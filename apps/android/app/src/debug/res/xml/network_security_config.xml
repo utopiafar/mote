@@ -1,0 +1,4 @@
+<network-security-config>
+    <!-- Debug HTTP requires the explicit UI opt-in and private-IP check in PrivacyRules. -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

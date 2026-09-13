@@ -1,0 +1,40 @@
+{
+  "name": "mote",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build:libs": "npm run build -w @mote/shared && npm run build -w @mote/agent && npm run build -w @mote/local-inference && npm run build -w @mote/diagnostics",
+    "dev": "npm run build:libs && concurrently -k -n server,web \"npm run dev -w @mote/server\" \"npm run dev -w @mote/web\"",
+    "build": "npm run build:libs && npm run build -w @mote/server && npm run build -w @mote/web && npm run build -w @mote/desktop",
+    "start": "npm run start -w @mote/server",
+    "desktop": "npm run start -w @mote/desktop",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "node --import tsx scripts/e2e.ts",
+    "test:container": "node scripts/test-container.mjs",
+    "demo": "node --import tsx scripts/seed-demo.ts",
+    "import:files": "node --import tsx scripts/import-files.ts",
+    "backup": "node --import tsx scripts/backup.ts",
+    "privacy": "node --import tsx scripts/privacy-gateway.ts",
+    "test:privacy": "node --import tsx scripts/test-privacy.ts",
+    "models:download": "npm run build -w @mote/local-inference && node scripts/download-model.cjs",
+    "models:setup": "sh scripts/setup-vision.sh"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.2.0",
+    "dotenv": "^17.4.2",
+    "sharp": "^0.35.4",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "zod": "^3.25.76"
+  }
+}

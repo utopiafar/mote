@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "unsloth/Qwen3.5-0.8B-GGUF",
+  "displayName": "Qwen3.5-0.8B · GGUF Q4_K_M + F16 vision",
+  "revision": "88467eb7c8e3b6e7894c794f373050d4dbc6ae8a",
+  "upstreamRevision": "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0",
+  "license": "Apache-2.0",
+  "sourceUrl": "https://modelscope.cn/models/unsloth/Qwen3.5-0.8B-GGUF",
+  "upstreamUrl": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF",
+  "totalBytes": 737504352,
+  "runtime": {
+    "name": "llama.cpp",
+    "revision": "1744c6bde8d687ce9774b3b54e688eee0bfdf5b7",
+    "backend": "cpu"
+  },
+  "files": [
+    {
+      "role": "language",
+      "fileName": "model.gguf",
+      "sourcePath": "Qwen3.5-0.8B-Q4_K_M.gguf",
+      "size": 532517120,
+      "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517",
+      "urls": {
+        "mirror": "https://modelscope.cn/api/v1/models/unsloth/Qwen3.5-0.8B-GGUF/repo?Revision=88467eb7c8e3b6e7894c794f373050d4dbc6ae8a&FilePath=Qwen3.5-0.8B-Q4_K_M.gguf",
+        "official": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/Qwen3.5-0.8B-Q4_K_M.gguf"
+      }
+    },
+    {
+      "role": "vision",
+      "fileName": "mmproj.gguf",
+      "sourcePath": "mmproj-F16.gguf",
+      "size": 204987232,
+      "sha256": "56e4c6cfe73b0c82e3e82bc518d7591997e61d81f723fc41a586f4fa69ea2453",
+      "urls": {
+        "mirror": "https://modelscope.cn/api/v1/models/unsloth/Qwen3.5-0.8B-GGUF/repo?Revision=88467eb7c8e3b6e7894c794f373050d4dbc6ae8a&FilePath=mmproj-F16.gguf",
+        "official": "https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/6ab461498e2023f6e3c1baea90a8f0fe38ab64d0/mmproj-F16.gguf"
+      }
+    }
+  ]
+}

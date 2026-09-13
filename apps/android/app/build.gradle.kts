@@ -1,0 +1,54 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+android {
+    namespace = "dev.mote.collector"
+    compileSdk = 36
+    ndkVersion = "28.2.13676358"
+    defaultConfig {
+        applicationId = "dev.mote.collector"
+        minSdk = 29
+        targetSdk = 36
+        versionCode = 2
+        versionName = "0.2.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk { abiFilters += "arm64-v8a" }
+        externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared"; targets += "mote_vlm" } }
+    }
+    buildTypes {
+        debug { manifestPlaceholders["cleartextAllowed"] = "true" }
+        release {
+            manifestPlaceholders["cleartextAllowed"] = "false"
+            isMinifyEnabled = false
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { buildConfig = true; aidl = true }
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/modelAssets"))
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
+    lint { abortOnError = true }
+}
+dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.10.2")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+}
+val copyModelManifest by tasks.registering(Sync::class) {
+    from(rootProject.file("../../models/qwen-manifest.json"))
+    from(rootProject.file("../../models/review-policy.txt"))
+    from(rootProject.file("../../models/review-system.txt"))
+    from(rootProject.file("../../models/review-grammar.gbnf"))
+    from(rootProject.file("../../licenses")) { into("licenses") }
+    into(layout.buildDirectory.dir("generated/modelAssets"))
+    doFirst { check(rootProject.file("../../models/qwen-manifest.json").exists()) { "Missing shared models/qwen-manifest.json" } }
+}
+tasks.named("preBuild").configure { dependsOn(copyModelManifest) }

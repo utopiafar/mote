@@ -1,0 +1,30 @@
+services:
+  mote:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:47832:47832"
+    environment:
+      MOTE_HOST: 0.0.0.0
+      MOTE_DATA_DIR: /data
+      MOTE_TOKEN: ${MOTE_TOKEN:-}
+      MOTE_DATA_KEY: ${MOTE_DATA_KEY:-}
+      MOTE_MODEL: ${MOTE_MODEL:-}
+      MOTE_MODEL_BASE_URL: ${MOTE_MODEL_BASE_URL:-https://api.deepseek.com}
+      MOTE_MODEL_API_KEY: ${MOTE_MODEL_API_KEY:-}
+      MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL: ${MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL:-0}
+      MOTE_EMBEDDING_MODEL: ${MOTE_EMBEDDING_MODEL:-}
+      MOTE_EMBEDDING_BASE_URL: ${MOTE_EMBEDDING_BASE_URL:-}
+      MOTE_EMBEDDING_API_KEY: ${MOTE_EMBEDDING_API_KEY:-}
+      MOTE_MAX_STORAGE_MB: ${MOTE_MAX_STORAGE_MB:-10240}
+      MOTE_RETENTION_DAYS: ${MOTE_RETENTION_DAYS:-0}
+      MOTE_INSIGHT_INTERVAL_HOURS: ${MOTE_INSIGHT_INTERVAL_HOURS:-0}
+    volumes:
+      - mote-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
+volumes:
+  mote-data:

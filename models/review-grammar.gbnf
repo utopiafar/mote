@@ -1,0 +1,4 @@
+root ::= "{" ws "\"reason\"" ws ":" ws string ws "," ws "\"allow\"" ws ":" ws ("true" | "false") (ws "," ws "\"labels\"" ws ":" ws "[" ws (string (ws "," ws string)*)? ws "]")? ws "}"
+string ::= "\"" character* "\""
+character ::= [^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])
+ws ::= [ \t\n\r]*

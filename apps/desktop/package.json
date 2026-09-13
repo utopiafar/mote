@@ -1,0 +1,72 @@
+{
+  "name": "@mote/desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Mote privacy-first personal context collector",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "npm run build && electron .",
+    "start": "electron .",
+    "build": "tsc -p tsconfig.json && node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:fixture": "npm run build && electron scripts/fixture-smoke.cjs",
+    "test:ui": "npm run build && electron scripts/ui-smoke.cjs",
+    "package": "npm run build && electron-builder --dir",
+    "test:vision": "npm run build && electron scripts/vision-smoke.cjs",
+    "test:central": "npm run build && electron scripts/central-smoke.cjs"
+  },
+  "dependencies": {
+    "@mote/local-inference": "0.1.0",
+    "@mote/diagnostics": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "41.10.7",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  },
+  "build": {
+    "appId": "dev.mote.collector",
+    "productName": "Mote Collector",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../licenses",
+        "to": "licenses"
+      },
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      },
+      {
+        "from": "native/bin",
+        "to": "native",
+        "filter": [
+          "mote-helper",
+          "mote-qwen"
+        ]
+      }
+    ],
+    "mac": {
+      "identity": "-",
+      "icon": "native/bin/mote.icns",
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ],
+      "hardenedRuntime": true,
+      "extendInfo": {
+        "NSScreenCaptureUsageDescription": "Mote records screenshots only while you enable capture, applies your privacy filters locally, then uploads them to your own central node."
+      },
+      "minimumSystemVersion": "13.3"
+    }
+  }
+}
