@@ -25,12 +25,16 @@ try {
   // Quote and dollar characters must survive Node dotenv parsing and Compose's raw env_file.
   dev = await updateEnvironment(dev, { MOTE_TOKEN: `synthetic-${randomUUID()}-$literal-"quoted"` });
   const config = JSON.parse((await run(dev, 'compose', ['--', 'config', '--format', 'json'])).stdout);
-  assert.equal(config.services.mote.environment.MOTE_TOKEN, dev.env.MOTE_TOKEN);
+  // compose config escapes dollar signs for reusable configuration output.
+  // Verify credential bytes at the actual container boundary after startup instead.
   assert.equal(config.services.mote.environment.MOTE_LOG_DIR, '/data/logs');
   assert.equal(config.services.mote.environment.MOTE_ENV_FILE, '/app/deploy/empty.env');
   assert.equal(config.services.mote.ports[0].host_ip, '127.0.0.1');
   assert.notEqual(dev.project, test.project); assert.notEqual(dev.meta.volume, test.meta.volume);
   await run(dev, 'start'); await run(test, 'start');
+  const literalContainer = (await run(dev,'compose',['--','ps','--quiet','mote'])).stdout.trim();
+  const actualEnvironment = JSON.parse(await docker(['inspect','--format','{{json .Config.Env}}',literalContainer]));
+  assert.equal(actualEnvironment.find(value=>value.startsWith('MOTE_TOKEN=')),`MOTE_TOKEN=${dev.env.MOTE_TOKEN}`);
   await request(dev, '/api/status', { token: test.env.MOTE_TOKEN, status: 401 });
   const saved = note(), screen = capture();
   await request(dev, '/api/notes', { method: 'POST', body: saved, status: 201 });
