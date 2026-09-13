@@ -24,6 +24,8 @@ try {
   profiles.push(dev, test); for (const p of profiles) volumes.add(p.meta.volume);
   // Quote and dollar characters must survive Node dotenv parsing and Compose's raw env_file.
   dev = await updateEnvironment(dev, { MOTE_TOKEN: `synthetic-${randomUUID()}-$literal-"quoted"` });
+  // Keep models disabled, while proving non-default capacity and configured key booleans cross Docker.
+  dev = await updateEnvironment(dev, { MOTE_MAX_STORAGE_MB: '23', MOTE_MODEL_API_KEY: 'synthetic-container-config-agent-key', MOTE_EMBEDDING_API_KEY: 'synthetic-container-config-embedding-key' });
   const config = JSON.parse((await run(dev, 'compose', ['--', 'config', '--format', 'json'])).stdout);
   // compose config escapes dollar signs for reusable configuration output.
   // Verify credential bytes at the actual container boundary after startup instead.
@@ -35,6 +37,35 @@ try {
   const literalContainer = (await run(dev,'compose',['--','ps','--quiet','mote'])).stdout.trim();
   const actualEnvironment = JSON.parse(await docker(['inspect','--format','{{json .Config.Env}}',literalContainer]));
   assert.equal(actualEnvironment.find(value=>value.startsWith('MOTE_TOKEN=')),`MOTE_TOKEN=${dev.env.MOTE_TOKEN}`);
+  for (const p of [dev, test]) {
+    await request(p, '/api/configuration', { token: p === dev ? test.env.MOTE_TOKEN : dev.env.MOTE_TOKEN, status: 401 });
+    const configuration = await request(p, '/api/configuration');
+    const fields = new Map(configuration.groups.flatMap(group => group.fields).map(field => [field.key, field]));
+    assert.equal(configuration.version, 1); assert.equal(configuration.profile, p.profile); assert.equal(configuration.runtime, 'docker');
+    assert.equal(configuration.readOnly, true); assert.equal(configuration.restartRequired, true);
+    assert.equal(configuration.envFile, p.envFile, 'The owner edit path must identify the host profile file');
+    assert.equal(configuration.baseDir, '/app/deploy');
+    assert.equal(fields.get('configurationFile').value, p.envFile);
+    assert.equal(fields.get('effectiveEnvFile').value, '/app/deploy/empty.env');
+    assert.equal(fields.get('effectiveEnvFile').source, 'environment');
+    assert.equal(configuration.storage.kind, 'docker-volume'); assert.equal(configuration.storage.source, p.meta.volume);
+    assert.equal(configuration.storage.mountPath, '/data'); assert.equal(configuration.storage.dataDir, '/data');
+    assert.equal(configuration.storage.sqlitePath, '/data/mote.sqlite'); assert.equal(configuration.storage.blobsDir, '/data/blobs');
+    assert.equal(configuration.storage.logDir, '/data/logs'); assert.equal(fields.get('logDirectory').value, '/data/logs');
+    assert.equal(fields.get('maxStorageBytes').value, Number(p.env.MOTE_MAX_STORAGE_MB) * 1024 * 1024);
+    assert.equal(fields.get('maxStorageBytes').source, 'environment');
+    assert.equal(fields.get('dataKeyConfigured').value, true); assert.equal(fields.get('accessTokenConfigured').value, true);
+    assert.equal(fields.get('modelApiKeyConfigured').value, Boolean(p.env.MOTE_MODEL_API_KEY));
+    assert.equal(fields.get('embeddingApiKeyConfigured').value, Boolean(p.env.MOTE_EMBEDDING_API_KEY));
+    const secrets = [p.env.MOTE_TOKEN, p.env.MOTE_DATA_KEY, p.env.MOTE_MODEL_API_KEY, p.env.MOTE_EMBEDDING_API_KEY].filter(Boolean);
+    const serialized = JSON.stringify(configuration);
+    for (const secret of secrets) assert.ok(!serialized.includes(JSON.stringify(secret).slice(1, -1)), 'Configuration must not contain credential values, including JSON-escaped tokens');
+    const support = JSON.stringify(await request(p, '/api/support-bundle'));
+    for (const privateValue of [...secrets, p.envFile, p.directory, p.meta.volume, '/app/deploy', '/data']) {
+      assert.ok(!support.includes(JSON.stringify(privateValue).slice(1, -1)), 'Reading owner configuration must not place secrets or paths in support bundles');
+    }
+  }
+  console.info('[compose-profiles] Authenticated effective configuration, host/container storage mapping and safe support isolation passed');
   await request(dev, '/api/status', { token: test.env.MOTE_TOKEN, status: 401 });
   const saved = note(), screen = capture();
   await request(dev, '/api/notes', { method: 'POST', body: saved, status: 201 });

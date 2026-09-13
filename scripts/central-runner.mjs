@@ -6,7 +6,7 @@ import { dirname } from 'node:path';
 const [entry, logPath, marker] = process.argv.slice(2);
 if (!entry || !logPath || !/^--mote-instance=[a-f0-9-]{36}$/.test(marker ?? '')) throw Error('Invalid central supervisor invocation');
 const bounded = (value, fallback, min, max) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback;
-const maxBytes = Math.floor(bounded(process.env.MOTE_LOG_MAX_MB ?? 2, 2, 1, 64) * 1024 * 1024);
+const maxBytes = Math.floor(bounded(process.env.MOTE_LOG_MAX_MB ?? 2, 2, 0.1, 8) * 1024 * 1024);
 const maxFiles = Math.floor(bounded(process.env.MOTE_LOG_MAX_FILES ?? 3, 3, 1, 10));
 mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
 const size = path => { try { return statSync(path).size; } catch (error) { if (error.code === 'ENOENT') return 0; throw error; } };
@@ -34,7 +34,7 @@ if (size(logPath) >= maxBytes) rotate();
 const child = spawn(process.execPath, [entry, marker], { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
 const events = new Set(['server.listening', 'server.stopped', 'server.stop_failed', 'server.start_failed']);
 const categories = new Set(['data_directory_in_use', 'port_in_use', 'permission', 'startup', 'shutdown', 'configuration']);
-const fields = new Set(['MOTE_ENV_FILE', 'MOTE_PROFILE', 'MOTE_DATA_DIR', 'MOTE_PORT', 'MOTE_TOKEN', 'MOTE_DATA_KEY', 'MOTE_LOG_LEVEL', 'MOTE_MODEL_REASONING_EFFORT', 'MOTE_MODEL_MAX_TOKENS', 'MOTE_MAX_STORAGE_MB', 'MOTE_MAX_EXPORT_MB', 'MOTE_RETENTION_DAYS', 'MOTE_INSIGHT_INTERVAL_HOURS', 'MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL', 'MOTE_DIAGNOSTICS_ENABLED', 'MOTE_DEBUG', 'MOTE_LOG_DIR', 'MOTE_LOG_MAX_MB', 'MOTE_LOG_MAX_FILES', 'MOTE_LOG_MAX_ENTRIES', 'MOTE_EMBEDDING_BASE_URL']);
+const fields = new Set(['MOTE_RUNTIME', 'MOTE_PUBLIC_URL', 'MOTE_CONFIG_FILE', 'MOTE_STORAGE_KIND', 'MOTE_STORAGE_SOURCE', 'MOTE_STORAGE_MOUNT', 'MOTE_TUNNEL_ENABLED', 'MOTE_TUNNEL_PROVIDER', 'MOTE_TUNNEL_PROTOCOL', 'MOTE_ALLOWED_ORIGINS', 'MOTE_MODEL_BASE_URL', 'MOTE_MODEL_API_KEY', 'MOTE_MODEL', 'MOTE_EMBEDDING_MODEL', 'MOTE_EMBEDDING_API_KEY', 'MOTE_ENV_FILE', 'MOTE_PROFILE', 'MOTE_DATA_DIR', 'MOTE_PORT', 'MOTE_TOKEN', 'MOTE_DATA_KEY', 'MOTE_LOG_LEVEL', 'MOTE_MODEL_REASONING_EFFORT', 'MOTE_MODEL_MAX_TOKENS', 'MOTE_MAX_STORAGE_MB', 'MOTE_MAX_EXPORT_MB', 'MOTE_RETENTION_DAYS', 'MOTE_INSIGHT_INTERVAL_HOURS', 'MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL', 'MOTE_DIAGNOSTICS_ENABLED', 'MOTE_DEBUG', 'MOTE_LOG_DIR', 'MOTE_LOG_MAX_MB', 'MOTE_LOG_MAX_FILES', 'MOTE_LOG_MAX_ENTRIES', 'MOTE_EMBEDDING_BASE_URL']);
 function safeLine(line, stream, byteCount = Buffer.byteLength(line)) {
   let event = { event: 'process.output_suppressed', stream, bytes: byteCount };
   try {

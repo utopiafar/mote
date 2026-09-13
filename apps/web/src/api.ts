@@ -108,7 +108,13 @@ export function createApi(connection: Connection, onUnauthorized?: () => void) {
     });
     if (!response.ok) {
       if (response.status === 401) onUnauthorized?.();
-      let message = `请求未完成（${response.status}）`;
+      let message = response.status === 524
+        ? "入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。"
+        : response.status === 413
+          ? "上传超过中央节点或公网入口的大小限制（413）。大型资料库请使用离线备份与恢复。"
+          : response.status === 502
+            ? "入口暂时无法连接中央服务（502）。请检查中央进程和隧道的 origin 地址。"
+            : `请求未完成（${response.status}）`;
       let requestId = response.headers.get("X-Request-Id") ?? undefined;
       try {
         const value = await response.json();

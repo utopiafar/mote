@@ -1,4 +1,5 @@
 import { z } from 'zod';
+export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource } from './configuration.js';
 
 export const platformSchema = z.enum(['macos', 'windows', 'linux', 'android', 'import']);
 export const sourceSchema = z.enum(['screen', 'file', 'note']);

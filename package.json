@@ -1,6 +1,6 @@
 {
   "name": "mote",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -31,6 +31,8 @@
     "dev:workspace": "concurrently -k -n server,web \"npm run dev -w @mote/server\" \"npm run dev -w @mote/web\"",
     "test:profiles": "node scripts/test-profiles.mjs",
     "test:profiles:container": "node scripts/test-profiles-container.mjs",
+    "test:tunnel": "node scripts/test-tunnel.mjs",
+    "test:tunnel:container": "node scripts/test-tunnel-container.mjs",
     "desktop:dev": "node scripts/mote.mjs exec --profile dev -- npm run start -w @mote/desktop"
   },
   "devDependencies": {

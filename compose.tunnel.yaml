@@ -1,0 +1,24 @@
+# Remotely managed Cloudflare Tunnel. Configure the dashboard origin as http://mote:47832.
+# No host ports, no Docker socket, and no token in command/environment/config output.
+services:
+  cloudflared:
+    image: ${MOTE_TUNNEL_IMAGE:?Profile tunnel image is required}
+    restart: unless-stopped
+    user: ${MOTE_TUNNEL_USER:?Token-file owner is required}
+    command: ["tunnel", "--no-autoupdate", "--protocol", "${MOTE_TUNNEL_PROTOCOL:-auto}", "--metrics", "127.0.0.1:20241", "--loglevel", "warn", "--grace-period", "30s", "run", "--token-file", "/run/secrets/cloudflared-token"]
+    secrets:
+      - source: cloudflared-token
+        target: cloudflared-token
+    depends_on:
+      mote:
+        condition: service_healthy
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    stop_grace_period: 40s
+    logging:
+      driver: none
+secrets:
+  cloudflared-token:
+    file: ${MOTE_TUNNEL_TOKEN_FILE:?Private profile tunnel token file is required}

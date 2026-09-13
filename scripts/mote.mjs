@@ -4,28 +4,36 @@ import { parseArgs } from 'node:util';
 import { writeFile, rename, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { profilePaths, initialize, loadProfile, isolatedEnvironment, withProfileLock, startNative, stopNative, nativeIdentity, health, compose, execute, dockerContainer, backupProfile, restoreProfile, verifiedBackup, atomicJson, launchdXml } from './profile-lib.mjs';
+import { profilePaths, initialize, loadProfile, isolatedEnvironment, withProfileLock, startNative, stopNative, nativeIdentity, health, compose, execute, dockerContainer, backupProfile, restoreProfile, verifiedBackup, atomicJson, launchdXml, effectiveConfiguration, setPublicUrl } from './profile-lib.mjs';
+import { configureTunnel, runNativeTunnel, nativeTunnelArgs, nativeTunnelIdentity } from './tunnel-lib.mjs';
 const help = `Mote central profiles (Node 24+, default: dev; prod requires --profile prod)
-  init [--profile dev|test|prod] [--home PATH] [--runtime native|docker] [--port N] [--image TAG]
-  start|run|stop|status|token [--profile NAME] [--home PATH]
+  init [--profile dev|test|prod] [--home PATH] [--runtime native|docker] [--port N] [--image TAG] [--data-dir NATIVE_PATH | --volume DOCKER_VOLUME]
+  start|run|stop|status|config|token [--profile NAME] [--home PATH]
   exec [--profile NAME] [--home PATH] -- COMMAND ARG...
   compose [--profile NAME] [--home PATH] -- build|ps|...
   backup [--profile NAME] [--home PATH] [--out NEW_DIRECTORY]
   restore --from BACKUP [--profile NAME] [--home PATH]
   launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
+  tunnel --enable --token-file PRIVATE_FILE [--public-url HTTPS_ORIGIN] [--protocol auto|http2|quic] [--binary ABSOLUTE_CLOUDFLARED]
+  tunnel --disable [--profile NAME] [--home PATH]
+  tunnel-run|tunnel-launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
   tls --enable|--disable [--profile NAME] [--home PATH]
   upgrade --release BUILT_CHECKOUT | --image LOCAL_IMAGE [--profile NAME] [--home PATH]
   rollback --restore-data [--profile NAME] [--home PATH]
 Prefix commands with: node scripts/mote.mjs
 No command installs launchd, publishes images, deletes old volumes or changes the legacy root .env.
-Only token intentionally prints a credential. Backups exclude credentials and encryption keys.`;
+Tunnel tokens are accepted only through private files, never argument values or environment.
+Native tunnel-run is foreground; generated launchd services are never installed automatically.
+Only token intentionally prints a central credential. Backups exclude credentials and encryption keys.`;
 const split = process.argv.indexOf('--');
 const raw = process.argv.slice(2, split < 0 ? undefined : split);
 const tail = split < 0 ? [] : process.argv.slice(split + 1);
-const { values, positionals } = parseArgs({ args: raw, allowPositionals: true, options: {
+let values, positionals;
+try { ({ values, positionals } = parseArgs({ args: raw, allowPositionals: true, options: {
   profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, runtime: { type: 'string' }, port: { type: 'string' }, image: { type: 'string' }, release: { type: 'string' },
+  'data-dir': { type: 'string' }, volume: { type: 'string' }, 'token-file': { type: 'string' }, 'public-url': { type: 'string' }, protocol: { type: 'string' }, binary: { type: 'string' },
   out: { type: 'string' }, from: { type: 'string' }, node: { type: 'string' }, enable: { type: 'boolean' }, disable: { type: 'boolean' }, 'restore-data': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
-} });
+} })); } catch { console.error('Mote: Invalid arguments; use --help. Credentials are never accepted as argument values.'); process.exit(1); }
 const command = positionals[0] ?? 'help';
 const print = value => console.info(JSON.stringify(value));
 async function stop(p) { return p.meta.runtime === 'docker' ? compose(p, ['stop'], { capture: true }).then(() => ({ stopped: true })) : stopNative(p); }
@@ -56,7 +64,7 @@ async function deploymentChange(p, rollback) {
       rollbackVolume = `${p.project}-rollback-${Date.now()}`;
     }
   }
-  p.meta = { ...p.meta, ...next, previous, ...(rollbackVolume ? { volume: rollbackVolume } : {}) };
+  p.meta = { ...p.meta, ...next, tunnel: p.meta.tunnel, previous, ...(rollbackVolume ? { volume: rollbackVolume } : {}) };
   delete p.meta.backup;
   await atomicJson(p.metaFile, p.meta);
   if (rollback) await restoreProfile(p, next.backup);
@@ -70,10 +78,28 @@ async function main() {
   const paths = profilePaths(values.profile, values.home);
   if (command === 'init') { print(await initialize(paths, values)); return; }
   const p = await loadProfile(paths);
+  if (command === 'config') { print(effectiveConfiguration(p)); return; }
+  if (command === 'tunnel') {
+    print(await withProfileLock(p, () => configureTunnel(p, values, { execute, persist: meta => atomicJson(p.metaFile, meta), persistPublicUrl: url => setPublicUrl(p,url) }))); return;
+  }
+  if (command === 'tunnel-run') {
+    if (p.meta.runtime !== 'native') throw Error('Use start for Docker tunnel profiles');
+    const runner = await withProfileLock(p, () => runNativeTunnel(p));
+    if (!runner?.wait) throw Error('Native tunnel could not start');
+    print(await runner.wait()); return;
+  }
+  if (command === 'tunnel-launchd') {
+    if (p.meta.runtime !== 'native') throw Error('tunnel-launchd requires a native profile');
+    nativeTunnelArgs(p);
+    const original = launchdXml(p,values.node), label = original.label.replace('dev.mote.central.','dev.mote.tunnel.');
+    const contents = original.contents.replaceAll(original.label,label).replace('<string>run</string>','<string>tunnel-run</string>');
+    const path = join(p.directory,'generated',`${label}.plist`); await writeFile(path,contents,{mode:0o600});
+    print({ generated:path,label,installed:false,credentialInArguments:false }); return;
+  }
   if (command === 'token') { console.info(p.env.MOTE_TOKEN); return; }
   if (command === 'status') {
     const state = p.meta.runtime === 'native' ? await nativeIdentity(p) : { compose: await compose(p, ['ps', '--all', '--format', 'json'], { capture: true }) };
-    print({ profile: p.profile, runtime: p.meta.runtime, envFile: p.envFile, dataDir: p.meta.runtime === 'native' ? p.dataDir : p.meta.volume, port: p.port, url: p.url, healthy: await health(p), ...state }); return;
+    print({ profile: p.profile, runtime: p.meta.runtime, envFile: p.envFile, dataDir: p.meta.runtime === 'native' ? p.dataDir : p.meta.volume, port: p.port, url: p.url, healthy: await health(p), tunnel: { ...effectiveConfiguration(p).tunnel, ...(p.meta.runtime === 'native' ? await nativeTunnelIdentity(p) : {}) }, ...state }); return;
   }
   if (command === 'exec') {
     if (!tail.length) throw Error('exec requires -- COMMAND ARG...');
@@ -103,7 +129,7 @@ async function main() {
     else if (command === 'backup') result = { backup: await backupProfile(p, values.out) };
     else if (command === 'restore') { if (!values.from) throw Error('restore requires --from BACKUP'); result = await restoreProfile(p, values.from); }
     else if (command === 'upgrade' || command === 'rollback') result = await deploymentChange(p, command === 'rollback');
-    else throw Error(`Unknown command: ${command}`);
+    else throw Error('Unknown command; use --help');
   });
   if (result?.wait) { const finished = await result.wait(); process.exitCode = finished.code ?? 1; }
   else print({ profile: p.profile, ...result });

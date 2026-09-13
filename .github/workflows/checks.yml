@@ -23,6 +23,7 @@ jobs:
       - run: npm run test:privacy
       - run: npm run test:e2e
       - run: npm run test:profiles
+      - run: npm run test:tunnel
       - run: python3 -m unittest discover -s scripts -p "test_fact_archive.py"
   docker-integration:
     runs-on: ubuntu-latest
@@ -36,3 +37,5 @@ jobs:
         run: node scripts/test-container.mjs
       - name: Verify isolated Compose profiles, backup and rollback
         run: node scripts/test-profiles-container.mjs
+      - name: Verify Cloudflare image flags, private secrets and connector lifecycle without network
+        run: node scripts/test-tunnel-container.mjs

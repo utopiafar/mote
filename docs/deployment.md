@@ -2,6 +2,8 @@
 
 中央节点包含 API、SQLite 归档与索引、Agent 运行时和 Web 界面。采集 App 通过节点 URL 与令牌连接；中央可以独立部署在 Mac mini、Linux 服务器或 NAS。只部署中央不需要屏幕权限、端上 Qwen 权重、CMake 或 Android SDK。
 
+配置字段、默认值、数据的真实存放位置见 [服务端配置参考](server-configuration.md)。家中 Mac mini 或服务器没有公网入站端口时，可用 [Cloudflare Tunnel](cloudflare-tunnel.md) 提供 HTTPS 入口；已有公网服务器也可使用下文 Caddy。
+
 ## 环境与私有目录
 
 需要 Node.js 24。以下命令从仓库根目录执行。统一入口是 `node scripts/mote.mjs`，也可用 `npm run mote --`。默认选择 **dev**，即使 shell 继承了 `MOTE_PROFILE=prod` 也不会改变目标；正式节点必须显式传 `--profile prod`。
@@ -17,6 +19,8 @@
 初始化为每个环境生成独立的 256 bit 随机令牌，私有目录权限 0700、配置权限 0600；已存在的环境会拒绝覆盖。只有 `token` 命令主动显示令牌。`profile.json` 记录运行方式、代码版本路径或镜像、卷名与升级快照，不含令牌。
 
 CLI 清除继承的 `MOTE_*`、`COMPOSE_*` 后注入所选环境。`MOTE_ENV_FILE` 显式指定配置文件时，中央与导入脚本只读该文件；路径不存在会报错。相对 `MOTE_DATA_DIR`、`MOTE_LOG_DIR` 基于该配置文件所在目录。dev/test 拒绝 47832，并要求数据和日志路径留在各自目录内。旧安装直接运行 `npm start` 时仍沿用根目录 `.env` 与 `data/`，不会被迁移或停止。
+
+`node scripts/mote.mjs config --profile prod --home /srv/mote/profiles` 可在启动前查看配置。运行后，中央「服务端配置」页面显示进程实际使用的值。原生新环境可用 `init --profile prod --data-dir /absolute/local-disk/mote` 选择资料目录；Docker 新环境用 `init --profile prod --runtime docker --volume mote-personal-data` 选择卷名，不能靠 `MOTE_DATA_DIR` 改变 Docker 挂载。
 
 ## Mac mini / 原生 Node.js
 

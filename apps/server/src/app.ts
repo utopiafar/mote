@@ -12,6 +12,7 @@ import { Store,StoreError } from './store.js';
 import { Indexer } from './indexer.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ServerDiagnostics,safeError } from './diagnostics.js';
+import { serverConfiguration } from './configuration.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface QueryAgent {configured:boolean;query(args:QueryScope&{question:string}):Promise<QueryResult>;close():Promise<void>}
@@ -42,14 +43,15 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);done();}));
   app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
-  await app.register(rateLimit,{max:180,timeWindow:'1 minute',errorResponseBuilder:(req,context)=>({statusCode:context.statusCode,error:'rate_limited',message:'请求过于频繁，请稍后重试。',requestId:req.id})});
+  const expectedBearer=Buffer.from(`Bearer ${config.token}`);
+  const validBearer=(req:{headers:{authorization?:string}})=>{if(typeof req.headers.authorization!=='string')return false;const supplied=Buffer.from(req.headers.authorization);return supplied.length===expectedBearer.length&&timingSafeEqual(supplied,expectedBearer);};
+  await app.register(rateLimit,{max:180,timeWindow:'1 minute',keyGenerator:req=>validBearer(req)?'authenticated-owner':`unauthenticated:${req.ip}`,errorResponseBuilder:(req,context)=>({statusCode:context.statusCode,error:'rate_limited',message:'请求过于频繁，请稍后重试。',requestId:req.id})});
   app.addHook('onRequest',async(req,reply)=>{
     const isApi=req.routeOptions.url?.startsWith('/api/')||req.url.startsWith('/api/');
     reply.header('X-Content-Type-Options','nosniff').header('Referrer-Policy','no-referrer');
     if(isApi)reply.header('Cache-Control','no-store');
     if(req.method==='OPTIONS'||req.routeOptions.url==='/api/health'||!isApi)return;
-    const supplied=Buffer.from(req.headers.authorization??'');const expected=Buffer.from(`Bearer ${config.token}`);
-    if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected))return reply.code(401).send({error:'unauthorized',message:'请连接中央节点并输入有效访问令牌',requestId:req.id});
+    if(!validBearer(req))return reply.code(401).send({error:'unauthorized',message:'请连接中央节点并输入有效访问令牌',requestId:req.id});
   });
   app.setErrorHandler((error,req,reply)=>{
     const failure=safeError(error);
@@ -58,6 +60,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   });
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
   app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
+  app.get('/api/configuration',async()=>serverConfiguration(config));
   app.post('/api/captures',async(req,reply)=>{const result=await diagnostics.measure('ingest','capture',()=>store.ingest(captureSchema.parse(req.body)),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
   app.get('/api/captures',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);

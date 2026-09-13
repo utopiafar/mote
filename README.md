@@ -6,7 +6,7 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记和选定文件
 
 采集器是独立的 **macOS App** 和 **Android App**。中央节点可放在 Mac mini、Linux 服务器或 NAS 上；它提供 API 与管理界面，Mac App 内可直接打开。更换服务器时迁移归档并更新客户端地址即可。
 
-[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [排查问题](docs/troubleshooting.md) · [开发环境](docs/development.md)
+[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [排查问题](docs/troubleshooting.md)
 
 ## 能做什么
 
@@ -97,6 +97,8 @@ node scripts/mote.mjs stop --profile dev
 node scripts/mote.mjs start --profile dev
 ```
 
+中央界面的 **服务端配置** 页面显示当前生效的数据目录、SQLite 与图片位置、日志、容量、保留时间、模型和网络设置，并标注来源及对应变量名。离线可用 `node scripts/mote.mjs config --profile dev` 查看部署配置与存储映射。完整变量、默认值与迁移注意事项见 [配置参考](docs/server-configuration.md)。
+
 日常部署建议使用仓库外的 `prod` 环境，见下方部署章节。已有 `npm start` / 根目录 `.env` / `data/` 的安装仍按原路径运行，不会自动搬迁。
 
 ### 2. 连接采集 App
@@ -139,7 +141,8 @@ MOTE_MODEL_MAX_TOKENS=8192
 | 本机开发 | `dev` 配置 + Node.js；客户端开发环境 | API `127.0.0.1:47842` |
 | 独立测试 | `test` 配置与合成输入 | API `127.0.0.1:47852` |
 | Mac mini 日常节点 | 仓库外 `prod` 目录 + Node.js，可生成 launchd 配置 | `127.0.0.1:47832`；跨设备经 HTTPS |
-| Linux / NAS / 远程服务器 | Docker Compose 独立项目与卷，可叠加 Caddy HTTPS | 默认仅映射主机 loopback |
+| Linux / NAS / 远程服务器 | Docker Compose 独立项目与卷，可选 Cloudflare Tunnel 或 Caddy HTTPS | 默认仅映射主机 loopback |
+| 家庭网络 / 无入站端口的 Mac mini | Cloudflare Tunnel，公开域名转发至本机或容器中央节点 | 客户端填写 HTTPS 域名与 Mote 令牌 |
 
 每个节点环境有独立端口、访问令牌、配置、数据与日志。CLI 未指定环境时使用 `dev`，不会自动操作 `prod`。Mac 命名环境使用独立 App 数据目录；Android `development` 构建使用独立包名，可以与日常版并装。详见 [开发环境](docs/development.md)。
 
@@ -158,7 +161,7 @@ node scripts/mote.mjs compose --profile prod --home /srv/mote/profiles -- build
 node scripts/mote.mjs start --profile prod --home /srv/mote/profiles
 ```
 
-中央节点默认仅监听 loopback。公网或局域网长期使用应配置 TLS 与强访问令牌。完整的 HTTPS、launchd、容器日志、备份、迁移和升级步骤见 [部署文档](docs/deployment.md)。
+中央节点默认仅监听 loopback。公网或局域网长期使用应配置 TLS 与强访问令牌。Cloudflare Tunnel 可通过主动出站连接提供 HTTPS 入口，无需将中央端口映射到公网；支持 profile 独立凭据文件、启停、协议设置和状态查看，步骤见 [Tunnel 部署](docs/cloudflare-tunnel.md)。完整的 HTTPS、launchd、容器日志、备份、迁移和升级步骤见 [部署文档](docs/deployment.md)。
 
 SQLite 数据目录放在主机本地磁盘或 Docker 本地卷；NAS 可以运行节点，但不要让多个节点共享网络文件系统上的 SQLite WAL。当前服务不提供多租户或多实例写入。
 

@@ -7,6 +7,7 @@ import { parseEnv } from 'node:util';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createServer } from 'node:net';
+import { validateTunnel, tunnelTokenPath, dockerTunnelUser, removeTunnelSidecars, assertTunnelToken } from './tunnel-lib.mjs';
 
 export const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 export const ports = { dev: 47842, test: 47852, prod: 47832 };
@@ -34,6 +35,13 @@ export async function initialize(paths, options = {}) {
   if (paths.profile !== 'prod' && port === ports.prod) throw Error('Port 47832 is reserved for the explicit prod profile');
   const runtime = options.runtime ?? 'native';
   if (!['native', 'docker'].includes(runtime)) throw Error('Runtime must be native or docker');
+  if (options['data-dir'] && runtime !== 'native') throw Error('--data-dir is for native profiles; Docker uses --volume with a named volume');
+  if (options.volume && runtime !== 'docker') throw Error('--volume requires a Docker profile');
+  const dataDir = resolve(paths.directory, options['data-dir'] || 'data');
+  const volume = options.volume || `${paths.project}-data`;
+  if (!/^[a-z0-9][a-z0-9_.-]+$/i.test(volume)) throw Error('Invalid Docker volume name');
+  if (paths.profile !== 'prod' && !volume.startsWith(paths.project + '-')) throw Error('Development/test volumes must belong to their own profile project');
+  if (paths.profile !== 'prod') { const delta = relative(paths.directory, dataDir); if (!delta || delta === '..' || delta.startsWith('../') || isAbsolute(delta)) throw Error('Development/test storage must remain inside its profile directory'); }
   await mkdir(paths.directory, { recursive: true, mode: 0o700 });
   // Never overwrite a profile or silently rotate its token, including partially initialized profiles.
   for (const path of [paths.envFile, paths.metaFile]) {
@@ -43,26 +51,46 @@ export async function initialize(paths, options = {}) {
   for (const folder of ['data', 'logs', 'backups', 'generated']) await mkdir(join(paths.directory, folder), { mode: 0o700 });
   const version = JSON.parse(await readFile(join(repository, 'package.json'), 'utf8')).version;
   const values = {
-    MOTE_PROFILE: paths.profile, MOTE_HOST: '127.0.0.1', MOTE_PORT: String(port), MOTE_DATA_DIR: './data',
+    MOTE_PROFILE: paths.profile, MOTE_HOST: '127.0.0.1', MOTE_PORT: String(port), MOTE_DATA_DIR: options['data-dir'] ? dataDir : './data',
     MOTE_TOKEN: randomBytes(32).toString('hex'), MOTE_DATA_KEY: '', MOTE_ALLOWED_ORIGINS: paths.profile === 'test' ? 'http://localhost:5174,http://127.0.0.1:5174' : 'http://localhost:5173,http://127.0.0.1:5173',
     MOTE_MODEL: '', MOTE_MODEL_BASE_URL: 'https://api.deepseek.com', MOTE_MODEL_API_KEY: '', MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL: '0',
     MOTE_MODEL_REASONING_EFFORT: 'high', MOTE_MODEL_MAX_TOKENS: '8192',
     MOTE_EMBEDDING_MODEL: '', MOTE_EMBEDDING_BASE_URL: '', MOTE_EMBEDDING_API_KEY: '',
     MOTE_RETENTION_DAYS: '0', MOTE_MAX_STORAGE_MB: '10240', MOTE_MAX_EXPORT_MB: '64', MOTE_INSIGHT_INTERVAL_HOURS: '0',
     MOTE_LOG_DIR: './logs', MOTE_DIAGNOSTICS_ENABLED: '1', MOTE_DEBUG: '0', MOTE_LOG_LEVEL: 'info', MOTE_LOG_MAX_MB: '2', MOTE_LOG_MAX_FILES: '3', MOTE_LOG_MAX_ENTRIES: '2000',
+    MOTE_PUBLIC_URL: '',
     MOTE_TLS_DOMAIN: '', MOTE_TLS_HTTP_PORT: '80', MOTE_TLS_HTTPS_PORT: '443',
   };
-  const contents = '# Private profile. Paths are relative to this file. Do not commit or copy between environments.\n' + Object.entries(values).map(([key, value]) => `${key}=${value.includes('\n') ? JSON.stringify(value) : value}`).join('\n') + '\n';
+  // Retain the documented settings and comments; only this profile's defaults replace example values.
+  const template = await readFile(join(repository, '.env.example'), 'utf8');
+  const remaining = new Set(Object.keys(values));
+  function line(key, value) {
+    for (const quote of ["'", '"', '`']) {
+      if (value.includes(quote) || /[\r\n\0]/.test(value)) continue;
+      const candidate = `${key}=${quote}${value}${quote}`;
+      if (parseEnv(candidate)[key] === value) return candidate;
+    }
+    throw Error('A configuration value cannot be represented safely; choose a path without quote delimiters');
+  }
+  const body = template.split('\n').filter(l => !l.startsWith('# Legacy single-node') && !l.includes('直接 npm start') && !l.includes('隔离部署先执行')).map(l => {
+    const match = /^([A-Z][A-Z0-9_]*)=/.exec(l);
+    if (!match || !Object.hasOwn(values, match[1])) return l;
+    remaining.delete(match[1]); return line(match[1], values[match[1]]);
+  });
+  const contents = '# Private isolated profile. Relative paths resolve beside this file. Do not commit.\n' + body.join('\n') + '\n# Deployment selection and optional public endpoint; tunnel secrets use a separate private file.\n' + Array.from(remaining, key => line(key, values[key])).join('\n') + '\n';
   await writeFile(paths.envFile, contents, { flag: 'wx', mode: 0o600 });
-  await atomicJson(paths.metaFile, { version: 1, profile: paths.profile, runtime, release: repository, image: options.image ?? `mote-central:${version}`, volume: `${paths.project}-data`, tls: false });
-  return { profile: paths.profile, runtime, port, envFile: paths.envFile, dataDir: join(paths.directory, 'data'), project: paths.project };
+  await atomicJson(paths.metaFile, { version: 1, profile: paths.profile, runtime, release: repository, image: options.image ?? `mote-central:${version}`, volume, tls: false });
+  return { profile: paths.profile, runtime, port, envFile: paths.envFile, storage: { kind: runtime === 'docker' ? 'docker-volume' : 'local-directory', source: runtime === 'docker' ? volume : dataDir, mount: runtime === 'docker' ? '/data' : dataDir }, dataDir: runtime === 'native' ? dataDir : undefined, volume: runtime === 'docker' ? volume : undefined, project: paths.project };
 }
 export async function loadProfile(paths) {
   let env, meta;
   try { env = parseEnv(await readFile(paths.envFile, 'utf8')); meta = await readJson(paths.metaFile); }
-  catch (error) { if (error.code === 'ENOENT') throw Error(`Profile is not initialized: run init --profile ${paths.profile}`); throw error; }
+  catch (error) { if (error.code === 'ENOENT') throw Error(`Profile is not initialized: run init --profile ${paths.profile}`); throw Error('Profile configuration could not be parsed; contents are suppressed'); }
   if (meta.version !== 1 || meta.profile !== paths.profile || !['native', 'docker'].includes(meta.runtime)) throw Error('Profile metadata is invalid');
   if (env.MOTE_PROFILE !== paths.profile) throw Error('mote.env profile does not match its directory');
+  validateTunnel(meta.tunnel);
+  if (Object.keys(env).some(k => k.startsWith('DOCKER_') || k.startsWith('COMPOSE_'))) throw Error('Docker context and Compose selection belong to the CLI environment, not mote.env');
+  if (Object.keys(env).some(k => k.startsWith('TUNNEL_') || k.startsWith('CLOUDFLARED_') || k === 'NO_AUTOUPDATE' || k.startsWith('MOTE_TUNNEL_TOKEN'))) throw Error('Provider credential/environment flags are not allowed in mote.env; use tunnel --token-file');
   const port = Number(env.MOTE_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw Error('Invalid profile MOTE_PORT');
   if (paths.profile !== 'prod' && port === ports.prod) throw Error('Port 47832 is reserved for the explicit prod profile');
@@ -84,10 +112,28 @@ export async function loadProfile(paths) {
   }
   return { ...paths, env, meta, port, dataDir, url: `http://127.0.0.1:${port}` };
 }
+export function deploymentEnvironment(p) {
+  const tunnel = validateTunnel(p.meta.tunnel), docker = p.meta.runtime === 'docker';
+  return { MOTE_RUNTIME: p.meta.runtime, MOTE_CONFIG_FILE: p.envFile, MOTE_STORAGE_KIND: docker ? 'docker-volume' : 'local-directory', MOTE_STORAGE_SOURCE: docker ? p.meta.volume : p.dataDir, MOTE_STORAGE_MOUNT: docker ? '/data' : p.dataDir,
+    MOTE_PUBLIC_URL: p.env.MOTE_PUBLIC_URL || '',
+    MOTE_TUNNEL_ENABLED: tunnel.enabled ? '1' : '0', MOTE_TUNNEL_PROVIDER: tunnel.enabled ? 'cloudflare' : '', MOTE_TUNNEL_PROTOCOL: tunnel.enabled ? tunnel.protocol : '' };
+}
+export function effectiveConfiguration(p) {
+  const d = deploymentEnvironment(p), tunnel = validateTunnel(p.meta.tunnel);
+  const endpoint = value => { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password && !u.search && !u.hash ? u.toString() : '[invalid endpoint hidden]'; } catch { return value ? '[invalid endpoint hidden]' : ''; } };
+  return { profile: p.profile, runtime: p.meta.runtime, configurationFile: p.envFile, processEnvFile: p.meta.runtime === 'docker' ? '/app/deploy/empty.env' : p.envFile, metadataFile: p.metaFile,
+    listener: { host: p.meta.runtime === 'docker' ? '0.0.0.0' : p.env.MOTE_HOST, port: p.meta.runtime === 'docker' ? 47832 : p.port, publishedUrl: p.url, publicUrl: endpoint(d.MOTE_PUBLIC_URL) },
+    storage: { kind: d.MOTE_STORAGE_KIND, source: d.MOTE_STORAGE_SOURCE, mount: d.MOTE_STORAGE_MOUNT, logPath: p.meta.runtime === 'docker' ? '/data/logs' : resolve(p.directory, p.env.MOTE_LOG_DIR || join(p.dataDir,'logs')), dataKeyConfigured: Boolean(p.env.MOTE_DATA_KEY) },
+    credentials: { accessTokenConfigured: Boolean(p.env.MOTE_TOKEN), modelKeyConfigured: Boolean(p.env.MOTE_MODEL_API_KEY), embeddingKeyConfigured: Boolean(p.env.MOTE_EMBEDDING_API_KEY) },
+    models: { model: p.env.MOTE_MODEL || '', endpoint: endpoint(p.env.MOTE_MODEL_BASE_URL), embeddingModel: p.env.MOTE_EMBEDDING_MODEL || '', embeddingEndpoint: endpoint(p.env.MOTE_EMBEDDING_BASE_URL) },
+    archive: { retentionDays: Number(p.env.MOTE_RETENTION_DAYS || 0), maxStorageMiB: Number(p.env.MOTE_MAX_STORAGE_MB || 10240), maxExportMiB: Number(p.env.MOTE_MAX_EXPORT_MB || 64) },
+    tunnel: { configured: tunnel.enabled, provider: tunnel.enabled ? 'cloudflare' : null, protocol: tunnel.protocol, connected: 'not-checked', originService: p.meta.runtime === 'docker' ? 'http://mote:47832' : p.url, supervision: p.meta.runtime === 'docker' ? 'compose' : 'foreground-runner' },
+    apply: 'Edit the selected private configuration and restart this profile; existing archive data is not moved automatically' };
+}
 export function isolatedEnvironment(p, extra = {}) {
   const env = { ...process.env };
-  for (const key of Object.keys(env)) if (key.startsWith('MOTE_') || key.startsWith('COMPOSE_')) delete env[key];
-  return { ...env, ...p.env, NODE_ENV: p.profile === 'prod' ? 'production' : p.profile === 'test' ? 'test' : 'development', MOTE_ENV_FILE: p.envFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN_FILE: join(p.dataDir, 'access-token'), ...extra };
+  for (const key of Object.keys(env)) if (key.startsWith('MOTE_') || key.startsWith('COMPOSE_') || key.startsWith('TUNNEL_') || key.startsWith('CLOUDFLARED_') || key === 'NO_AUTOUPDATE') delete env[key];
+  return { ...env, ...p.env, ...deploymentEnvironment(p), NODE_ENV: p.profile === 'prod' ? 'production' : p.profile === 'test' ? 'test' : 'development', MOTE_ENV_FILE: p.envFile, MOTE_PROFILE: p.profile, MOTE_URL: p.url, MOTE_TOKEN_FILE: join(p.dataDir, 'access-token'), ...extra };
 }
 export function execute(command, args, { env, cwd = repository, capture = false, timeoutMs = 120000 } = {}) {
   return new Promise((resolvePromise, reject) => {
@@ -203,14 +249,17 @@ export async function stopNative(p, expectedMarker) {
   return { stopped: true };
 }
 export function composeEnvironment(p) {
-  return isolatedEnvironment(p, { MOTE_COMPOSE_PROJECT: p.project, MOTE_IMAGE: p.meta.image, MOTE_VOLUME: p.meta.volume, MOTE_DOCKER_ENV_FILE: join(p.directory, 'generated/docker.env'), MOTE_BIND_ADDRESS: '127.0.0.1' });
+  return isolatedEnvironment(p, { MOTE_COMPOSE_PROJECT: p.project, MOTE_IMAGE: p.meta.image, MOTE_VOLUME: p.meta.volume, MOTE_DOCKER_ENV_FILE: join(p.directory, 'generated/docker.env'), MOTE_BIND_ADDRESS: '127.0.0.1', MOTE_TUNNEL_IMAGE: validateTunnel(p.meta.tunnel).image, MOTE_TUNNEL_TOKEN_FILE: tunnelTokenPath(p), MOTE_TUNNEL_USER: p.tunnelUser || `${process.getuid?.() ?? 65532}:${process.getgid?.() ?? 65532}` });
 }
 export function composeArgs(p, args) {
-  return ['compose', '--project-name', p.project, '--project-directory', repository, '--env-file', join(repository, 'deploy/empty.env'), '-f', join(repository, 'compose.yaml'), ...(p.meta.tls ? ['-f', join(repository, 'compose.tls.yaml')] : []), ...args];
+  return ['compose', '--project-name', p.project, '--project-directory', repository, '--env-file', join(repository, 'deploy/empty.env'), '-f', join(repository, 'compose.yaml'), ...(p.meta.tls ? ['-f', join(repository, 'compose.tls.yaml')] : []), ...(validateTunnel(p.meta.tunnel).enabled ? ['-f', join(repository, 'compose.tunnel.yaml')] : []), ...args];
 }
 export async function compose(p, args, options = {}) {
   // Parse dotenv once with Node, then pass literal values to Compose raw env_file. No root .env or shell interpolation.
-  const lines = Object.entries(p.env).map(([key, value]) => { if (/[\r\n]/.test(value)) throw Error('Docker profile values must be single-line'); return `${key}=${value}`; });
+  const tunnel = validateTunnel(p.meta.tunnel);
+  if (tunnel.enabled && ['up','create','run','restart'].includes(args[0])) { await assertTunnelToken(p); p.tunnelUser = await dockerTunnelUser(p, execute); }
+  else if (args[0] === 'up' && p.meta.tunnel) await removeTunnelSidecars(p, execute);
+  const lines = Object.entries({ ...p.env, ...deploymentEnvironment(p) }).map(([key, value]) => { if (/[\r\n]/.test(value)) throw Error('Docker profile values must be single-line'); return `${key}=${value}`; });
   const file = join(p.directory, 'generated/docker.env'), temp = `${file}.${randomUUID()}.tmp`;
   try { await writeFile(temp, lines.join('\n') + '\n', { flag: 'wx', mode: 0o600 }); await rename(temp, file); }
   finally { await rm(temp, { force: true }); }
@@ -296,4 +345,16 @@ export function launchdXml(p, nodePath = process.execPath) {
   const args = [resolve(nodePath), join(repository, 'scripts/mote.mjs'), 'run', '--profile', p.profile, '--home', p.home];
   const strings = args.map(value => `<string>${escape(value)}</string>`).join('');
   return { label, contents: `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array>${strings}</array><key>WorkingDirectory</key><string>${escape(repository)}</string><key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer><key>ProcessType</key><string>Background</string><key>Umask</key><integer>63</integer><key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string></dict></plist>\n` };
+}
+
+export async function setPublicUrl(p, url) {
+  const raw = await readFile(p.envFile,'utf8');
+  const entry = `MOTE_PUBLIC_URL=${JSON.stringify(url)}`;
+  if (parseEnv(entry).MOTE_PUBLIC_URL !== url) throw Error('Public URL cannot be represented in configuration');
+  const next = /^MOTE_PUBLIC_URL=/m.test(raw) ? raw.replace(/^MOTE_PUBLIC_URL=.*$/m,entry) : raw + '\n' + entry + '\n';
+  const beforeValues = parseEnv(raw), afterValues = parseEnv(next);
+  if (afterValues.MOTE_PUBLIC_URL !== url || JSON.stringify(Object.entries(beforeValues).filter(([key]) => key !== 'MOTE_PUBLIC_URL').sort()) !== JSON.stringify(Object.entries(afterValues).filter(([key]) => key !== 'MOTE_PUBLIC_URL').sort())) throw Error('Cannot update MOTE_PUBLIC_URL safely; remove duplicate keys or edit this field manually');
+  const temp = `${p.envFile}.${randomUUID()}.tmp`;
+  try { await writeFile(temp,next,{flag:'wx',mode:0o600}); await rename(temp,p.envFile); }
+  finally { await rm(temp,{force:true}); }
 }

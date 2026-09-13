@@ -19,7 +19,8 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   await app.whenReady();
   const port=await freePort(),url=`http://127.0.0.1:${port}`,token=randomBytes(32).toString('hex');
   const file=join(root,'mote.env');
-  writeFileSync(file,`MOTE_PROFILE=test\nMOTE_PORT=${port}\nMOTE_HOST=127.0.0.1\nMOTE_DATA_DIR=./data\nMOTE_TOKEN=${token}\nMOTE_DEBUG=1\n`,{mode:0o600});
+  const modelKey='generated-model-secret-'+randomUUID();
+  writeFileSync(file,`MOTE_PROFILE=test\nMOTE_PORT=${port}\nMOTE_HOST=127.0.0.1\nMOTE_DATA_DIR=./data\nMOTE_TOKEN=${token}\nMOTE_DEBUG=1\nMOTE_MODEL_API_KEY=${modelKey}\nMOTE_PUBLIC_URL=https://fixture.example.com\n`,{mode:0o600});
   const env={...process.env};for(const key of Object.keys(env))if(key.startsWith('MOTE_'))delete env[key];
   server=spawn('node',[join(repository,'apps/server/dist/index.js')],{cwd:repository,env:{...env,MOTE_ENV_FILE:file},stdio:['ignore','pipe','pipe']});
   let serverFailure='';server.stderr.on('data',chunk=>{serverFailure+=chunk;});
@@ -32,6 +33,22 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   await window.loadURL(url);
   await wc.executeJavaScript(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('中央节点已连接')`),'authenticated app');
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.sidebar nav button')).find(b=>b.innerText==='服务端配置').click()`);
+  await until(()=>wc.executeJavaScript(`document.body.innerText.includes('SQLite 数据库')`),'effective server configuration');
+  const settingsText=await wc.executeJavaScript(`document.querySelector('.server-settings').innerText`);
+  assert.ok(settingsText.includes(join(root,'data','mote.sqlite')));
+  assert.ok(settingsText.includes(file));
+  assert.ok(settingsText.includes('MOTE_MAX_STORAGE_MB'));
+  assert.ok(settingsText.includes('https://fixture.example.com'));
+  assert.ok(settingsText.includes('已配置'));
+  assert.equal(settingsText.includes(token),false);assert.equal(settingsText.includes(modelKey),false);
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.settings-heading button')).find(b=>b.innerText==='刷新配置').click()`);
+  await until(()=>wc.executeJavaScript(`!document.querySelector('.settings-heading button').disabled`),'configuration refresh');
+  writeFileSync(join(output,'web-settings-desktop.png'),(await wc.capturePage()).toPNG());
+  window.setSize(430,1000);await sleep(200);
+  assert.equal(await wc.executeJavaScript('document.documentElement.scrollWidth<=window.innerWidth'),true);
+  writeFileSync(join(output,'web-settings-mobile.png'),(await wc.capturePage()).toPNG());
+  window.setSize(1360,1100);await sleep(100);
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('nav button')).find(b=>b.innerText==='资料库').click()`);
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('本次运行')`),'diagnostic snapshot');
   assert.equal(await wc.executeJavaScript(`document.querySelector('#diagnostics-title').textContent`),'运行诊断');
@@ -44,7 +61,7 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   const path=await Promise.race([download,sleep(15000).then(()=>{throw Error('Support download timed out');})]);
   const raw=readFileSync(path,'utf8'),bundle=JSON.parse(raw);
   assert.equal(bundle.scope,'central-safe-support');assert.ok(bundle.events.some(e=>e.requestId===requestId));
-  assert.equal(raw.includes(generatedText),false);assert.equal(raw.includes(token),false);
+  assert.equal(raw.includes(generatedText),false);assert.equal(raw.includes(token),false);assert.equal(raw.includes(modelKey),false);assert.equal(raw.includes(root),false);
   await wc.executeJavaScript(`document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'})`);
   await sleep(150);writeFileSync(join(output,'web-diagnostics-desktop.png'),(await wc.capturePage()).toPNG());
   window.setSize(430,1000);await sleep(200);
@@ -52,7 +69,7 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   await wc.executeJavaScript(`document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'})`);
   writeFileSync(join(output,'web-diagnostics-mobile.png'),(await wc.capturePage()).toPNG());
   assert.deepEqual(errors,[]);
-  console.info('PASS: actual renderer → isolated central node → profile/snapshot → request ID filter → safe support download; desktop/mobile layouts rendered. Generated notes only.');
+  console.info('PASS: actual renderer → isolated central node → effective settings/storage paths/secret status/refresh → profile/snapshot → request ID filter → safe support download; desktop/mobile layouts rendered. Generated notes only.');
 })().then(()=>finish(0),error=>{console.error(error.message);finish(1);});
 async function finish(code){
   if(window&&!window.isDestroyed())window.destroy();

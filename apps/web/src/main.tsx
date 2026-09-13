@@ -65,8 +65,9 @@ import {
 import "./styles.css";
 import { Notes } from "./Notes";
 import { Diagnostics } from "./Diagnostics";
+import { ServerSettings } from "./ServerSettings";
 
-type Page = "overview" | "timeline" | "notes" | "ask" | "devices" | "vault";
+type Page = "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "settings";
 const nav = [
   { id: "overview" as const, label: "总览", icon: LayoutDashboard },
   { id: "timeline" as const, label: "时间线", icon: Clock3 },
@@ -74,6 +75,7 @@ const nav = [
   { id: "ask" as const, label: "问一问", icon: MessageSquare },
   { id: "devices" as const, label: "设备", icon: Monitor },
   { id: "vault" as const, label: "资料库", icon: Database },
+  { id: "settings" as const, label: "服务端配置", icon: Settings2 },
 ];
 const periodNames: Record<string, string> = {
   today: "今天",
@@ -2205,6 +2207,7 @@ function App() {
                           disconnect={disconnect}
                         />
                       )}
+                      {page === "settings" && <ServerSettings key={connection.url || window.location.origin} api={api} />}
                     </>
                   )}
             </>

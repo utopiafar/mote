@@ -19,7 +19,7 @@
 | 配置项 | 默认值 | 含义 |
 |---|---|---|
 | `MOTE_DIAGNOSTICS_ENABLED` | `1` | `0` 时不读取、积累或写入诊断事件；即时数值状态仍可查看 |
-| `MOTE_DEBUG` | `0` | `1` 时额外记录阶段开始事件，便于发现尚未完成的阶段 |
+| `MOTE_DEBUG` | `0` | `1` 时将非 silent 级别提升为 debug，额外记录阶段开始事件，便于发现尚未完成的阶段 |
 | `MOTE_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error`、`silent`；`silent` 优先于 debug 开关 |
 | `MOTE_LOG_DIR` | 数据目录下的 `logs` | 每个节点使用独立目录；不会出现在支持包内 |
 | `MOTE_LOG_MAX_MB` | `2` | 单个日志文件上限，允许 `0.1`–`8` MiB |
@@ -39,6 +39,7 @@ debug 开关只增加固定事件，不记录请求正文、模型输入输出�
 | 接口 | 内容 |
 |---|---|
 | `GET /api/status` | 当前 profile、服务配置状态、存储状态及诊断摘要 |
+| `GET /api/configuration` | 所有者专用：生效配置、私有目录、存储来源、变量名和密钥配置状态；此响应不属于可公开分享的诊断包 |
 | `GET /api/diagnostics` | 数值快照：进程 CPU/RSS/运行时间、索引队列、设备报告的排队总量、存储统计、日志容量及丢弃/失败计数 |
 | `GET /api/diagnostics/events?afterSeq=0&limit=200` | 从指定序号之后向前读取事件，单页最多 500 条 |
 | `GET /api/support-bundle` | 下载 `mote-support.json`：快照和最近最多 500 条事件 |
@@ -66,6 +67,8 @@ debug 开关只增加固定事件，不记录请求正文、模型输入输出�
 | `timeout` / `internal` | 操作中断或未归入上述类别的失败；用请求编号定位最后成功的阶段 |
 
 当设备显示离线时，先区分“最近一次客户端上报”与“中央已经保存的资料”。离线状态或旧的 `lastCaptureAt` 不能证明之后没有归档。客户端上报的队列量也可能过时。中央 `queue.index` 给出当前索引状态；`textReady` 表示文本原文已可检索，未配置 embedding 并不妨碍文本归档。
+
+Cloudflare Tunnel 的 connector 连接状态与中央 API 健康状态分别检查：先通过本机 `status` 确认中央可用，再核对公网域名、Tunnel origin 与 connector。502、524、413 分别可能对应 origin 不可达、代理等待超时和入口上传限制。中央 UI 会显示 HTTP 状态与排查提示，不将代理返回的 HTML 作为应用内容。完整命令见 [Tunnel 排错](cloudflare-tunnel.md#排错与入口限制)。
 
 启动与退出在终端中只输出固定 JSON 事件。`server.start_failed` 的 `data_directory_in_use` 表示另一个活跃节点持有资料库锁，`port_in_use` 表示监听端口冲突，`permission` 表示目录权限受限。`configuration` 类别会同时给出无效配置项的 `field`（例如 `MOTE_DEBUG`），不包含用户填写的值。通用 `startup` 类别需要检查所选环境文件和运行依赖；终端不会打印可能包含凭据或私人路径的底层异常。
 

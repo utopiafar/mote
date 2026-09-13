@@ -21,3 +21,17 @@ test('malformed error fields cannot become a request ID or object error message'
     assert.equal(errorMessage(error),'请求未完成（500）');return true;
   });
 });
+test('proxy HTML failures preserve actionable status without rendering its body or disconnecting', async t => {
+  let unauthorized = 0;
+  const api = createApi({url:'https://fixture.example.com',token:'synthetic'}, () => unauthorized++);
+  for (const status of [413, 502, 524]) {
+    const mock = t.mock.method(globalThis, 'fetch', async () => new Response('<html>PRIVATE_PROXY_BODY<script>untrusted()</script></html>', {status, headers:{'Content-Type':'text/html'}}));
+    await assert.rejects(api.request('/api/query'), error => {
+      assert.ok(error instanceof ApiError); assert.equal(error.status,status);
+      assert.match(error.message,new RegExp(String(status))); assert.equal(error.message.includes('PRIVATE_PROXY_BODY'),false);
+      return true;
+    });
+    mock.mock.restore();
+  }
+  assert.equal(unauthorized,0);
+});

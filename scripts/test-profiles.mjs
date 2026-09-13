@@ -23,7 +23,8 @@ try {
   await cli(home, 'dev', 'init', [], { fail: true });
   await cli(join(directory, 'reserved'), 'dev', 'init', ['--port', '47832'], { fail: true });
   const originalEnv = await readFile(dev.envFile, 'utf8');
-  await writeFile(dev.envFile, originalEnv.replace('MOTE_DATA_DIR="./data"', 'MOTE_DATA_DIR=../test/data').replace('MOTE_DATA_DIR=./data', 'MOTE_DATA_DIR=../test/data'));
+  assert.match(originalEnv, /^MOTE_DATA_DIR=/m);
+  await writeFile(dev.envFile, originalEnv.replace(/^MOTE_DATA_DIR=.*$/m, 'MOTE_DATA_DIR=../test/data'));
   await cli(home, 'dev', 'status', [], { fail: true }); await writeFile(dev.envFile, originalEnv);
   const launch = JSON.parse((await cli(home, 'dev', 'launchd')).stdout), xml = await readFile(launch.generated, 'utf8');
   assert.equal(launch.installed, false); assert.ok(xml.includes('/dev/null')); assert.ok(!xml.includes(dev.env.MOTE_TOKEN));
@@ -110,8 +111,8 @@ try {
   // The bounded supervisor must cap large chunks and repeated restarts independently of server logging.
   const noisy = join(directory, 'noisy.mjs'), log = join(directory, 'bounded.log');
   await writeFile(noisy, "process.stdout.write('synthetic-private-body\\n'.repeat(60000)); process.stderr.write('synthetic-private-token'.repeat(100000));");
-  for (let i = 0; i < 2; i++) assert.equal((await command(process.execPath, [join(repository, 'scripts/central-runner.mjs'), noisy, log, `--mote-instance=${randomUUID()}`], { env: { MOTE_LOG_MAX_MB: '1', MOTE_LOG_MAX_FILES: '3' } })).code, 0);
-  for (const name of (await readdir(directory)).filter(name => name.startsWith('bounded.log'))) { assert.ok((await stat(join(directory, name))).size <= 1024 * 1024); assert.ok(!(await readFile(join(directory, name), 'utf8')).includes('synthetic-private')); }
+  for (let i = 0; i < 2; i++) assert.equal((await command(process.execPath, [join(repository, 'scripts/central-runner.mjs'), noisy, log, `--mote-instance=${randomUUID()}`], { env: { MOTE_LOG_MAX_MB: '0.1', MOTE_LOG_MAX_FILES: '3' } })).code, 0);
+  for (const name of (await readdir(directory)).filter(name => name.startsWith('bounded.log'))) { assert.ok((await stat(join(directory, name))).size <= Math.floor(0.1 * 1024 * 1024)); assert.ok(!(await readFile(join(directory, name), 'utf8')).includes('synthetic-private')); }
   assert.equal((await readdir(directory)).filter(name => name.startsWith('bounded.log')).length, 3);
   console.info('[profiles] Bounded native stdout/stderr rotation passed; no formal node or live model was used');
 } finally {
