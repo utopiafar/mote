@@ -23,7 +23,7 @@
 | 文件导入/备份基线 | 通过 | 显式目录 dry-run、增量幂等/换节点；运行中备份拒绝、停止后 SQLite 与 blob 校验恢复。测试资料均为合成 |
 | 依赖 | 0 vulnerabilities | npm 审计及锁文件安装检查通过 |
 
-以上合计 112 项 TypeScript 工作区测试，另有 24 项 Android JVM、8 项 Android 仪器测试和独立 smoke/E2E。CI 配置也执行 Linux 工作区和临时 Docker 节点验收；远端执行结果以 GitHub Actions 为准。
+以上合计 112 项 TypeScript 工作区测试，另有 24 项 Android JVM、8 项 Android 仪器测试和独立 smoke/E2E。代码提交 `b6460e2` 的 [GitHub Actions](https://github.com/utopiafar/mote/actions/runs/34735449052) 已通过：Linux 安装/构建/类型检查、全部工作区测试、隐私检查与 E2E，以及真实 Docker 镜像构建、健康检查、401、笔记原文/幂等、重启和替换容器后的命名卷恢复。两项 job 均为 success。
 
 ## 真实端侧模型测试
 
@@ -60,7 +60,7 @@
 - macOS 用户真实屏幕权限、实际窗口过滤、锁屏/多显示器/登录启动和长时运行；Windows/Linux 原生采集未实现。
 - Android MediaProjection 实际授权链路：代码与构建已有，端到端使用无障碍截图模式。
 - 真实中央模型回答质量、中文召回、长期洞察与真实截图过滤质量。Harness 合成响应证明工具协议，不能代替模型理解评估。
-- 本机没有 Docker；本地未执行容器。目标 NAS 卷权限、公网 HTTPS 部署与数据迁移仍需在目标环境验收。
+- 本机没有 Docker；容器验收在 GitHub Linux runner 执行。目标 NAS 卷权限、公网 HTTPS 部署与目标环境数据迁移仍需分别验收。
 - Android release 签名、macOS Developer ID 公证、应用商店审核、多用户 ACL 与高负载。
 
 ## K90 首次验收顺序

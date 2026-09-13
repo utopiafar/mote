@@ -46,7 +46,7 @@ mote.example.com {
 
 `MOTE_MODEL_BASE_URL` 的 loopback 指容器内部；连接主机的模型需要可达地址和 API key。免密本地模式仅允许真正 loopback，默认禁用。
 
-当前开发环境未安装 Docker，因此 Dockerfile/Compose 提供可构建配置；实际容器构建、启动与目标 NAS 卷权限需要在装有 Docker 的环境验证。
+本机未安装 Docker；已在 [GitHub Linux CI](https://github.com/utopiafar/mote/actions/runs/34735449052) 实际构建本 Dockerfile，验证健康检查、认证、随手记同步及容器重启/重建后的命名卷恢复。可在装有 Docker 的环境运行 `npm run test:container` 复现；脚本只创建并清理本次合成测试的容器、卷和镜像。目标 NAS 卷权限、公网 HTTPS 与 Compose 在目标主机的配置仍需现场验收。
 
 ## 数据迁移
 
