@@ -24,15 +24,18 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   byId<HTMLInputElement>('diagnostics-enabled').checked = config.diagnosticsEnabled;
   byId<HTMLInputElement>('pause-on-battery').checked = config.pauseOnBattery;
   byId<HTMLInputElement>('ocr').checked = config.ocrEnabled;
-  byId<HTMLInputElement>('login').checked = config.openAtLogin;
+  byId<HTMLInputElement>('login').checked = currentStatus.environment?.legacy === false ? false : config.openAtLogin;
   byId<HTMLInputElement>('nsfw-enabled').checked = config.nsfwEnabled;
   byId<HTMLInputElement>('token').value = '';
   byId<HTMLInputElement>('token').placeholder = config.tokenConfigured ? '已安全保存；留空保留已有令牌' : '输入中央节点访问令牌';
 }
 function render(status: import('./contracts').Status): void {
   currentStatus = status;
+  byId('environment').textContent = status.environment ? `环境：${status.environment.profile}${status.environment.legacy ? '（原日常目录）' : ' · 独立数据'} · ${status.environment.dataDirectory}` : '';
   const names = { stopped: '采集已停止', capturing: '正在采集', paused: '采集已暂停', permission_required: '需要屏幕录制权限', error: '采集已停止 · 需要处理' };
   byId('state').textContent = names[status.state];
+  byId<HTMLInputElement>('login').disabled = status.environment?.legacy === false;
+  byId('login-hint').textContent = status.environment?.legacy === false ? '命名环境使用带 --profile 的启动命令；不会注册可能丢失环境参数的系统登录项。' : '应用启动后保持停止状态，需手动开始采集；已有队列会恢复上传。';
   byId('message').textContent = status.message;
   byId('status-dot').className = `dot ${status.state === 'capturing' ? 'active' : status.state === 'error' || status.state === 'permission_required' ? 'error' : ''}`;
   byId('permission').textContent = status.platform !== 'macos' ? '此平台尚不支持采集' : status.screenPermission === 'granted' ? '屏幕权限已授权' : '屏幕权限未授权';
@@ -166,3 +169,5 @@ byId('note-form').addEventListener('submit', event => {
 
 byId('diagnostics-sample').addEventListener('click', () => void perform(async () => render(await desktopApi.sampleDiagnostics())));
 byId('diagnostics-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportDiagnostics(); if (!result.canceled) feedback('数值诊断已导出。', true); }));
+
+byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(); if (!result.canceled) feedback('支持包已导出；只含数值、配置开关和固定阶段事件。', true); }));

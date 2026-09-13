@@ -4,7 +4,7 @@
 
 ## 方法与隐私
 
-从用户提供的 Memex ZIP 中仅解析时间戳 Fact 原始正文：518 条原始输入，按长度、日期、多行、数字和附件引用等结构选择 24 条，约 1.58 万字符。没有复用 Memex 的架构、派生总结、配置、附件 OCR 或实际图片。原文按源切片保留并校验 SHA；Fact 没有时区，测试明确按 +08:00 导入，原本墙上时间另存。提取脚本支持显式指定偏移。
+从用户提供的 时间戳日记归档 中仅解析时间戳 Fact 原始正文：518 条原始输入，按长度、日期、多行、数字和附件引用等结构选择 24 条，约 1.58 万字符。没有导入派生总结、配置、附件 OCR 或实际图片。原文按源切片保留并校验 SHA；Fact 没有时区，测试明确按 +08:00 导入，原本墙上时间另存。提取脚本支持显式指定偏移。
 
 样本只写入隔离测试节点，未进入正式 `data/`。完整问题、回答、评分、源切片和模型凭证放在 Git 忽略的 `.mote/live-validation/`，目录 700、文本文件 600；公开测试全部为虚构资料。提交前检查源码中没有模型 Key 或样本文字片段。个人数据不随源码/安装包分发。
 
@@ -52,7 +52,7 @@
 
 ## 自动回归与安装包
 
-最终工作区 139 项通过：Mac 57、服务端 29、前端 10、Agent 25、模型交付 13、诊断 5。另有隐私 Gateway 22 项、Memex 提取 8 项合成 ZIP 测试、Android JVM 26 项，以及独立 E2E/原生窗口/模拟器测试。TypeScript build/typecheck 通过。真实 Harness + fixture 模型 E2E 与真实官方模型评估分别记录，互不替代。
+最终工作区 139 项通过：Mac 57、服务端 29、前端 10、Agent 25、模型交付 13、诊断 5。另有隐私 Gateway 22 项、日记归档提取 8 项合成 ZIP 测试、Android JVM 26 项，以及独立 E2E/原生窗口/模拟器测试。TypeScript build/typecheck 通过。真实 Harness + fixture 模型 E2E 与真实官方模型评估分别记录，互不替代。
 
 源码提交 `cdcfa90` 的 [GitHub Actions](https://github.com/utopiafar/mote/actions/runs/34738739037) 两项 job 均通过：Linux 安装/构建/类型检查/工作区与隐私/E2E/提取脚本测试，以及 Docker 镜像构建、认证、笔记原文/幂等、重启与替换容器后的命名卷恢复。
 
@@ -65,8 +65,8 @@
 公开 fixture 见 Android/desktop 文档的复杂测试命令。私有日记测试需要显式提供自己的节点凭证和备份：
 
 ```sh
-python3 scripts/extract-memex-facts.py /private/path/backup.memex --output .mote/my-evaluation --time-zone-offset +08:00
-python3 -m unittest discover -s scripts -p test_memex_facts.py
+python3 scripts/extract-fact-archive.py /private/path/backup.zip --output .mote/my-evaluation --time-zone-offset +08:00
+python3 -m unittest discover -s scripts -p test_fact_archive.py
 node scripts/test-live-agent.mjs --connection .mote/private-connection.json --facts .mote/my-evaluation/sample-private.json --cases .mote/my-evaluation/cases-private.json --out .mote/my-evaluation/round1
 ```
 

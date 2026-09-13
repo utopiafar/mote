@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from zipfile import ZipFile
 
-SCRIPT = Path(__file__).with_name('extract-memex-facts.py')
-spec = importlib.util.spec_from_file_location('extract_memex_facts', SCRIPT)
+SCRIPT = Path(__file__).with_name('extract-fact-archive.py')
+spec = importlib.util.spec_from_file_location('extract_fact_archive', SCRIPT)
 parser = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(parser)
 

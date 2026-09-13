@@ -47,6 +47,7 @@ export interface CaptureEvent {
   privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; reason?: string };
 }
 export interface Status {
+  environment?: { profile: string; legacy: boolean; dataDirectory: string };
   running: boolean;
   state: 'stopped' | 'capturing' | 'paused' | 'permission_required' | 'error';
   message: string;
@@ -93,6 +94,7 @@ export interface DesktopApi {
   updateNoteDraft(input: import('./note-draft').NoteDraft): Promise<import('./note-draft').NoteDraft>;
   saveNote(input: import('./note-draft').NoteDraft): Promise<{ id: string; draft: import('./note-draft').NoteDraft }>;
   openCentral(): Promise<void>;
+  exportSupport(): Promise<{ canceled: boolean }>;
   exportDiagnostics(): Promise<{ canceled: boolean }>;
   sampleDiagnostics(): Promise<Status>;
   configure(update: ConfigUpdate): Promise<Status>;

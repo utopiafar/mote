@@ -24,3 +24,6 @@ test-results/
 # Python fixture parser cache
 __pycache__/
 *.pyc
+
+# Explicit per-environment credentials, including custom locations inside this checkout
+**/mote.env

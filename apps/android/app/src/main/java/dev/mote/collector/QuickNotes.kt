@@ -26,7 +26,9 @@ object QuickNotes {
         }
         val event = prepared.prepared!!
         context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+        SupportEvents.record(context, EventStage.NOTE, EventCode.OK)
         try { scheduleUpload(config) } catch (_: Exception) {
+            SupportEvents.record(context, EventStage.NOTE, EventCode.SCHEDULER)
             settings.uploadStatus("随手记已入队，同步调度未完成；草稿保持原提交 ID，可安全重试")
             throw IllegalStateException("随手记已保存在队列；同步调度暂不可用，再次保存会重试同一条记录")
         }

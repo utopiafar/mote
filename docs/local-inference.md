@@ -102,23 +102,6 @@ https://nas.example/mote-models/qwen/
 
 模型缓存与个人归档分开：Android 位于应用私有 `noBackupFilesDir/models/qwen/<revision>/`；macOS 位于应用数据目录中的 `models/qwen/`。中央导出不包含权重，新设备需再次下载或导入；卸载/清除应用数据会移除端侧缓存。
 
-## 从 ContextLab 0.3.1 继承的部分
-
-用户提供的 `ContextLab-0.3.1-source.zip` 归档 SHA-256 为 `bc8c2f1c43cda347af434354a741a549b1f37fdb93d1b38dfd958e9923697618`。以下路径均相对该归档中的 `context-collector-lab/`。
-
-| 参考位置 | 本版采用或调整的内容 |
-| --- | --- |
-| `app/src/main/assets/model-manifest.json` | 相同 Qwen GGUF + F16 projector、固定国内 revision、大小与 SHA；增加真实 Hugging Face 备用 revision。 |
-| `app/src/main/java/dev/context/collector/ModelStore.java:40`、`scripts/download_model.py` | 断点、Range、完成后核验启用；补充两端离线导入、多文件完整性状态及并发写隔离。 |
-| `app/src/main/java/dev/context/collector/ModelStore.java:29` | Demo 的就绪检查只看 `.verified` 和长度；本版在加载前核对完整摘要。 |
-| `app/src/main/java/dev/context/collector/InferenceClient.java:151`、`:216` | 超时、服务连接与死亡恢复，旧推理会话不得继续使用。 |
-| `app/src/main/java/dev/context/collector/InferenceService.java:28`、`:106` | 原生运行和释放串行、异常状态可观察，推理与界面生命周期分离。 |
-| `app/src/main/cpp/native_engine.cpp` | llama.cpp / mtmd CPU 视觉与文本生成、ChatML/no-thinking 约定、KV 状态清理和失效结果检查；两端用各自平台边界接入。 |
-| `app/src/main/java/dev/context/collector/MainActivity.java:522` | Demo 的临时 PNG 仅适合实验工具；Mote 改为内存图像，不复制原图临时落盘逻辑。 |
-| `docs/verification-gpu-stability.md:9` | 区分实现修订、模拟器实验与真机结论，未取得 K90 堆栈不能宣称其 GPU 问题已解决。 |
-
-本版实际接入相同 llama.cpp commit 与两份 Qwen 权重的 CPU 路径。Demo 的 Vulkan 模式、GPU 兼容参数、GPU 对比界面及历史 MNN 实验没有一起移入；不能把 Demo 或上游其他 GPU 的测试归算为本版 K90 验收。
-
 ## 通用前置任务的扩展方式
 
 端侧原生运行时接受指令、可选图像、生成预算和结构化输出约束，保留用于其他轻量视觉/文本任务的能力。当前采集器调用的是审查适配层，其允许/拒绝 JSON 契约固定。更换审查政策不需要替换模型，也不需要添加一个按关键词分流的专用分类器。

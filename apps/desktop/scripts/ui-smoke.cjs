@@ -9,6 +9,7 @@ const { defaultConfig } = require('../dist/config');
 // A clean generated profile prevents reading existing settings or personal screenshots.
 const profile = mkdtempSync(join(tmpdir(), 'mote-ui-fixture-'));
 app.setPath('userData', profile);
+process.env.MOTE_PROFILE = 'legacy'; delete process.env.MOTE_URL; delete process.env.MOTE_TOKEN; delete process.env.MOTE_ENV_FILE;
 writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config: { ...defaultConfig(), deviceName: 'Synthetic Mac', ocrEnabled: false } }), { mode: 0o600 });
 const errors = [];
 let finished = false;

@@ -110,20 +110,20 @@ export interface SecretStorage {
 }
 
 export class ConfigStore {
-  constructor(private readonly directory: string, private readonly secrets: SecretStorage) {}
+  constructor(private readonly directory: string, private readonly secrets: SecretStorage, private readonly defaults: () => Config = defaultConfig, private readonly bootstrap: () => Config = defaults) {}
   async load(): Promise<Config> {
     try {
       const stored = JSON.parse(await readFile(join(this.directory, 'config.json'), 'utf8')) as { config: Config; encryptedToken?: string };
       if (!stored.config || typeof stored.config.deviceId !== 'string' || !/^[0-9a-f-]{36}$/i.test(stored.config.deviceId)) throw new Error('设备标识无效');
       // Never accept a plaintext token from a tampered or legacy configuration.
-      const current: Config = { ...defaultConfig(), ...stored.config, token: undefined };
+      const current: Config = { ...this.defaults(), ...stored.config, token: undefined };
       if (stored.encryptedToken) {
         if (!this.secrets.available()) throw new Error('系统密钥存储不可用，无法解密令牌');
         current.token = this.secrets.decrypt(Buffer.from(stored.encryptedToken, 'base64'));
       }
       return updateConfig(current, { ...current, token: current.token });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return defaultConfig();
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return this.bootstrap();
       throw new Error('无法读取配置：请检查系统密钥存储或备份后修复配置文件');
     }
   }

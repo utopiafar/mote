@@ -67,6 +67,6 @@ test('a real central process refuses a lock belonging to another live process wi
   const node = startNode(directory, await availablePort(), false);
   t.after(async () => { await stop(node.child, node.exited); await rm(directory, { recursive:true, force:true }); });
   assert.notEqual(await node.exited, 0);
-  assert.match(node.output(), /already in use by a running central node/);
+  assert.match(node.output(), /data_directory_in_use/);
   assert.equal(await readFile(path, 'utf8'), String(process.pid));
 });

@@ -75,6 +75,8 @@ class MainActivity : Activity() {
         text("MOTE", 13, Color.rgb(23, 110, 98))
         text("让经历留有线索", 29)
         text("你的 Android 采集端 · 本机隐私处理 · 自选中央节点", 14)
+        text("环境：${BuildConfig.MOTE_PROFILE} · ${packageName}\n私有数据目录：${noBackupFilesDir.absolutePath}", 12)
+        if (BuildConfig.MOTE_PROFILE == "dev") text("开发版与日常 Mote 独立安装，权限、设备 ID、令牌、草稿、队列和模型互不共享。默认测试端口 47842；模拟器使用 adb reverse tcp:47842 tcp:47842。不会继承日常节点或令牌。", 13)
         status = text("正在读取状态…", 14).apply { setPadding(dp(16), dp(16), dp(16), dp(16)); setBackgroundColor(Color.WHITE) }
         rowButtons("开始采集", { startCapture() }, "停止", { stopCapture() })
         button("立即重试同步") {
@@ -109,11 +111,15 @@ class MainActivity : Activity() {
         captureMaxSide = field("保存图最长边（640–2560）", config.captureMaxSide.toString(), "1280", InputType.TYPE_CLASS_NUMBER)
         chargingOnly = check("仅充电时截图", config.chargingOnly)
         batteryBelow = field("电量低于百分之几暂停（0 为关闭，最高 95）", config.batteryPauseBelowPct.toString(), "0", InputType.TYPE_CLASS_NUMBER)
-        diagnosticEnabled = check("开发者：记录数值诊断", config.diagnosticsEnabled)
+        diagnosticEnabled = check("开发者：记录数值与事件诊断", config.diagnosticsEnabled)
         diagnosticInterval = field("诊断采样间隔 / 秒（15–3600）", config.diagnosticsIntervalSeconds.toString(), "60", InputType.TYPE_CLASS_NUMBER)
         text("仅在应用/采集运行时采样，最多 1440 条。记录整机电量、队列/模型空间、入队/拦截/失败计数、推理/OCR 耗时和上传字节，不包含截图、文字、笔记、令牌或审查理由。电量变化是整机变化，不能归因于 Mote。", 13)
         button("导出数值诊断 JSON") {
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-diagnostics.json"), 103)
+        }
+        text("事件日志最多 500 条，只记录固定阶段、错误类别与数值。支持包不包含节点地址、设备名、截图、笔记、OCR、令牌、提示词或审查理由；关闭诊断后停止新增，已有记录保留。", 13)
+        button("导出安全支持包 JSON") {
+            @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-${BuildConfig.MOTE_PROFILE}-support.json"), 104)
         }
         section("随手记")
         val drafts = QuickNotes.draft(this)
@@ -242,6 +248,10 @@ class MainActivity : Activity() {
             try { contentResolver.openOutputStream(data.data!!)!!.use { it.write(Diagnostics(this).export().toByteArray()) }; toast("数值诊断已导出") }
             catch (_: Exception) { toast("诊断导出失败") }; return
         }
+        if (requestCode == 104 && resultCode == RESULT_OK && data?.data != null) {
+            try { contentResolver.openOutputStream(data.data!!)!!.use { it.write(SupportEvents.export(this).toByteArray()) }; SupportEvents.record(this, EventStage.SUPPORT, EventCode.OK); toast("安全支持包已导出") }
+            catch (_: Exception) { SupportEvents.record(this, EventStage.SUPPORT, EventCode.STORAGE); toast("支持包导出失败") }; return
+        }
         if (requestCode == 102 && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!
             Thread {
@@ -258,6 +268,7 @@ class MainActivity : Activity() {
     }
     private fun stopCapture() {
         settings.enabled = false
+        SupportEvents.record(this, EventStage.CAPTURE, EventCode.STOPPED)
         settings.status("paused", "你已停止采集，已有队列继续同步")
         stopService(Intent(this, ProjectionService::class.java))
         CaptureAccessibilityService.instance?.stopCapture()

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -14,6 +14,9 @@ const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
 const loader = require.resolve('tsx');
 const scratch = await mkdtemp(join(tmpdir(), 'mote-privacy-fixture-'));
+const fixtureEnv = join(scratch, 'empty.env');
+await writeFile(fixtureEnv, '', {mode:0o600});
+const inheritedEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('MOTE_')));
 const processes: ChildProcess[] = [];
 let checks = 0;
 let calls = 0;
@@ -73,8 +76,8 @@ const model = createServer(async (req, res) => {
 function launch(base: string, port: number): { child: ChildProcess; output: () => string } {
   let output = '';
   const child = spawn(process.execPath, ['--import', loader, join(project, 'scripts/privacy-gateway.ts')], {
-    cwd: scratch, // dotenv never loads the user's project .env.
-    env: { ...process.env, MOTE_PRIVACY_MODEL: 'synthetic-vision-fixture', MOTE_PRIVACY_BASE_URL: base,
+    cwd: scratch, // The explicit empty file excludes the user's project .env.
+    env: { ...inheritedEnv, MOTE_ENV_FILE: fixtureEnv, MOTE_PRIVACY_MODEL: 'synthetic-vision-fixture', MOTE_PRIVACY_BASE_URL: base,
       MOTE_PRIVACY_PORT: String(port), MOTE_PRIVACY_API_KEY: '', MOTE_PRIVACY_POLICY: 'Mask only generated fixture regions.' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

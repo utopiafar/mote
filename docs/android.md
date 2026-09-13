@@ -18,6 +18,17 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 APK 位置：`apps/android/app/build/outputs/apk/debug/app-debug.apk`。Debug APK 可直接侧载，release 需用户自己的签名密钥。中国大陆小米设备不依赖 Google Play 下载 OCR 模型：中英 OCR 模型随 APK 打包，但仍需实机验证设备上的 ML Kit 运行兼容性。
 
+## 开发环境与日常版本隔离
+
+日常 `debug` / `release` 保持原 `dev.mote.collector` 包名与数据，不做迁移。新增 `development` 构建类型：名称 **Mote Dev**，包名 `dev.mote.collector.dev`，可与日常版本同时安装。Android UID、Keystore、设备 ID、配置、草稿、队列、WorkManager 数据库、诊断和模型目录均由系统按应用隔离。Dev 初始没有令牌、草稿或模型；不能读取日常采集权限与数据，各权限需单独启用。
+
+```sh
+apps/android/gradlew -p apps/android :app:assembleDevelopment
+adb install -r apps/android/app/build/outputs/apk/development/app-development.apk
+```
+
+Dev 默认节点 `http://127.0.0.1:47842`，仅供用户显式配令牌后的本机调试。模拟器使用 `adb reverse tcp:47842 tcp:47842`；真机仍需填写可达的节点地址。日常版本保持原配置、首次地址为空。应用顶部显示环境、包名与实际 `noBackupFilesDir`，方便判断正在操作哪个版本。不要用卸载或清除日常数据代替切换环境。
+
 ## 首次连接
 
 1. 在中央节点创建至少 32 字符访问令牌。手机填写相同令牌、节点 URL、设备名称；`localhost` 指手机自身。生产使用 HTTPS。首次局域网联调仅 debug APK 可显式允许私有 IPv4 地址 HTTP；节点也需由用户显式配置 LAN 监听。
@@ -58,7 +69,7 @@ APK 位置：`apps/android/app/build/outputs/apk/debug/app-debug.apk`。Debug AP
 
 ### 内置 Qwen 本机图片审查
 
-APK 随包集成 CPU `llama.cpp` 运行时，复用用户 demo 的 Qwen3.5-0.8B GGUF + 视觉投影路径。当前固定运行时源码 revision 为 `1744c6bde8d687ce9774b3b54e688eee0bfdf5b7`，双模型见仓库 `models/qwen-manifest.json`，总计 737,504,352 字节（约 703 MiB），模型权重单独下载、不塞进 APK。构建同时复制共享 `review-system.txt`、`review-policy.txt`、`review-grammar.gbnf` 和第三方许可证到 APK assets。
+APK 随包集成 CPU `llama.cpp` 运行时，运行 Qwen3.5-0.8B GGUF 与视觉投影。当前固定运行时源码 revision 为 `1744c6bde8d687ce9774b3b54e688eee0bfdf5b7`，双模型见仓库 `models/qwen-manifest.json`，总计 737,504,352 字节（约 703 MiB），模型权重单独下载、不塞进 APK。构建同时复制共享 `review-system.txt`、`review-policy.txt`、`review-grammar.gbnf` 和第三方许可证到 APK assets。
 
 - 默认启用；默认政策检查明确色情裸露或性行为，普通日常画面允许。政策为可编辑的模型指令，可扩展其它视觉审查任务；没有概率阈值、关键词判断或肤色启发式。
 - 语言文件 `model.gguf` 和视觉文件 `mmproj.gguf` 使用同一固定清单。下载支持 HTTP Range、HTTPS 重定向校验、来源回退、取消/被杀保留 `.part`、WorkManager 网络约束及指数退避。两个源 revision 不同但固定 SHA 相同；不会自行推测 URL。
@@ -105,6 +116,10 @@ URL 留空仅表示不使用这个额外钩子，**不会关闭内置 Qwen**。�
 
 开发者诊断默认关闭，采样间隔 15–3600 秒、默认 60 秒，在界面或采集服务运行时记录，最多保留 1440 条。内容为整机电量/充电状态、可用时的 chargeCounter、整机电量变化、队列/模型/诊断占用、入队/拦截/失败累计、最近推理/OCR 耗时、已确认上传 JSON 载荷字节。整机电量变化不能归因于 Mote。原生“导出数值诊断 JSON”使用系统保存文件选择器；不包含截图、OCR、笔记、token、prompt、模型reason、设备ID。关闭后停止新增采样，不为诊断单独拉活后台。
 
+诊断开关同时控制最多 500 条固定事件，阶段包括配置、模型、OCR、隐私、队列、上传、心跳和随手记；只含时间、固定错误类别、可选耗时及 HTTP 状态。分类依据异常类型/协议状态，不保存原始异常消息。关闭后停止新增，已记内容保留。日志损坏会重新开始诊断，但不会删改采集队列。
+
+“导出安全支持包 JSON”通过系统文件选择器导出应用/环境版本、采集状态、非敏感数值开关、数值诊断和上述事件；不含节点 URL、设备名/ID、目录、令牌、截图、OCR、笔记、心情、策略或模型理由。读取导出时再按字段白名单投影，诊断写入失败不影响隐私或 ACK 删除条件。支持包不等同于含内容的队列备份。
+
 ## K90 Pro Max / HyperOS 验证指南
 
 代码提供小米自启动页 Intent，并在该入口缺失时回退到应用详情；不假设特定 HyperOS 版本一定提供该 Activity。需要用户手动在当前固件确认：
@@ -118,7 +133,27 @@ URL 留空仅表示不使用这个额外钩子，**不会关闭内置 Qwen**。�
 
 **尚无 K90 Pro Max 真机验证，不能保证最新 HyperOS 的后台稳定性、权限页路径、耗电、截图/OCR延迟或长期续航。** Android 系统与 OEM 会限制后台行为；MVP 不用闹钟、WakeLock 或循环重启规避限制。
 
-## 验证边界
+## 0.3.0 环境隔离验证与产物
+
+0.3.0 / versionCode 4 已完成日常与 Dev APK 构建、29 项 JVM 测试（无失败/跳过），两 variant lint 均 0 error / 38 warning，两个 APK 均通过 16 KiB ZIP 对齐校验。产物：
+
+| 版本 | 文件 | 字节 | SHA-256 |
+| --- | --- | ---: | --- |
+| 日常 debug | `app/build/outputs/apk/debug/app-debug.apk` | 31,803,132 | `2128bbf5c6ccca8fedc5ee94ba1a1845c0a7a89bef4d72a5cfd7aab51c1738da` |
+| Mote Dev | `app/build/outputs/apk/development/app-development.apk` | 31,803,136 | `31a6c4d0983341a8b2c5d9d956d7af97feb998e399eec392ebdbf492e89fc741` |
+
+专用 `mote_fixture_api35` 上实测两个包同时存在，Dev 默认节点/稳定设备 ID/私有目录独立，未继承原草稿、队列或令牌；原生 Activity 的环境/实际目录和支持导出入口已验证；支持包排除合成令牌、笔记、心情、策略、URL 和设备 ID；关闭诊断不再新增事件。并装验证前后，原日常包关键配置与私有文件 SHA 相同。只使用合成内容，没有启用截图，也没有重新运行模型或进行 K90 Pro Max 真机验证。
+
+可重复的 Dev 专用测试（仅该专用 AVD、未配置令牌且无队列/草稿时运行）：
+
+```sh
+apps/android/gradlew -p apps/android -Pmote.testBuildType=development :app:assembleDevelopment :app:assembleDevelopmentAndroidTest
+adb -s emulator-5580 install -r apps/android/app/build/outputs/apk/development/app-development.apk
+adb -s emulator-5580 install -r apps/android/app/build/outputs/apk/androidTest/development/app-development-androidTest.apk
+adb -s emulator-5580 shell am instrument -w -e class dev.mote.collector.ProfileSupportInstrumentedTest dev.mote.collector.dev.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+## 历史采集链路验证边界
 
 前一交付批次的 debug APK 经过 `assembleDebug`、24 项 JVM 单元测试、lint（0 error / 38 warning）和 16 KiB ZIP 对齐校验，在专用 API35 模拟器一次组合执行 8 项 instrumentation，全部通过、无跳过（41.379 秒）。详细产物 hash 由对应根交付记录列出。当前复杂输入修复另通过 `assembleDebug` / `assembleDebugAndroidTest`、26 项 JVM 测试（无失败/跳过）和 lint（0 error / 38 warning）。最终 0.2.1 / versionCode 3 在仅改版本号后再次通过 `assembleDebug`、26 项 JVM、lint 与 16 KiB ZIP 对齐；该版本号重建未重复全套 instrumentation，下面三轮笔记与两项 Qwen 测试验证的是同一份产品代码。APK 为 31,769,972 字节，SHA-256：`efb506567320c2900504b3472e7b236683d356bc662c3cb45938803754a555b9`。JVM 测试只用生成的字节/JSON，覆盖严格排除、未知窗口 fail closed、归一化遮罩校验、HTTPS/本机模型边界、进程重建后队列幂等、图片去重、确认删除、满队列、孤儿恢复和损坏记录。
 
@@ -161,7 +196,6 @@ python3 apps/android/scripts/run-complex-fixtures.py --connection .mote/live-val
 
 ## 设计参考与官方依据
 
-- [ScreenMemo](https://github.com/2977094657/ScreenMemo)：参考其 Android 11+ 无障碍截图路径；本实现未复制其业务代码。
 - [Android AccessibilityService](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService)：用户控制服务启用、`takeScreenshot` 与截图能力声明。
 - [Android MediaProjection](https://developer.android.com/media/grow/media-projection)：前台服务类型、单次授权、回调、调整共享尺寸、Android 15 QPR1+ 锁屏停止行为。
 - [Android WorkManager 工作请求](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work)：网络约束和指数退避，不保证精确执行时间。

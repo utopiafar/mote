@@ -25,7 +25,7 @@ describe('isolated native inference lifecycle', () => {
   it('kills a timed-out native worker and starts a fresh process on the next sample', async () => {
     const children: FixtureChild[] = [];
     const worker = new InferenceProcess(() => { const child = new FixtureChild(); children.push(child); return child; });
-    await expect(worker.request({ fixture: 'hang' }, 10)).rejects.toThrow('超时');
+    await expect(worker.request({ fixture: 'hang' }, 10)).rejects.toMatchObject({ name: 'TimeoutError' });
     expect(children[0].killed).toBe(true); expect(worker.getState()).toBe('error');
     const resumed = worker.request({ fixture: 'recover' }, 1000);
     children[0].reply({ score: 0.99 }); // A late result from a discarded native generation cannot authorize a new frame.

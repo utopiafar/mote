@@ -1,5 +1,5 @@
-// CPU lifecycle and Qwen ChatML/no-thinking convention adapted from the user-provided
-// context-collector-lab demo. Image inputs use mtmd's in-memory decoder, never disk.
+// CPU Qwen lifecycle with ChatML and disabled thinking for structured image review.
+// Image inputs use mtmd's in-memory decoder, never disk.
 #include <jni.h>
 #include <llama.h>
 #include <mtmd.h>

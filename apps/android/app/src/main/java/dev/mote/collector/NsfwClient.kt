@@ -48,7 +48,8 @@ class NsfwClient(context: Context) : AutoCloseable {
             val decision = ReviewDecision.parse(native.getString("text"))
             store.inferenceStatus("Qwen CPU 已审查 · %.0f ms · %s\n加载 %d / 图像预填 %d / 解码 %d ms · %d token".format((System.nanoTime() - started) / 1_000_000.0, if (decision.allow) "当前帧通过" else "当前帧已过滤", native.optLong("loadMs"), native.optLong("visionPrefillMs"), native.optLong("decodeMs"), native.optInt("tokens")))
             decision
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            SupportEvents.record(context, EventStage.MODEL, EventJournal.failure(error, EventStage.MODEL), (System.nanoTime() - started) / 1_000_000L)
             result.cancel(true)
             reset()
             store.inferenceStatus("Qwen 本机审查 超时、进程退出或模型错误：已中止当前帧，下次重建推理进程")

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  exportSupport: () => ipcRenderer.invoke('mote:support-export'),
   sampleDiagnostics: () => ipcRenderer.invoke('mote:diagnostics-sample'),
   exportDiagnostics: () => ipcRenderer.invoke('mote:diagnostics-export'),
   noteDraft: () => ipcRenderer.invoke('mote:note-draft'),

@@ -10,14 +10,24 @@ android {
         applicationId = "dev.mote.collector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.3.0"
+        buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
+        buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared"; targets += "mote_vlm" } }
     }
     buildTypes {
         debug { manifestPlaceholders["cleartextAllowed"] = "true" }
+        create("development") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            buildConfigField("String", "MOTE_PROFILE", "\"dev\"")
+            buildConfigField("String", "DEFAULT_SERVER", "\"http://127.0.0.1:47842\"")
+            matchingFallbacks += "debug"
+        }
         release {
             manifestPlaceholders["cleartextAllowed"] = "false"
             isMinifyEnabled = false
@@ -31,6 +41,12 @@ android {
     buildFeatures { buildConfig = true; aidl = true }
     sourceSets.getByName("test").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("androidTest").java.srcDir("src/sharedTest/java")
+    sourceSets.getByName("development").apply {
+        java.srcDir("src/debug/java")
+        res.srcDir("src/debug/res")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
+    }
+    testBuildType = providers.gradleProperty("mote.testBuildType").orElse("debug").get()
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/modelAssets"))
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     lint { abortOnError = true }

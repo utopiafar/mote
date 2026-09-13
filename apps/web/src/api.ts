@@ -41,6 +41,7 @@ export interface Activity {
   captures: number;
 }
 export interface Status {
+  profile?: string;
   agent: { configured: boolean; model: string | null; provider: string };
   storage: {
     captures: number;
@@ -83,6 +84,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public requestId?: string,
   ) {
     super(message);
   }
@@ -107,13 +109,17 @@ export function createApi(connection: Connection, onUnauthorized?: () => void) {
     if (!response.ok) {
       if (response.status === 401) onUnauthorized?.();
       let message = `请求未完成（${response.status}）`;
+      let requestId = response.headers.get("X-Request-Id") ?? undefined;
       try {
         const value = await response.json();
-        message = value.message || value.error || message;
+        if (typeof value.message === "string") message = value.message;
+        else if (typeof value.error === "string") message = value.error;
+        if (!requestId && typeof value.requestId === "string") requestId = value.requestId;
       } catch {
         /* response might not be JSON */
       }
-      throw new ApiError(message, response.status);
+      if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) requestId = undefined;
+      throw new ApiError(message, response.status, requestId);
     }
     return response;
   }
@@ -177,5 +183,6 @@ export const deviceLabels: Record<string, string> = {
   offline: "已离线",
 };
 export function errorMessage(error: unknown) {
+  if (error instanceof ApiError && error.requestId) return `${error.message} 请求编号：${error.requestId}`;
   return error instanceof Error ? error.message : "请求未完成，请稍后重试。";
 }

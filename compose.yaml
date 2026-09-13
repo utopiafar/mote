@@ -1,26 +1,20 @@
+name: ${MOTE_COMPOSE_PROJECT:?Use node scripts/mote.mjs compose with a profile}
 services:
   mote:
+    image: ${MOTE_IMAGE:?Profile image is required}
     build: .
     restart: unless-stopped
     ports:
-      - "127.0.0.1:47832:47832"
+      - "127.0.0.1:${MOTE_PORT:?Profile port is required}:47832"
+    env_file:
+      - path: ${MOTE_DOCKER_ENV_FILE:?Generated raw profile environment is required}
+        format: raw
     environment:
+      MOTE_ENV_FILE: /app/deploy/empty.env
       MOTE_HOST: 0.0.0.0
+      MOTE_PORT: 47832
       MOTE_DATA_DIR: /data
-      MOTE_TOKEN: ${MOTE_TOKEN:-}
-      MOTE_DATA_KEY: ${MOTE_DATA_KEY:-}
-      MOTE_MODEL: ${MOTE_MODEL:-}
-      MOTE_MODEL_BASE_URL: ${MOTE_MODEL_BASE_URL:-https://api.deepseek.com}
-      MOTE_MODEL_API_KEY: ${MOTE_MODEL_API_KEY:-}
-      MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL: ${MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL:-0}
-      MOTE_MODEL_REASONING_EFFORT: ${MOTE_MODEL_REASONING_EFFORT:-high}
-      MOTE_MODEL_MAX_TOKENS: ${MOTE_MODEL_MAX_TOKENS:-8192}
-      MOTE_EMBEDDING_MODEL: ${MOTE_EMBEDDING_MODEL:-}
-      MOTE_EMBEDDING_BASE_URL: ${MOTE_EMBEDDING_BASE_URL:-}
-      MOTE_EMBEDDING_API_KEY: ${MOTE_EMBEDDING_API_KEY:-}
-      MOTE_MAX_STORAGE_MB: ${MOTE_MAX_STORAGE_MB:-10240}
-      MOTE_RETENTION_DAYS: ${MOTE_RETENTION_DAYS:-0}
-      MOTE_INSIGHT_INTERVAL_HOURS: ${MOTE_INSIGHT_INTERVAL_HOURS:-0}
+      MOTE_LOG_DIR: /data/logs
     volumes:
       - mote-data:/data
     security_opt:
@@ -28,5 +22,11 @@ services:
     cap_drop:
       - ALL
     init: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 volumes:
   mote-data:
+    name: ${MOTE_VOLUME:?Profile-specific volume is required}

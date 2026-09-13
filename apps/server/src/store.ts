@@ -248,6 +248,13 @@ export class Store {
     for(const file of readdirSync(this.blobsDir))if((/^[a-f0-9]{64}$/.test(file)&&!known.has(file))||/^[a-f0-9]{64}\.[a-f0-9]+\.tmp$/.test(file))unlinkSync(join(this.blobsDir,file));
   }
   pending(limit=10) {return (this.db.prepare("SELECT * FROM captures WHERE index_status='pending' ORDER BY received_at LIMIT ?").all(limit) as unknown as Row[]).map(r=>this.record(r));}
+  indexCounts() {
+    const result={pending:0,failed:0,indexed:0,textReady:0};
+    for(const row of this.db.prepare('SELECT index_status AS status,COUNT(*) AS count FROM captures GROUP BY index_status').all() as {status:string;count:number}[]) {
+      if(row.status==='pending')result.pending=row.count;else if(row.status==='failed')result.failed=row.count;else if(row.status==='indexed')result.indexed=row.count;else if(row.status==='text_ready')result.textReady=row.count;
+    }
+    return result;
+  }
   indexed(id:string,embedding:number[],model:string) {this.db.prepare("UPDATE captures SET embedding=?,embedding_model=?,index_status='indexed',index_error=NULL WHERE id=?").run(JSON.stringify(embedding),model,id);}
   indexFailed(id:string,error:string) {this.db.prepare("UPDATE captures SET index_status='failed',index_error=?,attempts=attempts+1 WHERE id=?").run(error.slice(0,500),id);}
   retryIndex() {return {queued:Number(this.db.prepare("UPDATE captures SET index_status='pending' WHERE length(trim(json_extract(json,'$.ocrText')))>0").run().changes)};}

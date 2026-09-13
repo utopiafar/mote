@@ -2,8 +2,6 @@ import { DatabaseSync,backup } from 'node:sqlite';
 import { mkdir,readFile,writeFile,copyFile,access,rm } from 'node:fs/promises';
 import { resolve,join,relative } from 'node:path';
 import { createHash } from 'node:crypto';
-import dotenv from 'dotenv';
-dotenv.config({path:resolve('.env'),quiet:true});
 const args=process.argv.slice(2);
 if(args.includes('--help')){console.info('Stop the central node first. Usage: npm run backup -- --data ./data --out /absolute/new-backup-directory\nBacks up SQLite, referenced image blobs and checksums. Tokens/keys are excluded; preserve your data key separately.');process.exit(0);}
 if(!args.includes('--out'))throw new Error('Stop the central node first. Usage: npm run backup -- --data ./data --out /backup/mote-YYYY-MM-DD');

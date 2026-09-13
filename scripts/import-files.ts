@@ -1,15 +1,15 @@
-import { readdir,readFile,stat,writeFile,mkdir,rename } from 'node:fs/promises';
+import { readdir,readFile,stat,writeFile,mkdir,rename,rm } from 'node:fs/promises';
 import { resolve,join,extname,basename } from 'node:path';
-import { createHash } from 'node:crypto';
-import { apiClient } from './client.js';
+import { createHash,randomUUID } from 'node:crypto';
+import { apiClient,resolvedConnection } from './client.js';
 const args=process.argv.slice(2);const get=(name:string)=>args[args.indexOf(name)+1];
 if(args.includes('--help')){console.info('Usage: npm run import:files -- --root /explicit/folder [--extensions .md,.txt] [--dry-run] [--watch]\nOnly explicitly selected UTF-8 files, max 100 KB each. Hidden entries and symlinks are skipped. Set MOTE_URL and MOTE_TOKEN for remote nodes.');process.exit(0);}
 if(!args.includes('--root'))throw new Error('Usage: npm run import:files -- --root /explicit/folder [--extensions .md,.txt] [--dry-run] [--watch]');
 const root=resolve(get('--root'));
 const extensions=new Set((args.includes('--extensions')?get('--extensions'):'.md,.txt').split(',').map(e=>e.toLowerCase()));
 const hash=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
-const deviceId='files-'+hash(root).slice(0,24);const stateDir=resolve('.mote/file-sync');await mkdir(stateDir,{recursive:true,mode:0o700});
-const destination=(process.env.MOTE_URL||'http://127.0.0.1:47832').replace(/\/$/,'');
+const deviceId='files-'+hash(root).slice(0,24);const stateDir=resolvedConnection.profileDirectory?join(resolvedConnection.profileDirectory,'file-sync'):resolve(resolvedConnection.baseDir,'.mote/file-sync');await mkdir(stateDir,{recursive:true,mode:0o700});
+const destination=resolvedConnection.url;
 const statePath=join(stateDir,deviceId+'-'+hash(destination).slice(0,16)+'.json');let state:Record<string,{hash:string;capturedAt:string;id:string}>={};
 try{state=JSON.parse(await readFile(statePath,'utf8'));}catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}
 const request=args.includes('--dry-run')?undefined:apiClient();
@@ -31,7 +31,8 @@ async function scan() {
     const event={id,deviceId,deviceName:`文件夹 · ${basename(root)}`,platform:'import',capturedAt:metadata.mtime.toISOString(),durationMs:0,appId:'mote.file-import',appName:'文件资料',windowTitle:basename(file),ocrText:text,source:'file',privacy:{excluded:false,redacted:false,mode:'none',reason:'User selected explicit source directory'}};
     if(request) {
       await request('/api/captures',event);state[key]={hash:digest,capturedAt:event.capturedAt,id};
-      await writeFile(statePath+'.tmp',JSON.stringify(state),{mode:0o600});await rename(statePath+'.tmp',statePath);
+      const temp=statePath+'.'+randomUUID()+'.tmp';
+      try{await writeFile(temp,JSON.stringify(state),{flag:'wx',mode:0o600});await rename(temp,statePath);}finally{await rm(temp,{force:true});}
     }
     count++;
   }

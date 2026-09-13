@@ -37,13 +37,13 @@ class Settings(private val context: Context) {
     }
     var enabled: Boolean get() = prefs.getBoolean("enabled", false); set(value) { prefs.edit().putBoolean("enabled", value).commit() }
     fun read(): CollectorConfig = CollectorConfig(
-        server = prefs.getString("server", "")!!,
+        server = prefs.getString("server", BuildConfig.DEFAULT_SERVER)!!,
         token = prefs.getString("token", null)?.let { String(secret.open(Base64.decode(it, Base64.NO_WRAP))) } ?: "",
         deviceName = prefs.getString("deviceName", Build.MODEL)!!,
         intervalSeconds = prefs.getInt("interval", 30), maxQueueMiB = prefs.getInt("maxQueue", 256),
         wifiOnly = prefs.getBoolean("wifiOnly", true), excludedPackages = prefs.getString("excluded", "")!!,
         masks = prefs.getString("masks", "")!!, localReviewUrl = prefs.getString("localReview", "")!!,
-        debugHttp = prefs.getBoolean("debugHttp", false), mode = prefs.getString("mode", "accessibility")!!,
+        debugHttp = prefs.getBoolean("debugHttp", BuildConfig.MOTE_PROFILE == "dev"), mode = prefs.getString("mode", "accessibility")!!,
         nsfw = NsfwConfig(enabled = prefs.getBoolean("nsfwEnabled", true), threads = prefs.getInt("nsfwThreads", 2),
             timeoutMs = prefs.getLong("qwenTimeout", 60000), source = prefs.getString("nsfwSource", "auto")!!,
             customUrl = prefs.getString("qwenCustomUrl", "")!!, policy = prefs.getString("qwenPolicy", null) ?: context.assets.open("review-policy.txt").bufferedReader().use { it.readText().trim() },

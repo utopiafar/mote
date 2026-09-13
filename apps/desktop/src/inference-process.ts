@@ -48,10 +48,10 @@ export class InferenceProcess {
     this.child = undefined;
     child?.kill();
   }
-  private fail(message: string): void {
+  private fail(message: string, name = 'Error'): void {
     const pending = this.pending; this.pending = undefined;
     this.terminate(); this.publish('error', message);
-    if (pending) { pending.cleanup(); pending.reject(new Error(message)); }
+    if (pending) { pending.cleanup(); pending.reject(Object.assign(new Error(message), { name })); }
   }
   request<T>(payload: unknown, timeoutMs: number, signal?: AbortSignal): Promise<T> {
     if (this.closed) return Promise.reject(new Error('本地推理客户端已关闭'));
@@ -62,8 +62,8 @@ export class InferenceProcess {
     try { child = this.start(); } catch { this.publish('error', '无法启动本地推理进程'); return Promise.reject(new Error('无法启动本地推理进程；本次截图已跳过')); }
     return new Promise<T>((resolve, reject) => {
       const id = randomUUID();
-      const timer = setTimeout(() => this.fail('本地推理超时；已终止独立进程，本次截图已跳过'), timeoutMs);
-      const abort = () => this.fail('本地推理已取消；本次截图已跳过');
+      const timer = setTimeout(() => this.fail('本地推理超时；已终止独立进程，本次截图已跳过', 'TimeoutError'), timeoutMs);
+      const abort = () => this.fail('本地推理已取消；本次截图已跳过', 'AbortError');
       this.pending = { id, resolve: value => resolve(value as T), reject, cleanup: () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); } };
       signal?.addEventListener('abort', abort, { once: true });
       this.publish('running');

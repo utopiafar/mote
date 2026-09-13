@@ -1,0 +1,26 @@
+services:
+  caddy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    ports:
+      - "${MOTE_TLS_HTTP_PORT:-80}:80"
+      - "${MOTE_TLS_HTTPS_PORT:-443}:443"
+    environment:
+      MOTE_TLS_DOMAIN: ${MOTE_TLS_DOMAIN:?Set a public domain in this profile}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      mote:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  caddy-data:
+  caddy-config:

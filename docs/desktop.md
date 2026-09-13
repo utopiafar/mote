@@ -23,15 +23,36 @@ npm run start -w @mote/desktop
 npm run package -w @mote/desktop
 ```
 
-当前 0.2.1 安装包为 `apps/desktop/release/mote-desktop-macos-arm64-0.2.1.zip`，解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；这是本机测试构建。发行版仍需显式设置 Apple Developer ID 签名、公证和对应架构构建。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
+当前 0.3.0 安装包为 `apps/desktop/release/mote-desktop-macos-arm64-0.3.0.zip`，解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；这是本机测试构建。发行版仍需显式设置 Apple Developer ID 签名、公证和对应架构构建。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
 
-0.2.1 ZIP 大小为 112,379,521 字节，SHA-256：`48c8212965dddaf3ad05507dba79e88c9053a0ae2d9674d9af90943580b8cb1f`。
+0.3.0 ZIP 大小为 112,480,649 字节，SHA-256：`7dcad06c29775e86863ab2c0c53794385fd93c1f2026ca5a2501985afc806206`。
 
 Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按钮被禁用。MVP 尚未接入其可靠前台/可见窗口身份与 OCR，不能以无过滤截图代替。
 
+## 环境隔离与启动 profile
+
+不设置 `MOTE_PROFILE` / `--profile` 时保持 **legacy**：直接使用之前的 Electron `userData`，不搬移、不复制、不清空已有内容。首次默认节点仍为 47832，已有设置优先。开发命令 `npm run desktop:dev` 使用独立 dev；直接工作区 `npm run dev -w @mote/desktop` 也显式选 dev。
+
+命名 profile 使用 `<原 userData>-profiles/<短名>`，在 Electron 实例锁和 session 创建之前设置；dev 默认端口 47842，test 为 47852，prod 为 47832，其他命名环境为 47842。短名仅接受 1–32 个小写字母、数字、下划线和连字符。可同时运行不同 profile，同名进程只能有一个。窗口顶部、标题和菜单栏显示当前 profile，界面显示实际数据目录。
+
+```sh
+# 由统一启动器读取选定环境，注入匹配的节点与令牌：
+node scripts/mote.mjs exec --profile dev -- npm run start -w @mote/desktop
+# 显式保留日常旧目录：
+npm run start -w @mote/desktop -- --profile=legacy
+# 打包应用可以指定环境，不需要浏览器：
+open -n "apps/desktop/release/mac-arm64/Mote Collector.app" --args --profile=dev
+```
+
+`--profile` 优先于 `MOTE_PROFILE`。命名环境仅在 `MOTE_PROFILE` 精确匹配时才接受启动器注入的 `MOTE_URL` / `MOTE_TOKEN`；缺 profile 的 ambient 节点/令牌或切换 CLI profile 后遗留的凭据均不继承。它们只用于新环境首次配置，已有节点和已加密凭据始终成对保留。`MOTE_ENV_FILE` 由统一启动器读取，采集器不另行寻找 `.env`。非 prod 命名环境的自动配置拒绝回环 47832；确需连接另一节点，用户仍可在原生设置中显式填写地址与新令牌。
+
+每个 profile 独立保存设备 UUID、Keychain 加密令牌、原生草稿、队列、模型、数值/事件诊断，以及中央窗口 Web session。新环境不自动复制模型或用户资料，可手动导入公开模型。支持包不跨环境读取。普通启动不会自动把 dev 变成日常环境；Finder 无参数启动仍进 legacy。
+
+命名 profile 不注册系统默认登录项，避免 macOS 丢失启动参数后进入 legacy；界面给出提示。需使用明确带 profile 的启动命令。legacy 的原登录项开关继续保留。该限制依据 [Electron 登录项文档](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings)：`args` 选项仅支持 Windows。本轮没有更改本机真实登录项。
+
 ## 首次使用
 
-1. 启动中央节点，在采集器填写节点地址与访问令牌。默认是 `http://127.0.0.1:47832`；远程只能使用 HTTPS，且令牌至少 32 字符。令牌通过 Electron `safeStorage` 交给 macOS Keychain 加密，前端只收到是否已配置，无法读取已有令牌。
+1. 启动中央节点，在采集器填写节点地址与访问令牌。legacy 默认是 `http://127.0.0.1:47832`，dev 是 47842；远程只能使用 HTTPS，且令牌至少 32 字符。令牌通过 Electron `safeStorage` 交给 macOS Keychain 加密，前端只收到是否已配置，无法读取已有令牌。
 2. 配置排除应用、遮挡区域、空闲阈值和队列上限，然后保存。排除 ID 可用 `osascript -e 'id of app "应用名"'` 查询。规则是用户指定的精确 Bundle ID，不做语义猜测。
 3. 默认开启千问本地视觉审查，先点击「下载 / 继续下载」或导入对应 `model.gguf` 与 `mmproj.gguf`（可一次选两个）。两个文件都通过 SHA-256 后才能开始。初期模型约 703 MiB，不随 App 重复捆绑；下载仅传输公开模型文件，不发送截图。
 4. 点击「开始采集」。首次使用需在系统设置的「隐私与安全性 → 屏幕与系统音频录制 / 屏幕录制」允许 Mote。开发模式权限可能显示 Electron。macOS 要求重启应用时，授权后退出并重新打开。
@@ -82,6 +103,10 @@ Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按�
 
 开发者区默认关闭诊断。启用后每 15–3600 秒（默认 60）记录有界数值日志（最多 1440 样本）：主进程 RSS/累计 CPU、队列与模型字节、保存/过滤/失败计数、推理/OCR 延迟、估算上传请求体字节和设备电量。日志和导出不含截图、OCR、随手记、模型 reason 或令牌。CPU 只表示采集主进程，原生推理以延迟单独测量；电量变化是整台电脑的读数，不可归因于 Mote。电源来源由 IOKit 获取，无法读取时显示不可用。
 
+同一开关还控制最多 500 条结构化事件，只包含时间、固定阶段与错误类别、可选耗时和 HTTP 状态；覆盖配置、模型加载/下载、采集、OCR、隐私、队列、上传、心跳、随手记和支持导出。分类只看异常类型/错误码，不保存原始异常消息。HTTP 401/403 可定位认证阶段，超时、TLS、网络、存储错误分别标记；诊断失败不改变原本隐私和 ACK 条件。关闭后停止新增，旧事件保留；崩溃遗留的已退出进程临时诊断文件会清理。
+
+“导出安全支持包”含当前 profile/版本、采集与队列数值、非敏感配置开关、模型耗时、累计/最近数值诊断及固定事件。输出再次按白名单投影，排除截图、OCR、笔记、心情、窗口/设备名、设备 ID、节点/下载 URL、数据目录、令牌、审查策略、模型理由和原始错误。完整 1440 条数值轨迹另用“导出数值诊断”；有内容的队列备份是独立入口。
+
 可以显式选择电池供电暂停、低电量暂停（0 关闭）、JPEG 质量和截图分辨率。已有采样间隔、空闲阈值、CPU 线程及审查图片尺寸也影响资源占用。电量策略默认不启用；启用后若电量无法确认则保守暂停。修改设置需先停止采集，避免同一帧切换隐私与资源策略。
 
 ## 可选本地隐私模型接口
@@ -121,7 +146,9 @@ config.json                 # 设备配置与 Keychain 加密的令牌
 notes/draft.json             # 原生随手记草稿、已准备的稳定提交与完成标记
 models/qwen/                # 已验证双模型及可续传部分
 diagnostics/diagnostics.json # 可选、有界数值诊断
-Partitions/                 # 各中央 origin 的独立 Web 草稿/离线存储
+diagnostics/events.json      # 可选、最多500条固定阶段事件
+Partitions/                 # legacy 中央 Web session
+session/Partitions/         # 命名 profile 的独立中央 Web session
 queue/
   events/<event-uuid>.json   # 不变的 observation、图像 hash、重试状态
   blobs/<sha256>.jpg        # 已脱敏图像，同内容只存一份
@@ -135,7 +162,17 @@ queue/
 
 进程被杀后，下次启动会恢复完整事件、清理未完成临时文件和孤立图像。遇到已提交事件或图像损坏时启动失败，保留损坏记录供人工备份恢复，避免静默丢失。新机器上不要依赖复制后的 Keychain 密文可解密，应复制队列并重新配置令牌。设备 UUID 随原队列事件保留，已有观测不会因迁移改写来源。
 
-## 验证范围
+## 0.3.0 验证范围
+
+本轮执行 63 个桌面单元测试、TypeScript/Swift/C++ 构建、0.3.0 `.app` 打包及 `codesign --verify --deep --strict`。原生 Electron profile fixture 同时启动 dev/test 两个进程，各自通过 IPC 保存合成凭据/随手记/草稿，实际 loopback HTTP 401 后保留队列，导出支持包，再重启两个进程验证设备 ID、凭据、草稿、队列与 session 路径独立稳定。支持包逐项检查没有合成私密原文、令牌、URL、策略、设备 ID 或目录。整个测试没有开始截图、下载模型或调用真实模型。
+
+```sh
+npm run test:profiles -w @mote/desktop
+```
+
+此命令只创建临时 fixture 根目录和临时 HTTP 拒绝服务，完成后清理。另完成真实 Electron 控制台 smoke：配置保存、无图随手记入队、profile/实际目录显示、保持停止状态，未读取已有用户目录。跨平台类型与持久化逻辑有测试，但本轮真实环境仍仅 Apple Silicon Mac，没有新增 Intel、Windows、Linux 或实体安卓手机验证。
+
+## 历史采集链路验证
 
 最终打包后的 ASAR 模块及随 App 分发的原生 helper 已用生成白图实际运行千问通过（0.2.1 的 CPU 合成白图约 4.7 秒）；ad-hoc 签名通过 `codesign --verify --deep --strict`。编译最低 macOS 13.3 是部署目标，未在 13.3 旧系统或 Intel Mac 实测。
 
@@ -146,7 +183,7 @@ MOTE_FIXTURE_SERVER=http://127.0.0.1:47835 MOTE_FIXTURE_TOKEN='<测试节点令�
 ```
 
 
-已执行：57 个桌面单元测试、TypeScript/Swift/C++ 编译、真实 Electron 控制台和中央窗口 smoke；中央窗口验证主进程注入认证、禁止外域、隔离 Node、关窗重开保留草稿以及节点存储隔离。真实 Qwen CPU 对 Android/Mac 共用生成图连续推理及强杀恢复通过：两次均 `allow:true`，本轮 Mac 冷启动约 5.4 秒、暖约 4.5 秒。这是功能性 live-model fixture 验证，不是 NSFW 准确率评测，也未采集用户真实屏幕。
+此前执行：57 个桌面单元测试、TypeScript/Swift/C++ 编译、真实 Electron 控制台和中央窗口 smoke；中央窗口验证主进程注入认证、禁止外域、隔离 Node、关窗重开保留草稿以及节点存储隔离。真实 Qwen CPU 对 Android/Mac 共用生成图连续推理及强杀恢复通过：两次均 `allow:true`，本轮 Mac 冷启动约 5.4 秒、暖约 4.5 秒。这是功能性 live-model fixture 验证，不是 NSFW 准确率评测，也未采集用户真实屏幕。
 
 ```sh
 npm run test:central -w @mote/desktop

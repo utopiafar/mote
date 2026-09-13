@@ -64,6 +64,7 @@ import {
 } from "./api";
 import "./styles.css";
 import { Notes } from "./Notes";
+import { Diagnostics } from "./Diagnostics";
 
 type Page = "overview" | "timeline" | "notes" | "ask" | "devices" | "vault";
 const nav = [
@@ -400,8 +401,8 @@ function ConnectionDialog({
         <div className="connection-help">
           <strong>第一次使用？</strong>
           <p>
-            启动服务后，从中央节点的 <code>data/access-token</code>{" "}
-            复制令牌。若设置过 <code>MOTE_TOKEN</code>，使用你配置的值。
+            从中央节点所选环境的数据目录中读取 <code>access-token</code>{" "}
+            文件并复制令牌。若设置过 <code>MOTE_TOKEN</code>，使用你配置的值。
           </p>
           <p>
             手机上的 localhost 指手机自己；跨设备访问请填写可达的中央节点地址。
@@ -1743,6 +1744,7 @@ function Vault({
           </div>
         </section>
       </div>
+      <Diagnostics api={api} profile={status.profile} />
       <section className="panel index-panel">
         <div className="section-heading">
           <div>
@@ -2001,7 +2003,7 @@ function App() {
             <Settings2 size={15} />
           </button>
           <div className="version">
-            MOTE MVP <span>0.2</span>
+            MOTE <span>0.3</span>
           </div>
         </div>
       </aside>

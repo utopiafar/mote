@@ -7,9 +7,12 @@ import java.util.concurrent.TimeUnit
 class NsfwDownloadWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     private val store = NsfwModelStore(context)
     override fun doWork(): Result = try {
+        SupportEvents.record(applicationContext, EventStage.MODEL_DOWNLOAD, EventCode.STARTED)
         store.download(Settings(applicationContext).read().nsfw)
+        SupportEvents.record(applicationContext, EventStage.MODEL_DOWNLOAD, EventCode.OK)
         Result.success()
-    } catch (_: Exception) {
+    } catch (error: Exception) {
+        SupportEvents.record(applicationContext, EventStage.MODEL_DOWNLOAD, if (isStopped) EventCode.CANCELLED else EventJournal.failure(error, EventStage.MODEL_DOWNLOAD))
         if (!isStopped) store.status("下载未完成，将退避重试；可取消后更换来源，已有断点保留")
         Result.retry()
     }

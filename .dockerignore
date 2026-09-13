@@ -21,3 +21,8 @@ apps/desktop/native/bin
 test-results
 playwright-report
 *.log
+
+**/profiles
+**/backups
+**/*.plist
+deploy/generated

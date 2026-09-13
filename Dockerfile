@@ -14,7 +14,7 @@ RUN npm run build:libs && npm run build -w @mote/server && npm run build -w @mot
 
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
-ENV NODE_ENV=production MOTE_HOST=0.0.0.0 MOTE_PORT=47832 MOTE_DATA_DIR=/data ELECTRON_SKIP_BINARY_DOWNLOAD=1
+ENV NODE_ENV=production MOTE_ENV_FILE=/app/deploy/empty.env MOTE_HOST=0.0.0.0 MOTE_PORT=47832 MOTE_DATA_DIR=/data ELECTRON_SKIP_BINARY_DOWNLOAD=1
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/agent/package.json ./packages/agent/package.json
@@ -24,6 +24,8 @@ COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/agent/dist ./packages/agent/dist
 COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
+COPY deploy/empty.env ./deploy/empty.env
+COPY scripts/backup.ts ./scripts/backup.ts
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME ["/data"]

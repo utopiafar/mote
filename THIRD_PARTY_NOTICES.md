@@ -24,7 +24,7 @@ Both endpoint applications compile the CPU implementation from [ggml-org/llama.c
 - nlohmann/json used by the desktop helper: preserve its [MIT license](licenses/nlohmann-json-LICENSE.txt).
 - Compiler and platform runtime dependencies retain their own notices. This list does not replace the third-party license files shipped in the pinned upstream source.
 
-Mote currently compiles and runs the CPU backend. Vulkan, Metal and the reference demo's archived MNN implementation are not enabled or linked as Mote inference backends.
+Mote currently compiles and runs the CPU backend. Vulkan, Metal and MNN are not enabled or linked as Mote inference backends.
 
 ## DeepSeek Harness
 
@@ -52,9 +52,3 @@ The table lists principal direct libraries, not a complete software bill of mate
 | AndroidX WorkManager | [AndroidX source](https://android.googlesource.com/platform/frameworks/support/+/androidx-main/work/), Apache-2.0 |
 | Google ML Kit text recognition | [ML Kit terms and privacy](https://developers.google.com/ml-kit/terms), Google SDK distribution terms; not described as an Apache-licensed model |
 | Apple Vision / AppKit / ScreenCaptureKit APIs | Provided by macOS and the Apple SDK; no Apple model weights or operating-system framework binaries are copied into this repository |
-
-## Reference designs
-
-- [ScreenMemo](https://github.com/2977094657/ScreenMemo), snapshot `2f57da1a43c55ff97c0e90e9b20885e9c3757ea3`, AGPL-3.0, and [Memex](https://github.com/memex-lab/memex), snapshot `1b186376320584464eb343ef224ce8837a5e7dac`, GPL-3.0, were read as design references. Their implementation code is not copied into Mote. Findings are recorded in [docs/research.md](docs/research.md).
-- The user supplied `ContextLab-0.3.1-source.zip`, SHA-256 `bc8c2f1c43cda347af434354a741a549b1f37fdb93d1b38dfd958e9923697618`. Mote adapts its pinned Qwen manifest, verified download and inference lifecycle design, and implements endpoint integration against the separately licensed official llama.cpp source. No public license for the user's archive is asserted here.
-- Qwen model/projector files are downloaded separately, and the pinned llama.cpp CPU runtime is linked into the endpoint helpers. ContextLab's Vulkan setup, GPU comparison interface and archived MNN experiments are not included. See [docs/local-inference.md](docs/local-inference.md) for the precise scope of reuse and validation limits.

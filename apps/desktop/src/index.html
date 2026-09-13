@@ -14,10 +14,11 @@
     <div class="nav-item selected"><span>◉</span> 采集与随手记</div>
     <button id="central" class="secondary" type="button">打开中央仓库 ↗</button>
     <div class="sidebar-card"><span class="tiny-label">LOCAL FIRST</span><p>先过滤，再保存。<br>中央节点可以随你迁移。</p></div>
-    <div class="sidebar-bottom">macOS · MVP 0.2<br>关闭窗口后仍驻留菜单栏</div>
+    <div class="sidebar-bottom">macOS · 本地采集<br>关闭窗口后仍驻留菜单栏</div>
   </aside>
   <main>
     <header><div><div class="eyebrow">YOUR CONTEXT, CONNECTED</div><h1>把日常，变成可回溯的记录。</h1><p>主屏采样 → 本地隐私处理 → 持久队列 → 你的中央节点</p></div><span class="tag">电脑端</span></header>
+    <p id="environment" class="helper profile-path"></p>
     <section class="status-card" aria-live="polite">
       <div class="status-heading"><span id="status-dot" class="dot"></span><h2 id="state">正在初始化</h2><span class="permission" id="permission">权限检查中</span></div>
       <p id="message">正在读取本地配置与队列…</p>
@@ -61,13 +62,13 @@
         </section>
         <section class="panel"><div class="section-title"><span class="step">03</span><div><h2>有界存储，断网可恢复</h2><p>只有中央节点确认接收后才删除本地记录。达到上限会停止采集。</p></div></div>
           <div class="form-grid"><label>队列容量上限（MiB）<input id="queue-mb" type="number" min="1" max="20480" required></label><label>队列记录数上限<input id="queue-events" type="number" min="1" max="1000000" required></label></div>
-          <label class="checkbox"><input id="login" type="checkbox"><span>登录时打开 Mote<small>应用启动后保持停止状态，需手动开始采集；已有队列会恢复上传。</small></span></label>
+          <label class="checkbox"><input id="login" type="checkbox"><span>登录时打开 Mote<small id="login-hint">应用启动后保持停止状态，需手动开始采集；已有队列会恢复上传。</small></span></label>
         </section>
-        <section class="panel"><details><summary>开发者诊断与资源优化</summary><p class="helper">仅保存数值与状态，不记录截图、OCR、随手记或令牌。电量是整台设备的变化，不是 Mote 的耗电归因。</p>
-          <label class="checkbox"><input id="diagnostics-enabled" type="checkbox"><span>启用本机数值诊断</span></label>
+        <section class="panel"><details><summary>开发者诊断与资源优化</summary><p class="helper">仅保存数值和最多 500 条固定阶段事件，不记录截图、OCR、随手记、审查策略、节点地址或令牌。电量是整台设备的变化，不是 Mote 的耗电归因。</p>
+          <label class="checkbox"><input id="diagnostics-enabled" type="checkbox"><span>启用本机数值与事件诊断</span></label>
           <div class="form-grid"><label>诊断采样（秒）<input id="diagnostic-interval" type="number" min="15" max="3600" required></label><label>JPEG 质量<input id="jpeg-quality" type="number" min="40" max="95" required><small>较低质量减少存储，可能影响小字识别。</small></label><label>截图最大边长<input id="capture-max-side" type="number" min="640" max="2560" required></label><label>低电量暂停（%）<input id="battery-pause-below" type="number" min="0" max="95" required><small>0 为关闭；仅在使用电池时触发。</small></label></div>
           <label class="checkbox"><input id="pause-on-battery" type="checkbox"><span>使用电池时暂停采集</span></label>
-          <pre id="diagnostics-detail" class="helper">诊断未开启</pre><div class="actions"><button id="diagnostics-sample" class="secondary" type="button">刷新数值</button><button id="diagnostics-export" class="secondary" type="button">导出诊断</button></div>
+          <pre id="diagnostics-detail" class="helper">诊断未开启</pre><div class="actions"><button id="diagnostics-sample" class="secondary" type="button">刷新数值</button><button id="diagnostics-export" class="secondary" type="button">导出数值诊断</button><button id="support-export" class="secondary" type="button">导出安全支持包</button></div>
         </details></section>
         <div class="save-row"><span id="save-hint">修改配置前请停止采集。</span><button class="primary" type="submit">保存设置</button></div>
       </fieldset>

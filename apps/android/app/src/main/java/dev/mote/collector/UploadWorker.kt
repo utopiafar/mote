@@ -44,36 +44,48 @@ object HttpJson {
 class UploadWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {
         val settings = Settings(applicationContext)
+        var stage = EventStage.CONFIG
         return try {
             val config = settings.read()
             if (config.server.isBlank()) return Result.success()
             config.validate()
             if (config.wifiOnly && !isWifi(applicationContext)) {
+                SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.WAIT_NETWORK)
                 settings.uploadStatus("等待非计费 Wi-Fi；截图留在本机队列")
                 return Result.retry()
             }
+            stage = EventStage.QUEUE
             val queue = applicationContext.queue()
+            stage = EventStage.HEARTBEAT
             sendHeartbeat(settings, config, queue)
             repeat(25) {
                 if (isStopped) return Result.retry()
                 if (config.wifiOnly && !isWifi(applicationContext)) return Result.retry()
+                stage = EventStage.QUEUE
                 val event = queue.peek() ?: run {
+                    stage = EventStage.HEARTBEAT
                     sendHeartbeat(settings, config, queue)
                     settings.uploadStatus("队列已同步 · ${java.time.Instant.now()}")
                     return Result.success()
                 }
+                stage = EventStage.UPLOAD
                 val (code, response) = HttpJson.post("${config.server}/api/captures", event, config.token)
                 if (code !in setOf(200, 201) || response?.optString("id") != event.getString("id")) {
+                    SupportEvents.record(applicationContext, stage, EventJournal.httpFailure(code), httpStatus = code)
                     settings.uploadStatus("上传未确认（HTTP $code），原记录保留并退避重试")
                     return Result.retry()
                 }
                 Diagnostics(applicationContext).add("uploadBytes", event.toString().toByteArray(Charsets.UTF_8).size.toLong())
+                stage = EventStage.QUEUE
                 queue.acknowledge(event.getString("id"))
+                SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                 settings.uploadStatus("已确认上传；待上传 ${queue.depth()} 条")
             }
+            stage = EventStage.HEARTBEAT
             sendHeartbeat(settings, config, queue)
             if (queue.depth() > 0) Result.retry() else Result.success()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            SupportEvents.record(applicationContext, stage, EventJournal.failure(error, stage))
             settings.uploadStatus("网络、配置或本地队列异常，数据保留，等待重试；请检查节点地址/证书/令牌")
             Result.retry()
         }
@@ -87,6 +99,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             "采集服务未连接，请打开手机应用恢复权限" else settings.message())
         else if (status == "error") body.put("error", settings.message())
         val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.token)
+        if (code !in 200..299 || response?.optBoolean("ok") != true) SupportEvents.record(applicationContext, EventStage.HEARTBEAT, EventJournal.httpFailure(code), httpStatus = code)
         check(code in 200..299 && response?.optBoolean("ok") == true) { "节点未确认最新设备状态" }
     }
     companion object {

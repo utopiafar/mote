@@ -1,0 +1,29 @@
+name: 问题反馈
+description: 报告采集、同步、部署或查询故障
+title: "[Bug] "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 版本与平台
+      description: Mote 版本、客户端平台/系统版本、中央节点运行环境。
+      placeholder: 0.3.0 · macOS / Android / Docker
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境与部署方式
+      description: 例如 dev / test / prod / legacy，Node.js 或 Docker；无需提供 IP、用户名或目录。
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤与预期结果
+      description: 描述操作、实际结果和预期行为；最好使用合成输入复现。
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 诊断线索
+      description: 可附错误类别、发生时间、请求编号，或从 App / 中央节点导出的诊断包。不要上传私人归档、真实截图、访问令牌或 API 密钥。

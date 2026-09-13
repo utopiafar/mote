@@ -5,6 +5,9 @@ import { readPowerState } from './native';
 import { NoteDraftStore, type NoteDraft } from './note-draft';
 import { openCentralWindow } from './central-window';
 import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { resolveProfile, profileDefaults } from './profile';
+import { EventJournal, buildSupportBundle, failureCode, type EventStage } from './support';
 import { pathToFileURL } from 'node:url';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { currentPlatform, Collector } from './collector';
@@ -13,6 +16,14 @@ import { DurableQueue } from './queue';
 import { NsfwController } from './nsfw';
 import type { Config, ConfigUpdate, Status } from './contracts';
 
+const profile = resolveProfile(process.argv, process.env, app.getPath('userData'));
+if (!profile.legacy) {
+  mkdirSync(profile.dataDirectory, { recursive: true, mode: 0o700 });
+  const sessionDirectory = join(profile.dataDirectory, 'session');
+  mkdirSync(sessionDirectory, { recursive: true, mode: 0o700 });
+  app.setPath('userData', profile.dataDirectory); app.setPath('sessionData', sessionDirectory);
+}
+const profileLabel = profile.legacy ? 'legacy（日常原目录）' : profile.name;
 let window: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let centralWindow: BrowserWindow | undefined;
@@ -26,6 +37,8 @@ function trackNote<T>(task: Promise<T>): Promise<T> {
 }
 async function settleNoteWork(): Promise<void> { while (noteWork.size) await Promise.allSettled([...noteWork]); }
 let settings: Config;
+const events = new EventJournal(join(profile.dataDirectory, 'diagnostics'), () => Boolean(settings?.diagnosticsEnabled));
+function clientStatus(): Status { return { ...collector.status(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } }; }
 let controlChain: Promise<unknown> = Promise.resolve();
 
 function serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -58,10 +71,11 @@ function trayIcon(): Electron.NativeImage {
   return icon;
 }
 function updateUi(status: Status): void {
+  status = { ...status, environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } };
   if (window && !window.isDestroyed()) window.webContents.send('mote:status', status);
-  tray?.setToolTip(`Mote · ${status.running ? '采集中' : '已停止'} · 待上传 ${status.queueDepth}`);
+  tray?.setToolTip(`Mote [${profile.name}] · ${status.running ? '采集中' : '已停止'} · 待上传 ${status.queueDepth}`);
   tray?.setContextMenu(Menu.buildFromTemplate([
-    { label: `Mote · ${status.running ? '采集中' : '已停止'}`, enabled: false },
+    { label: `Mote [${profile.name}] · ${status.running ? '采集中' : '已停止'}`, enabled: false },
     { label: `待上传 ${status.queueDepth} 条`, enabled: false },
     { type: 'separator' },
     { label: '打开采集与随手记', click: showWindow },
@@ -77,37 +91,38 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', showWindow);
   app.on('before-quit', event => {
-    quitting = true; collector?.shutdown();
+    quitting = true; void events.record('APP', 'STOPPED'); collector?.shutdown();
     if (notesSettledForQuit) return;
     event.preventDefault();
-    void settleNoteWork().finally(() => { notesSettledForQuit = true; app.quit(); });
+    void settleNoteWork().then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
   });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
   void app.whenReady().then(async () => {
-    const dataDirectory = app.getPath('userData');
+    const dataDirectory = profile.dataDirectory;
     const store = new ConfigStore(dataDirectory, {
       available: encryptedStorageAvailable,
       encrypt: value => safeStorage.encryptString(value),
       decrypt: value => safeStorage.decryptString(value),
-    });
+    }, () => profileDefaults(profile, {}), () => profileDefaults(profile, process.env));
     settings = await store.load();
     await store.save(settings); // Persist stable device identity before the first observation.
+    void events.record('APP', 'STARTED');
     const noteDrafts = new NoteDraftStore(join(dataDirectory, 'notes')); await noteDrafts.initialize();
     const queue = new DurableQueue(join(dataDirectory, 'queue'), settings);
     await queue.initialize();
     const helperPath = app.isPackaged ? join(process.resourcesPath, 'native', 'mote-helper') : join(__dirname, '..', 'native', 'bin', 'mote-helper');
-    const nsfw = new NsfwController(join(dataDirectory, 'models'), app.isPackaged ? join(process.resourcesPath, 'native', 'mote-qwen') : join(__dirname, '..', 'native', 'bin', 'mote-qwen'), () => { if (collector) updateUi(collector.status()); });
+    const nsfw = new NsfwController(join(dataDirectory, 'models'), app.isPackaged ? join(process.resourcesPath, 'native', 'mote-qwen') : join(__dirname, '..', 'native', 'bin', 'mote-qwen'), () => { if (collector) updateUi(clientStatus()); }, { events });
     const diagnostics = new DiagnosticsRecorder(join(dataDirectory, 'diagnostics'));
     const configureDiagnostics = async () => diagnostics.configure({ enabled: settings.diagnosticsEnabled, intervalMs: settings.diagnosticIntervalSeconds * 1000 }, async () => ({
       queueBytes: queue.stats().bytes, modelBytes: nsfw.status().bytes, ...await readPowerState(helperPath).catch(() => ({})),
     }));
-    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, nsfw, diagnostics);
+    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, nsfw, diagnostics, events);
     await nsfw.initialize();
     await configureDiagnostics();
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
     window = new BrowserWindow({
-      width: 1140, height: 840, minWidth: 820, minHeight: 620, title: 'Mote · 电脑采集器', backgroundColor: '#f3f5f1',
+      width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}] · 电脑采集器`, backgroundColor: '#f3f5f1',
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: !app.isPackaged },
     });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -119,27 +134,40 @@ else {
       if (!window || event.sender !== window.webContents || event.senderFrame?.url !== pageUrl || event.senderFrame !== window.webContents.mainFrame) throw new Error('请求来源不受信任');
     };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
-      ipcMain.handle(channel, (event, ...args) => { trusted(event); return operation(...args); });
+      const stage: EventStage | undefined = ({ 'mote:configure': 'CONFIG', 'mote:start': 'CAPTURE', 'mote:stop': 'CAPTURE', 'mote:note': 'NOTE', 'mote:note-draft-update': 'NOTE', 'mote:model-download': 'MODEL_DOWNLOAD', 'mote:model-import': 'MODEL_DOWNLOAD', 'mote:model-reload': 'MODEL', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
+      ipcMain.handle(channel, async (event, ...args) => {
+        trusted(event);
+        try { const result = await operation(...args); if (stage && channel !== 'mote:note-draft-update' && channel !== 'mote:model-download') void events.record(stage, 'OK'); return result; }
+        catch (error) { if (stage) void events.record(stage, failureCode(error, stage)); throw error; }
+      });
     };
-    handle('mote:get-status', () => collector.status());
-    handle('mote:diagnostics-sample', async () => { await diagnostics.sample(); updateUi(collector.status()); return collector.status(); });
+    handle('mote:get-status', () => clientStatus());
+    handle('mote:diagnostics-sample', async () => { await diagnostics.sample(); updateUi(clientStatus()); return clientStatus(); });
     handle('mote:diagnostics-export', async () => {
       const selected = await dialog.showSaveDialog(window!, { title: '导出本机数值诊断（不含内容与令牌）', defaultPath: 'mote-diagnostics.json', filters: [{ name: 'JSON diagnostics', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };
       await diagnostics.sample(); await diagnostics.exportTo(selected.filePath); return { canceled: false };
+    });
+    handle('mote:support-export', async () => {
+      const selected = await dialog.showSaveDialog(window!, { title: '导出支持包（数值与固定事件，不含内容和令牌）', defaultPath: `mote-support-${profile.name}.json`, filters: [{ name: 'JSON support bundle', extensions: ['json'] }] });
+      if (selected.canceled || !selected.filePath) return { canceled: true };
+      await diagnostics.sample();
+      await writeFile(selected.filePath, JSON.stringify(buildSupportBundle(profile, app.getVersion(), clientStatus(), await events.read()), null, 2), { mode: 0o600 });
+      return { canceled: false };
     });
     handle('mote:central', showCentral);
     handle('mote:note-draft', () => noteDrafts.get());
     handle('mote:note-draft-update', input => trackNote(noteDrafts.update(input as NoteDraft)));
     handle('mote:note', input => trackNote(serialize(async () => {
       const result = await noteDrafts.submit(input as NoteDraft, settings, currentPlatform, queue);
-      updateUi(collector.status()); if (!quitting) void collector.upload(); return result;
+      updateUi(clientStatus()); if (!quitting) void collector.upload(); return result;
     })));
     handle('mote:configure', input => serialize(async () => {
-      if (collector.status().running) throw new Error('请先停止采集，再修改配置');
+      if (clientStatus().running) throw new Error('请先停止采集，再修改配置');
       await collector.settleCapture();
       const updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (noteDrafts.hasPrepared() ? 1 : 0));
-      if (updated.openAtLogin !== settings.openAtLogin) {
+      if (!profile.legacy && updated.openAtLogin) throw new Error('命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数');
+      if (profile.legacy && updated.openAtLogin !== settings.openAtLogin) {
         app.setLoginItemSettings({ openAtLogin: updated.openAtLogin });
         if (app.getLoginItemSettings().openAtLogin !== updated.openAtLogin) throw new Error('系统未允许修改登录启动项，请在系统设置检查；开发模式建议先使用打包应用');
       }
@@ -148,18 +176,18 @@ else {
       settings = updated;
       collector.updateConfig(updated);
       await configureDiagnostics();
-      return collector.status();
+      return clientStatus();
     }));
-    handle('mote:start', () => serialize(async () => { await collector.start(); return collector.status(); }));
-    handle('mote:stop', () => serialize(async () => { collector.stop(); await collector.settleCapture(); return collector.status(); }));
-    handle('mote:retry', async () => { await collector.retry(); return collector.status(); });
+    handle('mote:start', () => serialize(async () => { await collector.start(); return clientStatus(); }));
+    handle('mote:stop', () => serialize(async () => { collector.stop(); await collector.settleCapture(); return clientStatus(); }));
+    handle('mote:retry', async () => { await collector.retry(); return clientStatus(); });
     const requireStopped = async () => {
-      if (collector.status().running) throw new Error('请先停止采集，再修改本地模型');
+      if (clientStatus().running) throw new Error('请先停止采集，再修改本地模型');
       await collector.settleCapture();
     };
-    handle('mote:model-download', () => serialize(async () => { await requireStopped(); nsfw.startDownload(settings); return collector.status(); }));
-    handle('mote:model-cancel', async () => { await nsfw.cancelDownload(); return collector.status(); });
-    handle('mote:model-reload', () => serialize(async () => { await requireStopped(); await nsfw.reload(); return collector.status(); }));
+    handle('mote:model-download', () => serialize(async () => { await requireStopped(); nsfw.startDownload(settings); return clientStatus(); }));
+    handle('mote:model-cancel', async () => { await nsfw.cancelDownload(); return clientStatus(); });
+    handle('mote:model-reload', () => serialize(async () => { await requireStopped(); await nsfw.reload(); return clientStatus(); }));
     handle('mote:model-import', () => serialize(async () => {
       await requireStopped();
       const selected = await dialog.showOpenDialog(window!, { title: '导入千问语言模型和视觉投影 GGUF（校验 SHA-256）', properties: ['openFile', 'multiSelections'], filters: [{ name: 'GGUF models', extensions: ['gguf'] }] });
@@ -181,12 +209,12 @@ else {
       const path = selected.filePaths[0];
       if ((await stat(path)).size > 360 * 1024 * 1024) throw new Error('备份超过 360 MiB，请使用完整 queue 文件夹迁移');
       const imported = await queue.importArchive(JSON.parse(await readFile(path, 'utf8')));
-      updateUi(collector.status()); void collector.upload();
+      updateUi(clientStatus()); void collector.upload();
       return { canceled: false, imported };
     });
     tray = new Tray(trayIcon());
     tray.on('click', showWindow);
-    updateUi(collector.status());
+    updateUi(clientStatus());
     await window.loadURL(pageUrl);
     collector.initialize();
     if (app.getLoginItemSettings().wasOpenedAtLogin) window.hide();

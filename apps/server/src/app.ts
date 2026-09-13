@@ -1,15 +1,17 @@
-import Fastify from 'fastify';
+import Fastify,{type FastifyReply} from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import staticFiles from '@fastify/static';
-import { timingSafeEqual } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { timingSafeEqual,randomUUID } from 'node:crypto';
+import { existsSync,readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { z,ZodError } from 'zod';
+import { z } from 'zod';
 import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,type QueryResult,type CaptureRecord } from '@mote/shared';
+import { AgentNotConfiguredError } from '@mote/agent';
 import { Store,StoreError } from './store.js';
 import { Indexer } from './indexer.js';
 import { repositoryRoot,type Config } from './config.js';
+import { ServerDiagnostics,safeError } from './diagnostics.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface QueryAgent {configured:boolean;query(args:QueryScope&{question:string}):Promise<QueryResult>;close():Promise<void>}
@@ -17,103 +19,126 @@ const scopeFields={after:z.string().datetime({offset:true}).optional(),before:z.
 const validRange=(v:QueryScope)=>!v.after||!v.before||Date.parse(v.after)<Date.parse(v.before);
 const querySchema=z.object({question:z.string().trim().min(1).max(8000),...scopeFields}).strict().refine(validRange,{message:'Invalid time range'});
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
+const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
 export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent}) {
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
-  const indexer=new Indexer(store,config);
+  const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
+  await diagnostics.init();
+  const indexer=new Indexer(store,config,diagnostics);
   let agent:QueryAgent;
   if(dependencies?.agent)agent=dependencies.agent;
   else {
     const {createAgent}=await import('@mote/agent');
     const context=(records:CaptureRecord[])=>records.map(record=>({...record,sourceType:record.source}));
-    agent=await createAgent({reader:{search:async args=>context(await indexer.search(args)),timeline:async args=>{const page=store.list(args);return {...page,items:context(page.items)};},evidence:async args=>context(store.evidence(args.ids)),activity:async args=>store.activity(args),devices:async()=>store.devices()},baseUrl:config.modelBaseUrl,apiKey:config.apiKey,model:config.model,allowUnauthenticatedLocal:config.allowUnauthenticatedLocal,reasoningEffort:config.modelReasoningEffort,maxTokens:config.modelMaxTokens});
+    agent=await createAgent({reader:{search:async args=>diagnostics.measure('source','search',async()=>context(await indexer.search(args)),rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>context(store.evidence(args.ids)),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))},baseUrl:config.modelBaseUrl,apiKey:config.apiKey,model:config.model,allowUnauthenticatedLocal:config.allowUnauthenticatedLocal,reasoningEffort:config.modelReasoningEffort,maxTokens:config.modelMaxTokens});
   }
-  const app=Fastify({logger:{level:process.env.MOTE_LOG_LEVEL||'warn',redact:['req.headers.authorization','req.body','res.body']},bodyLimit:12*1024*1024,requestTimeout:180000});
+  // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
+  // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
+  const app=Fastify({logger:false,genReqId:()=>randomUUID(),requestIdHeader:false,bodyLimit:12*1024*1024,requestTimeout:180000,frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:'请求格式无效。',requestId});}});
+  const routeName=(url:string|undefined)=>{
+    if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
+    const root=url.split('/')[2];return ({health:'health',status:'status',captures:'captures',notes:'notes',devices:'devices',updates:'updates',activity:'activity',query:'query',insights:'insights',index:'index',export:'export',import:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
+  };
+  app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);done();}));
+  app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
-  await app.register(rateLimit,{max:180,timeWindow:'1 minute'});
+  await app.register(rateLimit,{max:180,timeWindow:'1 minute',errorResponseBuilder:(req,context)=>({statusCode:context.statusCode,error:'rate_limited',message:'请求过于频繁，请稍后重试。',requestId:req.id})});
   app.addHook('onRequest',async(req,reply)=>{
     const isApi=req.routeOptions.url?.startsWith('/api/')||req.url.startsWith('/api/');
     reply.header('X-Content-Type-Options','nosniff').header('Referrer-Policy','no-referrer');
     if(isApi)reply.header('Cache-Control','no-store');
     if(req.method==='OPTIONS'||req.routeOptions.url==='/api/health'||!isApi)return;
     const supplied=Buffer.from(req.headers.authorization??'');const expected=Buffer.from(`Bearer ${config.token}`);
-    if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected))return reply.code(401).send({error:'unauthorized',message:'请连接中央节点并输入有效访问令牌'});
+    if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected))return reply.code(401).send({error:'unauthorized',message:'请连接中央节点并输入有效访问令牌',requestId:req.id});
   });
   app.setErrorHandler((error,req,reply)=>{
-    if(error instanceof ZodError || (error instanceof Error&&error.name==='ZodError'&&Array.isArray((error as ZodError).issues)))return reply.code(400).send({error:'validation',message:(error as ZodError).issues.map(i=>`${i.path.join('.')}: ${i.message}`).join('; ')});
-    const e=error as Error&{statusCode?:number;code?:string};const status=e.statusCode??(e.name==='AgentNotConfiguredError'?503:500);
-    if(status>=500)req.log.error({message:e.message,name:e.name},'request failed');
-    reply.code(status).send({error:e.code??e.name,message:status===500?'请求未完成，请检查服务日志或模型配置。':e.message});
+    const failure=safeError(error);
+    diagnostics.record('request.failed',{requestId:req.id,route:routeName(req.routeOptions.url),category:failure.category,statusCode:failure.status},failure.status>=500?'error':'warn');
+    reply.code(failure.status).send({error:failure.category,message:failure.message,requestId:req.id});
   });
-  app.get('/api/health',async()=>({ok:true,version:'0.2.1'}));
-  app.get('/api/status',async()=>({agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
-  app.post('/api/captures',async(req,reply)=>{const result=await store.ingest(captureSchema.parse(req.body));return reply.code(result.duplicate?200:201).send(result);});
+  app.get('/api/health',async()=>({ok:true,version:serverVersion}));
+  app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
+  app.post('/api/captures',async(req,reply)=>{const result=await diagnostics.measure('ingest','capture',()=>store.ingest(captureSchema.parse(req.body)),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
   app.get('/api/captures',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
-    return store.list({...args,cursor:raw.cursor});
+    return diagnostics.measure('source','timeline',()=>store.list({...args,cursor:raw.cursor}),page=>({count:page.items.length}));
   });
   app.get('/api/captures/:id/image',async(req,reply)=>{const {bytes,mime}=store.image((req.params as {id:string}).id);return reply.type(mime).send(bytes);});
   app.get('/api/captures/:id',async req=>{const record=store.evidence([(req.params as {id:string}).id])[0];if(!record)throw new StoreError('Capture not found',404);return record;});
   app.delete('/api/captures/:id',async req=>store.delete((req.params as {id:string}).id));
   // Notes share capture IDs, indexing, archive export and deletion tombstones.
   // The convenience route does not rewrite the author's text or infer their mood.
-  app.post('/api/notes',async(req,reply)=>{const result=await store.ingest(noteCapture(noteSchema.parse(req.body)));return reply.code(result.duplicate?200:201).send(result);});
+  app.post('/api/notes',async(req,reply)=>{const result=await diagnostics.measure('ingest','note',()=>store.ingest(noteCapture(noteSchema.parse(req.body))),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
   app.get('/api/notes',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
-    return store.list({...args,source:'note',cursor:raw.cursor});
+    return diagnostics.measure('source','timeline',()=>store.list({...args,source:'note',cursor:raw.cursor}),page=>({count:page.items.length}));
   });
   function noteById(id:string) {const record=store.evidence([id])[0];if(!record||record.source!=='note')throw new StoreError('Note not found',404);return record;}
   app.get('/api/notes/:id',async req=>noteById((req.params as {id:string}).id));
   app.delete('/api/notes/:id',async req=>{const {id}=req.params as {id:string};const record=store.evidence([id])[0];if(record&&record.source!=='note')throw new StoreError('Note not found',404);return store.delete(id);});
-  app.post('/api/devices/heartbeat',async req=>store.heartbeat(heartbeatSchema.parse(req.body)));
+  app.post('/api/devices/heartbeat',async req=>{const beat=heartbeatSchema.parse(req.body);const result=store.heartbeat(beat);diagnostics.record('queue.snapshot',{queueDepth:beat.queueDepth});return result;});
   app.get('/api/devices',async()=>({items:store.devices()}));
   app.get('/api/updates',async req=>{const {cursor,limit}=z.object({cursor:z.coerce.number().int().min(0).default(0),limit:z.coerce.number().int().min(1).max(200).default(100)}).parse(req.query);return store.updates(cursor,limit);});
   app.get('/api/activity',async req=>store.activity(rangeSchema.parse(req.query)));
   let closing=false;
   const activeQueries=new Set<Promise<QueryResult>>();
-  function queryAgent(input:QueryScope&{question:string}) {
+  function queryAgent(input:QueryScope&{question:string},operation:'query'|'insight'='query') {
     if(closing)throw new StoreError('Central node is shutting down',503);
     if(activeQueries.size>=2)throw new StoreError('Two Agent queries are already running; retry shortly',429);
     const revision=store.deletionRevision();
-    const promise=agent.query(input).then(result=>{
+    const promise=diagnostics.measure('agent',operation,()=>agent.query(input).then(result=>{
       if(store.deletionRevision()!==revision)throw new StoreError('Evidence was deleted during this run; retry against the updated archive',409);
       return result;
-    });
+    }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
   app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>{
-    if(!agent.configured)throw new StoreError('请在中央节点设置 MOTE_MODEL、MOTE_MODEL_BASE_URL 和 MOTE_MODEL_API_KEY，再重启服务。采集和归档仍可正常使用。',503);
+    if(!agent.configured)throw new AgentNotConfiguredError();
     return queryAgent(querySchema.parse(req.body));
   });
   async function insight(range:QueryScope) {
-    if(!agent.configured)throw new StoreError('Agent 未配置；请先配置模型以生成有证据的回顾。',503);
-    const result=await queryAgent({question:'请根据这段时间的上下文记录，生成中文个人回顾：我最近做了什么，时间花在哪里，哪些事情可能值得继续关注。自由选择工具检索并解释发现，区分事实、推断与信息缺口，每个具体发现引用原始记录。屏幕采样时间不能等同专注或真实劳动时间，不臆造待办或意图。',...range});
+    if(!agent.configured)throw new AgentNotConfiguredError();
+    const result=await queryAgent({question:'请根据这段时间的上下文记录，生成中文个人回顾：我最近做了什么，时间花在哪里，哪些事情可能值得继续关注。自由选择工具检索并解释发现，区分事实、推断与信息缺口，每个具体发现引用原始记录。屏幕采样时间不能等同专注或真实劳动时间，不臆造待办或意图。',...range},'insight');
     store.saveInsight(result,result.runId);return result;
   }
   app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{return insight(insightSchema.parse(req.body??{}));});
   app.get('/api/insights',async()=>({items:store.insights()}));
-  app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);return store.retryIndex();});
+  app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=store.retryIndex();diagnostics.record('queue.snapshot',{pending:result.queued});return result;});
   app.get('/api/export',async(_req,reply)=>reply.header('Content-Disposition',`attachment; filename="mote-${new Date().toISOString().slice(0,10)}.json"`).send(store.exportArchive(config.maxExportBytes)));
-  app.post('/api/import',{bodyLimit:config.maxExportBytes},async req=>store.importArchive(req.body));
+  app.post('/api/import',{bodyLimit:config.maxExportBytes},async req=>diagnostics.measure('ingest','import',()=>store.importArchive(req.body),r=>({count:r.imported})));
+  function diagnosticSnapshot() {
+    const counts=store.indexCounts(),devices=store.devices(),storage=store.stats();
+    return {version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot(),services:{agentConfigured:agent.configured,embeddingConfigured:indexer.configured,activeQueries:activeQueries.size,closing},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,maxBytes:storage.maxBytes,imagesEncrypted:storage.imagesEncrypted}};
+  }
+  app.get('/api/diagnostics',async()=>diagnosticSnapshot());
+  app.get('/api/diagnostics/events',async req=>{const args=z.object({afterSeq:z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),limit:z.coerce.number().int().min(1).max(500).default(200)}).strict().parse(req.query);return diagnostics.events(args.afterSeq,args.limit);});
+  app.get('/api/support-bundle',async(req,reply)=>{diagnostics.record('support.exported',{requestId:req.id});await diagnostics.flush();return reply.header('Content-Disposition','attachment; filename="mote-support.json"').type('application/json').send({version:1,scope:'central-safe-support',createdAt:new Date().toISOString(),snapshot:diagnosticSnapshot(),events:diagnostics.recent(500)});});
   const web=join(repositoryRoot,'apps/web/dist');
   if(existsSync(web)) {
     await app.register(staticFiles,{root:web,prefix:'/'});
     app.setNotFoundHandler(async(req,reply)=>{
-      if(req.url.startsWith('/api/'))return reply.code(404).send({error:'not_found'});
+      if(req.url.startsWith('/api/'))return reply.code(404).send({error:'not_found',requestId:req.id});
       return reply.type('text/html').sendFile('index.html');
     });
     app.addHook('onSend',async(req,reply,payload)=>{
       if(!req.url.startsWith('/api/'))reply.header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
       return payload;
     });
-  }
-  const indexTimer=setInterval(()=>void indexer.tick(),5000);indexTimer.unref();
-  const maintenance=()=>{if(config.retentionDays>0)store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString());};
+  } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:'未找到所请求的资料。',requestId:req.id}));
+  const indexTimer=setInterval(()=>void indexer.tick().catch(()=>{diagnostics.record('index.failed',{category:'internal'},'error');}),5000);indexTimer.unref();
+  const maintenance=()=>{if(config.retentionDays>0)void diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted}))).catch(()=>{});};
   maintenance();const retentionTimer=setInterval(maintenance,3600000);retentionTimer.unref();
   let backgroundInsight:Promise<void>|undefined;
   const insightTimer=config.insightIntervalHours>0?setInterval(()=>{
     if(backgroundInsight||!agent.configured||closing)return;
-    backgroundInsight=insight({after:new Date(Date.now()-config.insightIntervalHours*3600000).toISOString(),before:new Date().toISOString()}).then(()=>{},e=>{app.log.error({message:e instanceof Error?e.message:'Insight failed'});}).finally(()=>{backgroundInsight=undefined;});
+    backgroundInsight=diagnostics.run(randomUUID(),()=>insight({after:new Date(Date.now()-config.insightIntervalHours*3600000).toISOString(),before:new Date().toISOString()})).then(()=>{},()=>{}).finally(()=>{backgroundInsight=undefined;});
   },config.insightIntervalHours*3600000):undefined;insightTimer?.unref();
-  app.addHook('onClose',async()=>{closing=true;clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);await agent.close();await Promise.allSettled([...activeQueries]);await backgroundInsight;await indexer.close();if(!dependencies?.store)store.close();});
-  return {app,store,indexer,agent};
+  diagnostics.record('server.started');
+  app.addHook('onClose',async()=>{
+    closing=true;clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);
+    try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
+    await Promise.allSettled([...activeQueries]);await backgroundInsight;
+    try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
+  });
+  return {app,store,indexer,agent,diagnostics};
 }

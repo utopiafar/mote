@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read only original timestamped Fact blocks from a Memex ZIP into private JSON.
+"""Read only original timestamped Fact blocks from a timestamped Fact ZIP into private JSON.
 
 No media, settings, derived text attachments, database rows, or agent output are
 extracted. Benchmark cases are evidence rubrics assembled from original inputs;
@@ -188,7 +188,7 @@ def main() -> None:
     records, stats = extract(args.archive, args.time_zone_offset)
     sample = representative_sample(records)
     cases = evaluation_cases(sample)
-    metadata = {'formatVersion': 1, 'source': 'Memex original Fact blocks only',
+    metadata = {'formatVersion': 1, 'source': 'Original timestamped Fact blocks only',
       'archiveSha256': sha256(args.archive.read_bytes()).hexdigest(),
       'timestampNote': f'Fact stores local wall time without a zone; capturedAt adds {args.time_zone_offset} as an explicit validation import assumption. capturedAtLocal preserves the original.',
       'timeZoneOffsetAssumption': args.time_zone_offset,

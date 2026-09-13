@@ -8,6 +8,7 @@ import { DurableQueue, QueueFullError } from './queue';
 import { activeApplication, recognizeText, readPowerState } from './native';
 import { maskBitmap, reviewLocally, shouldExclude, shouldExcludeVisibleApps } from './privacy';
 import { heartbeat, uploadCapture } from './transport';
+import { EventJournal, failureCode, TransportFailure, type EventStage } from './support';
 
 export const currentPlatform: Platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
 export class Collector {
@@ -28,7 +29,7 @@ export class Collector {
   private lastCaptureAt?: string;
   private lastUploadAt?: string;
   private lastUploadError?: string;
-  constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly nsfw?: NsfwGate, private readonly diagnostics?: DiagnosticsRecorder) {
+  constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly nsfw?: NsfwGate, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal) {
     this.config = config;
     powerMonitor.on('lock-screen', () => { this.locked = true; this.pause('屏幕已锁定，暂停采集'); });
     powerMonitor.on('unlock-screen', () => { this.locked = false; this.lastSample = undefined; });
@@ -83,11 +84,13 @@ export class Collector {
         throw new Error(this.message);
       }
     }
+    void this.events?.record('CAPTURE', 'STARTED');
     this.running = true; this.state = 'capturing'; this.message = '已开启；截图在内存中先经过隐私过滤，再进入本地队列';
     this.lastSample = undefined;
     this.publish(); void this.capture(); void this.sendHeartbeat();
   }
   stop(): void {
+    void this.events?.record('CAPTURE', 'STOPPED');
     this.running = false; this.lastSample = undefined; this.captureAbort?.abort(); this.nsfw?.reset();
     if (this.timer) clearTimeout(this.timer);
     this.state = 'stopped'; this.message = '采集已停止；已入队的脱敏记录继续上传'; this.publish(); void this.sendHeartbeat();
@@ -113,12 +116,14 @@ export class Collector {
     const startedAt = Date.now();
     const cfg = this.config;
     let inferenceMs = 0, ocrMs = 0;
+    let stage: EventStage = 'CAPTURE';
     const abort = this.captureAbort = new AbortController();
     const valid = () => this.running && !abort.signal.aborted && !this.locked && !this.sleeping;
     try {
       if (this.locked || this.sleeping) { this.pause('锁屏或休眠中，暂停采集'); return; }
       if (cfg.idlePauseSeconds > 0 && powerMonitor.getSystemIdleTime() >= cfg.idlePauseSeconds) { this.pause('已达到空闲阈值，暂停采集；操作电脑后恢复'); return; }
       if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+        void this.events?.record('CAPTURE', 'PERMISSION');
         this.stop(); this.state = 'permission_required'; this.message = '屏幕录制权限已撤销，采集已停止'; this.publish(); return;
       }
       if (this.queue.atCapacity()) throw new QueueFullError();
@@ -142,24 +147,27 @@ export class Collector {
       let sanitized = this.finalImage(source.thumbnail, cfg.masks);
       let appliedMasks = cfg.masks.length;
       if (cfg.nsfwEnabled) {
+        stage = 'MODEL';
         if (!this.nsfw) throw new Error('本地千问视觉模型不可用，本次截图已跳过');
         const { width, height } = sanitized.getSize();
         const inferenceStarted = Date.now();
         const decision = await this.nsfw.classify({ bitmap: sanitized.toBitmap(), width, height }, cfg, abort.signal);
         if (!valid()) return;
         inferenceMs = Date.now() - inferenceStarted;
-        if (decision.blocked) { this.diagnostics?.recordCapture({ outcome: 'blocked', inferenceMs, durationMs: Date.now() - startedAt }); this.pause('本地千问视觉策略拒绝，整张截图已跳过'); return; }
+        if (decision.blocked) { void this.events?.record('MODEL', 'FILTERED', { elapsedMs: inferenceMs }); this.diagnostics?.recordCapture({ outcome: 'blocked', inferenceMs, durationMs: Date.now() - startedAt }); this.pause('本地千问视觉策略拒绝，整张截图已跳过'); return; }
       }
       if (cfg.privacyModelUrl) {
+        stage = 'PRIVACY';
         const decision = await reviewLocally(cfg.privacyModelUrl, sanitized.toJPEG(cfg.jpegQuality), abort.signal);
         if (!valid()) return;
-        if (!decision.allow) { this.pause('本地隐私模型拒绝本次采集'); return; }
+        if (!decision.allow) { void this.events?.record('PRIVACY', 'FILTERED'); this.pause('本地隐私模型拒绝本次采集'); return; }
         sanitized = this.finalImage(sanitized, decision.rectangles);
         appliedMasks += decision.rectangles.length;
       }
       const jpeg = sanitized.toJPEG(cfg.jpegQuality);
       if (jpeg.length > MAX_IMAGE_BYTES) throw new Error('截图超出单张大小限制，本次采集已跳过');
       // OCR must run after BOTH user masks and optional model masks.
+      stage = 'OCR';
       const ocrStarted = Date.now();
       const ocrText = cfg.ocrEnabled ? await recognizeText(this.helperPath, jpeg, abort.signal) : undefined;
       ocrMs = cfg.ocrEnabled ? Date.now() - ocrStarted : 0;
@@ -171,11 +179,14 @@ export class Collector {
         imageMime: 'image/jpeg', ocrText, source: 'screen',
         privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', reason: `${cfg.nsfwEnabled ? 'offline Qwen visual policy passed; ' : ''}${appliedMasks > 0 ? 'configured or local-model masks applied before OCR and persistence' : cfg.privacyModelUrl ? 'local privacy model approved; no masks returned' : 'user-configured app filters checked; no masks configured'}` },
       };
+      stage = 'QUEUE';
       await this.queue.enqueue(event, jpeg);
+      void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
       this.diagnostics?.recordCapture({ outcome: 'saved', imageBytes: jpeg.length, inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       this.lastSample = { at: startedAt, appId: before.appId }; this.lastCaptureAt = event.capturedAt;
       this.state = 'capturing'; this.message = '正在采集主屏；本地过滤、脱敏、OCR 已完成'; this.publish(); void this.upload();
     } catch (error) {
+      void this.events?.record(stage, failureCode(error, stage), { elapsedMs: Date.now() - startedAt });
       this.lastSample = undefined;
       this.diagnostics?.recordCapture({ outcome: 'failed', inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       if (!this.running || abort.signal.aborted) return;
@@ -199,20 +210,23 @@ export class Collector {
         try {
           await uploadCapture(this.config, entry.record.event, entry.image, abort.signal);
           await this.queue.acknowledge(entry.record.event.id);
+          void this.events?.record('UPLOAD', 'OK');
           this.diagnostics?.recordUpload(Buffer.byteLength(JSON.stringify(entry.record.event)) + Math.ceil((entry.image?.length ?? 0) / 3) * 4);
           this.lastUploadAt = new Date().toISOString(); this.lastUploadError = undefined;
         } catch (error) {
           if (abort.signal.aborted) break;
+          const stage: EventStage = error instanceof TransportFailure ? 'UPLOAD' : 'QUEUE';
+          void this.events?.record(stage, failureCode(error, stage), error instanceof TransportFailure ? { httpStatus: error.httpStatus } : {});
           await this.queue.failed(entry.record.event.id);
           this.lastUploadError = error instanceof Error ? error.message : '上传失败，队列已保留';
           break;
         }
       }
-    } catch { this.lastUploadError = '本地队列读取失败，请停止采集并检查队列备份'; }
+    } catch { void this.events?.record('QUEUE', 'STORAGE'); this.lastUploadError = '本地队列读取失败，请停止采集并检查队列备份'; }
     finally { this.uploading = false; this.publish(); }
   }
   private async sendHeartbeat(): Promise<void> {
     const state = this.state === 'stopped' ? 'paused' : this.state;
-    await heartbeat(this.config, { deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform, status: state, queueDepth: this.queue.stats().depth, lastCaptureAt: this.lastCaptureAt, error: this.lastUploadError });
+    await heartbeat(this.config, { deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform, status: state, queueDepth: this.queue.stats().depth, lastCaptureAt: this.lastCaptureAt, error: this.lastUploadError }, this.events);
   }
 }

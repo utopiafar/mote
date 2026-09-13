@@ -3,6 +3,7 @@ import { VisionModelStore, QWEN_MODEL, REVIEW_SYSTEM, REVIEW_GRAMMAR, parseVisio
 import type { Config, NsfwGate, NsfwStatus } from './contracts';
 import { InferenceProcess, type InferenceChild } from './inference-process';
 import { nativeInferenceChild } from './native-inference-child';
+import { EventJournal, failureCode } from './support';
 import { prepareVisionImage } from './vision-image';
 type VisionFiles = Pick<VisionModelStore, 'inspect' | 'verifiedPaths' | 'download' | 'importFiles'>;
 interface NativeVisionResult { text: string; status: string; backend: string; durationMs: number; loadMs: number; visionMs: number; tokens: number }
@@ -14,11 +15,13 @@ export class NsfwController implements NsfwGate {
   private downloadTask?: Promise<void>;
   private verifiedPaths?: VisionPaths;
   private closed = false;
+  private readonly events?: EventJournal;
   private value: NsfwStatus = {
     modelState: 'missing', modelId: QWEN_MODEL.id, modelRevision: QWEN_MODEL.revision,
     bytes: 0, totalBytes: QWEN_MODEL.totalBytes, downloading: false, inferenceState: 'stopped', blockedCount: 0,
   };
-  constructor(directory: string, executable: string, private readonly onChange: () => void, options: { store?: VisionFiles; spawn?: () => InferenceChild } = {}) {
+  constructor(directory: string, executable: string, private readonly onChange: () => void, options: { store?: VisionFiles; spawn?: () => InferenceChild; events?: EventJournal } = {}) {
+    this.events = options.events;
     this.modelStore = options.store ?? new VisionModelStore(join(directory, 'qwen'));
     this.worker = new InferenceProcess(options.spawn ?? (() => nativeInferenceChild(executable)), (state, error) => {
       this.value.inferenceState = state;
@@ -44,6 +47,7 @@ export class NsfwController implements NsfwGate {
       this.verifiedPaths = await this.modelStore.verifiedPaths();
       this.value.modelState = 'ready'; this.value.bytes = this.value.totalBytes; this.value.error = undefined;
     } catch {
+      void this.events?.record('MODEL', 'MODEL_UNAVAILABLE');
       await this.inspect();
       this.value.error = '本地千问视觉模型缺失或校验失败；请先下载、续传或导入模型';
       throw new Error(this.value.error);
@@ -80,6 +84,7 @@ export class NsfwController implements NsfwGate {
     this.reset();
     const abort = this.downloadAbort = new AbortController();
     this.value.downloading = true; this.value.error = undefined; this.publish();
+    void this.events?.record('MODEL_DOWNLOAD', 'STARTED');
     let lastUpdate = 0;
     this.downloadTask = this.modelStore.download({
       source: config.nsfwSource, customUrl: config.nsfwCustomUrl || undefined, signal: abort.signal,
@@ -88,7 +93,8 @@ export class NsfwController implements NsfwGate {
         this.value.downloadSource = progress.source; this.value.modelState = 'partial';
         if (Date.now() - lastUpdate >= 150 || progress.bytes === progress.totalBytes) { lastUpdate = Date.now(); this.publish(); }
       },
-    }).then(async () => { this.value.error = undefined; await this.inspect(); }).catch(async () => {
+    }).then(async () => { this.value.error = undefined; await this.inspect(); void this.events?.record('MODEL_DOWNLOAD', 'OK'); }).catch(async (error) => {
+      void this.events?.record('MODEL_DOWNLOAD', abort.signal.aborted ? 'CANCELLED' : failureCode(error, 'MODEL_DOWNLOAD'));
       this.value.error = abort.signal.aborted ? '下载已取消，断点已保留；点击下载可继续' : '模型下载或校验失败，已保留可续传部分；请重试、更换来源或导入';
       await this.inspect().catch(() => undefined);
     }).finally(() => { this.value.downloading = false; this.downloadTask = undefined; this.publish(); });

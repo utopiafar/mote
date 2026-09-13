@@ -1,93 +1,212 @@
 # Mote
 
-**自己的上下文，自己的资料库。** Android 与 Mac 独立 App 持续采集经过本地隐私处理的屏幕，离线保存并补传到独立中央节点；回看时间线、查看采样时长，通过 DeepSeek Harness 检索和生成有原始证据的回顾。
+**自己的上下文，自己的资料库。**
 
-这是第一版可运行 MVP。中央节点可以先在本机运行，后续迁移 NAS/Linux/云服务器；采集端只依赖版本化 HTTP 协议，不绑定服务位置。
+Mote 把电脑与手机上的屏幕采样、主动写下的日记和选定文件，汇入你自部署的中央节点。你可以回看时间线、了解采样期间的时间分布，也可以直接提问，让 Agent 查阅原始证据并生成回顾。
 
-## 四个交付端
+采集器是独立的 **macOS App** 和 **Android App**。中央节点可放在 Mac mini、Linux 服务器或 NAS 上；它提供 API 与管理界面，Mac App 内可直接打开。更换服务器时迁移归档并更新客户端地址即可。
 
-| 端 | 实现 | 入口 |
+[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [排查问题](docs/troubleshooting.md) · [开发环境](docs/development.md)
+
+## 能做什么
+
+- **收集与回看**：显式开启屏幕采样，按设备和时间浏览；截图相同也保留每次观察，图片去重存储。
+- **先处理隐私再上传**：应用排除、固定遮挡区域、端上 Qwen 视觉审查、本地 OCR；本地模型未就绪或审查失败时跳过该帧。
+- **随手记录**：在采集 App 中写日记、杂事、心情；草稿与待同步笔记保存在本机，恢复网络后补传。中央界面也提供记录入口。
+- **问答与回顾**：Agent 自主选择只读工具、查找材料、解释证据；答案附可点击的原始记录。可手动或按配置周期生成回顾。
+- **离线可用、资料可迁移**：持久上传队列、幂等确认、JSON 导入导出、离线完整备份、可选图片加密与保留期限。
+- **可观测与可调节**：查看同步、索引、存储和请求状态；按需记录客户端资源样本，调整采样频率、图片尺寸、质量、推理线程和低电量策略。
+
+“采样时间”是根据实际观察计算的覆盖时间，包含采样空缺的限制，不能当作连续专注时长或 App 独占耗电。Mote 不会用应用名称或关键词硬编码“工作”“娱乐”“待办”等语义判断。
+
+## 架构
+
+```mermaid
+flowchart LR
+  subgraph Endpoints[采集与输入端]
+    Mac[macOS App]
+    Android[Android App]
+    Files[选定本地或 NAS 文本目录]
+    Privacy[应用过滤 · 遮挡 · 本地 Qwen · OCR]
+    Queue[本地持久队列]
+    Mac --> Privacy
+    Android --> Privacy
+    Privacy --> Queue
+    Mac -->|随手记| Queue
+    Android -->|随手记| Queue
+  end
+  subgraph Central[独立中央节点]
+    API[认证 HTTP API]
+    Store[SQLite 元数据与全文索引]
+    Blobs[内容寻址图片库]
+    Agent[DeepSeek Harness Agent]
+    Tools[只读检索与证据工具]
+    UI[管理界面]
+    API --> Store
+    API --> Blobs
+    UI --> API
+    API --> Agent
+    Agent --> Tools
+    Tools --> Store
+  end
+  Queue -->|HTTPS · 幂等确认| API
+  Files -->|显式导入| API
+  Agent -->|文本证据| Model[用户配置的模型服务]
+```
+
+| 组件 | 职责 | 技术与边界 |
 |---|---|---|
-| 电脑采集器 | Electron + TypeScript；macOS Swift/AppKit/Vision 本地助手 | `npm run desktop`，详见 [电脑端](docs/desktop.md) |
-| Android | Kotlin；无障碍截图 / MediaProjection；离线中英 OCR、WorkManager | [安卓说明与 HyperOS 验收](docs/android.md) |
-| 中央节点 | Node.js 24 + Fastify，SQLite/FTS、内容寻址图像库、DeepSeek Harness | `npm start`，详见 [部署与迁移](docs/deployment.md) |
-| 中央节点前端 | React + Vite；随手记、时间线、问答、洞察、设备状态、导入导出 | Mac App 内「中央节点」；也保留自部署管理入口 |
+| macOS 采集器 | 屏幕采样、隐私策略、随手记、离线同步 | Electron / TypeScript；Swift 系统助手；独立窗口与本地存储 |
+| Android 采集器 | 无障碍截图或 MediaProjection、后台队列与设备状态 | Kotlin；WorkManager；Keystore；HyperOS 配置入口 |
+| 本地推理 | 上传前的 NSFW 过滤及可配置视觉前置任务 | Qwen3.5-0.8B、llama.cpp CPU；断点下载、国内来源、哈希校验、离线导入 |
+| 中央节点 | 认证、摄取、归档、索引、调度、诊断 | Node.js 24 / Fastify；SQLite；单实例、单所有者 |
+| 查询 Agent | 选择检索工具、理解上下文、关联证据 | 官方 DeepSeek Harness；仅暴露五个只读工具，无 shell 和写入工具 |
+| 中央界面 | 时间线、随手记、问答、设备、导入导出、运行诊断 | React；随中央节点部署，也可在 Mac App 内使用 |
 
-## 先跑起来
+截图先在端点通过隐私策略，再执行 OCR、编码和本地持久化。上传成功必须收到匹配事件 ID 的确认，客户端才清理队列；网络中断、节点停机或容量不足不会被当作同步成功。相同图片按内容哈希共享一个对象，观察事件独立保存。
 
-需要 Node.js 24 LTS；编译 Mac 助手需要 Xcode Command Line Tools、CMake 和 Ninja。`models:setup` 拉取固定版本的 llama.cpp 源码，模型权重单独下载。
+笔记与屏幕记录使用同一归档协议。同步采用带认证的版本化 HTTP API；Agent 通过只读上下文工具消费这些记录。NAS 和其他硬件可接入同一 [协议](docs/protocol.md)，不必绑定某个采集 App。
+
+默认检索使用本地全文与文本索引；可选 embedding 服务启用持久向量索引和混合检索。检索表达式由模型生成。采集内容始终是不可信证据，不能改变 Agent 权限。更多边界见 [架构说明](docs/architecture.md) 与 [Agent 配置](docs/agent.md)。
+
+## 开始使用
+
+### 1. 启动中央节点
+
+需要 **Node.js 24** 与 npm。只部署中央节点不需要屏幕权限、端上模型、Xcode 或 Android SDK。
 
 ```sh
+git clone https://github.com/utopiafar/mote.git
+cd mote
 npm ci
-npm run models:setup
-npm run build
-npm start
+npm run build:libs
+npm run build -w @mote/server -w @mote/web
+
+node scripts/mote.mjs init --profile dev
+node scripts/mote.mjs start --profile dev
+node scripts/mote.mjs status --profile dev
+node scripts/mote.mjs token --profile dev
 ```
 
-首次启动会在仓库 `data/access-token` 生成访问令牌。将其填入电脑采集器和安卓配置；Mac App 内可直接打开中央节点，无需另开浏览器。自部署管理页仍可通过 `http://127.0.0.1:47832` 访问。令牌属于你的私人资料访问凭证，不需要发到聊天里。
+开发节点默认是 `http://127.0.0.1:47842`。打开节点界面并输入最后一个命令显示的访问令牌。该令牌用于访问私人资料，请只填入自己的客户端。
 
-在另一终端运行 `npm run desktop`。配置节点地址和排除应用/遮罩，在客户端下载或导入千问语言模型和视觉投影器，授权系统屏幕录制，点击开始。不会随服务器启动自动截图。Android 同样先在配置页下载或导入模型；本机视觉审查默认开启，模型未就绪时不会放行截图。
-
-Android：安装构建产物 `apps/android/app/build/outputs/apk/debug/app-debug.apk`。USB 初次验证可执行 `adb reverse tcp:47832 tcp:47832`，手机填 `http://127.0.0.1:47832` 并勾选 debug HTTP。长期连接使用 HTTPS 的中央节点。HyperOS 推荐显式启用无障碍截图模式；详见 [Android 说明](docs/android.md)。
-
-如果尚未采集，可选择填入**标注为合成数据**的演示资料，验证 Web；该命令不截取你的屏幕：
+配置、数据、日志分别放在 `.mote/profiles/dev/` 下。修改 `mote.env` 后停止并重新启动该环境：
 
 ```sh
-npm run demo
+node scripts/mote.mjs stop --profile dev
+node scripts/mote.mjs start --profile dev
 ```
 
-## AI 原生约束
+日常部署建议使用仓库外的 `prod` 环境，见下方部署章节。已有 `npm start` / 根目录 `.env` / `data/` 的安装仍按原路径运行，不会自动搬迁。
 
-没有“搜索待办关键词 → 返回固定结果”这类意图路由。所有自然语言问题原样交给 Agent。DeepSeek Harness `0.1.5-rc.2` 实际运行，只装配 Mote 的 `search_context`、`timeline`、`evidence`、`activity`、`devices` 五个只读工具；模型自行选工具、生成检索表达式、推理与引用。采集内容被标为不可信证据，不能变成系统指令。
+### 2. 连接采集 App
 
-确定性代码仅负责你要求的应用排除/遮挡、权限、传输、配额、去重、数据保留和采样时间计算。界面明确区分采样时间与真实专注时间；不会推断“刷了某个 App 就是在浪费时间”。
+| 客户端 | 安装与首次设置 |
+|---|---|
+| macOS | 按 [电脑端说明](docs/desktop.md) 构建并打开独立 App。填写节点地址与令牌，设置排除应用、遮挡和本地模型，再授权屏幕录制并点击开始。 |
+| Android | 按 [Android 说明](docs/android.md) 安装 APK。配置节点、本地模型与采集权限，选择采集模式；小米 HyperOS 另配置自启动、电池与后台权限。 |
 
-将 `.env.example` 复制为根目录 `.env`，填写模型并重启：
+在两端配置页下载或导入 Qwen 语言模型与视觉投影器，合计约 **703 MiB**。可选 ModelScope 优先、Hugging Face 回退，或离线导入已校验的文件。默认 CPU 2 线程、60 秒审查超时、输入最长边 512 像素。配置、误判边界与自定义前置任务见 [端上推理](docs/local-inference.md)。
+
+手机上的 `127.0.0.1` 指手机自己。USB 开发验证可将手机端口转发到电脑开发节点：
+
+```sh
+adb reverse tcp:47842 tcp:47842
+```
+
+开发版 Android 填 `http://127.0.0.1:47842`，并显式允许调试 HTTP。跨设备的日常连接使用可达的 HTTPS 节点地址。系统强制结束或设备重启后，应检查采集权限与状态；不能保证系统允许无提示自动恢复截图。
+
+### 3. 配置 AI 并使用
+
+在所选环境的 `mote.env` 中填写模型服务，重启该节点：
 
 ```dotenv
 MOTE_MODEL=你的工具调用模型ID
 MOTE_MODEL_BASE_URL=https://api.deepseek.com
-MOTE_MODEL_API_KEY=你的密钥
+MOTE_MODEL_API_KEY=你的API密钥
+MOTE_MODEL_REASONING_EFFORT=high
+MOTE_MODEL_MAX_TOKENS=8192
 ```
 
-支持用户配置的兼容 API / 本地模型，具体约束见 [Agent 配置](docs/agent.md)。缺少配置时采集、归档和时间线仍可运行；AI 页面明确显示尚未配置，API 返回 503，**不会伪造回答或使用关键词替代 Agent**。
+没有模型配置时，采集、笔记、同步和时间线仍可使用，AI 页面会显示待配置。模型服务需支持工具调用与流式 Chat Completions；兼容服务与本地模型的配置见 [Agent 文档](docs/agent.md)。
 
-默认索引是本地全文/子串检索原语，由 Agent 自主组织查询。可选 `MOTE_EMBEDDING_*` 开启持久向量索引与混合检索；此时已脱敏 OCR 文字会发送到你指定的 embedding 服务。默认不向模型发送原始截图。OCR 为空的图片仍可回看，但无法假定 Agent 已看懂其中内容。
+开始采集后，在时间线查看记录，在随手记写下主动输入，在“问一问”选择时间与设备范围并提问，例如“这周我主要在推进什么，哪些事情还没完成？”点击答案引用可以展开原文。默认只向中央模型发送检索到的文本证据，不发送原始截图；启用 embedding 后，文本还会发送至你配置的 embedding 服务。
 
-## 已实现的链路
+## 部署与环境隔离
 
-- 显式开始/停止、排除指定应用、归一化像素遮挡、锁屏处理、权限状态、可配置采样间隔。
-- 两端内置离线千问视觉审查：固定 Qwen3.5-0.8B 模型、独立 llama.cpp CPU 推理进程，可配置审查指令、线程、超时和输入/输出预算；先判断再 OCR/落盘/上传，未就绪或失败跳过截图。模型下载支持 ModelScope 优先、Hugging Face 回退、断点续传、重试、SHA-256 校验和离线导入。
-- 可叠加本机视觉模型审查与遮罩，失败则跳过。Mac 凭证使用系统 safeStorage，Android 使用 Keystore；Android 本地队列加密。
-- 持久离线队列、失败重试、匹配事件 ID 的确认后清理、容量满时暂停；相同画面复用图片但保留每次观察。
-- 独立中央节点、Bearer 认证、图像校验、幂等 ID 冲突保护、按时间/设备浏览、跨设备采样时长。
-- 随手记保留原文和用户显式标注的心情；本机草稿、离线待同步队列、幂等上传，并能作为 Agent 证据。
-- 默认关闭的开发者诊断，记录有界的进程资源、队列/模型存储、采集/推理耗时和设备电量样本；可配置图片质量、尺寸、充电/低电量策略。设备电量变化不被冒充为 App 独占耗电。
-- Agent 查询、可追溯引用、手动洞察和可选周期回顾（`MOTE_INSIGHT_INTERVAL_HOURS`，默认关闭）。
-- JSON 导入导出、校验和、完整离线备份、图片可选 AES-GCM 加密、按需保留期限、关联删除；增量 changes 游标。
-- 显式选择的 NAS/本地 UTF-8 文本文件夹导入与增量扫描；扩展源复用同一 [协议](docs/protocol.md)。
+| 场景 | 推荐方式 | 默认入口 |
+|---|---|---|
+| 本机开发 | `dev` 配置 + Node.js；客户端开发环境 | API `127.0.0.1:47842` |
+| 独立测试 | `test` 配置与合成输入 | API `127.0.0.1:47852` |
+| Mac mini 日常节点 | 仓库外 `prod` 目录 + Node.js，可生成 launchd 配置 | `127.0.0.1:47832`；跨设备经 HTTPS |
+| Linux / NAS / 远程服务器 | Docker Compose 独立项目与卷，可叠加 Caddy HTTPS | 默认仅映射主机 loopback |
 
-两份千问模型文件合计约 703.34 MiB，下载后完全离线运行，无需 API key 或另启模型服务。可在客户端选择下载来源，也可执行 `npm run models:download`，再将 `.mote/models/qwen/model.gguf` 和 `.mote/models/qwen/mmproj.gguf` 在两端配置页离线导入。默认策略审查露骨色情内容，可修改模型指令以配置其他前置审查任务；默认 CPU 2 线程、最多 256 个输出 token、60 秒超时、审查图像最长边 512 像素。国内来源、配置与 demo 移植细节见 [端上推理](docs/local-inference.md)。模型可能误判或漏判，不保证拦截全部敏感图像。
+每个节点环境有独立端口、访问令牌、配置、数据与日志。CLI 未指定环境时使用 `dev`，不会自动操作 `prod`。Mac 命名环境使用独立 App 数据目录；Android `development` 构建使用独立包名，可以与日常版并装。详见 [开发环境](docs/development.md)。
 
-内置千问以严格 JSON 返回 `allow` 决定及简短原因，属于通用视觉模型的一个前置任务适配器。当前没有自动框选任意敏感区域的保证；明确不该采集的应用可直接加入排除列表。另保留可选的 HTTP 视觉审查与遮罩网关：使用其他兼容视觉模型时，可运行 `MOTE_PRIVACY_MODEL=<模型ID> npm run privacy`，将采集器地址设为 `http://127.0.0.1:47833/review`。Android 的 loopback 指手机本机；这个可选网关需要自行提供模型服务。
-
-## 验证
+Mac mini 示例：
 
 ```sh
-npm run typecheck
-npm test
-npm run test:privacy
-npm run test:e2e
-cd apps/android
-./gradlew assembleDebug testDebugUnitTest lintDebug
+node scripts/mote.mjs init --profile prod --home "$HOME/Library/Application Support/MoteCentral/profiles"
+node scripts/mote.mjs start --profile prod --home "$HOME/Library/Application Support/MoteCentral/profiles"
 ```
 
-`test:e2e` 使用真实中央服务、SQLite、加密图片存储、真实 DeepSeek Harness 运行时和合成模型响应，验证工具循环与原始证据；这不等同于真实模型质量验证。具体已执行结果和未验证项见 [0.2.1 真实模型与复杂链路验收](docs/live-validation.md)，首次交付另保留 [0.2.0 基线](docs/validation.md)。
+Docker 主机示例（先准备对当前用户可写的 `/srv/mote/profiles`）：
 
-当前范围：Mac 采集优先，Android 已有可安装 debug APK；Windows/Linux 的采集适配并未完成。K90 Pro Max/最新 HyperOS 的真机授权、长时后台稳定性与耗电要按清单验证，不能用模拟器结果替代。Docker 镜像构建、认证、笔记同步与重启持久化已在 [Linux CI](https://github.com/utopiafar/mote/actions/runs/34735449052) 通过；目标 NAS/公网部署仍需验收。无正式签名/公证分发，也未进行个人数据的长期测试；实际模型运行、审查质量与长时稳定性分别记录在验收文档中。
+```sh
+node scripts/mote.mjs init --profile prod --home /srv/mote/profiles --runtime docker
+node scripts/mote.mjs compose --profile prod --home /srv/mote/profiles -- build
+node scripts/mote.mjs start --profile prod --home /srv/mote/profiles
+```
 
-## 架构与参考
+中央节点默认仅监听 loopback。公网或局域网长期使用应配置 TLS 与强访问令牌。完整的 HTTPS、launchd、容器日志、备份、迁移和升级步骤见 [部署文档](docs/deployment.md)。
 
-[架构边界](docs/architecture.md) · [调研与许可证](docs/research.md) · [部署/备份](docs/deployment.md) · [采集协议](docs/protocol.md)
+SQLite 数据目录放在主机本地磁盘或 Docker 本地卷；NAS 可以运行节点，但不要让多个节点共享网络文件系统上的 SQLite WAL。当前服务不提供多租户或多实例写入。
 
-参考了 [ScreenMemo](https://github.com/2977094657/ScreenMemo) 的 Android 采集与存储设计、[Memex](https://github.com/memex-lab/memex) 的 Agent 整理与证据关联，以及你之前的 [Context Gateway 讨论](https://chatgpt.com/g/g-p-6a02a30fda548191a3937908bc0bdc05-ji-zhu/c/6aa117d3-e6f8-83e8-b306-77c2bb7fcce7)。实际 Agent 依赖为 MIT 的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)，不是同名自研替代。
+## 数据、隐私与资源
+
+| 配置 / 功能 | 默认行为 |
+|---|---|
+| 开始采集 | 需要用户显式开启；启动中央节点不会开始截图 |
+| 应用过滤与本地视觉审查 | 客户端配置；审查未完成或失败时不保存、不上传该帧 |
+| `MOTE_MAX_STORAGE_MB` | 中央配额 10240 MiB；满额拒绝新数据，端点保留未确认队列 |
+| `MOTE_RETENTION_DAYS` | `0`，持续保留；设为正数后会删除过期记录与无引用图片 |
+| `MOTE_DATA_KEY` | 可选 64 位十六进制 AES-256-GCM 图片密钥；SQLite 元数据依赖磁盘加密 |
+| `MOTE_EMBEDDING_*` | 默认关闭；配置后向指定服务发送文本建立向量索引 |
+| `MOTE_INSIGHT_INTERVAL_HOURS` | `0`，仅手动回顾；非零启用周期查询 |
+| 中央日志 | 固定事件与数量、耗时；默认轮转保留 3 个文件，每个最多 2 MiB |
+| 客户端资源诊断 | 默认关闭，按需记录进程、队列、模型、存储与电量样本 |
+
+小资料库可通过“资料库 → 导入与导出”迁移 JSON；完整迁移使用离线备份。备份包含私人资料，加密图片需要保留原 `MOTE_DATA_KEY`。归档导出和诊断包是两个独立功能：**诊断包不包含记录正文、图片或密钥**。
+
+选定本地/NAS 文件夹可作为文本来源，先预览再导入：
+
+```sh
+MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to/selected-notes --dry-run
+MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to/selected-notes --watch
+```
+
+当前支持 UTF-8 文本 / Markdown 等显式扩展名，每文件最多 100 KB。文件目录不是整机自动扫描入口；PDF、Office、大文件分块与更多硬件连接器仍需扩展。
+
+## 排查问题
+
+1. 在客户端查看采集权限、模型状态和待同步数量；开发者选项可导出本地诊断包。
+2. 在中央界面“资料库 → 运行诊断”查看队列、索引与资源状态，展开最近事件或导出诊断包。
+3. 错误提示中的请求编号可关联服务器的上传、索引与查询阶段。节点日志支持级别、轮转上限和 Debug 配置。
+4. 服务无法启动时，使用 `node scripts/mote.mjs status --profile dev` 和所选环境日志检查端口、路径、权限与配置。
+
+具体症状、命令和恢复步骤见 [故障排查](docs/troubleshooting.md)。提交 Issue 时附版本、平台、环境、复现步骤与经过检查的诊断包；请勿附访问令牌、日记原文或个人截图。
+
+## 文档与开发
+
+| 文档 | 内容 |
+|---|---|
+| [部署与迁移](docs/deployment.md) | Mac mini、Docker、HTTPS、备份恢复、升级与回滚 |
+| [开发环境](docs/development.md) | 服务端与客户端隔离、开发命令、测试 |
+| [故障排查](docs/troubleshooting.md) | 日志、请求编号、诊断包与常见故障 |
+| [架构](docs/architecture.md) / [协议](docs/protocol.md) | 数据流、边界、扩展接入与一致性 |
+| [macOS](docs/desktop.md) / [Android](docs/android.md) | 安装构建、采集权限、后台行为 |
+| [端上推理](docs/local-inference.md) / [Agent](docs/agent.md) | 本地模型、下载源、策略、中央模型与工具 |
+| [部署与诊断验证](docs/operations-validation.md) / [真实模型验证](docs/live-validation.md) | 自动化、模拟器、真实模型与真机的范围和限制 |
+| [第三方组件](THIRD_PARTY_NOTICES.md) | 实际依赖与模型许可说明 |
+
+目前优先支持 macOS 采集与 Android，Windows/Linux 采集适配尚未完成。桌面分发仅采用 ad-hoc 签名，尚未完成 Developer ID 签名与公证；K90 Pro Max / HyperOS 的实际后台稳定性和耗电需要真机验收。自动化 fixture、模拟器、真实模型和真机测试分别记录，不能互相替代。

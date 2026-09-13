@@ -1,0 +1,4 @@
+{$MOTE_TLS_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy mote:47832
+}

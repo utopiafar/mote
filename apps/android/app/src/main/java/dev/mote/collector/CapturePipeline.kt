@@ -55,14 +55,17 @@ class CapturePipeline(private val context: Context) {
         if (closed || !busy.compareAndSet(false, true)) { bitmap.recycle(); return }
         executor.execute {
             var output: Bitmap? = null
+            var stage = EventStage.CAPTURE
             try {
                 if (!settings.enabled || !unlocked(context) || closed) return@execute
                 val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
                 if (reason != null) { pause(reason); return@execute }
                 val inferenceStart = SystemClock.elapsedRealtime()
+                stage = EventStage.MODEL
                 val decision = if (config.nsfw.enabled) nsfw.check(bitmap, config.nsfw) else null
                 if (decision != null) diagnostics.timing("inferenceMs", SystemClock.elapsedRealtime() - inferenceStart)
                 if (decision?.allow == false) {
+                    SupportEvents.record(context, stage, EventCode.FILTERED, SystemClock.elapsedRealtime() - inferenceStart)
                     diagnostics.add("blockedCount")
                     pause("本机 NSFW 模型已过滤当前帧，未进入 OCR/保存/上传"); return@execute
                 }
@@ -74,10 +77,12 @@ class CapturePipeline(private val context: Context) {
                     val resized = Bitmap.createScaledBitmap(output, (output.width * scale).roundToInt(), (output.height * scale).roundToInt(), true)
                     output.recycle(); output = resized
                 }
+                stage = EventStage.OCR
                 var text = ocr(output)
                 var reviewed = false
                 var modelMaskApplied = false
                 if (config.localReviewUrl.isNotBlank()) {
+                    stage = EventStage.PRIVACY
                     PrivacyRules.validateLocalReview(config.localReviewUrl)
                     val request = JSONObject().put("version", 1).put("imageBase64", Base64.encodeToString(jpeg(output, config.jpegQuality), Base64.NO_WRAP))
                         .put("imageMime", "image/jpeg").put("ocrText", text).put("appId", windows.foreground)
@@ -99,15 +104,17 @@ class CapturePipeline(private val context: Context) {
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", masks.isNotEmpty() || modelMaskApplied).put("mode", "local")
                         .put("reason", (if (config.nsfw.enabled) "local NSFW model passed; " else "") +
                             if (reviewed) "configured masks and local model review" else if (masks.isNotEmpty()) "configured masks applied" else "user configured capture without masks"))
+                stage = EventStage.QUEUE
                 context.queue().enqueue(event, jpeg(output, config.jpegQuality), config.maxQueueMiB * 1024L * 1024L)
+                SupportEvents.record(context, stage, EventCode.OK)
                 diagnostics.add("capturedCount")
                 previousTime = now; previousApp = windows.foreground
                 settings.captured(capturedAt)
                 settings.status("capturing", "采集中 · 本地遮罩/OCR 已完成 · ${context.queue().depth()} 条待上传")
                 UploadWorker.schedule(context, config)
-            } catch (error: NsfwUnavailable) { diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
-            catch (error: QueueFull) { pause(error.message ?: "队列已满") }
-            catch (_: Exception) { diagnostics.add("failedCount"); pause("本机 OCR、隐私审查或存储失败，此帧未入队；下一周期重试") }
+            } catch (error: NsfwUnavailable) { SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
+            catch (error: QueueFull) { SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: "队列已满") }
+            catch (error: Exception) { SupportEvents.record(context, stage, EventJournal.failure(error, stage)); diagnostics.add("failedCount"); pause("本机 OCR、隐私审查或存储失败，此帧未入队；下一周期重试") }
             finally { output?.recycle(); bitmap.recycle(); busy.set(false) }
         }
     }

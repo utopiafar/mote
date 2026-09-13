@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+// Actual Docker/Compose lifecycle tests. Never publish images or use an existing profile.
+import assert from 'node:assert/strict';
+import { mkdtemp, rm, readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { repository, loadProfile, profilePaths } from './profile-lib.mjs';
+import { cli, command, initializeFixture, updateEnvironment, request, note, capture, image } from './profile-fixtures.mjs';
+
+const directory = await mkdtemp(join(tmpdir(), 'mote-compose-fixture-')), home = join(directory, 'profiles'), restoredHome = join(directory, 'restored');
+const imageTag = `mote-compose-fixture:${randomUUID()}`, profiles = [], volumes = new Set(), imageIds = new Set();
+async function docker(args, timeoutMs = 120000) {
+  const result = await command('docker', args, { timeoutMs });
+  assert.equal(result.code, 0, `docker ${args[0]} failed: ${result.stderr.slice(-1600)}`); return result.stdout.trim();
+}
+const run = (p, action, args = [], options = {}) => cli(p.home, p.profile, action, args, { timeoutMs: 180000, ...options });
+let available = false;
+try {
+  await docker(['version', '--format', '{{.Server.Version}}'], 30000); available = true;
+  console.info('[compose-profiles] Building temporary image from this repository');
+  await docker(['build', '--tag', imageTag, '--file', 'Dockerfile', '.'], 15 * 60 * 1000);
+  let dev = await initializeFixture(home, 'dev', { runtime: 'docker', image: imageTag }), test = await initializeFixture(home, 'test', { runtime: 'docker', image: imageTag });
+  profiles.push(dev, test); for (const p of profiles) volumes.add(p.meta.volume);
+  // Quote and dollar characters must survive Node dotenv parsing and Compose's raw env_file.
+  dev = await updateEnvironment(dev, { MOTE_TOKEN: `synthetic-${randomUUID()}-$literal-"quoted"` });
+  const config = JSON.parse((await run(dev, 'compose', ['--', 'config', '--format', 'json'])).stdout);
+  assert.equal(config.services.mote.environment.MOTE_TOKEN, dev.env.MOTE_TOKEN);
+  assert.equal(config.services.mote.environment.MOTE_LOG_DIR, '/data/logs');
+  assert.equal(config.services.mote.environment.MOTE_ENV_FILE, '/app/deploy/empty.env');
+  assert.equal(config.services.mote.ports[0].host_ip, '127.0.0.1');
+  assert.notEqual(dev.project, test.project); assert.notEqual(dev.meta.volume, test.meta.volume);
+  await run(dev, 'start'); await run(test, 'start');
+  await request(dev, '/api/status', { token: test.env.MOTE_TOKEN, status: 401 });
+  const saved = note(), screen = capture();
+  await request(dev, '/api/notes', { method: 'POST', body: saved, status: 201 });
+  await request(dev, '/api/captures', { method: 'POST', body: screen, status: 201 });
+  assert.equal((await request(test, '/api/captures')).items.length, 0);
+  assert.deepEqual(await request(dev, `/api/captures/${screen.id}/image`, { binary: true }), image);
+  await run(dev, 'backup', ['--out', join(directory, 'running')], { fail: true });
+  console.info('[compose-profiles] Real Compose profiles, literal credentials, loopback ports, isolated data and encrypted image checks passed');
+
+  await run(dev, 'compose', ['--', 'down']); await run(dev, 'start');
+  assert.equal((await request(dev, `/api/notes/${saved.id}`)).ocrText, saved.text);
+  await run(dev, 'stop');
+  const snapshot = join(directory, 'snapshot'); await run(dev, 'backup', ['--out', snapshot]);
+  assert.deepEqual((await readdir(snapshot)).sort(), ['backup-manifest.json', 'blobs', 'mote.sqlite']);
+  const manifest = JSON.parse(await readFile(join(snapshot, 'backup-manifest.json'), 'utf8'));
+  const blob = Object.keys(manifest.checksums).find(name => name.startsWith('blobs/'));
+  assert.notDeepEqual(await readFile(join(snapshot, blob)), image);
+  const restored = await initializeFixture(restoredHome, 'test', { runtime: 'docker', image: imageTag, dataKey: dev.env.MOTE_DATA_KEY }); profiles.push(restored); volumes.add(restored.meta.volume);
+  await run(restored, 'restore', ['--from', snapshot]); await run(restored, 'start');
+  assert.equal((await request(restored, `/api/notes/${saved.id}`)).ocrText, saved.text);
+  assert.deepEqual(await request(restored, `/api/captures/${screen.id}/image`, { binary: true }), image);
+  await run(restored, 'restore', ['--from', snapshot], { fail: true });
+  await run(restored, 'stop'); await run(restored, 'restore', ['--from', snapshot], { fail: true });
+  console.info('[compose-profiles] Recreated containers, offline volume backup and empty-volume encrypted restore passed');
+
+  await run(dev, 'start');
+  const oldImage = await docker(['image','inspect','--format','{{.Id}}',imageTag]); imageIds.add(oldImage);
+  // Rebuild the same mutable tag while its original container is still running.
+  // Rollback must restore the original image ID, not follow the overwritten tag.
+  const derive = join(directory,'image-derive'); await mkdir(derive);
+  await writeFile(join(derive,'Dockerfile'), `FROM ${imageTag}\nLABEL dev.mote.fixture.revision=${randomUUID()}\n`);
+  await docker(['build','--tag',imageTag,derive]);
+  const newImage = await docker(['image','inspect','--format','{{.Id}}',imageTag]); imageIds.add(newImage);
+  assert.notEqual(oldImage,newImage);
+  await run(dev, 'upgrade', ['--image', imageTag]);
+  const upgraded = await loadProfile(profilePaths('dev',home));
+  assert.equal(upgraded.meta.image,newImage); assert.equal(upgraded.meta.previous.image,oldImage);
+  const upgradedContainer = (await run(dev,'compose',['--','ps','--quiet','mote'])).stdout.trim();
+  assert.equal(await docker(['inspect','--format','{{.Image}}',upgradedContainer]),newImage);
+  const newer = note(); await request(dev, '/api/notes', { method: 'POST', body: newer, status: 201 });
+  await run(dev, 'rollback', ['--restore-data']);
+  const current = await loadProfile(profilePaths('dev', home)); volumes.add(current.meta.volume);
+  assert.notEqual(current.meta.volume, dev.meta.volume);
+  assert.equal(current.meta.image,oldImage);
+  const restoredContainer = (await run(dev,'compose',['--','ps','--quiet','mote'])).stdout.trim();
+  assert.equal(await docker(['inspect','--format','{{.Image}}',restoredContainer]),oldImage);
+  await docker(['volume', 'inspect', dev.meta.volume]);
+  assert.equal((await request(dev, `/api/notes/${saved.id}`)).ocrText, saved.text);
+  await request(dev, `/api/notes/${newer.id}`, { status: 404 });
+  assert.deepEqual(await request(dev, `/api/captures/${screen.id}/image`, { binary: true }), image);
+  console.info('[compose-profiles] Image switch and snapshot rollback passed; upgraded volume remains available');
+
+  // Validate the optional proxy config without publishing TLS ports or requesting certificates.
+  test = await updateEnvironment(test, { MOTE_TLS_DOMAIN: 'synthetic-mote.invalid' });
+  await run(test, 'tls', ['--enable']);
+  const tls = JSON.parse((await run(test, 'compose', ['--', 'config', '--format', 'json'])).stdout);
+  assert.equal(tls.services.caddy.image, 'caddy:2.11.4-alpine');
+  await docker(['run', '--rm', '--env', 'MOTE_TLS_DOMAIN=synthetic-mote.invalid', '--mount', `type=bind,source=${join(repository, 'deploy/Caddyfile')},target=/etc/caddy/Caddyfile,readonly`, 'caddy:2.11.4-alpine', 'caddy', 'validate', '--config', '/etc/caddy/Caddyfile']);
+  console.info('[compose-profiles] Caddy configuration validation passed; public DNS/TLS deployment was not attempted');
+} finally {
+  if (available) {
+    for (const p of profiles.reverse()) {
+      const current = await loadProfile(profilePaths(p.profile, p.home)).catch(() => p); volumes.add(current.meta.volume);
+      await run(p, 'compose', ['--', 'down', '--volumes', '--remove-orphans']).catch(() => undefined);
+    }
+    for (const volume of volumes) await command('docker', ['volume', 'rm', volume]).catch(() => undefined);
+    await command('docker', ['image', 'rm', imageTag]).catch(() => undefined);
+    for (const id of Array.from(imageIds).reverse()) await command('docker',['image','rm',id]).catch(()=>undefined);
+  }
+  await rm(directory, { recursive: true, force: true });
+}

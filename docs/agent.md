@@ -1,90 +1,72 @@
-# Agent 集成与验证
+# Agent 配置与权限
 
-Mote 的查询和洞察由真正的 DeepSeek Harness 执行。程序提供读取资料的能力，模型决定读什么、如何继续查询、如何解释证据。没有“待办”“工作”“娱乐”等关键词分支，也没有未配置模型时的规则回答。
+Mote 的查询和洞察由官方 DeepSeek Harness 执行。程序提供读取资料的能力，模型决定读什么、如何继续查询、如何解释证据。自然语言问题原样进入 Agent，不按“待办”“工作”“娱乐”等关键词分发。
 
-## 运行配置
+## 配置模型
 
-服务器读取以下环境变量后传入 `createAgent`：
+在中央节点所选环境的 `mote.env` 中配置，修改后重启该环境：
 
 ```dotenv
-MOTE_MODEL=你的模型 ID
+MOTE_MODEL=你的模型ID
 MOTE_MODEL_BASE_URL=https://api.deepseek.com
 MOTE_MODEL_API_KEY=你的模型服务凭据
+MOTE_MODEL_REASONING_EFFORT=high
+MOTE_MODEL_MAX_TOKENS=8192
 ```
 
-没有模型或凭据时 `configured=false`，`query()` 抛出带 `statusCode=503` 的 `AgentNotConfiguredError`。采集、存档和普通数据浏览可以继续使用。测试与源码不读取用户现有模型凭据。
+使用 `MOTE_ENV_FILE` 选择独立配置文件，或通过 [环境 CLI](deployment.md) 启动。没有模型或凭据时 `/api/status` 返回 `agent.configured=false`，问答返回 503；采集、笔记、存档与时间线仍可使用。
 
-模型服务需要支持 Chat Completions、SSE 流式输出和 function tools。Harness 的 DeepSeek 适配器接受自定义 `baseURL` 和模型 ID；Mote 关闭默认 thinking，避免假定所有本地模型都支持 DeepSeek 推理字段。不同兼容服务仍需独立验证。调用包 API 时，可显式设置 `allowUnauthenticatedLocal=true` 来使用不需要凭据的 loopback 服务；这个选项不能放行远端无凭据地址。
+模型服务需要支持 Chat Completions、SSE 流式输出和 function tools。`MOTE_MODEL_REASONING_EFFORT` 接受 `off`、`low`、`high`、`max`，默认 `high`；不支持 DeepSeek 推理字段的兼容服务可设置 `off`。输出预算默认 8192 token，范围 256–32768。提高推理和输出预算可能增加耗时与费用，不同兼容服务需要分别验证。
 
-## 锁定版本
+显式设置 `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=1` 可使用无需凭据的 loopback 模型服务。它不允许远端免密地址；容器内的 loopback 指容器自身。
 
-直接依赖准确锁定 `@deepseek-ai/dsh`、`@deepseek-ai/dsh-sdk-client` 和 `@deepseek-ai/dsh-tools` 为 `0.1.5-rc.2`，Cordis 为 `4.0.2`。2026-09-13 查阅时部分包的 npm `latest` 标签仍停在 `0.0.1-rc.1`，因此不要省略版本或拿最新文档配旧包。根目录 lockfile 负责锁定传递依赖。
+可选 `MOTE_EMBEDDING_MODEL`、`MOTE_EMBEDDING_BASE_URL`、`MOTE_EMBEDDING_API_KEY` 在中央节点启用向量索引。未启用时仍有本地全文/文本检索。问答向所选模型发送检索到的文本证据；embedding 则向其独立配置的服务发送待索引文本。原始截图不在五个 Agent 工具的返回内容中。
 
-这是官方开发预览框架；升级需要重新执行下面的真实运行时测试。参考 [SDK 接口](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/sdk/client/README.md) 和 [工具插件契约](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/cookbook/adding-a-tool.md)。
+## 检索与证据
 
-## 调用接口
-
-```ts
-import { createAgent } from '@mote/agent';
-
-const agent = createAgent({ reader, model, baseUrl, apiKey });
-const result = await agent.query({
-  question: '我最近的时间主要花在了哪里？',
-  after: '2026-09-01T00:00:00+08:00',
-  before: '2026-09-14T00:00:00+08:00',
-});
-// result: { answer, citations, trace, runId }
-await agent.close();
-```
-
-`ContextReader` 是可替换的数据读取接口：
-
-```ts
-interface ContextReader {
-  search(args: { query?: string; after?: string; before?: string; deviceId?: string; limit?: number }): Promise<ContextRecord[]>;
-  timeline(args: { after?: string; before?: string; deviceId?: string; limit?: number }): Promise<ContextRecord[]>;
-  evidence(args: { ids: string[] }): Promise<ContextRecord[]>;
-  activity(args: { after?: string; before?: string; deviceId?: string; limit?: number }): Promise<unknown>;
-  devices(): Promise<unknown>;
-}
-```
-
-一条 `ContextRecord` 至少包含 `id`、`capturedAt`、`appName`、`ocrText`。可增加 `summary`、`deviceId`、`sourceType`；这些字段之外的内部路径、对象位置和凭据不会投影到上下文工具结果中。`activity` 和 `devices` 的实现必须返回已经去除凭据的公共统计、设备状态对象。
-
-`search.query` 是模型生成的检索表达式。数据库可以做全文匹配、向量搜索与排序，但不能在 query 外部硬编码用户的语义分类。`activity` 提供确定性测量；模型解释这些测量时应同时指出采样空缺，不能把两个截图之间的所有时间自动视作连续工作。
-
-## 运行与权限边界
-
-每次查询创建独立临时目录、独立 Harness home、独立会话和带随机 256-bit secret 的 loopback HTTP bridge。子进程环境只包含此次显式提供的模型凭据及运行必需字段，不继承用户其他密钥或已有 Harness home。
-
-运行时采用 `sdk-minimal` 并在启动前禁用其 shell 工具及 shell 进程提供者。模型只能看见：
-
-| 工具 | 能力 |
-| --- | --- |
-| `search_context` | 检索上下文，可由模型改写查询 |
-| `timeline` | 按时间读取记录 |
-| `evidence` | 展开本次已发现的记录 |
-| `activity` | 读取采样活动统计 |
+| 工具 | 行为 |
+|---|---|
+| `search_context` | 使用模型生成的查询表达式检索，可带时间、设备和数量范围 |
+| `timeline` | 按事件时间分页读取，返回后续游标与范围内记录总数 |
+| `evidence` | 展开本次已经发现的记录，长文按字符偏移继续读取 |
+| `activity` | 读取实际采样时间的覆盖统计 |
 | `devices` | 读取设备采集与上传状态 |
 
-插件额外注册最终拒绝守卫，阻止这些工具之外的执行。插件向 bridge 验证完整工具清单后，才提供 SDK 启动所需的 `moteReady` 服务。整个链路没有模型可调用的文件写入、shell 或任意 URL 工具。这里的边界是工具能力限制及独立运行环境，不把 Harness 自己的 `sandbox-policy` 误称为完整操作系统沙箱。
+用户在界面选择的时间与设备范围在工具桥再次收紧，模型不能扩大范围。问题的时区随查询传入，用于解释“今天”“这周”等相对时间。时间线区分当前页和总记录数；长文显示已返回片段与完整长度，模型需要继续调用工具才能读完。
 
-用户选择的时间范围在 bridge 再次收紧；模型不能通过更宽时间参数扩大范围。`evidence` 只接受本轮检索已经发现的 ID。每次读取有结果数量和字符预算，默认一轮最多 24 次工具调用、120 秒总时限。SDK 无中途取消协议，超时后关闭子进程。结束后清理 bridge、子进程和包含此次临时会话的目录。
+`evidence` 只接受当前查询实际发现的 ID。失败或超过预算的读取不会将其结果变成允许引用的证据。工具结果只包含公共记录字段、时间和统计，不包含内部磁盘位置或凭据。
 
-捕获内容始终带 `untrusted_personal_context` 来源标记并作为工具结果传入，系统提示要求将其视为证据而非指令。这个安排降低提示注入影响，但 fixture 测试不等于真实模型抵抗所有注入的保证。即使模型被内容诱导，它仍没有归档写入或 shell 工具。
+采样统计按设备合并重叠区间，并裁剪到查询窗口。采样空缺不填充为活动；跨设备同时存在的记录也不意味着独立的人小时。模型根据这些测量解释趋势，而不是由程序判断行为价值。
 
-## 回答与洞察
+## 回答与回顾
 
-模型产出结构化回答和 `citationIds`。服务只接受本轮实际读取过的 ID，并从记录生成时间、应用与原文摘录。无效 JSON 或虚构引用会报错，不转成规则摘要。`trace` 记录真实工具名、实际参数及数量，便于诊断查了什么。
+模型返回结构化回答和 `citationIds`，服务校验引用确实属于本轮读取的记录，再生成时间、来源与原文摘录。正文中的引用也需要对应有效证据，界面点击后可展开原文。
 
-洞察也通过同一个 Agent 执行入口产生。调度器或用户提供问题与时间范围，模型选择工具并综合记录；对主题、待办、习惯的判断属于模型推理。生产系统将返回结果保存成洞察卡片时，应保存 `runId`、`citations`、时间范围和模型版本，便于回溯。
+输出格式错误时，可在同一会话内有限地要求模型修复格式；无效引用或最终仍无法验证的回答会报错。程序不会把失败回答改写成规则摘要。`trace` 是当前运行的实际工具名、参数与结果数量，`runId` 用于追踪该次回答。
 
-## 已执行测试与限制
+个人回顾使用相同的 Agent 入口。`MOTE_INSIGHT_INTERVAL_HOURS=0` 默认关闭周期回顾；设为非零后由中央节点调度，使用已配置模型。主题、习惯和待办判断属于模型推理，不是检索关键词的固定映射。
 
-```bash
+遇到问题可在 [运行诊断](troubleshooting.md) 用 HTTP 请求编号检查 Agent 开始、完成、耗时与错误类别。诊断日志不保存模型对话或工具参数；界面中的“检索过程”属于有访问权限的回答详情。
+
+## 隔离与能力边界
+
+每次查询创建独立临时目录、Harness home 和会话，通过带随机 256-bit secret 的 loopback bridge 读取中央资料。子进程环境只包含显式提供的模型配置和运行必需字段，不继承其他模型密钥或已有 Harness home。
+
+运行时使用 `sdk-minimal`，启动前禁用 shell 工具和 shell 进程提供者，并核对工具表恰好为上述五项只读能力。插件守卫拒绝其他工具。模型没有归档写入、删除、文件系统、shell、对外发消息或任意 URL 请求能力。这是工具权限和会话环境隔离，不等同完整操作系统沙箱。
+
+捕获内容带 `untrusted_personal_context` 来源标记，通过工具结果提供，始终作为证据。该安排不能保证模型绝不受提示注入误导，但其工具权限不能因此扩大。
+
+每轮默认最多 24 次工具调用、120 秒总时限，并限制工具返回数量和字符数。超时关闭子进程；结束后清理 bridge、会话目录与子进程。客户端超时、模型容量、输出预算和源记录完整性需要一起考虑，不能仅凭 HTTP 200 判断答案语义完整。
+
+## 扩展与验证
+
+`@mote/agent` 暴露 `createAgent({reader, model, baseUrl, apiKey, reasoningEffort, maxTokens})`。`ContextReader` 提供 `search`、`timeline`、`evidence`、`activity`、`devices`，实现见 [类型定义](../packages/agent/src/types.ts)。存储或检索引擎可替换，工具权限与证据 ID 保持稳定；关闭时调用 `agent.close()`。
+
+`@deepseek-ai/dsh`、SDK 和工具包固定为 `0.1.5-rc.2`，Cordis 固定为 `4.0.2`，传递依赖由 lockfile 锁定。升级框架时需重新验证工具清单、只读限制、会话清理和引用校验。官方契约见 [SDK](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/sdk/client/README.md) 和 [工具插件](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/cookbook/adding-a-tool.md)。
+
+```sh
+npm run build:libs
 npm run test -w @mote/agent
 ```
 
-当前测试覆盖：未配置模型的 503、拒绝虚构引用、禁用 shell 的配置、bridge 鉴权与时间收紧、证据发现限制、内部字段投影，以及真实 `0.1.5-rc.2` Harness 子进程完成 `search_context → evidence → final` 三轮调用。
-
-三轮测试使用本地 synthetic SSE 模型服务及合成记录；逐轮检查模型可见工具恰好为上述五个、采集文本只进入证据消息、返回引用对应真实 fixture 记录。它验证真实 SDK、Cordis 插件、工具调用、传输和引用整条链路，没有将 mock 假称真实 LLM。尚未使用用户模型凭据进行真实模型质量验证，模型检索质量、成本和不同本地服务兼容性需要分别验收。
+自动化测试使用合成记录与模型响应，运行真实 Harness 子进程，验证工具循环、权限和协议。真实 DeepSeek 调用、复杂日记输入和答案质量的结果另见 [真实模型验证](live-validation.md)；其中仍有部分语义覆盖不完整的案例，不能把协议测试或格式修复等同于回答质量保证。

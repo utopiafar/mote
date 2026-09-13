@@ -22,7 +22,8 @@ jobs:
       - run: npm test
       - run: npm run test:privacy
       - run: npm run test:e2e
-      - run: python3 -m unittest discover -s scripts -p "test_memex_facts.py"
+      - run: npm run test:profiles
+      - run: python3 -m unittest discover -s scripts -p "test_fact_archive.py"
   docker-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -33,3 +34,5 @@ jobs:
           node-version: '24'
       - name: Build and verify temporary Docker containers
         run: node scripts/test-container.mjs
+      - name: Verify isolated Compose profiles, backup and rollback
+        run: node scripts/test-profiles-container.mjs
