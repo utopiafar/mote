@@ -114,7 +114,7 @@ export async function loadProfile(paths) {
 }
 export function deploymentEnvironment(p) {
   const tunnel = validateTunnel(p.meta.tunnel), docker = p.meta.runtime === 'docker';
-  return { MOTE_RUNTIME: p.meta.runtime, MOTE_CONFIG_FILE: p.envFile, MOTE_STORAGE_KIND: docker ? 'docker-volume' : 'local-directory', MOTE_STORAGE_SOURCE: docker ? p.meta.volume : p.dataDir, MOTE_STORAGE_MOUNT: docker ? '/data' : p.dataDir,
+  return { MOTE_RUNTIME: p.meta.runtime, MOTE_CONFIG_FILE: p.envFile, MOTE_STORAGE_KIND: docker ? 'docker-volume' : 'local-directory', MOTE_STORAGE_SOURCE: docker ? p.meta.volume : p.dataDir, MOTE_STORAGE_MOUNT: docker ? '/data' : '',
     MOTE_PUBLIC_URL: p.env.MOTE_PUBLIC_URL || '',
     MOTE_TUNNEL_ENABLED: tunnel.enabled ? '1' : '0', MOTE_TUNNEL_PROVIDER: tunnel.enabled ? 'cloudflare' : '', MOTE_TUNNEL_PROTOCOL: tunnel.enabled ? tunnel.protocol : '' };
 }
@@ -123,7 +123,7 @@ export function effectiveConfiguration(p) {
   const endpoint = value => { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password && !u.search && !u.hash ? u.toString() : '[invalid endpoint hidden]'; } catch { return value ? '[invalid endpoint hidden]' : ''; } };
   return { profile: p.profile, runtime: p.meta.runtime, configurationFile: p.envFile, processEnvFile: p.meta.runtime === 'docker' ? '/app/deploy/empty.env' : p.envFile, metadataFile: p.metaFile,
     listener: { host: p.meta.runtime === 'docker' ? '0.0.0.0' : p.env.MOTE_HOST, port: p.meta.runtime === 'docker' ? 47832 : p.port, publishedUrl: p.url, publicUrl: endpoint(d.MOTE_PUBLIC_URL) },
-    storage: { kind: d.MOTE_STORAGE_KIND, source: d.MOTE_STORAGE_SOURCE, mount: d.MOTE_STORAGE_MOUNT, logPath: p.meta.runtime === 'docker' ? '/data/logs' : resolve(p.directory, p.env.MOTE_LOG_DIR || join(p.dataDir,'logs')), dataKeyConfigured: Boolean(p.env.MOTE_DATA_KEY) },
+    storage: { kind: d.MOTE_STORAGE_KIND, source: d.MOTE_STORAGE_SOURCE, mount: d.MOTE_STORAGE_MOUNT || null, logPath: p.meta.runtime === 'docker' ? '/data/logs' : resolve(p.directory, p.env.MOTE_LOG_DIR || join(p.dataDir,'logs')), dataKeyConfigured: Boolean(p.env.MOTE_DATA_KEY) },
     credentials: { accessTokenConfigured: Boolean(p.env.MOTE_TOKEN), modelKeyConfigured: Boolean(p.env.MOTE_MODEL_API_KEY), embeddingKeyConfigured: Boolean(p.env.MOTE_EMBEDDING_API_KEY) },
     models: { model: p.env.MOTE_MODEL || '', endpoint: endpoint(p.env.MOTE_MODEL_BASE_URL), embeddingModel: p.env.MOTE_EMBEDDING_MODEL || '', embeddingEndpoint: endpoint(p.env.MOTE_EMBEDDING_BASE_URL) },
     archive: { retentionDays: Number(p.env.MOTE_RETENTION_DAYS || 0), maxStorageMiB: Number(p.env.MOTE_MAX_STORAGE_MB || 10240), maxExportMiB: Number(p.env.MOTE_MAX_EXPORT_MB || 64) },

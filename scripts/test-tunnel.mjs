@@ -28,7 +28,8 @@ try {
   const prod = await reload('prod'); assert.equal(prod.dataDir,external);
   assert.equal(effectiveConfiguration(prod).storage.source,external);
   const config = JSON.parse((await cli(home,'prod','config')).stdout); noSecrets(config);
-  assert.equal(config.processEnvFile,prod.envFile); assert.equal(config.storage.mount,external);
+  assert.equal(config.processEnvFile,prod.envFile); assert.equal(config.storage.mount,null);
+  assert.equal(isolatedEnvironment(prod).MOTE_STORAGE_MOUNT,'');
   assert.equal(effectiveConfiguration(docker).processEnvFile,'/app/deploy/empty.env');
   assert.equal(effectiveConfiguration(docker).storage.source,docker.meta.volume);
   await assert.rejects(initialize(profilePaths('dev',join(directory,'escape')),{'data-dir':external}),/inside/);

@@ -38,6 +38,8 @@ The integration does not bundle DeepSeek model weights or grant access to a host
 
 ## Application runtimes and libraries
 
+Optional public-entry deployment uses separately downloaded [cloudflared 2026.9.1](https://github.com/cloudflare/cloudflared/blob/2026.9.1/LICENSE) and [Caddy 2.11.4](https://github.com/caddyserver/caddy/blob/v2.11.4/LICENSE), both declaring Apache-2.0. Their upstream binaries and container images retain their own bundled notices. The connector license does not provide a Cloudflare account or change the terms governing its hosted service.
+
 The table lists principal direct libraries, not a complete software bill of materials. Build-time tools and transitive native libraries retain their own licenses.
 
 | Component | Source / license |
