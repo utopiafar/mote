@@ -54,6 +54,8 @@
 
 最终工作区 139 项通过：Mac 57、服务端 29、前端 10、Agent 25、模型交付 13、诊断 5。另有隐私 Gateway 22 项、Memex 提取 8 项合成 ZIP 测试、Android JVM 26 项，以及独立 E2E/原生窗口/模拟器测试。TypeScript build/typecheck 通过。真实 Harness + fixture 模型 E2E 与真实官方模型评估分别记录，互不替代。
 
+源码提交 `cdcfa90` 的 [GitHub Actions](https://github.com/utopiafar/mote/actions/runs/34738739037) 两项 job 均通过：Linux 安装/构建/类型检查/工作区与隐私/E2E/提取脚本测试，以及 Docker 镜像构建、认证、笔记原文/幂等、重启与替换容器后的命名卷恢复。
+
 - Android 0.2.1 / versionCode 3：`apps/android/app/build/outputs/apk/debug/app-debug.apk`，31,769,972 字节，SHA-256 `efb506567320c2900504b3472e7b236683d356bc662c3cb45938803754a555b9`。assemble、26 JVM、lint（0 errors / 38 warnings）、16 KiB 对齐通过。版本号更新后的最终 APK 未重复全套仪器测试；三轮日记与两项真实 Qwen 仪器测试验证同一产品代码。
 - Mac 0.2.1：`apps/desktop/release/mote-desktop-macos-arm64-0.2.1.zip`，112,379,521 字节，SHA-256 `48c8212965dddaf3ad05507dba79e88c9053a0ae2d9674d9af90943580b8cb1f`。ZIP 完整性、App 版本、macOS 13.3 最低版本、ad-hoc 签名完整性与包内模型 smoke 通过。
 - 中央服务/前端：`apps/server/dist` 和 `apps/web/dist`，支持本机与独立节点配置；Mac 通过独立窗口访问。模型权重独立分发，没有塞入安装包或 Git。
