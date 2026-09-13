@@ -23,7 +23,7 @@
 
 Linux CI 执行既有镜像全链路、Compose 环境与卷隔离、备份恢复、镜像 ID 回退，以及新的容器配置 API 断言。另通过 `test:tunnel:container` 使用真实固定 cloudflared 镜像、真实 Compose 0600 file secret 和 `network_mode: none` 验证凭据可读与无效凭据拒绝，再用单独的带标签容器测试精确停止、孤儿清理、缺失 token 的恢复操作和轮换。
 
-本机没有 Docker；容器执行结果以对应源码提交的 GitHub Actions 为准。
+本机没有 Docker；源码 `a674dba` 的 [Linux CI](https://github.com/utopiafar/mote/actions/runs/34770347623) 已全部通过，包含工作区测试、原生部署与 Tunnel 专项测试、真实 Docker 镜像和 Compose 凭据权限、备份恢复及回退。原生节点现在不再把本机数据路径误声明为容器挂载点。
 
 ## 当前本机节点与边界
 

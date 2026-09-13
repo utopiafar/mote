@@ -135,3 +135,5 @@ cloudflared 不跟随 Mote 的 debug 开关；其 debug 可能记录包括凭据
 ## 验证边界
 
 自动化使用合成 token 和临时 profile，测试参数、文件权限、环境隔离、配置脱敏、启停及失败恢复。Docker connector 镜像与 Compose 生命周期在 Linux CI 验证；测试不能替代真实 Cloudflare 账号、域名路由与所在网络的连通性验收。没有配置用户 Tunnel 凭据时，项目不会声称已经建立公网连接。
+
+本轮实际执行的测试、官方二进制校验和 Linux CI 结果见 [0.3.1 验证记录](tunnel-validation.md)。

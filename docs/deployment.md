@@ -154,6 +154,8 @@ node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 
 ## 验证范围
 
+0.3.1 已完成服务端配置页面、Cloudflare Tunnel 专项回归和真实 Linux Docker 验收，最新结果见 [验证记录](tunnel-validation.md)。下方同时保留既有部署能力的验证说明。
+
 `npm run test:profiles` 在一次性临时 dev/test 目录及随机 loopback 端口运行真实 Node 中央进程，覆盖环境污染隔离、跨令牌拒绝、加密图片、文件导入状态分离、备份恢复、代码版本切换、回退、PID 防误杀、原生输出轮转与 plist 语法。本轮已在 Mac 执行通过；没有读取个人屏幕、连接正式 47832 或调用真实模型。
 
 `npm run test:profiles:container` 在有 Docker 的主机真实构建临时镜像，并验证 Compose project/volume 隔离、凭据字面值、容器重建、卷备份恢复、镜像切换回退和 Caddy 配置；已加入 Linux CI。当前 Mac 没有 Docker，容器验证在 GitHub Linux 环境执行；源码 `12fdef7` 的 [本次 CI](https://github.com/utopiafar/mote/actions/runs/34764645477) 已实际通过上述 Docker/Compose 检查，包含同名 tag 被覆盖后的镜像 ID 回退。没有安装 launchd job，也未验证目标 NAS 权限或公网证书签发；这些属于实际部署机器验收。
