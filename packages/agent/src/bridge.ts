@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
+import { displayTime } from './time.js';
 import type {
   ContextReader,
   ContextRecord,
@@ -40,26 +41,47 @@ function range(
     throw new Error("Time range is outside the requested scope");
   if (args.deviceId !== undefined && typeof args.deviceId !== "string")
     throw new Error("deviceId must be a string");
+  if (bounds.deviceId && args.deviceId !== undefined && args.deviceId !== bounds.deviceId)
+    throw new Error("Device is outside the requested scope");
   if (
     args.limit !== undefined &&
     (!Number.isInteger(args.limit) || Number(args.limit) < 1)
   )
     throw new Error("limit must be a positive integer");
+  if (args.cursor !== undefined && (typeof args.cursor !== "string" || !args.cursor || args.cursor.length > 4096))
+    throw new Error("cursor must be a pagination token returned by timeline");
   return {
     after: effectiveAfter,
     before: effectiveBefore,
-    deviceId: args.deviceId as string | undefined,
+    deviceId: bounds.deviceId ?? args.deviceId as string | undefined,
     limit: Math.min(Number(args.limit ?? 30), 100),
+    ...(args.cursor === undefined ? {} : { cursor: args.cursor as string }),
   };
 }
 
 /** Deliberately projects public evidence fields; no file paths, tokens, or images reach the model. */
-function project(record: ContextRecord): ContextRecord {
+function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'UTC'): ContextRecord {
+  const text = String(record.ocrText ?? "");
+  let start = Math.min(offset, text.length), end = Math.min(start + length, text.length);
+  // Offsets are UTF-16 units, as in stored JS strings; never split an emoji pair.
+  const splitsPair = (at: number) => at > 0 && at < text.length && /[\uD800-\uDBFF]/.test(text[at - 1]) && /[\uDC00-\uDFFF]/.test(text[at]);
+  if (splitsPair(start)) start--;
+  if (splitsPair(end)) end--;
+  if (end <= start && start < text.length) end = Math.min(start + 2, text.length);
+  const duration = typeof record.durationMs === 'number' && Number.isFinite(record.durationMs) && record.durationMs > 0 ? record.durationMs : 0;
+  const intervalStart = duration ? new Date(Date.parse(record.capturedAt) - duration).toISOString() : undefined;
   return {
     id: record.id,
     capturedAt: record.capturedAt,
+    displayCapturedAt: displayTime(record.capturedAt, timeZone),
+    timeZone,
+    ...(intervalStart ? { sampleInterval: {
+      start: intervalStart, end: record.capturedAt,
+      displayStart: displayTime(intervalStart, timeZone), displayEnd: displayTime(record.capturedAt, timeZone),
+    } } : {}),
     appName: record.appName,
-    ocrText: String(record.ocrText ?? "").slice(0, 12_000),
+    ocrText: text.slice(start, end),
+    textRange: { start, end, total: text.length, nextOffset: end < text.length ? end : null },
     ...(record.summary === undefined
       ? {}
       : { summary: String(record.summary).slice(0, 4000) }),
@@ -67,6 +89,8 @@ function project(record: ContextRecord): ContextRecord {
     ...(record.sourceType === undefined
       ? {}
       : { sourceType: record.sourceType }),
+    ...(typeof record.durationMs === 'number' && Number.isFinite(record.durationMs) && record.durationMs >= 0
+      ? { durationMs: record.durationMs } : {}),
     ...(typeof record.mood === "string"
       ? { mood: record.mood.slice(0, 80) }
       : {}),
@@ -128,7 +152,12 @@ export async function startBridge(
         );
       let value: unknown;
       let effective: Record<string, unknown> = args;
-      if (tool === "devices") value = await reader.devices();
+      let textOffset = 0, textLength = 2000;
+      let pagination: { nextCursor: string | null; totalCount?: number } | undefined;
+      if (tool === "devices") {
+        value = await reader.devices();
+        if (bounds.deviceId && Array.isArray(value)) value = value.filter(device => device.deviceId === bounds.deviceId);
+      }
       else if (tool === "evidence") {
         if (
           !Array.isArray(args.ids) ||
@@ -144,7 +173,12 @@ export async function startBridge(
             "Discover records with search_context or timeline before expanding evidence",
           );
         value = await reader.evidence({ ids });
-        effective = { ids };
+        for (const [key, fallback, min, max] of [["offset", 0, 0, 100000], ["length", 12000, 1, 12000]] as const) {
+          const n = args[key] ?? fallback;
+          if (typeof n !== "number" || !Number.isSafeInteger(n) || n < min || n > max) throw new Error(`${key} must be an integer from ${min} to ${max}`);
+          if (key === "offset") textOffset = n; else textLength = n;
+        }
+        effective = { ids, ...(args.offset === undefined ? {} : { offset:textOffset }), ...(args.length === undefined ? {} : { length:textLength }) };
       } else {
         const filters = range(args, bounds);
         effective = { ...filters };
@@ -158,7 +192,15 @@ export async function startBridge(
           value = await reader.search(
             effective as ContextRange & { query?: string },
           );
-        } else if (tool === "timeline") value = await reader.timeline(filters);
+        } else if (tool === "timeline") {
+          const page = await reader.timeline(filters);
+          if (Array.isArray(page)) value = page;
+          else {
+            if (!page || !Array.isArray(page.items) || (page.nextCursor !== null && typeof page.nextCursor !== "string")) throw new Error("Context reader returned an invalid page");
+            if (page.totalCount !== undefined && (!Number.isSafeInteger(page.totalCount) || page.totalCount < 0 || page.totalCount < page.items.length)) throw new Error("Context reader returned an invalid total count");
+            value = page.items; pagination = { nextCursor:page.nextCursor, ...(page.totalCount === undefined ? {} : { totalCount:page.totalCount }) };
+          }
+        }
         else value = await reader.activity(filters);
       }
       if (
@@ -170,19 +212,23 @@ export async function startBridge(
           throw new Error("Context reader returned invalid records");
         value = (value as ContextRecord[])
           .slice(0, tool === "evidence" ? 30 : Number(effective.limit ?? 100))
-          .map(project);
-        for (const record of value as ContextRecord[])
-          records.set(record.id, record);
+          .map(record => project(record, textOffset, textLength, bounds.timeZone));
       }
       const safeValue = JSON.parse(JSON.stringify(value ?? null));
       const serialized = JSON.stringify({
         source: "untrusted_personal_context",
         data: safeValue,
+        ...(pagination ? { pagination } : {}),
       });
       if (Buffer.byteLength(serialized) > 1_500_000)
         throw new Error(
           "Context result exceeds the evidence budget; request a smaller range",
         );
+      // Only a successfully serialized, deliverable tool result authorizes evidence.
+      if (tool === "search_context" || tool === "timeline" || tool === "evidence") {
+        for (const record of safeValue as ContextRecord[])
+          records.set(record.id, record);
+      }
       trace.push({
         tool,
         arguments: effective,

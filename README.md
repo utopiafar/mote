@@ -82,7 +82,7 @@ cd apps/android
 ./gradlew assembleDebug testDebugUnitTest lintDebug
 ```
 
-`test:e2e` 使用真实中央服务、SQLite、加密图片存储、真实 DeepSeek Harness 运行时和合成模型响应，验证工具循环与原始证据；这不等同于真实模型质量验证。具体已执行结果和未验证项见 [验收记录](docs/validation.md)。
+`test:e2e` 使用真实中央服务、SQLite、加密图片存储、真实 DeepSeek Harness 运行时和合成模型响应，验证工具循环与原始证据；这不等同于真实模型质量验证。具体已执行结果和未验证项见 [0.2.1 真实模型与复杂链路验收](docs/live-validation.md)，首次交付另保留 [0.2.0 基线](docs/validation.md)。
 
 当前范围：Mac 采集优先，Android 已有可安装 debug APK；Windows/Linux 的采集适配并未完成。K90 Pro Max/最新 HyperOS 的真机授权、长时后台稳定性与耗电要按清单验证，不能用模拟器结果替代。Docker 镜像构建、认证、笔记同步与重启持久化已在 [Linux CI](https://github.com/utopiafar/mote/actions/runs/34735449052) 通过；目标 NAS/公网部署仍需验收。无正式签名/公证分发，也未进行个人数据的长期测试；实际模型运行、审查质量与长时稳定性分别记录在验收文档中。
 

@@ -81,11 +81,19 @@ The Web/embedded console includes a separate 随手记 page. Drafts and immutabl
 - `GET /api/devices` => `{items}`
 - `GET /api/updates?cursor=0&limit=100` => `{items:[{seq,id,operation,changed_at,record}],nextCursor}`; arrival-ordered upsert/delete changes. `record` may be null when evidence was subsequently deleted.
 - `GET /api/activity?after=<ISO>&before=<ISO>` => `{apps:[{appName,durationMs,captures}],devices:[...],totalDurationMs,captures}`. Overlapping devices count separately; UI must label this as sampled device time.
-- `POST /api/query` `{question,after?,before?}` => `{answer,citations:[{id,capturedAt,appName,excerpt}],trace:[{tool,arguments,count}],runId}`. Unconfigured model responds 503; NEVER fabricate a keyword-based answer.
-- `POST /api/insights` `{after?,before?}` => same evidence-linked Agent query response for a retrospective.
+- `POST /api/query` `{question,after?,before?,deviceId?,timeZone?}` => `{answer,citations:[{id,capturedAt,appName,excerpt}],trace:[{tool,arguments,count}],runId}`. Unconfigured model responds 503; NEVER fabricate a keyword-based answer.
+- `POST /api/insights` `{after?,before?,deviceId?,timeZone?}` => same evidence-linked Agent query response for a retrospective.
 - `POST /api/index/retry` `{}` retries failed/pending records.
 - `GET /api/export` => portable JSON archive with version, captures including base64 image, `receivedAt`, `blobHash` checksums. Secrets not included. Bounded by configured archive size; CLI backup is recommended for large vaults.
 - `POST /api/import` archive JSON => `{imported,duplicates}` with all entries validated before ingestion.
 - `DELETE /api/captures/:id` deletes record and unreferenced image.
 
 Data model is source-agnostic so NAS/files/hardware can implement the same ingestion protocol. No directory is watched without explicit configuration.
+
+### Agent scope and source presentation
+
+Query `after` is inclusive and `before` exclusive. An explicit `deviceId` cannot be broadened by a model tool call. `timeZone` accepts a valid IANA zone and defaults to UTC; the embedded UI supplies the browser zone. Original timestamps remain UTC in storage. Agent evidence includes an explicit display timestamp with offset, the optional measured `durationMs`, explicit `sampleInterval` start/end for positive-duration samples, and paged `textRange` metadata. Timeline returns an opaque continuation and scoped `totalCount`; the model must inspect subsequent pages for a complete review. Current device heartbeat is a client report, not proof of historical recording coverage.
+
+Final answers must have a string body and declared retrieved citation IDs. Only successful tool responses authorize citations. Prose inline UUID citations must match the retrieved and declared IDs; code and authored Markdown links remain opaque. The UI presents verified inline sources as buttons opening the original record. Model-emitted literal JSON control characters are losslessly escaped; other malformed responses get at most one model-authored correction in the same read-only evidence session and original time budget. No semantic classifier or template fallback is used.
+
+`MOTE_MODEL_REASONING_EFFORT` is `off|low|high|max` (default `high`); `MOTE_MODEL_MAX_TOKENS` defaults to 8192 and is bounded to 256–32768. Reasoning is performed by the configured model through the Harness; no reasoning transcript is exposed as a user-facing answer. [DeepSeek's official thinking-mode documentation](https://api-docs.deepseek.com/guides/thinking_mode/) describes the provider controls and multi-round tool support. Higher effort can increase latency and usage.

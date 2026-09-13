@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, readdir, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, readdir, unlink, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CaptureEvent, Config, Platform } from './contracts';
 import type { DurableQueue } from './queue';
@@ -8,7 +8,9 @@ interface StoredDraft { draft: NoteDraft; submission?: CaptureEvent; targetOrigi
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 function emptyDraft(): NoteDraft { return { id: randomUUID(), text: '', mood: '', revision: 0 }; }
 function validateDraft(value: NoteDraft): void {
-  if (!value || !uuid.test(value.id) || typeof value.text !== 'string' || value.text.length > 20000 || typeof value.mood !== 'string' || value.mood.length > 80 || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error('随手记草稿格式无效');
+  if (!value || !uuid.test(value.id) || typeof value.text !== 'string' || typeof value.mood !== 'string' || !Number.isSafeInteger(value.revision) || value.revision < 0) throw new Error('随手记草稿格式无效');
+  if (value.text.length > 20000) throw new Error('正文最多 20000 个字符位，部分表情占多个字符位；原草稿未改动');
+  if (value.mood.length > 80) throw new Error('心情最多 80 个字符位，部分表情占多个字符位；原草稿未改动');
 }
 /** Prepared IDs precede queue writes, so an interrupted submit never becomes a second note. */
 export class NoteDraftStore {
@@ -19,8 +21,12 @@ export class NoteDraftStore {
   async initialize(): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     try {
-      const data = await readFile(join(this.directory, 'draft.json'), 'utf8');
-      if (data.length > 200000) throw new Error('oversized');
+      const path = join(this.directory, 'draft.json');
+      // Prepared submissions include a second copy; JSON can escape each UTF-16 unit as six bytes.
+      const maxBytes = 512 * 1024;
+      if ((await stat(path)).size > maxBytes) throw new Error('oversized');
+      const data = await readFile(path, 'utf8');
+      if (Buffer.byteLength(data) > maxBytes) throw new Error('oversized');
       const value = JSON.parse(data) as StoredDraft; validateDraft(value.draft);
       if (value.completed && (!uuid.test(value.completed.draftId) || !uuid.test(value.completed.eventId))) throw new Error('invalid completion');
       if (value.submission && (value.submission.id !== value.draft.id || value.submission.source !== 'note' || value.submission.ocrText !== value.draft.text || typeof value.targetOrigin !== 'string')) throw new Error('invalid prepared note');
@@ -55,7 +61,8 @@ export class NoteDraftStore {
       validateDraft(input);
       if (this.value.completed?.draftId === input.id) return { id: this.value.completed.eventId, draft: this.get() };
       if (input.id !== this.value.draft.id) throw new Error('草稿已更新，此提交不会重复创建记录');
-      if (!input.text.trim() || (input.mood && !input.mood.trim())) throw new Error('请填写随手记正文，心情可留空');
+      if (!input.text.trim()) throw new Error('请填写随手记正文，不能只有空白');
+      if (input.mood && !input.mood.trim()) throw new Error('心情不能只有空白；清空心情后也可以保存');
       if (input.revision < this.value.draft.revision) throw new Error('提交版本已过期，请重新保存当前草稿');
       if (this.value.submission) {
         if (this.value.targetOrigin !== config.serverUrl) throw new Error('待完成记录属于原中央节点，请恢复原节点完成保存');

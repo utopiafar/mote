@@ -140,8 +140,10 @@ export class Store {
   list(range:Range={}) {
     const {where,values}=this.clauses(range);const limit=Math.min(200,Math.max(1,range.limit??50));
     const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY captured_at DESC,id DESC LIMIT ?`).all(...values,limit+1) as unknown as Row[];
+    const {cursor:_cursor,...scope}=range;const totalScope=this.clauses(scope);
+    const totalCount=Number((this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}`).get(...totalScope.values) as {count:number}).count);
     const more=rows.length>limit;const items=rows.slice(0,limit).map(r=>this.record(r));const last=items.at(-1);
-    return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:last.capturedAt,id:last.id})).toString('base64url'):null};
+    return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:last.capturedAt,id:last.id})).toString('base64url'):null,totalCount};
   }
   evidence(ids:string[]) {return ids.slice(0,200).map(id=>this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));}
   search(range:Range&{query?:string}) {

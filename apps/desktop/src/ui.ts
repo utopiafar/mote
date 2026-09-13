@@ -125,6 +125,7 @@ void desktopApi.status().then(render).catch(() => feedback('无法连接采集�
 byId('central').addEventListener('click', () => void perform(() => desktopApi.openCentral()));
 let draft: import('./note-draft').NoteDraft | undefined;
 let noteSaving = false;
+let noteComposing = false;
 const noteFields = ['note-text', 'note-mood', 'save-note'];
 function lockNote(locked: boolean): void { for (const id of noteFields) (byId(id) as HTMLInputElement).disabled = locked; }
 lockNote(true);
@@ -133,6 +134,10 @@ function renderDraft(value: import('./note-draft').NoteDraft): void {
   byId<HTMLTextAreaElement>('note-text').readOnly = Boolean(value.prepared); byId<HTMLInputElement>('note-mood').readOnly = Boolean(value.prepared);
 }
 void desktopApi.noteDraft().then(value => { renderDraft(value); lockNote(false); if (value.prepared) byId('note-feedback').textContent = '发现上次未完成的保存，点击保存可用原 ID 重试。'; }).catch(() => feedback('无法恢复随手记草稿，请重启应用。'));
+for (const id of ['note-text', 'note-mood']) {
+  byId(id).addEventListener('compositionstart', () => { noteComposing = true; });
+  byId(id).addEventListener('compositionend', () => { noteComposing = false; });
+}
 for (const id of ['note-text', 'note-mood']) byId(id).addEventListener('input', () => {
   if (!draft || noteSaving) return;
   draft = { ...draft, text: readInput('note-text'), mood: readInput('note-mood'), revision: draft.revision + 1 };
@@ -140,7 +145,7 @@ for (const id of ['note-text', 'note-mood']) byId(id).addEventListener('input', 
   void desktopApi.updateNoteDraft(changed).then(() => { if (draft?.id === changed.id && draft.revision === changed.revision) byId('note-feedback').textContent = '草稿已保存到本机。'; }).catch(() => { byId('note-feedback').textContent = '草稿暂未保存，请保留正文并重试；如上次保存未完成，请重新打开窗口恢复原稿。'; });
 });
 byId('note-form').addEventListener('submit', event => {
-  event.preventDefault(); if (!draft || noteSaving || busy) return;
+  event.preventDefault(); if (!draft || noteSaving || noteComposing || busy) return;
   const input = { ...draft, text: readInput('note-text'), mood: readInput('note-mood'), revision: draft.revision + 1 };
   noteSaving = true; lockNote(true);
   void perform(async () => {
@@ -148,6 +153,8 @@ byId('note-form').addEventListener('submit', event => {
       const result = await desktopApi.saveNote(input); renderDraft(result.draft);
       byId('note-feedback').textContent = '已写入本地队列；中央节点确认后自动清除待上传记录。';
     } catch (error) {
+      const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : '保存未完成，请重试';
+      byId('note-feedback').textContent = message;
       const persisted = await desktopApi.noteDraft();
       if (persisted.prepared || persisted.id !== input.id) renderDraft(persisted);
       else draft = { ...input, revision: Math.max(input.revision, persisted.revision) }; // Keep unsaved text visible if disk persistence failed.

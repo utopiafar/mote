@@ -50,3 +50,18 @@ test('deleting evidence during an insight run cannot recreate a saved private in
   assert.equal((await running).statusCode,409);assert.equal((await app.inject({url:'/api/insights',headers})).json().items.length,0);
   assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:record})).statusCode,410);
 });
+
+test('queries and insights validate and preserve device and display time zone scope',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-scope-'));const config=testConfig(dir);const seen:any[]=[];
+  const {app}=await buildApp(config,{agent:{configured:true,query:async args=>{seen.push(args);return {answer:'synthetic scope',citations:[],trace:[],runId:randomUUID()};},close:async()=>{}}});
+  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+  const headers={authorization:`Bearer ${config.token}`};
+  for(const url of ['/api/query','/api/insights']){
+    const payload={...(url==='/api/query'?{question:'arbitrary input'}:{}),deviceId:'synthetic-device',timeZone:'Asia/Shanghai',after:'2026-06-01T00:00:00+08:00',before:'2026-06-12T00:00:00+08:00'};
+    assert.equal((await app.inject({method:'POST',url,headers,payload})).statusCode,200);
+    assert.equal(seen.at(-1).deviceId,payload.deviceId);assert.equal(seen.at(-1).timeZone,payload.timeZone);
+    assert.equal((await app.inject({method:'POST',url,headers,payload:{...payload,timeZone:'Invalid/Zone'}})).statusCode,400);
+    assert.equal((await app.inject({method:'POST',url,headers,payload:{...payload,before:payload.after}})).statusCode,400);
+  }
+  assert.equal(seen.length,2);
+});

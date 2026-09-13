@@ -11,8 +11,12 @@ import { Store,StoreError } from './store.js';
 import { Indexer } from './indexer.js';
 import { repositoryRoot,type Config } from './config.js';
 
-export interface QueryAgent {configured:boolean;query(args:{question:string;after?:string;before?:string}):Promise<QueryResult>;close():Promise<void>}
-const querySchema=z.object({question:z.string().trim().min(1).max(8000),after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional()}).strict().refine(v=>!v.after||!v.before||Date.parse(v.after)<Date.parse(v.before),{message:'Invalid time range'});
+type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
+export interface QueryAgent {configured:boolean;query(args:QueryScope&{question:string}):Promise<QueryResult>;close():Promise<void>}
+const scopeFields={after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),deviceId:z.string().min(1).max(200).optional(),timeZone:z.string().min(1).max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},{message:'Unknown time zone'}).optional()};
+const validRange=(v:QueryScope)=>!v.after||!v.before||Date.parse(v.after)<Date.parse(v.before);
+const querySchema=z.object({question:z.string().trim().min(1).max(8000),...scopeFields}).strict().refine(validRange,{message:'Invalid time range'});
+const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
 export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent}) {
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
   const indexer=new Indexer(store,config);
@@ -21,7 +25,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   else {
     const {createAgent}=await import('@mote/agent');
     const context=(records:CaptureRecord[])=>records.map(record=>({...record,sourceType:record.source}));
-    agent=await createAgent({reader:{search:async args=>context(await indexer.search(args)),timeline:async args=>context(store.list(args).items),evidence:async args=>context(store.evidence(args.ids)),activity:async args=>store.activity(args),devices:async()=>store.devices()},baseUrl:config.modelBaseUrl,apiKey:config.apiKey,model:config.model,allowUnauthenticatedLocal:config.allowUnauthenticatedLocal});
+    agent=await createAgent({reader:{search:async args=>context(await indexer.search(args)),timeline:async args=>{const page=store.list(args);return {...page,items:context(page.items)};},evidence:async args=>context(store.evidence(args.ids)),activity:async args=>store.activity(args),devices:async()=>store.devices()},baseUrl:config.modelBaseUrl,apiKey:config.apiKey,model:config.model,allowUnauthenticatedLocal:config.allowUnauthenticatedLocal,reasoningEffort:config.modelReasoningEffort,maxTokens:config.modelMaxTokens});
   }
   const app=Fastify({logger:{level:process.env.MOTE_LOG_LEVEL||'warn',redact:['req.headers.authorization','req.body','res.body']},bodyLimit:12*1024*1024,requestTimeout:180000});
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
@@ -40,8 +44,8 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     if(status>=500)req.log.error({message:e.message,name:e.name},'request failed');
     reply.code(status).send({error:e.code??e.name,message:status===500?'请求未完成，请检查服务日志或模型配置。':e.message});
   });
-  app.get('/api/health',async()=>({ok:true,version:'0.2.0'}));
-  app.get('/api/status',async()=>({agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
+  app.get('/api/health',async()=>({ok:true,version:'0.2.1'}));
+  app.get('/api/status',async()=>({agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
   app.post('/api/captures',async(req,reply)=>{const result=await store.ingest(captureSchema.parse(req.body));return reply.code(result.duplicate?200:201).send(result);});
   app.get('/api/captures',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
@@ -66,7 +70,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   app.get('/api/activity',async req=>store.activity(rangeSchema.parse(req.query)));
   let closing=false;
   const activeQueries=new Set<Promise<QueryResult>>();
-  function queryAgent(input:{question:string;after?:string;before?:string}) {
+  function queryAgent(input:QueryScope&{question:string}) {
     if(closing)throw new StoreError('Central node is shutting down',503);
     if(activeQueries.size>=2)throw new StoreError('Two Agent queries are already running; retry shortly',429);
     const revision=store.deletionRevision();
@@ -80,12 +84,12 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     if(!agent.configured)throw new StoreError('请在中央节点设置 MOTE_MODEL、MOTE_MODEL_BASE_URL 和 MOTE_MODEL_API_KEY，再重启服务。采集和归档仍可正常使用。',503);
     return queryAgent(querySchema.parse(req.body));
   });
-  async function insight(range:{after?:string;before?:string}) {
+  async function insight(range:QueryScope) {
     if(!agent.configured)throw new StoreError('Agent 未配置；请先配置模型以生成有证据的回顾。',503);
     const result=await queryAgent({question:'请根据这段时间的上下文记录，生成中文个人回顾：我最近做了什么，时间花在哪里，哪些事情可能值得继续关注。自由选择工具检索并解释发现，区分事实、推断与信息缺口，每个具体发现引用原始记录。屏幕采样时间不能等同专注或真实劳动时间，不臆造待办或意图。',...range});
     store.saveInsight(result,result.runId);return result;
   }
-  app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{const range=rangeSchema.parse(req.body??{});return insight({after:range.after,before:range.before});});
+  app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{return insight(insightSchema.parse(req.body??{}));});
   app.get('/api/insights',async()=>({items:store.insights()}));
   app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);return store.retryIndex();});
   app.get('/api/export',async(_req,reply)=>reply.header('Content-Disposition',`attachment; filename="mote-${new Date().toISOString().slice(0,10)}.json"`).send(store.exportArchive(config.maxExportBytes)));

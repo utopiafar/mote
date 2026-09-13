@@ -23,7 +23,9 @@ npm run start -w @mote/desktop
 npm run package -w @mote/desktop
 ```
 
-当前 0.2.0 安装包为 `apps/desktop/release/mote-desktop-macos-arm64-0.2.0.zip`，解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；这是本机测试构建。发行版仍需显式设置 Apple Developer ID 签名、公证和对应架构构建。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
+当前 0.2.1 安装包为 `apps/desktop/release/mote-desktop-macos-arm64-0.2.1.zip`，解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；这是本机测试构建。发行版仍需显式设置 Apple Developer ID 签名、公证和对应架构构建。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
+
+0.2.1 ZIP 大小为 112,379,521 字节，SHA-256：`48c8212965dddaf3ad05507dba79e88c9053a0ae2d9674d9af90943580b8cb1f`。
 
 Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按钮被禁用。MVP 尚未接入其可靠前台/可见窗口身份与 OCR，不能以无过滤截图代替。
 
@@ -135,7 +137,7 @@ queue/
 
 ## 验证范围
 
-最终打包后的 ASAR 模块及随 App 分发的原生 helper 已用生成白图实际运行千问通过（CPU 约 4.2 秒）；ad-hoc 签名通过 `codesign --verify --deep --strict`。编译最低 macOS 13.3 是部署目标，未在 13.3 旧系统或 Intel Mac 实测。
+最终打包后的 ASAR 模块及随 App 分发的原生 helper 已用生成白图实际运行千问通过（0.2.1 的 CPU 合成白图约 4.7 秒）；ad-hoc 签名通过 `codesign --verify --deep --strict`。编译最低 macOS 13.3 是部署目标，未在 13.3 旧系统或 Intel Mac 实测。
 
 原生随手记另已对独立合成中央节点通过「草稿落盘 → 模拟入队后中断 → 重建草稿存储 → 相同事件重试 → 服务器重复 ACK → 清空本地队列」验证，无占位图片。可复现命令：
 
@@ -144,7 +146,7 @@ MOTE_FIXTURE_SERVER=http://127.0.0.1:47835 MOTE_FIXTURE_TOKEN='<测试节点令�
 ```
 
 
-已执行：54 个桌面单元测试、TypeScript/Swift/C++ 编译、真实 Electron 控制台和中央窗口 smoke；中央窗口验证主进程注入认证、禁止外域、隔离 Node、关窗重开保留草稿以及节点存储隔离。真实 Qwen CPU 对 Android/Mac 共用生成图连续推理及强杀恢复通过：两次均 `allow:true`，当前 Mac 冷启动约 5.7 秒、暖约 4.8 秒。这是功能性 live-model fixture 验证，不是 NSFW 准确率评测，也未采集用户真实屏幕。
+已执行：57 个桌面单元测试、TypeScript/Swift/C++ 编译、真实 Electron 控制台和中央窗口 smoke；中央窗口验证主进程注入认证、禁止外域、隔离 Node、关窗重开保留草稿以及节点存储隔离。真实 Qwen CPU 对 Android/Mac 共用生成图连续推理及强杀恢复通过：两次均 `allow:true`，本轮 Mac 冷启动约 5.4 秒、暖约 4.5 秒。这是功能性 live-model fixture 验证，不是 NSFW 准确率评测，也未采集用户真实屏幕。
 
 ```sh
 npm run test:central -w @mote/desktop
@@ -170,6 +172,33 @@ MOTE_FIXTURE_SERVER=http://127.0.0.1:47834 MOTE_FIXTURE_TOKEN='<测试节点令�
 ```
 
 该测试验证遮挡区文字不再进入 OCR、可见测试标题仍可识别、两条观测复用一份图像、ACK 后队列清空以及同 ID 重传幂等。本次已在 macOS 上对生成图与本机中央节点执行通过；它不代表真实用户屏幕采集验证。
+
+本轮额外使用完全虚构的多段中文日记、后续更正、组合 emoji、ZWJ、组合重音、JSON/HTML 字面量，以及正文 20,000 / 心情 80 个 UTF-16 字符位边界进行多轮验证。正文不做归一化或截断，空格和原始编码保持不变。超限时保留编辑内容并在正文旁显示可修正的错误；输入法组合阶段不会误提交。已修复合法长草稿经 JSON 转义后无法恢复的问题，并在正常退出前等待已接收的草稿和提交写入完成。突然断电或强杀仍只能恢复最后一次已持久化的内容。
+
+真实 Electron 进程已完成「DOM 输入后立即退出 → 新进程恢复 → 三条无令牌离线入队 → 中央已接收但返回错误确认 ID → 再次退出重建 → 同 ID 重试 → 精确原文比对」；同时通过合成 HTTP 服务验证接收后断连、错误 ID、无效 JSON 的确认故障。测试不申请或调用屏幕采集。独立复杂输入 UI 测试可用：
+
+```sh
+# 在仓库根目录先完成 build；以下命令从 apps/desktop 目录执行。
+../../node_modules/.bin/electron scripts/complex-ui-smoke.cjs
+
+# 在 ignored 私有文件中配置本机测试中央地址与访问令牌：{"url":"http://127.0.0.1:<port>","token":"..."}
+MOTE_COMPLEX_CONNECTION=/absolute/private/connection.json node scripts/complex-app-driver.cjs
+# 节点重启中断时，使用上次输出的 statePath 保留原 ID 继续尚未完成的阶段。
+MOTE_COMPLEX_RESUME=/absolute/private/run-fixture.json node scripts/complex-app-driver.cjs
+```
+
+2026-09-13 已从真实 App 内选择合成设备并调用中央配置的 `deepseek-flash`：日记更正问题正确回答周五 10:30、林舟、只检查图表和注释，并区分取消的安排、引文中的伪指令与非实测时间；点击行内来源打开匹配 ID 的完整原文。长文问题早期返回 HTTP 502 模型格式错误，保留失败响应后在新版中央复测通过：约 5.45 秒、3 次只读工具调用，使用 offset 18000 / length 2000 读取末尾，准确回答校验事实；唯一行内来源打开的 ID 与完整 20,000 字符位原文匹配。期间有一次测试脚本挂起尚未发模型请求，不计为模型失败；脚本现已记录 fetch 确认与异常，并为单次 UI 调用设置短超时。这些合成问答不能替代真实个人资料的效果评估。
+
+中央内嵌窗口还用延迟响应和 HTTP 502 合成故障验证：用户切换查询时间范围时中止旧请求，忽略迟到的旧答案；切换设备后清除旧答案；失败保留问题，点击重试仍使用原设备、范围和浏览器时区。另外连续 10 轮快速切换设备后立即提交，验证新范围请求不会被误取消。此故障注入不调用模型。实际模型问答与它分开运行：
+
+```sh
+# 同样从 apps/desktop 执行，STATE 必须是上述脚本生成的 statePath。
+MOTE_COMPLEX_STATE=/absolute/private/run-fixture.json MOTE_COMPLEX_PHASE=query-ui ../../node_modules/.bin/electron scripts/complex-app-phase.cjs
+# 需要测试中央配置真实模型；在真实界面选择该合成设备，然后串行提问并核对行内来源与完整原文。
+MOTE_COMPLEX_STATE=/absolute/private/run-fixture.json MOTE_COMPLEX_PHASE=query ../../node_modules/.bin/electron scripts/complex-app-phase.cjs
+```
+
+该链路默认将生成配置和测试状态保存在 ignored 的 `.mote/live-validation/desktop`；令牌仅从私有连接文件读取，真实 App 配置使用系统安全存储加密。它会向明确配置的本机测试中央写入三条合成随手记；不要指向已有个人使用的节点。生产应用不会自动执行这些脚本。
 
 覆盖：精确应用过滤、可见窗口排除决策、矩形边界、本地审查失败关闭、TLS/令牌配置、队列并发与容量、进程重建恢复、图像去重但观测保留、幂等冲突、ACK 身份校验、持久重试、导入校验以及损坏后保留数据。Swift 编译验证不等于真实屏幕授权或真实截图验证。
 

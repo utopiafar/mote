@@ -10,8 +10,8 @@ android {
         applicationId = "dev.mote.collector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared"; targets += "mote_vlm" } }
@@ -29,6 +29,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { buildConfig = true; aidl = true }
+    sourceSets.getByName("test").java.srcDir("src/sharedTest/java")
+    sourceSets.getByName("androidTest").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/modelAssets"))
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     lint { abortOnError = true }

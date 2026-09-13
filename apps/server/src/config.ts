@@ -17,9 +17,14 @@ export function configFromEnv() {
   }
   if(token.length<24)throw new Error('MOTE_TOKEN must contain at least 24 characters');
   const host=process.env.MOTE_HOST||'127.0.0.1';
+  const modelReasoningEffort=process.env.MOTE_MODEL_REASONING_EFFORT||'high';
+  if(!['off','low','high','max'].includes(modelReasoningEffort))throw new Error('MOTE_MODEL_REASONING_EFFORT must be off, low, high or max');
+  const modelMaxTokens=number('MOTE_MODEL_MAX_TOKENS',8192,256,32768);
+  if(!Number.isInteger(modelMaxTokens))throw new Error('MOTE_MODEL_MAX_TOKENS must be an integer');
   const config={
     host, port:number('MOTE_PORT',47832,1,65535),dataDir,token,tokenPath,
     dataKey:process.env.MOTE_DATA_KEY||undefined,
+    modelReasoningEffort:modelReasoningEffort as "off"|"low"|"high"|"max", modelMaxTokens,
     maxStorageBytes:number('MOTE_MAX_STORAGE_MB',10240,1,1_000_000)*1024*1024,
     maxExportBytes:number('MOTE_MAX_EXPORT_MB',64,1,256)*1024*1024,
     retentionDays:number('MOTE_RETENTION_DAYS',0,0,36500),
@@ -31,4 +36,5 @@ export function configFromEnv() {
   if(config.embeddingModel&&!config.embeddingBaseUrl)throw new Error('MOTE_EMBEDDING_BASE_URL is required when embedding is enabled');
   return config;
 }
-export type Config=ReturnType<typeof configFromEnv>;
+type EnvironmentConfig=ReturnType<typeof configFromEnv>;
+export type Config=Omit<EnvironmentConfig,"modelReasoningEffort"|"modelMaxTokens"> & Partial<Pick<EnvironmentConfig,"modelReasoningEffort"|"modelMaxTokens">>;

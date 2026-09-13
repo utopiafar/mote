@@ -19,6 +19,12 @@ let centralWindow: BrowserWindow | undefined;
 let centralOpening: Promise<void> | undefined;
 let collector: Collector;
 let quitting = false;
+let notesSettledForQuit = false;
+const noteWork = new Set<Promise<unknown>>();
+function trackNote<T>(task: Promise<T>): Promise<T> {
+  noteWork.add(task); void task.then(() => noteWork.delete(task), () => noteWork.delete(task)); return task;
+}
+async function settleNoteWork(): Promise<void> { while (noteWork.size) await Promise.allSettled([...noteWork]); }
 let settings: Config;
 let controlChain: Promise<unknown> = Promise.resolve();
 
@@ -70,7 +76,12 @@ function updateUi(status: Status): void {
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', showWindow);
-  app.on('before-quit', () => { quitting = true; collector?.shutdown(); });
+  app.on('before-quit', event => {
+    quitting = true; collector?.shutdown();
+    if (notesSettledForQuit) return;
+    event.preventDefault();
+    void settleNoteWork().finally(() => { notesSettledForQuit = true; app.quit(); });
+  });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
   void app.whenReady().then(async () => {
@@ -117,13 +128,13 @@ else {
       if (selected.canceled || !selected.filePath) return { canceled: true };
       await diagnostics.sample(); await diagnostics.exportTo(selected.filePath); return { canceled: false };
     });
-    handle('mote:central', () => serialize(showCentral));
+    handle('mote:central', showCentral);
     handle('mote:note-draft', () => noteDrafts.get());
-    handle('mote:note-draft-update', input => serialize(() => noteDrafts.update(input as NoteDraft)));
-    handle('mote:note', input => serialize(async () => {
+    handle('mote:note-draft-update', input => trackNote(noteDrafts.update(input as NoteDraft)));
+    handle('mote:note', input => trackNote(serialize(async () => {
       const result = await noteDrafts.submit(input as NoteDraft, settings, currentPlatform, queue);
-      updateUi(collector.status()); void collector.upload(); return result;
-    }));
+      updateUi(collector.status()); if (!quitting) void collector.upload(); return result;
+    })));
     handle('mote:configure', input => serialize(async () => {
       if (collector.status().running) throw new Error('请先停止采集，再修改配置');
       await collector.settleCapture();

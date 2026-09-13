@@ -1,12 +1,13 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
-import ReactMarkdown from "react-markdown";
+import { AnswerMarkdown } from "./AnswerMarkdown";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -605,19 +606,7 @@ function AnswerView({
         <span>根据你的上下文</span>
       </div>
       <div className="markdown">
-        <ReactMarkdown
-          skipHtml
-          components={{
-            img: () => null,
-            a: ({ href, children }) => (
-              <a href={href} target="_blank" rel="noreferrer noopener">
-                {children}
-              </a>
-            ),
-          }}
-        >
-          {answer.answer}
-        </ReactMarkdown>
+        <AnswerMarkdown answer={answer} onOpen={onOpen} />
       </div>
       {answer.citations.length > 0 && (
         <div className="citations">
@@ -1156,25 +1145,46 @@ function Timeline({
 function Ask({
   api,
   status,
+  devices,
   range,
+  scopeKey,
   insights,
   onOpen,
   onInsight,
 }: {
   api: Api;
   status: Status;
+  devices: Device[];
   range: Range;
+  scopeKey: string;
   insights: Answer[];
   onOpen: (id: string) => void;
   onInsight: () => void;
 }) {
   const [question, setQuestion] = useState("");
+  const [selectedDevice, setSelectedDevice] = useState("");
   const [asked, setAsked] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"ask" | "insights">("ask");
   const [selectedInsight, setSelectedInsight] = useState<string | null>(null);
+  const queryGeneration = useRef(0);
+  const pendingQuery = useRef<AbortController | null>(null);
+  // Invalidate the previous scope before a user can submit against the newly committed controls.
+  useLayoutEffect(() => {
+    queryGeneration.current += 1;
+    pendingQuery.current?.abort();
+    pendingQuery.current = null;
+    setAnswer(null);
+    setAsked("");
+    setError("");
+    setBusy(false);
+    return () => {
+      queryGeneration.current += 1;
+      pendingQuery.current?.abort();
+    };
+  }, [scopeKey, selectedDevice]);
   async function submit(e?: React.FormEvent, sample?: string) {
     e?.preventDefault();
     const text = sample || question.trim();
@@ -1184,17 +1194,28 @@ function Ask({
     setBusy(true);
     setError("");
     setAnswer(null);
+    const generation = ++queryGeneration.current;
+    const controller = new AbortController();
+    pendingQuery.current = controller;
     try {
-      setAnswer(
-        await api.request<Answer>("/api/query", {
-          method: "POST",
-          body: JSON.stringify({ question: text, ...range }),
+      const result = await api.request<Answer>("/api/query", {
+        method: "POST",
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180000)]),
+        body: JSON.stringify({
+          question: text,
+          ...range,
+          ...(selectedDevice ? { deviceId: selectedDevice } : {}),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
-      );
+      });
+      if (queryGeneration.current === generation) setAnswer(result);
     } catch (e) {
-      setError(errorMessage(e));
+      if (queryGeneration.current === generation) setError(errorMessage(e));
     } finally {
-      setBusy(false);
+      if (queryGeneration.current === generation) {
+        pendingQuery.current = null;
+        setBusy(false);
+      }
     }
   }
   return (
@@ -1236,6 +1257,25 @@ function Ask({
       )}
       {tab === "ask" ? (
         <>
+          <div className="filter-bar">
+            <label>
+              <Monitor size={15} />
+              <span>筛选设备</span>
+              <select
+                aria-label="问答设备"
+                value={selectedDevice}
+                disabled={busy}
+                onChange={(event) => setSelectedDevice(event.target.value)}
+              >
+                <option value="">全部设备</option>
+                {devices.map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.deviceName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <form className="ask-form" onSubmit={(e) => void submit(e)}>
             <textarea
               aria-label="向 Mote 提问"
@@ -1900,7 +1940,7 @@ function App() {
     try {
       await api.request<Answer>("/api/insights", {
         method: "POST",
-        body: JSON.stringify(range),
+        body: JSON.stringify({ ...range, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       });
       setNotice("新的个人回顾已生成，打开「问一问 → 个人回顾」查看证据。");
       refresh();
@@ -2142,8 +2182,10 @@ function App() {
                       {page === "ask" && (
                         <Ask
                           api={api}
+                          devices={devices}
                           status={status}
                           range={range}
+                          scopeKey={period}
                           insights={insights}
                           onOpen={setEvidenceId}
                           onInsight={() => void generate()}

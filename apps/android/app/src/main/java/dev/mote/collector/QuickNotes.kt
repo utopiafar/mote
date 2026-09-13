@@ -8,7 +8,8 @@ import java.util.UUID
 
 object QuickNotes {
     fun draft(context: Context) = NoteDraftStore(File(context.noBackupFilesDir, "note-draft"), SecretBox())
-    fun save(context: Context, text: String, mood: String): String {
+    fun save(context: Context, text: String, mood: String): String = save(context, text, mood) { config -> UploadWorker.schedule(context, config) }
+    internal fun save(context: Context, text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String {
         require(text.isNotBlank() && text.length <= 100_000) { "随手记须为 1..100000 字符" }
         require(mood.length <= 80) { "心情最多 80 字符" }
         val store = draft(context)
@@ -25,8 +26,11 @@ object QuickNotes {
         }
         val event = prepared.prepared!!
         context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+        try { scheduleUpload(config) } catch (_: Exception) {
+            settings.uploadStatus("随手记已入队，同步调度未完成；草稿保持原提交 ID，可安全重试")
+            throw IllegalStateException("随手记已保存在队列；同步调度暂不可用，再次保存会重试同一条记录")
+        }
         store.clear()
-        UploadWorker.schedule(context, config)
         return event.getString("id")
     }
 }

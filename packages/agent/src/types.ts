@@ -6,6 +6,7 @@ export interface ContextRecord {
   summary?: string;
   deviceId?: string;
   sourceType?: string;
+  durationMs?: number;
   [field: string]: unknown;
 }
 
@@ -14,11 +15,19 @@ export interface ContextRange {
   before?: string;
   deviceId?: string;
   limit?: number;
+  cursor?: string;
+}
+
+export interface ContextPage {
+  items: ContextRecord[];
+  nextCursor: string | null;
+  /** Total records in the time/device scope, independent of the page cursor. */
+  totalCount?: number;
 }
 
 export interface ContextReader {
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
-  timeline(args: ContextRange): Promise<ContextRecord[]>;
+  timeline(args: ContextRange): Promise<ContextRecord[] | ContextPage>;
   evidence(args: { ids: string[] }): Promise<ContextRecord[]>;
   activity(args: ContextRange): Promise<unknown>;
   devices(): Promise<unknown>;
@@ -34,12 +43,15 @@ export interface AgentOptions {
   timeoutMs?: number;
   maxToolCalls?: number;
   maxTokens?: number;
+  reasoningEffort?: "off" | "low" | "high" | "max";
 }
 
 export interface QueryInput {
   question: string;
   after?: string;
   before?: string;
+  deviceId?: string;
+  timeZone?: string;
 }
 export interface Citation {
   id: string;

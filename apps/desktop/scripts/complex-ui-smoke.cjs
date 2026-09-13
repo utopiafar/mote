@@ -1,0 +1,41 @@
+const {app}=require('electron');
+const {mkdtempSync,writeFileSync,readFileSync,readdirSync}=require('node:fs');
+const {rm}=require('node:fs/promises');
+const {join}=require('node:path');
+const {tmpdir}=require('node:os');
+const assert=require('node:assert/strict');
+const {defaultConfig}=require('../dist/config');
+const profile=mkdtempSync(join(tmpdir(),'mote-complex-ui-'));app.setPath('userData',profile);
+writeFileSync(join(profile,'config.json'),JSON.stringify({version:1,config:{...defaultConfig(),deviceName:'desktop-complex-ui-fixture'}}),{mode:0o600});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const timeout=setTimeout(()=>{process.stderr.write('Complex UI timeout\n');app.exit(1);},30000);
+async function until(fn){for(let i=0;i<200;i++){if(await fn())return;await sleep(20);}throw Error('Complex UI condition failed');}
+app.on('browser-window-created',(_event,window)=>window.webContents.once('did-finish-load',()=>{
+ const js=s=>window.webContents.executeJavaScript(s);
+ (async()=>{
+  await until(()=>js('!document.querySelector("#note-text").disabled'));
+  const text='合成输入法：组合阶段不应误保存。👩🏽‍💻 cafe\u0301\n第二行 <script>window.__fixtureExecuted=true</script>';
+  await js(`document.querySelector('#note-text').dispatchEvent(new CompositionEvent('compositionstart'));document.querySelector('#note-text').value=${JSON.stringify(text)};document.querySelector('#note-text').dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true}));document.querySelector('#note-form').requestSubmit();`);
+  await sleep(100);assert.equal((await js('window.mote.status()')).queueDepth,0);
+  await js("document.querySelector('#note-text').dispatchEvent(new CompositionEvent('compositionend'));document.querySelector('#note-form').requestSubmit();");
+  await until(async()=> (await js('window.mote.status()')).queueDepth===1);
+  await until(()=>js('!document.querySelector("#save-note").disabled'));
+  assert.equal(await js('Boolean(window.__fixtureExecuted)'),false);
+  const records=()=>readdirSync(join(profile,'queue','events')).filter(x=>x.endsWith('.json')).map(x=>JSON.parse(readFileSync(join(profile,'queue','events',x))));
+  assert.equal(records()[0].event.ocrText,text);
+  await js(`document.querySelector('#note-text').value=${JSON.stringify('字'.repeat(20001))};document.querySelector('#note-text').dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#note-form').requestSubmit();`);
+  await until(()=>js('document.querySelector("#note-feedback").textContent.includes("正文最多")'));
+  assert.equal(await js('document.querySelector("#note-text").value.length'),20001);assert.equal(records().length,1);
+  await until(()=>js('!document.querySelector("#save-note").disabled'));
+  await js(`document.querySelector('#note-text').value='修正后的合成正文';document.querySelector('#note-text').dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#note-mood').value=${JSON.stringify('🙂'.repeat(40)+'字')};document.querySelector('#note-mood').dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#note-form').requestSubmit();`);
+  await until(()=>js('document.querySelector("#note-feedback").textContent.includes("心情最多")'));assert.equal(records().length,1);
+  await until(()=>js('!document.querySelector("#save-note").disabled'));
+  await js(`document.querySelector('#note-mood').value=${JSON.stringify('🙂'.repeat(40))};document.querySelector('#note-mood').dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#note-form').requestSubmit();`);
+  await until(async()=> (await js('window.mote.status()')).queueDepth===2);
+  assert(records().some(r=>r.event.ocrText==='修正后的合成正文'&&r.event.mood==='🙂'.repeat(40)));
+  process.stdout.write(JSON.stringify({ok:true,fixtureOnly:true,compositionSubmitSuppressed:true,unicodeAndMarkupPreserved:true,oversizeErrorsVisible:true,failedInputPreserved:true,correctionSaved:true,captureStayedStopped:true})+'\n');
+  clearTimeout(timeout);app.quit();
+ })().catch(e=>{process.stderr.write('Complex UI failed: '+e.message+'\n');app.exit(1);});
+}));
+app.on('quit',()=>{void rm(profile,{recursive:true,force:true});});
+require('../dist/main');

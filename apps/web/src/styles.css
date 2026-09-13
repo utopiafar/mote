@@ -3164,3 +3164,21 @@ strong {
   .note-composer-actions > span { flex-wrap: wrap; max-width: 55%; line-height: 1.7; }
   .note-mood input { width: 100%; margin-left: 0; }
 }
+
+.inline-citation {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 .15em;
+  padding: .08em .45em;
+  border: 1px solid #cfddcf;
+  border-radius: .45em;
+  background: #eef4eb;
+  color: #315d42;
+  font: inherit;
+  font-size: .8em;
+  line-height: 1.5;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+.inline-citation:hover { background: #dfeadd; }
+.inline-citation:focus-visible { outline: 2px solid #32694c; outline-offset: 2px; }
