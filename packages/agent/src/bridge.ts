@@ -16,6 +16,10 @@ export const TOOL_NAMES = [
   "evidence",
   "activity",
   "devices",
+  "sources",
+  "source_items",
+  "source_history",
+  "memories",
 ] as const;
 
 function dateValue(value: unknown, field: string): string | undefined {
@@ -80,6 +84,16 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
       displayStart: displayTime(intervalStart, timeZone), displayEnd: displayTime(record.capturedAt, timeZone),
     } } : {}),
     appName: record.appName,
+    ...(record.revisionState?{revisionState:record.revisionState}:{}),
+    ...(typeof record.windowTitle==='string'?{title:record.windowTitle.slice(0,2000)}:{}),
+    ...(record.provenance&&typeof record.provenance==='object'?{provenance:{
+      sourceId:(record.provenance as Record<string,unknown>).sourceId,
+      layer:(record.provenance as Record<string,unknown>).layer,
+      deleted:(record.provenance as Record<string,unknown>).deleted,
+      revision:(record.provenance as Record<string,unknown>).revision,
+      calendar:(record.provenance as Record<string,unknown>).calendar,
+      originalAvailable:(record.provenance as Record<string,unknown>).layer!=='reference',
+    }}:{}),
     ocrText: text.slice(start, end),
     textRange: { start, end, total: text.length, nextOffset: end < text.length ? end : null },
     ...(record.summary === undefined
@@ -153,10 +167,25 @@ export async function startBridge(
       let value: unknown;
       let effective: Record<string, unknown> = args;
       let textOffset = 0, textLength = 2000;
+      let memoryEvidence:ContextRecord[]=[];
       let pagination: { nextCursor: string | null; totalCount?: number } | undefined;
       if (tool === "devices") {
         value = await reader.devices();
         if (bounds.deviceId && Array.isArray(value)) value = value.filter(device => device.deviceId === bounds.deviceId);
+      }
+      else if(tool==='source_history'){
+        if(typeof args.id!=='string'||!records.has(args.id))throw Error('Discover a source record before requesting history');
+        const scope=range({},bounds);effective={...scope,id:args.id};value=await reader.sourceHistory?.({...scope,id:args.id})??[];
+      }
+      else if(tool==='sources')value=await reader.sources?.(range(args,bounds))??[];
+      else if(tool==='memories'){
+        const scope=range(args,bounds);
+        if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw Error('Invalid memory id');
+        effective={...scope,id:args.id};
+        const result=await reader.memories?.({...scope,id:args.id as string|undefined})??{items:[]};
+        const evidence=(result.evidence??[]).filter(r=>(!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||r.capturedAt>=scope.after)&&(!scope.before||r.capturedAt<scope.before)).slice(0,30).map(r=>project(r,0,2000,bounds.timeZone));
+        memoryEvidence=evidence;
+        value={items:result.items,evidence};
       }
       else if (tool === "evidence") {
         if (
@@ -192,8 +221,11 @@ export async function startBridge(
           value = await reader.search(
             effective as ContextRange & { query?: string },
           );
-        } else if (tool === "timeline") {
-          const page = await reader.timeline(filters);
+        } else if (tool === "timeline"||tool==='source_items') {
+          if(tool==='source_items')for(const field of ['sourceId','kind'])if(args[field]!==undefined&&(typeof args[field]!=='string'||String(args[field]).length>128))throw Error('Invalid source filter');
+          if(tool==='source_items'&&args.includeDeleted!==undefined&&typeof args.includeDeleted!=='boolean')throw Error('includeDeleted must be boolean');
+          if(tool==='source_items')effective={...filters,sourceId:args.sourceId,kind:args.kind,includeDeleted:args.includeDeleted};
+          const page = tool==='timeline'?await reader.timeline(filters):await reader.sourceItems?.({...filters,sourceId:args.sourceId as string|undefined,kind:args.kind as string|undefined,includeDeleted:args.includeDeleted as boolean|undefined})??[];
           if (Array.isArray(page)) value = page;
           else {
             if (!page || !Array.isArray(page.items) || (page.nextCursor !== null && typeof page.nextCursor !== "string")) throw new Error("Context reader returned an invalid page");
@@ -206,7 +238,7 @@ export async function startBridge(
       if (
         tool === "search_context" ||
         tool === "timeline" ||
-        tool === "evidence"
+        tool === "evidence" || tool==='source_items' || tool==='source_history'
       ) {
         if (!Array.isArray(value))
           throw new Error("Context reader returned invalid records");
@@ -225,10 +257,11 @@ export async function startBridge(
           "Context result exceeds the evidence budget; request a smaller range",
         );
       // Only a successfully serialized, deliverable tool result authorizes evidence.
-      if (tool === "search_context" || tool === "timeline" || tool === "evidence") {
+      if (tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history') {
         for (const record of safeValue as ContextRecord[])
           records.set(record.id, record);
       }
+      for(const record of memoryEvidence)records.set(record.id,record);
       trace.push({
         tool,
         arguments: effective,

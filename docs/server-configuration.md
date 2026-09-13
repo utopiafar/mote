@@ -102,3 +102,22 @@
 Caddy 使用 profile 文件中的 `MOTE_TLS_DOMAIN`、`MOTE_TLS_HTTP_PORT`（80）、`MOTE_TLS_HTTPS_PORT`（443），由 `tls --enable/--disable` 管理入口。Cloudflare 使用 `tunnel` 命令维护 profile 元数据与私有 token 文件；公开 URL、协议和 origin 的对应关系见 [Tunnel 指南](cloudflare-tunnel.md)。
 
 `MOTE_CONFIG_FILE` 由 CLI 注入，标记宿主机可编辑的环境文件；`MOTE_ENV_FILE` 是进程实际加载的文件，两者在 Docker 内可能不同。`MOTE_RUNTIME`、`MOTE_STORAGE_KIND`、`MOTE_STORAGE_SOURCE`、`MOTE_STORAGE_MOUNT` 等由 CLI 注入的字段用于说明部署映射；修改这些说明字段不会挂载磁盘。实际目录/卷必须通过部署配置设置。容器映射、备份目录和客户端本地目录不是通过网页远程修改的选项。
+
+## 来源、Google Calendar 与 MCP
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `MOTE_MCP_ENABLED` | `0` | 开启 `/mcp`；通过 Cloudflare Tunnel 时沿用节点 HTTPS 地址 |
+| `MOTE_MCP_READ_TOKEN` | 空 | 独立随机读令牌，启用时至少 32 字符；不要复用所有者令牌 |
+| `MOTE_MCP_WRITE_ENABLED` | `0` | 开放指定来源的归档写回，与内部只读查询 Agent 分离 |
+| `MOTE_MCP_WRITE_TOKEN` | 空 | 独立写令牌，至少 32 字符，与读令牌及所有者令牌不同 |
+| `MOTE_MCP_WRITE_SOURCE_IDS` | 空 | 允许写入的已注册来源 ID，逗号分隔；开启写入时必须指定 |
+| `MOTE_MCP_ALLOW_LOCAL` | `0` | 仅开发测试时允许回环 MCP；不会开放内网任意地址 |
+| `MOTE_GOOGLE_CLIENT_ID` | 空 | Google Cloud Web OAuth 客户端 ID |
+| `MOTE_GOOGLE_CLIENT_SECRET` | 空 | OAuth 客户端密钥；仅保存于私有配置 |
+| `MOTE_GOOGLE_REDIRECT_URI` | 空 | 完整 `/oauth/google/callback` 地址，必须与 Google 登记一致；非回环地址要求 HTTPS |
+| `MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS` | `900` | 已授权来源自动同步间隔，范围 60–86400 秒 |
+
+Google 三项配置需要一起填写，然后在“来源”页完成账户授权并选择日历。令牌保存在 `MOTE_DATA_DIR/connectors/` 的私有文件中，不进入 HTTP 资料导出或诊断包；迁移外部授权时请按[连接器说明](connectors.md)操作。修改环境文件后重启中央节点。
+
+原始资料、Shadow、快照、索引与 Memory 的保存和失效策略见[资料分层](context-layers.md)。

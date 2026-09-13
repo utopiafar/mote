@@ -23,9 +23,9 @@ npm run start -w @mote/desktop
 npm run package -w @mote/desktop
 ```
 
-当前 0.3.0 安装包为 `apps/desktop/release/mote-desktop-macos-arm64-0.3.0.zip`，解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；这是本机测试构建。发行版仍需显式设置 Apple Developer ID 签名、公证和对应架构构建。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
+当前 0.4.0 安装包为 `apps/desktop/release/mote-desktop-macos-arm64-0.4.0.zip`，解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；这是本机测试构建。发行版仍需显式设置 Apple Developer ID 签名、公证和对应架构构建。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
 
-0.3.0 ZIP 大小为 112,480,649 字节，SHA-256：`7dcad06c29775e86863ab2c0c53794385fd93c1f2026ca5a2501985afc806206`。
+0.4.0 ZIP 大小为 112,500,070 字节，SHA-256：`76124f2e91b7ff54e89f3f051c500a538f38c320ad7202c6988bb7d7726c77c4`。
 
 Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按钮被禁用。MVP 尚未接入其可靠前台/可见窗口身份与 OCR，不能以无过滤截图代替。
 
@@ -59,6 +59,48 @@ open -n "apps/desktop/release/mac-arm64/Mote Collector.app" --args --profile=dev
 5. 确认菜单栏状态、待上传数量和最近采样时间，点击「打开中央仓库」，在独立 Mac 窗口查看时间线、查询和随手记。首次采样及应用切换后的首次采样时长为 0；连续两次同一前台应用才累计两次采样之间、最多一个采样间隔的时长。
 
 「停止采集」立即取消当前处理、释放本地模型进程并停止新采样，已入队记录继续上传。「关闭窗口」隐藏到菜单栏，不退出程序。彻底停止采集与网络传输请在菜单栏选择「退出 Mote」。登录自动打开是可选项，应用重新启动后始终等待手动开始采集；已有脱敏队列自动恢复上传。
+
+## 本地日历、文件与目录来源（0.4.0）
+
+Mac App 的「本地来源」提供原生文件选择器和 EventKit 日历入口。它独立于屏幕采样：停止截图后，已启用来源仍会定时同步；可逐个点击「暂停本机同步」，完全退出 App 则中止扫描和上传。应用重新打开后，已连接且启用的来源自动恢复；不会在启动时申请日历权限。
+
+1. 先在来源规则选择「快照」或「引用」。快照保存标题与 UTF-8 正文，引用仅保存标题、文件 URI/修改时间或日历起止时间等元数据，正文为空。引用不会读取文件正文，日历引用也不读取备注和地点。
+2. 点击「选择文件」或「选择目录」，只会读取你明确选择的路径。默认扩展名为 `.md,.txt,.json,.csv,.ics`，按普通文字归档，不推断 CSV、JSON 或 ICS 的业务语义。每份最大 100,000 字节；快照必须是合法 UTF-8。扫描跳过隐藏项、`.git` 和符号链接。可配置排除相对路径或目录前缀，例如 `private`、`notes/private.md`。
+3. 日历先点击「连接系统日历」，系统要求授权时允许只读使用所需的完整日历读取权限；macOS 14+ 使用 EventKit full access，旧系统使用兼容授权 API。接着从已授权列表选择一个日历并点击「同步所选日历」。Mote 不创建、修改或删除系统日程。每次查询所选日历过去 30 天至未来 90 天的事件，保留独立的开始/结束、全天、时区和状态；观察时间不会冒充会议时间。权限拒绝、撤销、日历不可用或助手错误均暂停该扫描，不按空列表删除记录。可用旁边「日历权限」打开系统设置处理。
+4. 检查间隔默认 300 秒，可设 30–3600 秒。「立即检查 / 重试」提前触发检查；列表显示待传数量、条目数、跳过数量、最近同步和错误。最多 40 个来源。单次文件扫描最多处理 5,000 个入口、2,000 份资料、16 MiB 总文本；日历输出最多 2,000 事件、8 MiB。达到扫描限额时标记不完整，不据此判断删除。
+5. 「跟踪删除」默认关闭。开启后，仅完整成功扫描覆盖范围内、先前确认存在而此次消失的项产生删除版本；日历滚动窗口外的旧记录不因此标记删除。中央保留历史，删除标记不是抹除原文。调整隐私/保留/删除规则后，旧状态仅保留版本链；必须先在新规则下重新观察，才用于后续删除判断。
+
+文字来源的隐私规则与截图分开。截图的应用排除、固定矩形和千问视觉审查不会处理文件或日历文字。来源中的「上传前遮盖的确切文字」只执行你明确配置的替换，同时作用于来源名称、标题和正文；配置后不发送文件 URI，避免路径夹带原文。没有语义关键词推断。过滤和遮盖在待传正文落盘前完成；修改策略会放弃尚未确认的旧策略正文与删除记录，重新按新规则扫描，但不会自动抹除中央已接收的历史。
+
+每来源队列限制 4,000 版本 / 32 MiB（含持久状态）；保存使用私有目录、原子替换和 fsync。版本包含前一版本哈希，重试保持原版本与观察时间不变，因此 A→删除→相同 A 恢复仍是三个不同版本。中央 ACK 必须严格匹配来源、外部 ID、版本和记录 UUID 后才清除待传项。网络恢复时先排空旧队列，避免满队列阻挡恢复。中央页面暂停来源时，客户端不强行重新启用它。
+
+配置保存在当前 profile 的 `local-sources/sources.json`；各节点状态在 `local-sources/nodes/<节点及凭据哈希>/`。节点或凭据切换使用独立状态，旧待传内容不会自动发往新连接；原目录保留供用户处理。路径、规则和来源正文不进入安全支持包。这些文件与截图队列一样使用本机私有文件权限，正文不是 Keychain 加密；磁盘加密依赖系统 FileVault 等。截图队列导出按钮不包含本地来源状态，迁移本地来源时应在退出 App 后备份整个 `local-sources` 目录；中央完整归档仍使用服务端备份流程。
+
+本地来源 CLI 与 App 复用相同扫描、隐私和持久版本逻辑，可用于显式挂载的 NAS 文本目录：
+
+```sh
+node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /absolute/selected/folder --retention snapshot --watch
+node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /absolute/selected/folder --retention reference --track-deletions
+# 只预览可导入数量，不上传，也不建立同步状态
+node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /absolute/selected/folder --dry-run
+```
+
+保留 `--extensions`、`--dry-run`、`--watch`，另支持 `--exclude relative/path,...` 和可重复的 `--redact-literal`。涉及私密遮盖原文时优先使用 App 配置，避免正文出现在终端命令历史。watch 每 30 秒检查；Ctrl+C 中止在途请求并保留已持久版本。状态位于所选 profile 的 `file-sync`，按来源、节点和同一请求使用的凭据哈希隔离。只有确认旧进程已退出时才自动回收其 `.lock`；存在活动进程或不可信锁时拒绝同时写入。
+
+## 0.4.0 验证范围
+
+冻结版本通过 88 项桌面测试，其中 25 项覆盖新来源。验证包括：多段中文与组合 emoji；100 KB/非法 UTF-8；隐藏项、静态符号链接和显式路径排除；引用无正文；EventKit 合成解码和权限失效；错误 ACK/断连后同版本恢复；删除与恢复链；隐私策略改变后不再发送旧标题、路径或正文；关闭删除跟踪丢弃旧待传删除；满队列恢复；CLI 真子进程的两个 profile、同 URL 更换凭据、dry-run 和失效进程锁恢复。满队列回归注入小上限触发同一容量分支，不是 4,000 次 fsync 的性能测试。
+
+完整 TypeScript、Swift EventKit 助手和 C++ 千问助手已在 Apple Silicon Mac 编译。真实 Electron 临时 profile 通过原生文件选择器 IPC（选择结果仅注入合成文件）、离线来源待传、配置保存和随手记测试，截图采集始终停止；生成页面截图为 `apps/desktop/release/source-ui-fixture.png`。实际 dev/test 临时中央进程验证了文件 CLI 独立导入、重复跳过及既有离线备份/恢复和升级回退。
+
+独立本机中央节点还通过合成「来源管理器→文件扫描→丢失 ACK→退出重建→相同版本重试→更新→删除→恢复→引用转换」全链路，中央正确保留四个快照/删除历史版本及后续引用版本。合成 EventKit 对象经同一解码器和队列上传后，中央保留正确的会议时间与独立观察时间。复现时仅指向专用测试节点：
+
+```sh
+# 私有连接文件：{"url":"http://127.0.0.1:<port>","token":"..."}
+node apps/desktop/scripts/source-fixture.cjs /private/path/connection.json
+```
+
+0.4.0 `.app` 已通过 ad-hoc `codesign --verify --deep --strict`，打包 ASAR 及随包原生进程对生成白图实际运行千问成功（本机约 4.05 秒）。这不是模型准确率评测。日历部分只验证了 Swift 编译、合成数据与权限失败行为，没有请求或读取个人日历；真实 EventKit 授权弹窗、账户同步日历及真实个人日程仍需用户在自己的设备上验收。最低 macOS 13.3 是构建目标，未新增旧系统或 Intel Mac 实机验证。
 
 ## 隐私与采样流水线
 
@@ -145,6 +187,7 @@ Content-Type: application/json
 config.json                 # 设备配置与 Keychain 加密的令牌
 notes/draft.json             # 原生随手记草稿、已准备的稳定提交与完成标记
 models/qwen/                # 已验证双模型及可续传部分
+local-sources/              # 显式日历/文件来源配置及按连接隔离的持久版本队列
 diagnostics/diagnostics.json # 可选、有界数值诊断
 diagnostics/events.json      # 可选、最多500条固定阶段事件
 Partitions/                 # legacy 中央 Web session
@@ -162,9 +205,9 @@ queue/
 
 进程被杀后，下次启动会恢复完整事件、清理未完成临时文件和孤立图像。遇到已提交事件或图像损坏时启动失败，保留损坏记录供人工备份恢复，避免静默丢失。新机器上不要依赖复制后的 Keychain 密文可解密，应复制队列并重新配置令牌。设备 UUID 随原队列事件保留，已有观测不会因迁移改写来源。
 
-## 0.3.0 验证范围
+## 历史 0.3.0 验证范围
 
-本轮执行 63 个桌面单元测试、TypeScript/Swift/C++ 构建、0.3.0 `.app` 打包及 `codesign --verify --deep --strict`。原生 Electron profile fixture 同时启动 dev/test 两个进程，各自通过 IPC 保存合成凭据/随手记/草稿，实际 loopback HTTP 401 后保留队列，导出支持包，再重启两个进程验证设备 ID、凭据、草稿、队列与 session 路径独立稳定。支持包逐项检查没有合成私密原文、令牌、URL、策略、设备 ID 或目录。整个测试没有开始截图、下载模型或调用真实模型。
+0.3.0 当时执行 63 个桌面单元测试、TypeScript/Swift/C++ 构建、0.3.0 `.app` 打包及 `codesign --verify --deep --strict`。原生 Electron profile fixture 同时启动 dev/test 两个进程，各自通过 IPC 保存合成凭据/随手记/草稿，实际 loopback HTTP 401 后保留队列，导出支持包，再重启两个进程验证设备 ID、凭据、草稿、队列与 session 路径独立稳定。支持包逐项检查没有合成私密原文、令牌、URL、策略、设备 ID 或目录。整个测试没有开始截图、下载模型或调用真实模型。
 
 ```sh
 npm run test:profiles -w @mote/desktop

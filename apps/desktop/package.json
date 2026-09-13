@@ -1,6 +1,6 @@
 {
   "name": "@mote/desktop",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Mote privacy-first personal context collector",
   "main": "dist/main.js",
@@ -65,7 +65,9 @@
       ],
       "hardenedRuntime": true,
       "extendInfo": {
-        "NSScreenCaptureUsageDescription": "Mote records screenshots only while you enable capture, applies your privacy filters locally, then uploads them to your own central node."
+        "NSScreenCaptureUsageDescription": "Mote records screenshots only while you enable capture, applies your privacy filters locally, then uploads them to your own central node.",
+        "NSCalendarsUsageDescription": "仅在你连接本地日历并选择日历后，将日程同步到自己的中央仓库。",
+        "NSCalendarsFullAccessUsageDescription": "仅在你连接本地日历并选择日历后，读取所选日历用于个人上下文索引；Mote 不修改日历。"
       },
       "minimumSystemVersion": "13.3"
     }

@@ -9,7 +9,7 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.TimeoutException
 import javax.net.ssl.SSLException
 
-enum class EventStage { APP, CONFIG, CAPTURE, MODEL, MODEL_DOWNLOAD, OCR, PRIVACY, QUEUE, UPLOAD, HEARTBEAT, NOTE, SUPPORT }
+enum class EventStage { APP, CONFIG, CAPTURE, MODEL, MODEL_DOWNLOAD, OCR, PRIVACY, QUEUE, UPLOAD, HEARTBEAT, NOTE, SOURCE, SUPPORT }
 enum class EventCode { STARTED, STOPPED, OK, FILTERED, WAIT_NETWORK, PERMISSION, CONFIG_INVALID, NETWORK, TIMEOUT, TLS, AUTH, CONFLICT, SERVER, RESPONSE, STORAGE, MODEL_UNAVAILABLE, SCHEDULER, CANCELLED, OTHER }
 
 /** Fixed schema only: no exception messages, endpoints, IDs, content or arbitrary string attributes. */

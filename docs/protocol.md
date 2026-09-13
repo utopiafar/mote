@@ -97,3 +97,20 @@ Query `after` is inclusive and `before` exclusive. An explicit `deviceId` cannot
 Final answers must have a string body and declared retrieved citation IDs. Only successful tool responses authorize citations. Prose inline UUID citations must match the retrieved and declared IDs; code and authored Markdown links remain opaque. The UI presents verified inline sources as buttons opening the original record. Model-emitted literal JSON control characters are losslessly escaped; other malformed responses get at most one model-authored correction in the same read-only evidence session and original time budget. No semantic classifier or template fallback is used.
 
 `MOTE_MODEL_REASONING_EFFORT` is `off|low|high|max` (default `high`); `MOTE_MODEL_MAX_TOKENS` defaults to 8192 and is bounded to 256–32768. Reasoning is performed by the configured model through the Harness; no reasoning transcript is exposed as a user-facing answer. [DeepSeek's official thinking-mode documentation](https://api-docs.deepseek.com/guides/thinking_mode/) describes the provider controls and multi-round tool support. Higher effort can increase latency and usage.
+
+## 版本化外部来源
+
+客户端文件、日历和外部 Agent 使用来源接口，不覆盖不可变截图或笔记。
+
+- `POST /api/sources`：注册 `{id,name,kind,deviceId,platform,retention,enabled}`。重复注册保持服务器已有的启停设置。
+- `PATCH /api/sources/:id`：所有者编辑名称、保存策略或启停状态。
+- `PUT /api/sources/:id/items`：提交 `externalId,revision,observedAt,title,text,kind,layer`，以及可选 `modifiedAt,uri,mimeType,calendar,deleted`。确认包含 `id,sourceId,externalId,revision,duplicate`，客户端必须逐一核对。
+- `GET /api/source-items`：当前版本，支持 `sourceId,deviceId,kind,after,before,limit,cursor,includeDeleted`。日历按计划时间重叠匹配；其他记录按观察时间。
+- `GET /api/sources/:id/history?externalId=...`：不可变版本历史。
+- `GET /api/memories`：默认概要。`/:id` 展开模型陈述，`/:id/evidence` 读取原始证据。`POST /extract` 显式调用模型；`POST /:id/publish` 确认候选，`DELETE /:id` 删除记忆。
+
+`calendar` 使用带时区的 `start/end`、`allDay`、`timeZone` 和 `status`。来源记录的 `durationMs` 固定为零，会议计划不能计入实际采样时长。正文可以为空；空文件不被改写成说明文本。`reference` 和删除版本只保存元数据，正文必须为空。
+
+相同版本重复提交安全；相同版本但内容不同返回冲突。离线客户端需持久化版本与请求正文，严格确认后再移除。参考实现使用内容与前一版本的哈希链，支持“修改→删除→恢复相同内容”，而旧重试不会移动当前指针。
+
+外部 Chatbot 接口另见 [MCP 与连接器](connectors.md)。内部查询 Agent 没有写入能力。

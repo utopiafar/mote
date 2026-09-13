@@ -116,9 +116,25 @@ URL 留空仅表示不使用这个额外钩子，**不会关闭内置 Qwen**。�
 
 开发者诊断默认关闭，采样间隔 15–3600 秒、默认 60 秒，在界面或采集服务运行时记录，最多保留 1440 条。内容为整机电量/充电状态、可用时的 chargeCounter、整机电量变化、队列/模型/诊断占用、入队/拦截/失败累计、最近推理/OCR 耗时、已确认上传 JSON 载荷字节。整机电量变化不能归因于 Mote。原生“导出数值诊断 JSON”使用系统保存文件选择器；不包含截图、OCR、笔记、token、prompt、模型reason、设备ID。关闭后停止新增采样，不为诊断单独拉活后台。
 
-诊断开关同时控制最多 500 条固定事件，阶段包括配置、模型、OCR、隐私、队列、上传、心跳和随手记；只含时间、固定错误类别、可选耗时及 HTTP 状态。分类依据异常类型/协议状态，不保存原始异常消息。关闭后停止新增，已记内容保留。日志损坏会重新开始诊断，但不会删改采集队列。
+诊断开关同时控制最多 500 条固定事件，阶段包括配置、模型、OCR、隐私、队列、上传、心跳、随手记和来源同步；只含时间、固定错误类别、可选耗时及 HTTP 状态。分类依据异常类型/协议状态，不保存原始异常消息。关闭后停止新增，已记内容保留。日志损坏会重新开始诊断，但不会删改采集队列。
 
 “导出安全支持包 JSON”通过系统文件选择器导出应用/环境版本、采集状态、非敏感数值开关、数值诊断和上述事件；不含节点 URL、设备名/ID、目录、令牌、截图、OCR、笔记、心情、策略或模型理由。读取导出时再按字段白名单投影，诊断写入失败不影响隐私或 ACK 删除条件。支持包不等同于含内容的队列备份。
+
+## 本机日历与文件来源
+
+在首页保存中央节点配置，再打开原生“日历与文件来源”页面。此入口不需要截图权限，也不会在打开页面时读取日历；最多保存 20 个来源。来源的原始版本、当前快照、引用与衍生记忆之间的区别见 [上下文分层](context-layers.md)，跨端连接与中央管理见 [连接器](connectors.md)。
+
+- **日历**：点击“连接本机日历”时才申请 `READ_CALENDAR`，选择系统日历提供者中可见的一个日历。默认同步过去 30 天到未来 90 天的实例，可设过去 0–365 天、未来 1–365 天；重复日程通过系统 `Instances` 展开。仅保存计划起止、全天标记、时区和状态，实际扫描时间另记为 `observedAt`，不将日程视为参加或完成证据。没有写日历权限，不会修改日程；只存在远端、尚未同步到系统提供者的日历不可读取。
+- **文件**：点击“选择一个文件”或“选择文件目录”，通过系统 SAF 选择器授予并保留只读 URI 权限。不申请全盘访问，不扫描未选择的目录。默认扩展名为 `md,txt,json,csv,ics`，可自行修改；正文仅接受有效 UTF-8，不含 NUL，最多 100 KiB 且 100000 UTF-16 码元，起始 UTF-8 BOM 会去掉，其余正文及空白原样保留。PDF、Office、图片和音视频不在本期正文解析范围；ICS 当前是文件原文，不解析为日历实例。
+- **保存方式**：默认“正文快照”同步标题及正文；“仅引用”不打开文件内容流，也不查询日历描述/地点，只发送名称、URI、修改/计划时间等元数据。引用不会让中央节点获得读取手机 URI 的权限。用户主动选择的日历/文件不经过截图 Qwen 审查；需要限制上传时，应先选择引用、缩小范围或设置文件排除路径。
+
+文件排除每行一个相对路径模式，只有 `*` 是通配符，其他字符按字面匹配，例如 `private/*`、`*.secret.txt`；匹配区分大小写，扩展名匹配不区分大小写。匹配只用于用户配置的访问范围，不按内容关键词推断主题。每次最多收集 200 项及 4 MiB 序列化内容，目录遍历最多 12 层、检查 2000 项；任何超限、读取失败、无效 UTF-8 或部分扫描都显示“不完整”，保留原快照，不把漏扫项当成删除。移动窗口外的旧日程也不会被误标为删除。文件选择器受 Android 和提供者限制，某些目录不可选择；授权失效需重新选择，隐藏/不可用的日历需在系统恢复后重试。
+
+每个来源可设 15–1440 分钟扫描间隔，默认 60 分钟；WorkManager 约每 15 分钟检查各来源是否到期，“立即扫描并同步”可手动请求。扫描和上传独立，离线时先保存加密快照与有序待发版本，联网后按首页 Wi-Fi 配置发送。应用主进程再次启动会恢复任务；Android/HyperOS 省电、强行停止和提供者不可用可能延迟后台执行，不保证准点或永久后台存活。
+
+来源配置和状态位于各安装环境独立的 `noBackupFilesDir/local-sources`，使用 Keystore 加密、临时文件 fsync 后原子替换。总缓存上限为 64 MiB 与首页队列上限的较小值，单来源最多 4096 个待发版本；达到上限暂停增加，不默删未确认数据。上传严格核对来源 ID、外部 ID、revision、记录 UUID 和重复标记，再移除对应待发项；丢 ACK 后重试同一版本。节点 URL 或令牌变化会重置该目标的确认状态并重新提交当前快照。正文变化、删除、恢复形成不同的链式 revision；只有完整成功扫描才生成不带原文的删除版本，旧版本重试不会倒退中央当前指针。
+
+修改选择范围、过滤、时间窗口或保存方式会清掉该来源旧的本机缓存和未发送内容后重新扫描，界面在保存前明确说明。停用只暂停该来源任务；移除连接清除本机来源状态并释放未被其他连接使用的 URI 权限，两者都不会删除已经同步到中央的历史。中央暂停的来源会保留待发版本，不自动重新启用；需在中央恢复后重试。支持包仅增加来源数量、启用数量和缓存字节，不包含名称、URI 或正文。
 
 ## K90 Pro Max / HyperOS 验证指南
 
@@ -133,9 +149,32 @@ URL 留空仅表示不使用这个额外钩子，**不会关闭内置 Qwen**。�
 
 **尚无 K90 Pro Max 真机验证，不能保证最新 HyperOS 的后台稳定性、权限页路径、耗电、截图/OCR延迟或长期续航。** Android 系统与 OEM 会限制后台行为；MVP 不用闹钟、WakeLock 或循环重启规避限制。
 
-## 0.3.0 环境隔离验证与产物
+## 0.4.0 来源同步验证与产物
 
-0.3.0 / versionCode 4 已完成日常与 Dev APK 构建、29 项 JVM 测试（无失败/跳过），两 variant lint 均 0 error / 38 warning，两个 APK 均通过 16 KiB ZIP 对齐校验。产物：
+0.4.0 / versionCode 5 已完成 `assembleDebug`、`assembleDevelopment`、开发版测试 APK 构建、36 项 JVM 测试（0 失败），两种安装包 lint 均为 0 error / 48 warning，并通过 16 KiB ZIP 对齐。开发版显示版本为 `0.4.0-dev`。当前产物（路径相对 `apps/android`）：
+
+| 版本 | 文件 | 字节 | SHA-256 |
+| --- | --- | ---: | --- |
+| 日常 debug | `app/build/outputs/apk/debug/app-debug.apk` | 32,233,076 | `c5fd94cc55d4169ef1a393f80b667d516aa54b374253d57566f5ba3a79ffd71d` |
+| Mote Dev | `app/build/outputs/apk/development/app-development.apk` | 32,233,368 | `0e6792f7e7c26e9860248bc0b3370b8d5ccb20e75993b526a1998baa4cee3d80` |
+
+最终开发 APK 在专用 `mote_fixture_api35` / API35 上执行 `LocalSourcesInstrumentedTest` 三项测试，全部通过、无跳过（1.338 秒）。使用 debug 专用生成 Provider 验证日历计划时间与观察时间分离、文件 Unicode 原文、引用模式不读正文、隐藏/失败/部分扫描不误删；原生页面不提前请求日历权限。通过生产 `HttpJson` 对隔离的真实中央服务完成文件和日历注册/更新、丢 ACK 后重建加密状态并幂等重试、删除再恢复，以及三版本历史和当前正文回读。
+
+测试没有查询个人日历或文件、没有截图、没有调用真实模型。本轮未实测真实 SAF 选择器授权、生产 WorkManager 长期调度、OEM 日历提供者兼容性或 K90 Pro Max/HyperOS 后台行为；传输与本机状态机测试不能替代这些真机检查。以下命令默认只运行生成 Provider 和 UI 测试；真实中央测试必须另行在 Dev 私有目录放置隔离节点连接文件，没有文件时该项会跳过，不能声称完整链路通过：
+
+```sh
+apps/android/gradlew -p apps/android -Pmote.testBuildType=development \
+  :app:assembleDebug :app:assembleDevelopment :app:assembleDevelopmentAndroidTest \
+  :app:testDebugUnitTest :app:lintDebug :app:lintDevelopment
+adb -s emulator-5580 install -r apps/android/app/build/outputs/apk/development/app-development.apk
+adb -s emulator-5580 install -r apps/android/app/build/outputs/apk/androidTest/development/app-development-androidTest.apk
+adb -s emulator-5580 shell am instrument -w -e class dev.mote.collector.LocalSourcesInstrumentedTest \
+  dev.mote.collector.dev.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+## 历史 0.3.0 环境隔离验证
+
+0.3.0 / versionCode 4 曾完成日常与 Dev APK 构建、29 项 JVM 测试（无失败/跳过），两 variant lint 均 0 error / 38 warning，两个 APK 均通过 16 KiB ZIP 对齐校验。下表为历史记录，这些构建路径现已被 0.4.0 产物替换：
 
 | 版本 | 文件 | 字节 | SHA-256 |
 | --- | --- | ---: | --- |
@@ -196,6 +235,9 @@ python3 apps/android/scripts/run-complex-fixtures.py --connection .mote/live-val
 
 ## 设计参考与官方依据
 
+- [Android Calendar Provider](https://developer.android.com/identity/providers/calendar-provider)：日历权限、日历选择与实例查询。
+- [Android Storage Access Framework](https://developer.android.com/training/data-storage/shared/documents-files)：系统文件/目录选择与持久 URI 权限、受限目录。
+- [CalendarContract.Instances](https://developer.android.com/reference/android/provider/CalendarContract.Instances)：限定时间范围查询展开后的日程实例。
 - [Android AccessibilityService](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService)：用户控制服务启用、`takeScreenshot` 与截图能力声明。
 - [Android MediaProjection](https://developer.android.com/media/grow/media-projection)：前台服务类型、单次授权、回调、调整共享尺寸、Android 15 QPR1+ 锁屏停止行为。
 - [Android WorkManager 工作请求](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work)：网络约束和指数退避，不保证精确执行时间。

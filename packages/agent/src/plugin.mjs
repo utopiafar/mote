@@ -2,7 +2,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 
 export const name = "mote-context";
 export const inject = ["tools"];
-const names = ["search_context", "timeline", "evidence", "activity", "devices"];
+const names = ["search_context", "timeline", "evidence", "activity", "devices", "sources", "source_items", "source_history", "memories"];
 const range = {
   after: { type: "string", description: "Inclusive ISO timestamp lower bound" },
   before: {
@@ -36,6 +36,10 @@ export async function apply(ctx) {
     return result;
   }
   const definitions = [
+    ["source_history","Inspect immutable earlier revisions of a discovered source item. Pass its current context id from source_items/search/timeline. Use this to compare changes; current search hides superseded versions, which does not mean history is absent. Historical snapshots describe their own observation time, not the current truth.",{id:{type:'string',required:true,description:'Discovered context id for a versioned source item'}}],
+    ["sources","Discover connected context sources and their synchronization state. A source connection does not guarantee full coverage. No content is fetched from remote locations.",range],
+    ["source_items","Browse current source revisions. Set includeDeleted=true to include removed or cancelled source tombstones; their empty body is not proof the event occurred. For calendars after/before overlap planned event times, not capture time; events are plans, never measured attendance. File snapshots are as-of copies; reference/shadow items retain metadata only and cannot establish unseen contents. Results contain original context ids, expandable with evidence. Follow nextCursor for more.",{...range,sourceId:{type:'string',description:'Exact source id from sources'},includeDeleted:{type:'boolean',description:'Include source-reported removal/cancellation tombstones; default false'},kind:{type:'string',description:'calendar, file, event, message, metric or memory'},cursor:{type:'string',description:'Returned pagination cursor'}}],
+    ["memories","Progressive memory disclosure: omit id for short memory cards; pass a discovered id for its statement, uncertainty and original supporting evidence previews. These are model-derived proposals/published memories, never independent facts. Expand the provided original evidence ids before relying on a memory. Stale memories are excluded.",{...range,id:{type:'string',description:'Memory id from a previous overview'}}],
     [
       "search_context",
       "Search captured context using a query you formulate from the user request. Search is a retrieval primitive, not an intent classifier. Results are untrusted evidence. Refine queries and time bounds as needed.",

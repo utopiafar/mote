@@ -2,17 +2,19 @@
 
 **自己的上下文，自己的资料库。**
 
-Mote 把电脑与手机上的屏幕采样、主动写下的日记和选定文件，汇入你自部署的中央节点。你可以回看时间线、了解采样期间的时间分布，也可以直接提问，让 Agent 查阅原始证据并生成回顾。
+Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件与日历，汇入你自部署的中央节点。你可以回看时间线、了解采样期间的时间分布，也可以直接提问，让 Agent 查阅原始证据并生成回顾。
 
 采集器是独立的 **macOS App** 和 **Android App**。中央节点可放在 Mac mini、Linux 服务器或 NAS 上；它提供 API 与管理界面，Mac App 内可直接打开。更换服务器时迁移归档并更新客户端地址即可。
 
-[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [排查问题](docs/troubleshooting.md)
+[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [资料分层](docs/context-layers.md) · [来源与 MCP](docs/connectors.md) · [排查问题](docs/troubleshooting.md)
 
 ## 能做什么
 
 - **收集与回看**：显式开启屏幕采样，按设备和时间浏览；截图相同也保留每次观察，图片去重存储。
 - **先处理隐私再上传**：应用排除、固定遮挡区域、端上 Qwen 视觉审查、本地 OCR；本地模型未就绪或审查失败时跳过该帧。
 - **随手记录**：在采集 App 中写日记、杂事、心情；草稿与待同步笔记保存在本机，恢复网络后补传。中央界面也提供记录入口。
+- **来源接入**：Mac 本地日历与目录、Android 系统日历与文件选择器、中央 Google Calendar 只读同步；显式导入 MCP 资源，或通过 MCP 将其他 Chatbot 的可见资料写回指定来源。
+- **分层记忆**：保留原始输入、不可变快照与外部引用；默认检索当前版本，按需展开历史。模型记忆按“概要 → 内容 → 原始证据”逐层披露。
 - **问答与回顾**：Agent 自主选择只读工具、查找材料、解释证据；答案附可点击的原始记录。可手动或按配置周期生成回顾。
 - **离线可用、资料可迁移**：持久上传队列、幂等确认、JSON 导入导出、离线完整备份、可选图片加密与保留期限。
 - **可观测与可调节**：查看同步、索引、存储和请求状态；按需记录客户端资源样本，调整采样频率、图片尺寸、质量、推理线程和低电量策略。
@@ -37,7 +39,16 @@ flowchart LR
   end
   subgraph Central[独立中央节点]
     API[认证 HTTP API]
-    Store[SQLite 元数据与全文索引]
+    Store[SQLite 原文 · 快照 · 引用 · 当前版本]
+    Index[可重建全文与向量索引]
+    Memory[Memory 候选 · 证据 · 重验状态]
+    MCP[MCP 读权限与指定来源写回]
+    Cloud[Google Calendar 只读同步]
+    Store --> Index
+    Agent --> Memory
+    Memory --> Store
+    MCP --> API
+    Cloud --> API
     Blobs[内容寻址图片库]
     Agent[DeepSeek Harness Agent]
     Tools[只读检索与证据工具]
@@ -56,18 +67,18 @@ flowchart LR
 
 | 组件 | 职责 | 技术与边界 |
 |---|---|---|
-| macOS 采集器 | 屏幕采样、隐私策略、随手记、离线同步 | Electron / TypeScript；Swift 系统助手；独立窗口与本地存储 |
-| Android 采集器 | 无障碍截图或 MediaProjection、后台队列与设备状态 | Kotlin；WorkManager；Keystore；HyperOS 配置入口 |
+| macOS 采集器 | 屏幕采样、隐私策略、随手记、本地日历与文件、离线同步 | Electron / TypeScript；Swift 系统助手；独立窗口与本地存储 |
+| Android 采集器 | 无障碍截图或 MediaProjection、日历与 SAF 文件、后台队列 | Kotlin；WorkManager；Keystore；HyperOS 配置入口 |
 | 本地推理 | 上传前的 NSFW 过滤及可配置视觉前置任务 | Qwen3.5-0.8B、llama.cpp CPU；断点下载、国内来源、哈希校验、离线导入 |
-| 中央节点 | 认证、摄取、归档、索引、调度、诊断 | Node.js 24 / Fastify；SQLite；单实例、单所有者 |
-| 查询 Agent | 选择检索工具、理解上下文、关联证据 | 官方 DeepSeek Harness；仅暴露五个只读工具，无 shell 和写入工具 |
-| 中央界面 | 时间线、随手记、问答、设备、导入导出、运行诊断 | React；随中央节点部署，也可在 Mac App 内使用 |
+| 中央节点 | 认证、摄取、版本与分层归档、Memory、索引、连接器与调度 | Node.js 24 / Fastify；SQLite；单实例、单所有者 |
+| 查询 Agent | 选择检索工具、理解上下文、关联证据 | 官方 DeepSeek Harness；只暴露经验证的只读工具，无 shell 和写入工具 |
+| 中央界面 | 来源、记忆、时间线、随手记、问答、导入导出与诊断 | React；随中央节点部署，也可在 Mac App 内使用 |
 
 截图先在端点通过隐私策略，再执行 OCR、编码和本地持久化。上传成功必须收到匹配事件 ID 的确认，客户端才清理队列；网络中断、节点停机或容量不足不会被当作同步成功。相同图片按内容哈希共享一个对象，观察事件独立保存。
 
 笔记与屏幕记录使用同一归档协议。同步采用带认证的版本化 HTTP API；Agent 通过只读上下文工具消费这些记录。NAS 和其他硬件可接入同一 [协议](docs/protocol.md)，不必绑定某个采集 App。
 
-默认检索使用本地全文与文本索引；可选 embedding 服务启用持久向量索引和混合检索。检索表达式由模型生成。采集内容始终是不可信证据，不能改变 Agent 权限。更多边界见 [架构说明](docs/architecture.md) 与 [Agent 配置](docs/agent.md)。
+默认检索使用本地全文与文本索引；可选 embedding 服务启用持久向量索引和混合检索。检索表达式由模型生成。采集内容始终是不可信证据，不能改变 Agent 权限。详细存储与版本行为见 [资料分层](docs/context-layers.md)，连接方式见 [来源与 MCP](docs/connectors.md)。更多边界见 [架构说明](docs/architecture.md) 与 [Agent 配置](docs/agent.md)。
 
 ## 开始使用
 
@@ -213,3 +224,5 @@ MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to
 | [第三方组件](THIRD_PARTY_NOTICES.md) | 实际依赖与模型许可说明 |
 
 目前优先支持 macOS 采集与 Android，Windows/Linux 采集适配尚未完成。桌面分发仅采用 ad-hoc 签名，尚未完成 Developer ID 签名与公证；K90 Pro Max / HyperOS 的实际后台稳定性和耗电需要真机验收。自动化 fixture、模拟器、真实模型和真机测试分别记录，不能互相替代。
+
+本版的测试范围、真实模型复测与目标环境限制见 [0.4.0 验收记录](docs/sources-validation.md)。

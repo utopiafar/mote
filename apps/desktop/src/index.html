@@ -30,6 +30,20 @@
     <section class="panel"><div class="section-title"><span class="step">✎</span><div><h2>随手记</h2><p>记下心情、想法和杂事。先安全写入本地队列，联网后同步中央节点。</p></div></div>
       <form id="note-form"><label>此刻想记什么<textarea id="note-text" rows="3" maxlength="20000" required placeholder="今天的感受、突然想到的事情…"></textarea></label><div class="form-grid spaced"><label>心情（可选）<input id="note-mood" maxlength="80" placeholder="用自己的话描述"></label><div class="actions"><button id="save-note" class="primary" type="submit">保存随手记</button></div></div><p id="note-feedback" class="helper" role="status"></p></form>
     </section>
+    <section class="panel" id="local-sources">
+      <div class="section-title"><span class="step">↻</span><div><h2>本地来源</h2><p>由你选择日历、文件或目录。App 驻留时持续同步；退出后暂停，下次打开恢复。</p></div></div>
+      <div class="note">“快照”会将文字保存到中央，“引用”只同步标题、位置和时间等元数据。截图应用过滤和视觉审查不适用于文字来源；请单独设置路径排除或文字遮盖。日历只读过去 30 天至未来 90 天内的所选日历，不修改系统日历。权限仅在点击连接日历时申请。</div>
+      <details class="spaced" open><summary id="source-editor-title">新来源的保留与过滤规则</summary>
+        <div class="form-grid spaced"><label>保留方式<select id="source-retention"><option value="snapshot">快照 · 保存文字</option><option value="reference">引用 · 仅元数据</option></select></label><label>检查间隔（秒）<input id="source-interval" type="number" min="30" max="3600" value="300"></label><label>文本扩展名（逗号分隔）<input id="source-extensions" value=".md,.txt,.json,.csv,.ics"><small>每份 ≤100 KB UTF-8；跳过隐藏项和符号链接。</small></label><label>排除相对路径（每行一项）<textarea id="source-excludes" rows="2" placeholder="private&#10;notes/private.md"></textarea><small>精确路径或目录前缀，仅用于文件来源。</small></label></div>
+        <label class="spaced">上传前遮盖的确切文字（每行一项，可选）<textarea id="source-redacts" rows="2" placeholder="由你指定原文，不自动推断"></textarea><small>同时处理标题和正文。配置遮盖后不上传文件位置 URI，避免位置包含原文。</small></label>
+        <label class="checkbox"><input id="source-deletions" type="checkbox"><span>跟踪删除<small>仅完整成功扫描后标记范围内消失项；中央历史版本仍保留。默认关闭。</small></span></label>
+        <div class="actions spaced"><button id="source-save-edit" class="primary" type="button" hidden>保存所选来源规则</button><button id="source-cancel-edit" class="secondary" type="button" hidden>结束编辑</button></div>
+      </details>
+      <div class="actions spaced"><button id="source-files" class="primary" type="button">选择文件</button><button id="source-directory" class="secondary" type="button">选择目录</button><button id="source-calendar-connect" class="secondary" type="button">连接系统日历</button><button id="source-sync" class="secondary" type="button">立即检查 / 重试</button><button id="source-calendar-permissions" class="text-button" type="button">日历权限 ↗</button></div>
+      <div id="source-calendars" hidden class="spaced"><label>选择一个已授权日历<select id="source-calendar-choice"></select></label><button id="source-calendar-add" class="primary spaced" type="button">同步所选日历</button></div>
+      <p id="source-feedback" class="helper" role="status"></p><div id="source-list" aria-live="polite"></div>
+      <p class="helper">每来源待传上限 4000 版本 / 32 MiB。路径与待传正文只保存在本机私有来源目录，不进入支持包。更换节点或令牌使用独立同步状态；原节点待传版本不会发送到新节点。</p>
+    </section>
     <form id="settings">
       <fieldset id="settings-fields">
         <section class="panel"><div class="section-title"><span class="step">01</span><div><h2>连接中央节点</h2><p>此电脑只是一个端点。节点可部署在本机、NAS 或独立服务器。</p></div></div>

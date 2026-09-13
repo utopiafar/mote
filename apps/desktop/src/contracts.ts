@@ -89,6 +89,13 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  sources(): Promise<import('./source-types').SourceStatus[]>;
+  chooseSourceFiles(mode: 'files' | 'directory', options: import('./source-types').SourceOptions): Promise<{ canceled: boolean }>;
+  authorizeCalendar(): Promise<import('./source-types').CalendarChoice[]>;
+  addCalendarSource(id: string, options: import('./source-types').SourceOptions): Promise<void>;
+  updateSource(id: string, options: import('./source-types').SourceOptions & { enabled: boolean }): Promise<void>;
+  syncSources(): Promise<void>;
+  openCalendarPermissions(): Promise<void>;
   status(): Promise<Status>;
   noteDraft(): Promise<import('./note-draft').NoteDraft>;
   updateNoteDraft(input: import('./note-draft').NoteDraft): Promise<import('./note-draft').NoteDraft>;

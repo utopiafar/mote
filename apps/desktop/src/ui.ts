@@ -171,3 +171,60 @@ byId('diagnostics-sample').addEventListener('click', () => void perform(async ()
 byId('diagnostics-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportDiagnostics(); if (!result.canceled) feedback('数值诊断已导出。', true); }));
 
 byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(); if (!result.canceled) feedback('支持包已导出；只含数值、配置开关和固定阶段事件。', true); }));
+
+let localSourceRows: import('./source-types').SourceStatus[] = [];
+let sourceEditingId: string | undefined;
+let sourceBusy = false;
+function sourceOptions(): import('./source-types').SourceOptions {
+  return { retention: readInput('source-retention') as 'snapshot' | 'reference', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
+}
+function editSource(id?: string): void {
+  sourceEditingId = id;
+  const source = localSourceRows.find(s => s.source.id === id)?.source;
+  byId('source-editor-title').textContent = source ? '编辑：' + source.name : '新来源的保留与过滤规则';
+  byId('source-save-edit').hidden = !source; byId('source-cancel-edit').hidden = !source;
+  if (!source) return;
+  byId<HTMLSelectElement>('source-retention').value = source.retention; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
+  byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
+  byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n');
+}
+async function refreshSources(): Promise<void> {
+  const rows = await desktopApi.sources(); localSourceRows = rows;
+  const list = byId('source-list'); list.replaceChildren();
+  if (!rows.length) { const p = document.createElement('p'); p.className = 'helper'; p.textContent = '尚未连接本地来源。选择只包含你希望归档资料的目录。'; list.append(p); }
+  for (const row of rows) {
+    const card = document.createElement('article'); card.className = 'source-card';
+    const title = document.createElement('strong'); title.textContent = `${row.source.kind === 'local-calendar' ? '日历' : '文件'} · ${row.source.name} · ${row.source.retention === 'reference' ? '引用' : '快照'}`;
+    const detail = document.createElement('p'); detail.className = 'helper profile-path'; detail.textContent = row.source.path || '所选系统日历';
+    const status = document.createElement('p'); status.className = 'helper'; status.textContent = `${row.source.enabled ? row.message : '本机已暂停'} · ${row.items} 项 · 待传 ${row.pending} · 跳过 ${row.skipped}${row.lastSyncAt ? ' · 最近同步 ' + new Date(row.lastSyncAt).toLocaleString() : ''}`;
+    const actions = document.createElement('div'); actions.className = 'actions';
+    const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary'; edit.textContent = '编辑规则'; edit.addEventListener('click', () => editSource(row.source.id));
+    const pause = document.createElement('button'); pause.type = 'button'; pause.className = 'secondary'; pause.textContent = row.source.enabled ? '暂停本机同步' : '恢复本机同步'; pause.disabled = sourceBusy;
+    pause.addEventListener('click', () => void sourceAction(async () => { await desktopApi.updateSource(row.source.id, { ...row.source, enabled: !row.source.enabled }); }));
+    actions.append(edit, pause); card.append(title, detail, status, actions); list.append(card);
+  }
+}
+async function sourceAction(action: () => Promise<void>): Promise<void> {
+  if (sourceBusy) return; sourceBusy = true; byId('source-feedback').textContent = '正在处理，请稍候…';
+  for (const id of ['source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync']) byId<HTMLButtonElement>(id).disabled = true;
+  try { await action(); byId('source-feedback').textContent = '已处理，下面显示各来源的当前同步状态。'; }
+  catch (error) { byId('source-feedback').textContent = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : '操作未完成，请检查权限与配置后重试'; }
+  finally { sourceBusy = false; for (const id of ['source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync']) byId<HTMLButtonElement>(id).disabled = false; await refreshSources().catch(() => {}); }
+}
+for (const mode of ['files', 'directory'] as const) byId('source-' + mode).addEventListener('click', () => void sourceAction(async () => { await desktopApi.chooseSourceFiles(mode, sourceOptions()); }));
+byId('source-calendar-connect').addEventListener('click', () => void sourceAction(async () => {
+  const calendars = await desktopApi.authorizeCalendar(); const select = byId<HTMLSelectElement>('source-calendar-choice'); select.replaceChildren();
+  for (const calendar of calendars) { const option = document.createElement('option'); option.value = calendar.id; option.textContent = calendar.title; select.append(option); }
+  byId('source-calendars').hidden = !calendars.length;
+  if (!calendars.length) throw new Error('已授权，但系统中没有可选日历；请在系统日历中添加后重试');
+}));
+byId('source-calendar-add').addEventListener('click', () => void sourceAction(async () => { await desktopApi.addCalendarSource(readInput('source-calendar-choice'), sourceOptions()); }));
+byId('source-sync').addEventListener('click', () => void sourceAction(() => desktopApi.syncSources()));
+byId('source-calendar-permissions').addEventListener('click', () => void sourceAction(() => desktopApi.openCalendarPermissions()));
+byId('source-cancel-edit').addEventListener('click', () => editSource());
+byId('source-save-edit').addEventListener('click', () => void sourceAction(async () => {
+  const source = localSourceRows.find(s => s.source.id === sourceEditingId)?.source; if (!source) throw new Error('请先选择要编辑的来源');
+  await desktopApi.updateSource(source.id, { ...sourceOptions(), enabled: source.enabled }); editSource();
+}));
+void refreshSources().catch(() => { byId('source-feedback').textContent = '来源状态暂不可用，请重新打开应用'; });
+setInterval(() => { if (!sourceBusy) void refreshSources().catch(() => {}); }, 3000);

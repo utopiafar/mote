@@ -7,10 +7,10 @@ await mkdir('native/bin', { recursive: true });
 if (process.platform === 'darwin') {
   const nativeBuild = spawnSync(process.execPath, ['scripts/build-qwen.mjs'], { stdio: 'inherit' });
   if (nativeBuild.status !== 0) process.exit(nativeBuild.status ?? 1);
-  const result = spawnSync('swiftc', ['-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.3`, 'native/MoteHelper.swift', '-o', 'native/bin/mote-helper'], { stdio: 'inherit' });
+  const result = spawnSync('swiftc', ['-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.3`, 'native/MoteHelper.swift', '-module-cache-path', 'native/bin/swift-module-cache', '-o', 'native/bin/mote-helper'], { stdio: 'inherit' });
   if (result.status !== 0) process.exit(result.status ?? 1);
   for (const [command, args] of [
-    ['swift', ['scripts/generate-icon.swift', 'native/bin/mote.iconset']],
+    ['swift', ['-module-cache-path', 'native/bin/swift-module-cache', 'scripts/generate-icon.swift', 'native/bin/mote.iconset']],
     ['iconutil', ['-c', 'icns', '-o', 'native/bin/mote.icns', 'native/bin/mote.iconset']],
   ]) {
     const icon = spawnSync(command, args, { stdio: 'inherit' });

@@ -38,7 +38,7 @@ flowchart LR
 
 Mac 中央窗口使用按节点来源隔离的持久会话，保留该节点的草稿和待同步笔记；关闭 Node 权限、限制同来源请求，真实节点令牌只由主进程加入对应 API 请求。采集主窗口只开放明确的 IPC 功能，不给远程中央页面本地文件和截图能力。
 
-传输采用带稳定事件 ID、确认、重试及删除墓碑的 HTTP 协议，见 [协议](protocol.md)。MCP 适合作为 Agent 访问工具的适配层，本期不承担后台文件同步；后续可以把中央只读 ContextReader 包装成 MCP，不改变端上队列或存储格式。
+传输采用带稳定事件 ID、确认、重试及删除墓碑的 HTTP 协议，见 [协议](protocol.md)。MCP 提供外部 Agent 的读取与指定来源写回接口，也可显式导入其他 MCP 服务的资源。后台文件同步仍采用持久队列与 HTTP 确认，详见[连接器](connectors.md)与[资料分层](context-layers.md)。
 
 ## AI 与计算的分工
 
@@ -69,7 +69,7 @@ DeepSeek Harness 采用精确版本 SDK，sdk-minimal 中禁用 shell/文件相�
 | 中央节点从电脑迁移云/NAS | Capture API、独立 data 卷、导出格式 | 部署地址与存储卷 |
 | 新增智能硬件、录音、SaaS | 事件来源、时间与到达游标 | Source adapter + 素材处理器 |
 | 更大资料库 | Store/ContextReader | PostgreSQL、对象存储、向量数据库、后台任务队列 |
-| 更换 Agent / 模型 | 五个只读 Context 工具、证据 ID | Harness 插件、MCP 包装、其他消费者 |
+| 更换 Agent / 模型 | 受控只读 Context 工具、证据 ID | Harness 插件、MCP 包装、其他消费者 |
 | 端上增加通用视觉任务 | 图像内存输入、自然语言策略、JSON 决策、可取消独立进程 | 新任务提示与输出 schema、经验证的新模型清单 |
 | 个人多设备变成多人 | 明确的认证 hook | 每设备令牌、读写 scope、来源 ACL、owner namespace |
 | 完整文件库 | source=file 事件与版本 | PDF/Office 解析、分块、文件对象引用 |

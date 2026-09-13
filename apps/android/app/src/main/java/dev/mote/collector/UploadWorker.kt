@@ -10,19 +10,23 @@ import java.net.URL
 import java.util.concurrent.TimeUnit
 
 object HttpJson {
-    fun post(url: String, body: JSONObject, token: String? = null): Pair<Int, JSONObject?> {
+    fun post(url: String, body: JSONObject, token: String? = null): Pair<Int, JSONObject?> = request("POST", url, body, token)
+    fun get(url: String, token: String? = null): Pair<Int, JSONObject?> = request("GET", url, null, token)
+    fun request(method: String, url: String, body: JSONObject?, token: String? = null): Pair<Int, JSONObject?> {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
-            connection.requestMethod = "POST"
+            connection.requestMethod = method
             connection.connectTimeout = 15_000
             connection.readTimeout = 30_000
             connection.instanceFollowRedirects = false // Never leak owner tokens through redirects.
-            connection.doOutput = true
+            connection.doOutput = body != null
             connection.setRequestProperty("Content-Type", "application/json")
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-            val bytes = body.toString().toByteArray(Charsets.UTF_8)
-            connection.setFixedLengthStreamingMode(bytes.size)
-            connection.outputStream.use { it.write(bytes) }
+            if (body != null) {
+                val bytes = body.toString().toByteArray(Charsets.UTF_8)
+                connection.setFixedLengthStreamingMode(bytes.size)
+                connection.outputStream.use { it.write(bytes) }
+            }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.use { input ->

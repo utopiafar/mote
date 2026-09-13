@@ -12,6 +12,8 @@ import { pathToFileURL } from 'node:url';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { currentPlatform, Collector } from './collector';
 import { ConfigStore, updateConfig } from './config';
+import { LocalSourceManager } from './source-manager';
+import { normalizeSourceOptions } from './source-types';
 import { DurableQueue } from './queue';
 import { NsfwController } from './nsfw';
 import type { Config, ConfigUpdate, Status } from './contracts';
@@ -29,6 +31,7 @@ let tray: Tray | undefined;
 let centralWindow: BrowserWindow | undefined;
 let centralOpening: Promise<void> | undefined;
 let collector: Collector;
+let localSources: LocalSourceManager | undefined;
 let quitting = false;
 let notesSettledForQuit = false;
 const noteWork = new Set<Promise<unknown>>();
@@ -94,7 +97,7 @@ else {
     quitting = true; void events.record('APP', 'STOPPED'); collector?.shutdown();
     if (notesSettledForQuit) return;
     event.preventDefault();
-    void settleNoteWork().then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
+    void Promise.allSettled([settleNoteWork(), localSources?.close()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
   });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
@@ -112,6 +115,8 @@ else {
     const queue = new DurableQueue(join(dataDirectory, 'queue'), settings);
     await queue.initialize();
     const helperPath = app.isPackaged ? join(process.resourcesPath, 'native', 'mote-helper') : join(__dirname, '..', 'native', 'bin', 'mote-helper');
+    localSources = new LocalSourceManager(join(dataDirectory, 'local-sources'), settings, helperPath);
+    await localSources.initialize();
     const nsfw = new NsfwController(join(dataDirectory, 'models'), app.isPackaged ? join(process.resourcesPath, 'native', 'mote-qwen') : join(__dirname, '..', 'native', 'bin', 'mote-qwen'), () => { if (collector) updateUi(clientStatus()); }, { events });
     const diagnostics = new DiagnosticsRecorder(join(dataDirectory, 'diagnostics'));
     const configureDiagnostics = async () => diagnostics.configure({ enabled: settings.diagnosticsEnabled, intervalMs: settings.diagnosticIntervalSeconds * 1000 }, async () => ({
@@ -142,6 +147,20 @@ else {
       });
     };
     handle('mote:get-status', () => clientStatus());
+    handle('mote:sources', () => localSources!.status());
+    handle('mote:source-sync', () => { void localSources!.sync(true); });
+    handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));
+    handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error('日历选择无效'); await localSources!.addCalendar(id, options); }));
+    handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error('来源选择无效'); await localSources!.update(id, options); }));
+    handle('mote:source-files', (mode, input) => serialize(async () => {
+      const options = normalizeSourceOptions(input);
+      if (mode !== 'files' && mode !== 'directory') throw new Error('文件选择方式无效');
+      const result = await dialog.showOpenDialog(window!, { title: '选择持续同步到中央仓库的本地资料', properties: mode === 'directory' ? ['openDirectory'] : ['openFile', 'multiSelections'], ...(mode === 'files' ? { filters: [{ name: 'UTF-8 文本资料', extensions: options.extensions.map(e => e.slice(1)) }] } : {}) });
+      if (result.canceled) return { canceled: true };
+      for (const path of result.filePaths) await localSources!.addFiles(path, options);
+      return { canceled: false };
+    }));
+    handle('mote:calendar-permissions', async () => { if (process.platform === 'darwin') await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars'); });
     handle('mote:diagnostics-sample', async () => { await diagnostics.sample(); updateUi(clientStatus()); return clientStatus(); });
     handle('mote:diagnostics-export', async () => {
       const selected = await dialog.showSaveDialog(window!, { title: '导出本机数值诊断（不含内容与令牌）', defaultPath: 'mote-diagnostics.json', filters: [{ name: 'JSON diagnostics', extensions: ['json'] }] });
@@ -175,6 +194,7 @@ else {
       if (updated.serverUrl !== settings.serverUrl || updated.token !== settings.token) { centralWindow?.close(); centralWindow = undefined; }
       settings = updated;
       collector.updateConfig(updated);
+      await localSources!.changeConnection(updated);
       await configureDiagnostics();
       return clientStatus();
     }));

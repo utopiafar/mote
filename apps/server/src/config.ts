@@ -64,12 +64,19 @@ export function configFromEnv() {
     allowedOrigins:(env.MOTE_ALLOWED_ORIGINS??'http://localhost:5173,http://127.0.0.1:5173').split(',').map(s=>s.trim()).filter(Boolean),
     model:text('MOTE_MODEL'),modelBaseUrl:endpoint('MOTE_MODEL_BASE_URL',env.MOTE_MODEL_BASE_URL||'https://api.deepseek.com'),apiKey:text('MOTE_MODEL_API_KEY'),allowUnauthenticatedLocal:flag('MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL',false),
     embeddingModel:text('MOTE_EMBEDDING_MODEL'),embeddingBaseUrl:endpoint('MOTE_EMBEDDING_BASE_URL'),embeddingApiKey:text('MOTE_EMBEDDING_API_KEY'),
+    connectors:{directory:join(dataDir,'connectors'),mcpEnabled:flag('MOTE_MCP_ENABLED',false),mcpReadToken:text('MOTE_MCP_READ_TOKEN'),mcpWriteEnabled:flag('MOTE_MCP_WRITE_ENABLED',false),mcpWriteToken:text('MOTE_MCP_WRITE_TOKEN'),mcpWriteSourceIds:text('MOTE_MCP_WRITE_SOURCE_IDS').split(',').map(s=>s.trim()).filter(Boolean),googleClientId:text('MOTE_GOOGLE_CLIENT_ID'),googleClientSecret:text('MOTE_GOOGLE_CLIENT_SECRET'),googleRedirectUri:endpoint('MOTE_GOOGLE_REDIRECT_URI'),syncIntervalMs:number('MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS',900,60,86400,true)*1000,allowLocalMcp:flag('MOTE_MCP_ALLOW_LOCAL',false)},
     diagnosticsEnabled:flag('MOTE_DIAGNOSTICS_ENABLED',true),diagnosticsDebug:flag('MOTE_DEBUG',false),
     logLevel:logLevel as 'debug'|'info'|'warn'|'error'|'silent',
     logDirectory:env.MOTE_LOG_DIR?resolve(baseDir,env.MOTE_LOG_DIR):join(dataDir,'logs'),
     logMaxBytes:number('MOTE_LOG_MAX_MB',2,0.1,8)*1024*1024,
     logMaxFiles:number('MOTE_LOG_MAX_FILES',3,1,10,true),logMaxEntries:number('MOTE_LOG_MAX_ENTRIES',2000,100,5000,true),
   };
+  const c=config.connectors;
+  if(c.mcpEnabled&&c.mcpReadToken.length<32)throw new ConfigError('MOTE_MCP_READ_TOKEN','Enabled MCP requires a distinct random token of at least 32 characters');
+  if(c.mcpWriteEnabled&&(!c.mcpEnabled||c.mcpWriteToken.length<32||c.mcpWriteToken===c.mcpReadToken))throw new ConfigError('MOTE_MCP_WRITE_TOKEN','MCP write requires enabled MCP and a distinct token of at least 32 characters');
+  if(c.mcpWriteSourceIds.some(id=>!(/^[a-zA-Z0-9_.:-]{1,128}$/.test(id)))||(c.mcpWriteEnabled&&!c.mcpWriteSourceIds.length))throw new ConfigError('MOTE_MCP_WRITE_SOURCE_IDS','Choose one or more exact source IDs for MCP writes');
+  if(c.googleRedirectUri){const u=new URL(c.googleRedirectUri);if((u.protocol!=='https:'&&!['127.0.0.1','localhost','[::1]'].includes(u.hostname))||u.pathname!=='/oauth/google/callback')throw new ConfigError('MOTE_GOOGLE_REDIRECT_URI','Use HTTPS outside loopback and the exact /oauth/google/callback path');}
+  if([c.googleClientId,c.googleClientSecret,c.googleRedirectUri].some(Boolean)&&![c.googleClientId,c.googleClientSecret,c.googleRedirectUri].every(Boolean))throw new ConfigError('MOTE_GOOGLE_CLIENT_ID','Google authorization requires client id, client secret and redirect URI together');
   if(config.dataKey&&!/^[0-9a-f]{64}$/i.test(config.dataKey))throw new ConfigError('MOTE_DATA_KEY','MOTE_DATA_KEY must contain exactly 64 hexadecimal characters');
   if(config.embeddingModel&&!config.embeddingBaseUrl)throw new ConfigError('MOTE_EMBEDDING_BASE_URL','MOTE_EMBEDDING_BASE_URL is required when embedding is enabled');
   for(const origin of config.allowedOrigins) {
@@ -97,8 +104,9 @@ export function configFromEnv() {
   }
   if(token.length<24)throw new ConfigError('MOTE_TOKEN','MOTE_TOKEN must contain at least 24 characters');
   if(/[\r\n\0]/.test(token))throw new ConfigError('MOTE_TOKEN','MOTE_TOKEN must be a single-line credential');
+  if([c.mcpReadToken,c.mcpWriteToken].filter(Boolean).includes(token))throw new ConfigError('MOTE_MCP_READ_TOKEN','MCP tokens must be distinct from the node owner token');
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='configuration'|'modelReasoningEffort'|'modelMaxTokens'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

@@ -31,6 +31,10 @@ export interface ContextReader {
   evidence(args: { ids: string[] }): Promise<ContextRecord[]>;
   activity(args: ContextRange): Promise<unknown>;
   devices(): Promise<unknown>;
+  sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
+  sources?(args:ContextRange): Promise<unknown>;
+  sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
+  memories?(args:ContextRange & {id?:string}): Promise<{items:unknown[];evidence?:ContextRecord[]}>;
 }
 
 export interface AgentOptions {

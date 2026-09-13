@@ -21,6 +21,11 @@ object SupportEvents {
             .put("projectionRunning", ProjectionService.running)
         runCatching { state.put("queueDepth", context.queue().depth()).put("queueBytes", context.queue().bytes()) }
             .onFailure { state.put("queueReadable", false) }
+        runCatching {
+            val sources = context.localSources().sources()
+            state.put("localSourceCount", sources.size).put("enabledLocalSourceCount", sources.count { it.enabled })
+                .put("localSourceBytes", File(context.noBackupFilesDir, "local-sources").listFiles()?.sumOf { it.length() } ?: 0L)
+        }.onFailure { state.put("localSourcesReadable", false) }
         val safeConfig = JSONObject()
         config?.let {
             safeConfig.put("configured", it.server.isNotBlank() && it.token.isNotBlank()).put("diagnosticsEnabled", it.diagnosticsEnabled)

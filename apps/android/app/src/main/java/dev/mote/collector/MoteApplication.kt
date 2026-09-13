@@ -16,6 +16,7 @@ class MoteApplication : Application() {
                     queue().recoverOrphans()
                     val config = settings.read()
                     if (config.server.isNotBlank()) UploadWorker.schedule(this@MoteApplication, config)
+                    SourceWork.schedule(this@MoteApplication)
                     if (settings.enabled && config.mode == "projection") {
                         settings.enabled = false
                         settings.status("permission_required", "投屏会话已结束，请点击开始并重新授权；已有队列仍会上传")

@@ -13,6 +13,9 @@ import { Indexer } from './indexer.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ServerDiagnostics,safeError } from './diagnostics.js';
 import { serverConfiguration } from './configuration.js';
+import { SourceStore } from './sources.js';
+import {registerConnectors} from './connectors/index.js';
+import { MemoryStore,MEMORY_EXTRACTION_PROMPT } from './memory.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface QueryAgent {configured:boolean;query(args:QueryScope&{question:string}):Promise<QueryResult>;close():Promise<void>}
@@ -26,19 +29,25 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
   const indexer=new Indexer(store,config,diagnostics);
+  const sources=new SourceStore(store),memories=new MemoryStore(store);
   let agent:QueryAgent;
   if(dependencies?.agent)agent=dependencies.agent;
   else {
     const {createAgent}=await import('@mote/agent');
-    const context=(records:CaptureRecord[])=>records.map(record=>({...record,sourceType:record.source}));
-    agent=await createAgent({reader:{search:async args=>diagnostics.measure('source','search',async()=>context(await indexer.search(args)),rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>context(store.evidence(args.ids)),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))},baseUrl:config.modelBaseUrl,apiKey:config.apiKey,model:config.model,allowUnauthenticatedLocal:config.allowUnauthenticatedLocal,reasoningEffort:config.modelReasoningEffort,maxTokens:config.modelMaxTokens});
+    const context=(records:CaptureRecord[])=>records.map(record=>({...record,sourceType:record.source,...(record.provenance?{revisionState:sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id?'current':'historical'}:{})}));
+    agent=await createAgent({reader:{
+      sourceHistory:async args=>{const record=store.evidence([args.id])[0];if(!record?.provenance)return [];return context(store.evidence(sources.history(record.provenance.sourceId,record.provenance.externalId).filter(i=>(!args.after||Date.parse(i.calendar?.end??i.observedAt)>=Date.parse(args.after))&&(!args.before||Date.parse(i.calendar?.start??i.observedAt)<Date.parse(args.before))).map(i=>i.captureId)).filter(r=>!args.deviceId||r.deviceId===args.deviceId));},
+      sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
+      sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:context(store.evidence(page.items.map(i=>i.captureId)))};},
+      memories:async args=>{if(!args.id)return {items:memories.list({...args,level:'overview'})};const items=memories.list({...args,level:'detail',limit:100}).filter(m=>m.id===args.id);return {items,evidence:context(store.evidence(items.flatMap(m=>'evidenceIds' in m?m.evidenceIds:[])))};},
+      search:async args=>diagnostics.measure('source','search',async()=>context(await indexer.search(args)),rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>context(store.evidence(args.ids)),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))},baseUrl:config.modelBaseUrl,apiKey:config.apiKey,model:config.model,allowUnauthenticatedLocal:config.allowUnauthenticatedLocal,reasoningEffort:config.modelReasoningEffort,maxTokens:config.modelMaxTokens});
   }
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   const app=Fastify({logger:false,genReqId:()=>randomUUID(),requestIdHeader:false,bodyLimit:12*1024*1024,requestTimeout:180000,frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:'请求格式无效。',requestId});}});
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
-    const root=url.split('/')[2];return ({health:'health',status:'status',captures:'captures',notes:'notes',devices:'devices',updates:'updates',activity:'activity',query:'query',insights:'insights',index:'index',export:'export',import:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
+    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration',captures:'captures',notes:'notes',devices:'devices',sources:'sources',memories:'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query',insights:'insights',index:'index',export:'export',import:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
   };
   app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);done();}));
   app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
@@ -58,9 +67,25 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     diagnostics.record('request.failed',{requestId:req.id,route:routeName(req.routeOptions.url),category:failure.category,statusCode:failure.status},failure.status>=500?'error':'warn');
     reply.code(failure.status).send({error:failure.category,message:failure.message,requestId:req.id});
   });
+  const connectors=await registerConnectors(app,{sources,store,config});
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
   app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
   app.get('/api/configuration',async()=>serverConfiguration(config));
+  app.get('/api/sources',async()=>({items:sources.listSources()}));
+  app.post('/api/sources',async req=>sources.register(req.body));
+  app.patch('/api/sources/:id',async req=>sources.update((req.params as {id:string}).id,z.object({name:z.string().min(1).max(200).optional(),enabled:z.boolean().optional(),retention:z.enum(['snapshot','reference','archive']).optional()}).strict().parse(req.body)));
+  const sourceRange=z.object({sourceId:z.string().max(128).optional(),deviceId:z.string().max(128).optional(),kind:z.string().max(40).optional(),after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),limit:z.coerce.number().int().min(1).max(200).default(50),cursor:z.string().max(100).optional(),includeDeleted:z.enum(['true','false']).optional()}).strict();
+  app.get('/api/source-items',async req=>{const q=sourceRange.parse(req.query);return sources.listItems({...q,includeDeleted:q.includeDeleted==='true'});});
+  app.get('/api/sources/:id/items',async req=>{const q=sourceRange.parse(req.query);return sources.listItems({...q,sourceId:(req.params as {id:string}).id,includeDeleted:q.includeDeleted==='true'});});
+  app.put('/api/sources/:id/items',async req=>sources.upsert((req.params as {id:string}).id,req.body));
+  app.get('/api/sources/:id/item',async req=>{const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {item:sources.getItem((req.params as {id:string}).id,externalId)??null};});
+  app.get('/api/sources/:id/history',async req=>{const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {items:sources.history((req.params as {id:string}).id,externalId)};});
+  app.get('/api/layers',async()=>({...sources.summary(),memories:Number((store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)}));
+  app.get('/api/memories',async req=>{const q=z.object({level:z.enum(['overview','detail']).default('overview'),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return {items:memories.list({...q,includeStale:q.includeStale==='true'})};});
+  app.get('/api/memories/:id',async req=>memories.get((req.params as {id:string}).id));
+  app.get('/api/memories/:id/evidence',async req=>{const m=memories.get((req.params as {id:string}).id);return {items:store.evidence(m.evidenceIds),status:m.status};});
+  app.post('/api/memories/:id/publish',async req=>memories.publish((req.params as {id:string}).id));
+  app.delete('/api/memories/:id',async req=>memories.delete((req.params as {id:string}).id));
   app.post('/api/captures',async(req,reply)=>{const result=await diagnostics.measure('ingest','capture',()=>store.ingest(captureSchema.parse(req.body)),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
   app.get('/api/captures',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
@@ -95,6 +120,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
+  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const scope=insightSchema.parse(req.body??{});return memories.extract(await queryAgent({...scope,question:MEMORY_EXTRACTION_PROMPT}),config.model);});
   app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>{
     if(!agent.configured)throw new AgentNotConfiguredError();
     return queryAgent(querySchema.parse(req.body));
@@ -140,8 +166,8 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   app.addHook('onClose',async()=>{
     closing=true;clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
-    await Promise.allSettled([...activeQueries]);await backgroundInsight;
+    await Promise.allSettled([...activeQueries]);await backgroundInsight;await connectors.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,store,indexer,agent,diagnostics};
+  return {app,store,sources,memories,indexer,agent,diagnostics};
 }

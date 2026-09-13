@@ -20,7 +20,7 @@ MOTE_MODEL_MAX_TOKENS=8192
 
 显式设置 `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=1` 可使用无需凭据的 loopback 模型服务。它不允许远端免密地址；容器内的 loopback 指容器自身。
 
-可选 `MOTE_EMBEDDING_MODEL`、`MOTE_EMBEDDING_BASE_URL`、`MOTE_EMBEDDING_API_KEY` 在中央节点启用向量索引。未启用时仍有本地全文/文本检索。问答向所选模型发送检索到的文本证据；embedding 则向其独立配置的服务发送待索引文本。原始截图不在五个 Agent 工具的返回内容中。
+可选 `MOTE_EMBEDDING_MODEL`、`MOTE_EMBEDDING_BASE_URL`、`MOTE_EMBEDDING_API_KEY` 在中央节点启用向量索引。未启用时仍有本地全文/文本检索。问答向所选模型发送检索到的文本证据；embedding 则向其独立配置的服务发送待索引文本。原始截图不在只读 Agent 工具的返回内容中。
 
 ## 检索与证据
 
@@ -70,3 +70,9 @@ npm run test -w @mote/agent
 ```
 
 自动化测试使用合成记录与模型响应，运行真实 Harness 子进程，验证工具循环、权限和协议。真实 DeepSeek 调用、复杂日记输入和答案质量的结果另见 [真实模型验证](live-validation.md)；其中仍有部分语义覆盖不完整的案例，不能把协议测试或格式修复等同于回答质量保证。
+
+## 分层发现与原始证据
+
+Agent 额外拥有只读的 `sources`、`source_items`、`source_history`、`memories`：先发现来源、当前版本或 Memory 标题，再按需读取详情与原始证据。日历工具的时间范围按计划时间匹配，普通时间线按观察时间；取消或移除的来源记录可以显式包含在查询中。历史工具允许比较旧稿，不会把旧稿当作当前版本。
+
+Memory 提取使用同一 Harness 只读运行时生成结构化候选；每条记忆的正文引用还要与自身证据列表一致。模型结果无法新增工具或执行被采集内容中的指令。外部 MCP 的受限写回是独立认证入口，不属于内部查询 Agent 的工具集。

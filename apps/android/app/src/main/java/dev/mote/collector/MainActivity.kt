@@ -82,6 +82,7 @@ class MainActivity : Activity() {
         button("立即重试同步") {
             runCatching { val c = settings.read(); c.validate(); UploadWorker.schedule(this, c, true); toast("已请求同步；仍遵守网络约束") }.onFailure { toast(it.message ?: "配置无效") }
         }
+        button("日历与文件来源") { startActivity(Intent(this, SourcesActivity::class.java)) }
         section("01  中央节点")
         text("中央节点是独立服务，可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；请填节点局域网 IP 或 HTTPS 域名。", 13)
         server = field("节点 URL", config.server, "https://mote.example.com", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
@@ -218,6 +219,7 @@ class MainActivity : Activity() {
         require(queue().depth() == 0 || old.server.trimEnd('/') == c.server.trimEnd('/')) { "队列尚有数据，请先同步到原节点再更换地址，避免误传给另一节点" }
         settings.save(c)
         UploadWorker.schedule(this, c, true)
+        SourceWork.schedule(this, true)
         toast("配置已保存，规则对后续新截图生效")
         true
     } catch (e: Exception) { toast(e.message ?: "请检查配置输入"); false }

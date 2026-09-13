@@ -49,6 +49,8 @@ The table lists principal direct libraries, not a complete software bill of mate
 | Lucide React icons | [lucide-icons/lucide](https://github.com/lucide-icons/lucide), ISC; preserve included upstream icon notices |
 | react-markdown | [remarkjs/react-markdown](https://github.com/remarkjs/react-markdown), MIT |
 | Fastify | [fastify/fastify](https://github.com/fastify/fastify), MIT |
+| Model Context Protocol TypeScript SDK 1.30.0 | [modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk), MIT; used for HTTP and stdio MCP transports |
+| Google Auth Library for Node.js 11.0.2 | [googleapis/google-auth-library-nodejs](https://github.com/googleapis/google-auth-library-nodejs), Apache-2.0; Google Calendar requires separate user authorization |
 | sharp | [lovell/sharp](https://github.com/lovell/sharp), Apache-2.0; preserve libvips and other native dependency notices |
 | Zod | [colinhacks/zod](https://github.com/colinhacks/zod), MIT |
 | AndroidX WorkManager | [AndroidX source](https://android.googlesource.com/platform/frameworks/support/+/androidx-main/work/), Apache-2.0 |

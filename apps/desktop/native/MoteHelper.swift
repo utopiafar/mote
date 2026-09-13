@@ -3,6 +3,7 @@ import IOKit.ps
 import Foundation
 import Vision
 import ImageIO
+import EventKit
 
 func output(_ value: [String: Any]) throws {
     let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
@@ -11,6 +12,62 @@ func output(_ value: [String: Any]) throws {
 
 do {
     switch CommandLine.arguments.dropFirst().first ?? "" {
+    case "calendar-permission", "calendar-list", "calendar-scan":
+        let command = CommandLine.arguments[1]
+        let store = EKEventStore()
+        func fullAccess() -> Bool {
+            if #available(macOS 14.0, *) { return EKEventStore.authorizationStatus(for: .event) == .fullAccess }
+            return EKEventStore.authorizationStatus(for: .event) == .authorized
+        }
+        if command == "calendar-permission" && !fullAccess() {
+            var completed = false
+            // Only this explicit command can trigger TCC. Background scans never request access.
+            if #available(macOS 14.0, *) {
+                store.requestFullAccessToEvents { _, _ in DispatchQueue.main.async { completed = true } }
+            } else {
+                store.requestAccess(to: .event) { _, _ in DispatchQueue.main.async { completed = true } }
+            }
+            let deadline = Date().addingTimeInterval(110)
+            while !completed && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        }
+        guard fullAccess() else { try output(["permission": "required", "calendars": []]); break }
+        if command != "calendar-scan" {
+            try output(["permission": "granted", "calendars": store.calendars(for: .event).map { ["id": $0.calendarIdentifier, "title": $0.title] }]); break
+        }
+        let input = FileHandle.standardInput.readDataToEndOfFile()
+        guard input.count < 16384,
+              let query = try JSONSerialization.jsonObject(with: input) as? [String: Any],
+              let calendarID = query["calendarId"] as? String,
+              let startValue = query["start"] as? String, let endValue = query["end"] as? String else { throw NSError(domain: "Mote", code: 4) }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let start = formatter.date(from: startValue), let end = formatter.date(from: endValue), end > start,
+              end.timeIntervalSince(start) <= 400 * 86400 else { throw NSError(domain: "Mote", code: 4) }
+        guard let calendar = store.calendar(withIdentifier: calendarID) else { try output(["permission": "granted", "missingCalendar": true]); break }
+        let found = store.events(matching: store.predicateForEvents(withStart: start, end: end, calendars: [calendar]))
+        var events: [[String: Any]] = []
+        var bytes = 0
+        var complete = found.count <= 2000
+        for event in found.prefix(2000) {
+            let occurrence = event.occurrenceDate.map { formatter.string(from: $0) } ?? ""
+            var value: [String: Any] = [
+                "id": event.calendarItemIdentifier + ":" + occurrence,
+                "title": String((event.title ?? "").prefix(2000)),
+                "text": query["includeText"] as? Bool == true ? String((event.notes ?? "").prefix(90000)) : "",
+                "start": formatter.string(from: event.startDate), "end": formatter.string(from: event.endDate),
+                "allDay": event.isAllDay,
+                "status": event.status == .canceled ? "cancelled" : (event.status == .tentative ? "tentative" : "confirmed")
+            ]
+            if let zone = event.timeZone { value["timeZone"] = zone.identifier }
+            if let modified = event.lastModifiedDate { value["modifiedAt"] = formatter.string(from: modified) }
+            if query["includeText"] as? Bool == true, let location = event.location { value["text"] = String(((value["text"] as? String ?? "") + "\n" + location).prefix(100000)) }
+            bytes += (try JSONSerialization.data(withJSONObject: value)).count
+            if bytes > 8 * 1024 * 1024 { complete = false; break }
+            events.append(value)
+        }
+        // Detect permission revocation during the query; never report an empty successful scan.
+        if !fullAccess() { try output(["permission": "required", "calendars": []]); break }
+        try output(["permission": "granted", "events": events, "complete": complete])
     case "active":
         guard let application = NSWorkspace.shared.frontmostApplication,
               let bundleID = application.bundleIdentifier,

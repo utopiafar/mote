@@ -67,11 +67,16 @@ import { Notes } from "./Notes";
 import { Diagnostics } from "./Diagnostics";
 import { ServerSettings } from "./ServerSettings";
 
-type Page = "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "settings";
+import {Sources} from "./Sources";
+import {Memories} from "./Memories";
+
+type Page = "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "settings";
 const nav = [
   { id: "overview" as const, label: "总览", icon: LayoutDashboard },
   { id: "timeline" as const, label: "时间线", icon: Clock3 },
   { id: "notes" as const, label: "随手记", icon: FileText },
+  {id:"sources" as const,label:"来源",icon:Link2},
+  {id:"memories" as const,label:"记忆",icon:Layers3},
   { id: "ask" as const, label: "问一问", icon: MessageSquare },
   { id: "devices" as const, label: "设备", icon: Monitor },
   { id: "vault" as const, label: "资料库", icon: Database },
@@ -2207,6 +2212,8 @@ function App() {
                           disconnect={disconnect}
                         />
                       )}
+                      {page === "sources" && <Sources api={api} onOpen={setEvidenceId} />}
+                      {page === "memories" && <Memories api={api} range={range} onOpen={setEvidenceId} />}
                       {page === "settings" && <ServerSettings key={connection.url || window.location.origin} api={api} />}
                     </>
                   )}

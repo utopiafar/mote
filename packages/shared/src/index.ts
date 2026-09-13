@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import {provenanceSchema} from './sources.js';
+export * from './sources.js';
 export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource } from './configuration.js';
 
 export const platformSchema = z.enum(['macos', 'windows', 'linux', 'android', 'import']);
-export const sourceSchema = z.enum(['screen', 'file', 'note']);
+export const sourceSchema = z.enum(['screen', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
 // A mood is the author's own label, never inferred from note text or app identity.
 export const moodSchema = z.string().max(80).refine(value => value.trim().length > 0, 'Mood cannot be blank');
 export const privacySchema = z.object({
@@ -18,11 +20,14 @@ export const captureSchema = z.object({
   imageBase64: z.string().max(11_000_000).optional(), imageMime: z.enum(['image/jpeg','image/png','image/webp']).optional(),
   ocrText: z.string().max(100000).default(''), source: sourceSchema.default('screen'),
   mood: moodSchema.optional(),
+  provenance: provenanceSchema.optional(),
   privacy: privacySchema.default({excluded:false,redacted:false,mode:'local'}),
 }).strict().superRefine((v,ctx) => {
   if (Boolean(v.imageBase64) !== Boolean(v.imageMime)) ctx.addIssue({code:'custom',message:'imageBase64 and imageMime must be supplied together'});
   if (v.privacy.excluded) ctx.addIssue({code:'custom',message:'Excluded captures must never be uploaded'});
-  if (!v.imageBase64 && !v.ocrText.trim()) ctx.addIssue({code:'custom',message:'An image or text is required'});
+  if (!v.imageBase64 && !v.ocrText.trim() && !v.provenance) ctx.addIssue({code:'custom',message:'An image or text is required'});
+  if(v.provenance&&(v.provenance.layer==='reference'||v.provenance.deleted)&&v.ocrText)ctx.addIssue({code:'custom',message:'Reference and deletion records must not contain original text'});
+  if(v.provenance&&(v.durationMs!==0||v.imageBase64||['screen','note'].includes(v.source)))ctx.addIssue({code:'custom',message:'Versioned source records require zero duration and no screen/note payload'});
   if (v.mood !== undefined && v.source !== 'note') ctx.addIssue({code:'custom',path:['mood'],message:'Mood must be explicitly supplied for a user note'});
   if (v.source === 'note' && (v.durationMs !== 0 || v.imageBase64 || !v.ocrText.trim())) ctx.addIssue({code:'custom',message:'Notes require original text, zero duration and no image'});
 });
