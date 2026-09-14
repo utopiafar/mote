@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, Tray } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { readPowerState, recognizeInvitationQr } from './native';
@@ -16,6 +16,8 @@ import { ConfigStore, updateConfig } from './config';
 import { LocalSourceManager } from './source-manager';
 import { normalizeSourceOptions } from './source-types';
 import { DesktopUpdater } from './updater';
+import { createUpdateNetwork } from './update-network';
+import { createChromiumUpdateFetch } from './electron-update-fetch';
 import { acknowledgeInstalledUpdate } from './update-install';
 import { DurableQueue } from './queue';
 import { NsfwController } from './nsfw';
@@ -132,7 +134,8 @@ else {
     const helperPath = app.isPackaged ? join(process.resourcesPath, 'native', 'mote-helper') : join(__dirname, '..', 'native', 'bin', 'mote-helper');
     const bundlePath = app.isPackaged ? await realpath(resolve(process.resourcesPath, '../..')) : undefined;
     const updateDirectory = join(dataDirectory, 'updates');
-    updater = new DesktopUpdater({ directory: updateDirectory, helper: app.isPackaged ? join(process.resourcesPath, 'native', 'mote-updater') : join(__dirname, '..', 'native', 'bin', 'mote-updater'), bundlePath, currentVersion: app.getVersion(), arch: process.arch === 'arm64' ? 'arm64' : 'x64', profile: profile.name });
+    const updateSession = session.fromPartition('mote-public-updates', { cache: false });
+    updater = new DesktopUpdater({ directory: updateDirectory, helper: app.isPackaged ? join(process.resourcesPath, 'native', 'mote-updater') : join(__dirname, '..', 'native', 'bin', 'mote-updater'), bundlePath, currentVersion: app.getVersion(), arch: process.arch === 'arm64' ? 'arm64' : 'x64', profile: profile.name }, createUpdateNetwork(createChromiumUpdateFetch(options => net.request({ ...options, session: updateSession }))));
     await updater.initialize();
     localSources = new LocalSourceManager(join(dataDirectory, 'local-sources'), settings, helperPath);
     await localSources.initialize();

@@ -52,7 +52,9 @@ export class DesktopUpdater {
   private staged?: { path: string; digest: string };
   private task?: Promise<void>;
   private controller?: AbortController;
-  constructor(private options: { directory: string; helper: string; bundlePath?: string; currentVersion: string; arch: 'arm64' | 'x64'; profile: string }, private deps = dependencies) {
+  private deps: UpdateDependencies;
+  constructor(private options: { directory: string; helper: string; bundlePath?: string; currentVersion: string; arch: 'arm64' | 'x64'; profile: string }, deps: Partial<UpdateDependencies> = {}) {
+    this.deps = { ...dependencies, ...deps };
     this.value = { currentVersion: options.currentVersion, channel: 'stable', state: 'idle', message: '手动检查 GitHub utopiafar/mote 的已签名更新。', received: 0, total: 0, canInstall: false, installReason: '' };
   }
   async initialize(): Promise<void> {

@@ -24,7 +24,7 @@ npm run start -w @mote/desktop
 npm run package -w @mote/desktop
 ```
 
-当前源码版本 0.6.0 的安装包可由仓库根目录的 `node scripts/release/mac-package.mjs` 生成：`artifacts/release/mote-desktop-macos-arm64-0.6.0.zip`，旁边的 `.zip.asset.json` 记录大小与 SHA-256。解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；GitHub 更新清单另由固定发布密钥签名。若配置完整 Apple Developer ID 凭据，发布脚本也支持签名、公证与验证；本次没有验证该证书模式。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
+当前源码版本 0.6.1 的安装包可由仓库根目录的 `node scripts/release/mac-package.mjs` 生成：`artifacts/release/mote-desktop-macos-arm64-0.6.1.zip`，旁边的 `.zip.asset.json` 记录大小与 SHA-256。解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；GitHub 更新清单另由固定发布密钥签名。若配置完整 Apple Developer ID 凭据，发布脚本也支持签名、公证与验证；本次没有验证该证书模式。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
 
 Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按钮被禁用。MVP 尚未接入其可靠前台/可见窗口身份与 OCR，不能以无过滤截图代替。
 

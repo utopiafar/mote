@@ -46,12 +46,13 @@ jobs:
         run: node scripts/release/mac-package.mjs
       - name: Verify native replacement and startup rollback with generated apps
         run: node apps/desktop/scripts/update-fixture.cjs
-      - name: Verify client onboarding and central connection UI with generated data
+      - name: Verify client onboarding, central UI and update networking with generated data
         run: |
           npm run build -w @mote/server -w @mote/web
           node apps/desktop/scripts/connection-server-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/connection-smoke.cjs
           node_modules/.bin/electron scripts/test-web-connections.cjs
+          node_modules/.bin/electron apps/desktop/scripts/update-network-smoke.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: { name: release-mac, path: artifacts/release/*, if-no-files-found: error, retention-days: 7 }
   android:

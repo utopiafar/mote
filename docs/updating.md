@@ -8,6 +8,8 @@
 
 在采集器的更新入口检查版本，下载后选择安装并重启。更新只替换 App bundle；设备身份、各 profile 设置、Keychain 中的加密凭据、草稿、上传队列和本地模型仍保存在原来的用户目录。更新前会等待已经接受的写入完成，不会使用新默认设置覆盖旧配置。
 
+从 0.6.1 开始，Mac 的更新检查和下载使用 Electron 网络传输，遵循系统代理设置，且不携带登录 Cookie。如果旧版在依赖代理的网络下超时，请从 Releases 用浏览器下载 0.6.1 或更新版，再通过 Finder 替换 App。
+
 同一个 App 的多个 profile 共用程序文件。安装需要使用该 App bundle 的实例全部退出；更新器不会强制终止其他环境。只读 DMG、系统 App Translocation 或无目录写权限时，界面会说明手动安装要求，不会自动提权。旧程序保留用于失败恢复。
 
 本期 Mac 使用 adhoc 签名，更新后 macOS 可能再次要求允许应用运行、访问 Keychain 或读取日历/屏幕。原设置仍保留；重新授权与重置资料是两件事。正式 Developer ID 签名和公证流程已经预留，配置见 [发布说明](releasing.md)。
@@ -30,10 +32,12 @@
 node scripts/mote.mjs check-update --profile prod
 node scripts/mote.mjs update --profile prod
 # 明确指定一个经过验证的较新版本：
-node scripts/mote.mjs update --profile prod --version 0.6.0
+node scripts/mote.mjs update --profile prod --version 0.6.1
 ```
 
 自定义部署根目录使用原来的 `--home /absolute/profile-root`。各环境从自己的 `mote.env` 读取 `MOTE_UPDATE_REPOSITORY` 和 `MOTE_UPDATE_CHANNEL`；改变渠道不改变数据目录或任何中央凭据。默认 `utopiafar/mote` 与 `stable`，也可选择 `preview`。首次通过旧版本安装的部署工具需要先使用本版源码构建工具，再指向原来的 profile 根目录。
+
+命令行使用 Node 网络传输。若部署机已配置 `HTTP_PROXY`／`HTTPS_PROXY` 环境变量，可用 Node 24 的环境代理开关，例如 `node --use-env-proxy scripts/mote.mjs check-update --profile prod`；`update` 命令同样可加该开关。App 的系统代理与 CLI 的环境代理是分别配置的。
 
 原生部署先下载和验证源码包，在独立 release 目录安装依赖并构建中央及 Web，成功后才停止旧服务、备份并切换。Docker 使用签名清单中的不可变 digest 拉取镜像，继续使用原来的持久卷、环境文件和 Tunnel 配置。更新不修改模型选择、服务地址、访问令牌、图片加密密钥、存储位置或外部账户授权。
 

@@ -43,6 +43,30 @@ node_modules/.bin/electron scripts/test-web-diagnostics.cjs
 
 Android 本地完成 debug／development APK 构建和两个 variant 的 lint；统计页用生成数据绘制并检查分组、留白和目录信息，截图仅保存在本地忽略目录。模拟器测试的启动方式和连接参数见 [Android 说明](android.md)。
 
+## 公开发布
+
+[Mote 0.6.0](https://github.com/utopiafar/mote/releases/tag/v0.6.0) 于 2026-09-14 发布，对应代码提交 `835efadfd5ce4c33e47fcc67fa9a575d3e151aff`。[Release 流水线](https://github.com/utopiafar/mote/actions/runs/34805096401) 的 8 个任务全部通过，包含 Linux 工作区回归、Docker 隔离／备份／回退／Tunnel 生命周期、Mac 原生连接与更新测试、Android 测试与签名，以及双架构镜像发布。主分支的独立 [Checks](https://github.com/utopiafar/mote/actions/runs/34805096226) 也通过。
+
+公开资产包含 Mac arm64 ZIP、Android arm64 日常版与 Dev APK、中央源码包、签名更新清单和 SHA256SUMS。签名私钥仍由 GitHub `release` Environment Secrets 提供，没有进入仓库或安装包；Mac 仍为 adhoc 签名。
+
+公开 Android 两包实际下载后，通过内置公钥清单、大小／SHA、APK 签名、包名、版本和 16 KiB ZIP 对齐检查；正式包不带 debuggable，证书继续使用既有发布身份。在全新专用 API35 模拟器中安装官方 0.5.1 Dev，只写入生成资料，再用官方 0.6.0 Dev 执行 `adb install -r`：设置、设备 ID、原记录 ID 的加密笔记队列、加密草稿和模型目录标记的指纹全部一致。生产更新器另从公网读取并验证 0.6.0 清单、实际下载 Dev APK 并校验签名，界面拒绝重复覆盖相同 versionCode；没有创建安装会话。覆盖安装的数据保留与更新器下载检查是两项独立验证，不能据此声称已走过用户确认安装 UI。该专用模拟器完成后已关闭。
+
+公开 Mac ZIP 通过内置公钥、大小／SHA、解压结构、`codesign --deep --strict`、实际 Bundle ID／版本／arm64 架构和包内更新助手检查。包内 Swift 助手解码生成的邀请二维码；包内 Electron 载入连接模块与共享协议成功，Qwen 对生成白图完成真实离线推理。没有启动日常 App、读取个人 profile／Keychain 或替换现有安装。本机命令行默认直连清单曾在 30 秒截止时超时，使用 Node 的 `--use-env-proxy` 后，以原生产校验与下载函数通过公开资产验证；没有替换公钥或绕过校验。
+
+公开中央源码包的签名、大小／SHA、解包路径、各组件版本及新连接模块通过检查。匿名读取 GHCR 的签名不可变摘要 `sha256:28b6f4b9281f3d6f7a2885f9ff588e1c37bb8724ecf4eadc6045b85b98646145`，与 `0.6.0` 标签一致；linux/amd64 和 linux/arm64 的子清单与配置逐一核对实际字节散列、大小、架构和版本标签，全部一致。本地没有另行拉取镜像层或运行容器；容器运行结果来自上述成功的 CI 集成任务。
+
+公开分发的本地验收记录保存在忽略的 `.mote/release-validation/`：Android 的 `android-0.6.0/summary.json`、Mac 的 `mac-0.6.0-1789359963202/result.json`、中央与镜像的 `v0.6.0/result.json`。这些记录只描述生成测试资料、公开产物及验证结果。
+
+## 0.6.1 Mac 更新网络修补
+
+公开包验收额外发现旧版更新器的网络差异：在独立 Electron 会话中，同一个 GitHub 清单地址，Node 请求连接超时，而 Electron 网络请求成功。0.6.1 将 Mac 的检查与下载接入 Electron 系统网络，使用独立内存会话并省略 Cookie／登录凭据，继续由共享更新模块检查每一跳地址、发布签名、大小和散列。原来的 CLI 仍使用 Node 网络，可按 [更新说明](updating.md) 显式启用环境代理。
+
+固定 Electron 版本的 `net.fetch` 无法按共享更新器所需的方式返回手动重定向响应，因此适配层使用 `net.request` 暴露每次跳转，下载目标仍由共享模块逐跳决定。没有通过自动跳转或关闭证书检查来解决网络问题。
+
+修补后的完整工作区 271 项测试和类型检查通过，其中桌面 114 项。真实 Electron 的生成网络 fixture 验证手动 302、拒绝外域／HTTP 跳转、签名和 SHA 失败、会话 Cookie 与认证头剔除、首块数据后取消、消费者取消及 partial 文件清理；另捕获并修复请求写入端提前 `close` 被误当成下载失败的时序问题。相同路径实际访问 0.6.0 公开签名清单、下载 114,082,194 字节 Mac ZIP 并校验散列与包结构，无需环境代理开关。结果在 `.mote/release-validation/mac-network-0.6.1-result.json`。
+
+新增原生网络回归已加入 Release CI。可在构建桌面端后运行 `node_modules/.bin/electron apps/desktop/scripts/update-network-smoke.cjs`；显式加 `--public-version=0.6.0` 才会访问并下载该公开版本，其默认模式只连接生成的本地服务。
+
 ## 实际使用边界
 
 尚未在 K90 Pro Max／HyperOS 真机验证相机扫码和后台恢复；模拟器验证不能代替厂商系统的权限与耗电行为。本轮没有验证公网 Cloudflare Tunnel 或各家 Chatbot 的配置界面；实际 MCP HTTP／stdio SDK 传输已覆盖，只接受 OAuth 的聊天产品仍不支持直接导入 Bearer JSON。
