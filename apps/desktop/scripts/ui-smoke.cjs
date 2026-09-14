@@ -10,7 +10,7 @@ const { defaultConfig } = require('../dist/config');
 const profile = mkdtempSync(join(tmpdir(), 'mote-ui-fixture-'));
 app.setPath('userData', profile);
 process.env.MOTE_PROFILE = 'legacy'; delete process.env.MOTE_URL; delete process.env.MOTE_TOKEN; delete process.env.MOTE_ENV_FILE;
-writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config: { ...defaultConfig(), deviceName: 'Synthetic Mac', ocrEnabled: false } }), { mode: 0o600 });
+writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config: { ...defaultConfig(), deviceName: 'Synthetic Mac', ocrEnabled: false, metadataEnabled: false } }), { mode: 0o600 });
 const sourceFile = join(profile, 'synthetic-source.md');
 writeFileSync(sourceFile, '合成原生来源 UI：仅用于测试 🧑🏽‍💻');
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sourceFile] });
@@ -29,7 +29,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal((await window.webContents.executeJavaScript('window.mote.updateStatus()')).channel, 'preview');
       await window.webContents.executeJavaScript('window.mote.updateChannel("stable")');
       assert.equal(status.running, false); assert.equal(status.config.deviceName, 'Synthetic Mac'); assert.equal(status.queueDepth, 0);
-      await window.webContents.executeJavaScript(`document.querySelector('#device-name').value = 'UI Fixture Renamed'; document.querySelector('#settings').requestSubmit();`);
+      await window.webContents.executeJavaScript(`document.querySelector('#device-name').value = 'UI Fixture Renamed'; document.querySelector('#default-collection').value = 'activity'; document.querySelector('#add-app-rule').click(); document.querySelector('#app-collection-rules input').value = 'dev.mote.synthetic.private'; document.querySelector('#app-collection-rules select').value = 'off'; document.querySelector('#settings').requestSubmit();`);
       let updated;
       for (let i = 0; i < 50; i++) {
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -37,7 +37,7 @@ app.on('browser-window-created', (_event, window) => {
         if (updated.config.deviceName === 'UI Fixture Renamed') break;
       }
       assert.equal(updated.config.deviceName, 'UI Fixture Renamed');
-      assert.equal(updated.running, false);
+      assert.equal(updated.running, false); assert.equal(updated.config.defaultCollection, 'activity'); assert.deepEqual(updated.config.appCollectionRules, { 'dev.mote.synthetic.private': 'off' }); assert.equal(updated.config.metadataEnabled, false);
       const savedNote = await window.webContents.executeJavaScript('window.mote.noteDraft().then(draft => window.mote.saveNote({...draft,text:"Synthetic native app note",mood:"calm",revision:draft.revision+1}))');
       assert.match(savedNote.id, /^[a-f0-9-]{36}$/);
       const noteStatus = await window.webContents.executeJavaScript('window.mote.status()');
@@ -64,7 +64,9 @@ app.on('browser-window-created', (_event, window) => {
       writeFileSync(join(require('node:path').dirname(output), 'source-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       await window.webContents.executeJavaScript('document.querySelector("#app-updates").scrollIntoView({behavior:"instant",block:"start"}); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
       writeFileSync(join(require('node:path').dirname(output), 'update-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
-      process.stdout.write(JSON.stringify({ updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
+      await window.webContents.executeJavaScript('document.querySelector("#default-collection").scrollIntoView({behavior:"instant",block:"start"}); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+      writeFileSync(join(require('node:path').dirname(output), 'graded-collection-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
+      process.stdout.write(JSON.stringify({ gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write(`UI smoke failed: ${error.message}\n`); app.exit(1); });
   });

@@ -52,6 +52,8 @@ jobs:
           node apps/desktop/scripts/connection-server-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/connection-smoke.cjs
           node_modules/.bin/electron scripts/test-web-connections.cjs
+          node_modules/.bin/electron scripts/test-web-metadata.cjs
+          node apps/desktop/scripts/window-identity-smoke.mjs
           node_modules/.bin/electron apps/desktop/scripts/update-network-smoke.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: { name: release-mac, path: artifacts/release/*, if-no-files-found: error, retention-days: 7 }

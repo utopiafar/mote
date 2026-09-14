@@ -111,7 +111,7 @@ export class Connections {
   assertOwnSource(c:ConnectionCredential,id:string){this.assertActive(c);if(this.sources.getSource(id).deviceId!==c.deviceId)throw denied();}
   assertCapture(c:ConnectionCredential,body:unknown){
     this.assertOwnDevice(c,body);const input=body as {id?:unknown;provenance?:unknown;platform?:unknown;source?:unknown};
-    this.assertPlatform(c,input.platform);if(input.provenance!==undefined||!['screen','note'].includes(String(input.source)))throw denied();
+    this.assertPlatform(c,input.platform);if(input.provenance!==undefined||!['screen','note','activity'].includes(String(input.source)))throw denied();
     if(typeof input.id==='string'){const prior=this.store.evidence([input.id])[0];if(prior&&prior.deviceId!==c.deviceId)throw denied();}
   }
   async close(){this.closed=true;this.invitations.clear();await this.sequence.catch(()=>{});}

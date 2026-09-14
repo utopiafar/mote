@@ -5,8 +5,10 @@ import type { NativeImage } from 'electron';
 import type { Config, Status, Platform, CaptureEvent, NsfwGate } from './contracts';
 import { MAX_IMAGE_BYTES, publicConfig } from './config';
 import { DurableQueue, QueueFullError } from './queue';
-import { activeApplication, recognizeText, readPowerState } from './native';
-import { maskBitmap, reviewLocally, shouldExclude, shouldExcludeVisibleApps } from './privacy';
+import { activeApplication, foregroundApplication, recognizeText, readPowerState } from './native';
+import { maskBitmap, reviewLocally } from './privacy';
+import { collectionForApp, permitsVisibleContent } from './app-collection';
+import { collectRecordMetadata } from './record-metadata';
 import { heartbeat, uploadCapture } from './transport';
 import { EventJournal, failureCode, TransportFailure, type EventStage } from './support';
 
@@ -25,7 +27,7 @@ export class Collector {
   private timer?: ReturnType<typeof setTimeout>;
   private uploadTimer?: ReturnType<typeof setInterval>;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
-  private lastSample?: { at: number; appId: string };
+  private lastSample?: { at: number; appId: string; collection: 'content' | 'activity' };
   private state: Status['state'] = 'stopped';
   private message = '尚未开始采集。请确认隐私设置后手动开始。';
   private lastCaptureAt?: string;
@@ -83,20 +85,8 @@ export class Collector {
     if (currentPlatform !== 'macos') throw new Error('此 MVP 只支持 macOS 采集；Windows/Linux 需要接入可靠前台应用识别后才可启用');
     if (!this.config.token) throw new Error('请先保存中央节点访问令牌');
     if (this.queue.atCapacity()) throw new QueueFullError();
-    if (this.config.nsfwEnabled) {
-      if (!this.nsfw) throw new Error('本地千问视觉审查未初始化；采集保持停止');
-      await this.nsfw.ensureReady();
-    }
-    // A first Start click may cause macOS to prompt. This is never run in automated tests.
-    if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
-      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
-      if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
-        this.state = 'permission_required'; this.message = '请在系统设置中授权屏幕录制，然后重新打开 Mote'; this.publish();
-        throw new Error(this.message);
-      }
-    }
     void this.events?.record('CAPTURE', 'STARTED');
-    this.running = true; this.state = 'capturing'; this.message = '已开启；截图在内存中先经过隐私过滤，再进入本地队列';
+    this.running = true; this.state = 'capturing'; this.message = '已开启；按应用级别记录，完整内容先经过本地隐私过滤';
     this.lastSample = undefined;
     this.publish(); void this.capture(); void this.sendHeartbeat();
   }
@@ -131,21 +121,47 @@ export class Collector {
     const abort = this.captureAbort = new AbortController();
     const valid = () => this.running && !abort.signal.aborted && !this.locked && !this.sleeping;
     try {
-      if (this.locked || this.sleeping) { this.pause('锁屏或休眠中，暂停采集'); return; }
+      if (this.locked || this.sleeping || powerMonitor.getSystemIdleState(60) === 'locked') { this.pause('锁屏或休眠中，暂停采集'); return; }
       if (cfg.idlePauseSeconds > 0 && powerMonitor.getSystemIdleTime() >= cfg.idlePauseSeconds) { this.pause('已达到空闲阈值，暂停采集；操作电脑后恢复'); return; }
-      if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
-        void this.events?.record('CAPTURE', 'PERMISSION');
-        this.stop(); this.state = 'permission_required'; this.message = '屏幕录制权限已撤销，采集已停止'; this.publish(); return;
-      }
       if (this.queue.atCapacity()) throw new QueueFullError();
       if (cfg.pauseOnBattery || cfg.batteryPauseBelowPct > 0) {
         const power = await readPowerState(this.helperPath, abort.signal);
         if (power.onBattery === undefined || (cfg.batteryPauseBelowPct > 0 && power.batteryPercent === undefined)) { this.pause('无法确认电量，按你启用的电量策略暂停'); return; }
         if (power.onBattery && (cfg.pauseOnBattery || (power.batteryPercent ?? 100) <= cfg.batteryPauseBelowPct)) { this.pause('已达到你设置的电量暂停条件'); return; }
       }
+      const foreground = await foregroundApplication(this.helperPath, abort.signal);
+      if (!valid()) return;
+      const collection = collectionForApp(foreground.appId, cfg);
+      if (collection === 'off') { this.pause('当前应用设置为不记录，已跳过本次采样'); return; }
+      if (collection === 'activity') {
+        // This branch never requests screen permission, window enumeration, pixels, OCR or a model.
+        const metadata = cfg.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined, abort.signal) : undefined;
+        const after = await foregroundApplication(this.helperPath, abort.signal);
+        if (!valid()) return;
+        if (after.appId !== foreground.appId || after.pid !== foreground.pid) { this.pause('活动采样期间前台应用变化，已跳过'); return; }
+        if (metadata?.state?.screenLocked) { this.pause('屏幕已锁定，暂停记录'); return; }
+        const durationMs = this.lastSample?.appId === foreground.appId && this.lastSample.collection === 'activity' ? Math.max(0, Math.min(cfg.intervalMs, startedAt - this.lastSample.at)) : 0;
+        const event: CaptureEvent = {
+          id: randomUUID(), deviceId: cfg.deviceId, deviceName: cfg.deviceName, platform: currentPlatform,
+          capturedAt: new Date(startedAt).toISOString(), durationMs, appId: foreground.appId, appName: foreground.appName,
+          source: 'activity', privacy: { excluded: false, redacted: false, mode: 'none', collection: 'activity' },
+          ...(metadata ? { metadata: { ...metadata, capture: { intervalMs: cfg.intervalMs } } } : {}),
+        };
+        stage = 'QUEUE'; await this.queue.enqueue(event);
+        this.lastSample = { at: startedAt, appId: foreground.appId, collection }; this.lastCaptureAt = event.capturedAt;
+        void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
+        this.state = 'capturing'; this.message = '仅记录应用活动；未采集屏幕、窗口标题或正文'; this.publish(); void this.upload(); return;
+      }
+      if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+        this.lastSample = undefined; this.state = 'permission_required'; this.message = '完整内容需要屏幕录制授权；仅活动应用仍可采样。请打开系统权限设置';
+        void this.events?.record('CAPTURE', 'PERMISSION'); this.publish(); return;
+      }
+      if (cfg.nsfwEnabled) { if (!this.nsfw) throw new Error('本地千问视觉审查不可用，完整内容已跳过'); await this.nsfw.ensureReady(); }
+      if (!valid()) return;
+      const readyForeground = await foregroundApplication(this.helperPath, abort.signal);
+      if (readyForeground.appId !== foreground.appId || readyForeground.pid !== foreground.pid || collectionForApp(readyForeground.appId, cfg) !== 'content') { this.pause('准备期间前台应用变化，已跳过本次内容采样'); return; }
       const before = await activeApplication(this.helperPath, abort.signal);
-      if (shouldExclude(before.appId, cfg.excludedAppIds)) { this.pause('前台应用命中你配置的排除列表，跳过本次采集'); return; }
-      if (shouldExcludeVisibleApps(before.visibleAppIds, before.unknownVisibleWindows, cfg.excludedAppIds)) { this.pause('主屏含排除应用窗口或无法识别的窗口，已跳过本次采集'); return; }
+      if (before.appId !== foreground.appId || before.pid !== foreground.pid || collectionForApp(before.appId, cfg) !== 'content' || !permitsVisibleContent(before.visibleAppIds, before.unknownVisibleWindows, cfg)) { this.pause('屏幕含仅活动、不记录或身份未知的窗口，整张截图已跳过'); return; }
       const display = screen.getPrimaryDisplay();
       const scale = Math.min(1, cfg.captureMaxSide / Math.max(display.size.width, display.size.height));
       const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }, fetchWindowIcons: false });
@@ -153,7 +169,7 @@ export class Collector {
       if (!source || source.thumbnail.isEmpty()) throw new Error('无法获取主屏截图，本次采集已跳过');
       const after = await activeApplication(this.helperPath, abort.signal);
       if (!valid()) return;
-      if (before.appId !== after.appId || before.pid !== after.pid || shouldExclude(after.appId, cfg.excludedAppIds) || shouldExcludeVisibleApps(after.visibleAppIds, after.unknownVisibleWindows, cfg.excludedAppIds) || before.visibleAppIds.join('\n') !== after.visibleAppIds.join('\n') || before.unknownVisibleWindows !== after.unknownVisibleWindows) { this.pause('采样期间屏幕应用发生变化或存在排除窗口，已跳过本次采集'); return; }
+      if (before.appId !== after.appId || before.pid !== after.pid || collectionForApp(after.appId, cfg) !== 'content' || !permitsVisibleContent(after.visibleAppIds, after.unknownVisibleWindows, cfg) || before.visibleAppIds.join('\n') !== after.visibleAppIds.join('\n') || before.unknownVisibleWindows !== after.unknownVisibleWindows) { this.pause('采样期间屏幕应用发生变化或存在排除窗口，已跳过本次采集'); return; }
       // All unredacted pixels remain only in process memory. Never write a raw image.
       let sanitized = this.finalImage(source.thumbnail, cfg.masks);
       let appliedMasks = cfg.masks.length;
@@ -183,18 +199,21 @@ export class Collector {
       const ocrText = cfg.ocrEnabled ? await recognizeText(this.helperPath, jpeg, abort.signal) : undefined;
       ocrMs = cfg.ocrEnabled ? Date.now() - ocrStarted : 0;
       if (!valid()) return;
-      const durationMs = this.lastSample?.appId === before.appId ? Math.max(0, Math.min(cfg.intervalMs, startedAt - this.lastSample.at)) : 0;
+      const metadata = cfg.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, 'screen_capture', abort.signal) : undefined;
+      if (!valid()) return;
+      const durationMs = this.lastSample?.appId === before.appId && this.lastSample.collection === 'content' ? Math.max(0, Math.min(cfg.intervalMs, startedAt - this.lastSample.at)) : 0;
       const event: CaptureEvent = {
         id: randomUUID(), deviceId: cfg.deviceId, deviceName: cfg.deviceName, platform: currentPlatform,
         capturedAt: new Date(startedAt).toISOString(), durationMs, appId: before.appId, appName: before.appName,
         imageMime: 'image/jpeg', ocrText, source: 'screen',
-        privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', reason: `${cfg.nsfwEnabled ? 'offline Qwen visual policy passed; ' : ''}${appliedMasks > 0 ? 'configured or local-model masks applied before OCR and persistence' : cfg.privacyModelUrl ? 'local privacy model approved; no masks returned' : 'user-configured app filters checked; no masks configured'}` },
+        ...(metadata ? { metadata: { ...metadata, capture: { intervalMs: cfg.intervalMs, ...sanitized.getSize(), displayScale: display.scaleFactor, ocrEnabled: cfg.ocrEnabled, maskCount: appliedMasks } } } : {}),
+        privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', collection: 'content', reason: `${cfg.nsfwEnabled ? 'offline Qwen visual policy passed; ' : ''}${appliedMasks > 0 ? 'configured or local-model masks applied before OCR and persistence' : cfg.privacyModelUrl ? 'local privacy model approved; no masks returned' : 'user-configured app filters checked; no masks configured'}` },
       };
       stage = 'QUEUE';
       await this.queue.enqueue(event, jpeg);
       void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
       this.diagnostics?.recordCapture({ outcome: 'saved', imageBytes: jpeg.length, inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
-      this.lastSample = { at: startedAt, appId: before.appId }; this.lastCaptureAt = event.capturedAt;
+      this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' }; this.lastCaptureAt = event.capturedAt;
       this.state = 'capturing'; this.message = '正在采集主屏；本地过滤、脱敏、OCR 已完成'; this.publish(); void this.upload();
     } catch (error) {
       void this.events?.record(stage, failureCode(error, stage), { elapsedMs: Date.now() - startedAt });
@@ -240,6 +259,6 @@ export class Collector {
     if (this.connectionHeld || this.heartbeatInFlight) return;
     this.heartbeatInFlight = true;
     const state = this.state === 'stopped' ? 'paused' : this.state;
-    try { await heartbeat(this.config, { deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform, status: state, queueDepth: this.queue.stats().depth, lastCaptureAt: this.lastCaptureAt, error: this.lastUploadError }, this.events); } finally { this.heartbeatInFlight = false; }
+    try { const metadata = this.config.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined) : undefined; await heartbeat(this.config, { metadata, deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform, status: state, queueDepth: this.queue.stats().depth, lastCaptureAt: this.lastCaptureAt, error: this.lastUploadError }, this.events); } finally { this.heartbeatInFlight = false; }
   }
 }

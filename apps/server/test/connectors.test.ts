@@ -48,11 +48,12 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   assert.ok(names.includes('mote_timeline'));assert.ok(names.includes('mote_memories'));assert.ok(names.includes('mote_history'));assert.ok(!names.includes('mote_put_item'));
   assert.deepEqual((await writer.listTools()).tools.map(tool=>tool.name),['mote_put_item']);
   const refused=await writer.callTool({name:'mote_put_item',arguments:{sourceId:'other',item:item()}});assert.equal(refused.isError,true);assert.equal(sources.listItems({sourceId:'other'}).items.length,0);
-  const event=item('x'.repeat(14000));
+  const event={...item('x'.repeat(14000)),metadata:{version:1,file:{sizeBytes:14000,createdAt:'2026-09-01T00:00:00Z'}}};
   const written=jsonResult(await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:event}}));assert.equal(written.duplicate,false);
   assert.equal(jsonResult(await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:event}})).duplicate,true);
   const original=await reader.callTool({name:'mote_evidence',arguments:{ids:[written.id],offset:12000,length:2000}});
   assert.equal(jsonResult(original)[0].text.length,2000);assert.equal(jsonResult(original)[0].textRange.nextOffset,null);
+  assert.deepEqual(jsonResult(original)[0].provenance.metadata,event.metadata);
   const revised={...event,revision:randomUUID(),text:'a😀b',observedAt:new Date(Date.now()+1000).toISOString()};
   const revision=jsonResult(await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:revised}}));
   const unicode=jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:[revision.id],offset:2,length:1}}))[0];
@@ -67,6 +68,12 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   const noteId=randomUUID();await store.ingest({id:noteId,deviceId:'synthetic-notes',deviceName:'Synthetic notes',platform:'import',capturedAt:new Date().toISOString(),durationMs:0,appId:'notes',appName:'Notes',source:'note',ocrText:'Authored synthetic diary'});
   const timeline=jsonResult(await reader.callTool({name:'mote_timeline',arguments:{}}));assert.ok(timeline.items.some((e:any)=>e.id===noteId));assert.ok(timeline.items.every((e:any)=>e.text.length<=2000));
   const found=jsonResult(await reader.callTool({name:'mote_search',arguments:{query:'Authored'}}));assert.equal(found[0].id,noteId);
+  const activityId=randomUUID(),metadata={version:1,observedAt:new Date(Date.now()-1000).toISOString(),state:{batteryPercent:35}};
+  await store.ingest({id:activityId,deviceId:'synthetic-activity',deviceName:'Synthetic activity',platform:'android',capturedAt:new Date().toISOString(),durationMs:15000,appId:'synthetic.activity',appName:'Synthetic activity',source:'activity',ocrText:'',privacy:{collection:'activity'},metadata});
+  const scoped=jsonResult(await reader.callTool({name:'mote_timeline',arguments:{appId:'synthetic.activity',source:'activity',collection:'activity'}}));
+  assert.equal(scoped.totalCount,1);assert.equal(scoped.items[0].id,activityId);assert.equal(scoped.items[0].text,'');assert.equal(scoped.items[0].durationMs,15000);assert.deepEqual(scoped.items[0].metadata,metadata);
+  assert.equal(jsonResult(await reader.callTool({name:'mote_search',arguments:{query:'Synthetic',collection:'activity',appId:'synthetic.activity'}})).length,1);
+  const activity=jsonResult(await reader.callTool({name:'mote_activity',arguments:{collection:'activity',appId:'synthetic.activity'}}));assert.equal(activity.totalDurationMs,15000);assert.equal(activity.activityEvents,1);assert.equal(activity.contentCaptures,0);
   assert.equal((await reader.readResource({uri:'mote://sources'})).contents[0].mimeType,'application/json');
 });
 
@@ -194,4 +201,17 @@ test('Google disconnect waits for token-refresh work and cannot resurrect creden
   await connector.init();t.after(()=>connector.close());await authorize();block=true;
   const reading=connector.calendars();await started;const disconnect=connector.disconnect();release();await reading;await disconnect;
   assert.equal(connector.status().connected,false);await assert.rejects(readFile(join(directory,'private/google-calendar.json')),{code:'ENOENT'});
+});
+
+test('Google real provider timestamps remain distinct from observation and metadata-only changes create revisions',async t=>{
+  const {sources,store}=await fixture(t),event={...googleEvent('metadata-event','Synthetic calendar record'),created:'2025-01-01T01:00:00Z',updated:'2026-09-01T02:00:00Z'},first=googleItem(event,calendar);
+  await sources.upsert('allowed',first);const original=sources.getItem('allowed',event.id)!;
+  assert.deepEqual(original.metadata,{version:1,provider:{createdAt:event.created,updatedAt:event.updated}});
+  assert.equal(original.modifiedAt,event.updated);assert.notEqual(original.observedAt,event.updated);assert.notEqual(original.calendar!.start,original.observedAt);
+  const next=googleItem({...event,created:'2025-01-02T01:00:00Z'},calendar,original);assert.notEqual(next.revision,first.revision);await sources.upsert('allowed',next);
+  assert.equal(sources.history('allowed',event.id).length,2);assert.deepEqual(store.evidence([original.captureId])[0].provenance!.metadata,original.metadata);
+  const prior=sources.getItem('allowed',event.id)!,cancel=googleItem({id:event.id,status:'cancelled'},calendar,prior);await sources.upsert('allowed',cancel);
+  assert.deepEqual(cancel.metadata,prior.metadata);assert.equal(cancel.modifiedAt,prior.modifiedAt);assert.equal(cancel.calendar!.status,'cancelled');assert.equal(cancel.text,'');
+  const unknown=googleItem(googleEvent('unknown-timestamps','Synthetic unknown'),calendar);assert.equal(unknown.metadata,undefined);assert.equal(unknown.modifiedAt,undefined);
+  const reference=googleItem(event,calendar,undefined,true);assert.equal(reference.text,'');assert.deepEqual(reference.metadata,first.metadata);
 });

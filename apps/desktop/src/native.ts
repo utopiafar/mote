@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 export interface ActiveApplication { appId: string; appName: string; pid: number; visibleAppIds: string[]; unknownVisibleWindows: boolean }
-export function runHelper(path: string, command: 'active' | 'ocr' | 'power' | 'qr', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
+export function runHelper(path: string, command: 'screen-permission' | 'active' | 'activity' | 'device' | 'ocr' | 'power' | 'qr', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const child = spawn(path, [command], { stdio: ['pipe', 'pipe', 'pipe'], signal });
     const chunks: Buffer[] = [];
@@ -52,4 +52,16 @@ export async function recognizeInvitationQr(path: string, image: Buffer): Promis
     if (!Array.isArray(value?.payloads) || value.payloads.length !== 1 || typeof value.payloads[0] !== 'string' || Buffer.byteLength(value.payloads[0]) > 8192) throw new Error();
     return value.payloads[0];
   } catch { throw new Error('未找到唯一有效二维码，请选择清晰的单个连接二维码，或导入 JSON'); }
+}
+
+export type ForegroundApplication = Pick<ActiveApplication, 'appId' | 'appName' | 'pid'>;
+export async function foregroundApplication(path: string, signal?: AbortSignal): Promise<ForegroundApplication> {
+  const value = await runHelper(path, 'activity', undefined, signal) as ForegroundApplication;
+  if (!value || typeof value.appId !== 'string' || !value.appId || value.appId.length > 256 || typeof value.appName !== 'string' || !value.appName || value.appName.length > 200 || !Number.isInteger(value.pid) || value.pid <= 0) throw new Error('无法确认前台应用身份，本次记录已跳过');
+  return { appId: value.appId, appName: value.appName, pid: value.pid };
+}
+export async function readDeviceMetadata(path: string, signal?: AbortSignal): Promise<{ device?: import('@mote/shared').RecordMetadata['device']; state?: import('@mote/shared').RecordMetadata['state'] }> {
+  const value = await runHelper(path, 'device', undefined, signal);
+  const { recordMetadataSchema } = await import('@mote/shared/metadata');
+  return recordMetadataSchema.parse({ ...(value as object), version: 1, observedAt: new Date().toISOString() });
 }

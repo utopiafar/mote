@@ -56,7 +56,7 @@ export class NoteDraftStore {
       return this.get();
     });
   }
-  submit(input: NoteDraft, config: Config, platform: Platform, queue: Pick<DurableQueue, 'enqueue'>): Promise<{ id: string; draft: NoteDraft }> {
+  submit(input: NoteDraft, config: Config, platform: Platform, queue: Pick<DurableQueue, 'enqueue'>, metadataProvider?: () => Promise<import('@mote/shared').RecordMetadata | undefined>): Promise<{ id: string; draft: NoteDraft }> {
     return this.exclusive(async () => {
       validateDraft(input);
       if (this.value.completed?.draftId === input.id) return { id: this.value.completed.eventId, draft: this.get() };
@@ -68,9 +68,10 @@ export class NoteDraftStore {
         if (this.value.targetOrigin !== config.serverUrl) throw new Error('待完成记录属于原中央节点，请恢复原节点完成保存');
         if (input.text !== this.value.draft.text || input.mood !== this.value.draft.mood) throw new Error('待完成记录不能改写，请重新载入草稿后重试');
       } else {
+        const metadata = config.metadataEnabled ? await metadataProvider?.() : undefined;
         const submission: CaptureEvent = { id: input.id, deviceId: config.deviceId, deviceName: config.deviceName, platform,
           capturedAt: new Date().toISOString(), durationMs: 0, appId: 'dev.mote.notes', appName: '随手记', source: 'note',
-          ocrText: input.text, ...(input.mood ? { mood: input.mood } : {}), privacy: { excluded: false, redacted: false, mode: 'none' } };
+          ocrText: input.text, ...(metadata ? { metadata } : {}), ...(input.mood ? { mood: input.mood } : {}), privacy: { excluded: false, redacted: false, mode: 'none' } };
         await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, revision: input.revision }, submission, targetOrigin: config.serverUrl });
       }
       const submission = this.value.submission!;

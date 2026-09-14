@@ -76,6 +76,7 @@
 | `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL` | `0` | 显式允许无密钥的本地模型服务，正常远程服务保持 0 |
 | `MOTE_MODEL_REASONING_EFFORT` | `high` | `off` / `low` / `high` / `max`；需模型提供方支持 |
 | `MOTE_MODEL_MAX_TOKENS` | `8192` | 256–32768 整数；单次模型输出预算，非总请求/账户预算 |
+| `MOTE_MODEL_TIMEOUT_MS` | `120000` | 5000–600000 毫秒整数；查询、洞察和记忆提取的 Agent 期限。Web 对这些操作额外等待 60000ms；普通上传和其他请求的期限不变，入口代理可能更早超时 |
 | `MOTE_INSIGHT_INTERVAL_HOURS` | `0` | 0–168 小时；0 关闭定时回顾，非零会调用已配置 Agent 并产生模型用量 |
 | `MOTE_EMBEDDING_MODEL` | 空 | 可选 embedding 模型；未配置时使用本地文本索引 |
 | `MOTE_EMBEDDING_BASE_URL` | 空 | 启用 embedding 必填，模型请求可达的服务基址 |

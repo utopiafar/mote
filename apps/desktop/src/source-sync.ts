@@ -63,7 +63,7 @@ export class SourceSync {
         // A policy-invalidated record is only a revision anchor, not evidence for deletion.
         if (!previous.contentHash || item.deleted || seen.has(item.externalId)) continue;
         if (scan.scope && (!item.calendar || item.calendar.start >= scan.scope.end || item.calendar.end < scan.scope.start)) continue;
-        stage({ ...item, text: '', deleted: true });
+        stage({ ...item, text: '', deleted: true, ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
       }
     }
     if (next.pending.length > this.limits.maxEvents || Buffer.byteLength(JSON.stringify(next)) > this.limits.maxBytes) throw new Error('来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试');

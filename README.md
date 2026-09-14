@@ -13,7 +13,8 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 ## 能做什么
 
 - **收集与回看**：显式开启屏幕采样，按设备和时间浏览；截图相同也保留每次观察，图片去重存储。
-- **先处理隐私再上传**：应用排除、固定遮挡区域、端上 Qwen 视觉审查、本地 OCR；本地模型未就绪或审查失败时跳过该帧。
+- **按应用分级采集**：选择“采集内容、仅应用活动、不记录”；纯活动不读画面和正文，内容采样支持固定遮挡区域、端上 Qwen 视觉审查与本地 OCR，审查失败跳过该帧。见 [分级设置](docs/privacy-and-metadata.md)。
+- **保留有用的元数据**：按开关上报设备与采样状态，文件和日历保留可得的大小、创建/修改/访问及删除观察时间；来源版本与证据可展开查看，未知字段不伪造。
 - **随手记录**：在采集 App 中写日记、杂事、心情；草稿与待同步笔记保存在本机，恢复网络后补传。中央界面也提供记录入口。
 - **来源接入**：Mac 本地日历与目录、Android 系统日历与文件选择器、中央 Google Calendar 只读同步；显式导入 MCP 资源，或通过 MCP 将其他 Chatbot 的可见资料写回指定来源。
 - **分层记忆**：保留原始输入、不可变快照与外部引用；默认检索当前版本，按需展开历史。模型记忆按“概要 → 内容 → 原始证据”逐层披露。
@@ -33,10 +34,16 @@ flowchart LR
     Mac[macOS App]
     Android[Android App]
     Files[选定本地或 NAS 文本目录]
-    Privacy[应用过滤 · 遮挡 · 本地 Qwen · OCR]
+    Policy[按应用选择级别]
+    Privacy[内容：遮挡 · 本地 Qwen · OCR]
+    Activity[仅活动：应用 · 采样区间 · 设备状态]
     Queue[本地持久队列]
-    Mac --> Privacy
-    Android --> Privacy
+    Mac --> Policy
+    Android --> Policy
+    Policy -->|采集内容| Privacy
+    Policy -->|仅活动| Activity
+    Policy -->|不记录| Skip[跳过]
+    Activity --> Queue
     Privacy --> Queue
     Mac -->|随手记| Queue
     Android -->|随手记| Queue

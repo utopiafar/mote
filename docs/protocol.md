@@ -25,11 +25,42 @@ All `/api/*` routes require Bearer authentication except public `/api/health` an
 }
 ```
 
-`platform`: `macos|windows|linux|android|import`. `source`: `screen|file|note`. `imageBase64` and `imageMime` optional together for text/file imports. `durationMs` integer 0..300000, measures observed sampling exposure, NOT guaranteed attention. Response: `{id, duplicate, blobHash, indexingStatus}`. Same id with different content returns 409. Excluded events must never be queued; server rejects `privacy.excluded=true`.
+`platform`: `macos|windows|linux|android|import`. `source`: `screen|activity|file|note|calendar|event|message|metric|memory`. `imageBase64` and `imageMime` optional together for text/file imports. `durationMs` integer 0..300000, measures observed sampling exposure, NOT guaranteed attention. Response: `{id, duplicate, blobHash, indexingStatus}`. Same id with different content returns 409. Excluded events must never be queued; server rejects `privacy.excluded=true`.
 
 Deleted event IDs have tombstones: later upload/import of that ID into the same vault returns 410 instead of resurrecting deleted private evidence. Restore a full backup into a fresh vault when intentional recovery is needed. Export limits account for repeated base64 image references, not only unique blob bytes.
 
-`POST /api/devices/heartbeat`: `{deviceId,deviceName,platform,status,queueDepth,lastCaptureAt?,error?}`; status `capturing|paused|permission_required|error|offline`. Response `{ok:true}`. This route records status only and never starts capture.
+`POST /api/devices/heartbeat`: `{deviceId,deviceName,platform,status,queueDepth,lastCaptureAt?,error?,metadata?}`; status `capturing|paused|permission_required|error|offline`. Response `{ok:true}`. This route records status only and never starts capture.
+
+## Activity-only and metadata (0.7.0)
+
+App collection rules resolve locally to `content`, `activity`, or `off`; legacy exclusions override all rules. `off` creates no event. `activity` never acquires pixels, a window title or body. Example:
+
+```json
+{
+  "id": "9782b311-b209-4ffa-a8a4-b417a2d70cb4",
+  "deviceId": "example-device", "deviceName": "My phone", "platform": "android",
+  "capturedAt": "2026-09-13T02:00:15.000Z", "durationMs": 15000,
+  "appId": "com.example.app", "appName": "Example", "source": "activity",
+  "privacy": {"excluded": false, "redacted": false, "mode": "none", "collection": "activity"},
+  "metadata": {
+    "version": 1, "observedAt": "2026-09-13T02:00:15.020Z",
+    "collector": {"version": "0.7.0", "method": "accessibility"},
+    "device": {"osVersion": "15", "timeZone": "Asia/Shanghai"},
+    "state": {"batteryPercent": 72, "charging": false, "networkType": "wifi"},
+    "capture": {"intervalMs": 15000}
+  }
+}
+```
+
+Activity requires a nonblank app identity, `privacy.collection=activity`, no image fields, and empty/omitted `ocrText` and `windowTitle`; mood, provenance and redaction claims are rejected. Its `metadata.capture` permits only `intervalMs`. Other records cannot claim the activity collection mode. Legacy inputs may omit collection and metadata without being rewritten on upgrade.
+
+Optional capture/note/heartbeat metadata uses the bounded, strict `recordMetadataSchema` in `packages/shared/src/metadata.ts`. Version and `observedAt` are required if metadata is present; all collector/device/state/capture fields are optional. Unknown keys, identifiers such as serial number/SSID/location, invalid numbers and timestamps longer than 64 characters are rejected. `false` and zero are preserved; missing fields mean unavailable. A metadata observation time is distinct from `capturedAt` and server `receivedAt`.
+
+Source items and capture `provenance` accept `metadata: {version:1,file?:{sizeBytes?,createdAt?,accessedAt?,metadataChangedAt?,deletionObservedAt?},provider?:{createdAt?,updatedAt?}}`. File attributes belong only to file sources. `deletionObservedAt` requires a deleted revision. Existing `modifiedAt` stays at the source-item/provenance level. These stable attributes participate in immutable revision hashes and archive checksum validation. Retries must retain the same metadata; recomputing it under the same revision/event ID yields 409.
+
+Activity is stored without a fabricated text body or embedding task. `GET /api/captures`, model timeline/search/activity and MCP equivalents support exact `appId`, `source` and `collection`; keep filters fixed across pages. Activity totals return `captures` (all measured sample records), `contentCaptures`, `activityEvents`, plus the same counters per app/device. App groups include appId. Intervals are overlap-adjusted per device before applying app/collection filters, so filtered totals cannot reassign another application's duration.
+
+All record metadata survives capture export/import and incremental changes. Heartbeats remain the latest device report rather than a durable historical log in portable capture exports; full database backup also retains the device table. New wire fields require a 0.7.0 central node before clients start uploading them. See [privacy and metadata](privacy-and-metadata.md) for UI settings, filesystem semantics and limitations.
 
 ## User notes / 随手记
 
@@ -57,7 +88,7 @@ Native clients can use their existing durable capture queue and `POST /api/captu
 
 Use the above app identity/default fields when interoperating with the convenience endpoint. In TypeScript, `noteSchema` validates a convenience request and `noteCapture()` from `@mote/shared` creates the exact canonical capture payload. Omitting `mood` leaves it absent; it does not select a default emotion. Text is limited to 100,000 characters.
 
-`POST /api/notes` accepts `{id,deviceId,deviceName,platform,capturedAt,text,mood?}` and maps it to that same capture, using `text` as `ocrText`. Its response is the same `{id,duplicate,blobHash,indexingStatus}` acknowledgement as `/api/captures`, with 201 on first insert and 200 for an identical retry. API list/detail responses remain `CaptureRecord` objects, including `ocrText`, optional `mood`, `source`, `receivedAt` and indexing status, rather than introducing a second stored note shape.
+`POST /api/notes` accepts `{id,deviceId,deviceName,platform,capturedAt,text,mood?,metadata?}` and maps it to that same capture, using `text` as `ocrText`. Its response is the same `{id,duplicate,blobHash,indexingStatus}` acknowledgement as `/api/captures`, with 201 on first insert and 200 for an identical retry. API list/detail responses remain `CaptureRecord` objects, including `ocrText`, optional `mood`, `source`, `receivedAt` and indexing status, rather than introducing a second stored note shape.
 
 Before enqueueing, Web clients atomically persist the exact prepared event (including UUID and timestamp) with the draft. A crash between enqueueing and clearing the draft reuses this prepared event, even if the central acknowledgement already removed its queue entry. Editing the draft invalidates its prepared event; a later intentionally identical note still gets a new UUID. Completion clears only the matching prepared draft.
 
@@ -75,7 +106,7 @@ The Web/embedded console includes a separate 随手记 page. Drafts and immutabl
 
 - `GET /api/health` => `{ok,version}`
 - `GET /api/status` => `{agent:{configured,provider,model},storage:{bytes,captures,blobs},...}`
-- `GET /api/captures?limit=50&before=<ISO>&after=<ISO>&deviceId=<id>&source=<screen|file|note>` => `{items,nextCursor}`. Items include `id,deviceId,deviceName,platform,capturedAt,durationMs,appId,appName,windowTitle,ocrText,source,mood?,privacy,blobHash,indexingStatus,summary?`.
+- `GET /api/captures?limit=50&before=<ISO>&after=<ISO>&deviceId=<id>&source=<type>&appId=<exact-id>&collection=<content|activity>` => `{items,nextCursor}`. Items include `id,deviceId,deviceName,platform,capturedAt,durationMs,appId,appName,windowTitle,ocrText,source,mood?,privacy,blobHash,indexingStatus,summary?`.
 - `GET /api/captures/:id/image` authenticated image bytes.
 - `GET /api/captures/:id` one complete evidence record; 404 if deleted or missing.
 - `GET /api/devices` => `{items}`

@@ -102,3 +102,9 @@ reference 模式只调用 `resources/list` 获取选中资源的元数据，不�
 `node --import tsx --test apps/server/test/connectors.test.ts` 使用临时资料库、真实 MCP SDK 客户端/服务端、本机合成 HTTP 服务，以及可控 Google OAuth/API fixture。覆盖读写凭据隔离、写范围、证据分页、恢复旧内容、reference 不读取正文、SSRF/重定向拒绝、PKCE/state 防重放、分页失败保留游标、410 重建、取消计划时间、跨夏令时全天日程和断开连接竞态。
 
 这证明协议与故障路径，不代表真实 Google 账号授权、某个外部聊天产品接入或真实网络同步已验收。真实 Google 测试需要用户的 OAuth 项目与账号授权；只有实际完成之后才应报告相应结果。模型生成的记忆质量另行评估，HTTP 成功不等于内容正确。
+
+## 应用活动与元数据（0.7.0）
+
+`mote_timeline`、`mote_search`、`mote_activity` 支持精确 `appId`、`source`、`collection` 筛选；分页保持筛选一致。`source=activity` 是只有应用身份、采样区间和可选设备状态的记录，没有截图或正文。`mote_activity` 同时统计内容与活动样本，返回 `contentCaptures` 和 `activityEvents`，不能作为完成任务的证明。
+
+时间线与 `mote_evidence` 还提供 `appId`、`deviceId`、`durationMs`、`receivedAt`、`privacy`、`metadata`；文件与日历的稳定元数据在 `provenance.metadata` 或来源条目 `metadata` 中。通过写回工具提交来源元数据时，同一 revision 不可变，访问时间不证明人工阅读，删除观察不等于实际删除。详情见 [元数据语义](privacy-and-metadata.md)。

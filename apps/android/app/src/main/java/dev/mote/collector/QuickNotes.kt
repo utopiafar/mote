@@ -21,6 +21,7 @@ object QuickNotes {
         val event = JSONObject().put("id", id).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)
             .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0)
             .put("appId", "dev.mote.notes").put("appName", "随手记").put("ocrText", text).put("source", "note")
+            .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, "manual")) }
             .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
         if (mood.isNotBlank()) event.put("mood", mood)
         event

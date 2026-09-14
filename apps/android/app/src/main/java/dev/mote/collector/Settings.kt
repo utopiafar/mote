@@ -12,8 +12,10 @@ data class CollectorConfig(
     val excludedPackages: String = "", val masks: String = "", val localReviewUrl: String = "",
     val debugHttp: Boolean = false, val mode: String = "accessibility", val nsfw: NsfwConfig = NsfwConfig(),
     val jpegQuality: Int = 75, val captureMaxSide: Int = 1280, val chargingOnly: Boolean = false, val batteryPauseBelowPct: Int = 0,
-    val diagnosticsEnabled: Boolean = false, val diagnosticsIntervalSeconds: Int = 60
+    val diagnosticsEnabled: Boolean = false, val diagnosticsIntervalSeconds: Int = 60,
+    val appCollectionRules: String = AppCollectionRules.DEFAULT, val metadataEnabled: Boolean = true
 ) {
+    fun effectiveMode() = if (AppCollectionRules.parse(appCollectionRules).mayCollectContent()) mode else "accessibility"
     fun validate() {
         PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
         require(token.length >= 32) { "节点令牌至少需要 32 个字符" }
@@ -21,6 +23,7 @@ data class CollectorConfig(
         require(intervalSeconds in 5..300) { "采集间隔为 5..300 秒" }
         require(maxQueueMiB in 8..4096) { "队列上限为 8..4096 MiB" }
         Mask.parse(masks)
+        AppCollectionRules.parse(appCollectionRules)
         PrivacyRules.validateLocalReview(localReviewUrl)
         require(mode in setOf("accessibility", "projection"))
         nsfw.validate()
@@ -52,14 +55,16 @@ class Settings(private val context: Context) {
             maxTokens = prefs.getInt("qwenMaxTokens", 256), reviewMaxSide = prefs.getInt("qwenMaxSide", 512)),
         jpegQuality = prefs.getInt("jpegQuality", 75), captureMaxSide = prefs.getInt("captureMaxSide", 1280),
         chargingOnly = prefs.getBoolean("chargingOnly", false), batteryPauseBelowPct = prefs.getInt("batteryPauseBelowPct", 0),
-        diagnosticsEnabled = prefs.getBoolean("diagnosticsEnabled", false), diagnosticsIntervalSeconds = prefs.getInt("diagnosticsIntervalSeconds", 60)
+        diagnosticsEnabled = prefs.getBoolean("diagnosticsEnabled", false), diagnosticsIntervalSeconds = prefs.getInt("diagnosticsIntervalSeconds", 60),
+        appCollectionRules = prefs.getString("appCollectionRules", AppCollectionRules.DEFAULT)!!,
+        metadataEnabled = prefs.getBoolean("metadataEnabled", true)
     )
     fun save(c: CollectorConfig) {
         c.validate()
         if (!prefs.edit().putString("server", c.server.trim().trimEnd('/')).putString("token", Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP))
             .putString("deviceName", c.deviceName).putInt("interval", c.intervalSeconds).putInt("maxQueue", c.maxQueueMiB)
             .putBoolean("wifiOnly", c.wifiOnly).putString("excluded", c.excludedPackages).putString("masks", c.masks)
-            .putString("localReview", c.localReviewUrl).putBoolean("debugHttp", c.debugHttp).putString("mode", c.mode).commit()) throw SettingsWriteFailure()
+            .putString("localReview", c.localReviewUrl).putBoolean("debugHttp", c.debugHttp).putString("mode", c.mode).putString("appCollectionRules", c.appCollectionRules).putBoolean("metadataEnabled", c.metadataEnabled).commit()) throw SettingsWriteFailure()
         if (!prefs.edit().putInt("jpegQuality", c.jpegQuality).putInt("captureMaxSide", c.captureMaxSide).putBoolean("chargingOnly", c.chargingOnly)
             .putInt("batteryPauseBelowPct", c.batteryPauseBelowPct).putBoolean("diagnosticsEnabled", c.diagnosticsEnabled).putInt("diagnosticsIntervalSeconds", c.diagnosticsIntervalSeconds).commit()) throw SettingsWriteFailure()
         saveNsfw(c.nsfw)

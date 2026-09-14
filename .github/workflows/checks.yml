@@ -21,6 +21,7 @@ jobs:
       - run: npm run build:libs
       - run: npm run typecheck
       - run: npm run build -w @mote/server -w @mote/web
+      - run: node --import tsx scripts/test-live-metadata.ts --prepare-only --out .mote/ci-metadata-fixture
       - run: npm test
       - run: npm run test:privacy
       - run: npm run test:e2e

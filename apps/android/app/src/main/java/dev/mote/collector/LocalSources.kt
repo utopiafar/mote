@@ -153,6 +153,12 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
             if (external !in seen && !previous.optBoolean("deleted") && SourceRules.withinWindow(previous, result.from, result.until)) {
                 val deleted = JSONObject().put("externalId", external).put("observedAt", result.observedAt).put("title", "").put("text", "")
                     .put("kind", previous.getString("kind")).put("layer", previous.getString("layer")).put("deleted", true)
+                if (previous.getString("kind") == "file") {
+                    val known = previous.optJSONObject("metadata")?.optJSONObject("file")?.let { JSONObject(it.toString()) } ?: JSONObject()
+                    known.put("deletionObservedAt", result.observedAt)
+                    deleted.put("metadata", JSONObject().put("version", 1).put("file", known))
+                    if (previous.has("modifiedAt")) deleted.put("modifiedAt", previous.getString("modifiedAt"))
+                }
                 accept(deleted)
             }
         }

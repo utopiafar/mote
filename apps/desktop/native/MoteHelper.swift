@@ -4,12 +4,16 @@ import Foundation
 import Vision
 import ImageIO
 import EventKit
+import Darwin
 
 func output(_ value: [String: Any]) throws {
     let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
     FileHandle.standardOutput.write(data)
 }
 
+@main
+struct MoteHelper {
+static func main() {
 do {
     switch CommandLine.arguments.dropFirst().first ?? "" {
     case "calendar-permission", "calendar-list", "calendar-scan":
@@ -59,6 +63,7 @@ do {
                 "status": event.status == .canceled ? "cancelled" : (event.status == .tentative ? "tentative" : "confirmed")
             ]
             if let zone = event.timeZone { value["timeZone"] = zone.identifier }
+            if let created = event.creationDate { value["createdAt"] = formatter.string(from: created) }
             if let modified = event.lastModifiedDate { value["modifiedAt"] = formatter.string(from: modified) }
             if query["includeText"] as? Bool == true, let location = event.location { value["text"] = String(((value["text"] as? String ?? "") + "\n" + location).prefix(100000)) }
             bytes += (try JSONSerialization.data(withJSONObject: value)).count
@@ -68,6 +73,36 @@ do {
         // Detect permission revocation during the query; never report an empty successful scan.
         if !fullAccess() { try output(["permission": "required", "calendars": []]); break }
         try output(["permission": "granted", "events": events, "complete": complete])
+    case "screen-permission":
+        // Only the explicit permissions button invokes this. No image or window list is requested.
+        try output(["granted": CGRequestScreenCaptureAccess()])
+    case "activity":
+        // NSWorkspace application identity only: never enumerate windows, titles, or pixels.
+        guard let application = NSWorkspace.shared.frontmostApplication,
+              let bundleID = application.bundleIdentifier, !bundleID.isEmpty else { throw NSError(domain: "Mote", code: 1) }
+        try output(["appId": bundleID, "appName": application.localizedName ?? bundleID, "pid": Int(application.processIdentifier)])
+    case "device":
+        func systemString(_ key: String) -> String? {
+            var size = 0
+            guard sysctlbyname(key, nil, &size, nil, 0) == 0, size > 1, size < 1024 else { return nil }
+            var bytes = [CChar](repeating: 0, count: size)
+            guard sysctlbyname(key, &bytes, &size, nil, 0) == 0 else { return nil }
+            return String(cString: bytes)
+        }
+        let info = ProcessInfo.processInfo
+        let version = info.operatingSystemVersion
+        var device: [String: Any] = ["osVersion": "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)", "manufacturer": "Apple"]
+        if let build = systemString("kern.osversion") { device["osBuild"] = build }
+        if let model = systemString("hw.model") { device["model"] = model }
+        var state: [String: Any] = ["powerSave": info.isLowPowerModeEnabled]
+        switch info.thermalState {
+        case .nominal: state["thermalState"] = "nominal"
+        case .fair: state["thermalState"] = "fair"
+        case .serious: state["thermalState"] = "serious"
+        case .critical: state["thermalState"] = "critical"
+        @unknown default: state["thermalState"] = "unknown"
+        }
+        try output(["device": device, "state": state])
     case "active":
         guard let application = NSWorkspace.shared.frontmostApplication,
               let bundleID = application.bundleIdentifier,
@@ -78,32 +113,16 @@ do {
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             throw NSError(domain: "Mote", code: 3, userInfo: nil)
         }
-        var visibleAppIDs = Set<String>()
-        var unknownVisibleWindows = false
-        for window in windows {
-            guard let boundsDictionary = window[kCGWindowBounds as String] as? NSDictionary,
-                  let bounds = CGRect(dictionaryRepresentation: boundsDictionary),
-                  bounds.width > 1, bounds.height > 1,
-                  bounds.intersects(primaryBounds),
-                  let pid = window[kCGWindowOwnerPID as String] as? Int32 else { continue }
-            let alpha = window[kCGWindowAlpha as String] as? Double ?? 1
-            let layer = window[kCGWindowLayer as String] as? Int ?? 0
-            if alpha <= 0 || layer < 0 { continue }
-            if let owner = NSRunningApplication(processIdentifier: pid), let bundleID = owner.bundleIdentifier {
-                visibleAppIDs.insert(bundleID)
-            } else if layer == 0 {
-                // Unidentified normal application windows make exclusions unverifiable.
-                // Nonzero unidentified system layers (cursor/menu/background) are not app windows.
-                unknownVisibleWindows = true
-            }
+        let visible = visibleWindowIdentities(windows, within: primaryBounds) { pid in
+            NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
         }
         // Window titles are deliberately never requested or collected.
         try output([
             "appId": bundleID,
             "appName": application.localizedName ?? bundleID,
             "pid": Int(application.processIdentifier),
-            "visibleAppIds": visibleAppIDs.sorted(),
-            "unknownVisibleWindows": unknownVisibleWindows
+            "visibleAppIds": visible.ids,
+            "unknownVisibleWindows": visible.unknown
         ])
     case "power":
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
@@ -114,8 +133,11 @@ do {
                   let current = description[kIOPSCurrentCapacityKey] as? Int,
                   let maximum = description[kIOPSMaxCapacityKey] as? Int, maximum > 0 else { continue }
             result["batteryPercent"] = min(100, max(0, Double(current) / Double(maximum) * 100))
-            result["charging"] = description[kIOPSIsChargingKey] as? Bool ?? false
-            result["onBattery"] = (description[kIOPSPowerSourceStateKey] as? String) == kIOPSBatteryPowerValue
+            if let charging = description[kIOPSIsChargingKey] as? Bool { result["charging"] = charging }
+            if let state = description[kIOPSPowerSourceStateKey] as? String {
+                if state == kIOPSBatteryPowerValue { result["onBattery"] = true }
+                else if state == kIOPSACPowerValue { result["onBattery"] = false }
+            }
             break
         }
         try output(result)
@@ -157,4 +179,7 @@ do {
     // Never print recognized text, screenshots, or application metadata to stderr.
     FileHandle.standardError.write(Data("Mote native helper failed\n".utf8))
     exit(1)
+}
+
+}
 }

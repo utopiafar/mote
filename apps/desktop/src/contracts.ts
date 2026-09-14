@@ -1,3 +1,4 @@
+export type CollectionMode = 'content' | 'activity' | 'off';
 export type Platform = 'macos' | 'windows' | 'linux';
 export type Rectangle = { x: number; y: number; width: number; height: number };
 export interface Config {
@@ -8,6 +9,8 @@ export interface Config {
   maxQueueBytes: number;
   maxQueueEvents: number;
   excludedAppIds: string[];
+  defaultCollection: CollectionMode;
+  appCollectionRules: Record<string, CollectionMode>;
   masks: Rectangle[];
   idlePauseSeconds: number;
   ocrEnabled: boolean;
@@ -20,6 +23,7 @@ export interface Config {
   nsfwTimeoutMs: number;
   nsfwSource: 'auto' | 'mirror' | 'official' | 'custom';
   nsfwCustomUrl: string;
+  metadataEnabled: boolean;
   diagnosticsEnabled: boolean;
   diagnosticIntervalSeconds: number;
   jpegQuality: number;
@@ -43,9 +47,10 @@ export interface CaptureEvent {
   appName: string;
   imageMime?: 'image/jpeg';
   ocrText?: string;
-  source: 'screen' | 'note';
+  source: 'screen' | 'note' | 'activity';
+  metadata?: import('@mote/shared').RecordMetadata;
   mood?: string;
-  privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; reason?: string };
+  privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; collection?: 'content' | 'activity'; reason?: string };
 }
 export interface Status {
   environment?: { profile: string; legacy: boolean; dataDirectory: string };

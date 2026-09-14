@@ -103,3 +103,14 @@ describe('durable capture queue', () => {
     await target.acknowledge(note.id); expect(target.stats().depth).toBe(0);
     await expect(queue.enqueue(note, image)).rejects.toThrow('不得包含');
   });
+
+it('keeps activity metadata durable but rejects all content fields and content-only capture parameters before disk', async () => {
+  const { imageMime, ocrText, ...base } = event();
+  const activity = { ...base, source: 'activity' as const, privacy: { excluded: false as const, redacted: false, mode: 'none' as const, collection: 'activity' as const }, metadata: { version: 1 as const, observedAt: base.capturedAt, capture: { intervalMs: 15000 }, device: { osVersion: 'synthetic' } } };
+  await queue.enqueue(activity); await queue.failed(activity.id, 1000, () => .5);
+  const reopened = new DurableQueue(directory, limits); await reopened.initialize(); expect((await reopened.next(3000))?.record.event).toEqual(activity); expect(await readdir(join(directory, 'blobs'))).toEqual([]);
+  for (const key of ['ocrText', 'imageMime', 'imageBase64', 'mood', 'title', 'windowTitle', 'provenance']) await expect(queue.enqueue({ ...activity, [key]: 'forbidden fixture' } as never)).rejects.toThrow();
+  for (const key of ['width', 'height', 'displayScale', 'maskCount', 'ocrEnabled']) await expect(queue.enqueue({ ...activity, metadata: { ...activity.metadata, capture: { [key]: key === 'ocrEnabled' ? true : 1 } } } as never)).rejects.toThrow();
+  await expect(queue.enqueue({ ...activity, metadata: { ...activity.metadata, state: { serialNumber: 'not allowed' } } } as never)).rejects.toThrow();
+  await expect(queue.enqueue(activity, image)).rejects.toThrow('不得包含');
+});

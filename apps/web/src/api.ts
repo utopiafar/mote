@@ -1,3 +1,4 @@
+import type {RecordMetadata, SourceMetadata} from '@mote/shared';
 export interface Connection {
   url: string;
   token: string;
@@ -6,6 +7,7 @@ export interface Capture {
   id: string;
   capturedAt: string;
   appName: string;
+  appId?: string;
   deviceId: string;
   deviceName: string;
   platform: string;
@@ -14,12 +16,15 @@ export interface Capture {
   durationMs: number;
   blobHash: string | null;
   source: string;
-  privacy: { redacted: boolean; mode: string; reason?: string };
+  privacy: { redacted: boolean; mode: string; reason?: string; collection?: 'content' | 'activity' };
+  metadata?: RecordMetadata;
+  provenance?: {layer:string;modifiedAt?:string;deleted?:boolean;metadata?:SourceMetadata};
   indexingStatus: string;
   summary?: string;
   mood?: string;
 }
 export interface Device {
+  metadata?: RecordMetadata;
   deviceId: string;
   deviceName: string;
   platform: string;
@@ -30,7 +35,9 @@ export interface Device {
   error?: string;
 }
 export interface Activity {
-  apps: { appName: string; durationMs: number; captures: number }[];
+  activityEvents?: number;
+  contentCaptures?: number;
+  apps: { appId?: string; appName: string; durationMs: number; captures: number }[];
   devices: {
     deviceId: string;
     deviceName: string;
@@ -42,7 +49,7 @@ export interface Activity {
 }
 export interface Status {
   profile?: string;
-  agent: { configured: boolean; model: string | null; provider: string };
+  agent: { configured: boolean; model: string | null; provider: string; timeoutMs?: number };
   storage: {
     captures: number;
     blobs: number;
@@ -90,16 +97,24 @@ export class ApiError extends Error {
   }
 }
 export function createApi(connection: Connection, onUnauthorized?: () => void, isCurrentConnection: () => boolean = () => true) {
+  let agentTimeoutMs = 120000;
+  // Kept within this connection's API instance: a former node cannot change a new node's budget.
+  function setAgentTimeout(value: number | undefined) {
+    agentTimeoutMs = Number.isSafeInteger(value) && value! >= 5000 && value! <= 600000 ? value! : 120000;
+  }
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await raw(path, init);
     return response.json() as Promise<T>;
   }
   async function raw(path: string, init: RequestInit = {}) {
+    const modelOperation = init.method?.toUpperCase() === 'POST' && ['/api/query', '/api/insights', '/api/memories/extract'].includes(path);
+    const deadline = modelOperation ? AbortSignal.timeout(agentTimeoutMs + 60000) : undefined;
+    const signal = deadline ? (init.signal ? AbortSignal.any([init.signal, deadline]) : deadline) : init.signal ?? AbortSignal.timeout(180000);
     const response = await fetch(`${connection.url}${path}`, {
       ...init,
       redirect: "error",
       credentials: "omit",
-      signal: init.signal ?? AbortSignal.timeout(180000),
+      signal,
       headers: {
         ...(init.body ? { "Content-Type": "application/json" } : {}),
         ...init.headers,
@@ -129,7 +144,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
     }
     return response;
   }
-  return { request, raw };
+  return { request, raw, setAgentTimeout };
 }
 export type Api = ReturnType<typeof createApi>;
 export function queryString(

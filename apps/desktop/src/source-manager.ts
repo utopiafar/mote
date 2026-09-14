@@ -119,7 +119,7 @@ export class LocalSourceManager {
         await engine.ensurePolicy(sourcePolicy(source));
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
-        const scan = source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        const scan = source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json')) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
         status.skipped = scan.skipped;
         const request: SourceRequest = async (path, body, method, requestSignal) => {
           if (!this.connection.token) throw new Error('请先配置中央节点令牌');

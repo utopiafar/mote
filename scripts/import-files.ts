@@ -62,7 +62,7 @@ try {
     engine = new SourceSync(statePath); await engine.initialize(); await engine.ensurePolicy(policy);
   }
   async function scan(): Promise<void> {
-    const result = await scanSourceFiles(root, options, controller.signal);
+    const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined);
     let count = result.items.length;
     if (request && engine) {
       const prepare = async () => {

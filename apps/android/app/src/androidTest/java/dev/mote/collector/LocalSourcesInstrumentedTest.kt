@@ -38,6 +38,10 @@ class LocalSourcesInstrumentedTest {
             prefs.edit().putString("mode", "failure").commit(); assertThrows(Exception::class.java) { scanner.scan(files, now) }
             prefs.edit().putString("mode", "missing").commit(); store.scan(files, scanner.scan(files, now))
             assertEquals(2, store.state(files.id).getJSONArray("pending").length()); assertTrue(store.state(files.id).getJSONArray("pending").getJSONObject(1).getBoolean("deleted"))
+            val deletion = store.state(files.id).getJSONArray("pending").getJSONObject(1)
+            assertEquals(100, deletion.getJSONObject("metadata").getJSONObject("file").getLong("sizeBytes"))
+            assertEquals(now.toString(), deletion.getJSONObject("metadata").getJSONObject("file").getString("deletionObservedAt"))
+            assertEquals(snapshots.items.single().getString("modifiedAt"), deletion.getString("modifiedAt"))
         } finally { directory.deleteRecursively(); prefs.edit().clear().commit() }
     }
     @Test fun nativeSourcesScreenDoesNotRequestCalendarPermissionUntilUserConnects() {

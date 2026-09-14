@@ -1,11 +1,13 @@
-import { constants } from 'node:fs';
+import { constants, type Stats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { basename, extname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { SourceOptions, SourceScan } from './source-types';
 import { redactSourceText } from './source-types';
+import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
-export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal): Promise<SourceScan> {
+export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string): Promise<SourceScan> {
+  const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   const selected = await lstat(selectedPath);
   if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error('所选来源必须是普通文件或目录，不能是符号链接');
   const root = await realpath(selectedPath);
@@ -38,14 +40,26 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
       }
       const after = await handle.stat();
-      if (before.mtimeMs !== after.mtimeMs || before.size !== after.size || await realpath(path) !== path) throw new Error('changed file');
+      if (before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || before.size !== after.size || await realpath(path) !== path) throw new Error('changed file');
       totalBytes += before.size;
-      result.items.push({ externalId, title: redactSourceText(basename(path), options.redactLiterals), text: redactSourceText(text, options.redactLiterals), uri: options.redactLiterals.length ? undefined : pathToFileURL(path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention, mimeType: 'text/plain', deleted: false });
+      const accessedAtMs = accessMarkers.record(externalId, before, after);
+      const fileMetadata = observedFileMetadata(before, accessedAtMs);
+      result.items.push({ externalId, title: redactSourceText(basename(path), options.redactLiterals), text: redactSourceText(text, options.redactLiterals), uri: options.redactLiterals.length ? undefined : pathToFileURL(path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention, metadata: { version: 1, file: fileMetadata }, mimeType: 'text/plain', deleted: false });
     } catch { result.skipped++; result.complete = false; }
     finally { await handle?.close(); }
   }
   if (selected.isDirectory()) {
     for (const entry of (await readdir(root)).sort()) { if (visited > 5000) break; await visit(join(root, entry), entry); }
   } else await visit(root, basename(root));
+  await accessMarkers.persist(result.complete);
   return result;
+}
+
+export function observedFileMetadata(before: Stats, accessedAtMs: number): NonNullable<import('@mote/shared').SourceMetadata['file']> {
+  const timestamp = (ms: number) => Number.isFinite(ms) && ms > 0 && Number.isFinite(new Date(ms).getTime()) ? new Date(ms).toISOString() : undefined;
+  // Node documents ctime/epoch fallbacks when the filesystem cannot provide birth time.
+  // Equal birth/ctime is ambiguous even on a supported filesystem, so omit instead of guessing.
+  const createdAt = before.birthtimeMs === before.ctimeMs ? undefined : timestamp(before.birthtimeMs);
+  const accessedAt = timestamp(accessedAtMs), metadataChangedAt = timestamp(before.ctimeMs);
+  return { sizeBytes: before.size, ...(createdAt ? { createdAt } : {}), ...(accessedAt ? { accessedAt } : {}), ...(metadataChangedAt ? { metadataChangedAt } : {}) };
 }

@@ -92,6 +92,7 @@ class SourceProviders(private val resolver: ContentResolver, private val cancell
             val body = JSONObject().put("externalId", uri.toString()).put("observedAt", now.toString()).put("title", doc.name).put("text", text)
                 .put("uri", uri.toString()).put("kind", "file").put("layer", source.retention).put("mimeType", doc.mime.take(200))
             doc.modified?.takeIf { it > 0 }?.let { body.put("modifiedAt", Instant.ofEpochMilli(it).toString()) }
+            doc.size?.takeIf { it >= 0 }?.let { body.put("metadata", JSONObject().put("version", 1).put("file", JSONObject().put("sizeBytes", it))) }
             bytes += body.toString().toByteArray().size
             if (bytes > SourceRules.SCAN_BYTES) { complete = false; skipped++; return }
             items.add(body)

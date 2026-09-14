@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { readFile, mkdir, writeFile, rename, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
+import { normalizeAppCollectionRules, normalizeCollectionMode } from './app-collection';
 import type { Config, ConfigUpdate, PublicConfig, Rectangle } from './contracts';
 
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -10,9 +11,9 @@ export function defaultConfig(): Config {
   return {
     serverUrl: 'http://127.0.0.1:47832', deviceId: randomUUID(), deviceName: hostname(),
     intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000,
-    excludedAppIds: [], masks: [], idlePauseSeconds: 300, ocrEnabled: true,
+    excludedAppIds: [], defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300, ocrEnabled: true,
     privacyModelUrl: '', openAtLogin: false,
-    diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
+    metadataEnabled: true, diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
     nsfwEnabled: true, reviewPolicy: DEFAULT_REVIEW_POLICY, reviewMaxTokens: 256, reviewMaxSide: 512, nsfwThreads: 2, nsfwTimeoutMs: 60000, nsfwSource: 'auto', nsfwCustomUrl: '',
   };
 }
@@ -60,6 +61,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (!input || typeof input !== 'object') throw new Error('配置格式不正确');
   if (typeof input.deviceName !== 'string' || !input.deviceName.trim() || input.deviceName.length > 128) throw new Error('设备名需为 1–128 字符');
   if (!Array.isArray(input.excludedAppIds) || input.excludedAppIds.length > 500 || input.excludedAppIds.some(id => typeof id !== 'string' || id.length > 256 || !id.trim())) throw new Error('排除列表必须填写有效应用 ID');
+  if (input.metadataEnabled !== undefined && typeof input.metadataEnabled !== 'boolean') throw new Error('设备元数据开关值无效');
   if (typeof input.ocrEnabled !== 'boolean' || typeof input.openAtLogin !== 'boolean') throw new Error('开关值不正确');
   if (typeof input.diagnosticsEnabled !== 'boolean' || typeof input.pauseOnBattery !== 'boolean') throw new Error('诊断或电量策略开关值无效');
   if (typeof input.nsfwEnabled !== 'boolean') throw new Error('本地千问视觉审查开关值不正确');
@@ -79,9 +81,11 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, '本地队列容量'),
     maxQueueEvents: integer(input.maxQueueEvents, 1, 1000000, '本地队列事件数'),
     idlePauseSeconds: integer(input.idlePauseSeconds, 0, 86400, '空闲暂停秒数'),
+    defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection ?? 'content'),
+    appCollectionRules: normalizeAppCollectionRules(input.appCollectionRules ?? current.appCollectionRules ?? {}),
     excludedAppIds: [...new Set(input.excludedAppIds.map(id => id.trim()))], masks: validateRectangles(input.masks),
     ocrEnabled: input.ocrEnabled, privacyModelUrl: validateLocalModelUrl(input.privacyModelUrl), openAtLogin: input.openAtLogin,
-    diagnosticsEnabled: input.diagnosticsEnabled, diagnosticIntervalSeconds: integer(input.diagnosticIntervalSeconds, 15, 3600, '诊断采样秒数'),
+    metadataEnabled: input.metadataEnabled ?? current.metadataEnabled ?? true, diagnosticsEnabled: input.diagnosticsEnabled, diagnosticIntervalSeconds: integer(input.diagnosticIntervalSeconds, 15, 3600, '诊断采样秒数'),
     jpegQuality: integer(input.jpegQuality, 40, 95, 'JPEG 质量'), captureMaxSide: integer(input.captureMaxSide, 640, 2560, '截图最大边长'),
     pauseOnBattery: input.pauseOnBattery, batteryPauseBelowPct: integer(input.batteryPauseBelowPct, 0, 95, '低电量暂停百分比'),
     nsfwEnabled: input.nsfwEnabled, reviewPolicy: input.reviewPolicy.trim(),

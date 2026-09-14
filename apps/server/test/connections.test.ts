@@ -199,3 +199,19 @@ test('disabled MCP minting fails with actionable fixed codes and accurate safe d
   cfg.connectors={directory:join(cfg.dataDir,'connectors'),mcpEnabled:true};const write=await mint();assert.equal(write.statusCode,409);assert.equal(write.json().error,'mcp_write_disabled');assert.equal(connections.inventory().items.length,0);
   const events=diagnostics.events(0,100).items.filter(e=>e.event==='request.failed');assert.equal(events.length,2);assert.ok(events.every(e=>e.statusCode===409&&e.category==='conflict'&&e.route==='connections'));
 });
+
+test('collector can send only its own content-free activity and bounded heartbeat metadata',async t=>{
+  const {app,store,diagnostics}=await fixture(t),key=await paired(app),metadata={version:1,observedAt:new Date(Date.now()-1000).toISOString(),device:{osVersion:'Synthetic OS'},state:{batteryPercent:52,charging:false},capture:{intervalMs:15000}};
+  const capture={id:randomUUID(),deviceId:'synthetic-phone',deviceName:'Synthetic phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:15000,source:'activity',appId:'synthetic.activity',appName:'Synthetic app',ocrText:'',windowTitle:'',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'},metadata};
+  const send=(body:unknown)=>app.inject({method:'POST',url:'/api/captures',headers:headers(key.token),payload:body});
+  assert.equal((await send(capture)).statusCode,201);assert.equal((await send(capture)).json().duplicate,true);
+  assert.deepEqual(store.evidence([capture.id])[0].metadata,metadata);
+  assert.equal((await send({...capture,id:randomUUID(),deviceId:'another-device'})).statusCode,403);
+  assert.equal((await send({...capture,id:randomUUID(),platform:'macos'})).statusCode,403);
+  assert.equal((await send({...capture,id:randomUUID(),ocrText:'Synthetic forbidden hidden activity content'})).statusCode,400);
+  assert.equal((await send({...capture,id:randomUUID(),windowTitle:'Synthetic forbidden window title'})).statusCode,400);
+  const beat=await app.inject({method:'POST',url:'/api/devices/heartbeat',headers:headers(key.token),payload:{deviceId:'synthetic-phone',deviceName:'Synthetic phone',platform:'android',status:'capturing',queueDepth:0,metadata}});
+  assert.equal(beat.statusCode,200);assert.deepEqual(store.devices().find(d=>d.deviceId==='synthetic-phone')!.metadata,metadata);
+  assert.equal(store.activity().activityEvents,1);assert.equal(store.activity().contentCaptures,0);assert.equal(store.stats().imageCaptures,0);
+  const log=JSON.stringify(diagnostics.events(0,500));for(const privateField of ['synthetic.activity','Synthetic forbidden hidden activity content','Synthetic forbidden window title','Synthetic OS',key.token])assert.ok(!log.includes(privateField));
+});

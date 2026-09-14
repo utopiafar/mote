@@ -9,7 +9,7 @@ const scopes=['https://www.googleapis.com/auth/calendar.calendarlist.readonly','
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const now=()=>new Date().toISOString();
 type Calendar={id:string;summary:string;timeZone?:string;primary?:boolean};
-type Event={id?:string;etag?:string;updated?:string;summary?:string;description?:string;location?:string;status?:string;htmlLink?:string;recurrence?:string[];recurringEventId?:string;originalStartTime?:{date?:string;dateTime?:string};start?:{date?:string;dateTime?:string;timeZone?:string};end?:{date?:string;dateTime?:string;timeZone?:string}};
+type Event={id?:string;etag?:string;created?:string;updated?:string;summary?:string;description?:string;location?:string;status?:string;htmlLink?:string;recurrence?:string[];recurringEventId?:string;originalStartTime?:{date?:string;dateTime?:string};start?:{date?:string;dateTime?:string;timeZone?:string};end?:{date?:string;dateTime?:string;timeZone?:string}};
 type Checkpoint={syncToken?:string;day?:string};
 type Saved={version:1;tokens:Credentials;calendars:Calendar[];checkpoints:Record<string,Checkpoint>};
 type OAuth=Pick<OAuth2Client,'generateCodeVerifierAsync'|'generateAuthUrl'|'getToken'|'setCredentials'|'getAccessToken'|'credentials'>;
@@ -29,7 +29,7 @@ export function calendarBoundary(date:string,timeZone:string):string {
   }
   throw new ConnectorError('google_event_time_invalid',502);
 }
-function semantic(item:Partial<SourceItem>) {return JSON.stringify({externalId:item.externalId,title:item.title,text:item.text,mimeType:item.mimeType,kind:item.kind,layer:item.layer,deleted:item.deleted??false,calendar:item.calendar,uri:item.uri,modifiedAt:item.modifiedAt});}
+function semantic(item:Partial<SourceItem>) {return JSON.stringify({externalId:item.externalId,title:item.title,text:item.text,mimeType:item.mimeType,kind:item.kind,layer:item.layer,deleted:item.deleted??false,calendar:item.calendar,uri:item.uri,modifiedAt:item.modifiedAt,metadata:item.metadata});}
 export function googleItem(event:Event,calendar:Calendar,prior?:SourceItemRecord,reference=false):SourceItem {
   if(!event.id)throw new ConnectorError('google_event_invalid',502);
   const deleted=event.status==='cancelled',timeZone=event.start?.timeZone||calendar.timeZone||'UTC';
@@ -39,9 +39,11 @@ export function googleItem(event:Event,calendar:Calendar,prior?:SourceItemRecord
   const text=[event.summary,event.description,event.location,...(event.recurrence??[])].filter(v=>typeof v==='string'&&v.length).join('\n\n');
   if(text.length>100000)throw new ConnectorError('google_event_too_large',413);
   const item:SourceItem={externalId:event.id,revision:'pending',observedAt:now(),title:(event.summary??prior?.title??'').slice(0,2000),text:deleted||reference?'':text,kind:'calendar',layer:reference?'reference':'snapshot',deleted,
-    ...(event.updated?{modifiedAt:event.updated}:{}),
+    ...(event.updated??prior?.modifiedAt?{modifiedAt:event.updated??prior?.modifiedAt}:{}),
     ...(!deleted?{calendar:{start:start!,end:end!,allDay:Boolean(event.start?.date),timeZone,status:event.status==='tentative'?'tentative':'confirmed' as const}}:prior?.calendar?{calendar:{...prior.calendar,status:'cancelled' as const}}:{}),
   };
+  const createdAt=event.created??prior?.metadata?.provider?.createdAt,updatedAt=event.updated??prior?.metadata?.provider?.updatedAt;
+  if(createdAt||updatedAt)item.metadata={version:1,provider:{...(createdAt?{createdAt}:{}),...(updatedAt?{updatedAt}:{})}};
   // API links are references only. Never preserve query credentials or auto-fetch attachments.
   if(event.htmlLink)try{const url=new URL(event.htmlLink);if(url.protocol==='https:'&&!url.username&&!url.password){url.search='';url.hash='';item.uri=url.toString();}}catch{}
   const value=hash(semantic(item));item.revision=prior&&semantic(prior)===semantic(item)?prior.revision:hash(`${event.etag??value}\n${value}\n${prior?.revision??''}`);

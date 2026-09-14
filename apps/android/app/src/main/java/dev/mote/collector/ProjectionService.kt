@@ -22,8 +22,10 @@ class ProjectionService : Service() {
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
     private var reader: ImageReader? = null
-    private var frame: Bitmap? = null
-    private var frameWindows: WindowSnapshot? = null
+    private data class Pending(val windows: WindowSnapshot, val at: String, val requestedAt: Long)
+    private var pending: Pending? = null
+    private var displayWidth = 0
+    private var displayHeight = 0
     private var config: CollectorConfig? = null
     private var lastTick = 0L
     private var closed = false
@@ -52,12 +54,22 @@ class ProjectionService : Service() {
             }
             try {
                 val windows = ForegroundApps.snapshot(this@ProjectionService)
-                if (SystemClock.elapsedRealtime() - lastTick >= c.intervalSeconds * 1000L && pipeline?.canCapture(c, windows) == true) {
-                    if (frame != null && frameWindows == windows) {
-                        Operations.record(this@ProjectionService, OperationKind.CAPTURE_REQUESTED)
-                        pipeline?.submit(frame!!.copy(Bitmap.Config.ARGB_8888, false), windows, c, Instant.now().toString())
-                        lastTick = SystemClock.elapsedRealtime()
-                    } else pipeline?.pause("等待当前应用的新屏幕帧")
+                if (pending != null && (pending!!.windows != windows || CapturePipeline.policy(c, windows) != AppCollectionMode.CONTENT)) {
+                    clearPending(); pipeline?.pause("窗口已变化，丢弃未读取屏幕帧")
+                }
+                if (pending != null && SystemClock.elapsedRealtime() - pending!!.requestedAt > 5000) {
+                    clearPending(); pipeline?.pause("未收到屏幕帧；下一采样周期重试")
+                }
+                if (pending == null && SystemClock.elapsedRealtime() - lastTick >= c.intervalSeconds * 1000L) {
+                    when (CapturePipeline.policy(c, windows)) {
+                        AppCollectionMode.ACTIVITY -> if (pipeline?.canCollect(c, windows, AppCollectionMode.ACTIVITY) == true) {
+                            lastTick = SystemClock.elapsedRealtime(); pipeline?.submitActivity(windows, c)
+                        }
+                        AppCollectionMode.CONTENT -> if (pipeline?.canCapture(c, windows) == true) {
+                            lastTick = SystemClock.elapsedRealtime(); requestFrame(windows)
+                        }
+                        AppCollectionMode.OFF -> pipeline?.canCollect(c, windows, AppCollectionMode.OFF)
+                    }
                 }
                 Notifications.show(this@ProjectionService, settings.message())
             } catch (_: Exception) { pipeline?.pause("投屏帧暂不可用，下一周期重试") }
@@ -81,7 +93,7 @@ class ProjectionService : Service() {
             pipeline = CapturePipeline(this)
             val bounds = if (Build.VERSION.SDK_INT >= 30) getSystemService(WindowManager::class.java).maximumWindowMetrics.bounds else android.graphics.Rect(0, 0, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
             createDisplay(bounds.width(), bounds.height())
-            running = true
+            running = true; instance = this
             settings.status("capturing", "投屏采集已启动；每次会话都需系统授权")
             handler.post(tick)
         } catch (_: Exception) {
@@ -91,45 +103,69 @@ class ProjectionService : Service() {
         }
         return START_NOT_STICKY
     }
-    private fun reader(width: Int, height: Int): ImageReader {
-        val scale = minOf(1f, 1280f / maxOf(width, height))
-        return ImageReader.newInstance((width * scale).roundToInt(), (height * scale).roundToInt(), PixelFormat.RGBA_8888, 2).apply {
-            setOnImageAvailableListener({ source ->
-                val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-                try {
-                    if (!settings.enabled || !CapturePipeline.unlocked(this@ProjectionService)) return@setOnImageAvailableListener
-                    val windows = ForegroundApps.snapshot(this@ProjectionService)
-                    val plane = image.planes[0]
-                    val paddedWidth = image.width + (plane.rowStride - plane.pixelStride * image.width) / plane.pixelStride
-                    val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
-                    padded.copyPixelsFromBuffer(plane.buffer)
-                    val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
-                    if (cropped !== padded) padded.recycle()
-                    frame?.recycle(); frame = cropped; frameWindows = windows
-                } finally { image.close() }
-            }, handler)
-        }
+    /** No Surface is attached until the live app policy grants this individual sample. */
+    private fun requestFrame(windows: WindowSnapshot) {
+        val c = config ?: return
+        if (CapturePipeline.policy(c, windows) != AppCollectionMode.CONTENT || pending != null) return
+        val source = ImageReader.newInstance(displayWidth, displayHeight, PixelFormat.RGBA_8888, 2)
+        reader = source
+        pending = Pending(windows, Instant.now().toString(), SystemClock.elapsedRealtime())
+        source.setOnImageAvailableListener({ available ->
+            val ticket = pending
+            if (available !== reader || ticket == null) return@setOnImageAvailableListener
+            val current = ForegroundApps.snapshot(this@ProjectionService)
+            if (!settings.enabled || settings.read() != c || !CapturePipeline.unlocked(this@ProjectionService) || current != ticket.windows || CapturePipeline.policy(c, current) != AppCollectionMode.CONTENT) {
+                clearPending(); return@setOnImageAvailableListener
+            }
+            val image = available.acquireLatestImage() ?: return@setOnImageAvailableListener
+            display?.surface = null
+            pending = null
+            try {
+                val plane = image.planes[0]
+                val paddedWidth = image.width + (plane.rowStride - plane.pixelStride * image.width) / plane.pixelStride
+                val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+                padded.copyPixelsFromBuffer(plane.buffer)
+                val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
+                if (cropped !== padded) padded.recycle()
+                pipeline?.submit(cropped, current, c, ticket.at, ticket.requestedAt) ?: cropped.recycle()
+            } catch (_: Exception) { pipeline?.pause("投屏帧读取失败，未保存内容") }
+            finally { image.close(); if (reader === available) { reader = null; available.setOnImageAvailableListener(null, null); available.close() } }
+        }, handler)
+        Operations.record(this, OperationKind.CAPTURE_REQUESTED)
+        display?.surface = source.surface
+    }
+    private fun clearPending() {
+        display?.surface = null; pending = null
+        reader?.setOnImageAvailableListener(null, null); reader?.close(); reader = null
+    }
+    fun onWindowChanged() {
+        val ticket = pending ?: return
+        val current = ForegroundApps.snapshot(this)
+        if (ticket.windows != current || config?.let { CapturePipeline.policy(it, current) } != AppCollectionMode.CONTENT) clearPending()
+    }
+    private fun size(width: Int, height: Int) {
+        val scale = minOf(1f, (config?.captureMaxSide ?: 1280).toFloat() / maxOf(width, height))
+        displayWidth = (width * scale).roundToInt().coerceAtLeast(1)
+        displayHeight = (height * scale).roundToInt().coerceAtLeast(1)
     }
     private fun createDisplay(width: Int, height: Int) {
-        reader = reader(width, height)
-        display = projection!!.createVirtualDisplay("Mote", reader!!.width, reader!!.height, resources.displayMetrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader!!.surface, null, handler)
+        size(width, height)
+        display = projection!!.createVirtualDisplay("Mote", displayWidth, displayHeight, resources.displayMetrics.densityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, null, null, handler)
     }
     private fun resize(width: Int, height: Int) {
-        val next = reader(width, height)
-        display?.resize(next.width, next.height, resources.displayMetrics.densityDpi)
-        display?.surface = next.surface
-        reader?.close(); reader = next
-        frame?.recycle(); frame = null; frameWindows = null
+        val beforeWidth = displayWidth; val beforeHeight = displayHeight
+        size(width, height)
+        if (beforeWidth == displayWidth && beforeHeight == displayHeight) return
+        clearPending()
+        display?.resize(displayWidth, displayHeight, resources.displayMetrics.densityDpi)
     }
     override fun onDestroy() {
         if (!closed) {
-            closed = true; running = false
+            closed = true; running = false; instance = null
             handler.removeCallbacksAndMessages(null)
             pipeline?.close(); pipeline = null
-            display?.release(); display = null
-            reader?.close(); reader = null
-            frame?.recycle(); frame = null
+            clearPending(); display?.release(); display = null
             projection?.unregisterCallback(callback); projection?.stop(); projection = null
             settings.enabled = false
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -137,5 +173,5 @@ class ProjectionService : Service() {
         }
         super.onDestroy()
     }
-    companion object { @Volatile var running = false; private set }
+    companion object { @Volatile var running = false; private set; @Volatile var instance: ProjectionService? = null; private set }
 }

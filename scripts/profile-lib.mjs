@@ -54,7 +54,7 @@ export async function initialize(paths, options = {}) {
     MOTE_PROFILE: paths.profile, MOTE_HOST: '127.0.0.1', MOTE_PORT: String(port), MOTE_DATA_DIR: options['data-dir'] ? dataDir : './data',
     MOTE_TOKEN: randomBytes(32).toString('hex'), MOTE_DATA_KEY: '', MOTE_ALLOWED_ORIGINS: paths.profile === 'test' ? 'http://localhost:5174,http://127.0.0.1:5174' : 'http://localhost:5173,http://127.0.0.1:5173',
     MOTE_MODEL: '', MOTE_MODEL_BASE_URL: 'https://api.deepseek.com', MOTE_MODEL_API_KEY: '', MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL: '0',
-    MOTE_MODEL_REASONING_EFFORT: 'high', MOTE_MODEL_MAX_TOKENS: '8192',
+    MOTE_MODEL_REASONING_EFFORT: 'high', MOTE_MODEL_MAX_TOKENS: '8192', MOTE_MODEL_TIMEOUT_MS: '120000',
     MOTE_EMBEDDING_MODEL: '', MOTE_EMBEDDING_BASE_URL: '', MOTE_EMBEDDING_API_KEY: '',
     MOTE_RETENTION_DAYS: '0', MOTE_MAX_STORAGE_MB: '10240', MOTE_MAX_EXPORT_MB: '64', MOTE_INSIGHT_INTERVAL_HOURS: '0',
     MOTE_LOG_DIR: './logs', MOTE_DIAGNOSTICS_ENABLED: '1', MOTE_DEBUG: '0', MOTE_LOG_LEVEL: 'info', MOTE_LOG_MAX_MB: '2', MOTE_LOG_MAX_FILES: '3', MOTE_LOG_MAX_ENTRIES: '2000',

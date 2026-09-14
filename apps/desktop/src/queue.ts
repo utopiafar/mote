@@ -1,3 +1,4 @@
+import { recordMetadataSchema } from '@mote/shared/metadata';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, unlink, open, chmod } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -33,20 +34,27 @@ const HASH = /^[a-f0-9]{64}$/;
 function validateEvent(value: unknown): CaptureEvent {
   if (!value || typeof value !== 'object') throw new Error('队列事件无效');
   const v = value as CaptureEvent;
-  if (!UUID.test(v.id) || !UUID.test(v.deviceId) || !['macos', 'windows', 'linux'].includes(v.platform) || !Number.isFinite(Date.parse(v.capturedAt)) || !Number.isInteger(v.durationMs) || v.durationMs < 0 || v.durationMs > 300000 || !['screen', 'note'].includes(v.source)) throw new Error('队列事件元数据无效');
+  if (!UUID.test(v.id) || !UUID.test(v.deviceId) || !['macos', 'windows', 'linux'].includes(v.platform) || !Number.isFinite(Date.parse(v.capturedAt)) || !Number.isInteger(v.durationMs) || v.durationMs < 0 || v.durationMs > 300000 || !['screen', 'note', 'activity'].includes(v.source)) throw new Error('队列事件元数据无效');
   for (const [key, max] of [['deviceName', 128], ['appId', 256], ['appName', 200]] as const) {
     if (typeof v[key] !== 'string' || !v[key] || v[key].length > max) throw new Error('队列事件应用或设备信息无效');
   }
   if (v.ocrText !== undefined && (typeof v.ocrText !== 'string' || v.ocrText.length > 100000)) throw new Error('OCR 文本超出限制');
   if (v.privacy?.excluded !== false || typeof v.privacy?.redacted !== 'boolean') throw new Error('队列隐私标记无效');
+  const metadata = v.metadata === undefined ? undefined : recordMetadataSchema.parse(v.metadata);
   const base = { id: v.id, deviceId: v.deviceId, deviceName: v.deviceName, platform: v.platform,
-    capturedAt: new Date(v.capturedAt).toISOString(), durationMs: v.durationMs, appId: v.appId, appName: v.appName, ocrText: v.ocrText };
+    capturedAt: new Date(v.capturedAt).toISOString(), durationMs: v.durationMs, appId: v.appId, appName: v.appName, ...(metadata ? { metadata } : {}) };
+  if (v.source === 'activity') {
+    const raw = v as unknown as Record<string, unknown>;
+    if (v.privacy.collection !== 'activity' || v.privacy.mode !== 'none' || v.privacy.redacted || ['ocrText', 'imageMime', 'imageBase64', 'mood', 'title', 'windowTitle', 'provenance'].some(key => Object.hasOwn(raw, key)) || (metadata?.capture && Object.keys(metadata.capture).some(key => key !== 'intervalMs'))) throw new Error('仅活动记录不得包含屏幕或正文内容');
+    return { ...base, source: 'activity', privacy: { excluded: false, redacted: false, mode: 'none', collection: 'activity' } };
+  }
+  if (v.privacy.collection !== undefined && v.privacy.collection !== 'content') throw new Error('内容记录的采集级别无效');
   if (v.source === 'note') {
     if (v.durationMs !== 0 || v.imageMime !== undefined || typeof v.ocrText !== 'string' || !v.ocrText.trim() || v.ocrText.length > 20000 || v.privacy.mode !== 'none' || v.privacy.redacted !== false || (v.mood !== undefined && (typeof v.mood !== 'string' || !v.mood.trim() || v.mood.length > 80))) throw new Error('随手记格式无效');
-    return { ...base, source: 'note', mood: v.mood, privacy: { excluded: false, redacted: false, mode: 'none' } };
+    return { ...base, ocrText: v.ocrText, source: 'note', mood: v.mood, privacy: { excluded: false, redacted: false, mode: 'none' } };
   }
   if (v.imageMime !== 'image/jpeg' || v.privacy.mode !== 'local' || typeof v.privacy.reason !== 'string' || v.privacy.reason.length > 500) throw new Error('截图隐私标记无效');
-  return { ...base, source: 'screen', imageMime: 'image/jpeg', privacy: { excluded: false, redacted: v.privacy.redacted, mode: 'local', reason: v.privacy.reason } };
+  return { ...base, ocrText: v.ocrText, source: 'screen', imageMime: 'image/jpeg', privacy: { excluded: false, redacted: v.privacy.redacted, mode: 'local', ...(v.privacy.collection ? { collection: v.privacy.collection } : {}), reason: v.privacy.reason } };
 }
 function validateRecord(value: unknown): QueueRecord {
   const v = value as QueueRecord;
@@ -132,7 +140,7 @@ export class DurableQueue {
       this.assertReady();
       event = validateEvent(event);
       if (event.source === 'screen') { if (!image) throw new Error('截图缺少图像'); validateImage(image); }
-      else if (image) throw new Error('随手记不得包含图片');
+      else if (image) throw new Error('随手记或仅活动记录不得包含图片');
       const hash = image ? imageHash(image) : undefined;
       const existing = this.records.get(event.id);
       if (existing) {

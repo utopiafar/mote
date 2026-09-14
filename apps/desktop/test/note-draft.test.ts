@@ -40,3 +40,15 @@ it('refuses to mutate or retarget a prepared submission after a failed queue wri
   await expect(store.update({ ...input, text: 'changed', revision: 2 })).rejects.toThrow('不能改写');
   await expect(store.submit(input, { ...config, serverUrl: 'https://other.example' }, 'macos', { enqueue: async () => true })).rejects.toThrow('原中央节点');
 });
+
+it('captures optional note metadata once before preparation, preserves it on retry, and honors the disabled setting', async () => {
+  const store = new NoteDraftStore(directory); await store.initialize();
+  const queue = new DurableQueue(join(directory, 'queue'), config); await queue.initialize();
+  const input = { ...store.get(), text: 'synthetic metadata note', mood: '', revision: 1 }; let observations = 0;
+  const provider = async () => { observations++; return { version: 1 as const, observedAt: '2026-09-14T00:00:00Z', collector: { method: 'manual' as const }, state: { batteryPercent: 42 } }; };
+  await expect(store.submit(input, config, 'macos', { enqueue: async event => { await queue.enqueue(event); throw new Error('crash'); } }, provider)).rejects.toThrow('crash');
+  const restarted = new NoteDraftStore(directory); await restarted.initialize(); await restarted.submit(input, config, 'macos', queue, provider);
+  expect(observations).toBe(1); expect((await queue.next())?.record.event.metadata?.state?.batteryPercent).toBe(42);
+  await restarted.submit({ ...restarted.get(), text: 'metadata disabled', revision: 1 }, { ...config, metadataEnabled: false }, 'macos', queue, provider);
+  expect(observations).toBe(1); expect((await queue.exportArchive()).records[1].event).not.toHaveProperty('metadata');
+});

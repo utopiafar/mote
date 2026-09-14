@@ -10,6 +10,7 @@ const opaqueNodes = new Set(['code', 'inlineCode', 'link', 'linkReference', 'def
 /** Validate citation syntax only. Captured prose never chooses rules or executes actions. */
 export function validateInlineCitations(answer:string, declaredIds:Iterable<string>, retrievedIds:Iterable<string>):void {
   const declared = new Set(declaredIds), retrieved = new Set(retrievedIds);
+  const knownUuids = [...new Set([...declared, ...retrieved])].filter(id => uuid.test(id)).map(id => id.toLowerCase());
   function visit(node:MarkdownNode):void {
     if (opaqueNodes.has(node.type)) return;
     if (node.type === 'text' && node.value) {
@@ -17,7 +18,15 @@ export function validateInlineCitations(answer:string, declaredIds:Iterable<stri
         const id = match[1];
         // UUIDs are the production protocol's identifiers. Known non-UUID IDs
         // also support custom readers and synthetic tests; ordinary [labels] are text.
-        if (!uuid.test(id) && !retrieved.has(id)) continue;
+        if (!uuid.test(id) && !retrieved.has(id)) {
+          // Eight characters is the UUID's first complete group. Reject a known
+          // strict prefix even when ambiguous; never guess or expand an evidence ID.
+          // Exact custom reader IDs above remain valid, and ordinary labels stay text.
+          if (id.length >= 8 && id.length < 36 && knownUuids.some(known => known.startsWith(id.toLowerCase()))) {
+            throw new AgentResponseError('The model used a truncated inline citation. Use the complete retrieved evidence ID.');
+          }
+          continue;
+        }
         if (!retrieved.has(id)) throw new AgentResponseError('The model used an inline citation that was not retrieved in this run.');
         if (!declared.has(id)) throw new AgentResponseError('The model used an inline citation missing from citationIds.');
       }

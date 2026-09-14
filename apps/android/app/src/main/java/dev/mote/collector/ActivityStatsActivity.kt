@@ -54,11 +54,12 @@ class ActivityStatsActivity : Activity() {
                     if (getSharedPreferences("operation-health", 0).getBoolean("incomplete", false)) append("⚠ 曾有统计写入失败，本周期数据不完整。\n")
                     append("\n累计结果\n截图请求 ${count(OperationKind.CAPTURE_REQUESTED)} · 收到画面 ${count(OperationKind.FRAME_RECEIVED)}\n")
                     append("已保存截图 ${count(OperationKind.SCREEN_QUEUED)} · 已保存随手记 ${count(OperationKind.NOTE_QUEUED)}\n")
+                    append("应用活动已保存 ${count(OperationKind.ACTIVITY_QUEUED)} · 已确认 ${count(OperationKind.ACTIVITY_ACK)} · 失败 ${count(OperationKind.ACTIVITY_FAILED)}（无内容）\n")
                     append("已丢弃画面 ${count(OperationKind.FRAME_BLOCKED)} · 截图/处理失败 ${count(OperationKind.CAPTURE_FAILED)}\n")
                     append("截图已确认上传 ${count(OperationKind.SCREEN_ACK)} · 随手记已确认上传 ${count(OperationKind.NOTE_ACK)}\n")
                     append("上传待重试结果 ${count(OperationKind.UPLOAD_RETRY)} · 来源版本已确认 ${count(OperationKind.SOURCE_ACK)} / 失败 ${count(OperationKind.SOURCE_FAILED)}\n设备心跳失败 ${count(OperationKind.HEARTBEAT_FAILED)}\n")
                     append("已确认上传 JSON 字节 ${size(state.getLong("confirmedUploadBytes"))}（不含 TLS/HTTP 开销）\n")
-                    append("\n当前待上传\n当前队列：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
+                    append("\n当前待上传\n当前队列：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
                     append("\n资料在哪里\n队列存储：${size(queue.getLong("bytes"))} / 上限 ${config.maxQueueMiB} MiB\n${File(noBackupFilesDir, "queue").absolutePath}\n")
                     append("来源待确认版本：$sourcePending · 本机来源缓存 ${size(bytes(sources))}\n${sources.absolutePath}\n")
                     append("模型及下载断点：${size(bytes(models))}\n${models.absolutePath}\n")
@@ -67,6 +68,7 @@ class ActivityStatsActivity : Activity() {
                     append("\n生效设置\n实际配置：每 ${config.intervalSeconds} 秒，JPEG ${config.jpegQuality}，最长边 ${config.captureMaxSide}px\n")
                     append("仅非计费 Wi-Fi：${if (config.wifiOnly) "开启" else "关闭"} · 仅充电：${if (config.chargingOnly) "开启" else "关闭"} · 低于 ${config.batteryPauseBelowPct}% 暂停（0 关闭）\n")
                     append("本机过滤：${if (config.nsfw.enabled) "开启" else "关闭"} · ${config.nsfw.threads} 线程 · ${config.nsfw.timeoutMs}ms 超时\n")
+                    append("设备元数据：${if (config.metadataEnabled) "上传新记录的实际状态" else "新记录不附带"} · 应用规则 ${AppCollectionRules.parse(config.appCollectionRules).apps.size} 项\n")
                     append("\n统计口径与限制\n已保存表示加密入队成功；已上传表示节点 ACK 后本机删除成功。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量直接读取文件。\n")
                     append("文件字节合计不是 Android 系统的安装占用；不含 APK、系统配额或其他分区。目录仅可由本应用读取，不是共享相册。")
                 }
@@ -78,7 +80,7 @@ class ActivityStatsActivity : Activity() {
                     for (i in 0 until pending.length()) {
                         val item = pending.getJSONObject(i)
                         history.addView(Button(this).apply {
-                            text = "待确认 · ${if (item.getString("kind") == "screen") "截图" else "随手记"} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
+                            text = "待确认 · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
                             setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("待确认记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n加密条目字节：${item.getLong("bytes")}\n尚未匹配并清除本机记录；下方历史同一 ID 可关联上传失败和确认。不会在此显示图片或文字。").setPositiveButton("关闭", null).show() }
                         })
                     }
@@ -137,6 +139,7 @@ class ActivityStatsActivity : Activity() {
             OperationKind.HEARTBEAT_FAILED -> "设备心跳未确认"
             OperationKind.UPLOAD_RETRY -> "同步未完成，保留队列待重试"; OperationKind.SOURCE_ACK -> "来源版本已确认"; OperationKind.SOURCE_FAILED -> "来源同步失败"
             OperationKind.CONNECTION_OK -> "连接身份校验成功"; OperationKind.CONNECTION_FAILED -> "连接失败"; OperationKind.CAPTURE_STARTED -> "用户启用采集"; OperationKind.CAPTURE_STOPPED -> "用户停止采集"
+            OperationKind.ACTIVITY_QUEUED -> "应用活动已保存，无内容"; OperationKind.ACTIVITY_ACK -> "应用活动已确认上传"; OperationKind.ACTIVITY_FAILED -> "应用活动保存失败"
         }
         fun reason(value: OperationReason): String = when (value) {
             OperationReason.NONE -> "已完成"; OperationReason.LOCKED -> "锁屏或熄屏"; OperationReason.CHARGING -> "仅充电设置"; OperationReason.BATTERY -> "电量限制"

@@ -49,3 +49,21 @@ test('a delayed 401 from a previous connection cannot disconnect the new node or
   const currentRequest=current.request('/api/status');deliver(new Response('{}',{status:401}));
   await assert.rejects(currentRequest,ApiError);assert.equal(unauthorized,1);
 });
+
+test('only model operations use the node deadline plus transport allowance; ordinary requests keep their deadline', async t => {
+  const durations:number[]=[],signals:AbortSignal[]=[];
+  t.mock.method(AbortSignal,'timeout',(ms:number)=>{durations.push(ms);return new AbortController().signal;});
+  t.mock.method(globalThis,'fetch',async(_url:unknown,init?:RequestInit)=>{signals.push(init!.signal!);return new Response('{}');});
+  const api=createApi({url:'https://fixture.example',token:'synthetic'});
+  api.setAgentTimeout(300000);
+  for(const path of ['/api/query','/api/insights','/api/memories/extract']) await api.request(path,{method:'POST'});
+  await api.request('/api/insights'); await api.request('/api/captures',{method:'POST',body:'{}'}); await api.request('/api/query-other',{method:'POST'});
+  assert.deepEqual(durations,[360000,360000,360000,180000,180000,180000]);
+  api.setAgentTimeout(600000);const controller=new AbortController();
+  await api.request('/api/query',{method:'POST',signal:controller.signal});
+  assert.equal(durations.at(-1),660000);assert.equal(signals.at(-1)!.aborted,false);
+  controller.abort();assert.equal(signals.at(-1)!.aborted,true,'User navigation still cancels a long model request');
+  for(const value of [undefined,0,Infinity,600001,5000.5]){api.setAgentTimeout(value);await api.request('/api/query',{method:'POST'});assert.equal(durations.at(-1),180000);}
+  const next=createApi({url:'https://next.example',token:'synthetic-next'});
+  api.setAgentTimeout(600000);await next.request('/api/query',{method:'POST'});assert.equal(durations.at(-1),180000,'New connections do not inherit former server budgets');
+});

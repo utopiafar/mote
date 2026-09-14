@@ -15,12 +15,16 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
     'diagnostic-interval': config.diagnosticIntervalSeconds, 'jpeg-quality': config.jpegQuality, 'capture-max-side': config.captureMaxSide, 'battery-pause-below': config.batteryPauseBelowPct,
     'server-url': config.serverUrl, 'device-name': config.deviceName, interval: config.intervalMs / 1000,
     'queue-mb': config.maxQueueBytes / 1024 / 1024, 'queue-events': config.maxQueueEvents,
+    'default-collection': config.defaultCollection,
     'excluded-apps': config.excludedAppIds.join('\n'), masks: JSON.stringify(config.masks, null, 2),
     idle: config.idlePauseSeconds, 'privacy-model-url': config.privacyModelUrl,
     'review-policy': config.reviewPolicy, 'review-max-tokens': config.reviewMaxTokens, 'review-max-side': config.reviewMaxSide, 'nsfw-threads': config.nsfwThreads,
     'nsfw-timeout': config.nsfwTimeoutMs / 1000, 'nsfw-source': config.nsfwSource, 'nsfw-custom-url': config.nsfwCustomUrl,
   };
   for (const [id, value] of Object.entries(values)) byId<HTMLInputElement>(id).value = String(value);
+  byId<HTMLInputElement>('metadata-enabled').checked = config.metadataEnabled;
+  byId('app-collection-rules').replaceChildren();
+  for (const [id, mode] of Object.entries(config.appCollectionRules)) addAppRule(id, mode);
   byId<HTMLInputElement>('diagnostics-enabled').checked = config.diagnosticsEnabled;
   byId<HTMLInputElement>('pause-on-battery').checked = config.pauseOnBattery;
   byId<HTMLInputElement>('ocr').checked = config.ocrEnabled;
@@ -72,7 +76,7 @@ function render(status: import('./contracts').Status): void {
     if (nsfw.lastDurationMs !== undefined) details.push(`${nsfw.lastDurationMs} ms`);
     details.push(`本次运行已过滤 ${nsfw.blockedCount} 张`);
     byId('model-detail').textContent = details.join(' · ');
-    byId('model-error').textContent = nsfw.error || (status.config.nsfwEnabled && nsfw.modelState !== 'ready' ? '千问视觉审查已开启；请完成模型下载或本地导入后再开始采集。' : '截图仅在本机独立进程中推理，不发送给下载来源或外部模型。');
+    byId('model-error').textContent = nsfw.error || (status.config.nsfwEnabled && nsfw.modelState !== 'ready' ? '千问视觉审查已开启；完整内容需先下载或导入模型。仅活动采样不使用模型。' : '截图仅在本机独立进程中推理，不发送给下载来源或外部模型。');
     byId<HTMLButtonElement>('model-download').disabled = busy || status.running || nsfw.downloading;
     byId<HTMLButtonElement>('model-cancel').disabled = busy || !nsfw.downloading;
     byId<HTMLButtonElement>('model-import').disabled = busy || status.running || nsfw.downloading;
@@ -112,6 +116,8 @@ byId('settings').addEventListener('submit', event => {
     try { masks = JSON.parse(readInput('masks') || '[]'); } catch { throw new Error('遮挡区域不是有效 JSON，请检查括号与逗号'); }
     const token = readInput('token').trim();
     const updated = await desktopApi.configure({
+      metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
+      defaultCollection: readInput('default-collection') as import('./contracts').CollectionMode, appCollectionRules: readAppRules(),
       diagnosticsEnabled: byId<HTMLInputElement>('diagnostics-enabled').checked, diagnosticIntervalSeconds: numberInput('diagnostic-interval'),
       jpegQuality: numberInput('jpeg-quality'), captureMaxSide: numberInput('capture-max-side'), pauseOnBattery: byId<HTMLInputElement>('pause-on-battery').checked, batteryPauseBelowPct: numberInput('battery-pause-below'),
       serverUrl: readInput('server-url'), deviceName: readInput('device-name'), intervalMs: numberInput('interval') * 1000,
@@ -305,3 +311,24 @@ byId('connection-connect').addEventListener('click', () => void perform(async ()
 byId('connection-test').addEventListener('click', () => void perform(async () => renderConnection(await desktopApi.testConnection())));
 byId('connection-owner-open').addEventListener('click', () => { const token = readInput('connection-owner-token').trim(); byId<HTMLInputElement>('connection-owner-token').value = ''; void perform(() => desktopApi.openCentralOwner(token)); });
 void desktopApi.connectionStatus().then(renderConnection).catch(() => {});
+
+function addAppRule(id = '', mode: import('./contracts').CollectionMode = 'activity'): void {
+  const row = document.createElement('div'); row.className = 'app-rule';
+  const input = document.createElement('input'); input.value = id; input.placeholder = 'com.example.app'; input.maxLength = 256; input.setAttribute('aria-label', '应用 Bundle ID'); input.spellcheck = false;
+  const select = document.createElement('select'); select.setAttribute('aria-label', '应用采集级别');
+  for (const [value, label] of [['content', '完整内容'], ['activity', '仅应用活动'], ['off', '不记录']]) { const option = document.createElement('option'); option.value = value; option.textContent = label; select.append(option); }
+  select.value = mode;
+  const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '移除规则'; remove.addEventListener('click', () => row.remove());
+  row.append(input, select, remove); byId('app-collection-rules').append(row);
+}
+function readAppRules(): Record<string, import('./contracts').CollectionMode> {
+  const rules: Record<string, import('./contracts').CollectionMode> = {};
+  for (const row of Array.from(byId('app-collection-rules').children)) {
+    const id = row.querySelector('input')!.value.trim(); const mode = row.querySelector('select')!.value as import('./contracts').CollectionMode;
+    if (!id) throw new Error('应用规则需要填写 Bundle ID；不用的规则请移除');
+    if (Object.hasOwn(rules, id)) throw new Error('同一应用只能设置一条采集规则');
+    Object.defineProperty(rules, id, { value: mode, enumerable: true });
+  }
+  return rules;
+}
+byId('add-app-rule').addEventListener('click', () => addAppRule());

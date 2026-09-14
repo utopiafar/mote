@@ -1,3 +1,4 @@
+import type {CaptureInput} from '@mote/shared';
 export interface ContextRecord {
   id: string;
   capturedAt: string;
@@ -16,6 +17,9 @@ export interface ContextRange {
   deviceId?: string;
   limit?: number;
   cursor?: string;
+  source?: CaptureInput['source'];
+  appId?: string;
+  collection?: 'content' | 'activity';
 }
 
 export interface ContextPage {
@@ -90,5 +94,14 @@ export class AgentResponseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AgentResponseError";
+  }
+}
+
+/** A locally observed deadline or a typed SDK request timeout; not a diagnosis of its cause. */
+export class AgentTimeoutError extends Error {
+  readonly statusCode = 504;
+  constructor() {
+    super("The agent request timed out. Please retry or narrow the question.");
+    this.name = "AgentTimeoutError";
   }
 }

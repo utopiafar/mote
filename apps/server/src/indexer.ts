@@ -1,5 +1,5 @@
 import type { Config } from './config.js';
-import type { Store } from './store.js';
+import type { Store, Range } from './store.js';
 import type { ServerDiagnostics } from './diagnostics.js';
 import { randomUUID } from 'node:crypto';
 
@@ -35,6 +35,7 @@ export class Indexer {
   private async run() {
     for(const item of this.store.pending(8)) {
       if(this.closing)break;
+      if(item.source==='activity')continue;
       const task=async()=>{const vector=await this.embed([item.appName,item.windowTitle,item.ocrText,...(item.mood === undefined?[]:[`User-provided mood: ${item.mood}`])].join('\n'));if(!this.closing)this.store.indexed(item.id,vector,this.config.embeddingModel);return vector;};
       try {if(this.diagnostics)await this.diagnostics.measure('index','embedding',task,()=>({count:1}));else await task();}
       catch(e){if(!this.closing)this.store.indexFailed(item.id,e instanceof EmbeddingError?e.message:'Embedding operation failed');}
@@ -42,8 +43,8 @@ export class Indexer {
     const counts=this.store.indexCounts();this.diagnostics?.record('queue.snapshot',{pending:counts.pending,failed:counts.failed});
   }
   async close() {this.closing=true;this.abort.abort();await this.current;}
-  async search(args:{query?:string;after?:string;before?:string;deviceId?:string;limit?:number}) {
-    if(!this.configured||!args.query)return this.store.search(args);
+  async search(args:Range&{query?:string}) {
+    if(!this.configured||!args.query||args.source==='activity'||args.collection==='activity')return this.store.search(args);
     const vector=await this.embed(args.query);
     const semantic=this.store.vectorSearch(vector,this.config.embeddingModel,args);const lexical=this.store.search(args);
     // Interleave two retrieval primitives; semantic interpretation remains entirely with the Agent.

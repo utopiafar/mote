@@ -1,0 +1,58 @@
+// Run with the packaged executable and ELECTRON_RUN_AS_NODE=1. No normal App, screen, calendar, or real Keychain.
+const assert = require('node:assert/strict');
+const { join, resolve } = require('node:path');
+const { tmpdir } = require('node:os');
+const { mkdtemp, mkdir, readFile, writeFile, rm } = require('node:fs/promises');
+const { execFileSync } = require('node:child_process');
+const { createRequire } = require('node:module');
+const { randomUUID } = require('node:crypto');
+(async () => {
+  const resources = resolve(process.argv[2]), asar = join(resources, 'app.asar');
+  const packagedRequire = createRequire(join(asar, 'package.json'));
+  const metadataPath = packagedRequire.resolve('@mote/shared/metadata'); assert(metadataPath.startsWith(asar + '/'), 'Metadata must load from the actual package');
+  const { recordMetadataSchema } = packagedRequire('@mote/shared/metadata');
+  assert(recordMetadataSchema.safeParse({ version: 1, observedAt: '2026-09-14T00:00:00Z', device: { model: 'Generated' } }).success);
+  assert(!recordMetadataSchema.safeParse({ version: 1, observedAt: '2026-09-14T00:00:00Z', device: { serialNumber: 'forbidden' } }).success);
+  const current = require(join(asar, 'dist/config.js')); const { DurableQueue } = require(join(asar, 'dist/queue.js'));
+  const { NoteDraftStore } = require(join(asar, 'dist/note-draft.js')); const { collectionForApp } = require(join(asar, 'dist/app-collection.js'));
+  const version = packagedRequire('./package.json').version;
+  const legacyAsar = process.argv[3] && join(resolve(process.argv[3]), 'app.asar');
+  const oldConfig = legacyAsar ? require(join(legacyAsar, 'dist/config.js')) : current;
+  const OldQueue = legacyAsar ? require(join(legacyAsar, 'dist/queue.js')).DurableQueue : DurableQueue;
+  const OldDraft = legacyAsar ? require(join(legacyAsar, 'dist/note-draft.js')).NoteDraftStore : NoteDraftStore;
+  if (legacyAsar) assert.equal(require(join(legacyAsar, 'package.json')).version, '0.6.1');
+  const directory = await mkdtemp(join(tmpdir(), 'mote-packaged-metadata-'));
+  try {
+    const config = { ...oldConfig.defaultConfig(), deviceName: 'Generated old 0.6.1 fixture', token: 'synthetic-old-token-not-keychain', excludedAppIds: ['dev.generated.private'], masks: [{ x: 0, y: 0, width: .1, height: .1 }] };
+    delete config.defaultCollection; delete config.appCollectionRules; delete config.metadataEnabled;
+    const secrets = { available: () => true, encrypt: value => Buffer.from(value).map(byte => byte ^ 71), decrypt: value => Buffer.from(value).map(byte => byte ^ 71).toString() };
+    const oldStore = new oldConfig.ConfigStore(directory, secrets); await oldStore.save(config);
+    const oldQueue = new OldQueue(join(directory, 'queue'), config); await oldQueue.initialize();
+    const screenshot = { id: randomUUID(), deviceId: config.deviceId, deviceName: config.deviceName, platform: 'macos', capturedAt: '2026-09-14T00:00:00Z', durationMs: 15000, appId: 'dev.generated.old', appName: 'Generated app', source: 'screen', imageMime: 'image/jpeg', ocrText: 'Generated old image envelope', privacy: { excluded: false, redacted: true, mode: 'local', reason: 'synthetic fixture mask' } };
+    const jpegEnvelope = Buffer.from([255,216,255,224,0,4,77,84,255,217]); await oldQueue.enqueue(screenshot, jpegEnvelope);
+    const oldDraft = new OldDraft(join(directory, 'notes')); await oldDraft.initialize();
+    const draft = { ...oldDraft.get(), text: '旧版合成草稿与准备记录 🧑🏽‍💻', mood: '合成心情', revision: 1 };
+    await assert.rejects(oldDraft.submit(draft, config, 'macos', { enqueue: async event => { await oldQueue.enqueue(event); throw new Error('generated crash after queue write'); } }), /generated crash/);
+    const normalize = archive => ({ ...archive, records: [...archive.records].sort((a,b) => a.event.id.localeCompare(b.event.id)) });
+    const beforeArchive = normalize(await oldQueue.exportArchive()); const beforeEventBytes = new Map(); for (const record of beforeArchive.records) beforeEventBytes.set(record.event.id, await readFile(join(directory, 'queue/events', record.event.id + '.json')));
+    const beforeDraft = await readFile(join(directory, 'notes/draft.json'));
+    await mkdir(join(directory, 'models')); const modelFixture = Buffer.from('generated untouched model placeholder'); await writeFile(join(directory, 'models/model.fixture'), modelFixture);
+    const store = new current.ConfigStore(directory, secrets), migrated = await store.load();
+    assert.equal(migrated.defaultCollection, 'content'); assert.deepEqual(migrated.appCollectionRules, {}); assert.equal(migrated.metadataEnabled, true);
+    assert.equal(migrated.deviceId, config.deviceId); assert.equal(migrated.token, config.token); assert.deepEqual(migrated.masks, config.masks); assert.deepEqual(migrated.excludedAppIds, config.excludedAppIds);
+    assert.equal(collectionForApp('dev.generated.private', migrated), 'off');
+    const queue = new DurableQueue(join(directory, 'queue'), migrated); await queue.initialize(); assert.deepEqual(normalize(await queue.exportArchive()), beforeArchive); for (const [id, bytes] of beforeEventBytes) assert.deepEqual(await readFile(join(directory, 'queue/events', id + '.json')), bytes);
+    const notes = new NoteDraftStore(join(directory, 'notes')); await notes.initialize(); assert.deepEqual(await readFile(join(directory, 'notes/draft.json')), beforeDraft); assert.equal(notes.get().prepared, true);
+    await notes.submit(draft, migrated, 'macos', queue, async () => { throw new Error('Prepared note must never resample metadata'); }); assert.deepEqual(normalize(await queue.exportArchive()), beforeArchive); for (const [id, bytes] of beforeEventBytes) assert.deepEqual(await readFile(join(directory, 'queue/events', id + '.json')), bytes);
+    await store.save(migrated); assert.equal((await store.load()).deviceId, config.deviceId); assert.deepEqual(await readFile(join(directory, 'models/model.fixture')), modelFixture);
+    const activity = { id: randomUUID(), deviceId: migrated.deviceId, deviceName: migrated.deviceName, platform: 'macos', capturedAt: '2026-09-14T00:01:00.000Z', durationMs: 0, appId: 'dev.generated.activity', appName: 'Generated activity', source: 'activity', privacy: { excluded: false, redacted: false, mode: 'none', collection: 'activity' }, metadata: { version: 1, observedAt: '2026-09-14T00:01:00Z', capture: { intervalMs: 15000 } } };
+    await queue.enqueue(activity); const restarted = new DurableQueue(join(directory, 'queue'), migrated); await restarted.initialize(); assert.equal(restarted.stats().depth, 3); assert.deepEqual((await restarted.exportArchive()).records.find(record => record.event.id === activity.id).event, activity);
+    const helper = join(resources, 'native/mote-helper');
+    assert(execFileSync('/usr/bin/nm', [helper], { encoding: 'utf8' }).includes('visibleWindowIdentities'), 'Production Swift window policy must be linked into packaged helper');
+    const QRCode = require('qrcode'); const payload = 'mote-generated-qr-fixture-no-invitation'; const png = await QRCode.toBuffer(payload, { type: 'png', width: 256 });
+    const decoded = JSON.parse(execFileSync(helper, ['qr'], { input: png, encoding: 'utf8', timeout: 15000 })); assert.deepEqual(decoded.payloads, [payload]);
+    const { inspectBundle } = require(join(asar, 'dist/update-install.js')); await inspectBundle(join(resources, 'native/mote-updater'), resolve(resources, '../..'), version, process.arch);
+    const result = { ok: true, version, packagedExecutableNodeMode: true, metadataSubpathResolvedInsideAsar: true, strictSchemaAndActivityQueue: true, nativeWindowPolicyLinked: true, packagedNativeQrFixture: true, nativeUpdaterIdentity: true, legacyVersion: legacyAsar ? '0.6.1 actual public package modules' : 'generated legacy field shape', configDeviceTokenPrivacyPreserved: true, migrationDefaults: { defaultCollection: migrated.defaultCollection, metadataEnabled: migrated.metadataEnabled }, oldQueueBytesAndPreparedDraftPreserved: true, preparedRetryNoDuplicateOrNewMetadata: true, syntheticModelUnchanged: true, realKeychainUsed: false, normalAppStarted: false, personalScreensOrCalendarRead: false, qwenExecuted: false };
+    if (process.argv[4]) await writeFile(process.argv[4], JSON.stringify(result, null, 2), { mode: 0o600 }); process.stdout.write(JSON.stringify(result) + '\n');
+  } finally { await rm(directory, { recursive: true, force: true }); }
+})().catch(error => { process.stderr.write('Packaged metadata fixture failed: ' + error.message + '\n'); process.exitCode = 1; });

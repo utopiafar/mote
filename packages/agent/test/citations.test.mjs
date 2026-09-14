@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {validateInlineCitations} from '../dist/citations.js';
 import {AgentResponseError} from '../dist/types.js';
+import {parseAnswer} from '../dist/index.js';
 
 const known='11111111-1111-4111-8111-111111111111';
 const other='22222222-2222-4222-8222-222222222222';
@@ -38,4 +39,35 @@ test('extra declared sources need not appear inline and exact identifier casing 
   assert.doesNotThrow(()=>validateInlineCitations('A general answer with source cards.',[known],[known]));
   const mixed='a1111111-1111-4111-8111-111111111111';
   assert.throws(()=>validateInlineCitations(`[${mixed.toUpperCase()}]`,[mixed],[mixed]),/not retrieved/);
+});
+
+test('eight-character and longer known UUID prefixes are rejected instead of guessed',()=>{
+  const source='546b476f-2e0b-4f92-8809-8896f476589a';
+  for(const prefix of [source.slice(0,8),source.slice(0,13),source.slice(0,-1),source.slice(0,8).toUpperCase()]) {
+    for(const [declared,retrieved] of [[[source],[source]],[[],[source]],[[source],[]]]) {
+      assert.throws(()=>validateInlineCitations(`结论 [${prefix}]`,declared,retrieved),error=>error instanceof AgentResponseError&&/truncated inline citation/.test(error.message));
+    }
+  }
+  assert.doesNotThrow(()=>validateInlineCitations(`结论 [${source}]`,[source],[source]));
+});
+
+test('a shared prefix of multiple retrieved UUIDs is still invalid, while an exact custom ID is not expanded',()=>{
+  const second='11111111-9999-4999-8999-999999999999';
+  assert.throws(()=>validateInlineCitations('结论 [11111111]',[known,second],[known,second]),/truncated inline citation/);
+  assert.doesNotThrow(()=>validateInlineCitations('自定义完整标识 [11111111]', ['11111111'],[known,second,'11111111']));
+});
+
+test('short citation examples inside code and authored links remain opaque and ordinary labels remain text',()=>{
+  const prefix=known.slice(0,8);
+  const examples=`\`literal [${prefix}]\`\n\n\`\`\`json\n{"example":"[${prefix}]"}\n\`\`\`\n\n    literal [${prefix}]\n\n[${prefix}](https://example.com)\n\n[${prefix}][original]\n\n[original]: https://example.com/source\n\n![image [${prefix}]](https://example.com/image)`;
+  assert.doesNotThrow(()=>validateInlineCitations(examples,[],[known]));
+  assert.doesNotThrow(()=>validateInlineCitations('普通 [词] [ordinary label] [deadbeef] [1111111]',[known],[known]));
+  assert.throws(()=>validateInlineCitations(examples+`\n\n实际断言 [${prefix}]`,[known],[known]),/truncated inline citation/);
+});
+
+test('valid final JSON with truncated inline IDs reaches the existing repairable response-error boundary',()=>{
+  const records=new Map([[known,{id:known,capturedAt:'2026-01-01T00:00:00Z',appName:'Synthetic',ocrText:'Generated evidence'}]]);
+  assert.throws(()=>parseAnswer(JSON.stringify({answer:'合成结论 [11111111]',citationIds:[known]}),records),AgentResponseError);
+  const repaired=parseAnswer(JSON.stringify({answer:`合成结论 [${known}]`,citationIds:[known]}),records);
+  assert.equal(repaired.citations[0].id,known);assert.equal(repaired.answer,`合成结论 [${known}]`);
 });

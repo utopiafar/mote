@@ -22,38 +22,70 @@ import kotlin.math.roundToInt
 
 data class WindowSnapshot(val packages: Set<String>, val foreground: String?, val trustworthy: Boolean)
 
-class CapturePipeline(private val context: Context) {
+class CapturePipeline(private val context: Context, private val scheduleUpload: (CollectorConfig) -> Unit = { UploadWorker.schedule(context, it) }) {
     private val settings = Settings(context)
     private val diagnostics = Diagnostics(context)
     private val executor = Executors.newSingleThreadExecutor()
     private val busy = AtomicBoolean(false)
-    private val nsfw = NsfwClient(context)
-    private val latin = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private val chinese = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+    private val nsfwInstance = lazy { NsfwClient(context) }
+    private val latinInstance = lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val chineseInstance = lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
+    private val nsfw by nsfwInstance
+    private val latin by latinInstance
+    private val chinese by chineseInstance
     private var previousTime: Long? = null
     private var previousApp: String? = null
+    private var previousMode: AppCollectionMode? = null
     @Volatile private var closed = false
     fun isBusy(): Boolean = busy.get()
     private var lastPause: OperationReason? = null
     fun pause(reason: String, category: OperationReason = OperationReason.STATE_CHANGED) {
         if (lastPause != category) { Operations.record(context, OperationKind.CAPTURE_PAUSED, category); lastPause = category }
-        previousTime = null; previousApp = null
+        previousTime = null; previousApp = null; previousMode = null
         settings.status("paused", reason)
     }
-    fun canCapture(config: CollectorConfig, windows: WindowSnapshot): Boolean {
+    fun canCapture(config: CollectorConfig, windows: WindowSnapshot) = canCollect(config, windows, AppCollectionMode.CONTENT)
+    fun canCollect(config: CollectorConfig, windows: WindowSnapshot, expected: AppCollectionMode): Boolean {
         if (closed || !settings.enabled || busy.get()) return false
+        val selected = policy(config, windows)
+        if (selected == AppCollectionMode.OFF) { pause(if (!windows.trustworthy || windows.foreground.isNullOrBlank()) "无法可靠识别单一应用，未记录内容或活动" else "当前可见窗口的应用规则不允许本次采样", if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
+        if (selected != expected) return false
         if (!unlocked(context)) { pause("锁屏或熄屏，暂停采集", OperationReason.LOCKED); return false }
         runCatching { diagnostics.sample(config) }
         val battery = Diagnostics.battery(context)
         if (config.chargingOnly && !battery.second) { pause("用户设置仅充电时采集", OperationReason.CHARGING); return false }
         if (config.batteryPauseBelowPct > 0 && (battery.first < 0 || battery.first < config.batteryPauseBelowPct)) { pause("达到用户设置的低电量暂停条件", OperationReason.BATTERY); return false }
-        if (config.nsfw.enabled && !NsfwModelStore(context).hasFile()) { pause("NSFW 模型未就绪，请下载或导入；尚未截图", OperationReason.MODEL_MISSING); return false }
+        if (expected == AppCollectionMode.CONTENT && config.nsfw.enabled && !NsfwModelStore(context).hasFile()) { pause("NSFW 模型未就绪，请下载或导入；尚未截图", OperationReason.MODEL_MISSING); return false }
         val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
         if (reason != null) { pause(reason, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
         if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) { pause("本地队列已满，等待成功上传后恢复", OperationReason.QUEUE_FULL); return false }
         return true
     }
-    fun submit(bitmap: Bitmap, windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString()) {
+    fun submitActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) {
+        if (closed || !busy.compareAndSet(false, true)) return
+        ConnectionGuard.processing.incrementAndGet()
+        try { executor.execute {
+            try {
+                if (!settings.enabled || closed || !unlocked(context) || settings.read() != config || policy(config, windows) != AppCollectionMode.ACTIVITY) return@execute
+                val now = observedAtMs
+                val appId = requireNotNull(windows.foreground)
+                val duration = duration(now, appId, AppCollectionMode.ACTIVITY, config.intervalSeconds)
+                val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
+                    .put("deviceName", config.deviceName).put("platform", "android").put("capturedAt", capturedAt).put("durationMs", duration)
+                    .put("appId", appId).put("appName", CollectorMetadata.appName(context, appId)).put("source", "activity")
+                    .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
+                    .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L)) }
+                context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
+                settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型 · ${context.queue().depth()} 条待上传")
+                scheduleUpload(config)
+            } catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause("应用活动未保存，请检查本机队列；未采集内容") }
+            finally { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
+        } } catch (_: java.util.concurrent.RejectedExecutionException) { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
+    }
+    private fun duration(now: Long, appId: String?, mode: AppCollectionMode, intervalSeconds: Int): Long =
+        if (previousApp != null && previousApp == appId && previousMode == mode && previousTime != null) SamplingTime.interval(previousTime!!, now, intervalSeconds * 1000L) else 0L
+    fun submit(bitmap: Bitmap, windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) {
         if (closed || !busy.compareAndSet(false, true)) { bitmap.recycle(); return }
         ConnectionGuard.processing.incrementAndGet()
         try { executor.execute {
@@ -61,7 +93,7 @@ class CapturePipeline(private val context: Context) {
             var stage = EventStage.CAPTURE
             try {
                 Operations.record(context, OperationKind.FRAME_RECEIVED)
-                if (!settings.enabled || !unlocked(context) || closed) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
+                if (!settings.enabled || !unlocked(context) || closed || settings.read() != config || policy(config, windows) != AppCollectionMode.CONTENT) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
                 if (reason != null) { Operations.record(context, OperationKind.FRAME_BLOCKED, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); pause(reason); return@execute }
                 val inferenceStart = SystemClock.elapsedRealtime()
@@ -86,6 +118,7 @@ class CapturePipeline(private val context: Context) {
                 var text = ocr(output)
                 var reviewed = false
                 var modelMaskApplied = false
+                var appliedMaskCount = masks.size
                 if (config.localReviewUrl.isNotBlank()) {
                     stage = EventStage.PRIVACY
                     PrivacyRules.validateLocalReview(config.localReviewUrl)
@@ -95,18 +128,21 @@ class CapturePipeline(private val context: Context) {
                     require(code == 200 && response != null && response.has("allow") && response.get("allow") is Boolean) { "隐私模型响应无效" }
                     if (!response.getBoolean("allow")) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.LOCAL_DENIED); pause("本机隐私模型阻止此帧", OperationReason.LOCAL_DENIED); return@execute }
                     val extraMasks = ReviewResponse.masks(response)
-                    if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = ocr(output); modelMaskApplied = true }
+                    if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = ocr(output); modelMaskApplied = true; appliedMaskCount += extraMasks.size }
                     reviewed = true
                 }
                 if (!settings.enabled || closed || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
-                val now = SystemClock.elapsedRealtime()
-                val duration = if (previousApp != null && previousApp == windows.foreground && previousTime != null)
-                    (now - previousTime!!).coerceIn(0, config.intervalSeconds * 1000L) else 0L
+                val now = observedAtMs
+                val duration = duration(now, windows.foreground, AppCollectionMode.CONTENT, config.intervalSeconds)
                 val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
                     .put("deviceName", config.deviceName).put("platform", "android").put("capturedAt", capturedAt)
-                    .put("durationMs", duration).put("appId", windows.foreground).put("appName", windows.foreground ?: "未知应用")
+                    .put("durationMs", duration).put("appId", windows.foreground).put("appName", windows.foreground?.let { CollectorMetadata.appName(context, it) })
                     .put("imageMime", "image/jpeg").put("ocrText", text).put("source", "screen")
-                    .put("privacy", JSONObject().put("excluded", false).put("redacted", masks.isNotEmpty() || modelMaskApplied).put("mode", "local")
+                    .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L).apply {
+                        getJSONObject("capture").put("width", output.width).put("height", output.height).put("ocrEnabled", true)
+                        if (appliedMaskCount <= 200) getJSONObject("capture").put("maskCount", appliedMaskCount)
+                    }) }
+                    .put("privacy", JSONObject().put("excluded", false).put("redacted", masks.isNotEmpty() || modelMaskApplied).put("mode", "local").put("collection", "content")
                         .put("reason", (if (config.nsfw.enabled) "local NSFW model passed; " else "") +
                             if (reviewed) "configured masks and local model review" else if (masks.isNotEmpty()) "configured masks applied" else "user configured capture without masks"))
                 stage = EventStage.QUEUE
@@ -114,10 +150,10 @@ class CapturePipeline(private val context: Context) {
                 SupportEvents.record(context, stage, EventCode.OK)
                 diagnostics.add("capturedCount")
                 lastPause = null
-                previousTime = now; previousApp = windows.foreground
+                previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
                 settings.status("capturing", "采集中 · 本地遮罩/OCR 已完成 · ${context.queue().depth()} 条待上传")
-                UploadWorker.schedule(context, config)
+                scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
             catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: "队列已满") }
             catch (error: Exception) { Operations.record(context, OperationKind.CAPTURE_FAILED, Operations.failure(error, stage)); SupportEvents.record(context, stage, EventJournal.failure(error, stage)); diagnostics.add("failedCount"); pause("本机 OCR、隐私审查或存储失败，此帧未入队；下一周期重试") }
@@ -135,8 +171,9 @@ class CapturePipeline(private val context: Context) {
     private fun jpeg(bitmap: Bitmap, quality: Int): ByteArray = ByteArrayOutputStream().use { stream ->
         check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)); stream.toByteArray()
     }
-    fun close() { closed = true; nsfw.close(); executor.execute { latin.close(); chinese.close() }; executor.shutdown() }
+    fun close() { closed = true; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (latinInstance.isInitialized()) latin.close(); if (chineseInstance.isInitialized()) chinese.close() }; executor.shutdown() }
     companion object {
+        fun policy(config: CollectorConfig, windows: WindowSnapshot) = AppCollectionRules.parse(config.appCollectionRules).decide(windows, PrivacyRules.exclusions(config.excludedPackages))
         fun unlocked(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isInteractive &&
             !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
     }

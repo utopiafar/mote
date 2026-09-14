@@ -8,7 +8,6 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityWindowInfo
 import java.time.Instant
 
 /** Passive screenshot/window package source. No node text, gestures, UI actions or hidden grants. */
@@ -31,58 +30,63 @@ class CaptureAccessibilityService : AccessibilityService() {
         instance = this; connected = true
         handler.removeCallbacks(tick); handler.post(tick)
     }
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) { /* Read only live window package identities at capture time. */ }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) { ProjectionService.instance?.onWindowChanged() /* Never read event/node text. */ }
     override fun onInterrupt() {
         if (::settings.isInitialized) settings.status("permission_required", "无障碍服务中断，请检查系统设置")
     }
     fun windowSnapshot(): WindowSnapshot {
         return try {
             val all = windows
-            val apps = all.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
-            val packages = apps.map { window ->
+            val observed = all.map { window ->
                 val root = window.root
                 val name = root?.packageName?.toString()
                 @Suppress("DEPRECATION") root?.recycle()
-                name
+                CollectionWindow(window.type, name)
             }
             val root = rootInActiveWindow
             val foreground = root?.packageName?.toString()
             @Suppress("DEPRECATION") root?.recycle()
-            // Unknown app roots, overlays and multiple app windows cannot enforce exclusions safely.
-            val trustworthy = apps.size == 1 && packages.all { !it.isNullOrBlank() } && foreground in packages &&
-                all.none { it.type == AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY || (it.type == AccessibilityWindowInfo.TYPE_SYSTEM && it.isActive) }
-            WindowSnapshot(packages.filterNotNull().toSet(), foreground, trustworthy)
+            // Keyboards and system/other overlays may contain private content even when inactive.
+            CollectionWindows.snapshot(observed, foreground)
         } catch (_: Exception) { WindowSnapshot(emptySet(), null, false) }
     }
     private fun collectIfEnabled() {
         val config = settings.read()
-        if (!settings.enabled || config.mode != "accessibility") { stopCapture(); return }
+        if (!settings.enabled || config.effectiveMode() != "accessibility") { stopCapture(); return }
         UploadWorker.heartbeat(this, config)
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
             settings.enabled = false
             settings.status("permission_required", "通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始")
             stopCapture(); return
         }
-        if (Build.VERSION.SDK_INT < 30) { settings.status("permission_required", "此系统需使用投屏模式（Android 11+ 支持无障碍截图）"); return }
         if (pipeline == null) pipeline = CapturePipeline(this)
         Notifications.show(this, settings.message())
         if (inFlight || System.currentTimeMillis() < nextCapture || pipeline!!.isBusy()) return
         val snapshot = windowSnapshot()
+        val mode = CapturePipeline.policy(config, snapshot)
+        if (mode == AppCollectionMode.ACTIVITY) {
+            if (pipeline!!.canCollect(config, snapshot, mode)) {
+                nextCapture = System.currentTimeMillis() + config.intervalSeconds * 1000L
+                pipeline!!.submitActivity(snapshot, config)
+            }; return
+        }
         if (!pipeline!!.canCapture(config, snapshot)) return
+        if (Build.VERSION.SDK_INT < 30) { settings.status("permission_required", "此系统需投屏模式采集内容；仅应用活动无需截图API"); return }
         val capturePipeline = pipeline!!
         inFlight = true
         nextCapture = System.currentTimeMillis() + config.intervalSeconds * 1000L
         val at = Instant.now().toString()
+        val observedAtMs = android.os.SystemClock.elapsedRealtime()
         Operations.record(this, OperationKind.CAPTURE_REQUESTED)
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 try {
                     val current = windowSnapshot()
-                    if (!settings.enabled || current != snapshot || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) return
+                    if (!settings.enabled || current != snapshot || CapturePipeline.policy(settings.read(), current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) return
                     val hardware = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace) ?: return
                     val bitmap = hardware.copy(Bitmap.Config.ARGB_8888, false)
                     hardware.recycle()
-                    capturePipeline.submit(bitmap, current, config, at)
+                    capturePipeline.submit(bitmap, current, config, at, observedAtMs)
                 } finally { result.hardwareBuffer.close(); inFlight = false }
             }
             override fun onFailure(errorCode: Int) {

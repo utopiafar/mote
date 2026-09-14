@@ -4,6 +4,7 @@ export interface SourceDefinition {
   platform: 'macos' | 'import'; retention: SourceRetention; enabled: boolean;
 }
 export interface SourceItem {
+  metadata?: import('@mote/shared').SourceMetadata;
   externalId: string; revision: string; observedAt: string; modifiedAt?: string;
   title: string; text: string; uri?: string; kind: 'calendar' | 'file';
   layer: SourceRetention; mimeType?: string; deleted?: boolean;

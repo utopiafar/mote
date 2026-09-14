@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { displayTime } from './time.js';
+import {recordMetadataSchema, sourceMetadataSchema, sourceSchema} from '@mote/shared';
 import type {
   ContextReader,
   ContextRecord,
@@ -54,12 +55,18 @@ function range(
     throw new Error("limit must be a positive integer");
   if (args.cursor !== undefined && (typeof args.cursor !== "string" || !args.cursor || args.cursor.length > 4096))
     throw new Error("cursor must be a pagination token returned by timeline");
+  if (args.source !== undefined && !sourceSchema.safeParse(args.source).success) throw new Error('Invalid source');
+  if (args.appId !== undefined && (typeof args.appId !== 'string' || !args.appId.trim() || args.appId.length > 300)) throw new Error('Invalid appId');
+  if (args.collection !== undefined && args.collection !== 'content' && args.collection !== 'activity') throw new Error('Invalid collection');
   return {
     after: effectiveAfter,
     before: effectiveBefore,
     deviceId: bounds.deviceId ?? args.deviceId as string | undefined,
     limit: Math.min(Number(args.limit ?? 30), 100),
     ...(args.cursor === undefined ? {} : { cursor: args.cursor as string }),
+    ...(args.source === undefined ? {} : {source: sourceSchema.parse(args.source)}),
+    ...(args.appId === undefined ? {} : {appId: args.appId as string}),
+    ...(args.collection === undefined ? {} : {collection: args.collection as 'content' | 'activity'}),
   };
 }
 
@@ -74,6 +81,8 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
   if (end <= start && start < text.length) end = Math.min(start + 2, text.length);
   const duration = typeof record.durationMs === 'number' && Number.isFinite(record.durationMs) && record.durationMs > 0 ? record.durationMs : 0;
   const intervalStart = duration ? new Date(Date.parse(record.capturedAt) - duration).toISOString() : undefined;
+  const metadata = recordMetadataSchema.safeParse(record.metadata);
+  const sourceMetadata = sourceMetadataSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.metadata);
   return {
     id: record.id,
     capturedAt: record.capturedAt,
@@ -84,6 +93,10 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
       displayStart: displayTime(intervalStart, timeZone), displayEnd: displayTime(record.capturedAt, timeZone),
     } } : {}),
     appName: record.appName,
+    ...(typeof record.appId === 'string' ? {appId: record.appId.slice(0, 300)} : {}),
+    ...(metadata.success ? {metadata: {...metadata.data, displayObservedAt: displayTime(metadata.data.observedAt, timeZone)}} : {}),
+    ...(record.privacy && typeof record.privacy === 'object' && ['content', 'activity'].includes(String((record.privacy as Record<string,unknown>).collection))
+      ? {collection: (record.privacy as Record<string,unknown>).collection} : {}),
     ...(record.revisionState?{revisionState:record.revisionState}:{}),
     ...(typeof record.windowTitle==='string'?{title:record.windowTitle.slice(0,2000)}:{}),
     ...(record.provenance&&typeof record.provenance==='object'?{provenance:{
@@ -92,6 +105,8 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
       deleted:(record.provenance as Record<string,unknown>).deleted,
       revision:(record.provenance as Record<string,unknown>).revision,
       calendar:(record.provenance as Record<string,unknown>).calendar,
+      modifiedAt:(record.provenance as Record<string,unknown>).modifiedAt,
+      ...(sourceMetadata.success ? {metadata:sourceMetadata.data} : {}),
       originalAvailable:(record.provenance as Record<string,unknown>).layer!=='reference',
     }}:{}),
     ocrText: text.slice(start, end),
@@ -109,6 +124,30 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
       ? { mood: record.mood.slice(0, 80) }
       : {}),
   };
+}
+
+/** Health reports are not archive coverage. Keep their timestamps out of the record namespace. */
+function projectDevice(value: unknown, timeZone = 'UTC'): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const device = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const key of ['deviceId', 'deviceName', 'platform']) {
+    if (typeof device[key] === 'string') result[key] = device[key].slice(0, 300);
+  }
+  const healthReport: Record<string, unknown> = {};
+  for (const [key, label] of [['status', 'statusAsReported'], ['lastSeenAt', 'receivedAt'], ['lastCaptureAt', 'lastCaptureAtAsReported']]) {
+    if (typeof device[key] === 'string') {
+      healthReport[label] = device[key].slice(0, 100);
+      if (key !== 'status' && Number.isFinite(Date.parse(device[key])))
+        healthReport['display' + label[0].toUpperCase() + label.slice(1)] = displayTime(device[key], timeZone);
+    }
+  }
+  if (typeof device.queueDepth === 'number' && Number.isSafeInteger(device.queueDepth) && device.queueDepth >= 0)
+    healthReport.queueDepthAsReported = device.queueDepth;
+  if (Object.keys(healthReport).length) result.healthReport = healthReport;
+  const metadata = recordMetadataSchema.safeParse(device.metadata);
+  if (metadata.success) result.metadata = {...metadata.data, displayObservedAt: displayTime(metadata.data.observedAt, timeZone)};
+  return result;
 }
 
 export async function startBridge(
@@ -160,6 +199,8 @@ export async function startBridge(
         res.writeHead(404).end('{"error":"Unknown tool"}');
         return;
       }
+      if (!['timeline','search_context','activity'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
+        throw new Error('App/source/collection filters are supported only by timeline, search_context and activity');
       if (++calls > maxToolCalls)
         throw new Error(
           "Tool call budget reached; finish using the evidence already retrieved",
@@ -172,6 +213,7 @@ export async function startBridge(
       if (tool === "devices") {
         value = await reader.devices();
         if (bounds.deviceId && Array.isArray(value)) value = value.filter(device => device.deviceId === bounds.deviceId);
+        if (Array.isArray(value)) value = value.map(device => projectDevice(device, bounds.timeZone));
       }
       else if(tool==='source_history'){
         if(typeof args.id!=='string'||!records.has(args.id))throw Error('Discover a source record before requesting history');

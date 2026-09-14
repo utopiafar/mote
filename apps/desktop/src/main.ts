@@ -1,7 +1,8 @@
+import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, Tray } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
-import { readPowerState, recognizeInvitationQr } from './native';
+import { readPowerState, recognizeInvitationQr, runHelper } from './native';
 import { ConnectionOnboarding, ConnectionError, testConnection, assertConnectionChangeSafe, type ConnectionStatus } from './connection';
 import { NoteDraftStore, type NoteDraft } from './note-draft';
 import { openCentralWindow } from './central-window';
@@ -271,7 +272,7 @@ else {
     handle('mote:note-draft', () => noteDrafts.get());
     handle('mote:note-draft-update', input => trackNote(noteDrafts.update(input as NoteDraft)));
     handle('mote:note', input => trackNote(serialize(async () => {
-      const result = await noteDrafts.submit(input as NoteDraft, settings, currentPlatform, queue);
+      const result = await noteDrafts.submit(input as NoteDraft, settings, currentPlatform, queue, () => collectRecordMetadata(helperPath, dataDirectory, 'manual'));
       updateUi(clientStatus()); if (!quitting) void collector.upload(); return result;
     })));
     handle('mote:configure', input => serialize(async () => {
@@ -306,7 +307,7 @@ else {
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       await nsfw.importFiles(selected.filePaths); return { canceled: false };
     }));
-    handle('mote:permissions', async () => { if (process.platform === 'darwin') await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); });
+    handle('mote:permissions', async () => { if (process.platform === 'darwin') { await runHelper(helperPath, 'screen-permission').catch(() => undefined); await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); } });
     handle('mote:data-folder', async () => { await shell.openPath(dataDirectory); });
     handle('mote:export-queue', async () => {
       const selected = await dialog.showSaveDialog(window!, { title: '导出已脱敏待上传队列（包含个人资料）', defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });

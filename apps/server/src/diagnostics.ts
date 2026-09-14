@@ -29,6 +29,7 @@ function describeError(error:unknown):{status:number;category:string;message:str
   const e=error&&typeof error==='object'?error as {name?:unknown;code?:unknown;statusCode?:unknown}:{};
   if(e.name==='ZodError')return {status:400,category:'validation',message:'输入格式无效，请检查必填项和取值范围。'};
   if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:'Agent 未配置，请在中央节点配置模型后重试。'};
+  if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:'Agent 请求已超时，请稍后重试或缩小查询范围。'};
   if(e.name==='AgentResponseError')return {status:502,category:'agent_response',message:'模型未返回可验证的回答，请重试或检查模型配置。'};
   if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:'操作已取消或超时，请稍后重试。'};
   if(typeof e.code==='string'&&['embedding_http','embedding_invalid','embedding_transport'].includes(e.code))return {status:502,category:e.code,message:'索引模型请求未完成，请检查模型配置或稍后重试。'};

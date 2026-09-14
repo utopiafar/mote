@@ -26,6 +26,8 @@ try{
     execFileSync('codesign',['--verify','--strict','-R',`anchor apple generic and certificate leaf[subject.OU] = "${process.env.MOTE_APPLE_TEAM_ID}"`,app],{stdio:'pipe'});
     execFileSync('xcrun',['stapler','validate',app],{stdio:'pipe'});execFileSync('spctl',['--assess','--type','execute',app],{stdio:'pipe'});
   }
+  // Validate the actual packaged ESM dependencies and legacy data compatibility without opening the App.
+  execFileSync(join(app,'Contents/MacOS',field('CFBundleExecutable')),[resolve('apps/desktop/scripts/packaged-metadata-smoke.cjs'),join(app,'Contents/Resources')],{stdio:'inherit',env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}});
   const zip=resolve(`artifacts/release/mote-desktop-macos-${process.arch}-${pkg.version}.zip`);mkdirSync(resolve('artifacts/release'),{recursive:true});if(existsSync(zip))rmSync(zip);
   execFileSync('ditto',['-c','-k','--sequesterRsrc','--keepParent',app,zip]);
   execFileSync(process.execPath,['scripts/release/asset-metadata.mjs','desktop',zip,process.arch],{stdio:'inherit',env:process.env});

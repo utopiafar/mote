@@ -38,6 +38,9 @@ class MainActivity : Activity() {
     private lateinit var wifi: CheckBox
     private lateinit var http: CheckBox
     private lateinit var projectionMode: CheckBox
+    private lateinit var appDefault: Spinner
+    private lateinit var appPolicies: EditText
+    private lateinit var metadataEnabled: CheckBox
     private lateinit var jpegQuality: EditText
     private lateinit var captureMaxSide: EditText
     private lateinit var batteryBelow: EditText
@@ -161,6 +164,17 @@ class MainActivity : Activity() {
         text("输入会加密保存为本机草稿，页面重建后恢复；同次提交失败重试复用 ID。使用已保存的节点配置。手动记录不需截图权限，也不受截图过滤模型阻塞；离线时保留在本机加密队列，节点确认后清除。", 13)
         section("03  隐私规则")
         excludes = field("不采集的应用包名（每行一个或逗号分隔）", config.excludedPackages, "com.example.private", multiline = true)
+        section("按应用选择采集级别")
+        val appRules = AppCollectionRules.parse(config.appCollectionRules)
+        text("完整内容 content：截图并执行本机隐私审查；仅应用活动 activity：只记应用身份和采样时间，不请求截图/OCR/模型；不记录 off：不保存该应用的内容或活动。旧排除列表优先级最高。未知、多应用或不可靠窗口暂停，不自动降级。内容采集还要求所有已识别键盘/系统辅助窗允许 content；仅活动不读取这些窗口的内容。", 13)
+        appDefault = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("未单独配置：完整内容", "未单独配置：仅应用活动", "未单独配置：不记录"))
+            setSelection(AppCollectionMode.entries.indexOf(appRules.defaultMode))
+        }; content.addView(appDefault)
+        appPolicies = field("应用级别（每行 包名=content/activity/off）", appRules.apps.entries.joinToString("\n") { "${it.key}=${it.value.wire}" }, "com.example.chat=activity\ncom.example.private=off", multiline = true)
+        appPolicies.filters = arrayOf(android.text.InputFilter.LengthFilter(32768))
+        metadataEnabled = check("上传设备与采集状态元数据", config.metadataEnabled)
+        text("开启后附带实际系统/机型、采集器版本、语言/时区、电量/充电、网络类型、锁屏与可用空间；不取设备序列号、IMEI、MAC、SSID或定位。关闭只影响新记录和心跳，已入队内容不追溯修改。授权文件来源自身的大小/修改时间不受此开关影响。", 13)
         text("没有内置应用黑名单。配置排除后，无法识别应用、多个应用窗口或系统遮挡时暂停。投屏模式需要同时启用无障碍服务才能可靠执行排除；仅使用情况权限不足以保证所有可见窗口。", 13)
         masks = field("固定遮罩（每行 left,top,right,bottom）", config.masks, "0,0,1,0.08", multiline = true)
         text("坐标均为 0..1、相对当前屏幕。例如 0,0,1,0.08 遮住顶部 8%。遮罩先于 OCR 和保存；旋转后仍按屏幕比例应用。默认不遮罩，请自行设置。", 13)
@@ -211,7 +225,8 @@ class MainActivity : Activity() {
     private fun draft() = CollectorConfig(server.text.toString().trim(), token.text.toString().trim(), name.text.toString().trim(),
         interval.text.toString().toInt(), maxQueue.text.toString().toInt(), wifi.isChecked,
         excludes.text.toString(), masks.text.toString(), review.text.toString().trim(), http.isChecked,
-        if (projectionMode.isChecked) "projection" else "accessibility", nsfwDraft(), jpegQuality.text.toString().toInt(), captureMaxSide.text.toString().toInt(), chargingOnly.isChecked, batteryBelow.text.toString().toInt(), diagnosticEnabled.isChecked, diagnosticInterval.text.toString().toInt())
+        if (projectionMode.isChecked) "projection" else "accessibility", nsfwDraft(), jpegQuality.text.toString().toInt(), captureMaxSide.text.toString().toInt(), chargingOnly.isChecked, batteryBelow.text.toString().toInt(), diagnosticEnabled.isChecked, diagnosticInterval.text.toString().toInt(),
+        AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json(), metadataEnabled.isChecked)
     private fun nsfwDraft() = NsfwConfig(enabled = nsfwEnabled.isChecked, threads = nsfwThreads.text.toString().toInt(),
         timeoutMs = nsfwTimeout.text.toString().toLong(), source = nsfwSources[nsfwSource.selectedItemPosition], customUrl = nsfwCustom.text.toString().trim(),
         policy = nsfwPolicy.text.toString().trim(), maxTokens = nsfwMaxTokens.text.toString().toInt(), reviewMaxSide = nsfwMaxSide.text.toString().toInt())
@@ -227,7 +242,7 @@ class MainActivity : Activity() {
         ConnectionGuard.change(this, c.server) { settings.save(c) }
         UploadWorker.schedule(this, c, true)
         SourceWork.schedule(this, true)
-        toast("配置已保存，规则对后续新截图生效")
+        toast("配置已保存，规则对后续新记录生效")
         true
     } catch (e: Exception) { toast(e.message ?: "请检查配置输入"); false }
     private fun startCapture() {
@@ -236,16 +251,16 @@ class MainActivity : Activity() {
         if (!saveConfig()) return
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { notifications(); toast("请先允许通知，然后再次点击开始"); return }
         val c = settings.read()
-        if (c.mode == "accessibility") {
-            if (Build.VERSION.SDK_INT < 30) { toast("Android 10 请勾选投屏模式"); return }
+        if (c.effectiveMode() == "accessibility") {
+            if (Build.VERSION.SDK_INT < 30 && AppCollectionRules.parse(c.appCollectionRules).mayCollectContent()) { toast("Android 10 内容截图请勾选投屏模式；仅活动无需投屏"); return }
             if (!CaptureAccessibilityService.connected) { toast("请先启用无障碍截图服务，返回后再开始"); return }
             if (!ConnectionGuard.startCapture(this, SourceRules.hash(c.toString())) {
                 Operations.record(this, OperationKind.CAPTURE_STARTED)
                 settings.status("capturing", "采集已启用，等待首帧；配置页受系统安全保护")
             }) { toast("节点或配置已变化，请重新点击开始"); return }
         } else {
-            if (PrivacyRules.exclusions(c.excludedPackages).isNotEmpty() && !CaptureAccessibilityService.connected) {
-                toast("已配置应用排除，请先启用无障碍服务以可靠识别可见窗口"); return
+            if (!CaptureAccessibilityService.connected) {
+                toast("分级采集需要可靠窗口身份，请先启用无障碍服务；不会读取控件文字"); return
             }
             val manager = getSystemService(MediaProjectionManager::class.java)
             val intent = if (Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
@@ -297,10 +312,10 @@ class MainActivity : Activity() {
         if (!::status.isInitialized) return
         val c = runCatching { settings.read() }.getOrNull()
         if (c != null) runCatching { Diagnostics(this).sample(c) }
-        val live = if (c?.mode == "projection") ProjectionService.running else CaptureAccessibilityService.connected
+        val live = if (c?.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected
         val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else settings.message()
         val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
-        val totals = if (stats == null) "统计暂不可读取" else "本周期保存截图 ${stats.optLong("SCREEN_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
+        val totals = if (stats == null) "统计暂不可读取" else "本周期保存截图 ${stats.optLong("SCREEN_QUEUED")} · 应用活动 ${stats.optLong("ACTIVITY_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
         val bytes = runCatching { queue().bytes() / 1024.0 / 1024 }.getOrDefault(0.0)
         status.text = "$state\n$totals\n待上传 ${queue().depth()} 条 · ${"%.1f".format(bytes)} MiB\n${settings.uploadStatus()}\n无障碍 ${if (CaptureAccessibilityService.connected) "已连接" else "未连接"} · 使用情况 ${if (ForegroundApps.usageAllowed(this)) "已授权" else "未授权"}\n最近采集 ${settings.lastCapture() ?: "无"}"
         if (::nsfwStatus.isInitialized) {

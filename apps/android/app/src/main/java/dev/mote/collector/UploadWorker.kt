@@ -108,6 +108,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         val status = if (settings.enabled && !runtimeAlive) "permission_required" else settings.state()
         val body = JSONObject().put("deviceId", settings.deviceId).put("deviceName", config.deviceName).put("platform", "android")
             .put("status", status).put("queueDepth", queue.depth()).put("lastCaptureAt", settings.lastCapture())
+            .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(applicationContext, if (config.effectiveMode() == "projection") "media_projection" else "accessibility")) }
         if (status == "permission_required") body.put("error", if (!runtimeAlive && settings.enabled)
             "采集服务未连接，请打开手机应用恢复权限" else settings.message())
         else if (status == "error") body.put("error", settings.message())

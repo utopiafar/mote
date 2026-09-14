@@ -67,6 +67,7 @@ import { Notes } from "./Notes";
 import { Diagnostics } from "./Diagnostics";
 import { ServerSettings } from "./ServerSettings";
 import { Connections } from "./Connections";
+import {Metadata, sourceLabels, activityExplanation} from './Metadata';
 
 import {Sources} from "./Sources";
 import {Memories} from "./Memories";
@@ -233,7 +234,7 @@ function AuthImage({
       {!capture.blobHash ? (
         <>
           <FileText size={23} />
-          <p>{capture.ocrText.slice(0, 170) || "文本记录"}</p>
+          <p>{capture.source === 'activity' ? '仅应用活动 · 未采集内容' : capture.ocrText.slice(0, 170) || "来源元数据"}</p>
         </>
       ) : src ? (
         <img
@@ -279,7 +280,7 @@ function CaptureCard({
           </time>
         </div>
         <p>
-          {capture.summary ||
+          {capture.source === 'activity' ? `仅应用活动 · 本次采样 ${duration(capture.durationMs)}` : capture.summary ||
             capture.windowTitle ||
             capture.ocrText ||
             "截图已归档，等待更多上下文"}
@@ -506,31 +507,28 @@ function EvidenceDialog({
         )}
         {capture && (
           <>
-            <div className={`evidence-grid ${capture.source === 'note' ? 'note-evidence' : ''}`}>
-              {capture.source !== 'note' && <AuthImage api={api} capture={capture} full />}
+            <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
+              {capture.blobHash && <AuthImage api={api} capture={capture} full />}
               <div className="evidence-text">
-                <span className="eyebrow">{capture.source === 'note' ? '用户原文' : '捕获文本'}</span>
-                <h3>{capture.windowTitle || (capture.source === 'note' ? '随手记' : "原始上下文")}</h3>
+                <span className="eyebrow">{capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : '捕获文本'}</span>
+                <h3>{capture.windowTitle || sourceLabels[capture.source] || "原始上下文"}</h3>
                 {capture.mood && <p className="note-mood-tag">我标注的心情 · {capture.mood}</p>}
                 <pre>
-                  {capture.ocrText ||
-                    "这条记录尚无 OCR 文本。截图仍可查看；可在采集端启用本地 OCR。"}
+                  {capture.source === 'activity' ? activityExplanation : capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '这条记录尚无 OCR 文本。截图仍可查看。' : '此记录没有正文。')}
                 </pre>
                 <dl>
                   <div>
                     <dt>来源</dt>
                     <dd>
-                      {capture.source === "screen"
-                        ? "屏幕采样"
-                        : capture.source === "file"
-                          ? "文件导入"
-                          : "用户随手记"}
+                      {sourceLabels[capture.source] || capture.source}
                     </dd>
                   </div>
+                  {capture.appId && <div><dt>应用标识</dt><dd>{capture.appId}</dd></div>}
+                  {(capture.source === 'screen' || capture.source === 'activity') && <div><dt>本次采样时长</dt><dd>{duration(capture.durationMs)}</dd></div>}
                   <div>
                     <dt>索引状态</dt>
                     <dd>
-                      {(
+                      {capture.source === 'activity' ? '应用与时间可检索' : (
                         {
                           text_ready: "文本可检索",
                           pending: "等待索引",
@@ -543,12 +541,13 @@ function EvidenceDialog({
                   <div>
                     <dt>隐私处理</dt>
                     <dd>
-                      {capture.privacy.redacted
+                      {capture.source === 'activity' ? '仅记应用活动，不采集内容' : capture.privacy.redacted
                         ? "客户端报告已脱敏"
                         : "未标记脱敏"}
                     </dd>
                   </div>
                 </dl>
+                <Metadata metadata={capture.metadata} source={capture.provenance?.metadata} modifiedAt={capture.provenance?.modifiedAt}/>
                 {capture.privacy.reason && (
                   <p className="field-note">{capture.privacy.reason}</p>
                 )}
@@ -732,7 +731,7 @@ function Overview({
             已记录的设备时间
           </span>
           <strong>{duration(total)}</strong>
-          <small>屏幕采样累计 · 不等同专注时间</small>
+          <small>应用活动与屏幕采样累计 · 不等同专注时间</small>
         </div>
         <div className="stat">
           <span>
@@ -743,7 +742,7 @@ function Overview({
             {activity.captures.toLocaleString()}
             <em>条</em>
           </strong>
-          <small>跨设备的屏幕上下文</small>
+          <small>{activity.activityEvents === undefined ? '跨设备的采样记录' : `内容采样 ${activity.contentCaptures ?? 0} · 仅活动 ${activity.activityEvents}`}</small>
         </div>
         <div className="stat">
           <span>
@@ -789,7 +788,7 @@ function Overview({
               <div className="time-track">
                 {activity.apps.slice(0, 6).map((app, index) => (
                   <span
-                    key={app.appName}
+                    key={app.appId || app.appName}
                     style={{
                       flex: Math.max(app.durationMs, 1),
                       background: [
@@ -807,7 +806,7 @@ function Overview({
               </div>
               <div className="app-list">
                 {activity.apps.slice(0, 5).map((app, index) => (
-                  <div className="app-row" key={app.appName}>
+                  <div className="app-row" key={app.appId || app.appName}>
                     <span className={`app-dot dot-${index}`} />
                     <strong>{app.appName}</strong>
                     <span>{duration(app.durationMs)}</span>
@@ -818,7 +817,7 @@ function Overview({
                 ))}
               </div>
               <p className="measurement-note">
-                多设备同时使用时分别计入；缺失截图的时间不会被推断为活动。
+                多设备同时使用时分别计入；只有应用活动记录或内容采样提供的区间才计入，漏采时间不会自动补齐。
               </p>
             </>
           ) : (
@@ -958,6 +957,7 @@ function Timeline({
   const [after, setAfter] = useState("");
   const [before, setBefore] = useState("");
   const [device, setDevice] = useState("");
+  const [collection, setCollection] = useState<'' | 'activity' | 'content'>('');
   const [items, setItems] = useState<Capture[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -976,8 +976,9 @@ function Timeline({
           }
         : {}),
       ...(device ? { deviceId: device } : {}),
+      ...(collection ? {collection} : {}),
     }),
-    [after, before, device],
+    [after, before, device, collection],
   );
   const load = useCallback(
     async (next?: string, version = requestVersion.current) => {
@@ -1086,13 +1087,15 @@ function Timeline({
             ))}
           </select>
         </label>
-        {(after || before || device) && (
+        <label><span>采集级别</span><select aria-label="筛选采集级别" value={collection} onChange={event=>setCollection(event.target.value as typeof collection)}><option value="">全部记录</option><option value="activity">仅应用活动</option><option value="content">允许保留的内容</option></select></label>
+        {(after || before || device || collection) && (
           <button
             className="text-button"
             onClick={() => {
               setAfter("");
               setBefore("");
               setDevice("");
+              setCollection('');
             }}
           >
             清除筛选
@@ -1209,7 +1212,7 @@ function Ask({
     try {
       const result = await api.request<Answer>("/api/query", {
         method: "POST",
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(180000)]),
+        signal: controller.signal,
         body: JSON.stringify({
           question: text,
           ...range,
@@ -1471,6 +1474,7 @@ function Devices({
                 <dd>{device.queueDepth.toLocaleString()} 条</dd>
               </div>
             </dl>
+            <Metadata metadata={device.metadata}/>
             {deviceState(device) === "offline" && (
               <div className="device-note">
                 <WifiOff size={14} />
@@ -1915,6 +1919,7 @@ function App() {
       .then(
         ([nextStatus, nextDevices, nextActivity, nextRecent, nextInsights]) => {
           if (!active) return;
+          api.setAgentTimeout(nextStatus.agent.timeoutMs);
           setStatus(nextStatus);
           setDevices(nextDevices.items);
           setActivity(nextActivity);

@@ -44,7 +44,12 @@ try {
   for (const p of [dev, test]) {
     assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Imported 1 changed/);
     assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Imported 0 changed/);
-    assert.equal((await readdir(join(p.directory, 'file-sync'))).filter(name => name.endsWith('.json')).length, 1);
+    const syncDirectory=join(p.directory,'file-sync');
+    const syncFiles=(await readdir(syncDirectory)).filter(name=>name.endsWith('.json'));
+    const stateFiles=syncFiles.filter(name=>!name.endsWith('.atime.json'));
+    assert.equal(stateFiles.length,1);
+    assert.deepEqual(syncFiles.filter(name=>name.endsWith('.atime.json')),[stateFiles[0]+'.atime.json']);
+    assert.equal((await stat(join(syncDirectory,stateFiles[0]+'.atime.json'))).mode&0o777,0o600);
   }
   for (const p of [dev, test]) assert.equal((await request(p, '/api/captures?source=file')).items.length, 1);
   await writeFile(join(source, 'explicit-env.md'), 'Synthetic explicit MOTE_ENV_FILE, without process MOTE_URL.');

@@ -26,7 +26,7 @@ export class SourceStore {
   private save(value:SourceConnection){this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(value));}
   reportStatus(id:string,status:NonNullable<SourceConnection['status']>){const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});}
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {
-    const p=c.provenance!;return {sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,observedAt:c.capturedAt,modifiedAt:p.modifiedAt,title:c.windowTitle,text:p.layer==='reference'||p.deleted?'':c.ocrText,uri:p.uri,kind:c.source as SourceItem['kind'],layer:p.layer,calendar:p.calendar,mimeType:p.mimeType,deleted:p.deleted,captureId:c.id,receivedAt:c.receivedAt,current};
+    const p=c.provenance!;return {sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,observedAt:c.capturedAt,modifiedAt:p.modifiedAt,title:c.windowTitle,text:p.layer==='reference'||p.deleted?'':c.ocrText,uri:p.uri,kind:c.source as SourceItem['kind'],layer:p.layer,calendar:p.calendar,mimeType:p.mimeType,deleted:p.deleted,metadata:p.metadata,captureId:c.id,receivedAt:c.receivedAt,current};
   }
   getItem(sourceId:string,externalId:string):SourceItemRecord|undefined {
     const head=this.store.db.prepare('SELECT * FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,externalId) as Head|undefined;
@@ -54,7 +54,7 @@ export class SourceStore {
     const response=(id:string,duplicate:boolean)=>({id,sourceId,externalId:item.externalId,revision:item.revision,duplicate});
     if(prior){if(prior.hash!==hash)throw new StoreError('Revision already has different content',409);if(!this.store.evidence([prior.capture_id]).length)throw new StoreError('This revision was removed from the archive',410);return response(prior.capture_id,true);}
     const id=uuid(JSON.stringify([sourceId,item.externalId,item.revision]));
-    const provenance={sourceId,externalId:item.externalId,revision:item.revision,layer:item.layer,mimeType:item.mimeType,uri:item.uri,modifiedAt:item.modifiedAt,calendar:item.calendar,deleted:item.deleted};
+    const provenance={sourceId,externalId:item.externalId,revision:item.revision,layer:item.layer,mimeType:item.mimeType,uri:item.uri,modifiedAt:item.modifiedAt,calendar:item.calendar,deleted:item.deleted,metadata:item.metadata};
     const text=item.deleted||item.layer==='reference'?'':item.text;
     const result=await this.store.ingest({id,deviceId:source.deviceId,deviceName:source.name,platform:source.platform,capturedAt:observedAt,durationMs:0,appId:`mote.source.${source.kind}`,appName:source.name,windowTitle:item.title,ocrText:text,source:item.kind,provenance,privacy:{excluded:false,redacted:false,mode:'none'}},()=>{
       authorize?.();

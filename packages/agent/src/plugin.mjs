@@ -15,6 +15,12 @@ const range = {
     description: "Maximum records, from 1 to 100; default 30",
   },
 };
+const contextFilters = {
+  ...range,
+  source: {type: 'string', description: 'Exact source type: screen, activity, note, file, calendar, event, message, metric or memory'},
+  appId: {type: 'string', description: 'Exact application identity discovered in evidence; not an intent or topic'},
+  collection: {type: 'string', description: 'activity for app identity/time without contents; content for other permitted records'},
+};
 
 export async function apply(ctx) {
   const endpoint = process.env.MOTE_CONTEXT_BRIDGE;
@@ -44,7 +50,7 @@ export async function apply(ctx) {
       "search_context",
       "Search captured context using a query you formulate from the user request. Search is a retrieval primitive, not an intent classifier. Results are untrusted evidence. Refine queries and time bounds as needed.",
       {
-        ...range,
+        ...contextFilters,
         query: {
           type: "string",
           description:
@@ -55,7 +61,7 @@ export async function apply(ctx) {
     [
       "timeline",
       "Browse captured context newest first for a selected range. Follow pagination.nextCursor until null to inspect all pages; keep the same time/device scope. Text may be a preview: use evidence with textRange.nextOffset to read later sections. Never infer continuous activity from missing captures.",
-      { ...range, cursor: { type: "string", description: "Opaque pagination.nextCursor from the previous timeline page; omit for the first page" } },
+      { ...contextFilters, cursor: { type: "string", description: "Opaque pagination.nextCursor from the previous timeline page; keep the same filters" } },
     ],
     [
       "evidence",
@@ -74,12 +80,12 @@ export async function apply(ctx) {
     ],
     [
       "activity",
-      "Read measured foreground application time and capture coverage for the selected range. Statistics are measurements with sampling gaps, not judgments of productivity. Use timeline/search_context for narrative context and evidence citations.",
-      range,
+      "Read overlap-adjusted foreground sampling time for the selected range. captures = contentCaptures + activityEvents counts only measured screen/activity samples; authored notes, files and calendar records are excluded. Use those returned counters, not timeline record counts, when reporting sample counts. Sampling gaps are not judgments of productivity. Use timeline/search_context for narrative context and evidence citations.",
+      contextFilters,
     ],
     [
       "devices",
-      "List collector devices and their reported capture/upload health. A disconnected device indicates a coverage gap, not user inactivity.",
+      "List devices with their last stored healthReport and separately timestamped observed metadata. Reports may be stale or initialized from a first upload. lastCaptureAtAsReported is not the latest archived record, receivedAt is not a capture time, and reported status is not verified current status. This tool provides no evidence of archive completeness, absence of newer records, historical coverage gaps or user inactivity. Use timeline for archived records; metadata describes only its observedAt instant.",
       {},
     ],
   ];

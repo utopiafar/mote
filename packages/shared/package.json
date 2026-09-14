@@ -18,6 +18,12 @@
       "require": "./dist/connection.js",
       "default": "./dist/connection.js"
     },
+    "./metadata": {
+      "types": "./dist/metadata.d.ts",
+      "import": "./dist/metadata.js",
+      "require": "./dist/metadata.js",
+      "default": "./dist/metadata.js"
+    },
     "./release": {
       "types": "./dist/release.d.ts",
       "import": "./dist/release.js",
@@ -25,7 +31,7 @@
       "default": "./dist/release.js"
     }
   },
-  "typesVersions": { "*": { "release": ["dist/release.d.ts"], "connection": ["dist/connection.d.ts"] } },
+  "typesVersions": { "*": { "release": ["dist/release.d.ts"], "connection": ["dist/connection.d.ts"], "metadata": ["dist/metadata.d.ts"] } },
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
