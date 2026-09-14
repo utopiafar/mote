@@ -193,11 +193,12 @@ test('minted MCP credentials use the real SDK with independent read/write, fixed
 });
 
 test('disabled MCP minting fails with actionable fixed codes and accurate safe diagnostics',async t=>{
-  const {app,connections,cfg,diagnostics}=await fixture(t);
+  const {app,diagnostics}=await fixture(t);
   const mint=()=>app.inject({method:'POST',url:'/api/connections/mcp',headers:headers(),payload:{serverUrl:'https://synthetic.invalid',label:'Synthetic',access:'write'}});
   const disabled=await mint();assert.equal(disabled.statusCode,409);assert.equal(disabled.json().error,'mcp_disabled');
-  cfg.connectors={directory:join(cfg.dataDir,'connectors'),mcpEnabled:true};const write=await mint();assert.equal(write.statusCode,409);assert.equal(write.json().error,'mcp_write_disabled');assert.equal(connections.inventory().items.length,0);
-  const events=diagnostics.events(0,100).items.filter(e=>e.event==='request.failed');assert.equal(events.length,2);assert.ok(events.every(e=>e.statusCode===409&&e.category==='conflict'&&e.route==='connections'));
+  const enabled=await fixture(t,{mcp:true});enabled.cfg.connectors!.mcpWriteEnabled=false;
+  const write=await enabled.app.inject({method:'POST',url:'/api/connections/mcp',headers:headers(),payload:{serverUrl:'https://synthetic.invalid',label:'Synthetic',access:'write'}});assert.equal(write.statusCode,409);assert.equal(write.json().error,'mcp_write_disabled');assert.equal(enabled.connections.inventory().items.length,0);
+  const events=[...diagnostics.events(0,100).items,...enabled.diagnostics.events(0,100).items].filter(e=>e.event==='request.failed');assert.equal(events.length,2);assert.ok(events.every(e=>e.statusCode===409&&e.category==='conflict'&&e.route==='connections'));
 });
 
 test('collector can send only its own content-free activity and bounded heartbeat metadata',async t=>{

@@ -35,9 +35,33 @@
       "import": "./dist/release.js",
       "require": "./dist/release.js",
       "default": "./dist/release.js"
+    },
+    "./models": {
+      "types": "./dist/model-providers.d.ts",
+      "import": "./dist/model-providers.js",
+      "require": "./dist/model-providers.js",
+      "default": "./dist/model-providers.js"
     }
   },
-  "typesVersions": { "*": { "feedback": ["dist/feedback.d.ts"], "release": ["dist/release.d.ts"], "connection": ["dist/connection.d.ts"], "metadata": ["dist/metadata.d.ts"] } },
+  "typesVersions": {
+    "*": {
+      "feedback": [
+        "dist/feedback.d.ts"
+      ],
+      "release": [
+        "dist/release.d.ts"
+      ],
+      "connection": [
+        "dist/connection.d.ts"
+      ],
+      "metadata": [
+        "dist/metadata.d.ts"
+      ],
+      "models": [
+        "dist/model-providers.d.ts"
+      ]
+    }
+  },
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",

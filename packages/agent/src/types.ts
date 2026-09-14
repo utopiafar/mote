@@ -1,4 +1,5 @@
 import type {CaptureInput} from '@mote/shared';
+import type {ModelProtocol} from '@mote/shared/models';
 export interface ContextRecord {
   id: string;
   capturedAt: string;
@@ -46,12 +47,17 @@ export interface AgentOptions {
   baseUrl?: string;
   apiKey?: string;
   model?: string;
+  protocol?: ModelProtocol;
+  provider?: string;
+  /** Custom request headers and JSON parameters are secrets, not diagnostics. */
+  headers?: Record<string, string>;
+  extraBody?: Record<string, unknown>;
   /** Explicit opt-in for a local endpoint that does not need a credential. */
   allowUnauthenticatedLocal?: boolean;
   timeoutMs?: number;
   maxToolCalls?: number;
   maxTokens?: number;
-  reasoningEffort?: "off" | "low" | "high" | "max";
+  reasoningEffort?: "auto" | "off" | "low" | "high" | "max";
 }
 
 export interface QueryInput {
@@ -94,6 +100,22 @@ export class AgentResponseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "AgentResponseError";
+  }
+}
+
+export class AgentConfigurationError extends Error {
+  readonly statusCode = 400;
+  constructor(message = 'Invalid model connection settings.') {
+    super(message);
+    this.name = 'AgentConfigurationError';
+  }
+}
+
+export class AgentProviderError extends Error {
+  readonly statusCode = 502;
+  constructor() {
+    super('The model request failed. Check the endpoint, API credential, model and protocol settings.');
+    this.name = 'AgentProviderError';
   }
 }
 

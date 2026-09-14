@@ -22,12 +22,12 @@ test('oversized unframed streams are canceled before SDK parsing and retries can
   assert.equal(fetches,1);
 });
 
-test('body limits cover error responses and cumulative model turns without altering request transport policy', async () => {
+test('body limits cover error responses and cumulative turns while forbidding redirects', async () => {
   const seen=[], init={method:'POST',redirect:'follow',credentials:'include',headers:{Authorization:'Bearer synthetic'},body:'generated'};
   const transport=boundedModelFetch(async(input,options)=>{seen.push([input,options]);return new Response('x'.repeat(80),{status:500,headers:{'Content-Type':'text/plain'}});},bridge,128);
   const first=await transport('http://synthetic-provider',init);
   assert.equal(first.status,500);assert.equal((await first.text()).length,80);
-  assert.equal(seen[0][1],init);
+  assert.deepEqual(seen[0][1],{...init,redirect:'manual'});
   const second=await transport('http://synthetic-provider',init);
   await assert.rejects(second.text(),/byte budget/);
 });

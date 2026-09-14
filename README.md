@@ -151,17 +151,11 @@ adb reverse tcp:47842 tcp:47842
 
 ### 3. 配置 AI 并使用
 
-在所选环境的 `mote.env` 中填写模型服务，重启该节点：
+在中央网页打开 **设置 → 问答与回顾 → 模型服务**，选择厂商或本机服务，填写支持工具调用的模型 ID 和 API key，点击 **保存并应用**。新请求立即使用新配置，正在执行的问答继续完成；密钥保存后只显示配置状态。
 
-```dotenv
-MOTE_MODEL=你的工具调用模型ID
-MOTE_MODEL_BASE_URL=https://api.deepseek.com
-MOTE_MODEL_API_KEY=你的API密钥
-MOTE_MODEL_REASONING_EFFORT=high
-MOTE_MODEL_MAX_TOKENS=8192
-```
+当前提供 DeepSeek、Qwen、豆包、GLM、Kimi、MiniMax、千帆、腾讯、SiliconFlow、OpenAI、Claude、Gemini 等预设，以及 Ollama、LM Studio 和自定义接口。预设可修改地址与协议，模型能力仍以厂商说明为准。“测试连接”只使用合成内容，不读取资料库，可能产生少量模型费用。
 
-没有模型配置时，采集、笔记、同步和时间线仍可使用，AI 页面会显示待配置。模型服务需支持工具调用与流式 Chat Completions；兼容服务与本地模型的配置见 [Agent 文档](docs/agent.md)。
+没有模型配置时，采集、笔记、同步和时间线仍可使用，AI 页面会显示待配置。环境变量、五种协议和凭据迁移规则见 [模型服务配置](docs/model-providers.md)，运行时权限见 [Agent 文档](docs/agent.md)。
 
 开始采集后，在时间线查看记录，在随手记写下主动输入，在“问一问”选择时间与设备范围并提问，例如“这周我主要在推进什么，哪些事情还没完成？”点击答案引用可以展开原文。默认只向中央模型发送检索到的文本证据，不发送原始截图；启用 embedding 后，文本还会发送至你配置的 embedding 服务。
 
@@ -238,6 +232,7 @@ MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to
 |---|---|
 | [部署与迁移](docs/deployment.md) | Mac mini、Docker、HTTPS、备份恢复、升级与回滚 |
 | [开发环境](docs/development.md) | 服务端与客户端隔离、开发命令、测试 |
+| [模型服务配置](docs/model-providers.md) | 厂商预设、协议、保存即生效、合成测试与私有凭据 |
 | [故障排查](docs/troubleshooting.md) | 日志、请求编号、诊断包与常见故障 |
 | [架构](docs/architecture.md) / [协议](docs/protocol.md) | 数据流、边界、扩展接入与一致性 |
 | [macOS](docs/desktop.md) / [Android](docs/android.md) | 安装构建、采集权限、后台行为 |

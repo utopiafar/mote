@@ -4,6 +4,7 @@ import type { ServerConfiguration, ConfigurationField, SourceConnection } from '
 import { type Api, bytes, errorMessage } from './api';
 import {ConfigurationBuilder, type ConfigCategory} from './ConfigurationBuilder';
 import {Feedback} from './Feedback';
+import {ModelSettingsEditor} from './ModelSettingsEditor';
 export type SettingsDestination = 'vault'|'developer'|'about'|'connections';
 const categories: {id:ConfigCategory;title:string;description:string;icon:typeof Bot}[] = [
   {id:'model',title:'问答与回顾',description:'模型服务、推理强度与自动回顾',icon:Bot},
@@ -16,7 +17,7 @@ function EffectiveField({field}:{field:ConfigurationField}) {
  const value=field.value;
  return <div className="effective-field" data-config-key={field.key}><div><strong>{field.label}</strong><small>{field.description}</small></div><div>{field.visibility==='secret-status'?<span className={`badge ${value?'green':'muted'}`}>{value?'已配置':'未配置'}</span>:<span>{value===null||value===''?'未设置':field.unit==='bytes'&&typeof value==='number'?bytes(value):Array.isArray(value)?value.join('、')||'未设置':typeof value==='boolean'?value?'已开启':'已关闭':String(value)}{typeof value==='number'&&field.unit&&field.unit!=='bytes'?` ${{days:'天',hours:'小时',seconds:'秒',ms:'毫秒',tokens:'tokens',files:'个',entries:'条'}[field.unit]||field.unit}`:''}</span>}<small>{origins[field.source]}</small></div></div>;
 }
-export function ServerSettings({api,onNavigate}:{api:Api;onNavigate:(page:SettingsDestination)=>void}) {
+export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNavigate:(page:SettingsDestination)=>void;onModelApplied:()=>void}) {
  const [config,setConfig]=useState<ServerConfiguration>(),[category,setCategory]=useState<ConfigCategory|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[revision,setRevision]=useState(0);
  useEffect(()=>{const controller=new AbortController();setBusy(true);setError('');void api.request<ServerConfiguration>('/api/configuration',{signal:controller.signal}).then(setConfig).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));}).finally(()=>{if(!controller.signal.aborted)setBusy(false);});return()=>controller.abort();},[api,revision]);
  const [sources,setSources]=useState<SourceConnection[]>([]),[sourcesError,setSourcesError]=useState('');
@@ -32,9 +33,9 @@ export function ServerSettings({api,onNavigate}:{api:Api;onNavigate:(page:Settin
    <div className="settings-category-label">管理与维护</div><div className="preference-menu">{([
     ['vault','数据与备份','空间详情、归档导入与导出',Database],['connections','连接授权','设备邀请与外部 Chatbot 凭据',Fingerprint],['about','关于 Mote','软件版本、更新与部署信息',FileText],['developer','开发者选项','诊断、日志与高级生效配置',Terminal],
    ] as const).map(([id,title,description,Icon])=><button key={id} className="preference-menu-row" onClick={()=>onNavigate(id)}><span className="preference-menu-icon neutral"><Icon size={21}/></span><span><strong>{title}</strong><small>{description}</small></span><ArrowRight size={17}/></button>)}<Feedback profile={config?.profile} runtime={config?.runtime}/></div>
-   <p className="settings-footnote"><ShieldCheck size={16}/>设置草稿只保留在当前页面内存。重启节点后，新的部署配置才会生效。</p>
+   <p className="settings-footnote"><ShieldCheck size={16}/>模型服务可直接保存并生效；其他偏好通过部署草稿修改并重启。未保存的输入只保留在当前页面内存。</p>
   </>}
-  {config&&categories.map(item=><div key={item.id} hidden={category!==item.id}><ConfigurationBuilder config={config} category={item.id} sources={sources} sourcesError={sourcesError}/><section className="panel effective-settings"><div className="section-heading"><div><h2>当前生效值</h2><p>来自运行中的中央节点；与上方尚未应用的草稿分开显示。</p></div><span className="badge muted">只读</span></div>{config.groups.find(g=>g.id===item.id)?.fields.map(field=><EffectiveField key={field.key} field={field}/>)}</section></div>)}
+  {config&&categories.map(item=><div key={item.id} hidden={category!==item.id}>{item.id==='model'&&<ModelSettingsEditor api={api} revision={revision} onApplied={()=>{setRevision(n=>n+1);onModelApplied();}}/>}<ConfigurationBuilder config={config} category={item.id} sources={sources} sourcesError={sourcesError}/><section className="panel effective-settings"><div className="section-heading"><div><h2>{item.id==='model'?'当前回顾计划':'当前生效值'}</h2><p>来自运行中的中央节点；与上方尚未应用的草稿分开显示。</p></div><span className="badge muted">只读</span></div>{config.groups.find(g=>g.id===item.id)?.fields.filter(field=>item.id!=='model'||field.key==='insightIntervalHours').map(field=><EffectiveField key={field.key} field={field}/>)}</section></div>)}
  </div>;
 }
 export function AdvancedConfiguration({api}:{api:Api}) {

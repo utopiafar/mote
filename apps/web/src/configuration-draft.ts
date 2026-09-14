@@ -13,9 +13,3 @@ export function environmentFragment(changes: DraftValues): string {
   });
   return '# Mote configuration changes — merge into the existing deployment .env file.\n# Restart that node to apply. Do not replace the entire existing file.\n' + rows.join('\n') + '\n';
 }
-export const providerPresets = [
-  {id:'custom', name:'自定义兼容服务', url:''},
-  {id:'deepseek', name:'DeepSeek', url:'https://api.deepseek.com'},
-  {id:'local', name:'本机 Ollama', url:'http://localhost:11434/v1'},
-] as const;
-export function matchingProvider(url: string) { return providerPresets.find(p => p.url && p.url.replace(/\/$/,'') === url.replace(/\/$/,''))?.id ?? 'custom'; }

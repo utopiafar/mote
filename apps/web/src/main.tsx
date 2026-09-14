@@ -1921,7 +1921,7 @@ function App() {
                       )}
                       {page === "sources" && <Sources api={api} onOpen={setEvidenceId} />}
                       {page === "memories" && <Memories api={api} range={range} onOpen={setEvidenceId} />}
-                      <div hidden={page!=="settings"}><ServerSettings key={connection.url || window.location.origin} api={api} onNavigate={onPage}/></div>
+                      <div hidden={page!=="settings"}><ServerSettings key={connection.url || window.location.origin} api={api} onNavigate={onPage} onModelApplied={refresh}/></div>
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={connection.url || window.location.origin} devices={devices}/></>}
                       {page === "developer" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}

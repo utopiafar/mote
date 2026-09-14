@@ -2,13 +2,13 @@
 
 中央界面的日常入口是总览、时间线、随手记、问一问与资料库；设备和来源单独管理。底部 **设置** 按「问答与回顾」「保留与容量」「检索索引」「来源与外部应用」分组，数据导入导出放在「数据与备份」，邀请和 Chatbot 凭据在「连接授权」，软件更新在「关于 Mote」。运行诊断和部署详情收在 **设置 → 开发者选项**。
 
-每类设置将 **配置草稿** 与 **当前生效值** 分开显示。模型地址可以选 DeepSeek 或本机 Ollama 预设，也可填写自定义兼容服务地址和模型名称；预设不会发送测试请求。保留周期、容量、推理强度、同步间隔提供常用选项，保留已有自定义值。外部应用的可写来源可从已注册来源中勾选，高级选项仍可编辑来源 ID。
+每类设置将 **配置草稿** 与 **当前生效值** 分开显示。**问答与回顾 → 模型服务** 提供厂商和本机服务预设、模型 ID、协议及只写 API key；点击“保存并应用”立即用于后续模型请求，重启后仍保留。预设本身不会发请求；手动“测试连接”只发送合成内容，可能产生模型费用。详见[模型服务配置](model-providers.md)。保留周期、容量和同步间隔仍提供配置草稿；外部应用的可写来源可从已注册来源中勾选。
 
-选择「检查配置草稿」后，可以下载 `mote-config-changes.env`。文件仅包含本次修改的非敏感环境变量，不包含已配置的令牌或密钥，也不会直接写入节点或热更新。将这些变量合并到原部署配置，保留令牌、密钥与目录等其余设置，再重启节点并刷新生效配置。**不要用变更片段覆盖整个配置文件，也不要用 shell 的 `source` 执行它。** 草稿仅在当前页面内存保留，刷新页面或断开连接后会丢弃。
+其他部署设置选择「检查配置草稿」后，可以下载 `mote-config-changes.env`。文件仅包含本次修改的非敏感环境变量，不包含已配置的令牌或密钥，也不会直接写入节点或热更新。将这些变量合并到原部署配置，保留令牌、密钥与目录等其余设置，再重启节点并刷新生效配置。**不要用变更片段覆盖整个配置文件，也不要用 shell 的 `source` 执行它。** 草稿仅在当前页面内存保留，刷新页面或断开连接后会丢弃。
 
-「当前生效值」通过认证 API 读取正在运行的进程配置，显示配置来源。文件修改但服务尚未重启时，页面仍显示旧值。完整数据库与图片目录、日志目录、Docker 卷来源及环境变量名可在「开发者选项 → 部署与全部生效配置」展开查看。API 密钥只显示配置状态，设置新密钥仍需在部署机器操作。
+「当前生效值」通过认证 API 读取正在运行的进程配置，显示配置来源。文件修改但服务尚未重启时，页面仍显示旧值。完整数据库与图片目录、日志目录、Docker 卷来源及环境变量名可在「开发者选项 → 部署与全部生效配置」展开查看。模型 API key 可在模型服务页填写新值，但不回显旧值；其他访问和加密凭据仍在各自配置入口管理。
 
-在部署机器上运行 `node scripts/mote.mjs config --profile prod --home /srv/mote/profiles`，可以离线查看所选环境的配置文件与存储映射。CLI 读取磁盘上的配置，与正在运行的服务可能暂时不同。访问令牌、图片加密密钥和模型 API key 只显示配置状态，获取节点访问令牌使用单独的 `token` 命令。
+在部署机器上运行 `node scripts/mote.mjs config --profile prod --home /srv/mote/profiles`，可以离线查看所选环境的配置文件与存储映射。CLI 读取部署环境文件，不合并 Web 保存的模型覆盖值，因此应以网页显示的当前生效模型为准。访问令牌、图片加密密钥和模型 API key 只显示配置状态，获取节点访问令牌使用单独的 `token` 命令。
 
 ## 配置在哪里、如何生效
 
@@ -21,7 +21,7 @@
 
 直接启动时，进程环境变量覆盖文件值。CLI 会清除继承的 `MOTE_*`、`COMPOSE_*`，只装入显式选定的环境；Docker 另强制使用容器监听与挂载路径。容器内 `/app/deploy/empty.env` 是启动占位文件，实际应编辑页面显示的宿主机 profile 配置文件。
 
-编辑后按顺序执行 `stop`、`start`，然后在设置中刷新生效配置。使用 launchd 等进程管理器时，由该管理器执行停止和重启，避免两个管理器竞争。CLI 默认 `dev`；日常节点必须明确 `--profile prod`。完整操作见 [部署指南](deployment.md)。
+编辑环境文件后按顺序执行 `stop`、`start`，然后在设置中刷新生效配置。模型页面保存的覆盖值仍然优先；要重新使用环境中的模型字段，选择“恢复部署配置”。页面保存模型配置不需要此重启流程。使用 launchd 等进程管理器时，由该管理器执行停止和重启，避免两个管理器竞争。CLI 默认 `dev`；日常节点必须明确 `--profile prod`。完整操作见 [部署指南](deployment.md)。
 
 配置文件不展开 shell 表达式：用绝对路径或相对路径，不要写 `~`、`$HOME` 或 `$(...)`。含空格或 `#` 的值用单引号或双引号包裹；不要通过 `source mote.env` 加载配置。新环境文件权限为 0600、目录为 0700。
 
@@ -34,7 +34,8 @@
 | 结构化运行日志 | `MOTE_LOG_DIR`；为空时为数据目录下 `logs/` | `/data/logs`，同一卷 |
 | 原生进程监督日志 | profile 的 `logs/central.log` 及轮转文件 | Docker logging driver，独立于 `/data/logs` |
 | CLI 离线备份 | 默认 `<profile>/backups/`；`backup --out` 可指定其它目录 | 备份仍写入宿主机选定位置，不在数据卷内 |
-| Mote 访问令牌、模型凭据、图片加密 key | 私有 `mote.env`；未设访问令牌的直接启动使用数据目录 `access-token` | 宿主机私有配置注入；备份不会复制凭据 |
+| Mote 访问令牌、部署模型凭据、图片加密 key | 私有 `mote.env`；未设访问令牌的直接启动使用数据目录 `access-token` | 宿主机私有配置注入；标准归档备份不复制凭据 |
+| Web 保存的模型配置与凭据 | `<MOTE_DATA_DIR>/model-settings.json`，0600，内容包含密钥 | `/data/model-settings.json`；不进入资料导出、安全支持包或标准 CLI 归档备份，私有文件副本须独立保护 |
 | Tunnel 凭据 | profile 的 `secrets/cloudflared-token` | 只挂载给 cloudflared，中央容器不读取此文件 |
 | 客户端截图队列、草稿、Qwen 权重 | 分别在 Mac / Android App 本地目录 | 不属于中央节点配置或中央备份 |
 
@@ -76,12 +77,16 @@
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `MOTE_MODEL` | 空 | 支持工具调用的模型 ID；未设时归档可用、AI 功能显示未配置 |
-| `MOTE_MODEL_BASE_URL` | `https://api.deepseek.com` | Chat Completions 兼容服务基址；不要携带账号密码、令牌 query 或 fragment |
+| `MOTE_MODEL_PROVIDER` | `deepseek` | 注册厂商／服务预设 ID；未列出的服务选择 `custom`，见[预设列表](model-providers.md#服务预设) |
+| `MOTE_MODEL_PROTOCOL` | 所选预设 | `deepseek` / `openai-completions` / `openai-responses` / `anthropic-messages` / `google-generative-ai` |
+| `MOTE_MODEL` | 空 | 支持工具调用的模型或部署 ID；未设时归档可用、AI 功能显示未配置 |
+| `MOTE_MODEL_BASE_URL` | 所选预设，默认 DeepSeek 地址 | 协议基址；远程 HTTPS、仅回环 HTTP；禁止 URL 账号密码、query 或 fragment |
 | `MOTE_MODEL_API_KEY` | 空 | 中央 Agent 的模型凭据；不下发到采集客户端 |
-| `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL` | `0` | 显式允许无密钥的本地模型服务，正常远程服务保持 0 |
-| `MOTE_MODEL_REASONING_EFFORT` | `high` | `off` / `low` / `high` / `max`；需模型提供方支持 |
-| `MOTE_MODEL_MAX_TOKENS` | `8192` | 256–32768 整数；单次模型输出预算，非总请求/账户预算 |
+| `MOTE_MODEL_HEADERS` | `{}` | 字符串请求头 JSON 对象，环境变量最多 16 KiB；私有保存、禁止受保护传输头 |
+| `MOTE_MODEL_EXTRA_BODY` | `{}` | 当前协议的高级参数 JSON 对象，环境变量最多 16 KiB；不能覆盖消息、工具、输出上限等运行字段 |
+| `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL` | 本机服务预设为 `1`，其他为 `0` | 显式允许无密钥的回环模型服务，正常远程服务保持 0 |
+| `MOTE_MODEL_REASONING_EFFORT` | 通用 `auto`，DeepSeek `high` | `auto` 由模型决定；`off` / `low` / `high` / `max` 需模型支持 |
+| `MOTE_MODEL_MAX_TOKENS` | `8192` | 1–128000 整数；单次模型输出预算，非总请求/账户预算，仍须符合所选模型限制 |
 | `MOTE_MODEL_TIMEOUT_MS` | `120000` | 5000–600000 毫秒整数；查询、洞察和记忆提取的 Agent 期限。Web 对这些操作额外等待 60000ms；普通上传和其他请求的期限不变，入口代理可能更早超时 |
 | `MOTE_INSIGHT_INTERVAL_HOURS` | `0` | 0–168 小时；0 关闭定时回顾，非零会调用已配置 Agent 并产生模型用量 |
 | `MOTE_EMBEDDING_MODEL` | 空 | 可选 embedding 模型；未配置时使用本地文本索引 |

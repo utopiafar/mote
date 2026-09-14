@@ -20,6 +20,7 @@
     "@mote/shared": "0.1.0",
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/dsh": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-llm-pi-ai": "0.1.5-rc.2",
     "@deepseek-ai/dsh-sdk-client": "0.1.5-rc.2",
     "@deepseek-ai/dsh-tools": "0.1.5-rc.2",
     "remark-parse": "11.0.0",

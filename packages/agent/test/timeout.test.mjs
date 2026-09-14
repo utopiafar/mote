@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {setTimeout as delay} from 'node:timers/promises';
 import {DeepSeekHarness,RequestTimeoutError} from '@deepseek-ai/dsh-sdk-client';
-import {createAgent,AgentTimeoutError,AgentResponseError} from '../dist/index.js';
+import {createAgent,AgentTimeoutError,AgentResponseError,AgentProviderError} from '../dist/index.js';
 
 const reader={search:async()=>[],timeline:async()=>[],evidence:async()=>[],activity:async()=>({captures:0}),devices:async()=>[]};
 const options={reader,model:'synthetic-model',apiKey:'synthetic-test-key',baseUrl:'http://127.0.0.1:9/v1'};
@@ -39,11 +39,11 @@ test('deadline remains primary when cleanup fails, and cleanup is still awaited'
   assert.equal(cleaned,true);
 });
 
-test('lookalike timeout messages and response validation stay their original failures during cleanup errors',async t=>{
+test('lookalike timeouts are sanitized as provider failures and validation remains primary during cleanup errors',async t=>{
   const primary=new AgentResponseError('Synthetic invalid final JSON'),fake=Object.assign(new Error('Request timed out '+marker),{name:'RequestTimeoutError'});
   let next=primary;t.mock.method(DeepSeekHarness.prototype,'run',async()=>{throw next;});
   t.mock.method(DeepSeekHarness.prototype,'close',async()=>{throw new Error('Synthetic cleanup failed');});
   const agent=createAgent(options);t.after(()=>agent.close());
   await assert.rejects(agent.query({question:'Synthetic invalid output'}),error=>error===primary&&error.statusCode===502);
-  next=fake;await assert.rejects(agent.query({question:'Synthetic lookalike text'}),error=>error===fake&&!(error instanceof AgentTimeoutError));
+  next=fake;await assert.rejects(agent.query({question:'Synthetic lookalike text'}),error=>error instanceof AgentProviderError&&!(error instanceof AgentTimeoutError)&&!String(error).includes(marker));
 });

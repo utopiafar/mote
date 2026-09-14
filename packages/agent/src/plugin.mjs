@@ -25,7 +25,7 @@ const contextFilters = {
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
  * The limit covers retries and repair turns in this isolated agent process. */
-export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 1024) {
+export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 1024, configuration) {
   let received = 0;
   let exceeded = false;
   const tooLarge = () => new Error("Model response exceeds the agent byte budget");
@@ -34,7 +34,50 @@ export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 
     // Bridge responses already have their own authenticated evidence byte budget.
     if (url.startsWith(bridge + "/")) return transport(input, init);
     if (exceeded) throw tooLarge();
-    const response = await transport(input, init);
+    // Redirects can forward personal evidence to a destination the owner never
+    // selected. SSE is the only enabled SDK transport, so this covers every turn.
+    let requestInit = {...init, redirect: 'manual'};
+    if (configuration) {
+      const destination = new URL(url), base = new URL(configuration.baseUrl);
+      const prefix = base.pathname.replace(/\/+$/, '');
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+      if (destination.origin !== base.origin || (destination.pathname !== prefix && !destination.pathname.startsWith(prefix + '/')) || method.toUpperCase() !== 'POST') throw new Error('Unexpected model transport destination');
+      const headers = new Headers(input instanceof Request ? input.headers : undefined);
+      for (const [key, value] of new Headers(init?.headers)) headers.set(key, value);
+      if (configuration.provider === 'azure-openai') {
+        headers.delete('authorization');
+        headers.set('api-key', process.env.MOTE_MODEL_API_KEY);
+      }
+      for (const [key, value] of Object.entries(configuration.headers ?? {})) headers.set(key, value);
+      const raw = init?.body ?? (input instanceof Request ? await input.clone().text() : undefined);
+      if (typeof raw !== 'string') throw new Error('Model request must contain a JSON body');
+      const body = JSON.parse(raw);
+      if (configuration.protocol === 'deepseek' && configuration.reasoningEffort === 'auto') {
+        // The legacy adapter cannot omit its own defaults. Remove only those
+        // defaults before applying the owner's explicitly supplied parameters.
+        delete body.thinking;
+        delete body.reasoning_effort;
+      }
+      // MiniMax's default inline <think> output would mix reasoning into the
+      // final JSON. This changes wire format only, not whether the model thinks.
+      if (configuration.provider === 'minimax' && configuration.protocol === 'openai-completions') body.reasoning_split = true;
+      const merge = (base, extra) => {
+        const result = {...base};
+        for (const [key, value] of Object.entries(extra)) result[key] = value && typeof value === 'object' && !Array.isArray(value) && result[key] && typeof result[key] === 'object' && !Array.isArray(result[key]) ? merge(result[key], value) : value;
+        return result;
+      };
+      const customized = merge(body, configuration.extraBody ?? {});
+      if (configuration.protocol === 'openai-responses') customized.store = false;
+      headers.delete('content-length');
+      requestInit = {...requestInit, headers, body: JSON.stringify(customized)};
+    }
+    const response = await transport(input, requestInit);
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel();
+      // A deterministic refusal avoids the SDK treating a redirect as a
+      // transient network exception and repeatedly resending the same evidence.
+      return new Response(JSON.stringify({error:{message:'Model redirects are not allowed'}}), {status:400, headers:{'Content-Type':'application/json'}});
+    }
     if (!response.body) return response;
     const reader = response.body.getReader();
     const body = new ReadableStream({
@@ -63,7 +106,8 @@ export async function apply(ctx) {
   const endpoint = process.env.MOTE_CONTEXT_BRIDGE;
   const token = process.env.MOTE_CONTEXT_BRIDGE_TOKEN;
   if (!endpoint || !token) throw new Error("Mote context bridge is missing");
-  globalThis.fetch = boundedModelFetch(globalThis.fetch, endpoint);
+  const configuration = process.env.MOTE_MODEL_TRANSPORT ? JSON.parse(process.env.MOTE_MODEL_TRANSPORT) : undefined;
+  globalThis.fetch = boundedModelFetch(globalThis.fetch, endpoint, undefined, configuration);
   async function call(tool, args, signal) {
     const response = await fetch(`${endpoint}/${tool}`, {
       method: "POST",

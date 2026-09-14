@@ -31,7 +31,7 @@ npm run build -w @mote/server -w @mote/web
 node scripts/mote.mjs init --profile prod --home "$HOME/Library/Application Support/MoteCentral/profiles"
 ```
 
-编辑该环境的 `mote.env`，设置模型服务等配置，然后启动：
+编辑该环境的 `mote.env` 设置部署参数，然后启动。模型服务也可以启动后在 Web“设置 → 问答与回顾”中保存并立即应用，见[模型服务配置](model-providers.md)：
 
 ```sh
 node scripts/mote.mjs start --profile prod --home "$HOME/Library/Application Support/MoteCentral/profiles"

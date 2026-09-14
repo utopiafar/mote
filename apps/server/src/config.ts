@@ -4,6 +4,8 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadEnvironment } from '@mote/shared/environment';
 import type { ConfigurationSource, ServerConfiguration } from '@mote/shared';
+import { MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, modelProvider } from '@mote/shared/models';
+import { validateModelOptions } from '@mote/agent';
 
 export interface ConfigurationContext {
   envFile: string | null;
@@ -50,21 +52,31 @@ export function configFromEnv() {
   const dataDir=resolve(baseDir,env.MOTE_DATA_DIR??'data');
   const logLevel=env.MOTE_LOG_LEVEL||'info';
   if(!['debug','info','warn','error','silent'].includes(logLevel))throw new ConfigError('MOTE_LOG_LEVEL','MOTE_LOG_LEVEL must be debug, info, warn, error or silent');
-  const modelReasoningEffort=env.MOTE_MODEL_REASONING_EFFORT||'high';
-  if(!['off','low','high','max'].includes(modelReasoningEffort))throw new ConfigError('MOTE_MODEL_REASONING_EFFORT','MOTE_MODEL_REASONING_EFFORT must be off, low, high or max');
+  const modelProviderId=text('MOTE_MODEL_PROVIDER','deepseek');
+  const preset=modelProvider(modelProviderId);
+  if(!preset)throw new ConfigError('MOTE_MODEL_PROVIDER','Choose a supported provider or custom');
+  const modelProtocol=choice('MOTE_MODEL_PROTOCOL',MODEL_PROTOCOLS,preset.protocol);
+  const modelReasoningEffort=choice('MOTE_MODEL_REASONING_EFFORT',MODEL_REASONING_EFFORTS,modelProtocol==='deepseek'?'high':'auto');
+  const jsonObject=(name:string):Record<string,unknown>=>{
+    const value=env[name];if(!value)return {};
+    try{if(Buffer.byteLength(value)>16384)throw new Error();const parsed:unknown=JSON.parse(value);if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new Error();return parsed as Record<string,unknown>;}
+    catch{throw new ConfigError(name,`${name} must be a JSON object up to 16 KiB`);}
+  };
+  const modelHeaders=jsonObject('MOTE_MODEL_HEADERS') as Record<string,string>,modelExtraBody=jsonObject('MOTE_MODEL_EXTRA_BODY');
   const config={
     host:env.MOTE_HOST||'127.0.0.1',port:number('MOTE_PORT',47832,1,65535,true),dataDir,
     profile,tokenFromEnvironment:Boolean(env.MOTE_TOKEN?.trim()),
     updateRepository:text('MOTE_UPDATE_REPOSITORY','utopiafar/mote'),updateChannel:choice('MOTE_UPDATE_CHANNEL',['stable','preview'] as const,'stable'),
     dataKey:text('MOTE_DATA_KEY')||undefined,
-    modelReasoningEffort:modelReasoningEffort as 'off'|'low'|'high'|'max',modelMaxTokens:number('MOTE_MODEL_MAX_TOKENS',8192,256,32768,true),
+    modelProvider:modelProviderId,modelProtocol,modelHeaders,modelExtraBody,
+    modelReasoningEffort,modelMaxTokens:number('MOTE_MODEL_MAX_TOKENS',8192,1,128000,true),
     modelTimeoutMs:number('MOTE_MODEL_TIMEOUT_MS',120000,5000,600000,true),
     maxStorageBytes:number('MOTE_MAX_STORAGE_MB',10240,1,1_000_000)*1024*1024,
     maxExportBytes:number('MOTE_MAX_EXPORT_MB',64,1,256)*1024*1024,
     retentionDays:number('MOTE_RETENTION_DAYS',0,0,36500),
     insightIntervalHours:number('MOTE_INSIGHT_INTERVAL_HOURS',0,0,168),
     allowedOrigins:(env.MOTE_ALLOWED_ORIGINS??'http://localhost:5173,http://127.0.0.1:5173').split(',').map(s=>s.trim()).filter(Boolean),
-    model:text('MOTE_MODEL'),modelBaseUrl:endpoint('MOTE_MODEL_BASE_URL',env.MOTE_MODEL_BASE_URL||'https://api.deepseek.com'),apiKey:text('MOTE_MODEL_API_KEY'),allowUnauthenticatedLocal:flag('MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL',false),
+    model:text('MOTE_MODEL'),modelBaseUrl:endpoint('MOTE_MODEL_BASE_URL',preset.baseUrl),apiKey:text('MOTE_MODEL_API_KEY'),allowUnauthenticatedLocal:flag('MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL',preset.allowUnauthenticatedLocal??false),
     embeddingModel:text('MOTE_EMBEDDING_MODEL'),embeddingBaseUrl:endpoint('MOTE_EMBEDDING_BASE_URL'),embeddingApiKey:text('MOTE_EMBEDDING_API_KEY'),
     connectors:{directory:join(dataDir,'connectors'),mcpEnabled:flag('MOTE_MCP_ENABLED',false),mcpReadToken:text('MOTE_MCP_READ_TOKEN'),mcpWriteEnabled:flag('MOTE_MCP_WRITE_ENABLED',false),mcpWriteToken:text('MOTE_MCP_WRITE_TOKEN'),mcpWriteSourceIds:text('MOTE_MCP_WRITE_SOURCE_IDS').split(',').map(s=>s.trim()).filter(Boolean),googleClientId:text('MOTE_GOOGLE_CLIENT_ID'),googleClientSecret:text('MOTE_GOOGLE_CLIENT_SECRET'),googleRedirectUri:endpoint('MOTE_GOOGLE_REDIRECT_URI'),syncIntervalMs:number('MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS',900,60,86400,true)*1000,allowLocalMcp:flag('MOTE_MCP_ALLOW_LOCAL',false)},
     diagnosticsEnabled:flag('MOTE_DIAGNOSTICS_ENABLED',true),diagnosticsDebug:flag('MOTE_DEBUG',false),
@@ -73,6 +85,8 @@ export function configFromEnv() {
     logMaxBytes:number('MOTE_LOG_MAX_MB',2,0.1,8)*1024*1024,
     logMaxFiles:number('MOTE_LOG_MAX_FILES',3,1,10,true),logMaxEntries:number('MOTE_LOG_MAX_ENTRIES',2000,100,5000,true),
   };
+  try{validateModelOptions({provider:config.modelProvider,protocol:config.modelProtocol,baseUrl:config.modelBaseUrl,model:config.model,reasoningEffort:config.modelReasoningEffort,maxTokens:config.modelMaxTokens,headers:modelHeaders,extraBody:modelExtraBody});}
+  catch{throw new ConfigError('MOTE_MODEL_PROTOCOL','Model protocol, endpoint or advanced parameters are invalid');}
   const c=config.connectors;
   if(!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/.test(config.updateRepository))throw new ConfigError('MOTE_UPDATE_REPOSITORY','Use a GitHub owner/repository identifier');
   if(c.mcpEnabled&&c.mcpReadToken.length<32)throw new ConfigError('MOTE_MCP_READ_TOKEN','Enabled MCP requires a distinct random token of at least 32 characters');
@@ -111,5 +125,5 @@ export function configFromEnv() {
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

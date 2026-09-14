@@ -3442,6 +3442,24 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .config-review code {overflow-wrap:anywhere;}
 .config-review details {margin-top:20px;}
 .config-review pre {white-space:pre-wrap;overflow-wrap:anywhere;margin-top:15px;font-size:12px;line-height:1.8;}
+.model-settings-fields {border:0;margin:0;padding:0;min-width:0;}
+.model-settings-fields:disabled {opacity:.7;}
+.model-provider-docs {display:inline-flex;align-items:center;gap:7px;font-size:12px;margin-top:16px;color:#547a48;}
+.model-credential-section {border-block:1px solid #e5ecdd;margin-block:25px;padding-block:23px;}
+.model-subheading {display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:20px;flex-wrap:wrap;}
+.model-subheading h3 {display:flex;align-items:center;gap:8px;font-size:14px;color:#45693f;margin:0;}
+.model-advanced-block {display:grid;gap:18px;margin-top:24px;}
+.model-settings-editor .preference-field textarea {width:100%;min-height:120px;padding:12px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:13px;line-height:1.7;resize:vertical;color:#345039;background:#fff;}
+.model-credential-reuse {display:flex;align-items:flex-start;gap:12px;padding:18px;background:#fff8e6;border:1px solid #efdfb4;border-radius:9px;}
+.model-credential-reuse input {flex-shrink:0;margin-top:3px;}
+.model-credential-reuse strong {font-size:13px;font-weight:500;color:#7c641d;}
+.model-credential-reuse small {display:block;margin-top:7px;font-size:12px;line-height:1.75;color:#806d3d;}
+.model-test-explanation {margin-top:22px;}
+.model-success {display:flex;align-items:flex-start;gap:9px;color:#3d6e3a;background:#edf5e7;border:1px solid #d4e4c8;}
+.model-success svg {flex-shrink:0;margin-top:2px;}
+.model-restore {border-top:1px solid #e5ecdd;padding-top:22px;margin-top:18px;}
+.model-restore .preference-note {margin:18px 0 0;}
+.model-restore .preference-note p {margin-bottom:15px;}
 .effective-field {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.65fr);gap:24px;padding:18px 0;border-top:1px solid #edf0e6;}
 .effective-field strong {font-size:13px;}
 .effective-field small {display:block;font-size:12px;color:#66756c;line-height:1.8;margin-top:7px;}

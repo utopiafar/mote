@@ -7,7 +7,10 @@ import { existsSync,readFileSync } from 'node:fs';
 import { join,dirname } from 'node:path';
 import { z } from 'zod';
 import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,type QueryResult,type CaptureRecord } from '@mote/shared';
-import { AgentNotConfiguredError } from '@mote/agent';
+import { AgentNotConfiguredError,type ContextReader } from '@mote/agent';
+import { modelProvider } from '@mote/shared/models';
+import { ModelSettingsStore,ModelSettingsError } from './model-settings.js';
+import { ReloadableAgent,modelSettingsFromConfig,applyModelSettings,createModelAgent,testModelConnection,type ModelAgentFactory } from './model-agent.js';
 import { Store,StoreError } from './store.js';
 import { Indexer } from './indexer.js';
 import { repositoryRoot,type Config } from './config.js';
@@ -27,7 +30,8 @@ const validRange=(v:QueryScope)=>!v.after||!v.before||Date.parse(v.after)<Date.p
 const querySchema=z.object({question:z.string().trim().min(1).max(8000),...scopeFields}).strict().refine(validRange,{message:'Invalid time range'});
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent;connections?:Connections}) {
+export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory}) {
+  config={...config};
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
   const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
@@ -37,24 +41,31 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const credential=(req:FastifyRequest)=>identities.get(req);
   const sourceOwner=(req:FastifyRequest,id:string)=>{const c=credential(req);if(c)connections.assertOwnSource(c,id);};
-  let agent:QueryAgent;
-  if(dependencies?.agent)agent=dependencies.agent;
-  else {
-    const {createAgent}=await import('@mote/agent');
-    const context=(records:CaptureRecord[])=>records.map(record=>({...record,sourceType:record.source,...(record.provenance?{revisionState:sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id?'current':'historical'}:{})}));
-    agent=await createAgent({reader:{
+  const context=(records:CaptureRecord[])=>records.map(record=>({...record,sourceType:record.source,...(record.provenance?{revisionState:sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id?'current':'historical'}:{})}));
+  const reader:ContextReader={
       sourceHistory:async args=>{const record=store.evidence([args.id])[0];if(!record?.provenance)return [];return context(store.evidence(sources.history(record.provenance.sourceId,record.provenance.externalId).filter(i=>(!args.after||Date.parse(i.calendar?.end??i.observedAt)>=Date.parse(args.after))&&(!args.before||Date.parse(i.calendar?.start??i.observedAt)<Date.parse(args.before))).map(i=>i.captureId)).filter(r=>!args.deviceId||r.deviceId===args.deviceId));},
       sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
       sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:context(store.evidence(page.items.map(i=>i.captureId)))};},
       memories:async args=>{if(!args.id)return {items:memories.list({...args,level:'overview'})};const items=memories.list({...args,level:'detail',limit:100}).filter(m=>m.id===args.id);return {items,evidence:context(store.evidence(items.flatMap(m=>'evidenceIds' in m?m.evidenceIds:[])))};},
-      search:async args=>diagnostics.measure('source','search',async()=>context(await indexer.search(args)),rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>context(store.evidence(args.ids)),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))},baseUrl:config.modelBaseUrl,apiKey:config.apiKey,model:config.model,allowUnauthenticatedLocal:config.allowUnauthenticatedLocal,reasoningEffort:config.modelReasoningEffort,maxTokens:config.modelMaxTokens,timeoutMs:config.modelTimeoutMs});
-  }
+      search:async args=>diagnostics.measure('source','search',async()=>context(await indexer.search(args)),rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>context(store.evidence(args.ids)),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
+  const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
+  const factory=dependencies?.createModelAgent??createModelAgent;
+  let initialAgent=dependencies?.agent;
+  const modelSettings=new ModelSettingsStore({
+    directory:config.dataDir,environment:modelSettingsFromConfig(config),
+    prepare:async settings=>{
+      const candidate=initialAgent??await factory(settings,reader);initialAgent=undefined;
+      return agent.prepare(candidate,()=>applyModelSettings(config,settings));
+    },
+    probe:settings=>testModelConnection(settings,factory),
+  });
+  try{await modelSettings.initialize();}catch(error){await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   const app=Fastify({logger:false,genReqId:()=>randomUUID(),requestIdHeader:false,bodyLimit:12*1024*1024,requestTimeout:180000,frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:'请求格式无效。',requestId});}});
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
-    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query',insights:'insights',index:'index',export:'export',import:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
+    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query',insights:'insights',index:'index',export:'export',import:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
   };
   app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);done();}));
   app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
@@ -76,6 +87,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     const failure=safeError(error);
     diagnostics.record('request.failed',{requestId:req.id,route:routeName(req.routeOptions.url),category:failure.category,statusCode:failure.status},failure.status>=500?'error':'warn');
     if(error instanceof ConnectionError)return reply.code(error.statusCode).send({error:error.code,message:error.publicMessage,requestId:req.id});
+    if(error instanceof ModelSettingsError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});
     reply.code(failure.status).send({error:failure.category,message:failure.message,requestId:req.id});
   });
   const connectors=await registerConnectors(app,{sources,store,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
@@ -95,8 +107,12 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   registerUpdateRoutes(app,softwareUpdate);
   registerCaptureBrowser(app,{store,connections,credential});
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
-  app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192,timeoutMs:config.modelTimeoutMs??120000},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
-  app.get('/api/configuration',async()=>serverConfiguration(config));
+  app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:modelProvider(config.modelProvider??'deepseek')?.name??config.modelProvider,runtime:'DeepSeek Harness',protocol:config.modelProtocol,model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192,timeoutMs:config.modelTimeoutMs??120000},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
+  app.get('/api/configuration',async()=>serverConfiguration(config,{modelSource:modelSettings.view().source}));
+  app.get('/api/model-settings',async()=>modelSettings.view());
+  app.put('/api/model-settings',{bodyLimit:65536,config:connectionRate},async req=>modelSettings.update(req.body));
+  app.delete('/api/model-settings',{bodyLimit:8192,config:connectionRate},async req=>modelSettings.reset(req.body));
+  app.post('/api/model-settings/test',{bodyLimit:65536,config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async req=>modelSettings.test(req.body));
   app.get('/api/sources',async req=>{const c=credential(req);if(c)connections.assertActive(c);return {items:sources.listSources().filter(s=>!c||s.deviceId===c.deviceId)};});
   app.post('/api/sources',async req=>{const c=credential(req);if(c){connections.assertOwnDevice(c,req.body);const id=(req.body as {id?:unknown}).id;if(typeof id==='string'&&sources.listSources().some(s=>s.id===id))connections.assertOwnSource(c,id);}return sources.register(req.body);});
   app.patch('/api/sources/:id',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.update(id,z.object({name:z.string().min(1).max(200).optional(),enabled:z.boolean().optional(),retention:z.enum(['snapshot','reference','archive']).optional()}).strict().parse(req.body));});
@@ -147,7 +163,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
-  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const scope=insightSchema.parse(req.body??{});return memories.extract(await queryAgent({...scope,question:MEMORY_EXTRACTION_PROMPT}),config.model);});
+  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const scope=insightSchema.parse(req.body??{}),model=config.model;return memories.extract(await queryAgent({...scope,question:MEMORY_EXTRACTION_PROMPT}),model);});
   app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>{
     if(!agent.configured)throw new AgentNotConfiguredError();
     return queryAgent(querySchema.parse(req.body));
@@ -192,9 +208,10 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   diagnostics.record('server.started');
   app.addHook('onClose',async()=>{
     closing=true;clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);
+    await modelSettings.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
     await Promise.allSettled([...activeQueries]);await backgroundInsight;await connectors.close();await softwareUpdate.close();await connections.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,store,sources,memories,indexer,agent,diagnostics,connections};
+  return {app,store,sources,memories,indexer,agent,diagnostics,connections,modelSettings};
 }

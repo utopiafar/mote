@@ -1,5 +1,6 @@
 import { join, resolve } from 'node:path';
 import type { ConfigurationField, ConfigurationValue, ServerConfiguration } from '@mote/shared';
+import { modelProvider } from '@mote/shared/models';
 import { repositoryRoot, type Config } from './config.js';
 
 /** Strip credential-bearing URL components even for programmatic Config callers that bypass env validation. */
@@ -14,7 +15,7 @@ export function configurationUrl(value: string | null | undefined): string | nul
 }
 
 /** Explicit owner-only projection. Never spread Config or read mutable env files while serving requests. */
-export function serverConfiguration(config: Config): ServerConfiguration {
+export function serverConfiguration(config: Config, options: { modelSource?: 'environment' | 'saved' } = {}): ServerConfiguration {
   const context = config.configuration;
   const runtime = context?.runtime ?? 'unknown';
   const dataDir = resolve(config.dataDir), logDir = resolve(config.logDirectory ?? join(dataDir, 'logs'));
@@ -22,6 +23,7 @@ export function serverConfiguration(config: Config): ServerConfiguration {
   const field = (key: string, label: string, value: ConfigurationValue, description: string, envVar?: string, extra: Partial<Pick<ConfigurationField, 'unit' | 'visibility' | 'restartRequired' | 'source'>> = {}): ConfigurationField => ({
     key, label, value, description, ...(envVar ? { envVar } : {}),
     source: envVar && context ? context.sources[envVar] ?? 'default' : 'derived', restartRequired: Boolean(envVar), ...extra,
+    ...((envVar === 'MOTE_MODEL' || envVar?.startsWith('MOTE_MODEL_')) ? { restartRequired: false, ...(options.modelSource === 'saved' ? { source: 'derived' as const } : {}) } : {}),
   });
   const ownerPath = { visibility: 'owner-path' as const };
   const secret = { visibility: 'secret-status' as const };
@@ -40,7 +42,7 @@ export function serverConfiguration(config: Config): ServerConfiguration {
   return {
     version: 1, profile: config.profile ?? 'legacy', runtime, envFile: context?.hostConfigFile ?? context?.envFile ?? null, baseDir,
     readOnly: true, restartRequired: true,
-    description: '此页展示中央进程启动时读取的生效配置，只向已认证的节点所有者提供。修改所选配置文件或部署设置后重启中央节点；本接口不能写入文件。路径不会加入安全支持包。',
+    description: '此接口只读展示中央的生效配置，只向已认证的节点所有者提供。模型可在模型设置中保存并立即生效；其余部署设置修改后需重启中央。路径不会加入安全支持包。',
     storage,
     groups: [
       { id: 'updates', title: '软件更新', description: '从固定发布身份验证新版本。检查只读取公开发布元数据；安装由部署机上的更新命令执行，保留配置、数据和连接授权。', fields: [
@@ -66,12 +68,17 @@ export function serverConfiguration(config: Config): ServerConfiguration {
         field('maxExportBytes', 'HTTP 归档大小上限', config.maxExportBytes, '应用于 HTTP 导出/导入；最多 20,000 条记录，较大仓库使用离线备份。导出含可读原文与图片。', 'MOTE_MAX_EXPORT_MB', { unit: 'bytes' }),
         field('dataKeyConfigured', '图片加密密钥已配置', Boolean(config.dataKey), '只显示是否设置。AES-256-GCM 仅加密图片对象；SQLite 原文仍需磁盘加密。已有仓库不能直接更换密钥。', 'MOTE_DATA_KEY', secret),
       ] },
-      { id: 'model', title: '问答与洞察模型', description: '模型选择只读检索工具并解释证据；这里不展示 API key，也不执行模型探测或发送资料。', fields: [
+      { id: 'model', title: '问答与洞察模型', description: `${options.modelSource === 'saved' ? '使用已保存的模型设置。' : '使用部署环境中的模型设置。'}模型设置保存后立即生效，现有问答继续使用原配置。此投影不展示 API key 或高级参数原文。`, fields: [
+        field('modelProvider', '模型服务商', modelProvider(config.modelProvider ?? 'deepseek')?.name ?? config.modelProvider ?? 'DeepSeek', '提供商预设只设置协议与地址；模型 ID 和账户权限由服务商确定。', 'MOTE_MODEL_PROVIDER'),
+        field('modelProtocol', '模型接口协议', config.modelProtocol ?? 'deepseek', '按选择的协议发送请求，支持原生与兼容接口。', 'MOTE_MODEL_PROTOCOL'),
+        field('modelSettingsSource', '模型配置来源', options.modelSource ?? 'environment', 'saved 为页面保存的设置，environment 为部署环境；恢复部署配置会立即切换。'),
         field('agentConfigured', 'Agent 已具备配置', Boolean(config.model.trim() && (hasAgentKey || localWithoutKey)), '仅判断模型名称和认证配置是否齐全，不代表提供商可达或当前请求成功。'),
         field('model', '模型名称', config.model || null, '使用模型服务支持的准确标识，留空禁用 Agent。', 'MOTE_MODEL'),
-        field('modelBaseUrl', '模型服务地址', configurationUrl(config.modelBaseUrl), 'OpenAI/DeepSeek 兼容 base URL；显示时移除 URL 凭据、查询与片段，认证应使用独立 API key。', 'MOTE_MODEL_BASE_URL'),
+        field('modelBaseUrl', '模型服务地址', configurationUrl(config.modelBaseUrl), '所选协议的服务基址；显示时移除 URL 凭据、查询与片段，认证使用独立 API key 或请求头。', 'MOTE_MODEL_BASE_URL'),
         field('modelApiKeyConfigured', '模型 API key 已配置', hasAgentKey, '凭据只用于中央到模型服务的请求，不返回给浏览器。', 'MOTE_MODEL_API_KEY', secret),
-        field('modelReasoningEffort', '模型推理强度', config.modelReasoningEffort ?? 'high', '当前支持 off、low、high、max；具体行为取决于所选提供商和模型。', 'MOTE_MODEL_REASONING_EFFORT'),
+        field('modelHeadersConfigured', '自定义请求头已配置', Boolean(Object.keys(config.modelHeaders ?? {}).length), '请求头可能含凭据，仅显示配置状态。', 'MOTE_MODEL_HEADERS', secret),
+        field('modelExtraBodyConfigured', '高级请求参数已配置', Boolean(Object.keys(config.modelExtraBody ?? {}).length), '请求参数可能含凭据，仅显示配置状态。', 'MOTE_MODEL_EXTRA_BODY', secret),
+        field('modelReasoningEffort', '模型推理强度', config.modelReasoningEffort ?? 'high', 'auto 使用服务商默认行为；也可选择 off、low、high、max。实际可用的推理参数取决于模型。', 'MOTE_MODEL_REASONING_EFFORT'),
         field('modelMaxTokens', '单轮模型输出上限', config.modelMaxTokens ?? 8192, '模型生成输出的 token 上限，不是资料库容量或检索条数。', 'MOTE_MODEL_MAX_TOKENS', { unit: 'tokens' }),
         field('modelTimeoutMs', 'Agent 运行期限', config.modelTimeoutMs ?? 120000, '查询、洞察与记忆提取共用，5000–600000 毫秒整数。超时返回 504；入口代理可能有更短的等待限制。普通上传期限保持不变。', 'MOTE_MODEL_TIMEOUT_MS', { unit: 'ms' }),
         field('allowUnauthenticatedLocal', '允许本机免密模型', config.allowUnauthenticatedLocal, '只对 localhost、127.0.0.1 或 ::1 的模型地址生效；容器 loopback 指容器本身。', 'MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL'),

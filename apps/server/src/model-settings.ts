@@ -1,0 +1,301 @@
+import { constants } from 'node:fs';
+import * as fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { z } from 'zod';
+import { validateModelOptions } from '@mote/agent';
+import {
+  MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, modelProvider,
+  type ModelSettings, type ModelSettingsInput, type ModelSettingsView, type ModelTestResult,
+} from '@mote/shared/models';
+
+const line = (max: number, min = 0) => z.string().min(min).max(max).refine(value => !/[\u0000-\u001f\u007f]/.test(value));
+const parameters = {
+  provider: line(128, 1).refine(value => modelProvider(value) !== undefined),
+  protocol: z.enum(MODEL_PROTOCOLS),
+  baseUrl: line(4096),
+  model: line(512),
+  reasoningEffort: z.enum(MODEL_REASONING_EFFORTS),
+  maxTokens: z.number().int().min(1).max(128_000),
+  timeoutMs: z.number().int().min(5000).max(600_000),
+  allowUnauthenticatedLocal: z.boolean(),
+};
+const apiKey = line(8192);
+const headers = z.record(z.string().max(8192));
+const extraBody = z.record(z.unknown());
+const settingsSchema = z.object({ ...parameters, apiKey, headers, extraBody }).strict();
+const inputSchema = z.object({
+  ...parameters, apiKey: apiKey.nullable().optional(),
+  headers: headers.nullable().optional(), extraBody: extraBody.nullable().optional(),
+}).strict();
+const revisionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const updateSchema = z.object({
+  revision: revisionSchema, settings: inputSchema, allowCredentialReuse: z.boolean().optional(),
+}).strict();
+const resetSchema = z.object({ revision: revisionSchema }).strict();
+const savedSchema = z.object({ version: z.literal(1), revision: revisionSchema, settings: settingsSchema.nullable() }).strict();
+type SavedState = z.infer<typeof savedSchema>;
+type FileSystem = Pick<typeof fs, 'open' | 'mkdir' | 'rename' | 'unlink'>;
+const MAX_FILE_BYTES = 512 * 1024;
+
+const errors = {
+  model_settings_invalid: [400, '模型配置无效，请检查填写的参数。'],
+  model_settings_conflict: [409, '模型设置已发生变化，请刷新后重试。'],
+  model_settings_credential_reuse: [409, '服务商、协议或地址已改变，请确认复用已有凭据，或替换、清除已有凭据。'],
+  model_settings_unavailable: [503, '模型设置暂不可用，请检查服务状态后重试。'],
+  model_settings_prepare_failed: [503, '无法准备新的模型配置，原配置保持使用。'],
+  model_settings_save_failed: [503, '模型设置未能保存，原配置保持使用。'],
+  model_settings_commit_uncertain: [503, '模型设置保存结果需要重新确认，请刷新设置后重试。'],
+} as const;
+export class ModelSettingsError extends Error {
+  readonly statusCode: 400 | 409 | 503;
+  constructor(readonly code: keyof typeof errors) {
+    super(errors[code][1]); this.name = 'ModelSettingsError'; this.statusCode = errors[code][0];
+  }
+}
+
+export interface PreparedModelSettings {
+  /** A synchronous, non-throwing swap. Existing requests retain their old runtime. */
+  activate(): void;
+  /** Dispose only an unactivated candidate; active runtime retirement belongs to the caller. */
+  dispose(): Promise<void>;
+}
+export interface ModelSettingsStoreOptions {
+  directory: string;
+  environment: ModelSettings;
+  prepare(settings: ModelSettings): Promise<PreparedModelSettings>;
+  probe(settings: ModelSettings): Promise<ModelTestResult>;
+  /** Filesystem operations can be fault-injected without model or network access. */
+  fileSystem?: Partial<FileSystem>;
+}
+
+function validSettings(value: unknown): ModelSettings {
+  try {
+    const parsed = settingsSchema.parse(value);
+    // Validate the original advanced objects as well: parsing must not hide protected keys.
+    validateModelOptions(value as ModelSettings);
+    validateModelOptions(parsed);
+    if (!parsed.baseUrl.trim() && parsed.model.trim()) throw new Error('Configured models need an endpoint');
+    return structuredClone(parsed);
+  } catch { throw new ModelSettingsError('model_settings_invalid'); }
+}
+const same = (a: SavedState | null, b: SavedState | null) => JSON.stringify(a) === JSON.stringify(b);
+const testMessages: Record<ModelTestResult['code'], string> = {
+  ok: '模型连接及工具调用测试通过。',
+  not_configured: '请先填写模型和所需凭据。',
+  timeout: '模型测试超时，请检查服务后重试。',
+  provider_error: '模型服务未能完成测试，请检查地址、凭据及模型配置。',
+  invalid_response: '模型返回格式或工具调用能力未通过测试。',
+};
+
+/** Owner-only configuration transactions. HTTP authentication belongs to the app. */
+export class ModelSettingsStore {
+  private readonly environment: ModelSettings;
+  private readonly io: FileSystem;
+  private readonly path: string;
+  private tail: Promise<void> = Promise.resolve();
+  private state?: SavedState;
+  private diskState: SavedState | null = null;
+  private closing = false;
+  private closed = false;
+  private unavailable = false;
+
+  constructor(private readonly options: ModelSettingsStoreOptions) {
+    this.environment = validSettings(options.environment);
+    this.io = { open: fs.open, mkdir: fs.mkdir, rename: fs.rename, unlink: fs.unlink, ...options.fileSystem };
+    this.path = join(options.directory, 'model-settings.json');
+  }
+
+  private serialize<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.closing) return Promise.reject(new ModelSettingsError('model_settings_unavailable'));
+    const result = this.tail.then(operation);
+    this.tail = result.then(() => {}, () => {});
+    return result;
+  }
+
+  private requireState(): SavedState {
+    if (!this.state || this.unavailable || this.closed) throw new ModelSettingsError('model_settings_unavailable');
+    return this.state;
+  }
+
+  /** Missing files mean environment configuration; malformed/unreadable files never silently fall back. */
+  private async readSaved(): Promise<SavedState | null> {
+    let handle: Awaited<ReturnType<typeof fs.open>>;
+    try { handle = await this.io.open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('Invalid settings file');
+      const value: unknown = JSON.parse(await handle.readFile('utf8'));
+      const state = savedSchema.parse(value);
+      if (state.settings) state.settings = validSettings((value as SavedState).settings);
+      return state;
+    } finally { await handle.close(); }
+  }
+
+  initialize(): Promise<ModelSettingsView> {
+    return this.serialize(async () => {
+      if (this.state) return this.view();
+      let state: SavedState | null;
+      try {
+        await this.io.mkdir(this.options.directory, { recursive: true, mode: 0o700 });
+        state = await this.readSaved();
+      } catch { throw new ModelSettingsError('model_settings_unavailable'); }
+      const candidate = await this.prepare(state?.settings ?? this.environment);
+      this.state = state ?? { version: 1, revision: 0, settings: null };
+      this.diskState = state;
+      this.activate(candidate);
+      return this.view();
+    });
+  }
+
+  view(): ModelSettingsView {
+    const state = this.requireState(), settings = state.settings ?? this.environment;
+    return {
+      version: 1, revision: state.revision, source: state.settings ? 'saved' : 'environment',
+      settings: {
+        provider: settings.provider, protocol: settings.protocol, baseUrl: settings.baseUrl, model: settings.model,
+        reasoningEffort: settings.reasoningEffort, maxTokens: settings.maxTokens, timeoutMs: settings.timeoutMs,
+        allowUnauthenticatedLocal: settings.allowUnauthenticatedLocal,
+        apiKeyConfigured: Boolean(settings.apiKey), headersConfigured: Object.keys(settings.headers).length > 0,
+        extraBodyConfigured: Object.keys(settings.extraBody).length > 0,
+      },
+    };
+  }
+
+  /** Internal use only. HTTP routes must return view(), never current(). */
+  current(): ModelSettings { return structuredClone(this.requireState().settings ?? this.environment); }
+
+  private expectedRevision(revision: number): void {
+    if (revision !== this.requireState().revision) throw new ModelSettingsError('model_settings_conflict');
+  }
+
+  private draft(body: unknown): ModelSettings {
+    let update: z.infer<typeof updateSchema>;
+    try {
+      update = updateSchema.parse(body);
+      const original = (body as {settings: ModelSettingsInput}).settings;
+      validateModelOptions({ ...update.settings, headers: original.headers ?? undefined, extraBody: original.extraBody ?? undefined });
+      if (!update.settings.baseUrl.trim() && update.settings.model.trim()) throw new Error('Configured models need an endpoint');
+    } catch { throw new ModelSettingsError('model_settings_invalid'); }
+    this.expectedRevision(update.revision);
+    const current = this.current(), input = update.settings;
+    const changed = input.provider !== current.provider || input.protocol !== current.protocol || input.baseUrl !== current.baseUrl;
+    const retained = (input.apiKey === undefined && Boolean(current.apiKey))
+      || (input.headers === undefined && Object.keys(current.headers).length > 0)
+      || (input.extraBody === undefined && Object.keys(current.extraBody).length > 0);
+    if (changed && retained && update.allowCredentialReuse !== true) throw new ModelSettingsError('model_settings_credential_reuse');
+    return validSettings({
+      ...input,
+      apiKey: input.apiKey === undefined ? current.apiKey : input.apiKey ?? '',
+      headers: input.headers === undefined ? current.headers : input.headers ?? {},
+      extraBody: input.extraBody === undefined ? current.extraBody : input.extraBody ?? {},
+    });
+  }
+
+  private async prepare(settings: ModelSettings): Promise<PreparedModelSettings> {
+    try { return await this.options.prepare(structuredClone(settings)); }
+    catch { throw new ModelSettingsError('model_settings_prepare_failed'); }
+  }
+
+  private activate(candidate: PreparedModelSettings): void {
+    try { candidate.activate(); }
+    catch {
+      // A throwing swap may already have activated. Never dispose a possibly active runtime.
+      this.unavailable = true;
+      throw new ModelSettingsError('model_settings_unavailable');
+    }
+  }
+
+  /** True means the new file is authoritative, but the write's durability acknowledgement failed. */
+  private async persist(next: SavedState): Promise<boolean> {
+    const temporary = join(this.options.directory, `.model-settings-${randomUUID()}.tmp`);
+    let renameAttempted = false;
+    try {
+      const handle = await this.io.open(temporary, 'wx', 0o600);
+      try {
+        const serialized = JSON.stringify(next) + '\n';
+        if (Buffer.byteLength(serialized) > MAX_FILE_BYTES) throw new Error('Settings file too large');
+        await handle.writeFile(serialized, 'utf8');
+        await handle.sync();
+      } finally { await handle.close(); }
+      renameAttempted = true;
+      await this.io.rename(temporary, this.path);
+      const directory = await this.io.open(this.options.directory, 'r');
+      try { await directory.sync(); } finally { await directory.close(); }
+      return false;
+    } catch {
+      if (renameAttempted) {
+        let observed: SavedState | null;
+        try { observed = await this.readSaved(); }
+        catch {
+          this.unavailable = true;
+          throw new ModelSettingsError('model_settings_commit_uncertain');
+        }
+        if (same(observed, next)) return true;
+        if (!same(observed, this.diskState)) {
+          this.unavailable = true;
+          throw new ModelSettingsError('model_settings_commit_uncertain');
+        }
+      }
+      throw new ModelSettingsError('model_settings_save_failed');
+    } finally {
+      await this.io.unlink(temporary).catch(() => {});
+    }
+  }
+
+  private async commit(settings: ModelSettings | null): Promise<ModelSettingsView> {
+    const state = this.requireState();
+    if (state.revision === Number.MAX_SAFE_INTEGER) throw new ModelSettingsError('model_settings_unavailable');
+    const next: SavedState = { version: 1, revision: state.revision + 1, settings };
+    const candidate = await this.prepare(settings ?? this.environment);
+    let activated = false;
+    try {
+      const uncertain = await this.persist(next);
+      this.state = next;
+      this.diskState = next;
+      activated = true;
+      this.activate(candidate);
+      if (uncertain) throw new ModelSettingsError('model_settings_commit_uncertain');
+      return this.view();
+    } finally {
+      if (!activated) await candidate.dispose().catch(() => {});
+    }
+  }
+
+  update(body: unknown): Promise<ModelSettingsView> {
+    return this.serialize(() => this.commit(this.draft(body)));
+  }
+
+  reset(body: unknown): Promise<ModelSettingsView> {
+    return this.serialize(() => {
+      const parsed = resetSchema.safeParse(body);
+      if (!parsed.success) throw new ModelSettingsError('model_settings_invalid');
+      this.expectedRevision(parsed.data.revision);
+      return this.commit(null);
+    });
+  }
+
+  test(body: unknown): Promise<ModelTestResult> {
+    return this.serialize(async () => {
+      const settings = this.draft(body), started = Date.now();
+      try {
+        const result = await this.options.probe(settings);
+        if (!result || !Object.hasOwn(testMessages, result.code) || typeof result.ok !== 'boolean'
+          || result.ok !== (result.code === 'ok') || !Number.isFinite(result.durationMs) || result.durationMs < 0) {
+          return { ok: false, code: 'invalid_response', message: testMessages.invalid_response, durationMs: Date.now() - started };
+        }
+        // Provider/callback messages can contain URLs, keys or raw error text. Return fixed messages only.
+        return { ok: result.ok, code: result.code, message: testMessages[result.code], durationMs: Math.round(result.durationMs) };
+      } catch {
+        return { ok: false, code: 'provider_error', message: testMessages.provider_error, durationMs: Date.now() - started };
+      }
+    });
+  }
+
+  /** Drains configuration work. The app owns active and retired runtime lifetimes. */
+  async close(): Promise<void> { this.closing = true; await this.tail; this.closed = true; }
+}

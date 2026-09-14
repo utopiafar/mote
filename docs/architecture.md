@@ -44,7 +44,7 @@ Mac 中央窗口使用按节点来源隔离的持久会话，保留该节点的�
 
 程序不识别自然语言意图、不硬编码待办/效率/主题分类，也不根据 App 名称推断人的动机。Agent 可以调用全文检索这个普通数据工具，自己决定表达式、时间窗口、是否改写查询；可选 embedding 提供语义候选。用户时间范围在工具桥中收紧，证据引用必须属于当前运行真实读到的记录。
 
-DeepSeek Harness 采用精确版本 SDK，sdk-minimal 中禁用 shell/文件相关组件，只挂载 Mote 插件；启动时校验工具表恰好为五项只读能力。每轮使用独立临时 workspace/home，退出清理会话文件。随机令牌的 loopback 桥把模型工具调用转发到受控 ContextReader。详见 [Agent](agent.md)。
+DeepSeek Harness 采用精确版本 SDK；DeepSeek 官方协议保留专用适配，其他模型协议通过 pi-ai 接入，配置入口见[模型服务配置](model-providers.md)。sdk-minimal 中禁用 shell/文件相关组件，只挂载 Mote 插件；启动时校验工具表只包含 Mote 注册的只读能力。每轮使用独立临时 workspace/home，退出清理会话文件。随机令牌的 loopback 桥把模型工具调用转发到受控 ContextReader。详见 [Agent](agent.md)。
 
 截图文字是外部输入，即使出现“忽略系统指令”等文本也只作为证据。模型没有写入、删除、执行命令、对外发消息或任意 HTTP 工具。无法保证模型永不被误导，但工具能力边界限制其可产生的副作用，最终引用也被验证。
 
