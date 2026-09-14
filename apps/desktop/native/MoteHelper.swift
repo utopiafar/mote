@@ -16,6 +16,22 @@ struct MoteHelper {
 static func main() {
 do {
     switch CommandLine.arguments.dropFirst().first ?? "" {
+    case "installed-apps":
+        // Explicit settings picker only. Return app identities, never windows or screen content.
+        let manager = FileManager.default
+        let roots = [URL(fileURLWithPath: "/Applications"), URL(fileURLWithPath: "/System/Applications"), manager.homeDirectoryForCurrentUser.appendingPathComponent("Applications")]
+        var applications: [String: String] = [:]
+        let deadline = Date().addingTimeInterval(3)
+        for root in roots {
+            guard let entries = manager.enumerator(at: root, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { continue }
+            for case let url as URL in entries {
+                if Date() > deadline || applications.count >= 2048 { break }
+                guard url.pathExtension == "app", let bundle = Bundle(url: url), let id = bundle.bundleIdentifier, !id.isEmpty, id.count <= 256 else { continue }
+                let name = (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? url.deletingPathExtension().lastPathComponent
+                applications[id] = String(name.prefix(512))
+            }
+        }
+        try output(["applications": applications.map { ["appId": $0.key, "appName": $0.value] }])
     case "calendar-permission", "calendar-list", "calendar-scan":
         let command = CommandLine.arguments[1]
         let store = EKEventStore()

@@ -10,6 +10,7 @@ export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export function defaultConfig(): Config {
   return {
     serverUrl: 'http://127.0.0.1:47832', deviceId: randomUUID(), deviceName: hostname(),
+    syncMode: 'realtime', syncIntervalMinutes: 15, syncBatchSize: 20,
     intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000,
     excludedAppIds: [], defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300, ocrEnabled: true,
     privacyModelUrl: '', openAtLogin: false,
@@ -57,7 +58,7 @@ export function validateLocalModelUrl(value: unknown): string {
   return url.toString();
 }
 
-export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents = 0): Config {
+export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents = 0, confirmedUnboundBacklog = false): Config {
   if (!input || typeof input !== 'object') throw new Error('配置格式不正确');
   if (typeof input.deviceName !== 'string' || !input.deviceName.trim() || input.deviceName.length > 128) throw new Error('设备名需为 1–128 字符');
   if (!Array.isArray(input.excludedAppIds) || input.excludedAppIds.length > 500 || input.excludedAppIds.some(id => typeof id !== 'string' || id.length > 256 || !id.trim())) throw new Error('排除列表必须填写有效应用 ID');
@@ -75,8 +76,11 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   }
   if (input.nsfwSource === 'custom' && !input.nsfwCustomUrl) throw new Error('选择自定义来源后，请填写模型目录 URL');
   if (input.token !== undefined && (typeof input.token !== 'string' || input.token.length > 4096 || /[\r\n]/.test(input.token))) throw new Error('令牌格式不正确');
+  const syncMode = input.syncMode ?? current.syncMode ?? 'realtime';
+  if (!['realtime', 'interval', 'batch', 'manual'].includes(syncMode)) throw new Error('同步方式无效');
   const config: Config = {
-    serverUrl: validateServerUrl(input.serverUrl), deviceId: current.deviceId, deviceName: input.deviceName.trim(),
+    serverUrl: input.serverUrl === '' ? '' : validateServerUrl(input.serverUrl),
+    syncMode, syncIntervalMinutes: integer(input.syncIntervalMinutes ?? current.syncIntervalMinutes ?? 15, 15, 1440, '同步间隔（分钟）'), syncBatchSize: integer(input.syncBatchSize ?? current.syncBatchSize ?? 20, 1, 500, '批量同步条数'), deviceId: current.deviceId, deviceName: input.deviceName.trim(),
     intervalMs: integer(input.intervalMs, 5000, 300000, '采样间隔（毫秒）'),
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, '本地队列容量'),
     maxQueueEvents: integer(input.maxQueueEvents, 1, 1000000, '本地队列事件数'),
@@ -95,12 +99,13 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     token: input.token === undefined ? current.token : input.token.trim(),
   };
   if (config.serverUrl === current.serverUrl && config.token === current.token && ['owner', 'collector'].includes(current.credentialScope || '')) config.credentialScope = current.credentialScope;
-  if ((config.serverUrl !== current.serverUrl || config.token !== current.token) && queuedEvents > 0) throw new Error('还有待上传记录，不能切换节点或令牌；请先完成上传或备份处理旧队列');
+  if ((config.serverUrl !== current.serverUrl || config.token !== current.token) && queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error('还有待上传记录，不能切换节点或令牌；请先完成上传或备份处理旧队列');
   if (config.serverUrl !== current.serverUrl) {
-    if (queuedEvents > 0) throw new Error('还有待上传记录，不能切换中央节点；请先完成上传，或导出并移走旧队列后重启');
-    if (typeof input.token !== 'string' || !input.token.trim()) throw new Error('切换中央节点必须明确输入新节点令牌，不能复用已有令牌');
+    if (queuedEvents > 0 && !confirmedUnboundBacklog) throw new Error('还有待上传记录，不能切换中央节点；请先完成上传，或导出并移走旧队列后重启');
+    if (config.serverUrl && (typeof input.token !== 'string' || !input.token.trim())) throw new Error('切换中央节点必须明确输入新节点令牌，不能复用已有令牌');
   }
-  if (!isLoopback(new URL(config.serverUrl).hostname) && (config.token?.length ?? 0) < 32) throw new Error('远程部署至少需要 32 字符访问令牌');
+  if (!config.serverUrl) config.token = undefined;
+  if (config.serverUrl && !isLoopback(new URL(config.serverUrl).hostname) && (config.token?.length ?? 0) < 32) throw new Error('远程部署至少需要 32 字符访问令牌');
   return config;
 }
 

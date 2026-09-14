@@ -1,0 +1,219 @@
+package dev.mote.collector
+
+import android.content.Context
+import android.os.Build
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.work.WorkManager
+import androidx.work.WorkInfo
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.io.Closeable
+import java.io.File
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.time.Instant
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+
+/** Own loopback HTTP fixture and generated records only. No screen capture or model is started. */
+@RunWith(AndroidJUnit4::class)
+class OfflineSyncInstrumentedTest {
+    private val token = "generated-android-local-sync-token-1234567890"
+    private fun fixture(test: (Context, Settings) -> Unit) {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
+        val settings = Settings(context)
+        require(!settings.enabled && context.queue().depth() == 0 && QuickNotes.draft(context).read().text.isEmpty() && context.localSources().sources().isEmpty())
+        val prefs = context.getSharedPreferences("mote", 0); val original = prefs.all.toMap()
+        fun cancel() { listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic").forEach {
+            WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
+        } }
+        try {
+            cancel(); settings.save(settings.read().copy(server = "", token = "", deviceName = "Generated Android fixture", syncMode = "manual"))
+            test(context, settings)
+        } finally {
+            cancel(); waitUntil { !ConnectionGuard.changing() && ConnectionGuard.processing.get() == 0 }
+            while (context.queue().depth() > 0) context.queue().acknowledge(context.queue().peek()!!.getString("id"))
+            context.localSources().sources().forEach { context.localSources().remove(it.id) }
+            QuickNotes.draft(context).clear()
+            val edit = prefs.edit().clear()
+            original.forEach { (key, value) -> when (value) { is String -> edit.putString(key, value); is Boolean -> edit.putBoolean(key, value); is Int -> edit.putInt(key, value); is Long -> edit.putLong(key, value); is Float -> edit.putFloat(key, value) } }; edit.commit()
+        }
+    }
+    @Test fun localNoteWithoutNodeIsEncryptedAndDoesNotScheduleUploads() = fixture { context, settings ->
+        settings.read().validate(); assertFalse(settings.read().hasSyncConnection())
+        val text = "Generated local-only note 👩🏽‍💻"
+        val id = QuickNotes.save(context, text, "")
+        assertEquals(1, context.queue().depth()); assertEquals(text, context.queue().peek()!!.getString("ocrText"))
+        assertEquals("", settings.dataOrigin()); assertEquals("unconfigured", settings.syncState())
+        assertFalse(String(File(context.noBackupFilesDir, "queue/$id.event").readBytes()).contains(text))
+        assertTrue(QuickNotes.draft(context).read().text.isEmpty())
+    }
+    @Test fun generatedActivityCaptureIsLocalWithoutEndpointOrModel() = fixture { context, settings ->
+        val config = settings.read().copy(metadataEnabled = false, appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
+        settings.save(config); settings.enabled = true
+        val pipeline = CapturePipeline(context)
+        try {
+            val windows = WindowSnapshot(setOf("dev.mote.generated"), "dev.mote.generated", true)
+            assertTrue(pipeline.canCollect(config, windows, AppCollectionMode.ACTIVITY))
+            pipeline.submitActivity(windows, config)
+            waitUntil { context.queue().depth() == 1 && !pipeline.isBusy() }
+            val record = context.queue().peek()!!
+            assertEquals("activity", record.getString("source")); assertFalse(record.has("imageBase64")); assertFalse(record.has("ocrText"))
+            assertEquals("unconfigured", settings.syncState())
+        } finally { settings.enabled = false; pipeline.close() }
+    }
+    @Test fun firstBindingRequiresConfirmationAndDisconnectCannotRedirectBoundRecords() = fixture { context, settings ->
+        QuickNotes.save(context, "Generated unbound queue", "")
+        val local = settings.read(); val origin = "https://first.generated.invalid"
+        QuickNotes.draft(context).update("Generated prepared note", "")
+        val prepared = QuickNotes.draft(context).prepare("") { draft -> JSONObject().put("id", UUID.randomUUID().toString()).put("source", "note")
+            .put("ocrText", draft.text).put("capturedAt", Instant.now().toString()).put("privacy", JSONObject().put("excluded", false)) }.prepared!!
+        val before = context.queue().peek()!!.toString()
+        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, origin) { error("No implicit binding") } }.category)
+        ConnectionGuard.change(context, origin, bindLocal = true) { settings.save(local.copy(server = origin, token = token)) }
+        assertEquals(origin, settings.dataOrigin()); assertEquals(before, context.queue().peek()!!.toString())
+        assertEquals(prepared.getString("id"), QuickNotes.save(context, "Generated prepared note", ""))
+        ConnectionGuard.change(context, "") { settings.save(settings.read().copy(server = "", token = "")) }
+        assertEquals(origin, settings.dataOrigin())
+        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://other.generated.invalid", bindLocal = true) { error("Never redirect") } }.category)
+        ConnectionGuard.change(context, origin) { settings.save(settings.read().copy(server = origin, token = token + "-renewed")) }
+        assertEquals(2, context.queue().depth())
+    }
+    @Test fun unboundSourceRevisionsParticipateInTheSameOriginAndBatchProtection() = fixture { context, settings ->
+        val source = LocalSource(name = "Generated offline source", kind = "local-files", uri = "content://generated/source")
+        val store = context.localSources(); store.save(source)
+        store.scan(source, SourceScan(listOf(JSONObject().put("externalId", "generated.txt").put("title", "Generated").put("text", "Generated source body")
+            .put("kind", "file").put("layer", "snapshot").put("observedAt", Instant.now().toString())), true, Instant.now().toString()))
+        assertEquals(1, SyncSchedule.pending(context).count); assertEquals(1, SyncSchedule.pending(context).pendingUpdates); assertNotNull(SyncSchedule.pending(context).oldestAt)
+        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://first.generated.invalid") { } }.category)
+        ConnectionGuard.change(context, "https://first.generated.invalid", true) { settings.save(settings.read().copy(server = "https://first.generated.invalid", token = token)) }
+        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://other.generated.invalid", true) { } }.category)
+        assertEquals(1, store.pendingSync().count)
+    }
+    @Test fun manualDoesNotSendHeartbeatOrNotesUntilExplicitSync() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
+            settings.save(config)
+            QuickNotes.save(context, "Generated manual note", "")
+            UploadWorker.heartbeat(context, config); SourceWork.upload(context); UploadWorker.schedule(context, config)
+            Thread.sleep(750)
+            assertEquals(0, archive.requests.get()); assertEquals(1, context.queue().depth())
+            UploadWorker.schedule(context, config, true)
+            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 1 && settings.syncState() == "idle" }
+            waitUntil { archive.lastSync?.optString("state") == "idle" }
+            assertEquals(0, archive.lastSync!!.getInt("pendingRecords"))
+            assertTrue(archive.heartbeats.get() > 0); assertNotNull(settings.lastUploadAt())
+        }
+    }
+    @Test fun batchFlushesAtThresholdAndOldestAgeWithoutStrandingSmallQueues() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "batch", syncBatchSize = 2)
+            settings.save(config)
+            QuickNotes.save(context, "Generated batch one", "")
+            Thread.sleep(500); assertEquals(0, archive.requests.get())
+            QuickNotes.save(context, "Generated batch two", "")
+            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 2 && settings.syncState() == "idle" }
+            val id = QuickNotes.save(context, "Generated overdue single", "")
+            assertTrue(File(context.noBackupFilesDir, "queue/$id.event").setLastModified(System.currentTimeMillis() - 16 * 60_000))
+            UploadWorker.schedule(context, config)
+            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 3 && settings.syncState() == "idle" }
+        }
+    }
+    @Test fun intervalHoldsNewRecordsUntilDueAndThenFlushes() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "interval", syncIntervalMinutes = 15)
+            settings.save(config); settings.syncDispatched(System.currentTimeMillis())
+            QuickNotes.save(context, "Generated timed note", "")
+            Thread.sleep(500); assertEquals(0, archive.requests.get())
+            settings.syncDispatched(System.currentTimeMillis() - 16 * 60_000)
+            UploadWorker.schedule(context, config)
+            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 1 && settings.syncState() == "idle" }
+        }
+    }
+    @Test fun manualWrongAckAndDisconnectKeepRecordWithoutAutomaticRetry() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
+            settings.save(config); val id = QuickNotes.save(context, "Generated manual failure", "")
+            for (fault in listOf("wrongNoteAck", "dropNote")) {
+                archive.fault = fault; val attempts = archive.notes.get(); UploadWorker.schedule(context, config, true)
+                waitUntil { archive.notes.get() > attempts && WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().any { it.state == WorkInfo.State.FAILED } }
+                assertEquals(id, context.queue().peek()!!.getString("id")); assertEquals("error", settings.syncState())
+                val requests = archive.requests.get()
+                UploadWorker.schedule(context, config); SourceWork.upload(context); Thread.sleep(500)
+                assertEquals(requests, archive.requests.get())
+                assertTrue(WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().all { it.state.isFinished })
+            }
+            archive.fault = ""; UploadWorker.schedule(context, config, true)
+            waitUntil { context.queue().depth() == 0 && archive.lastSync?.optString("state") == "idle" }
+        }
+    }
+    @Test fun manualSourceAckFailureDoesNotScheduleRetry() = fixture { context, settings ->
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        automation.grantRuntimePermission(context.packageName, android.Manifest.permission.READ_CALENDAR)
+        try { LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
+            settings.save(config)
+            val source = LocalSource(name = "Generated source ACK failure", kind = "local-calendar", calendarId = 77)
+            val store = context.localSources(); store.save(source)
+            store.scan(source, SourceScan(listOf(JSONObject().put("externalId", "generated:77").put("title", "Generated").put("text", "Generated calendar fixture")
+                .put("kind", "calendar").put("layer", "snapshot").put("observedAt", Instant.now().toString())), true, Instant.now().toString()))
+            archive.fault = "wrongSourceAck"; SourceWork.enqueueUpload(context, config, true)
+            waitUntil { WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-source-upload").get().any { it.state == WorkInfo.State.FAILED } }
+            assertEquals(1, store.pendingSync().count); val requests = archive.requests.get()
+            SourceWork.upload(context); Thread.sleep(500); assertEquals(requests, archive.requests.get())
+            assertTrue(WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-source-upload").get().all { it.state.isFinished })
+            archive.fault = ""; SourceWork.enqueueUpload(context, config, true)
+            waitUntil { store.pendingSync().count == 0 && archive.lastSync?.optString("state") == "idle" }
+            assertEquals(0, archive.lastSync!!.getInt("pendingRecords"))
+        } } finally { /* Fixture-only calendar permission is discarded with the read-only emulator. No provider is queried. */ }
+    }
+    @Test fun exactTwentyFiveRecordChunkReportsIdleBeforeFinalHeartbeat() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
+            settings.save(config)
+            repeat(25) { QuickNotes.save(context, "Generated chunk $it", "") }
+            UploadWorker.schedule(context, config, true)
+            waitUntil { archive.notes.get() == 25 && context.queue().depth() == 0 && archive.lastSync?.optString("state") == "idle" }
+            assertEquals(0, archive.lastSync!!.getInt("pendingRecords"))
+        }
+    }
+    private fun waitUntil(check: () -> Boolean) { val deadline = System.currentTimeMillis() + 30_000; while (!check()) { require(System.currentTimeMillis() < deadline) { "Generated sync fixture timeout" }; Thread.sleep(50) } }
+    private class LoopbackArchive : Closeable {
+        private val socket = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))
+        val url = "http://127.0.0.1:${socket.localPort}"
+        val requests = AtomicInteger(); val notes = AtomicInteger(); val heartbeats = AtomicInteger()
+        @Volatile var fault = ""
+        @Volatile var lastSync: JSONObject? = null
+        @Volatile private var running = true
+        private val thread = Thread {
+            while (running) try { socket.accept().use { client ->
+                client.soTimeout = 5_000
+                val input = client.getInputStream()
+                fun line(): String { val value = StringBuilder(); while (true) { val byte = input.read(); if (byte < 0 || byte == 10) break; if (byte != 13) value.append(byte.toChar()) }; return value.toString() }
+                val route = line().split(' ').getOrNull(1); var length = 0
+                while (true) { val header = line(); if (header.isEmpty()) break; if (header.startsWith("Content-Length:", true)) length = header.substringAfter(':').trim().toInt() }
+                require(length in 0..1_000_000); val data = ByteArray(length); var read = 0
+                while (read < length) { val count = input.read(data, read, length - read); require(count > 0); read += count }
+                val body = JSONObject(String(data, Charsets.UTF_8)); requests.incrementAndGet()
+                val result = when (route) {
+                    "/api/devices/heartbeat" -> { heartbeats.incrementAndGet(); require(body.has("sync")); lastSync = body.getJSONObject("sync"); JSONObject().put("ok", true) }
+                    "/api/captures" -> { notes.incrementAndGet(); if (fault == "dropNote") return@use; JSONObject().put("id", if (fault == "wrongNoteAck") "wrong-id" else body.getString("id")) }
+                    "/api/sources" -> JSONObject().put("id", body.getString("id")).put("enabled", true)
+                    else -> if (route?.endsWith("/items") == true) JSONObject().put("id", UUID.randomUUID().toString()).put("duplicate", false)
+                        .put("sourceId", route.split('/')[3]).put("externalId", body.getString("externalId"))
+                        .put("revision", if (fault == "wrongSourceAck") "wrong-revision" else body.getString("revision"))
+                    else if (route?.startsWith("/api/sources/") == true) JSONObject().put("id", route.substringAfterLast('/'))
+                    else error("Unexpected fixture route")
+                }.toString().toByteArray(Charsets.UTF_8)
+                client.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${result.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                client.getOutputStream().write(result); client.getOutputStream().flush()
+            } } catch (error: Exception) { if (running) throw error }
+        }.apply { isDaemon = true; start() }
+        override fun close() { running = false; socket.close(); thread.join(2_000) }
+    }
+}

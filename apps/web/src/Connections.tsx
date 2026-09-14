@@ -16,6 +16,7 @@ function downloadFile(name:string, content:Blob) {
 }
 
 export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;devices:Device[]}) {
+  const [method,setMethod]=useState<'device'|'chatbot'>('device');
   const [endpoint,setEndpoint]=useState(serverUrl);
   const [label,setLabel]=useState('我的新设备');
   const [deviceId,setDeviceId]=useState('');
@@ -96,7 +97,7 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     ...devices.map(device=>[device.deviceId,device] as const),
   ]).values()];
   return <section className="panel connections" aria-labelledby="connections-title">
-    <div className="section-heading"><div><span className="eyebrow">CONNECT ONCE</span><h2 id="connections-title"><Link2 size={19}/>添加设备与 Chatbot</h2><p>扫码或导入一次性邀请，把手机和电脑连接到中央节点。</p></div><span className="badge muted">{activeCount} 个有效连接</span></div>
+    <div className="section-heading"><div><span className="eyebrow">CONNECT ONCE</span><h2 id="connections-title"><Link2 size={19}/>连接授权</h2><p>扫码或导入一次性邀请，把手机和电脑连接到中央节点。</p></div><span className="badge muted">{activeCount} 个有效连接</span></div>
     <div className="connection-steps"><span><b>1</b>填写设备可访问的地址</span><span><b>2</b>生成邀请或 MCP 配置</span><span><b>3</b>在客户端确认并连接</span></div>
     {error&&<div className="notice error" role="alert">{error}</div>}
     {message&&<div className="notice" role="status"><Check size={16}/>{message}</div>}
@@ -105,23 +106,23 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
       <label>连接名称<input aria-label="连接名称" value={label} disabled={!!busy} onChange={event=>setLabel(event.target.value)} placeholder="我的 K90 Pro Max / 工作电脑 / Chatbot" maxLength={120}/><small>用于在下面的列表中识别和撤销连接。</small></label>
     </div>
     {loopback&&<p className="connection-warning">当前是本机地址，手机扫码后会指向手机自己。跨设备连接请先填入可访问的 HTTPS 域名；本机地址可用于同一台电脑或明确配置了端口转发的开发环境。</p>}
-    <div className="connection-methods">
-      <div className="connection-method"><h3><QrCode size={18}/>手机、Mac 与其他采集端</h3>
+    <nav className="segmented-nav connection-mode" aria-label="连接类型"><button className={method==='device'?'active':''} onClick={()=>setMethod('device')}>连接设备</button><button className={method==='chatbot'?'active':''} onClick={()=>setMethod('chatbot')}>连接 Chatbot</button></nav><div className="connection-methods">
+      <div className="connection-method" hidden={method!=='device'}><h3><QrCode size={18}/>手机、Mac 与其他采集端</h3>
         <p>每份邀请仅能使用一次，10 分钟后失效。连接后得到独立采集凭据，不包含中央管理令牌。</p>
         <label>设备身份<select aria-label="邀请设备身份" value={deviceId} disabled={!!busy} onChange={event=>setDeviceId(event.target.value)}><option value="">首次连接的新设备</option>{knownDevices.map(device=><option key={device.deviceId} value={device.deviceId}>{device.deviceName} · {device.deviceId}</option>)}</select></label>
         <small>从旧版手填令牌迁移或重新配对，请选择原设备以保留身份。成功配对后会替换该设备之前的采集凭据。</small>
         <button className="button primary" disabled={!!busy||!label.trim()} onClick={createInvitation}><QrCode size={16}/>{busy==='invite'?'正在生成…':invite?'重新生成邀请':'生成连接邀请'}</button>
       </div>
-      <div className="connection-method"><h3><ShieldCheck size={18}/>连接其他 Chatbot · MCP</h3>
+      <div className="connection-method" hidden={method!=='chatbot'}><h3><ShieldCheck size={18}/>连接其他 Chatbot · MCP</h3>
         <p>生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。</p>
         <label>访问权限<select aria-label="MCP 访问权限" value={mcpAccess} disabled={!!busy||!inventory?.mcp.enabled} onChange={event=>setMcpAccess(event.target.value as 'read'|'write')}><option value="read">只读归档资料</option><option value="write" disabled={!inventory?.mcp.writeEnabled}>仅写入指定来源</option></select></label>
-        {inventory&&!inventory.mcp.enabled?<small>尚未启用 MCP。请在服务端配置 MOTE_MCP_ENABLED 和独立 MOTE_MCP_READ_TOKEN 后重启；写入还需明确启用并设置允许的信源。</small>:<small>{mcpAccess==='write'?`仅可写入：${inventory?.mcp.writeSourceIds.join('、')||'未配置'}。`:'只读权限能检索归档中的个人资料，请只交给你信任的应用。'} 只接受 OAuth 的客户端暂不能直接使用此 JSON。</small>}
+        {inventory&&!inventory.mcp.enabled?<small>尚未启用 MCP。请在设置 → 来源与外部应用中开启 MCP，并配置独立读令牌后重启；写入还需明确启用并设置允许的信源。</small>:<small>{mcpAccess==='write'?`仅可写入：${inventory?.mcp.writeSourceIds.join('、')||'未配置'}。`:'只读权限能检索归档中的个人资料，请只交给你信任的应用。'} 只接受 OAuth 的客户端暂不能直接使用此 JSON。</small>}
         <button className="button" disabled={!!busy||!label.trim()||!inventory?.mcp.enabled||!!mcp} onClick={createMcp}><Link2 size={16}/>{busy==='mcp'?'正在生成…':'生成 MCP JSON'}</button>
       </div>
     </div>
     {invite&&!expired&&<div className="connection-invitation" aria-label="连接邀请">
       <div className="connection-qr">{qr?<img src={qr} width={288} height={288} alt="使用 Mote 客户端扫描此一次性连接二维码"/>:<p>正在生成二维码…</p>}</div>
-      <div className="connection-invitation-details"><span className="badge green">有效期剩余 {Math.max(0,Math.ceil((Date.parse(invite.invitation.expiresAt)-now)/1000))} 秒</span><h3>在客户端打开「连接中央节点」</h3><p>Android 可以直接扫码；Mac 可以导入二维码图片。两端均支持粘贴邀请或导入 JSON 文件，确认节点地址后连接。</p><code>{invite.invitation.serverUrl}</code><p className="fine-print">有效期内，持有邀请的人可以领取该连接。请勿公开分享；关闭此页面不会取消邀请，需使用下面的取消按钮。</p>
+      <div className="connection-invitation-details"><span className="badge green">有效期剩余 {Math.max(0,Math.ceil((Date.parse(invite.invitation.expiresAt)-now)/1000))} 秒</span><h3>在客户端打开「设置 → 连接」</h3><p>Android 可以直接扫码；Mac 可以导入二维码图片。两端均支持粘贴邀请或导入 JSON 文件，确认节点地址后连接。</p><code>{invite.invitation.serverUrl}</code><p className="fine-print">有效期内，持有邀请的人可以领取该连接。请勿公开分享；关闭此页面不会取消邀请，需使用下面的取消按钮。</p>
         <div className="connection-actions"><button className="button" onClick={()=>void copy(JSON.stringify(invite.invitation,null,2))}><Copy size={15}/>复制邀请 JSON</button><button className="button" onClick={()=>downloadFile('mote-connection.json',new Blob([JSON.stringify(invite.invitation,null,2)],{type:'application/json'}))}><Download size={15}/>下载 JSON</button>{qr&&<a className="button" href={qr} download="mote-connection.png"><Download size={15}/>保存二维码</a>}<button className="button subtle" disabled={!!busy} onClick={cancelInvitation}><X size={15}/>取消邀请</button></div>
         <details><summary>手动复制邀请内容</summary><textarea readOnly aria-label="连接邀请 JSON" value={JSON.stringify(invite.invitation,null,2)} spellCheck={false}/></details>
       </div>

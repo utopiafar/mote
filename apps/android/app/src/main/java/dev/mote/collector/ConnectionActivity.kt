@@ -22,8 +22,7 @@ class ConnectionActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val settings = Settings(this); val config = settings.read()
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(36, 64, 36, 64) }
-        setContentView(ScrollView(this).apply { addView(root); moteInsets() })
+        val root = moteDetailPage()
         fun text(value: String, size: Float = 15f) = TextView(this).apply { text = value; textSize = size; setPadding(0, 16, 0, 16) }.also(root::addView)
         fun button(label: String, action: () -> Unit) = Button(this).apply { text = label; setOnClickListener { if (!working) runCatching(action).onFailure { showFailure(it) } } }.also(root::addView)
         text("连接中央节点", 26f)
@@ -40,11 +39,11 @@ class ConnectionActivity : Activity() {
         preview = text("还没有解析邀请。外部链接只填入此页，不会自动连接。")
         button("确认连接此节点") {
             val invite = parseInput()
-            AlertDialog.Builder(this).setTitle("确认连接节点").setMessage("${invite.serverUrl}\n\n将使用已有设备 ID 和当前采集设置。只获取这台设备的采集凭据；设置、队列和模型不会清空。同节点重新配对将使用新凭据继续同步本机待上传截图、笔记和来源。切换到不同节点前须停止采集并同步现有队列。")
+            AlertDialog.Builder(this).setTitle("确认连接节点").setMessage("${invite.serverUrl}\n\n将使用已有设备 ID 和当前采集设置。只获取这台设备的采集凭据；设置、队列和模型不会清空。同节点重新配对将使用新凭据继续同步本机待上传截图、笔记和来源。首次连接将把尚未绑定的本机截图、笔记与来源记录绑定到上方节点，并按已选择的同步方式发送。请确认这是你自己的档案地址。已经绑定其他节点的待同步记录不能改投此处。")
                 .setNegativeButton("取消", null).setPositiveButton("连接") { _, _ ->
                     val chosenName = name.text.toString().trim(); val debugHttp = allowHttp.isChecked
                     run("正在兑换邀请并校验设备身份…") {
-                        ConnectionClient(this).connect(invite, chosenName, debugHttp)
+                        ConnectionClient(this).connect(invite, chosenName, debugHttp, bindLocal = true)
                         runOnUiThread { input.text.clear(); parsed = null; preview.text = "连接成功：${invite.serverUrl}" }
                         "连接成功，采集权限与开始采集仍由你控制。"
                     }
@@ -52,15 +51,16 @@ class ConnectionActivity : Activity() {
         }
         button("恢复中断的连接确认") {
             val client = ConnectionClient(this); val server = client.pendingServer() ?: throw ConnectionFailure("no_pending")
-            AlertDialog.Builder(this).setTitle("恢复已兑换连接").setMessage("$server\n\n使用上次已兑换并加密保存的本设备凭据，不再使用一次性码；将重新联网校验。")
+            AlertDialog.Builder(this).setTitle("恢复已兑换连接").setMessage("$server\n\n使用上次已兑换并加密保存的本设备凭据，不再使用一次性码；将重新联网校验。若存在尚未绑定的本机记录，确认后会绑定到上方节点，并按同步设置发送。")
                 .setNegativeButton("取消", null).setPositiveButton("恢复") { _, _ ->
                     val chosenName = name.text.toString().trim(); val debug = allowHttp.isChecked
-                    run("正在重新校验设备连接…") { client.resume(chosenName, debug); "中断的连接已恢复。" }
+                    run("正在重新校验设备连接…") { client.resume(chosenName, debug, bindLocal = true); "中断的连接已恢复。" }
                 }.show()
         }
         button("测试已保存的连接") { run("正在测试节点和设备凭据…") { val scope = ConnectionClient(this).test(); "连接正常 · ${if (scope == "collector") "本设备采集权限" else "手工配置的管理员权限"}" } }
         status = text("${message(ConnectionClient(this).status())}\n状态记录时间：${ConnectionClient(this).statusAt().takeIf { it > 0 }?.let { Instant.ofEpochMilli(it) } ?: "未测试"}")
         text("一次性码已被兑换但网络校验中断时，原配置保持不变；可重试同一邀请，或点击“恢复中断的连接确认”使用本机加密保存的兑换结果；若一次性码已消耗但未收到响应，请重新生成绑定设备的邀请。连接失败信息不会包含令牌或邀请内容。")
+        MoteUi.styleTree(root)
         intent.dataString?.let { raw -> if (raw.length <= ConnectionInvitation.MAX_BYTES * 2) input.setText(raw) else status.text = message("invitation") }
     }
     private fun parseInput(): ConnectionInvitation {
@@ -106,6 +106,7 @@ class ConnectionActivity : Activity() {
             "invitation" -> "邀请格式或节点不安全。请使用中央生成的 JSON/二维码；公网节点须为 HTTPS。"
             "expired", "invite_rejected" -> "邀请已失效、已使用或不匹配，请重新生成。"
             "device_conflict" -> "中央已有此设备 ID。请用上方设备 ID 生成绑定邀请，再试一次；不会更换设备身份。"
+            "local_confirmation" -> "本机有尚未绑定节点的资料，请确认档案地址后再连接。"
             "pending" -> "仍有截图/笔记/来源待同步或已准备提交的草稿，不能切换节点。请先同步原节点。"
             "busy" -> "采集或同步正在进行，请先停止并等待当前任务完成，再连接。"
             "authentication" -> "节点拒绝当前凭据，请生成绑定本设备的邀请。"

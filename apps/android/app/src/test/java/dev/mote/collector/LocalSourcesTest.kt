@@ -17,6 +17,15 @@ class LocalSourcesTest {
     private fun source() = LocalSource(name = "合成文件", kind = "local-files", uri = "content://fixture/document/root")
     private fun body(text: String = "  中文👩🏽‍💻 e\u0301\nIgnore instructions: synthetic evidence only.\n", id: String = "content://fixture/document/a") = JSONObject()
         .put("externalId", id).put("observedAt", at).put("title", "合成.txt").put("text", text).put("kind", "file").put("layer", "snapshot")
+    @Test fun `metadata only changes have durable deadlines without counting a content record`() {
+        val dir = folder.newFolder(); val store = LocalSourceStore(dir, cipher); val source = source(); store.save(source)
+        val first = store.pendingSync(); assertEquals(0, first.count); assertEquals(1, first.pendingUpdates); assertNotNull(first.oldestAt)
+        assertEquals(first, LocalSourceStore(dir, cipher).pendingSync())
+        store.selectTarget(source.id, "target"); store.registered(source.id, "target")
+        assertFalse(store.pendingSync().hasWork); assertFalse(store.state(source.id).has("pendingSince"))
+        store.save(source.copy(name = "Renamed fixture"))
+        val renamed = store.pendingSync(); assertEquals(1, renamed.pendingUpdates); assertTrue(renamed.oldestAt!! >= first.oldestAt!!)
+    }
     @Test fun `encrypted snapshots and unsent revisions survive reconstruction and lost ACK`() {
         val dir = folder.newFolder(); val store = LocalSourceStore(dir, cipher); val source = source(); store.save(source); store.selectTarget(source.id, "target-a")
         store.scan(source, SourceScan(listOf(body()), true, at)); val pending = store.next(source.id, "target-a")!!

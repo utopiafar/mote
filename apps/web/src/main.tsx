@@ -65,25 +65,26 @@ import {
 import "./styles.css";
 import { Notes } from "./Notes";
 import { Diagnostics } from "./Diagnostics";
-import { ServerSettings } from "./ServerSettings";
+import { ServerSettings, AdvancedConfiguration } from "./ServerSettings";
+import { SoftwareUpdate } from "./SoftwareUpdate";
+import { DeviceOverview, PageBack } from "./DeviceOverview";
 import { Connections } from "./Connections";
 import {Metadata, sourceLabels, activityExplanation} from './Metadata';
 
 import {Sources} from "./Sources";
 import {Memories} from "./Memories";
 
-type Page = "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "settings";
+type Page = "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
-  { id: "overview" as const, label: "总览", icon: LayoutDashboard },
-  { id: "timeline" as const, label: "时间线", icon: Clock3 },
-  { id: "notes" as const, label: "随手记", icon: FileText },
-  {id:"sources" as const,label:"来源",icon:Link2},
-  {id:"memories" as const,label:"记忆",icon:Layers3},
-  { id: "ask" as const, label: "问一问", icon: MessageSquare },
-  { id: "devices" as const, label: "设备", icon: Monitor },
-  { id: "vault" as const, label: "资料库", icon: Database },
-  { id: "settings" as const, label: "服务端配置", icon: Settings2 },
+  { id: "overview" as const, label: "总览", icon: LayoutDashboard, group: "日常" },
+  { id: "timeline" as const, label: "时间线", icon: Clock3, group: "日常" },
+  { id: "notes" as const, label: "随手记", icon: FileText, group: "日常" },
+  { id: "ask" as const, label: "问一问", icon: MessageSquare, group: "日常" },
+  { id: "archive" as const, label: "资料库", icon: Database, group: "日常" },
+  { id: "devices" as const, label: "设备", icon: Monitor, group: "管理" },
+  { id: "sources" as const, label: "来源", icon: Link2, group: "管理" },
 ];
+const pageLabels: Record<Page,string> = {overview:'总览',timeline:'时间线',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
 const periodNames: Record<string, string> = {
   today: "今天",
   week: "过去 7 天",
@@ -663,7 +664,7 @@ function SetupSteps({ onPage }: { onPage: (page: Page) => void }) {
       <div>
         <span>01</span>
         <h3>连上采集端</h3>
-        <p>在电脑程序或 Android App 中，填入节点地址与访问令牌。</p>
+        <p>在手机或电脑的连接设置中，扫描或导入一次性邀请。</p>
       </div>
       <div>
         <span>02</span>
@@ -682,265 +683,22 @@ function SetupSteps({ onPage }: { onPage: (page: Page) => void }) {
   );
 }
 
-function Overview({
-  api,
-  status,
-  devices,
-  activity,
-  recent,
-  insights,
-  onPage,
-  onOpen,
-  generate,
-  generating,
-}: {
-  api: Api;
-  status: Status;
-  devices: Device[];
-  activity: Activity;
-  recent: Capture[];
-  insights: Answer[];
-  onPage: (page: Page) => void;
-  onOpen: (id: string) => void;
-  generate: () => void;
-  generating: boolean;
-}) {
-  const online = devices.filter(
-    (device) => deviceState(device) === "capturing",
-  ).length;
-  const total = activity.totalDurationMs;
-  return (
-    <>
-      <div className="greeting">
-        <div>
-          <div className="eyebrow">A LITTLE CONTEXT, A CLEARER PICTURE</div>
-          <h1>给生活留一点线索。</h1>
-          <p>散落在屏幕间的片刻，在这里慢慢连成脉络。</p>
-        </div>
-        <div className="greeting-mark" aria-hidden="true">
-          <div />
-          <div />
-          <div />
-          <span>m.</span>
-        </div>
-      </div>
-      <div className="stats-grid">
-        <div className="stat">
-          <span>
-            <Clock3 size={16} />
-            已记录的设备时间
-          </span>
-          <strong>{duration(total)}</strong>
-          <small>应用活动与屏幕采样累计 · 不等同专注时间</small>
-        </div>
-        <div className="stat">
-          <span>
-            <Layers3 size={16} />
-            这段时间的记录
-          </span>
-          <strong>
-            {activity.captures.toLocaleString()}
-            <em>条</em>
-          </strong>
-          <small>{activity.activityEvents === undefined ? '跨设备的采样记录' : `内容采样 ${activity.contentCaptures ?? 0} · 仅活动 ${activity.activityEvents}`}</small>
-        </div>
-        <div className="stat">
-          <span>
-            <Radio size={16} />
-            正在采集
-          </span>
-          <strong>
-            {online}
-            <em>/ {devices.length} 台设备</em>
-          </strong>
-          <small>
-            {online
-              ? "上下文正在持续汇入"
-              : devices.length
-                ? "查看设备状态以恢复采集"
-                : "等待第一台设备连接"}
-          </small>
-        </div>
-      </div>
-      {status.storage.captures === 0 && (
-        <section className="panel onboarding-panel">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">START SMALL</span>
-              <h2>从一台设备，开始你的上下文库。</h2>
-            </div>
-            <span className="badge neutral">尚无记录</span>
-          </div>
-          <SetupSteps onPage={onPage} />
-        </section>
-      )}
-      <div className="overview-columns">
-        <section className="panel activity-panel">
-          <div className="section-heading">
-            <div>
-              <h2>时间流向</h2>
-              <p>已记录的应用采样时间</p>
-            </div>
-            <Clock3 size={18} className="muted-icon" />
-          </div>
-          {activity.apps.length ? (
-            <>
-              <div className="time-track">
-                {activity.apps.slice(0, 6).map((app, index) => (
-                  <span
-                    key={app.appId || app.appName}
-                    style={{
-                      flex: Math.max(app.durationMs, 1),
-                      background: [
-                        "#356451",
-                        "#738775",
-                        "#a4ad93",
-                        "#c8c8b5",
-                        "#d2af7e",
-                        "#a4b0ba",
-                      ][index],
-                    }}
-                    title={`${app.appName} ${duration(app.durationMs)}`}
-                  />
-                ))}
-              </div>
-              <div className="app-list">
-                {activity.apps.slice(0, 5).map((app, index) => (
-                  <div className="app-row" key={app.appId || app.appName}>
-                    <span className={`app-dot dot-${index}`} />
-                    <strong>{app.appName}</strong>
-                    <span>{duration(app.durationMs)}</span>
-                    <small>
-                      {total ? Math.round((app.durationMs / total) * 100) : 0}%
-                    </small>
-                  </div>
-                ))}
-              </div>
-              <p className="measurement-note">
-                多设备同时使用时分别计入；只有应用活动记录或内容采样提供的区间才计入，漏采时间不会自动补齐。
-              </p>
-            </>
-          ) : (
-            <Empty icon={Clock3} title="还没有这段时间的采样">
-              <p>连上设备后，应用时间分布会出现在这里。</p>
-            </Empty>
-          )}
-        </section>
-        <section className="insight-panel">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">CONNECT THE DOTS</span>
-              <h2>
-                <Sparkles size={18} />
-                留意那些细小的发现
-              </h2>
-            </div>
-          </div>
-          <p className="insight-intro">
-            把最近的记录放在一起，看看做过什么，哪些线索值得继续。
-          </p>
-          {insights[0] ? (
-            <>
-              <div className="insight-preview">
-                {insights[0].answer.slice(0, 240)}
-                {insights[0].answer.length > 240 ? "…" : ""}
-              </div>
-              <div className="insight-source">
-                <Layers3 size={13} />
-                {insights[0].citations.length} 条来源 ·{" "}
-                {insights[0].createdAt
-                  ? dateTime(insights[0].createdAt)
-                  : "最近生成"}
-              </div>
-            </>
-          ) : (
-            <div className="insight-placeholder">
-              <span />
-              <span />
-              <span />
-              <p>
-                {status.agent.configured
-                  ? "有了记录，就可以生成第一份回顾。"
-                  : "配置 Agent 模型后，生成有来源的个人回顾。"}
-              </p>
-            </div>
-          )}
-          <button
-            className="button primary"
-            onClick={generate}
-            disabled={
-              generating ||
-              !status.agent.configured ||
-              status.storage.captures === 0
-            }
-          >
-            {generating ? (
-              <Spinner label="正在查阅与思考…" />
-            ) : (
-              <>
-                <Sparkles size={15} />
-                {insights.length ? "生成新的回顾" : "生成一份回顾"}
-                <ArrowRight size={15} />
-              </>
-            )}
-          </button>
-          {insights.length > 0 && (
-            <button className="text-button" onClick={() => onPage("ask")}>
-              阅读完整回顾与证据
-            </button>
-          )}
-        </section>
-      </div>
-      <section className="recent-section">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">RECENT MOMENTS</span>
-            <h2>最近留下的片刻</h2>
-          </div>
-          <button className="text-button" onClick={() => onPage("timeline")}>
-            打开时间线 <ArrowRight size={15} />
-          </button>
-        </div>
-        {recent.length ? (
-          <div className="capture-grid">
-            {recent.slice(0, 4).map((capture) => (
-              <CaptureCard
-                key={capture.id}
-                capture={capture}
-                api={api}
-                onOpen={onOpen}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="panel">
-            <Empty title="这里会留下你的第一条上下文">
-              <p>采集端会在你开启采集后，自动上传允许保留的记录。</p>
-            </Empty>
-          </div>
-        )}
-      </section>
-      <section className="devices-strip">
-        <div>
-          <Monitor size={17} />
-          <strong>你的采集端</strong>
-        </div>
-        {devices.length ? (
-          devices.slice(0, 3).map((device) => (
-            <div key={device.deviceId}>
-              <span>{device.deviceName}</span>
-              <StateBadge device={device} />
-            </div>
-          ))
-        ) : (
-          <span>电脑、手机，以及未来更多的数据源</span>
-        )}
-        <button className="text-button" onClick={() => onPage("devices")}>
-          管理设备 <ArrowRight size={14} />
-        </button>
-      </section>
-    </>
-  );
+function Overview({api,status,devices,activity,recent,insights,onPage,onOpen}: {api:Api;status:Status;devices:Device[];activity:Activity;recent:Capture[];insights:Answer[];onPage:(page:Page)=>void;onOpen:(id:string)=>void;generate:()=>void;generating:boolean}) {
+ return <div className="home-page">
+  <div className="greeting"><div><div className="eyebrow">你的个人上下文</div><h1>给生活留一点线索。</h1><p>记下的片刻，在需要时重新找到。</p></div><div className="greeting-mark" aria-hidden="true"><div/><div/><div/><span>m.</span></div></div>
+  <div className="home-actions"><button className="home-action primary-action" onClick={()=>onPage('notes')}><FileText size={23}/><span><strong>写一条随手记</strong><small>留住此刻的想法</small></span><ArrowRight size={18}/></button><button className="home-action" onClick={()=>onPage('ask')}><MessageSquare size={23}/><span><strong>从记录里找答案</strong><small>带着来源，回看自己的经历</small></span><ArrowRight size={18}/></button></div>
+  <div className="stats-grid compact-stats"><div className="stat"><span><Layers3 size={16}/>这段时间的设备采样</span><strong>{activity.captures.toLocaleString()}<em>条</em></strong><small>应用活动与内容采样，按所选时间统计</small></div><div className="stat"><span><Clock3 size={16}/>已记录设备时间</span><strong>{duration(activity.totalDurationMs)}</strong><small>采样区间累计，不等同专注时间</small></div><button className="stat stat-link" onClick={()=>onPage('devices')}><span><Monitor size={16}/>已知设备</span><strong>{devices.length}<em>台</em></strong><small>查看最近联系与上报的同步状态 →</small></button></div>
+  {!status.storage.captures&&<section className="panel first-record"><span className="preference-menu-icon"><Link2 size={23}/></span><div><h2>准备好接住第一份记录</h2><p>连接一台设备，或导入你选择的文件。采集范围与同步方式由你决定。</p></div><button className="button" onClick={()=>onPage('devices')}>连接设备<ArrowRight size={15}/></button></section>}
+  <section className="recent-section"><div className="section-heading"><div><h2>最近留下的片刻</h2><p>来自你选择的设备与来源</p></div><button className="text-button" onClick={()=>onPage('timeline')}>全部记录<ArrowRight size={15}/></button></div>{recent.length?<div className="capture-grid">{recent.slice(0,4).map(capture=><CaptureCard key={capture.id} capture={capture} api={api} onOpen={onOpen}/>)}</div>:<div className="home-empty"><Layers3 size={23}/><p>记录会在同步完成后出现在这里。也可以先写一条随手记。</p></div>}</section>
+  {insights[0]&&<button className="home-insight" onClick={()=>onPage('ask')}><Sparkles size={21}/><div><strong>你最近的个人回顾</strong><p>{insights[0].answer.slice(0,125)}{insights[0].answer.length>125?'…':''}</p><small>{insights[0].citations.length} 条证据来源</small></div><ArrowRight size={18}/></button>}
+ </div>;
+}
+
+function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>应用活动概况</h2><p>已记录设备时间 · {duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。</p></>:<Empty icon={Clock3} title="这段时间还没有活动采样"><p>设备完成同步后，可以在这里查看应用时间分布。</p></Empty>}</section>;}
+
+type ArchiveTab = 'records'|'activity'|'memories';
+function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
+ return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['activity','应用活动'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen}/>}</div>;
 }
 
 function Timeline({
@@ -1047,7 +805,7 @@ function Timeline({
   }, [items]);
   return (
     <>
-      <div className="page-heading">
+      <div className="page-heading timeline-heading">
         <div className="eyebrow">YOUR DAYS, IN CONTEXT</div>
         <h1>每一个片刻，都有来处。</h1>
         <p>沿着时间往回走，找到你见过、想过、做过的事。</p>
@@ -1422,122 +1180,6 @@ function Ask({
   );
 }
 
-function Devices({
-  devices,
-  connection,
-  api,
-}: {
-  devices: Device[];
-  connection: Connection;
-  api: Api;
-}) {
-  return (
-    <>
-      <div className="page-heading">
-        <div className="eyebrow">MANY SOURCES, ONE PLACE</div>
-        <h1>让你的设备，彼此相连。</h1>
-        <p>采集发生在端点，线索汇聚到你自己的中央节点。</p>
-      </div>
-      <Connections api={api} serverUrl={connection.url || window.location.origin} devices={devices}/>
-      <div className="device-grid">
-        {devices.map((device) => (
-          <article className="panel device-card" key={device.deviceId}>
-            <div className="device-top">
-              <div className="device-icon">
-                <DeviceIcon platform={device.platform} size={25} />
-              </div>
-              <StateBadge device={device} />
-            </div>
-            <h2>{device.deviceName}</h2>
-            <p className="device-platform">
-              {(
-                {
-                  macos: "macOS",
-                  windows: "Windows",
-                  linux: "Linux",
-                  android: "Android",
-                  import: "导入数据源",
-                } as Record<string, string>
-              )[device.platform] || device.platform}
-            </p>
-            <dl>
-              <div>
-                <dt>最近心跳</dt>
-                <dd>{ago(device.lastSeenAt)}</dd>
-              </div>
-              <div>
-                <dt>最近采集</dt>
-                <dd>{ago(device.lastCaptureAt)}</dd>
-              </div>
-              <div>
-                <dt>等待上传</dt>
-                <dd>{device.queueDepth.toLocaleString()} 条</dd>
-              </div>
-            </dl>
-            <Metadata metadata={device.metadata}/>
-            {deviceState(device) === "offline" && (
-              <div className="device-note">
-                <WifiOff size={14} />
-                超过 90 秒未收到心跳。检查网络或重新打开采集端。
-              </div>
-            )}
-            {device.error && (
-              <div className="device-note warn">
-                <Info size={14} />
-                最后上报：{device.error}
-              </div>
-            )}
-            <code className="record-id">{device.deviceId}</code>
-          </article>
-        ))}
-      </div>
-      <section className="panel connection-guide">
-        <div className="section-heading">
-          <div>
-            <span className="eyebrow">GET CONNECTED</span>
-            <h2>采集端连接指引</h2>
-          </div>
-          <ShieldCheck size={19} className="muted-icon" />
-        </div>
-        <div className="guide-grid">
-          <div>
-            <Monitor size={23} />
-            <h3>电脑端</h3>
-            <p>
-              启动 Mote
-              桌面程序，导入连接邀请 JSON 或二维码图片，核对地址后连接。先设置应用过滤、遮挡区域与本地隐私处理，再授予系统屏幕录制权限并开启采集。
-            </p>
-            <span>启动命令</span>
-            <code>npm run desktop</code>
-          </div>
-          <div>
-            <Smartphone size={23} />
-            <h3>Android · Xiaomi / HyperOS</h3>
-            <p>
-              安装 APK
-              后连接节点，在系统中启用采集权限，开启通知、自启动与电池无限制，并在最近任务中锁定应用。每次重启后检查采集状态。
-            </p>
-            <span>保持透明</span>
-            <p className="fine-print">
-              系统强行结束应用后无法保证自动恢复。控制台会保留最后心跳及等待上传数，不把漏采视作空闲。
-            </p>
-          </div>
-          <div>
-            <HardDrive size={23} />
-            <h3>本地文件与 NAS</h3>
-            <p>
-              使用文件导入工具，把明确选择的文本目录接入同一资料库。NAS
-              挂载目录可以作为来源；不会自动扫描其他目录。
-            </p>
-            <span>查看导入用法</span>
-            <code>npm run import:files -- --help</code>
-          </div>
-        </div>
-      </section>
-    </>
-  );
-}
-
 function Vault({
   api,
   status,
@@ -1602,7 +1244,7 @@ function Vault({
     <>
       <div className="page-heading">
         <div className="eyebrow">YOUR CONTEXT BELONGS TO YOU</div>
-        <h1>一个可以带走的资料库。</h1>
+        <h1>数据与备份</h1>
         <p>知道留下了什么、存在哪里，也随时保留迁移的自由。</p>
       </div>
       {error && <ErrorNotice text={error} />}
@@ -1750,7 +1392,7 @@ function Vault({
           </div>
         </section>
       </div>
-      <Diagnostics api={api} profile={status.profile} />
+
       <section className="panel index-panel">
         <div className="section-heading">
           <div>
@@ -1857,6 +1499,7 @@ function App() {
     totalDurationMs: 0,
     captures: 0,
   });
+  const [archiveTab, setArchiveTab] = useState<ArchiveTab>('records');
   const [recent, setRecent] = useState<Capture[]>([]);
   const [insights, setInsights] = useState<Answer[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1939,6 +1582,10 @@ function App() {
     const timer = setInterval(() => setRevision((value) => value + 1), 30_000);
     return () => clearInterval(timer);
   }, [api, refresh]);
+  useEffect(() => {
+    const heading = Array.from(document.querySelectorAll<HTMLElement>(".content h1")).find(element => element.getClientRects().length);
+    if (heading) { heading.tabIndex = -1; heading.focus({preventScroll: true}); }
+  }, [page]);
   function onPage(next: Page) {
     setPage(next);
     setMenuOpen(false);
@@ -1987,21 +1634,23 @@ function App() {
             Mote<span className="brand-dot">.</span>
           </span>
         </button>
-        <div className="workspace-label">PERSONAL CONTEXT</div>
+        <div className="workspace-label">你的个人上下文</div>
         <nav>
-          {nav.map((item) => (
+          {["日常", "管理"].map(group => <React.Fragment key={group}><div className="nav-group-label">{group}</div>{nav.filter(item=>item.group===group).map((item) => (
             <button
               key={item.id}
-              className={page === item.id ? "active" : ""}
+              className={(page === item.id || (page === "memories" && item.id === "archive")) ? "active" : ""}
+              aria-current={page === item.id ? "page" : undefined}
               onClick={() => onPage(item.id)}
             >
               <item.icon size={18} strokeWidth={1.7} />
               {item.label}
               {item.id === "ask" && <span className="nav-spark">✦</span>}
             </button>
-          ))}
+          ))}</React.Fragment>)}
         </nav>
         <div className="sidebar-bottom">
+          <button aria-current={["settings","vault","developer","about","connections"].includes(page)?"page":undefined} className={"settings-nav "+(["settings","vault","developer","about","connections"].includes(page)?"active":"")} onClick={()=>onPage("settings")}><Settings2 size={18}/>设置</button>
           <div className="local-note">
             <span className="orbit-mark">✳</span>
             <p>
@@ -2025,7 +1674,7 @@ function App() {
             <Settings2 size={15} />
           </button>
           <div className="version">
-            MOTE <span>0.3</span>
+            MOTE <span>个人上下文</span>
           </div>
         </div>
       </aside>
@@ -2044,7 +1693,7 @@ function App() {
             </button>
             <span className="breadcrumb">
               我的空间 <span>/</span>{" "}
-              <strong>{nav.find((item) => item.id === page)?.label}</strong>
+              <strong>{pageLabels[page]}</strong>
             </span>
           </div>
           <div className="topbar-actions">
@@ -2054,7 +1703,7 @@ function App() {
                   <ShieldCheck size={14} />
                   私有节点
                 </span>
-                {["overview", "ask"].includes(page) && (
+                {(["overview", "ask", "memories"].includes(page) || (page === "archive" && archiveTab !== "records")) && (
                   <select
                     className="period-select"
                     aria-label="选择时间范围"
@@ -2216,20 +1865,24 @@ function App() {
                         />
                       )}
                       {page === "devices" && (
-                        <Devices key={connection.url} devices={devices} connection={connection} api={api} />
+                        <DeviceOverview devices={devices} onConnect={()=>onPage("connections")} />
                       )}
                       {page === "vault" && (
-                        <Vault
+                        <><PageBack title="设置" onBack={()=>onPage("settings")}/><Vault
                           api={api}
                           status={status}
                           connection={connection}
                           refresh={refresh}
                           disconnect={disconnect}
-                        />
+                        /></>
                       )}
                       {page === "sources" && <Sources api={api} onOpen={setEvidenceId} />}
                       {page === "memories" && <Memories api={api} range={range} onOpen={setEvidenceId} />}
-                      {page === "settings" && <ServerSettings key={connection.url || window.location.origin} api={api} />}
+                      <div hidden={page!=="settings"}><ServerSettings key={connection.url || window.location.origin} api={api} onNavigate={onPage}/></div>
+                      {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
+                      {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={connection.url || window.location.origin} devices={devices}/></>}
+                      {page === "developer" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
+                      {page === "about" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">你的资料，由你保管</div><h1>关于 Mote</h1><p>AI 原生个人上下文采集与中央归档。</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>当前中央节点</h2><p>{connection.url || window.location.origin}</p><p className="fine-print">访问令牌只保留在当前标签页会话。</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>退出此节点</button></section></>}
                     </>
                   )}
             </>

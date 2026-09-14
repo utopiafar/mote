@@ -19,8 +19,7 @@ class ActivityStatsActivity : Activity() {
     private var loading = false
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 64, 32, 64) }
-        setContentView(ScrollView(this).apply { addView(body); moteInsets() })
+        body = moteDetailPage()
         text("采集与存储详情", 27f)
         text("这些统计始终在本机保存，与开发者诊断开关独立。记录固定结果与数字，不记录画面、文字、应用名、邀请或令牌。")
         summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(summary)
@@ -35,6 +34,7 @@ class ActivityStatsActivity : Activity() {
         }
         text("最近结果（最多 200 条，点按查看）", 20f)
         history = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(history)
+        MoteUi.styleTree(body)
     }
     override fun onResume() { super.onResume(); refresh() }
     private fun refresh() {
@@ -93,6 +93,7 @@ class ActivityStatsActivity : Activity() {
                             setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机结果详情").setMessage(detail(event)).setPositiveButton("关闭", null).show() }
                         })
                     }
+                    MoteUi.styleTree(history)
                     if (events.length() == 0) history.addView(TextView(this).apply { text = "此统计周期还没有事件，不能推断此前没有采集。" })
                 }
             } catch (_: Exception) { runOnUiThread { if (!isDestroyed) renderSummary("统计或队列暂不可读取，不能按零展示；原始文件保留，请查看支持诊断。") } }
@@ -105,7 +106,7 @@ class ActivityStatsActivity : Activity() {
             val value = android.text.SpannableString(block)
             value.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, block.indexOf('\n').takeIf { it >= 0 } ?: block.length, 0)
             summary.addView(TextView(this).apply {
-                text = value; textSize = 15f; setLineSpacing(5f, 1f); setPadding(24, 20, 24, 20); setBackgroundColor(android.graphics.Color.rgb(245, 247, 243))
+                text = value; textSize = 15f; setLineSpacing(5f, 1f); setPadding(moteDp(16), moteDp(16), moteDp(16), moteDp(16)); setTextColor(MoteUi.ink); background = MoteUi.shape(this@ActivityStatsActivity)
             }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 16 })
         }
     }

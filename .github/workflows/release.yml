@@ -46,9 +46,23 @@ jobs:
         run: node scripts/release/mac-package.mjs
       - name: Verify native replacement and startup rollback with generated apps
         run: node apps/desktop/scripts/update-fixture.cjs
+      # mac-package builds desktop dist and the native helpers after models:setup.
+      # These fixtures use temporary profiles and generated content only.
+      - name: Build central server and web for generated integration fixtures
+        run: npm run build -w @mote/server -w @mote/web
+      - name: Verify desktop navigation, settings and composed input with generated data
+        timeout-minutes: 5
+        run: |
+          node_modules/.bin/electron apps/desktop/scripts/ui-smoke.cjs
+          node_modules/.bin/electron apps/desktop/scripts/complex-ui-smoke.cjs
+      - name: Verify offline first binding and explicit sync against a generated central node
+        timeout-minutes: 5
+        run: node_modules/.bin/electron apps/desktop/scripts/offline-sync-smoke.cjs
+      - name: Verify central navigation, settings drafts and sync status with generated data
+        timeout-minutes: 5
+        run: node_modules/.bin/electron scripts/test-web-navigation.cjs
       - name: Verify client onboarding, central UI and update networking with generated data
         run: |
-          npm run build -w @mote/server -w @mote/web
           node apps/desktop/scripts/connection-server-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/connection-smoke.cjs
           node_modules/.bin/electron scripts/test-web-connections.cjs

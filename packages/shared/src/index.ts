@@ -71,6 +71,15 @@ export const heartbeatSchema = z.object({
   queueDepth: z.number().int().min(0).max(1000000), lastCaptureAt: z.string().max(64).datetime({offset:true}).nullable().optional(),
   error: z.string().max(1000).nullable().optional(),
   metadata: recordMetadataSchema.optional(),
+  sync: z.object({
+    mode: z.enum(['realtime','interval','batch','manual']),
+    state: z.enum(['unconfigured','idle','waiting','uploading','error','manual']),
+    intervalMinutes: z.number().int().min(15).max(1440),
+    batchSize: z.number().int().min(1).max(500),
+    pendingRecords: z.number().int().min(0).max(1000000),
+    lastUploadAt: z.string().max(64).datetime({offset:true}).optional(),
+    nextUploadAt: z.string().max(64).datetime({offset:true}).optional(),
+  }).strict().optional(),
 }).strict();
 export type Heartbeat = z.infer<typeof heartbeatSchema>;
 export type DeviceRecord = Heartbeat & {lastSeenAt:string};

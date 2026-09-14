@@ -7,13 +7,14 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
 
-class QueueFull : IllegalStateException("本地队列已满，暂停采集；联网并成功上传后恢复")
+class QueueFull : IllegalStateException("本机空间已满，暂停新增记录；同步释放空间或调大本机存储上限后恢复")
 
 /** Atomic encrypted events + content-addressed blobs. All callers share the process lock. */
 class DurableQueue(private val dir: File, private val cipher: ByteCipher, private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
     companion object { private val lock = Any() }
     init { dir.mkdirs() }
     private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
+    fun pendingSync(): PendingSync = synchronized(lock) { val files = records(); PendingSync(files.size, files.firstOrNull()?.lastModified()) }
     fun depth(): Int = synchronized(lock) { records().size }
     fun bytes(): Long = synchronized(lock) { dir.listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L }
     private fun read(file: File): JSONObject = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8))

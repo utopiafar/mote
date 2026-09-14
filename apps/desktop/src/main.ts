@@ -2,7 +2,7 @@ import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, Tray } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
-import { readPowerState, recognizeInvitationQr, runHelper } from './native';
+import { readPowerState, recognizeInvitationQr, runHelper, readInstalledApplications } from './native';
 import { ConnectionOnboarding, ConnectionError, testConnection, assertConnectionChangeSafe, type ConnectionStatus } from './connection';
 import { NoteDraftStore, type NoteDraft } from './note-draft';
 import { openCentralWindow } from './central-window';
@@ -50,7 +50,9 @@ function trackNote<T>(task: Promise<T>): Promise<T> {
 async function settleNoteWork(): Promise<void> { while (noteWork.size) await Promise.allSettled([...noteWork]); }
 let settings: Config;
 const events = new EventJournal(join(profile.dataDirectory, 'diagnostics'), () => Boolean(settings?.diagnosticsEnabled));
-function clientStatus(): Status { return { ...collector.status(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } }; }
+let pendingNoteStatus = () => ({ count: 0, unbound: true, baseRecords: undefined as number | undefined });
+function includePreparedNote(status: Status): Status { const note = pendingNoteStatus(); return { ...status, sync: { ...status.sync, pendingRecords: (note.baseRecords ?? status.sync.pendingRecords) + note.count, localBacklogUnbound: (note.baseRecords ?? status.sync.pendingRecords) + note.count > 0 && note.unbound } }; }
+function clientStatus(): Status { return { ...includePreparedNote(collector.status()), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } }; }
 let controlChain: Promise<unknown> = Promise.resolve();
 
 function serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -65,7 +67,7 @@ async function showCentral(ownerToken?: string): Promise<void> {
   if (centralWindow && !centralWindow.isDestroyed()) { centralWindow.show(); centralWindow.focus(); return; }
   if (centralOpening) return centralOpening;
   const requested = settings;
-  if (!ownerToken && requested.credentialScope === 'collector') throw new Error('此连接仅有采集权限。请在“连接中央”中展开管理员登录，使用单独管理员令牌打开中央仓库');
+  if (!ownerToken && requested.credentialScope === 'collector') throw new Error('此连接仅有采集权限。请在设置的“连接与设备”中展开“设备身份与管理员访问”，使用单独管理员令牌打开中央仓库');
   centralOpening = (async () => {
     try {
       const identity = await testConnection({ ...requested, token: ownerToken || requested.token });
@@ -82,6 +84,9 @@ async function showCentral(ownerToken?: string): Promise<void> {
   return centralOpening;
 }
 function showWindow(): void { window?.show(); window?.focus(); }
+function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings'): void {
+  showWindow(); window?.webContents.send('mote:navigate', page);
+}
 function trayIcon(): Electron.NativeImage {
   const bitmap = Buffer.alloc(20 * 20 * 4);
   for (let y = 4; y < 16; y++) for (let x = 3; x < 17; x++) {
@@ -92,14 +97,16 @@ function trayIcon(): Electron.NativeImage {
   return icon;
 }
 function updateUi(status: Status): void {
-  status = { ...status, environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } };
+  status = { ...includePreparedNote(status), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } };
   if (window && !window.isDestroyed()) window.webContents.send('mote:status', status);
   tray?.setToolTip(`Mote [${profile.name}] · ${status.running ? '采集中' : '已停止'} · 待上传 ${status.queueDepth}`);
   tray?.setContextMenu(Menu.buildFromTemplate([
     { label: `Mote [${profile.name}] · ${status.running ? '采集中' : '已停止'}`, enabled: false },
     { label: `待上传 ${status.queueDepth} 条`, enabled: false },
     { type: 'separator' },
-    { label: '打开采集与随手记', click: showWindow },
+    { label: '打开 Mote', click: () => showClientPage('overview') },
+    { label: '随手记', click: () => showClientPage('notes') },
+    { label: '设置…', click: () => showClientPage('settings') },
     { label: '打开中央仓库', click: () => { void showCentral().catch(e => dialog.showErrorBox('中央仓库', (e as Error).message)); } },
     { label: '开始采集', enabled: !status.running, click: () => { void serialize(() => collector.start()).catch(error => dialog.showErrorBox('无法开始采集', (error as Error).message)); } },
     { label: '停止采集', enabled: status.running, click: () => { void serialize(async () => { collector.stop(); await collector.settleCapture(); }); } },
@@ -132,27 +139,44 @@ else {
     const noteDrafts = new NoteDraftStore(join(dataDirectory, 'notes')); await noteDrafts.initialize();
     const queue = new DurableQueue(join(dataDirectory, 'queue'), settings);
     await queue.initialize();
+    pendingNoteStatus = () => ({ count: noteDrafts.hasPrepared() && !queue.contains(noteDrafts.get().id) ? 1 : 0, unbound: queue.binding.unbound() && (!localSources || localSources.nodeBinding.unbound()) && (!noteDrafts.hasPrepared() || noteDrafts.hasUnboundPrepared()), baseRecords: queue.stats().depth + (localSources?.pendingStats().pendingRecords ?? 0) });
     const helperPath = app.isPackaged ? join(process.resourcesPath, 'native', 'mote-helper') : join(__dirname, '..', 'native', 'bin', 'mote-helper');
     const bundlePath = app.isPackaged ? await realpath(resolve(process.resourcesPath, '../..')) : undefined;
     const updateDirectory = join(dataDirectory, 'updates');
     const updateSession = session.fromPartition('mote-public-updates', { cache: false });
     updater = new DesktopUpdater({ directory: updateDirectory, helper: app.isPackaged ? join(process.resourcesPath, 'native', 'mote-updater') : join(__dirname, '..', 'native', 'bin', 'mote-updater'), bundlePath, currentVersion: app.getVersion(), arch: process.arch === 'arm64' ? 'arm64' : 'x64', profile: profile.name }, createUpdateNetwork(createChromiumUpdateFetch(options => net.request({ ...options, session: updateSession }))));
     await updater.initialize();
-    localSources = new LocalSourceManager(join(dataDirectory, 'local-sources'), settings, helperPath);
+    localSources = new LocalSourceManager(join(dataDirectory, 'local-sources'), settings, helperPath, true);
     await localSources.initialize();
     const nsfw = new NsfwController(join(dataDirectory, 'models'), app.isPackaged ? join(process.resourcesPath, 'native', 'mote-qwen') : join(__dirname, '..', 'native', 'bin', 'mote-qwen'), () => { if (collector) updateUi(clientStatus()); }, { events });
     const diagnostics = new DiagnosticsRecorder(join(dataDirectory, 'diagnostics'));
     const configureDiagnostics = async () => diagnostics.configure({ enabled: settings.diagnosticsEnabled, intervalMs: settings.diagnosticIntervalSeconds * 1000 }, async () => ({
       queueBytes: queue.stats().bytes, modelBytes: nsfw.status().bytes, ...await readPowerState(helperPath).catch(() => ({})),
     }));
-    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, nsfw, diagnostics, events);
+    collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, nsfw, diagnostics, events, localSources);
     await nsfw.initialize();
     await configureDiagnostics();
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
     window = new BrowserWindow({
-      width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}] · 电脑采集器`, backgroundColor: '#f3f5f1',
+      width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}]`, backgroundColor: '#f7f8f5',
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: !app.isPackaged },
     });
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { label: 'Mote', submenu: [
+        { role: 'about', label: '关于 Mote' }, { type: 'separator' },
+        { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => showClientPage('settings') },
+        { type: 'separator' }, { role: 'services' }, { type: 'separator' },
+        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit', label: '退出 Mote' },
+      ] },
+      { role: 'editMenu', label: '编辑' },
+      { label: '前往', submenu: [
+        { label: '概览', accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
+        { label: '随手记', accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
+        { label: '来源', accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
+      ] },
+      { label: '显示', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+      { role: 'windowMenu', label: '窗口' },
+    ]));
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', event => event.preventDefault());
     window.webContents.on('will-attach-webview', event => event.preventDefault());
@@ -169,20 +193,29 @@ else {
         catch (error) { if (stage) void events.record(stage, failureCode(error, stage)); throw error; }
       });
     };
-    const connectionChange = async <T>(operation: () => Promise<T>, sameNodeInvitation = false): Promise<T> => {
+    const unboundBacklog = () => queue.binding.unbound() && localSources!.nodeBinding.unbound() && (!noteDrafts.hasPrepared() || noteDrafts.hasUnboundPrepared());
+    const connectionChange = async <T>(operation: () => Promise<T>, sameNodeInvitation = false, confirmedInitial = false): Promise<T> => {
       if (clientStatus().running) throw new Error('请先停止采集，再更换连接');
       const releaseCollector = await collector.holdConnection(); let releaseSources: (() => void) | undefined;
       try {
         releaseSources = await localSources!.holdConnection();
         const source = localSources!.connectionActivity();
-        assertConnectionChangeSafe({ running: clientStatus().running, inFlight: collector.connectionActivity().inFlight, queued: queue.stats().depth, preparedNote: noteDrafts.hasPrepared(), sourcePending: source.pending, sourceInFlight: source.inFlight }, sameNodeInvitation);
+        assertConnectionChangeSafe({ running: clientStatus().running, inFlight: collector.connectionActivity().inFlight, queued: queue.stats().depth, preparedNote: noteDrafts.hasPrepared(), sourcePending: source.pending, sourceInFlight: source.inFlight }, sameNodeInvitation || (confirmedInitial && unboundBacklog()));
         return await operation();
       } finally { releaseSources?.(); releaseCollector(); }
     };
-    const commitConnection = async (updated: Config, sameNodeInvitation = false): Promise<void> => {
+    const commitConnection = async (updated: Config, sameNodeInvitation = false, confirmedInitial = false): Promise<void> => {
       const previous = settings;
       // Checkpoint before config save so a crash cannot switch credentials without the original source queue.
-      if (sameNodeInvitation) await localSources!.prepareReauthorization(updated);
+      const initial = confirmedInitial && unboundBacklog();
+      queue.binding.assertChange(updated, queue.stats().depth > 0 || noteDrafts.hasPrepared(), initial, sameNodeInvitation);
+      localSources!.nodeBinding.assertChange(updated, localSources!.connectionActivity().pending > 0, initial, sameNodeInvitation);
+      if (initial) await localSources!.prepareInitialConnection(updated);
+      else if (sameNodeInvitation) await localSources!.prepareReauthorization(updated);
+      // Bind before config persistence: after a crash, a mismatched editable config cannot upload old bodies.
+      await queue.binding.commit(updated, queue.stats().depth > 0 || noteDrafts.hasPrepared(), initial, sameNodeInvitation);
+      await localSources!.nodeBinding.commit(updated, localSources!.connectionActivity().pending > 0, initial, sameNodeInvitation);
+      if (initial) await noteDrafts.bindPreparedOrigin(updated.serverUrl);
       if (sameNodeInvitation) await queue.resetRetries();
       await store.save(updated);
       try { await localSources!.changeConnection(updated); }
@@ -217,10 +250,10 @@ else {
       const updated = { ...updateConfig(settings, { ...settings, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope };
       const identity = await testConnection(updated);
       if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'collector') throw new Error('中央凭据身份确认不一致，原连接未修改；请重新生成邀请');
-      await commitConnection(updated, origin === settings.serverUrl);
+      await commitConnection(updated, origin === settings.serverUrl, true);
       connectionState = { state: 'connected', message: '采集连接成功；可上传记录与同步自身来源，完整仓库需单独管理员登录', checkedAt: new Date().toISOString(), identity };
       return clientStatus();
-    }, origin === settings.serverUrl)));
+    }, origin === settings.serverUrl, true)));
     handle('mote:connection-test', async () => {
       if (connectionState.state === 'checking') return connectionState;
       const requested = settings; connectionState = { state: 'checking', message: '正在验证已保存连接与权限…' };
@@ -233,6 +266,7 @@ else {
       return showCentral(token);
     });
     handle('mote:get-status', () => clientStatus());
+    handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
     handle('mote:update-status', () => updater!.status());
     handle('mote:update-channel', channel => updater!.setChannel(channel));
     handle('mote:update-check', () => updater!.check());
@@ -242,7 +276,7 @@ else {
     handle('mote:update-reveal', () => { const archive = updater!.archivePath(); if (archive) shell.showItemInFolder(archive); });
     handle('mote:update-notes', async () => { const url = updater!.status().notesUrl; if (url) await shell.openExternal(url); });
     handle('mote:sources', () => localSources!.status());
-    handle('mote:source-sync', () => { void localSources!.sync(true); });
+    handle('mote:source-sync', async () => { await localSources!.sync(true); await collector.retry(); });
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));
     handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error('日历选择无效'); await localSources!.addCalendar(id, options); }));
     handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error('来源选择无效'); await localSources!.update(id, options); }));
@@ -278,22 +312,23 @@ else {
     handle('mote:configure', input => serialize(async () => {
       if (clientStatus().running) throw new Error('请先停止采集，再修改配置');
       await collector.settleCapture();
-      const updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (noteDrafts.hasPrepared() ? 1 : 0));
+      const confirmedInitial = (input as ConfigUpdate).confirmLocalBacklog === true && unboundBacklog();
+      const updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (noteDrafts.hasPrepared() ? 1 : 0), confirmedInitial);
       if (!profile.legacy && updated.openAtLogin) throw new Error('命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数');
       const change = async () => {
         if (profile.legacy && updated.openAtLogin !== settings.openAtLogin) {
           app.setLoginItemSettings({ openAtLogin: updated.openAtLogin });
           if (app.getLoginItemSettings().openAtLogin !== updated.openAtLogin) throw new Error('系统未允许修改登录启动项，请在系统设置检查');
         }
-        if (updated.serverUrl !== settings.serverUrl || updated.token !== settings.token) await commitConnection(updated);
-        else { await store.save(updated); settings = updated; collector.updateConfig(updated); }
+        if (updated.serverUrl !== settings.serverUrl || updated.token !== settings.token) await commitConnection(updated, false, confirmedInitial);
+        else { await store.save(updated); await localSources!.changeConnection(updated); settings = updated; collector.updateConfig(updated); }
         await configureDiagnostics(); return clientStatus();
       };
-      return updated.serverUrl !== settings.serverUrl || updated.token !== settings.token ? connectionChange(change) : change();
+      return updated.serverUrl !== settings.serverUrl || updated.token !== settings.token ? connectionChange(change, false, confirmedInitial) : change();
     }));
     handle('mote:start', () => serialize(async () => { await collector.start(); return clientStatus(); }));
     handle('mote:stop', () => serialize(async () => { collector.stop(); await collector.settleCapture(); return clientStatus(); }));
-    handle('mote:retry', async () => { await collector.retry(); return clientStatus(); });
+    handle('mote:retry', async () => { await localSources!.sync(true); await collector.retry(); return clientStatus(); });
     const requireStopped = async () => {
       if (clientStatus().running) throw new Error('请先停止采集，再修改本地模型');
       await collector.settleCapture();

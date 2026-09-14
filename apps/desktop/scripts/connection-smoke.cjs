@@ -17,7 +17,7 @@ safeStorage.isEncryptionAvailable = () => true;
 safeStorage.encryptString = value => Buffer.from('fixture:' + Buffer.from(value).toString('base64'));
 safeStorage.decryptString = value => Buffer.from(value.toString().slice(8), 'base64').toString();
 const oldToken = 'old-synthetic-owner-token-' + 'o'.repeat(32), token = 'new-synthetic-collector-token-' + 'c'.repeat(32), owner = 'separate-synthetic-admin-token-' + 'a'.repeat(32);
-const config = { ...defaultConfig(), deviceName: 'Synthetic onboarding Mac', serverUrl: 'http://127.0.0.1:1', excludedAppIds: ['dev.synthetic.private'], masks: [{ x: 0, y: 0, width: 0.1, height: 0.1 }], ocrEnabled: false };
+const config = { ...defaultConfig(), deviceName: 'Synthetic onboarding Mac', serverUrl: 'http://127.0.0.1:1', excludedAppIds: ['dev.synthetic.private'], masks: [{ x: 0, y: 0, width: 0.1, height: 0.1 }], ocrEnabled: false, metadataEnabled: false };
 writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config, encryptedToken: safeStorage.encryptString(oldToken).toString('base64') }));
 mkdirSync(join(profile, 'models')); writeFileSync(join(profile, 'models', 'preserved-fixture'), 'synthetic-model-marker');
 let releaseFirstRedeem, selected, origin, invitation, failRedeem = true, requests = 0, ownerApiHeaders = [], finished = false, responseToken = token, uploadsAllowed = false; const uploadBodies = [];
@@ -48,9 +48,11 @@ app.on('browser-window-created', (_event, window) => {
     if (!window.webContents.getURL().startsWith('file:')) return;
     const js = code => window.webContents.executeJavaScript(code);
     void (async () => {
+      await js(`document.querySelector('[data-nav="connection"]').click()`);
       assert.equal((await js('window.mote.status()')).running, false);
       const originalFile = await readFile(join(profile, 'config.json'));
       const original = (await js('window.mote.status()')).config;
+      await js(`document.querySelector('#idle').value = '456'; document.querySelector('#idle').dispatchEvent(new Event('input', {bubbles: true}))`);
       await js('document.querySelector("#connection-input").value=' + JSON.stringify(connectionUri(invitation)) + '; document.querySelector("#connection-preview").click()');
       await until(() => js('!document.querySelector("#connection-confirmation").hidden'));
       assert.equal(requests, 0); assert(await js('document.querySelector("#connection-connect").disabled'));
@@ -71,6 +73,9 @@ app.on('browser-window-created', (_event, window) => {
       await js('document.querySelector("#connection-confirm-origin").click(); document.querySelector("#connection-connect").click()');
       await until(async () => (await js('window.mote.status()')).config.credentialScope === 'collector');
       const paired = await js('window.mote.status()'); assert.equal(paired.config.serverUrl, origin); assert.equal(paired.config.deviceId, original.deviceId); assert.deepEqual(paired.config.masks, original.masks); assert.deepEqual(paired.config.excludedAppIds, original.excludedAppIds); assert.equal(paired.running, false);
+      await until(() => js('!document.querySelector("#connection-preview").disabled'));
+      assert.equal(await js(`document.querySelector('#idle').value`), '456');
+      assert(await js(`!document.querySelector('#settings-pending').hidden`), 'Pairing preserves unsaved settings in other pages');
       const persisted = JSON.parse(await readFile(join(profile, 'config.json'), 'utf8')); assert.equal(safeStorage.decryptString(Buffer.from(persisted.encryptedToken, 'base64')), token); assert(!JSON.stringify(persisted).includes(token));
       assert.equal((await js('window.mote.testConnection()')).identity.credential.scope, 'collector');
       await assert.rejects(js('window.mote.openCentral()'), /采集权限/);

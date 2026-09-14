@@ -53,28 +53,43 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         val settings = Settings(applicationContext)
         var stage = EventStage.CONFIG
         var pendingRecordId: String? = null
+        val manualOnly = settings.read().syncMode == "manual" && inputData.getBoolean("manual", false)
+        fun failed(message: String): Result {
+            settings.syncStatus("error", "$message；记录保留在本机，${if (manualOnly) "请再次点击立即同步" else "稍后自动重试"}")
+            return if (manualOnly) Result.failure() else Result.retry()
+        }
         return try {
             val config = settings.read()
-            if (config.server.isBlank()) return Result.success()
-            config.validate()
+            val explicit = inputData.getBoolean("manual", false)
+            if (!config.hasSyncConnection()) { settings.syncStatus("unconfigured", "仅保存在本机 · 尚未配置完整连接"); return Result.success() }
+            if (config.syncMode == "manual" && !explicit) { settings.syncStatus("manual", "手动同步 · 记录持续保存在本机"); return Result.success() }
+            val requestedStamp = inputData.getString("syncStamp")
+            if (requestedStamp != null && requestedStamp != SyncSchedule.stamp(config)) { SyncSchedule.schedule(applicationContext, config); return Result.success() }
+            config.validate(); config.validateConnection()
+            if (runAttemptCount == 0 && (SyncSchedule.delay(applicationContext, config, explicit) ?: Long.MAX_VALUE) > 0) {
+                SyncSchedule.schedule(applicationContext, config); return Result.success()
+            }
+            if (runAttemptCount == 0) settings.syncDispatched(System.currentTimeMillis())
             if (config.wifiOnly && !isWifi(applicationContext)) {
                 SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.WAIT_NETWORK)
                 Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, OperationReason.WIFI)
-                settings.uploadStatus("等待非计费 Wi-Fi；截图留在本机队列")
+                settings.syncStatus("waiting", "等待非计费 Wi-Fi · 记录保留在本机")
                 return Result.retry()
             }
             stage = EventStage.QUEUE
             val queue = applicationContext.queue()
+            settings.syncStatus("uploading", "正在同步本机记录")
+            SourceWork.enqueueUpload(applicationContext, config, explicit)
             stage = EventStage.HEARTBEAT
-            sendHeartbeat(settings, config, queue)
+            SyncHeartbeat.send(applicationContext, settings, config, queue)
             repeat(25) {
                 if (isStopped) return Result.retry()
-                if (config.wifiOnly && !isWifi(applicationContext)) return Result.retry()
+                if (config.wifiOnly && !isWifi(applicationContext)) return failed("同步期间网络已变化")
                 stage = EventStage.QUEUE
                 val event = queue.peek() ?: run {
                     stage = EventStage.HEARTBEAT
-                    sendHeartbeat(settings, config, queue)
-                    settings.uploadStatus("队列已同步 · ${java.time.Instant.now()}")
+                    finishStatus(settings)
+                    SyncHeartbeat.send(applicationContext, settings, config, queue)
                     return Result.success()
                 }
                 stage = EventStage.UPLOAD
@@ -83,41 +98,29 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 if (code !in setOf(200, 201) || response?.optString("id") != event.getString("id")) {
                     SupportEvents.record(applicationContext, stage, EventJournal.httpFailure(code), httpStatus = code)
                     Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.httpReason(code), httpStatus = code, recordId = pendingRecordId)
-                    settings.uploadStatus("上传未确认（HTTP $code），原记录保留并退避重试")
-                    return Result.retry()
+                    return failed("上传未确认（HTTP $code）")
                 }
                 Diagnostics(applicationContext).add("uploadBytes", event.toString().toByteArray(Charsets.UTF_8).size.toLong())
                 stage = EventStage.QUEUE
                 queue.acknowledge(event.getString("id"), event.toString().toByteArray(Charsets.UTF_8).size.toLong())
                 SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                 pendingRecordId = null
-                settings.uploadStatus("已确认上传；待上传 ${queue.depth()} 条")
+                settings.syncStatus("uploading", "已确认上传；待同步 ${SyncSchedule.pending(applicationContext).count} 条", uploaded = true)
             }
             stage = EventStage.HEARTBEAT
-            sendHeartbeat(settings, config, queue)
+            if (queue.depth() == 0) finishStatus(settings)
+            SyncHeartbeat.send(applicationContext, settings, config, queue)
+            // A successful chunk may continue the same explicit operation; failures never retry in manual mode.
             if (queue.depth() > 0) Result.retry() else Result.success()
         } catch (error: Exception) {
             SupportEvents.record(applicationContext, stage, EventJournal.failure(error, stage))
             if (error !is RecordedHeartbeatFailure) Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.failure(error, stage), recordId = pendingRecordId)
-            settings.uploadStatus("网络、配置或本地队列异常，数据保留，等待重试；请检查节点地址/证书/令牌")
-            Result.retry()
+            failed("同步失败，请检查连接")
         }
     }
-    private fun sendHeartbeat(settings: Settings, config: CollectorConfig, queue: DurableQueue) {
-        val runtimeAlive = CaptureAccessibilityService.connected || ProjectionService.running
-        val status = if (settings.enabled && !runtimeAlive) "permission_required" else settings.state()
-        val body = JSONObject().put("deviceId", settings.deviceId).put("deviceName", config.deviceName).put("platform", "android")
-            .put("status", status).put("queueDepth", queue.depth()).put("lastCaptureAt", settings.lastCapture())
-            .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(applicationContext, if (config.effectiveMode() == "projection") "media_projection" else "accessibility")) }
-        if (status == "permission_required") body.put("error", if (!runtimeAlive && settings.enabled)
-            "采集服务未连接，请打开手机应用恢复权限" else settings.message())
-        else if (status == "error") body.put("error", settings.message())
-        val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.token)
-        if (code !in 200..299 || response?.optBoolean("ok") != true) SupportEvents.record(applicationContext, EventStage.HEARTBEAT, EventJournal.httpFailure(code), httpStatus = code)
-        if (code !in 200..299 || response?.optBoolean("ok") != true) {
-            Operations.record(applicationContext, OperationKind.HEARTBEAT_FAILED, Operations.httpReason(code), httpStatus = code)
-            throw RecordedHeartbeatFailure()
-        }
+    private fun finishStatus(settings: Settings) {
+        val pending = SyncSchedule.pending(applicationContext).hasWork
+        settings.syncStatus(if (pending) "waiting" else "idle", if (pending) "截图与笔记已同步，等待来源同步" else "全部待发记录已同步")
     }
     companion object {
         private var lastHeartbeatRequest = 0L
@@ -125,20 +128,35 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             val now = android.os.SystemClock.elapsedRealtime()
             if (now - lastHeartbeatRequest >= 30_000) { lastHeartbeatRequest = now; schedule(context, config) }
         }
-        private fun constraints(config: CollectorConfig) = Constraints.Builder()
-            .setRequiredNetworkType(if (config.wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
-        fun schedule(context: Context, config: CollectorConfig, manual: Boolean = false) {
-            val work = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config))
-                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-            WorkManager.getInstance(context).enqueueUniqueWork("mote-upload", if (manual) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, work)
-            val periodic = PeriodicWorkRequestBuilder<UploadWorker>(15, TimeUnit.MINUTES)
-                .setConstraints(constraints(config)).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork("mote-upload-recovery", ExistingPeriodicWorkPolicy.UPDATE, periodic)
-        }
+        fun schedule(context: Context, config: CollectorConfig, manual: Boolean = false) = SyncSchedule.schedule(context, config, manual)
         fun isWifi(context: Context): Boolean {
             val manager = context.getSystemService(ConnectivityManager::class.java)
             val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
             return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+        }
+    }
+}
+
+internal object SyncHeartbeat {
+    fun send(context: Context, settings: Settings, config: CollectorConfig, queue: DurableQueue) {
+        val runtimeAlive = CaptureAccessibilityService.connected || ProjectionService.running
+        val status = if (settings.enabled && !runtimeAlive) "permission_required" else settings.state()
+        val body = JSONObject().put("deviceId", settings.deviceId).put("deviceName", config.deviceName).put("platform", "android")
+            .put("status", status).put("queueDepth", queue.depth()).put("lastCaptureAt", settings.lastCapture())
+            .put("sync", JSONObject().put("mode", config.syncMode).put("state", settings.syncState())
+                .put("intervalMinutes", config.syncIntervalMinutes).put("batchSize", config.syncBatchSize)
+                .put("pendingRecords", SyncSchedule.pending(context).count.coerceAtMost(1_000_000))
+                .apply { settings.lastUploadAt()?.let { put("lastUploadAt", it) }
+                    SyncSchedule.delay(context, config)?.takeIf { it > 0 }?.let { put("nextUploadAt", java.time.Instant.ofEpochMilli(System.currentTimeMillis() + it).toString()) } })
+            .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility")) }
+        if (status == "permission_required") body.put("error", if (!runtimeAlive && settings.enabled)
+            "采集服务未连接，请打开手机应用恢复权限" else settings.message())
+        else if (status == "error") body.put("error", settings.message())
+        val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.token)
+        if (code !in 200..299 || response?.optBoolean("ok") != true) SupportEvents.record(context, EventStage.HEARTBEAT, EventJournal.httpFailure(code), httpStatus = code)
+        if (code !in 200..299 || response?.optBoolean("ok") != true) {
+            Operations.record(context, OperationKind.HEARTBEAT_FAILED, Operations.httpReason(code), httpStatus = code)
+            throw RecordedHeartbeatFailure()
         }
     }
 }

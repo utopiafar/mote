@@ -35,6 +35,7 @@ it('keeps the prepared event ID and timestamp across a crash after enqueue, then
   expect(second.id).not.toBe(saved.id); expect(queue.stats().depth).toBe(2);
 });
 it('refuses to mutate or retarget a prepared submission after a failed queue write', async () => {
+  const config = { ...defaultConfig(), token: 'synthetic-bound-note-token' };
   const store = new NoteDraftStore(directory); await store.initialize(); const input = { ...store.get(), text: 'generated', mood: '', revision: 1 };
   await expect(store.submit(input, config, 'macos', { enqueue: async () => { throw new Error('full'); } })).rejects.toThrow('full');
   await expect(store.update({ ...input, text: 'changed', revision: 2 })).rejects.toThrow('不能改写');
@@ -51,4 +52,15 @@ it('captures optional note metadata once before preparation, preserves it on ret
   expect(observations).toBe(1); expect((await queue.next())?.record.event.metadata?.state?.batteryPercent).toBe(42);
   await restarted.submit({ ...restarted.get(), text: 'metadata disabled', revision: 1 }, { ...config, metadataEnabled: false }, 'macos', queue, provider);
   expect(observations).toBe(1); expect((await queue.exportArchive()).records[1].event).not.toHaveProperty('metadata');
+});
+
+it('keeps a prepared local note local across restart, then binds it only through an explicit initial connection', async () => {
+  const local = { ...config, serverUrl: '', token: undefined };
+  let store = new NoteDraftStore(directory); await store.initialize(); const input = { ...store.get(), text: 'generated offline note', mood: '', revision: 1 };
+  await expect(store.submit(input, local, 'macos', { enqueue: async () => { throw new Error('full'); } })).rejects.toThrow('full');
+  store = new NoteDraftStore(directory); await store.initialize(); expect(store.hasUnboundPrepared()).toBe(true);
+  const target = { ...local, serverUrl: 'https://confirmed.example', token: 'synthetic-confirmed-token' };
+  await expect(store.submit(input, target, 'macos', { enqueue: async () => true })).rejects.toThrow('原中央节点');
+  await store.bindPreparedOrigin(target.serverUrl);
+  await expect(store.submit(input, target, 'macos', { enqueue: async () => true })).resolves.toMatchObject({ id: input.id });
 });

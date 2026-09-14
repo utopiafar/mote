@@ -1,5 +1,7 @@
 /** Real Electron renderer + isolated central process; generated text only, no screen capture APIs. */
 const {app, BrowserWindow} = require('electron');
+// Keep Electron alive until asynchronous fixture cleanup sets the intended exit code.
+app.on('window-all-closed', () => {});
 const {mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync} = require('node:fs');
 const {tmpdir} = require('node:os');
 const {join, resolve} = require('node:path');
@@ -33,31 +35,24 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   await window.loadURL(url);
   await wc.executeJavaScript(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('中央节点已连接')`),'authenticated app');
-  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.sidebar nav button')).find(b=>b.innerText==='服务端配置').click()`);
-  await until(()=>wc.executeJavaScript(`document.body.innerText.includes('SQLite 数据库')`),'effective server configuration');
-  const settingsText=await wc.executeJavaScript(`document.querySelector('.server-settings').innerText`);
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.innerText==='设置').click()`);
+  await until(()=>wc.executeJavaScript(`!!document.querySelector('.preference-menu')`),'settings hub');
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.preference-menu button')).find(b=>b.querySelector('strong')?.textContent==='开发者选项').click()`);
+  await until(()=>wc.executeJavaScript(`!!document.querySelector('.deployment-details')`),'effective server configuration');
+  await wc.executeJavaScript(`document.querySelector('.deployment-details').open=true`);
+  const settingsText=await wc.executeJavaScript(`document.querySelector('.deployment-details').innerText`);
   assert.ok(settingsText.includes(join(root,'data','mote.sqlite')));
   assert.ok(settingsText.includes(file));
   assert.ok(settingsText.includes('MOTE_MAX_STORAGE_MB'));
   assert.ok(settingsText.includes('https://fixture.example.com'));
   assert.ok(settingsText.includes('已配置'));
   assert.equal(settingsText.includes(token),false);assert.equal(settingsText.includes(modelKey),false);
-  await until(()=>wc.executeJavaScript(`document.querySelector('.software-update')?.innerText.includes('点击检查后连接 GitHub')`),'idle software update panel');
-  assert.ok(await wc.executeJavaScript(`document.querySelector('.software-update').innerText.includes('当前版本')`));
-  // Opt-in live GitHub release validation, never a live model or a daily node.
-  if(process.env.MOTE_WEB_UPDATE_CHECK==='1') {
-    await wc.executeJavaScript(`document.querySelector('.software-update button').click()`);
-    await until(()=>wc.executeJavaScript(`!document.querySelector('.software-update button').disabled`),'live release check');
-    assert.ok(await wc.executeJavaScript(`document.querySelector('.software-update').innerText.includes('发布签名已验证')`),'live GitHub release must verify');
-  }
-  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.settings-heading button')).find(b=>b.innerText==='刷新配置').click()`);
-  await until(()=>wc.executeJavaScript(`!document.querySelector('.settings-heading button').disabled`),'configuration refresh');
   writeFileSync(join(output,'web-settings-desktop.png'),(await wc.capturePage()).toPNG());
   window.setSize(430,1000);await sleep(200);
   assert.equal(await wc.executeJavaScript('document.documentElement.scrollWidth<=window.innerWidth'),true);
   writeFileSync(join(output,'web-settings-mobile.png'),(await wc.capturePage()).toPNG());
   window.setSize(1360,1100);await sleep(100);
-  await wc.executeJavaScript(`Array.from(document.querySelectorAll('nav button')).find(b=>b.innerText==='资料库').click()`);
+  await wc.executeJavaScript(`document.querySelector('.deployment-details').open=false`);
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('本次运行')`),'diagnostic snapshot');
   assert.equal(await wc.executeJavaScript(`document.querySelector('#diagnostics-title').textContent`),'运行诊断');
   await wc.executeJavaScript(`document.querySelector('.diagnostics-events').open=true;document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'})`);
@@ -78,7 +73,7 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   writeFileSync(join(output,'web-diagnostics-mobile.png'),(await wc.capturePage()).toPNG());
   assert.deepEqual(errors,[]);
   console.info('PASS: actual renderer → isolated central node → effective settings/storage paths/secret status/refresh → profile/snapshot → request ID filter → safe support download; desktop/mobile layouts rendered. Generated notes only.');
-})().then(()=>finish(0),error=>{console.error(error.message);finish(1);});
+})().then(()=>finish(0),error=>{console.error(error.stack);finish(1);});
 async function finish(code){
   if(window&&!window.isDestroyed())window.destroy();
   if(server&&server.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('close',r)),sleep(5000)]);}

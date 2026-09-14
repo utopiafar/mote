@@ -20,16 +20,17 @@ object ConnectionGuard {
         if (!lock.readLock().tryLock()) return null
         return try { action() } finally { lock.readLock().unlock() }
     }
-    fun <T> change(context: Context, nextServer: String, action: () -> T): T {
+    fun <T> change(context: Context, nextServer: String, bindLocal: Boolean = false, action: () -> T): T {
         if (!lock.writeLock().tryLock()) throw ConnectionFailure("busy")
         try {
             val settings = Settings(context)
             if (settings.enabled || ProjectionService.running || processing.get() > 0) throw ConnectionFailure("busy")
-            if (settings.read().server.trimEnd('/') != nextServer.trimEnd('/')) {
-                if (context.queue().depth() > 0 || QuickNotes.draft(context).read()?.prepared != null) throw ConnectionFailure("pending")
-                val sources = context.localSources()
-                if (sources.sources().any { (sources.state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }) throw ConnectionFailure("pending")
-            }
+            val origin = settings.dataOrigin(); val next = nextServer.trim().trimEnd('/')
+            val pending = settings.hasPendingData()
+            if (pending && next.isNotBlank() && origin.isNotBlank() && origin != next) throw ConnectionFailure("pending")
+            if (pending && next.isNotBlank() && origin.isBlank() && !bindLocal) throw ConnectionFailure("local_confirmation")
+            // Do not replay already acknowledged snapshots into a different archive.
+            if (!pending && origin.isNotBlank() && next != origin) context.localSources().resetSyncedSnapshots()
             return action()
         } finally { lock.writeLock().unlock() }
     }

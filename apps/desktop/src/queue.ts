@@ -2,7 +2,9 @@ import { recordMetadataSchema } from '@mote/shared/metadata';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, unlink, open, chmod } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { CaptureEvent } from './contracts';
+import { ConnectionBindingStore } from './connection-binding';
+import { atomicSourceJson } from './source-sync';
+import type { CaptureEvent, Config } from './contracts';
 import { MAX_IMAGE_BYTES } from './config';
 
 export interface QueueRecord {
@@ -13,7 +15,7 @@ export interface QueueRecord {
   nextAttemptAt: number;
 }
 export interface QueueLimits { maxQueueBytes: number; maxQueueEvents: number }
-export interface QueueStats { depth: number; bytes: number; nextRetryAt?: string }
+export interface QueueStats { depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string }
 export interface QueueArchive {
   format: 'mote-desktop-queue';
   version: 1;
@@ -84,7 +86,10 @@ export class DurableQueue {
   private records = new Map<string, QueueRecord>();
   private chain: Promise<unknown> = Promise.resolve();
   private initialized = false;
-  constructor(readonly directory: string, private limits: QueueLimits) {}
+  readonly binding: ConnectionBindingStore;
+  private lastUploadAt?: string;
+  private sourceRetryAt?: string;
+  constructor(readonly directory: string, private limits: QueueLimits) { this.binding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); }
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
     const result = this.chain.then(fn);
     this.chain = result.catch(() => undefined);
@@ -119,20 +124,29 @@ export class DurableQueue {
       for (const name of await readdir(join(this.directory, 'blobs'))) {
         if (name.endsWith('.tmp') || (name.endsWith('.jpg') && HASH.test(name.slice(0, -4)) && !checked.has(name.slice(0, -4)))) await unlink(join(this.directory, 'blobs', name));
       }
+      const config = this.limits as QueueLimits & Partial<Config>;
+      await this.binding.initialize({ serverUrl: config.serverUrl ?? '', token: config.token }, restored.size > 0);
+      try { const checkpoint = JSON.parse(await readFile(join(this.directory, 'sync-checkpoint.json'), 'utf8')); this.lastUploadAt = checkpoint.lastUploadAt; this.sourceRetryAt = checkpoint.nextRetryAt; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
       this.initialized = true;
     });
   }
+  contains(id: string): boolean { return this.records.has(id); }
   setLimits(limits: QueueLimits): void { this.limits = limits; }
   stats(): QueueStats {
     const blobs = new Map<string, number>();
     let metadataBytes = 0;
-    let nextRetry: number | undefined;
+    let nextRetry: number | undefined = this.sourceRetryAt ? Date.parse(this.sourceRetryAt) : undefined;
+    let oldestPendingAt: string | undefined;
     for (const record of this.records.values()) {
+      if (!oldestPendingAt || record.event.capturedAt < oldestPendingAt) oldestPendingAt = record.event.capturedAt;
       if (record.blobHash) blobs.set(record.blobHash, record.blobBytes);
       metadataBytes += Buffer.byteLength(JSON.stringify(record));
       if (record.nextAttemptAt > 0) nextRetry = Math.min(nextRetry ?? Infinity, record.nextAttemptAt);
     }
-    return { depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined };
+    return { depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt };
+  }
+  async syncCheckpoint(lastUploadAt = this.lastUploadAt, nextRetryAt?: string): Promise<void> {
+    await this.exclusive(async () => { await atomicSourceJson(join(this.directory, 'sync-checkpoint.json'), { lastUploadAt, nextRetryAt }); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; });
   }
   atCapacity(): boolean { const stats = this.stats(); return stats.depth >= this.limits.maxQueueEvents || stats.bytes >= this.limits.maxQueueBytes; }
   async enqueue(event: CaptureEvent, image?: Buffer): Promise<boolean> {
@@ -192,6 +206,7 @@ export class DurableQueue {
     });
   }
   async resetRetries(): Promise<void> {
+    await this.syncCheckpoint();
     return this.exclusive(async () => {
       for (const prior of this.records.values()) {
         const record = { ...prior, nextAttemptAt: 0 };

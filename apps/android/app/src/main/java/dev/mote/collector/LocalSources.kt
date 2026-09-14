@@ -107,7 +107,11 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         require(old != null || all.size < 20) { "最多连接 20 个来源" }
         // Explicit selection/filter/retention edits discard old unsent material before the new scan.
         if (old != null && old.copy(enabled = source.enabled, intervalMinutes = source.intervalMinutes, name = source.name).json().toString() != source.json().toString()) file(source.id).delete()
-        if (old != null && old.name != source.name) { val state = state(source.id); state.put("registered", false); write(file(source.id), state) }
+        if (old == null || old.name != source.name) {
+            val state = state(source.id); state.put("registered", false)
+            if (!state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
+            write(file(source.id), state)
+        }
         all.removeAll { it.id == source.id }; all.add(source)
         write(File(directory, "config.enc"), JSONObject().put("sources", JSONArray(all.map { it.json() })))
     }
@@ -121,6 +125,19 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         require(code in setOf("ready", "scanned", "partial", "synced", "offline", "permission", "paused", "configuration", "storage", "provider", "http", "ack"))
         val state = state(id); state.put("status", code).put("statusAt", at); write(file(id), state)
     }
+    fun pendingSync(): PendingSync = synchronized(lock) {
+        var count = 0; var updates = 0; var oldest: Long? = null
+        sources().forEach { source ->
+            val state = state(source.id)
+            val size = state.optJSONArray("pending")?.length() ?: 0
+            val metadata = source.enabled && !state.optBoolean("registered")
+            if (size > 0 || metadata) { count += size; if (metadata) updates++; val at = state.optLong("pendingSince", file(source.id).lastModified().takeIf { it > 0 } ?: File(directory, "config.enc").lastModified()); oldest = oldest?.let { minOf(it, at) } ?: at }
+        }; PendingSync(count, oldest, updates)
+    }
+    fun resetSyncedSnapshots() = synchronized(lock) {
+        val all = sources(); check(all.all { (state(it.id).optJSONArray("pending")?.length() ?: 0) == 0 })
+        all.forEach { if (file(it.id).exists()) check(file(it.id).delete()) }
+    }
     fun selectTarget(id: String, target: String) = synchronized(lock) {
         val state = state(id)
         if (state.optString("target") != target) {
@@ -128,11 +145,14 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
             val pending = state.optJSONArray("pending") ?: JSONArray(); val current = state.optJSONObject("current") ?: JSONObject()
             val keys = (0 until pending.length()).map { identity(pending.getJSONObject(it)) }.toMutableSet()
             for (key in current.keys()) { val body = current.getJSONObject(key).getJSONObject("body"); if (keys.add(identity(body))) pending.put(body) }
+            if (pending.length() > 0 && !state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
             state.put("pending", pending); write(file(id), state)
         }
     }
     fun registered(id: String, target: String) = synchronized(lock) {
-        val state = state(id); check(state.optString("target") == target); state.put("registered", true); write(file(id), state)
+        val state = state(id); check(state.optString("target") == target); state.put("registered", true)
+        if ((state.optJSONArray("pending")?.length() ?: 0) == 0) state.remove("pendingSince")
+        write(file(id), state)
     }
     fun scan(source: LocalSource, result: SourceScan, maxBytes: Long = 64L * 1024 * 1024) = synchronized(lock) {
         val active = sources().find { it.id == source.id } ?: return@synchronized
@@ -163,6 +183,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
             }
         }
         check(pending.length() <= 4096) { "来源队列已满，请先同步" }
+        if (pending.length() > 0 && !state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
         state.put("current", current).put("pending", pending).put("lastScan", result.observedAt).put("status", if (result.complete) "scanned" else "partial").put("skipped", result.skipped).put("scanComplete", result.complete)
         val bytes = cipher.seal(state.toString().toByteArray(Charsets.UTF_8))
         val other = directory.listFiles()?.filter { it != file(source.id) }?.sumOf { it.length() } ?: 0L
@@ -177,6 +198,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         val state = state(id); if (state.optString("target") != target) return@synchronized
         val old = state.optJSONArray("pending") ?: JSONArray(); val next = JSONArray()
         for (i in 0 until old.length()) { val value = old.getJSONObject(i); if (value.getString("externalId") != externalId || value.getString("revision") != revision) next.put(value) }
+        if (next.length() == 0) state.remove("pendingSince")
         state.put("pending", next); write(file(id), state)
     }
     private fun identity(value: JSONObject) = value.getString("externalId") + "\u0000" + value.getString("revision")

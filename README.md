@@ -6,6 +6,8 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 
 采集器是独立的 **macOS App** 和 **Android App**。中央节点可放在 Mac mini、Linux 服务器或 NAS 上；它提供 API 与管理界面，Mac App 内可直接打开。更换服务器时迁移归档并更新客户端地址即可。
 
+两端均可在未配置服务端时先记录到本机。上传可选实时、定时、积攒一批或仅手动，截图、随手记与本地来源共用策略；常用配置支持预设、应用选择和遮挡区域编辑。完整行为见 [采集与上传说明](docs/collection-and-sync.md)。
+
 [开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [资料分层](docs/context-layers.md) · [来源与 MCP](docs/connectors.md) · [排查问题](docs/troubleshooting.md)
 
 [下载安装包](https://github.com/utopiafar/mote/releases) · [扫码与 JSON 连接](docs/connections.md) · [保留设置地更新](docs/updating.md) · [发布与签名流程](docs/releasing.md)

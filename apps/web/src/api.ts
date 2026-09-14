@@ -24,6 +24,7 @@ export interface Capture {
   mood?: string;
 }
 export interface Device {
+  sync?: import('@mote/shared').Heartbeat['sync'];
   metadata?: RecordMetadata;
   deviceId: string;
   deviceName: string;
@@ -193,7 +194,7 @@ export function ago(value?: string) {
         : `${Math.floor(seconds / 86400)} 天前`;
 }
 export function deviceState(device: Device) {
-  if (Date.now() - Date.parse(device.lastSeenAt) > 90_000) return "offline";
+  if (!Number.isFinite(Date.parse(device.lastSeenAt)) || Date.now() - Date.parse(device.lastSeenAt) > 90_000) return "stale";
   return device.status;
 }
 export const deviceLabels: Record<string, string> = {
@@ -202,6 +203,7 @@ export const deviceLabels: Record<string, string> = {
   permission_required: "等待权限",
   error: "需要处理",
   offline: "已离线",
+  stale: "状态待更新",
 };
 export function errorMessage(error: unknown) {
   if (error instanceof ApiError && error.requestId) return `${error.message} 请求编号：${error.requestId}`;

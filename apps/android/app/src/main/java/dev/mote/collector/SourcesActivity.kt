@@ -25,16 +25,9 @@ class SourcesActivity : Activity() {
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 2500) } }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        val scroll = ScrollView(this); val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 48, 32, 40); setBackgroundColor(Color.rgb(245, 246, 242)) }
-        scroll.addView(content); setContentView(scroll)
-        scroll.setOnApplyWindowInsetsListener { view, insets ->
-            if (android.os.Build.VERSION.SDK_INT >= 30) {
-                val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars()); view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            } else { @Suppress("DEPRECATION") view.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom) }
-            insets
-        }
+        val content = moteDetailPage()
         content.addView(TextView(this).apply { text = "日历与文件"; textSize = 28f })
-        content.addView(TextView(this).apply { text = "只读取你主动选择的来源。日历记录计划时间，不代表实际参加；文件由系统选择器授权，不扫描整个手机。\n环境：${BuildConfig.MOTE_PROFILE}。中央节点沿用首页已保存的配置。"; textSize = 14f })
+        content.addView(TextView(this).apply { text = "只读取你主动选择的来源。日历记录计划时间，不代表实际参加；文件由系统选择器授权，不扫描整个手机。\n环境：${BuildConfig.MOTE_PROFILE}。中央节点沿用「连接与同步」中已保存的配置。"; textSize = 14f })
         fun action(label: String, callback: () -> Unit) { content.addView(Button(this).apply { text = label; setOnClickListener { callback() } }) }
         action("连接本机日历") {
             if (checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED) chooseCalendars()
@@ -42,9 +35,10 @@ class SourcesActivity : Activity() {
         }
         action("选择一个文件") { pick(false) }
         action("选择文件目录") { pick(true) }
-        action("立即扫描并同步") { runCatching { SourceWork.schedule(this, true); toast("已请求扫描；上传遵守首页 Wi-Fi 配置") }.onFailure { toast("无法调度，请保留应用数据后重试") } }
-        content.addView(TextView(this).apply { text = "默认扩展名 md/txt/json/csv/ics，正文只接受 UTF-8；单文件 100 KiB、100000 字符，单次最多 200 项和 4 MiB，来源缓存最多 64 MiB（也遵守首页队列上限）。超限或扫描不完整会提示，绝不把漏扫项当作删除。\n系统后台任务约每 15 分钟检查一次来源各自的间隔；省电或强行停止可能推迟，重新打开应用可恢复。引用模式仅同步名称/URI/时间元数据。"; textSize = 13f })
+        action("立即扫描并同步") { runCatching { SourceWork.schedule(this, true, syncExplicit = true); toast("已请求扫描；上传遵守同步 Wi-Fi 设置") }.onFailure { toast("无法调度，请保留应用数据后重试") } }
+        content.addView(TextView(this).apply { text = "默认扩展名 md/txt/json/csv/ics，正文只接受 UTF-8；单文件 100 KiB、100000 字符，单次最多 200 项和 4 MiB，来源缓存最多 64 MiB（也遵守采集与存储中的队列上限）。超限或扫描不完整会提示，绝不把漏扫项当作删除。\n系统后台任务约每 15 分钟检查一次来源各自的间隔；省电或强行停止可能推迟，重新打开应用可恢复。引用模式仅同步名称/URI/时间元数据。"; textSize = 13f })
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(list)
+        MoteUi.styleTree(content)
     }
     override fun onResume() { super.onResume(); handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
@@ -76,6 +70,7 @@ class SourcesActivity : Activity() {
                         list.addView(Button(this).apply { text = "设置 · ${source.name}"; setOnClickListener { edit(source) } })
                     }
                 }
+                MoteUi.styleTree(list)
             }
         }
     }
@@ -126,13 +121,14 @@ class SourcesActivity : Activity() {
         val name = field("来源名称", source.name)
         val enabled = CheckBox(this).apply { text = "允许本机扫描并发送这个来源"; isChecked = source.enabled }; form.addView(enabled)
         val reference = CheckBox(this).apply { text = "仅引用：不读取/发送正文（中央已有历史不随此设置删除）"; isChecked = source.retention == "reference" }; form.addView(reference)
-        val interval = field("同步间隔 / 分钟（15–1440，系统可能推迟）", source.intervalMinutes.toString(), true)
+        val interval = field("扫描间隔 / 分钟（15–1440，系统可能推迟）", source.intervalMinutes.toString(), true)
         val before = if (source.kind == "local-calendar") field("过去多少天（0–365）", source.daysBefore.toString(), true) else null
         val after = if (source.kind == "local-calendar") field("未来多少天（1–365）", source.daysAfter.toString(), true) else null
         val extensions = if (source.kind == "local-files") field("允许扩展名，逗号分隔", source.extensions) else null
         val excludes = if (source.kind == "local-files") field("排除相对路径：每行一项，* 表示任意字符；区分大小写", source.excluded) else null
-        form.addView(TextView(this).apply { text = "更改选择、过滤或保留方式会清除这个来源的本机旧待发缓存，按新设置重新扫描；不会自动删除中央历史。停止或移除也只影响本机连接。" })
-        val dialog = AlertDialog.Builder(this).setTitle("来源设置").setView(ScrollView(this).apply { addView(form) }).setNegativeButton("取消", null).setPositiveButton("保存并同步", null)
+        form.addView(TextView(this).apply { text = "更改选择、过滤或保留方式会清除这个来源的本机旧待发缓存，按新设置重新扫描；不会自动删除中央历史。停用仅暂停本机检查与同步，中央的启用状态与历史保持不变。移除只影响本机连接。" })
+        MoteUi.styleTree(form)
+        val dialog = AlertDialog.Builder(this).setTitle("来源设置").setView(ScrollView(this).apply { addView(form) }).setNegativeButton("取消", null).setPositiveButton("保存来源设置", null)
             .setNeutralButton("移除连接") { _, _ ->
                 localSources().remove(source.id)
                 source.uri?.let { old -> if (localSources().sources().none { it.uri == old }) runCatching { contentResolver.releasePersistableUriPermission(Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION) } }

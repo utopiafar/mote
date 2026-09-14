@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { desktopCapturer, nativeImage, powerMonitor, screen, systemPreferences } from 'electron';
 import type { NativeImage } from 'electron';
 import type { Config, Status, Platform, CaptureEvent, NsfwGate } from './contracts';
+import { decideSync } from './sync-policy';
+import type { LocalSourceManager } from './source-manager';
 import { MAX_IMAGE_BYTES, publicConfig } from './config';
 import { DurableQueue, QueueFullError } from './queue';
 import { activeApplication, foregroundApplication, recognizeText, readPowerState } from './native';
@@ -33,8 +35,8 @@ export class Collector {
   private lastCaptureAt?: string;
   private lastUploadAt?: string;
   private lastUploadError?: string;
-  constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly nsfw?: NsfwGate, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal) {
-    this.config = config;
+  constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly nsfw?: NsfwGate, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal, private readonly sources?: LocalSourceManager) {
+    this.config = config; this.lastUploadAt = this.queue.stats().lastUploadAt;
     powerMonitor.on('lock-screen', () => { this.locked = true; this.pause('屏幕已锁定，暂停采集'); });
     powerMonitor.on('unlock-screen', () => { this.locked = false; this.lastSample = undefined; });
     powerMonitor.on('suspend', () => { this.sleeping = true; this.pause('电脑休眠，暂停采集'); });
@@ -48,12 +50,27 @@ export class Collector {
   status(): Status {
     const queue = this.queue.stats();
     return {
-      running: this.running, state: this.state, message: this.message,
+      running: this.running, state: this.state, message: this.message, sync: this.syncStatus(),
       queueDepth: queue.depth, queueBytes: queue.bytes, nextRetryAt: queue.nextRetryAt,
       lastCaptureAt: this.lastCaptureAt, lastUploadAt: this.lastUploadAt, lastUploadError: this.lastUploadError,
       screenPermission: currentPlatform === 'macos' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
       platform: currentPlatform, encryptedTokenStorage: this.tokenStorageAvailable(), config: publicConfig(this.config), nsfw: this.nsfw?.status(), diagnostics: this.diagnostics?.status(),
     };
+  }
+  private pendingSync() {
+    const queue = this.queue.stats(), sources = this.sources?.pendingStats();
+    const oldestPendingAt = [queue.oldestPendingAt, (sources?.eligibleRecords === undefined ? sources?.oldestPendingAt : sources.oldestEligibleAt), sources?.oldestUpdateAt].filter((date): date is string => Boolean(date)).sort()[0];
+    return { pendingRecords: queue.depth + (sources?.pendingRecords ?? 0), eligibleRecords: queue.depth + (sources?.eligibleRecords ?? sources?.pendingRecords ?? 0), heldRecords: sources?.heldRecords ?? 0, heldUpdates: sources?.heldUpdates ?? 0, heldReason: sources?.heldReason, pendingUpdates: sources?.eligibleUpdates ?? sources?.pendingUpdates ?? 0, oldestPendingAt, lastUploadAt: this.lastUploadAt ?? queue.lastUploadAt, nextRetryAt: queue.nextRetryAt };
+  }
+  private syncStatus(): Status['sync'] {
+    const pending = this.pendingSync();
+    const { ready: _, ...policy } = decideSync(this.config, { ...pending, pendingRecords: pending.eligibleRecords });
+    const decision = { ...policy, pendingRecords: pending.pendingRecords };
+    const localBacklogUnbound = decision.pendingRecords > 0 && this.queue.binding.unbound() && (!this.sources || this.sources.nodeBinding.unbound());
+    if (decision.state !== 'unconfigured' && !pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) return { ...decision, state: 'waiting', message: pending.heldReason ?? '来源待传版本等待恢复', localBacklogUnbound };
+    if (this.uploading) return { ...decision, state: 'uploading', message: '正在同步本地记录', localBacklogUnbound };
+    if (decision.state !== 'unconfigured' && this.lastUploadError) return { ...decision, state: 'error', message: this.lastUploadError, localBacklogUnbound };
+    return { ...decision, localBacklogUnbound };
   }
   private publish(): void { this.onChange(this.status()); }
   private pause(message: string): void {
@@ -83,7 +100,6 @@ export class Collector {
     if (this.running) return;
     if (this.capturing) throw new Error('正在结束上一轮采集，请稍后再试');
     if (currentPlatform !== 'macos') throw new Error('此 MVP 只支持 macOS 采集；Windows/Linux 需要接入可靠前台应用识别后才可启用');
-    if (!this.config.token) throw new Error('请先保存中央节点访问令牌');
     if (this.queue.atCapacity()) throw new QueueFullError();
     void this.events?.record('CAPTURE', 'STARTED');
     this.running = true; this.state = 'capturing'; this.message = '已开启；按应用级别记录，完整内容先经过本地隐私过滤';
@@ -94,7 +110,7 @@ export class Collector {
     void this.events?.record('CAPTURE', 'STOPPED');
     this.running = false; this.lastSample = undefined; this.captureAbort?.abort(); this.nsfw?.reset();
     if (this.timer) clearTimeout(this.timer);
-    this.state = 'stopped'; this.message = '采集已停止；已入队的脱敏记录继续上传'; this.publish(); void this.sendHeartbeat();
+    this.state = 'stopped'; this.message = '采集已停止；本地记录保留，同步按设置独立运行'; this.publish(); void this.sendHeartbeat();
   }
   async settleCapture(): Promise<void> {
     while (this.capturing) await new Promise(resolve => setTimeout(resolve, 25));
@@ -106,7 +122,7 @@ export class Collector {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.nsfw?.close(); void this.diagnostics?.close();
   }
-  async retry(): Promise<void> { await this.queue.resetRetries(); await this.upload(); }
+  async retry(): Promise<void> { await this.queue.resetRetries(); await this.upload(true); await this.sendHeartbeat(true); }
   private finalImage(image: NativeImage, rectangles: Config['masks']): NativeImage {
     const { width, height } = image.getSize();
     return nativeImage.createFromBitmap(maskBitmap(image.toBitmap(), width, height, rectangles), { width, height });
@@ -228,13 +244,19 @@ export class Collector {
       if (this.running) this.timer = setTimeout(() => void this.capture(), Math.max(1000, cfg.intervalMs - (Date.now() - startedAt)));
     }
   }
-  async upload(): Promise<void> {
-    if (this.uploading || this.connectionHeld || !this.config.token) return;
-    this.uploading = true;
+  async upload(explicit = false): Promise<void> {
+    if (this.uploading || this.connectionHeld) return;
+    const pending = this.pendingSync();
+    const policy = decideSync(this.config, { ...pending, pendingRecords: pending.eligibleRecords }, Date.now(), explicit);
+    if (!pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) { this.publish(); return; }
+    if (!policy.ready) { this.publish(); return; }
+    if (!this.queue.binding.matches(this.config)) { this.lastUploadError = '本地队列仍绑定原节点，请恢复已确认的连接'; this.publish(); return; }
+    this.uploading = true; this.lastUploadError = undefined;
     const abort = this.uploadAbort = new AbortController();
+    this.publish();
     try {
       // Bound each flush so the UI and new capture policy changes stay responsive.
-      for (let count = 0; count < 20 && !abort.signal.aborted; count++) {
+      for (let count = 0, limit = this.queue.stats().depth; count < limit && !abort.signal.aborted; count++) {
         const entry = await this.queue.next();
         if (!entry) break;
         try {
@@ -252,13 +274,33 @@ export class Collector {
           break;
         }
       }
-    } catch { void this.events?.record('QUEUE', 'STORAGE'); this.lastUploadError = '本地队列读取失败，请停止采集并检查队列备份'; }
+      if (!abort.signal.aborted && !this.lastUploadError) {
+        await this.sources?.flushPending(abort.signal);
+        if (pending.pendingRecords > this.pendingSync().pendingRecords || pending.pendingUpdates > this.pendingSync().pendingUpdates) this.lastUploadAt = new Date().toISOString();
+        await this.queue.syncCheckpoint(this.lastUploadAt);
+      }
+    } catch (error) {
+      if (!abort.signal.aborted) { this.lastUploadError = error instanceof Error ? error.message : '同步失败，本地记录已保留'; await this.queue.syncCheckpoint(this.lastUploadAt, new Date(Date.now() + 30000).toISOString()).catch(() => undefined); }
+      void this.events?.record('QUEUE', 'STORAGE'); }
     finally { this.uploading = false; this.publish(); }
   }
-  private async sendHeartbeat(): Promise<void> {
-    if (this.connectionHeld || this.heartbeatInFlight) return;
+  private async sendHeartbeat(explicit = false): Promise<void> {
+    if (this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !this.config.token || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;
     this.heartbeatInFlight = true;
     const state = this.state === 'stopped' ? 'paused' : this.state;
-    try { const metadata = this.config.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined) : undefined; await heartbeat(this.config, { metadata, deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform, status: state, queueDepth: this.queue.stats().depth, lastCaptureAt: this.lastCaptureAt, error: this.lastUploadError }, this.events); } finally { this.heartbeatInFlight = false; }
+    try {
+      const metadata = this.config.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined) : undefined;
+      const sync = this.syncStatus();
+      await heartbeat(this.config, {
+        metadata, deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform,
+        status: state, queueDepth: this.queue.stats().depth, lastCaptureAt: this.lastCaptureAt, error: this.lastUploadError,
+        sync: {
+          mode: sync.mode, state: explicit && !sync.pendingRecords && !this.pendingSync().pendingUpdates && !this.pendingSync().heldUpdates && !this.lastUploadError ? 'idle' : sync.state,
+          intervalMinutes: this.config.syncIntervalMinutes, batchSize: this.config.syncBatchSize,
+          pendingRecords: Math.min(1_000_000, sync.pendingRecords), lastUploadAt: sync.lastUploadAt, nextUploadAt: sync.nextUploadAt,
+        },
+      }, this.events);
+    } catch (error) { void this.events?.record('HEARTBEAT', failureCode(error, 'HEARTBEAT')); }
+    finally { this.heartbeatInFlight = false; }
   }
 }

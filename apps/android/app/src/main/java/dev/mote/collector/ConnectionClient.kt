@@ -11,7 +11,7 @@ class ConnectionClient(private val context: Context) {
     private val settings = Settings(context)
     private val pending = File(context.noBackupFilesDir, "connection-pending.enc")
     private val prefs = context.getSharedPreferences("connection", Context.MODE_PRIVATE)
-    fun connect(invitation: ConnectionInvitation, deviceName: String, debugHttp: Boolean) = ConnectionGuard.change(context, invitation.serverUrl) {
+    fun connect(invitation: ConnectionInvitation, deviceName: String, debugHttp: Boolean, bindLocal: Boolean = false) = ConnectionGuard.change(context, invitation.serverUrl, bindLocal) {
         try {
             require(deviceName.isNotBlank() && deviceName.length <= 128)
             PrivacyRules.validateEndpoint(invitation.serverUrl, debugHttp, BuildConfig.DEBUG)
@@ -48,9 +48,9 @@ class ConnectionClient(private val context: Context) {
         if (response.optString("deviceId") != settings.deviceId) throw ConnectionFailure("identity")
         return response
     }
-    fun resume(deviceName: String, debugHttp: Boolean) {
+    fun resume(deviceName: String, debugHttp: Boolean, bindLocal: Boolean = false) {
         val response = readPending(); val server = response.getString("serverUrl")
-        ConnectionGuard.change(context, server) {
+        ConnectionGuard.change(context, server, bindLocal) {
             PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
             validateResponse(response, server); applyResponse(response, deviceName, debugHttp)
         }
@@ -63,7 +63,7 @@ class ConnectionClient(private val context: Context) {
         check(settings.read().let { it.server == server && it.token == response.getString("token") })
         prefs.edit().putString("credentialId", response.getString("credentialId")).putString("scope", "collector").putString("targetHash", SourceRules.target(server, response.getString("token"))).putString("status", "connected").putLong("at", System.currentTimeMillis()).commit()
         pending.delete(); Operations.record(context, OperationKind.CONNECTION_OK)
-        runCatching { UploadWorker.schedule(context, settings.read(), true); SourceWork.upload(context) }
+        runCatching { UploadWorker.schedule(context, settings.read()); SourceWork.upload(context) }
     }
     private fun validateResponse(body: JSONObject?, server: String) {
         if (body == null || body.opt("scope") != "collector" || body.opt("serverUrl") != server ||

@@ -1,8 +1,13 @@
+export type SyncMode = 'realtime' | 'interval' | 'batch' | 'manual';
+export interface SyncStatus { state: 'unconfigured' | 'idle' | 'waiting' | 'uploading' | 'error' | 'manual'; mode: SyncMode; message: string; nextUploadAt?: string; lastUploadAt?: string; pendingRecords: number; localBacklogUnbound?: boolean }
 export type CollectionMode = 'content' | 'activity' | 'off';
 export type Platform = 'macos' | 'windows' | 'linux';
 export type Rectangle = { x: number; y: number; width: number; height: number };
 export interface Config {
   serverUrl: string;
+  syncMode: SyncMode;
+  syncIntervalMinutes: number;
+  syncBatchSize: number;
   deviceId: string;
   deviceName: string;
   intervalMs: number;
@@ -35,7 +40,7 @@ export interface Config {
   credentialScope?: 'owner' | 'collector';
 }
 export type PublicConfig = Omit<Config, 'token'> & { tokenConfigured: boolean };
-export type ConfigUpdate = Omit<Config, 'token' | 'deviceId'> & { token?: string };
+export type ConfigUpdate = Omit<Config, 'token' | 'deviceId'> & { token?: string; confirmLocalBacklog?: boolean };
 export interface CaptureEvent {
   id: string;
   deviceId: string;
@@ -53,6 +58,7 @@ export interface CaptureEvent {
   privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; collection?: 'content' | 'activity'; reason?: string };
 }
 export interface Status {
+  sync: SyncStatus;
   environment?: { profile: string; legacy: boolean; dataDirectory: string };
   running: boolean;
   state: 'stopped' | 'capturing' | 'paused' | 'permission_required' | 'error';
@@ -95,6 +101,8 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  installedApplications(): Promise<{ appId: string; appName: string }[]>;
+  onNavigate(callback: (page: 'overview' | 'notes' | 'sources' | 'settings') => void): () => void;
   previewConnection(input: string): Promise<import('./connection').ConnectionPreview>;
   importConnection(kind: 'json' | 'qr'): Promise<{ canceled: boolean; preview?: import('./connection').ConnectionPreview }>;
   cancelConnection(): Promise<void>;

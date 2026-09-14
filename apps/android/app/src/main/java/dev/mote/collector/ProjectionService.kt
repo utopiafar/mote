@@ -169,7 +169,7 @@ class ProjectionService : Service() {
             projection?.unregisterCallback(callback); projection?.stop(); projection = null
             settings.enabled = false
             stopForeground(STOP_FOREGROUND_REMOVE)
-            config?.let { UploadWorker.schedule(this, it, true) }
+            config?.let { UploadWorker.schedule(this, it) }
         }
         super.onDestroy()
     }

@@ -1,5 +1,7 @@
 // Real central and Chromium UI, using generated records only; no personal screen capture.
 const {app,BrowserWindow}=require('electron');
+// Keep Electron alive until asynchronous fixture cleanup sets the intended exit code.
+app.on('window-all-closed', () => {});
 const {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync}=require('node:fs');
 const {tmpdir}=require('node:os');
 const {join,resolve}=require('node:path');
@@ -52,7 +54,7 @@ async function run(){
   writeFileSync(join(output,'web-metadata-mobile.png'),(await wc.capturePage()).toPNG());
   await js(`document.querySelector('[aria-label="关闭证据详情"]').click()`);assert.ok(await click('设备'));
   await until(()=>js(`!!document.querySelector('.device-card .metadata-details')`),'device metadata');
-  await js(`document.querySelector('.device-card .metadata-details').open=true`);
+  await js(`document.querySelector('.device-card .device-details').open=true;document.querySelector('.device-card .metadata-details').open=true`);
   assert.ok(await js(`document.querySelector('.device-card').innerText.includes('合成设备')`));
   assert.deepEqual(errors,[]);assert.deepEqual(imageRequests,[]);
   writeFileSync(join(output,'web-result.json'),JSON.stringify({passed:true,generatedOnly:true,checks:['activity HTTP ingestion','separate sample counts','activity filter','content-free evidence','zero and false state','device metadata','no image fetch','desktop/mobile layout']},null,2));

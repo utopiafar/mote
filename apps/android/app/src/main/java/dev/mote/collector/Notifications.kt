@@ -29,10 +29,10 @@ class StopReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val settings = Settings(context)
         settings.enabled = false
-        settings.status("paused", "你已停止采集，已有队列继续同步")
+        settings.status("paused", "你已停止采集，已有记录保留，同步按所选策略运行")
         context.stopService(Intent(context, ProjectionService::class.java))
         CaptureAccessibilityService.instance?.stopCapture()
         Notifications.clear(context)
-        runCatching { UploadWorker.schedule(context, settings.read(), true) }
+        runCatching { UploadWorker.schedule(context, settings.read()) }
     }
 }

@@ -182,3 +182,89 @@ describe.skipIf(process.platform !== 'darwin')('per-application collection bound
     expect(queue.stats().depth).toBe(1); expect(mocks.capture).not.toHaveBeenCalled(); expect(mocks.active).not.toHaveBeenCalled();
   });
 });
+
+describe('capture and synchronization are independent', () => {
+  it('leaves offline and manual queues untouched until an explicit configured sync, including heartbeats', async () => {
+    const { event, image } = await import('./fixtures');
+    const { collector, queue } = await makeCollector({ syncMode: 'manual' });
+    await queue.enqueue({ ...event(), capturedAt: new Date().toISOString() }, image);
+    await collector.upload(); await (collector as any).sendHeartbeat();
+    expect(fetch).not.toHaveBeenCalled(); expect(collector.status().sync).toMatchObject({ state: 'manual', pendingRecords: 1 });
+    vi.mocked(fetch).mockImplementation(async (_url, init) => new Response(JSON.stringify({ id: JSON.parse(init!.body as string).id }), { status: 201 }));
+    await collector.retry(); expect(queue.stats().depth).toBe(0); expect(fetch).toHaveBeenCalledTimes(2);
+    const finalHeartbeat = JSON.parse(vi.mocked(fetch).mock.calls.at(-1)![1]!.body as string);
+    expect(finalHeartbeat.sync).toMatchObject({ mode: 'manual', state: 'idle', pendingRecords: 0 });
+    expect(finalHeartbeat.sync).not.toHaveProperty('message');
+    expect(collector.status().running).toBe(false); expect(collector.status().sync.state).toBe('manual');
+  });
+  it('does not attempt any network request with an empty URL or token and preserves queued notes/screens', async () => {
+    const { event, image } = await import('./fixtures');
+    const { collector, queue } = await makeCollector({ serverUrl: '', token: undefined });
+    await queue.enqueue(event(), image); await collector.upload(); await collector.retry(); await (collector as any).sendHeartbeat();
+    expect(fetch).not.toHaveBeenCalled(); expect(queue.stats().depth).toBe(1);
+    expect(collector.status().sync).toMatchObject({ state: 'unconfigured', localBacklogUnbound: true, pendingRecords: 1 });
+  });
+  it('counts source versions with screenshots for one batch decision and drains both channels', async () => {
+    const { event, image } = await import('./fixtures');
+    const config = { ...defaultConfig(), token: 'synthetic-token', nsfwEnabled: false, syncMode: 'batch' as const, syncBatchSize: 2 };
+    const queue = new DurableQueue(directory, config); await queue.initialize(); const capturedAt = new Date().toISOString();
+    await queue.enqueue({ ...event(), capturedAt }, image);
+    let sourcePending = 1;
+    const flush = vi.fn(async () => { sourcePending = 0; });
+    const sources = { pendingStats: () => ({ pendingRecords: sourcePending, oldestPendingAt: capturedAt, hasUpdates: false }), nodeBinding: { unbound: () => false }, flushPending: flush };
+    collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, undefined, sources as any);
+    vi.mocked(fetch).mockImplementation(async (_url, init) => new Response(JSON.stringify({ id: JSON.parse(init!.body as string).id }), { status: 201 }));
+    await collector.upload(); expect(fetch).toHaveBeenCalledTimes(1); expect(flush).toHaveBeenCalledTimes(1);
+    expect(collector.status().sync).toMatchObject({ pendingRecords: 0, state: 'idle' });
+  });
+  it.skipIf(process.platform !== 'darwin')('captures generated activity locally before any URL or token is configured', async () => {
+    const { collector, queue } = await makeCollector({ serverUrl: '', token: undefined, defaultCollection: 'activity' });
+    await collector.start(); await collector.settleCapture();
+    expect(queue.stats().depth).toBe(1); expect(collector.status().running).toBe(true); expect(fetch).not.toHaveBeenCalled();
+  });
+});
+it('releases metadata-only source updates at their interval deadline while record count stays zero', async () => {
+  const config = { ...defaultConfig(), token: 'synthetic-token', syncMode: 'interval' as const };
+  const queue = new DurableQueue(directory, config); await queue.initialize();
+  const initial = Date.now(); let now = initial; let pendingUpdates = 1;
+  const flush = vi.fn(async () => { pendingUpdates = 0; });
+  const sources = { pendingStats: () => ({ pendingRecords: 0, pendingUpdates, oldestUpdateAt: new Date(initial).toISOString(), hasUpdates: Boolean(pendingUpdates) }), nodeBinding: { unbound: () => false }, flushPending: flush };
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+  try {
+    collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, undefined, sources as any);
+    await collector.upload(); expect(flush).not.toHaveBeenCalled(); expect(collector.status().sync).toMatchObject({ state: 'waiting', pendingRecords: 0 });
+    now += 15 * 60000; await collector.upload(); expect(flush).toHaveBeenCalledTimes(1); expect(collector.status().sync.state).toBe('idle');
+  } finally { clock.mockRestore(); }
+});
+it('caps only the heartbeat aggregate at the wire limit while local status keeps the full pending count', async () => {
+  const config = { ...defaultConfig(), token: 'synthetic-aggregate-token' };
+  const queue = new DurableQueue(directory, config); await queue.initialize();
+  const sources = { pendingStats: () => ({ pendingRecords: 1_000_020, pendingUpdates: 0, hasUpdates: false }), nodeBinding: { unbound: () => false } };
+  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, undefined, sources as any);
+  expect(collector.status().sync.pendingRecords).toBe(1_000_020);
+  await (collector as any).sendHeartbeat();
+  const call = vi.mocked(fetch).mock.calls.find(args => String(args[0]).endsWith('/api/devices/heartbeat'));
+  expect(call).toBeDefined();
+  expect(JSON.parse(call![1]!.body as string).sync.pendingRecords).toBe(1_000_000);
+  expect(collector.status().sync.pendingRecords).toBe(1_000_020);
+});
+it('keeps held source records in local totals without repeatedly announcing or attempting uploads', async () => {
+  const config = { ...defaultConfig(), token: 'synthetic-held-source-token' };
+  const queue = new DurableQueue(directory, config); await queue.initialize(); const flush = vi.fn(); const statuses: any[] = [];
+  const sources = { pendingStats: () => ({ pendingRecords: 4, eligibleRecords: 0, heldRecords: 4, pendingUpdates: 0, eligibleUpdates: 0, heldUpdates: 0, hasUpdates: false, heldReason: '本地来源已暂停，待传版本保留在本机' }), nodeBinding: { unbound: () => false }, flushPending: flush };
+  collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, status => statuses.push(status), undefined, undefined, undefined, sources as any);
+  await collector.upload(); await collector.upload();
+  expect(flush).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+  expect(collector.status().sync).toMatchObject({ state: 'waiting', pendingRecords: 4, message: '本地来源已暂停，待传版本保留在本机' });
+  expect(statuses.some(status => status.sync.state === 'uploading')).toBe(false);
+});
+it('does not reinterpret failed final heartbeats as failed or missing record uploads', async () => {
+  const { event, image } = await import('./fixtures'); const { collector, queue } = await makeCollector({ syncMode: 'manual' });
+  await queue.enqueue(event(), image);
+  vi.mocked(fetch).mockImplementation(async (url, init) => {
+    if (String(url).endsWith('/heartbeat')) throw new Error('synthetic heartbeat outage');
+    return new Response(JSON.stringify({ id: JSON.parse(init!.body as string).id }), { status: 201 });
+  });
+  await expect(collector.retry()).resolves.toBeUndefined(); expect(queue.stats().depth).toBe(0);
+  expect(collector.status().lastUploadError).toBeUndefined(); expect(collector.status().lastUploadAt).toBeDefined();
+});

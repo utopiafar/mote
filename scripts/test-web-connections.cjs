@@ -1,5 +1,7 @@
 /** Generated credentials and content; isolated node and browser, never the daily archive. */
 const {app,BrowserWindow}=require('electron');
+// Keep Electron alive until asynchronous fixture cleanup sets the intended exit code.
+app.on('window-all-closed', () => {});
 const {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync}=require('node:fs');
 const {tmpdir}=require('node:os');
 const {join,resolve}=require('node:path');
@@ -31,10 +33,10 @@ async function run(){
   await window.loadURL(url);
   await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token:owner}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('中央节点已连接')`),'owner UI');
-  assert.ok(await click('设备'));await until(()=>js(`document.querySelector('#connections-title')&&Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='生成 MCP JSON'&&!b.disabled)`),'connections panel');
+  assert.ok(await click('设备'));await click('添加设备');await click('连接 Chatbot');await until(()=>js(`document.querySelector('#connections-title')&&Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='生成 MCP JSON'&&!b.disabled)`),'connections panel');
   assert.ok(await js(`document.querySelector('.connection-warning').textContent.includes('手机自己')`));
   assert.equal(await js(`document.querySelector('.connections').innerText.includes(${JSON.stringify(owner)})`),false);
-  await input('连接名称','合成手机 · QR / JSON');assert.ok(await click('生成连接邀请'));
+  await click('连接设备');await input('连接名称','合成手机 · QR / JSON');assert.ok(await click('生成连接邀请'));
   await until(()=>js(`!!document.querySelector('.connection-qr img')`),'local QR rendered');
   const invite=JSON.parse(await js(`document.querySelector('[aria-label="连接邀请 JSON"]').value`));
   assert.equal(invite.serverUrl,url);assert.equal(invite.format,'mote.connection');assert.ok(!JSON.stringify(invite).includes(owner));
@@ -63,7 +65,7 @@ async function run(){
   assert.equal((await(await request('/api/connections/self',newConnection.token)).json()).credential.deviceId,device);
   assert.equal((await request('/api/connections/self',connection.token)).status,401);
   await click('取消邀请');await until(()=>js(`!document.querySelector('.connection-invitation')`),'clear recovery invitation');
-  await input('连接名称','合成 Chatbot · 只读');assert.ok(await click('生成 MCP JSON'));
+  await input('连接名称','合成 Chatbot · 只读');await click('连接 Chatbot');assert.ok(await click('生成 MCP JSON'));
   await until(()=>js(`!!document.querySelector('[aria-label="MCP JSON"]')`),'MCP JSON created');
   const mcpConfig=JSON.parse(await js(`document.querySelector('[aria-label="MCP JSON"]').value`)),mcp=mcpConfig.mcpServers.mote;
   assert.equal(mcp.url,url+'/mcp');assert.ok(!JSON.stringify(mcpConfig).includes(owner));

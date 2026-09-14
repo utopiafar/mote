@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 export interface ActiveApplication { appId: string; appName: string; pid: number; visibleAppIds: string[]; unknownVisibleWindows: boolean }
-export function runHelper(path: string, command: 'screen-permission' | 'active' | 'activity' | 'device' | 'ocr' | 'power' | 'qr', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
+export function runHelper(path: string, command: 'screen-permission' | 'active' | 'activity' | 'device' | 'ocr' | 'power' | 'qr' | 'installed-apps', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const child = spawn(path, [command], { stdio: ['pipe', 'pipe', 'pipe'], signal });
     const chunks: Buffer[] = [];
@@ -22,6 +22,16 @@ export function runHelper(path: string, command: 'screen-permission' | 'active' 
     child.stdin.on('error', () => undefined);
     child.stdin.end(input);
   });
+}
+export async function readInstalledApplications(path: string): Promise<{ appId: string; appName: string }[]> {
+  const value = await runHelper(path, 'installed-apps') as { applications?: unknown };
+  if (!Array.isArray(value?.applications) || value.applications.length > 2048) throw new Error('无法读取应用列表');
+  const applications = new Map<string, { appId: string; appName: string }>();
+  for (const item of value.applications) {
+    if (!item || typeof item.appId !== 'string' || !item.appId || item.appId.length > 256 || typeof item.appName !== 'string' || !item.appName || item.appName.length > 512) continue;
+    applications.set(item.appId, { appId: item.appId, appName: item.appName });
+  }
+  return [...applications.values()].sort((a, b) => a.appName.localeCompare(b.appName));
 }
 export async function activeApplication(path: string, signal?: AbortSignal): Promise<ActiveApplication> {
   const value = await runHelper(path, 'active', undefined, signal) as ActiveApplication;

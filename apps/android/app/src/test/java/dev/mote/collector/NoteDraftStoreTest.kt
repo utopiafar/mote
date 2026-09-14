@@ -46,4 +46,12 @@ class NoteDraftStoreTest {
         store.clear(); store.update("same text", "calm")
         assertNotEquals(first, store.prepare("https://one.example", ::event).prepared!!.getString("id"))
     }
+    @Test fun `unbound prepared note adopts its first destination without replacing its id`() {
+        val store = NoteDraftStore(folder.newFolder(), cipher); store.update("generated local note", "")
+        val before = store.prepare("", ::event).prepared!!.toString()
+        val bound = store.prepare("https://first.example") { error("Must retain the local submission") }
+        assertEquals(before, bound.prepared!!.toString())
+        assertEquals("https://first.example", bound.server)
+        assertThrows(IllegalArgumentException::class.java) { store.prepare("https://other.example", ::event) }
+    }
 }

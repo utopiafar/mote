@@ -35,6 +35,10 @@ export class NoteDraftStore {
     for (const name of await readdir(this.directory)) if (name.endsWith('.tmp') && uuid.test(name.slice(0, -4))) await unlink(join(this.directory, name));
   }
   get(): NoteDraft { return { ...this.value.draft, prepared: Boolean(this.value.submission) }; }
+  hasUnboundPrepared(): boolean { return Boolean(this.value.submission && this.value.targetOrigin === ''); }
+  async bindPreparedOrigin(origin: string): Promise<void> {
+    await this.exclusive(async () => { if (this.hasUnboundPrepared()) await this.persist({ ...this.value, targetOrigin: origin }); });
+  }
   hasPrepared(): boolean { return Boolean(this.value.submission); }
   private async persist(value: StoredDraft): Promise<void> {
     const temporary = join(this.directory, randomUUID() + '.tmp');
@@ -65,14 +69,14 @@ export class NoteDraftStore {
       if (input.mood && !input.mood.trim()) throw new Error('心情不能只有空白；清空心情后也可以保存');
       if (input.revision < this.value.draft.revision) throw new Error('提交版本已过期，请重新保存当前草稿');
       if (this.value.submission) {
-        if (this.value.targetOrigin !== config.serverUrl) throw new Error('待完成记录属于原中央节点，请恢复原节点完成保存');
+        if (this.value.targetOrigin !== (config.serverUrl && config.token ? config.serverUrl : '')) throw new Error('待完成记录属于原中央节点，请恢复原节点完成保存');
         if (input.text !== this.value.draft.text || input.mood !== this.value.draft.mood) throw new Error('待完成记录不能改写，请重新载入草稿后重试');
       } else {
         const metadata = config.metadataEnabled ? await metadataProvider?.() : undefined;
         const submission: CaptureEvent = { id: input.id, deviceId: config.deviceId, deviceName: config.deviceName, platform,
           capturedAt: new Date().toISOString(), durationMs: 0, appId: 'dev.mote.notes', appName: '随手记', source: 'note',
           ocrText: input.text, ...(metadata ? { metadata } : {}), ...(input.mood ? { mood: input.mood } : {}), privacy: { excluded: false, redacted: false, mode: 'none' } };
-        await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, revision: input.revision }, submission, targetOrigin: config.serverUrl });
+        await this.persist({ ...this.value, draft: { id: input.id, text: input.text, mood: input.mood, revision: input.revision }, submission, targetOrigin: config.serverUrl && config.token ? config.serverUrl : '' });
       }
       const submission = this.value.submission!;
       await queue.enqueue(submission);

@@ -2,6 +2,12 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  installedApplications: () => ipcRenderer.invoke('mote:installed-applications'),
+  onNavigate: callback => {
+    const handler = (_event: Electron.IpcRendererEvent, page: 'overview' | 'notes' | 'sources' | 'settings') => callback(page);
+    ipcRenderer.on('mote:navigate', handler);
+    return () => ipcRenderer.removeListener('mote:navigate', handler);
+  },
   previewConnection: input => ipcRenderer.invoke('mote:connection-preview', input),
   importConnection: kind => ipcRenderer.invoke('mote:connection-import', kind),
   cancelConnection: () => ipcRenderer.invoke('mote:connection-cancel'),

@@ -15,8 +15,8 @@ object QuickNotes {
         require(mood.length <= 80) { "心情最多 80 字符" }
         val store = draft(context)
         store.update(text, mood)
-        val settings = Settings(context); val config = settings.read(); config.validate()
-        val prepared = store.prepare(config.server.trimEnd('/')) {
+        val settings = Settings(context); val config = settings.read(); config.validate(); settings.ensureDataOrigin(config)
+        val prepared = store.prepare(settings.dataOrigin()) {
         val id = UUID.randomUUID().toString()
         val event = JSONObject().put("id", id).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)
             .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0)

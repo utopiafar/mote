@@ -58,7 +58,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         if (expected == AppCollectionMode.CONTENT && config.nsfw.enabled && !NsfwModelStore(context).hasFile()) { pause("NSFW 模型未就绪，请下载或导入；尚未截图", OperationReason.MODEL_MISSING); return false }
         val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
         if (reason != null) { pause(reason, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
-        if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) { pause("本地队列已满，等待成功上传后恢复", OperationReason.QUEUE_FULL); return false }
+        if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) { pause("本机空间已满，请同步释放空间或调大存储上限", OperationReason.QUEUE_FULL); return false }
         return true
     }
     fun submitActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) {
@@ -75,9 +75,10 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .put("appId", appId).put("appName", CollectorMetadata.appName(context, appId)).put("source", "activity")
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
                     .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L)) }
+                settings.ensureDataOrigin(config)
                 context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
-                settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型 · ${context.queue().depth()} 条待上传")
+                settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型 · ${context.queue().depth()} 条保存在本机")
                 scheduleUpload(config)
             } catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause("应用活动未保存，请检查本机队列；未采集内容") }
             finally { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
@@ -146,13 +147,14 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                         .put("reason", (if (config.nsfw.enabled) "local NSFW model passed; " else "") +
                             if (reviewed) "configured masks and local model review" else if (masks.isNotEmpty()) "configured masks applied" else "user configured capture without masks"))
                 stage = EventStage.QUEUE
+                settings.ensureDataOrigin(config)
                 context.queue().enqueue(event, jpeg(output, config.jpegQuality), config.maxQueueMiB * 1024L * 1024L)
                 SupportEvents.record(context, stage, EventCode.OK)
                 diagnostics.add("capturedCount")
                 lastPause = null
                 previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
-                settings.status("capturing", "采集中 · 本地遮罩/OCR 已完成 · ${context.queue().depth()} 条待上传")
+                settings.status("capturing", "采集中 · 本地遮罩/OCR 已完成 · ${context.queue().depth()} 条保存在本机")
                 scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
             catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: "队列已满") }

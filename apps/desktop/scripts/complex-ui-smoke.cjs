@@ -6,13 +6,15 @@ const {tmpdir}=require('node:os');
 const assert=require('node:assert/strict');
 const {defaultConfig}=require('../dist/config');
 const profile=mkdtempSync(join(tmpdir(),'mote-complex-ui-'));app.setPath('userData',profile);
-writeFileSync(join(profile,'config.json'),JSON.stringify({version:1,config:{...defaultConfig(),deviceName:'desktop-complex-ui-fixture'}}),{mode:0o600});
+process.env.MOTE_PROFILE='legacy';for(const key of ['MOTE_URL','MOTE_TOKEN','MOTE_ENV_FILE'])delete process.env[key];
+writeFileSync(join(profile,'config.json'),JSON.stringify({version:1,config:{...defaultConfig(),deviceName:'desktop-complex-ui-fixture',ocrEnabled:false,metadataEnabled:false}}),{mode:0o600});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const timeout=setTimeout(()=>{process.stderr.write('Complex UI timeout\n');app.exit(1);},30000);
 async function until(fn){for(let i=0;i<200;i++){if(await fn())return;await sleep(20);}throw Error('Complex UI condition failed');}
 app.on('browser-window-created',(_event,window)=>window.webContents.once('did-finish-load',()=>{
  const js=s=>window.webContents.executeJavaScript(s);
  (async()=>{
+  await js(`document.querySelector('[data-nav="notes"]').click()`);
   await until(()=>js('!document.querySelector("#note-text").disabled'));
   const text='合成输入法：组合阶段不应误保存。👩🏽‍💻 cafe\u0301\n第二行 <script>window.__fixtureExecuted=true</script>';
   await js(`document.querySelector('#note-text').dispatchEvent(new CompositionEvent('compositionstart'));document.querySelector('#note-text').value=${JSON.stringify(text)};document.querySelector('#note-text').dispatchEvent(new InputEvent('input',{bubbles:true,isComposing:true}));document.querySelector('#note-form').requestSubmit();`);

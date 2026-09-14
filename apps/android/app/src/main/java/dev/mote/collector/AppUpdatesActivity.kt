@@ -24,13 +24,8 @@ class AppUpdatesActivity : Activity() {
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 1000) } }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE); store = AppUpdateStore(this)
-        val scroll = ScrollView(this); val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 40, 32, 48); setBackgroundColor(Color.rgb(245, 246, 242)) }
-        scroll.addView(body); setContentView(scroll)
-        scroll.setOnApplyWindowInsetsListener { view, insets ->
-            if (android.os.Build.VERSION.SDK_INT >= 30) { val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars()); view.setPadding(bars.left, bars.top, bars.right, bars.bottom) }
-            else { @Suppress("DEPRECATION") view.setPadding(insets.systemWindowInsetLeft, insets.systemWindowInsetTop, insets.systemWindowInsetRight, insets.systemWindowInsetBottom) }; insets
-        }
-        fun text(value: String, size: Float = 14f) = TextView(this).apply { text = value; textSize = size }.also(body::addView)
+        val body = moteDetailPage()
+        fun text(value: String, size: Float = 14f) = TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(10), 0, moteDp(10)) }.also(body::addView)
         fun button(label: String, action: () -> Unit) = Button(this).apply { text = label; setOnClickListener { runCatching(action).onFailure { Toast.makeText(this@AppUpdatesActivity, message((it as? UpdateFailure)?.code ?: "failed"), Toast.LENGTH_LONG).show() } } }.also(body::addView)
         text("应用更新", 28f); text("当前 ${BuildConfig.VERSION_NAME} · code ${BuildConfig.VERSION_CODE}\n${packageName}\n检查和下载由你发起，最终由 Android 系统确认安装。")
         text("发布仓库（owner/repository）")
@@ -54,6 +49,7 @@ class AppUpdatesActivity : Activity() {
         }
         button("取消待确认的安装") { AppUpdateInstaller.cancelSession(this) }
         text("签名不一致会阻止更新，不会删除旧应用。0.4.0 本机 debug 安装包只能接受同一证书签名的后续包。系统安装权限、小米安装校验或省电限制仍需你在系统确认；安装失败时保留现有数据。")
+        MoteUi.styleTree(body)
     }
     override fun onResume() { super.onResume(); foreground = true; runCatching { AppUpdateInstaller.reconcile(this) }; handler.post(refresh) }
     override fun onPause() { foreground = false; handler.removeCallbacks(refresh); super.onPause() }

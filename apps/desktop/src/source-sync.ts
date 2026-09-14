@@ -27,8 +27,8 @@ export class SourceSync {
       this.data = value;
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   }
-  status(): { pending: number; items: number; lastSyncAt?: string } {
-    return { pending: this.data.pending.length, items: Object.values(this.data.known).filter(v => !v.item.deleted).length, lastSyncAt: this.data.lastSyncAt };
+  status(): { pending: number; items: number; lastSyncAt?: string; oldestPendingAt?: string } {
+    return { oldestPendingAt: this.data.pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: this.data.pending.length, items: Object.values(this.data.known).filter(v => !v.item.deleted).length, lastSyncAt: this.data.lastSyncAt };
   }
   async checkpointTo(path: string): Promise<void> {
     // Used only while the manager holds all sync work after explicit same-node reauthorization.

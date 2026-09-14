@@ -105,7 +105,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         handler.removeCallbacksAndMessages(null)
         stopCapture()
         if (::settings.isInitialized && settings.enabled) settings.status("permission_required", "无障碍服务未连接，等待系统恢复或打开设置重新启用")
-        if (::settings.isInitialized) runCatching { UploadWorker.schedule(this, settings.read(), true) }
+        if (::settings.isInitialized) runCatching { UploadWorker.schedule(this, settings.read()) }
         super.onDestroy()
     }
     companion object {

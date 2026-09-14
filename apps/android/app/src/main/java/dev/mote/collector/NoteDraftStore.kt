@@ -32,6 +32,7 @@ class NoteDraftStore(private val directory: File, private val cipher: ByteCipher
     fun prepare(server: String, create: (NoteDraft) -> JSONObject): NoteDraft = synchronized(lock) {
         val draft = read(); require(draft.text.isNotBlank()) { "请先填写随手记" }
         if (draft.prepared != null) {
+            if (draft.server.isNullOrBlank() && server.isNotBlank()) return@synchronized draft.copy(server = server).also { write(it) }
             require(draft.server == server) { "这条随手记已准备发往原节点，请恢复原节点重试；编辑内容后才能作为新记录提交" }
             return@synchronized draft
         }
