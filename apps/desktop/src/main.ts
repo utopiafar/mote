@@ -2,6 +2,7 @@ import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, Tray } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
+import { githubFeedbackUrl } from '@mote/shared/feedback';
 import { readPowerState, recognizeInvitationQr, runHelper, readInstalledApplications } from './native';
 import { ConnectionOnboarding, ConnectionError, testConnection, assertConnectionChangeSafe, type ConnectionStatus } from './connection';
 import { NoteDraftStore, type NoteDraft } from './note-draft';
@@ -21,6 +22,7 @@ import { createUpdateNetwork } from './update-network';
 import { createChromiumUpdateFetch } from './electron-update-fetch';
 import { acknowledgeInstalledUpdate } from './update-install';
 import { DurableQueue } from './queue';
+import { browseCaptures, captureDetail, captureImage, type BrowseRequest, type CaptureLocation } from './capture-browser';
 import { NsfwController } from './nsfw';
 import type { Config, ConfigUpdate, Status } from './contracts';
 
@@ -266,6 +268,13 @@ else {
       return showCentral(token);
     });
     handle('mote:get-status', () => clientStatus());
+    const browseWithConnection = async <T>(operation: (config: Config) => Promise<T>): Promise<T> => {
+      const requested = settings; const result = await operation(requested);
+      if (settings !== requested) throw new Error('连接已改变，请刷新采集记录'); return result;
+    };
+    handle('mote:captures-browse', input => browseWithConnection(config => browseCaptures(queue, config, input as BrowseRequest)));
+    handle('mote:captures-detail', (location, id) => browseWithConnection(config => captureDetail(queue, config, location as CaptureLocation, id as string)));
+    handle('mote:captures-image', (location, id, thumbnail) => browseWithConnection(config => captureImage(queue, config, location as CaptureLocation, id as string, thumbnail as boolean)));
     handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
     handle('mote:update-status', () => updater!.status());
     handle('mote:update-channel', channel => updater!.setChannel(channel));
@@ -275,6 +284,11 @@ else {
     handle('mote:update-install', () => serialize(() => updater!.install(async () => { collector.stop(); await collector.settleCapture(); await settleNoteWork(); }, () => app.quit())));
     handle('mote:update-reveal', () => { const archive = updater!.archivePath(); if (archive) shell.showItemInFolder(archive); });
     handle('mote:update-notes', async () => { const url = updater!.status().notesUrl; if (url) await shell.openExternal(url); });
+    handle('mote:feedback', () => shell.openExternal(githubFeedbackUrl({
+      version: app.getVersion(),
+      platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,
+      environment: `桌面客户端 · ${['dev', 'test', 'prod', 'legacy'].includes(profile.name) ? profile.name : '自定义环境'}`,
+    })));
     handle('mote:sources', () => localSources!.status());
     handle('mote:source-sync', async () => { await localSources!.sync(true); await collector.retry(); });
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));

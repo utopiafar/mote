@@ -86,6 +86,28 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 if (isStopped) return Result.retry()
                 if (config.wifiOnly && !isWifi(applicationContext)) return failed("同步期间网络已变化")
                 stage = EventStage.QUEUE
+                val ocrUpdate = queue.nextOcrUpdate()
+                if (ocrUpdate != null) {
+                    stage = EventStage.UPLOAD
+                    val id = ocrUpdate.getString("id"); pendingRecordId = id
+                    val body = JSONObject().put("ocrText", ocrUpdate.getString("ocrText")).put("status", ocrUpdate.getString("status"))
+                    val (code, response) = HttpJson.post("${config.server}/api/capture-browser/$id/ocr", body, config.token)
+                    if ((code == 404 && response?.optString("error") == "capture_not_found") || code == 410) {
+                        queue.archiveMissing(id); pendingRecordId = null
+                        settings.syncStatus("error", "中央记录已不可更新；本机保留图片和失败状态，不会重新创建记录")
+                        return@repeat
+                    }
+                    if (code == 409) {
+                        queue.ocrConflict(id); pendingRecordId = null
+                        settings.syncStatus("error", "OCR 更新与中央记录冲突；本机图片和文字已保留，请在采集记录中查看")
+                        return@repeat
+                    }
+                    if (code !in 200..299 || response?.optString("id") != id) return failed(if (code == 404) "中央节点可能需要升级，OCR 结果已保留" else "OCR 更新未确认（HTTP $code）")
+                    Diagnostics(applicationContext).add("uploadBytes", body.toString().toByteArray(Charsets.UTF_8).size.toLong())
+                    queue.acknowledgeOcr(id); pendingRecordId = null
+                    settings.syncStatus("uploading", "文字识别已更新至中央归档", uploaded = true)
+                    return@repeat
+                }
                 val event = queue.peek() ?: run {
                     stage = EventStage.HEARTBEAT
                     finishStatus(settings)
@@ -95,10 +117,15 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 stage = EventStage.UPLOAD
                 pendingRecordId = event.getString("id")
                 val (code, response) = HttpJson.post("${config.server}/api/captures", event, config.token)
+                if (code == 410) {
+                    queue.archiveMissing(event.getString("id")); pendingRecordId = null
+                    settings.syncStatus("error", "中央记录已删除；本机保留图片和失败状态，不会重新创建记录")
+                    return@repeat
+                }
                 if (code !in setOf(200, 201) || response?.optString("id") != event.getString("id")) {
                     SupportEvents.record(applicationContext, stage, EventJournal.httpFailure(code), httpStatus = code)
                     Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.httpReason(code), httpStatus = code, recordId = pendingRecordId)
-                    return failed("上传未确认（HTTP $code）")
+                    return failed(if (code == 400 && event.has("ocr")) "当前截图协议未被接受，请先确认中央节点已升级至 0.0.2 或更新版本" else "上传未确认（HTTP $code）")
                 }
                 Diagnostics(applicationContext).add("uploadBytes", event.toString().toByteArray(Charsets.UTF_8).size.toLong())
                 stage = EventStage.QUEUE
@@ -108,10 +135,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 settings.syncStatus("uploading", "已确认上传；待同步 ${SyncSchedule.pending(applicationContext).count} 条", uploaded = true)
             }
             stage = EventStage.HEARTBEAT
-            if (queue.depth() == 0) finishStatus(settings)
+            if (!queue.pendingSync().hasWork) finishStatus(settings)
             SyncHeartbeat.send(applicationContext, settings, config, queue)
             // A successful chunk may continue the same explicit operation; failures never retry in manual mode.
-            if (queue.depth() > 0) Result.retry() else Result.success()
+            if (queue.pendingSync().hasWork) Result.retry() else Result.success()
         } catch (error: Exception) {
             SupportEvents.record(applicationContext, stage, EventJournal.failure(error, stage))
             if (error !is RecordedHeartbeatFailure) Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.failure(error, stage), recordId = pendingRecordId)
@@ -120,7 +147,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
     }
     private fun finishStatus(settings: Settings) {
         val pending = SyncSchedule.pending(applicationContext).hasWork
-        settings.syncStatus(if (pending) "waiting" else "idle", if (pending) "截图与笔记已同步，等待来源同步" else "全部待发记录已同步")
+        val pendingOcr = applicationContext.queue().pendingOcr() != null
+        settings.syncStatus(if (pending) "waiting" else "idle", if (pending) "截图与笔记已同步，等待来源同步" else if (pendingOcr) "图片已同步，等待补做 OCR；图片仍保存在本机" else "全部待发记录已同步")
     }
     companion object {
         private var lastHeartbeatRequest = 0L

@@ -6,17 +6,11 @@ import android.graphics.*
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Base64
-import com.google.android.gms.tasks.Tasks
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
@@ -28,11 +22,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private val executor = Executors.newSingleThreadExecutor()
     private val busy = AtomicBoolean(false)
     private val nsfwInstance = lazy { NsfwClient(context) }
-    private val latinInstance = lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
-    private val chineseInstance = lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
+    private val ocrInstance = lazy { CaptureOcr(context) }
     private val nsfw by nsfwInstance
-    private val latin by latinInstance
-    private val chinese by chineseInstance
     private var previousTime: Long? = null
     private var previousApp: String? = null
     private var previousMode: AppCollectionMode? = null
@@ -48,7 +39,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     fun canCollect(config: CollectorConfig, windows: WindowSnapshot, expected: AppCollectionMode): Boolean {
         if (closed || !settings.enabled || busy.get()) return false
         val selected = policy(config, windows)
-        if (selected == AppCollectionMode.OFF) { pause(if (!windows.trustworthy || windows.foreground.isNullOrBlank()) "无法可靠识别单一应用，未记录内容或活动" else "当前可见窗口的应用规则不允许本次采样", if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
+        if (selected == AppCollectionMode.OFF) { pause(if (!windows.trustworthy) "当前应用规则要求完整窗口信息，暂停本次采样" else "当前可见窗口的应用规则不允许本次采样", if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
         if (selected != expected) return false
         if (!unlocked(context)) { pause("锁屏或熄屏，暂停采集", OperationReason.LOCKED); return false }
         runCatching { diagnostics.sample(config) }
@@ -85,7 +76,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         } } catch (_: java.util.concurrent.RejectedExecutionException) { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
     }
     private fun duration(now: Long, appId: String?, mode: AppCollectionMode, intervalSeconds: Int): Long =
-        if (previousApp != null && previousApp == appId && previousMode == mode && previousTime != null) SamplingTime.interval(previousTime!!, now, intervalSeconds * 1000L) else 0L
+        if (previousApp == appId && previousMode == mode && previousTime != null) SamplingTime.interval(previousTime!!, now, intervalSeconds * 1000L) else 0L
     fun submit(bitmap: Bitmap, windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) {
         if (closed || !busy.compareAndSet(false, true)) { bitmap.recycle(); return }
         ConnectionGuard.processing.incrementAndGet()
@@ -116,7 +107,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     output.recycle(); output = resized
                 }
                 stage = EventStage.OCR
-                var text = ocr(output)
+                val runOcr = !config.ocrChargingOnly || Diagnostics.battery(context).second
+                var text = if (runOcr) ocrInstance.value.recognize(output) else ""
                 var reviewed = false
                 var modelMaskApplied = false
                 var appliedMaskCount = masks.size
@@ -129,7 +121,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     require(code == 200 && response != null && response.has("allow") && response.get("allow") is Boolean) { "隐私模型响应无效" }
                     if (!response.getBoolean("allow")) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.LOCAL_DENIED); pause("本机隐私模型阻止此帧", OperationReason.LOCAL_DENIED); return@execute }
                     val extraMasks = ReviewResponse.masks(response)
-                    if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = ocr(output); modelMaskApplied = true; appliedMaskCount += extraMasks.size }
+                    if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = if (runOcr) ocrInstance.value.recognize(output) else ""; modelMaskApplied = true; appliedMaskCount += extraMasks.size }
                     reviewed = true
                 }
                 if (!settings.enabled || closed || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
@@ -139,8 +131,9 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .put("deviceName", config.deviceName).put("platform", "android").put("capturedAt", capturedAt)
                     .put("durationMs", duration).put("appId", windows.foreground).put("appName", windows.foreground?.let { CollectorMetadata.appName(context, it) })
                     .put("imageMime", "image/jpeg").put("ocrText", text).put("source", "screen")
+                    .put("ocr", JSONObject().put("status", if (runOcr) "completed" else "pending").apply { if (!runOcr) put("reason", "charging") })
                     .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L).apply {
-                        getJSONObject("capture").put("width", output.width).put("height", output.height).put("ocrEnabled", true)
+                        getJSONObject("capture").put("width", output.width).put("height", output.height).put("ocrEnabled", runOcr)
                         if (appliedMaskCount <= 200) getJSONObject("capture").put("maskCount", appliedMaskCount)
                     }) }
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", masks.isNotEmpty() || modelMaskApplied).put("mode", "local").put("collection", "content")
@@ -154,7 +147,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 lastPause = null
                 previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
-                settings.status("capturing", "采集中 · 本地遮罩/OCR 已完成 · ${context.queue().depth()} 条保存在本机")
+                settings.status("capturing", "采集中 · ${if (runOcr) "本地遮罩/OCR 已完成" else "图片已保存，充电后补做 OCR"} · ${context.queue().depth()} 条保存在本机")
+                if (!runOcr) CaptureOcrWorker.schedule(context, config)
                 scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
             catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: "队列已满") }
@@ -162,18 +156,10 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
             finally { output?.recycle(); bitmap.recycle(); busy.set(false); ConnectionGuard.processing.decrementAndGet() }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { ConnectionGuard.processing.decrementAndGet(); busy.set(false); bitmap.recycle(); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.CANCELLED) }
     }
-    private fun ocr(bitmap: Bitmap): String {
-        val started = SystemClock.elapsedRealtime()
-        val input = InputImage.fromBitmap(bitmap, 0)
-        val chineseText = Tasks.await(chinese.process(input), 30, TimeUnit.SECONDS).text
-        val latinText = Tasks.await(latin.process(input), 30, TimeUnit.SECONDS).text
-        diagnostics.timing("ocrMs", SystemClock.elapsedRealtime() - started)
-        return listOf(chineseText, latinText).filter(String::isNotBlank).distinct().joinToString("\n").take(100_000)
-    }
     private fun jpeg(bitmap: Bitmap, quality: Int): ByteArray = ByteArrayOutputStream().use { stream ->
         check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)); stream.toByteArray()
     }
-    fun close() { closed = true; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (latinInstance.isInitialized()) latin.close(); if (chineseInstance.isInitialized()) chinese.close() }; executor.shutdown() }
+    fun close() { closed = true; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (ocrInstance.isInitialized()) ocrInstance.value.close() }; executor.shutdown() }
     companion object {
         fun policy(config: CollectorConfig, windows: WindowSnapshot) = AppCollectionRules.parse(config.appCollectionRules).decide(windows, PrivacyRules.exclusions(config.excludedPackages))
         fun unlocked(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isInteractive &&

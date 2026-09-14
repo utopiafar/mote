@@ -1,4 +1,5 @@
-import { BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, dialog, session, shell } from 'electron';
+import { githubFeedbackUrl } from '@mote/shared/feedback';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { Config } from './contracts';
@@ -33,7 +34,20 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
   isolated.on('will-download', downloadListener);
   const central = new BrowserWindow({ width: 1280, height: 850, minWidth: 820, minHeight: 600, title: 'Mote · 中央仓库',
     webPreferences: { session: isolated, preload: join(__dirname, 'central-preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, devTools: false } });
-  central.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  central.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const target = new URL(url);
+      if (target.origin === 'https://github.com' && target.pathname === '/utopiafar/mote/issues/new' && target.searchParams.get('template') === 'bug_report.yml') {
+        // Discard renderer-controlled query data. The private central page must not
+        // send content or credentials out through an otherwise allowed feedback link.
+        void shell.openExternal(githubFeedbackUrl({ version: app.getVersion(),
+          platform: `${process.platform === 'darwin' ? 'macOS' : process.platform} ${process.getSystemVersion()} · ${process.arch}（中央窗口宿主客户端）`,
+          environment: '桌面内嵌中央界面',
+        })).catch(() => { if (!central.isDestroyed()) void dialog.showMessageBox(central, { type: 'error', message: '无法打开 GitHub，请检查默认浏览器后重试。' }); });
+      }
+    } catch { /* All other external targets remain blocked. */ }
+    return { action: 'deny' };
+  });
   central.webContents.on('will-attach-webview', event => event.preventDefault());
   central.webContents.on('will-navigate', (event, url) => { if (!centralRequestAllowed(url, origin)) event.preventDefault(); });
   central.webContents.on('will-redirect', (event, url) => { if (!centralRequestAllowed(url, origin)) event.preventDefault(); });

@@ -5,7 +5,7 @@ let initialized = false;
 let busy = false;
 const fields = byId<HTMLFieldSetElement>('settings-fields');
 const settingsForm = byId<HTMLFormElement>('settings');
-const pageNames = ['overview', 'notes', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity'] as const;
+const pageNames = ['overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity'] as const;
 type Page = typeof pageNames[number];
 let currentPage: Page = 'overview';
 let settingsDirty = false;
@@ -26,6 +26,7 @@ function showPage(page: Page, focus = true): void {
   updateSettingsHint();
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
+  if (page === 'records') void loadRecords();
 }
 for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-nav]'))) button.addEventListener('click', () => {
   const page = button.dataset.nav as Page;
@@ -67,6 +68,74 @@ function feedback(message: string, success = false): void {
   const box = byId('feedback'); box.textContent = message; box.hidden = !message; box.className = success ? 'success' : '';
 }
 function setText(id: string, value: string): void { const element = byId(id); if (element.textContent !== value) element.textContent = value; }
+
+let recordsRevision = 0, recordsPage = 0, recordsNext: string | undefined;
+let recordsCursors: (string | undefined)[] = [undefined];
+const recordsDate = new Date();
+byId<HTMLInputElement>('records-day').value = `${recordsDate.getFullYear()}-${String(recordsDate.getMonth() + 1).padStart(2, '0')}-${String(recordsDate.getDate()).padStart(2, '0')}`;
+const ocrNames = { pending: '等待 OCR', completed: 'OCR 已完成', disabled: 'OCR 已关闭', failed: 'OCR 待重试', unknown: 'OCR 状态未知' };
+function ocrLabel(value: import('./capture-browser').BrowserCapture): string {
+  return value.ocr.status === 'pending' && value.ocr.reason === 'charging' ? '待接通电源后 OCR' : ocrNames[value.ocr.status];
+}
+function resetRecords(): void { recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
+async function openRecord(item: import('./capture-browser').BrowserCapture, location: import('./capture-browser').CaptureLocation, revision: number): Promise<void> {
+  const panel = byId('record-detail'); panel.hidden = false;
+  byId('record-detail-title').textContent = item.appName || '截图';
+  byId('record-detail-meta').textContent = `${new Date(item.capturedAt).toLocaleString()} · ${ocrLabel(item)}`;
+  byId('record-detail-text').textContent = '正在读取识别文字…';
+  byId<HTMLImageElement>('record-detail-image').removeAttribute('src');
+  byId('record-detail-title').focus(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  const id = item.id; panel.dataset.recordId = id;
+  try {
+    const detail = await desktopApi.captureDetail(location, id);
+    if (revision !== recordsRevision || panel.dataset.recordId !== id || panel.hidden) return;
+    byId('record-detail-meta').textContent = `${new Date(detail.capturedAt).toLocaleString()} · ${detail.deviceName || ''} · ${ocrLabel(detail)}${detail.syncError ? ' · ' + detail.syncError : ''}`;
+    byId('record-detail-text').textContent = detail.ocrText || (detail.ocr.status === 'completed' ? '未识别到文字。' : ocrLabel(detail));
+    const image = await desktopApi.captureImage(location, id, false);
+    if (revision === recordsRevision && panel.dataset.recordId === id && !panel.hidden) byId<HTMLImageElement>('record-detail-image').src = image;
+  } catch (error) { if (revision === recordsRevision && panel.dataset.recordId === id) byId('record-detail-text').textContent = error instanceof Error ? error.message : '读取记录失败，请刷新后重试'; }
+}
+async function loadRecords(): Promise<void> {
+  const revision = ++recordsRevision;
+  const location = readInput('records-location') as import('./capture-browser').CaptureLocation;
+  byId('record-detail').hidden = true; byId('records-grid').replaceChildren();
+  byId('records-status').textContent = '正在读取采集记录…';
+  byId<HTMLButtonElement>('records-previous').disabled = true; byId<HTMLButtonElement>('records-next').disabled = true;
+  try {
+    const page = await desktopApi.browseCaptures({ location, day: readInput('records-day'), cursor: recordsCursors[recordsPage] });
+    if (revision !== recordsRevision) return;
+    recordsNext = page.nextCursor;
+    byId('records-status').textContent = page.items.length ? `${location === 'local' ? '本机保留' : '中央已归档'} · 当天共 ${page.totalCount} 张截图` : location === 'local' ? '当天没有本机待处理截图。已同步的截图可切换到“中央已归档”查看。' : '当天没有已归档截图。';
+    byId('records-page').textContent = page.items.length ? `第 ${recordsPage + 1} 页 · 每页最多 30 张` : '';
+    byId<HTMLButtonElement>('records-previous').disabled = recordsPage === 0;
+    byId<HTMLButtonElement>('records-next').disabled = !recordsNext;
+    const images: { element: HTMLImageElement; item: import('./capture-browser').BrowserCapture }[] = [];
+    for (const item of page.items) {
+      const card = document.createElement('button'); card.type = 'button'; card.className = 'record-card';
+      const image = document.createElement('img'); image.alt = `${item.appName || '截图'} · ${new Date(item.capturedAt).toLocaleTimeString()}`;
+      const caption = document.createElement('div'); caption.className = 'record-card-caption';
+      const title = document.createElement('strong'); title.textContent = item.appName || '截图';
+      const time = document.createElement('time'); time.dateTime = item.capturedAt; time.textContent = new Date(item.capturedAt).toLocaleTimeString();
+      const state = document.createElement('small'); state.textContent = item.syncError ? `同步需处理 · ${ocrLabel(item)}` : `${location === 'local' ? item.uploaded ? '图片已同步 · ' : '本机待同步 · ' : ''}${ocrLabel(item)}`;
+      caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => void openRecord(item, location, revision));
+      byId('records-grid').append(card); images.push({ element: image, item });
+    }
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, images.length) }, async () => {
+      while (next < images.length && revision === recordsRevision) {
+        const { element, item } = images[next++];
+        try { const image = await desktopApi.captureImage(location, item.id, true); if (revision === recordsRevision) element.src = image; }
+        catch { if (revision === recordsRevision) element.alt = '缩略图暂不可用；点击查看详情或刷新'; }
+      }
+    }));
+  } catch (error) { if (revision === recordsRevision) { byId('records-status').textContent = error instanceof Error ? error.message : '读取采集记录失败，请重试'; byId('records-page').textContent = ''; } }
+}
+byId('records-day').addEventListener('change', resetRecords);
+byId('records-location').addEventListener('change', resetRecords);
+byId('records-refresh').addEventListener('click', resetRecords);
+byId('records-previous').addEventListener('click', () => { if (recordsPage > 0) { recordsPage--; void loadRecords(); } });
+byId('records-next').addEventListener('click', () => { if (recordsNext) { recordsCursors[++recordsPage] = recordsNext; void loadRecords(); } });
+byId('record-detail-close').addEventListener('click', () => { byId('record-detail').hidden = true; byId<HTMLImageElement>('record-detail-image').removeAttribute('src'); });
 function readInput(id: string): string { return byId<HTMLInputElement>(id).value; }
 function numberInput(id: string): number { return Number(readInput(id)); }
 function fillConfig(config: import('./contracts').PublicConfig): void {
@@ -87,6 +156,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   byId<HTMLInputElement>('diagnostics-enabled').checked = config.diagnosticsEnabled;
   byId<HTMLInputElement>('pause-on-battery').checked = config.pauseOnBattery;
   byId<HTMLInputElement>('ocr').checked = config.ocrEnabled;
+  byId<HTMLInputElement>('ocr-charging').checked = config.ocrOnlyWhileCharging;
   byId<HTMLInputElement>('login').checked = currentStatus.environment?.legacy === false ? false : config.openAtLogin;
   byId<HTMLInputElement>('nsfw-enabled').checked = config.nsfwEnabled;
   byId<HTMLInputElement>('token').value = '';
@@ -214,7 +284,7 @@ byId('settings').addEventListener('submit', event => {
       serverUrl: readInput('server-url'), deviceName: readInput('device-name'), intervalMs: numberInput('interval') * 1000,
       maxQueueBytes: numberInput('queue-mb') * 1024 * 1024, maxQueueEvents: numberInput('queue-events'),
       excludedAppIds: readInput('excluded-apps').split('\n').map(v => v.trim()).filter(Boolean), masks,
-      idlePauseSeconds: numberInput('idle'), ocrEnabled: byId<HTMLInputElement>('ocr').checked,
+      idlePauseSeconds: numberInput('idle'), ocrEnabled: byId<HTMLInputElement>('ocr').checked, ocrOnlyWhileCharging: byId<HTMLInputElement>('ocr-charging').checked,
       privacyModelUrl: readInput('privacy-model-url').trim(), openAtLogin: byId<HTMLInputElement>('login').checked,
       nsfwEnabled: byId<HTMLInputElement>('nsfw-enabled').checked, reviewPolicy: readInput('review-policy'), reviewMaxTokens: numberInput('review-max-tokens'), reviewMaxSide: numberInput('review-max-side'),
       nsfwThreads: numberInput('nsfw-threads'), nsfwTimeoutMs: numberInput('nsfw-timeout') * 1000,
@@ -289,6 +359,7 @@ byId('note-form').addEventListener('submit', event => {
   });
 });
 
+byId('open-feedback').addEventListener('click', () => void perform(() => desktopApi.openFeedback()));
 byId('diagnostics-sample').addEventListener('click', () => void perform(async () => render(await desktopApi.sampleDiagnostics())));
 byId('diagnostics-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportDiagnostics(); if (!result.canceled) feedback('数值诊断已导出。', true); }));
 

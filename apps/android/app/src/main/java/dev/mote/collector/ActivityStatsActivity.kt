@@ -25,6 +25,7 @@ class ActivityStatsActivity : Activity() {
         summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(summary)
         renderSummary("正在读取本机统计…")
         button("刷新实际存储与统计") { refresh() }
+        button("查看采集记录") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         button("导出无正文统计 JSON") { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-activity-stats.json"), 1) }
         button("重置统计起点（保留队列和数据）") {
             AlertDialog.Builder(this).setTitle("重置本机统计").setMessage("只清空累计数字和最近事件，并记录新起算时间。不会删除队列、模型、配置或中央资料。")
@@ -59,29 +60,31 @@ class ActivityStatsActivity : Activity() {
                     append("截图已确认上传 ${count(OperationKind.SCREEN_ACK)} · 随手记已确认上传 ${count(OperationKind.NOTE_ACK)}\n")
                     append("上传待重试结果 ${count(OperationKind.UPLOAD_RETRY)} · 来源版本已确认 ${count(OperationKind.SOURCE_ACK)} / 失败 ${count(OperationKind.SOURCE_FAILED)}\n设备心跳失败 ${count(OperationKind.HEARTBEAT_FAILED)}\n")
                     append("已确认上传 JSON 字节 ${size(state.getLong("confirmedUploadBytes"))}（不含 TLS/HTTP 开销）\n")
-                    append("\n当前待上传\n当前队列：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
+                    append("\n当前本机记录\n加密保留：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
                     append("\n资料在哪里\n队列存储：${size(queue.getLong("bytes"))} / 上限 ${config.maxQueueMiB} MiB\n${File(noBackupFilesDir, "queue").absolutePath}\n")
+                    append("待 OCR 文字预留：${size(queue.getLong("reservedOcrBytes"))}（计入存储上限，完成识别后按实际大小计）\n")
                     append("来源待确认版本：$sourcePending · 本机来源缓存 ${size(bytes(sources))}\n${sources.absolutePath}\n")
                     append("模型及下载断点：${size(bytes(models))}\n${models.absolutePath}\n")
                     append("临时缓存：${size(bytes(cacheDir))}\n${cacheDir.absolutePath}\n")
                     append("应用私有文件合计：${size(bytes(File(applicationInfo.dataDir)))}\n设备此分区可用：${size(noBackupFilesDir.usableSpace)}\n")
                     append("\n生效设置\n实际配置：每 ${config.intervalSeconds} 秒，JPEG ${config.jpegQuality}，最长边 ${config.captureMaxSide}px\n")
-                    append("仅非计费 Wi-Fi：${if (config.wifiOnly) "开启" else "关闭"} · 仅充电：${if (config.chargingOnly) "开启" else "关闭"} · 低于 ${config.batteryPauseBelowPct}% 暂停（0 关闭）\n")
+                    append("仅非计费 Wi-Fi：${if (config.wifiOnly) "开启" else "关闭"} · 仅充电截图：${if (config.chargingOnly) "开启" else "关闭"} · 低于 ${config.batteryPauseBelowPct}% 暂停（0 关闭）\n")
+                    append("仅充电 OCR：${if (config.ocrChargingOnly) "开启，充电后补做历史图片" else "关闭"}\n")
                     append("本机过滤：${if (config.nsfw.enabled) "开启" else "关闭"} · ${config.nsfw.threads} 线程 · ${config.nsfw.timeoutMs}ms 超时\n")
                     append("设备元数据：${if (config.metadataEnabled) "上传新记录的实际状态" else "新记录不附带"} · 应用规则 ${AppCollectionRules.parse(config.appCollectionRules).apps.size} 项\n")
-                    append("\n统计口径与限制\n已保存表示加密入队成功；已上传表示节点 ACK 后本机删除成功。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量直接读取文件。\n")
+                    append("\n统计口径与限制\n已保存表示加密入队成功；已上传表示节点已确认收到。待 OCR 的图片在确认上传后仍会加密保留，补做结果也同步成功后才清理。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含待识别和同步失败保留的图片。\n")
                     append("文件字节合计不是 Android 系统的安装占用；不含 APK、系统配额或其他分区。目录仅可由本应用读取，不是共享相册。")
                 }
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread
                     renderSummary(content); history.removeAllViews()
-                    history.addView(TextView(this).apply { text = "当前待确认记录（最早100条，条目字节不含共享图片；不会预览正文）" })
+                    history.addView(TextView(this).apply { text = "本机保留记录（最早100条，条目字节不含共享图片；图片与文字请打开采集记录）" })
                     val pending = queue.getJSONArray("pending")
                     for (i in 0 until pending.length()) {
                         val item = pending.getJSONObject(i)
                         history.addView(Button(this).apply {
-                            text = "待确认 · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
-                            setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("待确认记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n加密条目字节：${item.getLong("bytes")}\n尚未匹配并清除本机记录；下方历史同一 ID 可关联上传失败和确认。不会在此显示图片或文字。").setPositiveButton("关闭", null).show() }
+                            text = "${if (item.optBoolean("archiveMissing")) "中央不可更新" else if (item.optBoolean("uploaded")) "已同步保留" else "待确认"} · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
+                            setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n加密条目字节：${item.getLong("bytes")}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。").setPositiveButton("关闭", null).show() }
                         })
                     }
                     history.addView(TextView(this).apply { text = "最近固定结果" })

@@ -94,9 +94,9 @@ do {
         try output(["granted": CGRequestScreenCaptureAccess()])
     case "activity":
         // NSWorkspace application identity only: never enumerate windows, titles, or pixels.
-        guard let application = NSWorkspace.shared.frontmostApplication,
-              let bundleID = application.bundleIdentifier, !bundleID.isEmpty else { throw NSError(domain: "Mote", code: 1) }
-        try output(["appId": bundleID, "appName": application.localizedName ?? bundleID, "pid": Int(application.processIdentifier)])
+        let application = NSWorkspace.shared.frontmostApplication
+        let identity = foregroundIdentity(bundleID: application?.bundleIdentifier, name: application?.localizedName, pid: application?.processIdentifier)
+        try output(["appId": identity.id, "appName": identity.name, "pid": identity.pid])
     case "device":
         func systemString(_ key: String) -> String? {
             var size = 0
@@ -120,11 +120,8 @@ do {
         }
         try output(["device": device, "state": state])
     case "active":
-        guard let application = NSWorkspace.shared.frontmostApplication,
-              let bundleID = application.bundleIdentifier,
-              !bundleID.isEmpty else {
-            throw NSError(domain: "Mote", code: 1, userInfo: nil)
-        }
+        let application = NSWorkspace.shared.frontmostApplication
+        let identity = foregroundIdentity(bundleID: application?.bundleIdentifier, name: application?.localizedName, pid: application?.processIdentifier)
         let primaryBounds = CGDisplayBounds(CGMainDisplayID())
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             throw NSError(domain: "Mote", code: 3, userInfo: nil)
@@ -134,16 +131,17 @@ do {
         }
         // Window titles are deliberately never requested or collected.
         try output([
-            "appId": bundleID,
-            "appName": application.localizedName ?? bundleID,
-            "pid": Int(application.processIdentifier),
+            "appId": identity.id,
+            "appName": identity.name,
+            "pid": identity.pid,
             "visibleAppIds": visible.ids,
             "unknownVisibleWindows": visible.unknown
         ])
     case "power":
         guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let sources = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { try output([:]); break }
-        var result: [String: Any] = [:]
+        // Desktop Macs have no battery source entries but are externally powered.
+        var result: [String: Any] = sources.isEmpty ? ["onBattery": false, "charging": false] : [:]
         for source in sources {
             guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
                   let current = description[kIOPSCurrentCapacityKey] as? Int,

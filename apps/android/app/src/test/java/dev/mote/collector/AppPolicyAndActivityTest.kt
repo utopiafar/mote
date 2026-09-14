@@ -8,6 +8,23 @@ import java.nio.file.Files
 import java.util.UUID
 
 class AppPolicyAndActivityTest {
+    @Test fun defaultContentIncludesLauncherSystemAndUnidentifiedSurfaces() {
+        val defaults = AppCollectionRules.parse(AppCollectionRules.DEFAULT)
+        val launcher = CollectionWindows.snapshot(listOf(CollectionWindow(1, "com.example.launcher")), "com.example.launcher")
+        val system = CollectionWindows.snapshot(listOf(CollectionWindow(3, "com.android.systemui")), null)
+        val absent = WindowSnapshot(emptySet(), null, false)
+        for (window in listOf(launcher, system, absent, WindowSnapshot(setOf("com.example.launcher"), null, false))) {
+            assertEquals(AppCollectionMode.CONTENT, defaults.decide(window, emptySet()))
+        }
+        assertEquals(AppCollectionMode.OFF, defaults.decide(launcher, setOf("com.example.launcher")))
+        assertEquals(AppCollectionMode.OFF, defaults.decide(absent, setOf("com.example.private")))
+        val excluded = AppCollectionRules.fromLines(AppCollectionMode.CONTENT, "com.example.launcher=off\ncom.android.systemui=off")
+        for (window in listOf(launcher, system, absent)) assertEquals(AppCollectionMode.OFF, excluded.decide(window, emptySet()))
+        val activity = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "")
+        assertEquals(AppCollectionMode.OFF, activity.decide(absent, emptySet()))
+        assertEquals(AppCollectionMode.OFF, activity.decide(system, emptySet()))
+    }
+
     @Test fun explicitRulesAndLegacyExclusionsFailClosedForAmbiguousWindows() {
         val rules = AppCollectionRules.fromLines(AppCollectionMode.CONTENT, "com.example.chat=activity\ncom.example.private=off")
         fun window(id: String) = WindowSnapshot(setOf(id), id, true)

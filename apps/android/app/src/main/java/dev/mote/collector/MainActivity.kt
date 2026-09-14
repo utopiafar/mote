@@ -2,6 +2,7 @@ package dev.mote.collector
 
 import android.Manifest
 import android.app.*
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Intent
 import android.text.Editable
@@ -78,6 +79,7 @@ class MainActivity : Activity() {
     private lateinit var captureMaxSide: EditText
     private lateinit var batteryBelow: EditText
     private lateinit var chargingOnly: CheckBox
+    private lateinit var ocrChargingOnly: CheckBox
     private lateinit var diagnosticEnabled: CheckBox
     private lateinit var diagnosticInterval: EditText
     private lateinit var nsfwEnabled: CheckBox
@@ -123,7 +125,7 @@ class MainActivity : Activity() {
         listOf(Page.OVERVIEW, Page.NOTES, Page.SOURCES, Page.SETTINGS).forEach { page ->
             val item = TextView(this).apply {
                 text = page.title; textSize = 11f; gravity = Gravity.CENTER; minHeight = dp(60)
-                compoundDrawablePadding = dp(4); isFocusable = true; isFocusableInTouchMode = true
+                compoundDrawablePadding = dp(4); isFocusable = true
                 contentDescription = page.title; setOnClickListener { showPage(page) }
             }
             navigation[page] = item
@@ -177,6 +179,7 @@ class MainActivity : Activity() {
         }
         section("本机记录")
         totalsStatus = text("正在读取统计…", 15)
+        menu("采集记录", "按天查看本机与中央归档的图片、OCR 状态和文字", "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         menu("采集与存储详情", "查看累计结果、队列与使用空间", "chart") { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
         menu("权限与后台运行", "管理采集权限和省电设置", "settings") { showPage(Page.PERMISSIONS) }
         text("本机采集与同步独立运行。记录加密保存在本机，空间达到上限会暂停新增。", 12, MoteUi.muted)
@@ -191,7 +194,19 @@ class MainActivity : Activity() {
         section("应用")
         menu("权限与后台运行", "系统授权、电池优化与自启动", "settings") { showPage(Page.PERMISSIONS) }
         menu("关于与更新", "版本信息、应用更新与开发者选项", "info") { showPage(Page.ABOUT) }
+        menu("反馈", "前往 GitHub，可附图片或诊断包", "note") { openFeedback() }
         text("设置在保存后生效。切换页面会保留尚未保存的输入。", 12, MoteUi.muted)
+    }
+
+    private fun openFeedback() {
+        val uri = Uri.Builder().scheme("https").authority("github.com").path("/utopiafar/mote/issues/new")
+            .appendQueryParameter("template", "bug_report.yml")
+            .appendQueryParameter("version", "Mote ${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
+            .appendQueryParameter("environment", "Android 客户端 · ${BuildConfig.MOTE_PROFILE}")
+            .build()
+        try { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+        catch (_: ActivityNotFoundException) { toast("无法打开 GitHub，请安装或启用浏览器后重试") }
+        catch (_: SecurityException) { toast("系统未允许打开 GitHub，请检查浏览器设置后重试") }
     }
 
     private fun buildSources() {
@@ -245,13 +260,15 @@ class MainActivity : Activity() {
         section("采样与空间")
         interval = presetNumber("采集间隔 / 秒", config.intervalSeconds, "30", 5..300, listOf(5, 15, 30, 60, 120, 300))
         maxQueue = presetNumber("本机存储上限 / MiB", config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
-        text("默认最长边 1280px、JPEG 75，生效数值可在统计详情查看。相同图片在队列中共用存储。队列 AES-GCM 加密，满后暂停，收到节点确认才删除。时间统计是采样设备时间。", 13)
+        text("默认最长边 1280px、JPEG 75，生效数值可在统计详情查看。相同图片共用加密存储，满后暂停；收到节点确认且 OCR 已处理后才清理本机图片。时间统计是采样设备时间。", 13)
         projectionMode = check("使用投屏模式（备用，每次需授权）", config.mode == "projection")
         text("默认无障碍截图模式适用 Android 11+：系统重新连接服务时可恢复你已启用的采集。投屏模式锁屏/被杀后必须重新授权。Android 10 请选投屏模式。", 13)
         section("画面质量与电量")
         jpegQuality = presetNumber("图像质量 · 数值越高清晰度越高", config.jpegQuality, "75", 40..95, listOf(50, 65, 75, 85, 95))
         captureMaxSide = presetNumber("图片最长边 / px", config.captureMaxSide, "1280", 640..2560, listOf(640, 960, 1280, 1920, 2560))
         chargingOnly = check("仅充电时截图", config.chargingOnly)
+        ocrChargingOnly = check("仅充电时 OCR", config.ocrChargingOnly)
+        text("开启后，电池供电时继续采集、遮罩、保存和同步图片；充电后自动补做文字识别，并按同步设置更新中央归档。待识别图片在本机保留，并为识别文字预留空间，均计入存储上限。", 13, MoteUi.muted)
         batteryBelow = presetNumber("低于此电量暂停 / % · 0 为关闭", config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
         menu("权限与后台运行", "调整系统授权与后台运行设置", "settings") { showPage(Page.PERMISSIONS) }
     }
@@ -448,7 +465,7 @@ class MainActivity : Activity() {
         checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } }, http.isChecked,
         if (projectionMode.isChecked) "projection" else "accessibility", nsfwDraft(), number(jpegQuality, 40..95), number(captureMaxSide, 640..2560),
         chargingOnly.isChecked, number(batteryBelow, 0..95), diagnosticEnabled.isChecked, number(diagnosticInterval, 15..3600),
-        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500))
+        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500), ocrChargingOnly.isChecked)
     private fun nsfwDraft(): NsfwConfig {
         val value = NsfwConfig(enabled = nsfwEnabled.isChecked, threads = number(nsfwThreads, 1..8),
             timeoutMs = number(nsfwTimeout, 5000..180000).toLong(), source = nsfwSources[nsfwSource.selectedItemPosition],
@@ -493,6 +510,7 @@ class MainActivity : Activity() {
         } else {
             ConnectionGuard.change(this, if (c.hasSyncConnection()) c.server else "", bindLocal) { settings.save(c) }
             UploadWorker.schedule(this, c)
+            CaptureOcrWorker.schedule(this, c, replace = true)
             SourceWork.schedule(this, true)
             loadedServer = c.server; loadedToken = c.token
             baseline = controlValues(); updateSaveBar(); refreshStatus()
@@ -514,7 +532,7 @@ class MainActivity : Activity() {
                 settings.status("capturing", "采集已启用，等待首帧；配置页受系统安全保护")
             }) { toast("节点或配置已变化，请重新点击开始"); return }
         } else {
-            if (!CaptureAccessibilityService.connected) {
+            if (!CaptureAccessibilityService.connected && AppCollectionRules.parse(c.appCollectionRules).requiresWindowIdentity(PrivacyRules.exclusions(c.excludedPackages))) {
                 showPage(Page.PERMISSIONS); toast("分级采集需要可靠窗口身份，请先启用无障碍服务；不会读取控件文字"); return
             }
             val manager = getSystemService(MediaProjectionManager::class.java)

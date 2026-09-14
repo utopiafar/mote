@@ -28,7 +28,7 @@ class Diagnostics(private val context: Context) {
         if (!force && now - prefs.getLong("lastSample", 0) < config.diagnosticsIntervalSeconds * 1000L) return@synchronized
         val battery = battery(context)
         val item = JSONObject().put("atMs", now).put("batteryPct", battery.first).put("charging", battery.second)
-            .put("queueBytes", context.queue().bytes()).put("queueDepth", context.queue().depth())
+            .put("queueBytes", context.queue().diskBytes()).put("queueDepth", context.queue().depth())
             .put("modelBytes", bytes(File(context.noBackupFilesDir, "models"))).put("diagnosticsBytes", file.length())
         val counter = context.getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)
         if (counter != Int.MIN_VALUE && counter >= 0) item.put("chargeCounterUAh", counter)

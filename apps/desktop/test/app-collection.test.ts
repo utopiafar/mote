@@ -13,4 +13,14 @@ describe('explicit collection policy', () => {
     for (const rules of [[], { 'dev.app': 'keyword-guess' }, { '': 'off' }, JSON.parse('{"__proto__":"content"}')]) expect(() => normalizeAppCollectionRules(rules)).toThrow();
     expect(() => updateConfig(cfg, { ...cfg, defaultCollection: 'invalid' } as never)).toThrow();
   });
+  it('allows desktop or unknown windows under an unrestricted default while preserving explicit restrictions', () => {
+    const cfg = defaultConfig();
+    expect(collectionForApp('com.apple.finder', cfg)).toBe('content');
+    expect(collectionForApp(undefined, cfg)).toBe('content');
+    expect(collectionForApp('dev.mote.unknown-foreground', cfg)).toBe('content');
+    expect(permitsVisibleContent([], true, cfg)).toBe(true);
+    expect(permitsVisibleContent([], true, { ...cfg, excludedAppIds: ['dev.private'] })).toBe(false);
+    expect(collectionForApp('dev.mote.unknown-foreground', { ...cfg, appCollectionRules: { 'dev.private': 'activity' } })).toBe('off');
+    expect(collectionForApp('com.apple.finder', { ...cfg, excludedAppIds: ['com.apple.finder'] })).toBe('off');
+  });
 });

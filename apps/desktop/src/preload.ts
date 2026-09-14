@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  browseCaptures: input => ipcRenderer.invoke('mote:captures-browse', input),
+  captureDetail: (location, id) => ipcRenderer.invoke('mote:captures-detail', location, id),
+  captureImage: (location, id, thumbnail) => ipcRenderer.invoke('mote:captures-image', location, id, thumbnail),
   installedApplications: () => ipcRenderer.invoke('mote:installed-applications'),
   onNavigate: callback => {
     const handler = (_event: Electron.IpcRendererEvent, page: 'overview' | 'notes' | 'sources' | 'settings') => callback(page);
@@ -23,6 +26,7 @@ const api: DesktopApi = {
   installUpdate: () => ipcRenderer.invoke('mote:update-install'),
   revealUpdate: () => ipcRenderer.invoke('mote:update-reveal'),
   releaseNotes: () => ipcRenderer.invoke('mote:update-notes'),
+  openFeedback: () => ipcRenderer.invoke('mote:feedback'),
   sources: () => ipcRenderer.invoke('mote:sources'),
   chooseSourceFiles: (mode, options) => ipcRenderer.invoke('mote:source-files', mode, options),
   authorizeCalendar: () => ipcRenderer.invoke('mote:calendar-authorize'),

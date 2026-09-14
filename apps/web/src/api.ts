@@ -1,4 +1,4 @@
-import type {RecordMetadata, SourceMetadata} from '@mote/shared';
+import type {RecordMetadata, SourceMetadata, OcrResult, CaptureRecord} from '@mote/shared';
 export interface Connection {
   url: string;
   token: string;
@@ -12,10 +12,11 @@ export interface Capture {
   deviceName: string;
   platform: string;
   ocrText: string;
+  ocr?: OcrResult;
   windowTitle: string;
   durationMs: number;
   blobHash: string | null;
-  source: string;
+  source: CaptureRecord['source'];
   privacy: { redacted: boolean; mode: string; reason?: string; collection?: 'content' | 'activity' };
   metadata?: RecordMetadata;
   provenance?: {layer:string;modifiedAt?:string;deleted?:boolean;metadata?:SourceMetadata};

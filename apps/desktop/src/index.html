@@ -27,6 +27,7 @@
       <div class="sidebar-label">工作空间</div>
       <button class="nav-item selected" data-nav="overview" type="button" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-home"/></svg><span>概览</span></button>
       <button class="nav-item" data-nav="notes" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-note"/></svg><span>随手记</span></button>
+      <button class="nav-item" data-nav="records" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg><span>采集记录</span></button>
       <button class="nav-item" data-nav="sources" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-source"/></svg><span>本地来源</span></button>
     </nav>
     <div class="sidebar-bottom">
@@ -44,7 +45,7 @@
       <section class="status-card" aria-live="polite" aria-label="采集状态">
         <div class="status-heading"><span id="status-dot" class="dot"></span><h2 id="state">正在初始化</h2><span class="permission" id="permission">权限检查中</span></div>
         <p id="message">正在读取本地配置与队列…</p>
-        <div class="metrics"><div><span>采集与随手记待传</span><strong id="queue-count">0</strong><small>中央确认接收后移出队列</small></div><div><span>本地队列</span><strong id="queue-size">0 MB</strong><small>断网时也能安全保留</small></div><div><span>最近采样</span><strong class="time" id="last-capture">尚无</strong><small>仅在开始采集后记录</small></div></div>
+        <div class="metrics"><div><span>采集与随手记待传</span><strong id="queue-count">0</strong><small>中央确认接收后移出队列</small></div><div><span>本地队列与 OCR 预留</span><strong id="queue-size">0 MB</strong><small>断网时也能安全保留</small></div><div><span>最近采样</span><strong class="time" id="last-capture">尚无</strong><small>仅在开始采集后记录</small></div></div>
         <div class="status-actions"><div class="actions"><button id="start" class="primary" type="button">开始采集</button><button id="stop" class="danger" type="button" disabled>停止采集</button></div><button id="permissions" class="text-button" type="button">屏幕录制权限 ↗</button></div>
 
       </section>
@@ -56,6 +57,15 @@
         <button class="shortcut-card" data-nav="activity" type="button"><span class="shortcut-icon"><svg class="icon" aria-hidden="true"><use href="#icon-activity"/></svg></span><strong>查看本机统计</strong><span>了解采集与队列的状态</span><svg class="icon shortcut-arrow" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
       </div>
       <div class="quiet-note"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg><p>先过滤，再保存。采集范围和隐私规则始终由你决定。<br><span>关闭窗口后仍驻留菜单栏；停止采集后，已有记录仍按上传策略同步；退出应用后暂停。</span></p><button class="text-button" data-nav="privacy" type="button">管理隐私 <span aria-hidden="true">→</span></button></div>
+    </section>
+
+    <section data-page="records" class="page" hidden>
+      <header class="page-header"><div><div class="eyebrow">按天回看</div><h1 tabindex="-1" data-page-title>采集记录</h1><p>查看这台设备保存的截图、同步进度与识别文字。</p></div></header>
+      <section class="panel records-toolbar"><label>日期<input id="records-day" type="date"></label><label>记录位置<select id="records-location"><option value="local">本机待同步 / 待 OCR</option><option value="central">中央已归档</option></select></label><button id="records-refresh" class="secondary" type="button">刷新</button></section>
+      <p id="records-status" class="helper" role="status"></p><div id="records-grid" class="records-grid"></div>
+      <div class="records-pagination"><button id="records-previous" class="secondary" type="button" disabled>上一页</button><span id="records-page" class="helper"></span><button id="records-next" class="secondary" type="button" disabled>下一页</button></div>
+      <section id="record-detail" class="panel record-detail" hidden><div class="section-title"><div><h2 id="record-detail-title" tabindex="-1">记录详情</h2><p id="record-detail-meta"></p></div><button id="record-detail-close" class="text-button" type="button">关闭详情</button></div><img id="record-detail-image" alt="当前选择的采集截图"><h3>识别文字</h3><pre id="record-detail-text" class="record-ocr-text"></pre></section>
+      <p class="page-footnote">本机只保留未完成同步或等待 OCR 的图片。已完成的记录可在“中央已归档”查看；关闭采集不会自动删除历史截图。</p>
     </section>
 
     <section data-page="notes" class="page" hidden>
@@ -86,6 +96,7 @@
         <button class="settings-row" data-nav="capture" type="button"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg></span><span class="settings-row-copy"><strong>采集与存储</strong><span>采样频率、文字识别、运行方式与本地队列</span></span><span class="chevron" aria-hidden="true">›</span></button>
         <button class="settings-row" data-nav="privacy" type="button"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-shield"/></svg></span><span class="settings-row-copy"><strong>隐私与过滤</strong><span>应用范围、遮挡区域与本地视觉审查</span></span><span class="chevron" aria-hidden="true">›</span></button>
         <button class="settings-row" data-nav="about" type="button"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg></span><span class="settings-row-copy"><strong>关于 Mote</strong><span>版本信息与应用更新</span></span><span class="chevron" aria-hidden="true">›</span></button>
+        <button id="open-feedback" class="settings-row" type="button"><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-note"/></svg></span><span class="settings-row-copy"><strong>反馈</strong><span>前往 GitHub，可附图片或诊断包</span></span><span class="chevron" aria-hidden="true">↗</span></button>
       </div>
       <div class="settings-group-label">高级</div>
       <div class="settings-menu"><button class="settings-row" data-nav="developer" type="button"><span class="setting-icon neutral"><svg class="icon" aria-hidden="true"><use href="#icon-code"/></svg></span><span class="settings-row-copy"><strong>开发者选项</strong><span>模型参数、性能诊断、支持包与数据迁移</span></span><span class="chevron" aria-hidden="true">›</span></button></div>
@@ -134,7 +145,7 @@
           <section class="panel"><h2>本地采集和上传独立运行</h2><div class="policy-steps"><p><strong>01 · 先保存</strong><span>未设置地址或断网时，记录先进入本机队列。队列达到上限会暂停采集。</span></p><p><strong>02 · 按策略发送</strong><span>停止采集不会停止已有记录的同步。应用运行时执行计划；电脑休眠或应用退出时延后。</span></p><p><strong>03 · 确认后清理</strong><span>中央确认每条记录后才清理本机待传内容。失败保留原记录，自动模式按重试计划稍后再试。</span></p></div><button class="text-button" data-nav="connection" type="button">管理连接地址 →</button></section>
         </section>
         <section data-page="capture" class="page settings-page" hidden>
-          <section class="panel"><div class="section-title"><div><h2>采集方式</h2><p>仅采集主屏幕。锁屏和休眠时始终暂停。</p></div></div><div class="form-grid"><label>采样间隔（秒）<input id="interval" type="number" min="5" max="300" required><small>相同画面复用本地图像，保留每次采样记录。</small></label><label>连续空闲后暂停（秒）<input id="idle" type="number" min="0" max="86400" required><small>默认 300；设为 0 可关闭空闲检测。</small></label></div><label class="checkbox option-row"><input id="ocr" type="checkbox"><span>识别截图中的文字<small>使用 Apple Vision 在本机识别中英文，只处理最终遮挡后的图像。关闭后仍归档图像，其中的文字不会自动进入检索。不收集窗口标题。</small></span></label></section>
+          <section class="panel"><div class="section-title"><div><h2>采集方式</h2><p>仅采集主屏幕。锁屏和休眠时始终暂停。</p></div></div><div class="form-grid"><label>采样间隔（秒）<input id="interval" type="number" min="5" max="300" required><small>相同画面复用本地图像，保留每次采样记录。</small></label><label>连续空闲后暂停（秒）<input id="idle" type="number" min="0" max="86400" required><small>默认 300；设为 0 可关闭空闲检测。</small></label></div><label class="checkbox option-row"><input id="ocr" type="checkbox"><span>识别截图中的文字<small>使用 Apple Vision 在本机识别中英文，只处理最终遮挡后的图像。关闭后仍归档图像，其中的文字不会自动进入检索。不收集窗口标题。</small></span></label><label class="checkbox option-row"><input id="ocr-charging" type="checkbox"><span>仅充电时 OCR<small>使用电池时照常保存并同步截图；接通电源后自动补做历史截图中的文字。待处理图片和每张最多约 600 KB 的文字预留计入队列额度，OCR 结果同步后释放。充满或台式 Mac 使用外部电源也会处理。</small></span></label></section>
           <section class="panel"><div class="section-title"><div><h2>运行与电源</h2><p>让 Mote 按照你的设备使用方式运行。</p></div></div><label class="checkbox option-row"><input id="login" type="checkbox"><span>登录时打开 Mote<small id="login-hint">应用启动后保持停止状态，需手动开始采集；已有队列按上传策略处理。</small></span></label><label class="checkbox option-row"><input id="pause-on-battery" type="checkbox"><span>使用电池时暂停采集<small>连接电源后恢复，减少移动使用时的资源消耗。</small></span></label><label class="spaced narrow-field">低电量暂停（%）<input id="battery-pause-below" type="number" min="0" max="95" required><small>设为 0 可关闭；仅在使用电池时触发。</small></label></section>
           <section class="panel"><div class="section-title"><div><h2>图像清晰度</h2><p>选择适合你的清晰度，空间占用会随画面而变化。</p></div></div><label>画质<select id="image-preset"><option value="1280,65">节省空间 · 1280 px</option><option value="1600,75">默认 · 1600 px</option><option value="1920,80">均衡 · 1920 px</option><option value="2560,90">清晰文字 · 2560 px</option><option value="custom">自定义 · 在开发者选项中调整</option></select></label><button id="image-custom" class="text-button spaced" type="button">查看具体参数 →</button></section>
           <section class="panel"><div class="section-title"><div><h2>本地队列</h2><p>中央节点确认接收后才删除本地记录。达到上限会停止采集。</p></div></div><div class="form-grid"><label>容量上限（MiB）<input id="queue-mb" type="number" min="1" max="20480" required></label><label>记录数量上限<input id="queue-events" type="number" min="1" max="1000000" required></label></div></section>

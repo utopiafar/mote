@@ -17,6 +17,7 @@ class MoteApplication : Application() {
                     val config = settings.read()
                     if (settings.syncState() == "uploading") settings.syncStatus(if (config.syncMode == "manual") "manual" else "waiting", "上次同步已中断，记录保留在本机")
                     UploadWorker.schedule(this@MoteApplication, config)
+                    CaptureOcrWorker.schedule(this@MoteApplication, config)
                     SourceWork.schedule(this@MoteApplication)
                     if (settings.enabled && config.mode == "projection") {
                         settings.enabled = false

@@ -12,6 +12,30 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-desktop-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 describe('durable capture queue', () => {
+  it('makes progress at the byte limit by consuming pre-reserved OCR space, including worst-case escaping', async () => {
+    const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const } };
+    await queue.enqueue(original, image); await queue.acknowledge(original.id);
+    const reserved = queue.stats().bytes;
+    queue.setLimits({ ...limits, maxQueueBytes: reserved });
+    expect(queue.atCapacity()).toBe(true);
+    await expect(queue.saveOcr(original.id, '\u0000'.repeat(100000))).resolves.toBeUndefined();
+    expect(queue.stats().bytes).toBeLessThanOrEqual(reserved);
+    await queue.acknowledge(original.id, true); expect(queue.stats().depth).toBe(0);
+  });
+  it('retains deferred OCR quota and immutable payload through ACK/restart/export until OCR succeeds', async () => {
+    queue.setLimits({ ...limits, maxQueueEvents: 1 });
+    const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const, reason: 'charging' as const } };
+    await queue.enqueue(original, image); await queue.acknowledge(original.id);
+    expect(queue.atCapacity()).toBe(true); expect(queue.stats()).toMatchObject({ depth: 1, waitingOcr: 1, eligibleDepth: 0 });
+    await expect(queue.enqueue(event('f50650f0-fb31-4215-90cd-c96dc62d5e93'), image)).rejects.toBeInstanceOf(QueueFullError);
+    const restored = new DurableQueue(directory, { ...limits, maxQueueEvents: 1 }); await restored.initialize();
+    expect((await restored.nextOcr())?.image).toEqual(image); expect(await restored.next()).toBeUndefined();
+    await restored.saveOcr(original.id, 'RECOGNIZED FIXTURE');
+    const entry = await restored.next(); expect(entry?.record.event).toEqual(original); expect(entry?.record.uploaded).toBe(true); expect(entry?.record.ocrResult).toBe('RECOGNIZED FIXTURE');
+    const target = new DurableQueue(join(directory, 'imported'), limits); await target.initialize(); await target.importArchive(await restored.exportArchive());
+    expect((await target.next())?.record.uploaded).toBe(false); // Imported node must ACK original again before patch.
+    await restored.acknowledge(original.id, true); expect(restored.stats().depth).toBe(0); expect(await readdir(join(directory, 'blobs'))).toEqual([]);
+  });
   it('deduplicates identical image bytes while preserving every sampled observation and survives restart', async () => {
     await queue.enqueue(event(), image);
     await queue.enqueue(event('f50650f0-fb31-4215-90cd-c96dc62d5e93'), image);

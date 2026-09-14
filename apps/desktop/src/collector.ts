@@ -11,7 +11,7 @@ import { activeApplication, foregroundApplication, recognizeText, readPowerState
 import { maskBitmap, reviewLocally } from './privacy';
 import { collectionForApp, permitsVisibleContent } from './app-collection';
 import { collectRecordMetadata } from './record-metadata';
-import { heartbeat, uploadCapture } from './transport';
+import { heartbeat, uploadCapture, uploadDeferredOcr, DeletedCaptureFailure } from './transport';
 import { EventJournal, failureCode, TransportFailure, type EventStage } from './support';
 
 export const currentPlatform: Platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
@@ -29,6 +29,11 @@ export class Collector {
   private timer?: ReturnType<typeof setTimeout>;
   private uploadTimer?: ReturnType<typeof setInterval>;
   private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private ocrTimer?: ReturnType<typeof setInterval>;
+  private ocrBusy = false;
+  private ocrAbort?: AbortController;
+  private captureOcrAbort?: AbortController;
+  private closed = false;
   private lastSample?: { at: number; appId: string; collection: 'content' | 'activity' };
   private state: Status['state'] = 'stopped';
   private message = '尚未开始采集。请确认隐私设置后手动开始。';
@@ -41,10 +46,14 @@ export class Collector {
     powerMonitor.on('unlock-screen', () => { this.locked = false; this.lastSample = undefined; });
     powerMonitor.on('suspend', () => { this.sleeping = true; this.pause('电脑休眠，暂停采集'); });
     powerMonitor.on('resume', () => { this.sleeping = false; this.lastSample = undefined; });
+    powerMonitor.on('on-ac', () => { void this.processPendingOcr(); });
+    powerMonitor.on('on-battery', () => { if (this.config.ocrOnlyWhileCharging) { this.ocrAbort?.abort(); this.captureOcrAbort?.abort(); } });
   }
   initialize(): void {
     this.uploadTimer = setInterval(() => void this.upload(), 2000);
     this.heartbeatTimer = setInterval(() => void this.sendHeartbeat(), 30000);
+    this.ocrTimer = setInterval(() => void this.processPendingOcr(), 10000);
+    void this.processPendingOcr();
     void this.upload();
   }
   status(): Status {
@@ -60,7 +69,7 @@ export class Collector {
   private pendingSync() {
     const queue = this.queue.stats(), sources = this.sources?.pendingStats();
     const oldestPendingAt = [queue.oldestPendingAt, (sources?.eligibleRecords === undefined ? sources?.oldestPendingAt : sources.oldestEligibleAt), sources?.oldestUpdateAt].filter((date): date is string => Boolean(date)).sort()[0];
-    return { pendingRecords: queue.depth + (sources?.pendingRecords ?? 0), eligibleRecords: queue.depth + (sources?.eligibleRecords ?? sources?.pendingRecords ?? 0), heldRecords: sources?.heldRecords ?? 0, heldUpdates: sources?.heldUpdates ?? 0, heldReason: sources?.heldReason, pendingUpdates: sources?.eligibleUpdates ?? sources?.pendingUpdates ?? 0, oldestPendingAt, lastUploadAt: this.lastUploadAt ?? queue.lastUploadAt, nextRetryAt: queue.nextRetryAt };
+    return { pendingRecords: queue.depth + (sources?.pendingRecords ?? 0), eligibleRecords: queue.eligibleDepth + (sources?.eligibleRecords ?? sources?.pendingRecords ?? 0), heldRecords: queue.depth - queue.eligibleDepth + (sources?.heldRecords ?? 0), heldUpdates: sources?.heldUpdates ?? 0, heldReason: queue.blocked ? '部分记录需要处理：中央记录已删除或节点需升级；请在采集记录中查看，处理后手动重试' : queue.waitingOcr ? '图片已同步；本机保留图片，等待 OCR 完成后同步文字' : sources?.heldReason, pendingUpdates: sources?.eligibleUpdates ?? sources?.pendingUpdates ?? 0, oldestPendingAt, lastUploadAt: this.lastUploadAt ?? queue.lastUploadAt, nextRetryAt: queue.nextRetryAt };
   }
   private syncStatus(): Status['sync'] {
     const pending = this.pendingSync();
@@ -78,11 +87,11 @@ export class Collector {
     this.captureAbort?.abort();
     if (this.running) { this.state = 'paused'; this.message = message; this.publish(); }
   }
-  connectionActivity(): { inFlight: boolean } { return { inFlight: this.capturing || this.uploading || this.heartbeatInFlight }; }
+  connectionActivity(): { inFlight: boolean } { return { inFlight: this.capturing || this.uploading || this.heartbeatInFlight || this.ocrBusy }; }
   async holdConnection(): Promise<() => void> {
     if (this.running || this.connectionHeld) throw new Error('请先停止采集，再更换连接');
     this.connectionHeld = true;
-    this.captureAbort?.abort(); this.uploadAbort?.abort();
+    this.captureAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
     // Heartbeats already have a bounded timeout. Wait until no old-credential request can race a save.
     while (this.connectionActivity().inFlight) await new Promise(resolve => setTimeout(resolve, 25));
     return () => { this.connectionHeld = false; };
@@ -91,6 +100,7 @@ export class Collector {
     // Config edits cannot change a privacy policy in the middle of capture.
     if (this.running || this.capturing) throw new Error('请先停止采集，再修改配置');
     this.uploadAbort?.abort();
+    this.ocrAbort?.abort();
     this.nsfw?.reset();
     this.config = config;
     this.queue.setLimits(config);
@@ -116,13 +126,32 @@ export class Collector {
     while (this.capturing) await new Promise(resolve => setTimeout(resolve, 25));
   }
   shutdown(): void {
-    this.running = false; this.captureAbort?.abort(); this.uploadAbort?.abort();
+    this.closed = true;
+    this.running = false; this.captureAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
     if (this.timer) clearTimeout(this.timer);
     if (this.uploadTimer) clearInterval(this.uploadTimer);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.ocrTimer) clearInterval(this.ocrTimer);
     this.nsfw?.close(); void this.diagnostics?.close();
   }
   async retry(): Promise<void> { await this.queue.resetRetries(); await this.upload(true); await this.sendHeartbeat(true); }
+  /** Only reads already sanitized queued JPEGs; independent of whether new capture is running. */
+  async processPendingOcr(): Promise<void> {
+    if (this.closed || this.ocrBusy || this.connectionHeld || this.sleeping || !this.config.ocrEnabled) return;
+    this.ocrBusy = true;
+    const cfg = this.config, abort = this.ocrAbort = new AbortController();
+    let id: string | undefined;
+    try {
+      const next = await this.queue.nextOcr(); if (!next) return;
+      id = next.record.event.id;
+      if (cfg.ocrOnlyWhileCharging && (await readPowerState(this.helperPath, abort.signal)).onBattery !== false) return;
+      const text = await recognizeText(this.helperPath, next.image, abort.signal);
+      if (abort.signal.aborted || cfg !== this.config) return;
+      await this.queue.saveOcr(id, text); this.publish();
+      void this.upload();
+    } catch { if (id && !abort.signal.aborted) await this.queue.deferOcr(id).catch(() => undefined); }
+    finally { this.ocrBusy = false; }
+  }
   private finalImage(image: NativeImage, rectangles: Config['masks']): NativeImage {
     const { width, height } = image.getSize();
     return nativeImage.createFromBitmap(maskBitmap(image.toBitmap(), width, height, rectangles), { width, height });
@@ -212,8 +241,15 @@ export class Collector {
       // OCR must run after BOTH user masks and optional model masks.
       stage = 'OCR';
       const ocrStarted = Date.now();
-      const ocrText = cfg.ocrEnabled ? await recognizeText(this.helperPath, jpeg, abort.signal) : undefined;
-      ocrMs = cfg.ocrEnabled ? Date.now() - ocrStarted : 0;
+      const deferredForPower = cfg.ocrEnabled && cfg.ocrOnlyWhileCharging && (await readPowerState(this.helperPath, abort.signal).catch(() => ({} as import('./native').PowerState))).onBattery !== false;
+      let ocrText: string | undefined;
+      let ocr: NonNullable<CaptureEvent['ocr']> = { status: cfg.ocrEnabled ? 'pending' : 'disabled', ...(deferredForPower ? { reason: 'charging' as const } : {}) };
+      if (cfg.ocrEnabled && !deferredForPower) {
+        const ocrAbort = this.captureOcrAbort = new AbortController();
+        try { ocrText = await recognizeText(this.helperPath, jpeg, AbortSignal.any([abort.signal, ocrAbort.signal])); if (!ocrAbort.signal.aborted) ocr = { status: 'completed' }; else ocrText = undefined; }
+        catch { /* Preserve the sanitized image and retry OCR from the durable queue. */ }
+        ocrMs = Date.now() - ocrStarted;
+      }
       if (!valid()) return;
       const metadata = cfg.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, 'screen_capture', abort.signal) : undefined;
       if (!valid()) return;
@@ -221,7 +257,7 @@ export class Collector {
       const event: CaptureEvent = {
         id: randomUUID(), deviceId: cfg.deviceId, deviceName: cfg.deviceName, platform: currentPlatform,
         capturedAt: new Date(startedAt).toISOString(), durationMs, appId: before.appId, appName: before.appName,
-        imageMime: 'image/jpeg', ocrText, source: 'screen',
+        imageMime: 'image/jpeg', ocrText, ocr, source: 'screen',
         ...(metadata ? { metadata: { ...metadata, capture: { intervalMs: cfg.intervalMs, ...sanitized.getSize(), displayScale: display.scaleFactor, ocrEnabled: cfg.ocrEnabled, maskCount: appliedMasks } } } : {}),
         privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', collection: 'content', reason: `${cfg.nsfwEnabled ? 'offline Qwen visual policy passed; ' : ''}${appliedMasks > 0 ? 'configured or local-model masks applied before OCR and persistence' : cfg.privacyModelUrl ? 'local privacy model approved; no masks returned' : 'user-configured app filters checked; no masks configured'}` },
       };
@@ -230,7 +266,7 @@ export class Collector {
       void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
       this.diagnostics?.recordCapture({ outcome: 'saved', imageBytes: jpeg.length, inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' }; this.lastCaptureAt = event.capturedAt;
-      this.state = 'capturing'; this.message = '正在采集主屏；本地过滤、脱敏、OCR 已完成'; this.publish(); void this.upload();
+      this.state = 'capturing'; this.message = ocr.status === 'pending' ? `截图已安全保存；${deferredForPower ? '接通电源后自动补做 OCR' : 'OCR 等待重试'}` : '正在采集主屏；本地过滤与脱敏已完成'; this.publish(); void this.upload();
     } catch (error) {
       void this.events?.record(stage, failureCode(error, stage), { elapsedMs: Date.now() - startedAt });
       this.lastSample = undefined;
@@ -260,16 +296,27 @@ export class Collector {
         const entry = await this.queue.next();
         if (!entry) break;
         try {
-          await uploadCapture(this.config, entry.record.event, entry.image, abort.signal);
-          await this.queue.acknowledge(entry.record.event.id);
+          if (entry.record.uploaded) {
+            await uploadDeferredOcr(this.config, entry.record.event.id, entry.record.ocrResult!, abort.signal);
+            await this.queue.acknowledge(entry.record.event.id, true);
+          } else {
+            await uploadCapture(this.config, entry.record.event, entry.image, abort.signal);
+            await this.queue.acknowledge(entry.record.event.id);
+          }
           void this.events?.record('UPLOAD', 'OK');
-          this.diagnostics?.recordUpload(Buffer.byteLength(JSON.stringify(entry.record.event)) + Math.ceil((entry.image?.length ?? 0) / 3) * 4);
+          this.diagnostics?.recordUpload(entry.record.uploaded
+            ? Buffer.byteLength(JSON.stringify({ ocrText: entry.record.ocrResult, status: 'completed' }))
+            : Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
           this.lastUploadAt = new Date().toISOString(); this.lastUploadError = undefined;
         } catch (error) {
           if (abort.signal.aborted) break;
           const stage: EventStage = error instanceof TransportFailure ? 'UPLOAD' : 'QUEUE';
           void this.events?.record(stage, failureCode(error, stage), error instanceof TransportFailure ? { httpStatus: error.httpStatus } : {});
-          await this.queue.failed(entry.record.event.id);
+          if (error instanceof DeletedCaptureFailure || (error instanceof TransportFailure && (error.httpStatus === 410 || (entry.record.uploaded && error.httpStatus === 409)))) {
+            await this.queue.blockSync(entry.record.event.id, error.httpStatus === 409 ? '中央 OCR 文字与本机结果冲突，已停止补写并保留中央原文字；本机副本保留待处理。' : '中央已删除此记录，不会重新创建；本机副本保留待处理。');
+            this.lastUploadError = error.message;
+            continue; // A permanent conflict on one item must not hold up unrelated records.
+          } else await this.queue.failed(entry.record.event.id);
           this.lastUploadError = error instanceof Error ? error.message : '上传失败，队列已保留';
           break;
         }

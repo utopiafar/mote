@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Bot, Database, FileText, Fingerprint, Link2, Ref
 import type { ServerConfiguration, ConfigurationField, SourceConnection } from '@mote/shared';
 import { type Api, bytes, errorMessage } from './api';
 import {ConfigurationBuilder, type ConfigCategory} from './ConfigurationBuilder';
+import {Feedback} from './Feedback';
 export type SettingsDestination = 'vault'|'developer'|'about'|'connections';
 const categories: {id:ConfigCategory;title:string;description:string;icon:typeof Bot}[] = [
   {id:'model',title:'问答与回顾',description:'模型服务、推理强度与自动回顾',icon:Bot},
@@ -30,7 +31,7 @@ export function ServerSettings({api,onNavigate}:{api:Api;onNavigate:(page:Settin
    <div className="settings-category-label">偏好设置</div><div className="preference-menu">{categories.map(item=><button key={item.id} className="preference-menu-row" onClick={()=>setCategory(item.id)}><span className="preference-menu-icon"><item.icon size={21}/></span><span><strong>{item.title}</strong><small>{item.description}</small></span><ArrowRight size={17}/></button>)}</div>
    <div className="settings-category-label">管理与维护</div><div className="preference-menu">{([
     ['vault','数据与备份','空间详情、归档导入与导出',Database],['connections','连接授权','设备邀请与外部 Chatbot 凭据',Fingerprint],['about','关于 Mote','软件版本、更新与部署信息',FileText],['developer','开发者选项','诊断、日志与高级生效配置',Terminal],
-   ] as const).map(([id,title,description,Icon])=><button key={id} className="preference-menu-row" onClick={()=>onNavigate(id)}><span className="preference-menu-icon neutral"><Icon size={21}/></span><span><strong>{title}</strong><small>{description}</small></span><ArrowRight size={17}/></button>)}</div>
+   ] as const).map(([id,title,description,Icon])=><button key={id} className="preference-menu-row" onClick={()=>onNavigate(id)}><span className="preference-menu-icon neutral"><Icon size={21}/></span><span><strong>{title}</strong><small>{description}</small></span><ArrowRight size={17}/></button>)}<Feedback profile={config?.profile} runtime={config?.runtime}/></div>
    <p className="settings-footnote"><ShieldCheck size={16}/>设置草稿只保留在当前页面内存。重启节点后，新的部署配置才会生效。</p>
   </>}
   {config&&categories.map(item=><div key={item.id} hidden={category!==item.id}><ConfigurationBuilder config={config} category={item.id} sources={sources} sourcesError={sourcesError}/><section className="panel effective-settings"><div className="section-heading"><div><h2>当前生效值</h2><p>来自运行中的中央节点；与上方尚未应用的草稿分开显示。</p></div><span className="badge muted">只读</span></div>{config.groups.find(g=>g.id===item.id)?.fields.map(field=><EffectiveField key={field.key} field={field}/>)}</section></div>)}

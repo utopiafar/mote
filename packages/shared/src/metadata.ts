@@ -4,6 +4,22 @@ const timestamp = z.string().max(64).datetime({ offset: true });
 const label = z.string().min(1).max(200);
 const bytes = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
+/** Processing state is part of the record, independent of optional device telemetry. */
+export const ocrSchema = z.object({
+  status: z.enum(['pending', 'completed', 'disabled', 'failed']),
+  reason: z.literal('charging').optional(),
+  updatedAt: timestamp.optional(),
+}).strict();
+export type OcrResult = z.infer<typeof ocrSchema>;
+export type OcrState = Omit<OcrResult, 'status'> & { status: OcrResult['status'] | 'unknown' | 'not_applicable' };
+export function captureOcrState(record: {source: string; ocr?: OcrResult; ocrText?: string; metadata?: RecordMetadata}): OcrState {
+  if (record.source !== 'screen') return {status: 'not_applicable'};
+  if (record.ocr) return record.ocr;
+  if (record.ocrText?.trim()) return {status: 'completed'};
+  if (record.metadata?.capture?.ocrEnabled === false) return {status: 'disabled'};
+  return {status: 'unknown'};
+}
+
 /** Explicit, bounded fields only: never an arbitrary bag of device identifiers or content. */
 export const recordMetadataSchema = z.object({
   version: z.literal(1),

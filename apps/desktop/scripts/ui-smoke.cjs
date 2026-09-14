@@ -1,4 +1,6 @@
-const { app, dialog, Menu, ipcMain } = require('electron');
+const { app, dialog, Menu, ipcMain, shell, nativeImage } = require('electron');
+const { randomUUID } = require('node:crypto');
+const { imageHash } = require('../dist/queue');
 const { mkdtempSync, writeFileSync, mkdirSync } = require('node:fs');
 const { rm } = require('node:fs/promises');
 const { join, resolve } = require('node:path');
@@ -15,6 +17,8 @@ const sourceFile = join(profile, 'synthetic-source.md');
 writeFileSync(sourceFile, '合成原生来源 UI：仅用于测试 🧑🏽‍💻');
 dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sourceFile] });
 const errors = [];
+const externalUrls = [];
+shell.openExternal = async url => { externalUrls.push(url); };
 let finished = false;
 const timeout = setTimeout(() => { process.stderr.write('UI smoke timeout\n'); app.exit(1); }, 30000);
 app.on('browser-window-created', (_event, window) => {
@@ -44,11 +48,24 @@ app.on('browser-window-created', (_event, window) => {
       assert(settingsMenu, 'Standard settings menu exists'); settingsMenu.click();
       await js(`new Promise(resolve => requestAnimationFrame(resolve))`);
       assert(await js(`!document.querySelector('[data-page="settings"]').hidden`), 'Native settings menu routes to Settings');
+      await js(`document.querySelector('#open-feedback').click(); new Promise(resolve => setTimeout(resolve, 100))`);
+      assert.equal(externalUrls.length, 1);
+      const feedbackUrl = new URL(externalUrls[0]);
+      assert.equal(feedbackUrl.origin, 'https://github.com');
+      assert.equal(feedbackUrl.pathname, '/utopiafar/mote/issues/new');
+      assert.equal(feedbackUrl.searchParams.get('template'), 'bug_report.yml');
+      assert(feedbackUrl.searchParams.get('version').includes(app.getVersion()));
+      assert.equal(feedbackUrl.searchParams.get('environment'), '桌面客户端 · legacy');
+      assert.equal(decodeURIComponent(externalUrls[0]).includes('Synthetic Mac'), false);
       // Simulate only the renderer lock state; the collector never starts in this fixture.
+      // Periodic real stopped-status publications must not race the deliberate renderer-only lock.
+      const send = window.webContents.send.bind(window.webContents);
+      window.webContents.send = (channel, ...args) => send(channel, ...(channel === 'mote:status' ? [{ ...args[0], running: true, state: 'capturing' }] : args));
       window.webContents.send('mote:status', { ...status, running: true, state: 'capturing' });
       await navigate('capture');
       assert(await js(`document.querySelector('#settings-fields').disabled`));
       await navigate('overview');
+      window.webContents.send = send;
       window.webContents.send('mote:status', status);
       await navigate('notes');
       for (let i = 0; i < 50 && await js(`document.querySelector('#note-text').disabled`); i++) await new Promise(resolve => setTimeout(resolve, 20));
@@ -81,7 +98,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(await js(`document.querySelectorAll('#mask-editor input[type=range]').length`), 4);
       await js(`const width = document.querySelector('[aria-label="区域 1 宽度"]'); width.value = '25'; width.dispatchEvent(new Event('input', { bubbles: true }));`);
       await navigate('capture');
-      await js(`document.querySelector('#interval-preset').value = '60'; document.querySelector('#interval-preset').dispatchEvent(new Event('change', { bubbles: true }));`);
+      await js(`document.querySelector('#ocr-charging').checked = true; document.querySelector('#ocr-charging').dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#interval-preset').value = '60'; document.querySelector('#interval-preset').dispatchEvent(new Event('change', { bubbles: true }));`);
       await navigate('sync');
       for (const mode of ['interval', 'batch', 'manual']) {
         await js(`document.querySelector('[name=sync-mode][value=${mode}]').click()`);
@@ -96,7 +113,7 @@ app.on('browser-window-created', (_event, window) => {
         if (updated.config.deviceName === 'UI Fixture Renamed') break;
       }
       assert.equal(updated.config.deviceName, 'UI Fixture Renamed');
-      assert.equal(updated.config.syncMode, 'manual'); assert.equal(updated.config.intervalMs, 60000); assert.deepEqual(updated.config.masks, [{ x: .7, y: 0, width: .25, height: .2 }]);
+      assert.equal(updated.config.ocrOnlyWhileCharging, true); assert.equal(updated.config.syncMode, 'manual'); assert.equal(updated.config.intervalMs, 60000); assert.deepEqual(updated.config.masks, [{ x: .7, y: 0, width: .25, height: .2 }]);
       assert.equal(updated.running, false); assert.equal(updated.config.defaultCollection, 'activity'); assert.deepEqual(updated.config.appCollectionRules, { 'dev.mote.synthetic.private': 'off' }); assert.equal(updated.config.metadataEnabled, false);
       const savedNote = await window.webContents.executeJavaScript('window.mote.noteDraft().then(draft => window.mote.saveNote({...draft,text:"Synthetic native app note",mood:"calm",revision:draft.revision+1}))');
       assert.match(savedNote.id, /^[a-f0-9-]{36}$/);
@@ -157,7 +174,28 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`document.documentElement.scrollWidth <= window.innerWidth`), 'No horizontal overflow at minimum window width');
       writeFileSync(join(require('node:path').dirname(output), 'compact-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       assert.equal((await js('window.mote.status()')).running, false);
-      process.stdout.write(JSON.stringify({ localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, nativeSettingsMenu: true, navigationWhileSettingsLocked: true, draftAndConfigRetainedAcrossPages: true, hiddenInvalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
+      const generatedJpeg = nativeImage.createFromBitmap(Buffer.alloc(64 * 64 * 4, 160), { width: 64, height: 64 }).toJPEG(75);
+      const hash = imageHash(generatedJpeg), day = new Date(), fixtureRecords = [];
+      for (let index = 0; index < 31; index++) fixtureRecords.push({ event: { id: randomUUID(), deviceId: status.config.deviceId, deviceName: '合成截图设备', platform: 'macos', capturedAt: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, index).toISOString(), durationMs: 0, appId: 'dev.mote.fixture', appName: '合成截图', imageMime: 'image/jpeg', ocrText: '合成 OCR <script>不可执行的证据</script>', ocr: { status: 'completed' }, source: 'screen', privacy: { excluded: false, redacted: false, mode: 'local', reason: 'generated fixture only' } }, blobHash: hash, blobBytes: generatedJpeg.length, attempts: 0, nextAttemptAt: 0 });
+      const fixtureArchive = join(profile, 'generated-records.json');
+      writeFileSync(fixtureArchive, JSON.stringify({ format: 'mote-desktop-queue', version: 1, records: fixtureRecords, blobs: { [hash]: generatedJpeg.toString('base64') } }));
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixtureArchive] });
+      assert.equal((await js('window.mote.importQueue()')).imported, 31);
+      await navigate('records');
+      for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 30`); i++) await new Promise(resolve => setTimeout(resolve, 20));
+      assert.equal(await js(`document.querySelectorAll('.record-card').length`), 30);
+      assert(await js(`document.querySelector('#records-status').textContent.includes('31')`));
+      await js(`document.querySelector('#records-next').click()`);
+      for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 1`); i++) await new Promise(resolve => setTimeout(resolve, 20));
+      assert.equal(await js(`document.querySelectorAll('.record-card').length`), 1);
+      await js(`document.querySelector('.record-card').click()`);
+      for (let i = 0; i < 100 && await js(`!document.querySelector('#record-detail-image').src.startsWith('data:image/jpeg')`); i++) await new Promise(resolve => setTimeout(resolve, 20));
+      assert(await js(`document.querySelector('#record-detail-text').textContent.includes('<script>不可执行的证据</script>')`));
+      assert(await js(`document.querySelector('#record-detail-image').src.startsWith('data:image/jpeg')`));
+      assert(await js(`document.querySelector('#record-detail-text script') === null`));
+      writeFileSync(join(require('node:path').dirname(output), 'capture-records-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
+      assert.equal((await js('window.mote.status()')).running, false);
+      process.stdout.write(JSON.stringify({ captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, nativeSettingsMenu: true, navigationWhileSettingsLocked: true, draftAndConfigRetainedAcrossPages: true, hiddenInvalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write(`UI smoke failed: ${error.message}\n`); app.exit(1); });
   });

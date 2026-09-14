@@ -7,7 +7,7 @@ body:
     attributes:
       label: 版本与平台
       description: Mote 版本、客户端平台/系统版本、中央节点运行环境。
-      placeholder: 0.3.0 · macOS / Android / Docker
+      placeholder: Mote 版本 · macOS / Android / Web
     validations:
       required: true
   - type: input
@@ -20,10 +20,17 @@ body:
     attributes:
       label: 复现步骤与预期结果
       description: 描述操作、实际结果和预期行为；最好使用合成输入复现。
+      placeholder: |
+        复现步骤：
+        1.
+
+        实际结果：
+
+        预期结果：
     validations:
       required: true
   - type: textarea
     id: diagnostics
     attributes:
       label: 诊断线索
-      description: 可附错误类别、发生时间、请求编号，或从 App / 中央节点导出的诊断包。不要上传私人归档、真实截图、访问令牌或 API 密钥。
+      description: 可选填错误类别、发生时间、请求编号，也可在此粘贴或上传图片、日志和导出的诊断包。附件会公开，请先检查并遮盖个人内容；不要上传私人归档、访问令牌或 API 密钥。

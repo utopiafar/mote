@@ -18,6 +18,7 @@ import {registerConnectors} from './connectors/index.js';
 import { MemoryStore,MEMORY_EXTRACTION_PROMPT } from './memory.js';
 import {createUpdateService,registerUpdateRoutes} from './updates.js';
 import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
+import {registerCaptureBrowser} from './capture-browser.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface QueryAgent {configured:boolean;query(args:QueryScope&{question:string}):Promise<QueryResult>;close():Promise<void>}
@@ -92,6 +93,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   });
   const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
   registerUpdateRoutes(app,softwareUpdate);
+  registerCaptureBrowser(app,{store,connections,credential});
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
   app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192,timeoutMs:config.modelTimeoutMs??120000},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
   app.get('/api/configuration',async()=>serverConfiguration(config));

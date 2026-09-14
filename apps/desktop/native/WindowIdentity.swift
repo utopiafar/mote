@@ -1,5 +1,12 @@
 import AppKit
 
+// Missing foreground is a normal desktop/transient state, not an automatic capture exclusion.
+// The collector still enforces explicit application restrictions when this identity is unknown.
+func foregroundIdentity(bundleID: String?, name: String?, pid: Int32?) -> (id: String, name: String, pid: Int) {
+    guard let id = bundleID, !id.isEmpty else { return ("dev.mote.unknown-foreground", "无前台应用", 0) }
+    return (id, name ?? id, Int(pid ?? 0))
+}
+
 // Pure window-description policy: no OS query and no title reads. Layer is deliberately irrelevant.
 func visibleWindowIdentities(_ windows: [[String: Any]], within primaryBounds: CGRect, resolveBundle: (Int32) -> String?) -> (ids: [String], unknown: Bool) {
     var ids = Set<String>()

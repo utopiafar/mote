@@ -3,6 +3,8 @@ package dev.mote.collector
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Build
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -29,6 +31,32 @@ class NavigationInstrumentedTest {
         .filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == label }.performClick()
     private fun menu(activity: MainActivity, label: String) = views(activity.window.decorView)
         .single { it.isShown && it.tag == "menu:$label" }.performClick()
+
+    @Test fun everyBottomTabSwitchesOnItsFirstTouch() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(true)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            for (label in listOf("随手记", "来源", "设置", "概览", "设置", "随手记", "概览")) {
+                instrumentation.waitForIdleSync()
+                var x = 0f; var y = 0f
+                scenario.onActivity { activity ->
+                    val item = views(activity.window.decorView).filterIsInstance<TextView>()
+                        .single { it.isShown && it.isClickable && it.text.toString() == label }
+                    val position = IntArray(2); item.getLocationOnScreen(position)
+                    x = position[0] + item.width / 2f; y = position[1] + item.height / 2f
+                }
+                val down = SystemClock.uptimeMillis()
+                MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, x, y, 0).let { instrumentation.sendPointerSync(it); it.recycle() }
+                MotionEvent.obtain(down, down + 30, MotionEvent.ACTION_UP, x, y, 0).let { instrumentation.sendPointerSync(it); it.recycle() }
+                instrumentation.waitForIdleSync()
+                scenario.onActivity { activity ->
+                    assertTrue("$label must select on one touch", views(activity.window.decorView).filterIsInstance<TextView>()
+                        .single { it.isShown && it.isClickable && it.text.toString() == label }.isSelected)
+                    assertEquals(label == "随手记", editor(activity, "记下此刻的想法…").isShown)
+                }
+            }
+        }
+    }
 
     @Test fun settingsAreSeparateAndUnsavedInputsSurviveNavigationAndRotation() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -68,12 +96,19 @@ class NavigationInstrumentedTest {
         fun dialogViews() = android.view.inspector.WindowInspector.getGlobalWindowViews()
             .filter { it.hasWindowFocus() }.flatMap { views(it) }
         fun clickDialogLabel(label: String) {
-            instrumentation.waitForIdleSync()
-            instrumentation.runOnMainSync {
-                val selected = dialogViews().filterIsInstance<TextView>().first { it !is EditText && it.isShown && it.text.toString() == label }
-                val list = selected.parent as? android.widget.ListView
-                if (list != null) assertTrue(list.performItemClick(selected, list.getPositionForView(selected), list.getItemIdAtPosition(list.getPositionForView(selected))))
-                else assertTrue(selected.performClick())
+            val deadline = SystemClock.elapsedRealtime() + 10_000
+            var clicked = false
+            // Installed-app choices arrive from a background query after the UI thread becomes idle.
+            while (!clicked) {
+                instrumentation.waitForIdleSync()
+                instrumentation.runOnMainSync {
+                    val selected = dialogViews().filterIsInstance<TextView>().firstOrNull { it !is EditText && it.isShown && it.text.toString() == label } ?: return@runOnMainSync
+                    val list = selected.parent as? android.widget.ListView
+                    if (list != null) assertTrue(list.performItemClick(selected, list.getPositionForView(selected), list.getItemIdAtPosition(list.getPositionForView(selected))))
+                    else assertTrue(selected.performClick())
+                    clicked = true
+                }
+                if (!clicked) { check(SystemClock.elapsedRealtime() < deadline) { "Generated dialog choice did not appear: $label" }; Thread.sleep(50) }
             }
             instrumentation.waitForIdleSync()
         }

@@ -14,7 +14,8 @@ data class CollectorConfig(
     val jpegQuality: Int = 75, val captureMaxSide: Int = 1280, val chargingOnly: Boolean = false, val batteryPauseBelowPct: Int = 0,
     val diagnosticsEnabled: Boolean = false, val diagnosticsIntervalSeconds: Int = 60,
     val appCollectionRules: String = AppCollectionRules.DEFAULT, val metadataEnabled: Boolean = true,
-    val syncMode: String = "realtime", val syncIntervalMinutes: Int = 15, val syncBatchSize: Int = 20
+    val syncMode: String = "realtime", val syncIntervalMinutes: Int = 15, val syncBatchSize: Int = 20,
+    val ocrChargingOnly: Boolean = false
 ) {
     fun effectiveMode() = if (AppCollectionRules.parse(appCollectionRules).mayCollectContent()) mode else "accessibility"
     fun hasSyncConnection() = server.isNotBlank() && token.length >= 32
@@ -67,7 +68,8 @@ class Settings(private val context: Context) {
         appCollectionRules = prefs.getString("appCollectionRules", AppCollectionRules.DEFAULT)!!,
         metadataEnabled = prefs.getBoolean("metadataEnabled", true),
         syncMode = prefs.getString("syncMode", "realtime")!!,
-        syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20)
+        syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20),
+        ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false)
     )
     fun save(c: CollectorConfig) {
         c.validate()
@@ -78,6 +80,7 @@ class Settings(private val context: Context) {
             .putBoolean("wifiOnly", c.wifiOnly).putString("excluded", c.excludedPackages).putString("masks", c.masks)
             .putString("localReview", c.localReviewUrl).putBoolean("debugHttp", c.debugHttp).putString("mode", c.mode).putString("appCollectionRules", c.appCollectionRules).putBoolean("metadataEnabled", c.metadataEnabled).commit()) throw SettingsWriteFailure()
         if (!prefs.edit().putInt("jpegQuality", c.jpegQuality).putInt("captureMaxSide", c.captureMaxSide).putBoolean("chargingOnly", c.chargingOnly)
+            .putBoolean("ocrChargingOnly", c.ocrChargingOnly)
             .putInt("batteryPauseBelowPct", c.batteryPauseBelowPct).putBoolean("diagnosticsEnabled", c.diagnosticsEnabled).putInt("diagnosticsIntervalSeconds", c.diagnosticsIntervalSeconds).commit()) throw SettingsWriteFailure()
         saveNsfw(c.nsfw)
     }

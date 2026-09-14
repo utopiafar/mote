@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {provenanceSchema} from './sources.js';
-import {recordMetadataSchema} from './metadata.js';
+import {recordMetadataSchema,ocrSchema,type OcrState} from './metadata.js';
 export * from './sources.js';
 export * from './metadata.js';
 export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource } from './configuration.js';
@@ -22,11 +22,14 @@ export const captureSchema = z.object({
   windowTitle: z.string().max(2000).default(''),
   imageBase64: z.string().max(11_000_000).optional(), imageMime: z.enum(['image/jpeg','image/png','image/webp']).optional(),
   ocrText: z.string().max(100000).default(''), source: sourceSchema.default('screen'),
+  ocr: ocrSchema.optional(),
   mood: moodSchema.optional(),
   provenance: provenanceSchema.optional(),
   metadata: recordMetadataSchema.optional(),
   privacy: privacySchema.default({excluded:false,redacted:false,mode:'local'}),
 }).strict().superRefine((v,ctx) => {
+  if (v.ocr && v.source !== 'screen') ctx.addIssue({code:'custom',message:'OCR processing state belongs only to screenshots'});
+  if (v.ocr?.status === 'pending' && (!v.imageBase64 || v.ocrText)) ctx.addIssue({code:'custom',message:'Pending OCR requires a screenshot without recognized text'});
   if (Boolean(v.imageBase64) !== Boolean(v.imageMime)) ctx.addIssue({code:'custom',message:'imageBase64 and imageMime must be supplied together'});
   if (v.privacy.excluded) ctx.addIssue({code:'custom',message:'Excluded captures must never be uploaded'});
   if (!v.imageBase64 && !v.ocrText.trim() && !v.provenance && v.source !== 'activity') ctx.addIssue({code:'custom',message:'An image or text is required'});
@@ -64,6 +67,9 @@ export function noteCapture(note: NoteInput): CaptureInput {
 export type CaptureRecord = Omit<CaptureInput,'imageBase64'|'imageMime'> & {
   receivedAt: string; blobHash: string | null; imageMime: string | null;
   indexingStatus: 'text_ready'|'pending'|'indexed'|'failed'; summary?: string;
+};
+export type CapturePreview = Pick<CaptureRecord,'id'|'deviceId'|'deviceName'|'platform'|'capturedAt'|'source'|'appId'|'appName'|'windowTitle'|'durationMs'> & {
+  hasImage: boolean; ocr: OcrState; textPreview: string;
 };
 export const heartbeatSchema = z.object({
   deviceId: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/), deviceName: z.string().min(1).max(200), platform: platformSchema,

@@ -7,7 +7,9 @@ import React, {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
+import {captureOcrState, type CapturePreview} from '@mote/shared';
 import { AnswerMarkdown } from "./AnswerMarkdown";
+import {captureDateRange, localDateInput, ocrPresentation} from './capture-presentation';
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -77,14 +79,14 @@ import {Memories} from "./Memories";
 type Page = "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
   { id: "overview" as const, label: "总览", icon: LayoutDashboard, group: "日常" },
-  { id: "timeline" as const, label: "时间线", icon: Clock3, group: "日常" },
+  { id: "timeline" as const, label: "采集记录", icon: Clock3, group: "日常" },
   { id: "notes" as const, label: "随手记", icon: FileText, group: "日常" },
   { id: "ask" as const, label: "问一问", icon: MessageSquare, group: "日常" },
   { id: "archive" as const, label: "资料库", icon: Database, group: "日常" },
   { id: "devices" as const, label: "设备", icon: Monitor, group: "管理" },
   { id: "sources" as const, label: "来源", icon: Link2, group: "管理" },
 ];
-const pageLabels: Record<Page,string> = {overview:'总览',timeline:'时间线',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
+const pageLabels: Record<Page,string> = {overview:'总览',timeline:'采集记录',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
 const periodNames: Record<string, string> = {
   today: "今天",
   week: "过去 7 天",
@@ -179,7 +181,7 @@ function AuthImage({
   full = false,
 }: {
   api: Api;
-  capture: Capture;
+  capture: Capture | CapturePreview;
   className?: string;
   full?: boolean;
 }) {
@@ -187,6 +189,8 @@ function AuthImage({
   const [visible, setVisible] = useState(full);
   const [src, setSrc] = useState("");
   const [error, setError] = useState("");
+  const hasImage = 'hasImage' in capture ? capture.hasImage : Boolean(capture.blobHash);
+  const text = 'textPreview' in capture ? capture.textPreview : capture.ocrText;
   useEffect(() => {
     if (full || visible || !ref.current) return;
     const observer = new IntersectionObserver(
@@ -202,14 +206,14 @@ function AuthImage({
     return () => observer.disconnect();
   }, [full, visible]);
   useEffect(() => {
-    if (!visible || !capture.blobHash) return;
+    if (!visible || !hasImage) return;
     const controller = new AbortController();
     let url = "";
     let mounted = true;
     setError("");
     setSrc("");
     void api
-      .raw(`/api/captures/${encodeURIComponent(capture.id)}/image`, {
+      .raw(`/api/capture-browser/${encodeURIComponent(capture.id)}/image${full ? '' : '?thumbnail=1'}`, {
         signal: controller.signal,
       })
       .then((response) => response.blob())
@@ -226,20 +230,21 @@ function AuthImage({
       controller.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [api, capture.id, capture.blobHash, visible]);
+  }, [api, capture.id, hasImage, visible, full]);
   return (
     <div
       ref={ref}
-      className={`capture-image ${className} ${!capture.blobHash ? "text-image" : ""}`}
+      className={`capture-image ${className} ${!hasImage ? "text-image" : ""}`}
     >
-      {!capture.blobHash ? (
+      {!hasImage ? (
         <>
           <FileText size={23} />
-          <p>{capture.source === 'activity' ? '仅应用活动 · 未采集内容' : capture.ocrText.slice(0, 170) || "来源元数据"}</p>
+          <p>{capture.source === 'activity' ? '仅应用活动 · 未采集内容' : text.slice(0, 170) || "来源元数据"}</p>
         </>
       ) : src ? (
         <img
           src={src}
+          decoding="async"
           alt={`${capture.appName} · ${dateTime(capture.capturedAt)}`}
         />
       ) : error ? (
@@ -259,12 +264,14 @@ function CaptureCard({
   api,
   onOpen,
 }: {
-  capture: Capture;
+  capture: Capture | CapturePreview;
   api: Api;
   onOpen: (id: string) => void;
 }) {
+  const text = 'textPreview' in capture ? capture.textPreview : capture.ocrText;
+  const ocr = ocrPresentation('textPreview' in capture ? capture.ocr : captureOcrState(capture), text);
   return (
-    <button className="capture-card" onClick={() => onOpen(capture.id)}>
+    <button className="capture-card" onClick={() => onOpen(capture.id)} aria-label={`查看 ${capture.appName || '未识别应用'} · ${dateTime(capture.capturedAt)} 的记录`}>
       <AuthImage api={api} capture={capture} />
       <div className="capture-card-body">
         <div className="capture-caption">
@@ -281,17 +288,18 @@ function CaptureCard({
           </time>
         </div>
         <p>
-          {capture.source === 'activity' ? `仅应用活动 · 本次采样 ${duration(capture.durationMs)}` : capture.summary ||
+          {capture.source === 'activity' ? `仅应用活动 · 本次采样 ${duration(capture.durationMs)}` : ('summary' in capture && capture.summary) ||
             capture.windowTitle ||
-            capture.ocrText ||
-            "截图已归档，等待更多上下文"}
+            text ||
+            (capture.source === 'screen' ? ocr.description : '此记录没有正文')}
         </p>
+        {capture.source === 'screen' && <span className={`badge capture-ocr ${ocr.tone}`}>{ocr.label}</span>}
         <div className="capture-bottom">
           <span>
             <DeviceIcon platform={capture.platform} size={12} />
             {capture.deviceName}
           </span>
-          {capture.privacy.redacted && (
+          {'privacy' in capture && capture.privacy.redacted && (
             <span title="客户端报告已脱敏">
               <ShieldCheck size={12} /> 已脱敏
             </span>
@@ -440,16 +448,33 @@ function EvidenceDialog({
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setCapture(null);
     setError("");
+    setConfirm(false);
     void api
-      .request<Capture>(`/api/captures/${encodeURIComponent(id)}`)
+      .request<Capture>(`/api/capture-browser/${encodeURIComponent(id)}`, {signal: controller.signal})
       .then((value) => active && setCapture(value))
       .catch((e) => active && setError(errorMessage(e)));
     return () => {
       active = false;
+      controller.abort();
     };
   }, [api, id]);
+  useEffect(() => {
+    if (capture?.ocr?.status !== 'pending') return;
+    const controller = new AbortController();
+    let fetching = false;
+    const timer = setInterval(() => {
+      if (fetching || document.hidden) return;
+      fetching = true;
+      void api.request<Capture>(`/api/capture-browser/${encodeURIComponent(id)}`, {signal: controller.signal})
+        .then(value => {if (!controller.signal.aborted) setCapture(value);})
+        .catch(() => { /* Preserve the last reported state while the node is unavailable. */ })
+        .finally(() => {fetching = false;});
+    }, 10_000);
+    return () => {clearInterval(timer);controller.abort();};
+  }, [api, id, capture?.ocr?.status]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -471,6 +496,7 @@ function EvidenceDialog({
       setBusy(false);
     }
   }
+  const ocr = capture ? ocrPresentation(captureOcrState(capture), capture.ocrText) : null;
   return (
     <div
       className="modal-backdrop"
@@ -511,11 +537,12 @@ function EvidenceDialog({
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <AuthImage api={api} capture={capture} full />}
               <div className="evidence-text">
-                <span className="eyebrow">{capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : '捕获文本'}</span>
+                <span className="eyebrow">{capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : '捕获文本'}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || "原始上下文"}</h3>
                 {capture.mood && <p className="note-mood-tag">我标注的心情 · {capture.mood}</p>}
-                <pre>
-                  {capture.source === 'activity' ? activityExplanation : capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '这条记录尚无 OCR 文本。截图仍可查看。' : '此记录没有正文。')}
+                {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
+                <pre aria-label={capture.source === 'screen' ? 'OCR 全文' : '记录全文'}>
+                  {capture.source === 'activity' ? activityExplanation : capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
                 </pre>
                 <dl>
                   <div>
@@ -526,6 +553,7 @@ function EvidenceDialog({
                   </div>
                   {capture.appId && <div><dt>应用标识</dt><dd>{capture.appId}</dd></div>}
                   {(capture.source === 'screen' || capture.source === 'activity') && <div><dt>本次采样时长</dt><dd>{duration(capture.durationMs)}</dd></div>}
+                  {capture.ocr?.updatedAt && <div><dt>OCR 状态更新时间</dt><dd>{dateTime(capture.ocr.updatedAt)}</dd></div>}
                   <div>
                     <dt>索引状态</dt>
                     <dd>
@@ -716,40 +744,42 @@ function Timeline({
   const [before, setBefore] = useState("");
   const [device, setDevice] = useState("");
   const [collection, setCollection] = useState<'' | 'activity' | 'content'>('');
-  const [items, setItems] = useState<Capture[]>([]);
+  const [ocrStatus, setOcrStatus] = useState('');
+  const [items, setItems] = useState<CapturePreview[]>([]);
+  const [totalCount, setTotalCount] = useState<number>();
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const marker = useRef<HTMLDivElement>(null);
   const requestVersion = useRef(0);
   const inFlight = useRef(false);
+  const request = useRef<AbortController | null>(null);
   const range = useMemo(
     () => ({
-      ...(after ? { after: new Date(`${after}T00:00:00`).toISOString() } : {}),
-      ...(before
-        ? {
-            before: new Date(
-              new Date(`${before}T00:00:00`).getTime() + 86_400_000,
-            ).toISOString(),
-          }
-        : {}),
+      ...captureDateRange(after, before),
       ...(device ? { deviceId: device } : {}),
       ...(collection ? {collection} : {}),
+      ...(ocrStatus ? {ocrStatus} : {}),
     }),
-    [after, before, device, collection],
+    [after, before, device, collection, ocrStatus],
   );
   const load = useCallback(
     async (next?: string, version = requestVersion.current) => {
       if (inFlight.current && next) return;
+      request.current?.abort();
+      const controller = new AbortController();
+      request.current = controller;
       inFlight.current = true;
       setLoading(true);
       setError("");
       try {
         const result = await api.request<{
-          items: Capture[];
+          items: CapturePreview[];
           nextCursor: string | null;
-        }>(`/api/captures${queryString(range, { limit: 24, cursor: next })}`);
-        if (requestVersion.current !== version) return;
+          totalCount: number;
+        }>(`/api/capture-browser${queryString(range, { limit: 24, cursor: next })}`, {signal: controller.signal});
+        if (requestVersion.current !== version || controller.signal.aborted) return;
         setItems((previous) =>
           next
             ? [
@@ -761,8 +791,9 @@ function Timeline({
             : result.items,
         );
         setCursor(result.nextCursor);
+        setTotalCount(result.totalCount);
       } catch (e) {
-        if (requestVersion.current === version) setError(errorMessage(e));
+        if (requestVersion.current === version && !controller.signal.aborted) setError(errorMessage(e));
       } finally {
         if (requestVersion.current === version) {
           setLoading(false);
@@ -776,9 +807,11 @@ function Timeline({
     const version = ++requestVersion.current;
     setItems([]);
     setCursor(null);
+    setTotalCount(undefined);
     inFlight.current = false;
     void load(undefined, version);
-  }, [load, revision]);
+    return () => {request.current?.abort();requestVersion.current++;};
+  }, [load, revision, refreshVersion]);
   useEffect(() => {
     if (!cursor || loading || error || !marker.current) return;
     const observer = new IntersectionObserver(
@@ -791,7 +824,7 @@ function Timeline({
     return () => observer.disconnect();
   }, [cursor, loading, error, load]);
   const groups = useMemo(() => {
-    const result = new Map<string, Capture[]>();
+    const result = new Map<string, CapturePreview[]>();
     for (const item of items) {
       const key = new Date(item.capturedAt).toLocaleDateString("zh-CN", {
         year: "numeric",
@@ -806,11 +839,18 @@ function Timeline({
   return (
     <>
       <div className="page-heading timeline-heading">
-        <div className="eyebrow">YOUR DAYS, IN CONTEXT</div>
-        <h1>每一个片刻，都有来处。</h1>
-        <p>沿着时间往回走，找到你见过、想过、做过的事。</p>
+        <div className="eyebrow">按天回看，保留来处</div>
+        <h1>采集记录</h1>
+        <p>按日期浏览截图和文字；点击记录查看原图、识别全文与处理状态。</p>
       </div>
-      <div className="filter-bar">
+      <div className="capture-day-controls">
+        <label><span>按天查看</span><input type="date" aria-label="查看某天的采集记录" value={after && after === before ? after : ''} onChange={event => {setAfter(event.target.value);setBefore(event.target.value);}}/></label>
+        <button className="button subtle" onClick={() => {const day=localDateInput(new Date());setAfter(day);setBefore(day);}}>今天</button>
+        <button className="button subtle" aria-label="查看前一天" disabled={!after || after !== before} onClick={() => {const date=new Date(`${after}T00:00:00`);date.setDate(date.getDate()-1);const day=localDateInput(date);setAfter(day);setBefore(day);}}><ArrowLeft size={15}/></button>
+        <button className="button subtle" aria-label="查看后一天" disabled={!after || after !== before} onClick={() => {const date=new Date(`${after}T00:00:00`);date.setDate(date.getDate()+1);const day=localDateInput(date);setAfter(day);setBefore(day);}}><ArrowRight size={15}/></button>
+        <button className="button subtle capture-refresh" disabled={loading} onClick={() => setRefreshVersion(value => value + 1)}><RefreshCw size={15} className={loading ? 'spin' : ''}/>刷新记录</button>
+      </div>
+      <div className="filter-bar capture-filters">
         <label>
           <span>从</span>
           <input
@@ -846,7 +886,8 @@ function Timeline({
           </select>
         </label>
         <label><span>采集级别</span><select aria-label="筛选采集级别" value={collection} onChange={event=>setCollection(event.target.value as typeof collection)}><option value="">全部记录</option><option value="activity">仅应用活动</option><option value="content">允许保留的内容</option></select></label>
-        {(after || before || device || collection) && (
+        <label><span>OCR</span><select aria-label="筛选 OCR 状态" value={ocrStatus} onChange={event=>setOcrStatus(event.target.value)}><option value="">全部状态</option><option value="pending">待处理</option><option value="completed">已完成</option><option value="failed">失败</option><option value="disabled">已关闭</option><option value="unknown">状态未知</option></select></label>
+        {(after || before || device || collection || ocrStatus) && (
           <button
             className="text-button"
             onClick={() => {
@@ -854,13 +895,15 @@ function Timeline({
               setBefore("");
               setDevice("");
               setCollection('');
+              setOcrStatus('');
             }}
           >
             清除筛选
           </button>
         )}
-        <span className="filter-count">已读取 {items.length} 条</span>
+        <span className="filter-count">已读取 {items.length}{totalCount === undefined ? '' : ` / ${totalCount}`} 条</span>
       </div>
+      <p className="capture-browse-note">日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；待充电的 OCR 由采集端补做，结果同步后可刷新查看。</p>
       {error && (
         <ErrorNotice
           text={error}
@@ -872,7 +915,7 @@ function Timeline({
           <h2>
             <span className="timeline-dot" />
             {day}
-            <small>{records.length} 条</small>
+            <small>已加载 {records.length} 条</small>
           </h2>
           <div className="capture-grid">
             {records.map((capture) => (

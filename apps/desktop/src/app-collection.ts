@@ -13,12 +13,20 @@ export function normalizeAppCollectionRules(value: unknown): Record<string, Coll
   }
   return result;
 }
-/** Only explicit exact identifiers determine policy. Unknown foreground identities fail closed. */
+export const UNKNOWN_FOREGROUND = 'dev.mote.unknown-foreground';
+export function hasRestrictedApplications(policy: CollectionPolicy): boolean {
+  return policy.defaultCollection !== 'content' || policy.excludedAppIds.length > 0 || Object.values(policy.appCollectionRules).some(mode => mode !== 'content');
+}
+/** Missing foreground/window identity only blocks content when it could bypass an explicit restriction. */
 export function collectionForApp(appId: string | undefined, policy: CollectionPolicy): CollectionMode {
-  if (!appId || policy.excludedAppIds.includes(appId)) return 'off';
+  if (!appId || appId === UNKNOWN_FOREGROUND) {
+    if (appId && (policy.excludedAppIds.includes(appId) || Object.hasOwn(policy.appCollectionRules, appId))) return policy.excludedAppIds.includes(appId) ? 'off' : policy.appCollectionRules[appId];
+    return hasRestrictedApplications(policy) ? 'off' : policy.defaultCollection;
+  }
+  if (policy.excludedAppIds.includes(appId)) return 'off';
   return Object.hasOwn(policy.appCollectionRules, appId) ? policy.appCollectionRules[appId] : policy.defaultCollection;
 }
 /** A full-screen frame must not contain any application configured to withhold content. */
 export function permitsVisibleContent(ids: string[], unknown: boolean, policy: CollectionPolicy): boolean {
-  return !unknown && ids.every(id => collectionForApp(id, policy) === 'content');
+  return (!unknown || !hasRestrictedApplications(policy)) && ids.every(id => collectionForApp(id, policy) === 'content');
 }

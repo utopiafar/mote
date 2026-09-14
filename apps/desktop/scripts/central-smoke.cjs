@@ -1,4 +1,4 @@
-const { app } = require('electron');
+const { app, shell } = require('electron');
 const { mkdtempSync } = require('node:fs');
 const { rm } = require('node:fs/promises');
 const { join } = require('node:path');
@@ -10,6 +10,8 @@ const { defaultConfig } = require('../dist/config');
 app.on('window-all-closed', () => {});
 const profile = mkdtempSync(join(tmpdir(), 'mote-central-fixture-')); app.setPath('userData', profile);
 let server, other, window;
+const externalUrls = [];
+shell.openExternal = async url => { externalUrls.push(url); };
 const listen = s => new Promise(resolve => s.listen(0, '127.0.0.1', resolve));
 app.whenReady().then(async () => {
   const token = 'synthetic-central-app-token-only'; let observed;
@@ -21,6 +23,17 @@ app.whenReady().then(async () => {
   assert.equal((await window.webContents.executeJavaScript('JSON.parse(sessionStorage.getItem("mote.connection")).token')), '__MOTE_NATIVE_AUTH__');
   assert.deepEqual(await window.webContents.executeJavaScript('fetch("/api/probe").then(r => r.json())'), { ok: true });
   assert.equal(observed, 'Bearer ' + token);
+  await window.webContents.executeJavaScript(`window.open('https://example.com/private?body=synthetic-secret')`);
+  assert.equal(externalUrls.length, 0, 'Unrelated external links remain blocked');
+  await window.webContents.executeJavaScript(`window.open('https://github.com/utopiafar/mote/issues/new?template=bug_report.yml&version=synthetic-private-version&body=synthetic-secret')`);
+  assert.equal(externalUrls.length, 1);
+  const feedback = new URL(externalUrls[0]);
+  assert.equal(feedback.origin, 'https://github.com');
+  assert.equal(feedback.searchParams.get('template'), 'bug_report.yml');
+  assert(feedback.searchParams.get('version').includes(app.getVersion()));
+  assert.equal(feedback.searchParams.has('body'), false);
+  assert.equal(externalUrls[0].includes('synthetic'), false, 'Renderer query data is never forwarded');
+  assert.equal(externalUrls[0].includes(encodeURIComponent(origin)), false);
   await window.webContents.executeJavaScript('localStorage.setItem("generated-note-outbox", JSON.stringify({text:"synthetic offline note",mood:"calm"})); localStorage.setItem("generated-note-draft", "synthetic unsaved draft");');
   const isolated = window.webContents.session;
   await new Promise(resolve => { window.once('closed', resolve); window.close(); });
@@ -34,7 +47,7 @@ app.whenReady().then(async () => {
   await assert.rejects(window.webContents.executeJavaScript(`fetch(${JSON.stringify(next)}).then(r => r.text())`));
   window.close(); window = await openCentralWindow({ ...cfg, serverUrl: next });
   assert.equal(await window.webContents.executeJavaScript('localStorage.getItem("generated-note-outbox")'), null);
-  process.stdout.write(JSON.stringify({ ok:true, fixtureOnly:true, tokenOnlyInMain:true, sameOriginApiAuth:true, externalRequestsBlocked:true, persistentDraftAndOutbox:true, nodeStorageIsolated:true, rendererNodeDisabled:true, closedSessionNetworkDenied:true, downloadListenerRemoved:true }) + '\n');
+  process.stdout.write(JSON.stringify({ ok:true, fixtureOnly:true, tokenOnlyInMain:true, sameOriginApiAuth:true, externalRequestsBlocked:true, safeFeedbackLink:true, persistentDraftAndOutbox:true, nodeStorageIsolated:true, rendererNodeDisabled:true, closedSessionNetworkDenied:true, downloadListenerRemoved:true }) + '\n');
   window.close(); await new Promise(resolve => server.close(resolve)); await new Promise(resolve => other.close(resolve));
   app.quit();
 }).catch(error => { process.stderr.write('Central app smoke failed: ' + error.message + '\n'); app.exit(1); });

@@ -1,0 +1,98 @@
+import { nativeImage } from 'electron';
+import type { Config, CaptureEvent } from './contracts';
+import type { DurableQueue, QueueRecord } from './queue';
+import { MAX_IMAGE_BYTES, validateServerUrl } from './config';
+import { readResponseText } from './response-body';
+import { captureOcrState } from '@mote/shared/metadata';
+
+export type CaptureLocation = 'local' | 'central';
+export interface BrowseRequest { location: CaptureLocation; day: string; cursor?: string }
+export interface BrowserCapture {
+  id: string; capturedAt: string; appName: string; appId: string;
+  ocr: { status: 'pending' | 'completed' | 'disabled' | 'failed' | 'unknown'; reason?: 'charging' };
+  textPreview: string; uploaded?: boolean; hasImage: boolean; syncError?: string;
+}
+export interface BrowserPage { items: BrowserCapture[]; totalCount: number; nextCursor?: string }
+export interface BrowserDetail extends BrowserCapture { ocrText: string; deviceName?: string }
+const PAGE_SIZE = 30;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function captureDayRange(day: string): { after: string; before: string } {
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error('请选择有效日期');
+  const [year, month, date] = day.split('-').map(Number);
+  const start = new Date(year, month - 1, date);
+  if (year < 2000 || year > 2100 || start.getFullYear() !== year || start.getMonth() !== month - 1 || start.getDate() !== date) throw new Error('请选择有效日期');
+  const end = new Date(year, month - 1, date + 1);
+  return { after: start.toISOString(), before: end.toISOString() };
+}
+function location(value: unknown): asserts value is CaptureLocation { if (value !== 'local' && value !== 'central') throw new Error('记录来源无效'); }
+function validId(id: unknown): asserts id is string { if (typeof id !== 'string' || !UUID.test(id)) throw new Error('记录标识无效'); }
+function preview(event: Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string }, record?: QueueRecord): BrowserCapture {
+  validId(event.id);
+  if (typeof event.capturedAt !== 'string' || !Number.isFinite(Date.parse(event.capturedAt))) throw new Error('中央记录时间无效');
+  const status = record?.ocrResult !== undefined ? 'completed' : record?.ocrRetryAt ? 'failed' : captureOcrState({ ...event, source: 'screen' }).status;
+  const normalizedStatus = status === 'pending' || status === 'completed' || status === 'disabled' || status === 'failed' ? status : 'unknown';
+  const ocr: BrowserCapture['ocr'] = { status: normalizedStatus, ...(event.ocr?.reason === 'charging' ? { reason: 'charging' as const } : {}) };
+  const text = record?.ocrResult ?? event.ocrText ?? event.textPreview ?? '';
+  return { id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { uploaded: Boolean(record.uploaded), syncError: record.syncError } : {}) };
+}
+async function request(config: Config, path: string): Promise<Response> {
+  if (!config.token || !config.serverUrl) throw new Error('请先连接中央节点；本机记录仍可查看');
+  const response = await fetch(`${validateServerUrl(config.serverUrl)}${path}`, { headers: { Authorization: `Bearer ${config.token}` }, redirect: 'error', signal: AbortSignal.timeout(20000) });
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    if (response.status === 404) throw new Error('记录不存在，或中央节点需要升级才能浏览采集记录');
+    if (response.status === 401 || response.status === 403) throw new Error('无法访问采集记录，请检查中央连接权限');
+    throw new Error(`中央节点返回 HTTP ${response.status}，请稍后重试`);
+  }
+  return response;
+}
+async function remoteDetail(config: Config, id: string): Promise<Partial<CaptureEvent>> {
+  const value = JSON.parse(await readResponseText(await request(config, `/api/capture-browser/${id}`), 1024 * 1024)) as Partial<CaptureEvent>;
+  if (value.id !== id || value.deviceId !== config.deviceId || value.source !== 'screen') throw new Error('记录不属于当前设备的截图');
+  return value;
+}
+async function imageBytes(response: Response, maximum: number): Promise<Buffer> {
+  if (Number(response.headers.get('content-length')) > maximum) { await response.body?.cancel(); throw new Error('图片超过大小限制'); }
+  if (!response.body) throw new Error('图片为空');
+  const reader = response.body.getReader(), chunks: Uint8Array[] = []; let size = 0;
+  try {
+    while (true) { const value = await reader.read(); if (value.done) break; size += value.value.length; if (size > maximum) throw new Error('图片超过大小限制'); chunks.push(value.value); }
+    return Buffer.concat(chunks);
+  } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
+}
+export async function browseCaptures(queue: DurableQueue, config: Config, input: BrowseRequest): Promise<BrowserPage> {
+  location(input?.location); const range = captureDayRange(input.day);
+  if (input.cursor !== undefined && (typeof input.cursor !== 'string' || input.cursor.length > 2048)) throw new Error('分页参数无效');
+  if (input.location === 'local') {
+    const offset = input.cursor ? Number(input.cursor) : 0;
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('分页参数无效');
+    const all = queue.recordsForBrowser().filter(r => r.event.capturedAt >= range.after && r.event.capturedAt < range.before).sort((a,b) => b.event.capturedAt.localeCompare(a.event.capturedAt) || b.event.id.localeCompare(a.event.id));
+    return { items: all.slice(offset, offset + PAGE_SIZE).map(r => preview(r.event, r)), totalCount: all.length, ...(offset + PAGE_SIZE < all.length ? { nextCursor: String(offset + PAGE_SIZE) } : {}) };
+  }
+  const params = new URLSearchParams({ ...range, deviceId: config.deviceId, source: 'screen', limit: String(PAGE_SIZE), ...(input.cursor ? { cursor: input.cursor } : {}) });
+  const response = JSON.parse(await readResponseText(await request(config, `/api/capture-browser?${params}`), 512 * 1024)) as { items?: (Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string })[]; totalCount?: number; nextCursor?: string | null };
+  if (!Array.isArray(response.items) || response.items.length > PAGE_SIZE || !Number.isSafeInteger(response.totalCount) || response.totalCount! < 0 || (response.nextCursor != null && (typeof response.nextCursor !== 'string' || response.nextCursor.length > 2048))) throw new Error('中央分页数据无效');
+  if (response.items.some(v => v.deviceId !== config.deviceId || v.source !== 'screen')) throw new Error('中央返回了其他设备的记录');
+  return { items: response.items.map(v => preview(v)), totalCount: response.totalCount!, nextCursor: response.nextCursor ?? undefined };
+}
+export async function captureDetail(queue: DurableQueue, config: Config, source: CaptureLocation, id: string): Promise<BrowserDetail> {
+  location(source); validId(id);
+  if (source === 'local') {
+    const record = queue.recordsForBrowser().find(r => r.event.id === id); if (!record) throw new Error('该记录已完成同步，请切换到中央已归档查看');
+    return { ...preview(record.event, record), ocrText: record.ocrResult ?? record.event.ocrText ?? '', deviceName: record.event.deviceName };
+  }
+  const value = await remoteDetail(config, id);
+  return { ...preview({ ...value, hasImage: Boolean(value.imageMime) }), ocrText: String(value.ocrText ?? '').slice(0, 100000), deviceName: String(value.deviceName ?? '').slice(0, 128) };
+}
+export async function captureImage(queue: DurableQueue, config: Config, source: CaptureLocation, id: string, thumbnail: boolean): Promise<string> {
+  location(source); validId(id); if (typeof thumbnail !== 'boolean') throw new Error('图片参数无效');
+  let bytes: Buffer | undefined;
+  if (source === 'local') bytes = await queue.imageForBrowser(id);
+  else { await remoteDetail(config, id); bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image${thumbnail ? '?thumbnail=1' : ''}`), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES); }
+  if (!bytes) throw new Error('图片已同步，请切换到中央已归档查看');
+  const image = nativeImage.createFromBuffer(bytes); if (image.isEmpty()) throw new Error('图片无法读取');
+  const size = image.getSize();
+  const jpeg = thumbnail && Math.max(size.width, size.height) > 480 ? image.resize(size.width >= size.height ? { width: 480 } : { height: 480 }).toJPEG(70) : image.toJPEG(thumbnail ? 70 : 90);
+  return `data:image/jpeg;base64,${jpeg.toString('base64')}`;
+}

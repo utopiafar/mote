@@ -6,14 +6,16 @@ enum class AppCollectionMode(val wire: String) { CONTENT("content"), ACTIVITY("a
     companion object { fun from(value: String) = entries.singleOrNull { it.wire == value } ?: error("应用采集级别必须为 content / activity / off") }
 }
 
-/** Explicit app identity rules only. A window ambiguity never grants content access. */
+/** Explicit app identity rules only; unknown surfaces use the default unless a privacy rule needs identity. */
 data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<String, AppCollectionMode>) {
     fun mayCollectContent() = defaultMode == AppCollectionMode.CONTENT || apps.values.any { it == AppCollectionMode.CONTENT }
+    fun requiresWindowIdentity(legacyExcluded: Set<String>) = legacyExcluded.isNotEmpty() || defaultMode != AppCollectionMode.CONTENT || apps.values.any { it != AppCollectionMode.CONTENT }
     fun decide(windows: WindowSnapshot, legacyExcluded: Set<String>): AppCollectionMode {
-        if (!windows.trustworthy || windows.foreground.isNullOrBlank() || windows.foreground !in windows.packages) return AppCollectionMode.OFF
         if (windows.packages.any { it in legacyExcluded }) return AppCollectionMode.OFF
+        if (!windows.trustworthy && requiresWindowIdentity(legacyExcluded)) return AppCollectionMode.OFF
         // Every identified auxiliary window obeys the same explicit rules. Never downgrade a sample.
-        val selected = apps[windows.foreground] ?: defaultMode
+        val selected = windows.foreground?.let { apps[it] } ?: defaultMode
+        if (selected == AppCollectionMode.ACTIVITY && (!windows.trustworthy || windows.foreground.isNullOrBlank() || windows.foreground !in windows.packages)) return AppCollectionMode.OFF
         if (selected == AppCollectionMode.CONTENT && windows.packages.any { it != windows.foreground && (apps[it] ?: defaultMode) != AppCollectionMode.CONTENT }) return AppCollectionMode.OFF
         return selected
     }
@@ -45,14 +47,13 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
     }
 }
 
-/** One foreground application; identified keyboard/system windows also participate in app rules. */
+/** All identified visible windows participate, including launchers, keyboards and system surfaces. */
 internal data class CollectionWindow(val type: Int, val packageName: String?)
 internal object CollectionWindows {
     fun snapshot(windows: List<CollectionWindow>, foreground: String?): WindowSnapshot {
         val packages = windows.mapNotNull { it.packageName }.toSet()
-        val applications = windows.filter { it.type == 1 }
-        val trustworthy = applications.size == 1 && applications.single().packageName == foreground &&
-            windows.all { it.type in 1..3 && !it.packageName.isNullOrBlank() } && !foreground.isNullOrBlank()
+        val trustworthy = windows.isNotEmpty() && windows.all { it.type in 1..3 && !it.packageName.isNullOrBlank() } &&
+            (foreground.isNullOrBlank() || foreground in packages)
         return WindowSnapshot(packages, foreground, trustworthy)
     }
 }

@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { UNKNOWN_FOREGROUND } from './app-collection';
 
 export interface ActiveApplication { appId: string; appName: string; pid: number; visibleAppIds: string[]; unknownVisibleWindows: boolean }
 export function runHelper(path: string, command: 'screen-permission' | 'active' | 'activity' | 'device' | 'ocr' | 'power' | 'qr' | 'installed-apps', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
@@ -67,7 +68,7 @@ export async function recognizeInvitationQr(path: string, image: Buffer): Promis
 export type ForegroundApplication = Pick<ActiveApplication, 'appId' | 'appName' | 'pid'>;
 export async function foregroundApplication(path: string, signal?: AbortSignal): Promise<ForegroundApplication> {
   const value = await runHelper(path, 'activity', undefined, signal) as ForegroundApplication;
-  if (!value || typeof value.appId !== 'string' || !value.appId || value.appId.length > 256 || typeof value.appName !== 'string' || !value.appName || value.appName.length > 200 || !Number.isInteger(value.pid) || value.pid <= 0) throw new Error('无法确认前台应用身份，本次记录已跳过');
+  if (!value || typeof value.appId !== 'string' || !value.appId || value.appId.length > 256 || typeof value.appName !== 'string' || !value.appName || value.appName.length > 200 || !Number.isInteger(value.pid) || (value.pid <= 0 && !(value.pid === 0 && value.appId === UNKNOWN_FOREGROUND))) throw new Error('无法确认前台应用身份，本次记录已跳过');
   return { appId: value.appId, appName: value.appName, pid: value.pid };
 }
 export async function readDeviceMetadata(path: string, signal?: AbortSignal): Promise<{ device?: import('@mote/shared').RecordMetadata['device']; state?: import('@mote/shared').RecordMetadata['state'] }> {

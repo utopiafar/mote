@@ -1,0 +1,63 @@
+import type {FastifyInstance,FastifyRequest} from 'fastify';
+import {z} from 'zod';
+import sharp from 'sharp';
+import {sourceSchema} from '@mote/shared';
+import {Store,StoreError} from './store.js';
+import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
+
+const range=z.object({
+  after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),
+  deviceId:z.string().min(1).max(128).optional(),appId:z.string().max(300).optional(),source:sourceSchema.optional(),
+  collection:z.enum(['content','activity']).optional(),
+  ocrStatus:z.enum(['pending','completed','disabled','failed','unknown','not_applicable']).optional(),
+  limit:z.coerce.number().int().min(1).max(60).default(30),cursor:z.string().max(512).optional(),
+}).strict().refine(v=>!v.after||!v.before||Date.parse(v.after)<Date.parse(v.before),{message:'Invalid time range'});
+const update=z.object({status:z.enum(['completed','failed']),ocrText:z.string().max(100000)}).strict();
+
+export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;connections:Connections;credential:(req:FastifyRequest)=>ConnectionCredential|undefined}) {
+  const {store,connections,credential}=context;
+  const thumbnails=new Map<string,Buffer>();let cachedBytes=0;
+  const ownRecord=(req:FastifyRequest)=>{
+    const id=z.string().uuid().parse((req.params as {id:string}).id);
+    const record=store.evidence([id])[0],c=credential(req);
+    if(c)connections.assertActive(c);
+    // Missing and foreign IDs share a response so collectors cannot probe other devices.
+    if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,'采集记录不存在或已被清理。');
+    return record;
+  };
+  app.get('/api/capture-browser',async req=>{
+    const query=range.parse(req.query),c=credential(req);
+    if(c){
+      connections.assertActive(c);
+      if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,'只能读取本设备的采集记录。');
+      query.deviceId=c.deviceId;
+    }
+    return store.previews(query);
+  });
+  app.get('/api/capture-browser/:id',async req=>ownRecord(req));
+  app.get('/api/capture-browser/:id/image',async(req,reply)=>{
+    const record=ownRecord(req);
+    const {thumbnail}=z.object({thumbnail:z.enum(['1','true']).optional()}).strict().parse(req.query);
+    if(!record.blobHash)throw new StoreError('Capture has no image',404);
+    if(!thumbnail){const image=store.image(record.id);return reply.type(image.mime!).send(image.bytes);}
+    let bytes=thumbnails.get(record.blobHash);
+    if(bytes){thumbnails.delete(record.blobHash);thumbnails.set(record.blobHash,bytes);}
+    else {
+      bytes=await sharp(store.image(record.id).bytes,{limitInputPixels:24_000_000}).resize({width:480,height:480,fit:'inside',withoutEnlargement:true}).jpeg({quality:72}).toBuffer();
+      ownRecord(req); // Re-check access and retention after asynchronous image processing.
+      while(thumbnails.size>=200||cachedBytes+bytes.length>16*1024*1024){
+        const oldest=thumbnails.keys().next().value;if(oldest===undefined)break;
+        cachedBytes-=thumbnails.get(oldest)!.length;thumbnails.delete(oldest);
+      }
+      const prior=thumbnails.get(record.blobHash);if(prior)cachedBytes-=prior.length;
+      thumbnails.set(record.blobHash,bytes);cachedBytes+=bytes.length;
+    }
+    return reply.type('image/jpeg').send(bytes);
+  });
+  // 100,000 valid characters may expand to 600,000 bytes through JSON escaping.
+  app.post('/api/capture-browser/:id/ocr',{bodyLimit:1024*1024},async req=>{
+    const record=ownRecord(req);
+    return store.completeOcr(record.id,update.parse(req.body));
+  });
+  app.addHook('onClose',async()=>{thumbnails.clear();cachedBytes=0;});
+}

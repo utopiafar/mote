@@ -4,12 +4,12 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, statS
 import { join } from 'node:path';
 import sharp, { type Metadata } from 'sharp';
 import {z} from 'zod';
-import { sourceConnectionSchema, sourceItemSchema, captureSchema, type CaptureInput, type CaptureRecord, type Heartbeat, type DeviceRecord, type Activity } from '@mote/shared';
+import { sourceConnectionSchema, sourceItemSchema, captureSchema, captureOcrState, type CapturePreview, type OcrState, type CaptureInput, type CaptureRecord, type Heartbeat, type DeviceRecord, type Activity } from '@mote/shared';
 import {privateDirectory,privateFile} from './private-storage.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
-export type Range = {after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string};
+export type Range = {after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
 type Row = {id:string;json:string;received_at:string;blob_hash:string|null;mime:string|null;index_status:CaptureRecord['indexingStatus'];summary:string|null};
 export class Store {
@@ -42,6 +42,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS insights (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, operation TEXT NOT NULL, changed_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS capture_ocr_receipts (id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE, original_fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS source_connections (id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS source_versions (source_id TEXT NOT NULL,external_id TEXT NOT NULL,revision TEXT NOT NULL,capture_id TEXT NOT NULL UNIQUE,hash TEXT NOT NULL,PRIMARY KEY(source_id,external_id,revision));
       CREATE TABLE IF NOT EXISTS source_heads (source_id TEXT NOT NULL,external_id TEXT NOT NULL,capture_id TEXT NOT NULL,observed_at TEXT NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(source_id,external_id));
@@ -49,6 +50,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
       PRAGMA user_version=1;`);
+    this.db.function('mote_ocr_status',{deterministic:true},json=>captureOcrState(JSON.parse(String(json))).status);
     const marker=this.db.prepare('SELECT value FROM settings WHERE key=?').get('encryption') as {value:string}|undefined;
     const expected=this.key ? sha256(this.key) : 'none';
     if(marker && marker.value!==expected) {this.db.close();throw new Error('Vault encryption key mismatch. Restore the original MOTE_DATA_KEY; do not change keys on an existing vault.');}
@@ -66,6 +68,10 @@ export class Store {
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
     if(range.appId!==undefined) {clauses.push("json_extract(json,'$.appId') = ?");values.push(range.appId);}
     if(range.source) {clauses.push("json_extract(json,'$.source') = ?");values.push(range.source);}
+    if(range.ocrStatus) {
+      clauses.push('mote_ocr_status(json) = ?');
+      values.push(range.ocrStatus);
+    }
     if(range.collection==='activity')clauses.push("json_extract(json,'$.source') = 'activity'");
     if(range.collection==='content')clauses.push("json_extract(json,'$.source') != 'activity' AND COALESCE(json_extract(json,'$.privacy.collection'),'content') = 'content'");
     if(range.cursor) {
@@ -103,9 +109,20 @@ export class Store {
     writeFileSync(temp,stored,{mode:0o600}); renameSync(temp,path);
   }
   private insert(p:Prepared) {
-    const prior=this.db.prepare('SELECT fingerprint,blob_hash,index_status FROM captures WHERE id=?').get(p.input.id) as {fingerprint:string;blob_hash:string|null;index_status:string}|undefined;
+    const prior=this.db.prepare('SELECT fingerprint,blob_hash,index_status,json,mime FROM captures WHERE id=?').get(p.input.id) as {fingerprint:string;blob_hash:string|null;index_status:string;json:string;mime:string|null}|undefined;
     if(prior) {
-      if(prior.fingerprint!==p.fingerprint)throw new StoreError('Event ID already exists with different content',409);
+      const original=this.db.prepare('SELECT original_fingerprint FROM capture_ocr_receipts WHERE id=?').get(p.input.id) as {original_fingerprint:string}|undefined;
+      if(prior.fingerprint!==p.fingerprint && original?.original_fingerprint!==p.fingerprint){
+        const previous=captureSchema.innerType().parse({...JSON.parse(prior.json),imageMime:prior.mime??undefined});
+        const immutable=(input:CaptureInput)=>{const {imageBase64:_,ocr:_ocr,ocrText:_text,...fields}=input;return JSON.stringify(fields);};
+        // A portable archive contains the latest OCR, while a restored client may
+        // still hold its original pending delivery. Only unchanged screenshot facts
+        // and image bytes may replay; the completed text is never overwritten.
+        const restoredPending=p.input.ocr?.status==='pending' && ['completed','failed'].includes(previous.ocr?.status??'')
+          && p.hash===prior.blob_hash && immutable(p.input)===immutable(previous);
+        if(!restoredPending)throw new StoreError('Event ID already exists with different content',409);
+        this.db.prepare('INSERT OR IGNORE INTO capture_ocr_receipts(id,original_fingerprint) VALUES(?,?)').run(p.input.id,p.fingerprint);
+      }
       return {id:p.input.id,duplicate:true,blobHash:prior.blob_hash,indexingStatus:prior.index_status};
     }
     if(this.db.prepare("SELECT seq FROM changes WHERE id=? AND operation='delete' LIMIT 1").get(p.input.id))throw new StoreError('This event was deleted; queued retries cannot restore it. Import into a fresh vault or create a new explicitly authorized event.',410);
@@ -172,6 +189,41 @@ export class Store {
     return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:last.capturedAt,id:last.id})).toString('base64url'):null,totalCount};
   }
   evidence(ids:string[]) {return ids.slice(0,200).map(id=>this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));}
+  previews(range:Range={}) {
+    const page=this.list(range);
+    const items:CapturePreview[]=page.items.map(record=>({id:record.id,deviceId:record.deviceId,deviceName:record.deviceName,platform:record.platform,
+      capturedAt:record.capturedAt,source:record.source,appId:record.appId,appName:record.appName,windowTitle:record.windowTitle.slice(0,300),
+      durationMs:record.durationMs,hasImage:Boolean(record.blobHash),ocr:captureOcrState(record),textPreview:record.ocrText.slice(0,160)}));
+    return {...page,items};
+  }
+  completeOcr(id:string,update:{status:'completed'|'failed';ocrText:string}) {
+    const row=this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as (Row&{fingerprint:string})|undefined;
+    if(!row)throw new StoreError('Capture not found',404);
+    const previous=JSON.parse(row.json) as CaptureInput;
+    if(previous.source!=='screen'||!row.blob_hash)throw new StoreError('Only stored screenshots can receive OCR',409);
+    if(previous.ocr?.status===update.status && previous.ocrText===update.ocrText) return {id,ocr:previous.ocr,duplicate:true};
+    if(!['pending','failed'].includes(previous.ocr?.status??''))throw new StoreError('OCR is not awaiting completion',409);
+    if(update.status==='failed'&&update.ocrText)throw new StoreError('Failed OCR cannot contain recognized text');
+    const ocr={status:update.status,updatedAt:new Date().toISOString()};
+    const next={...previous,ocrText:update.ocrText,ocr};
+    const json=JSON.stringify(next);
+    // Use the input schema's field order, matching prepare(), without needing to
+    // decode the unchanged image again. Original ingest retries retain their receipt.
+    const metadata=captureSchema.innerType().parse({...next,imageMime:row.mime});
+    const fingerprint=sha256(JSON.stringify({...metadata,blobHash:row.blob_hash}));
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(row.json)));
+      this.db.prepare('INSERT OR IGNORE INTO capture_ocr_receipts(id,original_fingerprint) VALUES(?,?)').run(id,row.fingerprint);
+      this.db.prepare('UPDATE captures SET json=?,fingerprint=?,index_status=?,embedding=NULL,embedding_model=NULL,summary=NULL,index_error=NULL,attempts=0 WHERE id=?')
+        .run(json,fingerprint,this.options.embeddingEnabled&&update.ocrText.trim()?'pending':'text_ready',id);
+      this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(id);
+      this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(id,[next.appName,next.windowTitle,next.ocrText,next.mood??''].join('\n'));
+      this.db.exec("DELETE FROM insights; UPDATE memories SET json=json_set(json,'$.status','stale')");
+      for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,ocr.updatedAt);
+      this.db.exec('COMMIT');return {id,ocr,duplicate:false};
+    } catch(error){this.db.exec('ROLLBACK');throw error;}
+  }
   search(range:Range&{query?:string}) {
     if(!range.query?.trim())return this.list(range).items;
     const {where,values}=this.clauses(range); const conjunction=where?' AND ':' WHERE ';

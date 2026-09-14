@@ -13,9 +13,15 @@ export interface QueueRecord {
   blobBytes: number;
   attempts: number;
   nextAttemptAt: number;
+  /** Original event stays immutable across POST retries; deferred OCR uses its own update. */
+  uploaded?: boolean;
+  ocrResult?: string;
+  ocrRetryAt?: number;
+  syncBlocked?: boolean;
+  syncError?: string;
 }
 export interface QueueLimits { maxQueueBytes: number; maxQueueEvents: number }
-export interface QueueStats { depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string }
+export interface QueueStats { depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string; eligibleDepth: number; waitingOcr: number; blocked: number }
 export interface QueueArchive {
   format: 'mote-desktop-queue';
   version: 1;
@@ -32,6 +38,12 @@ export function retryDelay(attempts: number, random = Math.random): number {
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HASH = /^[a-f0-9]{64}$/;
+// A 100,000-character OCR result can expand to six bytes per JSON-escaped character.
+// Reserve before accepting a pending image, so a full queue can still persist OCR and release it.
+export const OCR_RESULT_RESERVE_BYTES = 600128;
+function recordBytes(record: QueueRecord): number {
+  return Buffer.byteLength(JSON.stringify(record)) + (record.event.ocr?.status === 'pending' && record.ocrResult === undefined ? OCR_RESULT_RESERVE_BYTES : 0);
+}
 
 function validateEvent(value: unknown): CaptureEvent {
   if (!value || typeof value !== 'object') throw new Error('队列事件无效');
@@ -56,13 +68,17 @@ function validateEvent(value: unknown): CaptureEvent {
     return { ...base, ocrText: v.ocrText, source: 'note', mood: v.mood, privacy: { excluded: false, redacted: false, mode: 'none' } };
   }
   if (v.imageMime !== 'image/jpeg' || v.privacy.mode !== 'local' || typeof v.privacy.reason !== 'string' || v.privacy.reason.length > 500) throw new Error('截图隐私标记无效');
-  return { ...base, ocrText: v.ocrText, source: 'screen', imageMime: 'image/jpeg', privacy: { excluded: false, redacted: v.privacy.redacted, mode: 'local', ...(v.privacy.collection ? { collection: v.privacy.collection } : {}), reason: v.privacy.reason } };
+  if (v.ocr !== undefined && (!['pending', 'completed', 'disabled', 'failed'].includes(v.ocr.status) || (v.ocr.reason !== undefined && v.ocr.reason !== 'charging') || (v.ocr.updatedAt !== undefined && !Number.isFinite(Date.parse(v.ocr.updatedAt))))) throw new Error('OCR 状态无效');
+  const ocr = v.ocr ? { status: v.ocr.status, ...(v.ocr.reason ? { reason: v.ocr.reason } : {}), ...(v.ocr.updatedAt ? { updatedAt: v.ocr.updatedAt } : {}) } : undefined;
+  return { ...base, ocrText: v.ocrText, ...(ocr ? { ocr } : {}), source: 'screen', imageMime: 'image/jpeg', privacy: { excluded: false, redacted: v.privacy.redacted, mode: 'local', ...(v.privacy.collection ? { collection: v.privacy.collection } : {}), reason: v.privacy.reason } };
 }
 function validateRecord(value: unknown): QueueRecord {
   const v = value as QueueRecord;
   const event = validateEvent(v?.event);
   if ((event.source === 'screen' ? (!v.blobHash || !HASH.test(v.blobHash) || !Number.isInteger(v.blobBytes) || v.blobBytes < 4 || v.blobBytes > MAX_IMAGE_BYTES) : (v.blobHash !== undefined || v.blobBytes !== 0)) || !Number.isInteger(v.attempts) || v.attempts < 0 || !Number.isFinite(v.nextAttemptAt) || v.nextAttemptAt < 0) throw new Error('队列记录无效');
-  return { event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt };
+  if ((v.uploaded !== undefined && typeof v.uploaded !== 'boolean') || (v.ocrResult !== undefined && (typeof v.ocrResult !== 'string' || v.ocrResult.length > 100000)) || (v.ocrRetryAt !== undefined && (!Number.isFinite(v.ocrRetryAt) || v.ocrRetryAt < 0)) || ((v.uploaded || v.ocrResult !== undefined) && event.ocr?.status !== 'pending')) throw new Error('OCR 补做队列状态无效');
+  if ((v.syncBlocked !== undefined && typeof v.syncBlocked !== 'boolean') || (v.syncError !== undefined && (typeof v.syncError !== 'string' || v.syncError.length > 300))) throw new Error('同步失败状态无效');
+  return { event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt, ...(v.uploaded ? { uploaded: true } : {}), ...(v.ocrResult !== undefined ? { ocrResult: v.ocrResult } : {}), ...(v.ocrRetryAt ? { ocrRetryAt: v.ocrRetryAt } : {}), ...(v.syncBlocked ? { syncBlocked: true, syncError: v.syncError } : {}) };
 }
 function validateImage(image: Buffer, hash?: string): void {
   if (image.length < 4 || image.length > MAX_IMAGE_BYTES || image[0] !== 0xff || image[1] !== 0xd8 || image.at(-2) !== 0xff || image.at(-1) !== 0xd9 || (hash && imageHash(image) !== hash)) throw new Error('队列图片格式、大小或校验和不正确');
@@ -131,6 +147,45 @@ export class DurableQueue {
     });
   }
   contains(id: string): boolean { return this.records.has(id); }
+  recordsForBrowser(): QueueRecord[] { return structuredClone([...this.records.values()].filter(r => r.event.source === 'screen')); }
+  async imageForBrowser(id: string): Promise<Buffer | undefined> {
+    return this.exclusive(async () => {
+      const record = this.records.get(id);
+      if (!record?.blobHash) return undefined;
+      const image = await readFile(this.blobPath(record.blobHash)); validateImage(image, record.blobHash); return image;
+    });
+  }
+  async nextOcr(now = Date.now()): Promise<{ record: QueueRecord; image: Buffer } | undefined> {
+    return this.exclusive(async () => {
+      const record = [...this.records.values()].find(r => !r.syncBlocked && r.event.ocr?.status === 'pending' && r.ocrResult === undefined && (r.ocrRetryAt ?? 0) <= now);
+      if (!record?.blobHash) return undefined;
+      const image = await readFile(this.blobPath(record.blobHash)); validateImage(image, record.blobHash);
+      return { record: structuredClone(record), image };
+    });
+  }
+  async saveOcr(id: string, text: string): Promise<void> {
+    if (typeof text !== 'string' || text.length > 100000) throw new Error('OCR 文本超出限制');
+    await this.exclusive(async () => {
+      const prior = this.records.get(id); if (!prior || prior.event.ocr?.status !== 'pending') return;
+      const record = { ...prior, ocrResult: text, ocrRetryAt: 0, nextAttemptAt: 0 };
+      // This consumes the record's pre-reserved budget, even if the user since lowered the limit.
+      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.records.set(id, record);
+    });
+  }
+  async deferOcr(id: string): Promise<void> {
+    await this.exclusive(async () => {
+      const prior = this.records.get(id); if (!prior) return;
+      const record = { ...prior, ocrRetryAt: Date.now() + 60000 };
+      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.records.set(id, record);
+    });
+  }
+  async blockSync(id: string, message: string): Promise<void> {
+    await this.exclusive(async () => {
+      const prior = this.records.get(id); if (!prior) return;
+      const record = { ...prior, syncBlocked: true, syncError: message.slice(0, 300), nextAttemptAt: 0 };
+      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.records.set(id, record);
+    });
+  }
   setLimits(limits: QueueLimits): void { this.limits = limits; }
   stats(): QueueStats {
     const blobs = new Map<string, number>();
@@ -140,10 +195,13 @@ export class DurableQueue {
     for (const record of this.records.values()) {
       if (!oldestPendingAt || record.event.capturedAt < oldestPendingAt) oldestPendingAt = record.event.capturedAt;
       if (record.blobHash) blobs.set(record.blobHash, record.blobBytes);
-      metadataBytes += Buffer.byteLength(JSON.stringify(record));
-      if (record.nextAttemptAt > 0) nextRetry = Math.min(nextRetry ?? Infinity, record.nextAttemptAt);
+      metadataBytes += recordBytes(record);
+      if (!record.syncBlocked && record.nextAttemptAt > 0) nextRetry = Math.min(nextRetry ?? Infinity, record.nextAttemptAt);
     }
-    return { depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt };
+    const values = [...this.records.values()];
+    return { depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt,
+      eligibleDepth: values.filter(r => !r.syncBlocked && (!r.uploaded || r.ocrResult !== undefined)).length,
+      waitingOcr: values.filter(r => r.uploaded && r.ocrResult === undefined).length, blocked: values.filter(r => r.syncBlocked).length };
   }
   async syncCheckpoint(lastUploadAt = this.lastUploadAt, nextRetryAt?: string): Promise<void> {
     await this.exclusive(async () => { await atomicSourceJson(join(this.directory, 'sync-checkpoint.json'), { lastUploadAt, nextRetryAt }); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; });
@@ -169,7 +227,7 @@ export class DurableQueue {
   private async insertRecord(record: QueueRecord, image?: Buffer): Promise<void> {
     const hasBlob = [...this.records.values()].some(r => r.blobHash === record.blobHash);
     const size = this.stats();
-    if (size.depth + 1 > this.limits.maxQueueEvents || size.bytes + (hasBlob ? 0 : image?.length ?? 0) + Buffer.byteLength(JSON.stringify(record)) > this.limits.maxQueueBytes) throw new QueueFullError();
+    if (size.depth + 1 > this.limits.maxQueueEvents || size.bytes + (hasBlob ? 0 : image?.length ?? 0) + recordBytes(record) > this.limits.maxQueueBytes) throw new QueueFullError();
     if (image && record.blobHash && !hasBlob) await atomicWrite(this.blobPath(record.blobHash), image);
     await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
     this.records.set(record.event.id, record);
@@ -177,18 +235,22 @@ export class DurableQueue {
   async next(now = Date.now()): Promise<{ record: QueueRecord; image?: Buffer } | undefined> {
     return this.exclusive(async () => {
       this.assertReady();
-      const record = [...this.records.values()].filter(r => r.nextAttemptAt <= now).sort((a, b) => a.event.capturedAt.localeCompare(b.event.capturedAt))[0];
+      const record = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now && (!r.uploaded || r.ocrResult !== undefined)).sort((a, b) => a.event.capturedAt.localeCompare(b.event.capturedAt))[0];
       if (!record) return undefined;
       const image = record.blobHash ? await readFile(this.blobPath(record.blobHash)) : undefined;
       if (image) validateImage(image, record.blobHash);
       return { record: structuredClone(record), image };
     });
   }
-  async acknowledge(id: string): Promise<void> {
+  async acknowledge(id: string, ocrComplete = false): Promise<void> {
     return this.exclusive(async () => {
       this.assertReady();
       const record = this.records.get(id);
       if (!record) return;
+      if (record.event.ocr?.status === 'pending' && !ocrComplete) {
+        const retained = { ...record, uploaded: true, attempts: 0, nextAttemptAt: 0 };
+        await atomicWrite(this.eventsPath(id), JSON.stringify(retained)); this.records.set(id, retained); return;
+      }
       await unlink(this.eventsPath(id));
       // The event deletion must be durable before the last referenced blob is removed.
       await syncDirectory(join(this.directory, 'events'));
@@ -209,7 +271,7 @@ export class DurableQueue {
     await this.syncCheckpoint();
     return this.exclusive(async () => {
       for (const prior of this.records.values()) {
-        const record = { ...prior, nextAttemptAt: 0 };
+        const record = { ...prior, nextAttemptAt: 0, syncBlocked: false, syncError: undefined };
         await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
         this.records.set(record.event.id, record);
       }
@@ -218,7 +280,8 @@ export class DurableQueue {
   async exportArchive(): Promise<QueueArchive> {
     return this.exclusive(async () => {
       this.assertReady();
-      if (this.stats().bytes > 256 * 1024 * 1024) throw new Error('队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹');
+      const reservation = [...this.records.values()].filter(r => r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
+      if (this.stats().bytes - reservation > 256 * 1024 * 1024) throw new Error('队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹');
       const blobs: Record<string, string> = {};
       for (const record of this.records.values()) if (record.blobHash && !blobs[record.blobHash]) blobs[record.blobHash] = (await readFile(this.blobPath(record.blobHash))).toString('base64');
       return { format: 'mote-desktop-queue', version: 1, records: structuredClone([...this.records.values()]), blobs };
@@ -242,13 +305,14 @@ export class DurableQueue {
         }
         const existing = this.records.get(record.event.id) ?? unique.get(record.event.id);
         if (existing && (existing.blobHash !== record.blobHash || JSON.stringify(existing.event) !== JSON.stringify(record.event))) throw new Error('备份包含冲突的事件 ID');
-        if (!existing) unique.set(record.event.id, { ...record, attempts: 0, nextAttemptAt: 0 });
+        // A restored archive may target a new node: re-ACK the immutable original before OCR patching.
+        if (!existing) unique.set(record.event.id, { ...record, uploaded: false, attempts: 0, nextAttemptAt: 0 });
       }
       const knownBlobs = new Set([...this.records.values()].map(r => r.blobHash));
       const stats = this.stats();
       let extraBytes = 0;
       for (const record of unique.values()) {
-        extraBytes += Buffer.byteLength(JSON.stringify(record));
+        extraBytes += recordBytes(record);
         if (!knownBlobs.has(record.blobHash)) { extraBytes += record.blobBytes; knownBlobs.add(record.blobHash); }
       }
       if (stats.depth + unique.size > this.limits.maxQueueEvents || stats.bytes + extraBytes > this.limits.maxQueueBytes) throw new QueueFullError();

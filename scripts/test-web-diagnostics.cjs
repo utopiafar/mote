@@ -37,6 +37,12 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('中央节点已连接')`),'authenticated app');
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.innerText==='设置').click()`);
   await until(()=>wc.executeJavaScript(`!!document.querySelector('.preference-menu')`),'settings hub');
+  const feedback = await wc.executeJavaScript(`(()=>{const link=document.querySelector('.preference-menu a.feedback-link');return {href:link.href,target:link.target,rel:link.rel};})()`);
+  const feedbackUrl = new URL(feedback.href);
+  assert.equal(feedbackUrl.origin,'https://github.com');assert.equal(feedbackUrl.pathname,'/utopiafar/mote/issues/new');
+  assert.equal(feedbackUrl.searchParams.get('template'),'bug_report.yml');assert(feedbackUrl.searchParams.get('version').includes('Web'));
+  assert.equal(feedback.target,'_blank');assert(feedback.rel.includes('noreferrer'));
+  for(const privateValue of [token,modelKey,generatedText,url,root])assert.equal(decodeURIComponent(feedback.href).includes(privateValue),false);
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('.preference-menu button')).find(b=>b.querySelector('strong')?.textContent==='开发者选项').click()`);
   await until(()=>wc.executeJavaScript(`!!document.querySelector('.deployment-details')`),'effective server configuration');
   await wc.executeJavaScript(`document.querySelector('.deployment-details').open=true`);

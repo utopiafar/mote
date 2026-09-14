@@ -24,6 +24,12 @@
       "require": "./dist/metadata.js",
       "default": "./dist/metadata.js"
     },
+    "./feedback": {
+      "types": "./dist/feedback.d.ts",
+      "import": "./dist/feedback.js",
+      "require": "./dist/feedback.js",
+      "default": "./dist/feedback.js"
+    },
     "./release": {
       "types": "./dist/release.d.ts",
       "import": "./dist/release.js",
@@ -31,7 +37,7 @@
       "default": "./dist/release.js"
     }
   },
-  "typesVersions": { "*": { "release": ["dist/release.d.ts"], "connection": ["dist/connection.d.ts"], "metadata": ["dist/metadata.d.ts"] } },
+  "typesVersions": { "*": { "feedback": ["dist/feedback.d.ts"], "release": ["dist/release.d.ts"], "connection": ["dist/connection.d.ts"], "metadata": ["dist/metadata.d.ts"] } },
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
