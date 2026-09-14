@@ -24,6 +24,7 @@ import {
   ExternalLink,
   FileText,
   HardDrive,
+  Headphones,
   Info,
   Layers3,
   LayoutDashboard,
@@ -72,6 +73,8 @@ import { SoftwareUpdate } from "./SoftwareUpdate";
 import { DeviceOverview, PageBack } from "./DeviceOverview";
 import { Connections } from "./Connections";
 import {Metadata, sourceLabels, activityExplanation} from './Metadata';
+import {MediaSnapshot,MediaActivitySummary} from './Media';
+import {mediaCardText,mediaStatus,mediaExplanation} from './media-presentation';
 
 import {Sources} from "./Sources";
 import {Memories} from "./Memories";
@@ -191,6 +194,7 @@ function AuthImage({
   const [error, setError] = useState("");
   const hasImage = 'hasImage' in capture ? capture.hasImage : Boolean(capture.blobHash);
   const text = 'textPreview' in capture ? capture.textPreview : capture.ocrText;
+  const media = 'textPreview' in capture ? capture.media : capture.metadata?.media;
   useEffect(() => {
     if (full || visible || !ref.current) return;
     const observer = new IntersectionObserver(
@@ -234,12 +238,12 @@ function AuthImage({
   return (
     <div
       ref={ref}
-      className={`capture-image ${className} ${!hasImage ? "text-image" : ""}`}
+      className={`capture-image ${className} ${!hasImage ? "text-image" : ""} ${capture.source==='media'?'media-image':''}`}
     >
       {!hasImage ? (
         <>
-          <FileText size={23} />
-          <p>{capture.source === 'activity' ? '仅应用活动 · 未采集内容' : text.slice(0, 170) || "来源元数据"}</p>
+          {capture.source==='media'?<Headphones size={28}/>:<FileText size={23} />}
+          <p>{capture.source==='media'?mediaCardText(media,'privacy' in capture?capture.privacy.collection:undefined):capture.source === 'activity' ? '仅应用活动 · 未采集内容' : text.slice(0, 170) || "来源元数据"}</p>
         </>
       ) : src ? (
         <img
@@ -270,6 +274,7 @@ function CaptureCard({
 }) {
   const text = 'textPreview' in capture ? capture.textPreview : capture.ocrText;
   const ocr = ocrPresentation('textPreview' in capture ? capture.ocr : captureOcrState(capture), text);
+  const media = 'textPreview' in capture ? capture.media : capture.metadata?.media;
   return (
     <button className="capture-card" onClick={() => onOpen(capture.id)} aria-label={`查看 ${capture.appName || '未识别应用'} · ${dateTime(capture.capturedAt)} 的记录`}>
       <AuthImage api={api} capture={capture} />
@@ -288,12 +293,14 @@ function CaptureCard({
           </time>
         </div>
         <p>
-          {capture.source === 'activity' ? `仅应用活动 · 本次采样 ${duration(capture.durationMs)}` : ('summary' in capture && capture.summary) ||
+          {capture.source==='media'?`媒体播放 · ${capture.durationMs>0?`播放采样 ${duration(capture.durationMs)}`:'状态观察 · 不累计时长'}`:capture.source === 'activity' ? `仅应用活动 · 本次采样 ${duration(capture.durationMs)}` : ('summary' in capture && capture.summary) ||
             capture.windowTitle ||
             text ||
             (capture.source === 'screen' ? ocr.description : '此记录没有正文')}
         </p>
         {capture.source === 'screen' && <span className={`badge capture-ocr ${ocr.tone}`}>{ocr.label}</span>}
+        {capture.source==='media'&&<span className={`badge capture-ocr ${mediaStatus(media).tone}`}>{mediaStatus(media).label}</span>}
+        {capture.source!=='media'&&media&&<span className="badge capture-ocr muted"><Headphones size={12}/>附带媒体状态</span>}
         <div className="capture-bottom">
           <span>
             <DeviceIcon platform={capture.platform} size={12} />
@@ -537,13 +544,14 @@ function EvidenceDialog({
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <AuthImage api={api} capture={capture} full />}
               <div className="evidence-text">
-                <span className="eyebrow">{capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : '捕获文本'}</span>
+                <span className="eyebrow">{capture.source==='media'?'媒体观察':capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : '捕获文本'}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || "原始上下文"}</h3>
                 {capture.mood && <p className="note-mood-tag">我标注的心情 · {capture.mood}</p>}
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
                 <pre aria-label={capture.source === 'screen' ? 'OCR 全文' : '记录全文'}>
-                  {capture.source === 'activity' ? activityExplanation : capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
+                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
                 </pre>
+                {(capture.source==='media'||capture.metadata?.media)&&<MediaSnapshot media={capture.metadata?.media} observedAt={capture.metadata?.observedAt??capture.capturedAt} screenLocked={capture.metadata?.state?.screenLocked} collection={capture.privacy.collection}/>}
                 <dl>
                   <div>
                     <dt>来源</dt>
@@ -552,12 +560,13 @@ function EvidenceDialog({
                     </dd>
                   </div>
                   {capture.appId && <div><dt>应用标识</dt><dd>{capture.appId}</dd></div>}
-                  {(capture.source === 'screen' || capture.source === 'activity') && <div><dt>本次采样时长</dt><dd>{duration(capture.durationMs)}</dd></div>}
+                  {(capture.source === 'screen' || capture.source === 'activity') && <div><dt>前台应用采样时长</dt><dd>{duration(capture.durationMs)}</dd></div>}
+                  {capture.source==='media'&&<div><dt>媒体播放采样时长</dt><dd>{capture.durationMs>0?duration(capture.durationMs):'状态观察，不累计时长'}</dd></div>}
                   {capture.ocr?.updatedAt && <div><dt>OCR 状态更新时间</dt><dd>{dateTime(capture.ocr.updatedAt)}</dd></div>}
                   <div>
                     <dt>索引状态</dt>
                     <dd>
-                      {capture.source === 'activity' ? '应用与时间可检索' : (
+                      {capture.source==='media'?'媒体状态与上报内容可检索':capture.source === 'activity' ? '应用与时间可检索' : (
                         {
                           text_ready: "文本可检索",
                           pending: "等待索引",
@@ -570,7 +579,7 @@ function EvidenceDialog({
                   <div>
                     <dt>隐私处理</dt>
                     <dd>
-                      {capture.source === 'activity' ? '仅记应用活动，不采集内容' : capture.privacy.redacted
+                      {capture.source==='media'?(capture.privacy.collection==='activity'?'仅应用与播放状态，不采集标题等内容':'保留应用上报的媒体信息，不录制音频'):capture.source === 'activity' ? '仅记应用活动，不采集内容' : capture.privacy.redacted
                         ? "客户端报告已脱敏"
                         : "未标记脱敏"}
                     </dd>
@@ -711,22 +720,23 @@ function SetupSteps({ onPage }: { onPage: (page: Page) => void }) {
   );
 }
 
-function Overview({api,status,devices,activity,recent,insights,onPage,onOpen}: {api:Api;status:Status;devices:Device[];activity:Activity;recent:Capture[];insights:Answer[];onPage:(page:Page)=>void;onOpen:(id:string)=>void;generate:()=>void;generating:boolean}) {
+function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,range,onMedia}: {api:Api;status:Status;devices:Device[];activity:Activity;recent:Capture[];insights:Answer[];onPage:(page:Page)=>void;onOpen:(id:string)=>void;range:Range;onMedia:()=>void;generate:()=>void;generating:boolean}) {
  return <div className="home-page">
   <div className="greeting"><div><div className="eyebrow">你的个人上下文</div><h1>给生活留一点线索。</h1><p>记下的片刻，在需要时重新找到。</p></div><div className="greeting-mark" aria-hidden="true"><div/><div/><div/><span>m.</span></div></div>
   <div className="home-actions"><button className="home-action primary-action" onClick={()=>onPage('notes')}><FileText size={23}/><span><strong>写一条随手记</strong><small>留住此刻的想法</small></span><ArrowRight size={18}/></button><button className="home-action" onClick={()=>onPage('ask')}><MessageSquare size={23}/><span><strong>从记录里找答案</strong><small>带着来源，回看自己的经历</small></span><ArrowRight size={18}/></button></div>
-  <div className="stats-grid compact-stats"><div className="stat"><span><Layers3 size={16}/>这段时间的设备采样</span><strong>{activity.captures.toLocaleString()}<em>条</em></strong><small>应用活动与内容采样，按所选时间统计</small></div><div className="stat"><span><Clock3 size={16}/>已记录设备时间</span><strong>{duration(activity.totalDurationMs)}</strong><small>采样区间累计，不等同专注时间</small></div><button className="stat stat-link" onClick={()=>onPage('devices')}><span><Monitor size={16}/>已知设备</span><strong>{devices.length}<em>台</em></strong><small>查看最近联系与上报的同步状态 →</small></button></div>
+  <div className="stats-grid compact-stats"><div className="stat"><span><Layers3 size={16}/>前台应用与屏幕采样</span><strong>{activity.captures.toLocaleString()}<em>条</em></strong><small>按所选时间统计，与媒体记录分别查看</small></div><div className="stat"><span><Clock3 size={16}/>前台应用采样时长</span><strong>{duration(activity.totalDurationMs)}</strong><small>采样区间累计，不等同专注时间</small></div><button className="stat stat-link" onClick={()=>onPage('devices')}><span><Monitor size={16}/>已知设备</span><strong>{devices.length}<em>台</em></strong><small>查看最近联系与上报的同步状态 →</small></button></div>
+  <MediaActivitySummary api={api} range={range} onOpen={onOpen} compact onExpand={onMedia}/>
   {!status.storage.captures&&<section className="panel first-record"><span className="preference-menu-icon"><Link2 size={23}/></span><div><h2>准备好接住第一份记录</h2><p>连接一台设备，或导入你选择的文件。采集范围与同步方式由你决定。</p></div><button className="button" onClick={()=>onPage('devices')}>连接设备<ArrowRight size={15}/></button></section>}
   <section className="recent-section"><div className="section-heading"><div><h2>最近留下的片刻</h2><p>来自你选择的设备与来源</p></div><button className="text-button" onClick={()=>onPage('timeline')}>全部记录<ArrowRight size={15}/></button></div>{recent.length?<div className="capture-grid">{recent.slice(0,4).map(capture=><CaptureCard key={capture.id} capture={capture} api={api} onOpen={onOpen}/>)}</div>:<div className="home-empty"><Layers3 size={23}/><p>记录会在同步完成后出现在这里。也可以先写一条随手记。</p></div>}</section>
   {insights[0]&&<button className="home-insight" onClick={()=>onPage('ask')}><Sparkles size={21}/><div><strong>你最近的个人回顾</strong><p>{insights[0].answer.slice(0,125)}{insights[0].answer.length>125?'…':''}</p><small>{insights[0].citations.length} 条证据来源</small></div><ArrowRight size={18}/></button>}
  </div>;
 }
 
-function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>应用活动概况</h2><p>已记录设备时间 · {duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。</p></>:<Empty icon={Clock3} title="这段时间还没有活动采样"><p>设备完成同步后，可以在这里查看应用时间分布。</p></Empty>}</section>;}
+function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>应用活动概况</h2><p>前台应用采样时长 · {duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。</p></>:<Empty icon={Clock3} title="这段时间还没有活动采样"><p>设备完成同步后，可以在这里查看应用时间分布。</p></Empty>}</section>;}
 
-type ArchiveTab = 'records'|'activity'|'memories';
+type ArchiveTab = 'records'|'activity'|'media'|'memories';
 function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
- return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['activity','应用活动'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen}/>}</div>;
+ return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动与播放分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['activity','应用活动'],['media','媒体播放'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen}/>}</div>;
 }
 
 function Timeline({
@@ -744,6 +754,7 @@ function Timeline({
   const [before, setBefore] = useState("");
   const [device, setDevice] = useState("");
   const [collection, setCollection] = useState<'' | 'activity' | 'content'>('');
+  const [source,setSource] = useState('');
   const [ocrStatus, setOcrStatus] = useState('');
   const [items, setItems] = useState<CapturePreview[]>([]);
   const [totalCount, setTotalCount] = useState<number>();
@@ -760,9 +771,10 @@ function Timeline({
       ...captureDateRange(after, before),
       ...(device ? { deviceId: device } : {}),
       ...(collection ? {collection} : {}),
+      ...(source ? {source} : {}),
       ...(ocrStatus ? {ocrStatus} : {}),
     }),
-    [after, before, device, collection, ocrStatus],
+    [after, before, device, collection, source, ocrStatus],
   );
   const load = useCallback(
     async (next?: string, version = requestVersion.current) => {
@@ -841,7 +853,7 @@ function Timeline({
       <div className="page-heading timeline-heading">
         <div className="eyebrow">按天回看，保留来处</div>
         <h1>采集记录</h1>
-        <p>按日期浏览截图和文字；点击记录查看原图、识别全文与处理状态。</p>
+        <p>按日期浏览截图、文字与媒体状态；点击记录查看内容和采样时的上下文。</p>
       </div>
       <div className="capture-day-controls">
         <label><span>按天查看</span><input type="date" aria-label="查看某天的采集记录" value={after && after === before ? after : ''} onChange={event => {setAfter(event.target.value);setBefore(event.target.value);}}/></label>
@@ -885,9 +897,10 @@ function Timeline({
             ))}
           </select>
         </label>
-        <label><span>采集级别</span><select aria-label="筛选采集级别" value={collection} onChange={event=>setCollection(event.target.value as typeof collection)}><option value="">全部记录</option><option value="activity">仅应用活动</option><option value="content">允许保留的内容</option></select></label>
+        <label><span>来源</span><select aria-label="筛选记录来源" value={source} onChange={event=>{setSource(event.target.value);if(event.target.value&&event.target.value!=='screen')setOcrStatus('');}}><option value="">全部来源</option>{Object.entries(sourceLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
+        <label><span>采集级别</span><select aria-label="筛选采集级别" value={collection} onChange={event=>setCollection(event.target.value as typeof collection)}><option value="">全部记录</option><option value="activity">仅活动状态</option><option value="content">允许保留的内容</option></select></label>
         <label><span>OCR</span><select aria-label="筛选 OCR 状态" value={ocrStatus} onChange={event=>setOcrStatus(event.target.value)}><option value="">全部状态</option><option value="pending">待处理</option><option value="completed">已完成</option><option value="failed">失败</option><option value="disabled">已关闭</option><option value="unknown">状态未知</option></select></label>
-        {(after || before || device || collection || ocrStatus) && (
+        {(after || before || device || collection || source || ocrStatus) && (
           <button
             className="text-button"
             onClick={() => {
@@ -895,6 +908,7 @@ function Timeline({
               setBefore("");
               setDevice("");
               setCollection('');
+              setSource('');
               setOcrStatus('');
             }}
           >
@@ -1883,6 +1897,8 @@ function App() {
                           insights={insights}
                           onPage={onPage}
                           onOpen={setEvidenceId}
+                          range={range}
+                          onMedia={()=>{setArchiveTab('media');onPage('archive');}}
                           generate={() => void generate()}
                           generating={generating}
                         />

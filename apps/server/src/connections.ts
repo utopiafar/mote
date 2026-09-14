@@ -103,7 +103,7 @@ export class Connections {
     this.assertActive(credential);
     if(route==='/api/connections/self'&&['GET','HEAD'].includes(method))return;
     if(credential.scope!=='collector')throw denied();
-    const permitted:Record<string,string[]>={'/api/captures':['POST'],'/api/capture-browser':['GET','HEAD'],'/api/capture-browser/:id':['GET','HEAD'],'/api/capture-browser/:id/image':['GET','HEAD'],'/api/capture-browser/:id/ocr':['POST'],'/api/notes':['POST'],'/api/devices/heartbeat':['POST'],'/api/sources':['GET','HEAD','POST'],'/api/sources/:id':['PATCH'],'/api/sources/:id/items':['GET','HEAD','PUT'],'/api/sources/:id/item':['GET','HEAD'],'/api/sources/:id/history':['GET','HEAD'],'/api/source-items':['GET','HEAD']};
+    const permitted:Record<string,string[]>={'/api/captures':['POST'],'/api/capture-browser':['GET','HEAD'],'/api/capture-browser/:id':['GET','HEAD'],'/api/capture-browser/:id/image':['GET','HEAD'],'/api/capture-browser/:id/ocr':['POST'],'/api/media-activity':['GET','HEAD'],'/api/notes':['POST'],'/api/devices/heartbeat':['POST'],'/api/sources':['GET','HEAD','POST'],'/api/sources/:id':['PATCH'],'/api/sources/:id/items':['GET','HEAD','PUT'],'/api/sources/:id/item':['GET','HEAD'],'/api/sources/:id/history':['GET','HEAD'],'/api/source-items':['GET','HEAD']};
     if(!permitted[route]?.includes(method))throw denied();
   }
   assertOwnDevice(c:ConnectionCredential,body:unknown){this.assertActive(c);if(!body||typeof body!=='object'||(body as {deviceId?:unknown}).deviceId!==c.deviceId)throw denied();}
@@ -111,7 +111,7 @@ export class Connections {
   assertOwnSource(c:ConnectionCredential,id:string){this.assertActive(c);if(this.sources.getSource(id).deviceId!==c.deviceId)throw denied();}
   assertCapture(c:ConnectionCredential,body:unknown){
     this.assertOwnDevice(c,body);const input=body as {id?:unknown;provenance?:unknown;platform?:unknown;source?:unknown};
-    this.assertPlatform(c,input.platform);if(input.provenance!==undefined||!['screen','note','activity'].includes(String(input.source)))throw denied();
+    this.assertPlatform(c,input.platform);if(input.provenance!==undefined||!['screen','note','activity','media'].includes(String(input.source)))throw denied();
     if(typeof input.id==='string'){const prior=this.store.evidence([input.id])[0];if(prior&&prior.deviceId!==c.deviceId)throw denied();}
   }
   async close(){this.closed=true;this.invitations.clear();await this.sequence.catch(()=>{});}

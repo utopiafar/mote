@@ -7,6 +7,7 @@ import type {
   ContextReader,
   ContextRecord,
   ContextRange,
+  MediaContextRange,
   QueryInput,
   ToolTrace,
 } from "./types.js";
@@ -16,6 +17,7 @@ export const TOOL_NAMES = [
   "timeline",
   "evidence",
   "activity",
+  "media_activity",
   "devices",
   "sources",
   "source_items",
@@ -199,8 +201,10 @@ export async function startBridge(
         res.writeHead(404).end('{"error":"Unknown tool"}');
         return;
       }
-      if (!['timeline','search_context','activity'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
-        throw new Error('App/source/collection filters are supported only by timeline, search_context and activity');
+      if (!['timeline','search_context','activity','media_activity'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
+        throw new Error('App/source/collection filters require a context or activity tool');
+      if (tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
+        throw new Error('Media state filters require media_activity');
       if (++calls > maxToolCalls)
         throw new Error(
           "Tool call budget reached; finish using the evidence already retrieved",
@@ -274,6 +278,18 @@ export async function startBridge(
             if (page.totalCount !== undefined && (!Number.isSafeInteger(page.totalCount) || page.totalCount < 0 || page.totalCount < page.items.length)) throw new Error("Context reader returned an invalid total count");
             value = page.items; pagination = { nextCursor:page.nextCursor, ...(page.totalCount === undefined ? {} : { totalCount:page.totalCount }) };
           }
+        }
+        else if (tool === 'media_activity') {
+          if (args.source !== undefined && args.source !== 'media') throw new Error('media_activity requires the media source');
+          if (args.appVisibility !== undefined && (typeof args.appVisibility !== 'string' || !['foreground','background','unknown'].includes(args.appVisibility))) throw new Error('Invalid appVisibility');
+          if (args.playbackType !== undefined && (typeof args.playbackType !== 'string' || !['local','remote','unknown'].includes(args.playbackType))) throw new Error('Invalid playbackType');
+          if (args.screenLocked !== undefined && typeof args.screenLocked !== 'boolean') throw new Error('screenLocked must be boolean');
+          if (!reader.mediaActivity) throw new Error('Media activity is unavailable from this archive reader');
+          effective = {...filters, source:'media',
+            ...(args.appVisibility === undefined ? {} : {appVisibility:args.appVisibility}),
+            ...(args.screenLocked === undefined ? {} : {screenLocked:args.screenLocked}),
+            ...(args.playbackType === undefined ? {} : {playbackType:args.playbackType})};
+          value = await reader.mediaActivity(effective as MediaContextRange);
         }
         else value = await reader.activity(filters);
       }

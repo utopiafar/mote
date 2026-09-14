@@ -43,6 +43,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const sourceOwner=(req:FastifyRequest,id:string)=>{const c=credential(req);if(c)connections.assertOwnSource(c,id);};
   const context=(records:CaptureRecord[])=>records.map(record=>({...record,sourceType:record.source,...(record.provenance?{revisionState:sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id?'current':'historical'}:{})}));
   const reader:ContextReader={
+      mediaActivity:async args=>diagnostics.measure('source','activity',()=>store.mediaActivity(args),result=>({count:result.observations})),
       sourceHistory:async args=>{const record=store.evidence([args.id])[0];if(!record?.provenance)return [];return context(store.evidence(sources.history(record.provenance.sourceId,record.provenance.externalId).filter(i=>(!args.after||Date.parse(i.calendar?.end??i.observedAt)>=Date.parse(args.after))&&(!args.before||Date.parse(i.calendar?.start??i.observedAt)<Date.parse(args.before))).map(i=>i.captureId)).filter(r=>!args.deviceId||r.deviceId===args.deviceId));},
       sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
       sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:context(store.evidence(page.items.map(i=>i.captureId)))};},
@@ -151,6 +152,17 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   app.get('/api/devices',async()=>({items:store.devices()}));
   app.get('/api/updates',async req=>{const {cursor,limit}=z.object({cursor:z.coerce.number().int().min(0).default(0),limit:z.coerce.number().int().min(1).max(200).default(100)}).parse(req.query);return store.updates(cursor,limit);});
   app.get('/api/activity',async req=>store.activity(rangeSchema.parse(req.query)));
+  const mediaRange=z.object({
+    after:z.string().max(64).datetime({offset:true}).optional(),before:z.string().max(64).datetime({offset:true}).optional(),
+    deviceId:z.string().min(1).max(128).optional(),appId:z.string().min(1).max(300).optional(),collection:z.enum(['content','activity']).optional(),
+    appVisibility:z.enum(['foreground','background','unknown']).optional(),
+    screenLocked:z.enum(['true','false']).transform(value=>value==='true').optional(),playbackType:z.enum(['local','remote','unknown']).optional(),
+  }).strict().refine(value=>!value.after||!value.before||Date.parse(value.after)<Date.parse(value.before),{message:'Invalid time range'});
+  app.get('/api/media-activity',async req=>{
+    const query=mediaRange.parse(req.query),c=credential(req);
+    if(c){connections.assertActive(c);if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,'只能读取本设备的媒体采集统计。');query.deviceId=c.deviceId;}
+    return store.mediaActivity(query);
+  });
   let closing=false;
   const activeQueries=new Set<Promise<QueryResult>>();
   function queryAgent(input:QueryScope&{question:string},operation:'query'|'insight'='query') {
@@ -170,7 +182,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   });
   async function insight(range:QueryScope) {
     if(!agent.configured)throw new AgentNotConfiguredError();
-    const result=await queryAgent({question:'请根据这段时间的上下文记录，生成中文个人回顾：我最近做了什么，时间花在哪里，哪些事情可能值得继续关注。自由选择工具检索并解释发现，区分事实、推断与信息缺口，每个具体发现引用原始记录。屏幕采样时间不能等同专注或真实劳动时间，不臆造待办或意图。',...range},'insight');
+    const result=await queryAgent({question:'请根据这段时间的上下文记录，生成中文个人回顾：我最近做了什么，时间花在哪里，哪些事情可能值得继续关注。自由选择工具检索并解释发现，区分事实、推断与信息缺口，每个具体发现引用原始记录。可用 media_activity 查看锁屏和后台的媒体播放采样；媒体播放与屏幕时长独立，不能相加为专注或真实劳动时间。音乐、有声书等内容类型依据原始媒体证据判断，播放状态不证明听完或投入注意力，权限缺失不证明未播放，不臆造待办或意图。',...range},'insight');
     store.saveInsight(result,result.runId);return result;
   }
   app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{return insight(insightSchema.parse(req.body??{}));});

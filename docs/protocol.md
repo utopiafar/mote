@@ -25,7 +25,7 @@ All `/api/*` routes require Bearer authentication except public `/api/health` an
 }
 ```
 
-`platform`: `macos|windows|linux|android|import`. `source`: `screen|activity|file|note|calendar|event|message|metric|memory`. `imageBase64` and `imageMime` optional together for text/file imports. `durationMs` integer 0..300000, measures observed sampling exposure, NOT guaranteed attention. Response: `{id, duplicate, blobHash, indexingStatus}`. Same id with different content returns 409. Excluded events must never be queued; server rejects `privacy.excluded=true`.
+`platform`: `macos|windows|linux|android|import`. `source`: `screen|activity|media|file|note|calendar|event|message|metric|memory`. `imageBase64` and `imageMime` optional together for text/file imports. `durationMs` integer 0..300000, measures observed sampling exposure, NOT guaranteed attention. Response: `{id, duplicate, blobHash, indexingStatus}`. Same id with different content returns 409. Excluded events must never be queued; server rejects `privacy.excluded=true`.
 
 Deleted event IDs have tombstones: later upload/import of that ID into the same vault returns 410 instead of resurrecting deleted private evidence. Restore a full backup into a fresh vault when intentional recovery is needed. Export limits account for repeated base64 image references, not only unique blob bytes.
 
@@ -52,7 +52,7 @@ App collection rules resolve locally to `content`, `activity`, or `off`; legacy 
 }
 ```
 
-Activity requires a nonblank app identity, `privacy.collection=activity`, no image fields, and empty/omitted `ocrText` and `windowTitle`; mood, provenance and redaction claims are rejected. Its `metadata.capture` permits only `intervalMs`. Other records cannot claim the activity collection mode. Legacy inputs may omit collection and metadata without being rewritten on upgrade.
+Activity requires a nonblank app identity, `privacy.collection=activity`, no image fields, and empty/omitted `ocrText` and `windowTitle`; mood, provenance and redaction claims are rejected. Its `metadata.capture` permits only `intervalMs`. Media observations may also use activity collection, which forbids media titles, artists, albums, subtitles and content identifiers. Other records cannot claim the activity collection mode. Legacy inputs may omit collection and metadata without being rewritten on upgrade.
 
 Optional capture/note/heartbeat metadata uses the bounded, strict `recordMetadataSchema` in `packages/shared/src/metadata.ts`. Version and `observedAt` are required if metadata is present; all collector/device/state/capture fields are optional. Unknown keys, identifiers such as serial number/SSID/location, invalid numbers and timestamps longer than 64 characters are rejected. `false` and zero are preserved; missing fields mean unavailable. A metadata observation time is distinct from `capturedAt` and server `receivedAt`.
 
@@ -61,6 +61,10 @@ Source items and capture `provenance` accept `metadata: {version:1,file?:{sizeBy
 Activity is stored without a fabricated text body or embedding task. `GET /api/captures`, model timeline/search/activity and MCP equivalents support exact `appId`, `source` and `collection`; keep filters fixed across pages. Activity totals return `captures` (all measured sample records), `contentCaptures`, `activityEvents`, plus the same counters per app/device. App groups include appId. Intervals are overlap-adjusted per device before applying app/collection filters, so filtered totals cannot reassign another application's duration.
 
 All record metadata survives capture export/import and incremental changes. Heartbeats remain the latest device report rather than a durable historical log in portable capture exports; full database backup also retains the device table. New wire fields require a 0.7.0 central node before clients start uploading them. See [privacy and metadata](privacy-and-metadata.md) for UI settings, filesystem semantics and limitations.
+
+## Media observations
+
+`source: "media"` stores standalone media-session observations without screenshots or OCR. `metadata.media` also attaches to other samples and device reports, with an independent optional `observedAt` for cached snapshots. Media intervals end at `capturedAt`, are bounded to 60000 ms, and count only one matching playing session. `/api/media-activity` and the read-only Agent/MCP media tools measure playback independently from foreground activity; unavailable observations never imply zero listening. See [media protocol, modes and accounting](media-context.md) for fields, privacy rules, queries and limitations.
 
 ## User notes / 随手记
 

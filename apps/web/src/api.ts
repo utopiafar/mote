@@ -49,6 +49,21 @@ export interface Activity {
   totalDurationMs: number;
   captures: number;
 }
+export interface MediaActivity {
+  totalDurationMs:number;
+  observations:number;
+  playingSamples:number;
+  availability?:{available:number;disabled:number;permission_required:number;unavailable:number};
+  apps:{appId:string;appName:string;durationMs:number;observations:number;evidenceIds:string[];evidenceTruncated:boolean}[];
+  devices:{deviceId:string;deviceName:string;durationMs:number;observations:number;evidenceIds:string[];evidenceTruncated:boolean}[];
+  visibility:{foreground:number;background:number;unknown:number};
+  screenLock:{locked:number;unlocked:number;unknown:number};
+  playbackType:{local:number;remote:number;unknown:number};
+  evidenceIds:string[];
+  evidenceTruncated:boolean;
+  accounting:'union_per_device_sum_across_devices';
+  coverage:'observed_intervals_only';
+}
 export interface Status {
   profile?: string;
   agent: { configured: boolean; model: string | null; provider: string; timeoutMs?: number };

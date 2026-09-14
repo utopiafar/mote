@@ -11,10 +11,11 @@ import java.util.UUID
 
 internal class CaptureRecordClient(private val config: CollectorConfig, private val deviceId: String) {
     init { config.validateConnection() }
-    fun page(after: String, before: String, cursor: String?): JSONObject {
+    fun page(after: String, before: String, cursor: String?, source: String = "screen"): JSONObject {
+        require(source in setOf("screen", "media"))
         val uri = Uri.parse("${config.server}/api/capture-browser").buildUpon()
             .appendQueryParameter("after", after).appendQueryParameter("before", before)
-            .appendQueryParameter("source", "screen").appendQueryParameter("deviceId", deviceId).appendQueryParameter("limit", "20")
+            .appendQueryParameter("source", source).appendQueryParameter("deviceId", deviceId).appendQueryParameter("limit", "20")
         cursor?.let { uri.appendQueryParameter("cursor", it) }
         return JSONObject(String(request(uri.toString(), false), Charsets.UTF_8))
     }
@@ -40,6 +41,31 @@ internal class CaptureRecordClient(private val config: CollectorConfig, private 
 }
 
 internal object CapturePreview {
+    fun hasImage(record: JSONObject): Boolean = record.optString("source", "screen") == "screen" &&
+        if (record.has("hasImage")) record.optBoolean("hasImage") else
+            (!record.isNull("imagePath") && record.optString("imagePath").isNotBlank() || !record.isNull("imageMime") && record.optString("imageMime").isNotBlank())
+    fun mediaLabel(record: JSONObject): String {
+        val media = record.optJSONObject("metadata")?.optJSONObject("media") ?: return "无媒体状态"
+        val status = when (media.optString("status")) {
+            "available" -> "媒体会话"; "disabled" -> "媒体采集未启用"; "permission_required" -> "媒体等待授权"; else -> "媒体暂不可用"
+        }
+        val sessions = media.optJSONArray("sessions") ?: return status
+        if (sessions.length() == 0) return if (media.optString("status") == "available") "未观察到媒体会话" else status
+        return (0 until sessions.length()).joinToString("\n") { index ->
+            val session = sessions.getJSONObject(index)
+            val playback = when (session.optString("playbackState")) {
+                "playing" -> "播放中"; "paused" -> "已暂停"; "stopped" -> "已停止"; "buffering" -> "缓冲中"
+                "connecting" -> "连接中"; "seeking" -> "调整进度"; "skipping" -> "切换内容"; "error" -> "播放出错"; else -> "状态未知"
+            }
+            val visibility = when (session.optString("appVisibility")) { "foreground" -> "前台"; "background" -> "后台"; else -> "前后台未知" }
+            val type = when (session.optString("playbackType")) { "remote" -> "远程播放"; "local" -> "本机播放"; else -> "输出未知" }
+            buildString {
+                append("${session.optString("appName").ifBlank { session.optString("appId") }} · $playback · $visibility · $type")
+                listOf("title", "artist", "album", "displaySubtitle").map { session.optString(it) }.filter(String::isNotBlank).distinct()
+                    .takeIf(List<String>::isNotEmpty)?.let { append("\n${it.joinToString(" · ")}") }
+            }
+        }
+    }
     fun ocrLabel(record: JSONObject): String = when (record.optJSONObject("ocr")?.optString("status", "unknown") ?: "unknown") {
         "pending" -> "OCR 待处理${if (record.optJSONObject("ocr")?.optString("reason") == "charging") " · 等待充电" else ""}"
         "completed" -> "OCR 已完成"

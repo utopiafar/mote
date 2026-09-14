@@ -25,6 +25,7 @@ object RuntimeSettings {
         val wasEnabled = settings.enabled
         try {
             CaptureAccessibilityService.instance?.stopCapture()
+            MediaCollectionService.suspendObservation()
             ProjectionService.instance?.pauseForConfiguration()
             settings.status(if (wasEnabled) "capturing" else "paused", "正在应用设置，已有记录保持加密保存")
         } catch (error: Exception) {
@@ -52,11 +53,14 @@ object RuntimeSettings {
             main.post {
                 val applied = runCatching {
                     val config = current.getOrThrow()
+                    if (!config.screenCollectionEnabled && !(config.mediaCollectionEnabled && config.metadataEnabled)) settings.enabled = false
                     val resume = wasEnabled && settings.enabled
                     var needsConsent = false
-                    when (captureResume(wasEnabled, settings.enabled, config.effectiveMode(), ProjectionService.instance != null)) {
+                    when (captureResume(wasEnabled, settings.enabled, if (config.screenCollectionEnabled) config.effectiveMode() else "accessibility", ProjectionService.instance != null)) {
                         CaptureResume.EXISTING_PROJECTION -> ProjectionService.instance!!.applyConfiguration(config)
-                        CaptureResume.NEW_PROJECTION -> { settings.enabled = false; needsConsent = true }
+                        CaptureResume.NEW_PROJECTION -> {
+                            if (!(config.mediaCollectionEnabled && config.metadataEnabled)) { settings.enabled = false; needsConsent = true }
+                        }
                         CaptureResume.ACCESSIBILITY -> {
                             ProjectionService.instance?.finishForModeChange()
                             CaptureAccessibilityService.instance?.stopCapture()
@@ -68,6 +72,7 @@ object RuntimeSettings {
                     Applied(needsConsent)
                 }.onFailure { settings.enabled = false; settings.status("error", "采集恢复失败：${it.message ?: "请检查权限和所选存储位置"}") }
                 ConnectionGuard.endReconfiguration()
+                MediaCollectionService.refresh()
                 if (result.isSuccess && applied.getOrNull()?.projectionConsentRequired == true) projectionConsent.request()
                 val scheduled = runCatching {
                     if (applied.isSuccess) current.getOrNull()?.let { config ->

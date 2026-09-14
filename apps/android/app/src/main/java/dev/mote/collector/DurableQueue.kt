@@ -80,11 +80,15 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val id = UUID.fromString(event.getString("id")).toString()
         val file = File(dir, "$id.event")
         val source = event.optString("source", "screen")
-        if (image == null) require(source in setOf("note", "activity") && !event.has("imageMime") && !event.has("imageBase64")) { "Only notes or activity can omit images" }
+        if (image == null) require(source in setOf("note", "activity", "media") && !event.has("imageMime") && !event.has("imageBase64")) { "Only notes, activity or media can omit images" }
         if (source == "activity") {
             require(image == null && event.getJSONObject("privacy").optString("collection") == "activity" && event.optString("appId").isNotBlank())
             require(listOf("ocrText", "title", "windowTitle", "mood", "provenance", "imageMime", "imageBase64").none(event::has)) { "Activity must not contain content" }
             event.optJSONObject("metadata")?.optJSONObject("capture")?.let { require(it.keys().asSequence().all { key -> key == "intervalMs" }) }
+        }
+        if (source == "media") { require(image == null); MediaPrivacy.validateEvent(event) }
+        if (source == "activity") event.optJSONObject("metadata")?.optJSONObject("media")?.optJSONArray("sessions")?.let { sessions ->
+            for (i in 0 until sessions.length()) require(MediaPrivacy.contentKeys.none(sessions.getJSONObject(i)::has))
         }
         val hash = image?.let { MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { byte -> "%02x".format(byte) } }
         val stored = JSONObject(event.toString()).put("_blob", hash)
@@ -95,14 +99,14 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (bytes() + added + ocrReserve(stored) > maxBytes) throw QueueFull()
         if (blob != null && !blob.exists()) atomic(blob, image!!)
         atomic(file, body)
-        onChange?.invoke(when (source) { "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
+        onChange?.invoke(when (source) { "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
     }
     fun peek(): JSONObject? = guarded {
         val file = records().firstOrNull { val event = read(it); !event.optBoolean("_uploaded") && !syncFailed(event) } ?: return null
         val event = read(file)
         localFields.forEach(event::remove)
         val hash = event.optString("_blob", "")
-        if (hash.isEmpty()) { require(event.getString("source") in setOf("note", "activity")); event.remove("_blob"); return event }
+        if (hash.isEmpty()) { require(event.getString("source") in setOf("note", "activity", "media")); event.remove("_blob"); return event }
         require(hash.matches(Regex("[a-f0-9]{64}")))
         event.remove("_blob")
         event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
@@ -115,7 +119,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (record.optBoolean("_uploaded")) return
         if (record.optJSONObject("ocr")?.optString("status") == "pending") atomic(file, record.put("_uploaded", true).toString().toByteArray())
         else remove(file, record)
-        onChange?.invoke(when (record.optString("source")) { "activity" -> OperationKind.ACTIVITY_ACK; "note" -> OperationKind.NOTE_ACK; else -> OperationKind.SCREEN_ACK }, uploadedBytes, id)
+        onChange?.invoke(when (record.optString("source")) { "media" -> OperationKind.MEDIA_ACK; "activity" -> OperationKind.ACTIVITY_ACK; "note" -> OperationKind.NOTE_ACK; else -> OperationKind.SCREEN_ACK }, uploadedBytes, id)
     }
     private fun remove(file: File, record: JSONObject) {
         val hash = record.optString("_blob", "")
@@ -192,12 +196,14 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         event.remove("_blob"); localFields.forEach(event::remove)
         return event
     }
-    fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20): JSONObject = guarded {
+    fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
+    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen"): JSONObject = guarded {
         require(limit in 1..60)
+        require(source in setOf("screen", "media"))
         val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
         val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
         val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
-        val matching = records().asSequence().map(::read).filter { it.optString("source", "screen") == "screen" }
+        val matching = records().asSequence().map(::read).filter { it.optString("source", "screen") == source }
             .filter { java.time.Instant.parse(it.getString("capturedAt")).let { date -> date >= start && date < end } }
             .sortedWith(compareByDescending<JSONObject> { java.time.Instant.parse(it.getString("capturedAt")) }.thenByDescending { it.getString("id") }).toList()
         val page = matching.filter { item -> at == null || java.time.Instant.parse(item.getString("capturedAt")).let { date -> date < at || (date == at && item.getString("id") < id!!) } }.take(limit + 1)
@@ -209,16 +215,16 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
     }
     fun summary(): JSONObject = guarded {
-        val files = records(); var screens = 0; var notes = 0; var activities = 0; var unreadable = 0
+        val files = records(); var screens = 0; var notes = 0; var activities = 0; var media = 0; var unreadable = 0
         val pending = org.json.JSONArray()
         files.take(100).forEach { file -> try {
             val body = read(file); val source = body.optString("source", "screen"); val id = UUID.fromString(body.getString("id")).toString()
             val at = java.time.Instant.parse(body.getString("capturedAt")).toString()
-            when (source) { "screen" -> screens++; "note" -> notes++; "activity" -> activities++; else -> error("unknown") }
+            when (source) { "screen" -> screens++; "note" -> notes++; "activity" -> activities++; "media" -> media++; else -> error("unknown") }
             pending.put(JSONObject().put("id", id).put("kind", source).put("createdAt", at).put("bytes", file.length())
                 .put("uploaded", body.optBoolean("_uploaded")).put("archiveMissing", body.optBoolean("_archiveMissing")))
         } catch (_: Exception) { unreadable++ } }
-        JSONObject().put("total", files.size).put("screens", screens).put("notes", notes).put("activities", activities).put("unreadable", unreadable)
+        JSONObject().put("total", files.size).put("screens", screens).put("notes", notes).put("activities", activities).put("media", media).put("unreadable", unreadable)
             .put("uninspected", (files.size - 100).coerceAtLeast(0)).put("bytes", diskBytes()).put("reservedOcrBytes", reservedOcrBytes()).put("pending", pending)
     }
     fun verifyIntegrity() = guarded {
@@ -227,7 +233,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val event = read(file)
             check(file.nameWithoutExtension == UUID.fromString(event.getString("id")).toString()) { "记录 ID 与存储文件不匹配" }
             val hash = event.optString("_blob", "")
-            if (hash.isEmpty()) { check(event.getString("source") in setOf("note", "activity")); continue }
+            if (hash.isEmpty()) { check(event.getString("source") in setOf("note", "activity", "media")); continue }
             check(hash.matches(Regex("[a-f0-9]{64}"))) { "图片引用无效" }
             if (checked.add(hash)) {
                 val blob = File(dir, "$hash.blob")

@@ -37,7 +37,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     }
     fun canCapture(config: CollectorConfig, windows: WindowSnapshot) = canCollect(config, windows, AppCollectionMode.CONTENT)
     fun canCollect(config: CollectorConfig, windows: WindowSnapshot, expected: AppCollectionMode): Boolean {
-        if (closed || ConnectionGuard.changing() || !settings.enabled || busy.get()) return false
+        if (closed || !config.screenCollectionEnabled || ConnectionGuard.changing() || !settings.enabled || busy.get()) return false
         val selected = policy(config, windows)
         if (selected == AppCollectionMode.OFF) { pause(if (!windows.trustworthy) "当前应用规则要求完整窗口信息，暂停本次采样" else "当前可见窗口的应用规则不允许本次采样", if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
         if (selected != expected) return false
@@ -70,7 +70,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .put("deviceName", config.deviceName).put("platform", "android").put("capturedAt", capturedAt).put("durationMs", duration)
                     .put("appId", appId).put("appName", CollectorMetadata.appName(context, appId)).put("source", "activity")
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
-                    .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L)) }
+                    .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
                 settings.ensureDataOrigin(config)
                 context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null

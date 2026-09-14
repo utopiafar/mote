@@ -77,6 +77,9 @@ class MainActivity : Activity() {
     private lateinit var appDefault: Spinner
     private lateinit var appPolicies: EditText
     private lateinit var metadataEnabled: CheckBox
+    private lateinit var mediaCollectionEnabled: CheckBox
+    private lateinit var screenCollectionEnabled: CheckBox
+    private lateinit var mediaStatus: TextView
     private lateinit var jpegQuality: EditText
     private lateinit var captureMaxSide: EditText
     private lateinit var batteryBelow: EditText
@@ -99,7 +102,7 @@ class MainActivity : Activity() {
     private var statusLoading = false
     private var resumed = false
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
-        val totals: String, val technical: String, val connection: String, val model: String)
+        val totals: String, val technical: String, val connection: String, val model: String, val media: String)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 2000) }
     }
@@ -265,6 +268,20 @@ class MainActivity : Activity() {
 
     private fun buildCapture(config: CollectorConfig) {
         page(Page.CAPTURE, "在记录密度、清晰度和耗电之间找到平衡")
+        section("采集来源")
+        screenCollectionEnabled = check("采集屏幕与前台应用活动", config.screenCollectionEnabled)
+        mediaCollectionEnabled = check("采集媒体播放状态（需通知使用权）", config.mediaCollectionEnabled)
+        text("媒体采集可单独开启，在前台、后台和锁屏时观察播放器公开的状态、应用及曲目/章节信息；不录音、不控制播放，不读取普通通知。使用概览页的开始/暂停控制采集。媒体沿用应用隐私规则、电量限制和同步策略；关闭元数据会同时暂停媒体。", 13, MoteUi.muted)
+        mediaStatus = text("媒体状态正在读取…", 13, MoteUi.muted)
+        button("授权媒体播放状态") { mediaPermission() }
+        button("重新授权投屏（已开启的媒体可继续）") {
+            val c = settings.read()
+            if (!c.screenCollectionEnabled || c.effectiveMode() != "projection") toast("请先启用屏幕采集并保存投屏模式")
+            else if (ProjectionService.running) toast("投屏会话正在运行")
+            else if (!settings.enabled) startCapture()
+            else requestProjectionConsent()
+        }
+        text("约每30秒及状态变化时记录。系统休眠、终止服务或播放器未公开媒体会话时可能缺失；仅统计连续观测的播放时段。", 13, MoteUi.muted)
         section("采样与空间")
         interval = presetNumber("采集间隔 / 秒", config.intervalSeconds, "30", 5..300, listOf(5, 15, 30, 60, 120, 300))
         menu("图片保存位置", "选择应用存储空间并迁移已有记录", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
@@ -275,7 +292,7 @@ class MainActivity : Activity() {
         section("画面质量与电量")
         jpegQuality = presetNumber("图像质量 · 数值越高清晰度越高", config.jpegQuality, "75", 40..95, listOf(50, 65, 75, 85, 95))
         captureMaxSide = presetNumber("图片最长边 / px", config.captureMaxSide, "1280", 640..2560, listOf(640, 960, 1280, 1920, 2560))
-        chargingOnly = check("仅充电时截图", config.chargingOnly)
+        chargingOnly = check("仅充电时采集屏幕、活动和媒体", config.chargingOnly)
         ocrChargingOnly = check("仅充电时 OCR", config.ocrChargingOnly)
         text("开启后，电池供电时继续采集、遮罩、保存和同步图片；充电后自动补做文字识别，并按同步设置更新中央归档。待识别图片在本机保留，并为识别文字预留空间，均计入存储上限。", 13, MoteUi.muted)
         batteryBelow = presetNumber("低于此电量暂停 / % · 0 为关闭", config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
@@ -450,6 +467,7 @@ class MainActivity : Activity() {
                 .setMessage(getString(R.string.accessibility_description) + "\n\n继续后请在系统设置中选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。")
                 .setNegativeButton("取消", null).setPositiveButton("打开系统设置") { _, _ -> safeOpen(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
         }
+        button("授权媒体播放状态（通知使用权）") { mediaPermission() }
         rowButtons("通知权限", { notifications() }, "使用情况权限", { safeOpen(Intent(SystemSettings.ACTION_USAGE_ACCESS_SETTINGS)) })
         rowButtons("电池优化设置", { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }, "自启动设置", { autostart() })
         button("应用详情 / 受限制设置") { safeOpen(detailsIntent()) }
@@ -490,7 +508,7 @@ class MainActivity : Activity() {
         checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } }, http.isChecked,
         if (projectionMode.isChecked) "projection" else "accessibility", nsfwDraft(), number(jpegQuality, 40..95), number(captureMaxSide, 640..2560),
         chargingOnly.isChecked, number(batteryBelow, 0..95), diagnosticEnabled.isChecked, number(diagnosticInterval, 15..3600),
-        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500), ocrChargingOnly.isChecked)
+        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500), ocrChargingOnly.isChecked, mediaCollectionEnabled.isChecked, screenCollectionEnabled.isChecked)
     private fun nsfwDraft(): NsfwConfig {
         val value = NsfwConfig(enabled = nsfwEnabled.isChecked, threads = number(nsfwThreads, 1..8),
             timeoutMs = number(nsfwTimeout, 5000..180000).toLong(), source = nsfwSources[nsfwSource.selectedItemPosition],
@@ -557,6 +575,17 @@ class MainActivity : Activity() {
     private fun startConfiguredCapture() {
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { notifications(); toast("请先允许通知，然后再次点击开始"); return }
         val c = settings.read()
+        if (!c.screenCollectionEnabled) {
+            if (!c.mediaCollectionEnabled || !c.metadataEnabled) { showPage(Page.CAPTURE); toast("请启用媒体采集及元数据，或启用屏幕采集"); return }
+            if (!MediaCollection.permissionAllowed(this)) { mediaPermission(); return }
+            if (!ConnectionGuard.startCapture(this, SourceRules.hash(c.toString())) {
+                Operations.record(this, OperationKind.CAPTURE_STARTED)
+                settings.status("capturing", "媒体采集已启用；等待系统媒体会话")
+            }) { toast("配置已变化，请重试"); return }
+            MediaCollectionService.refresh()
+            if (!MediaCollectionService.connected) android.service.notification.NotificationListenerService.requestRebind(ComponentName(this, MediaCollectionService::class.java))
+            refreshStatus(); return
+        }
         if (c.effectiveMode() == "accessibility") {
             if (Build.VERSION.SDK_INT < 30 && AppCollectionRules.parse(c.appCollectionRules).mayCollectContent()) { toast("Android 10 内容截图请勾选投屏模式；仅活动无需投屏"); return }
             if (!CaptureAccessibilityService.connected) { showPage(Page.PERMISSIONS); toast("请先启用无障碍截图服务，返回后再开始"); return }
@@ -568,12 +597,19 @@ class MainActivity : Activity() {
             if (!CaptureAccessibilityService.connected && AppCollectionRules.parse(c.appCollectionRules).requiresWindowIdentity(PrivacyRules.exclusions(c.excludedPackages))) {
                 showPage(Page.PERMISSIONS); toast("分级采集需要可靠窗口身份，请先启用无障碍服务；不会读取控件文字"); return
             }
-            val manager = getSystemService(MediaProjectionManager::class.java)
-            val intent = if (Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
-            projectionRequestStamp = SourceRules.hash(c.toString())
-            @Suppress("DEPRECATION") startActivityForResult(intent, 100)
+            requestProjectionConsent()
         }
         refreshStatus()
+    }
+    private fun requestProjectionConsent() {
+        val c = settings.read()
+        if (!CaptureAccessibilityService.connected && AppCollectionRules.parse(c.appCollectionRules).requiresWindowIdentity(PrivacyRules.exclusions(c.excludedPackages))) {
+            showPage(Page.PERMISSIONS); toast("分级采集需要可靠窗口身份，请先启用无障碍服务"); return
+        }
+        val manager = getSystemService(MediaProjectionManager::class.java)
+        val intent = if (Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
+        projectionRequestStamp = SourceRules.hash(c.toString())
+        @Suppress("DEPRECATION") startActivityForResult(intent, 100)
     }
     private fun resumeProjectionAfterSettings() {
         if (RuntimeSettings.takeProjectionConsentRequest()) startConfiguredCapture()
@@ -604,11 +640,18 @@ class MainActivity : Activity() {
         }
         if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
             val stamp = projectionRequestStamp; projectionRequestStamp = null
-            if (stamp == null || !ConnectionGuard.startCapture(this, stamp) {
+            val startProjection = {
                 startForegroundService(Intent(this, ProjectionService::class.java).putExtra("result", resultCode).putExtra("consent", data).putExtra("configurationStamp", stamp))
                 Operations.record(this, OperationKind.CAPTURE_STARTED)
-            }) settings.status("permission_required", "节点或采集配置已变化，本次授权已丢弃；请重新点击开始")
-        } else if (requestCode == 100) settings.status("permission_required", "你未授予投屏权限，未开始截图")
+            }
+            val started = stamp != null && if (settings.enabled) ConnectionGuard.sync {
+                val c = settings.read()
+                if (stamp == SourceRules.hash(c.toString()) && c.screenCollectionEnabled && c.effectiveMode() == "projection" && c.mediaCollectionEnabled && c.metadataEnabled && !ProjectionService.running) {
+                    startProjection(); true
+                } else false
+            } == true else ConnectionGuard.startCapture(this, stamp, startProjection)
+            if (!started) settings.status(if (settings.enabled) "capturing" else "permission_required", "节点或采集配置已变化，本次授权已丢弃；请重新点击开始")
+        } else if (requestCode == 100) settings.status(if (settings.enabled) "capturing" else "permission_required", "你未授予投屏权限，未开始截图" + if (settings.enabled) "；媒体采集继续运行" else "")
     }
     private fun stopCapture() {
         RuntimeSettings.cancelProjectionConsentRequest()
@@ -618,7 +661,8 @@ class MainActivity : Activity() {
         settings.status("paused", "你已停止采集，已有记录保留，同步按所选策略运行")
         stopService(Intent(this, ProjectionService::class.java))
         CaptureAccessibilityService.instance?.stopCapture()
-        Notifications.clear(this)
+        Notifications.clear(this); Notifications.clearMedia(this)
+        MediaCollection.clear(); MediaCollectionService.refresh()
         runCatching { UploadWorker.schedule(this, settings.read()) }
         refreshStatus()
     }
@@ -641,6 +685,7 @@ class MainActivity : Activity() {
                     status.text = snapshot.status; syncStatus.text = snapshot.sync
                     totalsStatus.text = snapshot.totals; technicalStatus.text = snapshot.technical
                     connectionSummary.text = snapshot.connection; nsfwStatus.text = snapshot.model
+                    mediaStatus.text = snapshot.media
                     updateSaveBar()
                 }.onFailure { status.text = "状态暂不可读取，已有记录保留在本机" }
             }
@@ -649,14 +694,15 @@ class MainActivity : Activity() {
     private fun readStatus(): StatusSnapshot {
         val c = runCatching { settings.read() }.getOrNull()
         if (c != null) runCatching { Diagnostics(this).sample(c) }
-        val live = if (c?.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected
+        val screenLive = c?.screenCollectionEnabled == true && (if (c.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
+        val live = screenLive || (c?.mediaCollectionEnabled == true && c.metadataEnabled && MediaCollectionService.connected)
         val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else settings.message()
         val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
-        val totals = if (stats == null) "统计暂不可读取" else "本周期保存截图 ${stats.optLong("SCREEN_QUEUED")} · 应用活动 ${stats.optLong("ACTIVITY_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
+        val totals = if (stats == null) "统计暂不可读取" else "本周期保存截图 ${stats.optLong("SCREEN_QUEUED")} · 应用活动 ${stats.optLong("ACTIVITY_QUEUED")} · 媒体 ${stats.optLong("MEDIA_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED") + stats.optLong("MEDIA_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
         val queueStats = runCatching { queue().stats() }.getOrNull()
         val pending = runCatching { queueStats?.pendingSync?.count?.plus(localSources().pendingSync().count) }.getOrNull()
         val bytes = queueStats?.bytes?.div(1024.0 * 1024)
-        val modelMissing = c != null && c.nsfw.enabled && AppCollectionRules.parse(c.appCollectionRules).mayCollectContent() && !NsfwModelStore(this).hasFile()
+        val modelMissing = c != null && c.screenCollectionEnabled && c.nsfw.enabled && AppCollectionRules.parse(c.appCollectionRules).mayCollectContent() && !NsfwModelStore(this).hasFile()
         val queueFull = c != null && bytes != null && bytes >= c.maxQueueMiB
         val title = when {
             settings.enabled && !live -> "等待采集权限"
@@ -676,11 +722,18 @@ class MainActivity : Activity() {
             else -> settings.uploadStatus()
         }
         val syncText = "${pending?.let { "待同步 $it 条" } ?: "队列暂不可读取"}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}\n$syncMessage"
-        val totalsText = if (stats == null) "统计暂不可读取" else "截图 ${stats.optLong("SCREEN_QUEUED")}    活动 ${stats.optLong("ACTIVITY_QUEUED")}    随手记 ${stats.optLong("NOTE_QUEUED")}\n本周期已同步 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK")} 条"
+        val totalsText = if (stats == null) "统计暂不可读取" else "截图 ${stats.optLong("SCREEN_QUEUED")}    活动 ${stats.optLong("ACTIVITY_QUEUED")}    媒体 ${stats.optLong("MEDIA_QUEUED")}    随手记 ${stats.optLong("NOTE_QUEUED")}\n本周期已同步 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")} 条"
         val technicalText = "$state\n$totals\n$syncText\n${settings.uploadStatus()}\n无障碍 ${if (CaptureAccessibilityService.connected) "已连接" else "未连接"} · 使用情况 ${if (ForegroundApps.usageAllowed(this)) "已授权" else "未授权"}\n最近采集 ${settings.lastCapture() ?: "无"}"
         val connectionText = if (c?.server.isNullOrBlank()) "尚未连接中央节点，请导入邀请或填写下方设置。" else "已保存节点：${c?.server}"
         val model = NsfwModelStore(this)
-        return StatusSnapshot(title, action, state, syncText, totalsText, technicalText, connectionText, "${model.status()}\n${model.inferenceStatus()}")
+        return StatusSnapshot(title, action, state, syncText, totalsText, technicalText, connectionText, "${model.status()}\n${model.inferenceStatus()}", MediaCollection.statusLabel(this))
+    }
+    private fun mediaPermission() {
+        AlertDialog.Builder(this).setTitle("媒体播放状态授权")
+            .setMessage("Android 通过通知使用权允许读取其他应用公开的媒体会话。Mote 仅观察播放器状态，不读取普通通知正文、不录音或控制播放。授权后仍需开启媒体采集并点击开始；各应用的“不记录”和“仅活动”规则同样适用。")
+            .setNegativeButton("取消", null).setPositiveButton("打开系统设置") { _, _ ->
+                safeOpen(Intent(SystemSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            }.show()
     }
     private fun notifications() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)

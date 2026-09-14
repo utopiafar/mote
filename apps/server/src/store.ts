@@ -6,12 +6,18 @@ import sharp, { type Metadata } from 'sharp';
 import {z} from 'zod';
 import { sourceConnectionSchema, sourceItemSchema, captureSchema, captureOcrState, type CapturePreview, type OcrState, type CaptureInput, type CaptureRecord, type Heartbeat, type DeviceRecord, type Activity } from '@mote/shared';
 import {privateDirectory,privateFile} from './private-storage.js';
+import {mediaActivity,type MediaActivityRange} from './media-activity.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
 export type Range = {after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
 type Row = {id:string;json:string;received_at:string;blob_hash:string|null;mime:string|null;index_status:CaptureRecord['indexingStatus'];summary:string|null};
+// Media evidence is searchable without rewriting the original screenshot OCR.
+function searchText(record:Pick<CaptureInput,'appId'|'appName'|'windowTitle'|'ocrText'|'mood'|'metadata'>) {
+  return [record.appId,record.appName,record.windowTitle,record.ocrText,record.mood,
+    ...(record.metadata?.media?.sessions??[]).flatMap(s=>[s.appId,s.appName,s.title,s.artist,s.album,s.displaySubtitle,s.mediaId])].filter(Boolean).join('\n');
+}
 export class Store {
   db:DatabaseSync;
   blobsDir:string;
@@ -55,6 +61,15 @@ export class Store {
     const expected=this.key ? sha256(this.key) : 'none';
     if(marker && marker.value!==expected) {this.db.close();throw new Error('Vault encryption key mismatch. Restore the original MOTE_DATA_KEY; do not change keys on an existing vault.');}
     this.db.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)').run('encryption',expected);
+    this.db.function('mote_search_text',{deterministic:true},json=>searchText(JSON.parse(String(json))));
+    if(!this.db.prepare('SELECT value FROM settings WHERE key=? AND value=?').get('search_text_version','2')){
+      this.db.exec('BEGIN IMMEDIATE');
+      try{
+        this.db.exec('DELETE FROM captures_fts; INSERT INTO captures_fts(id,text) SELECT id,mote_search_text(json) FROM captures');
+        this.db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run('search_text_version','2');
+        this.db.exec('COMMIT');
+      }catch(error){this.db.exec('ROLLBACK');this.db.close();throw error;}
+    }
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
     this.sweep();
   }
@@ -66,13 +81,16 @@ export class Store {
     if(range.after) {clauses.push('captured_at >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push('captured_at < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
-    if(range.appId!==undefined) {clauses.push("json_extract(json,'$.appId') = ?");values.push(range.appId);}
+    if(range.appId!==undefined) {
+      clauses.push("((json_extract(json,'$.source') != 'media' AND json_extract(json,'$.appId') = ?) OR (json_extract(json,'$.source') = 'media' AND EXISTS (SELECT 1 FROM json_each(captures.json,'$.metadata.media.sessions') AS session WHERE json_extract(session.value,'$.appId') = ?)))");
+      values.push(range.appId,range.appId);
+    }
     if(range.source) {clauses.push("json_extract(json,'$.source') = ?");values.push(range.source);}
     if(range.ocrStatus) {
       clauses.push('mote_ocr_status(json) = ?');
       values.push(range.ocrStatus);
     }
-    if(range.collection==='activity')clauses.push("json_extract(json,'$.source') = 'activity'");
+    if(range.collection==='activity')clauses.push("json_extract(json,'$.privacy.collection') = 'activity'");
     if(range.collection==='content')clauses.push("json_extract(json,'$.source') != 'activity' AND COALESCE(json_extract(json,'$.privacy.collection'),'content') = 'content'");
     if(range.cursor) {
       try {const c=JSON.parse(Buffer.from(range.cursor,'base64url').toString());if(typeof c.t!=='string'||typeof c.id!=='string')throw Error();clauses.push('(captured_at < ? OR (captured_at = ? AND id < ?))');values.push(c.t,c.t,c.id);}catch {throw new StoreError('Invalid pagination cursor');}
@@ -139,7 +157,7 @@ export class Store {
     const receivedAt=p.receivedAt??new Date().toISOString();
     this.db.prepare('INSERT INTO captures(id,device_id,captured_at,received_at,json,fingerprint,blob_hash,mime,index_status) VALUES(?,?,?,?,?,?,?,?,?)')
       .run(p.input.id,p.input.deviceId,p.input.capturedAt,receivedAt,json,p.fingerprint,p.hash,imageMime??null,status);
-    this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(p.input.id,[p.input.appName,p.input.windowTitle,p.input.ocrText,p.input.mood??''].join('\n'));
+    this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(p.input.id,searchText(p.input));
     this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(p.input.id,'upsert',new Date().toISOString());
     const device=this.db.prepare('SELECT json FROM devices WHERE id=?').get(p.input.deviceId) as {json:string}|undefined;
     if(!device)this.heartbeat({deviceId:p.input.deviceId,deviceName:p.input.deviceName,platform:p.input.platform,status:'offline',queueDepth:0,lastCaptureAt:p.input.capturedAt,...(p.input.metadata?{metadata:p.input.metadata}:{})});
@@ -193,7 +211,9 @@ export class Store {
     const page=this.list(range);
     const items:CapturePreview[]=page.items.map(record=>({id:record.id,deviceId:record.deviceId,deviceName:record.deviceName,platform:record.platform,
       capturedAt:record.capturedAt,source:record.source,appId:record.appId,appName:record.appName,windowTitle:record.windowTitle.slice(0,300),
-      durationMs:record.durationMs,hasImage:Boolean(record.blobHash),ocr:captureOcrState(record),textPreview:record.ocrText.slice(0,160)}));
+      durationMs:record.durationMs,hasImage:Boolean(record.blobHash),ocr:captureOcrState(record),
+      ...(record.metadata?.media?{media:record.metadata.media}:{}),
+      textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:'未观察到媒体会话',disabled:'媒体采集已关闭',permission_required:'媒体权限未授予',unavailable:'媒体信息暂不可用'}[record.metadata?.media?.status??'unavailable'])):record.ocrText).slice(0,160)}));
     return {...page,items};
   }
   completeOcr(id:string,update:{status:'completed'|'failed';ocrText:string}) {
@@ -218,7 +238,7 @@ export class Store {
       this.db.prepare('UPDATE captures SET json=?,fingerprint=?,index_status=?,embedding=NULL,embedding_model=NULL,summary=NULL,index_error=NULL,attempts=0 WHERE id=?')
         .run(json,fingerprint,this.options.embeddingEnabled&&update.ocrText.trim()?'pending':'text_ready',id);
       this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(id);
-      this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(id,[next.appName,next.windowTitle,next.ocrText,next.mood??''].join('\n'));
+      this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(id,searchText(next));
       this.db.exec("DELETE FROM insights; UPDATE memories SET json=json_set(json,'$.status','stale')");
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,ocr.updatedAt);
       this.db.exec('COMMIT');return {id,ocr,duplicate:false};
@@ -231,8 +251,8 @@ export class Store {
     // Generic lexical primitive. The Agent, never keyword intent routing, chooses search expressions.
     const ids=this.db.prepare(`SELECT id FROM captures_fts WHERE captures_fts MATCH ? ORDER BY rank LIMIT 500`).all(terms) as {id:string}[];
     const placeholders=ids.map(()=>'?').join(',');
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}(instr(lower(json_extract(json,'$.ocrText')),lower(?))>0 OR instr(lower(json_extract(json,'$.appName')),lower(?))>0 OR instr(lower(COALESCE(json_extract(json,'$.mood'),'')),lower(?))>0${ids.length?` OR id IN (${placeholders})`:''}) ORDER BY captured_at DESC,id DESC LIMIT ?`)
-      .all(...values,query,query,query,...ids.map(i=>i.id),Math.min(range.limit??50,200)) as unknown as Row[];
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}(instr(lower(mote_search_text(json)),lower(?))>0${ids.length?` OR id IN (${placeholders})`:''}) ORDER BY captured_at DESC,id DESC LIMIT ?`)
+      .all(...values,query,...ids.map(i=>i.id),Math.min(range.limit??50,200)) as unknown as Row[];
     return rows.map(r=>this.record(r));
   }
   vectorSearch(vector:number[], model:string, range:Range={}) {
@@ -288,14 +308,23 @@ export class Store {
     }
     return {apps:[...apps.values()].sort((a,b)=>b.durationMs-a.durationMs),devices:[...devices.values()],totalDurationMs,captures,activityEvents,contentCaptures};
   }
+  mediaActivity(range:MediaActivityRange={}) {
+    // Intervals end at capturedAt and can overlap the exclusive upper bound.
+    // Snapshot metadata on screen/activity events never participates in media accounting.
+    const {where,values}=this.clauses({deviceId:range.deviceId,source:'media',after:range.after,before:range.before?new Date(Date.parse(range.before)+60000).toISOString():undefined});
+    // SQLite sorts interval starts before streaming; rich session metadata is parsed one row at a time.
+    const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY unixepoch(captured_at,'subsec')*1000-json_extract(json,'$.durationMs') ASC,captured_at ASC,id ASC`).iterate(...values);
+    const record=this.record.bind(this);
+    return mediaActivity((function*(){for(const row of rows)yield record(row as unknown as Row);})(),range);
+  }
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() {return Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n)+Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM (SELECT json FROM captures UNION ALL SELECT json FROM memories UNION ALL SELECT json FROM source_connections)').get() as {n:number}).n);}
   stats() {
-    const counts=this.db.prepare("SELECT COUNT(*) AS captures, COUNT(blob_hash) AS imageCaptures, SUM(CASE WHEN json_extract(json,'$.source')='activity' THEN 1 ELSE 0 END) AS activityEvents, MIN(captured_at) AS firstCaptureAt,MAX(captured_at) AS lastCaptureAt FROM captures").get() as {captures:number;imageCaptures:number;activityEvents:number|null;firstCaptureAt:string|null;lastCaptureAt:string|null};
+    const counts=this.db.prepare("SELECT COUNT(*) AS captures, COUNT(blob_hash) AS imageCaptures, SUM(CASE WHEN json_extract(json,'$.source')='activity' THEN 1 ELSE 0 END) AS activityEvents, SUM(CASE WHEN json_extract(json,'$.source')='media' THEN 1 ELSE 0 END) AS mediaEvents, MIN(captured_at) AS firstCaptureAt,MAX(captured_at) AS lastCaptureAt FROM captures").get() as {captures:number;imageCaptures:number;activityEvents:number|null;mediaEvents:number|null;firstCaptureAt:string|null;lastCaptureAt:string|null};
     const blob=this.db.prepare('SELECT COUNT(*) AS blobs,COALESCE(SUM(bytes),0) AS imageBytes FROM blobs').get() as {blobs:number;imageBytes:number};
     const indexing=this.db.prepare('SELECT index_status AS status,COUNT(*) AS count FROM captures GROUP BY index_status').all();
     const physicalBytes=[join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p))].reduce((n,p)=>n+(existsSync(p)?statSync(p).size:0),0);
-    return {...counts,activityEvents:counts.activityEvents??0,...blob,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:Boolean(this.key)};
+    return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:Boolean(this.key)};
   }
   exportArchive(maxBytes:number) {
     const stats=this.stats() as {logicalBytes:number;captures:number};

@@ -12,7 +12,7 @@ import type { Config } from '../apps/server/src/config.js';
 const dir=await mkdtemp(join(tmpdir(),'mote-e2e-'));const id=randomUUID();const noteId=randomUUID();let rounds=0;
 const fixtureModel=createServer(async(req,res)=>{
   let raw='';for await(const c of req)raw+=c;
-  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.function.name).sort(),['activity','devices','evidence','memories','search_context','source_history','source_items','sources','timeline']);
+  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.function.name).sort(),['activity','devices','evidence','media_activity','memories','search_context','source_history','source_items','sources','timeline']);
   const stage=(body.messages??[]).filter((message:any)=>message.role==='tool').length;rounds++;
   const tool=stage===0?{name:'search_context',arguments:JSON.stringify({query:'orbital observatory'})}:stage===1?{name:'evidence',arguments:JSON.stringify({ids:[id,noteId]})}:null;
   const delta=tool?{role:'assistant',tool_calls:[{index:0,id:`tool-${stage}`,type:'function',function:tool}]}:{role:'assistant',content:JSON.stringify({answer:`这是合成测试：阅读了 orbital observatory 的资料。[${id}] 也主动记录了复盘笔记。[${noteId}]`,citationIds:[id,noteId]})};

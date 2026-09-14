@@ -35,8 +35,7 @@ class ProjectionService : Service() {
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() {
             RuntimeSettings.cancelProjectionConsentRequest()
-            settings.enabled = false
-            settings.status("permission_required", "投屏授权已结束（锁屏、系统或用户停止），请打开应用重新授权")
+            projectionEnded("投屏授权已结束（锁屏、系统或用户停止），请打开应用重新授权")
             stopSelf()
         }
         override fun onCapturedContentResize(width: Int, height: Int) {
@@ -50,8 +49,7 @@ class ProjectionService : Service() {
             if (!settings.enabled) { stopSelf(); return }
             UploadWorker.heartbeat(this@ProjectionService, c)
             if (!CapturePipeline.unlocked(this@ProjectionService)) {
-                settings.enabled = false
-                settings.status("permission_required", "已锁屏，投屏采集结束；解锁后请重新授权")
+                projectionEnded("已锁屏，投屏采集结束；解锁后请重新授权")
                 stopSelf(); return
             }
             if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
@@ -102,8 +100,7 @@ class ProjectionService : Service() {
             settings.status("capturing", "投屏采集已启动；每次会话都需系统授权")
             handler.post(tick)
         } catch (_: Exception) {
-            settings.enabled = false
-            settings.status("permission_required", "无法启动投屏，请重新点击开始并授予屏幕共享权限")
+            projectionEnded("无法启动投屏，请重新点击开始并授予屏幕共享权限")
             stopSelf()
         }
         return START_NOT_STICKY
@@ -175,6 +172,13 @@ class ProjectionService : Service() {
         pipeline = CapturePipeline(this)
     }
     fun finishForModeChange() { preserveEnabledOnStop = true; stopSelf() }
+    private fun projectionEnded(message: String) {
+        val c = settings.read()
+        preserveEnabledOnStop = settings.enabled && c.mediaCollectionEnabled && c.metadataEnabled
+        if (!preserveEnabledOnStop) settings.enabled = false
+        settings.status(if (preserveEnabledOnStop) "capturing" else "permission_required", message + if (preserveEnabledOnStop) "；媒体采集继续运行" else "")
+        MediaCollectionService.refresh()
+    }
     override fun onDestroy() {
         if (!closed) {
             closed = true; running = false; instance = null

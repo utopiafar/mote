@@ -54,7 +54,7 @@ class CaptureAccessibilityService : AccessibilityService() {
     private fun collectIfEnabled() {
         if (ConnectionGuard.reconfiguring()) return
         val config = settings.read()
-        if (!settings.enabled || config.effectiveMode() != "accessibility") { stopCapture(); return }
+        if (!settings.enabled || !config.screenCollectionEnabled || config.effectiveMode() != "accessibility") { stopCapture(); return }
         UploadWorker.heartbeat(this, config)
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
             settings.enabled = false
@@ -109,7 +109,12 @@ class CaptureAccessibilityService : AccessibilityService() {
         connected = false; instance = null
         handler.removeCallbacksAndMessages(null)
         stopCapture()
-        if (::settings.isInitialized && settings.enabled) settings.status("permission_required", "无障碍服务未连接，等待系统恢复或打开设置重新启用")
+        if (::settings.isInitialized && settings.enabled) {
+            val c = settings.read()
+            val media = c.mediaCollectionEnabled && c.metadataEnabled && MediaCollectionService.connected && MediaCollection.permissionAllowed(this)
+            settings.status(if (media) "capturing" else "permission_required", "无障碍服务未连接，等待系统恢复或打开设置重新启用" + if (media) "；媒体采集继续运行" else "")
+            MediaCollectionService.refresh()
+        }
         if (::settings.isInitialized) runCatching { UploadWorker.schedule(this, settings.read()) }
         super.onDestroy()
     }

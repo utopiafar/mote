@@ -4,6 +4,30 @@ const timestamp = z.string().max(64).datetime({ offset: true });
 const label = z.string().min(1).max(200);
 const bytes = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 
+/** Provider-reported media facts. No inferred genre, activity, or listening intent. */
+export const mediaSessionSchema = z.object({
+  sessionId: z.string().min(1).max(128),
+  appId: z.string().min(1).max(300), appName: label,
+  playbackState: z.enum(['playing', 'paused', 'stopped', 'buffering', 'connecting', 'seeking', 'skipping', 'error', 'none', 'unknown']),
+  appVisibility: z.enum(['foreground', 'background', 'unknown']),
+  playbackType: z.enum(['local', 'remote', 'unknown']),
+  title: z.string().max(1000).optional(), artist: z.string().max(1000).optional(),
+  album: z.string().max(1000).optional(), displaySubtitle: z.string().max(1000).optional(), mediaId: z.string().max(1000).optional(),
+  durationMs: bytes.optional(), positionMs: bytes.optional(), playbackSpeed: z.number().finite().min(-16).max(16).optional(),
+}).strict();
+export type MediaSession = z.infer<typeof mediaSessionSchema>;
+export const mediaMetadataSchema = z.object({
+  status: z.enum(['available', 'disabled', 'permission_required', 'unavailable']),
+  observedAt: timestamp.optional(),
+  sessions: z.array(mediaSessionSchema).max(16),
+}).strict().superRefine((value, ctx) => {
+  if (value.status !== 'available' && value.sessions.length)
+    ctx.addIssue({code:'custom', message:'Unavailable media observations cannot contain sessions'});
+  if (new Set(value.sessions.map(session => session.sessionId)).size !== value.sessions.length)
+    ctx.addIssue({code:'custom', message:'Media session identities must be unique within an observation'});
+});
+export type MediaMetadata = z.infer<typeof mediaMetadataSchema>;
+
 /** Processing state is part of the record, independent of optional device telemetry. */
 export const ocrSchema = z.object({
   status: z.enum(['pending', 'completed', 'disabled', 'failed']),
@@ -26,7 +50,7 @@ export const recordMetadataSchema = z.object({
   observedAt: timestamp,
   collector: z.object({
     version: label.optional(),
-    method: z.enum(['accessibility', 'media_projection', 'screen_capture', 'manual', 'file', 'calendar', 'mcp', 'import']).optional(),
+    method: z.enum(['accessibility', 'media_projection', 'screen_capture', 'media_session', 'manual', 'file', 'calendar', 'mcp', 'import']).optional(),
   }).strict().optional(),
   device: z.object({
     osVersion: label.optional(), osBuild: label.optional(), manufacturer: label.optional(),
@@ -46,6 +70,7 @@ export const recordMetadataSchema = z.object({
     displayScale: z.number().positive().max(16).optional(), ocrEnabled: z.boolean().optional(),
     maskCount: z.number().int().min(0).max(200).optional(),
   }).strict().optional(),
+  media: mediaMetadataSchema.optional(),
 }).strict();
 export type RecordMetadata = z.infer<typeof recordMetadataSchema>;
 

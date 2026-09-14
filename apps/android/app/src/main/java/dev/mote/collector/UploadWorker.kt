@@ -167,7 +167,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
 
 internal object SyncHeartbeat {
     fun send(context: Context, settings: Settings, config: CollectorConfig, queue: DurableQueue) {
-        val runtimeAlive = CaptureAccessibilityService.connected || ProjectionService.running
+        val runtimeAlive = (config.screenCollectionEnabled && (CaptureAccessibilityService.connected || ProjectionService.running)) || (config.mediaCollectionEnabled && config.metadataEnabled && MediaCollectionService.connected)
         val status = if (settings.enabled && !runtimeAlive) "permission_required" else settings.state()
         val body = JSONObject().put("deviceId", settings.deviceId).put("deviceName", config.deviceName).put("platform", "android")
             .put("status", status).put("queueDepth", queue.depth()).put("lastCaptureAt", settings.lastCapture())
@@ -176,7 +176,7 @@ internal object SyncHeartbeat {
                 .put("pendingRecords", SyncSchedule.pending(context).count.coerceAtMost(1_000_000))
                 .apply { settings.lastUploadAt()?.let { put("lastUploadAt", it) }
                     SyncSchedule.delay(context, config)?.takeIf { it > 0 }?.let { put("nextUploadAt", java.time.Instant.ofEpochMilli(System.currentTimeMillis() + it).toString()) } })
-            .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility")) }
+            .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (!config.screenCollectionEnabled) "media_session" else if (config.effectiveMode() == "projection") "media_projection" else "accessibility")) }
         if (status == "permission_required") body.put("error", if (!runtimeAlive && settings.enabled)
             "采集服务未连接，请打开手机应用恢复权限" else settings.message())
         else if (status == "error") body.put("error", settings.message())

@@ -66,7 +66,7 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   const connect=async(token:string)=>{const client=new Client({name:'synthetic-client',version:'1'});clients.push(client);await client.connect(new StreamableHTTPClientTransport(endpoint,{requestInit:{headers:{Authorization:`Bearer ${token}`}}}));return client;};
   const reader=await connect(readToken),writer=await connect(writeToken);
   const names=(await reader.listTools()).tools.map(tool=>tool.name);
-  assert.ok(names.includes('mote_timeline'));assert.ok(names.includes('mote_memories'));assert.ok(names.includes('mote_history'));assert.ok(!names.includes('mote_put_item'));
+  assert.ok(names.includes('mote_timeline'));assert.ok(names.includes('mote_media_activity'));assert.ok(names.includes('mote_memories'));assert.ok(names.includes('mote_history'));assert.ok(!names.includes('mote_put_item'));
   assert.deepEqual((await writer.listTools()).tools.map(tool=>tool.name),['mote_put_item']);
   const refused=await writer.callTool({name:'mote_put_item',arguments:{sourceId:'other',item:item()}});assert.equal(refused.isError,true);assert.equal(sources.listItems({sourceId:'other'}).items.length,0);
   const event={...item('x'.repeat(14000)),metadata:{version:1,file:{sizeBytes:14000,createdAt:'2026-09-01T00:00:00Z'}}};
@@ -95,6 +95,15 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   assert.equal(scoped.totalCount,1);assert.equal(scoped.items[0].id,activityId);assert.equal(scoped.items[0].text,'');assert.equal(scoped.items[0].durationMs,15000);assert.deepEqual(scoped.items[0].metadata,metadata);
   assert.equal(jsonResult(await reader.callTool({name:'mote_search',arguments:{query:'Synthetic',collection:'activity',appId:'synthetic.activity'}})).length,1);
   const activity=jsonResult(await reader.callTool({name:'mote_activity',arguments:{collection:'activity',appId:'synthetic.activity'}}));assert.equal(activity.totalDurationMs,15000);assert.equal(activity.activityEvents,1);assert.equal(activity.contentCaptures,0);
+  const mediaId=randomUUID(),media={status:'available',sessions:[{sessionId:'generated-session',appId:'generated.player',appName:'Generated player',playbackState:'playing',appVisibility:'background',playbackType:'local',title:'Generated audiobook chapter'}]};
+  await store.ingest({id:mediaId,deviceId:'synthetic-media',deviceName:'Generated phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:15000,appId:'generated.player',appName:'Generated player',source:'media',metadata:{version:1,observedAt:new Date().toISOString(),state:{screenLocked:true},media}});
+  const mediaTotals=jsonResult(await reader.callTool({name:'mote_media_activity',arguments:{deviceId:'synthetic-media',screenLocked:true,appVisibility:'background'}}));
+  assert.equal(mediaTotals.totalDurationMs,15000);assert.equal(mediaTotals.screenLock.locked,15000);assert.deepEqual(mediaTotals.evidenceIds,[mediaId]);
+  const mediaEvidence=jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:[mediaId]}}))[0];assert.deepEqual(mediaEvidence.metadata.media,media);assert.equal(mediaEvidence.text,'');
+  assert.equal(jsonResult(await reader.callTool({name:'mote_search',arguments:{source:'media',query:'audiobook'}}))[0].id,mediaId);
+  assert.equal(jsonResult(await reader.callTool({name:'mote_activity',arguments:{deviceId:'synthetic-media'}})).totalDurationMs,0);
+  assert.equal((await reader.callTool({name:'mote_media_activity',arguments:{source:'screen'}})).isError,true);
+  assert.equal((await writer.callTool({name:'mote_media_activity',arguments:{}})).isError,true,'Write-only MCP credentials cannot read private media');
   assert.equal((await reader.readResource({uri:'mote://sources'})).contents[0].mimeType,'application/json');
 });
 
