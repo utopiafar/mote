@@ -37,7 +37,7 @@ GitHub 的 `GITHUB_TOKEN` 由工作流自动取得，用于当前仓库的 Relea
 
 配置方式见 [GitHub Secrets 官方说明](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)。例如使用 `gh secret set NAME --env release --repo utopiafar/mote`，通过标准输入提交值；不要把值写在 shell 参数中。
 
-Android 0.5.0 延续本项目 0.4.0 包的原有签名密钥，转换为强密码 PKCS#12 后供 CI 使用。私钥身份保持相同，发布版不启用调试标志。CI 会核对实际 APK 的包名、版本和固定证书 SHA-256，防止每次 runner 自动生成新 debug key，造成用户无法覆盖升级。证书公开指纹与应用标识位于 [签名策略](../release/signing-policy.json)。[Android 要求更新包保持签名身份](https://developer.android.com/studio/publish/app-signing)。
+Android 0.5.1 延续本项目 0.4.0 包的原有签名密钥，转换为强密码 PKCS#12 后供 CI 使用。私钥身份保持相同，发布版不启用调试标志。CI 会核对实际 APK 的包名、版本和固定证书 SHA-256，防止每次 runner 自动生成新 debug key，造成用户无法覆盖升级。证书公开指纹与应用标识位于 [签名策略](../release/signing-policy.json)。[Android 要求更新包保持签名身份](https://developer.android.com/studio/publish/app-signing)。
 
 Mac 默认 adhoc 只提供本期可构建的分发方式，不代表 Apple 认可的正式签名。选择 `developer-id` 后，缺少证书或公证凭据会使构建失败，不会静默降级为 adhoc；构建验证签名、公证票据和 Gatekeeper。Apple 账户、证书费用与公证服务由应用维护者配置，流程不会代为创建这些账户。[electron-builder v26 签名说明](https://www.electron.build/v26/docs/code-signing)。
 

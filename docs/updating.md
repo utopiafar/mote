@@ -2,7 +2,7 @@
 
 所有组件从 [GitHub Releases](https://github.com/utopiafar/mote/releases) 获取版本信息。检查更新只发送普通公开 HTTP 请求，不发送中央令牌、日记、截图、日历或模型 API key。发布清单通过内置公钥验证，资产另校验大小和 SHA-256；验证失败保留当前版本。
 
-0.5.0 是首个带应用内更新入口的版本。旧客户端需先下载本版安装包覆盖安装一次，保留原应用数据；以后可使用应用内入口。不要通过卸载旧版或删除配置目录完成这一步。
+0.5.1 是首个带应用内更新入口的版本。旧客户端需先下载本版安装包覆盖安装一次，保留原应用数据；以后可使用应用内入口。不要通过卸载旧版或删除配置目录完成这一步。
 
 ## Mac App
 
@@ -30,7 +30,7 @@
 node scripts/mote.mjs check-update --profile prod
 node scripts/mote.mjs update --profile prod
 # 明确指定一个经过验证的较新版本：
-node scripts/mote.mjs update --profile prod --version 0.5.0
+node scripts/mote.mjs update --profile prod --version 0.5.1
 ```
 
 自定义部署根目录使用原来的 `--home /absolute/profile-root`。各环境从自己的 `mote.env` 读取 `MOTE_UPDATE_REPOSITORY` 和 `MOTE_UPDATE_CHANNEL`；改变渠道不改变数据目录或任何中央凭据。默认 `utopiafar/mote` 与 `stable`，也可选择 `preview`。首次通过旧版本安装的部署工具需要先使用本版源码构建工具，再指向原来的 profile 根目录。
