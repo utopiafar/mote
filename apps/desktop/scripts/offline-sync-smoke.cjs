@@ -77,8 +77,10 @@ app.on('browser-window-created', (_event, window) => {
       const nextDraft = await invoke('noteDraft'); await invoke('saveNote', { ...nextDraft, text: 'Generated note that must stay bound to the first node.', revision: nextDraft.revision + 1 });
       writeFileSync(file, 'Generated second source version still belongs to the first node.');
       // Same-connection config update triggers a local rescan without an upload in manual mode.
+      const requestsBeforeRescan = requests.length;
       await invoke('configure', { ...(await invoke('status')).config, token: undefined });
       await until(async () => (await invoke('sources'))[0].pending === 1);
+      assert.equal(requests.length, requestsBeforeRescan, 'Settings resume local scanning without bypassing manual upload policy');
       const boundNotes = queueBodies(), boundSources = structuredClone(sourcePending(origin, token, source.id));
       const beforeAttempt = requests.length;
       await assert.rejects(invoke('configure', { ...(await invoke('status')).config, serverUrl: otherOrigin, token: 'synthetic-other-node-token-' + 'z'.repeat(32), confirmLocalBacklog: true }), /待上传|归属/);
@@ -87,7 +89,7 @@ app.on('browser-window-created', (_event, window) => {
       await invoke('retry'); assert.deepEqual(captureBodies.at(-1), boundNotes[0]); assert.deepEqual(sourceBodies.at(-1), boundSources[0]);
       assert.equal((await invoke('status')).sync.pendingRecords, 0); assert.equal((await invoke('status')).running, false);
       const stored = readFileSync(join(profile, 'config.json'), 'utf8'); assert(!stored.includes(token));
-      process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, realMainAndPreloadIpc: true, noUrlLocalNoteAndSource: true, firstBindingRequiresConfirmation: true, manualBindingHasNoAutomaticRequests: true, realCentralSqliteAcksDrainBothQueues: true, finalManualHeartbeatVisibleInDevicesApi: true, firstBindingPreservesOriginalPayloads: true, otherNodeRejectedWithoutPayloadMutation: true, captureStayedStopped: true, realKeychainUntouched: true }) + '\n');
+      process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, realMainAndPreloadIpc: true, noUrlLocalNoteAndSource: true, firstBindingRequiresConfirmation: true, manualBindingHasNoAutomaticRequests: true, settingsResumeLocalScanWithoutUpload: true, realCentralSqliteAcksDrainBothQueues: true, finalManualHeartbeatVisibleInDevicesApi: true, firstBindingPreservesOriginalPayloads: true, otherNodeRejectedWithoutPayloadMutation: true, captureStayedStopped: true, realKeychainUntouched: true }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write('Offline sync fixture failed: ' + error.stack + '\n'); app.exit(1); });
   });

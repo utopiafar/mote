@@ -210,7 +210,13 @@ else {
     const pausedSettings = async <T>(operation: () => Promise<T>): Promise<T> => {
       const releaseCollector = await collector.suspendForSettings(); let releaseSources: (() => void) | undefined;
       try { releaseSources = await localSources!.holdConnection(); return await operation(); }
-      finally { releaseSources?.(); await releaseCollector(); }
+      finally {
+        releaseSources?.();
+        // changeConnection's forced scan is suppressed while held. Resume it after settings settle;
+        // managed sources only stage locally here, leaving uploads to the collector's sync policy.
+        if (releaseSources && !quitting && !recoveryRequired) void localSources!.sync(true);
+        await releaseCollector();
+      }
     };
     const connectionChange = async <T>(operation: () => Promise<T>, sameNodeInvitation = false, confirmedInitial = false): Promise<T> => pausedSettings(async () => {
       const source = localSources!.connectionActivity();
