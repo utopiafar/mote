@@ -27,6 +27,14 @@
       <div id="upload-info" class="helper"></div>
     </section>
     <div id="feedback" role="alert" hidden></div>
+    <section class="panel" id="connection-onboarding"><div class="section-title"><span class="step">↗</span><div><h2>连接你的中央节点</h2><p>从中央“设备连接”生成邀请。粘贴 JSON / mote:// 链接，或导入二维码图片。</p></div></div>
+      <p class="helper" id="connection-device"></p><label>连接邀请<textarea id="connection-input" rows="3" maxlength="8192" autocomplete="off" spellcheck="false" placeholder="粘贴连接邀请 JSON 或 mote://connect?data=…"></textarea><small>邀请是短期一次性凭据，请仅使用你确认可信的中央地址；预览时不会发送网络请求。</small></label>
+      <div class="actions spaced"><button id="connection-preview" class="primary" type="button">预览连接</button><button id="connection-json" class="secondary" type="button">导入 JSON 文件</button><button id="connection-qr" class="secondary" type="button">导入二维码图片</button><button id="connection-test" class="text-button" type="button">测试已保存连接</button></div>
+      <div id="connection-confirmation" class="note spaced" hidden><strong>即将连接的中央地址</strong><p id="connection-origin" class="profile-path"></p><p id="connection-expiry"></p><p id="connection-resume"></p><label class="checkbox"><input id="connection-confirm-origin" type="checkbox"><span>我确认这是自己的中央节点地址，并同意上述待传数据处理</span></label><div class="actions"><button id="connection-connect" class="primary" type="button" disabled>确认连接并安全保存</button><button id="connection-cancel" class="secondary" type="button">取消</button></div></div>
+      <p id="connection-state" role="status" class="helper">连接尚未检查</p><p id="connection-capabilities" class="helper"></p>
+      <details class="spaced"><summary>单独使用管理员权限打开中央仓库</summary><p class="helper">邀请只授予此设备采集权限。查看全仓库、问答或设置时，输入单独管理员令牌；仅在本次中央窗口内存中使用，不替换采集凭据、不保存到本机配置。</p><label>管理员令牌<input id="connection-owner-token" type="password" maxlength="4096" autocomplete="off" spellcheck="false"></label><button id="connection-owner-open" class="secondary spaced" type="button">用管理员权限打开</button></details>
+    </section>
+    <section class="panel"><div class="section-title"><span class="step">◷</span><div><h2>本机统计</h2><p>队列与模型使用即时状态；处理数量、耗时和 CPU 使用已有可选诊断，不上传个人正文。</p></div></div><div id="collection-statistics" class="helper"></div></section>
     <section class="panel"><div class="section-title"><span class="step">✎</span><div><h2>随手记</h2><p>记下心情、想法和杂事。先安全写入本地队列，联网后同步中央节点。</p></div></div>
       <form id="note-form"><label>此刻想记什么<textarea id="note-text" rows="3" maxlength="20000" required placeholder="今天的感受、突然想到的事情…"></textarea></label><div class="form-grid spaced"><label>心情（可选）<input id="note-mood" maxlength="80" placeholder="用自己的话描述"></label><div class="actions"><button id="save-note" class="primary" type="submit">保存随手记</button></div></div><p id="note-feedback" class="helper" role="status"></p></form>
     </section>
@@ -46,7 +54,7 @@
     </section>
     <form id="settings">
       <fieldset id="settings-fields">
-        <section class="panel"><div class="section-title"><span class="step">01</span><div><h2>连接中央节点</h2><p>此电脑只是一个端点。节点可部署在本机、NAS 或独立服务器。</p></div></div>
+        <section class="panel"><div class="section-title"><span class="step">01</span><div><h2>手动连接与采集设置</h2><p>此电脑只是一个端点。节点可部署在本机、NAS 或独立服务器。</p></div></div>
           <div class="form-grid"><label>中央节点地址<input id="server-url" type="url" placeholder="http://127.0.0.1:47832" required><small>远程地址必须使用 HTTPS。</small></label><label>访问令牌<input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="输入访问令牌"><small id="token-hint">使用系统密钥存储加密；不会展示已有令牌。</small></label><label>设备名称<input id="device-name" maxlength="128" required><small>用于在中央节点区分来源。</small></label><label>采样间隔（秒）<input id="interval" type="number" min="5" max="300" required><small>相同画面复用本地图像，保留每次采样记录。</small></label></div>
           <div class="note">有待上传队列时不能换节点。迁移前先完成上传或导出并移走旧队列；切换地址必须重新输入新节点令牌。</div>
         </section>

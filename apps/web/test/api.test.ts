@@ -35,3 +35,17 @@ test('proxy HTML failures preserve actionable status without rendering its body 
   }
   assert.equal(unauthorized,0);
 });
+
+test('a delayed 401 from a previous connection cannot disconnect the new node or a reconnected session', async t => {
+  let generation=1,unauthorized=0,deliver: (response:Response)=>void=()=>{};
+  t.mock.method(globalThis,'fetch',()=>new Promise<Response>(resolve=>{deliver=resolve;}));
+  const previous=generation;
+  const api=createApi({url:'https://old.example',token:'synthetic'},()=>unauthorized++,()=>generation===previous);
+  const pending=api.request('/api/status');
+  generation++;
+  deliver(new Response('{}',{status:401}));
+  await assert.rejects(pending,ApiError);assert.equal(unauthorized,0);
+  const current=createApi({url:'https://new.example',token:'synthetic'},()=>unauthorized++,()=>generation===2);
+  const currentRequest=current.request('/api/status');deliver(new Response('{}',{status:401}));
+  await assert.rejects(currentRequest,ApiError);assert.equal(unauthorized,1);
+});

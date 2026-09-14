@@ -34,38 +34,43 @@ class CapturePipeline(private val context: Context) {
     private var previousApp: String? = null
     @Volatile private var closed = false
     fun isBusy(): Boolean = busy.get()
-    fun pause(reason: String) {
+    private var lastPause: OperationReason? = null
+    fun pause(reason: String, category: OperationReason = OperationReason.STATE_CHANGED) {
+        if (lastPause != category) { Operations.record(context, OperationKind.CAPTURE_PAUSED, category); lastPause = category }
         previousTime = null; previousApp = null
         settings.status("paused", reason)
     }
     fun canCapture(config: CollectorConfig, windows: WindowSnapshot): Boolean {
         if (closed || !settings.enabled || busy.get()) return false
-        if (!unlocked(context)) { pause("锁屏或熄屏，暂停采集"); return false }
+        if (!unlocked(context)) { pause("锁屏或熄屏，暂停采集", OperationReason.LOCKED); return false }
         runCatching { diagnostics.sample(config) }
         val battery = Diagnostics.battery(context)
-        if (config.chargingOnly && !battery.second) { pause("用户设置仅充电时采集"); return false }
-        if (config.batteryPauseBelowPct > 0 && (battery.first < 0 || battery.first < config.batteryPauseBelowPct)) { pause("达到用户设置的低电量暂停条件"); return false }
-        if (config.nsfw.enabled && !NsfwModelStore(context).hasFile()) { pause("NSFW 模型未就绪，请下载或导入；尚未截图"); return false }
+        if (config.chargingOnly && !battery.second) { pause("用户设置仅充电时采集", OperationReason.CHARGING); return false }
+        if (config.batteryPauseBelowPct > 0 && (battery.first < 0 || battery.first < config.batteryPauseBelowPct)) { pause("达到用户设置的低电量暂停条件", OperationReason.BATTERY); return false }
+        if (config.nsfw.enabled && !NsfwModelStore(context).hasFile()) { pause("NSFW 模型未就绪，请下载或导入；尚未截图", OperationReason.MODEL_MISSING); return false }
         val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
-        if (reason != null) { pause(reason); return false }
-        if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) { pause("本地队列已满，等待成功上传后恢复"); return false }
+        if (reason != null) { pause(reason, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
+        if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) { pause("本地队列已满，等待成功上传后恢复", OperationReason.QUEUE_FULL); return false }
         return true
     }
     fun submit(bitmap: Bitmap, windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString()) {
         if (closed || !busy.compareAndSet(false, true)) { bitmap.recycle(); return }
-        executor.execute {
+        ConnectionGuard.processing.incrementAndGet()
+        try { executor.execute {
             var output: Bitmap? = null
             var stage = EventStage.CAPTURE
             try {
-                if (!settings.enabled || !unlocked(context) || closed) return@execute
+                Operations.record(context, OperationKind.FRAME_RECEIVED)
+                if (!settings.enabled || !unlocked(context) || closed) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
-                if (reason != null) { pause(reason); return@execute }
+                if (reason != null) { Operations.record(context, OperationKind.FRAME_BLOCKED, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); pause(reason); return@execute }
                 val inferenceStart = SystemClock.elapsedRealtime()
                 stage = EventStage.MODEL
                 val decision = if (config.nsfw.enabled) nsfw.check(bitmap, config.nsfw) else null
                 if (decision != null) diagnostics.timing("inferenceMs", SystemClock.elapsedRealtime() - inferenceStart)
                 if (decision?.allow == false) {
                     SupportEvents.record(context, stage, EventCode.FILTERED, SystemClock.elapsedRealtime() - inferenceStart)
+                    Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.MODEL_DENIED, elapsedMs = SystemClock.elapsedRealtime() - inferenceStart)
                     diagnostics.add("blockedCount")
                     pause("本机 NSFW 模型已过滤当前帧，未进入 OCR/保存/上传"); return@execute
                 }
@@ -88,12 +93,12 @@ class CapturePipeline(private val context: Context) {
                         .put("imageMime", "image/jpeg").put("ocrText", text).put("appId", windows.foreground)
                     val (code, response) = HttpJson.post(config.localReviewUrl, request)
                     require(code == 200 && response != null && response.has("allow") && response.get("allow") is Boolean) { "隐私模型响应无效" }
-                    if (!response.getBoolean("allow")) { pause("本机隐私模型阻止此帧"); return@execute }
+                    if (!response.getBoolean("allow")) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.LOCAL_DENIED); pause("本机隐私模型阻止此帧", OperationReason.LOCAL_DENIED); return@execute }
                     val extraMasks = ReviewResponse.masks(response)
                     if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = ocr(output); modelMaskApplied = true }
                     reviewed = true
                 }
-                if (!settings.enabled || closed || !unlocked(context)) return@execute
+                if (!settings.enabled || closed || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val now = SystemClock.elapsedRealtime()
                 val duration = if (previousApp != null && previousApp == windows.foreground && previousTime != null)
                     (now - previousTime!!).coerceIn(0, config.intervalSeconds * 1000L) else 0L
@@ -108,15 +113,16 @@ class CapturePipeline(private val context: Context) {
                 context.queue().enqueue(event, jpeg(output, config.jpegQuality), config.maxQueueMiB * 1024L * 1024L)
                 SupportEvents.record(context, stage, EventCode.OK)
                 diagnostics.add("capturedCount")
+                lastPause = null
                 previousTime = now; previousApp = windows.foreground
                 settings.captured(capturedAt)
                 settings.status("capturing", "采集中 · 本地遮罩/OCR 已完成 · ${context.queue().depth()} 条待上传")
                 UploadWorker.schedule(context, config)
-            } catch (error: NsfwUnavailable) { SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
-            catch (error: QueueFull) { SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: "队列已满") }
-            catch (error: Exception) { SupportEvents.record(context, stage, EventJournal.failure(error, stage)); diagnostics.add("failedCount"); pause("本机 OCR、隐私审查或存储失败，此帧未入队；下一周期重试") }
-            finally { output?.recycle(); bitmap.recycle(); busy.set(false) }
-        }
+            } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
+            catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: "队列已满") }
+            catch (error: Exception) { Operations.record(context, OperationKind.CAPTURE_FAILED, Operations.failure(error, stage)); SupportEvents.record(context, stage, EventJournal.failure(error, stage)); diagnostics.add("failedCount"); pause("本机 OCR、隐私审查或存储失败，此帧未入队；下一周期重试") }
+            finally { output?.recycle(); bitmap.recycle(); busy.set(false); ConnectionGuard.processing.decrementAndGet() }
+        } } catch (_: java.util.concurrent.RejectedExecutionException) { ConnectionGuard.processing.decrementAndGet(); busy.set(false); bitmap.recycle(); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.CANCELLED) }
     }
     private fun ocr(bitmap: Bitmap): String {
         val started = SystemClock.elapsedRealtime()

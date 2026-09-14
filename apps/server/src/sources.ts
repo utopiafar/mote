@@ -37,13 +37,14 @@ export class SourceStore {
     const rows=this.store.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? ORDER BY rowid DESC LIMIT 100').all(sourceId,externalId) as {capture_id:string}[];
     return this.store.evidence(rows.map(r=>r.capture_id)).map(c=>this.item(c,c.id===head?.captureId));
   }
-  async upsert(sourceId:string,raw:unknown) {
+  async upsert(sourceId:string,raw:unknown,authorize?:()=>void) {
     const item=sourceItemSchema.parse(raw),key=JSON.stringify([sourceId,item.externalId]);
     const prior=this.pending.get(key)??Promise.resolve();
-    const task=prior.catch(()=>{}).then(()=>this.commit(sourceId,item));this.pending.set(key,task);
+    const task=prior.catch(()=>{}).then(()=>this.commit(sourceId,item,authorize));this.pending.set(key,task);
     try{return await task;}finally{if(this.pending.get(key)===task)this.pending.delete(key);}
   }
-  private async commit(sourceId:string,raw:unknown) {
+  private async commit(sourceId:string,raw:unknown,authorize?:()=>void) {
+    authorize?.();
     const source=this.getSource(sourceId);if(!source.enabled)throw new StoreError('Source is paused',409);
     const item=sourceItemSchema.parse(raw);
     if(Date.parse(item.observedAt)>Date.now()+86400000)throw new StoreError('Observation cannot be in the future');
@@ -56,6 +57,7 @@ export class SourceStore {
     const provenance={sourceId,externalId:item.externalId,revision:item.revision,layer:item.layer,mimeType:item.mimeType,uri:item.uri,modifiedAt:item.modifiedAt,calendar:item.calendar,deleted:item.deleted};
     const text=item.deleted||item.layer==='reference'?'':item.text;
     const result=await this.store.ingest({id,deviceId:source.deviceId,deviceName:source.name,platform:source.platform,capturedAt:observedAt,durationMs:0,appId:`mote.source.${source.kind}`,appName:source.name,windowTitle:item.title,ocrText:text,source:item.kind,provenance,privacy:{excluded:false,redacted:false,mode:'none'}},()=>{
+      authorize?.();
       const head=this.store.db.prepare('SELECT * FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,item.externalId) as Head|undefined;
       this.store.db.prepare('INSERT INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(sourceId,item.externalId,item.revision,id,hash);
       // Older observations remain history; late retries never roll the current pointer backwards.

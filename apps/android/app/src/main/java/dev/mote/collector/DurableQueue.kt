@@ -10,7 +10,7 @@ import java.util.UUID
 class QueueFull : IllegalStateException("本地队列已满，暂停采集；联网并成功上传后恢复")
 
 /** Atomic encrypted events + content-addressed blobs. All callers share the process lock. */
-class DurableQueue(private val dir: File, private val cipher: ByteCipher) {
+class DurableQueue(private val dir: File, private val cipher: ByteCipher, private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
     companion object { private val lock = Any() }
     init { dir.mkdirs() }
     private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
@@ -38,6 +38,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher) {
         if (bytes() + added > maxBytes) throw QueueFull()
         if (blob != null && !blob.exists()) atomic(blob, image!!)
         atomic(file, body)
+        onChange?.invoke(if (image == null) OperationKind.NOTE_QUEUED else OperationKind.SCREEN_QUEUED, added, id)
     }
     fun peek(): JSONObject? = synchronized(lock) {
         val file = records().firstOrNull() ?: return null
@@ -49,12 +50,26 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher) {
         event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
         event
     }
-    fun acknowledge(id: String) = synchronized(lock) {
+    fun acknowledge(id: String, uploadedBytes: Long = 0) = synchronized(lock) {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return
-        val hash = read(file).optString("_blob", "")
+        val record = read(file)
+        val hash = record.optString("_blob", "")
         check(file.delete()) { "无法删除已确认记录" }
+        onChange?.invoke(if (record.optString("source") == "note") OperationKind.NOTE_ACK else OperationKind.SCREEN_ACK, uploadedBytes, id)
         if (hash.isNotEmpty() && records().none { read(it).optString("_blob", "") == hash }) File(dir, "$hash.blob").delete()
+    }
+    fun summary(): JSONObject = synchronized(lock) {
+        val files = records(); var screens = 0; var notes = 0; var unreadable = 0
+        val pending = org.json.JSONArray()
+        files.take(100).forEach { file -> try {
+            val body = read(file); val source = body.getString("source"); val id = UUID.fromString(body.getString("id")).toString()
+            val at = java.time.Instant.parse(body.getString("capturedAt")).toString()
+            when (source) { "screen" -> screens++; "note" -> notes++; else -> error("unknown") }
+            pending.put(JSONObject().put("id", id).put("kind", source).put("createdAt", at).put("bytes", file.length()))
+        } catch (_: Exception) { unreadable++ } }
+        JSONObject().put("total", files.size).put("screens", screens).put("notes", notes).put("unreadable", unreadable)
+            .put("uninspected", (files.size - 100).coerceAtLeast(0)).put("bytes", bytes()).put("pending", pending)
     }
     fun recoverOrphans() = synchronized(lock) {
         // Read every event first. Corruption is surfaced; never silently discard an event.

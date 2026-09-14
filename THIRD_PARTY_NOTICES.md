@@ -48,6 +48,8 @@ The table lists principal direct libraries, not a complete software bill of mate
 | React and React DOM | [facebook/react](https://github.com/facebook/react), MIT |
 | Lucide React icons | [lucide-icons/lucide](https://github.com/lucide-icons/lucide), ISC; preserve included upstream icon notices |
 | react-markdown | [remarkjs/react-markdown](https://github.com/remarkjs/react-markdown), MIT |
+| QRCode 1.5.4 | [soldair/node-qrcode](https://github.com/soldair/node-qrcode), MIT; generates invitation QR images locally in the central web UI; [license](licenses/qrcode-LICENSE.txt) |
+| ZXing Android Embedded 4.3.0 and ZXing core 3.5.4 | [journeyapps/zxing-android-embedded](https://github.com/journeyapps/zxing-android-embedded) and [zxing/zxing](https://github.com/zxing/zxing), Apache-2.0; Android QR scanning uses an explicitly requested camera permission and does not depend on Play Services |
 | Fastify | [fastify/fastify](https://github.com/fastify/fastify), MIT |
 | Model Context Protocol TypeScript SDK 1.30.0 | [modelcontextprotocol/typescript-sdk](https://github.com/modelcontextprotocol/typescript-sdk), MIT; used for HTTP and stdio MCP transports |
 | Google Auth Library for Node.js 11.0.2 | [googleapis/google-auth-library-nodejs](https://github.com/googleapis/google-auth-library-nodejs), Apache-2.0; Google Calendar requires separate user authorization |

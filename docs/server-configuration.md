@@ -49,7 +49,7 @@
 | `MOTE_HOST` | `127.0.0.1` | 监听地址；Docker 强制 `0.0.0.0`，宿主机端口仍仅发布 loopback |
 | `MOTE_PORT` | `47832` | 1–65535 整数；CLI dev/test 分别 47842/47852，Docker 容器内部始终 47832 |
 | `MOTE_PUBLIC_URL` | 空 | 客户端使用的公开 HTTPS 基址，例如 `https://mote.example.com`；不创建 DNS、Tunnel 路由或证书 |
-| `MOTE_TOKEN` | 自动生成 | API Bearer 令牌；命名环境生成 32 字节随机值。远程节点使用强随机令牌 |
+| `MOTE_TOKEN` | 自动生成 | 中央所有者 Bearer 令牌；命名环境生成 32 字节随机值。设备页可另外发放受限的独立采集／MCP 凭据 |
 | `MOTE_ALLOWED_ORIGINS` | 本机 5173 开发前端两个 origin | 逗号分隔的浏览器跨域来源；CLI test 使用 5174。完整 origin，包括协议和端口，不是 API 路径 |
 
 同域中央网页无需额外配置跨域来源。不同域的浏览器前端才需要将其 origin 加入白名单。公开 URL 与节点 Bearer 令牌分别填入客户端，令牌不放 URL。Cloudflare Tunnel 与 Caddy 是两种可选入口；详见 [Tunnel 部署](cloudflare-tunnel.md)。

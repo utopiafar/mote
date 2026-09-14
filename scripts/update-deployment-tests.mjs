@@ -24,6 +24,8 @@ test('real isolated central update and rollback preserve credentials, data, conn
     await writeFile(join(p.dataDir, 'connectors/google-calendar.json'), JSON.stringify(credentials), { mode: 0o600 });
     await cli(p.home, p.profile, 'start');
     const saved = note(), screen = capture(); await request(p, '/api/notes', { method: 'POST', body: saved, status: 201 }); await request(p, '/api/captures', { method: 'POST', body: screen, status: 201 });
+    const invitation=await request(p,'/api/connections/invitations',{method:'POST',body:{serverUrl:p.url,label:'Generated update-preservation device'}});
+    const paired=await request(p,'/api/connections/redeem',{method:'POST',token:'',body:{code:invitation.invitation.code,deviceId:'synthetic-paired-update',deviceName:'Synthetic paired device',platform:'android'}});
     const bytes = sourceTar(version), asset = { component: 'server', platform: 'source', arch: 'all', format: 'tar.gz', name: `mote-server-${version}.tar.gz`, url: `https://github.com/utopiafar/mote/releases/download/v${version}/mote-server-${version}.tar.gz`, sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
     const manifest = { version, tag: `v${version}`, assets: [asset], images: [] };
     // The production downloader verifies the generated artifact; build adapter copies current compiled
@@ -38,6 +40,8 @@ test('real isolated central update and rollback preserve credentials, data, conn
     assert.equal(await profileVersion(p), version); assert.equal((await request(p, `/api/notes/${saved.id}`)).ocrText, saved.text); assert.deepEqual(await request(p, `/api/captures/${screen.id}/image`, { binary: true }), image);
     assert.deepEqual(await readFile(p.envFile), envBefore); assert.deepEqual(await readFile(tunnelSecret), tunnelBefore); assert.deepEqual(p.meta.tunnel, tunnel);
     assert.deepEqual(JSON.parse(await readFile(join(p.dataDir, 'connectors/google-calendar.json'), 'utf8')), credentials);
+    assert.equal((await request(p,'/api/connections/self',{token:paired.token})).credential.id,paired.credentialId,'Client credentials survive upgrade unchanged');
+    await request(p,`/api/connections/${paired.credentialId}`,{method:'DELETE'});
     const later = note(); await request(p, '/api/notes', { method: 'POST', body: later, status: 201 });
     const source = { id: 'synthetic-after-upgrade', name: 'Synthetic selected source', kind: 'google-calendar', deviceId: 'synthetic-device', platform: 'import', retention: 'reference', enabled: false };
     await request(p, '/api/sources', { method: 'POST', body: source });
@@ -56,6 +60,9 @@ test('real isolated central update and rollback preserve credentials, data, conn
     assert.deepEqual(await readFile(p.envFile), envBefore); assert.deepEqual(await readFile(tunnelSecret), tunnelBefore); assert.deepEqual(p.meta.tunnel, tunnel);
     const retained = JSON.parse(await readFile(join(p.dataDir, 'connectors/google-calendar.json'), 'utf8')); assert.deepEqual(retained.tokens, credentials.tokens); assert.deepEqual(retained.checkpoints, {});
     assert.equal((await lstat(join(p.dataDir, 'connectors/google-calendar.json'))).mode & 0o777, 0o600); assert.ok(rollback.preservedData);
+    await request(p,'/api/connections/self',{token:paired.token,status:401});
+    assert.ok((await request(p,'/api/connections')).items.find(c=>c.id===paired.credentialId)?.revokedAt,'Rollback must not resurrect a revoked device');
+    assert.equal((await lstat(join(p.dataDir,'connectors/client-connections.json'))).mode&0o777,0o600);
     const backupManifest = JSON.parse(await readFile(join(rollback.snapshot, 'backup-manifest.json'), 'utf8')); assert.ok(Object.keys(backupManifest.checksums).every(key => !key.includes('connectors')));
   } finally {
     if (p) { const state = await nativeIdentity(p).catch(() => null); if (state?.running && state.managed) await stopNative(p); }

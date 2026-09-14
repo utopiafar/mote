@@ -3240,5 +3240,42 @@ strong {
 .sources-page .source-item form{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:end;gap:16px;margin-top:16px}
 .sources-page .source-item form>label{display:flex;flex-direction:column;gap:8px;min-width:0}
 .sources-page .source-item form input{width:100%;min-width:0;box-sizing:border-box}
+.connections { margin-bottom: 26px; padding: 30px; }
+.connections h2,.connections h3 { display: flex; align-items: center; gap: 9px; }
+.connections h3 { font-size: 16px; }
+.connections p { color: var(--muted); font-size: 13px; line-height: 1.85; }
+.connections code { overflow-wrap: anywhere; word-break: break-word; font-size: 11px; }
+.connections small { display: block; color: var(--muted); font-size: 11px; line-height: 1.8; }
+.connection-steps { display: flex; flex-wrap: wrap; gap: 16px 30px; border-bottom: 1px solid var(--line); padding: 0 0 24px; margin-bottom: 24px; color: var(--muted); font-size: 12px; }
+.connection-steps b { display: inline-grid; place-items: center; width: 23px; height: 23px; border-radius: 50%; margin-right: 7px; background: var(--green-soft,#e8f0ec); color: var(--green); font-weight: 500; }
+.connection-fields,.connection-methods { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 22px; }
+.connections label { display: flex; flex-direction: column; gap: 9px; font-size: 12px; min-width: 0; }
+.connections input,.connections select,.connections textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 11px 13px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 8px; font-size: 13px; }
+.connections input:focus,.connections select:focus,.connections textarea:focus { outline-color: var(--green); }
+.connection-warning { padding: 12px 15px; border-radius: 8px; background: #faf2df; color: #6f5523 !important; }
+.connection-methods { margin-top: 26px; }
+.connection-method { display: flex; flex-direction: column; padding: 20px; border: 1px solid var(--line); border-radius: 12px; gap: 13px; }
+.connection-method h3,.connection-method p { margin: 0; }
+.connection-method > .button { align-self: flex-start; margin-top: auto; }
+.connection-invitation { display: grid; grid-template-columns: 288px minmax(0,1fr); gap: 24px; padding: 22px; margin-top: 25px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
+.connection-qr { display: flex; align-items: center; justify-content: center; }
+.connection-qr img { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+.connection-invitation-details { min-width: 0; }
+.connection-invitation details { margin-top: 15px; }
+.connections summary { color: var(--muted); font-size: 12px; cursor: pointer; margin-bottom: 12px; }
+.connections textarea { font: 11px/1.7 var(--font-mono,monospace); min-height: 180px; resize: vertical; overflow-wrap: anywhere; white-space: pre-wrap; }
+.connection-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.connection-actions .button { font-size: 11px; text-decoration: none; }
+.connection-mcp { padding: 22px; margin-top: 25px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; }
+.connection-mcp textarea { min-height: 240px; margin-bottom: 15px; }
+.connection-list-heading { margin-top: 30px; }
+.connection-list { padding: 0; margin: 0; list-style: none; }
+.connection-list li { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 18px 0; border-top: 1px solid var(--line); }
+.connection-list li > div { min-width: 0; }
+.connection-list strong { font-size: 13px; margin-right: 12px; overflow-wrap: anywhere; }
+.connection-list p { margin: 7px 0; font-size: 11px; }
+.connection-revoke { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 11px; }
+@media(max-width:1000px) { .connection-invitation { grid-template-columns: minmax(0,1fr); }.connection-qr img{max-width:288px;width:100%;} }
+@media(max-width:650px) { .connections{padding:20px;}.connection-fields,.connection-methods{grid-template-columns:minmax(0,1fr);}.connections > .section-heading{flex-direction:column;align-items:flex-start;gap:12px;}.connection-list li{align-items:flex-start;flex-direction:column;}.connection-steps{gap:12px;}.connection-invitation,.connection-mcp{padding:14px;}.connections .notice{overflow-wrap:anywhere;} }
 .sources-page .source-item form>.error-banner{grid-column:1/-1}
 @media(max-width:650px){.sources-page .source-item form{grid-template-columns:minmax(0,1fr)}.sources-page .source-item form>.button{justify-self:start}}

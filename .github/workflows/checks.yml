@@ -25,6 +25,7 @@ jobs:
       - run: npm run test:privacy
       - run: npm run test:e2e
       - run: node scripts/test-mcp-stdio.mjs
+      - run: node --test scripts/mcp-connection-tests.mjs
       - run: node --test scripts/update-tests.mjs scripts/update-deployment-tests.mjs
       - run: node scripts/test-setup-vision.mjs
       - run: npm run test:profiles

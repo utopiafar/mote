@@ -28,6 +28,7 @@ export interface Config {
   batteryPauseBelowPct: number;
   openAtLogin: boolean;
   token?: string;
+  credentialScope?: 'owner' | 'collector';
 }
 export type PublicConfig = Omit<Config, 'token'> & { tokenConfigured: boolean };
 export type ConfigUpdate = Omit<Config, 'token' | 'deviceId'> & { token?: string };
@@ -89,6 +90,13 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  previewConnection(input: string): Promise<import('./connection').ConnectionPreview>;
+  importConnection(kind: 'json' | 'qr'): Promise<{ canceled: boolean; preview?: import('./connection').ConnectionPreview }>;
+  cancelConnection(): Promise<void>;
+  confirmConnection(id: string, origin: string): Promise<Status>;
+  testConnection(): Promise<import('./connection').ConnectionStatus>;
+  connectionStatus(): Promise<import('./connection').ConnectionStatus>;
+  openCentralOwner(token: string): Promise<void>;
   updateStatus(): Promise<import('./updater').UpdateStatus>;
   updateChannel(channel: 'stable' | 'preview'): Promise<import('./updater').UpdateStatus>;
   checkUpdate(): Promise<import('./updater').UpdateStatus>;

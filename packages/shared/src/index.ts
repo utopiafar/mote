@@ -67,3 +67,4 @@ export const rangeSchema = z.object({
 export type TimeRange = z.input<typeof rangeSchema>;
 export type QueryResult = {answer:string; citations:{id:string;capturedAt:string;appName:string;excerpt:string}[]; trace:{tool:string;arguments:unknown;count:number}[];runId:string};
 export type Activity = {apps:{appName:string;durationMs:number;captures:number}[];devices:{deviceId:string;deviceName:string;durationMs:number;captures:number}[];totalDurationMs:number;captures:number};
+export * from './connection.js';

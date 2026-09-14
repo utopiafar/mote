@@ -29,8 +29,10 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   byId<HTMLInputElement>('token').value = '';
   byId<HTMLInputElement>('token').placeholder = config.tokenConfigured ? '已安全保存；留空保留已有令牌' : '输入中央节点访问令牌';
 }
+let connectionPreview: import('./connection').ConnectionPreview | undefined;
 function render(status: import('./contracts').Status): void {
   currentStatus = status;
+  byId('connection-device').textContent = `设备：${status.config.deviceName} · ID ${status.config.deviceId}。迁移已有设备时，请在中央邀请中选择此 ID。`;
   byId('environment').textContent = status.environment ? `环境：${status.environment.profile}${status.environment.legacy ? '（原日常目录）' : ' · 独立数据'} · ${status.environment.dataDirectory}` : '';
   const names = { stopped: '采集已停止', capturing: '正在采集', paused: '采集已暂停', permission_required: '需要屏幕录制权限', error: '采集已停止 · 需要处理' };
   byId('state').textContent = names[status.state];
@@ -45,6 +47,11 @@ function render(status: import('./contracts').Status): void {
   byId<HTMLButtonElement>('start').disabled = busy || status.running || status.platform !== 'macos';
   byId<HTMLButtonElement>('stop').disabled = busy || !status.running;
   fields.disabled = busy || status.running;
+  for (const id of ['connection-preview', 'connection-json', 'connection-qr', 'connection-test', 'connection-owner-open']) byId<HTMLButtonElement>(id).disabled = busy || (id !== 'connection-test' && id !== 'connection-owner-open' && status.running);
+  byId<HTMLButtonElement>('connection-cancel').disabled = busy;
+  byId<HTMLTextAreaElement>('connection-input').disabled = busy;
+  byId<HTMLInputElement>('connection-confirm-origin').disabled = busy;
+  byId<HTMLButtonElement>('connection-connect').disabled = busy || status.running || !connectionPreview || Date.parse(connectionPreview.expiresAt) <= Date.now() || !byId<HTMLInputElement>('connection-confirm-origin').checked;
   byId('save-hint').textContent = status.running ? '正在采集；停止后可修改隐私和连接设置。' : '设置保存后生效。';
   const uploadInfo = [];
   if (status.lastUploadError) uploadInfo.push(status.lastUploadError);
@@ -79,6 +86,15 @@ function render(status: import('./contracts').Status): void {
     if (d.error) rows.push(d.error);
     byId('diagnostics-detail').textContent = rows.join('\n');
   }
+  const statistics = [
+    `待上传 ${status.queueDepth.toLocaleString()} / ${status.config.maxQueueEvents.toLocaleString()} 条 · 队列 ${(status.queueBytes / 1048576).toFixed(2)} / ${(status.config.maxQueueBytes / 1048576).toFixed(0)} MiB（${(100 * status.queueBytes / status.config.maxQueueBytes).toFixed(1)}%）`,
+    `采样间隔 ${status.config.intervalMs / 1000} 秒 · 图像最大边 ${status.config.captureMaxSide} px · JPEG 质量 ${status.config.jpegQuality}`,
+    `本地模型 ${((status.nsfw?.bytes || 0) / 1048576).toFixed(1)} MiB · 当前进程已过滤 ${status.nsfw?.blockedCount || 0} 张`,
+  ];
+  if (status.nsfw?.lastDurationMs !== undefined) statistics.push(`最近审查 ${status.nsfw.lastDurationMs} ms · 模型加载 ${status.nsfw.lastLoadMs ?? '—'} ms · 视觉编码 ${status.nsfw.lastVisionMs ?? '—'} ms · 生成 ${status.nsfw.lastTokens ?? '—'} token`);
+  if (status.diagnostics?.enabled) { const c = status.diagnostics.counters; statistics.push(`诊断累计：保存 ${c.saved} · 过滤 ${c.blocked} · 失败 ${c.failed} · 推理 ${(c.inferenceMs / 1000).toFixed(1)} s · OCR ${(c.ocrMs / 1000).toFixed(1)} s`, `累计上传请求体约 ${(c.uploadedBytes / 1048576).toFixed(2)} MiB；不代表远端存储量。`); }
+  else statistics.push('数值诊断未开启；如需持续处理计数、资源与耗时，请在开发者设置中启用。');
+  byId('collection-statistics').replaceChildren(...statistics.map(text => { const p = document.createElement('p'); p.textContent = text; return p; }));
   if (!initialized) { fillConfig(status.config); initialized = true; }
 }
 async function perform(action: () => Promise<unknown>): Promise<void> {
@@ -264,3 +280,28 @@ byId('update-install').addEventListener('click', () => {
 });
 void desktopApi.updateStatus().then(renderUpdate).catch(() => {});
 setInterval(() => { void desktopApi.updateStatus().then(renderUpdate).catch(() => {}); }, 1000);
+
+function renderConnection(value: import('./connection').ConnectionStatus): void {
+  byId('connection-state').textContent = value.message + (value.checkedAt ? ' · ' + new Date(value.checkedAt).toLocaleTimeString() : '');
+  byId('connection-capabilities').textContent = value.identity ? `权限：${value.identity.credential.scope === 'collector' ? '此设备采集与自身来源同步' : '管理员'} · 中央 ${value.identity.node.version} · 环境 ${value.identity.node.profile}` : currentStatus?.config.credentialScope === 'collector' ? '已保存采集专用凭据；完整仓库需单独管理员登录。' : '';
+}
+function clearConnectionPreview(): void { connectionPreview = undefined; byId('connection-confirmation').hidden = true; byId<HTMLInputElement>('connection-confirm-origin').checked = false; }
+function showConnectionPreview(value: import('./connection').ConnectionPreview): void {
+  connectionPreview = value; byId<HTMLTextAreaElement>('connection-input').value = ''; byId<HTMLInputElement>('connection-confirm-origin').checked = false;
+  byId('connection-origin').textContent = value.serverUrl; byId('connection-expiry').textContent = '邀请到期：' + new Date(value.expiresAt).toLocaleString();
+  byId('connection-resume').textContent = value.serverUrl === currentStatus?.config.serverUrl ? '同一节点重新授权后，现有待传截图、随手记和来源版本将继续发往此地址。节点身份以此地址和 HTTPS 证书为准；请确认它仍由你控制。' : '更换节点时，本机必须没有待传截图、随手记或来源版本；设备 ID、隐私设置和本地模型将保留。';
+  byId('connection-confirmation').hidden = false; byId<HTMLButtonElement>('connection-connect').disabled = true;
+}
+byId('connection-input').addEventListener('input', () => { clearConnectionPreview(); void desktopApi.cancelConnection(); });
+byId('connection-preview').addEventListener('click', () => void perform(async () => { clearConnectionPreview(); showConnectionPreview(await desktopApi.previewConnection(readInput('connection-input'))); }));
+for (const kind of ['json', 'qr'] as const) byId('connection-' + kind).addEventListener('click', () => void perform(async () => { clearConnectionPreview(); byId<HTMLTextAreaElement>('connection-input').value = ''; const result = await desktopApi.importConnection(kind); if (!result.canceled && result.preview) showConnectionPreview(result.preview); }));
+byId('connection-confirm-origin').addEventListener('change', () => { if (currentStatus) render(currentStatus); });
+byId('connection-cancel').addEventListener('click', () => { clearConnectionPreview(); byId<HTMLTextAreaElement>('connection-input').value = ''; void desktopApi.cancelConnection(); });
+byId('connection-connect').addEventListener('click', () => void perform(async () => {
+  if (!connectionPreview || !byId<HTMLInputElement>('connection-confirm-origin').checked) throw new Error('请先确认中央地址');
+  feedback('正在连接并验证新凭据，此过程无法取消；原配置在确认成功前保持不变。');
+  const status = await desktopApi.confirmConnection(connectionPreview.id, connectionPreview.serverUrl); clearConnectionPreview(); fillConfig(status.config); render(status); renderConnection(await desktopApi.connectionStatus()); feedback('连接已安全保存；原设备 ID、隐私设置和本地模型保留。', true);
+}));
+byId('connection-test').addEventListener('click', () => void perform(async () => renderConnection(await desktopApi.testConnection())));
+byId('connection-owner-open').addEventListener('click', () => { const token = readInput('connection-owner-token').trim(); byId<HTMLInputElement>('connection-owner-token').value = ''; void perform(() => desktopApi.openCentralOwner(token)); });
+void desktopApi.connectionStatus().then(renderConnection).catch(() => {});

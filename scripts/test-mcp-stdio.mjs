@@ -12,7 +12,8 @@ const {app,sources}=await buildApp(config);const clients=[];
 try{
  sources.register({id:'stdio-fixture',name:'Synthetic stdio',kind:'mcp',deviceId:'fixture',platform:'import'});await app.listen({port:0,host:'127.0.0.1'});const url='http://127.0.0.1:'+app.server.address().port+'/mcp';
  for(const [role,token]of [['read',read],['write',write]]){
-  const path=join(root,role+'.json');await writeFile(path,JSON.stringify({url,token}),{mode:0o600});
+  const connection=role==='read'?{mcpServers:{mote:{type:'http',url,headers:{Authorization:'Bearer '+token}}}}:{url,token};
+  const path=join(root,role+'.json');await writeFile(path,JSON.stringify(connection),{mode:0o600});
   const client=new Client({name:'fixture-chatbot',version:'1'});const transport=new StdioClientTransport({command:process.execPath,args:[resolve('scripts/mcp-stdio.mjs'),'--connection',path],stderr:'pipe'});clients.push(client);await client.connect(transport);
   const {tools}=await client.listTools();
   if(role==='write'){

@@ -9,7 +9,8 @@ import java.util.UUID
 object QuickNotes {
     fun draft(context: Context) = NoteDraftStore(File(context.noBackupFilesDir, "note-draft"), SecretBox())
     fun save(context: Context, text: String, mood: String): String = save(context, text, mood) { config -> UploadWorker.schedule(context, config) }
-    internal fun save(context: Context, text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String {
+    internal fun save(context: Context, text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String = ConnectionGuard.sync { saveCurrent(context, text, mood, scheduleUpload) } ?: throw ConnectionFailure("busy")
+    private fun saveCurrent(context: Context, text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String {
         require(text.isNotBlank() && text.length <= 100_000) { "随手记须为 1..100000 字符" }
         require(mood.length <= 80) { "心情最多 80 字符" }
         val store = draft(context)

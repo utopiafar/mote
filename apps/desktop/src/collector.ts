@@ -17,6 +17,8 @@ export class Collector {
   private sleeping = false;
   private capturing = false;
   private uploading = false;
+  private heartbeatInFlight = false;
+  private connectionHeld = false;
   private config: Config;
   private captureAbort?: AbortController;
   private uploadAbort?: AbortController;
@@ -56,6 +58,15 @@ export class Collector {
     this.lastSample = undefined;
     this.captureAbort?.abort();
     if (this.running) { this.state = 'paused'; this.message = message; this.publish(); }
+  }
+  connectionActivity(): { inFlight: boolean } { return { inFlight: this.capturing || this.uploading || this.heartbeatInFlight }; }
+  async holdConnection(): Promise<() => void> {
+    if (this.running || this.connectionHeld) throw new Error('请先停止采集，再更换连接');
+    this.connectionHeld = true;
+    this.captureAbort?.abort(); this.uploadAbort?.abort();
+    // Heartbeats already have a bounded timeout. Wait until no old-credential request can race a save.
+    while (this.connectionActivity().inFlight) await new Promise(resolve => setTimeout(resolve, 25));
+    return () => { this.connectionHeld = false; };
   }
   updateConfig(config: Config): void {
     // Config edits cannot change a privacy policy in the middle of capture.
@@ -199,7 +210,7 @@ export class Collector {
     }
   }
   async upload(): Promise<void> {
-    if (this.uploading || !this.config.token) return;
+    if (this.uploading || this.connectionHeld || !this.config.token) return;
     this.uploading = true;
     const abort = this.uploadAbort = new AbortController();
     try {
@@ -226,7 +237,9 @@ export class Collector {
     finally { this.uploading = false; this.publish(); }
   }
   private async sendHeartbeat(): Promise<void> {
+    if (this.connectionHeld || this.heartbeatInFlight) return;
+    this.heartbeatInFlight = true;
     const state = this.state === 'stopped' ? 'paused' : this.state;
-    await heartbeat(this.config, { deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform, status: state, queueDepth: this.queue.stats().depth, lastCaptureAt: this.lastCaptureAt, error: this.lastUploadError }, this.events);
+    try { await heartbeat(this.config, { deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform, status: state, queueDepth: this.queue.stats().depth, lastCaptureAt: this.lastCaptureAt, error: this.lastUploadError }, this.events); } finally { this.heartbeatInFlight = false; }
   }
 }

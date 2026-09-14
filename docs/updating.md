@@ -30,7 +30,7 @@
 node scripts/mote.mjs check-update --profile prod
 node scripts/mote.mjs update --profile prod
 # 明确指定一个经过验证的较新版本：
-node scripts/mote.mjs update --profile prod --version 0.5.1
+node scripts/mote.mjs update --profile prod --version 0.6.0
 ```
 
 自定义部署根目录使用原来的 `--home /absolute/profile-root`。各环境从自己的 `mote.env` 读取 `MOTE_UPDATE_REPOSITORY` 和 `MOTE_UPDATE_CHANNEL`；改变渠道不改变数据目录或任何中央凭据。默认 `utopiafar/mote` 与 `stable`，也可选择 `preview`。首次通过旧版本安装的部署工具需要先使用本版源码构建工具，再指向原来的 profile 根目录。
@@ -46,6 +46,8 @@ node scripts/mote.mjs rollback --profile prod --restore-data
 ```
 
 回退恢复升级前的数据快照，升级之后的数据另行保留，不能当作自动合并。当前连接授权与选择会保留，并清空 Google 的前进游标以重新同步，避免数据回退后漏收事件。普通 HTTP 归档导出和离线备份不会额外暴露这些授权凭据。
+
+0.6.0 的设备邀请接口需要先升级中央，再升级客户端。已配对凭据保存在独立的私有连接文件中；升级与回滚保留当前撤销状态，不会让已撤销的设备重新获得访问权。Android 的本机采集统计从本版首次记录开始，旧版的历史累计数不补算；原队列仍直接读取并继续同步。
 
 ## 验证和排查
 

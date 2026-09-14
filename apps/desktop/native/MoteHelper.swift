@@ -119,6 +119,19 @@ do {
             break
         }
         try output(result)
+    case "qr":
+        // Only a user-selected invitation image reaches this command. Never use screen capture.
+        let data = FileHandle.standardInput.readDataToEndOfFile()
+        guard data.count <= 8 * 1024 * 1024, let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0, width <= 4096, height <= 4096,
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw NSError(domain: "Mote", code: 5) }
+        let request = VNDetectBarcodesRequest(); request.symbologies = [.qr]
+        try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        let payloads = (request.results ?? []).compactMap { $0.payloadStringValue }
+        guard payloads.count == 1, payloads[0].utf8.count <= 8192 else { throw NSError(domain: "Mote", code: 5) }
+        try output(["payloads": payloads])
     case "ocr":
         // Input is the final masked JPEG over stdin. No temporary screenshots are written.
         let data = FileHandle.standardInput.readDataToEndOfFile()

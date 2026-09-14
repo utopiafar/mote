@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, shell, Tray } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
-import { readPowerState } from './native';
+import { readPowerState, recognizeInvitationQr } from './native';
+import { ConnectionOnboarding, ConnectionError, testConnection, assertConnectionChangeSafe, type ConnectionStatus } from './connection';
 import { NoteDraftStore, type NoteDraft } from './note-draft';
 import { openCentralWindow } from './central-window';
 import { join, resolve } from 'node:path';
@@ -9,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { resolveProfile, profileDefaults } from './profile';
 import { EventJournal, buildSupportBundle, failureCode, type EventStage } from './support';
 import { pathToFileURL } from 'node:url';
-import { readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { readFile, realpath, stat, writeFile, open } from 'node:fs/promises';
 import { currentPlatform, Collector } from './collector';
 import { ConfigStore, updateConfig } from './config';
 import { LocalSourceManager } from './source-manager';
@@ -35,6 +36,8 @@ let centralOpening: Promise<void> | undefined;
 let collector: Collector;
 let localSources: LocalSourceManager | undefined;
 let updater: DesktopUpdater | undefined;
+const onboarding = new ConnectionOnboarding();
+let connectionState: ConnectionStatus = { state: 'unchecked', message: '连接尚未检查' };
 let quitting = false;
 let notesSettledForQuit = false;
 const noteWork = new Set<Promise<unknown>>();
@@ -55,13 +58,22 @@ function serialize<T>(operation: () => Promise<T>): Promise<T> {
 function encryptedStorageAvailable(): boolean {
   return safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
 }
-async function showCentral(): Promise<void> {
+async function showCentral(ownerToken?: string): Promise<void> {
   if (centralWindow && !centralWindow.isDestroyed()) { centralWindow.show(); centralWindow.focus(); return; }
   if (centralOpening) return centralOpening;
   const requested = settings;
+  if (!ownerToken && requested.credentialScope === 'collector') throw new Error('此连接仅有采集权限。请在“连接中央”中展开管理员登录，使用单独管理员令牌打开中央仓库');
   centralOpening = (async () => {
-    const opened = await openCentralWindow(requested);
-    if (settings.serverUrl !== requested.serverUrl || settings.token !== requested.token) { opened.close(); return; }
+    try {
+      const identity = await testConnection({ ...requested, token: ownerToken || requested.token });
+      if (identity.credential.scope !== 'owner') throw new Error('完整中央仓库需要管理员权限；采集专用凭据不能用于此登录');
+    } catch (error) {
+      // Legacy nodes predate scoped credentials. Only the original manually configured path is compatible.
+      if (!(error instanceof ConnectionError && error.code === 'UNSUPPORTED' && !ownerToken && requested.credentialScope !== 'collector')) throw error;
+    }
+    if (settings !== requested || quitting) throw new Error('连接已改变，请重新打开中央仓库');
+    const opened = await openCentralWindow({ ...requested, token: ownerToken || requested.token });
+    if (settings !== requested || quitting) { opened.close(); return; }
     centralWindow = opened;
   })().finally(() => { centralOpening = undefined; });
   return centralOpening;
@@ -100,7 +112,7 @@ else {
     quitting = true; void events.record('APP', 'STOPPED'); collector?.shutdown();
     if (notesSettledForQuit) return;
     event.preventDefault();
-    void Promise.allSettled([settleNoteWork(), localSources?.close(), updater?.close(), collector?.settleCapture()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
+    void Promise.allSettled([controlChain, settleNoteWork(), localSources?.close(), updater?.close(), collector?.settleCapture()]).then(() => events.read()).finally(() => { notesSettledForQuit = true; app.quit(); });
   });
   app.on('window-all-closed', () => { /* Tray keeps the collector and durable uploader alive. */ });
   app.on('activate', showWindow);
@@ -153,6 +165,69 @@ else {
         catch (error) { if (stage) void events.record(stage, failureCode(error, stage)); throw error; }
       });
     };
+    const connectionChange = async <T>(operation: () => Promise<T>, sameNodeInvitation = false): Promise<T> => {
+      if (clientStatus().running) throw new Error('请先停止采集，再更换连接');
+      const releaseCollector = await collector.holdConnection(); let releaseSources: (() => void) | undefined;
+      try {
+        releaseSources = await localSources!.holdConnection();
+        const source = localSources!.connectionActivity();
+        assertConnectionChangeSafe({ running: clientStatus().running, inFlight: collector.connectionActivity().inFlight, queued: queue.stats().depth, preparedNote: noteDrafts.hasPrepared(), sourcePending: source.pending, sourceInFlight: source.inFlight }, sameNodeInvitation);
+        return await operation();
+      } finally { releaseSources?.(); releaseCollector(); }
+    };
+    const commitConnection = async (updated: Config, sameNodeInvitation = false): Promise<void> => {
+      const previous = settings;
+      // Checkpoint before config save so a crash cannot switch credentials without the original source queue.
+      if (sameNodeInvitation) await localSources!.prepareReauthorization(updated);
+      if (sameNodeInvitation) await queue.resetRetries();
+      await store.save(updated);
+      try { await localSources!.changeConnection(updated); }
+      catch { await store.save(previous); throw new Error('本地来源状态无法切换，已保留原连接；请检查磁盘权限后重试'); }
+      centralWindow?.close(); centralWindow = undefined;
+      settings = updated; collector.updateConfig(updated);
+      connectionState = { state: 'unchecked', message: updated.credentialScope === 'collector' ? '已安全保存采集凭据；可测试连接。完整仓库需单独管理员登录。' : '连接已保存，可测试权限与节点版本' };
+    };
+    const readSelectedInvitation = async (path: string, maximum: number): Promise<Buffer> => {
+      const file = await open(path, 'r');
+      try { const buffer = Buffer.alloc(maximum + 1); const read = await file.read(buffer, 0, buffer.length, 0); if (read.bytesRead > maximum) throw new Error('连接邀请文件超过大小限制'); return buffer.subarray(0, read.bytesRead); }
+      finally { await file.close(); }
+    };
+    handle('mote:connection-status', () => connectionState);
+    handle('mote:connection-preview', input => onboarding.preview(input));
+    handle('mote:connection-cancel', () => onboarding.clear());
+    handle('mote:connection-import', kind => serialize(async () => {
+      if (kind !== 'json' && kind !== 'qr') throw new Error('邀请导入方式无效');
+      onboarding.clear();
+      if (kind === 'qr' && process.platform !== 'darwin') throw new Error('二维码图片导入暂仅支持 macOS，请使用 JSON 或连接链接');
+      const selected = await dialog.showOpenDialog(window!, { title: kind === 'qr' ? '选择中央连接二维码图片' : '选择中央连接邀请 JSON', properties: ['openFile'], filters: [{ name: kind === 'qr' ? 'QR image' : 'Mote connection JSON', extensions: kind === 'qr' ? ['png', 'jpg', 'jpeg'] : ['json', 'txt'] }] });
+      if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
+      try {
+        const bytes = await readSelectedInvitation(selected.filePaths[0], kind === 'qr' ? 8 * 1024 * 1024 : 8192);
+        const input = kind === 'qr' ? await recognizeInvitationQr(helperPath, bytes) : new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        return { canceled: false, preview: onboarding.preview(input) };
+      } catch { throw new Error('无法读取有效邀请，请检查 JSON/二维码格式、有效期和文件大小；原连接未变动'); }
+    }));
+    handle('mote:connection-confirm', (id, origin) => serialize(() => connectionChange(async () => {
+      if (!encryptedStorageAvailable()) throw new Error('系统加密存储不可用，不能交换并保存凭据');
+      const result = await onboarding.redeem(id, origin, settings, currentPlatform);
+      const updated = { ...updateConfig(settings, { ...settings, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope };
+      const identity = await testConnection(updated);
+      if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'collector') throw new Error('中央凭据身份确认不一致，原连接未修改；请重新生成邀请');
+      await commitConnection(updated, origin === settings.serverUrl);
+      connectionState = { state: 'connected', message: '采集连接成功；可上传记录与同步自身来源，完整仓库需单独管理员登录', checkedAt: new Date().toISOString(), identity };
+      return clientStatus();
+    }, origin === settings.serverUrl)));
+    handle('mote:connection-test', async () => {
+      if (connectionState.state === 'checking') return connectionState;
+      const requested = settings; connectionState = { state: 'checking', message: '正在验证已保存连接与权限…' };
+      try { const identity = await testConnection(requested); if (settings === requested) connectionState = { state: 'connected', message: identity.credential.scope === 'collector' ? '采集连接正常 · 仅上传与自身来源同步' : '管理员连接正常 · 可访问完整中央仓库', checkedAt: new Date().toISOString(), identity }; }
+      catch (error) { if (settings === requested) connectionState = { state: 'error', message: error instanceof ConnectionError ? error.message : '连接检查失败；已保存配置未改变', checkedAt: new Date().toISOString() }; }
+      return connectionState;
+    });
+    handle('mote:central-owner', token => {
+      if (typeof token !== 'string' || token.length < 32 || token.length > 4096 || /[\r\n]/.test(token)) throw new Error('管理员令牌格式不正确');
+      return showCentral(token);
+    });
     handle('mote:get-status', () => clientStatus());
     handle('mote:update-status', () => updater!.status());
     handle('mote:update-channel', channel => updater!.setChannel(channel));
@@ -189,7 +264,7 @@ else {
       await writeFile(selected.filePath, JSON.stringify(buildSupportBundle(profile, app.getVersion(), clientStatus(), await events.read()), null, 2), { mode: 0o600 });
       return { canceled: false };
     });
-    handle('mote:central', showCentral);
+    handle('mote:central', () => showCentral());
     handle('mote:note-draft', () => noteDrafts.get());
     handle('mote:note-draft-update', input => trackNote(noteDrafts.update(input as NoteDraft)));
     handle('mote:note', input => trackNote(serialize(async () => {
@@ -201,17 +276,16 @@ else {
       await collector.settleCapture();
       const updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (noteDrafts.hasPrepared() ? 1 : 0));
       if (!profile.legacy && updated.openAtLogin) throw new Error('命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数');
-      if (profile.legacy && updated.openAtLogin !== settings.openAtLogin) {
-        app.setLoginItemSettings({ openAtLogin: updated.openAtLogin });
-        if (app.getLoginItemSettings().openAtLogin !== updated.openAtLogin) throw new Error('系统未允许修改登录启动项，请在系统设置检查；开发模式建议先使用打包应用');
-      }
-      await store.save(updated);
-      if (updated.serverUrl !== settings.serverUrl || updated.token !== settings.token) { centralWindow?.close(); centralWindow = undefined; }
-      settings = updated;
-      collector.updateConfig(updated);
-      await localSources!.changeConnection(updated);
-      await configureDiagnostics();
-      return clientStatus();
+      const change = async () => {
+        if (profile.legacy && updated.openAtLogin !== settings.openAtLogin) {
+          app.setLoginItemSettings({ openAtLogin: updated.openAtLogin });
+          if (app.getLoginItemSettings().openAtLogin !== updated.openAtLogin) throw new Error('系统未允许修改登录启动项，请在系统设置检查');
+        }
+        if (updated.serverUrl !== settings.serverUrl || updated.token !== settings.token) await commitConnection(updated);
+        else { await store.save(updated); settings = updated; collector.updateConfig(updated); }
+        await configureDiagnostics(); return clientStatus();
+      };
+      return updated.serverUrl !== settings.serverUrl || updated.token !== settings.token ? connectionChange(change) : change();
     }));
     handle('mote:start', () => serialize(async () => { await collector.start(); return clientStatus(); }));
     handle('mote:stop', () => serialize(async () => { collector.stop(); await collector.settleCapture(); return clientStatus(); }));
@@ -238,7 +312,7 @@ else {
       await writeFile(selected.filePath, JSON.stringify(archive), { mode: 0o600 });
       return { canceled: false, path: selected.filePath };
     });
-    handle('mote:import-queue', async () => {
+    handle('mote:import-queue', () => serialize(async () => {
       const selected = await dialog.showOpenDialog(window!, { title: '导入 Mote 电脑端队列备份', properties: ['openFile'], filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       const path = selected.filePaths[0];
@@ -246,7 +320,7 @@ else {
       const imported = await queue.importArchive(JSON.parse(await readFile(path, 'utf8')));
       updateUi(clientStatus()); void collector.upload();
       return { canceled: false, imported };
-    });
+    }));
     tray = new Tray(trayIcon());
     tray.on('click', showWindow);
     updateUi(clientStatus());

@@ -30,6 +30,11 @@ export class SourceSync {
   status(): { pending: number; items: number; lastSyncAt?: string } {
     return { pending: this.data.pending.length, items: Object.values(this.data.known).filter(v => !v.item.deleted).length, lastSyncAt: this.data.lastSyncAt };
   }
+  async checkpointTo(path: string): Promise<void> {
+    // Used only while the manager holds all sync work after explicit same-node reauthorization.
+    // Preserve every pending body, timestamp and revision before the new credential is persisted.
+    await atomicSourceJson(path, this.data);
+  }
   async ensurePolicy(policy: string): Promise<void> {
     if (this.data.policy === policy) return;
     await this.discardPendingForPolicyChange(policy);

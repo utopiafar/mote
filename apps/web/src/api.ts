@@ -89,7 +89,7 @@ export class ApiError extends Error {
     super(message);
   }
 }
-export function createApi(connection: Connection, onUnauthorized?: () => void) {
+export function createApi(connection: Connection, onUnauthorized?: () => void, isCurrentConnection: () => boolean = () => true) {
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await raw(path, init);
     return response.json() as Promise<T>;
@@ -107,7 +107,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void) {
       },
     });
     if (!response.ok) {
-      if (response.status === 401) onUnauthorized?.();
+      if (response.status === 401 && !init.signal?.aborted && isCurrentConnection()) onUnauthorized?.();
       let message = response.status === 524
         ? "入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。"
         : response.status === 413

@@ -61,3 +61,26 @@ describe('native source lifecycle with local HTTP fixtures', () => {
     expect(server.items.at(-1)?.uri).toBeUndefined();
   });
 });
+
+it('loads paused durable pending bodies before permitting a connection change and holds background sync', async () => {
+  const endpointValue = await endpoint(true), file = join(directory, 'pending.md'); await writeFile(file, 'synthetic queued body');
+  let value = await manager(endpointValue.url); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
+  const source = value.status()[0].source; await value.update(source.id, { ...source, enabled: false }); await value.sync(); await value.close();
+  value = await manager(endpointValue.url); await value.sync(); expect(value.connectionActivity().pending).toBe(1);
+  const release = await value.holdConnection(); await value.sync(true); expect(value.connectionActivity()).toEqual({ pending: 1, inFlight: false }); release();
+});
+
+it('checkpoints pending source bodies before credential persistence and recovers identical revisions after restart', async () => {
+  const server = await endpoint(true), file = join(directory, 'pending-reauth.md'); await writeFile(file, 'unchanged synthetic pending original');
+  let value = await manager(server.url); await value.addFiles(file, DEFAULT_SOURCE_OPTIONS); await value.sync();
+  expect(value.connectionActivity().pending).toBe(1); const oldBody = structuredClone(server.items[0]);
+  const replacement = { serverUrl: server.url, token: 'synthetic-replacement-token', deviceId: 'synthetic-device' };
+  await expect(value.prepareReauthorization(replacement)).rejects.toThrow('同一节点');
+  const release = await value.holdConnection();
+  await expect(value.prepareReauthorization({ ...replacement, serverUrl: 'https://other.example' })).rejects.toThrow();
+  await expect(value.prepareReauthorization({ ...replacement, deviceId: 'another-device' })).rejects.toThrow();
+  await value.prepareReauthorization(replacement); expect(value.connectionActivity().pending).toBe(1);
+  // Simulate exit after new config was saved but before changeConnection updated in-memory state.
+  release(); await value.close(); value = await manager(server.url, replacement.token); await value.sync();
+  expect(value.connectionActivity().pending).toBe(0); expect(server.items).toHaveLength(2); expect(server.items[1]).toEqual(oldBody);
+});

@@ -54,6 +54,7 @@ class ProjectionService : Service() {
                 val windows = ForegroundApps.snapshot(this@ProjectionService)
                 if (SystemClock.elapsedRealtime() - lastTick >= c.intervalSeconds * 1000L && pipeline?.canCapture(c, windows) == true) {
                     if (frame != null && frameWindows == windows) {
+                        Operations.record(this@ProjectionService, OperationKind.CAPTURE_REQUESTED)
                         pipeline?.submit(frame!!.copy(Bitmap.Config.ARGB_8888, false), windows, c, Instant.now().toString())
                         lastTick = SystemClock.elapsedRealtime()
                     } else pipeline?.pause("等待当前应用的新屏幕帧")
@@ -72,6 +73,7 @@ class ProjectionService : Service() {
                 @Suppress("DEPRECATION") intent?.getParcelableExtra("consent")
             }
             require(data != null && intent?.getIntExtra("result", Activity.RESULT_CANCELED) == Activity.RESULT_OK)
+            require(settings.enabled && intent.getStringExtra("configurationStamp") == ConnectionGuard.configurationStamp(this))
             config = settings.read().also { it.validate() }
             startForeground(Notifications.ID, Notifications.notification(this, "投屏采集已启动，可随时停止"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
             projection = getSystemService(MediaProjectionManager::class.java).getMediaProjection(Activity.RESULT_OK, data)

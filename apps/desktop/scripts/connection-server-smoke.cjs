@@ -1,0 +1,71 @@
+// End-to-end against an isolated real central process. Generated input only; no Electron screen/calendar access.
+const assert = require('node:assert/strict');
+const { mkdtemp, mkdir, writeFile, readFile, rm } = require('node:fs/promises');
+const { tmpdir } = require('node:os');
+const { join, resolve } = require('node:path');
+const { randomBytes } = require('node:crypto');
+const { createServer } = require('node:net');
+const { spawn } = require('node:child_process');
+const { ConnectionOnboarding, testConnection, assertConnectionChangeSafe } = require('../dist/connection');
+const { defaultConfig, updateConfig, ConfigStore } = require('../dist/config');
+const { DurableQueue } = require('../dist/queue');
+const { NoteDraftStore } = require('../dist/note-draft');
+const { uploadCapture } = require('../dist/transport');
+const { sourceHash } = require('../dist/source-sync');
+const { LocalSourceManager } = require('../dist/source-manager');
+const { DEFAULT_SOURCE_OPTIONS } = require('../dist/source-types');
+const freePort = () => new Promise(resolve => { const server = createServer(); server.listen(0, '127.0.0.1', () => { const port = server.address().port; server.close(() => resolve(port)); }); });
+(async () => {
+  const root = await mkdtemp(join(tmpdir(), 'mote-native-connection-central-')); let central, sources;
+  try {
+    const port = await freePort(), origin = 'http://127.0.0.1:' + port, owner = randomBytes(32).toString('hex');
+    const file = join(root, 'node.env'); await writeFile(file, `MOTE_PROFILE=test\nMOTE_HOST=127.0.0.1\nMOTE_PORT=${port}\nMOTE_DATA_DIR=./central\nMOTE_TOKEN=${owner}\n`, { mode: 0o600 });
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('MOTE_')));
+    central = spawn('node', [resolve(__dirname, '../../server/dist/index.js')], { cwd: resolve(__dirname, '../../..'), env: { ...env, MOTE_ENV_FILE: file }, stdio: 'ignore' });
+    for (let i = 0; i < 100; i++) { if (central.exitCode !== null) throw Error('Generated central failed to start'); try { if ((await fetch(origin + '/api/health')).ok) break; } catch {} await new Promise(resolve => setTimeout(resolve, 50)); }
+    const request = (path, body, method = body ? 'POST' : 'GET', token = owner) => fetch(origin + path, { method, headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const original = { ...defaultConfig(), deviceName: 'Synthetic desktop pairing', masks: [{ x: 0, y: 0, width: 0.1, height: 0.2 }], excludedAppIds: ['dev.synthetic.private'] };
+    const issued = await request('/api/connections/invitations', { serverUrl: origin, label: 'Synthetic desktop' }); assert.equal(issued.status, 200); const invitation = (await issued.json()).invitation;
+    const flow = new ConnectionOnboarding(), preview = flow.preview(JSON.stringify(invitation));
+    const redeemed = await flow.redeem(preview.id, preview.serverUrl, original, 'macos'); assert.notEqual(redeemed.token, owner);
+    const config = { ...updateConfig(original, { ...original, serverUrl: redeemed.serverUrl, token: redeemed.token }), credentialScope: redeemed.scope };
+    const identity = await testConnection(config); assert.equal(identity.credential.deviceId, original.deviceId); assert.equal(identity.credential.scope, 'collector');
+    const profile = join(root, 'profile'); const store = new ConfigStore(profile, { available: () => true, encrypt: value => Buffer.from(value).map(v => v ^ 71), decrypt: value => Buffer.from(value).map(v => v ^ 71).toString() });
+    await store.save(config); const reloaded = await store.load(); assert.equal(reloaded.deviceId, original.deviceId); assert.deepEqual(reloaded.masks, original.masks); assert(!String(await readFile(join(profile, 'config.json'))).includes(redeemed.token));
+    const queue = new DurableQueue(join(profile, 'queue'), config); await queue.initialize();
+    const notes = new NoteDraftStore(join(profile, 'notes')); await notes.initialize(); const draft = notes.get();
+    const saved = await notes.submit({ ...draft, text: '合成 Mac 邀请连接之后的一笔记录 🧑🏽‍💻', mood: '测试', revision: draft.revision + 1 }, config, 'macos', queue);
+    const next = await queue.next(); assert(next); await uploadCapture(config, next.record.event); await queue.acknowledge(saved.id); assert.equal(queue.stats().depth, 0);
+    assert.equal((await request('/api/captures/' + saved.id)).status, 200); assert.equal((await request('/api/configuration', undefined, 'GET', config.token)).status, 403);
+    const text = join(root, 'selected.md'); await writeFile(text, 'Generated file synced with device-scoped credential.');
+    sources = new LocalSourceManager(join(profile, 'local-sources'), config, '/unused-calendar-helper'); await sources.initialize(); await sources.addFiles(text, DEFAULT_SOURCE_OPTIONS); await sources.sync(); assert.equal(sources.status()[0].pending, 0); assert.equal(sources.status()[0].state, 'idle');
+    const sourceId = sources.status()[0].source.id; const listed = await request('/api/sources', undefined, 'GET', config.token); assert.equal(listed.status, 200); assert(JSON.stringify(await listed.json()).includes(sourceId));
+    // An existing device cannot be rebound by an unbound invitation.
+    const replacementInvite = (await (await request('/api/connections/invitations', { serverUrl: origin, label: 'Unbound fixture' })).json()).invitation;
+    const unbound = new ConnectionOnboarding(), unboundPreview = unbound.preview(JSON.stringify(replacementInvite)); await assert.rejects(unbound.redeem(unboundPreview.id, origin, original, 'macos'), /选择此设备/);
+    await request('/api/connections/' + redeemed.credentialId, undefined, 'DELETE'); await assert.rejects(testConnection(config), /拒绝/);
+    const retained = notes.get(); await notes.submit({ ...retained, text: 'Generated offline note after revocation', revision: retained.revision + 1 }, config, 'macos', queue);
+    await assert.rejects(uploadCapture(config, (await queue.next()).record.event), /拒绝/); assert.equal(queue.stats().depth, 1);
+    await writeFile(text, 'Generated source version pending after revocation'); await sources.sync(); assert.equal(sources.connectionActivity().pending, 1);
+    const oldSourceBytes = await readFile(join(profile, 'local-sources', 'nodes', sourceHash(config.serverUrl + ':' + config.token), sourceId + '.json'));
+    const pendingEvent = JSON.stringify((await queue.next()).record.event);
+    const newInvitationResponse = await request('/api/connections/invitations', { serverUrl: origin, label: 'Synthetic bound recovery', deviceId: config.deviceId }); assert.equal(newInvitationResponse.status, 200);
+    const newInvitation = (await newInvitationResponse.json()).invitation, reconnect = new ConnectionOnboarding(), newPreview = reconnect.preview(JSON.stringify(newInvitation));
+    const releaseSources = await sources.holdConnection();
+    const barrier = { running: false, inFlight: false, queued: queue.stats().depth, preparedNote: notes.hasPrepared(), sourcePending: sources.connectionActivity().pending, sourceInFlight: sources.connectionActivity().inFlight };
+    assert.throws(() => assertConnectionChangeSafe(barrier), /待上传/); assertConnectionChangeSafe(barrier, newPreview.serverUrl === config.serverUrl);
+    const newCredential = await reconnect.redeem(newPreview.id, newPreview.serverUrl, config, 'macos');
+    const nextConfig = { ...config, token: newCredential.token, credentialScope: newCredential.scope };
+    const newIdentity = await testConnection(nextConfig); assert.equal(newIdentity.credential.id, newCredential.credentialId); assert.equal(newIdentity.credential.deviceId, config.deviceId);
+    await sources.prepareReauthorization(nextConfig);
+    assert.deepEqual(await readFile(join(profile, 'local-sources', 'nodes', sourceHash(nextConfig.serverUrl + ':' + nextConfig.token), sourceId + '.json')), oldSourceBytes);
+    await store.save(nextConfig); await sources.changeConnection(nextConfig); assert.equal(sources.connectionActivity().pending, 1); releaseSources();
+    assert.equal(JSON.stringify((await queue.next()).record.event), pendingEvent);
+    const pending = await queue.next(); await uploadCapture(nextConfig, pending.record.event); await queue.acknowledge(pending.record.event.id); assert.equal(queue.stats().depth, 0);
+    await sources.sync(); assert.equal(sources.connectionActivity().pending, 0); assert.equal(sources.status()[0].state, 'idle');
+    const history = await request('/api/sources/' + sourceId + '/items'); assert.equal(history.status, 200);
+    const historyBody = JSON.stringify(await history.json()); assert(historyBody.includes(JSON.parse(oldSourceBytes.toString()).pending[0].revision));
+    assert.equal((await store.load()).deviceId, original.deviceId); assert.deepEqual((await store.load()).masks, original.masks);
+    console.log(JSON.stringify({ ok: true, realIsolatedCentral: true, invitationRedeemAndSelf: true, preservedDeviceAndPrivacy: true, encryptedConfigAdapter: true, noteQueueUploadAck: true, scopedFileSourceSync: true, adminAccessDenied: true, existingDeviceUnboundInviteDenied: true, revokedCredentialKeepsQueue: true, sameOriginBoundInvitationResumesExactNoteAndSource: true, differentOriginWithPendingBlocked: true, personalDataRead: false }));
+  } finally { await sources?.close(); if (central && central.exitCode === null) { central.kill('SIGTERM'); await new Promise(resolve => central.once('exit', resolve)); } await rm(root, { recursive: true, force: true }); }
+})().catch(error => { process.stderr.write('Real central connection fixture failed: ' + error.message + '\n'); process.exitCode = 1; });

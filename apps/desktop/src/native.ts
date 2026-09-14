@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 export interface ActiveApplication { appId: string; appName: string; pid: number; visibleAppIds: string[]; unknownVisibleWindows: boolean }
-export function runHelper(path: string, command: 'active' | 'ocr' | 'power', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
+export function runHelper(path: string, command: 'active' | 'ocr' | 'power' | 'qr', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const child = spawn(path, [command], { stdio: ['pipe', 'pipe', 'pipe'], signal });
     const chunks: Buffer[] = [];
@@ -43,4 +43,13 @@ export async function readPowerState(path: string, signal?: AbortSignal): Promis
     ...(typeof value.charging === 'boolean' ? { charging: value.charging } : {}),
     ...(typeof value.onBattery === 'boolean' ? { onBattery: value.onBattery } : {}),
   };
+}
+
+export async function recognizeInvitationQr(path: string, image: Buffer): Promise<string> {
+  if (image.length > 8 * 1024 * 1024) throw new Error('二维码图片不能超过 8 MiB');
+  try {
+    const value = await runHelper(path, 'qr', image) as { payloads?: unknown };
+    if (!Array.isArray(value?.payloads) || value.payloads.length !== 1 || typeof value.payloads[0] !== 'string' || Buffer.byteLength(value.payloads[0]) > 8192) throw new Error();
+    return value.payloads[0];
+  } catch { throw new Error('未找到唯一有效二维码，请选择清晰的单个连接二维码，或导入 JSON'); }
 }

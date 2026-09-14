@@ -73,6 +73,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         inFlight = true
         nextCapture = System.currentTimeMillis() + config.intervalSeconds * 1000L
         val at = Instant.now().toString()
+        Operations.record(this, OperationKind.CAPTURE_REQUESTED)
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 try {
@@ -86,6 +87,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             }
             override fun onFailure(errorCode: Int) {
                 inFlight = false
+                Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.SYSTEM)
                 pipeline?.pause("系统未提供截图（代码 $errorCode），可能是安全窗口或权限变化；未保存内容")
             }
         })

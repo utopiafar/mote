@@ -105,7 +105,7 @@ export function serverConfiguration(config: Config): ServerConfiguration {
         field('logMaxFiles', '日志文件数上限', config.logMaxFiles ?? 3, '有限轮转的总文件数量；Docker/进程管理器输出另有部署级上限。', 'MOTE_LOG_MAX_FILES', { unit: 'files' }),
         field('logMaxEntries', '内存事件条数上限', config.logMaxEntries ?? 2000, '达到上限后保留较新的固定事件。', 'MOTE_LOG_MAX_ENTRIES', { unit: 'entries' }),
       ] },
-      { id: 'network', title: '连接与访问', description: '中央是单所有者节点。访问令牌授权读取和管理整个私人资料库；公开 URL 只是部署声明，不证明隧道或 TLS 可用。', fields: [
+      { id: 'network', title: '连接与访问', description: '中央是单所有者节点。所有者令牌管理整个资料库；设备页可发放权限受限的独立采集或 MCP 凭据。公开 URL 是部署声明，不证明隧道或 TLS 可用。', fields: [
         field('listenHost', '监听地址', config.host, '127.0.0.1 只接受本机连接，0.0.0.0 接受所有 IPv4 网卡；跨设备长期访问应通过 HTTPS。', 'MOTE_HOST'),
         field('listenPort', '监听端口', config.port, '这是中央进程端口；Docker 的宿主发布端口可能不同。', 'MOTE_PORT'),
         field('listenUrl', '进程 HTTP 地址', `http://${host}:${config.port}`, '绑定地址用于排查进程监听；0.0.0.0 或 :: 不是应填写给远端客户端的公共节点地址。'),
@@ -113,6 +113,7 @@ export function serverConfiguration(config: Config): ServerConfiguration {
         field('allowedOrigins', '允许的浏览器来源', config.allowedOrigins.map(origin => { const url = configurationUrl(origin); return url ? new URL(url).origin : null; }).filter((origin): origin is string => origin !== null), 'CORS 浏览器 origin 白名单。配置仅控制浏览器跨源请求，不能替代令牌鉴权。', 'MOTE_ALLOWED_ORIGINS'),
         field('accessTokenConfigured', '访问令牌已配置', Boolean(config.token), '只显示状态，不显示令牌、哈希、前后缀或可恢复片段。', 'MOTE_TOKEN', { ...secret, source: config.tokenFromEnvironment ? context?.sources.MOTE_TOKEN ?? 'environment' : 'derived' }),
         field('accessTokenSource', '访问令牌来源', config.tokenFromEnvironment === undefined ? 'programmatic' : config.tokenFromEnvironment ? 'configured-value' : 'private-token-file', 'configured-value 来自进程/所选配置；private-token-file 来自资料库私有 access-token 文件；programmatic 表示由调用方传入。文件内容不返回。'),
+        field('clientConnectionsPath', '独立连接凭据位置', join(dataDir, 'connectors', 'client-connections.json'), '保存凭据哈希、权限和撤销状态，不保存明文令牌。随本数据目录使用，最多 500 条／2 MiB；在设备页管理。', undefined, ownerPath),
         field('tunnelConfigured', '隧道已声明启用', context?.tunnelEnabled ?? false, '只有部署配置状态，不代表隧道已经连接或公网路由可达。', 'MOTE_TUNNEL_ENABLED'),
         field('tunnelProvider', '隧道提供方', context?.tunnelProvider ?? null, '由部署工具声明；隧道凭据文件与 token 不进入此接口。', 'MOTE_TUNNEL_PROVIDER'),
         field('tunnelProtocol', '隧道传输设置', context?.tunnelProtocol ?? 'auto', 'auto、http2 或 quic；修改后需要由部署工具重新启动隧道进程。', 'MOTE_TUNNEL_PROTOCOL'),

@@ -90,6 +90,8 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     nsfwSource: input.nsfwSource, nsfwCustomUrl: input.nsfwCustomUrl.trim(),
     token: input.token === undefined ? current.token : input.token.trim(),
   };
+  if (config.serverUrl === current.serverUrl && config.token === current.token && ['owner', 'collector'].includes(current.credentialScope || '')) config.credentialScope = current.credentialScope;
+  if ((config.serverUrl !== current.serverUrl || config.token !== current.token) && queuedEvents > 0) throw new Error('还有待上传记录，不能切换节点或令牌；请先完成上传或备份处理旧队列');
   if (config.serverUrl !== current.serverUrl) {
     if (queuedEvents > 0) throw new Error('还有待上传记录，不能切换中央节点；请先完成上传，或导出并移走旧队列后重启');
     if (typeof input.token !== 'string' || !input.token.trim()) throw new Error('切换中央节点必须明确输入新节点令牌，不能复用已有令牌');

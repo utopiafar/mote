@@ -1,6 +1,6 @@
 # Mote protocol v1
 
-All `/api/*` routes except `/api/health` require `Authorization: Bearer <MOTE_TOKEN>`. Health contains no private data. Server default port 47832, bind 127.0.0.1. A single owner token is an MVP limitation. Android/emulators must use LAN host with TLS or explicitly enabled debug LAN HTTP; `localhost` on a phone means the phone.
+All `/api/*` routes require Bearer authentication except public `/api/health` and the one-use invitation exchange `POST /api/connections/redeem`. `MOTE_TOKEN` remains the node owner credential. Since 0.6.0, clients can pair using a QR/JSON invitation and receive a separate revocable collector credential, restricted to their device's ingestion and sources; MCP credentials are separate read or source-scoped write capabilities. See [connection protocol](connections.md) for the invitation, identity check, permission matrix and revocation behavior. Health contains no private data. Server default port is 47832, bound to 127.0.0.1. Remote clients require HTTPS; only loopback is allowed for HTTP invitations. `localhost` on a phone means the phone.
 
 ## Capture upload
 

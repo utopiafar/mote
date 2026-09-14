@@ -20,6 +20,7 @@ export class LocalSourceManager {
   private controller?: AbortController;
   private timer?: ReturnType<typeof setInterval>;
   private stopped = false;
+  private connectionHeld = false;
   private choices: CalendarChoice[] = [];
   private permissionController?: AbortController;
   private permissionTask?: Promise<CalendarChoice[]>;
@@ -36,10 +37,25 @@ export class LocalSourceManager {
       });
       this.metadataDirty = new Set(saved.metadataDirty || []);
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
+    // Include paused sources when guarding a node change: they can still own durable pending bodies.
+    for (const source of this.sources) { const engine = new SourceSync(join(this.directory, 'nodes', this.binding, source.id + '.json')); await engine.initialize(); this.engines.set(source.id, engine); }
     this.timer = setInterval(() => { void this.sync(false); }, 5000); this.timer.unref();
     void this.sync(false);
   }
   status(): SourceStatus[] { return this.sources.map(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? '等待首次同步' : '本机已暂停', pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: '本机已暂停' } : {}) })); }
+  connectionActivity(): { pending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), inFlight: Boolean(this.task || this.permissionTask) }; }
+  async holdConnection(): Promise<() => void> {
+    if (this.connectionHeld || this.permissionTask) throw new Error('本地来源授权尚未结束，请稍后重试连接');
+    this.connectionHeld = true;
+    try { await this.interrupt(); return () => { this.connectionHeld = false; }; }
+    catch (error) { this.connectionHeld = false; throw error; }
+  }
+  async prepareReauthorization(connection: Pick<Config, 'serverUrl' | 'token' | 'deviceId'>): Promise<void> {
+    if (!this.connectionHeld || this.task || this.permissionTask || connection.serverUrl !== this.connection.serverUrl || connection.deviceId !== this.connection.deviceId) throw new Error('仅允许已暂停同步的同一节点、同一设备重新授权');
+    const binding = sourceHash(connection.serverUrl + ':' + (connection.token ?? ''));
+    if (binding === this.binding) return;
+    for (const [id, engine] of this.engines) await engine.checkpointTo(join(this.directory, 'nodes', binding, id + '.json'));
+  }
   async authorizeCalendar(): Promise<CalendarChoice[]> {
     if (this.permissionTask) return this.permissionTask;
     if (this.stopped) throw new Error('应用正在退出');
@@ -70,12 +86,20 @@ export class LocalSourceManager {
     await this.persist(); void this.sync(true);
   }
   async changeConnection(connection: Pick<Config, 'serverUrl' | 'token' | 'deviceId'>): Promise<void> {
-    await this.interrupt(); this.connection = connection; const binding = this.connectionBinding();
-    if (binding !== this.binding) { this.binding = binding; this.engines.clear(); this.states.clear(); this.metadataDirty = new Set(this.sources.map(s => s.id)); await this.persist(); }
-    void this.sync(true);
+    await this.interrupt();
+    const binding = sourceHash(connection.serverUrl + ':' + (connection.token ?? ''));
+    if (binding !== this.binding) {
+      const dirty = new Set(this.sources.map(s => s.id));
+      // Persist before mutating the connection so an I/O failure can retain the old in-memory node.
+      await atomicSourceJson(join(this.directory, 'sources.json'), { version: 1, sources: this.sources, metadataDirty: [...dirty] });
+      const engines = new Map<string, SourceSync>();
+      for (const source of this.sources) { const engine = new SourceSync(join(this.directory, 'nodes', binding, source.id + '.json')); await engine.initialize(); engines.set(source.id, engine); }
+      this.binding = binding; this.engines = engines; this.states.clear(); this.metadataDirty = dirty;
+    }
+    this.connection = connection; void this.sync(true);
   }
   async sync(force = true): Promise<void> {
-    if (this.stopped) return;
+    if (this.stopped || this.connectionHeld) return;
     if (this.task) return this.task;
     const controller = new AbortController(); this.controller = controller;
     this.task = this.run(force, controller.signal).finally(() => { this.task = undefined; if (this.controller === controller) this.controller = undefined; });

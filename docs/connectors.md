@@ -37,6 +37,8 @@ MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS=900
 
 ## 把 Mote 提供给其他 Agent
 
+0.6.0 起可在中央「设备 → 添加设备与 Chatbot」直接生成专用 MCP JSON，并按连接撤销。支持 HTTP Bearer 的客户端可导入此 JSON，仓库的 stdio 桥接也可直接读取；操作步骤与权限范围见 [设备配对与独立连接](connections.md)。下面的静态令牌配置继续兼容已有部署。
+
 Mote 使用固定 `@modelcontextprotocol/sdk` **1.30.0** 的标准 Streamable HTTP，对外路径为 `/mcp`，采用无持久会话的 JSON 响应。依赖采用 MIT 许可证。不要混用 SDK v2 的拆分包 import；当前实现依据 [官方 v1 服务端文档](https://ts.sdk.modelcontextprotocol.io/server)。
 
 ```dotenv

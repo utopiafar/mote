@@ -22,6 +22,10 @@ import android.widget.*
 class MainActivity : Activity() {
     private lateinit var settings: Settings
     private lateinit var content: LinearLayout
+    private var loadedServer: String? = null
+    private var loadedToken: String? = null
+    private var projectionRequestStamp: String? = null
+    private var applyingConnectionFields = false
     private lateinit var status: TextView
     private lateinit var server: EditText
     private lateinit var token: EditText
@@ -59,6 +63,7 @@ class MainActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         settings = Settings(this)
         val config = runCatching { settings.read() }.getOrElse { CollectorConfig() }
+        loadedServer = config.server; loadedToken = config.token
         val scroll = ScrollView(this).apply { setBackgroundColor(Color.rgb(245, 246, 242)); isFillViewport = true }
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(18), dp(22), dp(30)) }
         scroll.addView(content)
@@ -82,19 +87,20 @@ class MainActivity : Activity() {
         button("立即重试同步") {
             runCatching { val c = settings.read(); c.validate(); UploadWorker.schedule(this, c, true); toast("已请求同步；仍遵守网络约束") }.onFailure { toast(it.message ?: "配置无效") }
         }
+        button("连接中央节点（扫码 / JSON）") { startActivity(Intent(this, ConnectionActivity::class.java)) }
+        button("采集统计、存储与结果详情") { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
         button("日历与文件来源") { startActivity(Intent(this, SourcesActivity::class.java)) }
         button("应用更新") { startActivity(Intent(this, AppUpdatesActivity::class.java)) }
         section("01  中央节点")
         text("中央节点是独立服务，可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；请填节点局域网 IP 或 HTTPS 域名。", 13)
         server = field("节点 URL", config.server, "https://mote.example.com", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
-        token = field("访问令牌（至少 32 字符）", config.token, "与中央节点 MOTE_TOKEN 一致", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
-        var clearedTokenForNodeChange = false
+        token = field("手工访问令牌（也可用上方扫码连接）", config.token, "建议通过邀请获取本设备凭据", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         server.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun afterTextChanged(s: Editable?) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                if (!clearedTokenForNodeChange && config.server.isNotBlank() && s.toString().trim().trimEnd('/') != config.server.trimEnd('/')) {
-                    clearedTokenForNodeChange = true; token.text.clear()
+                if (!applyingConnectionFields && !loadedServer.isNullOrBlank() && s.toString().trim().trimEnd('/') != loadedServer!!.trimEnd('/') && token.text.isNotEmpty()) {
+                    token.text.clear()
                     toast("节点地址已修改，请明确填写新节点令牌；队列未清空时不能换节点")
                 }
             }
@@ -105,7 +111,7 @@ class MainActivity : Activity() {
         section("02  采集与存储")
         interval = field("截图间隔 / 秒（5–300）", config.intervalSeconds.toString(), "30", InputType.TYPE_CLASS_NUMBER)
         maxQueue = field("本机队列上限 / MiB（8–4096）", config.maxQueueMiB.toString(), "256", InputType.TYPE_CLASS_NUMBER)
-        text("图片缩放至最长边 1280px，JPEG 75；相同图片在队列中共用存储。队列 AES-GCM 加密，满后暂停，收到节点确认才删除。时间统计是采样设备时间。", 13)
+        text("默认最长边 1280px、JPEG 75，可在下方调整；生效数值见统计详情。相同图片在队列中共用存储。队列 AES-GCM 加密，满后暂停，收到节点确认才删除。时间统计是采样设备时间。", 13)
         projectionMode = check("使用投屏模式（备用，每次需授权）", config.mode == "projection")
         text("默认无障碍截图模式适用 Android 11+：系统重新连接服务时可恢复你已启用的采集。投屏模式锁屏/被杀后必须重新授权。Android 10 请选投屏模式。", 13)
         section("采集优化与开发者选项")
@@ -160,7 +166,7 @@ class MainActivity : Activity() {
         text("坐标均为 0..1、相对当前屏幕。例如 0,0,1,0.08 遮住顶部 8%。遮罩先于 OCR 和保存；旋转后仍按屏幕比例应用。默认不遮罩，请自行设置。", 13)
         text("内置本机 NSFW 过滤", 19)
         nsfwEnabled = check("启用 NSFW 过滤（默认启用，故障不放行）", config.nsfw.enabled)
-        text("内置 demo 同款 Qwen3.5-0.8B 小视觉语言模型，CPU 离线审查，可编辑指令用于其它图片过滤。截图只在内存中送入独立进程。模型拒绝、缺失、输出无效、超时或进程退出时，该帧不会进入 OCR、存储或上传。模型可能误判。", 13)
+        text("内置 Qwen3.5-0.8B 小视觉语言模型，CPU 离线审查，可编辑指令用于其它图片过滤。截图只在内存中送入独立进程。模型拒绝、缺失、输出无效、超时或进程退出时，该帧不会进入 OCR、存储或上传。模型可能误判。", 13)
         nsfwPolicy = field("本机图片审查指令", config.nsfw.policy, "", multiline = true)
         nsfwMaxTokens = field("输出上限 token（32–1024）", config.nsfw.maxTokens.toString(), "256", InputType.TYPE_CLASS_NUMBER)
         nsfwMaxSide = field("审查图最长边（256–1024）", config.nsfw.reviewMaxSide.toString(), "512", InputType.TYPE_CLASS_NUMBER)
@@ -199,7 +205,7 @@ class MainActivity : Activity() {
         rowButtons("电池优化设置", { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }, "自启动设置", { autostart() })
         button("应用详情 / 受限制设置") { safeOpen(detailsIntent()) }
         text("小米 / HyperOS：在系统应用设置中允许 Mote 自启动，将省电策略设为无限制，并允许通知；可在最近任务中锁定应用。菜单随系统版本变化。若侧载 APK 的无障碍开关受限，请在应用详情的菜单中检查“允许受限制的设置”。这些设置不能保证系统永不终止采集。", 13)
-        text("本构建尚未在 K90 Pro Max 真机验证。无需 Root，不申请相册、麦克风、相机权限；安全窗口不绕过。配置页受 FLAG_SECURE 保护，避免把令牌截进队列。", 13)
+        text("本构建尚未在 K90 Pro Max 真机验证。无需 Root，不申请相册、麦克风权限；相机只在主动扫码连接时申请；安全窗口不绕过。配置页受 FLAG_SECURE 保护，避免把令牌截进队列。", 13)
         text("${BuildConfig.VERSION_NAME} · Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}\n${Build.MANUFACTURER} ${Build.MODEL}", 12)
     }
     private fun draft() = CollectorConfig(server.text.toString().trim(), token.text.toString().trim(), name.text.toString().trim(),
@@ -218,13 +224,14 @@ class MainActivity : Activity() {
         val c = draft().also { it.validate() }
         val old = settings.read()
         require(queue().depth() == 0 || old.server.trimEnd('/') == c.server.trimEnd('/')) { "队列尚有数据，请先同步到原节点再更换地址，避免误传给另一节点" }
-        settings.save(c)
+        ConnectionGuard.change(this, c.server) { settings.save(c) }
         UploadWorker.schedule(this, c, true)
         SourceWork.schedule(this, true)
         toast("配置已保存，规则对后续新截图生效")
         true
     } catch (e: Exception) { toast(e.message ?: "请检查配置输入"); false }
     private fun startCapture() {
+        if (ConnectionGuard.changing()) { toast("正在连接节点，请稍后再开始采集"); return }
         if (settings.enabled) { toast("已启用，状态见上方"); return }
         if (!saveConfig()) return
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { notifications(); toast("请先允许通知，然后再次点击开始"); return }
@@ -232,14 +239,17 @@ class MainActivity : Activity() {
         if (c.mode == "accessibility") {
             if (Build.VERSION.SDK_INT < 30) { toast("Android 10 请勾选投屏模式"); return }
             if (!CaptureAccessibilityService.connected) { toast("请先启用无障碍截图服务，返回后再开始"); return }
-            settings.enabled = true
-            settings.status("capturing", "采集已启用，等待首帧；配置页受系统安全保护")
+            if (!ConnectionGuard.startCapture(this, SourceRules.hash(c.toString())) {
+                Operations.record(this, OperationKind.CAPTURE_STARTED)
+                settings.status("capturing", "采集已启用，等待首帧；配置页受系统安全保护")
+            }) { toast("节点或配置已变化，请重新点击开始"); return }
         } else {
             if (PrivacyRules.exclusions(c.excludedPackages).isNotEmpty() && !CaptureAccessibilityService.connected) {
                 toast("已配置应用排除，请先启用无障碍服务以可靠识别可见窗口"); return
             }
             val manager = getSystemService(MediaProjectionManager::class.java)
             val intent = if (Build.VERSION.SDK_INT >= 34) manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()) else manager.createScreenCaptureIntent()
+            projectionRequestStamp = SourceRules.hash(c.toString())
             @Suppress("DEPRECATION") startActivityForResult(intent, 100)
         }
         refreshStatus()
@@ -265,12 +275,16 @@ class MainActivity : Activity() {
             return
         }
         if (requestCode == 100 && resultCode == RESULT_OK && data != null) {
-            settings.enabled = true
-            startForegroundService(Intent(this, ProjectionService::class.java).putExtra("result", resultCode).putExtra("consent", data))
+            val stamp = projectionRequestStamp; projectionRequestStamp = null
+            if (stamp == null || !ConnectionGuard.startCapture(this, stamp) {
+                startForegroundService(Intent(this, ProjectionService::class.java).putExtra("result", resultCode).putExtra("consent", data).putExtra("configurationStamp", stamp))
+                Operations.record(this, OperationKind.CAPTURE_STARTED)
+            }) settings.status("permission_required", "节点或采集配置已变化，本次授权已丢弃；请重新点击开始")
         } else if (requestCode == 100) settings.status("permission_required", "你未授予投屏权限，未开始截图")
     }
     private fun stopCapture() {
         settings.enabled = false
+        Operations.record(this, OperationKind.CAPTURE_STOPPED)
         SupportEvents.record(this, EventStage.CAPTURE, EventCode.STOPPED)
         settings.status("paused", "你已停止采集，已有队列继续同步")
         stopService(Intent(this, ProjectionService::class.java))
@@ -285,8 +299,10 @@ class MainActivity : Activity() {
         if (c != null) runCatching { Diagnostics(this).sample(c) }
         val live = if (c?.mode == "projection") ProjectionService.running else CaptureAccessibilityService.connected
         val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else settings.message()
+        val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
+        val totals = if (stats == null) "统计暂不可读取" else "本周期保存截图 ${stats.optLong("SCREEN_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
         val bytes = runCatching { queue().bytes() / 1024.0 / 1024 }.getOrDefault(0.0)
-        status.text = "$state\n待上传 ${queue().depth()} 条 · ${"%.1f".format(bytes)} MiB\n${settings.uploadStatus()}\n无障碍 ${if (CaptureAccessibilityService.connected) "已连接" else "未连接"} · 使用情况 ${if (ForegroundApps.usageAllowed(this)) "已授权" else "未授权"}\n最近采集 ${settings.lastCapture() ?: "无"}"
+        status.text = "$state\n$totals\n待上传 ${queue().depth()} 条 · ${"%.1f".format(bytes)} MiB\n${settings.uploadStatus()}\n无障碍 ${if (CaptureAccessibilityService.connected) "已连接" else "未连接"} · 使用情况 ${if (ForegroundApps.usageAllowed(this)) "已授权" else "未授权"}\n最近采集 ${settings.lastCapture() ?: "无"}"
         if (::nsfwStatus.isInitialized) {
             val model = NsfwModelStore(this)
             nsfwStatus.text = "${model.status()}\n${model.inferenceStatus()}"
@@ -306,7 +322,17 @@ class MainActivity : Activity() {
         try { startActivity(intent) }
         catch (_: Exception) { try { startActivity(detailsIntent()); toast("此系统入口不同，请在应用详情或系统搜索中查找") } catch (_: Exception) { toast("请手动打开系统设置") } }
     }
-    override fun onResume() { super.onResume(); handler.post(refresh) }
+    override fun onResume() {
+        super.onResume()
+        if (::server.isInitialized) {
+            val c = settings.read()
+            if (c.server != loadedServer || c.token != loadedToken) {
+                applyingConnectionFields = true
+                try { server.setText(c.server); token.setText(c.token); name.setText(c.deviceName); loadedServer = c.server; loadedToken = c.token } finally { applyingConnectionFields = false }
+            }
+        }
+        handler.post(refresh)
+    }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun text(value: String, size: Int, color: Int = Color.rgb(39, 54, 50)): TextView = TextView(this).apply {

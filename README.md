@@ -8,7 +8,7 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 
 [开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [资料分层](docs/context-layers.md) · [来源与 MCP](docs/connectors.md) · [排查问题](docs/troubleshooting.md)
 
-[下载安装包](https://github.com/utopiafar/mote/releases) · [保留设置地更新](docs/updating.md) · [发布与签名流程](docs/releasing.md)
+[下载安装包](https://github.com/utopiafar/mote/releases) · [扫码与 JSON 连接](docs/connections.md) · [保留设置地更新](docs/updating.md) · [发布与签名流程](docs/releasing.md)
 
 ## 能做什么
 
@@ -19,6 +19,7 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 - **分层记忆**：保留原始输入、不可变快照与外部引用；默认检索当前版本，按需展开历史。模型记忆按“概要 → 内容 → 原始证据”逐层披露。
 - **问答与回顾**：Agent 自主选择只读工具、查找材料、解释证据；答案附可点击的原始记录。可手动或按配置周期生成回顾。
 - **离线可用、资料可迁移**：持久上传队列、幂等确认、JSON 导入导出、离线完整备份、可选图片加密与保留期限。
+- **便捷连接**：中央生成一次性二维码或 JSON 邀请，采集端确认后获得独立凭据；Chatbot 可导入专用 MCP JSON。按连接撤销，不必给每个端点分发中央管理令牌。
 - **版本更新**：客户端检查和验证 Release 安装包，服务端按命名环境备份、升级与回退；配置、队列、模型和资料保存在原位置。
 - **可观测与可调节**：查看同步、索引、存储和请求状态；按需记录客户端资源样本，调整采样频率、图片尺寸、质量、推理线程和低电量策略。
 
@@ -102,7 +103,7 @@ node scripts/mote.mjs status --profile dev
 node scripts/mote.mjs token --profile dev
 ```
 
-开发节点默认是 `http://127.0.0.1:47842`。打开节点界面并输入最后一个命令显示的访问令牌。该令牌用于访问私人资料，请只填入自己的客户端。
+开发节点默认是 `http://127.0.0.1:47842`。打开节点界面并输入最后一个命令显示的所有者令牌。该令牌用于管理私人资料；采集 App 建议使用下一步的独立配对凭据。
 
 配置、数据、日志分别放在 `.mote/profiles/dev/` 下。修改 `mote.env` 后停止并重新启动该环境：
 
@@ -119,8 +120,12 @@ node scripts/mote.mjs start --profile dev
 
 | 客户端 | 安装与首次设置 |
 |---|---|
-| macOS | 从 [Releases](https://github.com/utopiafar/mote/releases/latest) 下载对应架构的 ZIP，解压并将 App 移到应用目录后打开。填写节点地址与令牌，设置排除应用、遮挡和本地模型，再授权屏幕录制并点击开始。首次打开与源码构建见 [电脑端说明](docs/desktop.md)。 |
-| Android | 从 [Releases](https://github.com/utopiafar/mote/releases/latest) 下载日常版 APK；需要与日常环境并存时选择文件名含 `dev` 的开发版。配置节点、本地模型与采集权限，选择采集模式；小米 HyperOS 另配置自启动、电池与后台权限，见 [Android 说明](docs/android.md)。 |
+| macOS | 从 [Releases](https://github.com/utopiafar/mote/releases/latest) 下载对应架构的 ZIP，解压并将 App 移到应用目录后打开。导入邀请 JSON、链接或二维码图片，核对节点后连接；再配置隐私过滤、模型与系统权限。首次打开与源码构建见 [电脑端说明](docs/desktop.md)。 |
+| Android | 从 [Releases](https://github.com/utopiafar/mote/releases/latest) 下载日常版 APK；需要与日常环境并存时选择文件名含 `dev` 的开发版。在「连接中央节点」扫码或导入 JSON，配置模型与采集权限；小米后台设置见 [Android 说明](docs/android.md)。 |
+
+在中央界面「设备 → 添加设备与 Chatbot」填写设备可访问的 HTTPS 地址，生成 10 分钟有效的一次性邀请。旧设备重新授权时选择原设备身份；新设备保持默认。采集凭据仅用于自身数据同步，Mac 内浏览完整中央资料时可以临时输入所有者令牌，采集配置不改变。MCP 的读取与指定来源写入使用另外的独立凭据，详见 [连接指南](docs/connections.md)。
+
+Android 的「采集与存储详情」显示本周期已保存截图／笔记、确认上传、过滤与失败、待重试结果，以及当前队列、模型、来源缓存、存储目录和生效配置。累计数从安装此功能或明确重置时起算，旧版本历史不会补算成零；实际待同步数量直接读取本机文件。
 
 在两端配置页下载或导入 Qwen 语言模型与视觉投影器，合计约 **703 MiB**。可选 ModelScope 优先、Hugging Face 回退，或离线导入已校验的文件。默认 CPU 2 线程、60 秒审查超时、输入最长边 512 像素。配置、误判边界与自定义前置任务见 [端上推理](docs/local-inference.md)。
 

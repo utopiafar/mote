@@ -71,10 +71,10 @@ DeepSeek Harness 采用精确版本 SDK，sdk-minimal 中禁用 shell/文件相�
 | 更大资料库 | Store/ContextReader | PostgreSQL、对象存储、向量数据库、后台任务队列 |
 | 更换 Agent / 模型 | 受控只读 Context 工具、证据 ID | Harness 插件、MCP 包装、其他消费者 |
 | 端上增加通用视觉任务 | 图像内存输入、自然语言策略、JSON 决策、可取消独立进程 | 新任务提示与输出 schema、经验证的新模型清单 |
-| 个人多设备变成多人 | 明确的认证 hook | 每设备令牌、读写 scope、来源 ACL、owner namespace |
+| 个人多设备变成多人 | 所有者认证与独立设备／MCP scope | 独立 owner namespace、多租户隔离；当前节点内已有设备来源归属校验 |
 | 完整文件库 | source=file 事件与版本 | PDF/Office 解析、分块、文件对象引用 |
 
-当前单 owner Bearer 令牌同时可读写，SQLite 单写者、CPU 内向量比较，HTTP base64 不适合超大媒体。它们是明确 MVP 限制，不是已经具备多租户/海量数据能力。长期应在已测量的瓶颈上替换实现，保持事件、来源和证据可迁移。
+当前中央仍是单所有者资料库。0.6.0 已有一次性配对、可撤销设备凭据和独立 MCP scope；设备只能上传及读取自身来源，所有者可以浏览和管理整个归档。多人 owner namespace、SQLite 单写者、CPU 内向量比较和 HTTP base64 大媒体是后续扩展边界，当前不宣称多租户或海量数据能力。长期应在已测量的瓶颈上替换实现，保持事件、来源和证据可迁移。
 
 ## 环境与运维边界
 

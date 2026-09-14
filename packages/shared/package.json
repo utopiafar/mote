@@ -12,6 +12,12 @@
       "types": "./dist/environment.d.ts",
       "import": "./dist/environment.js"
     },
+    "./connection": {
+      "types": "./dist/connection.d.ts",
+      "import": "./dist/connection.js",
+      "require": "./dist/connection.js",
+      "default": "./dist/connection.js"
+    },
     "./release": {
       "types": "./dist/release.d.ts",
       "import": "./dist/release.js",
@@ -19,7 +25,7 @@
       "default": "./dist/release.js"
     }
   },
-  "typesVersions": { "*": { "release": ["dist/release.d.ts"] } },
+  "typesVersions": { "*": { "release": ["dist/release.d.ts"], "connection": ["dist/connection.d.ts"] } },
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  previewConnection: input => ipcRenderer.invoke('mote:connection-preview', input),
+  importConnection: kind => ipcRenderer.invoke('mote:connection-import', kind),
+  cancelConnection: () => ipcRenderer.invoke('mote:connection-cancel'),
+  confirmConnection: (id, origin) => ipcRenderer.invoke('mote:connection-confirm', id, origin),
+  connectionStatus: () => ipcRenderer.invoke('mote:connection-status'),
+  testConnection: () => ipcRenderer.invoke('mote:connection-test'),
+  openCentralOwner: token => ipcRenderer.invoke('mote:central-owner', token),
   updateStatus: () => ipcRenderer.invoke('mote:update-status'),
   updateChannel: channel => ipcRenderer.invoke('mote:update-channel', channel),
   checkUpdate: () => ipcRenderer.invoke('mote:update-check'),

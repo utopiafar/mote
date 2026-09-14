@@ -10,7 +10,7 @@ export type Operation = 'capture'|'note'|'import'|'embedding'|'search'|'timeline
 const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention'];
 const events = new Set(['server.started','server.stopping','request.completed','request.failed','queue.snapshot','support.exported',...['ingest','index','agent','source','maintenance'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
-const routes = new Set(['health','status','captures','notes','image','devices','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
+const routes = new Set(['health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
 const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted'] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

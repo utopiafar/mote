@@ -66,6 +66,7 @@ import "./styles.css";
 import { Notes } from "./Notes";
 import { Diagnostics } from "./Diagnostics";
 import { ServerSettings } from "./ServerSettings";
+import { Connections } from "./Connections";
 
 import {Sources} from "./Sources";
 import {Memories} from "./Memories";
@@ -1421,9 +1422,11 @@ function Ask({
 function Devices({
   devices,
   connection,
+  api,
 }: {
   devices: Device[];
   connection: Connection;
+  api: Api;
 }) {
   return (
     <>
@@ -1432,6 +1435,7 @@ function Devices({
         <h1>让你的设备，彼此相连。</h1>
         <p>采集发生在端点，线索汇聚到你自己的中央节点。</p>
       </div>
+      <Connections api={api} serverUrl={connection.url || window.location.origin} devices={devices}/>
       <div className="device-grid">
         {devices.map((device) => (
           <article className="panel device-card" key={device.deviceId}>
@@ -1482,15 +1486,6 @@ function Devices({
             <code className="record-id">{device.deviceId}</code>
           </article>
         ))}
-        <article className="add-device-card">
-          <div className="device-icon">
-            <Link2 size={25} />
-          </div>
-          <h2>连上下一台设备</h2>
-          <p>在采集端填入下面的节点地址，使用与此控制台相同的访问令牌。</p>
-          <code>{connection.url || window.location.origin}</code>
-          <span>请确保设备可以访问这个地址。</span>
-        </article>
       </div>
       <section className="panel connection-guide">
         <div className="section-heading">
@@ -1506,7 +1501,7 @@ function Devices({
             <h3>电脑端</h3>
             <p>
               启动 Mote
-              桌面程序，填写节点地址和令牌。先设置应用过滤、遮挡区域与本地隐私处理，再授予系统屏幕录制权限并开启采集。
+              桌面程序，导入连接邀请 JSON 或二维码图片，核对地址后连接。先设置应用过滤、遮挡区域与本地隐私处理，再授予系统屏幕录制权限并开启采集。
             </p>
             <span>启动命令</span>
             <code>npm run desktop</code>
@@ -1845,6 +1840,7 @@ function App() {
   const [connection, setConnection] = useState<Connection | null>(
     readConnection,
   );
+  const connectionGeneration = useRef(0);
   const [showConnect, setShowConnect] = useState(false);
   const [page, setPage] = useState<Page>("overview");
   const [period, setPeriod] = useState("week");
@@ -1867,6 +1863,7 @@ function App() {
   const [notice, setNotice] = useState("");
   const [timelineRevision, setTimelineRevision] = useState(0);
   const disconnect = useCallback(() => {
+    connectionGeneration.current++;
     sessionStorage.removeItem("mote.connection");
     setConnection(null);
     setStatus(null);
@@ -1880,7 +1877,10 @@ function App() {
     setNotice("访问令牌已失效，请重新连接中央节点。");
   }, [disconnect]);
   const api = useMemo(
-    () => (connection ? createApi(connection, unauthorized) : null),
+    () => {
+      const generation = connectionGeneration.current;
+      return connection ? createApi(connection, unauthorized, () => generation === connectionGeneration.current) : null;
+    },
     [connection, unauthorized],
   );
   const range: Range = useMemo(() => {
@@ -1898,16 +1898,19 @@ function App() {
   useEffect(() => {
     if (!api) return;
     let active = true;
+    const controller = new AbortController();
+    const requestOptions = {signal: controller.signal};
     setLoading(true);
     setError("");
     void Promise.all([
-      api.request<Status>("/api/status"),
-      api.request<{ items: Device[] }>("/api/devices"),
-      api.request<Activity>(`/api/activity${queryString(range)}`),
+      api.request<Status>("/api/status", requestOptions),
+      api.request<{ items: Device[] }>("/api/devices", requestOptions),
+      api.request<Activity>(`/api/activity${queryString(range)}`, requestOptions),
       api.request<{ items: Capture[] }>(
         `/api/captures${queryString(range, { limit: 4 })}`,
+        requestOptions,
       ),
-      api.request<{ items: Answer[] }>("/api/insights"),
+      api.request<{ items: Answer[] }>("/api/insights", requestOptions),
     ])
       .then(
         ([nextStatus, nextDevices, nextActivity, nextRecent, nextInsights]) => {
@@ -1923,6 +1926,7 @@ function App() {
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
+      controller.abort();
     };
   }, [api, range, revision]);
   useEffect(() => {
@@ -1936,14 +1940,19 @@ function App() {
     window.scrollTo({ top: 0 });
   }
   function connected(value: Connection) {
+    connectionGeneration.current++;
     sessionStorage.setItem("mote.connection", JSON.stringify(value));
     setConnection(value);
     setStatus(null);
+    setDevices([]); setRecent([]); setInsights([]); setEvidenceId(null);
+    setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
+    setGenerating(false);
     setShowConnect(false);
     setNotice("");
   }
   async function generate() {
     if (!api || generating) return;
+    const generation = connectionGeneration.current;
     setGenerating(true);
     setNotice("");
     try {
@@ -1951,12 +1960,13 @@ function App() {
         method: "POST",
         body: JSON.stringify({ ...range, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       });
+      if (generation !== connectionGeneration.current) return;
       setNotice("新的个人回顾已生成，打开「问一问 → 个人回顾」查看证据。");
       refresh();
     } catch (e) {
-      setNotice(errorMessage(e));
+      if (generation === connectionGeneration.current) setNotice(errorMessage(e));
     } finally {
-      setGenerating(false);
+      if (generation === connectionGeneration.current) setGenerating(false);
     }
   }
   return (
@@ -2201,7 +2211,7 @@ function App() {
                         />
                       )}
                       {page === "devices" && (
-                        <Devices devices={devices} connection={connection} />
+                        <Devices key={connection.url} devices={devices} connection={connection} api={api} />
                       )}
                       {page === "vault" && (
                         <Vault

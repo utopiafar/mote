@@ -1,0 +1,36 @@
+package dev.mote.collector
+
+import android.content.Context
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantReadWriteLock
+
+/** Serializes explicit connection changes against current upload/scan and capture work. */
+object ConnectionGuard {
+    private val lock = ReentrantReadWriteLock()
+    val processing = AtomicInteger(0)
+    fun changing() = lock.isWriteLocked
+    fun configurationStamp(context: Context) = SourceRules.hash(Settings(context).read().toString())
+    fun startCapture(context: Context, expectedStamp: String, start: () -> Unit): Boolean = sync {
+        val settings = Settings(context)
+        if (settings.enabled || expectedStamp != configurationStamp(context)) return@sync false
+        settings.enabled = true
+        try { start(); true } catch (e: Exception) { settings.enabled = false; throw e }
+    } ?: false
+    fun <T> sync(action: () -> T): T? {
+        if (!lock.readLock().tryLock()) return null
+        return try { action() } finally { lock.readLock().unlock() }
+    }
+    fun <T> change(context: Context, nextServer: String, action: () -> T): T {
+        if (!lock.writeLock().tryLock()) throw ConnectionFailure("busy")
+        try {
+            val settings = Settings(context)
+            if (settings.enabled || ProjectionService.running || processing.get() > 0) throw ConnectionFailure("busy")
+            if (settings.read().server.trimEnd('/') != nextServer.trimEnd('/')) {
+                if (context.queue().depth() > 0 || QuickNotes.draft(context).read()?.prepared != null) throw ConnectionFailure("pending")
+                val sources = context.localSources()
+                if (sources.sources().any { (sources.state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }) throw ConnectionFailure("pending")
+            }
+            return action()
+        } finally { lock.writeLock().unlock() }
+    }
+}
