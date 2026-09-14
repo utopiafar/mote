@@ -1,11 +1,31 @@
 package dev.mote.collector
 
 import android.content.Context
+import android.os.Looper
 import androidx.work.*
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** One scheduling gate for screenshots, notes, source revisions and device heartbeats. */
 object SyncSchedule {
+    private data class Request(val context: Context, val intent: ScheduleIntent)
+    private val dispatcher = CoalescingDispatcher<Request>(Executors.newSingleThreadExecutor(),
+        merge = { old, next -> next.copy(intent = old.intent.merge(next.intent)) }, action = { request ->
+            val app = request.context
+            runCatching {
+                val ran = ConnectionGuard.sync {
+                    val current = Settings(app).read()
+                    if (stamp(current) == request.intent.stamp) scheduleNow(app, current, request.intent.explicit)
+                }
+                if (ran == null && request.intent.explicit) reportBusy(app)
+            }.onFailure {
+                SupportEvents.record(app, EventStage.UPLOAD, EventCode.SCHEDULER)
+                Settings(app).syncStatus("error", "同步调度暂不可用，记录保留在本机，请稍后重试")
+            }
+        })
+    internal fun reportBusy(context: Context) {
+        Settings(context).syncStatus("waiting", "正在应用设置，请完成后重试本次扫描或立即同步")
+    }
     fun pending(context: Context): PendingSync {
         val captures = context.queue().pendingSync(); val sources = context.localSources().pendingSync()
         return PendingSync(captures.count + sources.count, listOfNotNull(captures.oldestAt, sources.oldestAt).minOrNull(), sources.pendingUpdates)
@@ -19,6 +39,16 @@ object SyncSchedule {
     fun constraints(config: CollectorConfig) = Constraints.Builder()
         .setRequiredNetworkType(if (config.wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
     fun schedule(context: Context, config: CollectorConfig, explicit: Boolean = false) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            val app = context.applicationContext
+            // Pending counts can decrypt a large legacy queue or wait for storage recovery.
+            // Service ticks and UI actions must never perform that work on the main looper.
+            dispatcher.submit(Request(app, ScheduleIntent(stamp(config), explicit)))
+            return
+        }
+        scheduleNow(context, config, explicit)
+    }
+    private fun scheduleNow(context: Context, config: CollectorConfig, explicit: Boolean) {
         val manager = WorkManager.getInstance(context); val settings = Settings(context)
         if (!config.hasSyncConnection()) {
             listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload").forEach(manager::cancelUniqueWork)

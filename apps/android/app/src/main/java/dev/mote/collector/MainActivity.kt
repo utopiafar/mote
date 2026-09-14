@@ -19,6 +19,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.*
+import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
     private lateinit var settings: Settings
@@ -94,6 +95,11 @@ class MainActivity : Activity() {
     private lateinit var nsfwStatus: TextView
     private val nsfwSources = listOf("auto", "mirror", "official", "custom")
     private val handler = Handler(Looper.getMainLooper())
+    private val statusExecutor = Executors.newSingleThreadExecutor()
+    private var statusLoading = false
+    private var resumed = false
+    private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
+        val totals: String, val technical: String, val connection: String, val model: String)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 2000) }
     }
@@ -451,12 +457,28 @@ class MainActivity : Activity() {
     }
 
     private fun retrySync() {
-        runCatching {
-            val c = settings.read()
-            if (!c.hasSyncConnection()) { showPage(Page.CONNECTION); toast("记录已保存在本机；连接节点后才可以同步") }
-            else { c.validateConnection(); if (localSources().sources().any { it.enabled }) SourceWork.schedule(this, true, syncExplicit = true) else UploadWorker.schedule(this, c, true); toast("已请求同步；仍遵守网络约束") }
-        }
-            .onFailure { toast(it.message ?: "配置无效") }
+        val app = applicationContext
+        Thread {
+            val result = runCatching {
+                ConnectionGuard.sync {
+                    val c = Settings(app).read()
+                    if (!c.hasSyncConnection()) false
+                    else {
+                        c.validateConnection()
+                        if (app.localSources().sources().any { it.enabled }) SourceWork.schedule(app, true, syncExplicit = true)
+                        else UploadWorker.schedule(app, c, true)
+                        true
+                    }
+                } ?: error("正在应用设置，请稍后重试")
+            }
+            handler.post {
+                if (isDestroyed || isFinishing) return@post
+                result.onSuccess { connected ->
+                    if (!connected) { showPage(Page.CONNECTION); toast("记录已保存在本机；连接节点后才可以同步") }
+                    else toast("已请求同步；仍遵守网络约束")
+                }.onFailure { toast(it.message ?: "配置无效") }
+            }
+        }.start()
     }
 
     private fun draft() = CollectorConfig(
@@ -559,13 +581,17 @@ class MainActivity : Activity() {
     @Deprecated("Platform consent result API retained for the minimal native Activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 103 && resultCode == RESULT_OK && data?.data != null) {
-            try { contentResolver.openOutputStream(data.data!!)!!.use { it.write(Diagnostics(this).export().toByteArray()) }; toast("数值诊断已导出") }
-            catch (_: Exception) { toast("诊断导出失败") }; return
-        }
-        if (requestCode == 104 && resultCode == RESULT_OK && data?.data != null) {
-            try { contentResolver.openOutputStream(data.data!!)!!.use { it.write(SupportEvents.export(this).toByteArray()) }; SupportEvents.record(this, EventStage.SUPPORT, EventCode.OK); toast("安全支持包已导出") }
-            catch (_: Exception) { SupportEvents.record(this, EventStage.SUPPORT, EventCode.STORAGE); toast("支持包导出失败") }; return
+        if (requestCode in setOf(103, 104) && resultCode == RESULT_OK && data?.data != null) {
+            val uri = data.data!!; val app = applicationContext
+            Thread {
+                val result = runCatching {
+                    val body = if (requestCode == 104) SupportEvents.export(app) else Diagnostics(app).export()
+                    app.contentResolver.openOutputStream(uri)!!.use { it.write(body.toByteArray()) }
+                }
+                if (requestCode == 104) SupportEvents.record(app, EventStage.SUPPORT, if (result.isSuccess) EventCode.OK else EventCode.STORAGE)
+                handler.post { if (!isDestroyed) toast(if (result.isSuccess) "诊断包已导出" else "诊断导出失败") }
+            }.start()
+            return
         }
         if (requestCode == 102 && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!
@@ -600,17 +626,39 @@ class MainActivity : Activity() {
         if (!::status.isInitialized) return
         if (QueueStorage.recovering) { status.text = "正在恢复并验证本机存储…"; return }
         if (ConnectionGuard.reconfiguring()) { status.text = "正在应用设置，已有记录保持加密保存"; updateSaveBar(); return }
+        if (statusLoading || isDestroyed) return
+        statusLoading = true
+        // Queue recovery, Keystore reads and diagnostic writes may wait for a worker.
+        // Keep one request in flight; a slow scan must never accumulate refresh jobs.
+        statusExecutor.execute {
+            val result = runCatching { readStatus() }
+            handler.post {
+                statusLoading = false
+                if (!resumed || isDestroyed || isFinishing) return@post
+                if (QueueStorage.recovering || ConnectionGuard.reconfiguring()) { refreshStatus(); return@post }
+                result.onSuccess { snapshot ->
+                    captureTitle.text = snapshot.title; captureAction.text = snapshot.action
+                    status.text = snapshot.status; syncStatus.text = snapshot.sync
+                    totalsStatus.text = snapshot.totals; technicalStatus.text = snapshot.technical
+                    connectionSummary.text = snapshot.connection; nsfwStatus.text = snapshot.model
+                    updateSaveBar()
+                }.onFailure { status.text = "状态暂不可读取，已有记录保留在本机" }
+            }
+        }
+    }
+    private fun readStatus(): StatusSnapshot {
         val c = runCatching { settings.read() }.getOrNull()
         if (c != null) runCatching { Diagnostics(this).sample(c) }
         val live = if (c?.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected
         val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else settings.message()
         val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
         val totals = if (stats == null) "统计暂不可读取" else "本周期保存截图 ${stats.optLong("SCREEN_QUEUED")} · 应用活动 ${stats.optLong("ACTIVITY_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
-        val pending = runCatching { SyncSchedule.pending(this).count }.getOrNull()
-        val bytes = runCatching { queue().bytes() / 1024.0 / 1024 }.getOrNull()
+        val queueStats = runCatching { queue().stats() }.getOrNull()
+        val pending = runCatching { queueStats?.pendingSync?.count?.plus(localSources().pendingSync().count) }.getOrNull()
+        val bytes = queueStats?.bytes?.div(1024.0 * 1024)
         val modelMissing = c != null && c.nsfw.enabled && AppCollectionRules.parse(c.appCollectionRules).mayCollectContent() && !NsfwModelStore(this).hasFile()
         val queueFull = c != null && bytes != null && bytes >= c.maxQueueMiB
-        captureTitle.text = when {
+        val title = when {
             settings.enabled && !live -> "等待采集权限"
             settings.enabled && queueFull -> "本机空间已满"
             settings.enabled && modelMissing -> "等待本机过滤模型"
@@ -618,8 +666,7 @@ class MainActivity : Activity() {
             settings.enabled -> "正在本机采集"
             else -> "采集已暂停"
         }
-        captureAction.text = if (settings.enabled) "暂停采集" else "开始采集"
-        status.text = state
+        val action = if (settings.enabled) "暂停采集" else "开始采集"
         val syncMessage = when {
             c == null -> "无法读取同步配置"
             !c.hasSyncConnection() -> "仅保存在本机 · 尚未连接节点"
@@ -628,15 +675,12 @@ class MainActivity : Activity() {
                 if (c.syncMode == "interval") "约每 ${c.syncIntervalMinutes} 分钟同步" else "满 ${c.syncBatchSize} 条或等待 ${c.syncIntervalMinutes} 分钟同步"
             else -> settings.uploadStatus()
         }
-        syncStatus.text = "${pending?.let { "待同步 $it 条" } ?: "队列暂不可读取"}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}\n$syncMessage"
-        totalsStatus.text = if (stats == null) "统计暂不可读取" else "截图 ${stats.optLong("SCREEN_QUEUED")}    活动 ${stats.optLong("ACTIVITY_QUEUED")}    随手记 ${stats.optLong("NOTE_QUEUED")}\n本周期已同步 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK")} 条"
-        technicalStatus.text = "$state\n$totals\n${syncStatus.text}\n${settings.uploadStatus()}\n无障碍 ${if (CaptureAccessibilityService.connected) "已连接" else "未连接"} · 使用情况 ${if (ForegroundApps.usageAllowed(this)) "已授权" else "未授权"}\n最近采集 ${settings.lastCapture() ?: "无"}"
-        connectionSummary.text = if (c?.server.isNullOrBlank()) "尚未连接中央节点，请导入邀请或填写下方设置。" else "已保存节点：${c?.server}"
-        updateSaveBar()
-        if (::nsfwStatus.isInitialized) {
-            val model = NsfwModelStore(this)
-            nsfwStatus.text = "${model.status()}\n${model.inferenceStatus()}"
-        }
+        val syncText = "${pending?.let { "待同步 $it 条" } ?: "队列暂不可读取"}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}\n$syncMessage"
+        val totalsText = if (stats == null) "统计暂不可读取" else "截图 ${stats.optLong("SCREEN_QUEUED")}    活动 ${stats.optLong("ACTIVITY_QUEUED")}    随手记 ${stats.optLong("NOTE_QUEUED")}\n本周期已同步 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK")} 条"
+        val technicalText = "$state\n$totals\n$syncText\n${settings.uploadStatus()}\n无障碍 ${if (CaptureAccessibilityService.connected) "已连接" else "未连接"} · 使用情况 ${if (ForegroundApps.usageAllowed(this)) "已授权" else "未授权"}\n最近采集 ${settings.lastCapture() ?: "无"}"
+        val connectionText = if (c?.server.isNullOrBlank()) "尚未连接中央节点，请导入邀请或填写下方设置。" else "已保存节点：${c?.server}"
+        val model = NsfwModelStore(this)
+        return StatusSnapshot(title, action, state, syncText, totalsText, technicalText, connectionText, "${model.status()}\n${model.inferenceStatus()}")
     }
     private fun notifications() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
@@ -654,6 +698,7 @@ class MainActivity : Activity() {
     }
     override fun onResume() {
         super.onResume()
+        resumed = true
         RuntimeSettings.observeProjectionConsent { resumeProjectionAfterSettings() }
         if (::server.isInitialized) {
             val c = settings.read()
@@ -667,7 +712,8 @@ class MainActivity : Activity() {
         }
         handler.post(refresh)
     }
-    override fun onPause() { RuntimeSettings.observeProjectionConsent(null); handler.removeCallbacks(refresh); super.onPause() }
+    override fun onPause() { resumed = false; RuntimeSettings.observeProjectionConsent(null); handler.removeCallbacks(refresh); super.onPause() }
+    override fun onDestroy() { statusExecutor.shutdownNow(); handler.removeCallbacks(refresh); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun page(page: Page, subtitle: String) {

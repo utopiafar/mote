@@ -7,11 +7,11 @@ class MoteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         if (getProcessName() != packageName) return
-        SupportEvents.record(this, EventStage.APP, EventCode.STARTED)
         Notifications.create(this)
         QueueStorage.recovering = true
         Executors.newSingleThreadExecutor().apply {
             execute {
+                SupportEvents.record(this@MoteApplication, EventStage.APP, EventCode.STARTED)
                 val settings = Settings(this@MoteApplication)
                 try {
                     queue().recoverOrphans()

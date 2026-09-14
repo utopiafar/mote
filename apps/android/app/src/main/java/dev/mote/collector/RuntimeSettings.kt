@@ -44,11 +44,14 @@ object RuntimeSettings {
                     if (change == null) settings.save(next) else change()
                 }
             }
+            // Also validate the still-saved configuration after a failed apply. The selected
+            // directory can wait behind recovery/migration; keep that wait off the UI thread.
+            val current = runCatching {
+                settings.read().also { app.queue().depth() }
+            }
             main.post {
-                val current = runCatching { settings.read() }
                 val applied = runCatching {
                     val config = current.getOrThrow()
-                    app.queue().depth() // Never resume into a missing or unverified selected directory.
                     val resume = wasEnabled && settings.enabled
                     var needsConsent = false
                     when (captureResume(wasEnabled, settings.enabled, config.effectiveMode(), ProjectionService.instance != null)) {

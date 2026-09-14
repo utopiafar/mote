@@ -42,15 +42,19 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         if (selected == AppCollectionMode.OFF) { pause(if (!windows.trustworthy) "当前应用规则要求完整窗口信息，暂停本次采样" else "当前可见窗口的应用规则不允许本次采样", if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
         if (selected != expected) return false
         if (!unlocked(context)) { pause("锁屏或熄屏，暂停采集", OperationReason.LOCKED); return false }
-        runCatching { diagnostics.sample(config) }
         val battery = Diagnostics.battery(context)
         if (config.chargingOnly && !battery.second) { pause("用户设置仅充电时采集", OperationReason.CHARGING); return false }
         if (config.batteryPauseBelowPct > 0 && (battery.first < 0 || battery.first < config.batteryPauseBelowPct)) { pause("达到用户设置的低电量暂停条件", OperationReason.BATTERY); return false }
         if (expected == AppCollectionMode.CONTENT && config.nsfw.enabled && !NsfwModelStore(context).hasFile()) { pause("NSFW 模型未就绪，请下载或导入；尚未截图", OperationReason.MODEL_MISSING); return false }
         val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
         if (reason != null) { pause(reason, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
-        if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) { pause("本机空间已满，请同步释放空间或调大存储上限", OperationReason.QUEUE_FULL); return false }
         return true
+    }
+    private fun checkStorage(config: CollectorConfig) {
+        // canCollect runs on service/UI callbacks. Queue accounting and diagnostic sampling
+        // may scan legacy encrypted records, so run them only on the processing executor.
+        runCatching { diagnostics.sample(config) }
+        if (context.queue().bytes() >= config.maxQueueMiB * 1024L * 1024L) throw QueueFull()
     }
     fun submitActivity(windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) {
         if (closed || !busy.compareAndSet(false, true)) return
@@ -58,6 +62,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         try { executor.execute {
             try {
                 if (!settings.enabled || closed || !unlocked(context) || settings.read() != config || policy(config, windows) != AppCollectionMode.ACTIVITY) return@execute
+                checkStorage(config)
                 val now = observedAtMs
                 val appId = requireNotNull(windows.foreground)
                 val duration = duration(now, appId, AppCollectionMode.ACTIVITY, config.intervalSeconds)
@@ -71,7 +76,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
                 settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型 · ${context.queue().depth()} 条保存在本机")
                 scheduleUpload(config)
-            } catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause("应用活动未保存，请检查本机队列；未采集内容") }
+            } catch (error: QueueFull) { Operations.record(context, OperationKind.ACTIVITY_FAILED, OperationReason.QUEUE_FULL); pause(error.message ?: "队列已满", OperationReason.QUEUE_FULL) }
+            catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause("应用活动未保存，请检查本机队列；未采集内容") }
             finally { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { busy.set(false); ConnectionGuard.processing.decrementAndGet() }
     }
@@ -88,6 +94,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 if (!settings.enabled || !unlocked(context) || closed || settings.read() != config || policy(config, windows) != AppCollectionMode.CONTENT) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
                 if (reason != null) { Operations.record(context, OperationKind.FRAME_BLOCKED, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); pause(reason); return@execute }
+                stage = EventStage.QUEUE
+                checkStorage(config)
                 val inferenceStart = SystemClock.elapsedRealtime()
                 stage = EventStage.MODEL
                 val decision = if (config.nsfw.enabled) nsfw.check(bitmap, config.nsfw) else null

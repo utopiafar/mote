@@ -2,8 +2,10 @@ package dev.mote.collector
 
 import android.content.Context
 import android.os.CancellationSignal
+import android.os.Looper
 import androidx.work.*
 import java.time.Instant
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
@@ -99,7 +101,24 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
 }
 
 object SourceWork {
+    private data class Request(val context: Context, val intent: ScheduleIntent)
+    private val dispatcher = CoalescingDispatcher<Request>(Executors.newSingleThreadExecutor(),
+        merge = { old, next -> next.copy(intent = old.intent.merge(next.intent)) }, action = { request ->
+            val app = request.context
+            runCatching {
+                val ran = ConnectionGuard.sync {
+                    if (SyncSchedule.stamp(Settings(app).read()) == request.intent.stamp)
+                        schedule(app, request.intent.manualScan, request.intent.explicit)
+                }
+                if (ran == null && (request.intent.explicit || request.intent.manualScan)) SyncSchedule.reportBusy(app)
+            }.onFailure { SupportEvents.record(app, EventStage.SOURCE, EventCode.SCHEDULER) }
+        })
     fun schedule(context: Context, manual: Boolean = false, syncExplicit: Boolean = false) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            val app = context.applicationContext
+            dispatcher.submit(Request(app, ScheduleIntent(SyncSchedule.stamp(Settings(app).read()), syncExplicit, manual)))
+            return
+        }
         val manager = WorkManager.getInstance(context)
         if (context.localSources().sources().none { it.enabled }) { manager.cancelUniqueWork("mote-source-scan"); manager.cancelUniqueWork("mote-source-periodic"); manager.cancelUniqueWork("mote-source-upload"); return }
         val request = OneTimeWorkRequestBuilder<SourceScanWorker>().setInputData(workDataOf("manual" to manual, "syncExplicit" to syncExplicit)).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()

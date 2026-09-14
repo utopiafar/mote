@@ -9,6 +9,10 @@ import java.util.UUID
 
 class QueueFull : IllegalStateException("本机空间已满，暂停新增记录；同步释放空间或调大本机存储上限后恢复")
 
+data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes: Long, val pendingSync: PendingSync) {
+    val bytes: Long get() = diskBytes + reservedOcrBytes
+}
+
 /** Atomic encrypted events + content-addressed blobs. All callers share the process lock. */
 class DurableQueue(private val dir: File, private val cipher: ByteCipher, createMissing: Boolean = true, private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
     companion object {
@@ -17,19 +21,48 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         // 100,000 UTF-16 code units can require six JSON bytes each, plus result fields.
         private const val OCR_RESERVE_BYTES = 600_256L
         private val localFields = listOf("_uploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts")
+        // Only fixed statistics are cached, never decrypted capture content. A bounded process cache
+        // is shared by the short-lived queue handles; the encrypted files remain authoritative.
+        private const val MAX_CACHED_DIRECTORIES = 4
+        private const val MAX_CACHED_EVENTS = 50_000
+        private data class EventStamp(val bytes: Long, val modifiedAt: Long)
+        private data class EventStats(val stamp: EventStamp, val pending: Boolean, val reservedBytes: Long)
+        private val statistics = object : LinkedHashMap<String, MutableMap<String, EventStats>>(MAX_CACHED_DIRECTORIES, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MutableMap<String, EventStats>>?) = size > MAX_CACHED_DIRECTORIES
+        }
     }
     internal var assertCurrent: (() -> Unit)? = null
     private inline fun <T> guarded(action: () -> T): T = synchronized(lock) { assertCurrent?.invoke(); action() }
     init { check(dir.isDirectory || createMissing && dir.mkdirs()) { "本机存储目录不可用" } }
     private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
-    fun pendingSync(): PendingSync = guarded {
-        val files = records().filter { val event = read(it); !syncFailed(event) && (!event.optBoolean("_uploaded") || event.has("_ocrResult")) }
-        PendingSync(files.size, files.firstOrNull()?.lastModified())
+    fun stats(): QueueStats = guarded {
+        val files = dir.listFiles() ?: error("无法读取本机存储目录")
+        val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
+        val eventNames = files.filter { it.extension == "event" }.mapTo(mutableSetOf()) { it.name }
+        cache.keys.retainAll(eventNames)
+        var diskBytes = 0L; var reservedBytes = 0L; var pending = 0; var oldestAt: Long? = null
+        for (file in files) {
+            val length = file.length()
+            if (file.isFile) diskBytes += length
+            if (file.extension != "event") continue
+            val stamp = EventStamp(length, file.lastModified())
+            val cached = cache[file.name]?.takeIf { it.stamp == stamp } ?: run {
+                // A failed decrypt is propagated. It must never become an empty/healthy queue.
+                cache.remove(file.name)
+                val event = read(file)
+                EventStats(stamp, !syncFailed(event) && (!event.optBoolean("_uploaded") || event.has("_ocrResult")), ocrReserve(event))
+                    .also { if (cache.size < MAX_CACHED_EVENTS) cache[file.name] = it }
+            }
+            reservedBytes += cached.reservedBytes
+            if (cached.pending) { pending++; oldestAt = oldestAt?.let { minOf(it, stamp.modifiedAt) } ?: stamp.modifiedAt }
+        }
+        QueueStats(eventNames.size, diskBytes, reservedBytes, PendingSync(pending, oldestAt))
     }
-    fun depth(): Int = guarded { records().size }
+    fun pendingSync(): PendingSync = stats().pendingSync
+    fun depth(): Int = guarded { dir.listFiles()?.count { it.extension == "event" } ?: 0 }
     fun diskBytes(): Long = guarded { dir.listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L }
-    fun reservedOcrBytes(): Long = guarded { records().sumOf { ocrReserve(read(it)) } }
-    fun bytes(): Long = guarded { diskBytes() + reservedOcrBytes() }
+    fun reservedOcrBytes(): Long = stats().reservedOcrBytes
+    fun bytes(): Long = stats().bytes
     private fun read(file: File): JSONObject = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8))
     private fun syncFailed(event: JSONObject) = event.optBoolean("_archiveMissing") || event.optBoolean("_ocrConflict")
     private fun ocrReserve(event: JSONObject) = if (event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult") && !syncFailed(event)) OCR_RESERVE_BYTES else 0L
@@ -38,6 +71,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         try {
             FileOutputStream(temp).use { it.write(cipher.seal(bytes)); it.fd.sync() }
             check(temp.renameTo(file)) { "无法原子写入队列" }
+            // Atomic replacements may have the same length and timestamp on coarse filesystems.
+            statistics[dir.absolutePath]?.remove(file.name)
         } finally { temp.delete() }
     }
     fun enqueue(event: JSONObject, image: ByteArray?, maxBytes: Long) = guarded {
@@ -85,6 +120,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private fun remove(file: File, record: JSONObject) {
         val hash = record.optString("_blob", "")
         check(file.delete()) { "无法删除已确认记录" }
+        statistics[dir.absolutePath]?.remove(file.name)
         if (hash.isNotEmpty() && records().none { read(it).optString("_blob", "") == hash }) File(dir, "$hash.blob").delete()
     }
     fun pendingOcr(): JSONObject? = guarded {
