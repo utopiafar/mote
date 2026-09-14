@@ -1,0 +1,84 @@
+/** Real central + browser, generated tokens and notes only; no personal capture or model calls. */
+const {app,BrowserWindow}=require('electron');
+const {mkdtempSync,mkdirSync,writeFileSync,rmSync}=require('node:fs');
+const {tmpdir}=require('node:os');const {join,resolve}=require('node:path');
+const {spawn}=require('node:child_process');const {randomBytes,randomUUID}=require('node:crypto');
+const net=require('node:net');const assert=require('node:assert/strict');
+const repo=resolve(__dirname,'..'),root=mkdtempSync(join(tmpdir(),'mote-login-')),output=join(repo,'.mote/web-login');
+mkdirSync(output,{recursive:true,mode:0o700});app.setPath('userData',join(root,'browser'));app.on('window-all-closed',()=>{});
+let server,window;const delay=ms=>new Promise(r=>setTimeout(r,ms));
+async function until(fn,label){const deadline=Date.now()+20000;while(Date.now()<deadline){if(await fn())return;await delay(80);}throw Error('Timed out: '+label);}
+async function run(){
+ await app.whenReady();
+ const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
+ const base='http://127.0.0.1:'+port,owner=randomBytes(32).toString('hex'),envFile=join(root,'mote.env');
+ writeFileSync(envFile,`MOTE_PROFILE=test\nMOTE_HOST=127.0.0.1\nMOTE_PORT=${port}\nMOTE_DATA_DIR=./data\nMOTE_TOKEN=${owner}\n`,{mode:0o600});
+ const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('MOTE_')));
+ server=spawn('node',[join(repo,'apps/server/dist/index.js')],{env:{...env,MOTE_ENV_FILE:envFile},stdio:'ignore'});
+ await until(async()=>{try{return(await fetch(base+'/api/health')).ok;}catch{return false;}},'fixture server');
+ const request=(path,token,body)=>fetch(base+path,{method:body?'POST':'GET',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+ const invite=await(await request('/api/connections/invitations',owner,{label:'Generated phone',serverUrl:base})).json();
+ const collector=await(await request('/api/connections/redeem',null,{code:invite.invitation.code,deviceId:'fixture-phone',deviceName:'合成测试手机',platform:'android'})).json();
+ assert.equal((await request('/api/notes',collector.token,{id:randomUUID(),deviceId:'fixture-phone',deviceName:'合成测试手机',platform:'android',capturedAt:new Date().toISOString(),text:'Generated private note for authentication regression.'})).status,201);
+ window=new BrowserWindow({width:1360,height:1000,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});
+ const wc=window.webContents,js=code=>wc.executeJavaScript(code);
+ const click=async text=>until(()=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)return false;b.click();return true;})()`),'button '+text);
+ const input=async value=>js(`(()=>{const e=document.querySelector('[aria-label="管理访问令牌"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+ async function shot(name){await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');writeFileSync(join(output,name+'.png'),(await wc.capturePage()).toPNG());assert.ok(await js('document.documentElement.scrollWidth<=innerWidth'),'no horizontal overflow: '+name+' '+JSON.stringify(await js(`Array.from(document.querySelectorAll('body *')).filter(e=>e.getBoundingClientRect().right>innerWidth+1).map(e=>({tag:e.tagName,cls:e.className,width:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right})).slice(0,12)`)));}
+ await window.loadURL(base);
+ await until(()=>js(`document.querySelector('.welcome')`),'anonymous welcome');
+ assert.equal(await js(`!!document.querySelector('.archive-page,.device-overview,.server-settings')`),false);
+ await js(`window.fixtureRequests=[];window.fixtureFailures=new Set();window.fixtureExpire=false;const original=fetch.bind(window);window.fetch=async(input,init)=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;window.fixtureRequests.push(path);if(window.fixtureExpire&&path==='/api/status')return new Response(JSON.stringify({message:'Generated expired session'}),{status:401});if(window.fixtureFailures.has(path))return new Response(JSON.stringify({message:'Generated independent endpoint failure'}),{status:503});return original(input,init);};true;`);
+ await click('设备');await until(()=>js(`document.querySelector('#connect-title')?.textContent==='登录 Mote'`),'device login guard');
+ assert.ok(await js(`document.querySelector('.connect-modal').innerText.includes('进入「设备」')`));
+ assert.equal(await js(`document.querySelector('.login-advanced').open`),false,'same-origin login defaults to no URL entry');
+ assert.deepEqual(await js('window.fixtureRequests'),[],'anonymous navigation does not request private data');
+ await shot('login-desktop');window.setSize(430,900);await delay(150);await shot('login-mobile');window.setSize(1360,1000);
+ await input('generated-invalid');await click('登录并继续');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('令牌无效')`),'invalid token error');
+ assert.equal(await js(`sessionStorage.getItem('mote.connection')`),null);
+ await input(collector.token);await click('登录并继续');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('没有管理权限')`),'collector cannot unlock owner UI');
+ assert.equal(await js(`!!document.querySelector('.device-overview')`),false);
+ await js(`document.querySelector('[aria-label="关闭登录"]').click()`);
+ await click('资料库');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('进入「资料库」')`),'preserve selected protected page');
+ await js(`window.fixtureFailures.add('/api/insights');window.fixtureFailures.add('/api/status');true;`);
+ await input(owner);await click('登录并继续');
+ await until(()=>js(`!!document.querySelector('.archive-page .filter-bar')`),'archive opens despite failed status and insights');
+ assert.equal(await js(`document.querySelector('.connect-modal')`),null);
+ await click('设备');await until(()=>js(`document.querySelector('.device-overview')?.innerText.includes('合成测试手机')`),'devices load independently');
+ await click('扫码连接设备');await until(()=>js(`!!document.querySelector('#connections-title')`),'pairing accessible without overview status');
+ await click('生成设备二维码');await until(()=>js(`!!document.querySelector('.connection-qr img')`),'QR accessible after login');
+ assert.equal(await js(`document.querySelector('[aria-label="连接邀请 JSON"]').value.includes(${JSON.stringify(owner)})`),false);
+ await click('取消邀请');await until(()=>js(`!document.querySelector('.connection-invitation')`),'cancel synthetic invite');
+ await js(`window.fixtureFailures.clear();true;`);await click('总览');await js(`document.querySelector('[aria-label="刷新资料"]').click()`);
+ await until(()=>js(`document.querySelector('.capture-card')`),'overview recovers after retry');
+ await shot('authenticated-desktop');
+ await js(`window.fixtureExpire=true;document.querySelector('[aria-label="刷新资料"]').click()`);
+ await until(()=>js(`document.querySelector('#connect-title')?.textContent==='登录 Mote'&&sessionStorage.getItem('mote.connection')===null`),'expired session clears credential and reopens login');
+ assert.equal(await js(`document.body.innerText.includes('Generated private note')`),false,'private records removed after expiry');
+ await js(`window.fixtureExpire=false;true;`);await input(owner);await click('登录并继续');await until(()=>js(`document.querySelector('.capture-card')`),'relogin');
+ await js(`document.querySelector('[aria-label="登录会话"]').click()`);await click('退出登录');
+ assert.equal(await js(`sessionStorage.getItem('mote.connection')`),null);
+ assert.equal(await js(`!!document.querySelector('.capture-card,.device-overview,.archive-page')`),false);
+ await window.reload();await until(()=>js(`!!document.querySelector('.welcome')`),'logged out survives reload');
+ // A saved token is untrusted until the owner-only endpoint validates it again.
+ await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token:collector.token}))});location.reload()`);
+ await until(()=>js(`document.body.innerText.includes('此令牌没有管理权限')`),'restored collector session denied');
+ assert.equal(await js(`!!document.querySelector('.archive-page,.device-overview,.capture-card')`),false);
+ // Run this same web build inside the real Mac central window, with main-only credentials.
+ window.destroy();
+ const {openCentralWindow}=require('../apps/desktop/dist/central-window');
+ const {defaultConfig}=require('../apps/desktop/dist/config');
+ window=await openCentralWindow({...defaultConfig(),serverUrl:base,token:owner});
+ await until(()=>window.webContents.executeJavaScript(`document.body.innerText.includes('已登录 · test')`),'native owner session verified');
+ assert.equal(await window.webContents.executeJavaScript(`JSON.parse(sessionStorage.getItem('mote.connection')).token`),'__MOTE_NATIVE_AUTH__');
+ await window.webContents.executeJavaScript(`document.querySelector('[aria-label="登录会话"]').click()`);
+ await until(()=>window.webContents.executeJavaScript(`!![...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='退出登录')`),'native session controls');
+ const nativeSession=window.webContents.session;
+ void window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='退出登录').click()`).catch(()=>{});
+ await until(()=>window.isDestroyed(),'native logout closes privileged window');
+ await assert.rejects(nativeSession.fetch(base+'/api/configuration'));
+ writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,checks:['anonymous page guard','same-origin login','invalid token','collector denied','intended page restored','independent endpoint failures','device QR reachable','expired session clears data','logout','restored token verification','desktop/mobile layout','native owner-only header authentication','native logout closes authorized session']},null,2));
+ console.log('PASS: real central + browser login, permission gates, independent navigation and device QR; generated content only.');
+}
+async function finish(code){if(window&&!window.isDestroyed())window.destroy();if(server&&server.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('close',r)),delay(5000)]);}rmSync(root,{recursive:true,force:true});app.exit(code);}
+run().then(()=>finish(0),e=>{console.error(e.message);void finish(1);});

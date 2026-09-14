@@ -97,7 +97,7 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     ...devices.map(device=>[device.deviceId,device] as const),
   ]).values()];
   return <section className="panel connections" aria-labelledby="connections-title">
-    <div className="section-heading"><div><span className="eyebrow">CONNECT ONCE</span><h2 id="connections-title"><Link2 size={19}/>连接授权</h2><p>扫码或导入一次性邀请，把手机和电脑连接到中央节点。</p></div><span className="badge muted">{activeCount} 个有效连接</span></div>
+    <div className="section-heading"><div><span className="eyebrow">CONNECT ONCE</span><h2 id="connections-title"><QrCode size={19}/>设备二维码与连接授权</h2><p>扫码或导入一次性邀请，把手机和电脑连接到中央节点。</p></div><span className="badge muted">{activeCount} 个有效连接</span></div>
     <div className="connection-steps"><span><b>1</b>填写设备可访问的地址</span><span><b>2</b>生成邀请或 MCP 配置</span><span><b>3</b>在客户端确认并连接</span></div>
     {error&&<div className="notice error" role="alert">{error}</div>}
     {message&&<div className="notice" role="status"><Check size={16}/>{message}</div>}
@@ -111,7 +111,7 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
         <p>每份邀请仅能使用一次，10 分钟后失效。连接后得到独立采集凭据，不包含中央管理令牌。</p>
         <label>设备身份<select aria-label="邀请设备身份" value={deviceId} disabled={!!busy} onChange={event=>setDeviceId(event.target.value)}><option value="">首次连接的新设备</option>{knownDevices.map(device=><option key={device.deviceId} value={device.deviceId}>{device.deviceName} · {device.deviceId}</option>)}</select></label>
         <small>从旧版手填令牌迁移或重新配对，请选择原设备以保留身份。成功配对后会替换该设备之前的采集凭据。</small>
-        <button className="button primary" disabled={!!busy||!label.trim()} onClick={createInvitation}><QrCode size={16}/>{busy==='invite'?'正在生成…':invite?'重新生成邀请':'生成连接邀请'}</button>
+        <button className="button primary" disabled={!!busy||!label.trim()} onClick={createInvitation}><QrCode size={16}/>{busy==='invite'?'正在生成…':invite?'重新生成二维码':'生成设备二维码'}</button>
       </div>
       <div className="connection-method" hidden={method!=='chatbot'}><h3><ShieldCheck size={18}/>连接其他 Chatbot · MCP</h3>
         <p>生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。</p>

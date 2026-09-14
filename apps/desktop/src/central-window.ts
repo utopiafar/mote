@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -34,6 +34,10 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
   isolated.on('will-download', downloadListener);
   const central = new BrowserWindow({ width: 1280, height: 850, minWidth: 820, minHeight: 600, title: 'Mote · 中央仓库',
     webPreferences: { session: isolated, preload: join(__dirname, 'central-preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, devTools: false } });
+  const closeSession = (event: Electron.IpcMainEvent) => {
+    if (!central.isDestroyed() && event.sender === central.webContents && event.senderFrame === central.webContents.mainFrame) central.close();
+  };
+  ipcMain.on('mote:central-close', closeSession);
   central.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const target = new URL(url);
@@ -52,6 +56,7 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
   central.webContents.on('will-navigate', (event, url) => { if (!centralRequestAllowed(url, origin)) event.preventDefault(); });
   central.webContents.on('will-redirect', (event, url) => { if (!centralRequestAllowed(url, origin)) event.preventDefault(); });
   central.on('closed', () => {
+    ipcMain.removeListener('mote:central-close', closeSession);
     isolated.removeListener('will-download', downloadListener);
     if (guardOwners.get(partition) !== owner) return;
     // Persistent drafts survive, but service workers / keepalive requests get no network after close.

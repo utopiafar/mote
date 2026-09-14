@@ -34,7 +34,7 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   const wc=window.webContents,errors=[];wc.on('console-message',(_event,level,message)=>{if(level>=3)errors.push(message);});
   await window.loadURL(url);
   await wc.executeJavaScript(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
-  await until(()=>wc.executeJavaScript(`document.body.innerText.includes('中央节点已连接')`),'authenticated app');
+  await until(()=>wc.executeJavaScript(`document.body.innerText.includes('已登录 ·')`),'authenticated app');
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.innerText==='设置').click()`);
   await until(()=>wc.executeJavaScript(`!!document.querySelector('.preference-menu')`),'settings hub');
   const feedback = await wc.executeJavaScript(`(()=>{const link=document.querySelector('.preference-menu a.feedback-link');return {href:link.href,target:link.target,rel:link.rel};})()`);

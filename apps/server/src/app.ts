@@ -81,7 +81,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     if(req.method==='OPTIONS'||req.routeOptions.url==='/api/health'||!isApi||(req.method==='POST'&&req.routeOptions.url==='/api/connections/redeem'))return;
     if(validBearer(req))return;
     const c=connections.authenticate(req.headers.authorization);
-    if(!c)return reply.code(401).send({error:'unauthorized',message:'请连接中央节点并输入有效访问令牌',requestId:req.id});
+    if(!c)return reply.code(401).send({error:'unauthorized',message:'请提供有效访问令牌；管理网页请重新登录',requestId:req.id});
     identities.set(req,c);connections.assertCollectorRoute(c,req.method,req.routeOptions.url??'');
   });
   app.setErrorHandler((error,req,reply)=>{

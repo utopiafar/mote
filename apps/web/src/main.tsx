@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import {
   createApi,
+  ApiError,
   queryString,
   duration,
   bytes,
@@ -79,6 +80,9 @@ import {mediaCardText,mediaStatus,mediaExplanation} from './media-presentation';
 import {Sources} from "./Sources";
 import {Memories} from "./Memories";
 
+declare global {
+  interface Window { moteCentralSession?: {close: () => void} }
+}
 type Page = "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
   { id: "overview" as const, label: "总览", icon: LayoutDashboard, group: "日常" },
@@ -317,125 +321,69 @@ function CaptureCard({
   );
 }
 
-function ConnectionDialog({
-  initial,
-  onConnected,
-  onClose,
-}: {
+function ConnectionDialog({ initial, destination, onConnected, onClose }: {
   initial: Connection | null;
+  destination: string;
   onConnected: (value: Connection) => void;
   onClose: () => void;
 }) {
   const [url, setUrl] = useState(initial?.url ?? "");
-  const [token, setToken] = useState(initial?.token ?? "");
+  const [token, setToken] = useState("");
+  const [advanced, setAdvanced] = useState(Boolean(initial?.url));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const active = useRef<AbortController | null>(null);
+  useEffect(() => () => active.current?.abort(), []);
   async function connect(event: React.FormEvent) {
     event.preventDefault();
-    setBusy(true);
-    setError("");
+    if (active.current) return;
+    const controller = new AbortController(); active.current = controller;
+    setBusy(true); setError("");
     try {
-      const endpoint = url.trim().replace(/\/+$/, "");
+      const endpoint = advanced ? url.trim().replace(/\/+$/, "") : "";
       if (endpoint) {
         let parsed: URL;
         try { parsed = new URL(endpoint); }
-        catch { throw new Error("节点地址格式不正确，请输入完整的 HTTP(S) 地址，或留空连接当前网站。"); }
-        if (
-          !["http:", "https:"].includes(parsed.protocol) ||
-          parsed.username ||
-          parsed.password ||
-          parsed.search ||
-          parsed.hash ||
-          (parsed.pathname !== "/" && parsed.pathname !== "")
-        )
-          throw new Error(
-            "请输入节点的完整 HTTP(S) 地址，不包含路径、账号或查询参数。",
-          );
+        catch { throw new Error("请输入完整的节点地址，或使用当前网站。"); }
+        const local = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
+        if ((!local && parsed.protocol !== "https:") || !["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash || !["/", ""].includes(parsed.pathname))
+          throw new Error("远程节点须使用 HTTPS，地址不能包含路径、账号或查询参数。");
       }
-      if (!token.trim()) throw new Error("请填写中央节点的访问令牌。");
-      const connection = { url: endpoint, token: token.trim() };
-      await createApi(connection).request("/api/status");
-      onConnected(connection);
+      if (!token.trim()) throw new Error("请输入管理访问令牌。");
+      const connection = {url: endpoint, token: token.trim()};
+      // A collector credential must never unlock owner-only management pages.
+      await createApi(connection).request("/api/configuration", {signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])});
+      if (!controller.signal.aborted) onConnected(connection);
     } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
+      if (!controller.signal.aborted) setError(e instanceof ApiError && e.status === 401
+        ? "令牌无效或已失效，请检查后重新登录。"
+        : e instanceof ApiError && e.status === 403
+          ? "此令牌没有管理权限。请使用中央节点的管理令牌，设备配对凭据不能登录管理页面。"
+          : errorMessage(e));
+    } finally { if (!controller.signal.aborted) setBusy(false); active.current = null; }
   }
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <section
-        className="modal connect-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="connect-title"
-      >
-        <button
-          className="icon-button close"
-          aria-label="关闭连接设置"
-          onClick={onClose}
-        >
-          <X size={19} />
-        </button>
-        <div className="modal-icon">
-          <Link2 size={24} />
-        </div>
-        <div className="eyebrow">YOUR PERSONAL NODE</div>
-        <h2 id="connect-title">连接你的中央节点</h2>
-        <p className="muted-copy">资料留在你选择的地方，Mote 把它们串起来。</p>
-        <form onSubmit={connect}>
-          <label>
-            节点地址 <span>留空使用当前网站所在节点</span>
-            <input
-              autoFocus
-              placeholder="https://mote.example.com"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-          </label>
-          <label>
-            访问令牌
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder="粘贴中央节点的访问令牌"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              required
-            />
-          </label>
-          <div className="field-note">
-            <ShieldCheck size={15} />
-            令牌仅保留在当前浏览器标签页的会话中。
-          </div>
-          {error && <ErrorNotice text={error} />}
-          <button className="button primary full" disabled={busy}>
-            {busy ? (
-              <Spinner label="正在连接…" />
-            ) : (
-              <>
-                <Link2 size={16} />
-                连接节点
-              </>
-            )}
-          </button>
-        </form>
-        <div className="connection-help">
-          <strong>第一次使用？</strong>
-          <p>
-            从中央节点所选环境的数据目录中读取 <code>access-token</code>{" "}
-            文件并复制令牌。若设置过 <code>MOTE_TOKEN</code>，使用你配置的值。
-          </p>
-          <p>
-            手机上的 localhost 指手机自己；跨设备访问请填写可达的中央节点地址。
-          </p>
-        </div>
-      </section>
-    </div>
-  );
+  return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()} onKeyDown={e => e.key === "Escape" && onClose()}>
+    <section className="modal connect-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title">
+      <button className="icon-button close" aria-label="关闭登录" onClick={onClose}><X size={19}/></button>
+      <div className="modal-icon"><ShieldCheck size={24}/></div>
+      <div className="eyebrow">MOTE · 中央管理界面</div>
+      <h2 id="connect-title">登录 Mote</h2>
+      <p className="muted-copy">验证管理令牌后，进入「{destination}」。采集由手机和电脑上的客户端完成。</p>
+      <form onSubmit={connect}>
+        <p className="login-endpoint">当前节点 <strong>{advanced && url.trim() ? url.trim() : window.location.origin}</strong></p>
+        <label>管理访问令牌<input aria-label="管理访问令牌" autoFocus type="password" autoComplete="off" placeholder="输入此节点的管理令牌" value={token} onChange={e=>setToken(e.target.value)} required disabled={busy}/></label>
+        <div className="field-note"><ShieldCheck size={15}/>令牌只保留在当前标签页会话，退出登录后清除。</div>
+        <details className="login-advanced" open={advanced} onToggle={e=>{const open=e.currentTarget.open;if(open!==advanced){setAdvanced(open);setToken("");setError("");}}}>
+          <summary>高级：登录其他节点</summary>
+          <label>节点地址<input aria-label="登录节点地址" value={url} disabled={busy} onChange={e=>{setUrl(e.target.value);setToken("");}} placeholder="https://mote.example.com"/></label>
+          <small>一般无需修改。切换地址后，请输入目标节点的管理令牌。</small>
+        </details>
+        {error && <ErrorNotice text={error}/>}
+        <button className="button primary full" disabled={busy}>{busy ? <Spinner label="正在验证令牌…"/> : <>登录并继续<ArrowRight size={16}/></>}</button>
+      </form>
+      <details className="connection-help"><summary>在哪里获取管理令牌？</summary><p>在部署机器上运行 <code>node scripts/mote.mjs token --profile dev</code>（日常环境使用对应名称），或读取部署配置中的 <code>MOTE_TOKEN</code>。设备扫码使用单独的一次性邀请。</p></details>
+    </section>
+  </div>;
 }
 
 function EvidenceDialog({
@@ -1544,6 +1492,7 @@ function App() {
     readConnection,
   );
   const connectionGeneration = useRef(0);
+  const [verified, setVerified] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
   const [page, setPage] = useState<Page>("overview");
   const [period, setPeriod] = useState("week");
@@ -1570,15 +1519,23 @@ function App() {
     connectionGeneration.current++;
     sessionStorage.removeItem("mote.connection");
     setConnection(null);
+    setVerified(false);
+    setShowConnect(false);
+    setGenerating(false);
+    setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
+    setError("");
+    setLoading(false);
     setStatus(null);
     setDevices([]);
     setRecent([]);
     setInsights([]);
     setEvidenceId(null);
+    window.moteCentralSession?.close();
   }, []);
   const unauthorized = useCallback(() => {
     disconnect();
-    setNotice("访问令牌已失效，请重新连接中央节点。");
+    setNotice("登录已失效，请重新输入管理令牌。");
+    setShowConnect(true);
   }, [disconnect]);
   const api = useMemo(
     () => {
@@ -1587,6 +1544,15 @@ function App() {
     },
     [connection, unauthorized],
   );
+  useEffect(() => {
+    if (!api || verified) return;
+    const controller = new AbortController();
+    setError("");
+    void api.request("/api/configuration", {signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])})
+      .then(() => { if (!controller.signal.aborted) setVerified(true); })
+      .catch(e => { if (!controller.signal.aborted) setError(e instanceof ApiError && e.status === 403 ? "此令牌没有管理权限，请退出后使用管理令牌登录。" : errorMessage(e)); });
+    return () => controller.abort();
+  }, [api, verified, revision]);
   const range: Range = useMemo(() => {
     if (period === "all") return {};
     const now = new Date();
@@ -1600,51 +1566,42 @@ function App() {
     setTimelineRevision((value) => value + 1);
   }, []);
   useEffect(() => {
-    if (!api) return;
+    if (!api || !verified) return;
     let active = true;
     const controller = new AbortController();
-    const requestOptions = {signal: controller.signal};
-    setLoading(true);
-    setError("");
-    void Promise.all([
-      api.request<Status>("/api/status", requestOptions),
-      api.request<{ items: Device[] }>("/api/devices", requestOptions),
-      api.request<Activity>(`/api/activity${queryString(range)}`, requestOptions),
-      api.request<{ items: Capture[] }>(
-        `/api/captures${queryString(range, { limit: 4 })}`,
-        requestOptions,
-      ),
-      api.request<{ items: Answer[] }>("/api/insights", requestOptions),
-    ])
-      .then(
-        ([nextStatus, nextDevices, nextActivity, nextRecent, nextInsights]) => {
-          if (!active) return;
-          api.setAgentTimeout(nextStatus.agent.timeoutMs);
-          setStatus(nextStatus);
-          setDevices(nextDevices.items);
-          setActivity(nextActivity);
-          setRecent(nextRecent.items);
-          setInsights(nextInsights.items);
-        },
-      )
-      .catch((e) => active && setError(errorMessage(e)))
-      .finally(() => active && setLoading(false));
-    return () => {
-      active = false;
-      controller.abort();
+    setLoading(true); setError("");
+    const load = async <T,>(path: string, apply: (value: T) => void) => {
+      const result = await api.request<T>(path, {signal: controller.signal});
+      if (active) apply(result);
     };
-  }, [api, range, revision]);
+    // Independent collections must not block navigation when one endpoint fails.
+    void Promise.allSettled([
+      load<Status>("/api/status", value => {api.setAgentTimeout(value.agent.timeoutMs);setStatus(value);}),
+      load<{items: Device[]}>("/api/devices", value => setDevices(value.items)),
+      load<Activity>(`/api/activity${queryString(range)}`, setActivity),
+      load<{items: Capture[]}>(`/api/captures${queryString(range, {limit: 4})}`, value => setRecent(value.items)),
+      load<{items: Answer[]}>("/api/insights", value => setInsights(value.items)),
+    ]).then(results => {
+      if (!active) return;
+      const failure = results.find(result => result.status === "rejected");
+      if (failure?.status === "rejected") setError("部分资料加载失败，其他页面仍可使用。" + errorMessage(failure.reason));
+      setLoading(false);
+    });
+    return () => { active = false; controller.abort(); };
+  }, [api, verified, range, revision]);
   useEffect(() => {
     if (!api) return;
     const timer = setInterval(() => setRevision((value) => value + 1), 30_000);
     return () => clearInterval(timer);
   }, [api, refresh]);
   useEffect(() => {
+    if (showConnect) return;
     const heading = Array.from(document.querySelectorAll<HTMLElement>(".content h1")).find(element => element.getClientRects().length);
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll: true}); }
-  }, [page]);
+  }, [page, showConnect]);
   function onPage(next: Page) {
     setPage(next);
+    if (!connection) setShowConnect(true);
     setMenuOpen(false);
     window.scrollTo({ top: 0 });
   }
@@ -1652,6 +1609,7 @@ function App() {
     connectionGeneration.current++;
     sessionStorage.setItem("mote.connection", JSON.stringify(value));
     setConnection(value);
+    setVerified(false);
     setStatus(null);
     setDevices([]); setRecent([]); setInsights([]); setEvidenceId(null);
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
@@ -1691,7 +1649,7 @@ function App() {
             Mote<span className="brand-dot">.</span>
           </span>
         </button>
-        <div className="workspace-label">你的个人上下文</div>
+        <div className="workspace-label">中央管理界面</div>
         <nav>
           {["日常", "管理"].map(group => <React.Fragment key={group}><div className="nav-group-label">{group}</div>{nav.filter(item=>item.group===group).map((item) => (
             <button
@@ -1716,16 +1674,16 @@ function App() {
               慢慢成为你的记忆。
             </p>
           </div>
-          <button className="node-button" onClick={() => setShowConnect(true)}>
+          <button className="node-button" onClick={() => connection ? onPage("about") : setShowConnect(true)}>
             <span
-              className={`node-state ${connection && status ? "online" : ""}`}
+              className={`node-state ${verified ? "online" : ""}`}
             />
             <div>
               <strong>
-                {connection && status ? "中央节点已连接" : "连接中央节点"}
+                {verified ? `已登录 · ${status?.profile || "当前节点"}` : connection ? "正在验证登录" : "登录 Mote"}
               </strong>
               <small>
-                {connection && status ? "你的个人上下文库" : "让线索开始汇聚"}
+                {verified ? "管理当前节点" : "使用管理令牌访问资料"}
               </small>
             </div>
             <Settings2 size={15} />
@@ -1786,8 +1744,8 @@ function App() {
             )}
             <button
               className="avatar"
-              aria-label="连接设置"
-              onClick={() => setShowConnect(true)}
+              aria-label={connection ? "登录会话" : "登录 Mote"}
+              onClick={() => connection ? onPage("about") : setShowConnect(true)}
             >
               我
             </button>
@@ -1813,21 +1771,17 @@ function App() {
                 <div>
                   <div className="eyebrow">A HOME FOR YOUR CONTEXT</div>
                   <h1>
-                    把散落的片刻，
-                    <br />
-                    留给未来的自己。
+                    {page === "overview" ? "你的资料，汇聚在这里。" : `登录后查看${pageLabels[page]}`}
                   </h1>
                   <p>
-                    手机、电脑、文件。
-                    <br />
-                    一个私有资料库，一句就能问起的上下文。
+                    这里是当前节点的管理界面。登录后可查看资料库、管理设备和设置模型；手机与电脑客户端负责采集和同步。
                   </p>
                   <button
                     className="button primary"
                     onClick={() => setShowConnect(true)}
                   >
                     <Link2 size={16} />
-                    连接我的中央节点
+                    登录 Mote
                     <ArrowRight size={16} />
                   </button>
                 </div>
@@ -1878,16 +1832,18 @@ function App() {
           ) : (
             <>
               {error && <ErrorNotice text={error} retry={refresh} />}
-              {page === "notes" && api && <Notes key={connection.url || window.location.origin} api={api} namespace={connection.url || window.location.origin} revision={timelineRevision} onOpen={setEvidenceId} onSaved={refresh} />}
-              {!status && page !== "notes"
+              {!verified && <button className="button subtle" onClick={disconnect}>退出登录</button>}
+              {page === "notes" && api && verified && <Notes key={connection.url || window.location.origin} api={api} namespace={connection.url || window.location.origin} revision={timelineRevision} onOpen={setEvidenceId} onSaved={refresh} />}
+              {!verified
                 ? !error && (
                     <div className="initial-loading">
-                      <Spinner label="正在连接你的上下文库…" />
+                      <Spinner label="正在验证登录权限…" />
                     </div>
                   )
-                : api && status && (
+                : api && (
                     <>
-                      {page === "overview" && (
+                      {!["notes","devices","connections","settings","sources","archive","memories","about"].includes(page) && !status && !error && <Spinner label="正在读取节点状态…"/>}
+                      {page === "overview" && status && (
                         <Overview
                           api={api}
                           status={status}
@@ -1911,7 +1867,7 @@ function App() {
                           revision={timelineRevision}
                         />
                       )}
-                      {page === "ask" && (
+                      {page === "ask" && status && (
                         <Ask
                           api={api}
                           devices={devices}
@@ -1926,7 +1882,7 @@ function App() {
                       {page === "devices" && (
                         <DeviceOverview devices={devices} onConnect={()=>onPage("connections")} />
                       )}
-                      {page === "vault" && (
+                      {page === "vault" && status && (
                         <><PageBack title="设置" onBack={()=>onPage("settings")}/><Vault
                           api={api}
                           status={status}
@@ -1940,8 +1896,8 @@ function App() {
                       <div hidden={page!=="settings"}><ServerSettings key={connection.url || window.location.origin} api={api} onNavigate={onPage} onModelApplied={refresh}/></div>
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={connection.url || window.location.origin} devices={devices}/></>}
-                      {page === "developer" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
-                      {page === "about" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">你的资料，由你保管</div><h1>关于 Mote</h1><p>AI 原生个人上下文采集与中央归档。</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>当前中央节点</h2><p>{connection.url || window.location.origin}</p><p className="fine-print">访问令牌只保留在当前标签页会话。</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>退出此节点</button></section></>}
+                      {page === "developer" && status && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
+                      {page === "about" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">你的资料，由你保管</div><h1>关于 Mote</h1><p>AI 原生个人上下文采集与中央归档。</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>当前中央节点</h2><p>{connection.url || window.location.origin}</p><p className="fine-print">访问令牌只保留在当前标签页会话。</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>退出登录</button></section></>}
                     </>
                   )}
             </>
@@ -1959,6 +1915,7 @@ function App() {
       {showConnect && (
         <ConnectionDialog
           initial={connection}
+          destination={pageLabels[page]}
           onConnected={connected}
           onClose={() => setShowConnect(false)}
         />

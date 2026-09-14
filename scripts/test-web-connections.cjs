@@ -32,11 +32,11 @@ async function run(){
   async function request(path,token,body,method=body?'POST':'GET'){return fetch(url+path,{method,headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(15000)});}
   await window.loadURL(url);
   await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token:owner}))});location.reload()`);
-  await until(()=>js(`document.body.innerText.includes('中央节点已连接')`),'owner UI');
-  assert.ok(await click('设备'));await click('添加设备');await click('连接 Chatbot');await until(()=>js(`document.querySelector('#connections-title')&&Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='生成 MCP JSON'&&!b.disabled)`),'connections panel');
+  await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'owner UI');
+  assert.ok(await click('设备'));await click('扫码连接设备');await click('连接 Chatbot');await until(()=>js(`document.querySelector('#connections-title')&&Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='生成 MCP JSON'&&!b.disabled)`),'connections panel');
   assert.ok(await js(`document.querySelector('.connection-warning').textContent.includes('手机自己')`));
   assert.equal(await js(`document.querySelector('.connections').innerText.includes(${JSON.stringify(owner)})`),false);
-  await click('连接设备');await input('连接名称','合成手机 · QR / JSON');assert.ok(await click('生成连接邀请'));
+  await click('连接设备');await input('连接名称','合成手机 · QR / JSON');assert.ok(await click('生成设备二维码'));
   await until(()=>js(`!!document.querySelector('.connection-qr img')`),'local QR rendered');
   const invite=JSON.parse(await js(`document.querySelector('[aria-label="连接邀请 JSON"]').value`));
   assert.equal(invite.serverUrl,url);assert.equal(invite.format,'mote.connection');assert.ok(!JSON.stringify(invite).includes(owner));
@@ -58,7 +58,7 @@ async function run(){
   assert.equal((await request('/api/notes',connection.token,{...note,id:randomUUID()})).status,401);
   assert.equal((await request('/api/notes',owner)).status,200);
   await js(`(()=>{const s=document.querySelector('[aria-label="邀请设备身份"]');s.value=${JSON.stringify(device)};s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
-  await click('生成连接邀请');await until(()=>js(`!!document.querySelector('[aria-label="连接邀请 JSON"]')`),'bound recovery invitation');
+  await click('生成设备二维码');await until(()=>js(`!!document.querySelector('[aria-label="连接邀请 JSON"]')`),'bound recovery invitation');
   const replacement=JSON.parse(await js(`document.querySelector('[aria-label="连接邀请 JSON"]').value`));
   const recovered=await request('/api/connections/redeem',null,{...body,code:replacement.code});assert.equal(recovered.status,200);
   const newConnection=await recovered.json();assert.notEqual(newConnection.token,connection.token);
