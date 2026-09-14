@@ -26,8 +26,11 @@ class EventJournal(private val file: File, private val limit: Int = 500) {
         FileOutputStream(temporary).use { out -> out.write(next.toString().toByteArray()); out.fd.sync() }
         check(temporary.renameTo(file))
     }
-    fun read(): JSONArray = synchronized(lock) {
-        val raw = if (file.exists() && file.length() <= 256 * 1024) runCatching { JSONArray(file.readText()) }.getOrNull() else null
+    fun read(strict: Boolean = false): JSONArray = synchronized(lock) {
+        val raw = if (strict && file.exists()) {
+            check(file.length() <= 256 * 1024) { "Event log exceeds limit" }
+            JSONArray(file.readText()) // A corrupt/unreadable log is not an empty history.
+        } else if (file.exists() && file.length() <= 256 * 1024) runCatching { JSONArray(file.readText()) }.getOrNull() else null
         val safe = JSONArray()
         if (raw != null) for (index in maxOf(0, raw.length() - limit) until raw.length()) {
             val item = raw.optJSONObject(index) ?: continue

@@ -17,6 +17,11 @@ class ActivityStatsActivity : Activity() {
     private lateinit var history: LinearLayout
     private val executor = Executors.newSingleThreadExecutor()
     private var loading = false
+    private var historyPage = 0
+    private var pendingPage = 0
+    private var snapshot: JSONObject? = null
+    private var queueSnapshot: JSONObject? = null
+    private lateinit var progress: ProgressBar
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage()
@@ -24,6 +29,7 @@ class ActivityStatsActivity : Activity() {
         text("这些统计始终在本机保存，与开发者诊断开关独立。记录固定结果与数字，不记录画面、文字、应用名、邀请或令牌。")
         summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(summary)
         renderSummary("正在读取本机统计…")
+        progress = ProgressBar(this); body.addView(progress)
         button("刷新实际存储与统计") { refresh() }
         button("设置图片保存位置") { startActivity(Intent(this, StorageActivity::class.java)) }
         button("查看采集记录") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
@@ -41,6 +47,7 @@ class ActivityStatsActivity : Activity() {
     override fun onResume() { super.onResume(); refresh() }
     private fun refresh() {
         if (loading) return; loading = true
+        progress.visibility = android.view.View.VISIBLE
         executor.execute {
             try {
                 val state = Operations.ledger(this).read(); val counts = state.getJSONObject("counts")
@@ -80,39 +87,61 @@ class ActivityStatsActivity : Activity() {
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread
                     renderSummary(content); history.removeAllViews()
-                    history.addView(TextView(this).apply { text = "本机保留记录（最多 30 条；图片与文字请打开采集记录）" })
-                    val pending = queue.getJSONArray("pending")
-                    for (i in 0 until minOf(30, pending.length())) {
-                        val item = pending.getJSONObject(i)
-                        history.addView(Button(this).apply {
-                            text = "${if (item.optBoolean("archiveMissing")) "中央不可更新" else if (item.optBoolean("uploaded")) "已同步保留" else "待确认"} · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; "media" -> "媒体状态"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
-                            setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n加密条目字节：${item.getLong("bytes")}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。").setPositiveButton("关闭", null).show() }
-                        })
-                    }
-                    history.addView(TextView(this).apply { text = "最近固定结果（最多 30 条）" })
-                    val events = state.getJSONArray("events")
-                    for (i in events.length() - 1 downTo maxOf(0, events.length() - 30)) {
-                        val event = events.getJSONObject(i)
-                        history.addView(Button(this).apply {
-                            text = "${Instant.ofEpochMilli(event.getLong("atMs"))}\n${kind(OperationKind.valueOf(event.getString("kind")))} · ${reason(OperationReason.valueOf(event.getString("reason")))} · ${event.optString("recordId").take(8)}"
-                            setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机结果详情").setMessage(detail(event)).setPositiveButton("关闭", null).show() }
-                        })
-                    }
-                    MoteUi.styleTree(history)
-                    if (events.length() == 0) history.addView(TextView(this).apply { text = "此统计周期还没有事件，不能推断此前没有采集。" })
+                    snapshot = state; queueSnapshot = queue; historyPage = 0; pendingPage = 0; renderHistory()
                 }
             } catch (_: Exception) { runOnUiThread { if (!isDestroyed) renderSummary("统计或队列暂不可读取，不能按零展示；原始文件保留，请查看支持诊断。") } }
-            finally { runOnUiThread { loading = false } }
+            finally { runOnUiThread { loading = false; if (!isDestroyed) progress.visibility = android.view.View.GONE } }
         }
+    }
+    private fun pager(page: Int, total: Int, select: (Int) -> Unit) {
+        val row = LinearLayout(this)
+        row.addView(Button(this).apply { text = "上一页"; isEnabled = page > 0; setOnClickListener { select(page - 1) } })
+        row.addView(Button(this).apply { text = "下一页"; isEnabled = (page + 1) * 10 < total; setOnClickListener { select(page + 1) } })
+        history.addView(row)
+    }
+    private fun renderHistory() {
+        val state = snapshot ?: return
+        val queue = queueSnapshot ?: return
+        history.removeAllViews()
+        history.addView(TextView(this).apply { text = "本机保留记录（第 ${pendingPage + 1} 页，每页 10 条；图片与文字请打开采集记录）" })
+        val pending = queue.getJSONArray("pending")
+        for (i in pendingPage * 10 until minOf((pendingPage + 1) * 10, pending.length())) {
+            val item = pending.getJSONObject(i)
+            history.addView(Button(this).apply {
+                text = "${if (item.optBoolean("archiveMissing")) "中央不可更新" else if (item.optBoolean("uploaded")) "已同步保留" else "待确认"} · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; "media" -> "媒体状态"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
+                setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n加密条目字节：${item.getLong("bytes")}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。").setPositiveButton("关闭", null).show() }
+            })
+        }
+        pager(pendingPage, pending.length()) { pendingPage = it; renderHistory() }
+        history.addView(TextView(this).apply { text = "最近固定结果 · 第 ${historyPage + 1} 页，每页 10 条" })
+        val events = state.getJSONArray("events")
+        for (i in events.length() - 1 - historyPage * 10 downTo maxOf(0, events.length() - (historyPage + 1) * 10)) {
+            val event = events.getJSONObject(i)
+            history.addView(Button(this).apply {
+                text = "${Instant.ofEpochMilli(event.getLong("atMs"))}\n${kind(OperationKind.valueOf(event.getString("kind")))} · ${reason(OperationReason.valueOf(event.getString("reason")))} · ${event.optString("recordId").take(8)}"
+                setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机结果详情").setMessage(detail(event)).setPositiveButton("关闭", null).show() }
+            })
+        }
+        pager(historyPage, events.length()) { historyPage = it; renderHistory() }
+        MoteUi.styleTree(history)
+        if (events.length() == 0) history.addView(TextView(this).apply { text = "此统计周期还没有事件，不能推断此前没有采集。" })
     }
     private fun renderSummary(content: String) {
         summary.removeAllViews()
-        content.split("\n\n").filter { it.isNotBlank() }.forEach { block ->
+        content.split("\n\n").filter { it.isNotBlank() }.forEachIndexed { index, block ->
             val value = android.text.SpannableString(block)
             value.setSpan(android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 0, block.indexOf('\n').takeIf { it >= 0 } ?: block.length, 0)
-            summary.addView(TextView(this).apply {
+            val detail = TextView(this).apply {
                 text = value; textSize = 15f; setLineSpacing(5f, 1f); setPadding(moteDp(16), moteDp(16), moteDp(16), moteDp(16)); setTextColor(MoteUi.ink); background = MoteUi.shape(this@ActivityStatsActivity)
-            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 16 })
+            }
+            if (index > 1) {
+                detail.visibility = android.view.View.GONE
+                summary.addView(MoteUi.button(Button(this).apply {
+                    text = block.substringBefore('\n') + " · 展开 / 收起"
+                    setOnClickListener { detail.visibility = if (detail.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE }
+                }))
+            }
+            summary.addView(detail, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 16 })
         }
     }
     private fun text(value: String, size: Float = 15f) = TextView(this).apply { text = value; textSize = size; setPadding(0, 14, 0, 14) }.also(body::addView)

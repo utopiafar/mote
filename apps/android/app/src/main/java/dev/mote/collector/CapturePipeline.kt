@@ -98,6 +98,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 checkStorage(config)
                 val inferenceStart = SystemClock.elapsedRealtime()
                 stage = EventStage.MODEL
+                if (config.nsfw.enabled) settings.status("capturing", "已收到画面，正在加载模型并进行本机隐私检查…")
                 val decision = if (config.nsfw.enabled) nsfw.check(bitmap, config.nsfw) else null
                 if (decision != null) diagnostics.timing("inferenceMs", SystemClock.elapsedRealtime() - inferenceStart)
                 if (decision?.allow == false) {
@@ -116,12 +117,14 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 }
                 stage = EventStage.OCR
                 val runOcr = !config.ocrChargingOnly || Diagnostics.battery(context).second
+                if (runOcr) settings.status("capturing", "隐私检查已完成，正在识别文字…")
                 var text = if (runOcr) ocrInstance.value.recognize(output) else ""
                 var reviewed = false
                 var modelMaskApplied = false
                 var appliedMaskCount = masks.size
                 if (config.localReviewUrl.isNotBlank()) {
                     stage = EventStage.PRIVACY
+                    settings.status("capturing", "正在进行本机附加隐私检查…")
                     PrivacyRules.validateLocalReview(config.localReviewUrl)
                     val request = JSONObject().put("version", 1).put("imageBase64", Base64.encodeToString(jpeg(output, config.jpegQuality), Base64.NO_WRAP))
                         .put("imageMime", "image/jpeg").put("ocrText", text).put("appId", windows.foreground)

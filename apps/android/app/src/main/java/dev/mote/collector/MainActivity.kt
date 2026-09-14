@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private var applyingConnectionFields = false
     private lateinit var status: TextView
     private lateinit var captureTitle: TextView
+    private lateinit var captureProgress: ProgressBar
     private lateinit var syncStatus: TextView
     private lateinit var totalsStatus: TextView
     private lateinit var technicalStatus: TextView
@@ -97,6 +98,10 @@ class MainActivity : Activity() {
     private lateinit var nsfwCustom: EditText
     private lateinit var nsfwStatus: TextView
     private lateinit var permissionsSummary: TextView
+    private lateinit var accessibilityButton: Button
+    private lateinit var notificationButton: Button
+    private lateinit var usageButton: Button
+    private lateinit var batteryButton: Button
     private val nsfwSources = listOf("auto", "mirror", "official", "custom")
     private val handler = Handler(Looper.getMainLooper())
     private val statusExecutor = Executors.newSingleThreadExecutor()
@@ -180,6 +185,8 @@ class MainActivity : Activity() {
             text("此刻的 Mote", 12, MoteUi.accent)
             captureTitle = text("采集已暂停", 26)
             status = text("正在读取状态…", 14, MoteUi.muted)
+            captureProgress = ProgressBar(this@MainActivity, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true }
+            content.addView(captureProgress)
             captureAction = button("开始采集", true) { if (settings.enabled) stopCapture() else startCapture() }
             text("未连接节点也能采集；随时可以暂停。", 12, MoteUi.muted)
         }
@@ -466,25 +473,31 @@ class MainActivity : Activity() {
         page(Page.PERMISSIONS, "按需授权，让记录稳定运行")
         section("当前状态")
         permissionsSummary = text("正在检查系统权限…", 14, MoteUi.muted)
-        button("启用无障碍截图服务") {
+        accessibilityButton = button("启用无障碍截图服务") {
             AlertDialog.Builder(this).setTitle("屏幕采集权限说明")
                 .setMessage(getString(R.string.accessibility_description) + "\n\n继续后请在系统设置中选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。")
                 .setNegativeButton("取消", null).setPositiveButton("打开系统设置") { _, _ -> safeOpen(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
         }
         button("授权媒体播放状态（通知使用权）") { mediaPermission() }
-        rowButtons("通知权限", { notifications() }, "使用情况权限", { safeOpen(Intent(SystemSettings.ACTION_USAGE_ACCESS_SETTINGS)) })
-        rowButtons("电池优化设置", { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }, "自启动设置", { autostart() })
+        notificationButton = button("通知权限") { notifications() }
+        usageButton = button("使用情况权限") { safeOpen(Intent(SystemSettings.ACTION_USAGE_ACCESS_SETTINGS)) }
+        batteryButton = button("电池优化设置") { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        button("自启动设置 · 需在系统确认") { autostart() }
         button("应用详情 / 受限制设置") { safeOpen(detailsIntent()) }
         text("小米 / HyperOS：在系统应用设置中允许 Mote 自启动，将省电策略设为无限制，并允许通知；可在最近任务中锁定应用。菜单随系统版本变化。若侧载 APK 的无障碍开关受限，请在应用详情的菜单中检查“允许受限制的设置”。这些设置不能保证系统永不终止采集。", 13)
     }
 
     private fun updatePermissionSummary() {
         if (!::permissionsSummary.isInitialized) return
-        val accessibility = runCatching { SystemSettings.Secure.getString(contentResolver, SystemSettings.Secure.ENABLED_ACCESSIBILITY_SERVICES)?.split(':')?.any { it.equals(ComponentName(this, CaptureAccessibilityService::class.java).flattenToString(), true) } == true }.getOrDefault(false)
-        val notifications = if (Build.VERSION.SDK_INT >= 33) checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED else getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+        val accessibility = runCatching { SystemSettings.Secure.getString(contentResolver, SystemSettings.Secure.ENABLED_ACCESSIBILITY_SERVICES)?.split(':')?.any { ComponentName.unflattenFromString(it) == ComponentName(this, CaptureAccessibilityService::class.java) } == true }.getOrDefault(false)
+        val notifications = getSystemService(NotificationManager::class.java).areNotificationsEnabled()
         val usage = ForegroundApps.usageAllowed(this)
         val power = runCatching { getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) }.getOrDefault(false)
-        permissionsSummary.text = "屏幕采集：${if (accessibility) "已授权" else "未授权"}\n媒体通知使用权：${if (MediaCollection.permissionAllowed(this)) "已授权" else "未授权"}\n通知：${if (notifications) "已允许" else "未允许"}\n使用情况：${if (usage) "已授权" else "未授权"}\n电池优化：${if (power) "已豁免" else "系统可能限制后台运行"}"
+        accessibilityButton.text = if (accessibility) "无障碍截图已授权 · 管理" else "无障碍截图未授权 · 去授权"
+        notificationButton.text = if (notifications) "通知已允许 · 管理" else "通知未允许 · 去授权"
+        usageButton.text = if (usage) "使用情况已授权 · 管理" else "使用情况未授权 · 去授权"
+        batteryButton.text = if (power) "电池优化已豁免 · 管理" else "电池优化未豁免 · 设置"
+        permissionsSummary.text = "无障碍截图：${if (accessibility) if (CaptureAccessibilityService.connected) "已授权 · 服务已连接" else "已授权 · 等待系统连接服务" else "未授权"}\n媒体通知使用权：${if (MediaCollection.permissionAllowed(this)) "已授权" else "未授权"}\n投屏：${if (ProjectionService.running) "本次会话正在运行" else "未运行 · 开始时需系统授权"}\n通知：${if (notifications) "已允许" else "未允许"}\n使用情况：${if (usage) "已授权" else "未授权"}\n电池优化：${if (power) "已豁免" else "系统可能限制后台运行"}\n自启动：系统未提供可靠查询，请在系统设置确认。"
     }
 
     private fun retrySync() {
@@ -681,7 +694,7 @@ class MainActivity : Activity() {
     }
     private fun refreshStatus() {
         if (!::status.isInitialized) return
-        if (QueueStorage.recovering) { status.text = "正在恢复并验证本机存储…"; return }
+        if (QueueStorage.recovering) { captureProgress.visibility = View.VISIBLE; status.text = "正在恢复并验证本机存储…"; return }
         if (ConnectionGuard.reconfiguring()) { status.text = "正在应用设置，已有记录保持加密保存"; updateSaveBar(); return }
         if (statusLoading || isDestroyed) return
         statusLoading = true
@@ -695,12 +708,13 @@ class MainActivity : Activity() {
                 if (QueueStorage.recovering || ConnectionGuard.reconfiguring()) { refreshStatus(); return@post }
                 result.onSuccess { snapshot ->
                     captureTitle.text = snapshot.title; captureAction.text = snapshot.action
+                    captureProgress.visibility = if (settings.enabled) View.VISIBLE else View.GONE
                     status.text = snapshot.status; syncStatus.text = snapshot.sync
                     totalsStatus.text = snapshot.totals; technicalStatus.text = snapshot.technical
                     connectionSummary.text = snapshot.connection; nsfwStatus.text = snapshot.model
                     mediaStatus.text = snapshot.media
                     updateSaveBar()
-                }.onFailure { status.text = "状态暂不可读取，已有记录保留在本机" }
+                }.onFailure { captureProgress.visibility = View.GONE; status.text = "状态暂不可读取，已有记录保留在本机；稍后自动重试" }
             }
         }
     }
@@ -802,6 +816,7 @@ class MainActivity : Activity() {
     }
 
     private fun showPage(page: Page) {
+        if (page == Page.PERMISSIONS) updatePermissionSummary()
         if (currentPage != page) {
             pages[currentPage]?.let { scrollPositions[currentPage] = it.scrollY }
             currentFocus?.clearFocus()

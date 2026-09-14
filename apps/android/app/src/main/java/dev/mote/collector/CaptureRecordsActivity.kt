@@ -20,6 +20,8 @@ class CaptureRecordsActivity : Activity() {
     private lateinit var body: LinearLayout
     private lateinit var list: LinearLayout
     private lateinit var status: TextView
+    private lateinit var progress: ProgressBar
+    private val detailExecutor = Executors.newSingleThreadExecutor()
     private lateinit var dateButton: Button
     private lateinit var previousPage: Button
     private lateinit var nextPage: Button
@@ -69,6 +71,7 @@ class CaptureRecordsActivity : Activity() {
         }
         nextDay = button(days, "后一天") { date = date.plusDays(1); reload() }
         status = text(body, "正在读取…", 14f)
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true }; body.addView(progress)
         button(body, "刷新") { reload() }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(list)
         val pages = row(body)
@@ -80,6 +83,7 @@ class CaptureRecordsActivity : Activity() {
     private fun reload() { cursors.clear(); cursors.add(null); load() }
     private fun load() {
         val stamp = ++generation; val remote = central; val source = recordSource
+        progress.visibility = View.VISIBLE; progress.isIndeterminate = true
         val zone = ZoneId.systemDefault(); val after = date.atStartOfDay(zone).toInstant().toString(); val before = date.plusDays(1).atStartOfDay(zone).toInstant().toString()
         val cursor = cursors.last(); val pageNumber = cursors.size
         dateButton.text = date.toString(); nextDay.isEnabled = date < LocalDate.now()
@@ -103,16 +107,17 @@ class CaptureRecordsActivity : Activity() {
                     val pageStatus = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · 第 $pageNumber 页"
                     status.text = pageStatus + if (thumbnailCount > 0) " · 正在加载缩略图（0/$thumbnailCount）" else ""
                     if (records.isEmpty()) text(list, if (source == "media") "当天没有媒体记录。开启媒体采集并授权后，记录会按同步设置发送。" else if (remote) "当天没有此设备的中央截图记录。" else "当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。", 14f)
+                    progress.isIndeterminate = false; progress.max = maxOf(1, thumbnailCount); progress.progress = 0
+                    if (thumbnailCount == 0) progress.visibility = View.GONE
                     for (item in records) {
                         val image = recordRow(item, remote, client, stamp)
                         if (CapturePreview.hasImage(item)) images += item to image
                     }
                     previousPage.isEnabled = cursors.size > 1; nextPage.isEnabled = nextCursor != null
                     executor.execute {
-                        var loaded = 0
+                        var loaded = 0; var failed = 0
                         for ((item, image) in images) {
                             if (stamp != generation || isDestroyed) break
-                            if (!CapturePreview.hasImage(item)) continue
                             val bitmap = runCatching {
                                 val bytes = client?.image(item.getString("id"), true) ?: queue().image(item.getString("id"))
                                 bytes?.let { CapturePreview.decode(it, 256) }
@@ -122,13 +127,16 @@ class CaptureRecordsActivity : Activity() {
                                 if (bitmap != null) { bitmaps += bitmap; image.setImageBitmap(bitmap) }
                                 else image.contentDescription = "缩略图暂不可用，点按查看详情或刷新"
                                 loaded += 1
-                                status.text = "$pageStatus · 缩略图 $loaded/$thumbnailCount"
+                                if (bitmap == null) failed++
+                                progress.progress = loaded
+                                if (loaded == images.size) progress.visibility = View.GONE
+                                status.text = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · 第 $pageNumber 页 · 缩略图已处理 ${loaded}/${images.size}${if (failed > 0) " · $failed 张失败，可刷新重试" else ""}"
                             }
                         }
                     }
                 }
             } catch (error: Exception) {
-                runOnUiThread { if (!isDestroyed && stamp == generation) { status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1 } }
+                runOnUiThread { if (!isDestroyed && stamp == generation) { progress.visibility = View.GONE; status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1 } }
             }
         }
     }
@@ -152,13 +160,15 @@ class CaptureRecordsActivity : Activity() {
     private fun detail(id: String, remote: Boolean, client: CaptureRecordClient?, stamp: Int) {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(18), moteDp(10), moteDp(18), moteDp(16)) }
         val message = text(content, "正在读取详情…", 14f)
+        val loading = ProgressBar(this); content.addView(loading)
         val dialog = AlertDialog.Builder(this).setTitle("采集记录").setView(ScrollView(this).apply { addView(content) }).setPositiveButton("关闭", null).create()
         var detailBitmap: Bitmap? = null
         dialog.setOnDismissListener { content.removeAllViews(); detailBitmap?.recycle(); detailBitmap = null }
         dialog.show(); dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        executor.execute {
+        detailExecutor.execute {
             try {
                 val record = client?.detail(id) ?: queue().capture(id) ?: error("本机记录已同步并清理，请切换到中央归档查看")
+                runOnUiThread { if (dialog.isShowing && CapturePreview.hasImage(record)) message.text = "记录已读取，正在加载图片…" }
                 require(record.getString("id") == id); Instant.parse(record.getString("capturedAt"))
                 val bytes = if (CapturePreview.hasImage(record)) client?.image(id, false) ?: queue().image(id) else null
                 val bitmap = bytes?.let { CapturePreview.decode(it, 1600) }
@@ -181,7 +191,7 @@ class CaptureRecordsActivity : Activity() {
                     text(content, "识别文字", 17f)
                     text(content, record.optString("ocrText").ifBlank { if (record.optJSONObject("ocr")?.optString("status") == "completed") "此图片未识别到文字。" else "暂无识别文字。" }, 14f).setTextIsSelectable(true)
                 }
-            } catch (error: Exception) { runOnUiThread { if (!isDestroyed && dialog.isShowing) message.text = errorMessage(error, remote) } }
+            } catch (error: Exception) { runOnUiThread { if (!isDestroyed && dialog.isShowing) { loading.visibility = View.GONE; message.text = errorMessage(error, remote) } } }
         }
     }
     private fun errorMessage(error: Exception, remote: Boolean): String = if (error is IllegalStateException || error is IllegalArgumentException) error.message ?: "记录读取失败，请刷新重试" else if (remote) "中央记录暂不可读取，请检查网络后重试" else "本机记录暂不可读取，请刷新重试；文件已保留"
@@ -191,5 +201,5 @@ class CaptureRecordsActivity : Activity() {
     private fun button(parent: LinearLayout, label: String, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { action() } }).also { parent.addView(it, if (parent.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2)) }
     private fun clearList() { list.removeAllViews(); bitmaps.forEach(Bitmap::recycle); bitmaps.clear() }
     override fun onSaveInstanceState(outState: Bundle) { outState.putString("date", date.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
-    override fun onDestroy() { generation++; executor.shutdown(); clearList(); super.onDestroy() }
+    override fun onDestroy() { generation++; executor.shutdown(); detailExecutor.shutdown(); clearList(); super.onDestroy() }
 }

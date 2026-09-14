@@ -11,6 +11,14 @@ import java.net.SocketTimeoutException
 import javax.net.ssl.SSLException
 
 class EventJournalTest {
+    @Test fun `strict viewer detects corruption and preserves file`() {
+        val path = File(folder.root, "broken.json")
+        val journal = EventJournal(path)
+        assertEquals(0, journal.read(strict = true).length())
+        path.writeText("broken generated fixture")
+        assertTrue(runCatching { journal.read(strict = true) }.isFailure)
+        assertEquals("broken generated fixture", path.readText())
+    }
     @get:Rule val folder = TemporaryFolder()
     @Test fun `journal remains bounded after reopen and never exports arbitrary fields`() {
         val path = File(folder.root, "events.json"); val journal = EventJournal(path, 3)

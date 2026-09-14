@@ -233,6 +233,7 @@ export class Collector {
       if (before.appId !== foreground.appId || before.pid !== foreground.pid || collectionForApp(before.appId, cfg) !== 'content' || !permitsVisibleContent(before.visibleAppIds, before.unknownVisibleWindows, cfg)) { this.pause('屏幕含仅活动、不记录或身份未知的窗口，整张截图已跳过'); return; }
       const display = screen.getPrimaryDisplay();
       const scale = Math.min(1, cfg.captureMaxSide / Math.max(display.size.width, display.size.height));
+      this.message = '正在读取屏幕画面…'; this.publish();
       const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }, fetchWindowIcons: false });
       const source = sources.find(s => s.display_id === String(display.id));
       if (!source || source.thumbnail.isEmpty()) throw new Error('无法获取主屏截图，本次采集已跳过');
@@ -244,6 +245,7 @@ export class Collector {
       let appliedMasks = cfg.masks.length;
       if (cfg.nsfwEnabled) {
         stage = 'MODEL';
+        this.message = '正在加载模型并进行本机隐私检查…'; this.publish();
         if (!this.nsfw) throw new Error('本地千问视觉模型不可用，本次截图已跳过');
         const { width, height } = sanitized.getSize();
         const inferenceStarted = Date.now();
@@ -254,6 +256,7 @@ export class Collector {
       }
       if (cfg.privacyModelUrl) {
         stage = 'PRIVACY';
+        this.message = '正在进行本机附加隐私检查…'; this.publish();
         const decision = await reviewLocally(cfg.privacyModelUrl, sanitized.toJPEG(cfg.jpegQuality), abort.signal);
         if (!valid()) return;
         if (!decision.allow) { void this.events?.record('PRIVACY', 'FILTERED'); this.pause('本地隐私模型拒绝本次采集'); return; }
@@ -269,6 +272,7 @@ export class Collector {
       let ocrText: string | undefined;
       let ocr: NonNullable<CaptureEvent['ocr']> = { status: cfg.ocrEnabled ? 'pending' : 'disabled', ...(deferredForPower ? { reason: 'charging' as const } : {}) };
       if (cfg.ocrEnabled && !deferredForPower) {
+        this.message = '正在识别文字…'; this.publish();
         const ocrAbort = this.captureOcrAbort = new AbortController();
         try { ocrText = await recognizeText(this.helperPath, jpeg, AbortSignal.any([abort.signal, ocrAbort.signal])); if (!ocrAbort.signal.aborted) ocr = { status: 'completed' }; else ocrText = undefined; }
         catch { /* Preserve the sanitized image and retry OCR from the durable queue. */ }
@@ -286,6 +290,7 @@ export class Collector {
         privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', collection: 'content', reason: `${cfg.nsfwEnabled ? 'offline Qwen visual policy passed; ' : ''}${appliedMasks > 0 ? 'configured or local-model masks applied before OCR and persistence' : cfg.privacyModelUrl ? 'local privacy model approved; no masks returned' : 'user-configured app filters checked; no masks configured'}` },
       };
       stage = 'QUEUE';
+      this.message = '正在保存采集记录…'; this.publish();
       await this.queue.enqueue(event, jpeg);
       void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
       this.diagnostics?.recordCapture({ outcome: 'saved', imageBytes: jpeg.length, inferenceMs, ocrMs, durationMs: Date.now() - startedAt });

@@ -326,3 +326,6 @@ progress::-webkit-progress-value { border-radius: 5px; background: #759664; }
 .record-detail > img:not([src]) { display: none; }
 .record-ocr-text { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line-height: 1.65; max-height: 480px; overflow: auto; }
 @media (max-width: 1000px) { .records-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.page [aria-busy="true"]::before, #feedback[aria-busy="true"]::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 2px solid #dce3d9; border-top-color: #1c6754; border-radius: 50%; animation: mote-busy 1s linear infinite; }
+@keyframes mote-busy { to { transform: rotate(360deg); } }
+#events-viewer pre { white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -33,6 +33,7 @@ class StorageActivity : Activity() {
     private fun refresh() {
         if (working) return
         working = true; content.removeAllViews(); text(content, "正在读取存储位置…")
+        content.addView(android.widget.ProgressBar(this))
         executor.execute {
             val storage = QueueStorage(applicationContext)
             val selected = runCatching { storage.selected() }
@@ -67,6 +68,7 @@ class StorageActivity : Activity() {
     }
     private fun migrate(choice: QueueStorageChoice) {
         working = true; content.removeAllViews(); text(content, "正在迁移并验证加密记录，请保持存储介质连接…")
+        content.addView(android.widget.ProgressBar(this))
         RuntimeSettings.apply(this, Settings(this).read(), change = { QueueStorage(applicationContext).migrate(choice.id) }) { result ->
             working = false; if (isDestroyed) return@apply
             result.onSuccess {

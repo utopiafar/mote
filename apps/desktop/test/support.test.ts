@@ -7,6 +7,13 @@ import { EventJournal, buildSupportBundle, failureCode, httpFailure, TransportFa
 import { resolveProfile } from '../src/profile';
 import type { Status } from '../src/contracts';
 let directory: string;
+it('viewer distinguishes missing history from corrupt history without modifying the file', async () => {
+  const journal = new EventJournal(directory, () => false);
+  expect(await journal.read(true)).toEqual([]);
+  await writeFile(join(directory, 'events.json'), 'broken generated fixture');
+  await expect(journal.read(true)).rejects.toThrow();
+  expect(await readFile(join(directory, 'events.json'), 'utf8')).toBe('broken generated fixture');
+});
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-support-test-')); });
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 it('bounds concurrent events, restores after restart, strips unknown fields and honors opt-out', async () => {

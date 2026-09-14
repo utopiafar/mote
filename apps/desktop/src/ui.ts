@@ -30,6 +30,7 @@ function showPage(page: Page, focus = true): void {
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
   if (page === 'records') void loadRecords();
+  if (page === 'overview' && initialized) void desktopApi.status().then(render).catch(() => feedback('状态读取失败，请重试。'));
 }
 for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-nav]'))) button.addEventListener('click', () => {
   const page = button.dataset.nav as Page;
@@ -83,26 +84,36 @@ function ocrLabel(value: import('./capture-browser').BrowserCapture): string {
 function resetRecords(): void { recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
 async function openRecord(item: import('./capture-browser').BrowserCapture, location: import('./capture-browser').CaptureLocation, revision: number): Promise<void> {
   const panel = byId('record-detail'); panel.hidden = false;
+  panel.setAttribute('aria-busy', 'true');
   byId('record-detail-title').textContent = item.appName || '截图';
   byId('record-detail-meta').textContent = `${new Date(item.capturedAt).toLocaleString()} · ${ocrLabel(item)}`;
   byId('record-detail-text').textContent = '正在读取识别文字…';
   byId<HTMLImageElement>('record-detail-image').removeAttribute('src');
   byId('record-detail-title').focus(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
   const id = item.id; panel.dataset.recordId = id;
+  let detailRead = false;
   try {
     const detail = await desktopApi.captureDetail(location, id);
     if (revision !== recordsRevision || panel.dataset.recordId !== id || panel.hidden) return;
     byId('record-detail-meta').textContent = `${new Date(detail.capturedAt).toLocaleString()} · ${detail.deviceName || ''} · ${ocrLabel(detail)}${detail.syncError ? ' · ' + detail.syncError : ''}`;
     byId('record-detail-text').textContent = detail.ocrText || (detail.ocr.status === 'completed' ? '未识别到文字。' : ocrLabel(detail));
+    detailRead = true;
+    byId<HTMLImageElement>('record-detail-image').alt = '正在加载原图…';
     const image = await desktopApi.captureImage(location, id, false);
-    if (revision === recordsRevision && panel.dataset.recordId === id && !panel.hidden) byId<HTMLImageElement>('record-detail-image').src = image;
-  } catch (error) { if (revision === recordsRevision && panel.dataset.recordId === id) byId('record-detail-text').textContent = error instanceof Error ? error.message : '读取记录失败，请刷新后重试'; }
+    if (revision === recordsRevision && panel.dataset.recordId === id && !panel.hidden) { byId<HTMLImageElement>('record-detail-image').src = image; byId<HTMLImageElement>('record-detail-image').alt = '当前选择的采集截图'; }
+  } catch (error) { if (revision === recordsRevision && panel.dataset.recordId === id) {
+    const message = error instanceof Error ? error.message : '读取记录失败，请刷新后重试';
+    if (detailRead) byId<HTMLImageElement>('record-detail-image').alt = `原图加载失败：${message}；可重新打开详情重试`;
+    else byId('record-detail-text').textContent = message;
+  } }
+  finally { if (revision === recordsRevision && panel.dataset.recordId === id) panel.setAttribute('aria-busy', 'false'); }
 }
 async function loadRecords(): Promise<void> {
   const revision = ++recordsRevision;
   const location = readInput('records-location') as import('./capture-browser').CaptureLocation;
   byId('record-detail').hidden = true; byId('records-grid').replaceChildren();
   byId('records-status').textContent = '正在读取采集记录…';
+  byId('records-status').setAttribute('aria-busy', 'true');
   byId<HTMLButtonElement>('records-previous').disabled = true; byId<HTMLButtonElement>('records-next').disabled = true;
   try {
     const page = await desktopApi.browseCaptures({ location, day: readInput('records-day'), cursor: recordsCursors[recordsPage] });
@@ -124,16 +135,19 @@ async function loadRecords(): Promise<void> {
       caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => void openRecord(item, location, revision));
       byId('records-grid').append(card); images.push({ element: image, item });
     }
-    let next = 0;
+    let next = 0, completed = 0, failed = 0;
     await Promise.all(Array.from({ length: Math.min(4, images.length) }, async () => {
       while (next < images.length && revision === recordsRevision) {
         const { element, item } = images[next++];
         try { const image = await desktopApi.captureImage(location, item.id, true); if (revision === recordsRevision) element.src = image; }
-        catch { if (revision === recordsRevision) element.alt = '缩略图暂不可用；点击查看详情或刷新'; }
+        catch { failed++; if (revision === recordsRevision) element.alt = '缩略图暂不可用；点击查看详情或刷新'; }
+        completed++;
+        if (revision === recordsRevision) byId('records-status').textContent = `正在加载缩略图 ${completed}/${images.length} · 失败 ${failed}`;
       }
     }));
-    if (revision === recordsRevision && page.items.length) byId('records-status').textContent = `${location === 'local' ? '本机保留' : '中央已归档'} · 当天共 ${page.totalCount} 张截图 · 缩略图已加载`;
+    if (revision === recordsRevision && page.items.length) byId('records-status').textContent = `${location === 'local' ? '本机保留' : '中央已归档'} · 当天共 ${page.totalCount} 张截图 · 缩略图成功 ${completed - failed}/${images.length}${failed ? ` · ${failed} 张失败，可刷新重试` : ''}`;
   } catch (error) { if (revision === recordsRevision) { byId('records-status').textContent = error instanceof Error ? error.message : '读取采集记录失败，请重试'; byId('records-page').textContent = ''; } }
+  finally { if (revision === recordsRevision) byId('records-status').setAttribute('aria-busy', 'false'); }
 }
 byId('records-day').addEventListener('change', resetRecords);
 byId('records-location').addEventListener('change', resetRecords);
@@ -200,6 +214,8 @@ function render(status: import('./contracts').Status): void {
   setText('message', status.message);
   byId('status-dot').className = `dot ${status.state === 'capturing' ? 'active' : status.state === 'error' || status.state === 'permission_required' ? 'error' : ''}`;
   setText('permission', status.platform !== 'macos' ? '此平台尚不支持采集' : status.screenPermission === 'granted' ? '屏幕权限已授权' : '屏幕权限未授权');
+  setText('permissions', status.screenPermission === 'granted' ? '屏幕录制已授权 · 管理 ↗' : '屏幕录制未授权 · 去授权 ↗');
+  byId('message').setAttribute('aria-busy', String(status.running && status.state === 'capturing'));
   setText('queue-count', status.queueDepth.toLocaleString());
   setText('queue-size', `${(status.queueBytes / 1024 / 1024).toFixed(1)} MiB`);
   setText('last-capture', status.lastCaptureAt ? new Date(status.lastCaptureAt).toLocaleTimeString('zh-CN', { hour12: false }) : '尚无');
@@ -271,11 +287,11 @@ function render(status: import('./contracts').Status): void {
 }
 async function perform(action: () => Promise<unknown>): Promise<void> {
   if (busy) return;
-  busy = true; feedback(''); if (currentStatus) render(currentStatus);
+  busy = true; feedback('正在处理，请稍候…'); byId('feedback').setAttribute('aria-busy', 'true'); if (currentStatus) render(currentStatus);
   try { await action(); } catch (error) {
     const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : '操作失败';
     feedback(message);
-  } finally { busy = false; if (currentStatus) render(currentStatus); }
+  } finally { busy = false; byId('feedback').setAttribute('aria-busy', 'false'); if (byId('feedback').textContent === '正在处理，请稍候…') feedback(''); if (currentStatus) render(currentStatus); }
 }
 byId('settings').addEventListener('submit', event => {
   event.preventDefault();
@@ -385,10 +401,31 @@ byId('note-form').addEventListener('submit', event => {
 byId('open-feedback').addEventListener('click', () => void perform(() => desktopApi.openFeedback()));
 byId('diagnostics-sample').addEventListener('click', () => void perform(async () => render(await desktopApi.sampleDiagnostics())));
 byId('diagnostics-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportDiagnostics(); if (!result.canceled) feedback('数值诊断已导出。', true); }));
+let logRows: import('./support').SupportEvent[] = [];
+let logPage = 0;
+let logLevel = 'all';
+function logSeverity(code: string): string {
+  return ['STARTED','STOPPED','OK','FILTERED','CANCELLED'].includes(code) ? '信息'
+    : ['WAIT_NETWORK','SCHEDULER','PERMISSION','MODEL_UNAVAILABLE'].includes(code) ? '警告' : '错误';
+}
+function renderLogs(): void {
+  const viewer = byId('events-viewer'); viewer.replaceChildren();
+  const filter = document.createElement('select'); filter.setAttribute('aria-label', '日志级别');
+  for (const value of ['all', '信息', '警告', '错误']) { const option = document.createElement('option'); option.value = value; option.textContent = value === 'all' ? '全部级别' : value; filter.append(option); }
+  filter.value = logLevel; filter.onchange = () => { logLevel = filter.value; logPage = 0; renderLogs(); }; viewer.append(filter);
+  const rows = logRows.filter(row => logLevel === 'all' || logSeverity(row.code) === logLevel);
+  const summary = document.createElement('p'); summary.textContent = `${rows.length} 条 · 第 ${logPage + 1}/${Math.max(1, Math.ceil(rows.length / 20))} 页 · 每页 20 条`; viewer.append(summary);
+  const output = document.createElement('pre'); output.textContent = rows.slice(logPage * 20, (logPage + 1) * 20).map(event => `${new Date(event.atMs).toLocaleString()}  ${logSeverity(event.code)} · ${event.stage} · ${event.code}\n耗时 ${event.elapsedMs ?? '未测量'} ms · HTTP ${event.httpStatus ?? '无'}`).join('\n\n') || '暂无符合条件的日志。诊断关闭时停止新增，历史仍可查看。'; viewer.append(output);
+  for (const [label, offset] of [['上一页', -1], ['下一页', 1]] as const) {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
+    button.disabled = offset === -1 ? logPage === 0 : (logPage + 1) * 20 >= rows.length;
+    button.onclick = () => { logPage += offset; renderLogs(); }; viewer.append(button);
+  }
+}
 byId('events-open').addEventListener('click', () => void perform(async () => {
   const viewer = byId('events-viewer'); viewer.hidden = false; viewer.textContent = '正在读取本地日志…';
-  const rows = (await desktopApi.readEvents()).slice().reverse().slice(0, 100);
-  viewer.textContent = rows.length ? rows.map(event => `${new Date(event.atMs).toLocaleString()}  ${event.stage} · ${event.code}${event.elapsedMs === undefined ? '' : ` · ${event.elapsedMs}ms`}`).join('\n') : '暂无日志；请开启诊断后重试。';
+  try { logRows = (await desktopApi.readEvents()).slice().reverse(); logPage = 0; renderLogs(); }
+  catch (error) { viewer.textContent = '日志读取失败，请点击查看本地日志重试。'; throw error; }
 }));
 
 byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(); if (!result.canceled) feedback('支持包已导出；只含数值、配置开关和固定阶段事件。', true); }));

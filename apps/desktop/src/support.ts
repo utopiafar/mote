@@ -63,14 +63,14 @@ export class EventJournal {
       await unlink(join(this.directory, entry.name)).catch(() => undefined);
     }
   }
-  private async load(): Promise<SupportEvent[]> {
+  private async load(strict = false): Promise<SupportEvent[]> {
     try {
-      if ((await stat(this.path)).size > 256 * 1024) return [];
+      if ((await stat(this.path)).size > 256 * 1024) { if (strict) throw new Error('日志文件超出读取上限'); return []; }
       const raw = await readFile(this.path, 'utf8');
       if (Buffer.byteLength(raw) > 256 * 1024) return [];
       const value = JSON.parse(raw);
       return Array.isArray(value) ? value.map(cleanEvent).filter((e): e is SupportEvent => Boolean(e)).slice(-this.limit) : [];
-    } catch { return []; }
+    } catch (error) { if (strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return []; }
   }
   record(stage: EventStage, code: EventCode, metrics: { elapsedMs?: number; httpStatus?: number } = {}): Promise<void> {
     if (!this.enabled()) return Promise.resolve();
@@ -86,7 +86,7 @@ export class EventJournal {
     }).catch(() => undefined);
     this.chain = task; return task;
   }
-  async read(): Promise<SupportEvent[]> { await this.chain; return this.load(); }
+  async read(strict = false): Promise<SupportEvent[]> { await this.chain; return this.load(strict); }
 }
 const metricKeys = ['sampleCount','fileBytes','queueBytes','modelBytes','rssBytes','cpuUserMicros','cpuSystemMicros','batteryPercent','deviceBatteryDeltaPct','queueDeltaBytes','saved','blocked','failed','imageBytes','uploadedBytes','inferenceMs','ocrMs','captureMs'];
 function metrics(value: unknown): Record<string, number | boolean | object> {
