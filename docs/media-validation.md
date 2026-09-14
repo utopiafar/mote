@@ -24,7 +24,17 @@
 
 Android 执行 `./gradlew :app:compileDebugKotlin :app:compileDebugAndroidTestKotlin :app:testDebugUnitTest --offline`，使用 Android Studio bundled JBR 和本机 Android SDK：BUILD SUCCESSFUL；18 个 suites、88 项 JVM tests、0 failures、0 errors。其中新增 7 项媒体测试覆盖隐私、电量门控、暂停／切章、并发会话、时钟与睡眠缺口、加密队列往返、统计迁移和手机无图媒体浏览。主代码与 instrumentation 源码编译通过，不等同实际运行 instrumentation。
 
-静态复核额外修复快速停止／重启的计时竞态、撤销通知使用权后的保存边界、无障碍服务断开时的媒体状态、锁屏广播断段，以及媒体详情收到 `imageMime: null` 时误请求图片的问题。本机存在 `mote_fixture_api35` AVD，但本次未启动、安装或执行模拟器测试。
+静态复核额外修复快速停止／重启的计时竞态、撤销通知使用权后的保存边界、无障碍服务断开时的媒体状态、锁屏广播断段，以及媒体详情收到 `imageMime: null` 时误请求图片的问题。
+
+## 0.0.7 合并与发布前回归
+
+合并主分支的加载状态与日志入口后，重新通过完整类型检查、上述 564 项测试、两个 E2E 和 22 项隐私检查。媒体 E2E 已加入发布所依赖的 Checks workflow。
+
+Android 0.0.7／versionCode 18 重新通过主代码与 instrumentation 编译、88 项 JVM tests、`lintRelease` 和 `lintDevelopment`。Lint 分别为 0 errors／114 warnings 与 0 errors／121 warnings。修复权限页重复添加视图、日志页引用不存在的事件类，以及异步日志结果覆盖新筛选的问题；媒体记录不计入截图缩略图加载进度。
+
+完整构建 development APK 和测试 APK，使用已核对提交 pin 的本机原生依赖源码。仅在专用 `mote_fixture_api35`（API 35 ARM64）安装并执行 `NavigationInstrumentedTest`：返回 `OK (5 tests)`，耗时 14.201 秒。其中 4 项实际执行界面断言，第 5 项渲染 hook 未设置参数而直接返回，不计作截图验证。新增回归确认权限摘要显示媒体通知使用权、权限页及本地日志页可打开、日志完成加载且采集保持关闭。测试后停止 fixture 应用并关闭该 AVD；未截取个人内容或调用模型。这些检查不等同于真实媒体会话的后台采集验证。
+
+## 未执行的验证
 
 未执行实体 Android 手机验证、真实音乐／有声书 App 兼容性检查、厂商后台存活与 Doze 实测，也未验证真实模型的内容类型判断。未采集、传输真实个人截图或播放历史。APK 构建和 JVM fixture 不能证明这些行为。
 
