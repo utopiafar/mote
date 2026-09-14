@@ -35,6 +35,8 @@ Mote 的客户端、中央节点和中央前端使用同一个产品版本。每
 
 GitHub 的 `GITHUB_TOKEN` 由工作流自动取得，用于当前仓库的 Release 和 GHCR 发布，不另存一个个人 PAT。镜像首次发布后需确认包可见性满足部署需求；如果 GHCR 包保持私有，部署机需要自己的只读 registry 凭据，不能将发布 token 写入客户端。
 
+本仓库的 `ghcr.io/utopiafar/mote:0.5.1` 已验证可匿名读取 amd64/arm64 镜像清单。实际安装与升级使用发布签名中的 digest；fork 或新软件包仍需单独检查其可见性。
+
 配置方式见 [GitHub Secrets 官方说明](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets)。例如使用 `gh secret set NAME --env release --repo utopiafar/mote`，通过标准输入提交值；不要把值写在 shell 参数中。
 
 Android 0.5.1 延续本项目 0.4.0 包的原有签名密钥，转换为强密码 PKCS#12 后供 CI 使用。私钥身份保持相同，发布版不启用调试标志。CI 会核对实际 APK 的包名、版本和固定证书 SHA-256，防止每次 runner 自动生成新 debug key，造成用户无法覆盖升级。证书公开指纹与应用标识位于 [签名策略](../release/signing-policy.json)。[Android 要求更新包保持签名身份](https://developer.android.com/studio/publish/app-signing)。
