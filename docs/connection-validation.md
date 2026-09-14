@@ -67,6 +67,12 @@ Android 本地完成 debug／development APK 构建和两个 variant 的 lint；
 
 新增原生网络回归已加入 Release CI。可在构建桌面端后运行 `node_modules/.bin/electron apps/desktop/scripts/update-network-smoke.cjs`；显式加 `--public-version=0.6.0` 才会访问并下载该公开版本，其默认模式只连接生成的本地服务。
 
+[0.6.1 正式版本](https://github.com/utopiafar/mote/releases/tag/v0.6.1) 对应提交 `fbf978a4b52fe9c602fa4afceed7f28b9d2d3ee6`。[Release 的 8 项任务](https://github.com/utopiafar/mote/actions/runs/34807124530)和主分支 [Checks](https://github.com/utopiafar/mote/actions/runs/34807124491)全部通过。公开源码包、公钥与版本元数据核验通过，两个 Android 变体均为 code 9；GHCR 不可变摘要 `sha256:5578b676bc1f9932d17eeb25cf63ae8b204c51fdef43f701e7e7149d690d9aa1` 与 `0.6.1` 标签一致，amd64／arm64 的清单、配置及散列链全部匹配。证据保存在 `.mote/release-validation/v0.6.1/result.json`。
+
+公开 Android 0.6.1 双 APK 的实际签名、包身份、大小／SHA、内置公钥和 16 KiB 对齐通过；从官方 0.6.0 Dev 经 ADB 覆盖安装官方 0.6.1 Dev 后，生成设置、设备 ID、原 ID 的加密队列、草稿与模型目录标记全部保留。真实更新器再次完成公网清单、APK 下载及 apksig 校验，同 code 9 被拒绝覆盖且没有创建安装会话。记录在 `.mote/release-validation/android-0.6.1/summary.json`，独立模拟器已关闭；此结果仍不能代替真机或用户确认安装界面测试。
+
+公开 Mac 0.6.1 ZIP 的实际大小／SHA、公钥签名、包结构、`codesign --deep --strict`、版本／Bundle ID／arm64 和包内更新助手检查通过。使用与公开包 Electron Framework 版本相同的独立 Electron host，直接加载解包后 `app.asar` 内的更新适配层和共享公钥，对 0.6.1 再次完成实际清单验签与完整 ZIP 下载，每个请求均手动处理两跳重定向；子进程未使用 Node 环境代理开关。两次独立下载散列一致，证明修复已进入公开产物。记录在 `.mote/release-validation/mac-0.6.1-1789361756071/result.json`。没有启动正常 App、运行 Qwen、读取个人 profile／Keychain 或替换日常安装，验收进程已全部退出。
+
 ## 实际使用边界
 
 尚未在 K90 Pro Max／HyperOS 真机验证相机扫码和后台恢复；模拟器验证不能代替厂商系统的权限与耗电行为。本轮没有验证公网 Cloudflare Tunnel 或各家 Chatbot 的配置界面；实际 MCP HTTP／stdio SDK 传输已覆盖，只接受 OAuth 的聊天产品仍不支持直接导入 Bearer JSON。
