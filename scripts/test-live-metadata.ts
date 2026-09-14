@@ -91,7 +91,7 @@ async function main(){
       const evidenceUniverse=[...known,...test.evidenceIds];
       let validCitations=citations.length>0&&citations.every(c=>c&&typeof c==='object'&&typeof c.id==='string'&&evidenceUniverse.includes(c.id)&&store.evidence([c.id])[0]?.deviceId===test.scope.deviceId);
       if(validCitations&&typeof answer.answer==='string')try{validateInlineCitations(answer.answer,citations.map(c=>String(c.id)),evidenceUniverse);}catch{validCitations=false;}
-      const tools=new Set(['search_context','timeline','evidence','activity','devices','sources','source_items','source_history','memories']);
+      const tools=new Set(['search_context','timeline','evidence','activity','media_activity','devices','sources','source_items','source_history','memories']);
       const validTools=trace.length>0&&trace.every(s=>s&&typeof s==='object'&&typeof s.tool==='string'&&tools.has(s.tool)&&typeof s.count==='number'&&Number.isSafeInteger(s.count)&&s.count>=0);
       const protocolPassed=status===200&&typeof answer.answer==='string'&&answer.answer.length>0&&typeof answer.runId==='string'&&validCitations&&validTools;
       if(!protocolPassed)failed++;

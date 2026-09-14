@@ -14,7 +14,7 @@ data class CollectorConfig(
     val diagnosticsEnabled: Boolean = false, val diagnosticsIntervalSeconds: Int = 60,
     val appCollectionRules: String = AppCollectionRules.DEFAULT, val metadataEnabled: Boolean = true,
     val syncMode: String = "realtime", val syncIntervalMinutes: Int = 15, val syncBatchSize: Int = 20,
-    val ocrChargingOnly: Boolean = false
+    val ocrChargingOnly: Boolean = false, val mediaCollectionEnabled: Boolean = false, val screenCollectionEnabled: Boolean = true
 ) {
     fun effectiveMode() = if (AppCollectionRules.parse(appCollectionRules).mayCollectContent()) mode else "accessibility"
     fun hasSyncConnection() = server.isNotBlank() && token.length >= 32
@@ -48,7 +48,10 @@ class Settings(private val context: Context) {
     val deviceId: String get() = synchronized(Settings::class.java) {
         prefs.getString("deviceId", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("deviceId", it).commit() }
     }
-    var enabled: Boolean get() = prefs.getBoolean("enabled", false); set(value) { prefs.edit().putBoolean("enabled", value).commit() }
+    var enabled: Boolean get() = prefs.getBoolean("enabled", false); set(value) {
+        if (!value) MediaCollectionService.suspendObservation()
+        prefs.edit().putBoolean("enabled", value).commit()
+    }
     fun read(): CollectorConfig = synchronized(Settings::class.java) { CollectorConfig(
         server = prefs.getString("server", BuildConfig.DEFAULT_SERVER)!!,
         token = prefs.getString("token", null)?.let { String(secret.open(Base64.decode(it, Base64.NO_WRAP))) } ?: "",
@@ -68,7 +71,7 @@ class Settings(private val context: Context) {
         metadataEnabled = prefs.getBoolean("metadataEnabled", true),
         syncMode = prefs.getString("syncMode", "realtime")!!,
         syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20),
-        ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false)
+        ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false), mediaCollectionEnabled = prefs.getBoolean("mediaCollectionEnabled", false), screenCollectionEnabled = prefs.getBoolean("screenCollectionEnabled", true)
     ) }
     fun save(c: CollectorConfig) = synchronized(Settings::class.java) {
         c.validate()
@@ -81,7 +84,7 @@ class Settings(private val context: Context) {
             "wifiOnly" to c.wifiOnly, "excluded" to c.excludedPackages, "masks" to c.masks, "localReview" to c.localReviewUrl,
             "debugHttp" to c.debugHttp, "mode" to c.mode, "appCollectionRules" to c.appCollectionRules, "metadataEnabled" to c.metadataEnabled,
             "jpegQuality" to c.jpegQuality, "captureMaxSide" to c.captureMaxSide, "chargingOnly" to c.chargingOnly,
-            "ocrChargingOnly" to c.ocrChargingOnly, "batteryPauseBelowPct" to c.batteryPauseBelowPct,
+            "ocrChargingOnly" to c.ocrChargingOnly, "mediaCollectionEnabled" to c.mediaCollectionEnabled, "screenCollectionEnabled" to c.screenCollectionEnabled, "batteryPauseBelowPct" to c.batteryPauseBelowPct,
             "diagnosticsEnabled" to c.diagnosticsEnabled, "diagnosticsIntervalSeconds" to c.diagnosticsIntervalSeconds,
             "nsfwEnabled" to c.nsfw.enabled, "nsfwThreads" to c.nsfw.threads, "qwenTimeout" to c.nsfw.timeoutMs,
             "nsfwSource" to c.nsfw.source, "qwenCustomUrl" to c.nsfw.customUrl, "qwenPolicy" to c.nsfw.policy,

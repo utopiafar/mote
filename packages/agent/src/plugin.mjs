@@ -2,7 +2,7 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 
 export const name = "mote-context";
 export const inject = ["tools"];
-const names = ["search_context", "timeline", "evidence", "activity", "devices", "sources", "source_items", "source_history", "memories"];
+const names = ["search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories"];
 const range = {
   after: { type: "string", description: "Inclusive ISO timestamp lower bound" },
   before: {
@@ -17,7 +17,7 @@ const range = {
 };
 const contextFilters = {
   ...range,
-  source: {type: 'string', description: 'Exact source type: screen, activity, note, file, calendar, event, message, metric or memory'},
+  source: {type: 'string', description: 'Exact source type: screen, activity, media, note, file, calendar, event, message, metric or memory'},
   appId: {type: 'string', description: 'Exact application identity discovered in evidence; not an intent or topic'},
   collection: {type: 'string', description: 'activity for app identity/time without contents; content for other permitted records'},
 };
@@ -124,6 +124,12 @@ export async function apply(ctx) {
     return result;
   }
   const definitions = [
+    ['media_activity', 'Read measured media playback intervals, separately from foreground activity. Only standalone media records count; attached screenshot snapshots do not. Totals union overlapping intervals per device and sum across devices. App and state breakdowns may overlap and must not be added together. Playback is reported by the app, not proof of hearing, attention, or finished reading. Gaps, permission loss and unavailable sessions are unknown coverage. Use timeline/search_context with source=media and evidence for provider titles, states and citations; this aggregate does not discover or authorize evidence ids.', {
+      ...contextFilters,
+      appVisibility:{type:'string',description:'Exact observed player visibility: foreground, background or unknown'},
+      screenLocked:{type:'boolean',description:'Filter explicitly observed screen lock state; omitted includes unknown'},
+      playbackType:{type:'string',description:'Provider playback destination: local, remote or unknown'},
+    }],
     ["source_history","Inspect immutable earlier revisions of a discovered source item. Pass its current context id from source_items/search/timeline. Use this to compare changes; current search hides superseded versions, which does not mean history is absent. Historical snapshots describe their own observation time, not the current truth.",{id:{type:'string',required:true,description:'Discovered context id for a versioned source item'}}],
     ["sources","Discover connected context sources and their synchronization state. A source connection does not guarantee full coverage. No content is fetched from remote locations.",range],
     ["source_items","Browse current source revisions. Set includeDeleted=true to include removed or cancelled source tombstones; their empty body is not proof the event occurred. For calendars after/before overlap planned event times, not capture time; events are plans, never measured attendance. File snapshots are as-of copies; reference/shadow items retain metadata only and cannot establish unseen contents. Results contain original context ids, expandable with evidence. Follow nextCursor for more.",{...range,sourceId:{type:'string',description:'Exact source id from sources'},includeDeleted:{type:'boolean',description:'Include source-reported removal/cancellation tombstones; default false'},kind:{type:'string',description:'calendar, file, event, message, metric or memory'},cursor:{type:'string',description:'Returned pagination cursor'}}],
@@ -162,7 +168,7 @@ export async function apply(ctx) {
     ],
     [
       "activity",
-      "Read overlap-adjusted foreground sampling time for the selected range. captures = contentCaptures + activityEvents counts only measured screen/activity samples; authored notes, files and calendar records are excluded. Use those returned counters, not timeline record counts, when reporting sample counts. Sampling gaps are not judgments of productivity. Use timeline/search_context for narrative context and evidence citations.",
+      "Read overlap-adjusted foreground sampling time for the selected range. captures = contentCaptures + activityEvents counts only measured screen/activity samples; media playback, authored notes, files and calendar records are excluded. Use media_activity for playback duration. Use those returned counters, not timeline record counts, when reporting sample counts. Sampling gaps are not judgments of productivity. Use timeline/search_context for narrative context and evidence citations.",
       contextFilters,
     ],
     [

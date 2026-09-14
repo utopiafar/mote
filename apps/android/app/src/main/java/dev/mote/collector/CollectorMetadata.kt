@@ -16,7 +16,7 @@ import java.util.Locale
 
 /** Measured platform facts only; unavailable fields are omitted, never inferred from content. */
 object CollectorMetadata {
-    fun snapshot(context: Context, method: String, intervalMs: Long? = null): JSONObject {
+    fun snapshot(context: Context, method: String, intervalMs: Long? = null, activityOnly: Boolean = false): JSONObject {
         val root = JSONObject().put("version", 1).put("observedAt", Instant.now().toString())
             .put("collector", JSONObject().put("version", BuildConfig.VERSION_NAME).put("method", method))
         val device = JSONObject()
@@ -67,6 +67,7 @@ object CollectorMetadata {
         }
         runCatching { state.put("availableStorageBytes", context.noBackupFilesDir.usableSpace.coerceAtLeast(0)) }
         root.put("state", state)
+        root.put("media", MediaCollection.snapshot(context, activityOnly))
         if (intervalMs != null) root.put("capture", JSONObject().put("intervalMs", intervalMs))
         return root
     }

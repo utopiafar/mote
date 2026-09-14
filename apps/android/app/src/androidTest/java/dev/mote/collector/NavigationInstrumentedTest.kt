@@ -58,6 +58,35 @@ class NavigationInstrumentedTest {
         }
     }
 
+    @Test fun permissionsAndLocalLogsOpenWithoutStartingCapture() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        assertFalse(Settings(context).enabled)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                tab(activity, "设置"); menu(activity, "权限与后台运行")
+                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any {
+                    it.isShown && it.text.contains("媒体通知使用权：")
+                })
+                assertFalse(Settings(activity).enabled)
+            }
+        }
+        ActivityScenario.launch(LogViewerActivity::class.java).use { scenario ->
+            val deadline = SystemClock.elapsedRealtime() + 10_000
+            var loaded = false
+            while (!loaded && SystemClock.elapsedRealtime() < deadline) {
+                instrumentation.waitForIdleSync()
+                scenario.onActivity { activity ->
+                    assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
+                    loaded = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.startsWith("最近 ") }
+                }
+                if (!loaded) Thread.sleep(50)
+            }
+            assertTrue("Local event log must finish loading", loaded)
+        }
+        assertFalse(Settings(context).enabled)
+    }
+
     @Test fun settingsAreSeparateAndUnsavedInputsSurviveNavigationAndRotation() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

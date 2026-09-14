@@ -9,7 +9,7 @@ import java.util.UUID
 enum class OperationKind {
     CAPTURE_REQUESTED, FRAME_RECEIVED, SCREEN_QUEUED, NOTE_QUEUED, SCREEN_ACK, NOTE_ACK,
     FRAME_BLOCKED, CAPTURE_FAILED, CAPTURE_PAUSED, UPLOAD_RETRY, HEARTBEAT_FAILED, SOURCE_ACK, SOURCE_FAILED,
-    CONNECTION_OK, CONNECTION_FAILED, CAPTURE_STARTED, CAPTURE_STOPPED, ACTIVITY_QUEUED, ACTIVITY_ACK, ACTIVITY_FAILED
+    CONNECTION_OK, CONNECTION_FAILED, CAPTURE_STARTED, CAPTURE_STOPPED, ACTIVITY_QUEUED, ACTIVITY_ACK, ACTIVITY_FAILED, MEDIA_QUEUED, MEDIA_ACK, MEDIA_FAILED
 }
 enum class OperationReason {
     NONE, LOCKED, CHARGING, BATTERY, MODEL_MISSING, EXCLUDED, WINDOW_UNKNOWN, QUEUE_FULL,
@@ -26,7 +26,7 @@ class OperationLedger(private val file: File, private val limit: Int = 200, priv
         if (recordId != null) require(UUID.fromString(recordId).toString() == recordId)
         val state = load(); val counts = state.getJSONObject("counts")
         counts.put(kind.name, Math.addExact(counts.getLong(kind.name), 1L))
-        if (kind in setOf(OperationKind.SCREEN_ACK, OperationKind.NOTE_ACK, OperationKind.ACTIVITY_ACK)) state.put("confirmedUploadBytes", Math.addExact(state.getLong("confirmedUploadBytes"), bytes))
+        if (kind in setOf(OperationKind.SCREEN_ACK, OperationKind.NOTE_ACK, OperationKind.ACTIVITY_ACK, OperationKind.MEDIA_ACK)) state.put("confirmedUploadBytes", Math.addExact(state.getLong("confirmedUploadBytes"), bytes))
         val old = state.getJSONArray("events"); val next = JSONArray()
         for (i in maxOf(0, old.length() - limit + 1) until old.length()) next.put(old.getJSONObject(i))
         next.put(JSONObject().put("atMs", clock()).put("kind", kind.name).put("reason", reason.name).put("bytes", bytes)
@@ -46,7 +46,7 @@ class OperationLedger(private val file: File, private val limit: Int = 200, priv
             require(state.keys().asSequence().toSet() == setOf("version", "epochId", "epochAtMs", "epochReason", "confirmedUploadBytes", "counts", "events"))
             val counts = state.getJSONObject("counts")
             val allowed = OperationKind.entries.map { it.name }.toSet()
-            val added = setOf("ACTIVITY_QUEUED", "ACTIVITY_ACK", "ACTIVITY_FAILED")
+            val added = setOf("ACTIVITY_QUEUED", "ACTIVITY_ACK", "ACTIVITY_FAILED", "MEDIA_QUEUED", "MEDIA_ACK", "MEDIA_FAILED")
             val existing = counts.keys().asSequence().toSet()
             require(existing.all { it in allowed } && existing.containsAll(allowed - added))
             // Adding activity statistics must not reset the user's existing 0.6 totals/epoch.

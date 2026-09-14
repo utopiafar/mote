@@ -1,12 +1,12 @@
 import { z } from 'zod';
 import {provenanceSchema} from './sources.js';
-import {recordMetadataSchema,ocrSchema,type OcrState} from './metadata.js';
+import {recordMetadataSchema,ocrSchema,type OcrState,type MediaMetadata} from './metadata.js';
 export * from './sources.js';
 export * from './metadata.js';
 export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource } from './configuration.js';
 
 export const platformSchema = z.enum(['macos', 'windows', 'linux', 'android', 'import']);
-export const sourceSchema = z.enum(['screen', 'activity', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
+export const sourceSchema = z.enum(['screen', 'activity', 'media', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
 // A mood is the author's own label, never inferred from note text or app identity.
 export const moodSchema = z.string().max(80).refine(value => value.trim().length > 0, 'Mood cannot be blank');
 export const privacySchema = z.object({
@@ -32,13 +32,25 @@ export const captureSchema = z.object({
   if (v.ocr?.status === 'pending' && (!v.imageBase64 || v.ocrText)) ctx.addIssue({code:'custom',message:'Pending OCR requires a screenshot without recognized text'});
   if (Boolean(v.imageBase64) !== Boolean(v.imageMime)) ctx.addIssue({code:'custom',message:'imageBase64 and imageMime must be supplied together'});
   if (v.privacy.excluded) ctx.addIssue({code:'custom',message:'Excluded captures must never be uploaded'});
-  if (!v.imageBase64 && !v.ocrText.trim() && !v.provenance && v.source !== 'activity') ctx.addIssue({code:'custom',message:'An image or text is required'});
+  if (!v.imageBase64 && !v.ocrText.trim() && !v.provenance && !['activity','media'].includes(v.source)) ctx.addIssue({code:'custom',message:'An image or text is required'});
   if (v.source === 'activity') {
     if (v.privacy.collection !== 'activity' || !v.appId.trim() || v.imageBase64 !== undefined || v.imageMime !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.privacy.redacted)
       ctx.addIssue({code:'custom',message:'Activity records require an app identity and activity collection, without content, images or source references'});
     if (v.metadata?.capture && Object.keys(v.metadata.capture).some(key => key !== 'intervalMs'))
       ctx.addIssue({code:'custom',path:['metadata','capture'],message:'Activity metadata cannot describe screen content processing'});
-  } else if (v.privacy.collection === 'activity') ctx.addIssue({code:'custom',message:'Activity collection must use the activity source'});
+  } else if (v.privacy.collection === 'activity' && v.source !== 'media') ctx.addIssue({code:'custom',message:'Activity collection must use the activity or media source'});
+  if (v.privacy.collection === 'activity' && v.metadata?.media?.sessions.some(session =>
+    ['title','artist','album','displaySubtitle','mediaId'].some(key => key in session)))
+    ctx.addIssue({code:'custom',path:['metadata','media'],message:'Activity collection cannot contain media titles or content identifiers'});
+  if (v.source === 'media') {
+    const media = v.metadata?.media;
+    if (!media || v.imageBase64 !== undefined || v.imageMime !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.privacy.redacted)
+      ctx.addIssue({code:'custom',message:'Media observations require media metadata without images, OCR, titles, notes or source references'});
+    if (v.metadata?.capture && Object.keys(v.metadata.capture).some(key => key !== 'intervalMs'))
+      ctx.addIssue({code:'custom',path:['metadata','capture'],message:'Media metadata cannot describe screen content processing'});
+    if (v.durationMs > 60000 || (v.durationMs > 0 && (media?.status !== 'available' || media.sessions.length !== 1 || media.sessions[0]?.playbackState !== 'playing' || media.sessions[0]?.appId !== v.appId || media.sessions[0]?.appName !== v.appName)))
+      ctx.addIssue({code:'custom',message:'Media intervals require one matching playing session and at most 60 seconds of observed time'});
+  }
   if(v.provenance&&(v.provenance.layer==='reference'||v.provenance.deleted)&&v.ocrText)ctx.addIssue({code:'custom',message:'Reference and deletion records must not contain original text'});
   if(v.provenance&&(v.durationMs!==0||v.imageBase64||['screen','activity','note'].includes(v.source)))ctx.addIssue({code:'custom',message:'Versioned source records require zero duration and no screen/activity/note payload'});
   if (v.provenance?.metadata?.file && v.source !== 'file') ctx.addIssue({code:'custom',message:'File metadata belongs to file sources'});
@@ -70,6 +82,7 @@ export type CaptureRecord = Omit<CaptureInput,'imageBase64'|'imageMime'> & {
 };
 export type CapturePreview = Pick<CaptureRecord,'id'|'deviceId'|'deviceName'|'platform'|'capturedAt'|'source'|'appId'|'appName'|'windowTitle'|'durationMs'> & {
   hasImage: boolean; ocr: OcrState; textPreview: string;
+  media?: MediaMetadata;
 };
 export const heartbeatSchema = z.object({
   deviceId: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/), deviceName: z.string().min(1).max(200), platform: platformSchema,

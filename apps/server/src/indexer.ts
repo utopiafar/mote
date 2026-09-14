@@ -54,7 +54,7 @@ export class Indexer {
   }
   async close() {this.closing=true;this.abort.abort();await this.current;}
   async search(args:Range&{query?:string}) {
-    if(!this.configured||!args.query||args.source==='activity'||args.collection==='activity')return this.store.search(args);
+    if(!this.configured||!args.query||args.source==='activity'||args.source==='media'||args.collection==='activity')return this.store.search(args);
     const vector=await this.embed(args.query);
     const semantic=this.store.vectorSearch(vector,this.config.embeddingModel,args);const lexical=this.store.search(args);
     // Interleave two retrieval primitives; semantic interpretation remains entirely with the Agent.

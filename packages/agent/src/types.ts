@@ -30,11 +30,18 @@ export interface ContextPage {
   totalCount?: number;
 }
 
+export interface MediaContextRange extends ContextRange {
+  appVisibility?: 'foreground' | 'background' | 'unknown';
+  screenLocked?: boolean;
+  playbackType?: 'local' | 'remote' | 'unknown';
+}
+
 export interface ContextReader {
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
   timeline(args: ContextRange): Promise<ContextRecord[] | ContextPage>;
   evidence(args: { ids: string[] }): Promise<ContextRecord[]>;
   activity(args: ContextRange): Promise<unknown>;
+  mediaActivity?(args: MediaContextRange): Promise<unknown>;
   devices(): Promise<unknown>;
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;

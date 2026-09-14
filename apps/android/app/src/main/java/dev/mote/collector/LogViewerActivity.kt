@@ -13,6 +13,7 @@ class LogViewerActivity : Activity() {
     private lateinit var list: LinearLayout
     private lateinit var status: TextView
     private var level = "all"
+    @Volatile private var generation = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -32,11 +33,12 @@ class LogViewerActivity : Activity() {
     }
 
     private fun load() {
+        val stamp = ++generation; val selectedLevel = level
         status.text = "正在读取日志…"; list.removeAllViews()
         executor.execute {
-            val events = runCatching { SupportBundle.journal(this).read() }.getOrElse { org.json.JSONArray() }
+            val events = runCatching { SupportEvents.journal(this).read() }.getOrElse { org.json.JSONArray() }
             val rows = (0 until events.length()).mapNotNull { events.optJSONObject(it) }.asReversed().filter { event ->
-                when (level) {
+                when (selectedLevel) {
                     "ok" -> event.optString("code") in setOf("started", "stopped", "ok")
                     "wait" -> event.optString("code") in setOf("wait_network", "scheduler", "permission", "model_unavailable")
                     "error" -> event.optString("code") !in setOf("started", "stopped", "ok", "wait_network", "scheduler")
@@ -44,6 +46,8 @@ class LogViewerActivity : Activity() {
                 }
             }.take(100)
             runOnUiThread {
+                if (isDestroyed || stamp != generation) return@runOnUiThread
+                list.removeAllViews()
                 status.text = "最近 ${rows.size} 条 · 最多保留 500 条"
                 rows.forEach { event ->
                     val elapsed = event.optLong("elapsedMs", -1).takeIf { it >= 0 }?.let { " · ${it}ms" } ?: ""
@@ -57,5 +61,5 @@ class LogViewerActivity : Activity() {
         }
     }
     private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(8), 0, moteDp(8)) }.also(parent::addView)
-    override fun onDestroy() { executor.shutdown(); super.onDestroy() }
+    override fun onDestroy() { generation++; executor.shutdown(); super.onDestroy() }
 }

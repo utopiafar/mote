@@ -19,6 +19,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "node --import tsx scripts/e2e.ts",
+    "test:media-e2e": "node --import tsx scripts/media-e2e.ts",
     "test:container": "node scripts/test-container.mjs",
     "demo": "node --import tsx scripts/seed-demo.ts",
     "import:files": "node --import tsx scripts/import-files.ts",

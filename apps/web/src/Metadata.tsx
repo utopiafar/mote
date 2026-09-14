@@ -1,7 +1,7 @@
 import type {RecordMetadata, SourceMetadata} from '@mote/shared';
 import {bytes, dateTime} from './api';
 
-export const sourceLabels: Record<string,string> = {screen:'屏幕采样',activity:'仅应用活动',note:'随手记',file:'文件',calendar:'日历',event:'事件',message:'消息',metric:'指标',memory:'记忆'};
+export const sourceLabels: Record<string,string> = {screen:'屏幕采样',activity:'仅应用活动',media:'媒体播放',note:'随手记',file:'文件',calendar:'日历',event:'事件',message:'消息',metric:'指标',memory:'记忆'};
 export const activityExplanation = '仅记录前台应用与采样时长；没有采集截图、窗口标题或正文。时长存在采样空隙，不代表完整使用历史。';
 type Row = [string, string | number | boolean | undefined];
 const bool = (value: boolean | undefined) => value === undefined ? undefined : value ? '是' : '否';
@@ -12,7 +12,7 @@ export function Metadata({metadata,source,modifiedAt}: {metadata?:RecordMetadata
   const d=metadata?.device,s=metadata?.state,c=metadata?.capture,f=source?.file;
   const network:Record<string,string>={none:'无网络',wifi:'Wi-Fi',cellular:'移动网络',ethernet:'以太网',other:'其他',unknown:'未知'};
   const thermal:Record<string,string>={unknown:'未知',nominal:'正常',fair:'略热',serious:'严重',critical:'临界'};
-  const methods:Record<string,string>={accessibility:'无障碍采集',media_projection:'系统录屏',screen_capture:'系统屏幕采集',manual:'主动记录',file:'文件同步',calendar:'日历同步',mcp:'MCP',import:'导入'};
+  const methods:Record<string,string>={accessibility:'无障碍采集',media_projection:'系统录屏',screen_capture:'系统屏幕采集',media_session:'系统媒体会话',manual:'主动记录',file:'文件同步',calendar:'日历同步',mcp:'MCP',import:'导入'};
   const rows:Row[]=[
     ['状态观察时间',time(metadata?.observedAt)],['客户端版本',metadata?.collector?.version],['采集方式',metadata?.collector?.method ? methods[metadata.collector.method] : undefined],
     ['设备型号',d?.model],['制造商',d?.manufacturer],['系统版本',d?.osVersion],['系统构建',d?.osBuild],['处理器架构',d?.architecture],['地区',d?.locale],['设备时区',d?.timeZone],

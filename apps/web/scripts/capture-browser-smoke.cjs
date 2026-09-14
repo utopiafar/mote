@@ -95,6 +95,50 @@ async function finish(code) {
   await until(()=>js(`document.querySelector('.activity-panel')!==null`),'archive tab after one click');
   await js(`Array.from(document.querySelectorAll('.segmented-nav button')).find(button=>button.innerText==='全部记录').click()`);
   await until(()=>js(`document.querySelector('.timeline-group')!==null`),'records tab after one click');
+  const mediaNow=Date.now(),mediaSession={sessionId:'fixture-media-session',appId:'fixture.player',appName:'合成播放器',playbackState:'playing',appVisibility:'background',playbackType:'local',title:'合成章节 · 海边的声音',artist:'合成作者',positionMs:0,durationMs:180000,playbackSpeed:1};
+  const mediaFixtures=[
+    {offset:90000,durationMs:45000,locked:true,session:mediaSession,collection:'content'},
+    {offset:15000,durationMs:30000,locked:false,session:{...mediaSession,sessionId:'fixture-private-session',appVisibility:'foreground',title:undefined,artist:undefined},collection:'activity'},
+    {offset:10000,durationMs:0,locked:true,status:'permission_required',collection:'content'},
+    {offset:5000,durationMs:0,locked:true,session:{...mediaSession,playbackState:'paused'},collection:'content'},
+  ];
+  for(const item of mediaFixtures){
+    const capturedAt=new Date(mediaNow-item.offset).toISOString();
+    const event={id:randomUUID(),deviceId:'synthetic-capture-browser',deviceName:'合成测试设备',platform:'android',capturedAt,durationMs:item.durationMs,source:'media',appId:item.session?.appId??'dev.mote.media',appName:item.session?.appName??'媒体观察',windowTitle:'',ocrText:'',privacy:{mode:'none',redacted:false,excluded:false,collection:item.collection},metadata:{version:1,observedAt:capturedAt,collector:{method:'media_session'},state:{screenLocked:item.locked,screenInteractive:!item.locked},media:{status:item.status??'available',sessions:item.session?[item.session]:[]}}};
+    const response=await fetch(url+'/api/captures',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify(event)});
+    assert.equal(response.status,201,`media fixture: ${await response.text()}`);
+  }
+  await clickNav('采集记录');
+  await until(()=>js(`document.querySelector('[aria-label="筛选记录来源"]')!==null`),'media source filter');
+  await js(`(()=>{const select=document.querySelector('[aria-label="筛选记录来源"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,'media');select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await until(()=>js(`document.querySelector('.filter-count').innerText.includes('/ 4')&&document.querySelectorAll('.timeline-group .capture-card').length===4`),'independent media source records');
+  assert(await js(`document.querySelector('.content').innerText.includes('媒体采集等待授权')`));
+  assert(await js(`document.querySelector('.content').innerText.includes('播放采样 45 秒')`));
+  writeFileSync(join(output,'media-records-desktop.png'),(await wc.capturePage()).toPNG());
+  await js(`Array.from(document.querySelectorAll('.timeline-group .capture-card')).find(card=>card.innerText.includes('播放采样 45 秒')).click()`);
+  await until(()=>js(`document.querySelector('.media-snapshot')?.innerText.includes('合成章节 · 海边的声音')`),'media session evidence');
+  assert(await js(`document.querySelector('.evidence-modal').innerText.includes('屏幕已锁定')&&document.querySelector('.evidence-modal').innerText.includes('后台应用')`));
+  assert(await js(`!document.querySelector('.evidence-modal .capture-image')`),'media has no screenshot');
+  window.setSize(390,844);await sleep(200);
+  assert(await js('document.documentElement.scrollWidth<=window.innerWidth'),'mobile media evidence fits');
+  writeFileSync(join(output,'media-detail-mobile.png'),(await wc.capturePage()).toPNG());
+  await js(`document.querySelector('[aria-label="关闭证据详情"]').click()`);
+  window.setSize(1360,1000);await sleep(100);
+  await clickNav('资料库');
+  await js(`document.querySelector('[aria-label="刷新资料"]').click()`);
+  await js(`Array.from(document.querySelectorAll('.segmented-nav button')).find(button=>button.innerText==='媒体播放').click()`);
+  await until(()=>js(`document.querySelector('.media-stats')?.innerText.includes('4 次状态观察')`),'media aggregates');
+  assert.equal(await js(`document.querySelector('.media-stats>div:first-child strong').innerText`),'1 分钟 15 秒');
+  assert(await js(`document.querySelector('.media-stats').innerText.includes('45 秒')`));
+  assert(await js(`document.querySelector('.media-availability').innerText.includes('1 次等待授权')`));
+  writeFileSync(join(output,'media-activity-desktop.png'),(await wc.capturePage()).toPNG());
+  window.setSize(390,844);await sleep(200);
+  assert(await js('document.documentElement.scrollWidth<=window.innerWidth'),'mobile media stats fit');
+  writeFileSync(join(output,'media-activity-mobile.png'),(await wc.capturePage()).toPNG());
+  window.setSize(1360,1000);await sleep(100);
+  await clickNav('设备');
+  await until(()=>js(`document.querySelector('.device-card .media-snapshot')!==null`),'recent media device state');
+  assert(await js(`document.querySelector('.device-card .media-snapshot').innerText.includes('最近上报的媒体状态')`));
   assert.deepEqual(errors,[]);
-  console.info('PASS: generated screenshots only; single-click navigation/detail/tabs, real thumbnails, cursor pages, local date filter, OCR states/full text and mobile layout.');
+  console.info('PASS: generated fixtures only; capture navigation/thumbnails/cursors/OCR, media source filter, locked/background playback evidence, independent playback totals, permission coverage, recent device metadata and desktop/mobile layout.');
 })().then(()=>finish(0),error=>{console.error(error.stack);finish(1);});
