@@ -1,6 +1,12 @@
 # 发布版本与签名
 
-Mote 的客户端、中央节点和中央前端使用同一个产品版本。每个 `vX.Y.Z` Git 标签对应一个 GitHub Release。发布入口是 [Release workflow](../.github/workflows/release.yml)，安装与更新入口见 [更新说明](updating.md)。
+Mote 的客户端、中央节点和中央前端使用同一个产品版本。发布使用 `vX.Y.Z` Git 标签；撤下的试验 Release 仍可保留历史标签用于追溯。发布入口是 [Release workflow](../.github/workflows/release.yml)，安装与更新入口见 [更新说明](updating.md)。
+
+## 开发早期版本编号
+
+2026-09-14 将对外版本重新从 **0.0.1** 开始，保留已实现功能和代码历史，撤下此前的 GitHub 试验 Release。版本编号较小不会改变应用签名、数据格式或用户目录；Android 内部 `versionCode` 从 11 递增到 12，后续每次发布继续递增。
+
+此前 Mac 和中央节点的自动更新按语义版本比较，因此不会将 0.0.1 当作更新；切换时应手动更新中央部署、退出并覆盖替换 Mac App，保留配置、凭据、模型与数据目录。Android 按内部版本码比较，原有更新流程仍可识别 code 12。不要绕过签名校验、复用较低 Android 版本码或卸载应用来完成切换。项目仍处于开发早期，当前版本不承诺功能和协议稳定。
 
 ## 发布产物
 
