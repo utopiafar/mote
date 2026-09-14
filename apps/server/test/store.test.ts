@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync,rmSync,readFileSync,readdirSync } from 'node:fs';
+import { mkdtempSync,rmSync,readFileSync,readdirSync,mkdirSync,chmodSync,statSync,writeFileSync,symlinkSync,linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -15,6 +15,29 @@ function vault(t:{after(fn:()=>void):void},options:ConstructorParameters<typeof 
   const directory=mkdtempSync(join(tmpdir(),'mote-store-test-'));const store=new Store(directory,options);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return store;
 }
+test('pre-created storage and restored databases gain private permissions before use',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-store-permissions-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+  chmodSync(directory,0o755);mkdirSync(join(directory,'blobs'),{mode:0o755});
+  const first=new Store(directory);first.close();chmodSync(join(directory,'mote.sqlite'),0o644);
+  const reopened=new Store(directory);t.after(()=>reopened.close());
+  assert.equal(statSync(directory).mode&0o777,0o700);assert.equal(statSync(join(directory,'blobs')).mode&0o777,0o700);
+  assert.equal(statSync(join(directory,'mote.sqlite')).mode&0o777,0o600);
+  for(const name of readdirSync(directory).filter(name=>name.startsWith('mote.sqlite-')))assert.equal(statSync(join(directory,name)).mode&0o777,0o600);
+});
+test('vault, blob directories, database and sidecar links cannot redirect private storage',t=>{
+  const root=mkdtempSync(join(tmpdir(),'mote-store-links-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const external=join(root,'external');mkdirSync(external,{mode:0o755});
+  const linked=join(root,'linked');symlinkSync(external,linked);assert.throws(()=>new Store(linked),/owned directory/);
+  assert.equal(statSync(external).mode&0o777,0o755);
+  const outside=join(root,'outside-file');writeFileSync(outside,'synthetic external file',{mode:0o644});
+  for(const [index,name] of ['blobs','mote.sqlite','mote.sqlite-wal','mote.sqlite-shm','mote.sqlite-journal'].entries()){
+    const directory=join(root,`vault-${index}`);mkdirSync(directory);
+    symlinkSync(name==='blobs'?external:outside,join(directory,name));assert.throws(()=>new Store(directory));
+  }
+  const hardlink=join(root,'hardlink-vault');mkdirSync(hardlink);linkSync(outside,join(hardlink,'mote.sqlite'));
+  assert.throws(()=>new Store(hardlink),/one link/);
+  assert.equal(readFileSync(outside,'utf8'),'synthetic external file');assert.equal(statSync(outside).mode&0o777,0o644);
+});
 test('retries are idempotent, images deduplicate independently, conflicting event IDs reject',async t=>{
   const store=vault(t);const first=await fixture();
   assert.equal((await store.ingest(first)).duplicate,false);

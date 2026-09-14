@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { uploadCapture } from '../src/transport';
+import { heartbeat, uploadCapture } from '../src/transport';
 import { defaultConfig } from '../src/config';
 import { event, image } from './fixtures';
 
@@ -22,5 +22,17 @@ describe('acknowledgment-gated uploads', () => {
   it('does not expose network internals or tokens in errors', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('url has synthetic-secret')));
     await expect(uploadCapture({ ...defaultConfig(), token: 'synthetic-secret' }, event(), image)).rejects.toThrow('无法连接中央节点');
+  });
+  it('cancels an oversized streamed acknowledgement and preserves the pending record', async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ pull(controller) { controller.enqueue(new Uint8Array(8192)); }, cancel }), { status: 201 })));
+    await expect(uploadCapture({ ...defaultConfig(), token: 'synthetic-token' }, event(), image)).rejects.toThrow('队列已保留');
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+  it.each([200, 500])('cancels unused heartbeat response bodies on HTTP %s', async status => {
+    const cancel = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ cancel }), { status })));
+    await heartbeat({ ...defaultConfig(), token: 'synthetic-token' }, {});
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

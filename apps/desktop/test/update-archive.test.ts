@@ -28,3 +28,20 @@ it('rejects duplicate entries, multiple top-level apps and truncated archives', 
   await expect(inspect([{ name: 'Mote.app/a' }, { name: 'Other.app/a' }])).rejects.toThrow();
   const path = join(directory, 'bad.zip'); await writeFile(path, Buffer.from('synthetic truncation')); await expect(inspectUpdateArchive(path)).rejects.toThrow();
 });
+it('rejects path aliases on case-insensitive and Unicode-normalizing macOS filesystems', async () => {
+  for (const entries of [
+    [{ name: 'Mote.app/A' }, { name: 'Mote.app/a' }],
+    [{ name: 'Mote.app/caf\u00e9' }, { name: 'Mote.app/cafe\u0301' }],
+    [{ name: 'Mote.app/\u03c3' }, { name: 'Mote.app/\u03c2' }],
+    [{ name: 'Mote.app/link', text: '.', symlink: true }, { name: 'Mote.app/LINK/escape' }],
+    [{ name: 'Mote.app/file' }, { name: 'Mote.app/file/child' }],
+  ]) await expect(inspect(entries)).rejects.toThrow('UPDATE_ARCHIVE_INVALID');
+});
+it('resolves symlinks before parent traversal instead of erasing the link lexically', async () => {
+  for (const target of ['dir/up/../outside', 'DIR/UP/../outside']) {
+    await expect(inspect([
+      { name: 'Mote.app/dir/up', text: '..', symlink: true },
+      { name: 'Mote.app/link', text: target, symlink: true },
+    ])).rejects.toThrow('UPDATE_ARCHIVE_INVALID');
+  }
+});

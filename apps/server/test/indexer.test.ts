@@ -144,6 +144,16 @@ test('malformed provider vectors fail closed instead of storing unusable embeddi
   assert.equal(row.index_status, 'failed'); assert.equal(row.embedding, null); assert.match(row.index_error, /invalid vector/);
 });
 
+test('oversized provider JSON is bounded even when its embedding is valid, and retry can recover',async t=>{
+  let oversized=true;
+  const {store,indexer,calls}=await fixture(t,()=>({body:{data:[{embedding:[1,0]}],...(oversized?{padding:'x'.repeat(2*1024*1024)}:{})}}));
+  const event=capture('Generated bounded-provider-response test');await store.ingest(event);await indexer.tick();
+  assert.equal(store.evidence([event.id])[0].indexingStatus,'failed');assert.equal(calls.length,1);
+  const row=store.db.prepare('SELECT embedding,index_error FROM captures WHERE id=?').get(event.id) as {embedding:null;index_error:string};
+  assert.equal(row.embedding,null);assert.match(row.index_error,/invalid vector/);
+  oversized=false;store.retryIndex();await indexer.tick();assert.equal(store.evidence([event.id])[0].indexingStatus,'indexed');
+});
+
 test('close aborts an in-flight embedding, waits for the worker, and allows the database to close without later writes', { timeout: 5000 }, async t => {
   const started = deferred(), release = deferred(), disconnected = deferred();
   const { store, indexer, calls, closeStore } = await fixture(t, async (_call, response) => {

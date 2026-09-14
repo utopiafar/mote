@@ -4,6 +4,8 @@ import {mkdtemp,rm,readFile,stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
+import {createServer} from 'node:http';
+import type {AddressInfo} from 'node:net';
 import Fastify from 'fastify';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -13,7 +15,7 @@ import {OAuth2Client} from 'google-auth-library';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {registerConnectors} from '../src/connectors/index.js';
-import {RemoteMcp} from '../src/connectors/mcp.js';
+import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
 import {publicAddress,remoteUrl,restrictedFetch} from '../src/connectors/network.js';
 import type {ConnectorContext} from '../src/connectors/types.js';
@@ -30,6 +32,25 @@ async function fixture(t:any){
   t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});return {ctx,directory,store,sources};
 }
 const item=(text='Synthetic evidence')=>({externalId:'synthetic-item',revision:randomUUID(),observedAt:new Date().toISOString(),title:'Synthetic item',text,kind:'file',layer:'original'});
+
+test('MCP rejects unauthorized bodies before parsing and preserves authenticated requests',async t=>{
+  const {ctx}=await fixture(t),app=Fastify({bodyLimit:12*1024*1024});let parsed=0;
+  app.addHook('preParsing',async(_req,_reply,payload)=>{parsed++;return payload;});
+  const connectors=registerMcp(app,ctx);t.after(async()=>{await connectors.close();await app.close();});
+  const malformed={method:'POST' as const,url:'/mcp',payload:'{"',headers:{'content-type':'application/json'}};
+  for(const token of [undefined,owner]){
+    const reply=await app.inject({...malformed,headers:{...malformed.headers,...(token?{authorization:`Bearer ${token}`}:{})}});
+    assert.equal(reply.statusCode,401);
+  }
+  assert.equal((await app.inject({...malformed,headers:{...malformed.headers,authorization:`Bearer ${readToken}`,origin:'https://attacker.invalid'}})).statusCode,403);
+  ctx.config.connectors!.mcpEnabled=false;assert.equal((await app.inject(malformed)).statusCode,503);ctx.config.connectors!.mcpEnabled=true;
+  assert.equal(parsed,0,'Authorization failures must never enter the body parser');
+  const headers={...malformed.headers,authorization:`Bearer ${readToken}`,accept:'application/json, text/event-stream'};
+  assert.equal((await app.inject({...malformed,headers})).statusCode,400);
+  assert.equal(parsed,1,'Only authorized requests may enter the body parser');
+  const next=await app.inject({method:'POST',url:'/mcp',headers,payload:{jsonrpc:'2.0',id:1,method:'tools/list',params:{}}});
+  assert.equal(next.statusCode,200);assert.ok(next.json().result.tools.length);
+});
 
 test('MCP real SDK isolates read/write credentials, scopes writes and exposes bounded complete archive reads',async t=>{
   const {ctx,store,sources}=await fixture(t),app=Fastify();
@@ -119,6 +140,16 @@ test('remote fetch denies private/default targets, credentials, metadata IPs and
   await assert.rejects(restrictedFetch(new URL('https://127.0.0.1/mcp'))('https://127.0.0.1/mcp'),/address_rejected/);
   const app=Fastify();app.get('/mcp',(_,reply)=>reply.redirect('http://169.254.169.254/'));await app.listen({host:'127.0.0.1',port:0});t.after(()=>app.close());
   const endpoint=new URL('/mcp',app.listeningOrigin);await assert.rejects(restrictedFetch(endpoint,true)(endpoint),/redirect_rejected/);
+});
+
+test('malformed remote HTTP status rejects without an uncaught callback error or process failure',async t=>{
+  let status=600;
+  const remote=createServer((_req,res)=>{res.writeHead(status,{'Content-Type':'application/json'});res.end('{"fixture":true}');});
+  t.after(async()=>{remote.closeAllConnections();await new Promise<void>((resolve,reject)=>remote.close(error=>error?reject(error):resolve()));});
+  await new Promise<void>((resolve,reject)=>{remote.once('error',reject);remote.listen(0,'127.0.0.1',resolve);});
+  const endpoint=new URL(`http://127.0.0.1:${(remote.address() as AddressInfo).port}/mcp`),request=restrictedFetch(endpoint,true);
+  for(const invalid of [600,999]){status=invalid;await assert.rejects(request(endpoint),(error:any)=>error.code==='mcp_response_invalid'&&error.statusCode===502);}
+  status=200;assert.deepEqual(await (await request(endpoint)).json(),{fixture:true});
 });
 
 function googleFixture(ctx:ConnectorContext,handle:(url:URL)=>Response|Promise<Response>){

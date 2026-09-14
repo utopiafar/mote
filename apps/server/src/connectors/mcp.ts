@@ -6,7 +6,7 @@ import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {z} from 'zod';
 import {sourceItemSchema,sourceSchema,type SourceItem} from '@mote/shared';
-import type {FastifyInstance} from 'fastify';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
 import type {ConnectorContext} from './types.js';
 import {ConnectorError} from './types.js';
 import {remoteUrl,restrictedFetch} from './network.js';
@@ -51,8 +51,10 @@ export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:P
 
 export function registerMcp(app:FastifyInstance,ctx:ConnectorContext) {
   const active=new Set<McpServer>(),operations=new Set<Promise<unknown>>();let closed=false;
+  const authorized=new WeakMap<FastifyRequest,{write:boolean;issued:ReturnType<NonNullable<ConnectorContext['mcpAuthorization']>>}>();
   const track=<T>(work:Promise<T>)=>{operations.add(work);void work.finally(()=>operations.delete(work)).catch(()=>{});return work;};
-  app.all('/mcp',async(req,reply)=>{
+  app.all('/mcp',{onRequest:async(req,reply)=>{
+    // Reject unauthenticated uploads before Fastify allocates and parses their bodies.
     const options=ctx.config.connectors;
     if(closed||!options?.mcpEnabled)return reply.code(503).send({error:'mcp_disabled'});
     const issued=ctx.mcpAuthorization?.(req.headers.authorization);
@@ -62,6 +64,9 @@ export function registerMcp(app:FastifyInstance,ctx:ConnectorContext) {
     reply.header('Cache-Control','no-store');reply.raw.setHeader('Cache-Control','no-store');
     // Stateless JSON responses avoid persistent sessions carrying privilege between credentials.
     if(req.method!=='POST')return reply.code(405).header('Allow','POST').send({error:'method_not_allowed'});
+    authorized.set(req,{write,issued});
+  }},async(req,reply)=>{
+    const options=ctx.config.connectors!,{write,issued}=authorized.get(req)!;
     const scoped=issued?.write?{...ctx,config:{...ctx.config,connectors:{...options,mcpWriteSourceIds:issued.sourceIds}}}:ctx;
     const server=createMoteMcp(scoped,write,track,issued?.authorize),transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});
     active.add(server);

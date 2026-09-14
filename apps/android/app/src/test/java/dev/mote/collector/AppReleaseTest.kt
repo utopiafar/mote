@@ -65,6 +65,19 @@ class AppReleaseTest {
             for (url in listOf("http://github.com/path", "https://github.com:8443/path", "https://secret@github.com/path", "https://api.github.com.evil.test/path")) assertThrows(UpdateFailure::class.java) { UpdateNetwork.validateUrl(URL(url)) }
         } finally { directory.deleteRecursively() }
     }
+    @Test fun deeplyNestedUnsignedReleaseMetadataStopsBeforeFetchingTheManifest() {
+        val nested = "[".repeat(64) + "0" + "]".repeat(64)
+        val metadata = """{"draft":false,"prerelease":false,"tag_name":"v0.5.0","untrusted":$nested}""".toByteArray()
+        val requested = mutableListOf<String>()
+        val network = UpdateNetwork(open = { url -> requested.add(url.toString()); Fake(url, metadata, 200) })
+        assertEquals("response", assertThrows(UpdateFailure::class.java) { network.check(UpdateConfig()) }.code)
+        assertEquals(listOf("https://api.github.com/repos/utopiafar/mote/releases/latest"), requested)
+    }
+    @Test fun oversizedNestingInUnsignedManifestIsRejectedAsAnOrdinaryUpdateFailure() {
+        val nested = "[".repeat(20000) + "0" + "]".repeat(20000)
+        val raw = """{"schemaVersion":$nested,"keyId":"${AppReleaseVerifier.KEY_ID}","payload":"","signature":""}""".toByteArray()
+        assertEquals("manifest", assertThrows(UpdateFailure::class.java) { AppReleaseVerifier.verify(raw, pem, UpdateConfig()) }.code)
+    }
     private class Fake(url: URL, val bytes: ByteArray, val status: Int, val headers: Map<String, String> = emptyMap()) : HttpURLConnection(url) {
         override fun connect() = Unit; override fun disconnect() = Unit; override fun usingProxy() = false
         override fun getResponseCode() = status

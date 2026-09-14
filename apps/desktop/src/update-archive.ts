@@ -14,7 +14,9 @@ export async function inspectUpdateArchive(path: string): Promise<string> {
     const count = tail.readUInt16LE(end + 10), length = tail.readUInt32LE(end + 12), offset = tail.readUInt32LE(end + 16);
     if (!count || count >= 50000 || count !== tail.readUInt16LE(end + 8) || length > 32 * 1024 * 1024 || offset + length > size - tail.length + end) invalid();
     const entries = Buffer.alloc(length); const read = await file.read(entries, 0, length, offset); if (read.bytesRead !== length) invalid();
-    let at = 0, uncompressed = 0; const roots = new Set<string>(), seen = new Set<string>(), links = new Map<string, string>();
+    let at = 0, uncompressed = 0; const roots = new Set<string>(), seen = new Map<string, boolean>(), links = new Map<string, string>(), spellings = new Map<string, string>();
+    // The destination may use case-insensitive, Unicode-normalizing APFS/HFS+.
+    const pathKey = (name: string) => name.normalize('NFD').toUpperCase().toLowerCase();
     const decode = (bytes: Buffer) => new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     for (let entry = 0; entry < count; entry++) {
       if (at + 46 > length || entries.readUInt32LE(at) !== 0x02014b50) invalid();
@@ -26,8 +28,13 @@ export async function inspectUpdateArchive(path: string): Promise<string> {
       if (flags & 1 || ![0, 8].includes(method) || at + 46 + names + extra + comment > length || ![0, 0x4000, 0x8000, 0xa000].includes(type)) invalid();
       const name = decode(entries.subarray(at + 46, at + 46 + names));
       const parts = name.replace(/\/$/, '').split('/');
-      if (!name || name.length > 4096 || /[\\\x00-\x1f\x7f]/.test(name) || parts.some(p => !p || p === '.' || p === '..') || seen.has(name)) invalid();
-      seen.add(name); const root = parts[0];
+      if (!name || name.length > 4096 || /[\\\x00-\x1f\x7f]/.test(name) || parts.some(p => !p || p === '.' || p === '..') || seen.has(pathKey(parts.join('/')))) invalid();
+      for (let i = 1; i <= parts.length; i++) {
+        const prefix = parts.slice(0, i).join('/'), key = pathKey(prefix);
+        if (spellings.has(key) && spellings.get(key) !== prefix) invalid();
+        spellings.set(key, prefix);
+      }
+      seen.set(pathKey(parts.join('/')), type === 0x4000 || name.endsWith('/')); const root = parts[0];
       if (root !== '__MACOSX') { if (!root.endsWith('.app')) invalid(); roots.add(root); }
       if (roots.size > 1) invalid();
       uncompressed += expanded; if (uncompressed > 2_000_000_000) invalid();
@@ -37,31 +44,37 @@ export async function inspectUpdateArchive(path: string): Promise<string> {
       if (start + compressed > offset || localNameLength !== names) invalid();
       const localName = Buffer.alloc(localNameLength); if ((await file.read(localName, 0, localNameLength, localOffset + 30)).bytesRead !== localNameLength || decode(localName) !== name) invalid();
       if (type === 0xa000) {
-        if (root === '__MACOSX' || expanded > 4096 || compressed > 8192) invalid();
+        if (root === '__MACOSX' || name.endsWith('/') || expanded > 4096 || compressed > 8192) invalid();
         const bytes = Buffer.alloc(compressed); if ((await file.read(bytes, 0, compressed, start)).bytesRead !== compressed) invalid();
         const target = decode(method === 0 ? bytes : inflateRawSync(bytes, { maxOutputLength: 4096 }));
-        links.set(name, target);
-        const resolved = posix.normalize(posix.join(posix.dirname(name), target));
-        if (target.startsWith('/') || /[\\\x00-\x1f\x7f]/.test(target) || !(resolved === root || resolved.startsWith(root + '/'))) invalid();
+        if (!target || target.startsWith('/') || /[\\\x00-\x1f\x7f]/.test(target)) invalid();
+        links.set(pathKey(name), target);
       }
       at += 46 + names + extra + comment;
     }
     if (at !== length || roots.size !== 1) invalid();
     const root = [...roots][0];
-    // No entry may be extracted through a symlink directory, regardless of ZIP ordering.
-    for (const name of seen) {
-      const pieces = name.replace(/\/$/, '').split('/');
-      for (let i = 1; i < pieces.length; i++) if (links.has(pieces.slice(0, i).join('/'))) invalid();
+    // No entry may be extracted through a symlink or regular file, regardless of ZIP ordering.
+    for (const name of seen.keys()) {
+      const pieces = name.split('/');
+      for (let i = 1; i < pieces.length; i++) if (seen.get(pieces.slice(0, i).join('/')) === false) invalid();
     }
     for (const [name, target] of links) {
-      let resolved = posix.normalize(posix.join(posix.dirname(name), target)); let exhausted = true;
-      for (let depth = 0; depth < 60; depth++) {
-        if (!(resolved === root || resolved.startsWith(root + '/'))) invalid();
-        const pieces = resolved.split('/'); const prefix = pieces.map((_, i) => pieces.slice(0, i + 1).join('/')).find(p => links.has(p));
-        if (!prefix) { exhausted = false; break; }
-        resolved = posix.normalize(posix.join(posix.dirname(prefix), links.get(prefix)!, resolved.slice(prefix.length)));
+      const pending = [...posix.dirname(name).split('/'), ...target.split('/')], resolved: string[] = [];
+      let followed = 0;
+      // Resolve each symlink before processing '..': lexical normalization can hide a bundle escape.
+      while (pending.length) {
+        const piece = pending.shift()!;
+        if (!piece || piece === '.') continue;
+        if (piece === '..') { if (resolved.length <= 1) invalid(); resolved.pop(); continue; }
+        resolved.push(piece);
+        if (pathKey(resolved[0]) !== pathKey(root)) invalid();
+        const next = links.get(pathKey(resolved.join('/')));
+        if (next !== undefined) {
+          if (++followed > 60) invalid();
+          resolved.pop(); pending.unshift(...next.split('/'));
+        }
       }
-      if (exhausted) invalid();
     }
     return root;
   } catch (error) { if ((error as Error).message === 'UPDATE_ARCHIVE_INVALID') throw error; throw new Error('UPDATE_ARCHIVE_INVALID'); }

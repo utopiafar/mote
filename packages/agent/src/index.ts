@@ -96,6 +96,8 @@ function escapeJsonStringControls(raw: string): string {
 }
 
 export function parseAnswer(raw: string, records: Map<string, ContextRecord>) {
+  if (typeof raw !== 'string' || raw.length > 1_000_000)
+    throw new AgentResponseError('The model response exceeds the answer size limit.');
   const clean = raw
     .trim()
     .replace(/^```(?:json)?\s*\n?/, "")

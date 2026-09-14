@@ -1,10 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, statSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, statSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp, { type Metadata } from 'sharp';
 import {z} from 'zod';
 import { sourceConnectionSchema, sourceItemSchema, captureSchema, type CaptureInput, type CaptureRecord, type Heartbeat, type DeviceRecord, type Activity } from '@mote/shared';
+import {privateDirectory,privateFile} from './private-storage.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
@@ -16,12 +17,14 @@ export class Store {
   blobsDir:string;
   key?:Buffer;
   constructor(public directory:string, private options:{dataKey?:string;maxStorageBytes?:number;embeddingEnabled?:boolean}={}) {
-    mkdirSync(directory,{recursive:true,mode:0o700});
-    this.blobsDir=join(directory,'blobs'); mkdirSync(this.blobsDir,{recursive:true,mode:0o700});
+    privateDirectory(directory);
+    this.blobsDir=join(directory,'blobs'); privateDirectory(this.blobsDir);
     if(options.dataKey) {
       if(!/^[0-9a-f]{64}$/i.test(options.dataKey)) throw new Error('MOTE_DATA_KEY must be 64 hexadecimal characters');
       this.key=Buffer.from(options.dataKey,'hex');
     }
+    privateFile(join(directory,'mote.sqlite'),true);
+    for(const suffix of ['-wal','-shm','-journal'])privateFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new DatabaseSync(join(directory,'mote.sqlite'));
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);

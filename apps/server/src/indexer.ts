@@ -22,7 +22,17 @@ export class Indexer {
     try{response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(this.config.embeddingApiKey?{Authorization:`Bearer ${this.config.embeddingApiKey}`}:{})},body:JSON.stringify({model:this.config.embeddingModel,input:text.slice(0,20000)}),signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(45000)]),redirect:'error'});}catch{throw new EmbeddingError('embedding_transport');}
     if(!response.ok){await response.body?.cancel();throw new EmbeddingError('embedding_http',response.status);}
     let data:{data?:{embedding?:number[]}[]};
-    try{data=await response.json() as typeof data;}catch{throw new EmbeddingError('embedding_invalid');}
+    try {
+      // A provider controls the complete body, including ignored JSON fields and decompressed bytes.
+      const limit=2*1024*1024,reader=response.body?.getReader(),bytes=Buffer.allocUnsafe(limit);let size=0;
+      if(!reader)throw new Error('Missing embedding response body');
+      try {
+        if(Number(response.headers.get('content-length'))>limit)throw new Error('Embedding response too large');
+        for(;;){const {value,done}=await reader.read();if(done)break;if(size+value.byteLength>limit)throw new Error('Embedding response too large');bytes.set(value,size);size+=value.byteLength;}
+        data=JSON.parse(bytes.subarray(0,size).toString('utf8')) as typeof data;
+      }catch(error){await reader.cancel().catch(()=>{});throw error;}
+      finally{reader.releaseLock();}
+    }catch{throw new EmbeddingError('embedding_invalid');}
     const vector=data?.data?.[0]?.embedding;
     if(!Array.isArray(vector)||!vector.length||vector.length>16384||!vector.every(n=>Number.isFinite(n)))throw new EmbeddingError('embedding_invalid');
     return vector;

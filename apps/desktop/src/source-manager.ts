@@ -6,6 +6,7 @@ import { scanSourceFiles } from './source-files';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices, decodeCalendarScan } from './source-calendar';
 import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
 import type { Config } from './contracts';
+import { readResponseText } from './response-body';
 export function sourceDefinition(source: LocalSource): SourceDefinition {
   const { id, name, kind, deviceId, platform, retention, enabled } = source;
   return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || '本地来源', kind, deviceId, platform, retention, enabled };
@@ -124,8 +125,8 @@ export class LocalSourceManager {
         const request: SourceRequest = async (path, body, method, requestSignal) => {
           if (!this.connection.token) throw new Error('请先配置中央节点令牌');
           const response = await fetch(this.connection.serverUrl + path, { method, headers: { Authorization: 'Bearer ' + this.connection.token, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
-          if (!response.ok) throw new Error(response.status === 401 ? '中央认证失败，请检查令牌' : response.status === 409 ? '中央来源已暂停，请在中央来源页恢复' : '中央同步失败，已保留本地版本，稍后自动重试');
-          const text = await response.text(); if (text.length > 1024 * 1024) throw new Error('中央响应超过上限'); return JSON.parse(text);
+          if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new Error(response.status === 401 ? '中央认证失败，请检查令牌' : response.status === 409 ? '中央来源已暂停，请在中央来源页恢复' : '中央同步失败，已保留本地版本，稍后自动重试'); }
+          return JSON.parse(await readResponseText(response, 1024 * 1024));
         };
         // Register without overriding an owner's central pause. Apply metadata only after an explicit local edit.
         const prepare = async () => { if (this.metadataDirty.has(source.id)) {

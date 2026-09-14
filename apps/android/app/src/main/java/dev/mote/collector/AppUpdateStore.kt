@@ -27,7 +27,11 @@ class UpdateNetwork(private val stopped: () -> Boolean = { false }, private val 
     fun check(config: UpdateConfig): ByteArray {
         config.validate()
         val endpoint = "https://api.github.com/repos/${config.repository}/releases" + if (config.channel == "stable") "/latest" else "?per_page=30"
-        val json = AppReleaseVerifier.utf8(bytes(endpoint, 2_000_000)); val releases = if (config.channel == "stable") JSONArray().put(JSONObject(json)) else JSONArray(json)
+        val json = AppReleaseVerifier.utf8(bytes(endpoint, 2_000_000))
+        val releases = try {
+            StrictJson.validate(json)
+            if (config.channel == "stable") JSONArray().put(JSONObject(json)) else JSONArray(json)
+        } catch (_: Exception) { throw UpdateFailure("response") }
         val versions = (0 until releases.length()).mapNotNull { index ->
             val r = releases.optJSONObject(index) ?: return@mapNotNull null
             val tag = r.optString("tag_name")

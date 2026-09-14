@@ -38,10 +38,15 @@ export function restrictedFetch(endpoint:URL,allowLocal=false):typeof fetch {
       },res=>{
         const status=res.statusCode??502;
         if(status>=300&&status<400){res.destroy();reject(new ConnectorError('mcp_redirect_rejected',502));return;}
+        if(status<200||status>599){res.destroy();reject(new ConnectorError('mcp_response_invalid',502));return;}
         const chunks:Buffer[]=[];
         res.on('data',(chunk:Buffer)=>{length+=chunk.length;if(length>2*1024*1024){res.destroy();reject(new ConnectorError('mcp_response_too_large',413));}else chunks.push(chunk);});
         res.on('error',()=>reject(new ConnectorError('mcp_network_error',502)));
-        res.on('end',()=>{const responseHeaders=new Headers();for(const [key,value]of Object.entries(res.headers))if(value!==undefined)responseHeaders.set(key,Array.isArray(value)?value.join(', '):value);resolve(new Response([204,205,304].includes(status)?null:Buffer.concat(chunks),{status,headers:responseHeaders}));});
+        res.on('end',()=>{
+          // Event handlers run after the Promise executor; protocol conversion errors must reject, never escape and crash the node.
+          try{const responseHeaders=new Headers();for(const [key,value]of Object.entries(res.headers))if(value!==undefined)responseHeaders.set(key,Array.isArray(value)?value.join(', '):value);resolve(new Response([204,205,304].includes(status)?null:Buffer.concat(chunks),{status,headers:responseHeaders}));}
+          catch{reject(new ConnectorError('mcp_response_invalid',502));}
+        });
       });
       const abort=()=>req.destroy(new Error('aborted'));
       if(init?.signal?.aborted)abort();else init?.signal?.addEventListener('abort',abort,{once:true});

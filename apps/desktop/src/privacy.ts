@@ -1,5 +1,6 @@
 import type { Rectangle } from './contracts';
 import { validateLocalModelUrl, validateRectangles } from './config';
+import { readResponseText } from './response-body';
 
 export function shouldExclude(appId: string | undefined, excludedAppIds: string[]): boolean {
   // Exact identities only. Unknown foreground identity is always fail-closed.
@@ -41,9 +42,8 @@ export async function reviewLocally(url: string, image: Buffer, signal?: AbortSi
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
       body: JSON.stringify({ version: 1, imageBase64: image.toString('base64'), imageMime: 'image/jpeg', purpose: 'privacy_review' }),
     });
-    if (!result.ok) throw new Error('request failed');
-    const raw = await result.text();
-    if (raw.length > 64000) throw new Error('response too large');
+    if (!result.ok) { await result.body?.cancel().catch(() => undefined); throw new Error('request failed'); }
+    const raw = await readResponseText(result, 64000);
     return parseReviewDecision(JSON.parse(raw));
   } catch {
     throw new Error('本地隐私审查不可用或返回无效结果，已跳过本次采集');

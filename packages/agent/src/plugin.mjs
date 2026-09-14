@@ -22,10 +22,48 @@ const contextFilters = {
   collection: {type: 'string', description: 'activity for app identity/time without contents; content for other permitted records'},
 };
 
+/** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
+ * A token parameter and wall-clock timeout do not constrain a hostile response.
+ * The limit covers retries and repair turns in this isolated agent process. */
+export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 1024) {
+  let received = 0;
+  let exceeded = false;
+  const tooLarge = () => new Error("Model response exceeds the agent byte budget");
+  return async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    // Bridge responses already have their own authenticated evidence byte budget.
+    if (url.startsWith(bridge + "/")) return transport(input, init);
+    if (exceeded) throw tooLarge();
+    const response = await transport(input, init);
+    if (!response.body) return response;
+    const reader = response.body.getReader();
+    const body = new ReadableStream({
+      async pull(controller) {
+        try {
+          const { done, value } = await reader.read();
+          if (done) { reader.releaseLock(); controller.close(); return; }
+          received += value.byteLength;
+          if (received > maximumBytes) {
+            exceeded = true;
+            await reader.cancel().catch(() => undefined);
+            reader.releaseLock();
+            controller.error(tooLarge());
+            return;
+          }
+          controller.enqueue(value);
+        } catch (error) { controller.error(error); }
+      },
+      async cancel(reason) { try { await reader.cancel(reason); } finally { reader.releaseLock(); } },
+    });
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+  };
+}
+
 export async function apply(ctx) {
   const endpoint = process.env.MOTE_CONTEXT_BRIDGE;
   const token = process.env.MOTE_CONTEXT_BRIDGE_TOKEN;
   if (!endpoint || !token) throw new Error("Mote context bridge is missing");
+  globalThis.fetch = boundedModelFetch(globalThis.fetch, endpoint);
   async function call(tool, args, signal) {
     const response = await fetch(`${endpoint}/${tool}`, {
       method: "POST",
