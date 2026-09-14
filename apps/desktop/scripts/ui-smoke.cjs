@@ -7,6 +7,7 @@ const { join, resolve } = require('node:path');
 const { tmpdir } = require('node:os');
 const assert = require('node:assert/strict');
 const { defaultConfig, ConfigStore } = require('../dist/config');
+const { QueueStorage } = require('../dist/queue-storage');
 
 // A clean generated profile prevents reading existing settings or personal screenshots.
 const profile = mkdtempSync(join(tmpdir(), 'mote-ui-fixture-'));
@@ -26,6 +27,13 @@ app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', () => {
     void (async () => {
       const js = code => window.webContents.executeJavaScript(code);
+      const settingsIdle = async phase => {
+        for (let i = 0; i < 200; i++) {
+          if (await js(`!document.querySelector('#settings-fields').disabled`)) return;
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        throw new Error(`Settings operation did not complete: ${phase}`);
+      };
       const navigate = async page => {
         await js(`document.querySelector('[data-nav="${page}"]').click(); new Promise(resolve => setTimeout(resolve, 180))`);
         assert(await js(`Array.from(document.querySelectorAll('[data-page]')).every(element => element.hidden === (element.dataset.page !== '${page}'))`), `Only ${page} should be visible`);
@@ -209,6 +217,14 @@ app.on('browser-window-created', (_event, window) => {
         assert.equal(disk.deviceName, beforeFailedSave.config.deviceName); assert.equal(disk.intervalMs, beforeFailedSave.config.intervalMs); assert.equal(disk.jpegQuality, beforeFailedSave.config.jpegQuality);
       } finally { ConfigStore.prototype.save = originalSave; }
       const external = await realpath(mkdtempSync(join(tmpdir(), 'mote-storage-ui-fixture-')));
+      const originalMigration = QueueStorage.prototype.migrate;
+      QueueStorage.prototype.migrate = async function(...args) {
+        const result = await originalMigration.apply(this, args);
+        // The active directory can change before configure finishes. Make that interval deterministic
+        // so the fixture must wait for the UI to enable the next action, including on fast local disks.
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return result;
+      };
       try {
         const oldStatus = await js('window.mote.status()');
         const rejected = await js(`window.mote.configure({...(${JSON.stringify(oldStatus.config)}),captureStorageDirectory:${JSON.stringify(join(external, 'unauthorized'))}}).then(()=>false, error=>error.message.includes('选择器'))`);
@@ -216,18 +232,19 @@ app.on('browser-window-created', (_event, window) => {
         dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [external] });
         await navigate('capture');
         await js(`document.querySelector('#capture-directory-choose').click()`);
-        for (let i = 0; i < 100 && !await js(`document.querySelector('#capture-directory').value.includes('Mote-Captures-')`); i++) await new Promise(resolve => setTimeout(resolve, 20));
+        await settingsIdle('choose capture directory');
+        assert(await js(`document.querySelector('#capture-directory').value.includes('Mote-Captures-')`));
         assert(await js(`document.querySelector('#capture-directory').readOnly`));
         const selected = await js(`document.querySelector('#capture-directory').value`);
         await js(`document.querySelector('#settings').requestSubmit()`);
-        for (let i = 0; i < 100 && (await js('window.mote.status()')).storage.directory !== selected; i++) await new Promise(resolve => setTimeout(resolve, 20));
+        await settingsIdle('move capture directory');
         const moved = await js('window.mote.status()');
         assert.equal(moved.storage.directory, selected); assert.equal(moved.config.captureStorageDirectory, selected);
         assert.equal(moved.running, false); assert.equal(moved.queueDepth, oldStatus.queueDepth); assert.equal(moved.config.deviceId, oldStatus.config.deviceId);
         await assert.rejects(stat(oldStatus.storage.directory), {code:'ENOENT'});
         assert.equal(JSON.parse(await readFile(join(profile, 'config.json'),'utf8')).config.captureStorageDirectory, selected);
         await js(`document.querySelector('#capture-directory-default').click(); document.querySelector('#settings').requestSubmit()`);
-        for (let i = 0; i < 100 && (await js('window.mote.status()')).storage.directory !== oldStatus.storage.directory; i++) await new Promise(resolve => setTimeout(resolve, 20));
+        await settingsIdle('restore default capture directory');
         const restored = await js('window.mote.status()'); assert.equal(restored.storage.directory, oldStatus.storage.directory); assert.equal(restored.config.captureStorageDirectory, ''); assert.equal(restored.running, false); assert.equal(restored.queueDepth, moved.queueDepth);
         await assert.rejects(stat(selected), {code:'ENOENT'});
         const crashTarget = (await js('window.mote.chooseCaptureDirectory()')).directory;
@@ -243,8 +260,8 @@ app.on('browser-window-created', (_event, window) => {
           assert(await js(`window.mote.saveNote({}).then(()=>false,error=>error.message.includes('需要恢复'))`));
           await navigate('overview'); assert(await js(`!document.querySelector('#storage-restart').hidden`));
         } finally { ConfigStore.prototype.save = originalSave; }
-      } finally { await rm(external, { recursive: true, force: true }); }
-      process.stdout.write(JSON.stringify({ failedSettingsRolledBack: true, ambiguousCommitPreservesBothAndBlocksWrites: true, captureStorageNativePickerAndMigration: true, arbitraryStoragePathRejected: true, captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, nativeSettingsMenu: true, settingsEditableWhileCapturing: true, draftAndConfigRetainedAcrossPages: true, hiddenInvalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
+      } finally { QueueStorage.prototype.migrate = originalMigration; await rm(external, { recursive: true, force: true }); }
+      process.stdout.write(JSON.stringify({ slowMigrationWaitsForSettingsCompletion: true, failedSettingsRolledBack: true, ambiguousCommitPreservesBothAndBlocksWrites: true, captureStorageNativePickerAndMigration: true, arbitraryStoragePathRejected: true, captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, nativeSettingsMenu: true, settingsEditableWhileCapturing: true, draftAndConfigRetainedAcrossPages: true, hiddenInvalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write(`UI smoke failed: ${error.message}\n`); app.exit(1); });
   });
