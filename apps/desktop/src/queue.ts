@@ -1,9 +1,8 @@
 import { recordMetadataSchema } from '@mote/shared/metadata';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, unlink, open, chmod } from 'node:fs/promises';
+import { mkdir, lstat, readFile, readdir, rename, unlink, open, chmod } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { ConnectionBindingStore } from './connection-binding';
-import { atomicSourceJson } from './source-sync';
 import type { CaptureEvent, Config } from './contracts';
 import { MAX_IMAGE_BYTES } from './config';
 
@@ -102,12 +101,33 @@ export class DurableQueue {
   private records = new Map<string, QueueRecord>();
   private chain: Promise<unknown> = Promise.resolve();
   private initialized = false;
-  readonly binding: ConnectionBindingStore;
+  private storageGuard?: () => Promise<void>;
+  setStorageGuard(guard: () => Promise<void>): void { this.storageGuard = guard; }
+  private storageBinding: ConnectionBindingStore;
+  private storageDirectory: string;
   private lastUploadAt?: string;
   private sourceRetryAt?: string;
-  constructor(readonly directory: string, private limits: QueueLimits) { this.binding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); }
+  constructor(directory: string, private limits: QueueLimits) { this.storageDirectory = directory; this.storageBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json'), async (path, value) => { await this.storageGuard?.(); await atomicWrite(path, JSON.stringify(value)); }); }
+  get directory(): string { return this.storageDirectory; }
+  get binding(): ConnectionBindingStore { return this.storageBinding; }
+  /** All file readers/writers queue behind this transaction; memory records keep the same IDs. */
+  async relocate(target: string, storage: import('./queue-storage').QueueStorage, commitConfig: () => Promise<void>, selectedDirectory: () => Promise<string>): Promise<void> {
+    await this.exclusive(async () => {
+      this.assertReady();
+      await storage.migrate(this.directory, target, async () => {
+        // A copied binding must exist before initialize; never synthesize an empty replacement.
+        await readFile(join(target, 'connection-binding.json'));
+        const binding = new ConnectionBindingStore(join(target, 'connection-binding.json'), async (path, value) => { await this.storageGuard?.(); await atomicWrite(path, JSON.stringify(value)); });
+        const config = this.limits as QueueLimits & Partial<Config>;
+        await binding.initialize({ serverUrl: config.serverUrl ?? '', token: config.token }, this.records.size > 0);
+        await commitConfig();
+        // No fallible operation after the durable pointer commit and before activation.
+        this.storageDirectory = target; this.storageBinding = binding;
+      }, selectedDirectory);
+    });
+  }
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
-    const result = this.chain.then(fn);
+    const result = this.chain.then(async () => { await this.storageGuard?.(); return fn(); });
     this.chain = result.catch(() => undefined);
     return result;
   }
@@ -117,7 +137,9 @@ export class DurableQueue {
   async initialize(): Promise<void> {
     return this.exclusive(async () => {
       for (const path of [this.directory, join(this.directory, 'events'), join(this.directory, 'blobs')]) {
-        await mkdir(path, { recursive: true, mode: 0o700 });
+        if (this.storageGuard) {
+          const info = await lstat(path); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('截图存储目录不完整，请连接原磁盘后重试');
+        } else await mkdir(path, { recursive: true, mode: 0o700 });
         await chmod(path, 0o700);
       }
       const restored = new Map<string, QueueRecord>();
@@ -204,7 +226,7 @@ export class DurableQueue {
       waitingOcr: values.filter(r => r.uploaded && r.ocrResult === undefined).length, blocked: values.filter(r => r.syncBlocked).length };
   }
   async syncCheckpoint(lastUploadAt = this.lastUploadAt, nextRetryAt?: string): Promise<void> {
-    await this.exclusive(async () => { await atomicSourceJson(join(this.directory, 'sync-checkpoint.json'), { lastUploadAt, nextRetryAt }); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; });
+    await this.exclusive(async () => { await atomicWrite(join(this.directory, 'sync-checkpoint.json'), JSON.stringify({ lastUploadAt, nextRetryAt })); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; });
   }
   atCapacity(): boolean { const stats = this.stats(); return stats.depth >= this.limits.maxQueueEvents || stats.bytes >= this.limits.maxQueueBytes; }
   async enqueue(event: CaptureEvent, image?: Buffer): Promise<boolean> {

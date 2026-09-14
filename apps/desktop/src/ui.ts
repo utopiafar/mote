@@ -9,6 +9,9 @@ const pageNames = ['overview', 'notes', 'records', 'sources', 'settings', 'conne
 type Page = typeof pageNames[number];
 let currentPage: Page = 'overview';
 let settingsDirty = false;
+let captureStorageDirectory = '';
+let settingsApplying = false;
+let wasRunningBeforeSave = false;
 const pageScroll = new Map<Page, number>();
 const settingsPages = new Set<Page>(['connection', 'sync', 'capture', 'privacy', 'developer']);
 
@@ -35,14 +38,14 @@ for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-na
 function updateSettingsHint(): void {
   byId('settings-save-bar').hidden = !(settingsPages.has(currentPage) || (currentPage === 'settings' && settingsDirty));
   byId('settings-pending').hidden = !settingsDirty;
-  byId('save-hint').textContent = currentStatus?.running ? '正在采集；停止后可修改设置。' : settingsDirty ? '有未保存的修改，切换页面会为你保留。' : '设置保存后生效。';
-  byId<HTMLButtonElement>('settings-reset').disabled = !settingsDirty || busy || Boolean(currentStatus?.running);
+  byId('save-hint').textContent = currentStatus?.running ? '保存后立即应用；必要时会短暂暂停并自动恢复采集。' : settingsDirty ? '有未保存的修改，切换页面会为你保留。' : '设置保存后立即生效；采集保持当前开停状态。';
+  byId<HTMLButtonElement>('settings-reset').disabled = !settingsDirty || busy;
 }
 function markSettingsDirty(): void { settingsDirty = true; updateSettingsHint(); }
 settingsForm.addEventListener('input', markSettingsDirty);
 settingsForm.addEventListener('change', markSettingsDirty);
 byId('settings-reset').addEventListener('click', () => {
-  if (!currentStatus || busy || currentStatus.running) return;
+  if (!currentStatus || busy) return;
   fillConfig(currentStatus.config); feedback('已还原为上次保存的设置。', true);
 });
 // Inputs stay mounted across pages. Reveal an invalid field before native validation focuses it.
@@ -139,6 +142,8 @@ byId('record-detail-close').addEventListener('click', () => { byId('record-detai
 function readInput(id: string): string { return byId<HTMLInputElement>(id).value; }
 function numberInput(id: string): number { return Number(readInput(id)); }
 function fillConfig(config: import('./contracts').PublicConfig): void {
+  captureStorageDirectory = config.captureStorageDirectory || '';
+  renderStorage();
   const values: Record<string, string | number> = {
     'diagnostic-interval': config.diagnosticIntervalSeconds, 'jpeg-quality': config.jpegQuality, 'capture-max-side': config.captureMaxSide, 'battery-pause-below': config.batteryPauseBelowPct,
     'server-url': config.serverUrl, 'device-name': config.deviceName, interval: config.intervalMs / 1000,
@@ -166,9 +171,21 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   refreshPresets(); updateSyncOptions(); renderMaskEditor(); updateLocalBacklog();
   settingsDirty = false; updateSettingsHint();
 }
+function renderStorage(): void {
+  byId('storage-restart').hidden = !currentStatus?.storage?.recoveryRequired;
+  byId<HTMLInputElement>('capture-directory').value = captureStorageDirectory || currentStatus?.storage?.defaultDirectory || '默认位置（当前环境目录）';
+  byId('capture-directory-state').textContent = currentStatus?.storage?.cleanupPending ? '新目录已生效；旧副本尚未清理，请连接原磁盘后重新打开 Mote。' : captureStorageDirectory !== (currentStatus?.config.captureStorageDirectory || '') ? '保存设置后迁移本机已有记录，过程中会自动暂停并恢复。' : '这里保存本机待同步、待 OCR 的截图。中央已归档图片仍保存在中央节点。';
+}
+byId('storage-restart').addEventListener('click', () => void desktopApi.restartForStorageRecovery());
+byId('capture-directory-choose').addEventListener('click', () => void perform(async () => {
+  const result = await desktopApi.chooseCaptureDirectory();
+  if (!result.canceled && result.directory) { captureStorageDirectory = result.directory; markSettingsDirty(); renderStorage(); }
+}));
+byId('capture-directory-default').addEventListener('click', () => { captureStorageDirectory = ''; markSettingsDirty(); renderStorage(); });
+byId('capture-directory-open').addEventListener('click', () => void perform(() => desktopApi.openCaptureDirectory()));
 let connectionPreview: import('./connection').ConnectionPreview | undefined;
 function render(status: import('./contracts').Status): void {
-  currentStatus = status;
+  currentStatus = status; renderStorage();
   byId('connection-device').textContent = `设备：${status.config.deviceName} · ID ${status.config.deviceId}。迁移已有设备时，请在中央邀请中选择此 ID。`;
   byId('environment').textContent = status.environment ? `环境：${status.environment.profile}${status.environment.legacy ? '（原日常目录）' : ' · 独立数据'} · ${status.environment.dataDirectory}` : '';
   const names = { stopped: '采集已停止', capturing: '正在采集', paused: '采集已暂停', permission_required: '需要屏幕录制权限', error: '采集已停止 · 需要处理' };
@@ -185,19 +202,19 @@ function render(status: import('./contracts').Status): void {
   setText('queue-size', `${(status.queueBytes / 1024 / 1024).toFixed(1)} MiB`);
   setText('last-capture', status.lastCaptureAt ? new Date(status.lastCaptureAt).toLocaleTimeString('zh-CN', { hour12: false }) : '尚无');
   byId<HTMLButtonElement>('start').disabled = busy || status.running || status.platform !== 'macos';
-  byId<HTMLButtonElement>('stop').disabled = busy || !status.running;
-  byId('start').hidden = status.running;
-  byId('stop').hidden = !status.running;
+  byId<HTMLButtonElement>('stop').disabled = !status.running && !(settingsApplying && wasRunningBeforeSave);
+  byId('start').hidden = status.running || (settingsApplying && wasRunningBeforeSave);
+  byId('stop').hidden = !status.running && !(settingsApplying && wasRunningBeforeSave);
   // A source registration or settings update can need a flush even with no pending bodies.
   byId('retry').hidden = false;
   byId<HTMLButtonElement>('retry').disabled = busy || status.sync.state === 'uploading' || status.sync.state === 'unconfigured';
   byId('retry').textContent = status.sync.state === 'error' ? '重试上传' : '立即上传';
-  fields.disabled = busy || status.running;
-  for (const id of ['connection-preview', 'connection-json', 'connection-qr', 'connection-test', 'connection-owner-open']) byId<HTMLButtonElement>(id).disabled = busy || (id !== 'connection-test' && id !== 'connection-owner-open' && status.running);
+  fields.disabled = busy;
+  for (const id of ['connection-preview', 'connection-json', 'connection-qr', 'connection-test', 'connection-owner-open']) byId<HTMLButtonElement>(id).disabled = busy;
   byId<HTMLButtonElement>('connection-cancel').disabled = busy;
   byId<HTMLTextAreaElement>('connection-input').disabled = busy;
   byId<HTMLInputElement>('connection-confirm-origin').disabled = busy;
-  byId<HTMLButtonElement>('connection-connect').disabled = busy || status.running || !connectionPreview || Date.parse(connectionPreview.expiresAt) <= Date.now() || !byId<HTMLInputElement>('connection-confirm-origin').checked;
+  byId<HTMLButtonElement>('connection-connect').disabled = busy || !connectionPreview || Date.parse(connectionPreview.expiresAt) <= Date.now() || !byId<HTMLInputElement>('connection-confirm-origin').checked;
   updateSettingsHint();
   const syncNames = { unconfigured: '仅保存在本机', idle: '已同步', waiting: '等待同步条件', uploading: '正在上传', error: '上传需要处理', manual: '等待手动上传' };
   const syncStateLabel = status.sync.state === 'idle' && status.sync.pendingRecords > 0 ? '记录已保存 · 准备上传' : syncNames[status.sync.state];
@@ -260,7 +277,7 @@ async function perform(action: () => Promise<unknown>): Promise<void> {
 }
 byId('settings').addEventListener('submit', event => {
   event.preventDefault();
-  if (busy || !initialized || currentStatus.running) return;
+  if (busy || !initialized) return;
   for (const element of Array.from(settingsForm.elements)) {
     if ((element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) && !element.checkValidity()) {
       revealField(element); element.reportValidity(); return;
@@ -274,7 +291,10 @@ byId('settings').addEventListener('submit', event => {
   catch (error) { feedback((error as Error).message); return; }
   void perform(async () => {
     const token = readInput('token').trim();
-    const updated = await desktopApi.configure({
+    settingsApplying = true; wasRunningBeforeSave = currentStatus.running; render(currentStatus);
+    let updated: import('./contracts').Status;
+    try { updated = await desktopApi.configure({
+      captureStorageDirectory,
       metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
       defaultCollection: readInput('default-collection') as import('./contracts').CollectionMode, appCollectionRules,
       diagnosticsEnabled: byId<HTMLInputElement>('diagnostics-enabled').checked, diagnosticIntervalSeconds: numberInput('diagnostic-interval'),
@@ -291,14 +311,15 @@ byId('settings').addEventListener('submit', event => {
       nsfwSource: readInput('nsfw-source') as import('./contracts').Config['nsfwSource'], nsfwCustomUrl: readInput('nsfw-custom-url').trim(),
       ...(token ? { token } : {}),
     });
-    fillConfig(updated.config); render(updated); feedback('设置已保存。开始采集后使用新设置。', true);
+    } finally { settingsApplying = false; wasRunningBeforeSave = false; }
+    fillConfig(updated.config); render(updated); feedback(updated.running ? '设置已保存并立即生效，采集已恢复。' : '设置已保存并立即生效，采集保持停止。', true);
   });
 });
 byId('start').addEventListener('click', () => {
   if (settingsDirty) { showPage('settings'); feedback('请先保存或还原修改，再开始采集。'); return; }
   void perform(async () => render(await desktopApi.start()));
 });
-byId('stop').addEventListener('click', () => void perform(async () => render(await desktopApi.stop())));
+byId('stop').addEventListener('click', () => { wasRunningBeforeSave = false; void desktopApi.stop().then(render).catch(error => feedback((error as Error).message)); });
 byId('retry').addEventListener('click', () => void perform(async () => { render(await desktopApi.retry()); feedback(currentStatus.sync.message, currentStatus.sync.state !== 'error' && currentStatus.sync.state !== 'unconfigured'); }));
 byId('permissions').addEventListener('click', () => void perform(() => desktopApi.openPermissions()));
 byId('data-folder').addEventListener('click', () => void perform(() => desktopApi.openDataFolder()));
@@ -482,7 +503,11 @@ byId('connection-cancel').addEventListener('click', () => { clearConnectionPrevi
 byId('connection-connect').addEventListener('click', () => void perform(async () => {
   if (!connectionPreview || !byId<HTMLInputElement>('connection-confirm-origin').checked) throw new Error('请先确认中央地址');
   feedback('正在连接并验证新凭据，此过程无法取消；原配置在确认成功前保持不变。');
-  const status = await desktopApi.confirmConnection(connectionPreview.id, connectionPreview.serverUrl); clearConnectionPreview();
+  settingsApplying = true; wasRunningBeforeSave = currentStatus.running; render(currentStatus);
+  let status: import('./contracts').Status;
+  try { status = await desktopApi.confirmConnection(connectionPreview.id, connectionPreview.serverUrl); }
+  finally { settingsApplying = false; wasRunningBeforeSave = false; }
+  clearConnectionPreview();
   if (settingsDirty) {
     // Pairing changes connection credentials only; preserve edits in other settings pages.
     byId<HTMLInputElement>('server-url').value = status.config.serverUrl;

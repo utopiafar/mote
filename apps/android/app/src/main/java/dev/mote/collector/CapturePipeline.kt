@@ -37,7 +37,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     }
     fun canCapture(config: CollectorConfig, windows: WindowSnapshot) = canCollect(config, windows, AppCollectionMode.CONTENT)
     fun canCollect(config: CollectorConfig, windows: WindowSnapshot, expected: AppCollectionMode): Boolean {
-        if (closed || !settings.enabled || busy.get()) return false
+        if (closed || ConnectionGuard.changing() || !settings.enabled || busy.get()) return false
         val selected = policy(config, windows)
         if (selected == AppCollectionMode.OFF) { pause(if (!windows.trustworthy) "当前应用规则要求完整窗口信息，暂停本次采样" else "当前可见窗口的应用规则不允许本次采样", if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
         if (selected != expected) return false
@@ -124,7 +124,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = if (runOcr) ocrInstance.value.recognize(output) else ""; modelMaskApplied = true; appliedMaskCount += extraMasks.size }
                     reviewed = true
                 }
-                if (!settings.enabled || closed || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
+                if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val now = observedAtMs
                 val duration = duration(now, windows.foreground, AppCollectionMode.CONTENT, config.intervalSeconds)
                 val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
@@ -159,7 +159,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private fun jpeg(bitmap: Bitmap, quality: Int): ByteArray = ByteArrayOutputStream().use { stream ->
         check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)); stream.toByteArray()
     }
-    fun close() { closed = true; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (ocrInstance.isInitialized()) ocrInstance.value.close() }; executor.shutdown() }
+    @Synchronized fun close() { if (closed) return; closed = true; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (ocrInstance.isInitialized()) ocrInstance.value.close() }; executor.shutdown() }
     companion object {
         fun policy(config: CollectorConfig, windows: WindowSnapshot) = AppCollectionRules.parse(config.appCollectionRules).decide(windows, PrivacyRules.exclusions(config.excludedPackages))
         fun unlocked(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isInteractive &&

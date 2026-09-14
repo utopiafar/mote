@@ -10,7 +10,7 @@ export function connectionBinding(config: Connection): Binding {
 /** Independent of editable config: clearing a URL cannot make old personal data unbound. */
 export class ConnectionBindingStore {
   private value: Binding = { kind: 'unknown' };
-  constructor(private path: string) {}
+  constructor(private path: string, private readonly write: (path: string, value: unknown) => Promise<void> = atomicSourceJson) {}
   async initialize(config: Connection, hasLegacyData: boolean): Promise<void> {
     try {
       const value = JSON.parse(await readFile(this.path, 'utf8')) as Binding;
@@ -20,7 +20,7 @@ export class ConnectionBindingStore {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       const current = connectionBinding(config);
       this.value = current.kind === 'unbound' && hasLegacyData ? { kind: 'unknown' } : current;
-      await atomicSourceJson(this.path, this.value);
+      await this.write(this.path, this.value);
     }
   }
   unbound(): boolean { return this.value.kind === 'unbound'; }
@@ -36,6 +36,6 @@ export class ConnectionBindingStore {
   async commit(config: Connection, pending: boolean, confirmedInitial = false, sameNodeReauthorization = false): Promise<void> {
     this.assertChange(config, pending, confirmedInitial, sameNodeReauthorization);
     const next = connectionBinding(config);
-    await atomicSourceJson(this.path, next); this.value = next;
+    await this.write(this.path, next); this.value = next;
   }
 }

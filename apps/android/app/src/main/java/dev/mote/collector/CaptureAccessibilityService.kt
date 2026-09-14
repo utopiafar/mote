@@ -17,6 +17,7 @@ class CaptureAccessibilityService : AccessibilityService() {
     private var pipeline: CapturePipeline? = null
     private var inFlight = false
     private var nextCapture = 0L
+    private var configurationGeneration = 0L
     private val tick = object : Runnable {
         override fun run() {
             try { collectIfEnabled() }
@@ -51,6 +52,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         } catch (_: Exception) { WindowSnapshot(emptySet(), null, false) }
     }
     private fun collectIfEnabled() {
+        if (ConnectionGuard.reconfiguring()) return
         val config = settings.read()
         if (!settings.enabled || config.effectiveMode() != "accessibility") { stopCapture(); return }
         UploadWorker.heartbeat(this, config)
@@ -73,6 +75,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         if (!pipeline!!.canCapture(config, snapshot)) return
         if (Build.VERSION.SDK_INT < 30) { settings.status("permission_required", "此系统需投屏模式采集内容；仅应用活动无需截图API"); return }
         val capturePipeline = pipeline!!
+        val generation = configurationGeneration
         inFlight = true
         nextCapture = System.currentTimeMillis() + config.intervalSeconds * 1000L
         val at = Instant.now().toString()
@@ -82,14 +85,15 @@ class CaptureAccessibilityService : AccessibilityService() {
             override fun onSuccess(result: ScreenshotResult) {
                 try {
                     val current = windowSnapshot()
-                    if (!settings.enabled || current != snapshot || CapturePipeline.policy(settings.read(), current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) return
+                    if (generation != configurationGeneration || ConnectionGuard.reconfiguring() || !settings.enabled || current != snapshot || CapturePipeline.policy(settings.read(), current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) return
                     val hardware = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace) ?: return
                     val bitmap = hardware.copy(Bitmap.Config.ARGB_8888, false)
                     hardware.recycle()
                     capturePipeline.submit(bitmap, current, config, at, observedAtMs)
-                } finally { result.hardwareBuffer.close(); inFlight = false }
+                } finally { result.hardwareBuffer.close(); if (generation == configurationGeneration) inFlight = false }
             }
             override fun onFailure(errorCode: Int) {
+                if (generation != configurationGeneration) return
                 inFlight = false
                 Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.SYSTEM)
                 pipeline?.pause("系统未提供截图（代码 $errorCode），可能是安全窗口或权限变化；未保存内容")
@@ -97,6 +101,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         })
     }
     fun stopCapture() {
+        configurationGeneration++; nextCapture = 0; inFlight = false
         pipeline?.close(); pipeline = null
         if (!ProjectionService.running) Notifications.clear(this)
     }

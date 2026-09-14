@@ -1,8 +1,8 @@
 import { DEFAULT_REVIEW_POLICY } from '@mote/local-inference';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
-import { readFile, mkdir, writeFile, rename, chmod } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, mkdir, open, rename, chmod } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
 import { normalizeAppCollectionRules, normalizeCollectionMode } from './app-collection';
 import type { Config, ConfigUpdate, PublicConfig, Rectangle } from './contracts';
 
@@ -11,7 +11,7 @@ export function defaultConfig(): Config {
   return {
     serverUrl: 'http://127.0.0.1:47832', deviceId: randomUUID(), deviceName: hostname(),
     syncMode: 'realtime', syncIntervalMinutes: 15, syncBatchSize: 20,
-    intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000,
+    intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '',
     excludedAppIds: [], defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300, ocrEnabled: true, ocrOnlyWhileCharging: false,
     privacyModelUrl: '', openAtLogin: false,
     metadataEnabled: true, diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
@@ -64,6 +64,8 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (!Array.isArray(input.excludedAppIds) || input.excludedAppIds.length > 500 || input.excludedAppIds.some(id => typeof id !== 'string' || id.length > 256 || !id.trim())) throw new Error('排除列表必须填写有效应用 ID');
   if (input.metadataEnabled !== undefined && typeof input.metadataEnabled !== 'boolean') throw new Error('设备元数据开关值无效');
   if (input.ocrOnlyWhileCharging !== undefined && typeof input.ocrOnlyWhileCharging !== 'boolean') throw new Error('OCR 电源策略开关值无效');
+  const captureStorageDirectory = input.captureStorageDirectory ?? current.captureStorageDirectory ?? '';
+  if (typeof captureStorageDirectory !== 'string' || captureStorageDirectory.length > 2048 || /[\x00-\x1f]/.test(captureStorageDirectory) || (captureStorageDirectory && (!isAbsolute(captureStorageDirectory) || resolve(captureStorageDirectory) !== captureStorageDirectory))) throw new Error('请通过文件夹选择器选择截图保存位置');
   if (typeof input.ocrEnabled !== 'boolean' || typeof input.openAtLogin !== 'boolean') throw new Error('开关值不正确');
   if (typeof input.diagnosticsEnabled !== 'boolean' || typeof input.pauseOnBattery !== 'boolean') throw new Error('诊断或电量策略开关值无效');
   if (typeof input.nsfwEnabled !== 'boolean') throw new Error('本地千问视觉审查开关值不正确');
@@ -85,6 +87,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     intervalMs: integer(input.intervalMs, 5000, 300000, '采样间隔（毫秒）'),
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, '本地队列容量'),
     maxQueueEvents: integer(input.maxQueueEvents, 1, 1000000, '本地队列事件数'),
+    captureStorageDirectory,
     idlePauseSeconds: integer(input.idlePauseSeconds, 0, 86400, '空闲暂停秒数'),
     defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection ?? 'content'),
     appCollectionRules: normalizeAppCollectionRules(input.appCollectionRules ?? current.appCollectionRules ?? {}),
@@ -146,7 +149,12 @@ export class ConfigStore {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     await chmod(this.directory, 0o700);
     const temporary = join(this.directory, `config.${randomUUID()}.tmp`);
-    await writeFile(temporary, contents, { mode: 0o600 });
+    const file = await open(temporary, 'wx', 0o600);
+    try { await file.writeFile(contents); await file.sync(); } finally { await file.close(); }
     await rename(temporary, join(this.directory, 'config.json'));
+    if (process.platform !== 'win32') {
+      const directory = await open(this.directory, 'r');
+      try { await directory.sync(); } finally { await directory.close(); }
+    }
   }
 }

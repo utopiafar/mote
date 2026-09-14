@@ -26,11 +26,15 @@ class ProjectionService : Service() {
     private var pending: Pending? = null
     private var displayWidth = 0
     private var displayHeight = 0
+    private var sourceWidth = 0
+    private var sourceHeight = 0
+    private var preserveEnabledOnStop = false
     private var config: CollectorConfig? = null
     private var lastTick = 0L
     private var closed = false
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() {
+            RuntimeSettings.cancelProjectionConsentRequest()
             settings.enabled = false
             settings.status("permission_required", "投屏授权已结束（锁屏、系统或用户停止），请打开应用重新授权")
             stopSelf()
@@ -41,6 +45,7 @@ class ProjectionService : Service() {
     }
     private val tick = object : Runnable {
         override fun run() {
+            if (ConnectionGuard.reconfiguring()) { handler.postDelayed(this, 1000); return }
             val c = config ?: return
             if (!settings.enabled) { stopSelf(); return }
             UploadWorker.heartbeat(this@ProjectionService, c)
@@ -149,17 +154,27 @@ class ProjectionService : Service() {
         displayHeight = (height * scale).roundToInt().coerceAtLeast(1)
     }
     private fun createDisplay(width: Int, height: Int) {
+        sourceWidth = width; sourceHeight = height
         size(width, height)
         display = projection!!.createVirtualDisplay("Mote", displayWidth, displayHeight, resources.displayMetrics.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, null, null, handler)
     }
     private fun resize(width: Int, height: Int) {
+        sourceWidth = width; sourceHeight = height
         val beforeWidth = displayWidth; val beforeHeight = displayHeight
         size(width, height)
         if (beforeWidth == displayWidth && beforeHeight == displayHeight) return
         clearPending()
         display?.resize(displayWidth, displayHeight, resources.displayMetrics.densityDpi)
     }
+    fun pauseForConfiguration() { clearPending(); pipeline?.close(); pipeline = null; lastTick = 0 }
+    fun applyConfiguration(next: CollectorConfig) {
+        check(!closed && projection != null && display != null)
+        config = next; lastTick = 0
+        resize(sourceWidth, sourceHeight)
+        pipeline = CapturePipeline(this)
+    }
+    fun finishForModeChange() { preserveEnabledOnStop = true; stopSelf() }
     override fun onDestroy() {
         if (!closed) {
             closed = true; running = false; instance = null
@@ -167,9 +182,9 @@ class ProjectionService : Service() {
             pipeline?.close(); pipeline = null
             clearPending(); display?.release(); display = null
             projection?.unregisterCallback(callback); projection?.stop(); projection = null
-            settings.enabled = false
+            if (!preserveEnabledOnStop) settings.enabled = false
             stopForeground(STOP_FOREGROUND_REMOVE)
-            config?.let { UploadWorker.schedule(this, it) }
+            runCatching { UploadWorker.schedule(this, settings.read()) }
         }
         super.onDestroy()
     }

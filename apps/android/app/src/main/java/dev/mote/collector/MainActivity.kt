@@ -35,6 +35,7 @@ class MainActivity : Activity() {
     private lateinit var captureAction: Button
     private lateinit var connectionSummary: TextView
     private lateinit var saveBar: LinearLayout
+    private var applyingSettings = false
     private lateinit var saveHint: TextView
     private lateinit var pagesHost: FrameLayout
     private val pages = linkedMapOf<Page, ScrollView>()
@@ -190,6 +191,7 @@ class MainActivity : Activity() {
         section("偏好设置")
         menu("连接与同步", "中央节点、设备名称与上传网络", "sync") { showPage(Page.CONNECTION) }
         menu("采集与存储", "采样频率、图像质量与电量策略", "capture") { showPage(Page.CAPTURE) }
+        menu("图片保存位置", "本机待同步与待 OCR 图片的加密存储", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
         menu("隐私与应用规则", "应用采集级别、遮罩与本机过滤", "shield") { showPage(Page.PRIVACY) }
         section("应用")
         menu("权限与后台运行", "系统授权、电池优化与自启动", "settings") { showPage(Page.PERMISSIONS) }
@@ -259,6 +261,7 @@ class MainActivity : Activity() {
         page(Page.CAPTURE, "在记录密度、清晰度和耗电之间找到平衡")
         section("采样与空间")
         interval = presetNumber("采集间隔 / 秒", config.intervalSeconds, "30", 5..300, listOf(5, 15, 30, 60, 120, 300))
+        menu("图片保存位置", "选择应用存储空间并迁移已有记录", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
         maxQueue = presetNumber("本机存储上限 / MiB", config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
         text("默认最长边 1280px、JPEG 75，生效数值可在统计详情查看。相同图片共用加密存储，满后暂停；收到节点确认且 OCR 已处理后才清理本机图片。时间统计是采样设备时间。", 13)
         projectionMode = check("使用投屏模式（备用，每次需授权）", config.mode == "projection")
@@ -374,10 +377,10 @@ class MainActivity : Activity() {
         text("内置 Qwen3.5-0.8B 小视觉语言模型，CPU 离线审查，可编辑指令用于其它图片过滤。截图只在内存中送入独立进程。模型拒绝、缺失、输出无效、超时或进程退出时，该帧不会进入 OCR、存储或上传。模型可能误判。", 13)
         nsfwStatus = text("正在读取模型状态…", 13, MoteUi.muted)
         rowButtons("下载 / 继续", {
-            if (saveNsfw()) NsfwDownloadWorker.start(this, wifi.isChecked)
+            saveNsfw { NsfwDownloadWorker.start(this, wifi.isChecked) }
         }, "取消下载", { NsfwDownloadWorker.cancel(this) })
         button("导入本地模型") {
-            if (saveNsfw()) {
+            saveNsfw {
                 NsfwDownloadWorker.cancel(this)
                 @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 102)
             }
@@ -492,36 +495,44 @@ class MainActivity : Activity() {
         field.post { field.requestRectangleOnScreen(android.graphics.Rect(0, 0, field.width, field.height), false) }
         throw IllegalArgumentException(message, error)
     }
-    private fun saveNsfw(): Boolean = try {
-        require(!settings.enabled) { "请先停止采集再修改模型设置" }
-        settings.saveNsfw(nsfwDraft())
-        val saved = controlValues(); baseline = baseline + listOf(nsfwEnabled, nsfwThreads, nsfwTimeout, nsfwSource, nsfwCustom, nsfwPolicy, nsfwMaxTokens, nsfwMaxSide)
-            .associate { it.tag as String to saved.getValue(it.tag as String) }
-        updateSaveBar(); true
-    } catch (error: Exception) { toast(error.message ?: "请检查 NSFW 配置"); false }
-    private fun saveConfig(bindLocal: Boolean = false): Boolean = try {
-        require(!settings.enabled) { "请先停止采集再修改配置" }
+    private fun saveNsfw(after: () -> Unit) = try {
+        val next = settings.read().copy(nsfw = nsfwDraft()); val saved = controlValues()
+        applySettings(next) {
+            baseline = baseline + listOf(nsfwEnabled, nsfwThreads, nsfwTimeout, nsfwSource, nsfwCustom, nsfwPolicy, nsfwMaxTokens, nsfwMaxSide)
+                .associate { it.tag as String to saved.getValue(it.tag as String) }
+            after()
+        }
+    } catch (error: Exception) { toast(error.message ?: "请检查 NSFW 配置") }
+    private fun saveConfig(bindLocal: Boolean = false, after: () -> Unit = {}): Unit = try {
         val c = draft().also { it.validate() }
         if (c.hasSyncConnection() && settings.dataOrigin().isBlank() && settings.hasPendingData() && !bindLocal) {
             AlertDialog.Builder(this).setTitle("将本机资料绑定到此节点？")
                 .setMessage("${c.server}\n\n本机已有尚未绑定的截图、笔记或来源资料。确认后会绑定到这个档案地址，并按你的同步策略发送。请核对这是你自己的节点。")
-                .setNegativeButton("继续保存在本机", null).setPositiveButton("确认绑定并保存") { _, _ -> saveConfig(true) }.show()
-            false
+                .setNegativeButton("继续保存在本机", null).setPositiveButton("确认绑定并保存") { _, _ -> saveConfig(true, after) }.show()
         } else {
-            ConnectionGuard.change(this, if (c.hasSyncConnection()) c.server else "", bindLocal) { settings.save(c) }
-            UploadWorker.schedule(this, c)
-            CaptureOcrWorker.schedule(this, c, replace = true)
-            SourceWork.schedule(this, true)
-            loadedServer = c.server; loadedToken = c.token
-            baseline = controlValues(); updateSaveBar(); refreshStatus()
-            toast("设置已保存，规则对后续新记录生效")
-            true
+            val saved = controlValues()
+            applySettings(c, bindLocal) { loadedServer = c.server; loadedToken = c.token; baseline = saved; after() }
         }
-    } catch (e: Exception) { toast(e.message ?: "请检查配置输入"); false }
+        Unit
+    } catch (e: Exception) { toast(e.message ?: "请检查配置输入") }
+    private fun applySettings(config: CollectorConfig, bindLocal: Boolean = false, saved: () -> Unit) {
+        if (applyingSettings) return
+        applyingSettings = true; updateSaveBar()
+        RuntimeSettings.apply(this, config, bindLocal) { result ->
+            applyingSettings = false
+            if (isDestroyed) return@apply
+            result.onSuccess { saved(); toast("设置已保存并生效"); resumeProjectionAfterSettings() }
+                .onFailure { toast(it.message ?: "设置未保存，请重试") }
+            updateSaveBar(); refreshStatus()
+        }
+    }
     private fun startCapture() {
         if (ConnectionGuard.changing()) { toast("正在连接节点，请稍后再开始采集"); return }
         if (settings.enabled) { toast("已启用，状态见上方"); return }
-        if (!saveConfig()) return
+        val next = runCatching { draft().also { it.validate() } }.getOrElse { toast(it.message ?: "请检查设置"); return }
+        if (next == settings.read()) startConfiguredCapture() else saveConfig(after = { startConfiguredCapture() })
+    }
+    private fun startConfiguredCapture() {
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { notifications(); toast("请先允许通知，然后再次点击开始"); return }
         val c = settings.read()
         if (c.effectiveMode() == "accessibility") {
@@ -541,6 +552,9 @@ class MainActivity : Activity() {
             @Suppress("DEPRECATION") startActivityForResult(intent, 100)
         }
         refreshStatus()
+    }
+    private fun resumeProjectionAfterSettings() {
+        if (RuntimeSettings.takeProjectionConsentRequest()) startConfiguredCapture()
     }
     @Deprecated("Platform consent result API retained for the minimal native Activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -571,6 +585,7 @@ class MainActivity : Activity() {
         } else if (requestCode == 100) settings.status("permission_required", "你未授予投屏权限，未开始截图")
     }
     private fun stopCapture() {
+        RuntimeSettings.cancelProjectionConsentRequest()
         settings.enabled = false
         Operations.record(this, OperationKind.CAPTURE_STOPPED)
         SupportEvents.record(this, EventStage.CAPTURE, EventCode.STOPPED)
@@ -583,6 +598,8 @@ class MainActivity : Activity() {
     }
     private fun refreshStatus() {
         if (!::status.isInitialized) return
+        if (QueueStorage.recovering) { status.text = "正在恢复并验证本机存储…"; return }
+        if (ConnectionGuard.reconfiguring()) { status.text = "正在应用设置，已有记录保持加密保存"; updateSaveBar(); return }
         val c = runCatching { settings.read() }.getOrNull()
         if (c != null) runCatching { Diagnostics(this).sample(c) }
         val live = if (c?.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected
@@ -592,7 +609,7 @@ class MainActivity : Activity() {
         val pending = runCatching { SyncSchedule.pending(this).count }.getOrNull()
         val bytes = runCatching { queue().bytes() / 1024.0 / 1024 }.getOrNull()
         val modelMissing = c != null && c.nsfw.enabled && AppCollectionRules.parse(c.appCollectionRules).mayCollectContent() && !NsfwModelStore(this).hasFile()
-        val queueFull = c != null && queue().bytes() >= c.maxQueueMiB * 1024L * 1024L
+        val queueFull = c != null && bytes != null && bytes >= c.maxQueueMiB
         captureTitle.text = when {
             settings.enabled && !live -> "等待采集权限"
             settings.enabled && queueFull -> "本机空间已满"
@@ -637,6 +654,7 @@ class MainActivity : Activity() {
     }
     override fun onResume() {
         super.onResume()
+        RuntimeSettings.observeProjectionConsent { resumeProjectionAfterSettings() }
         if (::server.isInitialized) {
             val c = settings.read()
             if (c.server != loadedServer || c.token != loadedToken) {
@@ -649,7 +667,7 @@ class MainActivity : Activity() {
         }
         handler.post(refresh)
     }
-    override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
+    override fun onPause() { RuntimeSettings.observeProjectionConsent(null); handler.removeCallbacks(refresh); super.onPause() }
     private fun dp(value: Int) = moteDp(value)
 
     private fun page(page: Page, subtitle: String) {
@@ -723,8 +741,9 @@ class MainActivity : Activity() {
     private fun updateSaveBar() {
         if (!::saveBar.isInitialized || initializing) return
         val dirty = controlValues() != baseline
-        saveBar.visibility = if (dirty) View.VISIBLE else View.GONE
-        saveHint.text = if (settings.enabled) "有更改待保存\n请先暂停采集" else "设置有更改\n保存后生效"
+        saveBar.visibility = if (dirty || applyingSettings) View.VISIBLE else View.GONE
+        (saveBar.getChildAt(1) as Button).isEnabled = !applyingSettings && !ConnectionGuard.reconfiguring()
+        saveHint.text = if (applyingSettings) "正在应用设置…\n无需手动暂停采集" else "设置有更改\n保存后立即生效"
     }
 
     private fun controlValues() = controls.associate { view ->

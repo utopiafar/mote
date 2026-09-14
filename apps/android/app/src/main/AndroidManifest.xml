@@ -25,6 +25,7 @@
             <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="mote" android:host="connect" /></intent-filter>
         </activity>
         <activity android:name=".ConnectionScanActivity" android:exported="false" />
+        <activity android:name=".StorageActivity" android:exported="false" />
         <activity android:name=".ActivityStatsActivity" android:exported="false" />
         <activity android:name=".CaptureRecordsActivity" android:exported="false" />
         <service android:name=".ProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection" />

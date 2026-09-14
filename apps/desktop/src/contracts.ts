@@ -13,6 +13,7 @@ export interface Config {
   intervalMs: number;
   maxQueueBytes: number;
   maxQueueEvents: number;
+  captureStorageDirectory: string;
   excludedAppIds: string[];
   defaultCollection: CollectionMode;
   appCollectionRules: Record<string, CollectionMode>;
@@ -60,6 +61,7 @@ export interface CaptureEvent {
   privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; collection?: 'content' | 'activity'; reason?: string };
 }
 export interface Status {
+  storage?: { directory: string; defaultDirectory: string; custom: boolean; cleanupPending: boolean; recoveryRequired?: string };
   sync: SyncStatus;
   environment?: { profile: string; legacy: boolean; dataDirectory: string };
   running: boolean;
@@ -103,6 +105,9 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  restartForStorageRecovery(): Promise<void>;
+  chooseCaptureDirectory(): Promise<{ canceled: boolean; directory?: string }>;
+  openCaptureDirectory(): Promise<void>;
   browseCaptures(input: import('./capture-browser').BrowseRequest): Promise<import('./capture-browser').BrowserPage>;
   captureDetail(location: import('./capture-browser').CaptureLocation, id: string): Promise<import('./capture-browser').BrowserDetail>;
   captureImage(location: import('./capture-browser').CaptureLocation, id: string, thumbnail: boolean): Promise<string>;

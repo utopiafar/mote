@@ -43,13 +43,13 @@ class CaptureOcrWorker(context: Context, params: WorkerParameters) : Worker(cont
             CaptureOcr(applicationContext).use { ocr ->
                 repeat(20) {
                     val config = settings.read()
-                    if (isStopped || (config.ocrChargingOnly && !Diagnostics.battery(applicationContext).second)) return@sync Result.retry()
+                    if (isStopped || ConnectionGuard.reconfiguring() || (config.ocrChargingOnly && !Diagnostics.battery(applicationContext).second)) return@sync Result.retry()
                     val event = queue.pendingOcr() ?: return@sync Result.success()
                     val id = event.getString("id")
                     try {
                         val bytes = queue.image(id) ?: return@repeat
                         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Invalid stored image")
-                        val text = try { ocr.recognize(bitmap) { !isStopped && (!settings.read().ocrChargingOnly || Diagnostics.battery(applicationContext).second) } } finally { bitmap.recycle() }
+                        val text = try { ocr.recognize(bitmap) { !isStopped && !ConnectionGuard.reconfiguring() && (!settings.read().ocrChargingOnly || Diagnostics.battery(applicationContext).second) } } finally { bitmap.recycle() }
                         if (isStopped || (settings.read().ocrChargingOnly && !Diagnostics.battery(applicationContext).second)) return@sync Result.retry()
                         queue.completeOcr(id, text, "completed", config.maxQueueMiB * 1024L * 1024L)
                     } catch (error: Exception) {

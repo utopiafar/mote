@@ -83,7 +83,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             stage = EventStage.HEARTBEAT
             SyncHeartbeat.send(applicationContext, settings, config, queue)
             repeat(25) {
-                if (isStopped) return Result.retry()
+                if (isStopped || ConnectionGuard.reconfiguring()) return Result.retry()
                 if (config.wifiOnly && !isWifi(applicationContext)) return failed("同步期间网络已变化")
                 stage = EventStage.QUEUE
                 val ocrUpdate = queue.nextOcrUpdate()

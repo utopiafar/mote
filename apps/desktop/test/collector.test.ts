@@ -358,3 +358,43 @@ it('does not reinterpret failed final heartbeats as failed or missing record upl
   await expect(collector.retry()).resolves.toBeUndefined(); expect(queue.stats().depth).toBe(0);
   expect(collector.status().lastUploadError).toBeUndefined(); expect(collector.status().lastUploadAt).toBeDefined();
 });
+
+describe.skipIf(process.platform !== 'darwin')('immediate settings with generated capture only', () => {
+  it('waits for an old capture, discards it, applies the new mask and timer, then resumes only prior running intent', async () => {
+    let release!: (value: unknown) => void;
+    mocks.capture.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+    const { collector, queue } = await makeCollector({ syncMode: 'manual' });
+    await collector.start(); await vi.waitFor(() => expect(release).toBeDefined());
+    let held = false; const holding = collector.suspendForSettings().then(releaseHold => { held = true; return releaseHold; });
+    await new Promise(resolve => setTimeout(resolve, 35)); expect(held).toBe(false);
+    release([{ display_id: '1', thumbnail: nativeImage.createFromBitmap(Buffer.alloc(64, 77), { width: 4, height: 4 }) }]);
+    const resume = await holding; expect(queue.stats().depth).toBe(0); expect(collector.status().running).toBe(false);
+    const config = { ...defaultConfig(), serverUrl: '', token: undefined, nsfwEnabled: false, syncMode: 'manual' as const, intervalMs: 300000, masks: [{ x: 0, y: 0, width: 1, height: 1 }] };
+    collector.updateConfig(config); await resume(); await collector.settleCapture();
+    expect(collector.status().running).toBe(true);
+    const stored = Object.values((await queue.exportArchive()).blobs).map(value => Buffer.from(value, 'base64')); expect(stored).toHaveLength(1);
+    for (let i = 2; i < stored[0].length - 2; i += 4) expect([...stored[0].subarray(i, i + 4)]).toEqual([0, 0, 0, 255]);
+    expect((collector as unknown as { timer: { _idleTimeout: number } }).timer._idleTimeout).toBeGreaterThan(290000);
+    await resume(); expect(mocks.capture).toHaveBeenCalledTimes(2);
+  });
+  it.each(['stopped', 'stop during save', 'shutdown during save'])('does not auto-start when %s', async mode => {
+    const { collector } = await makeCollector({ syncMode: 'manual', defaultCollection: 'off' });
+    if (mode !== 'stopped') { await collector.start(); await collector.settleCapture(); }
+    const resume = await collector.suspendForSettings();
+    if (mode === 'stop during save') collector.stop();
+    if (mode === 'shutdown during save') collector.shutdown();
+    else collector.updateConfig({ ...defaultConfig(), serverUrl: '', nsfwEnabled: false });
+    await resume(); expect(collector.status().running).toBe(false); expect(mocks.capture).not.toHaveBeenCalled();
+    if (mode === 'shutdown during save') { await expect(collector.start()).rejects.toThrow(); await collector.upload(true); await collector.retry(); expect(vi.mocked(fetch).mock.calls.filter(args => String(args[0]).includes('/api/captures'))).toHaveLength(0); }
+  });
+  it('holds OCR/upload across settings and permits pending OCR to continue after release even while capture stays stopped', async () => {
+    const { collector, queue } = await makeCollector({ syncMode: 'manual', ocrOnlyWhileCharging: true });
+    const { event, image } = await import('./fixtures');
+    await queue.enqueue({ ...event(), ocrText: undefined, ocr: { status: 'pending', reason: 'charging' } }, image);
+    mocks.power.mockResolvedValue({ onBattery: false });
+    const resume = await collector.suspendForSettings();
+    await collector.processPendingOcr(); await collector.upload(true); expect(mocks.ocr).not.toHaveBeenCalled();
+    await resume(); await vi.waitFor(async () => expect((await queue.exportArchive()).records[0].ocrResult).toBe('GENERATED SANITIZED TEXT'));
+    expect(collector.status().running).toBe(false); expect(mocks.capture).not.toHaveBeenCalled();
+  });
+});

@@ -25,6 +25,7 @@ class ActivityStatsActivity : Activity() {
         summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(summary)
         renderSummary("正在读取本机统计…")
         button("刷新实际存储与统计") { refresh() }
+        button("设置图片保存位置") { startActivity(Intent(this, StorageActivity::class.java)) }
         button("查看采集记录") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         button("导出无正文统计 JSON") { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-activity-stats.json"), 1) }
         button("重置统计起点（保留队列和数据）") {
@@ -61,7 +62,7 @@ class ActivityStatsActivity : Activity() {
                     append("上传待重试结果 ${count(OperationKind.UPLOAD_RETRY)} · 来源版本已确认 ${count(OperationKind.SOURCE_ACK)} / 失败 ${count(OperationKind.SOURCE_FAILED)}\n设备心跳失败 ${count(OperationKind.HEARTBEAT_FAILED)}\n")
                     append("已确认上传 JSON 字节 ${size(state.getLong("confirmedUploadBytes"))}（不含 TLS/HTTP 开销）\n")
                     append("\n当前本机记录\n加密保留：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
-                    append("\n资料在哪里\n队列存储：${size(queue.getLong("bytes"))} / 上限 ${config.maxQueueMiB} MiB\n${File(noBackupFilesDir, "queue").absolutePath}\n")
+                    append("\n资料在哪里\n队列存储：${size(queue.getLong("bytes"))} / 上限 ${config.maxQueueMiB} MiB\n${QueueStorage(this@ActivityStatsActivity).current().path}\n")
                     append("待 OCR 文字预留：${size(queue.getLong("reservedOcrBytes"))}（计入存储上限，完成识别后按实际大小计）\n")
                     append("来源待确认版本：$sourcePending · 本机来源缓存 ${size(bytes(sources))}\n${sources.absolutePath}\n")
                     append("模型及下载断点：${size(bytes(models))}\n${models.absolutePath}\n")

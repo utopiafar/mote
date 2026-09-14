@@ -42,10 +42,10 @@ class ConnectionActivity : Activity() {
             AlertDialog.Builder(this).setTitle("确认连接节点").setMessage("${invite.serverUrl}\n\n将使用已有设备 ID 和当前采集设置。只获取这台设备的采集凭据；设置、队列和模型不会清空。同节点重新配对将使用新凭据继续同步本机待上传截图、笔记和来源。首次连接将把尚未绑定的本机截图、笔记与来源记录绑定到上方节点，并按已选择的同步方式发送。请确认这是你自己的档案地址。已经绑定其他节点的待同步记录不能改投此处。")
                 .setNegativeButton("取消", null).setPositiveButton("连接") { _, _ ->
                     val chosenName = name.text.toString().trim(); val debugHttp = allowHttp.isChecked
-                    run("正在兑换邀请并校验设备身份…") {
+                    changeConnection("正在兑换邀请并校验设备身份…") {
                         ConnectionClient(this).connect(invite, chosenName, debugHttp, bindLocal = true)
                         runOnUiThread { input.text.clear(); parsed = null; preview.text = "连接成功：${invite.serverUrl}" }
-                        "连接成功，采集权限与开始采集仍由你控制。"
+                        "连接成功，已自动应用新连接并恢复原采集状态。"
                     }
                 }.show()
         }
@@ -54,7 +54,7 @@ class ConnectionActivity : Activity() {
             AlertDialog.Builder(this).setTitle("恢复已兑换连接").setMessage("$server\n\n使用上次已兑换并加密保存的本设备凭据，不再使用一次性码；将重新联网校验。若存在尚未绑定的本机记录，确认后会绑定到上方节点，并按同步设置发送。")
                 .setNegativeButton("取消", null).setPositiveButton("恢复") { _, _ ->
                     val chosenName = name.text.toString().trim(); val debug = allowHttp.isChecked
-                    run("正在重新校验设备连接…") { client.resume(chosenName, debug, bindLocal = true); "中断的连接已恢复。" }
+                    changeConnection("正在重新校验设备连接…") { client.resume(chosenName, debug, bindLocal = true); "中断的连接已恢复。" }
                 }.show()
         }
         button("测试已保存的连接") { run("正在测试节点和设备凭据…") { val scope = ConnectionClient(this).test(); "连接正常 · ${if (scope == "collector") "本设备采集权限" else "手工配置的管理员权限"}" } }
@@ -74,6 +74,19 @@ class ConnectionActivity : Activity() {
         executor.execute { try { val result = work(); runOnUiThread { if (!isDestroyed) status.text = result } }
             catch (e: Exception) { runOnUiThread { if (!isDestroyed) showFailure(e) } }
             finally { runOnUiThread { working = false } } }
+    }
+    private fun changeConnection(progress: String, work: () -> String) {
+        if (working) return
+        working = true; status.text = "$progress\n正在自动应用，采集无需手动暂停。"
+        var message = "连接已更新"
+        RuntimeSettings.apply(this, Settings(this).read(), bindLocal = true, change = { message = work() }) { result ->
+            working = false
+            if (isDestroyed) return@apply
+            result.onSuccess {
+                status.text = message
+                if (it.projectionConsentRequired) startActivity(Intent(this, MainActivity::class.java))
+            }.onFailure(::showFailure)
+        }
     }
     private fun showFailure(error: Throwable) { status.text = message((error as? ConnectionFailure)?.category ?: if (error is SettingsWriteFailure) "storage" else "response") }
     @Deprecated("Native Activity document result")
@@ -108,7 +121,7 @@ class ConnectionActivity : Activity() {
             "device_conflict" -> "中央已有此设备 ID。请用上方设备 ID 生成绑定邀请，再试一次；不会更换设备身份。"
             "local_confirmation" -> "本机有尚未绑定节点的资料，请确认档案地址后再连接。"
             "pending" -> "仍有截图/笔记/来源待同步或已准备提交的草稿，不能切换节点。请先同步原节点。"
-            "busy" -> "采集或同步正在进行，请先停止并等待当前任务完成，再连接。"
+            "busy" -> "另一次设置操作尚未完成，请稍候再试。"
             "authentication" -> "节点拒绝当前凭据，请生成绑定本设备的邀请。"
             "identity", "response" -> "节点响应或设备身份校验失败，未确认连接；旧配置保留。"
             "rate_limit" -> "节点暂时限流，稍后重试。"; "network" -> "节点连接失败，请检查地址、网络与 TLS 证书后重试。"

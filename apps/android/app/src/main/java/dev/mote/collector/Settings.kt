@@ -3,7 +3,6 @@ package dev.mote.collector
 import android.content.Context
 import android.os.Build
 import android.util.Base64
-import java.io.File
 import java.util.UUID
 
 data class CollectorConfig(
@@ -50,7 +49,7 @@ class Settings(private val context: Context) {
         prefs.getString("deviceId", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("deviceId", it).commit() }
     }
     var enabled: Boolean get() = prefs.getBoolean("enabled", false); set(value) { prefs.edit().putBoolean("enabled", value).commit() }
-    fun read(): CollectorConfig = CollectorConfig(
+    fun read(): CollectorConfig = synchronized(Settings::class.java) { CollectorConfig(
         server = prefs.getString("server", BuildConfig.DEFAULT_SERVER)!!,
         token = prefs.getString("token", null)?.let { String(secret.open(Base64.decode(it, Base64.NO_WRAP))) } ?: "",
         deviceName = prefs.getString("deviceName", Build.MODEL)!!,
@@ -70,21 +69,40 @@ class Settings(private val context: Context) {
         syncMode = prefs.getString("syncMode", "realtime")!!,
         syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20),
         ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false)
-    )
-    fun save(c: CollectorConfig) {
+    ) }
+    fun save(c: CollectorConfig) = synchronized(Settings::class.java) {
         c.validate()
         val origin = originAfterChange(c)
-        if (!prefs.edit().putString("dataOrigin", origin).putString("syncMode", c.syncMode)
-            .putInt("syncIntervalMinutes", c.syncIntervalMinutes).putInt("syncBatchSize", c.syncBatchSize).putString("server", c.server.trim().trimEnd('/')).putString("token", Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP))
-            .putString("deviceName", c.deviceName).putInt("interval", c.intervalSeconds).putInt("maxQueue", c.maxQueueMiB)
-            .putBoolean("wifiOnly", c.wifiOnly).putString("excluded", c.excludedPackages).putString("masks", c.masks)
-            .putString("localReview", c.localReviewUrl).putBoolean("debugHttp", c.debugHttp).putString("mode", c.mode).putString("appCollectionRules", c.appCollectionRules).putBoolean("metadataEnabled", c.metadataEnabled).commit()) throw SettingsWriteFailure()
-        if (!prefs.edit().putInt("jpegQuality", c.jpegQuality).putInt("captureMaxSide", c.captureMaxSide).putBoolean("chargingOnly", c.chargingOnly)
-            .putBoolean("ocrChargingOnly", c.ocrChargingOnly)
-            .putInt("batteryPauseBelowPct", c.batteryPauseBelowPct).putBoolean("diagnosticsEnabled", c.diagnosticsEnabled).putInt("diagnosticsIntervalSeconds", c.diagnosticsIntervalSeconds).commit()) throw SettingsWriteFailure()
-        saveNsfw(c.nsfw)
+        val values = mapOf<String, Any>(
+            "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
+            "syncBatchSize" to c.syncBatchSize, "server" to c.server.trim().trimEnd('/'),
+            "token" to Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP),
+            "deviceName" to c.deviceName, "interval" to c.intervalSeconds, "maxQueue" to c.maxQueueMiB,
+            "wifiOnly" to c.wifiOnly, "excluded" to c.excludedPackages, "masks" to c.masks, "localReview" to c.localReviewUrl,
+            "debugHttp" to c.debugHttp, "mode" to c.mode, "appCollectionRules" to c.appCollectionRules, "metadataEnabled" to c.metadataEnabled,
+            "jpegQuality" to c.jpegQuality, "captureMaxSide" to c.captureMaxSide, "chargingOnly" to c.chargingOnly,
+            "ocrChargingOnly" to c.ocrChargingOnly, "batteryPauseBelowPct" to c.batteryPauseBelowPct,
+            "diagnosticsEnabled" to c.diagnosticsEnabled, "diagnosticsIntervalSeconds" to c.diagnosticsIntervalSeconds,
+            "nsfwEnabled" to c.nsfw.enabled, "nsfwThreads" to c.nsfw.threads, "qwenTimeout" to c.nsfw.timeoutMs,
+            "nsfwSource" to c.nsfw.source, "qwenCustomUrl" to c.nsfw.customUrl, "qwenPolicy" to c.nsfw.policy,
+            "qwenMaxTokens" to c.nsfw.maxTokens, "qwenMaxSide" to c.nsfw.reviewMaxSide)
+        val previous = values.keys.associateWith { prefs.all[it] }
+        fun write(items: Map<String, Any?>): Boolean {
+            val edit = prefs.edit()
+            items.forEach { (key, value) -> when (value) {
+                null -> edit.remove(key); is String -> edit.putString(key, value); is Int -> edit.putInt(key, value)
+                is Long -> edit.putLong(key, value); is Boolean -> edit.putBoolean(key, value)
+                else -> error("Unsupported configuration value")
+            } }
+            return edit.commit()
+        }
+        if (!write(values)) {
+            if (!write(previous)) { enabled = false; status("error", "设置保存与恢复均未持久完成，采集已停止；请检查存储空间并重试") }
+            throw SettingsWriteFailure()
+        }
+        /* Configuration is committed as one snapshot; status counters are never rolled back. */
     }
-    fun saveConnection(server: String, token: String, deviceName: String, debugHttp: Boolean) {
+    fun saveConnection(server: String, token: String, deviceName: String, debugHttp: Boolean) = synchronized(Settings::class.java) {
         val next = read().copy(server = server, token = token, deviceName = deviceName, debugHttp = debugHttp)
         next.validate(); next.validateConnection()
         val origin = originAfterChange(next)
@@ -95,7 +113,9 @@ class Settings(private val context: Context) {
             .putString("deviceName", deviceName).putBoolean("debugHttp", debugHttp).commit()
         if (!saved) {
             // Restore memory as well as attempt durable rollback; caller retains the encrypted redemption journal.
-            prefs.edit().putString("dataOrigin", previousOrigin).putString("server", previousServer).putString("token", previousToken).putString("deviceName", previousName).putBoolean("debugHttp", previousHttp).commit()
+            if (!prefs.edit().putString("dataOrigin", previousOrigin).putString("server", previousServer).putString("token", previousToken).putString("deviceName", previousName).putBoolean("debugHttp", previousHttp).commit()) {
+                enabled = false; status("error", "连接设置未能持久恢复，采集已停止；原连接恢复资料仍保留")
+            }
             throw SettingsWriteFailure()
         }
     }
@@ -129,10 +149,7 @@ class Settings(private val context: Context) {
         edit.apply()
     }
     fun saveNsfw(value: NsfwConfig) {
-        value.validate()
-        if (!prefs.edit().putBoolean("nsfwEnabled", value.enabled)
-            .putInt("nsfwThreads", value.threads).putLong("qwenTimeout", value.timeoutMs).putString("nsfwSource", value.source)
-            .putString("qwenCustomUrl", value.customUrl).putString("qwenPolicy", value.policy).putInt("qwenMaxTokens", value.maxTokens).putInt("qwenMaxSide", value.reviewMaxSide).commit()) throw SettingsWriteFailure()
+        save(read().copy(nsfw = value))
     }
     fun status(state: String, message: String) { prefs.edit().putString("state", state).putString("message", message).putLong("statusAt", System.currentTimeMillis()).apply() }
     fun state(): String = prefs.getString("state", "paused")!!
@@ -144,4 +161,4 @@ class Settings(private val context: Context) {
     fun uploadStatus(): String = prefs.getString("uploadStatus", "尚未上传")!!
 }
 
-fun Context.queue() = DurableQueue(File(noBackupFilesDir, "queue"), SecretBox()) { kind, bytes, id -> Operations.record(this, kind, bytes = bytes, recordId = id) }
+fun Context.queue() = QueueStorage(this).openQueue()

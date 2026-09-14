@@ -2,11 +2,11 @@ const { app, dialog, Menu, ipcMain, shell, nativeImage } = require('electron');
 const { randomUUID } = require('node:crypto');
 const { imageHash } = require('../dist/queue');
 const { mkdtempSync, writeFileSync, mkdirSync } = require('node:fs');
-const { rm } = require('node:fs/promises');
+const { rm, realpath, stat, readFile } = require('node:fs/promises');
 const { join, resolve } = require('node:path');
 const { tmpdir } = require('node:os');
 const assert = require('node:assert/strict');
-const { defaultConfig } = require('../dist/config');
+const { defaultConfig, ConfigStore } = require('../dist/config');
 
 // A clean generated profile prevents reading existing settings or personal screenshots.
 const profile = mkdtempSync(join(tmpdir(), 'mote-ui-fixture-'));
@@ -57,13 +57,14 @@ app.on('browser-window-created', (_event, window) => {
       assert(feedbackUrl.searchParams.get('version').includes(app.getVersion()));
       assert.equal(feedbackUrl.searchParams.get('environment'), '桌面客户端 · legacy');
       assert.equal(decodeURIComponent(externalUrls[0]).includes('Synthetic Mac'), false);
-      // Simulate only the renderer lock state; the collector never starts in this fixture.
-      // Periodic real stopped-status publications must not race the deliberate renderer-only lock.
+      // Simulate only the renderer running state; the collector never starts in this fixture.
+      // Settings must remain editable while capturing, independently of actual native capture.
       const send = window.webContents.send.bind(window.webContents);
       window.webContents.send = (channel, ...args) => send(channel, ...(channel === 'mote:status' ? [{ ...args[0], running: true, state: 'capturing' }] : args));
       window.webContents.send('mote:status', { ...status, running: true, state: 'capturing' });
       await navigate('capture');
-      assert(await js(`document.querySelector('#settings-fields').disabled`));
+      assert(await js(`!document.querySelector('#settings-fields').disabled`));
+      assert(await js(`document.querySelector('#save-hint').textContent.includes('立即应用')`));
       await navigate('overview');
       window.webContents.send = send;
       window.webContents.send('mote:status', status);
@@ -195,7 +196,55 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`document.querySelector('#record-detail-text script') === null`));
       writeFileSync(join(require('node:path').dirname(output), 'capture-records-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       assert.equal((await js('window.mote.status()')).running, false);
-      process.stdout.write(JSON.stringify({ captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, nativeSettingsMenu: true, navigationWhileSettingsLocked: true, draftAndConfigRetainedAcrossPages: true, hiddenInvalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
+      const originalSave = ConfigStore.prototype.save;
+      const beforeFailedSave = await js('window.mote.status()');
+      ConfigStore.prototype.save = async function(config) { if (config.deviceName === 'Synthetic Save Failure') throw new Error('synthetic config persistence failure'); return originalSave.call(this, config); };
+      try {
+        const rejected = await js(`window.mote.configure({...(${JSON.stringify(beforeFailedSave.config)}),deviceName:'Synthetic Save Failure',intervalMs:15000,jpegQuality:55}).then(()=>false,error=>error.message.includes('synthetic config persistence failure'))`);
+        assert(rejected, 'Config persistence failure is reported');
+        const afterFailedSave = await js('window.mote.status()');
+        assert.deepEqual(afterFailedSave.config, beforeFailedSave.config, 'Runtime settings roll back after save failure');
+        assert.equal(afterFailedSave.running, false); assert.equal(afterFailedSave.storage.recoveryRequired, undefined);
+        const disk = JSON.parse(await readFile(join(profile, 'config.json'),'utf8')).config;
+        assert.equal(disk.deviceName, beforeFailedSave.config.deviceName); assert.equal(disk.intervalMs, beforeFailedSave.config.intervalMs); assert.equal(disk.jpegQuality, beforeFailedSave.config.jpegQuality);
+      } finally { ConfigStore.prototype.save = originalSave; }
+      const external = await realpath(mkdtempSync(join(tmpdir(), 'mote-storage-ui-fixture-')));
+      try {
+        const oldStatus = await js('window.mote.status()');
+        const rejected = await js(`window.mote.configure({...(${JSON.stringify(oldStatus.config)}),captureStorageDirectory:${JSON.stringify(join(external, 'unauthorized'))}}).then(()=>false, error=>error.message.includes('选择器'))`);
+        assert(rejected, 'Renderer cannot submit arbitrary filesystem paths');
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [external] });
+        await navigate('capture');
+        await js(`document.querySelector('#capture-directory-choose').click()`);
+        for (let i = 0; i < 100 && !await js(`document.querySelector('#capture-directory').value.includes('Mote-Captures-')`); i++) await new Promise(resolve => setTimeout(resolve, 20));
+        assert(await js(`document.querySelector('#capture-directory').readOnly`));
+        const selected = await js(`document.querySelector('#capture-directory').value`);
+        await js(`document.querySelector('#settings').requestSubmit()`);
+        for (let i = 0; i < 100 && (await js('window.mote.status()')).storage.directory !== selected; i++) await new Promise(resolve => setTimeout(resolve, 20));
+        const moved = await js('window.mote.status()');
+        assert.equal(moved.storage.directory, selected); assert.equal(moved.config.captureStorageDirectory, selected);
+        assert.equal(moved.running, false); assert.equal(moved.queueDepth, oldStatus.queueDepth); assert.equal(moved.config.deviceId, oldStatus.config.deviceId);
+        await assert.rejects(stat(oldStatus.storage.directory), {code:'ENOENT'});
+        assert.equal(JSON.parse(await readFile(join(profile, 'config.json'),'utf8')).config.captureStorageDirectory, selected);
+        await js(`document.querySelector('#capture-directory-default').click(); document.querySelector('#settings').requestSubmit()`);
+        for (let i = 0; i < 100 && (await js('window.mote.status()')).storage.directory !== oldStatus.storage.directory; i++) await new Promise(resolve => setTimeout(resolve, 20));
+        const restored = await js('window.mote.status()'); assert.equal(restored.storage.directory, oldStatus.storage.directory); assert.equal(restored.config.captureStorageDirectory, ''); assert.equal(restored.running, false); assert.equal(restored.queueDepth, moved.queueDepth);
+        await assert.rejects(stat(selected), {code:'ENOENT'});
+        const crashTarget = (await js('window.mote.chooseCaptureDirectory()')).directory;
+        ConfigStore.prototype.save = async function(config) { await originalSave.call(this, config); throw new Error('synthetic failure after durable pointer rename'); };
+        try {
+          const rejected = await js(`window.mote.configure({...(${JSON.stringify(restored.config)}),captureStorageDirectory:${JSON.stringify(crashTarget)}}).then(()=>false,error=>error.message.includes('需要恢复'))`);
+          assert(rejected, 'Ambiguous commit explicitly requires recovery');
+          const recovering = await js('window.mote.status()'); assert.equal(recovering.running, false); assert(recovering.storage.recoveryRequired); assert.equal(recovering.state, 'error');
+          assert((await stat(crashTarget)).isDirectory()); assert((await stat(restored.storage.directory)).isDirectory());
+          assert.equal(JSON.parse(await readFile(join(profile, 'config.json'),'utf8')).config.captureStorageDirectory, crashTarget);
+          assert(await js(`window.mote.retry().then(()=>false,error=>error.message.includes('需要恢复'))`));
+          assert(await js(`window.mote.importQueue().then(()=>false,error=>error.message.includes('需要恢复'))`));
+          assert(await js(`window.mote.saveNote({}).then(()=>false,error=>error.message.includes('需要恢复'))`));
+          await navigate('overview'); assert(await js(`!document.querySelector('#storage-restart').hidden`));
+        } finally { ConfigStore.prototype.save = originalSave; }
+      } finally { await rm(external, { recursive: true, force: true }); }
+      process.stdout.write(JSON.stringify({ failedSettingsRolledBack: true, ambiguousCommitPreservesBothAndBlocksWrites: true, captureStorageNativePickerAndMigration: true, arbitraryStoragePathRejected: true, captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, nativeSettingsMenu: true, settingsEditableWhileCapturing: true, draftAndConfigRetainedAcrossPages: true, hiddenInvalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write(`UI smoke failed: ${error.message}\n`); app.exit(1); });
   });

@@ -112,7 +112,7 @@ class ComplexNotesInstrumentedTest {
         assertEquals(pending.prepared.getString("id"), id)
         assertEquals("Recovery must reuse the existing queue record", records.length(), context.queue().depth())
         assertEquals("", drafts.read().text)
-        val recreated = DurableQueue(File(context.noBackupFilesDir, "queue"), SecretBox()); recreated.recoverOrphans()
+        val recreated = context.queue(); recreated.recoverOrphans()
         assertEquals(records.length(), recreated.depth())
         before.put("phase", "recovered").put("recoveryPid", Process.myPid()); writeState(before)
         println("MOTE_COMPLEX round=${before.getInt("round")} phase=recovered records=${records.length()} samePreparedId=true")

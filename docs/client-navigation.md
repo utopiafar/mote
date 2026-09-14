@@ -15,6 +15,8 @@ macOS 使用常驻侧栏：概览、随手记、本地来源、采集记录；�
 
 Android 使用概览、随手记、来源、设置四个底部目的地。设置包含连接与同步、采集与存储、隐私与应用规则、权限与后台运行、关于与更新；开发者选项位于关于与更新内，诊断与支持、模型高级设置再分到下级页面。隐私页面同时提供模型高级设置的快捷入口。详情提供返回入口，并保留系统返回行为。两端使用相同概念，具体控件遵循平台习惯。
 
+两端的“采集与存储”显示本机图片队列位置并提供更改入口。保存设置后自动应用，按原采集开停状态恢复；目录变更包含已有记录迁移。详见 [客户端设置与图片位置](client-settings-and-storage.md)。
+
 这些设计取舍参考 [Android 导航模式](https://developer.android.com/design/ui/mobile/guides/layout-and-content/layout-and-nav-patterns)、[Android 设置设计](https://developer.android.com/design/ui/mobile/guides/patterns/settings)、[Apple 侧栏](https://developer.apple.com/design/human-interface-guidelines/sidebars)与 [Apple 设置](https://developer.apple.com/design/human-interface-guidelines/settings)。其中 Android 文档明确建议将大量设置分组到下级页面，并把常用操作放在对应功能附近。
 
 ## 验收清单

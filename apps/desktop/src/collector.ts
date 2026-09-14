@@ -34,6 +34,7 @@ export class Collector {
   private ocrAbort?: AbortController;
   private captureOcrAbort?: AbortController;
   private closed = false;
+  private stopIntent = 0;
   private lastSample?: { at: number; appId: string; collection: 'content' | 'activity' };
   private state: Status['state'] = 'stopped';
   private message = '尚未开始采集。请确认隐私设置后手动开始。';
@@ -96,6 +97,26 @@ export class Collector {
     while (this.connectionActivity().inFlight) await new Promise(resolve => setTimeout(resolve, 25));
     return () => { this.connectionHeld = false; };
   }
+  /** Freeze every producer/consumer before applying settings; preserve the user's running intent. */
+  async suspendForSettings(): Promise<() => Promise<void>> {
+    if (this.connectionHeld || this.closed) throw new Error('设置正在应用或应用正在退出，请稍后重试');
+    const resume = this.running, intent = this.stopIntent;
+    this.connectionHeld = true; this.running = false; this.lastSample = undefined;
+    if (this.timer) clearTimeout(this.timer);
+    this.captureAbort?.abort(); this.captureOcrAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
+    this.state = 'paused'; this.message = '正在安全应用设置，已有记录保留'; this.publish();
+    while (this.connectionActivity().inFlight) await new Promise(resolve => setTimeout(resolve, 25));
+    let released = false;
+    return async () => {
+      if (released) return; released = true; this.connectionHeld = false;
+      if (this.closed) return;
+      if (resume && intent === this.stopIntent) {
+        try { await this.start(); }
+        catch (error) { this.state = 'error'; this.message = `设置已应用，采集暂未恢复：${error instanceof Error ? error.message : '请检查采集条件'}`; this.publish(); }
+      } else { this.state = 'stopped'; this.message = '设置已应用；采集保持停止'; this.publish(); }
+      void this.upload(); void this.processPendingOcr();
+    };
+  }
   updateConfig(config: Config): void {
     // Config edits cannot change a privacy policy in the middle of capture.
     if (this.running || this.capturing) throw new Error('请先停止采集，再修改配置');
@@ -107,6 +128,7 @@ export class Collector {
     this.publish();
   }
   async start(): Promise<void> {
+    if (this.closed || this.connectionHeld) throw new Error('正在应用设置或退出，请稍后重试');
     if (this.running) return;
     if (this.capturing) throw new Error('正在结束上一轮采集，请稍后再试');
     if (currentPlatform !== 'macos') throw new Error('此 MVP 只支持 macOS 采集；Windows/Linux 需要接入可靠前台应用识别后才可启用');
@@ -117,6 +139,7 @@ export class Collector {
     this.publish(); void this.capture(); void this.sendHeartbeat();
   }
   stop(): void {
+    this.stopIntent++;
     void this.events?.record('CAPTURE', 'STOPPED');
     this.running = false; this.lastSample = undefined; this.captureAbort?.abort(); this.nsfw?.reset();
     if (this.timer) clearTimeout(this.timer);
@@ -134,7 +157,8 @@ export class Collector {
     if (this.ocrTimer) clearInterval(this.ocrTimer);
     this.nsfw?.close(); void this.diagnostics?.close();
   }
-  async retry(): Promise<void> { await this.queue.resetRetries(); await this.upload(true); await this.sendHeartbeat(true); }
+  requireRecovery(message: string): void { this.shutdown(); this.state = 'error'; this.message = message; this.publish(); }
+  async retry(): Promise<void> { if (this.closed || this.connectionHeld) return; await this.queue.resetRetries(); await this.upload(true); await this.sendHeartbeat(true); }
   /** Only reads already sanitized queued JPEGs; independent of whether new capture is running. */
   async processPendingOcr(): Promise<void> {
     if (this.closed || this.ocrBusy || this.connectionHeld || this.sleeping || !this.config.ocrEnabled) return;
@@ -281,7 +305,7 @@ export class Collector {
     }
   }
   async upload(explicit = false): Promise<void> {
-    if (this.uploading || this.connectionHeld) return;
+    if (this.closed || this.uploading || this.connectionHeld) return;
     const pending = this.pendingSync();
     const policy = decideSync(this.config, { ...pending, pendingRecords: pending.eligibleRecords }, Date.now(), explicit);
     if (!pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) { this.publish(); return; }
@@ -332,7 +356,7 @@ export class Collector {
     finally { this.uploading = false; this.publish(); }
   }
   private async sendHeartbeat(explicit = false): Promise<void> {
-    if (this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !this.config.token || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;
+    if (this.closed || this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !this.config.token || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;
     this.heartbeatInFlight = true;
     const state = this.state === 'stopped' ? 'paused' : this.state;
     try {
