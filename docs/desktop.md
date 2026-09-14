@@ -11,11 +11,12 @@ npm install
 npm run models:setup
 npm run build -w @mote/local-inference
 npm run build -w @mote/diagnostics
+npm run build -w @mote/shared
 npm run build -w @mote/desktop
 npm run start -w @mote/desktop
 ```
 
-开发迭代可用 `npm run dev -w @mote/desktop`。构建会编译 TypeScript、复制界面资源，用 `swiftc` 生成当前 Mac 架构的 `native/bin/mote-helper`，并从固定 `vendor/llama.cpp` 编译 CPU 静态链接的 `native/bin/mote-qwen`。首次原生编译需要几分钟；可用 `MOTE_CMAKE`、`MOTE_NINJA`、`MOTE_BUILD_JOBS` 指定构建工具与并发度。不需要辅助功能权限，不查询或存储窗口标题。
+开发迭代可用 `npm run dev -w @mote/desktop`。构建会编译 TypeScript、复制界面资源，用 `swiftc` 生成当前 Mac 架构的 `native/bin/mote-helper` 与独立更新助手 `mote-updater`，并从固定 `vendor/llama.cpp` 编译 CPU 静态链接的 `native/bin/mote-qwen`。首次原生编译需要几分钟；可用 `MOTE_CMAKE`、`MOTE_NINJA`、`MOTE_BUILD_JOBS` 指定构建工具与并发度。不需要辅助功能权限，不查询或存储窗口标题。
 
 生成可运行应用目录：
 
@@ -23,11 +24,33 @@ npm run start -w @mote/desktop
 npm run package -w @mote/desktop
 ```
 
-当前 0.4.0 安装包为 `apps/desktop/release/mote-desktop-macos-arm64-0.4.0.zip`，解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；这是本机测试构建。发行版仍需显式设置 Apple Developer ID 签名、公证和对应架构构建。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
-
-0.4.0 ZIP 大小为 112,500,070 字节，SHA-256：`76124f2e91b7ff54e89f3f051c500a538f38c320ad7202c6988bb7d7726c77c4`。
+当前 0.5.0 安装包由仓库根目录的 `node scripts/release/mac-package.mjs` 生成：`artifacts/release/mote-desktop-macos-arm64-0.5.0.zip`，旁边的 `.zip.asset.json` 记录大小与 SHA-256。解压后即是独立 Mac App。应用目录在 `apps/desktop/release/mac-arm64/Mote Collector.app`（Intel 为 `mac/`）。默认使用 ad-hoc 签名，不调用本机个人开发证书；GitHub 更新清单另由固定发布密钥签名。若配置完整 Apple Developer ID 凭据，发布脚本也支持签名、公证与验证；本次没有验证该证书模式。生成安装镜像可在 `apps/desktop` 目录执行 `npx electron-builder --mac dmg`。
 
 Windows/Linux 可编译 TypeScript、运行界面和队列逻辑，但采集按钮被禁用。MVP 尚未接入其可靠前台/可见窗口身份与 OCR，不能以无过滤截图代替。
+
+## 应用内更新（0.5.0）
+
+原生采集窗口提供「应用更新」：选择稳定 / 预览渠道，点击「检查更新」，再下载、校验，最后「安装并重启」。只手动发起检查，不上传中央令牌、截图、笔记或路径。默认只信任 GitHub `utopiafar/mote` 的签名发布。首次提供该能力的版本为 0.5.0，旧版需先手动安装；没有可信发布清单时会显示暂不可用，不能把旧的普通 ZIP 当成应用内更新。
+
+App 内置发布公钥，使用 RSA-3072 / SHA-256 验证 `mote-release.json` 原始 payload 字节；清单绑定渠道、版本、仓库、架构、Bundle ID、安装包大小与 SHA-256。下载临时文件校验成功后才转为完整包。解压前拒绝路径穿越、跨目录/循环符号链接、不支持的 ZIP 格式和过大展开体积；解压后再次核验 ZIP 哈希，随后验证应用签名、版本、架构以及文件树摘要。安装前和旧进程退出后都重新检查文件树，校验后被篡改或被重新 ad-hoc 签名的包仍被拒绝。更新缓存限于一个下载批次，取消后重新下载；不会占用模型下载缓存。
+
+当前 ad-hoc 构建使用独立 Swift 助手，不依赖 Electron 的内置自动更新器。[Electron 官方说明](https://www.electronjs.org/docs/latest/api/auto-updater)指出 macOS 自动更新基于 Squirrel.Mac，要求应用签名；本项目不把该机制等同于已验证可用的 ad-hoc 自更新。这里的发布者信任来自固定密钥签名，Apple Developer ID、公证与 Gatekeeper 的系统信任仍是另一层。ad-hoc 更新后系统可能再次要求 Keychain、屏幕或日历授权；应用不会为绕过授权重置资料或令牌。
+
+安装只更换当前 `.app`：先在同一父目录建立候选包和更新锁，确认其他 profile 没有运行该 App，再保存原生草稿、停止采集、等待持久操作结束并退出。助手使用 macOS 原子交换，把旧包暂存为应用旁的 `.mote-stage-<事务号>.app`，以相同 `--profile` 重启。新进程完成自身配置、队列和窗口初始化后写入启动确认，才删除旧包。75 秒内未确认会尝试停止未确认的新进程并自动恢复旧版；若新进程无法退出或恢复失败，保留旧包与明确错误，不强删应用。死助手留下的事务仅在同一 profile 重新打开、文件树仍精确匹配时完成清理；无法确认的恢复包保留供人工恢复。
+
+安装不会迁移、清空或重建任何 profile 的设置、Keychain 加密令牌、草稿、截图/来源队列、下载模型、诊断和中央窗口会话。仍需先保存未提交的普通设置；当前随手记正文会在交接前持久化。重新打开后截图采集等待用户手动开始，待传队列与已启用来源按原有行为恢复。更新状态和事务文件位于当前 profile 的 `updates/`，安全支持包不会导出安装路径或配置正文。
+
+应用位于只读磁盘、App Translocation 或父目录不可写时禁止自动替换。可点击「显示安装包」，在 Finder 退出所有 Mote 实例后把已验证的 App 拖到可写应用目录手动替换，用户资料仍保留在包外。更新磁盘至少需要容纳 ZIP、展开包与同目录候选包；空间不足会保留原 App。人工处理异常事务前先备份，确认没有更新助手或 Mote 实例运行，并保留 `.mote-stage-*` 旧包，不能直接当缓存删除。
+
+复现验证（只生成临时 App，不更新日常安装）：
+
+```sh
+npm run build -w @mote/desktop
+node apps/desktop/scripts/update-fixture.cjs
+npm run test -w @mote/desktop -- updater update-archive update-install
+```
+
+0.5.0 完整桌面 100 项回归通过，其中更新新增 12 项 TypeScript 回归：签名失败阻止下载/安装、下载取消、渠道持久化、ZIP 路径/符号链接、解压期间篡改、跨 profile 启动确认、反复下载缓存有界。原生 fixture 已实际验证生成 ad-hoc App 的原子替换、同 profile 重启、缺失启动 ACK 自动回滚、重新签名篡改拒绝、其他 profile 阻止以及中断准备恢复；15 个合成配置、令牌文件、草稿、队列与模型逐字节不变。本次本机 ZIP 为 113,094,457 字节，SHA-256 `211e801f539a9b2cb981e147851ba897adc256f82ac6f15ab71fb7382e6f6f6d`；GitHub runner 重建的发布包以其签名清单为准。包内更新助手与共享发布模块已通过实际加载，包内千问对生成白图返回通过（约 7.48 秒）；原生界面和渠道 IPC 使用临时 profile 验证，未发更新网络请求。未操作真实 Keychain 项，未替换日常 App，未新增 Intel / 旧版 macOS 实机验证。签名清单发布与 GitHub 完整线上更新另由发布流程验收，不能把本地 fixture 当成已发布版本的线上升级。
 
 ## 环境隔离与启动 profile
 
@@ -87,7 +110,7 @@ node scripts/mote.mjs exec --profile dev -- npm run import:files -- --root /abso
 
 保留 `--extensions`、`--dry-run`、`--watch`，另支持 `--exclude relative/path,...` 和可重复的 `--redact-literal`。涉及私密遮盖原文时优先使用 App 配置，避免正文出现在终端命令历史。watch 每 30 秒检查；Ctrl+C 中止在途请求并保留已持久版本。状态位于所选 profile 的 `file-sync`，按来源、节点和同一请求使用的凭据哈希隔离。只有确认旧进程已退出时才自动回收其 `.lock`；存在活动进程或不可信锁时拒绝同时写入。
 
-## 0.4.0 验证范围
+## 0.4.0 验证范围（历史）
 
 冻结版本通过 88 项桌面测试，其中 25 项覆盖新来源。验证包括：多段中文与组合 emoji；100 KB/非法 UTF-8；隐藏项、静态符号链接和显式路径排除；引用无正文；EventKit 合成解码和权限失效；错误 ACK/断连后同版本恢复；删除与恢复链；隐私策略改变后不再发送旧标题、路径或正文；关闭删除跟踪丢弃旧待传删除；满队列恢复；CLI 真子进程的两个 profile、同 URL 更换凭据、dry-run 和失效进程锁恢复。满队列回归注入小上限触发同一容量分支，不是 4,000 次 fsync 的性能测试。
 

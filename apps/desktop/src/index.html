@@ -87,6 +87,12 @@
         <div class="save-row"><span id="save-hint">修改配置前请停止采集。</span><button class="primary" type="submit">保存设置</button></div>
       </fieldset>
     </form>
+    <section class="panel" id="app-updates"><div class="section-title"><span class="step">↑</span><div><h2>应用更新</h2><p>来自 GitHub utopiafar/mote；只接受内置发布公钥验证通过的安装包。</p></div></div>
+      <div class="form-grid"><label>更新渠道<select id="update-channel"><option value="stable">稳定版</option><option value="preview">预览版</option></select></label><div><strong id="update-version">正在读取版本…</strong><p class="helper" id="update-message" role="status"></p></div></div>
+      <progress id="update-progress" max="1" value="0" class="spaced" aria-label="应用更新下载进度"></progress><p id="update-bytes" class="helper"></p>
+      <div class="actions spaced"><button id="update-check" class="secondary" type="button">检查更新</button><button id="update-download" class="secondary" type="button" disabled>下载并校验</button><button id="update-cancel" class="secondary" type="button" disabled>取消</button><button id="update-install" class="primary" type="button" disabled>安装并重启</button><button id="update-reveal" class="text-button" type="button" disabled>显示已验证安装包</button><button id="update-notes" class="text-button" type="button" disabled>发布说明 ↗</button></div>
+      <p id="update-install-reason" class="helper"></p><div class="note">安装前请保存尚未提交的设置。随手记草稿会先保存；所有 profile、Keychain、草稿、队列与模型目录保留。请先退出同一 App 的其他 profile。ad-hoc 签名更新后，macOS 可能再次要求授权；不会重置你的资料。安装目录不可写时可使用 Finder 手动替换 App。</div>
+    </section>
     <section class="storage-tools"><div><h2>本地数据与迁移</h2><p>队列备份包含已脱敏截图与 OCR，不含访问令牌；中央仓库请在服务端导出。</p></div><div class="actions"><button id="export" class="secondary" type="button">导出待上传队列</button><button id="import" class="secondary" type="button">导入队列</button><button id="data-folder" class="text-button" type="button">打开数据目录 ↗</button></div></section>
     <footer>采样时长表示两次同应用采样之间的设备活动估计，不等于你的注意力时间。停止后已有队列仍会上传；完全退出请使用菜单栏。</footer>
   </main>

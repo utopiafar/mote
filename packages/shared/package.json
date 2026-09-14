@@ -11,8 +11,15 @@
     "./environment": {
       "types": "./dist/environment.d.ts",
       "import": "./dist/environment.js"
+    },
+    "./release": {
+      "types": "./dist/release.d.ts",
+      "import": "./dist/release.js",
+      "require": "./dist/release.js",
+      "default": "./dist/release.js"
     }
   },
+  "typesVersions": { "*": { "release": ["dist/release.d.ts"] } },
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",

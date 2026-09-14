@@ -16,7 +16,7 @@ cd apps/android
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-APK 位置：`apps/android/app/build/outputs/apk/debug/app-debug.apk`。Debug APK 可直接侧载，release 需用户自己的签名密钥。中国大陆小米设备不依赖 Google Play 下载 OCR 模型：中英 OCR 模型随 APK 打包，但仍需实机验证设备上的 ML Kit 运行兼容性。
+APK 位置：`apps/android/app/build/outputs/apk/debug/app-debug.apk`。Debug APK 可直接侧载；release 需注入签名配置，覆盖现有安装必须保持同一证书，详见下方更新说明。中国大陆小米设备不依赖 Google Play 下载 OCR 模型：中英 OCR 模型随 APK 打包，但仍需实机验证设备上的 ML Kit 运行兼容性。
 
 ## 开发环境与日常版本隔离
 
@@ -28,6 +28,29 @@ adb install -r apps/android/app/build/outputs/apk/development/app-development.ap
 ```
 
 Dev 默认节点 `http://127.0.0.1:47842`，仅供用户显式配令牌后的本机调试。模拟器使用 `adb reverse tcp:47842 tcp:47842`；真机仍需填写可达的节点地址。日常版本保持原配置、首次地址为空。应用顶部显示环境、包名与实际 `noBackupFilesDir`，方便判断正在操作哪个版本。不要用卸载或清除日常数据代替切换环境。
+
+## 应用内更新与签名兼容
+
+从原生首页打开“应用更新”，保存发布仓库和渠道后检查。默认仓库 `utopiafar/mote`；稳定版 `stable` 查询正式发布，预览版 `preview` 查询预发布。检查与下载由用户发起，不会自动安装；下载默认等待非计费 Wi-Fi，可自行关闭这一下载约束。APK 下载由独立 WorkManager 任务执行，取消或中断保留断点，重新打开页面可以继续；后台时机仍由 Android 调度。
+
+更新先读取 GitHub Release 的 `mote-release.json`。APK 内置 `release-public-key.pem`，按固定 key ID、RSA/SHA-256 校验原始 payload 字节，再校验仓库、渠道、版本、tag、资产 URL 与包名。换仓库不能自动引入另一把信任公钥；本期仅适用于同一受信任发布密钥签署的发布镜像。网络只访问允许的 GitHub HTTPS 主机及发布 CDN，重定向重新检查，不发送中央节点令牌。
+
+下载内容位于应用私有 `noBackupFilesDir/app-updates`；APK 大小与 SHA-256 匹配后，还通过 `apksig` 验证实际 APK 签名、系统 PackageManager 检查包名、versionCode 与最低 Android 版本。清单证书、APK 证书和当前安装证书必须相同，只允许更高 versionCode；日常与 Dev 通过不同包名分别选择资产。签名不符、篡改、错误包名或降级均不会进入安装。
+
+点击“交给系统安装”才申请允许安装应用的系统设置；从设置返回后再次点击安装。应用创建 Android `PackageInstaller.Session`，要求用户确认。没有收到确认时可通过更新通知继续；系统取消或失败保留旧应用与数据，可以取消待确认的会话后重试。更新采用同包覆盖安装，**没有自动卸载或清除数据流程**；设置、设备 ID、加密队列、草稿、模型和已授予权限由 Android 保留。安装可能中断正在进行的采集；投屏会话在进程被替换后需重新授权。OEM 安装校验、权限和电池策略仍可能要求额外用户操作。
+
+0.4.0 的日常 debug 和 Dev 包使用本机生成的同一 Android Debug 证书，SHA-256 为 `0670a89e6f9548552b90777dd1e0dc4e3efab6cf7082d436fcc60d6e9edb5076`。兼容发布沿用这个证书身份，发布用私钥以受保护签名配置保存；日常 release 构建关闭 debuggable，Dev 保持独立开发包。重新生成一把 release 密钥，即使包名相同，也不能无损覆盖这些已安装包；当前更新器会阻止这种情况，不提示自动卸载。
+
+发布构建从环境读取以下四项，值不写入源码或更新清单：
+
+```text
+MOTE_ANDROID_KEYSTORE_PATH
+MOTE_ANDROID_KEYSTORE_PASSWORD
+MOTE_ANDROID_KEY_ALIAS
+MOTE_ANDROID_KEY_PASSWORD
+```
+
+四项齐备时 `release` 和 `development` 都使用指定证书；普通本机 debug 继续使用本机 debug keystore。缺少配置时 `assembleRelease` 拒绝产出未签名发布包，不能把另一台机器新生成的 debug 证书当成升级凭据。构建时需同时包含仓库内的固定发布公钥；APK 签名和发布清单签名是两层独立检查。
 
 ## 首次连接
 
@@ -149,9 +172,26 @@ URL 留空仅表示不使用这个额外钩子，**不会关闭内置 Qwen**。�
 
 **尚无 K90 Pro Max 真机验证，不能保证最新 HyperOS 的后台稳定性、权限页路径、耗电、截图/OCR延迟或长期续航。** Android 系统与 OEM 会限制后台行为；MVP 不用闹钟、WakeLock 或循环重启规避限制。
 
-## 0.4.0 来源同步验证与产物
+## 0.5.0 应用更新验证与产物
 
-0.4.0 / versionCode 5 已完成 `assembleDebug`、`assembleDevelopment`、开发版测试 APK 构建、36 项 JVM 测试（0 失败），两种安装包 lint 均为 0 error / 48 warning，并通过 16 KiB ZIP 对齐。开发版显示版本为 `0.4.0-dev`。当前产物（路径相对 `apps/android`）：
+0.5.0 / versionCode 6 已完成日常 debug 与 Dev 构建、40 项 JVM 测试（0 失败、0 跳过）、两种安装包 lint（0 error / 81 warning）和 16 KiB ZIP 对齐。`apksigner` 实际验证两包签名通过，证书与上文 0.4.0 兼容身份一致。以下为本机调试产物；正式发布的非 debuggable release 由发布流水线独立签名和校验，不能用本表代替发布资产清单：
+
+| 版本 | 文件（相对 `apps/android`） | 字节 | SHA-256 |
+| --- | --- | ---: | --- |
+| 日常 debug | `app/build/outputs/apk/debug/app-debug.apk` | 32,882,579 | `7bae184cfa933c0fd3d5510c9017a6d586050b5e2613e855dac7b03e5b30e6ba` |
+| Mote Dev | `app/build/outputs/apk/development/app-development.apk` | 32,459,347 | `54d90895f00f793489c48372afc231df2037c301047f387922a6e4ddb5496950` |
+
+新增 JVM 测试使用生成的 RSA 密钥、签名清单和 HTTP 连接 fixture，覆盖原始 payload 验签、仓库/渠道/tag/版本绑定、错误签名/资产身份/来源拒绝、严格 SemVer、HTTP Range 断点恢复、文件 SHA 错误及不可信重定向。网络 fixture 不访问 GitHub，也不发布文件。
+
+专用 `mote_fixture_api35` / Android API35 实跑 `AppUpdateInstrumentedTest`：实际已签名 APK 验证、错误包名/证书/降级/篡改拒绝、原生页面不自动请求网络或安装权限，加上显式取消场景，共 3 项通过（2.694 秒）。取消场景在真实 APK 验签完成、创建系统会话之前设置线程屏障，并在锁仍被占用时取消；另验证排队任务取消与重复点击。两个已取消请求均未创建或提交安装会话。首次测试曾把 Android 异步取消尚未移除的旧会话误计入基线，补充等待系统完成后复测通过。
+
+覆盖更新使用私有合成 `0.5.1-dev / code7` APK，由同一 APK 证书签名，配套清单由实际内置 RSA 发布密钥签署但未发布。先在 code6 保存合成设置、设备 ID、加密待上传笔记、草稿和模型目录哨兵，再通过生产 `PackageInstaller.Session` 提交（1 项通过，2.952 秒），在系统显示的 **Mote Dev / Update** 确认页点击更新。随后 PackageManager 实际显示 code7，独立验证阶段通过（1 项，0.049 秒），五类状态指纹逐项相同；队列仍是原 ID 的无图记录。验证结束清理本次合成记录与哨兵，并撤销测试专用的安装/通知授权。未卸载应用、未清除应用数据。
+
+code7 仅保存在 ignored 的本机测试目录，源码与正常构建输出已恢复 `0.5.0 / code6`。本轮没有公开 fixture、实际 GitHub Release 下载、真实模型调用或个人屏幕采集。APK 网络下载用连接 fixture 验证，真实系统安装用私有文件验证，这两项不能合称已跑过公开 GitHub 下载到安装的完整链路。未测试 K90 Pro Max、HyperOS 安装校验、长期后台下载或正式 release 的真机覆盖行为。
+
+## 历史 0.4.0 来源同步验证与产物
+
+0.4.0 / versionCode 5 曾完成 `assembleDebug`、`assembleDevelopment`、开发版测试 APK 构建、36 项 JVM 测试（0 失败），两种安装包 lint 均为 0 error / 48 warning，并通过 16 KiB ZIP 对齐。开发版显示版本为 `0.4.0-dev`。以下为历史产物（路径相对 `apps/android`），构建路径现已被 0.5.0 替换：
 
 | 版本 | 文件 | 字节 | SHA-256 |
 | --- | --- | ---: | --- |
@@ -174,7 +214,7 @@ adb -s emulator-5580 shell am instrument -w -e class dev.mote.collector.LocalSou
 
 ## 历史 0.3.0 环境隔离验证
 
-0.3.0 / versionCode 4 曾完成日常与 Dev APK 构建、29 项 JVM 测试（无失败/跳过），两 variant lint 均 0 error / 38 warning，两个 APK 均通过 16 KiB ZIP 对齐校验。下表为历史记录，这些构建路径现已被 0.4.0 产物替换：
+0.3.0 / versionCode 4 曾完成日常与 Dev APK 构建、29 项 JVM 测试（无失败/跳过），两 variant lint 均 0 error / 38 warning，两个 APK 均通过 16 KiB ZIP 对齐校验。下表为历史记录，这些构建路径现已被后续产物替换：
 
 | 版本 | 文件 | 字节 | SHA-256 |
 | --- | --- | ---: | --- |
@@ -235,6 +275,9 @@ python3 apps/android/scripts/run-complex-fixtures.py --connection .mote/live-val
 
 ## 设计参考与官方依据
 
+- [Android PackageInstaller](https://developer.android.com/reference/android/content/pm/PackageInstaller)：系统安装会话、结果回调与用户确认。
+- [PackageInstaller.SessionParams](https://developer.android.com/reference/android/content/pm/PackageInstaller.SessionParams)：完整 APK 安装与 `USER_ACTION_REQUIRED`。
+- [Android apksigner](https://developer.android.com/tools/apksigner)：APK 签名验证与证书检查；文件 SHA 校验不能替代 APK 签名验证。
 - [Android Calendar Provider](https://developer.android.com/identity/providers/calendar-provider)：日历权限、日历选择与实例查询。
 - [Android Storage Access Framework](https://developer.android.com/training/data-storage/shared/documents-files)：系统文件/目录选择与持久 URI 权限、受限目录。
 - [CalendarContract.Instances](https://developer.android.com/reference/android/provider/CalendarContract.Instances)：限定时间范围查询展开后的日程实例。

@@ -42,6 +42,14 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   assert.ok(settingsText.includes('https://fixture.example.com'));
   assert.ok(settingsText.includes('已配置'));
   assert.equal(settingsText.includes(token),false);assert.equal(settingsText.includes(modelKey),false);
+  await until(()=>wc.executeJavaScript(`document.querySelector('.software-update')?.innerText.includes('点击检查后连接 GitHub')`),'idle software update panel');
+  assert.ok(await wc.executeJavaScript(`document.querySelector('.software-update').innerText.includes('当前版本')`));
+  // Opt-in live GitHub release validation, never a live model or a daily node.
+  if(process.env.MOTE_WEB_UPDATE_CHECK==='1') {
+    await wc.executeJavaScript(`document.querySelector('.software-update button').click()`);
+    await until(()=>wc.executeJavaScript(`!document.querySelector('.software-update button').disabled`),'live release check');
+    assert.ok(await wc.executeJavaScript(`document.querySelector('.software-update').innerText.includes('发布签名已验证')`),'live GitHub release must verify');
+  }
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('.settings-heading button')).find(b=>b.innerText==='刷新配置').click()`);
   await until(()=>wc.executeJavaScript(`!document.querySelector('.settings-heading button').disabled`),'configuration refresh');
   writeFileSync(join(output,'web-settings-desktop.png'),(await wc.capturePage()).toPNG());

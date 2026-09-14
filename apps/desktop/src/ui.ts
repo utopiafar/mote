@@ -228,3 +228,39 @@ byId('source-save-edit').addEventListener('click', () => void sourceAction(async
 }));
 void refreshSources().catch(() => { byId('source-feedback').textContent = '来源状态暂不可用，请重新打开应用'; });
 setInterval(() => { if (!sourceBusy) void refreshSources().catch(() => {}); }, 3000);
+
+let updateState: import('./updater').UpdateStatus | undefined;
+function renderUpdate(value: import('./updater').UpdateStatus): void {
+  updateState = value;
+  byId('update-version').textContent = `当前 ${value.currentVersion}${value.availableVersion ? ' · 发布 ' + value.availableVersion : ''}`;
+  byId<HTMLSelectElement>('update-channel').value = value.channel;
+  byId('update-message').textContent = value.message; byId('update-install-reason').textContent = value.installReason;
+  byId<HTMLProgressElement>('update-progress').value = value.total ? value.received / value.total : 0;
+  byId('update-bytes').textContent = value.total ? `${(value.received / 1048576).toFixed(1)} / ${(value.total / 1048576).toFixed(1)} MiB` : '';
+  const working = ['checking', 'downloading', 'verifying', 'installing'].includes(value.state);
+  byId<HTMLButtonElement>('update-check').disabled = working;
+  byId<HTMLSelectElement>('update-channel').disabled = working;
+  byId<HTMLButtonElement>('update-download').disabled = working || !value.availableVersion || value.state === 'up_to_date' || value.state === 'idle';
+  byId<HTMLButtonElement>('update-cancel').disabled = !working || value.state === 'installing';
+  byId<HTMLButtonElement>('update-install').disabled = value.state !== 'ready' || !value.canInstall;
+  byId<HTMLButtonElement>('update-reveal').disabled = !['ready', 'installing'].includes(value.state);
+  byId<HTMLButtonElement>('update-notes').disabled = !value.notesUrl;
+}
+byId('update-channel').addEventListener('change', () => void perform(async () => renderUpdate(await desktopApi.updateChannel(readInput('update-channel') as 'stable' | 'preview'))));
+byId('update-check').addEventListener('click', () => { void desktopApi.checkUpdate().then(renderUpdate).catch(() => feedback('更新检查未完成，请重试。')); });
+byId('update-download').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.downloadUpdate())));
+byId('update-cancel').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.cancelUpdate())));
+byId('update-reveal').addEventListener('click', () => void perform(() => desktopApi.revealUpdate()));
+byId('update-notes').addEventListener('click', () => void perform(() => desktopApi.releaseNotes()));
+byId('update-install').addEventListener('click', () => {
+  if (noteSaving || noteComposing) { feedback('请先完成当前随手记输入，再安装更新。'); return; }
+  void perform(async () => {
+    lockNote(true); byId('local-sources').inert = true;
+    try {
+      if (draft && !draft.prepared) { draft = await desktopApi.updateNoteDraft({ ...draft, text: readInput('note-text'), mood: readInput('note-mood'), revision: draft.revision + 1 }); }
+      await desktopApi.installUpdate();
+    } finally { lockNote(false); byId('local-sources').inert = false; }
+  });
+});
+void desktopApi.updateStatus().then(renderUpdate).catch(() => {});
+setInterval(() => { void desktopApi.updateStatus().then(renderUpdate).catch(() => {}); }, 1000);

@@ -8,6 +8,8 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 
 [开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [资料分层](docs/context-layers.md) · [来源与 MCP](docs/connectors.md) · [排查问题](docs/troubleshooting.md)
 
+[下载安装包](https://github.com/utopiafar/mote/releases) · [保留设置地更新](docs/updating.md) · [发布与签名流程](docs/releasing.md)
+
 ## 能做什么
 
 - **收集与回看**：显式开启屏幕采样，按设备和时间浏览；截图相同也保留每次观察，图片去重存储。
@@ -17,6 +19,7 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 - **分层记忆**：保留原始输入、不可变快照与外部引用；默认检索当前版本，按需展开历史。模型记忆按“概要 → 内容 → 原始证据”逐层披露。
 - **问答与回顾**：Agent 自主选择只读工具、查找材料、解释证据；答案附可点击的原始记录。可手动或按配置周期生成回顾。
 - **离线可用、资料可迁移**：持久上传队列、幂等确认、JSON 导入导出、离线完整备份、可选图片加密与保留期限。
+- **版本更新**：客户端检查和验证 Release 安装包，服务端按命名环境备份、升级与回退；配置、队列、模型和资料保存在原位置。
 - **可观测与可调节**：查看同步、索引、存储和请求状态；按需记录客户端资源样本，调整采样频率、图片尺寸、质量、推理线程和低电量策略。
 
 “采样时间”是根据实际观察计算的覆盖时间，包含采样空缺的限制，不能当作连续专注时长或 App 独占耗电。Mote 不会用应用名称或关键词硬编码“工作”“娱乐”“待办”等语义判断。
@@ -116,8 +119,8 @@ node scripts/mote.mjs start --profile dev
 
 | 客户端 | 安装与首次设置 |
 |---|---|
-| macOS | 按 [电脑端说明](docs/desktop.md) 构建并打开独立 App。填写节点地址与令牌，设置排除应用、遮挡和本地模型，再授权屏幕录制并点击开始。 |
-| Android | 按 [Android 说明](docs/android.md) 安装 APK。配置节点、本地模型与采集权限，选择采集模式；小米 HyperOS 另配置自启动、电池与后台权限。 |
+| macOS | 从 [Releases](https://github.com/utopiafar/mote/releases/latest) 下载对应架构的 ZIP，解压并将 App 移到应用目录后打开。填写节点地址与令牌，设置排除应用、遮挡和本地模型，再授权屏幕录制并点击开始。首次打开与源码构建见 [电脑端说明](docs/desktop.md)。 |
+| Android | 从 [Releases](https://github.com/utopiafar/mote/releases/latest) 下载日常版 APK；需要与日常环境并存时选择文件名含 `dev` 的开发版。配置节点、本地模型与采集权限，选择采集模式；小米 HyperOS 另配置自启动、电池与后台权限，见 [Android 说明](docs/android.md)。 |
 
 在两端配置页下载或导入 Qwen 语言模型与视觉投影器，合计约 **703 MiB**。可选 ModelScope 优先、Hugging Face 回退，或离线导入已校验的文件。默认 CPU 2 线程、60 秒审查超时、输入最长边 512 像素。配置、误判边界与自定义前置任务见 [端上推理](docs/local-inference.md)。
 
@@ -225,4 +228,4 @@ MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to
 
 目前优先支持 macOS 采集与 Android，Windows/Linux 采集适配尚未完成。桌面分发仅采用 ad-hoc 签名，尚未完成 Developer ID 签名与公证；K90 Pro Max / HyperOS 的实际后台稳定性和耗电需要真机验收。自动化 fixture、模拟器、真实模型和真机测试分别记录，不能互相替代。
 
-本版的测试范围、真实模型复测与目标环境限制见 [0.4.0 验收记录](docs/sources-validation.md)。
+来源与分层记忆的测试范围、真实模型复测与目标环境限制见 [0.4.0 验收记录](docs/sources-validation.md)；发布和升级的验证见 [0.5.0 验收记录](docs/update-validation.md)。

@@ -1,0 +1,14 @@
+import {readFileSync,appendFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
+const read=path=>JSON.parse(readFileSync(path,'utf8'));
+const version=read('package.json').version;
+if(!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version))throw Error('Invalid release version');
+for(const app of ['server','web','desktop'])if(read(`apps/${app}/package.json`).version!==version)throw Error('Workspace release versions differ');
+const android=readFileSync('apps/android/app/build.gradle.kts','utf8');
+if(!android.includes(`versionName = "${version}"`))throw Error('Android release version differs');
+const ref=process.env.GITHUB_REF;
+if(ref&&ref!==`refs/tags/v${version}`)throw Error('Release workflow must run on its exact version tag');
+if(process.env.GITHUB_REPOSITORY&&process.env.GITHUB_REPOSITORY!==read('release/signing-policy.json').repository)throw Error('Configure a distinct release identity for a fork before publishing');
+const commit=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
+if(process.env.GITHUB_OUTPUT)appendFileSync(process.env.GITHUB_OUTPUT,`version=${version}\ntag=v${version}\ncommit=${commit}\nchannel=${version.includes('-')?'preview':'stable'}\n`);
+console.log(JSON.stringify({version,tag:`v${version}`,commit}));

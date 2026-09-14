@@ -6,7 +6,7 @@
 
 ## 环境与私有目录
 
-需要 Node.js 24。以下命令从仓库根目录执行。统一入口是 `node scripts/mote.mjs`，也可用 `npm run mote --`。默认选择 **dev**，即使 shell 继承了 `MOTE_PROFILE=prod` 也不会改变目标；正式节点必须显式传 `--profile prod`。
+需要 Node.js 24。以下命令从仓库根目录执行。统一入口是 `node scripts/mote.mjs`，也可用 `npm run mote --`。默认选择 **dev**，即使 shell 继承了 `MOTE_PROFILE=prod` 也不会改变目标；正式节点必须显式传 `--profile prod`。也可使用 1–32 位小写字母、数字、下划线或连字符的独立环境名；其它名字默认使用开发端口，建议初始化时显式指定空闲 `--port`。`legacy` 不属于部署 CLI 管理范围。
 
 | 环境 | 默认 API 端口 | 默认配置 | 数据与日志 |
 |---|---:|---|---|
@@ -103,22 +103,48 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 升级和回退会短暂停机，采集端保留未确认的本地队列。先确认新的 release 已构建或镜像已拉取，使用版本目录/不可变镜像，不要在旧 release 中直接覆盖代码。
 
+### 从签名发行版更新
+
+0.5.0 起，已初始化的独立 profile 可检查并安装 GitHub Release。中央「服务端配置」页面也可检查最新版本并给出当前环境的操作命令；HTTP 接口不会启动 shell、选择本机路径或直接安装。检查是手动触发，同一分钟内共享同一次结果，不在中央启动时自动联网。旧的 `legacy` 根目录安装只显示发行信息，需要先按本文建立独立部署后再使用更新命令。
+
+从 Git 源码运行签名更新 CLI 前，宿主机需要 Node 24，并在可信检出目录执行 `npm ci --ignore-scripts`、`npm run build:libs` 以准备验证器及其锁定依赖。Docker 的普通 `init/start/stop/compose/backup/upgrade/rollback` 命令不依赖宿主 `node_modules`；`check-update/update` 才加载签名验证器。
+
+```sh
+node scripts/mote.mjs check-update --profile prod --home /srv/mote/profiles
+# 可明确固定目标版本；省略 --version 时检查所选渠道最新版本
+node scripts/mote.mjs update --profile prod --home /srv/mote/profiles --version 0.5.0
+```
+
+版本号只是示例；目标必须高于当前安装的版本，已是该版本时不会重装或降级。尚无签名发行版、GitHub 限流、签名失效或包校验失败都会明确报错，不退回下载任意代码。当前原生进程的版本优先通过已认证的本机节点确认；Docker 使用该 profile 容器实际镜像的版本，不能把执行 CLI 的代码目录版本当成容器版本。
+
+发行来源默认是 `utopiafar/mote`、`stable`，可以在所选私有 `mote.env` 调整 `MOTE_UPDATE_REPOSITORY` 与 `MOTE_UPDATE_CHANNEL=stable|preview` 后重启中央界面服务。CLI 每次读取该文件。`preview` 接收预发行版本；更换仓库不会更换内置的发行签名公钥。
+
+`mote-release.json` 包含 RSA-3072 / SHA-256 签名的原始 JSON payload。客户端只接受已安装程序内置的公钥与 keyId；manifest 不能自带替代公钥。验证仓库、版本、渠道、固定 GitHub asset URL、大小和 SHA-256 后才准备代码。原生源包限制压缩 128 MiB、展开 256 MiB、单文件 32 MiB，并拒绝路径穿越、符号链接、硬链接与私有配置条目。
+
+原生更新在 profile 的 `releases/版本-哈希/` 中准备一个独立目录，执行锁定依赖的 `npm ci` 与中央/Web 构建。构建不接收 profile 令牌、模型密钥或数据路径；需要 npm 网络访问、构建依赖和额外磁盘空间。准备失败不会停止正在运行的中央。独立目录准备好之后，复用下面的停机、一致备份、切换和健康检查流程，并确认启动进程报告的版本一致。旧目录保留用于回退，不被覆盖。
+
+Docker 更新只拉取已签名 manifest 中的 `ghcr.io/仓库@sha256:...`，验证本地 RepoDigest 后切换。不会使用漂移的 `latest` tag，也不把宿主 profile 凭据交给镜像拉取进程。公开发行依赖的 registry 可用性需要部署机器具备网络访问。
+
+更新保留现有 `mote.env`、访问令牌、数据目录/卷、连接器凭据与 Tunnel 配置。回退时归档回到升级前快照，当前连接器凭据、日历选择和来源连接配置另作私有移交；Google 增量游标会清空，下一轮重新构建有界窗口，避免跳过已回退的数据。这份临时私有移交不进入可携带的备份文件，完成后删除。服务没有自动重启安装、自动降级或自动回退策略。
+
+### 手动准备的版本
+
 原生示例：
 
 ```sh
 # 在另一个检出目录完成 npm ci 和中央/Web 构建
-node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --release /srv/mote/releases/0.3.1
+node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --release /srv/mote/releases/0.5.0
 ```
 
 Docker 示例：
 
 ```sh
 # 先 docker pull 已发布镜像，或在新代码目录构建带新 tag 的镜像
-docker build --tag mote-central:0.3.1 .
-node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --image mote-central:0.3.1
+docker build --tag mote-central:0.5.0 .
+node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --image mote-central:0.5.0
 ```
 
-升级先停止该环境、生成 `backups/pre-upgrade-*` 一致快照，再切换代码路径或本地镜像 ID，等待健康检查。失败会保留快照与选择记录，不会自动让旧代码打开可能已迁移的数据库。`profile.json` 的 `previous` 记录回退目标，镜像保存实际 image ID，避免旧 tag 被覆盖后指向新代码。
+升级先停止该环境、生成 `backups/pre-upgrade-*` 一致快照，再切换代码路径或本地镜像 ID，等待健康检查。备份或私有连接器移交准备失败、且资料和版本选择均未变更时，会恢复此前正在运行的服务；原本已停止的环境仍保持停止。切换或资料迁移开始后，失败会保留快照与选择记录，不会自动让旧代码打开可能已迁移的数据库。`profile.json` 的 `previous` 记录回退目标，镜像保存实际 image ID，避免旧 tag 被覆盖后指向新代码。
 
 ```sh
 node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restore-data
@@ -153,6 +179,8 @@ node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 `MOTE_DATA_KEY` 是可选的 64 位十六进制 AES-256-GCM 图片加密密钥，必须单独备份；原文与元数据仍在 SQLite，需要 FileVault/LUKS 或 NAS 加密卷提供全盘保护。不要在已有仓库上变更加密密钥。丢失密钥不能通过重新下载模型或更换访问令牌恢复图片。
 
 ## 验证范围
+
+更新专项使用 `node --test scripts/update-tests.mjs scripts/update-deployment-tests.mjs`，覆盖合成 RSA 签名、真实校验下载、安全提取、镜像 digest/实际版本、无权限 HTTP 参数，以及临时 Node 中央的实际切换/回退。进程用例复用当前编译代码作为构建 fixture，不等于从公网完成 npm 安装或发布生产 Release；Docker 用例需在 Docker 主机另行验收。没有操作日常节点、调用真实模型或使用真实 Google/Tunnel 凭据。HTTP 更新接口另由 `apps/server/test/updates.test.ts` 覆盖。
 
 0.3.1 已完成服务端配置页面、Cloudflare Tunnel 专项回归和真实 Linux Docker 验收，最新结果见 [验证记录](tunnel-validation.md)。下方同时保留既有部署能力的验证说明。
 

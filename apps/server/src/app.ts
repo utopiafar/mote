@@ -4,7 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import staticFiles from '@fastify/static';
 import { timingSafeEqual,randomUUID } from 'node:crypto';
 import { existsSync,readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join,dirname } from 'node:path';
 import { z } from 'zod';
 import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,type QueryResult,type CaptureRecord } from '@mote/shared';
 import { AgentNotConfiguredError } from '@mote/agent';
@@ -16,6 +16,7 @@ import { serverConfiguration } from './configuration.js';
 import { SourceStore } from './sources.js';
 import {registerConnectors} from './connectors/index.js';
 import { MemoryStore,MEMORY_EXTRACTION_PROMPT } from './memory.js';
+import {createUpdateService,registerUpdateRoutes} from './updates.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface QueryAgent {configured:boolean;query(args:QueryScope&{question:string}):Promise<QueryResult>;close():Promise<void>}
@@ -68,6 +69,8 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     reply.code(failure.status).send({error:failure.category,message:failure.message,requestId:req.id});
   });
   const connectors=await registerConnectors(app,{sources,store,config});
+  const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
+  registerUpdateRoutes(app,softwareUpdate);
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
   app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:'DeepSeek Harness',model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
   app.get('/api/configuration',async()=>serverConfiguration(config));
@@ -166,7 +169,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   app.addHook('onClose',async()=>{
     closing=true;clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
-    await Promise.allSettled([...activeQueries]);await backgroundInsight;await connectors.close();
+    await Promise.allSettled([...activeQueries]);await backgroundInsight;await connectors.close();await softwareUpdate.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
   return {app,store,sources,memories,indexer,agent,diagnostics};

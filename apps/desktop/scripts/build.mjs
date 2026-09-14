@@ -9,6 +9,8 @@ if (process.platform === 'darwin') {
   if (nativeBuild.status !== 0) process.exit(nativeBuild.status ?? 1);
   const result = spawnSync('swiftc', ['-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.3`, 'native/MoteHelper.swift', '-module-cache-path', 'native/bin/swift-module-cache', '-o', 'native/bin/mote-helper'], { stdio: 'inherit' });
   if (result.status !== 0) process.exit(result.status ?? 1);
+  const updater = spawnSync('swiftc', ['-O', '-target', `${process.arch === 'arm64' ? 'arm64' : 'x86_64'}-apple-macos13.3`, 'native/MoteUpdater.swift', '-module-cache-path', 'native/bin/swift-module-cache', '-o', 'native/bin/mote-updater'], { stdio: 'inherit' });
+  if (updater.status !== 0) process.exit(updater.status ?? 1);
   for (const [command, args] of [
     ['swift', ['-module-cache-path', 'native/bin/swift-module-cache', 'scripts/generate-icon.swift', 'native/bin/mote.iconset']],
     ['iconutil', ['-c', 'icns', '-o', 'native/bin/mote.icns', 'native/bin/mote.iconset']],

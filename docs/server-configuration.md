@@ -45,7 +45,7 @@
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `MOTE_ENV_FILE` | 根目录 `.env`（直接启动） | 启动时选择配置文件；CLI 自动提供，不在文件内切换其它文件 |
-| `MOTE_PROFILE` | `legacy`（直接启动） | 命名环境由 CLI 设置为 `dev` / `test` / `prod` |
+| `MOTE_PROFILE` | `legacy`（直接启动） | CLI 支持 `dev` / `test` / `prod` 与显式命名隔离环境；legacy 不受更新命令管理 |
 | `MOTE_HOST` | `127.0.0.1` | 监听地址；Docker 强制 `0.0.0.0`，宿主机端口仍仅发布 loopback |
 | `MOTE_PORT` | `47832` | 1–65535 整数；CLI dev/test 分别 47842/47852，Docker 容器内部始终 47832 |
 | `MOTE_PUBLIC_URL` | 空 | 客户端使用的公开 HTTPS 基址，例如 `https://mote.example.com`；不创建 DNS、Tunnel 路由或证书 |
@@ -102,6 +102,19 @@
 Caddy 使用 profile 文件中的 `MOTE_TLS_DOMAIN`、`MOTE_TLS_HTTP_PORT`（80）、`MOTE_TLS_HTTPS_PORT`（443），由 `tls --enable/--disable` 管理入口。Cloudflare 使用 `tunnel` 命令维护 profile 元数据与私有 token 文件；公开 URL、协议和 origin 的对应关系见 [Tunnel 指南](cloudflare-tunnel.md)。
 
 `MOTE_CONFIG_FILE` 由 CLI 注入，标记宿主机可编辑的环境文件；`MOTE_ENV_FILE` 是进程实际加载的文件，两者在 Docker 内可能不同。`MOTE_RUNTIME`、`MOTE_STORAGE_KIND`、`MOTE_STORAGE_SOURCE`、`MOTE_STORAGE_MOUNT` 等由 CLI 注入的字段用于说明部署映射；修改这些说明字段不会挂载磁盘。实际目录/卷必须通过部署配置设置。容器映射、备份目录和客户端本地目录不是通过网页远程修改的选项。
+
+## 发行版本与更新
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `MOTE_UPDATE_REPOSITORY` | `utopiafar/mote` | GitHub `owner/repository`；只改变发现位置，不能替换程序内置发行公钥 |
+| `MOTE_UPDATE_CHANNEL` | `stable` | `stable` 正式版或 `preview` 预发行版；中央重启后生效，CLI 每次读取所选 profile |
+
+中央不会因启动、打开配置页或发现新版本而自动安装。认证的 `GET /api/software-update` 读取最近状态；`POST /api/software-update/check` 仅允许空请求体，手动检查固定配置的 GitHub Release。同一分钟内合并检查，失败只返回固定错误代码。`release_not_found` 表示尚无所选渠道的可信发行资产，不能据此绕过签名校验。
+
+页面为独立命名的原生/Docker 环境给出检查、更新与回退命令；`legacy` / 未知运行方式不生成可执行安装命令。HTTP 不接受任意仓库 URL、目标路径、签名密钥或 shell，不停止中央或更改资料库。已有 `/api/updates` 仍是归档条目的增量同步接口，与软件发行检查无关。
+
+安装使用 `node scripts/mote.mjs update --profile 名称 --home /绝对路径`，原生准备独立源码目录，Docker 使用 manifest 中的固定镜像 digest；两者均先验证签名，复用备份、健康检查和显式回退。详细的凭据、连接器游标、磁盘空间及 launchd 停机操作见 [部署与更新](deployment.md#升级与回退)。
 
 ## 来源、Google Calendar 与 MCP
 

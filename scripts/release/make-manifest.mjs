@@ -1,0 +1,19 @@
+import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
+import {createHash,sign} from 'node:crypto';
+import {resolve,join} from 'node:path';
+import {verifyReleaseEnvelope} from '../../packages/shared/dist/release.js';
+const directory=resolve(process.env.MOTE_RELEASE_OUTPUT||'artifacts/release');
+const version=JSON.parse(readFileSync('package.json','utf8')).version,policy=JSON.parse(readFileSync('release/signing-policy.json','utf8'));
+const names=readdirSync(directory),assets=names.filter(n=>n.endsWith('.asset.json')).map(n=>JSON.parse(readFileSync(join(directory,n),'utf8'))).sort((a,b)=>a.name.localeCompare(b.name));
+for(const asset of assets){if(!/^[A-Za-z0-9._-]+$/.test(asset.name))throw Error('Invalid artifact name');const bytes=readFileSync(join(directory,asset.name));if(bytes.length!==asset.size||createHash('sha256').update(bytes).digest('hex')!==asset.sha256)throw Error('Release artifact changed after verification');}
+if(!assets.some(a=>a.component==='desktop')||!assets.some(a=>a.component==='server')||!policy.androidPackages.every(p=>assets.some(a=>a.component==='android'&&a.packageName===p)))throw Error('Release is missing a required client or central source package');
+const image=JSON.parse(readFileSync(join(directory,'server-image.json'),'utf8'));
+const manifest={schemaVersion:1,version,channel:version.includes('-')?'preview':'stable',repository:policy.repository,tag:`v${version}`,notesUrl:`https://github.com/${policy.repository}/releases/tag/v${version}`,publishedAt:new Date().toISOString(),assets,images:[{component:'server',image:image.image}]};
+const payload=Buffer.from(JSON.stringify(manifest));
+const key=process.env.MOTE_RELEASE_SIGNING_KEY;
+if(!key)throw Error('Release signing secret is required');
+const envelope={schemaVersion:1,keyId:policy.keyId,payload:payload.toString('base64'),signature:sign('RSA-SHA256',payload,key).toString('base64')};
+const raw=JSON.stringify(envelope,null,2)+'\n';verifyReleaseEnvelope(raw,{repository:policy.repository,channel:manifest.channel,version});
+writeFileSync(join(directory,'mote-release.json'),raw);
+writeFileSync(join(directory,'SHA256SUMS'),assets.map(a=>`${a.sha256}  ${a.name}`).join('\n')+'\n'+createHash('sha256').update(raw).digest('hex')+'  mote-release.json\n');
+console.log(JSON.stringify({version,assets:assets.length,signed:true,image:image.image}));

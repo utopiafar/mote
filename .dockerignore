@@ -26,3 +26,8 @@ playwright-report
 **/backups
 **/*.plist
 deploy/generated
+**/*.keystore
+**/*.jks
+**/*.p12
+**/*.p8
+**/*-private.pem

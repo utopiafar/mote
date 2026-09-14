@@ -89,6 +89,14 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  updateStatus(): Promise<import('./updater').UpdateStatus>;
+  updateChannel(channel: 'stable' | 'preview'): Promise<import('./updater').UpdateStatus>;
+  checkUpdate(): Promise<import('./updater').UpdateStatus>;
+  downloadUpdate(): Promise<import('./updater').UpdateStatus>;
+  cancelUpdate(): Promise<import('./updater').UpdateStatus>;
+  installUpdate(): Promise<void>;
+  revealUpdate(): Promise<void>;
+  releaseNotes(): Promise<void>;
   sources(): Promise<import('./source-types').SourceStatus[]>;
   chooseSourceFiles(mode: 'files' | 'directory', options: import('./source-types').SourceOptions): Promise<{ canceled: boolean }>;
   authorizeCalendar(): Promise<import('./source-types').CalendarChoice[]>;

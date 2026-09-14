@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Explicit profiles only. Ambient MOTE_* variables never choose a target or supply credentials.
 import { parseArgs } from 'node:util';
-import { writeFile, rename, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { profilePaths, initialize, loadProfile, isolatedEnvironment, withProfileLock, startNative, stopNative, nativeIdentity, health, compose, execute, dockerContainer, backupProfile, restoreProfile, verifiedBackup, atomicJson, launchdXml, effectiveConfiguration, setPublicUrl } from './profile-lib.mjs';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { profilePaths, initialize, loadProfile, isolatedEnvironment, withProfileLock, startNative, nativeIdentity, health, compose, execute, backupProfile, restoreProfile, atomicJson, launchdXml, effectiveConfiguration, setPublicUrl } from './profile-lib.mjs';
 import { configureTunnel, runNativeTunnel, nativeTunnelArgs, nativeTunnelIdentity } from './tunnel-lib.mjs';
+import { startProfile as start, stopProfile as stop, changeProfileDeployment } from './update-deploy.mjs';
 const help = `Mote central profiles (Node 24+, default: dev; prod requires --profile prod)
   init [--profile dev|test|prod] [--home PATH] [--runtime native|docker] [--port N] [--image TAG] [--data-dir NATIVE_PATH | --volume DOCKER_VOLUME]
   start|run|stop|status|config|token [--profile NAME] [--home PATH]
@@ -19,6 +19,8 @@ const help = `Mote central profiles (Node 24+, default: dev; prod requires --pro
   tunnel-run|tunnel-launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
   tls --enable|--disable [--profile NAME] [--home PATH]
   upgrade --release BUILT_CHECKOUT | --image LOCAL_IMAGE [--profile NAME] [--home PATH]
+  check-update [--profile NAME] [--home PATH] [--version VERSION]
+  update [--profile NAME] [--home PATH] [--version VERSION]
   rollback --restore-data [--profile NAME] [--home PATH]
 Prefix commands with: node scripts/mote.mjs
 No command installs launchd, publishes images, deletes old volumes or changes the legacy root .env.
@@ -30,47 +32,12 @@ const raw = process.argv.slice(2, split < 0 ? undefined : split);
 const tail = split < 0 ? [] : process.argv.slice(split + 1);
 let values, positionals;
 try { ({ values, positionals } = parseArgs({ args: raw, allowPositionals: true, options: {
-  profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, runtime: { type: 'string' }, port: { type: 'string' }, image: { type: 'string' }, release: { type: 'string' },
+  profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, runtime: { type: 'string' }, port: { type: 'string' }, image: { type: 'string' }, release: { type: 'string' }, version: { type: 'string' },
   'data-dir': { type: 'string' }, volume: { type: 'string' }, 'token-file': { type: 'string' }, 'public-url': { type: 'string' }, protocol: { type: 'string' }, binary: { type: 'string' },
   out: { type: 'string' }, from: { type: 'string' }, node: { type: 'string' }, enable: { type: 'boolean' }, disable: { type: 'boolean' }, 'restore-data': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
 } })); } catch { console.error('Mote: Invalid arguments; use --help. Credentials are never accepted as argument values.'); process.exit(1); }
 const command = positionals[0] ?? 'help';
 const print = value => console.info(JSON.stringify(value));
-async function stop(p) { return p.meta.runtime === 'docker' ? compose(p, ['stop'], { capture: true }).then(() => ({ stopped: true })) : stopNative(p); }
-async function start(p) { return p.meta.runtime === 'docker' ? compose(p, ['up', '--detach', '--no-build', '--wait'], { timeoutMs: 120000 }).then(() => ({ started: true, project: p.project, url: p.url })) : startNative(p); }
-async function deploymentChange(p, rollback) {
-  if (rollback && (!values['restore-data'] || !p.meta.previous?.backup)) throw Error('Rollback restores the pre-upgrade snapshot and preserves current data separately. Review profile.json previous.backup, then use --restore-data');
-  let next;
-  if (rollback) { next = p.meta.previous; await verifiedBackup(next.backup); }
-  else if (p.meta.runtime === 'native') {
-    if (!values.release) throw Error('Native upgrade requires --release pointing to a separately built, immutable checkout');
-    if (resolve(values.release) === resolve(p.meta.release)) throw Error('Use a separate release directory so the previous code remains available for rollback');
-    await stat(join(resolve(values.release), 'apps/server/dist/index.js')); next = { release: resolve(values.release) };
-  } else {
-    if (!values.image) throw Error('Docker upgrade requires --image; build or pull it first');
-    next = { image: await execute('docker', ['image', 'inspect', '--format', '{{.Id}}', values.image], { capture: true }) };
-  }
-  if (p.meta.runtime === 'docker') p.meta.image = await execute('docker', ['inspect', '--format', '{{.Image}}', await dockerContainer(p)], { capture: true });
-  await stop(p);
-  const backup = await backupProfile(p, join(p.directory, 'backups', `${rollback ? 'pre-rollback' : 'pre-upgrade'}-${Date.now()}-${randomUUID().slice(0, 8)}`));
-  const previous = { ...p.meta, backup }; delete previous.previous;
-  let rollbackVolume;
-  if (rollback) {
-    if (p.meta.runtime === 'native') {
-      const archivedData = `${p.dataDir}.before-rollback-${Date.now()}`;
-      await rename(p.dataDir, archivedData); print({ preservedData: archivedData });
-    } else {
-      await compose(p, ['down'], { capture: true }); // No --volumes: preserve the upgraded data volume.
-      rollbackVolume = `${p.project}-rollback-${Date.now()}`;
-    }
-  }
-  p.meta = { ...p.meta, ...next, tunnel: p.meta.tunnel, previous, ...(rollbackVolume ? { volume: rollbackVolume } : {}) };
-  delete p.meta.backup;
-  await atomicJson(p.metaFile, p.meta);
-  if (rollback) await restoreProfile(p, next.backup);
-  // Failure leaves the snapshot intact; never run old code on possibly migrated data automatically.
-  return { ...await start(p), snapshot: backup };
-}
 async function main() {
   if (values.help || command === 'help') { console.info(help); return; }
   if (Number(process.versions.node.split('.')[0]) < 24) throw Error('Node.js 24 or newer is required');
@@ -79,6 +46,11 @@ async function main() {
   if (command === 'init') { print(await initialize(paths, values)); return; }
   const p = await loadProfile(paths);
   if (command === 'config') { print(effectiveConfiguration(p)); return; }
+  if (command === 'check-update') {
+    const { checkProfileUpdate } = await import('./update-release.mjs');
+    const checked = await checkProfileUpdate(p, { version: values.version });
+    print({ profile: p.profile, currentVersion: checked.currentVersion, latestVersion: checked.manifest.version, available: checked.available, verified: true, channel: checked.manifest.channel, releaseUrl: checked.manifest.notesUrl, runtime: p.meta.runtime }); return;
+  }
   if (command === 'tunnel') {
     print(await withProfileLock(p, () => configureTunnel(p, values, { execute, persist: meta => atomicJson(p.metaFile, meta), persistPublicUrl: url => setPublicUrl(p,url) }))); return;
   }
@@ -128,7 +100,17 @@ async function main() {
     else if (command === 'stop') result = await stop(p);
     else if (command === 'backup') result = { backup: await backupProfile(p, values.out) };
     else if (command === 'restore') { if (!values.from) throw Error('restore requires --from BACKUP'); result = await restoreProfile(p, values.from); }
-    else if (command === 'upgrade' || command === 'rollback') result = await deploymentChange(p, command === 'rollback');
+    else if (command === 'update') {
+      const { checkProfileUpdate, prepareProfileUpdate } = await import('./update-release.mjs');
+      const checked = await checkProfileUpdate(p, { version: values.version });
+      if (!checked.available) result = { updated: false, reason: 'already_current_or_newer', currentVersion: checked.currentVersion, latestVersion: checked.manifest.version };
+      else {
+        const prepared = await prepareProfileUpdate(p, checked, { onStage: phase => print({ profile: p.profile, version: checked.manifest.version, phase }) });
+        print({ profile: p.profile, version: checked.manifest.version, phase: 'backup-and-switch' });
+        result = { ...await changeProfileDeployment(p, { prepared }), updated: true, version: checked.manifest.version };
+      }
+    }
+    else if (command === 'upgrade' || command === 'rollback') result = await changeProfileDeployment(p, { rollback: command === 'rollback', restoreData: values['restore-data'], release: values.release, image: values.image });
     else throw Error('Unknown command; use --help');
   });
   if (result?.wait) { const finished = await result.wait(); process.exitCode = finished.code ?? 1; }

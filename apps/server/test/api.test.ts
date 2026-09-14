@@ -15,6 +15,11 @@ test('authenticated ingestion, source history, export/import and unavailable AI 
   const headers={authorization:`Bearer ${config.token}`};
   assert.equal((await app.inject('/api/health')).statusCode,200);
   assert.equal((await app.inject('/api/captures')).statusCode,401);
+  assert.equal((await app.inject('/api/software-update')).statusCode,401);
+  assert.equal((await app.inject({method:'POST',url:'/api/software-update/check'})).statusCode,401);
+  const update=(await app.inject({url:'/api/software-update',headers})).json();
+  assert.equal(update.state,'idle');assert.equal(update.verified,false);
+  assert.equal((await app.inject({method:'POST',url:'/api/software-update/check',headers,payload:{url:'https://attacker.invalid'}})).statusCode,400);
   assert.equal((await app.inject({url:'/api/status',headers:{authorization:'Bearer wrong'}})).statusCode,401);
   const f={id:randomUUID(),deviceId:'test',deviceName:'Synthetic',platform:'import',capturedAt:'2026-09-12T12:00:00Z',durationMs:0,ocrText:'测试导入资料',source:'note'};
   assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:f})).statusCode,201);

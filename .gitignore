@@ -27,3 +27,21 @@ __pycache__/
 
 # Explicit per-environment credentials, including custom locations inside this checkout
 **/mote.env
+
+# Release credentials are never source or build artifacts.
+*.keystore
+*.jks
+*.p12
+*.p8
+*-private.pem
+
+# Versioned public release policy and publishing tools, distinct from build output.
+!/release/
+/release/*
+!/release/release-public-key.pem
+!/release/signing-policy.json
+!/release/notes/
+!/release/notes/*.md
+!/scripts/release/
+/scripts/release/*
+!/scripts/release/*.mjs

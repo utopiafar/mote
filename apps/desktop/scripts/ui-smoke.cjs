@@ -22,6 +22,12 @@ app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', () => {
     void (async () => {
       const status = await window.webContents.executeJavaScript('window.mote.status()');
+      const update = await window.webContents.executeJavaScript('window.mote.updateStatus()');
+      assert.equal(update.currentVersion, app.getVersion()); assert.equal(update.state, 'idle'); assert.equal(update.canInstall, false);
+      assert(await window.webContents.executeJavaScript('Boolean(document.querySelector("#update-install"))'));
+      await window.webContents.executeJavaScript('window.mote.updateChannel("preview")');
+      assert.equal((await window.webContents.executeJavaScript('window.mote.updateStatus()')).channel, 'preview');
+      await window.webContents.executeJavaScript('window.mote.updateChannel("stable")');
       assert.equal(status.running, false); assert.equal(status.config.deviceName, 'Synthetic Mac'); assert.equal(status.queueDepth, 0);
       await window.webContents.executeJavaScript(`document.querySelector('#device-name').value = 'UI Fixture Renamed'; document.querySelector('#settings').requestSubmit();`);
       let updated;
@@ -56,7 +62,9 @@ app.on('browser-window-created', (_event, window) => {
       writeFileSync(output, (await window.webContents.capturePage()).toPNG());
       await window.webContents.executeJavaScript('document.querySelector("#local-sources").scrollIntoView()');
       writeFileSync(join(require('node:path').dirname(output), 'source-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
-      process.stdout.write(JSON.stringify({ ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
+      await window.webContents.executeJavaScript('document.querySelector("#app-updates").scrollIntoView({behavior:"instant",block:"start"}); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+      writeFileSync(join(require('node:path').dirname(output), 'update-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
+      process.stdout.write(JSON.stringify({ updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write(`UI smoke failed: ${error.message}\n`); app.exit(1); });
   });

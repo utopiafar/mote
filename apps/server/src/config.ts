@@ -45,7 +45,7 @@ export function configFromEnv() {
   };
   const choice=<T extends string>(name:string,values:readonly T[],fallback:T):T=>{const value=text(name)||fallback;if(!values.includes(value as T))throw new ConfigError(name,`${name} has an unsupported value`);return value as T;};
   const profile=env.MOTE_PROFILE||'legacy';
-  if(!/^[a-z][a-z0-9-]{0,31}$/.test(profile))throw new ConfigError('MOTE_PROFILE','MOTE_PROFILE must be a short lowercase profile name');
+  if(!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(profile))throw new ConfigError('MOTE_PROFILE','MOTE_PROFILE must be a short lowercase profile name');
   if(profile!=='legacy'&&!env.MOTE_ENV_FILE&&!env.MOTE_DATA_DIR)throw new ConfigError('MOTE_DATA_DIR','Named server profiles require MOTE_ENV_FILE or an explicit MOTE_DATA_DIR');
   const dataDir=resolve(baseDir,env.MOTE_DATA_DIR??'data');
   const logLevel=env.MOTE_LOG_LEVEL||'info';
@@ -55,6 +55,7 @@ export function configFromEnv() {
   const config={
     host:env.MOTE_HOST||'127.0.0.1',port:number('MOTE_PORT',47832,1,65535,true),dataDir,
     profile,tokenFromEnvironment:Boolean(env.MOTE_TOKEN?.trim()),
+    updateRepository:text('MOTE_UPDATE_REPOSITORY','utopiafar/mote'),updateChannel:choice('MOTE_UPDATE_CHANNEL',['stable','preview'] as const,'stable'),
     dataKey:text('MOTE_DATA_KEY')||undefined,
     modelReasoningEffort:modelReasoningEffort as 'off'|'low'|'high'|'max',modelMaxTokens:number('MOTE_MODEL_MAX_TOKENS',8192,256,32768,true),
     maxStorageBytes:number('MOTE_MAX_STORAGE_MB',10240,1,1_000_000)*1024*1024,
@@ -72,6 +73,7 @@ export function configFromEnv() {
     logMaxFiles:number('MOTE_LOG_MAX_FILES',3,1,10,true),logMaxEntries:number('MOTE_LOG_MAX_ENTRIES',2000,100,5000,true),
   };
   const c=config.connectors;
+  if(!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/.test(config.updateRepository))throw new ConfigError('MOTE_UPDATE_REPOSITORY','Use a GitHub owner/repository identifier');
   if(c.mcpEnabled&&c.mcpReadToken.length<32)throw new ConfigError('MOTE_MCP_READ_TOKEN','Enabled MCP requires a distinct random token of at least 32 characters');
   if(c.mcpWriteEnabled&&(!c.mcpEnabled||c.mcpWriteToken.length<32||c.mcpWriteToken===c.mcpReadToken))throw new ConfigError('MOTE_MCP_WRITE_TOKEN','MCP write requires enabled MCP and a distinct token of at least 32 characters');
   if(c.mcpWriteSourceIds.some(id=>!(/^[a-zA-Z0-9_.:-]{1,128}$/.test(id)))||(c.mcpWriteEnabled&&!c.mcpWriteSourceIds.length))throw new ConfigError('MOTE_MCP_WRITE_SOURCE_IDS','Choose one or more exact source IDs for MCP writes');
@@ -108,5 +110,5 @@ export function configFromEnv() {
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

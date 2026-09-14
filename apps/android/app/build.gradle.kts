@@ -2,6 +2,9 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+val releaseSecrets = listOf("MOTE_ANDROID_KEYSTORE_PATH", "MOTE_ANDROID_KEYSTORE_PASSWORD", "MOTE_ANDROID_KEY_ALIAS", "MOTE_ANDROID_KEY_PASSWORD")
+    .associateWith { providers.environmentVariable(it).orNull }
+val releaseSigningReady = releaseSecrets.values.all { !it.isNullOrBlank() }
 android {
     namespace = "dev.mote.collector"
     compileSdk = 36
@@ -10,13 +13,21 @@ android {
         applicationId = "dev.mote.collector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
         buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake { arguments += "-DANDROID_STL=c++_shared"; targets += "mote_vlm" } }
+    }
+    signingConfigs {
+        if (releaseSigningReady) create("distribution") {
+            storeFile = file(releaseSecrets.getValue("MOTE_ANDROID_KEYSTORE_PATH")!!)
+            storePassword = releaseSecrets.getValue("MOTE_ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = releaseSecrets.getValue("MOTE_ANDROID_KEY_ALIAS")
+            keyPassword = releaseSecrets.getValue("MOTE_ANDROID_KEY_PASSWORD")
+        }
     }
     buildTypes {
         debug { manifestPlaceholders["cleartextAllowed"] = "true" }
@@ -24,6 +35,7 @@ android {
             initWith(getByName("debug"))
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
+            if (releaseSigningReady) signingConfig = signingConfigs.getByName("distribution")
             buildConfigField("String", "MOTE_PROFILE", "\"dev\"")
             buildConfigField("String", "DEFAULT_SERVER", "\"http://127.0.0.1:47842\"")
             matchingFallbacks += "debug"
@@ -31,6 +43,7 @@ android {
         release {
             manifestPlaceholders["cleartextAllowed"] = "false"
             isMinifyEnabled = false
+            if (releaseSigningReady) signingConfig = signingConfigs.getByName("distribution")
         }
     }
     compileOptions {
@@ -52,6 +65,7 @@ android {
     lint { abortOnError = true }
 }
 dependencies {
+    implementation("com.android.tools.build:apksig:8.11.1")
     implementation("androidx.work:work-runtime-ktx:2.10.2")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
@@ -60,11 +74,15 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
+tasks.matching { it.name == "packageRelease" }.configureEach {
+    doFirst { check(releaseSigningReady) { "Release signing requires all four MOTE_ANDROID_KEYSTORE_PATH/PASSWORD and MOTE_ANDROID_KEY_ALIAS/PASSWORD environment settings. No unsigned release is produced." } }
+}
 val copyModelManifest by tasks.registering(Sync::class) {
     from(rootProject.file("../../models/qwen-manifest.json"))
     from(rootProject.file("../../models/review-policy.txt"))
     from(rootProject.file("../../models/review-system.txt"))
     from(rootProject.file("../../models/review-grammar.gbnf"))
+    from(rootProject.file("../../release/release-public-key.pem"))
     from(rootProject.file("../../licenses")) { into("licenses") }
     into(layout.buildDirectory.dir("generated/modelAssets"))
     doFirst { check(rootProject.file("../../models/qwen-manifest.json").exists()) { "Missing shared models/qwen-manifest.json" } }

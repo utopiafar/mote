@@ -12,7 +12,7 @@ import { validateTunnel, tunnelTokenPath, dockerTunnelUser, removeTunnelSidecars
 export const repository = resolve(fileURLToPath(new URL('../', import.meta.url)));
 export const ports = { dev: 47842, test: 47852, prod: 47832 };
 export function profilePaths(profile = 'dev', home = join(repository, '.mote/profiles')) {
-  if (!Object.hasOwn(ports, profile)) throw Error('Profile must be dev, test or prod; default is dev');
+  if (!/^[a-z0-9][a-z0-9_-]{0,31}$/.test(profile) || profile === 'legacy') throw Error('Profile must be a 1–32 character isolated name; legacy is not managed by this CLI');
   const directory = resolve(home, profile);
   const project = `mote-${profile}-${createHash('sha256').update(directory).digest('hex').slice(0, 10)}`;
   return { profile, home: resolve(home), directory, envFile: join(directory, 'mote.env'), metaFile: join(directory, 'profile.json'), processFile: join(directory, 'process.json'), project };
@@ -30,7 +30,7 @@ export async function readJson(path, fallback) {
   catch (error) { if (error.code === 'ENOENT' && fallback !== undefined) return fallback; throw error; }
 }
 export async function initialize(paths, options = {}) {
-  const port = Number(options.port ?? ports[paths.profile]);
+  const port = Number(options.port ?? ports[paths.profile] ?? ports.dev);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw Error('Port must be an integer between 1 and 65535');
   if (paths.profile !== 'prod' && port === ports.prod) throw Error('Port 47832 is reserved for the explicit prod profile');
   const runtime = options.runtime ?? 'native';
@@ -127,6 +127,7 @@ export function effectiveConfiguration(p) {
     credentials: { accessTokenConfigured: Boolean(p.env.MOTE_TOKEN), modelKeyConfigured: Boolean(p.env.MOTE_MODEL_API_KEY), embeddingKeyConfigured: Boolean(p.env.MOTE_EMBEDDING_API_KEY) },
     models: { model: p.env.MOTE_MODEL || '', endpoint: endpoint(p.env.MOTE_MODEL_BASE_URL), embeddingModel: p.env.MOTE_EMBEDDING_MODEL || '', embeddingEndpoint: endpoint(p.env.MOTE_EMBEDDING_BASE_URL) },
     archive: { retentionDays: Number(p.env.MOTE_RETENTION_DAYS || 0), maxStorageMiB: Number(p.env.MOTE_MAX_STORAGE_MB || 10240), maxExportMiB: Number(p.env.MOTE_MAX_EXPORT_MB || 64) },
+    updates: { repository: p.env.MOTE_UPDATE_REPOSITORY || 'utopiafar/mote', channel: p.env.MOTE_UPDATE_CHANNEL || 'stable', verifiedManifestRequired: true, installation: 'explicit-profile-command' },
     tunnel: { configured: tunnel.enabled, provider: tunnel.enabled ? 'cloudflare' : null, protocol: tunnel.protocol, connected: 'not-checked', originService: p.meta.runtime === 'docker' ? 'http://mote:47832' : p.url, supervision: p.meta.runtime === 'docker' ? 'compose' : 'foreground-runner' },
     apply: 'Edit the selected private configuration and restart this profile; existing archive data is not moved automatically' };
 }
@@ -138,12 +139,17 @@ export function isolatedEnvironment(p, extra = {}) {
 export function execute(command, args, { env, cwd = repository, capture = false, timeoutMs = 120000 } = {}) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, args, { cwd, env, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit' });
-    let output = '', timedOut = false;
+    let output = '', outputBytes = 0, timedOut = false, outputExceeded = false;
     let killTimer;
-    const timer = setTimeout(() => { timedOut = true; child.kill('SIGTERM'); killTimer = setTimeout(() => child.kill('SIGKILL'), 5000); }, timeoutMs);
-    if (capture) for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { output += chunk; if (output.length > 4 * 1024 * 1024) child.kill('SIGTERM'); });
+    const terminate = () => { if (killTimer) return; child.kill('SIGTERM'); killTimer = setTimeout(() => child.kill('SIGKILL'), 5000); };
+    const timer = setTimeout(() => { timedOut = true; terminate(); }, timeoutMs);
+    if (capture) for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => {
+      const remaining = Math.max(0, 4 * 1024 * 1024 - outputBytes), length = Math.min(chunk.length, remaining);
+      if (length) { output += chunk.subarray(0, length).toString('utf8'); outputBytes += length; }
+      if (chunk.length > remaining) { outputExceeded = true; terminate(); }
+    });
     child.on('error', error => { clearTimeout(timer); clearTimeout(killTimer); reject(error); });
-    child.on('close', code => { clearTimeout(timer); clearTimeout(killTimer); if (code === 0 && !timedOut) resolvePromise(output.trim()); else reject(Error(`${command} ${args[0] ?? ''} ${timedOut ? 'timed out' : `exited ${code}`}${capture ? '; diagnostic output suppressed to avoid exposing configuration' : ''}`)); });
+    child.on('close', code => { clearTimeout(timer); clearTimeout(killTimer); if (code === 0 && !timedOut && !outputExceeded) resolvePromise(output.trim()); else reject(Error(`${command} ${args[0] ?? ''} ${outputExceeded ? 'exceeded output limit' : timedOut ? 'timed out' : `exited ${code}`}${capture ? '; diagnostic output suppressed to avoid exposing configuration' : ''}`)); });
   });
 }
 export async function withProfileLock(p, operation) {

@@ -1,0 +1,33 @@
+import {readFileSync,writeFileSync,mkdirSync,copyFileSync,statSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {join,resolve} from 'node:path';
+const [component,input,variant]=process.argv.slice(2),out=resolve(process.env.MOTE_RELEASE_OUTPUT||'artifacts/release');
+const version=JSON.parse(readFileSync('package.json','utf8')).version,policy=JSON.parse(readFileSync('release/signing-policy.json','utf8'));
+mkdirSync(out,{recursive:true});
+let asset;
+if(component==='server')asset={component,platform:'source',arch:'all',format:'tar.gz',name:`mote-server-${version}.tar.gz`};
+else if(component==='android'){
+  const sdk=process.env.ANDROID_HOME||process.env.ANDROID_SDK_ROOT;
+  if(!sdk)throw Error('Android SDK is required for package verification');
+  const tools=join(sdk,'build-tools',process.env.MOTE_ANDROID_BUILD_TOOLS||'36.0.0');
+  const badging=execFileSync(join(tools,'aapt2'),['dump','badging',input],{encoding:'utf8',maxBuffer:2e6});
+  const match=/package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'/.exec(badging);
+  const signing=execFileSync(join(tools,'apksigner'),['verify','--print-certs',input],{encoding:'utf8'});
+  const certificateSha256=/Signer #1 certificate SHA-256 digest: ([a-fA-F0-9]+)/.exec(signing)?.[1]?.toLowerCase();
+  if(!match||!policy.androidPackages.includes(match[1])||![version,version+'-dev'].includes(match[3])||certificateSha256!==policy.androidCertificateSha256)throw Error('Android release identity or version mismatch');
+  const expectedCode=Number(/versionCode\s*=\s*(\d+)/.exec(readFileSync('apps/android/app/build.gradle.kts','utf8'))?.[1]);
+  if(Number(match[2])!==expectedCode||(!match[1].endsWith('.dev')&&/^application-debuggable\s*$/m.test(badging)))throw Error('Android version code or release debug flag mismatch');
+  execFileSync(join(tools,'zipalign'),['-c','-P','16','4',input],{stdio:'pipe'});
+  const dev=match[1].endsWith('.dev');
+  asset={component,platform:'android',arch:'arm64',format:'apk',name:`mote-android-${dev?'dev-':''}arm64-${version}.apk`,packageName:match[1],versionCode:Number(match[2]),certificateSha256};
+}else if(component==='desktop'){
+  if(!['arm64','x64'].includes(variant))throw Error('Unsupported Mac architecture');
+  const mode=process.env.MOTE_MAC_SIGNING_MODE||'adhoc';
+  if(!['adhoc','developer-id'].includes(mode))throw Error('Invalid Mac signing mode');
+  asset={component,platform:'darwin',arch:variant,format:'zip',name:`mote-desktop-macos-${variant}-${version}.zip`,bundleId:policy.macBundleId,signing:mode,...(mode==='developer-id'?{teamId:process.env.MOTE_APPLE_TEAM_ID}:{})};
+}else throw Error('Choose a supported release component');
+const path=join(out,asset.name);if(resolve(input)!==path)copyFileSync(input,path);
+Object.assign(asset,{size:statSync(path).size,sha256:createHash('sha256').update(readFileSync(path)).digest('hex'),url:`https://github.com/${policy.repository}/releases/download/v${version}/${asset.name}`});
+writeFileSync(join(out,asset.name+'.asset.json'),JSON.stringify(asset,null,2));
+console.log(JSON.stringify({component:asset.component,name:asset.name,size:asset.size,sha256:asset.sha256}));

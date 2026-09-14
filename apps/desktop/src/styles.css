@@ -3,3 +3,4 @@
 
 .profile-path { overflow-wrap: anywhere; }
 .source-card{margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:8px;background:white}.source-card strong{font-size:12px}.source-card .helper{color:#607057}.source-card .actions{margin-top:10px}
+#update-progress{width:100%;height:8px;accent-color:var(--green)}#update-version{display:block;font-size:12px;margin-top:8px}

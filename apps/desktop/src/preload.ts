@@ -2,6 +2,14 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  updateStatus: () => ipcRenderer.invoke('mote:update-status'),
+  updateChannel: channel => ipcRenderer.invoke('mote:update-channel', channel),
+  checkUpdate: () => ipcRenderer.invoke('mote:update-check'),
+  downloadUpdate: () => ipcRenderer.invoke('mote:update-download'),
+  cancelUpdate: () => ipcRenderer.invoke('mote:update-cancel'),
+  installUpdate: () => ipcRenderer.invoke('mote:update-install'),
+  revealUpdate: () => ipcRenderer.invoke('mote:update-reveal'),
+  releaseNotes: () => ipcRenderer.invoke('mote:update-notes'),
   sources: () => ipcRenderer.invoke('mote:sources'),
   chooseSourceFiles: (mode, options) => ipcRenderer.invoke('mote:source-files', mode, options),
   authorizeCalendar: () => ipcRenderer.invoke('mote:calendar-authorize'),

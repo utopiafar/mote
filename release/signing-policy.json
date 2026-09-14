@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "repository": "utopiafar/mote",
+  "keyId": "mote-release-2026",
+  "androidCertificateSha256": "0670a89e6f9548552b90777dd1e0dc4e3efab6cf7082d436fcc60d6e9edb5076",
+  "androidPackages": ["dev.mote.collector", "dev.mote.collector.dev"],
+  "macBundleId": "dev.mote.collector"
+}

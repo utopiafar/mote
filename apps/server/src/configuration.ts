@@ -43,6 +43,10 @@ export function serverConfiguration(config: Config): ServerConfiguration {
     description: '此页展示中央进程启动时读取的生效配置，只向已认证的节点所有者提供。修改所选配置文件或部署设置后重启中央节点；本接口不能写入文件。路径不会加入安全支持包。',
     storage,
     groups: [
+      { id: 'updates', title: '软件更新', description: '从固定发布身份验证新版本。检查只读取公开发布元数据；安装由部署机上的更新命令执行，保留配置、数据和连接授权。', fields: [
+        field('updateRepository', 'GitHub 发布仓库', config.updateRepository ?? 'utopiafar/mote', '仓库格式为 owner/repository；发布清单仍必须通过随程序内置的发布公钥验证。', 'MOTE_UPDATE_REPOSITORY'),
+        field('updateChannel', '发布渠道', config.updateChannel ?? 'stable', 'stable 使用正式版本，preview 使用预览版本。不会自动降级或重启服务。', 'MOTE_UPDATE_CHANNEL'),
+      ] },
       { id: 'deployment', title: '部署与配置来源', description: '环境文件修改后不会立即影响运行中的进程。容器中的加载文件与宿主机可编辑配置可能不同。', fields: [
         field('profile', '环境', config.profile ?? 'legacy', 'dev、test、prod 或显式命名的独立环境。', 'MOTE_PROFILE'),
         field('runtime', '运行方式', runtime, '部署工具声明的运行方式；缺少元数据时显示 unknown，不探测宿主环境。', 'MOTE_RUNTIME'),

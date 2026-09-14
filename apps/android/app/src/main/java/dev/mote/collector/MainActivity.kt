@@ -83,6 +83,7 @@ class MainActivity : Activity() {
             runCatching { val c = settings.read(); c.validate(); UploadWorker.schedule(this, c, true); toast("已请求同步；仍遵守网络约束") }.onFailure { toast(it.message ?: "配置无效") }
         }
         button("日历与文件来源") { startActivity(Intent(this, SourcesActivity::class.java)) }
+        button("应用更新") { startActivity(Intent(this, AppUpdatesActivity::class.java)) }
         section("01  中央节点")
         text("中央节点是独立服务，可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；请填节点局域网 IP 或 HTTPS 域名。", 13)
         server = field("节点 URL", config.server, "https://mote.example.com", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)

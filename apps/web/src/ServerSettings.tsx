@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Database, FolderOpen, RefreshCw, Settings2 } from "lucide-react";
 import type { ServerConfiguration } from "@mote/shared";
 import { type Api, bytes, errorMessage } from "./api";
+import { SoftwareUpdate } from './SoftwareUpdate';
 
 const sources = { environment: "启动环境", "env-file": "配置文件", default: "默认值", derived: "根据部署计算" };
 const runtimes = { native: "原生 Node.js", docker: "Docker", unknown: "未声明" };
@@ -30,6 +31,7 @@ export function ServerSettings({ api }: { api: Api }) {
     {error && <div className="notice error" role="alert">{error}</div>}
     {busy && !config && <p role="status">正在读取服务端配置…</p>}
     {config && <>
+      <SoftwareUpdate api={api}/>
       <section className="panel settings-summary" aria-labelledby="settings-location-title">
         <div className="section-heading"><div><h2 id="settings-location-title"><Database size={18} />资料在哪里</h2><p>{config.profile} · {runtimes[config.runtime]}</p></div><span className="badge muted">当前生效配置</span></div>
         <p className="settings-description">{config.storage.description}</p>
