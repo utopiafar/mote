@@ -78,7 +78,7 @@ class NavigationInstrumentedTest {
                 instrumentation.waitForIdleSync()
                 scenario.onActivity { activity ->
                     assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
-                    loaded = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.startsWith("最近 ") }
+                    loaded = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("每页 20 条") }
                 }
                 if (!loaded) Thread.sleep(50)
             }

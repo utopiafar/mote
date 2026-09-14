@@ -58,9 +58,15 @@ class ClientFeedbackInstrumentedTest {
             scenario.onActivity { it.startActivity(android.content.Intent(it, CaptureRecordsActivity::class.java)) }
             instrumentation.waitForIdleSync()
             var original: android.app.Activity? = null
+            val deadline = android.os.SystemClock.elapsedRealtime() + 10000
+            while (original == null && android.os.SystemClock.elapsedRealtime() < deadline) {
+                instrumentation.runOnMainSync {
+                    original = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
+                        .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).filterIsInstance<CaptureRecordsActivity>().singleOrNull()
+                }
+                if (original == null) Thread.sleep(50)
+            }
             instrumentation.runOnMainSync {
-                original = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
-                    .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).single()
                 assertTrue(original is CaptureRecordsActivity)
                 Notifications.create(original!!)
                 Notifications.notification(original!!, "合成状态通知").contentIntent.send()

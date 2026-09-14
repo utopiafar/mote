@@ -126,7 +126,13 @@ class CaptureRecordsInstrumentedTest {
             }
             waitUntil {
                 var ready = false
-                instrumentation.runOnMainSync { ready = android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::views).filterIsInstance<TextView>().any { it.text.toString() == "Generated OCR 0" } }
+                instrumentation.runOnMainSync {
+                    ready = android.view.inspector.WindowInspector.getGlobalWindowViews().any { window ->
+                        val content = views(window)
+                        content.filterIsInstance<TextView>().any { it.text.toString() == "Generated OCR 0" } &&
+                            content.filterIsInstance<ImageView>().any { it.contentDescription == "采集图片" && it.drawable != null }
+                    }
+                }
                 ready
             }
             instrumentation.runOnMainSync {
