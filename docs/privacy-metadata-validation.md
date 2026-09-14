@@ -80,3 +80,22 @@ Android 平台验证使用专用 Android API 35 模拟器与开发版 App。真�
 - macOS Developer ID、公证与 Gatekeeper 放行；当前发布方式为 ad-hoc 签名。
 
 升级顺序为中央节点先、客户端后，使用覆盖安装并保留配置和数据目录。详细行为见 [应用分级与元数据](privacy-and-metadata.md)、[Android](android.md)、[macOS](desktop.md) 和 [更新](updating.md)。
+
+## 公开发布产物复验
+
+[v0.7.0](https://github.com/utopiafar/mote/releases/tag/v0.7.0) 对应代码提交 `66fb1002a9bd9bab1c15f329c574a4b2533f47ba`。[发布 Workflow](https://github.com/utopiafar/mote/actions/runs/34818196135) 的 8 个任务全部通过，包括跨平台回归、Docker/Cloudflare 集成、客户端构建签名、包内兼容与更新回滚检查。
+
+发布后重新匿名下载公开清单与四个安装/源码产物，分别用内置 RSA 公钥验证原始清单、下载大小及 SHA-256：
+
+| 产物 | 字节数 | SHA-256 |
+|---|---:|---|
+| Android 正式版 | 31,194,622 | `e56bd71d9b19afac8c42acaa70f3de7d26dc803979c82549655082965a3470b2` |
+| Android Dev | 33,302,975 | `c04ee5ed443ed3f2d805adad4550a042b92e377faa897a2561f3a9f6eb41adcd` |
+| macOS arm64 | 114,095,641 | `e6660b9d9286b3ec6a0c3c75e6c6f94eb5ab9a7341fc3ff848c78d86a10e5816` |
+| 服务端源码 | 947,932 | `c78b9333ec91ca2802381051760bb069b3bb89b682ef176a18637dfc83a064cd` |
+
+- 两个公开 APK 的实际证书均为 `0670a89e6f9548552b90777dd1e0dc4e3efab6cf7082d436fcc60d6e9edb5076`、versionCode 10；正式包不可调试，Dev 使用独立包名。ZIP 和三个 ARM64 原生 ELF 的 16 KiB 对齐、内置更新公钥及私有组件检查通过；此项为静态验收，没有安装到设备。
+- 公开 Mac ZIP 解压后，通过实际 codesign、架构、Bundle ID/版本和更新助手检查。公开包自身载入 ASAR 中的模块并验证真实 0.6.1 旧模块生成的合成配置、队列和草稿保持；未启动正常 App 或读写日常资料。
+- 服务端源码包内的 git-archive 提交与公开标签一致，各端版本一致。签名清单固定的镜像为 `ghcr.io/utopiafar/mote@sha256:7d219d6ac981bf8ef7d912b958e512891d9db0fe725bfc729445062180316235`；匿名核验了版本标签、索引、Linux amd64/arm64 子清单及配置的哈希和版本。没有下载镜像层或把两个公开架构都启动运行，不能以这项静态验签替代平台运行测试。
+
+签名材料继续保存在 GitHub 受保护环境的 Secrets 中；模型 Key、私有验证文件和个人数据未进入提交。本轮临时模型 Key 文件、测试连接凭据、测试节点与专用模拟器均已清理，日常安装和部署未被替换。
