@@ -12,7 +12,7 @@ object Notifications {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "屏幕采集状态", NotificationManager.IMPORTANCE_LOW))
     }
     fun notification(context: Context, text: String): Notification {
-        val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val open = PendingIntent.getActivity(context, 0, Intent(context, CaptureRecordsActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getBroadcast(context, 1, Intent(context, StopReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_mote).setContentTitle("Mote · 屏幕采集")
             .setContentText(text).setStyle(Notification.BigTextStyle().bigText(text)).setContentIntent(open)

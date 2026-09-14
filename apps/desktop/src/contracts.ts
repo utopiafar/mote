@@ -143,6 +143,7 @@ export interface DesktopApi {
   openCentral(): Promise<void>;
   exportSupport(): Promise<{ canceled: boolean }>;
   exportDiagnostics(): Promise<{ canceled: boolean }>;
+  readEvents(): Promise<import('./support').SupportEvent[]>;
   sampleDiagnostics(): Promise<Status>;
   configure(update: ConfigUpdate): Promise<Status>;
   start(): Promise<Status>;

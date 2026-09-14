@@ -34,7 +34,7 @@ class ActivityStatsActivity : Activity() {
                     Operations.ledger(this).reset(); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit(); refresh()
                 }.show()
         }
-        text("最近结果（最多 200 条，点按查看）", 20f)
+        text("最近结果", 20f)
         history = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(history)
         MoteUi.styleTree(body)
     }
@@ -79,18 +79,18 @@ class ActivityStatsActivity : Activity() {
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread
                     renderSummary(content); history.removeAllViews()
-                    history.addView(TextView(this).apply { text = "本机保留记录（最早100条，条目字节不含共享图片；图片与文字请打开采集记录）" })
+                    history.addView(TextView(this).apply { text = "本机保留记录（最多 30 条；图片与文字请打开采集记录）" })
                     val pending = queue.getJSONArray("pending")
-                    for (i in 0 until pending.length()) {
+                    for (i in 0 until minOf(30, pending.length())) {
                         val item = pending.getJSONObject(i)
                         history.addView(Button(this).apply {
                             text = "${if (item.optBoolean("archiveMissing")) "中央不可更新" else if (item.optBoolean("uploaded")) "已同步保留" else "待确认"} · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
                             setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n加密条目字节：${item.getLong("bytes")}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。").setPositiveButton("关闭", null).show() }
                         })
                     }
-                    history.addView(TextView(this).apply { text = "最近固定结果" })
+                    history.addView(TextView(this).apply { text = "最近固定结果（最多 30 条）" })
                     val events = state.getJSONArray("events")
-                    for (i in events.length() - 1 downTo 0) {
+                    for (i in events.length() - 1 downTo maxOf(0, events.length() - 30)) {
                         val event = events.getJSONObject(i)
                         history.addView(Button(this).apply {
                             text = "${Instant.ofEpochMilli(event.getLong("atMs"))}\n${kind(OperationKind.valueOf(event.getString("kind")))} · ${reason(OperationReason.valueOf(event.getString("reason")))} · ${event.optString("recordId").take(8)}"

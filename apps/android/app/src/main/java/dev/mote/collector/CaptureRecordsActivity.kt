@@ -86,13 +86,14 @@ class CaptureRecordsActivity : Activity() {
                 runOnUiThread {
                     if (isDestroyed || stamp != generation) return@runOnUiThread
                     nextCursor = next
-                    status.text = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · 第 $pageNumber 页"
+                    status.text = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · 第 $pageNumber 页 · 正在加载缩略图（0/${records.size}）"
                     if (records.isEmpty()) text(list, if (remote) "当天没有此设备的中央截图记录。" else "当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。", 14f)
                     for (item in records) {
                         images += item to recordRow(item, remote, client, stamp)
                     }
                     previousPage.isEnabled = cursors.size > 1; nextPage.isEnabled = nextCursor != null
                     executor.execute {
+                        var loaded = 0
                         for ((item, image) in images) {
                             if (stamp != generation || isDestroyed) break
                             if (!item.optBoolean("hasImage")) continue
@@ -104,6 +105,8 @@ class CaptureRecordsActivity : Activity() {
                                 if (isDestroyed || stamp != generation) { bitmap?.recycle(); return@runOnUiThread }
                                 if (bitmap != null) { bitmaps += bitmap; image.setImageBitmap(bitmap) }
                                 else image.contentDescription = "缩略图暂不可用，点按查看详情或刷新"
+                                loaded += 1
+                                status.text = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · 第 $pageNumber 页 · 缩略图 ${loaded}/${images.size}"
                             }
                         }
                     }

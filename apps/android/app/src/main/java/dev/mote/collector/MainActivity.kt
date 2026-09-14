@@ -93,6 +93,7 @@ class MainActivity : Activity() {
     private lateinit var nsfwSource: Spinner
     private lateinit var nsfwCustom: EditText
     private lateinit var nsfwStatus: TextView
+    private lateinit var permissionsSummary: TextView
     private val nsfwSources = listOf("auto", "mirror", "official", "custom")
     private val handler = Handler(Looper.getMainLooper())
     private val statusExecutor = Executors.newSingleThreadExecutor()
@@ -291,6 +292,7 @@ class MainActivity : Activity() {
         button("导出数值诊断 JSON") {
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-diagnostics.json"), 103)
         }
+        button("打开本地日志查看器") { startActivity(Intent(this, LogViewerActivity::class.java)) }
         text("事件日志最多 500 条，只记录固定阶段、错误类别与数值。支持包不包含节点地址、设备名、截图、笔记、OCR、令牌、提示词或审查理由；关闭诊断后停止新增，已有记录保留。", 13)
         button("导出安全支持包 JSON") {
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-${BuildConfig.MOTE_PROFILE}-support.json"), 104)
@@ -445,6 +447,9 @@ class MainActivity : Activity() {
 
     private fun buildPermissions() {
         page(Page.PERMISSIONS, "按需授权，让记录稳定运行")
+        section("当前状态")
+        permissionsSummary = text("正在检查系统权限…", 14, MoteUi.muted)
+        content.addView(permissionsSummary)
         button("启用无障碍截图服务") {
             AlertDialog.Builder(this).setTitle("屏幕采集权限说明")
                 .setMessage(getString(R.string.accessibility_description) + "\n\n继续后请在系统设置中选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。")
@@ -454,6 +459,15 @@ class MainActivity : Activity() {
         rowButtons("电池优化设置", { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }, "自启动设置", { autostart() })
         button("应用详情 / 受限制设置") { safeOpen(detailsIntent()) }
         text("小米 / HyperOS：在系统应用设置中允许 Mote 自启动，将省电策略设为无限制，并允许通知；可在最近任务中锁定应用。菜单随系统版本变化。若侧载 APK 的无障碍开关受限，请在应用详情的菜单中检查“允许受限制的设置”。这些设置不能保证系统永不终止采集。", 13)
+    }
+
+    private fun updatePermissionSummary() {
+        if (!::permissionsSummary.isInitialized) return
+        val accessibility = runCatching { SystemSettings.Secure.getString(contentResolver, SystemSettings.Secure.ENABLED_ACCESSIBILITY_SERVICES)?.split(':')?.any { it.equals(ComponentName(this, CaptureAccessibilityService::class.java).flattenToString(), true) } == true }.getOrDefault(false)
+        val notifications = if (Build.VERSION.SDK_INT >= 33) checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED else getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+        val usage = ForegroundApps.usageAllowed(this)
+        val power = runCatching { getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) }.getOrDefault(false)
+        permissionsSummary.text = "屏幕采集：${if (accessibility) "已授权" else "未授权"}\n通知：${if (notifications) "已允许" else "未允许"}\n使用情况：${if (usage) "已授权" else "未授权"}\n电池优化：${if (power) "已豁免" else "系统可能限制后台运行"}"
     }
 
     private fun retrySync() {
@@ -699,6 +713,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         resumed = true
+        updatePermissionSummary()
         RuntimeSettings.observeProjectionConsent { resumeProjectionAfterSettings() }
         if (::server.isInitialized) {
             val c = settings.read()

@@ -112,6 +112,7 @@ async function loadRecords(): Promise<void> {
     byId('records-page').textContent = page.items.length ? `第 ${recordsPage + 1} 页 · 每页最多 30 张` : '';
     byId<HTMLButtonElement>('records-previous').disabled = recordsPage === 0;
     byId<HTMLButtonElement>('records-next').disabled = !recordsNext;
+    if (page.items.length) byId('records-status').textContent = `${location === 'local' ? '本机保留' : '中央已归档'} · 列表已读取 ${page.items.length} 条，正在加载缩略图…`;
     const images: { element: HTMLImageElement; item: import('./capture-browser').BrowserCapture }[] = [];
     for (const item of page.items) {
       const card = document.createElement('button'); card.type = 'button'; card.className = 'record-card';
@@ -131,6 +132,7 @@ async function loadRecords(): Promise<void> {
         catch { if (revision === recordsRevision) element.alt = '缩略图暂不可用；点击查看详情或刷新'; }
       }
     }));
+    if (revision === recordsRevision && page.items.length) byId('records-status').textContent = `${location === 'local' ? '本机保留' : '中央已归档'} · 当天共 ${page.totalCount} 张截图 · 缩略图已加载`;
   } catch (error) { if (revision === recordsRevision) { byId('records-status').textContent = error instanceof Error ? error.message : '读取采集记录失败，请重试'; byId('records-page').textContent = ''; } }
 }
 byId('records-day').addEventListener('change', resetRecords);
@@ -383,6 +385,11 @@ byId('note-form').addEventListener('submit', event => {
 byId('open-feedback').addEventListener('click', () => void perform(() => desktopApi.openFeedback()));
 byId('diagnostics-sample').addEventListener('click', () => void perform(async () => render(await desktopApi.sampleDiagnostics())));
 byId('diagnostics-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportDiagnostics(); if (!result.canceled) feedback('数值诊断已导出。', true); }));
+byId('events-open').addEventListener('click', () => void perform(async () => {
+  const viewer = byId('events-viewer'); viewer.hidden = false; viewer.textContent = '正在读取本地日志…';
+  const rows = (await desktopApi.readEvents()).slice().reverse().slice(0, 100);
+  viewer.textContent = rows.length ? rows.map(event => `${new Date(event.atMs).toLocaleString()}  ${event.stage} · ${event.code}${event.elapsedMs === undefined ? '' : ` · ${event.elapsedMs}ms`}`).join('\n') : '暂无日志；请开启诊断后重试。';
+}));
 
 byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(); if (!result.canceled) feedback('支持包已导出；只含数值、配置开关和固定阶段事件。', true); }));
 

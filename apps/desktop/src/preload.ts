@@ -37,6 +37,7 @@ const api: DesktopApi = {
   exportSupport: () => ipcRenderer.invoke('mote:support-export'),
   sampleDiagnostics: () => ipcRenderer.invoke('mote:diagnostics-sample'),
   exportDiagnostics: () => ipcRenderer.invoke('mote:diagnostics-export'),
+  readEvents: () => ipcRenderer.invoke('mote:events-read'),
   noteDraft: () => ipcRenderer.invoke('mote:note-draft'),
   updateNoteDraft: input => ipcRenderer.invoke('mote:note-draft-update', input),
   saveNote: input => ipcRenderer.invoke('mote:note', input),
