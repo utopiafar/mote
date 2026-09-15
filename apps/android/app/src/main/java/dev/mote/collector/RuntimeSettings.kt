@@ -17,7 +17,8 @@ object RuntimeSettings {
     fun observeProjectionConsent(observer: (() -> Unit)?) { if (observer == null) projectionConsent.detach() else projectionConsent.attach(observer) }
     fun cancelProjectionConsentRequest() = projectionConsent.cancel()
     data class Applied(val projectionConsentRequired: Boolean)
-    fun apply(context: Context, next: CollectorConfig, bindLocal: Boolean = false, change: (() -> Unit)? = null, finished: (kotlin.Result<Applied>) -> Unit) {
+    fun apply(context: Context, next: CollectorConfig, bindLocal: Boolean = false, change: (() -> Unit)? = null,
+        nextServer: String = if (next.hasSyncConnection()) next.server else "", finished: (kotlin.Result<Applied>) -> Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
         val app = context.applicationContext; val settings = Settings(app)
         next.validate()
@@ -41,7 +42,7 @@ object RuntimeSettings {
                     check(SystemClock.elapsedRealtime() < deadline) { "当前处理暂未结束，原设置已保留，请稍后重试" }
                     Thread.sleep(25)
                 }
-                ConnectionGuard.reconfigure(app, if (next.hasSyncConnection()) next.server else "", bindLocal) {
+                ConnectionGuard.reconfigure(app, nextServer, bindLocal) {
                     if (change == null) settings.save(next) else change()
                 }
             }

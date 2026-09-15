@@ -19,6 +19,27 @@ it('rejects expired confirmation, oversized input and unsafe invitations before 
   await expect(value.redeem(preview.id, preview.serverUrl, { deviceId: 'fixture-device', deviceName: 'Synthetic' }, 'macos')).rejects.toThrow('过期');
   for (const input of ['x'.repeat(8193), JSON.stringify({ ...invitation, serverUrl: 'http://remote.example' }), JSON.stringify({ ...invitation, ownerToken: token })]) expect(() => value.preview(input)).toThrow(); expect(calls).toBe(0);
 });
+it('uses the latest invitation for repeated pairing and rejects a replaced preview without exchanging it', async () => {
+  const requests: Array<{ url: string; code: string }> = [];
+  const value = new ConnectionOnboarding(async (url, init) => {
+    requests.push({ url: String(url), code: JSON.parse(String(init?.body)).code });
+    return response({ serverUrl: new URL(String(url)).origin, token: token + requests.length, credentialId: 'fixture-' + requests.length, scope: 'collector' });
+  }, () => now);
+  const device = { deviceId: 'fixture-device', deviceName: 'Synthetic' };
+  const first = value.preview(connectionUri(invitation, now));
+  expect((await value.redeem(first.id, first.serverUrl, device, 'macos')).token).toBe(token + '1');
+  const stale = value.preview(JSON.stringify({ ...invitation, code: 'b'.repeat(43) }));
+  const second = value.preview(JSON.stringify({ ...invitation, code: 'c'.repeat(43) }));
+  await expect(value.redeem(stale.id, stale.serverUrl, device, 'macos')).rejects.toThrow('确认');
+  expect((await value.redeem(second.id, second.serverUrl, device, 'macos')).token).toBe(token + '2');
+  const third = value.preview(JSON.stringify({ ...invitation, code: 'd'.repeat(43), serverUrl: 'https://second.example' }));
+  expect((await value.redeem(third.id, third.serverUrl, device, 'macos')).serverUrl).toBe('https://second.example');
+  expect(requests).toEqual([
+    { url: invitation.serverUrl + '/api/connections/redeem', code: invitation.code },
+    { url: invitation.serverUrl + '/api/connections/redeem', code: 'c'.repeat(43) },
+    { url: 'https://second.example/api/connections/redeem', code: 'd'.repeat(43) },
+  ]);
+});
 it('never sends saved credentials during redemption and rejects response origin/scope/token mismatches', async () => {
   for (const bad of [{ serverUrl: 'https://other.example' }, { scope: 'owner' }, { token: 'short' }, { token: 'a'.repeat(32) + '\n' }, { ownerToken: token }]) {
     const value = new ConnectionOnboarding(async (url, init) => { expect(url).toBe(invitation.serverUrl + '/api/connections/redeem'); expect(init?.redirect).toBe('error'); expect(init?.headers).not.toHaveProperty('Authorization'); expect(JSON.parse(String(init?.body))).toEqual({ code: invitation.code, deviceId: 'fixture-device', deviceName: 'Synthetic', platform: 'macos' }); return response({ serverUrl: invitation.serverUrl, token, credentialId: 'fixture-credential', scope: 'collector', ...bad }); }, () => now);

@@ -24,6 +24,38 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class ConnectionInstrumentedTest {
+    @Test fun connectionPageRefreshesSavedNodeAndSecondScanReplacesFirstPreview() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = context.getSharedPreferences("mote", 0); val original = preferences.all.toMap()
+        require(!Settings(context).enabled)
+        fun invitation(server: String) = JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", server)
+            .put("code", "A".repeat(43)).put("expiresAt", Instant.ofEpochMilli(System.currentTimeMillis() + 600_000).toString()).toString()
+        try {
+            ActivityScenario.launch(ConnectionActivity::class.java).use { scenario ->
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+                Settings(context).saveConnection("https://generated-new.invalid", "synthetic-collector-token-no-network-123456789", "合成设备", false)
+                scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+                scenario.onActivity { activity ->
+                    val receive = ConnectionActivity::class.java.getDeclaredMethod("onActivityResult", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Intent::class.java).apply { isAccessible = true }
+                    fun scan(raw: String) { receive.invoke(activity, 1, android.app.Activity.RESULT_OK, Intent().putExtra("invitation", raw)) }
+                    val texts = mutableListOf<android.widget.TextView>()
+                    fun walk(v: android.view.View) { if (v is android.widget.TextView) texts += v; if (v is android.view.ViewGroup) repeat(v.childCount) { walk(v.getChildAt(it)) } }
+                    walk(activity.window.decorView)
+                    assertTrue(texts.single { it.text.startsWith("当前节点：") }.text.startsWith("当前节点：https://generated-new.invalid"))
+                    for (server in listOf("https://first.generated.invalid", "https://second.generated.invalid")) {
+                        scan(invitation(server))
+                        assertTrue(texts.single { it.text.startsWith("将连接：") }.text.startsWith("将连接：$server"))
+                        assertEquals("https://generated-new.invalid", Settings(context).read().server)
+                    }
+                    scan("invalid generated invitation")
+                    assertFalse(texts.any { it.text.startsWith("将连接：") })
+                }
+            }
+        } finally {
+            val editor = preferences.edit().clear()
+            original.forEach { (key, value) -> when (value) { is String -> editor.putString(key, value); is Boolean -> editor.putBoolean(key, value); is Int -> editor.putInt(key, value); is Long -> editor.putLong(key, value); is Float -> editor.putFloat(key, value) } }; editor.commit()
+        }
+    }
     @Test fun pairingReturnThenManualServerEditClearsPreviousCredential() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val preferences = context.getSharedPreferences("mote", 0); val original = preferences.all.toMap()
@@ -100,6 +132,21 @@ class ConnectionInstrumentedTest {
             val (code, body) = HttpJson.post("$server/api/connections/invitations", JSONObject().put("serverUrl", server).put("label", "合成 Android 连接验证").put("deviceId", deviceId), owner)
             check(code in 200..299); return ConnectionInvitation.parse(body!!.getJSONObject("invitation").toString(), true, true)
         }
+        fun connectThroughRuntime(client: ConnectionClient, invitation: ConnectionInvitation) {
+            val done = CountDownLatch(1); var result: Result<RuntimeSettings.Applied>? = null
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                RuntimeSettings.apply(context, settings.read(), bindLocal = true, nextServer = invitation.serverUrl, change = {
+                    client.connect(invitation, "合成连接设备", true, bindLocal = true)
+                    // New workers must not start behind the reconfiguration gate and enter backoff.
+                    for (name in listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload")) {
+                        assertTrue("No upload enqueued before reconfiguration resumes: $name", manager.getWorkInfosForUniqueWork(name).get(5, TimeUnit.SECONDS).all { it.state.isFinished })
+                    }
+                }) { result = it; done.countDown() }
+            }
+            assertTrue("Runtime connection callback", done.await(45, TimeUnit.SECONDS))
+            assertFalse(result!!.getOrThrow().projectionConsentRequired)
+            assertFalse(ConnectionGuard.changing())
+        }
         fun event(source: String, text: String) = JSONObject().put("id", UUID.randomUUID().toString()).put("source", source).put("deviceId", deviceId).put("deviceName", "合成连接设备")
             .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0).put("appId", "dev.mote.generated").put("appName", "合成测试")
             .put("ocrText", text).put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
@@ -107,7 +154,7 @@ class ConnectionInstrumentedTest {
             stopUploads()
             val baseline = Operations.ledger(context).read().getJSONObject("counts")
             val first = mint(); val client = ConnectionClient(context)
-            client.connect(first, "合成连接设备", true)
+            connectThroughRuntime(client, first)
             waitUntil { ConnectionGuard.sync { true } == true }; stopUploads()
             assertEquals("collector", client.test()); assertEquals(deviceId, settings.deviceId)
             val config = settings.read().copy(wifiOnly = false, diagnosticsEnabled = false); settings.save(config)
@@ -129,7 +176,7 @@ class ConnectionInstrumentedTest {
             // Match-origin, owner-bound invitation refreshes credentials without rotating identity or deleting pending data.
             val second = mint()
             waitUntil { runCatching { ConnectionGuard.change(context, server) { true } }.getOrDefault(false) }
-            client.connect(second, "合成连接设备", true)
+            connectThroughRuntime(client, second)
             assertEquals(deviceId, settings.deviceId); assertNotEquals(config.token, settings.read().token)
             assertEquals(preparedBefore, QuickNotes.draft(context).read().prepared!!.toString())
             val noteId = QuickNotes.save(context, QuickNotes.draft(context).read().text, "") { }

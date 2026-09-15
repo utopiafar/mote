@@ -16,6 +16,7 @@ class ConnectionActivity : Activity() {
     private lateinit var allowHttp: CheckBox
     private lateinit var status: TextView
     private lateinit var preview: TextView
+    private lateinit var currentNode: TextView
     private var parsed: ConnectionInvitation? = null
     private val executor = Executors.newSingleThreadExecutor()
     private var working = false
@@ -27,7 +28,7 @@ class ConnectionActivity : Activity() {
         fun button(label: String, action: () -> Unit) = Button(this).apply { text = label; setOnClickListener { if (!working) runCatching(action).onFailure { showFailure(it) } } }.also(root::addView)
         text("连接中央节点", 26f)
         text("先在中央网页生成一次性邀请。扫码、选择 JSON 文件或粘贴邀请后，核对节点再确认连接；不会自动开始截图。邀请有效期 10 分钟，请勿分享。")
-        text("当前节点：${config.server.ifBlank { "尚未配置" }}\n设备 ID：${settings.deviceId}\n已有设备请让中央生成绑定此设备 ID 的邀请；设备身份不会重置。")
+        currentNode = text(""); refreshCurrentNode()
         button("复制本设备 ID") { getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Mote device ID", settings.deviceId)); Toast.makeText(this, "已复制设备 ID，不含凭据", Toast.LENGTH_SHORT).show() }
         button("扫描连接二维码") { startActivityForResult(Intent(this, ConnectionScanActivity::class.java), 1) }
         button("选择连接 JSON 文件") { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/plain")), 2) }
@@ -42,7 +43,7 @@ class ConnectionActivity : Activity() {
             AlertDialog.Builder(this).setTitle("确认连接节点").setMessage("${invite.serverUrl}\n\n将使用已有设备 ID 和当前采集设置。只获取这台设备的采集凭据；设置、队列和模型不会清空。同节点重新配对将使用新凭据继续同步本机待上传截图、笔记和来源。首次连接将把尚未绑定的本机截图、笔记与来源记录绑定到上方节点，并按已选择的同步方式发送。请确认这是你自己的档案地址。已经绑定其他节点的待同步记录不能改投此处。")
                 .setNegativeButton("取消", null).setPositiveButton("连接") { _, _ ->
                     val chosenName = name.text.toString().trim(); val debugHttp = allowHttp.isChecked
-                    changeConnection("正在兑换邀请并校验设备身份…") {
+                    changeConnection(invite.serverUrl, "正在兑换邀请并校验设备身份…") {
                         ConnectionClient(this).connect(invite, chosenName, debugHttp, bindLocal = true)
                         runOnUiThread { input.text.clear(); parsed = null; preview.text = "连接成功：${invite.serverUrl}" }
                         "连接成功，已自动应用新连接并恢复原采集状态。"
@@ -54,7 +55,7 @@ class ConnectionActivity : Activity() {
             AlertDialog.Builder(this).setTitle("恢复已兑换连接").setMessage("$server\n\n使用上次已兑换并加密保存的本设备凭据，不再使用一次性码；将重新联网校验。若存在尚未绑定的本机记录，确认后会绑定到上方节点，并按同步设置发送。")
                 .setNegativeButton("取消", null).setPositiveButton("恢复") { _, _ ->
                     val chosenName = name.text.toString().trim(); val debug = allowHttp.isChecked
-                    changeConnection("正在重新校验设备连接…") { client.resume(chosenName, debug, bindLocal = true); "中断的连接已恢复。" }
+                    changeConnection(server, "正在重新校验设备连接…") { client.resume(chosenName, debug, bindLocal = true); "中断的连接已恢复。" }
                 }.show()
         }
         button("测试已保存的连接") { run("正在测试节点和设备凭据…") { val scope = ConnectionClient(this).test(); "连接正常 · ${if (scope == "collector") "本设备采集权限" else "手工配置的管理员权限"}" } }
@@ -64,8 +65,10 @@ class ConnectionActivity : Activity() {
         intent.dataString?.let { raw -> if (raw.length <= ConnectionInvitation.MAX_BYTES * 2) input.setText(raw) else status.text = message("invitation") }
     }
     private fun parseInput(): ConnectionInvitation {
+        parsed = null; preview.text = "还没有解析有效邀请。"
         val invite = ConnectionInvitation.parse(input.text.toString(), allowHttp.isChecked, BuildConfig.DEBUG)
         parsed = invite; preview.text = "将连接：${invite.serverUrl}\n有效至：${invite.expiresAt}\n确认前不会发送网络请求。"
+        status.text = "邀请已解析，请核对节点并确认连接。当前连接尚未更改。"
         return invite
     }
     private fun run(progress: String, work: () -> String) {
@@ -75,13 +78,19 @@ class ConnectionActivity : Activity() {
             catch (e: Exception) { runOnUiThread { if (!isDestroyed) showFailure(e) } }
             finally { runOnUiThread { working = false } } }
     }
-    private fun changeConnection(progress: String, work: () -> String) {
+    private fun refreshCurrentNode() {
+        val settings = Settings(this)
+        currentNode.text = "当前节点：${settings.read().server.ifBlank { "尚未配置" }}\n设备 ID：${settings.deviceId}\n已有设备请让中央生成绑定此设备 ID 的邀请；设备身份不会重置。"
+    }
+    override fun onResume() { super.onResume(); refreshCurrentNode() }
+    private fun changeConnection(server: String, progress: String, work: () -> String) {
         if (working) return
         working = true; status.text = "$progress"
         var message = "连接已更新"
-        RuntimeSettings.apply(this, Settings(this).read(), bindLocal = true, change = { message = work() }) { result ->
+        RuntimeSettings.apply(this, Settings(this).read(), bindLocal = true, change = { message = work() }, nextServer = server) { result ->
             working = false
             if (isDestroyed) return@apply
+            refreshCurrentNode()
             result.onSuccess {
                 status.text = message
                 if (it.projectionConsentRequired) startActivity(Intent(this, MainActivity::class.java))
