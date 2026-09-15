@@ -3625,3 +3625,6 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
   .conversation-history { position: static; }
   .conversation-list { max-height: 200px; }
 }
+
+.file-card{display:flex;flex-direction:column;gap:8px;text-align:left;width:100%;color:inherit}.file-detail{width:100%;min-width:0;padding:24px 28px;box-sizing:border-box}.file-detail>h3{font-size:20px;margin:0 0 12px}.file-detail .source-toolbar{flex-wrap:wrap;gap:8px}.file-detail>p{margin:12px 0}.file-detail p,.file-detail li{overflow-wrap:anywhere}.file-detail audio{width:100%;margin:12px 0}.file-text{white-space:pre-wrap;overflow-wrap:anywhere}
+.file-processing-settings form{display:grid;gap:16px;margin-top:16px}.file-processing-settings fieldset{min-width:0;border:1px solid var(--border,#dce4d8);border-radius:12px;padding:16px;display:grid;gap:12px}.file-processing-settings label{display:grid;gap:6px}.file-processing-settings input:not([type=checkbox]),.file-processing-settings select{min-width:0;width:100%;box-sizing:border-box}.file-processing-settings input[type=checkbox]{width:auto}.file-processing-settings details>label{margin:12px 0}.file-detail details{margin:16px 0}.file-detail details>summary{cursor:pointer;padding:8px 0}.file-detail label{display:grid;gap:6px;margin:10px 0}.file-detail input:not([type=checkbox]){max-width:100%;box-sizing:border-box}

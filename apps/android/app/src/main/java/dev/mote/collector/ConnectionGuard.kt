@@ -42,7 +42,7 @@ object ConnectionGuard {
         val pending = settings.hasPendingData()
         if (pending && next.isNotBlank() && origin.isNotBlank() && origin != next) throw ConnectionFailure("pending")
         if (pending && next.isNotBlank() && origin.isBlank() && !bindLocal) throw ConnectionFailure("local_confirmation")
-        if (!pending && origin.isNotBlank() && next != origin) context.localSources().resetSyncedSnapshots()
+        if (!pending && origin.isNotBlank() && next != origin) { context.localSources().resetSyncedSnapshots(); context.fileArchives().resetSynced() }
     }
     fun <T> change(context: Context, nextServer: String, bindLocal: Boolean = false, action: () -> T): T {
         if (updating.get() && lock.isWriteLockedByCurrentThread) { validateOrigin(context, nextServer, bindLocal); return action() }
@@ -56,7 +56,7 @@ object ConnectionGuard {
             if (pending && next.isNotBlank() && origin.isNotBlank() && origin != next) throw ConnectionFailure("pending")
             if (pending && next.isNotBlank() && origin.isBlank() && !bindLocal) throw ConnectionFailure("local_confirmation")
             // Do not replay already acknowledged snapshots into a different archive.
-            if (!pending && origin.isNotBlank() && next != origin) context.localSources().resetSyncedSnapshots()
+            if (!pending && origin.isNotBlank() && next != origin) { context.localSources().resetSyncedSnapshots(); context.fileArchives().resetSynced() }
             return action()
         } finally { lock.writeLock().unlock() }
     }

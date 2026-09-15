@@ -27,8 +27,8 @@ object SyncSchedule {
         Settings(context).syncStatus("waiting", "正在应用设置，请完成后重试本次扫描或立即同步")
     }
     fun pending(context: Context): PendingSync {
-        val captures = context.queue().pendingSync(); val sources = context.localSources().pendingSync()
-        return PendingSync(captures.count + sources.count, listOfNotNull(captures.oldestAt, sources.oldestAt).minOrNull(), sources.pendingUpdates)
+        val captures = context.queue().pendingSync(); val sources = context.localSources().pendingSync(); val files = context.fileArchives().pendingSync()
+        return PendingSync(captures.count + sources.count + files.count, listOfNotNull(captures.oldestAt, sources.oldestAt, files.oldestAt).minOrNull(), sources.pendingUpdates)
     }
     fun stamp(config: CollectorConfig) = SourceRules.hash(listOf(config.server, config.token, config.syncMode, config.syncIntervalMinutes, config.syncBatchSize, config.wifiOnly, config.syncChargingOnly, config.syncBatteryNotLow).joinToString("\u0000"))
     fun delay(context: Context, config: CollectorConfig, explicit: Boolean = false): Long? {

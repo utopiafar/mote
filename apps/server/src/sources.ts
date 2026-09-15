@@ -16,7 +16,7 @@ export class SourceStore {
     if(this.listSources().length>=500)throw new StoreError('Maximum 500 sources',413);
     const now=new Date().toISOString(),value={...input,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return value;
   }
-  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention']}):SourceConnection {
+  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only'}):SourceConnection {
     const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch});
     const value={...existing,...input,updatedAt:new Date().toISOString()};
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
@@ -37,13 +37,13 @@ export class SourceStore {
     const rows=this.store.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? ORDER BY rowid DESC LIMIT 100').all(sourceId,externalId) as {capture_id:string}[];
     return this.store.evidence(rows.map(r=>r.capture_id)).map(c=>this.item(c,c.id===head?.captureId));
   }
-  async upsert(sourceId:string,raw:unknown,authorize?:()=>void) {
+  async upsert(sourceId:string,raw:unknown,authorize?:()=>void,onCommit?:(id:string)=>void) {
     const item=sourceItemSchema.parse(raw),key=JSON.stringify([sourceId,item.externalId]);
     const prior=this.pending.get(key)??Promise.resolve();
-    const task=prior.catch(()=>{}).then(()=>this.commit(sourceId,item,authorize));this.pending.set(key,task);
+    const task=prior.catch(()=>{}).then(()=>this.commit(sourceId,item,authorize,onCommit));this.pending.set(key,task);
     try{return await task;}finally{if(this.pending.get(key)===task)this.pending.delete(key);}
   }
-  private async commit(sourceId:string,raw:unknown,authorize?:()=>void) {
+  private async commit(sourceId:string,raw:unknown,authorize?:()=>void,onCommit?:(id:string)=>void) {
     authorize?.();
     const source=this.getSource(sourceId);if(!source.enabled)throw new StoreError('Source is paused',409);
     const item=sourceItemSchema.parse(raw);
@@ -65,6 +65,7 @@ export class SourceStore {
         this.store.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted').run(sourceId,item.externalId,id,new Date(observedAt).toISOString(),Number(item.deleted));
         if(head){this.store.db.exec("DELETE FROM insights; UPDATE memories SET json=json_set(json,'$.status','stale')");this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
       }
+      onCommit?.(id);
     });
     return response(result.id,result.duplicate);
   }

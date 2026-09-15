@@ -13,8 +13,8 @@ android {
         applicationId = "dev.mote.collector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 27
-        versionName = "0.0.16"
+        versionCode = 29
+        versionName = "0.0.18"
         buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -40,6 +40,12 @@ android {
             buildConfigField("String", "DEFAULT_SERVER", "\"http://127.0.0.1:47842\"")
             matchingFallbacks += "debug"
         }
+        create("fileFixture") {
+            initWith(getByName("development"))
+            applicationIdSuffix = ".filefixture"
+            versionNameSuffix = "-filefixture"
+            matchingFallbacks += "development"
+        }
         release {
             manifestPlaceholders["cleartextAllowed"] = "false"
             isMinifyEnabled = false
@@ -55,6 +61,11 @@ android {
     sourceSets.getByName("test").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("androidTest").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("development").apply {
+        java.srcDir("src/debug/java")
+        res.srcDir("src/debug/res")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
+    }
+    sourceSets.getByName("fileFixture").apply {
         java.srcDir("src/debug/java")
         res.srcDir("src/debug/res")
         manifest.srcFile("src/debug/AndroidManifest.xml")

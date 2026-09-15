@@ -7,7 +7,7 @@ export async function atomicSourceJson(path: string, value: unknown): Promise<vo
   await sourceWork.run({ kind: 'json-write', path, value });
 }
 interface Known { contentHash: string; revision: string; item: ScannedItem }
-interface State { policy?: string; version: 1; known: Record<string, Known>; pending: SourceItem[]; lastSyncAt?: string }
+interface State { initialized?:boolean; baseline?:string[]; policy?: string; version: 1; known: Record<string, Known>; pending: SourceItem[]; lastSyncAt?: string }
 // All transitions are persisted before network I/O. Callers serialize one source at a time.
 export class SourceSync {
   private data: State = { version: 1, known: {}, pending: [] };
@@ -37,8 +37,15 @@ export class SourceSync {
     const next = { ...this.data, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '' }])), pending: [] };
     await this.commit(next);
   }
-  async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString()): Promise<number> {
+  async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all'|'new_only'='all'): Promise<number> {
     const next: State = { ...this.data, known: { ...this.data.known }, pending: [...this.data.pending] }; let changes = 0;
+    if(initialSync==='new_only'&&!next.initialized&&Object.keys(next.known).length===0){
+      next.baseline=[...new Set([...(next.baseline??[]),...scan.seen])];
+      next.initialized=scan.complete;await this.commit(next, this.limits.maxBytes);return 0;
+    }
+    if(initialSync==='all')next.baseline=[];
+    if(scan.complete)next.initialized=true;
+    const baseline=new Set(next.baseline??[]);
     const stage = (item: ScannedItem) => {
       const key = sourceHash(item.externalId); const previous = next.known[key];
       const contentHash = sourceHash(JSON.stringify(item));
@@ -48,7 +55,7 @@ export class SourceSync {
       // Persist only metadata for deletion detection; original text lives solely in the bounded pending queue.
       next.known[key] = { contentHash, revision, item: { ...item, text: '' } }; changes++;
     };
-    for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); stage(item); }
+    for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
     if (trackDeletions && scan.complete) {
       const seen = new Set(scan.seen);
       for (const previous of Object.values(this.data.known)) {
@@ -72,7 +79,7 @@ export class SourceSync {
       } catch (error) { precedingError = error; }
     }
     signal?.throwIfAborted();
-    const changes = await this.stage(scan, trackDeletions);
+    const changes = await this.stage(scan, trackDeletions,undefined,source.initialSync);
     if (precedingError) throw precedingError; // Offline changes remain durable; avoid a second failing request in this cycle.
     await prepare?.();
     return { changes, state: await this.flush(source, request, signal) };

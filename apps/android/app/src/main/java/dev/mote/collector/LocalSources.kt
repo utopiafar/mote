@@ -15,11 +15,11 @@ data class LocalSource(
     val retention: String = "snapshot", val enabled: Boolean = true,
     val calendarId: Long? = null, val uri: String? = null, val tree: Boolean = false,
     val extensions: String = "md,txt,json,csv,ics", val excluded: String = "",
-    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60
+    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all"
 ) {
     fun validate() {
         require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}")) && name.isNotBlank() && name.length <= 200) { "检查来源名称" }
-        require(kind in setOf("local-calendar", "local-files") && retention in setOf("snapshot", "reference"))
+        require(kind in setOf("local-calendar", "local-files") && retention in setOf("snapshot", "reference", "archive") && initialSync in setOf("all", "new_only") && (kind == "local-files" || retention != "archive"))
         require(daysBefore in 0..365 && daysAfter in 1..365 && intervalMinutes in 15..1440) { "窗口为过去 0–365 天、未来 1–365 天，间隔 15–1440 分钟" }
         if (kind == "local-calendar") require(calendarId != null && calendarId >= 0)
         else require(uri != null && uri.startsWith("content://") && !uri.contains('?') && !uri.contains('#')) { "需要系统选择器提供的持久文件权限" }
@@ -27,14 +27,14 @@ data class LocalSource(
     }
     fun json() = JSONObject().put("id", id).put("name", name).put("kind", kind).put("retention", retention).put("enabled", enabled)
         .put("calendarId", calendarId).put("uri", uri).put("tree", tree).put("extensions", extensions).put("excluded", excluded)
-        .put("daysBefore", daysBefore).put("daysAfter", daysAfter).put("intervalMinutes", intervalMinutes)
+        .put("initialSync", initialSync).put("daysBefore", daysBefore).put("daysAfter", daysAfter).put("intervalMinutes", intervalMinutes)
     fun registration(deviceId: String) = JSONObject().put("id", id).put("name", name).put("kind", kind).put("deviceId", deviceId)
-        .put("platform", "android").put("retention", retention).put("enabled", true)
+        .put("platform", "android").put("initialSync", initialSync).put("retention", retention).put("enabled", true)
     companion object {
         fun from(v: JSONObject) = LocalSource(v.getString("id"), v.getString("name"), v.getString("kind"), v.getString("retention"), v.getBoolean("enabled"),
             if (v.has("calendarId")) v.getLong("calendarId") else null, if (v.has("uri")) v.getString("uri") else null,
             v.optBoolean("tree"), v.optString("extensions", "md,txt,json,csv,ics"), v.optString("excluded", ""),
-            v.optInt("daysBefore", 30), v.optInt("daysAfter", 90), v.optInt("intervalMinutes", 60)).also { it.validate() }
+            v.optInt("daysBefore", 30), v.optInt("daysAfter", 90), v.optInt("intervalMinutes", 60), v.optString("initialSync", "all")).also { it.validate() }
     }
 }
 
@@ -107,8 +107,8 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         source.validate(); val all = sources().toMutableList(); val old = all.find { it.id == source.id }
         require(old != null || all.size < 20) { "最多连接 20 个来源" }
         // Explicit selection/filter/retention edits discard old unsent material before the new scan.
-        if (old != null && old.copy(enabled = source.enabled, intervalMinutes = source.intervalMinutes, name = source.name).json().toString() != source.json().toString()) file(source.id).delete()
-        if (old == null || old.name != source.name) {
+        if (old != null && old.copy(enabled = source.enabled, intervalMinutes = source.intervalMinutes, name = source.name, initialSync = source.initialSync).json().toString() != source.json().toString()) file(source.id).delete()
+        if (old == null || old.name != source.name || old.initialSync != source.initialSync) {
             val state = state(source.id); state.put("registered", false)
             if (!state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
             write(file(source.id), state)
@@ -180,6 +180,18 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         val active = sources().find { it.id == source.id } ?: return@synchronized
         if (!active.enabled || active != source) return@synchronized
         val state = state(source.id); val current = state.optJSONObject("current") ?: JSONObject(); val pending = state.optJSONArray("pending") ?: JSONArray()
+        val baseline = state.optJSONArray("baseline") ?: JSONArray()
+        if (source.initialSync == "new_only" && !state.optBoolean("initialized") && current.length() == 0) {
+            val ids = (0 until baseline.length()).map { baseline.getString(it) }.toMutableSet()
+            result.items.forEach { ids.add(it.getString("externalId")) }
+            state.put("baseline", JSONArray(ids.toList())).put("initialized", result.complete).put("scanComplete", result.complete).put("lastScan", result.observedAt)
+            check(state.toString().toByteArray().size <= maxBytes) { "首次同步清单达到缓存上限" }
+            write(file(source.id), state); return@synchronized
+        }
+        val ignored = if (source.initialSync == "new_only") (0 until baseline.length()).map { baseline.getString(it) }.toSet() else emptySet()
+        if (source.initialSync == "all") state.remove("baseline")
+        if (result.complete) state.put("initialized", true)
+
         val seen = mutableSetOf<String>()
         fun accept(input: JSONObject) {
             val body = JSONObject(input.toString()); val external = body.getString("externalId"); require(external.length <= 1000)
@@ -189,7 +201,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
             body.put("revision", SourceRules.hash(hash + ":" + (previous?.getJSONObject("body")?.optString("revision") ?: "")))
             pending.put(body); current.put(external, JSONObject().put("hash", hash).put("body", body))
         }
-        result.items.forEach { body -> seen.add(body.getString("externalId")); accept(body) }
+        result.items.forEach { body -> seen.add(body.getString("externalId")); if (body.getString("externalId") !in ignored) accept(body) }
         if (result.complete) for (external in current.keys().asSequence().toList()) {
             val previous = current.getJSONObject(external).getJSONObject("body")
             if (external !in seen && !previous.optBoolean("deleted") && SourceRules.withinWindow(previous, result.from, result.until)) {

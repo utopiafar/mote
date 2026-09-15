@@ -79,6 +79,7 @@ import {Metadata, sourceLabels, activityExplanation} from './Metadata';
 import {MediaSnapshot,MediaActivitySummary} from './Media';
 import {mediaCardText,mediaStatus,mediaExplanation} from './media-presentation';
 
+import {Files,FileDetail} from './Files';
 import {Sources} from "./Sources";
 import {Memories} from "./Memories";
 
@@ -369,11 +370,13 @@ function EvidenceDialog({
   api,
   onClose,
   onDeleted,
+  onOpen,
 }: {
   id: string;
   api: Api;
   onClose: () => void;
   onDeleted: () => void;
+  onOpen: (id:string) => void;
 }) {
   const [capture, setCapture] = useState<Capture | null>(null);
   const [error, setError] = useState("");
@@ -387,6 +390,7 @@ function EvidenceDialog({
     setConfirm(false);
     void api
       .request<Capture>(`/api/capture-browser/${encodeURIComponent(id)}`, {signal: controller.signal})
+      .catch(()=>api.request<Capture>(`/api/captures/${encodeURIComponent(id)}`,{signal:controller.signal}))
       .then((value) => active && setCapture(value))
       .catch((e) => active && setError(errorMessage(e)));
     return () => {
@@ -459,6 +463,7 @@ function EvidenceDialog({
             <X size={20} />
           </button>
         </div>
+        {capture?.source==='file'&&<FileDetail api={api} id={capture.fileEvidence?.captureId??id} startMs={capture.fileEvidence?.startMs} onOpen={onOpen}/>}
         {error && <ErrorNotice text={error} />}
         {!capture && !error && (
           <div className="panel-pad">
@@ -470,12 +475,12 @@ function EvidenceDialog({
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <AuthImage api={api} capture={capture} full />}
               <div className="evidence-text">
-                <span className="eyebrow">{capture.source==='media'?'媒体观察':capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : '捕获文本'}</span>
+                <span className="eyebrow">{capture.source==='media'?'媒体观察':capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : capture.source==='file'?(capture.fileEvidence?'转写片段':'文件元信息'):'捕获文本'}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || "原始上下文"}</h3>
                 {capture.mood && <p className="note-mood-tag">我标注的心情 · {capture.mood}</p>}
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
                 <pre aria-label={capture.source === 'screen' ? 'OCR 全文' : '记录全文'}>
-                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
+                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.source==='file'&&capture.provenance?.layer==='original'?'原件单独保存；转写与摘要见上方。':capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
                 </pre>
                 {(capture.source==='media'||capture.metadata?.media)&&<MediaSnapshot media={capture.metadata?.media} observedAt={capture.metadata?.observedAt??capture.capturedAt} screenLocked={capture.metadata?.state?.screenLocked} collection={capture.privacy.collection}/>}
                 <dl>
@@ -522,7 +527,7 @@ function EvidenceDialog({
               {confirm ? (
                 <>
                   <p>
-                    删除原始记录及不再被引用的影像，并清除已有洞察。此操作无法撤销。
+                    {capture.source==='file'?'删除中央文件归档及其派生内容；手机原文件保留。':'删除原始记录及不再被引用的影像，并清除已有洞察。'}此操作无法撤销。
                   </p>
                   <button
                     className="button subtle"
@@ -660,9 +665,9 @@ function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,ran
 
 function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>应用活动概况</h2><p>前台应用采样时长 · {duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。</p></>:<Empty icon={Clock3} title="这段时间还没有活动采样"><p>设备完成同步后，可以在这里查看应用时间分布。</p></Empty>}</section>;}
 
-type ArchiveTab = 'records'|'activity'|'media'|'memories';
+type ArchiveTab = 'records'|'files'|'activity'|'media'|'memories';
 function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
- return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动与播放分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['activity','应用活动'],['media','媒体播放'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen}/>}</div>;
+ return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动与播放分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['files','文件'],['activity','应用活动'],['media','媒体播放'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='files'&&<Files api={api} onOpen={onOpen}/>} {tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen}/>}</div>;
 }
 
 function Timeline({
@@ -1748,6 +1753,7 @@ function App() {
         <EvidenceDialog
           id={evidenceId}
           api={api}
+          onOpen={setEvidenceId}
           onClose={() => setEvidenceId(null)}
           onDeleted={refresh}
         />
