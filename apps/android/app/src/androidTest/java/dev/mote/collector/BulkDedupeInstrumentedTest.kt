@@ -78,8 +78,8 @@ class BulkDedupeInstrumentedTest {
                     .put("ocr", JSONObject().put("status", "disabled")), image, 100_000_000)
             }
             add(0); add(30); add(61); add(62, black); add(63, black, "fixture.b"); add(64, black, "fixture.b")
-            repeat(100) { add(200 + it.toLong(), white, "fixture.long") }
-            val scan = launch(workDataOf("action" to "scan", "mode" to "exact", "seconds" to 60L))
+            repeat(100) { add(200 + it.toLong() * 86400, white, "fixture.long") }
+            val scan = launch(workDataOf("action" to "scan", "mode" to "exact"))
             ActivityScenario.launch(BulkDedupeActivity::class.java).use { scenario ->
                 repeat(8) {
                     val before = System.currentTimeMillis()
@@ -89,13 +89,16 @@ class BulkDedupeInstrumentedTest {
                 }
                 finish(scan)
                 val report = store.read("report"); val pairs = report.getJSONArray("pairs")
-                assertEquals(106, report.getInt("scanned")); assertEquals(0, report.getInt("errors")); assertEquals(100, pairs.length())
-                assertFalse((0 until pairs.length()).any { pairs.getJSONObject(it).getJSONObject("candidate").getString("id") == ids[2] })
+                assertEquals(106, report.getInt("scanned")); assertEquals(0, report.getInt("errors")); assertEquals(102, pairs.length())
+                val comparisons = (0 until pairs.length()).map { pairs.getJSONObject(it) }
+                assertEquals(ids[0], comparisons.single { it.getJSONObject("candidate").getString("id") == ids[2] }.getJSONObject("reference").getString("id"))
+                assertEquals(ids[6], comparisons.single { it.getJSONObject("candidate").getString("id") == ids.last() }.getJSONObject("reference").getString("id"))
+                assertFalse(report.has("seconds"))
                 scenario.recreate()
-                waitFor("persistent result UI") { var ready = false; scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("候选 100 张") } }; ready }
+                waitFor("persistent result UI") { var ready = false; scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("候选 102 张") } }; ready }
                 scenario.onActivity { activity ->
                     views(activity.window.decorView).filterIsInstance<Button>().first { it.text == "选择全部候选" }.performClick()
-                    assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("已选 100 条") })
+                    assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("已选 102 条") })
                     views(activity.window.decorView).filterIsInstance<Button>().first { it.text == "取消全部选择" }.performClick()
                     views(activity.window.decorView).filterIsInstance<Button>().first { it.text == "预览图片与保留图" }.performClick()
                 }
@@ -110,7 +113,7 @@ class BulkDedupeInstrumentedTest {
             }
             val pairs = store.read("report").getJSONArray("pairs")
             resolve("move", pairs)
-            assertEquals(6, context.queue().depth()); assertEquals(100, store.quarantine().depth())
+            assertEquals(4, context.queue().depth()); assertEquals(102, store.quarantine().depth())
             assertArrayEquals(white, context.queue().image(ids[0]))
             fun pendingItems() = JSONArray(store.quarantine().dedupeIds().map { JSONObject().put("candidate", store.quarantine().dedupeRow(it)) })
             resolve("restore", pendingItems())
@@ -119,13 +122,28 @@ class BulkDedupeInstrumentedTest {
             assertEquals(105, context.queue().depth()); assertArrayEquals(white, context.queue().image(ids[0]))
             val remaining = JSONArray((1 until pairs.length()).map { pairs.getJSONObject(it) })
             resolve("move", remaining); resolve("purge", pendingItems())
-            assertEquals(0, store.quarantine().depth()); assertEquals(6, context.queue().depth())
-            val cancel = launch(workDataOf("action" to "scan", "mode" to "exact", "seconds" to 60L))
+            assertEquals(0, store.quarantine().depth()); assertEquals(4, context.queue().depth())
+            val cancel = launch(workDataOf("action" to "scan", "mode" to "exact"))
             manager.cancelWorkById(cancel).result.get()
             waitFor("cancel") { manager.getWorkInfoById(cancel).get()!!.state.isFinished }
-            assertEquals(6, context.queue().depth())
-            // Every threshold mode uses the same feature implementation; time/app boundaries remain hard limits.
-            for (mode in listOf("conservative", "balanced", "aggressive")) finish(launch(workDataOf("action" to "scan", "mode" to mode, "seconds" to 60L)))
+            assertEquals(4, context.queue().depth())
+            val gray = Bitmap.createBitmap(240, 400, Bitmap.Config.ARGB_8888)
+            try {
+                for (value in listOf(0, 20, 40)) {
+                    gray.eraseColor(Color.rgb(value, value, value))
+                    val image = ByteArrayOutputStream().also { gray.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+                    add(200L + 101L * 86400 + value, image, "fixture.drift")
+                }
+            } finally { gray.recycle() }
+            // Every threshold mode preserves the same app boundaries without a time cutoff.
+            for (mode in listOf("conservative", "balanced", "aggressive")) {
+                finish(launch(workDataOf("action" to "scan", "mode" to mode)))
+                val found = store.read("report").getJSONArray("pairs")
+                val drift = (0 until found.length()).map { found.getJSONObject(it) }.filter { it.getJSONObject("candidate").getString("appId") == "fixture.drift" }
+                assertEquals("Similar rejected frames must not become the next reference", 1, drift.size)
+                assertEquals(ids[ids.size - 2], drift.single().getJSONObject("candidate").getString("id"))
+                assertEquals(ids[ids.size - 3], drift.single().getJSONObject("reference").getString("id"))
+            }
         } finally {
             manager.cancelUniqueWork(BulkDedupeWorker.NAME).result.get()
             ids.forEach { id -> listOf(context.queue(), store.quarantine()).forEach { queue -> queue.dedupeRow(id)?.let { queue.resolveDedupe(id, it.getString("blob"), null, null, null) } } }

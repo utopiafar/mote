@@ -24,7 +24,6 @@ class BulkDedupeActivity : Activity() {
     private val dialogs = mutableListOf<AlertDialog>()
     @Volatile private var imageGeneration = 0
     private lateinit var modes: Spinner
-    private lateinit var interval: EditText
     private val controls = mutableListOf<android.view.View>()
     private val executor = Executors.newSingleThreadScheduledExecutor()
     private val images = Executors.newSingleThreadExecutor()
@@ -44,18 +43,14 @@ class BulkDedupeActivity : Activity() {
         page = savedInstanceState?.getInt("page") ?: 0
         body = moteDetailPage()
         label(body, "本机图片批量去重", 25f)
-        label(body, "扫描开始时本机保存的全部采集图片，按时间排序，与同一应用的保留图比较。只处理本机副本；已上传中央的记录仍然保留。待决定区独立加密保存，不参与同步和自动清理，仍占用磁盘空间。")
+        label(body, "扫描开始时本机保存的全部采集图片，按时间从早到晚扫描，与上一张保留图比较；相似则标记为重复，否则更新保留图。应用或尺寸变化时重新开始比较，不限制时间间隔。只处理本机副本；已上传中央的记录仍然保留。待决定区独立加密保存，不参与同步和自动清理，仍占用磁盘空间。")
         modes = Spinner(this).apply {
             adapter = ArrayAdapter(this@BulkDedupeActivity, android.R.layout.simple_spinner_dropdown_item, listOf("精确", "保守", "均衡", "激进"))
             setSelection(modeValues.indexOf(Settings(this@BulkDedupeActivity).read().imageDedupeMode).coerceAtLeast(0))
         }; body.addView(modes); controls += modes
-        label(body, "与保留图的最大间隔（秒，1–3600）")
-        interval = EditText(this).apply { inputType = android.text.InputType.TYPE_CLASS_NUMBER; setText("60") }; body.addView(interval); controls += interval
         action(body, "开始全量扫描") {
-            val seconds = interval.text.toString().toLongOrNull()
-            if (seconds == null || seconds !in 1..3600) { interval.error = "请输入 1–3600 秒"; return@action }
             val mode = modeValues[modes.selectedItemPosition]
-            submit(workDataOf("action" to "scan", "mode" to mode, "seconds" to seconds))
+            submit(workDataOf("action" to "scan", "mode" to mode))
         }
         status = label(body, "正在读取后台任务…")
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); body.addView(progress)
@@ -97,7 +92,7 @@ class BulkDedupeActivity : Activity() {
                     val queue = queue()
                     loaded = if (report.optBoolean("complete")) (0 until pairs.length()).map { pairs.getJSONObject(it) }
                         .filter { queue.dedupeRow(id(it))?.optString("blob") == it.getJSONObject("candidate").optString("blob") } else emptyList()
-                    title = if (report.optBoolean("complete")) "扫描结果 · ${report.optString("mode")} · 间隔 ${report.optLong("seconds")} 秒\n扫描 ${report.optInt("scanned")} 张 · 失败 ${report.optInt("errors")} 张 · 候选 ${loaded.size} 张\n时间 ${report.optString("at")}" else "尚无完整扫描结果；取消或中断后请重新扫描。"
+                    title = if (report.optBoolean("complete")) "扫描结果 · ${report.optString("mode")} · ${if (report.optString("comparison") == "last_retained") "与上一张保留图比较" else "旧规则结果，请重新扫描"}\n扫描 ${report.optInt("scanned")} 张 · 失败 ${report.optInt("errors")} 张 · 候选 ${loaded.size} 张\n时间 ${report.optString("at")}" else "尚无完整扫描结果；取消或中断后请重新扫描。"
                 }
                 refresh = false
             }

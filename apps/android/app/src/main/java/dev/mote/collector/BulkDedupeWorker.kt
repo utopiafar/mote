@@ -31,10 +31,6 @@ class BulkDedupeStore(context: Context) {
 }
 
 object BulkDedupeRules {
-    fun adjacent(reference: JSONObject, current: JSONObject, seconds: Long): Boolean {
-        val gap = java.time.Duration.between(Instant.parse(reference.getString("capturedAt")), Instant.parse(current.getString("capturedAt"))).toMillis()
-        return reference.optString("appId") == current.optString("appId") && gap in 0..seconds * 1000
-    }
     fun features(bytes: ByteArray, mode: ScreenshotDedupeHelper.Mode): ScreenshotDedupeHelper.FrameFeatures {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
@@ -66,7 +62,6 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
     }
     private fun scan(): Result {
         val mode = ScreenshotDedupeHelper.Mode.fromRaw(inputData.getString("mode"))
-        val seconds = inputData.getLong("seconds", 60).also { require(it in 1..3600) }
         store.write("report", JSONObject().put("complete", false))
         val queue = applicationContext.queue()
         val ids = queue.dedupeIds(); val rows = mutableListOf<JSONObject>(); var errors = 0
@@ -83,7 +78,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
                 val bytes = queue.image(row.getString("id")) ?: error("图片已离开本机")
                 val features = BulkDedupeRules.features(bytes, mode)
                 val previous = reference
-                val comparison = if (previous != null && BulkDedupeRules.adjacent(previous, row, seconds)) ScreenshotDedupeHelper.shouldSkip(signature, features, mode) else null
+                val comparison = if (previous != null && previous.optString("appId") == row.optString("appId")) ScreenshotDedupeHelper.shouldSkip(signature, features, mode) else null
                 if (comparison?.duplicate == true) {
                     pairs.put(JSONObject().put("reference", previous).put("candidate", row).put("bytes", bytes.size)
                         .put("reason", comparison.reason).put("hashDistance", comparison.hashDistance)
@@ -94,7 +89,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
             if (index % 5 == 0 || index == rows.lastIndex) progress("比较图片", index + 1, rows.size, pairs.length(), errors)
         }
         if (isStopped) return Result.failure()
-        store.write("report", JSONObject().put("complete", true).put("mode", mode.rawValue).put("seconds", seconds)
+        store.write("report", JSONObject().put("complete", true).put("mode", mode.rawValue).put("comparison", "last_retained")
             .put("scanned", rows.size).put("errors", errors).put("pairs", pairs).put("at", Instant.now().toString()))
         return Result.success(workDataOf("message" to "扫描完成：${rows.size} 张，${pairs.length()} 张候选，$errors 张跳过或读取失败"))
     }
