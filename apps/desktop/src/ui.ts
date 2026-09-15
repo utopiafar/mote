@@ -401,32 +401,43 @@ byId('note-form').addEventListener('submit', event => {
 byId('open-feedback').addEventListener('click', () => void perform(() => desktopApi.openFeedback()));
 byId('diagnostics-sample').addEventListener('click', () => void perform(async () => render(await desktopApi.sampleDiagnostics())));
 byId('diagnostics-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportDiagnostics(); if (!result.canceled) feedback('数值诊断已导出。', true); }));
-let logRows: import('./support').SupportEvent[] = [];
-let logPage = 0;
-let logLevel = 'all';
-function logSeverity(code: string): string {
-  return ['STARTED','STOPPED','OK','FILTERED','CANCELLED'].includes(code) ? '信息'
-    : ['WAIT_NETWORK','SCHEDULER','PERMISSION','MODEL_UNAVAILABLE'].includes(code) ? '警告' : '错误';
-}
+let logText = '';
+let logWrap = true;
 function renderLogs(): void {
   const viewer = byId('events-viewer'); viewer.replaceChildren();
-  const filter = document.createElement('select'); filter.setAttribute('aria-label', '日志级别');
-  for (const value of ['all', '信息', '警告', '错误']) { const option = document.createElement('option'); option.value = value; option.textContent = value === 'all' ? '全部级别' : value; filter.append(option); }
-  filter.value = logLevel; filter.onchange = () => { logLevel = filter.value; logPage = 0; renderLogs(); }; viewer.append(filter);
-  const rows = logRows.filter(row => logLevel === 'all' || logSeverity(row.code) === logLevel);
-  const summary = document.createElement('p'); summary.textContent = `${rows.length} 条 · 第 ${logPage + 1}/${Math.max(1, Math.ceil(rows.length / 20))} 页 · 每页 20 条`; viewer.append(summary);
-  const output = document.createElement('pre'); output.textContent = rows.slice(logPage * 20, (logPage + 1) * 20).map(event => `${new Date(event.atMs).toLocaleString()}  ${logSeverity(event.code)} · ${event.stage} · ${event.code}\n耗时 ${event.elapsedMs ?? '未测量'} ms · HTTP ${event.httpStatus ?? '无'}`).join('\n\n') || '暂无符合条件的日志。诊断关闭时停止新增，历史仍可查看。'; viewer.append(output);
-  for (const [label, offset] of [['上一页', -1], ['下一页', 1]] as const) {
+  const actions = document.createElement('div'); actions.className = 'actions';
+  const output = document.createElement('textarea'); output.readOnly = true;
+  output.setAttribute('aria-label', '原始日志'); output.spellcheck = false;
+  output.className = 'raw-log-output'; output.wrap = logWrap ? 'soft' : 'off'; output.value = logText;
+  output.placeholder = '暂无日志。诊断关闭时停止新增，历史仍可查看。';
+  const notice = document.createElement('p'); notice.setAttribute('role', 'status');
+  notice.textContent = '按文件原始顺序显示，可拖动选中或使用 ⌘/Ctrl+A、C 复制。';
+  for (const label of ['刷新日志', '复制全部', '全选', '自动换行']) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
-    button.disabled = offset === -1 ? logPage === 0 : (logPage + 1) * 20 >= rows.length;
-    button.onclick = () => { logPage += offset; renderLogs(); }; viewer.append(button);
+    if (label === '刷新日志') button.onclick = () => void loadLogs();
+    if (label === '全选') button.onclick = () => { output.focus(); output.select(); };
+    if (label === '自动换行') {
+      button.setAttribute('aria-pressed', String(logWrap));
+      button.onclick = () => { logWrap = !logWrap; output.wrap = logWrap ? 'soft' : 'off'; button.setAttribute('aria-pressed', String(logWrap)); };
+    }
+    if (label === '复制全部') {
+      button.disabled = !logText;
+      button.onclick = () => { void navigator.clipboard.writeText(logText).then(() => { notice.textContent = '已复制全部原始日志。'; }, () => { output.focus(); output.select(); notice.textContent = '剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。'; }); };
+    }
+    actions.append(button);
   }
+  viewer.append(actions, notice, output);
 }
-byId('events-open').addEventListener('click', () => void perform(async () => {
-  const viewer = byId('events-viewer'); viewer.hidden = false; viewer.textContent = '正在读取本地日志…';
-  try { logRows = (await desktopApi.readEvents()).slice().reverse(); logPage = 0; renderLogs(); }
-  catch (error) { viewer.textContent = '日志读取失败，请点击查看本地日志重试。'; throw error; }
-}));
+let logLoading = false;
+async function loadLogs(): Promise<void> {
+  if (logLoading) return;
+  logLoading = true;
+  const viewer = byId('events-viewer'); viewer.hidden = false;
+  try { logText = await desktopApi.readRawEvents(); renderLogs(); }
+  catch { let notice = viewer.querySelector('[role="status"]'); if (!notice) { notice = document.createElement('p'); notice.setAttribute('role', 'status'); viewer.append(notice); } notice.textContent = '日志读取失败，请点击查看本地日志重试。'; }
+  finally { logLoading = false; }
+}
+byId('events-open').addEventListener('click', () => void loadLogs());
 
 byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(); if (!result.canceled) feedback('支持包已导出；只含数值、配置开关和固定阶段事件。', true); }));
 

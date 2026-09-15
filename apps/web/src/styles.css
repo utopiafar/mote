@@ -3605,3 +3605,5 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .welcome-art {overflow:clip;}
 
 .connection-help summary {cursor:pointer;}
+
+.raw-log-output { box-sizing: border-box; width: 100%; min-height: 420px; max-height: 75vh; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: inherit; resize: vertical; overflow: auto; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; user-select: text; -webkit-user-select: text; cursor: text; tab-size: 2; }

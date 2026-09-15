@@ -68,7 +68,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
     const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query',insights:'insights',index:'index',export:'export',import:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
   };
-  app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);done();}));
+  app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);diagnostics.record('request.started',{requestId:req.id,route:routeName(req.routeOptions.url)},'debug');done();}));
   app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
   const expectedBearer=Buffer.from(`Bearer ${config.token}`);
@@ -195,6 +195,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     return {version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot(),services:{agentConfigured:agent.configured,embeddingConfigured:indexer.configured,activeQueries:activeQueries.size,closing},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,maxBytes:storage.maxBytes,imagesEncrypted:storage.imagesEncrypted}};
   }
   app.get('/api/diagnostics',async()=>diagnosticSnapshot());
+  app.get('/api/diagnostics/logs',async(req,reply)=>{const {file}=z.object({file:z.coerce.number().int().min(0).max(9).default(0)}).strict().parse(req.query);return reply.type('text/plain; charset=utf-8').send(await diagnostics.readRaw(file));});
   app.get('/api/diagnostics/events',async req=>{const args=z.object({afterSeq:z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),limit:z.coerce.number().int().min(1).max(500).default(200)}).strict().parse(req.query);return diagnostics.events(args.afterSeq,args.limit);});
   app.get('/api/support-bundle',async(req,reply)=>{diagnostics.record('support.exported',{requestId:req.id});await diagnostics.flush();return reply.header('Content-Disposition','attachment; filename="mote-support.json"').type('application/json').send({version:1,scope:'central-safe-support',createdAt:new Date().toISOString(),snapshot:diagnosticSnapshot(),events:diagnostics.recent(500)});});
   const web=join(repositoryRoot,'apps/web/dist');

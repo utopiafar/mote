@@ -18,13 +18,27 @@ class EventJournal(private val file: File, private val limit: Int = 500) {
     fun record(stage: EventStage, code: EventCode, elapsedMs: Long? = null, httpStatus: Int? = null) = synchronized(lock) {
         val next = JSONArray(); val old = read()
         for (index in maxOf(0, old.length() - limit + 1) until old.length()) next.put(old.getJSONObject(index))
-        val event = JSONObject().put("atMs", System.currentTimeMillis()).put("stage", stage.name.lowercase()).put("code", code.name.lowercase())
+        val event = JSONObject().put("atMs", System.currentTimeMillis()).put("stage", stage.name.lowercase()).put("code", code.name.lowercase()).put("level", level(code))
         if (elapsedMs != null && elapsedMs >= 0) event.put("elapsedMs", elapsedMs)
         if (httpStatus != null && httpStatus in 100..599) event.put("httpStatus", httpStatus)
         next.put(event); file.parentFile!!.mkdirs()
         val temporary = File(file.parentFile, "${file.name}.tmp")
-        FileOutputStream(temporary).use { out -> out.write(next.toString().toByteArray()); out.fd.sync() }
+        FileOutputStream(temporary).use { out -> out.write(("[" + (0 until next.length()).joinToString(",\n") { next.getJSONObject(it).toString() } + "]\n").toByteArray()); out.fd.sync() }
         check(temporary.renameTo(file))
+    }
+    fun readRaw(): String = synchronized(lock) {
+        if (!file.exists()) return@synchronized ""
+        file.inputStream().use { input ->
+            val bytes = ByteArray(256 * 1024 + 1)
+            var size = 0
+            while (size < bytes.size) {
+                val count = input.read(bytes, size, bytes.size - size)
+                if (count < 0) break
+                size += count
+            }
+            check(size <= 256 * 1024) { "Event log exceeds limit" }
+            String(bytes, 0, size, Charsets.UTF_8)
+        }
     }
     fun read(strict: Boolean = false): JSONArray = synchronized(lock) {
         val raw = if (strict && file.exists()) {
@@ -41,12 +55,19 @@ class EventJournal(private val file: File, private val limit: Int = 500) {
             val event = JSONObject().put("atMs", at.toLong()).put("stage", stage.name.lowercase()).put("code", code.name.lowercase())
             (item.opt("elapsedMs") as? Number)?.takeIf { it.toDouble().isFinite() && it.toLong() >= 0 }?.let { event.put("elapsedMs", it.toLong()) }
             (item.opt("httpStatus") as? Number)?.takeIf { it.toInt() in 100..599 }?.let { event.put("httpStatus", it.toInt()) }
+            item.optString("level").takeIf { it in listOf("debug", "info", "warn", "error") }?.let { event.put("level", it) }
             safe.put(event)
         }
         safe
     }
     companion object {
         private val lock = Any()
+        private fun level(code: EventCode) = when (code) {
+            EventCode.STARTED -> "debug"
+            EventCode.STOPPED, EventCode.OK, EventCode.FILTERED, EventCode.CANCELLED -> "info"
+            EventCode.WAIT_NETWORK, EventCode.SCHEDULER, EventCode.PERMISSION, EventCode.MODEL_UNAVAILABLE -> "warn"
+            else -> "error"
+        }
         fun failure(error: Throwable, stage: EventStage): EventCode {
             var current: Throwable? = error
             repeat(8) {

@@ -169,11 +169,14 @@ export class Collector {
       const next = await this.queue.nextOcr(); if (!next) return;
       id = next.record.event.id;
       if (cfg.ocrOnlyWhileCharging && (await readPowerState(this.helperPath, abort.signal)).onBattery !== false) return;
+      const started = Date.now();
+      void this.events?.record('OCR', 'STARTED');
       const text = await recognizeText(this.helperPath, next.image, abort.signal);
       if (abort.signal.aborted || cfg !== this.config) return;
-      await this.queue.saveOcr(id, text); this.publish();
+      await this.queue.saveOcr(id, text);
+      void this.events?.record('OCR', 'OK', { elapsedMs: Date.now() - started }); this.publish();
       void this.upload();
-    } catch { if (id && !abort.signal.aborted) await this.queue.deferOcr(id).catch(() => undefined); }
+    } catch (error) { if (id) void this.events?.record('OCR', failureCode(error, 'OCR')); if (id && !abort.signal.aborted) await this.queue.deferOcr(id).catch(() => undefined); }
     finally { this.ocrBusy = false; }
   }
   private finalImage(image: NativeImage, rectangles: Config['masks']): NativeImage {
@@ -244,7 +247,7 @@ export class Collector {
       let sanitized = this.finalImage(source.thumbnail, cfg.masks);
       let appliedMasks = cfg.masks.length;
       if (cfg.nsfwEnabled) {
-        stage = 'MODEL';
+        stage = 'MODEL'; void this.events?.record(stage, 'STARTED');
         this.message = '正在加载模型并进行本机隐私检查…'; this.publish();
         if (!this.nsfw) throw new Error('本地千问视觉模型不可用，本次截图已跳过');
         const { width, height } = sanitized.getSize();
@@ -254,14 +257,16 @@ export class Collector {
         inferenceMs = Date.now() - inferenceStarted;
         if (decision.blocked) { void this.events?.record('MODEL', 'FILTERED', { elapsedMs: inferenceMs }); this.diagnostics?.recordCapture({ outcome: 'blocked', inferenceMs, durationMs: Date.now() - startedAt }); this.pause('本地千问视觉策略拒绝，整张截图已跳过'); return; }
       }
+      if (cfg.nsfwEnabled) void this.events?.record('MODEL', 'OK', { elapsedMs: inferenceMs });
       if (cfg.privacyModelUrl) {
-        stage = 'PRIVACY';
+        stage = 'PRIVACY'; void this.events?.record(stage, 'STARTED');
         this.message = '正在进行本机附加隐私检查…'; this.publish();
         const decision = await reviewLocally(cfg.privacyModelUrl, sanitized.toJPEG(cfg.jpegQuality), abort.signal);
         if (!valid()) return;
         if (!decision.allow) { void this.events?.record('PRIVACY', 'FILTERED'); this.pause('本地隐私模型拒绝本次采集'); return; }
         sanitized = this.finalImage(sanitized, decision.rectangles);
         appliedMasks += decision.rectangles.length;
+        void this.events?.record('PRIVACY', 'OK');
       }
       const jpeg = sanitized.toJPEG(cfg.jpegQuality);
       if (jpeg.length > MAX_IMAGE_BYTES) throw new Error('截图超出单张大小限制，本次采集已跳过');
@@ -271,12 +276,15 @@ export class Collector {
       const deferredForPower = cfg.ocrEnabled && cfg.ocrOnlyWhileCharging && (await readPowerState(this.helperPath, abort.signal).catch(() => ({} as import('./native').PowerState))).onBattery !== false;
       let ocrText: string | undefined;
       let ocr: NonNullable<CaptureEvent['ocr']> = { status: cfg.ocrEnabled ? 'pending' : 'disabled', ...(deferredForPower ? { reason: 'charging' as const } : {}) };
+      if (deferredForPower) void this.events?.record('OCR', 'SCHEDULER');
       if (cfg.ocrEnabled && !deferredForPower) {
+        void this.events?.record('OCR', 'STARTED');
         this.message = '正在识别文字…'; this.publish();
         const ocrAbort = this.captureOcrAbort = new AbortController();
         try { ocrText = await recognizeText(this.helperPath, jpeg, AbortSignal.any([abort.signal, ocrAbort.signal])); if (!ocrAbort.signal.aborted) ocr = { status: 'completed' }; else ocrText = undefined; }
-        catch { /* Preserve the sanitized image and retry OCR from the durable queue. */ }
+        catch (error) { void this.events?.record('OCR', failureCode(error, 'OCR')); /* Retry from the durable queue. */ }
         ocrMs = Date.now() - ocrStarted;
+        if (ocr.status === 'completed') void this.events?.record('OCR', 'OK', { elapsedMs: ocrMs });
       }
       if (!valid()) return;
       const metadata = cfg.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, 'screen_capture', abort.signal) : undefined;
@@ -289,7 +297,7 @@ export class Collector {
         ...(metadata ? { metadata: { ...metadata, capture: { intervalMs: cfg.intervalMs, ...sanitized.getSize(), displayScale: display.scaleFactor, ocrEnabled: cfg.ocrEnabled, maskCount: appliedMasks } } } : {}),
         privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', collection: 'content', reason: `${cfg.nsfwEnabled ? 'offline Qwen visual policy passed; ' : ''}${appliedMasks > 0 ? 'configured or local-model masks applied before OCR and persistence' : cfg.privacyModelUrl ? 'local privacy model approved; no masks returned' : 'user-configured app filters checked; no masks configured'}` },
       };
-      stage = 'QUEUE';
+      stage = 'QUEUE'; void this.events?.record(stage, 'STARTED');
       this.message = '正在保存采集记录…'; this.publish();
       await this.queue.enqueue(event, jpeg);
       void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
@@ -324,6 +332,8 @@ export class Collector {
       for (let count = 0, limit = this.queue.stats().depth; count < limit && !abort.signal.aborted; count++) {
         const entry = await this.queue.next();
         if (!entry) break;
+        const uploadStarted = Date.now();
+        void this.events?.record('UPLOAD', 'STARTED');
         try {
           if (entry.record.uploaded) {
             await uploadDeferredOcr(this.config, entry.record.event.id, entry.record.ocrResult!, abort.signal);
@@ -332,7 +342,7 @@ export class Collector {
             await uploadCapture(this.config, entry.record.event, entry.image, abort.signal);
             await this.queue.acknowledge(entry.record.event.id);
           }
-          void this.events?.record('UPLOAD', 'OK');
+          void this.events?.record('UPLOAD', 'OK', { elapsedMs: Date.now() - uploadStarted });
           this.diagnostics?.recordUpload(entry.record.uploaded
             ? Buffer.byteLength(JSON.stringify({ ocrText: entry.record.ocrResult, status: 'completed' }))
             : Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));

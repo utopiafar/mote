@@ -1,5 +1,6 @@
 import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { Status } from './contracts';
 import type { DesktopProfile } from './profile';
@@ -8,13 +9,21 @@ export const stages = ['APP','CONFIG','CAPTURE','MODEL','MODEL_DOWNLOAD','OCR','
 export type EventStage = typeof stages[number];
 export const codes = ['STARTED','STOPPED','OK','FILTERED','WAIT_NETWORK','PERMISSION','CONFIG_INVALID','NETWORK','TIMEOUT','TLS','AUTH','CONFLICT','SERVER','RESPONSE','STORAGE','MODEL_UNAVAILABLE','SCHEDULER','CANCELLED','OTHER'] as const;
 export type EventCode = typeof codes[number];
-export interface SupportEvent { atMs: number; stage: EventStage; code: EventCode; elapsedMs?: number; httpStatus?: number }
+export type EventLevel = 'debug' | 'info' | 'warn' | 'error';
+export function eventLevel(code: EventCode): EventLevel {
+  if (code === 'STARTED') return 'debug';
+  if (['STOPPED','OK','FILTERED','CANCELLED'].includes(code)) return 'info';
+  if (['WAIT_NETWORK','SCHEDULER','PERMISSION','MODEL_UNAVAILABLE'].includes(code)) return 'warn';
+  return 'error';
+}
+export interface SupportEvent { level?: EventLevel; atMs: number; stage: EventStage; code: EventCode; elapsedMs?: number; httpStatus?: number }
 const number = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= Number.MAX_SAFE_INTEGER;
 function cleanEvent(value: unknown): SupportEvent | undefined {
   if (!value || typeof value !== 'object') return;
   const v = value as SupportEvent;
   if (!number(v.atMs) || v.atMs < 0 || !stages.includes(v.stage) || !codes.includes(v.code)) return;
   return { atMs: v.atMs, stage: v.stage, code: v.code,
+    ...(['debug','info','warn','error'].includes(v.level ?? '') ? { level: v.level } : {}),
     ...(number(v.elapsedMs) && v.elapsedMs >= 0 ? { elapsedMs: v.elapsedMs } : {}),
     ...(Number.isInteger(v.httpStatus) && v.httpStatus! >= 100 && v.httpStatus! <= 599 ? { httpStatus: v.httpStatus } : {}) };
 }
@@ -74,17 +83,29 @@ export class EventJournal {
   }
   record(stage: EventStage, code: EventCode, metrics: { elapsedMs?: number; httpStatus?: number } = {}): Promise<void> {
     if (!this.enabled()) return Promise.resolve();
-    const event = cleanEvent({ atMs: Date.now(), stage, code, ...metrics });
+    const event = cleanEvent({ atMs: Date.now(), stage, code, level: eventLevel(code), ...metrics });
     if (!event) return Promise.resolve();
     const task = this.chain.then(async () => {
       await this.cleanOrphanedWrites();
       const rows = [...await this.load(), event].slice(-this.limit);
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
       const file = await open(this.temporary, 'w', 0o600);
-      try { await file.writeFile(JSON.stringify(rows)); await file.sync(); } finally { await file.close(); }
+      try { await file.writeFile('[' + rows.map(row => JSON.stringify(row)).join(',\n') + ']\n'); await file.sync(); } finally { await file.close(); }
       try { await rename(this.temporary, this.path); } finally { await unlink(this.temporary).catch(() => undefined); }
     }).catch(() => undefined);
     this.chain = task; return task;
+  }
+  async readRaw(): Promise<string> {
+    await this.chain;
+    try {
+      const file = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        if ((await file.stat()).size > 256 * 1024) throw new Error('日志文件超出读取上限');
+        const buffer = Buffer.alloc(256 * 1024);
+        const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+        return buffer.subarray(0, bytesRead).toString('utf8');
+      } finally { await file.close(); }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw error; }
   }
   async read(strict = false): Promise<SupportEvent[]> { await this.chain; return this.load(strict); }
 }

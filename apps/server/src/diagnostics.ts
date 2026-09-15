@@ -9,8 +9,8 @@ export type Stage = 'ingest'|'index'|'agent'|'source'|'maintenance';
 export type Operation = 'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention';
 const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention'];
-const events = new Set(['server.started','server.stopping','request.completed','request.failed','queue.snapshot','support.exported',...['ingest','index','agent','source','maintenance'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
-const routes = new Set(['health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
+const events = new Set(['server.started','server.stopping','request.started','request.completed','request.failed','queue.snapshot','support.exported',...['ingest','index','agent','source','maintenance'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
+const routes = new Set(['configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
 const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted'] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -148,7 +148,7 @@ export class ServerDiagnostics {
   async measure<T>(stage:Stage,operation:Operation,task:()=>Promise<T>|T,metrics?:(result:T)=>Metrics):Promise<T> {
     const start=performance.now();this.record(`${stage}.started`,{operation},'debug');
     try {const result=await task();let extra:Metrics={};try{extra=metrics?.(result)??{};}catch{}this.record(`${stage}.completed`,{operation,durationMs:performance.now()-start,...extra});return result;}
-    catch(error){this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:safeError(error).category},'error');throw error;}
+    catch(error){const failure=safeError(error);this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:failure.category},failure.status>=500?'error':'warn');throw error;}
   }
   private startWrite() {
     if(this.pending)return;
@@ -175,6 +175,23 @@ export class ServerDiagnostics {
   snapshot() {return {enabled:!this.closed&&this.enabled&&this.level!=='silent',level:this.level,instanceId:this.instanceId,retainedEvents:this.entries.length,lastSeq:this.seq,pendingWrites:this.queue.length+this.writingCount,droppedEvents:this.dropped,writeFailures:this.writeFailures,readFailures:this.readFailures,limits:{maxFileBytes:this.maxBytes,maxFiles:this.maxFiles,maxEvents:this.maxEntries},runtime:{uptimeMs:Math.round(process.uptime()*1000),rssBytes:process.memoryUsage().rss,cpuUserMicros:process.cpuUsage().user,cpuSystemMicros:process.cpuUsage().system}};}
   events(afterSeq=0,limit=500) {const items=this.entries.filter(e=>e.seq>afterSeq).slice(0,Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));return {items,nextSeq:items.at(-1)?.seq??afterSeq,oldestSeq:this.entries[0]?.seq??null};}
   recent(limit=500) {return this.entries.slice(-Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));}
+  /** Return the current file verbatim, including incomplete/malformed text for troubleshooting. */
+  async readRaw(index=0):Promise<string> {
+    if(!Number.isInteger(index)||index<0||index>=this.maxFiles)throw Object.assign(new Error('Invalid log file'),{statusCode:400});
+    await this.flush();
+    try {
+      const file=await open(this.path(index),constants.O_RDONLY|constants.O_NOFOLLOW);
+      try {
+        if((await file.stat()).size>this.maxBytes)throw new Error('Log exceeds read limit');
+        const buffer=Buffer.alloc(this.maxBytes);
+        const {bytesRead}=await file.read(buffer,0,buffer.length,0);
+        return buffer.subarray(0,bytesRead).toString('utf8');
+      } finally {await file.close();}
+    } catch(error) {
+      if((error as NodeJS.ErrnoException).code==='ENOENT')return '';
+      this.readFailures++;throw error;
+    }
+  }
   async flush() {while(this.pending)await this.pending;}
   close():Promise<void> {if(this.closingPromise)return this.closingPromise;this.closed=true;this.closingPromise=this.finishClose();return this.closingPromise;}
   private async finishClose() {

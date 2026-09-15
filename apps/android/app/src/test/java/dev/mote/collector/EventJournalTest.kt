@@ -11,6 +11,24 @@ import java.net.SocketTimeoutException
 import javax.net.ssl.SSLException
 
 class EventJournalTest {
+    @org.junit.Test fun rawTextIsNotParsedAndLevelsArePersisted() {
+        val path = File(folder.root, "raw-events.json")
+        val journal = EventJournal(path)
+        assertEquals("", journal.readRaw())
+        val raw = "  {\"level\":\"debug\"}\nmalformed <script>中文</script>\n"
+        path.writeText(raw)
+        assertEquals(raw, journal.readRaw())
+        assertEquals(raw, path.readText())
+        path.delete()
+        journal.record(EventStage.MODEL, EventCode.STARTED)
+        journal.record(EventStage.MODEL, EventCode.OK)
+        journal.record(EventStage.OCR, EventCode.SCHEDULER)
+        journal.record(EventStage.UPLOAD, EventCode.AUTH)
+        val rows = journal.read()
+        assertEquals(listOf("debug", "info", "warn", "error"), (0 until rows.length()).map { rows.getJSONObject(it).getString("level") })
+        assertEquals(path.readText(), journal.readRaw())
+    }
+
     @Test fun `strict viewer detects corruption and preserves file`() {
         val path = File(folder.root, "broken.json")
         val journal = EventJournal(path)

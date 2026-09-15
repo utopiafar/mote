@@ -75,8 +75,10 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .put("appId", appId).put("appName", CollectorMetadata.appName(context, appId)).put("source", "activity")
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
                     .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
+                SupportEvents.record(context, EventStage.QUEUE, EventCode.STARTED)
                 settings.ensureDataOrigin(config)
                 context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                SupportEvents.record(context, EventStage.QUEUE, EventCode.OK)
                 dedupeSignature = null
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
                 settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型 · ${context.queue().depth()} 条保存在本机")
@@ -104,6 +106,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 val inferenceStart = SystemClock.elapsedRealtime()
                 stage = EventStage.MODEL
                 if (config.nsfw.enabled) settings.status("capturing", "已收到画面，正在加载模型并进行本机隐私检查…")
+                if (config.nsfw.enabled) SupportEvents.record(context, stage, EventCode.STARTED)
                 val decision = if (config.nsfw.enabled) nsfw.check(bitmap, config.nsfw) else null
                 if (decision != null) diagnostics.timing("inferenceMs", SystemClock.elapsedRealtime() - inferenceStart)
                 if (decision?.allow == false) {
@@ -112,6 +115,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     diagnostics.add("blockedCount")
                     pause("本机 NSFW 模型已过滤当前帧，未进入 OCR/保存/上传"); return@execute
                 }
+                if (decision != null) SupportEvents.record(context, stage, EventCode.OK, SystemClock.elapsedRealtime() - inferenceStart)
                 output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
                 val masks = Mask.parse(config.masks)
                 ImagePrivacy.applyMasks(output, masks)
@@ -123,22 +127,27 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 stage = EventStage.OCR
                 val runOcr = !config.ocrChargingOnly || Diagnostics.battery(context).second
                 if (runOcr) settings.status("capturing", "隐私检查已完成，正在识别文字…")
+                val ocrStart = SystemClock.elapsedRealtime()
+                SupportEvents.record(context, stage, if (runOcr) EventCode.STARTED else EventCode.SCHEDULER)
                 var text = if (runOcr) ocrInstance.value.recognize(output) else ""
+                if (runOcr) SupportEvents.record(context, stage, EventCode.OK, SystemClock.elapsedRealtime() - ocrStart)
                 var reviewed = false
                 var modelMaskApplied = false
                 var appliedMaskCount = masks.size
                 if (config.localReviewUrl.isNotBlank()) {
                     stage = EventStage.PRIVACY
+                    SupportEvents.record(context, stage, EventCode.STARTED)
                     settings.status("capturing", "正在进行本机附加隐私检查…")
                     PrivacyRules.validateLocalReview(config.localReviewUrl)
                     val request = JSONObject().put("version", 1).put("imageBase64", Base64.encodeToString(jpeg(output, config.jpegQuality), Base64.NO_WRAP))
                         .put("imageMime", "image/jpeg").put("ocrText", text).put("appId", windows.foreground)
                     val (code, response) = HttpJson.post(config.localReviewUrl, request)
                     require(code == 200 && response != null && response.has("allow") && response.get("allow") is Boolean) { "隐私模型响应无效" }
-                    if (!response.getBoolean("allow")) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.LOCAL_DENIED); pause("本机隐私模型阻止此帧", OperationReason.LOCAL_DENIED); return@execute }
+                    if (!response.getBoolean("allow")) { SupportEvents.record(context, stage, EventCode.FILTERED); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.LOCAL_DENIED); pause("本机隐私模型阻止此帧", OperationReason.LOCAL_DENIED); return@execute }
                     val extraMasks = ReviewResponse.masks(response)
                     if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = if (runOcr) ocrInstance.value.recognize(output) else ""; modelMaskApplied = true; appliedMaskCount += extraMasks.size }
                     reviewed = true
+                    SupportEvents.record(context, stage, EventCode.OK)
                 }
                 if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 if (dedupeConfig != config || dedupeApp != windows.foreground || dedupeSize != (output.width to output.height)) dedupeSignature = null
@@ -176,6 +185,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     event.put("metadata", metadata.put("capture", capture))
                 }
                 stage = EventStage.QUEUE
+                SupportEvents.record(context, EventStage.QUEUE, EventCode.STARTED)
                 settings.ensureDataOrigin(config)
                 context.queue().enqueue(event, if (duplicate) null else jpeg(output, config.jpegQuality), config.maxQueueMiB * 1024L * 1024L)
                 if (!duplicate) dedupeSignature = features?.toSignature()

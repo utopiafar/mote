@@ -151,3 +151,31 @@ test('explicit agent timeout returns correlated 504 diagnostics while invalid an
   assert.equal(invalid.statusCode,502);assert.equal(invalid.json().error,'agent_response');
   const bundle=await app.inject({url:'/api/support-bundle',headers});for(const privateValue of [marker,cfg.token,cfg.apiKey])assert.ok(!bundle.body.includes(privateValue));
 });
+
+test('raw log endpoint returns file text verbatim with owner authentication and no cache', async t=>{
+  const dataDir=await mkdtemp(join(tmpdir(),'mote-raw-log-'));
+  const {app,diagnostics}=await buildApp(config(dataDir),{agent:inactive});
+  t.after(async()=>{await app.close();await rm(dataDir,{recursive:true,force:true});});
+  const unauthorized=await app.inject({method:'GET',url:'/api/diagnostics/logs'});
+  assert.equal(unauthorized.statusCode,401);
+  await diagnostics.flush();
+  const path=join(dataDir,'logs','central.0.ndjson');
+  const raw='  {"level":"info"}\nmalformed <script>中文 fixture</script>\n';
+  await writeFile(path,raw);
+  // Read directly so debug request-start writes do not alter the exact-byte assertion.
+  assert.equal(await diagnostics.readRaw(),raw);
+  await writeFile(join(dataDir,'logs','central.1.ndjson'),raw);
+  assert.equal(await diagnostics.readRaw(1),raw);
+  await assert.rejects(diagnostics.readRaw(9));
+  const result=await app.inject({method:'GET',url:'/api/diagnostics/logs',headers:{authorization:`Bearer ${config(dataDir).token}`}});
+  assert.equal(result.statusCode,200);assert.match(result.headers['content-type']!,/^text\/plain/);
+  assert.equal(result.headers['cache-control'],'no-store');assert.ok(result.body.startsWith(raw));
+});
+
+test('stage failures use warning for rejected input and error for failed execution', async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-levels-'));const d=new ServerDiagnostics({directory,debug:true});
+  t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
+  await assert.rejects(d.measure('ingest','note',()=>{throw {statusCode:400};}));
+  await assert.rejects(d.measure('index','embedding',()=>{throw new Error('synthetic');}));
+  assert.deepEqual(d.events().items.map(e=>e.level),['debug','warn','debug','error']);
+});
