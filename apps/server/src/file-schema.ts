@@ -24,5 +24,6 @@ export function fileSchema(db:DatabaseSync){db.exec(`
  if(!columns.has('index_error'))db.exec('ALTER TABLE file_chunks ADD COLUMN index_error TEXT');
  if(!columns.has('metadata'))db.exec("ALTER TABLE file_chunks ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'");
  const jobs=new Set((db.prepare('PRAGMA table_info(file_jobs)').all() as {name:string}[]).map(r=>r.name));
+ if(!jobs.has('policy_json'))db.exec('ALTER TABLE file_jobs ADD COLUMN policy_json TEXT');
  if(!jobs.has('local_only'))db.exec('ALTER TABLE file_jobs ADD COLUMN local_only INTEGER NOT NULL DEFAULT 0');
 }

@@ -1,7 +1,7 @@
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import {pathToFileURL} from 'node:url';
 import {isAbsolute} from 'node:path';
-import {transcriptSchema,diarizationSchema,type Transcript,type FileProcessingSettings} from '@mote/shared';
+import {transcriptSchema,diarizationSchema,type Transcript,type FileProcessingSettings,processorParameterSchema,type ProcessorParameter} from '@mote/shared';
 import {StoreError} from './store.js';
 
 export interface TranscriptionProvider {
@@ -27,17 +27,18 @@ export class HttpTranscriptionProvider implements TranscriptionProvider {
 }
 export interface ProcessorInput {
   file:{id:string;title:string;mimeType:string;sizeBytes:number};
-  settings:FileProcessingSettings;signal:AbortSignal;maxAudioMs:number;
+  parameters?:Record<string,string|number|boolean|null>;settings:FileProcessingSettings;signal:AbortSignal;maxAudioMs:number;
   readOriginal():AsyncIterable<Buffer>;
 }
 export interface FileProcessor {
-  id:string;version:string;name:string;stage:'extract'|'diarize';mediaTypes:string[];localOnly?:boolean;
+  id:string;version:string;name:string;stage:'extract'|'diarize';mediaTypes:string[];localOnly?:boolean;serviceKind?:'asr'|'image'|'file';parameters?:ProcessorParameter[];
   process(input:ProcessorInput):Promise<unknown>;
 }
 export class ProcessorRegistry {
   private entries=new Map<string,FileProcessor>();
   register(processor:FileProcessor){
     if(!/^[a-z][a-z0-9.-]{0,99}$/.test(processor.id)||!processor.version||this.entries.has(processor.id))throw new Error('Invalid or duplicate file processor');
+    if(processor.parameters){processor.parameters=processor.parameters.map(p=>processorParameterSchema.parse(p));if(new Set(processor.parameters.map(p=>p.key)).size!==processor.parameters.length)throw new Error('Duplicate processor parameter');}
     this.entries.set(processor.id,processor);
     return ()=>{if(this.entries.get(processor.id)===processor)this.entries.delete(processor.id);};
   }
@@ -53,7 +54,7 @@ export class FileProcessorRuntime {
   readonly context=new Context();readonly registry=new ProcessorRegistry();readonly ready:Promise<void>;
   constructor(provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[]){
     this.context.provide('moteFileProcessors',this.registry);
-    const audio=(id:string,localOnly=false)=>builtin({id,version:'1',name:localOnly?'本地多人录音':'转写接口',stage:'extract',mediaTypes:['audio/'],localOnly,
+    const audio=(id:string,localOnly=false)=>builtin({id,version:'1',name:localOnly?'本地多人录音':'转写接口',stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',parameters:localOnly?[{key:'speakerCount',label:'预期说话人数',type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:'留空由模型自动识别'},{key:'semanticTurns',label:'使用本地语言模型合并自然发言轮次',type:'boolean',default:false}]:[],
       process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,maxAudioMs:input.maxAudioMs,signal:input.signal})});
     this.ready=(async()=>{
       try{
@@ -65,9 +66,9 @@ export class FileProcessorRuntime {
           const text=new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(buffers));
           return {durationMs:0,segments:Array.from({length:Math.ceil(text.length/4000)},(_,i)=>({startMs:0,endMs:0,text:text.slice(i*4000,(i+1)*4000)}))};
         }}));
-        await this.context.plugin(builtin({id:'image.http',version:'1',name:'图片文字提取接口',stage:'extract',mediaTypes:['image/'],async process(input){
+        await this.context.plugin(builtin({id:'image.http',version:'1',name:'图片文字提取接口',stage:'extract',mediaTypes:['image/'],serviceKind:'image',async process(input){
           if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
-          const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
+          const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
           const transcript=transcriptSchema.parse(await readProcessorJson(response));if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
         }}));
         await this.context.plugin(builtin({id:'audio.diarize',version:'1',name:'本地说话人分离',stage:'diarize',mediaTypes:['audio/'],localOnly:true,async process(input){

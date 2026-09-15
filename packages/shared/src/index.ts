@@ -136,3 +136,4 @@ export type Activity = ActivityCounts & {apps:(ActivityCounts & {appId?:string;a
 export * from './connection.js';
 
 export * from './files.js';
+export * from './file-policy.js';

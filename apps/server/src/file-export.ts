@@ -28,7 +28,7 @@ export function fileExportEntries(files:FileStore,id:string,maxBytes=64*1024*102
   if(corrected){add('带说话人_已确认校正记录.md',markdown(corrected.data.transcript,'已确认校正记录'));add('带说话人_已确认校正记录.csv',csv(corrected.data.transcript));}
   const calendar=artifacts.find(a=>a.kind==='calendar-link')?.data,names=artifacts.find(a=>a.kind==='speaker-names')?.data;
   if(calendar)add('已确认场次.json',JSON.stringify(calendar,null,2));if(names)add('已确认说话人.json',JSON.stringify(names,null,2));
-  add('manifest.json',JSON.stringify({version:1,captureId:id,sourceId:file.sourceId,originalTitle:file.item.title,originalSha256:file.sha256,job:file.job,steps:file.steps,uncorrectedPreserved:true,artifacts:artifacts.map(({id,kind})=>({id,kind})),calendarConfirmed:!!calendar,speakerNamesConfirmed:!!names},null,2));
+  add('manifest.json',JSON.stringify({version:1,captureId:id,sourceId:file.sourceId,originalTitle:file.item.title,originalSha256:file.sha256,job:file.job,steps:file.steps,processingPolicy:(()=>{const json=db.prepare('SELECT policy_json FROM file_jobs WHERE capture_id=?').get(id)?.policy_json;return json?JSON.parse(String(json)):null;})(),uncorrectedPreserved:true,artifacts:artifacts.map(({id,kind})=>({id,kind})),calendarConfirmed:!!calendar,speakerNamesConfirmed:!!names},null,2));
   return entries;
 }
 /** Fixed, generated file names only. USTAR bytes can be read by tar or common archive applications. */

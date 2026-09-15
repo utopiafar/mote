@@ -3628,3 +3628,20 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 
 .file-card{display:flex;flex-direction:column;gap:8px;text-align:left;width:100%;color:inherit}.file-detail{width:100%;min-width:0;padding:24px 28px;box-sizing:border-box}.file-detail>h3{font-size:20px;margin:0 0 12px}.file-detail .source-toolbar{flex-wrap:wrap;gap:8px}.file-detail>p{margin:12px 0}.file-detail p,.file-detail li{overflow-wrap:anywhere}.file-detail audio{width:100%;margin:12px 0}.file-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .file-processing-settings form{display:grid;gap:16px;margin-top:16px}.file-processing-settings fieldset{min-width:0;border:1px solid var(--border,#dce4d8);border-radius:12px;padding:16px;display:grid;gap:12px}.file-processing-settings label{display:grid;gap:6px}.file-processing-settings input:not([type=checkbox]),.file-processing-settings select{min-width:0;width:100%;box-sizing:border-box}.file-processing-settings input[type=checkbox]{width:auto}.file-processing-settings details>label{margin:12px 0}.file-detail details{margin:16px 0}.file-detail details>summary{cursor:pointer;padding:8px 0}.file-detail label{display:grid;gap:6px;margin:10px 0}.file-detail input:not([type=checkbox]){max-width:100%;box-sizing:border-box}
+
+.file-processing-settings { margin-top: 24px; }
+.file-processing-settings fieldset { min-width: 0; margin: 18px 0; padding: 16px; border: 1px solid var(--border, #d8dce5); border-radius: 10px; }
+.file-processing-settings legend { font-weight: 650; padding: 0 6px; }
+.file-processing-settings label { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.file-processing-settings label:has(input[type=checkbox]) { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.file-processing-settings label small { color: var(--muted, #657080); font-weight: normal; }
+.file-processing-settings input:not([type=checkbox]), .file-processing-settings select { width: 100%; min-width: 0; box-sizing: border-box; }
+.policy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)); gap: 16px; margin: 12px 0; }
+.policy-rule { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border, #d8dce5); }
+.policy-rule label { flex: 1 1 160px; }
+.policy-rules { margin-bottom: 14px; }
+.policy-card { border: 1px solid var(--border, #d8dce5); border-radius: 8px; margin: 12px 0; padding: 12px; }
+.policy-card summary { cursor: pointer; overflow-wrap: anywhere; }
+.policy-preview { margin-top: 14px; padding: 16px; background: var(--panel, #f3f5f8); border-radius: 8px; }
+.policy-preview ul { max-height: 260px; overflow: auto; }
+.policy-message { padding: 12px; border-left: 3px solid var(--accent, #5274e0); overflow-wrap: anywhere; }

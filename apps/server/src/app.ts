@@ -73,7 +73,10 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const analyzeFile:FileAnalysis=async(records,prompt,settings,localOnly)=>{
     const scoped:ContextReader={search:async()=>records,timeline:async()=>records,evidence:async args=>records.filter(r=>args.ids.includes(r.id)),activity:async()=>({}),devices:async()=>[]};
     let selected=modelSettings.current();
-    if(localOnly){
+    if(settings.analysisModel){
+      const m=settings.analysisModel;if(localOnly&&m.execution!=='local')throw new StoreError('本地文件不能使用远程语言模型',409);
+      selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:m.endpoint,model:m.model,apiKey:m.apiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:m.execution==='local',reasoningEffort:'auto'};
+    }else if(localOnly){
       if(!settings.localModelName||!['127.0.0.1','localhost','[::1]'].includes(new URL(settings.localModelEndpoint).hostname))throw new StoreError('Configure a local language model for this operation',409);
       selected={...selected,provider:'custom',protocol:'openai-completions',baseUrl:settings.localModelEndpoint,model:settings.localModelName,apiKey:settings.localModelApiKey??'',headers:{},extraBody:{},allowUnauthenticatedLocal:true,reasoningEffort:'auto'};
     }

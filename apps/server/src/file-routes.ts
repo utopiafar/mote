@@ -25,7 +25,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.post('/api/file-sync/v1/uploads/:id/commit',async req=>files.commit(id(req),check(req)));
   app.put('/api/file-sync/v1/revisions',{bodyLimit:32768,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>files.revision(req.body,check(req)));
   app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
-  app.get('/api/files/:id',async req=>file(req));
+  app.get('/api/files/:id',async req=>({...file(req),processingPolicy:processing.explain(id(req))}));
   app.get('/api/files/:id/chunks',async req=>{file(req);const q=z.object({offset:z.coerce.number().int().min(0).default(0)}).strict().parse(req.query);const items=files.chunks(id(req),q.offset);return {items,nextOffset:items.length===100?q.offset+100:null};});
   app.post('/api/files/:id/playback',async(req,reply)=>{
     file(req);const token=randomBytes(32).toString('hex');for(const [key,value] of grants)if(value.until<Date.now())grants.delete(key);
@@ -51,9 +51,12 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.post('/api/files/:id/reviews',{bodyLimit:16384,config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{file(req);return reviews.propose(id(req),req.body);});
   app.post('/api/files/:id/reviews/:reviewId',{bodyLimit:65536},async req=>{file(req);return reviews.confirm(id(req),(req.params as {reviewId:string}).reviewId,req.body);});
   app.post('/api/files/:id/speakers',{bodyLimit:16384},async req=>{file(req);return reviews.nameSpeakers(id(req),req.body);});
-  app.post('/api/file-processing/test-local',async()=>{const settings=processing.currentSettings();if(!isLoopback(settings.localEndpoint))throw new StoreError('Local worker must use loopback');const endpoint=new URL(settings.localEndpoint);endpoint.pathname='/health';const response=await fetch(endpoint,{headers:settings.localWorkerApiKey?{Authorization:`Bearer ${settings.localWorkerApiKey}`}:{},signal:AbortSignal.timeout(10000),redirect:'error'});return z.object({version:z.number(),execution:z.literal('local'),asr:z.boolean(),diarization:z.boolean()}).strict().parse(await readProcessorJson(response,4096));});
+  app.post('/api/file-processing/test-local',async req=>{const q=z.object({serviceId:z.string().max(100).optional()}).strict().parse(req.body??{}),settings=processing.localService(q.serviceId);if(!isLoopback(settings.endpoint))throw new StoreError('Local worker must use loopback');const endpoint=new URL(settings.endpoint);endpoint.pathname='/health';const response=await fetch(endpoint,{headers:settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{},signal:AbortSignal.timeout(10000),redirect:'error'});return z.object({version:z.number(),execution:z.literal('local'),asr:z.boolean(),diarization:z.boolean()}).strict().parse(await readProcessorJson(response,4096));});
   app.get('/api/file-processing',async()=>processing.view());
-  app.put('/api/file-processing',{bodyLimit:16384},async req=>processing.update(req.body));
+  app.post('/api/file-processing/match',async req=>processing.match(req.body));
+  app.post('/api/file-processing/preview',async req=>processing.preview(req.body));
+  app.post('/api/file-processing/reprocess',async req=>processing.reprocess(req.body));
+  app.put('/api/file-processing',{bodyLimit:262144},async req=>processing.update(req.body));
   return (req:FastifyRequest)=>{
     if(req.routeOptions.url!=='/api/files/:id/content'||!['GET','HEAD'].includes(req.method))return false;
     const token=req.headers.cookie?.split(';').map(s=>s.trim()).find(s=>s.startsWith(cookieName(id(req))+'='))?.split('=')[1];

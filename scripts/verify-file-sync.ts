@@ -32,7 +32,12 @@ console.info(JSON.stringify({transport:'passed',originals:report.originals.lengt
 
 if(process.argv.includes('--live-model')){
  const status=await request('/api/status');assert.equal(status.agent.configured,true);report.model=status.agent.model;
- const settings=await request('/api/file-processing');await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',summarize:true,endpoint:process.env.MOTE_FILE_TEST_ASR??'http://127.0.0.1:59019/transcribe',dailyAudioMinutes:10}},'PUT');
+ const settings=await request('/api/file-processing');
+ if(process.argv.includes('--policy')){
+   const policy=settings.policy;const service=policy.services.find((s:any)=>s.id==='asr-api');service.endpoint=process.env.MOTE_FILE_TEST_ASR??'http://127.0.0.1:59019/transcribe';service.execution='local';service.apiKey=null;
+   for(const processorId of ['audio.http','text.utf8']){const profile=policy.profiles.find((p:any)=>p.processorId===processorId);profile.summarize=true;}
+   await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,dailyAudioMinutes:10},policy},'PUT');
+ }else await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',summarize:true,endpoint:process.env.MOTE_FILE_TEST_ASR??'http://127.0.0.1:59019/transcribe',dailyAudioMinutes:10}},'PUT');
  const audio=android.initialFiles.find((f:any)=>f.item.mimeType==='audio/wav');assert.ok(audio);
  const targets=android.initialFiles.filter((f:any)=>/^(audio|text)\//.test(f.item.mimeType));
  const deadline=Date.now()+240000;let details:any[]=[];
@@ -51,6 +56,6 @@ if(process.argv.includes('--live-model')){
  save();
  const ids=new Set(chunks.items.map((c:any)=>c.id));assert.ok(report.query.citations.length);assert.ok(report.query.citations.some((c:any)=>ids.has(c.id)));assert.ok(report.query.citations.every((c:any)=>ids.has(c.id)||c.id===audio.captureId));assert.ok(report.query.trace.some((step:any)=>step.tool==='file_chunks'&&step.count===chunks.items.length));
  report.memories=await request('/api/memories/extract',{deviceId:connection.deviceId,timeZone:'Asia/Shanghai'});
- report.layers=await request('/api/layers');report.liveModel=true;save();
+ report.layers=await request('/api/layers');report.liveModel=true;report.policyMode=process.argv.includes('--policy');save();
  console.info(JSON.stringify({liveModel:'passed',citations:report.query.citations.length,memories:report.memories.items.length,report:join(directory,'central-result.json')}));
 }
