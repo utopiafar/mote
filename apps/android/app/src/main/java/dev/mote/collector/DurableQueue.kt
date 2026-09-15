@@ -244,6 +244,46 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (!file.exists()) return
         atomic(file, read(file).put("_ocrConflict", true).toString().toByteArray())
     }
+    /** IDs only: callers read one record per lock acquisition while scanning in a worker. */
+    fun dedupeIds(): List<String> = guarded { browseFiles().map { it.nameWithoutExtension } }
+    fun dedupeRow(id: String): JSONObject? = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) null else JSONObject(browseIndex().entry(file, ::read).toString())
+    }
+    /** Commit only against the exact blobs reviewed. Never remove the retained reference. */
+    fun resolveDedupe(id: String, hash: String, referenceId: String?, referenceHash: String?, destination: DurableQueue?, destinationMaxBytes: Long = Long.MAX_VALUE): Boolean = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) return@guarded false
+        val event = read(file)
+        if (event.optString("_blob") != hash) return@guarded false
+        if (referenceId != null) {
+            require(referenceId != id)
+            val reference = File(dir, "${UUID.fromString(referenceId)}.event")
+            if (!reference.exists() || read(reference).optString("_blob") != referenceHash || image(referenceId) == null) return@guarded false
+        }
+        if (destination != null) {
+            destination.assertCurrent?.invoke()
+            require(destination.dir.canonicalFile != dir.canonicalFile)
+            val target = File(destination.dir, file.name)
+            // A previous interrupted move may already have committed its destination.
+            if (target.exists()) check(destination.read(target).toString() == event.toString()) { "目标已有不同记录，保留两份以供检查" }
+            else {
+                require(hash.matches(Regex("[a-f0-9]{64}")))
+                val bytes = cipher.open(File(dir, "$hash.blob").readBytes())
+                val additional = event.toString().toByteArray().size + 2048L + ocrReserve(event) +
+                    if (File(destination.dir, "$hash.blob").exists()) 0L else bytes.size + 64L
+                if (destination.bytes() > destinationMaxBytes - additional) throw QueueFull()
+                destination.atomic(File(destination.dir, "$hash.blob"), bytes)
+                destination.atomic(target, event.toString().toByteArray())
+                check(destination.read(target).toString() == event.toString())
+                check(destination.image(id)!!.contentEquals(bytes))
+            }
+            // Also validate a destination left by an interrupted earlier attempt.
+            check(destination.image(id)?.contentEquals(requireNotNull(image(id))) == true) { "目标图片校验失败，原记录已保留" }
+        }
+        remove(file, event)
+        true
+    }
     fun image(id: String): ByteArray? = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return null

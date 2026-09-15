@@ -467,6 +467,7 @@ class MainActivity : Activity() {
         section("图片去重排查")
         imageDedupeDiagnosticsEnabled = check("临时保留图片去重对比记录", config.imageDedupeDiagnosticsEnabled)
         text("默认关闭。开启并保存后，将已去重图片及对比原图临时加密保存在本机，供核对分数与判断依据。最多 20 组、32 MiB，24 小时后到期；读取时清理，系统可能延后后台清理。关闭并保存后清空。保留的都是通过隐私检查和遮罩后的图片。", 13, MoteUi.muted)
+        menu("本机图片批量去重", "全量扫描、对比预览、移入待决定区或删除", "chart") { startActivity(Intent(this, BulkDedupeActivity::class.java)) }
         menu("查看图片去重记录", "对比两张图片、分数与依据，可随时清空", "chart") { startActivity(Intent(this, ImageDedupeDiagnosticsActivity::class.java)) }
         menu("模型高级设置", "审查指令、下载来源与推理参数", "settings") { showPage(Page.MODEL) }
         section("调试连接")
