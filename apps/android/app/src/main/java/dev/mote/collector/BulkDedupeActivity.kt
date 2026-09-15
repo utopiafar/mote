@@ -49,7 +49,7 @@ class BulkDedupeActivity : Activity() {
         label(body, "扫描开始时本机保存的全部采集图片，按时间从早到晚扫描，与上一张保留图比较；相似则标记为重复，否则更新保留图。应用或尺寸变化时重新开始比较，不限制时间间隔。只处理本机副本；已上传中央的记录仍然保留。待决定区独立加密保存，不参与同步和自动清理，仍占用磁盘空间。")
         modes = Spinner(this).apply {
             adapter = ArrayAdapter(this@BulkDedupeActivity, android.R.layout.simple_spinner_dropdown_item, listOf("精确", "保守", "均衡", "激进"))
-            setSelection(modeValues.indexOf(Settings(this@BulkDedupeActivity).read().imageDedupeMode).coerceAtLeast(0))
+            isEnabled = false
         }; body.addView(modes); controls += modes
         action(body, "开始全量扫描") {
             val mode = modeValues[modes.selectedItemPosition]
@@ -71,6 +71,10 @@ class BulkDedupeActivity : Activity() {
         action(body, "上一页") { if (page > 0) { page--; render() } }
         action(body, "下一页") { if ((page + 1) * 10 < rows.size) { page++; render() } }
         MoteUi.styleTree(body)
+        executor.execute {
+            val mode = runCatching { Settings(applicationContext).read().imageDedupeMode }
+            runOnUiThread { if (!isDestroyed) { mode.onSuccess { modes.setSelection(modeValues.indexOf(it).coerceAtLeast(0)) }; modes.isEnabled = !busy } }
+        }
     }
     override fun onResume() {
         super.onResume()

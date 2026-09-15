@@ -8,7 +8,8 @@ import type { LocalSourceManager } from './source-manager';
 import { MAX_IMAGE_BYTES, publicConfig } from './config';
 import { DurableQueue, QueueFullError } from './queue';
 import { activeApplication, foregroundApplication, recognizeText, readPowerState } from './native';
-import { maskBitmap, reviewLocally } from './privacy';
+import { imageWork } from './background';
+import { reviewLocally } from './privacy';
 import { collectionForApp, permitsVisibleContent } from './app-collection';
 import { collectRecordMetadata } from './record-metadata';
 import { heartbeat, uploadCapture, uploadDeferredOcr, DeletedCaptureFailure } from './transport';
@@ -176,9 +177,13 @@ export class Collector {
     } catch { if (id && !abort.signal.aborted) await this.queue.deferOcr(id).catch(() => undefined); }
     finally { this.ocrBusy = false; }
   }
-  private finalImage(image: NativeImage, rectangles: Config['masks']): NativeImage {
+  private async finalImage(image: NativeImage, rectangles: Config['masks']): Promise<NativeImage> {
     const { width, height } = image.getSize();
-    return nativeImage.createFromBitmap(maskBitmap(image.toBitmap(), width, height, rectangles), { width, height });
+    return nativeImage.createFromBitmap(Buffer.from(await imageWork.run<Uint8Array>({ kind: 'mask', bytes: image.toBitmap(), width, height, rectangles })), { width, height });
+  }
+  private async encodeImage(image: NativeImage, quality: number): Promise<Buffer> {
+    const { width, height } = image.getSize();
+    return Buffer.from(await imageWork.run<Uint8Array>({ kind: 'jpeg', bytes: image.toBitmap(), width, height, quality }));
   }
   private async capture(): Promise<void> {
     if (!this.running || this.capturing) return;
@@ -241,7 +246,7 @@ export class Collector {
       if (!valid()) return;
       if (before.appId !== after.appId || before.pid !== after.pid || collectionForApp(after.appId, cfg) !== 'content' || !permitsVisibleContent(after.visibleAppIds, after.unknownVisibleWindows, cfg) || before.visibleAppIds.join('\n') !== after.visibleAppIds.join('\n') || before.unknownVisibleWindows !== after.unknownVisibleWindows) { this.pause('采样期间屏幕应用发生变化或存在排除窗口，已跳过本次采集'); return; }
       // All unredacted pixels remain only in process memory. Never write a raw image.
-      let sanitized = this.finalImage(source.thumbnail, cfg.masks);
+      let sanitized = await this.finalImage(source.thumbnail, cfg.masks);
       let appliedMasks = cfg.masks.length;
       if (cfg.nsfwEnabled) {
         stage = 'MODEL';
@@ -257,13 +262,13 @@ export class Collector {
       if (cfg.privacyModelUrl) {
         stage = 'PRIVACY';
         this.message = '正在进行本机附加隐私检查…'; this.publish();
-        const decision = await reviewLocally(cfg.privacyModelUrl, sanitized.toJPEG(cfg.jpegQuality), abort.signal);
+        const decision = await reviewLocally(cfg.privacyModelUrl, await this.encodeImage(sanitized, cfg.jpegQuality), abort.signal);
         if (!valid()) return;
         if (!decision.allow) { void this.events?.record('PRIVACY', 'FILTERED'); this.pause('本地隐私模型拒绝本次采集'); return; }
-        sanitized = this.finalImage(sanitized, decision.rectangles);
+        sanitized = await this.finalImage(sanitized, decision.rectangles);
         appliedMasks += decision.rectangles.length;
       }
-      const jpeg = sanitized.toJPEG(cfg.jpegQuality);
+      const jpeg = await this.encodeImage(sanitized, cfg.jpegQuality);
       if (jpeg.length > MAX_IMAGE_BYTES) throw new Error('截图超出单张大小限制，本次采集已跳过');
       // OCR must run after BOTH user masks and optional model masks.
       stage = 'OCR';

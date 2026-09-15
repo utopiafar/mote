@@ -39,7 +39,7 @@ class QueueStorage(private val context: Context) {
     fun current(): QueueLocation { requireUiReady(); return DurableQueue.exclusive { store().current().also { recoveryFailure = null } } }
     fun migrate(id: String): QueueLocation = DurableQueue.exclusive {
         val target = choices().singleOrNull { it.id == id } ?: error("所选目标存储暂不可用")
-        try { store().migrate(target.id, target.base) } finally { LocalStateChanges.changed(records = true) }
+        try { store().migrate(target.id, target.base, RuntimeSettings::reportProgress) } finally { LocalStateChanges.changed(records = true) }
     }
     fun openQueue(): DurableQueue {
         requireUiReady()

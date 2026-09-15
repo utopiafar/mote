@@ -72,10 +72,10 @@ class ComplexNotesInstrumentedTest {
         var editorMs = 0L
         fixtures.forEach { fixture ->
             if (fixture.name == "maximum-length") {
-                ActivityScenario.launch(MainActivity::class.java).use { activity ->
+                ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { activity ->
                     val started = SystemClock.elapsedRealtime()
                     activity.onActivity { field(it.window.decorView, "记下此刻的想法…")!!.setText(fixture.text) }
-                    activity.recreate()
+                    activity.recreate(); activity.awaitMainUi()
                     activity.onActivity { assertEquals(fixture.text, field(it.window.decorView, "记下此刻的想法…")!!.text.toString()) }
                     editorMs = SystemClock.elapsedRealtime() - started
                     assertEquals(fixture.text, drafts.read().text)
@@ -103,9 +103,9 @@ class ComplexNotesInstrumentedTest {
         assertEquals(records.length(), context.queue().depth())
         val drafts = QuickNotes.draft(context); val pending = drafts.read()
         assertEquals(before.getJSONObject("prepared").toString(), pending.prepared!!.toString())
-        ActivityScenario.launch(MainActivity::class.java).use { activity ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { activity ->
             activity.onActivity { assertEquals(pending.text, field(it.window.decorView, "记下此刻的想法…")!!.text.toString()) }
-            activity.recreate()
+            activity.recreate(); activity.awaitMainUi()
             activity.onActivity { assertEquals(pending.text, field(it.window.decorView, "记下此刻的想法…")!!.text.toString()) }
         }
         val id = QuickNotes.save(context, pending.text, pending.mood)

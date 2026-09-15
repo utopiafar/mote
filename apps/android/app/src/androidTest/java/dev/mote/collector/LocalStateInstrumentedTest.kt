@@ -77,7 +77,7 @@ class LocalStateInstrumentedTest {
             val cumulative = Operations.ledger(context).read().getJSONObject("counts").getLong("SCREEN_QUEUED")
             settings.status("capturing", "generated state")
             instrumentation.runOnMainSync { Notifications.show(context, "generated old count 999") }
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 textAppears(scenario, "当前图片 2 张")
                 move(b, a); stock(1, 1); textAppears(scenario, "采集区 1 张 · 待决定区 1 张")
                 waitFor("notification stock") { notifications.activeNotifications.any { it.id == Notifications.ID && it.notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.contains("采集区 1 张 · 待决定区 1 张") == true } }
@@ -126,7 +126,7 @@ class LocalStateInstrumentedTest {
             queue.acknowledgeOcr(a); stock(0, 1)
             pending.resolveDedupe(b, pending.dedupeRow(b)!!.getString("blob"), null, null, null); stock(0, 0)
             val countBefore = emissions.get()
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 val writer = java.util.concurrent.Executors.newSingleThreadExecutor()
                 try {
                     val task = writer.submit { repeat(40) { add(false) } }

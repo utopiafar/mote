@@ -94,7 +94,7 @@ class AppPolicyInstrumentedTest {
                 mode = "projection", nsfw = settings.read().nsfw.copy(enabled = true), appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config)
             assertEquals("accessibility", config.effectiveMode())
-            androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity -> MainActivity::class.java.getDeclaredMethod("startCapture").apply { isAccessible = true }.invoke(activity) }
                 assertTrue(settings.enabled); assertFalse(ProjectionService.running)
                 openFixture()
@@ -193,7 +193,7 @@ class AppPolicyInstrumentedTest {
                 settings.save(c)
                 val before = Operations.ledger(context).read().getJSONObject("counts")
                 fun delta(key: String) = Operations.ledger(context).read().getJSONObject("counts").getLong(key) - before.getLong(key)
-                androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     scenario.onActivity { activity -> MainActivity::class.java.getDeclaredMethod("startCapture").apply { isAccessible = true }.invoke(activity) }
                     // Only a generated-only task AVD may accept the real Android consent dialog.
                     waitUntil {

@@ -41,13 +41,13 @@ class ImageDedupeDiagnosticsActivity : Activity() {
         val stamp = ++revision; clear.isEnabled = false; refresh.isEnabled = false
         list.removeAllViews(); status.text = "正在读取…"
         executor.execute {
-            val result = runCatching { imageDedupeDiagnostics().list() }
+            val result = runCatching { imageDedupeDiagnostics().list() to Settings(applicationContext).read().imageDedupeDiagnosticsEnabled }
             runOnUiThread {
                 if (isDestroyed || isFinishing || stamp != revision) return@runOnUiThread
                 refresh.isEnabled = true
-                result.onSuccess { rows ->
+                result.onSuccess { (rows, enabled) ->
                     clear.isEnabled = rows.isNotEmpty()
-                    status.text = if (Settings(this).read().imageDedupeDiagnosticsEnabled) "本机保留 ${rows.size} 组去重诊断" else "诊断已关闭，临时图片已清空。可在开发者选项中开启。"
+                    status.text = if (enabled) "本机保留 ${rows.size} 组去重诊断" else "诊断已关闭，临时图片已清空。可在开发者选项中开启。"
                     if (rows.isEmpty()) text(list, "暂无图片对。开启后，下一次采集到重复画面时会在这里显示。", 14f)
                     rows.forEach { item ->
                         button(list, "${time(item.optString("capturedAt"))} · ${ImageDedupeDiagnosticsDetails.modeName(item.optString("mode"))}\n哈希相似度 ${percent(item.optDouble("hashSimilarityPercent"))}\n${ImageDedupeDiagnosticsDetails.reason(item)}") { detail(item.getString("id")) }

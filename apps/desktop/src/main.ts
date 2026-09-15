@@ -23,6 +23,7 @@ import { createChromiumUpdateFetch } from './electron-update-fetch';
 import { acknowledgeInstalledUpdate } from './update-install';
 import { QueueStorage, StorageCommitUncertainError } from './queue-storage';
 import { DurableQueue } from './queue';
+import { BackgroundJobs } from './background-jobs';
 import { browseCaptures, captureDetail, captureImage, type BrowseRequest, type CaptureLocation } from './capture-browser';
 import { NsfwController } from './nsfw';
 import type { Config, ConfigUpdate, Status } from './contracts';
@@ -58,7 +59,8 @@ const events = new EventJournal(join(profile.dataDirectory, 'diagnostics'), () =
 let pendingNoteStatus = () => ({ count: 0, unbound: true, baseRecords: undefined as number | undefined });
 function includePreparedNote(status: Status): Status { const note = pendingNoteStatus(); return { ...status, sync: { ...status.sync, pendingRecords: (note.baseRecords ?? status.sync.pendingRecords) + note.count, localBacklogUnbound: (note.baseRecords ?? status.sync.pendingRecords) + note.count > 0 && note.unbound } }; }
 let storageStatus: () => Status['storage'] = () => undefined;
-function clientStatus(): Status { return { ...includePreparedNote(collector.status()), storage: storageStatus(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } }; }
+function clientStatus(): Status { return { ...includePreparedNote(collector.status()), operations: backgroundJobs.snapshot(), storage: storageStatus(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } }; }
+const backgroundJobs = new BackgroundJobs();
 let controlChain: Promise<unknown> = Promise.resolve();
 
 function serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -103,7 +105,7 @@ function trayIcon(): Electron.NativeImage {
   return icon;
 }
 function updateUi(status: Status): void {
-  status = { ...includePreparedNote(status), storage: storageStatus(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } };
+  status = { ...includePreparedNote(status), operations: backgroundJobs.snapshot(), storage: storageStatus(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } };
   if (window && !window.isDestroyed()) window.webContents.send('mote:status', status);
   tray?.setToolTip(`Mote [${profile.name}] · ${status.running ? '采集中' : '已停止'} · 待上传 ${status.queueDepth}`);
   tray?.setContextMenu(Menu.buildFromTemplate([
@@ -197,12 +199,22 @@ else {
     const trusted = (event: IpcMainInvokeEvent) => {
       if (!window || event.sender !== window.webContents || event.senderFrame?.url !== pageUrl || event.senderFrame !== window.webContents.mainFrame) throw new Error('请求来源不受信任');
     };
+    const operationLabels: Record<string, string> = {
+      'mote:configure': '正在应用设置或迁移存储', 'mote:import-queue': '正在导入队列', 'mote:export-queue': '正在导出队列',
+      'mote:model-import': '正在导入并校验模型', 'mote:model-reload': '正在校验模型', 'mote:source-sync': '正在扫描并同步来源',
+      'mote:retry': '正在同步待发记录', 'mote:source-files': '正在连接文件来源', 'mote:source-update': '正在保存来源设置',
+      'mote:source-calendar': '正在连接日历', 'mote:calendar-authorize': '正在读取日历授权', 'mote:installed-applications': '正在读取应用列表',
+      'mote:support-export': '正在导出支持包', 'mote:diagnostics-export': '正在导出诊断', 'mote:diagnostics-sample': '正在读取诊断',
+      'mote:connection-confirm': '正在连接中央节点', 'mote:connection-test': '正在测试连接',
+      'mote:update-download': '正在下载更新', 'mote:update-install': '正在准备安装更新', 'mote:update-check': '正在检查更新',
+      'mote:start': '正在准备采集', 'mote:stop': '正在结束当前采集', 'mote:note': '正在保存随手记',
+    };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
       const stage: EventStage | undefined = ({ 'mote:configure': 'CONFIG', 'mote:start': 'CAPTURE', 'mote:stop': 'CAPTURE', 'mote:note': 'NOTE', 'mote:note-draft-update': 'NOTE', 'mote:model-download': 'MODEL_DOWNLOAD', 'mote:model-import': 'MODEL_DOWNLOAD', 'mote:model-reload': 'MODEL', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
       ipcMain.handle(channel, async (event, ...args) => {
         trusted(event);
         if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:stop', 'mote:note-draft', 'mote:connection-status', 'mote:update-status', 'mote:sources'].includes(channel)) throw new Error(recoveryRequired);
-        try { const result = await operation(...args); if (stage && channel !== 'mote:note-draft-update' && channel !== 'mote:model-download') void events.record(stage, 'OK'); return result; }
+        try { const label = operationLabels[channel]; const result = await (label ? backgroundJobs.run(channel, label, () => operation(...args)) : operation(...args)); if (stage && channel !== 'mote:note-draft-update' && channel !== 'mote:model-download') void events.record(stage, 'OK'); return result; }
         catch (error) { if (stage) void events.record(stage, failureCode(error, stage)); throw error; }
       });
     };
@@ -238,7 +250,7 @@ else {
         }
         await localSources!.changeConnection(updated);
         settings = updated; collector.updateConfig(updated); await configureDiagnostics();
-        if (relocating) await queue.relocate(updated.captureStorageDirectory || storage.defaultDirectory, storage, () => store.save(updated), async () => (await store.load()).captureStorageDirectory || storage.defaultDirectory);
+        if (relocating) await queue.relocate(updated.captureStorageDirectory || storage.defaultDirectory, storage, () => store.save(updated), async () => (await store.load()).captureStorageDirectory || storage.defaultDirectory, value => backgroundJobs.progress('mote:configure', value));
         else await store.save(updated);
         saved = true;
       } catch (error) {
@@ -420,16 +432,14 @@ else {
     handle('mote:export-queue', async () => {
       const selected = await dialog.showSaveDialog(window!, { title: '导出已脱敏待上传队列（包含个人资料）', defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };
-      const archive = await queue.exportArchive();
-      await writeFile(selected.filePath, JSON.stringify(archive), { mode: 0o600 });
+      await queue.exportArchiveFile(selected.filePath, value => backgroundJobs.progress('mote:export-queue', value));
       return { canceled: false, path: selected.filePath };
     });
     handle('mote:import-queue', () => serialize(async () => {
       const selected = await dialog.showOpenDialog(window!, { title: '导入 Mote 电脑端队列备份', properties: ['openFile'], filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       const path = selected.filePaths[0];
-      if ((await stat(path)).size > 360 * 1024 * 1024) throw new Error('备份超过 360 MiB，请使用完整 queue 文件夹迁移');
-      const imported = await queue.importArchive(JSON.parse(await readFile(path, 'utf8')));
+      const imported = await queue.importArchiveFile(path, value => backgroundJobs.progress('mote:import-queue', value));
       updateUi(clientStatus()); void collector.upload();
       return { canceled: false, imported };
     }));

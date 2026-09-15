@@ -35,7 +35,7 @@ class NavigationInstrumentedTest {
     @Test fun everyBottomTabSwitchesOnItsFirstTouch() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(true)
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             for (label in listOf("随手记", "来源", "设置", "概览", "设置", "随手记", "概览")) {
                 instrumentation.waitForIdleSync()
                 var x = 0f; var y = 0f
@@ -62,7 +62,7 @@ class NavigationInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         assertFalse(Settings(context).enabled)
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
                 tab(activity, "设置"); menu(activity, "权限与后台运行")
                 assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any {
@@ -88,7 +88,7 @@ class NavigationInstrumentedTest {
     }
 
     @Test fun leavingSettingsPagesDiscardsInputsAndHidesSaveBar() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
                 val saved = Settings(activity).read()
                 assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
@@ -120,13 +120,13 @@ class NavigationInstrumentedTest {
     }
 
     @Test fun activePageDraftSurvivesRotationButNotLeavingTheActivity() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             val saved = Settings(InstrumentationRegistry.getInstrumentation().targetContext).read()
             scenario.onActivity { activity ->
                 tab(activity, "设置"); menu(activity, "采集与存储")
                 editor(activity, "30").setText("47")
             }
-            scenario.recreate()
+            scenario.recreate(); scenario.awaitMainUi()
             scenario.onActivity { activity ->
                 assertTrue(editor(activity, "30").isShown)
                 assertEquals("47", editor(activity, "30").text.toString())
@@ -166,7 +166,7 @@ class NavigationInstrumentedTest {
             }
             instrumentation.waitForIdleSync()
         }
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity -> tab(activity, "设置"); menu(activity, "采集与存储"); assertNull(editor(activity, "30").keyListener); editor(activity, "30").performClick() }
             clickDialogLabel("60")
             scenario.onActivity { activity ->
@@ -185,7 +185,7 @@ class NavigationInstrumentedTest {
                 assertEquals(2, Mask.parse(editor(activity, "0,0,1,0.08").text.toString()).size)
                 assertFalse(editor(activity, "0,0,1,0.08").isShown)
             }
-            scenario.recreate()
+            scenario.recreate(); scenario.awaitMainUi()
             scenario.onActivity { activity -> assertEquals(2, Mask.parse(editor(activity, "0,0,1,0.08").text.toString()).size) }
         }
     }
@@ -198,7 +198,7 @@ class NavigationInstrumentedTest {
         require(!Settings(context).enabled && context.queue().depth() == 0)
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             listOf("概览" to "overview", "随手记" to "notes", "来源" to "sources", "设置" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings").forEach { (label, file) ->
                 scenario.onActivity { if (file.endsWith("-settings")) { tab(it, "设置"); menu(it, label) } else tab(it, label) }
                 instrumentation.waitForIdleSync()

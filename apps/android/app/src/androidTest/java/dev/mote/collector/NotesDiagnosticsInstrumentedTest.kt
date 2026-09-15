@@ -18,13 +18,14 @@ class NotesDiagnosticsInstrumentedTest {
             if (view is android.view.ViewGroup) for (index in 0 until view.childCount) editor(view.getChildAt(index))?.let { return it }
             return null
         }
-        androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).use { activity ->
+        androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { activity ->
             try {
                 activity.onActivity { editor(it.window.decorView)!!.setText(value) }
+                QuickNotes.io.submit {}.get(5, java.util.concurrent.TimeUnit.SECONDS)
                 assertEquals(value, drafts.read().text)
                 val stored = java.io.File(context.noBackupFilesDir, "note-draft/draft.enc").readBytes()
                 assertFalse(String(stored).contains("合成草稿"))
-                activity.recreate()
+                activity.recreate(); activity.awaitMainUi()
                 activity.onActivity { assertEquals(value, editor(it.window.decorView)!!.text.toString()) }
             } finally { drafts.clear() }
         }

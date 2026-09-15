@@ -16,6 +16,10 @@ class StorageActivity : Activity() {
     private lateinit var content: LinearLayout
     private val executor = Executors.newSingleThreadExecutor()
     private var working = false
+    private var migrationLabel: TextView? = null
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val poll = object : Runnable { override fun run() { migrationLabel?.text = RuntimeSettings.progressLabel(); handler.postDelayed(this, 500) } }
+    private var config: CollectorConfig? = null
     private var localStateJob: kotlinx.coroutines.Job? = null
     private lateinit var inventory: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,8 +33,8 @@ class StorageActivity : Activity() {
         text(body, "这些是本应用专用目录，图片保持加密，不是共享相册；卸载应用会删除本机文件。移除存储卡后会停止使用该位置并提示，不会切到空目录；重新连接后可恢复。")
         MoteUi.styleTree(body)
     }
-    override fun onResume() { super.onResume(); localStateJob = observeLocalState { inventory.text = it.storageLabel() }; refresh() }
-    override fun onPause() { localStateJob?.cancel(); localStateJob = null; super.onPause() }
+    override fun onResume() { super.onResume(); localStateJob = observeLocalState { inventory.text = it.storageLabel() }; handler.post(poll); refresh() }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; handler.removeCallbacks(poll); super.onPause() }
     private fun text(parent: LinearLayout, value: String, size: Float = 15f) {
         parent.addView(TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(8), 0, moteDp(8)); setTextColor(MoteUi.ink) })
     }
@@ -43,9 +47,10 @@ class StorageActivity : Activity() {
             val selected = runCatching { storage.selected() }
             val current = runCatching { storage.current() }
             val choices = runCatching { storage.choices() }
+            val settings = runCatching { Settings(applicationContext).read() }
             runOnUiThread {
                 working = false; if (isDestroyed) return@runOnUiThread
-                content.removeAllViews()
+                config = settings.getOrNull(); content.removeAllViews()
                 selected.getOrNull()?.let { location -> text(content, "当前保存位置\n${location.path}") }
                 current.exceptionOrNull()?.let { text(content, "位置不可用：${it.message}\n已保留原位置，请重新连接原介质后重试。") }
                 choices.onSuccess { entries ->
@@ -53,7 +58,7 @@ class StorageActivity : Activity() {
                         content.addView(Button(this).apply {
                             val chosen = selected.getOrNull()?.baseId == choice.id
                             text = "${choice.title}${if (chosen) "（当前）" else ""}\n可用 ${size(choice.availableBytes)}\n${choice.base.absolutePath}"
-                            isAllCaps = false; isEnabled = current.isSuccess && !chosen && !ConnectionGuard.reconfiguring()
+                            isAllCaps = false; isEnabled = config != null && current.isSuccess && !chosen && !ConnectionGuard.reconfiguring()
                             setOnClickListener { confirm(choice) }
                         })
                     }
@@ -70,10 +75,12 @@ class StorageActivity : Activity() {
             .setNegativeButton("取消", null).setPositiveButton("迁移并应用") { _, _ -> migrate(choice) }.show()
     }
     private fun migrate(choice: QueueStorageChoice) {
-        working = true; content.removeAllViews(); text(content, "正在迁移并验证加密记录，请保持存储介质连接…")
+        val current = config ?: return
+        working = true; content.removeAllViews()
+        migrationLabel = TextView(this).apply { text = "正在迁移并验证加密记录，请保持存储介质连接…"; content.addView(this) }
         content.addView(android.widget.ProgressBar(this))
-        RuntimeSettings.apply(this, Settings(this).read(), change = { QueueStorage(applicationContext).migrate(choice.id) }) { result ->
-            working = false; if (isDestroyed) return@apply
+        RuntimeSettings.apply(this, current, change = { QueueStorage(applicationContext).migrate(choice.id) }) { result ->
+            migrationLabel = null; working = false; if (isDestroyed) return@apply
             result.onSuccess {
                 android.widget.Toast.makeText(this, "保存位置已生效", android.widget.Toast.LENGTH_LONG).show()
                 if (it.projectionConsentRequired) startActivity(Intent(this, MainActivity::class.java))

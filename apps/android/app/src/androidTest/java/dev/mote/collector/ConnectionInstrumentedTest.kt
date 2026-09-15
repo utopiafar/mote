@@ -31,10 +31,11 @@ class ConnectionInstrumentedTest {
         fun invitation(server: String) = JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", server)
             .put("code", "A".repeat(43)).put("expiresAt", Instant.ofEpochMilli(System.currentTimeMillis() + 600_000).toString()).toString()
         try {
-            ActivityScenario.launch(ConnectionActivity::class.java).use { scenario ->
+            ActivityScenario.launch(ConnectionActivity::class.java).awaitUiText("当前节点：").use { scenario ->
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 Settings(context).saveConnection("https://generated-new.invalid", "synthetic-collector-token-no-network-123456789", "合成设备", false)
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+                scenario.awaitUiText("当前节点：https://generated-new.invalid")
                 scenario.onActivity { activity ->
                     val receive = ConnectionActivity::class.java.getDeclaredMethod("onActivityResult", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Intent::class.java).apply { isAccessible = true }
                     fun scan(raw: String) { receive.invoke(activity, 1, android.app.Activity.RESULT_OK, Intent().putExtra("invitation", raw)) }
@@ -61,10 +62,11 @@ class ConnectionInstrumentedTest {
         val preferences = context.getSharedPreferences("mote", 0); val original = preferences.all.toMap()
         require(!Settings(context).enabled)
         try {
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 Settings(context).saveConnection("https://generated-new.invalid", "synthetic-collector-token-no-network-123456789", "合成设备", false)
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+                scenario.awaitUiText("synthetic-collector-token-no-network-123456789")
                 scenario.onActivity { activity ->
                     val fields = mutableListOf<android.widget.EditText>()
                     fun walk(v: android.view.View) { if (v is android.widget.EditText) fields += v; if (v is android.view.ViewGroup) repeat(v.childCount) { walk(v.getChildAt(it)) } }
@@ -85,7 +87,7 @@ class ConnectionInstrumentedTest {
         val raw = JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", "https://generated.invalid")
             .put("code", "A".repeat(43)).put("expiresAt", Instant.now().plusSeconds(600).toString())
         val uri = "mote://connect?data=" + Base64.getUrlEncoder().withoutPadding().encodeToString(raw.toString().toByteArray())
-        ActivityScenario.launch<ConnectionActivity>(Intent(context, ConnectionActivity::class.java).setData(Uri.parse(uri))).use { scenario ->
+        ActivityScenario.launch<ConnectionActivity>(Intent(context, ConnectionActivity::class.java).setData(Uri.parse(uri))).awaitUiText("确认连接此节点").use { scenario ->
             scenario.onActivity { activity ->
                 val labels = mutableListOf<String>()
                 fun walk(v: android.view.View) { if (v is android.widget.TextView) labels += v.text.toString(); if (v is android.view.ViewGroup) repeat(v.childCount) { walk(v.getChildAt(it)) } }

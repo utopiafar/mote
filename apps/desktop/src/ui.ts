@@ -216,6 +216,9 @@ byId('capture-directory-open').addEventListener('click', () => void perform(() =
 let connectionPreview: import('./connection').ConnectionPreview | undefined;
 function render(status: import('./contracts').Status): void {
   currentStatus = status; renderStorage();
+  const operations = status.operations ?? [];
+  byId('background-progress').hidden = !operations.length;
+  byId('background-progress').textContent = operations.map(job => `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${job.state === 'running' ? ` · 已用 ${Math.floor((Date.now() - job.startedAt) / 1000)} 秒` : ''}`).join('；');
   byId('connection-device').textContent = `设备：${status.config.deviceName} · ID ${status.config.deviceId}。迁移已有设备时，请在中央邀请中选择此 ID。`;
   byId('environment').textContent = status.environment ? `环境：${status.environment.profile}${status.environment.legacy ? '（原日常目录）' : ' · 独立数据'} · ${status.environment.dataDirectory}` : '';
   const names = { stopped: '采集已停止', capturing: '正在采集', paused: '采集已暂停', permission_required: '需要屏幕录制权限', error: '采集已停止 · 需要处理' };
@@ -464,7 +467,11 @@ function editSource(id?: string): void {
   byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
   byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n'); refreshPresets();
 }
+let sourcesReading = false;
 async function refreshSources(): Promise<void> {
+  if (sourcesReading) return;
+  sourcesReading = true;
+  try {
   const rows = await desktopApi.sources(); localSourceRows = rows;
   const list = byId('source-list'); list.replaceChildren();
   if (!rows.length) { const p = document.createElement('p'); p.className = 'helper'; p.textContent = '尚未连接本地来源。选择只包含你希望归档资料的目录。'; list.append(p); }
@@ -479,6 +486,7 @@ async function refreshSources(): Promise<void> {
     pause.addEventListener('click', () => void sourceAction(async () => { await desktopApi.updateSource(row.source.id, { ...row.source, enabled: !row.source.enabled }); }));
     actions.append(edit, pause); card.append(title, detail, status, actions); list.append(card);
   }
+  } finally { sourcesReading = false; }
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
   if (sourceBusy) return; sourceBusy = true; byId('source-feedback').textContent = '正在处理，请稍候…';
@@ -503,7 +511,7 @@ byId('source-save-edit').addEventListener('click', () => void sourceAction(async
   await desktopApi.updateSource(source.id, { ...sourceOptions(), enabled: source.enabled }); editSource();
 }));
 void refreshSources().catch(() => { byId('source-feedback').textContent = '来源状态暂不可用，请重新打开应用'; });
-setInterval(() => { if (!sourceBusy) void refreshSources().catch(() => {}); }, 3000);
+setInterval(() => { void refreshSources().catch(() => {}); }, 3000);
 
 let updateState: import('./updater').UpdateStatus | undefined;
 function renderUpdate(value: import('./updater').UpdateStatus): void {
@@ -525,7 +533,7 @@ function renderUpdate(value: import('./updater').UpdateStatus): void {
 byId('update-channel').addEventListener('change', () => void perform(async () => renderUpdate(await desktopApi.updateChannel(readInput('update-channel') as 'stable' | 'preview'))));
 byId('update-check').addEventListener('click', () => { void desktopApi.checkUpdate().then(renderUpdate).catch(() => feedback('更新检查未完成，请重试。')); });
 byId('update-download').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.downloadUpdate())));
-byId('update-cancel').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.cancelUpdate())));
+byId('update-cancel').addEventListener('click', () => { void desktopApi.cancelUpdate().then(renderUpdate).catch(error => feedback(String(error))); });
 byId('update-reveal').addEventListener('click', () => void perform(() => desktopApi.revealUpdate()));
 byId('update-notes').addEventListener('click', () => void perform(() => desktopApi.releaseNotes()));
 byId('update-install').addEventListener('click', () => {
@@ -540,7 +548,14 @@ byId('update-install').addEventListener('click', () => {
   });
 });
 void desktopApi.updateStatus().then(renderUpdate).catch(() => {});
-setInterval(() => { void desktopApi.updateStatus().then(renderUpdate).catch(() => {}); }, 1000);
+// One polling request at a time, even if a slow disk or worker delays a reply.
+let statusReading = false;
+setInterval(() => {
+  if (statusReading || document.hidden) return;
+  statusReading = true;
+  void Promise.allSettled([desktopApi.status().then(render), desktopApi.updateStatus().then(renderUpdate)])
+    .finally(() => { statusReading = false; });
+}, 1000);
 
 function renderConnection(value: import('./connection').ConnectionStatus): void {
   byId('connection-state').textContent = value.message + (value.checkedAt ? ' · ' + new Date(value.checkedAt).toLocaleTimeString() : '');

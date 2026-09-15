@@ -16,6 +16,8 @@ class ActivityStatsActivity : Activity() {
     private lateinit var summary: LinearLayout
     private lateinit var history: LinearLayout
     private val executor = Executors.newSingleThreadExecutor()
+    private val task by lazy { UiTask(this) }
+    private lateinit var operationStatus: TextView
     private var loading = false
     private var localStateJob: kotlinx.coroutines.Job? = null
     private var refreshPending = false
@@ -32,6 +34,7 @@ class ActivityStatsActivity : Activity() {
         summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(summary)
         renderSummary("正在读取本机统计…")
         progress = ProgressBar(this); body.addView(progress)
+        operationStatus = TextView(this); body.addView(operationStatus)
         button("刷新实际存储与统计") { refresh() }
         button("设置图片保存位置") { startActivity(Intent(this, StorageActivity::class.java)) }
         button("查看采集记录") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
@@ -39,7 +42,10 @@ class ActivityStatsActivity : Activity() {
         button("重置统计起点（保留队列和数据）") {
             AlertDialog.Builder(this).setTitle("重置本机统计").setMessage("只清空累计数字和最近事件，并记录新起算时间。不会删除队列、模型、配置或中央资料。")
                 .setNegativeButton("取消", null).setPositiveButton("重置") { _, _ ->
-                    Operations.ledger(this).reset(); LocalStateChanges.changed(immediate = true); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit(); refresh()
+                    task.start("正在重置统计…", { operationStatus.text = it }, {
+                        Operations.ledger(applicationContext).reset(); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit()
+                        LocalStateChanges.changed(immediate = true)
+                    }) { result -> operationStatus.text = if (result.isSuccess) "统计起点已重置" else "重置失败，请重试"; refresh() }
                 }.show()
         }
         text("最近结果", 20f)
@@ -156,12 +162,13 @@ class ActivityStatsActivity : Activity() {
     @Deprecated("Native Activity document result")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 1 && resultCode == RESULT_OK && data?.data != null) try {
-            val output = JSONObject().put("format", "mote.activity-stats").put("version", 1).put("statistics", Operations.ledger(this).read())
+        if (requestCode != 1 || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        task.start("正在导出统计…", { operationStatus.text = it }, {
+            val output = JSONObject().put("format", "mote.activity-stats").put("version", 1).put("statistics", Operations.ledger(applicationContext).read())
                 .put("incomplete", getSharedPreferences("operation-health", 0).getBoolean("incomplete", false))
-            contentResolver.openOutputStream(data.data!!)!!.use { it.write(output.toString(2).toByteArray(Charsets.UTF_8)) }
-            Toast.makeText(this, "统计已导出，不含本机目录或正文", Toast.LENGTH_LONG).show()
-        } catch (_: Exception) { Toast.makeText(this, "统计导出失败", Toast.LENGTH_LONG).show() }
+            contentResolver.openOutputStream(uri)!!.use { it.write(output.toString(2).toByteArray(Charsets.UTF_8)) }
+        }) { result -> operationStatus.text = if (result.isSuccess) "统计已导出，不含本机目录或正文" else "统计导出失败" }
     }
     override fun onDestroy() { executor.shutdown(); super.onDestroy() }
     companion object {

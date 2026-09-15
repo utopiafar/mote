@@ -50,8 +50,8 @@ class QueueLocationStore(private val control: File, private val legacy: File, pr
     fun selected(): QueueLocation = if (pointer.exists()) QueueLocation.parse(read(pointer)) else current()
     fun current(): QueueLocation { recover(); return load() }
     fun assertCurrent(expected: QueueLocation) { check(load() == expected) { "存储位置已更新，请重试此操作" } }
-    fun migrate(baseId: String, base: File): QueueLocation {
-        recover(); val source = load()
+    fun migrate(baseId: String, base: File, progress: (String) -> Unit = {}): QueueLocation {
+        progress("正在检查原存储完整性"); recover(); val source = load()
         if (source.baseId == baseId) return source
         val sourceDirectory = identified(source)
         DurableQueue(sourceDirectory, cipher, createMissing = false).verifyIntegrity()
@@ -68,13 +68,16 @@ class QueueLocationStore(private val control: File, private val legacy: File, pr
         write(journal, JSONObject().put("version", 1).put("source", source.json()).put("target", target.json()))
         checkpoint("journal")
         try {
-            for (file in sourceDirectory.listFiles() ?: error("无法读取原存储目录")) {
+            val files = sourceDirectory.listFiles() ?: error("无法读取原存储目录")
+            for ((index, file) in files.withIndex()) {
+                progress("正在复制并校验文件 ${index + 1}/${files.size}")
                 if (file.name == IDENTITY) continue
                 check(file.isFile && !java.nio.file.Files.isSymbolicLink(file.toPath())) { "原存储包含无法迁移的条目" }
                 val destination = File(targetDirectory, file.name)
                 FileOutputStream(destination).use { output -> file.inputStream().use { it.copyTo(output) }; output.fd.sync() }
                 check(file.length() == destination.length() && hash(file).contentEquals(hash(destination))) { "复制校验失败，原数据已保留" }
             }
+            progress("正在验证目标记录与图片")
             DurableQueue(targetDirectory, cipher, createMissing = false).verifyIntegrity()
             syncDirectory(targetDirectory)
             checkpoint("verified")
