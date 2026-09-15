@@ -30,14 +30,24 @@ object SyncSchedule {
         val captures = context.queue().pendingSync(); val sources = context.localSources().pendingSync()
         return PendingSync(captures.count + sources.count, listOfNotNull(captures.oldestAt, sources.oldestAt).minOrNull(), sources.pendingUpdates)
     }
-    fun stamp(config: CollectorConfig) = SourceRules.hash(listOf(config.server, config.token, config.syncMode, config.syncIntervalMinutes, config.syncBatchSize, config.wifiOnly).joinToString("\u0000"))
+    fun stamp(config: CollectorConfig) = SourceRules.hash(listOf(config.server, config.token, config.syncMode, config.syncIntervalMinutes, config.syncBatchSize, config.wifiOnly, config.syncChargingOnly, config.syncBatteryNotLow).joinToString("\u0000"))
     fun delay(context: Context, config: CollectorConfig, explicit: Boolean = false): Long? {
         if (!config.hasSyncConnection()) return null
         val pending = pending(context)
         return config.syncPolicy().delayMillis(System.currentTimeMillis(), pending.count, pending.oldestAt, Settings(context).lastSyncDispatch(), explicit, pending.pendingUpdates)
     }
     fun constraints(config: CollectorConfig) = Constraints.Builder()
-        .setRequiredNetworkType(if (config.wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build()
+        .setRequiredNetworkType(if (config.wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+        .setRequiresCharging(config.syncChargingOnly).setRequiresBatteryNotLow(config.syncBatteryNotLow).build()
+    fun waitingReason(context: Context, config: CollectorConfig): String? {
+        val battery = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+        val status = battery?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1)
+        val charging = status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+        val low = battery?.getBooleanExtra(android.os.BatteryManager.EXTRA_BATTERY_LOW, false)
+        return SyncConditions(config.syncChargingOnly, config.syncBatteryNotLow, config.wifiOnly)
+            .waitingReason(charging, low, !config.wifiOnly || UploadWorker.isWifi(context))
+    }
+
     fun schedule(context: Context, config: CollectorConfig, explicit: Boolean = false) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             val app = context.applicationContext
@@ -47,6 +57,12 @@ object SyncSchedule {
             return
         }
         scheduleNow(context, config, explicit)
+    }
+    internal fun continueUpload(context: Context, config: CollectorConfig, explicit: Boolean) {
+        val request = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config))
+            .setInputData(workDataOf("manual" to explicit, "syncStamp" to stamp(config), "continuation" to true))
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
+        WorkManager.getInstance(context).enqueueUniqueWork("mote-upload", ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
     private fun scheduleNow(context: Context, config: CollectorConfig, explicit: Boolean) {
         val manager = WorkManager.getInstance(context); val settings = Settings(context)

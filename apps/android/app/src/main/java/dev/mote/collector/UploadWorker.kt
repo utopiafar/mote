@@ -54,9 +54,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         var stage = EventStage.CONFIG
         var pendingRecordId: String? = null
         val manualOnly = settings.read().syncMode == "manual" && inputData.getBoolean("manual", false)
-        fun failed(message: String): Result {
-            settings.syncStatus("error", "$message；记录保留在本机，${if (manualOnly) "请再次点击立即同步" else "稍后自动重试"}")
-            return if (manualOnly) Result.failure() else Result.retry()
+        fun failed(message: String, retryable: Boolean = true): Result {
+            settings.syncStatus("error", "$message；记录保留在本机，${if (manualOnly || !retryable) "请处理后点击立即同步" else "稍后自动重试"}")
+            return if (manualOnly || !retryable) Result.failure() else Result.retry()
         }
         return try {
             val config = settings.read()
@@ -66,25 +66,24 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             val requestedStamp = inputData.getString("syncStamp")
             if (requestedStamp != null && requestedStamp != SyncSchedule.stamp(config)) { SyncSchedule.schedule(applicationContext, config); return Result.success() }
             config.validate(); config.validateConnection()
-            if (runAttemptCount == 0 && (SyncSchedule.delay(applicationContext, config, explicit) ?: Long.MAX_VALUE) > 0) {
+            if (runAttemptCount == 0 && !inputData.getBoolean("continuation", false) && (SyncSchedule.delay(applicationContext, config, explicit) ?: Long.MAX_VALUE) > 0) {
                 SyncSchedule.schedule(applicationContext, config); return Result.success()
             }
-            if (runAttemptCount == 0) settings.syncDispatched(System.currentTimeMillis())
-            if (config.wifiOnly && !isWifi(applicationContext)) {
-                SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.WAIT_NETWORK)
-                Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, OperationReason.WIFI)
-                settings.syncStatus("waiting", "等待非计费 Wi-Fi · 记录保留在本机")
-                return Result.retry()
+            if (runAttemptCount == 0 && !inputData.getBoolean("continuation", false)) settings.syncDispatched(System.currentTimeMillis())
+            SyncSchedule.waitingReason(applicationContext, config)?.let {
+                settings.syncStatus("waiting", it); return Result.retry()
             }
             stage = EventStage.QUEUE
             val queue = applicationContext.queue()
             settings.syncStatus("uploading", "正在同步本机记录")
-            SourceWork.enqueueUpload(applicationContext, config, explicit)
+            if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
             stage = EventStage.HEARTBEAT
             SyncHeartbeat.send(applicationContext, settings, config, queue)
             repeat(25) {
                 if (isStopped || ConnectionGuard.reconfiguring()) return Result.retry()
-                if (config.wifiOnly && !isWifi(applicationContext)) return failed("同步期间网络已变化")
+                SyncSchedule.waitingReason(applicationContext, config)?.let {
+                    settings.syncStatus("waiting", it); return Result.retry()
+                }
                 stage = EventStage.QUEUE
                 val ocrUpdate = queue.nextOcrUpdate()
                 if (ocrUpdate != null) {
@@ -110,13 +109,18 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 }
                 val event = queue.peek() ?: run {
                     stage = EventStage.HEARTBEAT
-                    finishStatus(settings)
+                    finishStatus()
                     SyncHeartbeat.send(applicationContext, settings, config, queue)
                     return Result.success()
                 }
                 stage = EventStage.UPLOAD
                 pendingRecordId = event.getString("id")
                 val (code, response) = HttpJson.post("${config.server}/api/captures", event, config.token)
+                if (code == 409) {
+                    queue.uploadConflict(event.getString("id")); pendingRecordId = null
+                    settings.syncStatus("error", "记录 ID 与中央内容冲突；保留本机副本，继续发送其他记录")
+                    return@repeat
+                }
                 if (code == 410) {
                     queue.archiveMissing(event.getString("id")); pendingRecordId = null
                     settings.syncStatus("error", "中央记录已删除；本机保留图片和失败状态，不会重新创建记录")
@@ -125,7 +129,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 if (code !in setOf(200, 201) || response?.optString("id") != event.getString("id")) {
                     SupportEvents.record(applicationContext, stage, EventJournal.httpFailure(code), httpStatus = code)
                     Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.httpReason(code), httpStatus = code, recordId = pendingRecordId)
-                    return failed(if (code == 400 && event.has("ocr")) "当前截图协议未被接受，请先确认中央节点已升级至 0.0.2 或更新版本" else "上传未确认（HTTP $code）")
+                    return failed(if (code == 400 && event.has("ocr")) "当前截图协议未被接受，请先确认中央节点已升级至 0.0.2 或更新版本" else "上传未确认（HTTP $code）", retryable = code !in setOf(400, 401, 403, 413))
                 }
                 Diagnostics(applicationContext).add("uploadBytes", event.toString().toByteArray(Charsets.UTF_8).size.toLong())
                 stage = EventStage.QUEUE
@@ -135,21 +139,18 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 settings.syncStatus("uploading", "已确认上传；待同步 ${SyncSchedule.pending(applicationContext).count} 条", uploaded = true)
             }
             stage = EventStage.HEARTBEAT
-            if (!queue.pendingSync().hasWork) finishStatus(settings)
+            if (!queue.pendingSync().hasWork) finishStatus()
             SyncHeartbeat.send(applicationContext, settings, config, queue)
             // A successful chunk may continue the same explicit operation; failures never retry in manual mode.
-            if (queue.pendingSync().hasWork) Result.retry() else Result.success()
+            if (queue.pendingSync().hasWork) SyncSchedule.continueUpload(applicationContext, config, explicit)
+            Result.success()
         } catch (error: Exception) {
             SupportEvents.record(applicationContext, stage, EventJournal.failure(error, stage))
             if (error !is RecordedHeartbeatFailure) Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.failure(error, stage), recordId = pendingRecordId)
             failed("同步失败，请检查连接")
         }
     }
-    private fun finishStatus(settings: Settings) {
-        val pending = SyncSchedule.pending(applicationContext).hasWork
-        val pendingOcr = applicationContext.queue().pendingOcr() != null
-        settings.syncStatus(if (pending) "waiting" else "idle", if (pending) "截图与笔记已同步，等待来源同步" else if (pendingOcr) "图片已同步，等待补做 OCR；图片仍保存在本机" else "全部待发记录已同步")
-    }
+    private fun finishStatus() = SyncHealth.finish(applicationContext)
     companion object {
         private var lastHeartbeatRequest = 0L
         @Synchronized fun heartbeat(context: Context, config: CollectorConfig) {
@@ -167,13 +168,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
 
 internal object SyncHeartbeat {
     fun send(context: Context, settings: Settings, config: CollectorConfig, queue: DurableQueue) {
-        val runtimeAlive = (config.screenCollectionEnabled && (CaptureAccessibilityService.connected || ProjectionService.running)) || (config.mediaCollectionEnabled && config.metadataEnabled && MediaCollectionService.connected)
+        if (SyncSchedule.waitingReason(context, config) != null) return
+        val runtimeAlive = (config.screenCollectionEnabled && (CaptureAccessibilityService.connected || ProjectionService.running)) || (config.observesSystem() && MediaCollectionService.connected)
         val status = if (settings.enabled && !runtimeAlive) "permission_required" else settings.state()
+        val inventory = queue.syncInventory()
         val body = JSONObject().put("deviceId", settings.deviceId).put("deviceName", config.deviceName).put("platform", "android")
             .put("status", status).put("queueDepth", queue.depth()).put("lastCaptureAt", settings.lastCapture())
             .put("sync", JSONObject().put("mode", config.syncMode).put("state", settings.syncState())
                 .put("intervalMinutes", config.syncIntervalMinutes).put("batchSize", config.syncBatchSize)
                 .put("pendingRecords", SyncSchedule.pending(context).count.coerceAtMost(1_000_000))
+                .put("blockedRecords", inventory.getInt("blocked")).put("awaitingOcrRecords", inventory.getInt("awaitingOcr")).put("retainedRecords", inventory.getInt("retained"))
                 .apply { settings.lastUploadAt()?.let { put("lastUploadAt", it) }
                     SyncSchedule.delay(context, config)?.takeIf { it > 0 }?.let { put("nextUploadAt", java.time.Instant.ofEpochMilli(System.currentTimeMillis() + it).toString()) } })
             .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (!config.screenCollectionEnabled) "media_session" else if (config.effectiveMode() == "projection") "media_projection" else "accessibility")) }

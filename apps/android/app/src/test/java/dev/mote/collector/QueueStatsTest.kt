@@ -24,6 +24,17 @@ class QueueStatsTest {
         try { test(directory, CountingCipher()) } finally { directory.deleteRecursively() }
     }
 
+    @Test fun browsingOtherPagesDecryptsOnlyTheirDisplayRecordsAfterIndexWarmup() = fixture { directory, cipher ->
+        val queue = DurableQueue(directory, cipher)
+        repeat(65) { queue.enqueue(screen(), byteArrayOf(1), 2_000_000) }
+        queue.stats()
+        val before = cipher.opens
+        val first = queue.capturePage("2026-09-14T00:00:00Z", "2026-09-15T00:00:00Z")
+        assertEquals(65, first.getInt("totalCount")); assertEquals(before + 20, cipher.opens)
+        val second = DurableQueue(directory, cipher).capturePage("2026-09-14T00:00:00Z", "2026-09-15T00:00:00Z", first.getString("nextCursor"))
+        assertEquals(20, second.getJSONArray("items").length()); assertEquals(before + 40, cipher.opens)
+    }
+
     @Test fun legacyScreenshotBacklogIsDecryptedOnceAcrossQueueHandlesAndStatisticsCalls() = fixture { directory, cipher ->
         // Write the 0.0.1 format directly: no deferred OCR or upload flags, no location pointer.
         // All data is generated; the shared blob must never be opened for numeric statistics.

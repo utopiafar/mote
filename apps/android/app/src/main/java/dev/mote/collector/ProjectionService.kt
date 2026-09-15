@@ -174,7 +174,7 @@ class ProjectionService : Service() {
     fun finishForModeChange() { preserveEnabledOnStop = true; stopSelf() }
     private fun projectionEnded(message: String) {
         val c = settings.read()
-        preserveEnabledOnStop = settings.enabled && c.mediaCollectionEnabled && c.metadataEnabled
+        preserveEnabledOnStop = settings.enabled && c.observesSystem()
         if (!preserveEnabledOnStop) settings.enabled = false
         settings.status(if (preserveEnabledOnStop) "capturing" else "permission_required", message + if (preserveEnabledOnStop) "；媒体采集继续运行" else "")
         MediaCollectionService.refresh()
@@ -187,7 +187,8 @@ class ProjectionService : Service() {
             clearPending(); display?.release(); display = null
             projection?.unregisterCallback(callback); projection?.stop(); projection = null
             if (!preserveEnabledOnStop) settings.enabled = false
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopForeground(STOP_FOREGROUND_DETACH)
+            Notifications.clear(this)
             runCatching { UploadWorker.schedule(this, settings.read()) }
         }
         super.onDestroy()

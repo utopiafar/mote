@@ -99,9 +99,9 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
     <div className="page-heading"><div className="eyebrow">A LITTLE ROOM FOR YOUR THOUGHTS</div><h1>想到什么，就记下来。</h1><p>心情、杂事、一个还没成形的想法，都可以成为上下文。</p></div>
     <form className="panel note-composer" onSubmit={save}>
       <label htmlFor="note-text">此刻想留下什么？</label>
-      <textarea id="note-text" value={draft.text} onChange={e => edit({ ...draft, text: e.target.value })} maxLength={100000} rows={6} placeholder="不用整理，也不用想好标题。" onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && draft.text.trim()) save(e); }} />
+      <textarea id="note-text" value={draft.text} onChange={e => edit({ ...draft, text: e.target.value })} maxLength={100000} rows={6} placeholder="记下此刻的想法…" onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && draft.text.trim()) save(e); }} />
       <div className="note-mood"><Smile size={17} /><label htmlFor="note-mood">我的心情 <span>可选，由你自己描述</span></label><input id="note-mood" value={draft.mood} onChange={e => edit({ ...draft, mood: e.target.value })} maxLength={80} placeholder="比如：松了一口气" /></div>
-      <div className="note-composer-actions"><span>{draftSaved ? <><Check size={14} /> 草稿已保存在本机</> : '正文原样保存，不自动改写'} · {draft.text.length.toLocaleString()} 字</span><button className="button primary" disabled={!draft.text.trim()}><CloudUpload size={16} />保存并同步</button></div>
+      <div className="note-composer-actions"><span>{draftSaved && <><Check size={14} /> 草稿已保存在本机 · </>} {draft.text.length.toLocaleString()} 字</span><button className="button primary" disabled={!draft.text.trim()}><CloudUpload size={16} />保存并同步</button></div>
       <p className="note-storage-hint">草稿和待同步内容保存在此应用的本机存储中，清除应用数据会移除它们。打开随手记时自动续传；按中央节点地址分别保存。</p>
     </form>
     {error && <div className="notice error" role="alert">{error}</div>}

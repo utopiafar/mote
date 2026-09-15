@@ -77,7 +77,7 @@ class ConnectionActivity : Activity() {
     }
     private fun changeConnection(progress: String, work: () -> String) {
         if (working) return
-        working = true; status.text = "$progress\n正在自动应用，采集无需手动暂停。"
+        working = true; status.text = "$progress"
         var message = "连接已更新"
         RuntimeSettings.apply(this, Settings(this).read(), bindLocal = true, change = { message = work() }) { result ->
             working = false

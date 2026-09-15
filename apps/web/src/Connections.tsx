@@ -102,7 +102,7 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     {error&&<div className="notice error" role="alert">{error}</div>}
     {message&&<div className="notice" role="status"><Check size={16}/>{message}</div>}
     <div className="connection-fields">
-      <label>中央节点地址<input aria-label="邀请节点地址" type="url" value={endpoint} disabled={!!busy} onChange={event=>setEndpoint(event.target.value)} placeholder="https://mote.example.com" maxLength={2048}/><small>可使用 Cloudflare Tunnel 的 HTTPS 域名。二维码不会自动打通网络。</small></label>
+      <label>本服务供设备访问的地址<input aria-label="邀请节点地址" type="url" value={endpoint} disabled={!!busy} onChange={event=>setEndpoint(event.target.value)} placeholder="https://mote.example.com" maxLength={2048}/><small>填写指向本服务的 HTTPS 地址，供客户端配对和上传使用。二维码不会自动打通网络。</small></label>
       <label>连接名称<input aria-label="连接名称" value={label} disabled={!!busy} onChange={event=>setLabel(event.target.value)} placeholder="我的 K90 Pro Max / 工作电脑 / Chatbot" maxLength={120}/><small>用于在下面的列表中识别和撤销连接。</small></label>
     </div>
     {loopback&&<p className="connection-warning">当前是本机地址，手机扫码后会指向手机自己。跨设备连接请先填入可访问的 HTTPS 域名；本机地址可用于同一台电脑或明确配置了端口转发的开发环境。</p>}

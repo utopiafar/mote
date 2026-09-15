@@ -1,6 +1,5 @@
 import type {RecordMetadata, SourceMetadata, OcrResult, CaptureRecord} from '@mote/shared';
 export interface Connection {
-  url: string;
   token: string;
 }
 export interface Capture {
@@ -115,7 +114,7 @@ export class ApiError extends Error {
 }
 export function createApi(connection: Connection, onUnauthorized?: () => void, isCurrentConnection: () => boolean = () => true) {
   let agentTimeoutMs = 120000;
-  // Kept within this connection's API instance: a former node cannot change a new node's budget.
+  // Keep request budgets isolated between authenticated sessions.
   function setAgentTimeout(value: number | undefined) {
     agentTimeoutMs = Number.isSafeInteger(value) && value! >= 5000 && value! <= 600000 ? value! : 120000;
   }
@@ -127,7 +126,11 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
     const modelOperation = init.method?.toUpperCase() === 'POST' && ['/api/query', '/api/insights', '/api/memories/extract'].includes(path);
     const deadline = modelOperation ? AbortSignal.timeout(agentTimeoutMs + 60000) : undefined;
     const signal = deadline ? (init.signal ? AbortSignal.any([init.signal, deadline]) : deadline) : init.signal ?? AbortSignal.timeout(180000);
-    const response = await fetch(`${connection.url}${path}`, {
+    // Management requests always address the service serving this page.
+    if (!path.startsWith('/api/') || path.includes('\\') || /[\r\n\t]/.test(path)) {
+      throw new Error('管理请求必须使用当前服务的 API 路径。');
+    }
+    const response = await fetch(path, {
       ...init,
       redirect: "error",
       credentials: "omit",

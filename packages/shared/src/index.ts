@@ -6,7 +6,7 @@ export * from './metadata.js';
 export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource } from './configuration.js';
 
 export const platformSchema = z.enum(['macos', 'windows', 'linux', 'android', 'import']);
-export const sourceSchema = z.enum(['screen', 'activity', 'media', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
+export const sourceSchema = z.enum(['screen', 'activity', 'media', 'notification', 'device_event', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
 // A mood is the author's own label, never inferred from note text or app identity.
 export const moodSchema = z.string().max(80).refine(value => value.trim().length > 0, 'Mood cannot be blank');
 export const privacySchema = z.object({
@@ -32,13 +32,13 @@ export const captureSchema = z.object({
   if (v.ocr?.status === 'pending' && (!v.imageBase64 || v.ocrText)) ctx.addIssue({code:'custom',message:'Pending OCR requires a screenshot without recognized text'});
   if (Boolean(v.imageBase64) !== Boolean(v.imageMime)) ctx.addIssue({code:'custom',message:'imageBase64 and imageMime must be supplied together'});
   if (v.privacy.excluded) ctx.addIssue({code:'custom',message:'Excluded captures must never be uploaded'});
-  if (!v.imageBase64 && !v.ocrText.trim() && !v.provenance && !['activity','media'].includes(v.source)) ctx.addIssue({code:'custom',message:'An image or text is required'});
+  if (!v.imageBase64 && !v.ocrText.trim() && !v.provenance && !['activity','media','notification','device_event'].includes(v.source)) ctx.addIssue({code:'custom',message:'An image or text is required'});
   if (v.source === 'activity') {
     if (v.privacy.collection !== 'activity' || !v.appId.trim() || v.imageBase64 !== undefined || v.imageMime !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.privacy.redacted)
       ctx.addIssue({code:'custom',message:'Activity records require an app identity and activity collection, without content, images or source references'});
     if (v.metadata?.capture && Object.keys(v.metadata.capture).some(key => key !== 'intervalMs'))
       ctx.addIssue({code:'custom',path:['metadata','capture'],message:'Activity metadata cannot describe screen content processing'});
-  } else if (v.privacy.collection === 'activity' && v.source !== 'media') ctx.addIssue({code:'custom',message:'Activity collection must use the activity or media source'});
+  } else if (v.privacy.collection === 'activity' && !['media','notification'].includes(v.source)) ctx.addIssue({code:'custom',message:'Activity collection must use the activity or media source'});
   if (v.privacy.collection === 'activity' && v.metadata?.media?.sessions.some(session =>
     ['title','artist','album','displaySubtitle','mediaId'].some(key => key in session)))
     ctx.addIssue({code:'custom',path:['metadata','media'],message:'Activity collection cannot contain media titles or content identifiers'});
@@ -50,6 +50,22 @@ export const captureSchema = z.object({
       ctx.addIssue({code:'custom',path:['metadata','capture'],message:'Media metadata cannot describe screen content processing'});
     if (v.durationMs > 60000 || (v.durationMs > 0 && (media?.status !== 'available' || media.sessions.length !== 1 || media.sessions[0]?.playbackState !== 'playing' || media.sessions[0]?.appId !== v.appId || media.sessions[0]?.appName !== v.appName)))
       ctx.addIssue({code:'custom',message:'Media intervals require one matching playing session and at most 60 seconds of observed time'});
+  }
+  if (v.metadata?.notification && v.source !== 'notification' || v.metadata?.deviceEvent && v.source !== 'device_event')
+    ctx.addIssue({code:'custom',message:'System event payload must match its source'});
+  if (v.source === 'notification' || v.source === 'device_event') {
+    if (v.durationMs !== 0 || v.platform !== 'android' || v.imageBase64 !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.metadata?.media || v.metadata?.capture)
+      ctx.addIssue({code:'custom',message:'System observations require zero duration and no unrelated content'});
+    if (!v.metadata?.observation || v.metadata.collector?.method !== 'notification_listener')
+      ctx.addIssue({code:'custom',message:'System observations require observer provenance'});
+    if (v.source === 'notification') {
+      const n=v.metadata?.notification;
+      if (!n || !v.appId.trim()) ctx.addIssue({code:'custom',message:'Notifications require payload and source app'});
+      if ((v.privacy.collection === 'activity' || n?.action === 'removed') && n && ['title','text','bigText','subText','textLines','channelId'].some(key=>key in n))
+        ctx.addIssue({code:'custom',message:'Activity-only and removed notifications cannot contain content'});
+      if (n?.removalReason !== undefined && n.action !== 'removed') ctx.addIssue({code:'custom',message:'Removal reason requires removal action'});
+    } else if (!v.metadata?.deviceEvent || v.privacy.collection === 'activity' || v.appId || v.appName)
+      ctx.addIssue({code:'custom',message:'Device observations require device state without app attribution'});
   }
   if(v.provenance&&(v.provenance.layer==='reference'||v.provenance.deleted)&&v.ocrText)ctx.addIssue({code:'custom',message:'Reference and deletion records must not contain original text'});
   if(v.provenance&&(v.durationMs!==0||v.imageBase64||['screen','activity','note'].includes(v.source)))ctx.addIssue({code:'custom',message:'Versioned source records require zero duration and no screen/activity/note payload'});
@@ -96,6 +112,9 @@ export const heartbeatSchema = z.object({
     intervalMinutes: z.number().int().min(15).max(1440),
     batchSize: z.number().int().min(1).max(500),
     pendingRecords: z.number().int().min(0).max(1000000),
+    blockedRecords: z.number().int().min(0).max(1000000).optional(),
+    awaitingOcrRecords: z.number().int().min(0).max(1000000).optional(),
+    retainedRecords: z.number().int().min(0).max(1000000).optional(),
     lastUploadAt: z.string().max(64).datetime({offset:true}).optional(),
     nextUploadAt: z.string().max(64).datetime({offset:true}).optional(),
   }).strict().optional(),

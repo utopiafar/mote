@@ -27,21 +27,29 @@ class CaptureRecordsActivity : Activity() {
     private lateinit var nextPage: Button
     private lateinit var nextDay: Button
     private val executor = Executors.newSingleThreadExecutor()
-    private val bitmaps = mutableListOf<Bitmap>()
+    private val imageExecutor = java.util.concurrent.ThreadPoolExecutor(3, 3, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>())
+    // Bounded memory only: decrypted thumbnails never go to disk.
+    private val thumbnails = object : android.util.LruCache<String, Bitmap>(12 * 1024 * 1024) {
+        override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
+    }
+    private var cacheConfig: CollectorConfig? = null
+    private var grid = true
     private val cursors = mutableListOf<String?>(null)
     private var nextCursor: String? = null
     private var date = LocalDate.now()
     private var central = false
+    private val recordSources = listOf("screen", "media", "notification", "device_event", "note", "activity")
     private var recordSource = "screen"
     @Volatile private var generation = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         date = savedInstanceState?.getString("date")?.let(LocalDate::parse) ?: date
         central = savedInstanceState?.getBoolean("central") ?: false
-        recordSource = savedInstanceState?.getString("recordSource")?.takeIf { it in setOf("screen", "media") } ?: "screen"
+        recordSource = savedInstanceState?.getString("recordSource")?.takeIf { it in recordSources } ?: "screen"
+        grid = getPreferences(MODE_PRIVATE).getBoolean("grid", true)
         body = moteDetailPage()
         text(body, "采集记录", 27f)
-        text(body, "按日期查看本机或中央归档中的截图和媒体播放状态。", 14f)
+        text(body, "按日期查看截图、媒体、通知和设备事件。", 14f)
         val source = Spinner(this).apply {
             adapter = ArrayAdapter(this@CaptureRecordsActivity, android.R.layout.simple_spinner_dropdown_item, listOf("本机记录", "中央归档"))
             setSelection(if (central) 1 else 0)
@@ -53,14 +61,21 @@ class CaptureRecordsActivity : Activity() {
             }
         }
         val kinds = Spinner(this).apply {
-            adapter = ArrayAdapter(this@CaptureRecordsActivity, android.R.layout.simple_spinner_dropdown_item, listOf("截图", "媒体播放状态"))
-            setSelection(if (recordSource == "media") 1 else 0)
+            adapter = ArrayAdapter(this@CaptureRecordsActivity, android.R.layout.simple_spinner_dropdown_item, listOf("截图", "媒体播放状态", "通知事件", "设备事件", "随手记", "应用活动"))
+            setSelection(recordSources.indexOf(recordSource))
         }; body.addView(kinds)
         kinds.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                val chosen = if (position == 1) "media" else "screen"
+                val chosen = recordSources[position]
                 if (recordSource != chosen) { recordSource = chosen; reload() }
+            }
+        }
+        button(body, if (grid) "布局：网格 · 切换为列表" else "布局：列表 · 切换为网格", {}).apply {
+            setOnClickListener {
+                grid = !grid; getPreferences(MODE_PRIVATE).edit().putBoolean("grid", grid).apply()
+                text = if (grid) "布局：网格 · 切换为列表" else "布局：列表 · 切换为网格"
+                load()
             }
         }
         val days = row(body)
@@ -79,6 +94,7 @@ class CaptureRecordsActivity : Activity() {
         nextPage = button(pages, "下一页") { nextCursor?.let { cursors.add(it); load() } }
         MoteUi.styleTree(body)
         load()
+        intent.getStringExtra("recordId")?.let { detail(it, false, null, generation) }
     }
     private fun reload() { cursors.clear(); cursors.add(null); load() }
     private fun load() {
@@ -88,9 +104,13 @@ class CaptureRecordsActivity : Activity() {
         val cursor = cursors.last(); val pageNumber = cursors.size
         dateButton.text = date.toString(); nextDay.isEnabled = date < LocalDate.now()
         previousPage.isEnabled = false; nextPage.isEnabled = false; status.text = "正在读取${if (remote) "中央归档" else "本机记录"}…"
-        clearList()
+        clearList(); imageExecutor.queue.clear()
+        repeat(6) { text(list, "▧  正在读取记录…", 15f).apply {
+            minHeight = moteDp(88); gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(0xffeeeeee.toInt())
+        } }
         executor.execute {
             try {
+                if (stamp != generation) return@execute
                 val settings = Settings(this); val config = settings.read()
                 if (remote && !config.hasSyncConnection()) error("请先在连接与同步中配置中央节点")
                 val client = if (remote) CaptureRecordClient(config, settings.deviceId) else null
@@ -102,59 +122,89 @@ class CaptureRecordsActivity : Activity() {
                 val images = mutableListOf<Pair<JSONObject, ImageView>>()
                 runOnUiThread {
                     if (isDestroyed || stamp != generation) return@runOnUiThread
+                    clearList()
+                    if (cacheConfig != config) { thumbnails.evictAll(); cacheConfig = config }
                     nextCursor = next
                     val thumbnailCount = records.count(CapturePreview::hasImage)
                     val pageStatus = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · 第 $pageNumber 页"
                     status.text = pageStatus + if (thumbnailCount > 0) " · 正在加载缩略图（0/$thumbnailCount）" else ""
-                    if (records.isEmpty()) text(list, if (source == "media") "当天没有媒体记录。开启媒体采集并授权后，记录会按同步设置发送。" else if (remote) "当天没有此设备的中央截图记录。" else "当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。", 14f)
+                    if (records.isEmpty()) text(list, if (source != "screen") "当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。" else if (remote) "当天没有此设备的中央截图记录。" else "当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。", 14f)
                     progress.isIndeterminate = false; progress.max = maxOf(1, thumbnailCount); progress.progress = 0
                     if (thumbnailCount == 0) progress.visibility = View.GONE
-                    for (item in records) {
-                        val image = recordRow(item, remote, client, stamp)
+                    var gridRow: LinearLayout? = null
+                    for ((index, item) in records.withIndex()) {
+                        val useGrid = grid && source == "screen"
+                        if (useGrid && index % 2 == 0) gridRow = row(list)
+                        val image = recordRow(item, remote, client, stamp, if (useGrid) gridRow!! else list, useGrid)
                         if (CapturePreview.hasImage(item)) images += item to image
                     }
+                    if (grid && source == "screen" && records.size % 2 == 1) gridRow?.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
                     previousPage.isEnabled = cursors.size > 1; nextPage.isEnabled = nextCursor != null
-                    executor.execute {
-                        var loaded = 0; var failed = 0
-                        for ((item, image) in images) {
-                            if (stamp != generation || isDestroyed) break
-                            val bitmap = runCatching {
-                                val bytes = client?.image(item.getString("id"), true) ?: queue().image(item.getString("id"))
-                                bytes?.let { CapturePreview.decode(it, 256) }
-                            }.getOrNull()
-                            runOnUiThread {
-                                if (isDestroyed || stamp != generation) { bitmap?.recycle(); return@runOnUiThread }
-                                if (bitmap != null) { bitmaps += bitmap; image.setImageBitmap(bitmap) }
-                                else image.contentDescription = "缩略图暂不可用，点按查看详情或刷新"
-                                loaded += 1
-                                if (bitmap == null) failed++
+                    var loaded = 0; var failed = 0
+                    for ((item, image) in images) {
+                        val id = item.getString("id")
+                        val key = "${if (remote) "remote" else "local"}:$id"
+                        val placeholder = (image.parent as FrameLayout).getChildAt(1) as TextView
+                        var failedForImage = false
+                        fun requestImage(countProgress: Boolean) {
+                            placeholder.text = "正在加载…"; placeholder.setOnClickListener(null); placeholder.isClickable = false
+                            fun display(bitmap: Bitmap?) {
+                                if (isDestroyed || stamp != generation) return
+                                if (bitmap != null) {
+                                    thumbnails.put(key, bitmap); image.setImageBitmap(bitmap); placeholder.visibility = View.GONE
+                                    if (failedForImage) { failed--; failedForImage = false }
+                                } else {
+                                    if (!failedForImage) { failed++; failedForImage = true }
+                                    placeholder.text = "加载失败\n点此重试"
+                                    placeholder.setOnClickListener { requestImage(false) }
+                                }
+                                if (countProgress) loaded++
                                 progress.progress = loaded
                                 if (loaded == images.size) progress.visibility = View.GONE
-                                status.text = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · 第 $pageNumber 页 · 缩略图已处理 ${loaded}/${images.size}${if (failed > 0) " · $failed 张失败，可刷新重试" else ""}"
+                                status.text = pageStatus + " · 已处理 $loaded/${images.size}" + if (failed > 0) " · $failed 张失败，可点按重试" else ""
+                            }
+                            // Revisited thumbnails appear immediately, even if old network work is still finishing.
+                            thumbnails.get(key)?.let { display(it); return }
+                            imageExecutor.execute {
+                                if (stamp != generation || isDestroyed) return@execute
+                                val bitmap = runCatching {
+                                    val bytes = client?.image(id, true) ?: queue().image(id)
+                                    bytes?.let { CapturePreview.decode(it, 256) }
+                                }.getOrNull()
+                                runOnUiThread { display(bitmap) }
                             }
                         }
+                        requestImage(true)
                     }
                 }
             } catch (error: Exception) {
-                runOnUiThread { if (!isDestroyed && stamp == generation) { progress.visibility = View.GONE; status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1 } }
+                runOnUiThread { if (!isDestroyed && stamp == generation) { clearList(); progress.visibility = View.GONE; status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1 } }
             }
         }
     }
-    private fun recordRow(item: JSONObject, remote: Boolean, client: CaptureRecordClient?, stamp: Int): ImageView {
-        val row = row(list).apply {
+    private fun recordRow(item: JSONObject, remote: Boolean, client: CaptureRecordClient?, stamp: Int, parent: LinearLayout, grid: Boolean): ImageView {
+        val row = LinearLayout(this).apply {
+            orientation = if (grid) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
             tag = "capture:${item.getString("id")}"
             gravity = Gravity.CENTER_VERTICAL; background = MoteUi.clickable(this@CaptureRecordsActivity)
             setPadding(moteDp(12), moteDp(12), moteDp(12), moteDp(12)); isFocusable = true
             setOnClickListener { detail(item.getString("id"), remote, client, stamp) }
         }
-        val image = ImageView(this).apply { if (item.optString("source") == "media") visibility = View.GONE; scaleType = ImageView.ScaleType.CENTER_INSIDE; contentDescription = "采集图片缩略图"; setImageDrawable(MoteNavigationIcon(this@CaptureRecordsActivity, "capture", true)) }
-        row.addView(image, LinearLayout.LayoutParams(moteDp(88), moteDp(88)))
+        parent.addView(row, if (grid) LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = moteDp(6) } else LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(10) })
+        val preview = FrameLayout(this).apply { setBackgroundColor(0xffeeeeee.toInt()); if (item.optString("source") != "screen") visibility = View.GONE }
+        val image = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_INSIDE; contentDescription = "采集图片缩略图" }
+        preview.addView(image, FrameLayout.LayoutParams(-1, -1))
+        preview.addView(TextView(this).apply {
+            text = if (CapturePreview.hasImage(item)) "正在加载…" else "无图片"
+            gravity = Gravity.CENTER; textSize = 12f; setTextColor(MoteUi.muted)
+        }, FrameLayout.LayoutParams(-1, -1))
+        row.addView(preview, LinearLayout.LayoutParams(if (grid) -1 else moteDp(88), moteDp(if (grid) 160 else 88)))
         val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(12), 0, 0, 0) }
-        row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
-        text(labels, "${time(item.getString("capturedAt"))} · ${item.optString("appName").ifBlank { item.optString("appId").ifBlank { if (item.optString("source") == "media") "媒体会话状态" else "桌面 / 系统画面" } }}", 15f)
-        text(labels, if (item.optString("source") == "media") CapturePreview.mediaLabel(item) else CapturePreview.ocrLabel(item), 12f)
-        if (!remote) text(labels, when (item.optString("syncError")) { "archive_missing" -> "中央记录不可更新 · 本机图片已保留"; "ocr_conflict" -> "OCR 更新冲突 · 本机图片和文字已保留"; else -> if (item.optBoolean("uploaded")) "图片已同步 · 本机保留待更新 OCR" else "保存在本机 · 待同步" }, 12f)
-        item.optString("textPreview").takeIf(String::isNotBlank)?.let { text(labels, it.take(100), 12f) }
+        row.addView(labels, if (grid) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f))
+        text(labels, "${time(item.getString("capturedAt"))} · ${item.optString("appName").ifBlank { item.optString("appId").ifBlank { if (item.optString("source") == "media") "媒体会话状态" else if (item.optString("source") == "device_event") "设备状态" else "桌面 / 系统画面" } }}", 15f)
+        text(labels, if (item.optString("source") in SystemEventRules.sources) SystemEventRules.label(item) else if (item.optString("source") == "media") CapturePreview.mediaLabel(item) else CapturePreview.ocrLabel(item), 12f)
+        if (!remote) text(labels, when (item.optString("syncError")) { "archive_missing" -> "中央记录不可更新 · 本机图片已保留"; "ocr_conflict" -> "OCR 更新冲突 · 本机图片和文字已保留"; "upload_conflict" -> "记录内容冲突 · 本机副本已保留"; else -> if (item.optBoolean("uploaded")) "图片已同步 · 本机保留待更新 OCR" else "保存在本机 · 待同步" }, 12f)
+        item.optString("textPreview").takeIf(String::isNotBlank)?.let { text(labels, it.take(if (grid) 48 else 100), 12f) }
         return image
     }
     private fun detail(id: String, remote: Boolean, client: CaptureRecordClient?, stamp: Int) {
@@ -176,7 +226,13 @@ class CaptureRecordsActivity : Activity() {
                     if (isDestroyed || stamp != generation || !dialog.isShowing) { bitmap?.recycle(); if (dialog.isShowing) dialog.dismiss(); return@runOnUiThread }
                     content.removeAllViews(); detailBitmap = bitmap
                     text(content, "${time(record.getString("capturedAt"))} · ${if (remote) "中央归档" else "本机记录"}", 15f)
-                    text(content, record.optString("appName").ifBlank { record.optString("appId").ifBlank { if (record.optString("source") == "media") "媒体会话状态" else "桌面 / 系统画面" } }, 15f)
+                    text(content, record.optString("appName").ifBlank { record.optString("appId").ifBlank { if (record.optString("source") == "media") "媒体会话状态" else if (record.optString("source") == "device_event") "设备状态" else "桌面 / 系统画面" } }, 15f)
+                    if (record.optString("source") in SystemEventRules.sources) {
+                        text(content, SystemEventRules.label(record), 14f).setTextIsSelectable(true)
+                        text(content, "原始系统事件 · 不代表已阅读通知或实际执行某项任务。熄屏不等于锁定。", 12f)
+                        text(content, record.getJSONObject("metadata").toString(2), 12f).setTextIsSelectable(true)
+                        return@runOnUiThread
+                    }
                     val media = record.optJSONObject("metadata")?.optJSONObject("media")
                     if (record.optString("source") == "media") {
                         text(content, CapturePreview.mediaLabel(record), 14f).setTextIsSelectable(true)
@@ -185,6 +241,11 @@ class CaptureRecordsActivity : Activity() {
                         return@runOnUiThread
                     }
                     if (media != null) text(content, CapturePreview.mediaLabel(record), 13f)
+                    if (record.optString("source") in setOf("note", "activity")) {
+                        text(content, record.optString("ocrText").ifBlank { "应用活动 · ${record.optLong("durationMs")} 毫秒" }, 14f).setTextIsSelectable(true)
+                        record.optString("syncError").takeIf(String::isNotBlank)?.let { text(content, "同步需要处理：$it", 14f) }
+                        return@runOnUiThread
+                    }
                     text(content, CapturePreview.ocrLabel(record), 14f)
                     if (bitmap != null) content.addView(ImageView(this).apply { setImageBitmap(bitmap); adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = "采集图片" }, LinearLayout.LayoutParams(-1, -2))
                     else text(content, "图片暂不可用。", 14f)
@@ -199,7 +260,7 @@ class CaptureRecordsActivity : Activity() {
     private fun row(parent: LinearLayout) = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }.also { parent.addView(it, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(10) }) }
     private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply { text = value; textSize = size; setTextColor(MoteUi.ink); setLineSpacing(moteDp(3).toFloat(), 1f); setPadding(0, moteDp(5), 0, moteDp(5)) }.also(parent::addView)
     private fun button(parent: LinearLayout, label: String, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { action() } }).also { parent.addView(it, if (parent.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2)) }
-    private fun clearList() { list.removeAllViews(); bitmaps.forEach(Bitmap::recycle); bitmaps.clear() }
+    private fun clearList() { list.removeAllViews() }
     override fun onSaveInstanceState(outState: Bundle) { outState.putString("date", date.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
-    override fun onDestroy() { generation++; executor.shutdown(); detailExecutor.shutdown(); clearList(); super.onDestroy() }
+    override fun onDestroy() { generation++; executor.shutdownNow(); imageExecutor.shutdownNow(); detailExecutor.shutdownNow(); clearList(); thumbnails.evictAll(); super.onDestroy() }
 }

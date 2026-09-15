@@ -1,3 +1,4 @@
+import {systemEventText} from '@mote/shared';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, statSync, renameSync } from 'node:fs';
@@ -16,6 +17,7 @@ type Row = {id:string;json:string;received_at:string;blob_hash:string|null;mime:
 // Media evidence is searchable without rewriting the original screenshot OCR.
 function searchText(record:Pick<CaptureInput,'appId'|'appName'|'windowTitle'|'ocrText'|'mood'|'metadata'>) {
   return [record.appId,record.appName,record.windowTitle,record.ocrText,record.mood,
+    ...Object.values(record.metadata?.notification??{}).flat(), ...Object.values(record.metadata?.deviceEvent??{}),
     ...(record.metadata?.media?.sessions??[]).flatMap(s=>[s.appId,s.appName,s.title,s.artist,s.album,s.displaySubtitle,s.mediaId])].filter(Boolean).join('\n');
 }
 export class Store {
@@ -213,7 +215,7 @@ export class Store {
       capturedAt:record.capturedAt,source:record.source,appId:record.appId,appName:record.appName,windowTitle:record.windowTitle.slice(0,300),
       durationMs:record.durationMs,hasImage:Boolean(record.blobHash),ocr:captureOcrState(record),
       ...(record.metadata?.media?{media:record.metadata.media}:{}),
-      textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:'未观察到媒体会话',disabled:'媒体采集已关闭',permission_required:'媒体权限未授予',unavailable:'媒体信息暂不可用'}[record.metadata?.media?.status??'unavailable'])):record.ocrText).slice(0,160)}));
+      textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:'未观察到媒体会话',disabled:'媒体采集已关闭',permission_required:'媒体权限未授予',unavailable:'媒体信息暂不可用'}[record.metadata?.media?.status??'unavailable'])):record.source==='notification'||record.source==='device_event'?systemEventText(record.metadata):record.ocrText).slice(0,160)}));
     return {...page,items};
   }
   completeOcr(id:string,update:{status:'completed'|'failed';ocrText:string}) {

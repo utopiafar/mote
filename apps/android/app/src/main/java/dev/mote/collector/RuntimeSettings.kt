@@ -27,14 +27,14 @@ object RuntimeSettings {
             CaptureAccessibilityService.instance?.stopCapture()
             MediaCollectionService.suspendObservation()
             ProjectionService.instance?.pauseForConfiguration()
-            settings.status(if (wasEnabled) "capturing" else "paused", "正在应用设置，已有记录保持加密保存")
+            settings.status(if (wasEnabled) "capturing" else "paused", "正在保存设置…")
         } catch (error: Exception) {
             ConnectionGuard.endReconfiguration(); finished(kotlin.Result.failure(error)); return
         }
         executor.execute {
             val result = runCatching {
                 val work = WorkManager.getInstance(app)
-                listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic", "mote-capture-ocr", "mote-capture-ocr-recovery")
+                listOf("mote-sync-recovery", "mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic", "mote-capture-ocr", "mote-capture-ocr-recovery")
                     .forEach { work.cancelUniqueWork(it).result.get(10, TimeUnit.SECONDS) }
                 val deadline = SystemClock.elapsedRealtime() + 120_000
                 while (ConnectionGuard.processing.get() > 0) {
@@ -53,13 +53,13 @@ object RuntimeSettings {
             main.post {
                 val applied = runCatching {
                     val config = current.getOrThrow()
-                    if (!config.screenCollectionEnabled && !(config.mediaCollectionEnabled && config.metadataEnabled)) settings.enabled = false
+                    if (!config.screenCollectionEnabled && !config.observesSystem()) settings.enabled = false
                     val resume = wasEnabled && settings.enabled
                     var needsConsent = false
                     when (captureResume(wasEnabled, settings.enabled, if (config.screenCollectionEnabled) config.effectiveMode() else "accessibility", ProjectionService.instance != null)) {
                         CaptureResume.EXISTING_PROJECTION -> ProjectionService.instance!!.applyConfiguration(config)
                         CaptureResume.NEW_PROJECTION -> {
-                            if (!(config.mediaCollectionEnabled && config.metadataEnabled)) { settings.enabled = false; needsConsent = true }
+                            if (!config.observesSystem()) { settings.enabled = false; needsConsent = true }
                         }
                         CaptureResume.ACCESSIBILITY -> {
                             ProjectionService.instance?.finishForModeChange()
@@ -67,7 +67,7 @@ object RuntimeSettings {
                         }
                         CaptureResume.STOPPED -> Unit
                     }
-                    if (result.isSuccess) settings.status(if (resume && !needsConsent) "capturing" else "paused", if (resume && !needsConsent) "设置已生效，采集继续运行" else if (needsConsent) "设置已生效，请授权新的投屏会话" else "设置已生效，采集保持停止")
+                    if (result.isSuccess) settings.status(if (resume && !needsConsent) "capturing" else "paused", if (resume && !needsConsent) "设置已保存" else if (needsConsent) "设置已生效，请授权新的投屏会话" else "设置已保存")
                     else settings.status(if (resume && !needsConsent) "capturing" else "paused", "设置未完成，继续使用当前已保存配置")
                     Applied(needsConsent)
                 }.onFailure { settings.enabled = false; settings.status("error", "采集恢复失败：${it.message ?: "请检查权限和所选存储位置"}") }

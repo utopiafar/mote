@@ -27,14 +27,14 @@
         <activity android:name=".ConnectionScanActivity" android:exported="false" />
         <activity android:name=".StorageActivity" android:exported="false" />
         <activity android:name=".ActivityStatsActivity" android:exported="false" />
+        <activity android:name=".SyncRecoveryActivity" android:exported="false" />
         <activity android:name=".CaptureRecordsActivity" android:exported="false" />
         <activity android:name=".LogViewerActivity" android:exported="false" />
         <service android:name=".ProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection" />
         <service android:name=".NsfwInferenceService" android:exported="false" android:process=":nsfw" />
-        <service android:name=".MediaCollectionService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true" android:label="Mote 媒体播放状态">
+        <service android:name=".MediaCollectionService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true" android:label="Mote 通知、媒体与设备事件">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
-            <meta-data android:name="android.service.notification.default_filter_types" android:value="0" />
-            <meta-data android:name="android.service.notification.disabled_filter_types" android:value="ongoing|conversations|alerting|silent" />
+            <meta-data android:name="android.service.notification.default_filter_types" android:value="ongoing|conversations|alerting|silent" />
         </service>
         <service android:name=".CaptureAccessibilityService" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="@string/accessibility_name">
             <intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter>

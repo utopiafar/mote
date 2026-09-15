@@ -50,10 +50,11 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
             if (!config.hasSyncConnection() || (config.syncMode == "manual" && !explicit)) return Result.success()
             if (inputData.getString("syncStamp") != SyncSchedule.stamp(config)) return Result.success()
             config.validate(); config.validateConnection(); val target = SourceRules.target(config.server, config.token)
-            if (config.wifiOnly && !UploadWorker.isWifi(applicationContext)) return Result.retry()
+            SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
             settings.syncStatus("uploading", "正在同步来源记录")
             for (source in store.sources().filter { it.enabled }) {
                 if (isStopped) return Result.retry()
+                SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
                 if (!SourceAccess.available(applicationContext, source)) { store.status(source.id, "permission"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
                 try {
                     fun stillSelected(): Boolean = store.sources().any { it == source && it.enabled } && settings.read().let { SourceRules.target(it.server, it.token) == target }
@@ -71,7 +72,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     }
                     while (submitted < 20) {
                         if (isStopped || !stillSelected()) return Result.retry()
-                        if (config.wifiOnly && !UploadWorker.isWifi(applicationContext)) return failure()
+                        SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
                         val body = store.next(source.id, target) ?: break
                         val (code, ack) = HttpJson.request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.token)
                         if (code == 409) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = code); store.status(source.id, "paused"); break }
@@ -88,10 +89,9 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 } catch (_: Exception) { store.status(source.id, "offline"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.NETWORK); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.NETWORK); failed = true }
             }
             if (failed) failure()
-            else if (more) Result.retry()
+            else if (more) { SourceWork.enqueueUpload(applicationContext, settings.read(), inputData.getBoolean("manual", false), continuation = true); Result.success() }
             else {
-                if (!SyncSchedule.pending(applicationContext).hasWork) settings.syncStatus("idle", "全部待发记录已同步")
-                else settings.syncStatus("waiting", "仍有本机待发记录；暂停或权限不可用的来源需恢复后同步")
+                SyncHealth.finish(applicationContext)
                 // Explicit source sync has its own final report because manual mode sends no later automatic heartbeat.
                 SyncHeartbeat.send(applicationContext, settings, config, applicationContext.queue())
                 Result.success()
@@ -129,11 +129,11 @@ object SourceWork {
         if (!syncExplicit) upload(context)
     }
     fun upload(context: Context, explicit: Boolean = false) = UploadWorker.schedule(context, Settings(context).read(), explicit)
-    internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean) {
+    internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean, continuation: Boolean = false) {
         if (context.localSources().sources().none { it.enabled }) return
         val request = OneTimeWorkRequestBuilder<SourceUploadWorker>().setConstraints(SyncSchedule.constraints(config))
             .setInputData(workDataOf("manual" to explicit, "syncStamp" to SyncSchedule.stamp(config)))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        WorkManager.getInstance(context).enqueueUniqueWork("mote-source-upload", if (explicit) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
+        WorkManager.getInstance(context).enqueueUniqueWork("mote-source-upload", if (continuation) ExistingWorkPolicy.APPEND_OR_REPLACE else if (explicit) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
     }
 }

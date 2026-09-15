@@ -17,6 +17,7 @@ import android.provider.Settings as SystemSettings
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
 import java.util.concurrent.Executors
@@ -79,11 +80,15 @@ class MainActivity : Activity() {
     private lateinit var appPolicies: EditText
     private lateinit var metadataEnabled: CheckBox
     private lateinit var mediaCollectionEnabled: CheckBox
+    private lateinit var notificationCollectionEnabled: CheckBox
+    private lateinit var deviceEventCollectionEnabled: CheckBox
     private lateinit var screenCollectionEnabled: CheckBox
     private lateinit var mediaStatus: TextView
     private lateinit var jpegQuality: EditText
     private lateinit var captureMaxSide: EditText
     private lateinit var batteryBelow: EditText
+    private lateinit var syncChargingOnly: CheckBox
+    private lateinit var syncBatteryNotLow: CheckBox
     private lateinit var chargingOnly: CheckBox
     private lateinit var ocrChargingOnly: CheckBox
     private lateinit var diagnosticEnabled: CheckBox
@@ -193,7 +198,7 @@ class MainActivity : Activity() {
         section("同步状态")
         card {
             syncStatus = text("正在读取同步状态…", 14)
-            rowButtons("立即同步", { retrySync() }, "连接设置", { showPage(Page.CONNECTION) })
+            rowButtons("立即同步", { retrySync() }, "同步与恢复", { startActivity(Intent(this, SyncRecoveryActivity::class.java)) })
         }
         section("本机记录")
         totalsStatus = text("正在读取统计…", 15)
@@ -232,7 +237,7 @@ class MainActivity : Activity() {
         page(Page.SOURCES, "把你选择的生活线索，收进同一份档案")
         section("已支持的来源")
         menu("屏幕与应用活动", "按你的隐私规则采集，可随时暂停", "capture") { showPage(Page.PRIVACY) }
-        menu("随手记", "保存此刻的想法，不需要截图权限", "note") { showPage(Page.NOTES) }
+        menu("随手记", "记录此刻的想法", "note") { showPage(Page.NOTES) }
         menu("日历与文件", "连接日历、选择文件或授权目录", "folder") { startActivity(Intent(this, SourcesActivity::class.java)) }
         card(MoteUi.tint) {
             text("只连接你选择的内容", 17)
@@ -243,7 +248,7 @@ class MainActivity : Activity() {
     private fun buildConnection(config: CollectorConfig) {
         page(Page.CONNECTION, "可先只在本机记录，需要时再连接中央档案")
         section("统一同步方式")
-        text("截图、应用活动、笔记和日历/文件采用同一同步策略。", 13, MoteUi.muted)
+        text("所有采集记录和来源文件共用以下同步设置。", 13, MoteUi.muted)
         syncMode = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("实时同步", "定时同步", "批量同步", "仅手动同步"))
             setSelection(syncModes.indexOf(config.syncMode).coerceAtLeast(0))
@@ -251,8 +256,13 @@ class MainActivity : Activity() {
         syncInterval = presetNumber("同步间隔 / 分钟（批量模式下也是最长等待时间）", config.syncIntervalMinutes, "15", 15..1440, listOf(15, 30, 60, 180, 360, 720, 1440))
         syncBatch = presetNumber("批量达到多少条时同步", config.syncBatchSize, "20", 1..500, listOf(5, 10, 20, 50, 100, 200, 500))
         updateSyncFields()
-        text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。手动模式仅在点击“立即同步”后发送；网络条件始终有效。Android 省电可能推迟后台执行。", 13, MoteUi.muted)
-        section("可选中央节点")
+        text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。", 13, MoteUi.muted)
+        section("同步条件")
+        wifi = check("仅非计费 Wi-Fi 同步", config.wifiOnly)
+        syncChargingOnly = check("仅充电时同步", config.syncChargingOnly)
+        syncBatteryNotLow = check("低电量时暂停同步", config.syncBatteryNotLow)
+        text("适用于记录、来源文件和 OCR 结果。立即同步与全量补传也遵守这些条件；低电量由系统判定。", 13, MoteUi.muted)
+        section("中央节点")
         menu("扫码或导入邀请", "推荐使用中央节点生成的一次性邀请", "sync") { startActivity(Intent(this, ConnectionActivity::class.java)) }
         section("节点与设备")
         connectionSummary = text("", 13, MoteUi.muted)
@@ -269,19 +279,22 @@ class MainActivity : Activity() {
             }
         })
         name = field("设备名称", config.deviceName, "我的 K90 Pro Max")
-        wifi = check("仅非计费 Wi-Fi 上传（离线仍入队）", config.wifiOnly)
         text("中央节点可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；跨设备请填写局域网 IP 或 HTTPS 域名。", 13, MoteUi.muted)
         button("立即重试同步") { retrySync() }
+        menu("同步与恢复", "待发、两端检查、全量补传与冲突处理", "sync") { startActivity(Intent(this, SyncRecoveryActivity::class.java)) }
     }
 
     private fun buildCapture(config: CollectorConfig) {
         page(Page.CAPTURE, "在记录密度、清晰度和耗电之间找到平衡")
         section("采集来源")
         screenCollectionEnabled = check("采集屏幕与前台应用活动", config.screenCollectionEnabled)
+        notificationCollectionEnabled = check("采集通知（正文、持续状态、更新与移除）", config.notificationCollectionEnabled)
+        deviceEventCollectionEnabled = check("采集亮屏、熄屏与锁定 / 解锁事件", config.deviceEventCollectionEnabled)
+        text("通知与设备事件可独立开启，通过系统通知服务观察，按同步策略上传。通知遵循应用规则：仅活动不读取正文，不记录会完全跳过。系统可能隐藏敏感内容；熄屏不等同于锁定。", 13, MoteUi.muted)
         mediaCollectionEnabled = check("采集媒体播放状态（需通知使用权）", config.mediaCollectionEnabled)
-        text("媒体采集可单独开启，在前台、后台和锁屏时观察播放器公开的状态、应用及曲目/章节信息；不录音、不控制播放，不读取普通通知。使用概览页的开始/暂停控制采集。媒体沿用应用隐私规则、电量限制和同步策略；关闭元数据会同时暂停媒体。", 13, MoteUi.muted)
+        text("媒体采集可单独开启，在前台、后台和锁屏时观察播放器公开的状态、应用及曲目/章节信息；不录音、不控制播放。普通通知由单独的通知采集开关控制。使用概览页的开始/暂停控制采集。媒体沿用应用隐私规则、电量限制和同步策略；关闭元数据会同时暂停媒体。", 13, MoteUi.muted)
         mediaStatus = text("媒体状态正在读取…", 13, MoteUi.muted)
-        button("授权媒体播放状态") { mediaPermission() }
+        button("授权通知、媒体与设备事件") { mediaPermission() }
         button("重新授权投屏（已开启的媒体可继续）") {
             val c = settings.read()
             if (!c.screenCollectionEnabled || c.effectiveMode() != "projection") toast("请先启用屏幕采集并保存投屏模式")
@@ -302,7 +315,7 @@ class MainActivity : Activity() {
         captureMaxSide = presetNumber("图片最长边 / px", config.captureMaxSide, "1280", 640..2560, listOf(640, 960, 1280, 1920, 2560))
         chargingOnly = check("仅充电时采集屏幕、活动和媒体", config.chargingOnly)
         ocrChargingOnly = check("仅充电时 OCR", config.ocrChargingOnly)
-        text("开启后，电池供电时继续采集、遮罩、保存和同步图片；充电后自动补做文字识别，并按同步设置更新中央归档。待识别图片在本机保留，并为识别文字预留空间，均计入存储上限。", 13, MoteUi.muted)
+        text("使用电池时保存图片，充电后识别文字；图片和识别结果按同步设置上传。待识别图片与文字预留空间计入存储上限。", 13, MoteUi.muted)
         batteryBelow = presetNumber("低于此电量暂停 / % · 0 为关闭", config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
         menu("权限与后台运行", "调整系统授权与后台运行设置", "settings") { showPage(Page.PERMISSIONS) }
     }
@@ -357,20 +370,21 @@ class MainActivity : Activity() {
                     catch (_: Exception) { toast("草稿清除失败") }
                 }.show()
         }
-        text("输入自动加密保存为本机草稿。无需节点或截图权限即可保存；已配置节点时按同步设置发送。正文最多 100000 字符，心情最多 80 字符。", 13, MoteUi.muted)
+        text("草稿自动保存在本机，保存后按同步设置上传。正文最多 100000 字符，心情最多 80 字符。", 13, MoteUi.muted)
     }
 
     private fun buildPrivacy(config: CollectorConfig) {
         page(Page.PRIVACY, "由你决定，哪些内容可以留下")
-        section("应用采集级别")
-        text("完整内容会保存经过本机过滤的截图；仅应用活动只记应用与时长，不需要截图或模型；不记录不会保存该应用。", 13, MoteUi.muted)
+        section("选择要记录的应用")
+        text("完整内容：保存经过隐私过滤的截图。仅应用活动：记录应用与时长。不记录：跳过该应用。", 13, MoteUi.muted)
         val appRules = AppCollectionRules.parse(config.appCollectionRules)
         appDefault = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("其他应用：完整内容", "其他应用：仅应用活动", "其他应用：不记录"))
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("默认：记录截图与内容", "默认：只记应用和时长", "默认：不记录（仅记录单独开启的应用）"))
             setSelection(AppCollectionMode.entries.indexOf(appRules.defaultMode))
         }; content.addView(appDefault, LinearLayout.LayoutParams(-1, dp(56))); track(appDefault, "appDefault")
         appRuleRows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(appRuleRows)
-        button("从已安装应用中选择") { chooseInstalledApp() }
+        text("默认方式适用于没有单独设置的应用，也适用于以后安装的应用。下方显示单独设置；修改后点击保存生效。", 13, MoteUi.muted)
+        button("管理应用 · 查看每个应用的记录方式") { chooseInstalledApp() }
         val regular = content
         val rawRules = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
         button("高级：手工编辑包名规则") { rawRules.visibility = if (rawRules.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
@@ -465,7 +479,7 @@ class MainActivity : Activity() {
         menu("应用更新", "检查新版本与安装更新", "sync") { startActivity(Intent(this, AppUpdatesActivity::class.java)) }
         menu("开发者选项", "诊断、模型高级参数与构建信息", "settings") { showPage(Page.DEVELOPER) }
         text("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT} · ${Build.MANUFACTURER} ${Build.MODEL}", 12, MoteUi.muted)
-        text("无需 Root，不申请相册和麦克风权限；相机仅在主动扫码时申请。应用页面受到系统安全保护，不会把令牌截进采集队列。", 13, MoteUi.muted)
+        text("相机权限用于扫码连接。", 13, MoteUi.muted)
         text("本构建尚未在 K90 Pro Max 真机验证。", 12, MoteUi.muted)
     }
 
@@ -478,7 +492,8 @@ class MainActivity : Activity() {
                 .setMessage(getString(R.string.accessibility_description) + "\n\n继续后请在系统设置中选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。")
                 .setNegativeButton("取消", null).setPositiveButton("打开系统设置") { _, _ -> safeOpen(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
         }
-        button("授权媒体播放状态（通知使用权）") { mediaPermission() }
+        button("授权通知与媒体（通知使用权）") { mediaPermission() }
+        text("HyperOS 通知使用权：请按需打开实时、对话、通知、静音类别。旧版曾禁用这些类别；更新后若仍是灰色，可关闭再重新授予通知使用权。类别和应用级开关会影响可接收的事件。", 13, MoteUi.muted)
         notificationButton = button("通知权限") { notifications() }
         usageButton = button("使用情况权限") { safeOpen(Intent(SystemSettings.ACTION_USAGE_ACCESS_SETTINGS)) }
         batteryButton = button("电池优化设置") { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
@@ -534,7 +549,7 @@ class MainActivity : Activity() {
         checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } }, http.isChecked,
         if (projectionMode.isChecked) "projection" else "accessibility", nsfwDraft(), number(jpegQuality, 40..95), number(captureMaxSide, 640..2560),
         chargingOnly.isChecked, number(batteryBelow, 0..95), diagnosticEnabled.isChecked, number(diagnosticInterval, 15..3600),
-        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500), ocrChargingOnly.isChecked, mediaCollectionEnabled.isChecked, screenCollectionEnabled.isChecked)
+        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500), ocrChargingOnly.isChecked, mediaCollectionEnabled.isChecked, screenCollectionEnabled.isChecked, notificationCollectionEnabled.isChecked, deviceEventCollectionEnabled.isChecked, syncChargingOnly.isChecked, syncBatteryNotLow.isChecked)
     private fun nsfwDraft(): NsfwConfig {
         val value = NsfwConfig(enabled = nsfwEnabled.isChecked, threads = number(nsfwThreads, 1..8),
             timeoutMs = number(nsfwTimeout, 5000..180000).toLong(), source = nsfwSources[nsfwSource.selectedItemPosition],
@@ -587,7 +602,7 @@ class MainActivity : Activity() {
         RuntimeSettings.apply(this, config, bindLocal) { result ->
             applyingSettings = false
             if (isDestroyed) return@apply
-            result.onSuccess { saved(); toast("设置已保存并生效"); resumeProjectionAfterSettings() }
+            result.onSuccess { saved(); toast("设置已保存"); resumeProjectionAfterSettings() }
                 .onFailure { toast(it.message ?: "设置未保存，请重试") }
             updateSaveBar(); refreshStatus()
         }
@@ -602,11 +617,11 @@ class MainActivity : Activity() {
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) { notifications(); toast("请先允许通知，然后再次点击开始"); return }
         val c = settings.read()
         if (!c.screenCollectionEnabled) {
-            if (!c.mediaCollectionEnabled || !c.metadataEnabled) { showPage(Page.CAPTURE); toast("请启用媒体采集及元数据，或启用屏幕采集"); return }
+            if (!c.observesSystem()) { showPage(Page.CAPTURE); toast("请至少启用一种采集来源"); return }
             if (!MediaCollection.permissionAllowed(this)) { mediaPermission(); return }
             if (!ConnectionGuard.startCapture(this, SourceRules.hash(c.toString())) {
                 Operations.record(this, OperationKind.CAPTURE_STARTED)
-                settings.status("capturing", "媒体采集已启用；等待系统媒体会话")
+                settings.status("capturing", "通知、设备事件或媒体采集已启用；等待系统事件")
             }) { toast("配置已变化，请重试"); return }
             MediaCollectionService.refresh()
             if (!MediaCollectionService.connected) android.service.notification.NotificationListenerService.requestRebind(ComponentName(this, MediaCollectionService::class.java))
@@ -672,7 +687,7 @@ class MainActivity : Activity() {
             }
             val started = stamp != null && if (settings.enabled) ConnectionGuard.sync {
                 val c = settings.read()
-                if (stamp == SourceRules.hash(c.toString()) && c.screenCollectionEnabled && c.effectiveMode() == "projection" && c.mediaCollectionEnabled && c.metadataEnabled && !ProjectionService.running) {
+                if (stamp == SourceRules.hash(c.toString()) && c.screenCollectionEnabled && c.effectiveMode() == "projection" && c.observesSystem() && !ProjectionService.running) {
                     startProjection(); true
                 } else false
             } == true else ConnectionGuard.startCapture(this, stamp, startProjection)
@@ -722,7 +737,7 @@ class MainActivity : Activity() {
         val c = runCatching { settings.read() }.getOrNull()
         if (c != null) runCatching { Diagnostics(this).sample(c) }
         val screenLive = c?.screenCollectionEnabled == true && (if (c.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
-        val live = screenLive || (c?.mediaCollectionEnabled == true && c.metadataEnabled && MediaCollectionService.connected)
+        val live = screenLive || (c?.observesSystem() == true && MediaCollectionService.connected)
         val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else settings.message()
         val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
         val totals = if (stats == null) "统计暂不可读取" else "本周期保存截图 ${stats.optLong("SCREEN_QUEUED")} · 应用活动 ${stats.optLong("ACTIVITY_QUEUED")} · 媒体 ${stats.optLong("MEDIA_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED") + stats.optLong("MEDIA_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
@@ -740,9 +755,11 @@ class MainActivity : Activity() {
             else -> "采集已暂停"
         }
         val action = if (settings.enabled) "暂停采集" else "开始采集"
+        val syncWait = c?.takeIf { it.hasSyncConnection() }?.let { SyncSchedule.waitingReason(this, it) }
         val syncMessage = when {
             c == null -> "无法读取同步配置"
             !c.hasSyncConnection() -> "仅保存在本机 · 尚未连接节点"
+            syncWait != null -> syncWait
             c.syncMode == "manual" && settings.syncState() !in setOf("uploading", "error", "waiting") -> "手动同步 · 点击立即同步才会发送"
             c.syncMode in setOf("interval", "batch") && settings.syncState() !in setOf("uploading", "error") ->
                 if (c.syncMode == "interval") "约每 ${c.syncIntervalMinutes} 分钟同步" else "满 ${c.syncBatchSize} 条或等待 ${c.syncIntervalMinutes} 分钟同步"
@@ -757,7 +774,7 @@ class MainActivity : Activity() {
     }
     private fun mediaPermission() {
         AlertDialog.Builder(this).setTitle("媒体播放状态授权")
-            .setMessage("Android 通过通知使用权允许读取其他应用公开的媒体会话。Mote 仅观察播放器状态，不读取普通通知正文、不录音或控制播放。授权后仍需开启媒体采集并点击开始；各应用的“不记录”和“仅活动”规则同样适用。")
+            .setMessage("Android 通过通知使用权开放通知与媒体会话。开启通知采集后，Mote 会保存应用公开的标题、正文、持续状态以及更新和移除事件，并按同步策略上传。设备事件单独记录亮屏、熄屏和锁定状态。各来源需单独开启并点击开始；应用的“不记录”和“仅活动”规则仍适用。系统可能隐藏敏感通知；Mote 不回复通知、不控制播放。")
             .setNegativeButton("取消", null).setPositiveButton("打开系统设置") { _, _ ->
                 safeOpen(Intent(SystemSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             }.show()
@@ -871,7 +888,7 @@ class MainActivity : Activity() {
         val dirty = controlValues() != baseline
         saveBar.visibility = if (dirty || applyingSettings) View.VISIBLE else View.GONE
         (saveBar.getChildAt(1) as Button).isEnabled = !applyingSettings && !ConnectionGuard.reconfiguring()
-        saveHint.text = if (applyingSettings) "正在应用设置…\n无需手动暂停采集" else "设置有更改\n保存后立即生效"
+        saveHint.text = if (applyingSettings) "正在保存…" else "有未保存的更改"
     }
 
     private fun controlValues() = controls.associate { view ->
@@ -959,9 +976,11 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         }
     }
-    private fun appModeLabel(mode: AppCollectionMode) = when (mode) { AppCollectionMode.CONTENT -> "完整内容"; AppCollectionMode.ACTIVITY -> "仅应用活动"; AppCollectionMode.OFF -> "不记录" }
-    private fun chooseAppMode(id: String, label: String) {
-        AlertDialog.Builder(this).setTitle(label).setItems(arrayOf("完整内容", "仅应用活动", "不记录", "跟随其他应用")) { _, index ->
+    private fun appModeLabel(mode: AppCollectionMode) = when (mode) { AppCollectionMode.CONTENT -> "截图与内容"; AppCollectionMode.ACTIVITY -> "仅应用和时长"; AppCollectionMode.OFF -> "不记录" }
+    private fun chooseAppMode(id: String, label: String, onChanged: () -> Unit = {}) {
+        val current = runCatching { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()) }.getOrElse { toast("请先修正高级规则"); return }
+        val selectedIndex = if (id in PrivacyRules.exclusions(excludes.text.toString())) 2 else current.apps[id]?.ordinal ?: 3
+        AlertDialog.Builder(this).setTitle(label).setSingleChoiceItems(arrayOf("截图与内容 · 保存过滤后的截图", "仅应用和时长 · 不保存截图", "不记录 · 跳过此应用", "使用默认方式 · ${appModeLabel(current.defaultMode)}"), selectedIndex) { dialog, index ->
             runCatching {
                 val rules = AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString())
                 val selected = rules.apps.toMutableMap()
@@ -969,6 +988,7 @@ class MainActivity : Activity() {
                 AppCollectionRules.parse(AppCollectionRules(rules.defaultMode, selected).json())
                 excludes.setText(PrivacyRules.exclusions(excludes.text.toString()).filterNot { it == id }.joinToString("\n"))
                 appPolicies.setText(selected.entries.joinToString("\n") { "${it.key}=${it.value.wire}" })
+                dialog.dismiss(); onChanged()
             }.onFailure { toast(it.message ?: "请检查应用规则") }
         }.setNegativeButton("取消", null).show()
     }
@@ -978,14 +998,35 @@ class MainActivity : Activity() {
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8)) }
         val search = MoteUi.field(EditText(this)).apply { hint = "搜索应用名称"; setSingleLine() }; body.addView(search)
         val list = ListView(this); body.addView(list, LinearLayout.LayoutParams(-1, dp(340)))
+        val modes = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("全部应用", "截图与内容", "仅应用和时长", "不记录"))
+        }; body.addView(modes, 1)
+        val summary = TextView(this); body.addView(summary, 2)
         var shown = apps
         fun filter() {
             val query = search.text.toString().trim()
-            shown = apps.filter { query.isEmpty() || it.second.contains(query, true) || it.first.contains(query, true) }
-            list.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, shown.map { it.second })
+            val rules = runCatching { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()) }.getOrNull() ?: return
+            val excluded = PrivacyRules.exclusions(excludes.text.toString())
+            fun mode(id: String) = if (id in excluded) AppCollectionMode.OFF else rules.apps[id] ?: rules.defaultMode
+            shown = apps.filter { (query.isEmpty() || it.second.contains(query, true) || it.first.contains(query, true)) &&
+                (modes.selectedItemPosition == 0 || mode(it.first).ordinal == modes.selectedItemPosition - 1) }
+            summary.text = "${shown.size} 个应用 · 点按更改，返回后保存生效"
+            list.adapter = object : ArrayAdapter<Pair<String, String>>(this, android.R.layout.simple_list_item_2, shown) {
+                override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                    val view = convertView ?: layoutInflater.inflate(android.R.layout.simple_list_item_2, parent, false)
+                    val app = getItem(position)!!
+                    view.findViewById<TextView>(android.R.id.text1).text = app.second
+                    view.findViewById<TextView>(android.R.id.text2).text = "${appModeLabel(mode(app.first))} · ${if (app.first in excluded || app.first in rules.apps) "单独设置" else "默认"}\n${app.first}"
+                    return view
+                }
+            }
         }
-        val dialog = AlertDialog.Builder(this).setTitle("选择应用").setView(body).setNegativeButton("取消", null).create()
-        list.setOnItemClickListener { _, _, position, _ -> val app = shown[position]; dialog.dismiss(); chooseAppMode(app.first, app.second) }
+        modes.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) { filter() }
+        }
+        val dialog = AlertDialog.Builder(this).setTitle("应用记录方式").setView(body).setNegativeButton("完成", null).create()
+        list.setOnItemClickListener { _, _, position, _ -> val app = shown[position]; chooseAppMode(app.first, app.second) { filter() } }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit

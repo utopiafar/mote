@@ -20,7 +20,7 @@ class MoteApplication : Application() {
                     UploadWorker.schedule(this@MoteApplication, config)
                     CaptureOcrWorker.schedule(this@MoteApplication, config)
                     SourceWork.schedule(this@MoteApplication)
-                    if (settings.enabled && config.screenCollectionEnabled && config.mode == "projection" && !(config.mediaCollectionEnabled && config.metadataEnabled)) {
+                    if (settings.enabled && config.screenCollectionEnabled && config.mode == "projection" && !config.observesSystem()) {
                         settings.enabled = false
                         settings.status("permission_required", "投屏会话已结束，请点击开始并重新授权；已有记录保留，同步按所选策略运行")
                     }

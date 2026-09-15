@@ -31,7 +31,7 @@ async function run(){
  await js(`window.fixtureRequests=[];window.fixtureFailures=new Set();window.fixtureExpire=false;const original=fetch.bind(window);window.fetch=async(input,init)=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;window.fixtureRequests.push(path);if(window.fixtureExpire&&path==='/api/status')return new Response(JSON.stringify({message:'Generated expired session'}),{status:401});if(window.fixtureFailures.has(path))return new Response(JSON.stringify({message:'Generated independent endpoint failure'}),{status:503});return original(input,init);};true;`);
  await click('设备');await until(()=>js(`document.querySelector('#connect-title')?.textContent==='登录 Mote'`),'device login guard');
  assert.ok(await js(`document.querySelector('.connect-modal').innerText.includes('进入「设备」')`));
- assert.equal(await js(`document.querySelector('.login-advanced').open`),false,'same-origin login defaults to no URL entry');
+ assert.equal(await js(`!!document.querySelector('.login-advanced,[aria-label="登录节点地址"]')`),false,'management login has no remote node selector');
  assert.deepEqual(await js('window.fixtureRequests'),[],'anonymous navigation does not request private data');
  await shot('login-desktop');window.setSize(430,900);await delay(150);await shot('login-mobile');window.setSize(1360,1000);
  await input('generated-invalid');await click('登录并继续');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('令牌无效')`),'invalid token error');

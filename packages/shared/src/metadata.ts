@@ -28,6 +28,21 @@ export const mediaMetadataSchema = z.object({
 });
 export type MediaMetadata = z.infer<typeof mediaMetadataSchema>;
 
+/** Original Android fields; category is provider-reported, not an inferred activity. */
+export const notificationEventSchema = z.object({
+  action: z.enum(['posted','updated','removed']), notificationKey: z.string().regex(/^[a-f0-9]{64}$/),
+  postedAt: timestamp, ongoing: z.boolean(), groupSummary: z.boolean(),
+  category: z.string().max(200).optional(), channelId: z.string().max(300).optional(),
+  removalReason: z.number().int().min(0).max(1000).optional(),
+  title: z.string().max(4000).optional(), text: z.string().max(4000).optional(),
+  bigText: z.string().max(4000).optional(), subText: z.string().max(4000).optional(),
+  textLines: z.array(z.string().max(2000)).max(20).optional(),
+}).strict();
+export const deviceEventSchema = z.object({
+  action: z.enum(['screen_on','screen_off','user_present','state_observed']),
+  keyguardLocked: z.boolean(), screenInteractive: z.boolean(),
+}).strict();
+
 /** Processing state is part of the record, independent of optional device telemetry. */
 export const ocrSchema = z.object({
   status: z.enum(['pending', 'completed', 'disabled', 'failed']),
@@ -50,7 +65,7 @@ export const recordMetadataSchema = z.object({
   observedAt: timestamp,
   collector: z.object({
     version: label.optional(),
-    method: z.enum(['accessibility', 'media_projection', 'screen_capture', 'media_session', 'manual', 'file', 'calendar', 'mcp', 'import']).optional(),
+    method: z.enum(['accessibility', 'media_projection', 'screen_capture', 'media_session', 'notification_listener', 'manual', 'file', 'calendar', 'mcp', 'import']).optional(),
   }).strict().optional(),
   device: z.object({
     osVersion: label.optional(), osBuild: label.optional(), manufacturer: label.optional(),
@@ -71,6 +86,9 @@ export const recordMetadataSchema = z.object({
     maskCount: z.number().int().min(0).max(200).optional(),
   }).strict().optional(),
   media: mediaMetadataSchema.optional(),
+  notification: notificationEventSchema.optional(),
+  deviceEvent: deviceEventSchema.optional(),
+  observation: z.object({sessionId:z.string().uuid(),elapsedRealtimeMs:bytes}).strict().optional(),
 }).strict();
 export type RecordMetadata = z.infer<typeof recordMetadataSchema>;
 
@@ -84,3 +102,11 @@ export const sourceMetadataSchema = z.object({
   provider: z.object({ createdAt: timestamp.optional(), updatedAt: timestamp.optional() }).strict().optional(),
 }).strict();
 export type SourceMetadata = z.infer<typeof sourceMetadataSchema>;
+
+/** Display raw event fields; this does not infer activity or intent. */
+export function systemEventText(metadata?: RecordMetadata): string {
+  const n=metadata?.notification,e=metadata?.deviceEvent;
+  if(n) return [({posted:'收到通知（首次观察）',updated:'通知更新',removed:'通知移除'})[n.action],n.title,n.text,n.bigText,n.subText,...(n.textLines??[])].filter(Boolean).join('\n');
+  if(e) return `${({screen_on:'亮屏',screen_off:'熄屏',user_present:'用户解锁 / 在场',state_observed:'锁定状态观察'})[e.action]} · ${e.keyguardLocked?'系统报告已锁定':'系统报告未锁定'} · ${e.screenInteractive?'屏幕可交互':'屏幕不可交互'}`;
+  return '';
+}

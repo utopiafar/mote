@@ -134,6 +134,27 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
             if (size > 0 || metadata) { count += size; if (metadata) updates++; val at = state.optLong("pendingSince", file(source.id).lastModified().takeIf { it > 0 } ?: File(directory, "config.enc").lastModified()); oldest = oldest?.let { minOf(it, at) } ?: at }
         }; PendingSync(count, oldest, updates)
     }
+    /** Explicit full replay of retained versions; paused sources and their privacy choices stay untouched. */
+    fun requeueRetained(maxBytes: Long = 64L * 1024 * 1024): Int = synchronized(lock) {
+        var count = 0
+        for (source in sources().filter { it.enabled }) {
+            val state = state(source.id)
+            val pending = state.optJSONArray("pending") ?: JSONArray()
+            val keys = (0 until pending.length()).map { identity(pending.getJSONObject(it)) }.toMutableSet()
+            val current = state.optJSONObject("current") ?: JSONObject()
+            for (key in current.keys()) {
+                val body = current.getJSONObject(key).getJSONObject("body")
+                if (keys.add(identity(body))) pending.put(body)
+            }
+            check(pending.length() <= 4096) { "来源队列已满，请先同步后重试全量上传" }
+            state.put("pending", pending).put("registered", false)
+            if (!state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
+            val bytes = cipher.seal(state.toString().toByteArray(Charsets.UTF_8))
+            val other = directory.listFiles()?.filter { it != file(source.id) }?.sumOf { it.length() } ?: 0L
+            check(bytes.size + other <= maxBytes) { "来源补传缓存达到上限，请先同步待发版本后重试" }
+            writeBytes(file(source.id), bytes); count += pending.length()
+        }; count
+    }
     fun resetSyncedSnapshots() = synchronized(lock) {
         val all = sources(); check(all.all { (state(it.id).optJSONArray("pending")?.length() ?: 0) == 0 })
         all.forEach { if (file(it.id).exists()) check(file(it.id).delete()) }

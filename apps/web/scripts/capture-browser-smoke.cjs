@@ -51,7 +51,7 @@ async function finish(code) {
   const js=code=>wc.executeJavaScript(code);
   const clickNav=label=>js(`Array.from(document.querySelectorAll('.sidebar button')).find(button=>button.innerText===${JSON.stringify(label)}).click()`);
   await window.loadURL(url);
-  await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
+  await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'authenticated app');
   await clickNav('采集记录');
   await until(()=>js(`document.querySelectorAll('.timeline-group .capture-card').length===24`),'first page after one click');

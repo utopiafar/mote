@@ -111,7 +111,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         stopCapture()
         if (::settings.isInitialized && settings.enabled) {
             val c = settings.read()
-            val media = c.mediaCollectionEnabled && c.metadataEnabled && MediaCollectionService.connected && MediaCollection.permissionAllowed(this)
+            val media = c.observesSystem() && MediaCollectionService.connected && MediaCollection.permissionAllowed(this)
             settings.status(if (media) "capturing" else "permission_required", "无障碍服务未连接，等待系统恢复或打开设置重新启用" + if (media) "；媒体采集继续运行" else "")
             MediaCollectionService.refresh()
         }

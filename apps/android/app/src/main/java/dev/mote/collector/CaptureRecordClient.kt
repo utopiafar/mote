@@ -12,7 +12,7 @@ import java.util.UUID
 internal class CaptureRecordClient(private val config: CollectorConfig, private val deviceId: String) {
     init { config.validateConnection() }
     fun page(after: String, before: String, cursor: String?, source: String = "screen"): JSONObject {
-        require(source in setOf("screen", "media"))
+        require(source in setOf("screen", "media", "notification", "device_event", "note", "activity"))
         val uri = Uri.parse("${config.server}/api/capture-browser").buildUpon()
             .appendQueryParameter("after", after).appendQueryParameter("before", before)
             .appendQueryParameter("source", source).appendQueryParameter("deviceId", deviceId).appendQueryParameter("limit", "20")
@@ -20,11 +20,11 @@ internal class CaptureRecordClient(private val config: CollectorConfig, private 
         return JSONObject(String(request(uri.toString(), false), Charsets.UTF_8))
     }
     fun detail(id: String) = JSONObject(String(request("${config.server}/api/capture-browser/${UUID.fromString(id)}", false), Charsets.UTF_8))
-    fun image(id: String, thumbnail: Boolean) = request("${config.server}/api/capture-browser/${UUID.fromString(id)}/image${if (thumbnail) "?thumbnail=1" else ""}", true)
-    private fun request(url: String, image: Boolean): ByteArray {
+    fun image(id: String, thumbnail: Boolean) = request("${config.server}/api/capture-browser/${UUID.fromString(id)}/image${if (thumbnail) "?thumbnail=1" else ""}", true, thumbnail)
+    private fun request(url: String, image: Boolean, thumbnail: Boolean = false): ByteArray {
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
-            connection.connectTimeout = 15_000; connection.readTimeout = 30_000
+            connection.connectTimeout = if (thumbnail) 5_000 else 15_000; connection.readTimeout = if (thumbnail) 8_000 else 30_000
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Authorization", "Bearer ${config.token}")
             val code = connection.responseCode
@@ -45,7 +45,7 @@ internal object CapturePreview {
         if (record.has("hasImage")) record.optBoolean("hasImage") else
             (!record.isNull("imagePath") && record.optString("imagePath").isNotBlank() || !record.isNull("imageMime") && record.optString("imageMime").isNotBlank())
     fun mediaLabel(record: JSONObject): String {
-        val media = record.optJSONObject("metadata")?.optJSONObject("media") ?: return "无媒体状态"
+        val media = record.optJSONObject("metadata")?.optJSONObject("media") ?: record.optJSONObject("media") ?: return "无媒体状态"
         val status = when (media.optString("status")) {
             "available" -> "媒体会话"; "disabled" -> "媒体采集未启用"; "permission_required" -> "媒体等待授权"; else -> "媒体暂不可用"
         }

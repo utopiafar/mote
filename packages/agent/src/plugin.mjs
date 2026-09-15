@@ -17,7 +17,7 @@ const range = {
 };
 const contextFilters = {
   ...range,
-  source: {type: 'string', description: 'Exact source type: screen, activity, media, note, file, calendar, event, message, metric or memory'},
+  source: {type: 'string', description: 'Exact source type: screen, activity, media, notification, device_event, note, file, calendar, event, message, metric or memory'},
   appId: {type: 'string', description: 'Exact application identity discovered in evidence; not an intent or topic'},
   collection: {type: 'string', description: 'activity for app identity/time without contents; content for other permitted records'},
 };

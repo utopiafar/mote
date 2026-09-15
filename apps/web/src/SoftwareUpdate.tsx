@@ -13,7 +13,7 @@ export function SoftwareUpdate({api}: {api: Api}) {
     {status&&<><p>当前版本 <strong>{status.currentVersion}</strong> · {status.repository} · {status.channel==='stable'?'正式渠道':'预览渠道'}</p>
       {status.state==='idle'&&<p>点击检查后连接 GitHub，不上传个人资料或中央令牌。</p>}
       {status.state==='error'&&<p role="alert">{status.error==='release_not_found'?'此渠道暂时没有可用的签名发布版本。':'更新检查未通过，现有程序和设置保持原样；稍后可重试。'}</p>}
-      {status.verified&&<p>{status.available?`发现 ${status.latestVersion}，发布签名已验证。`:'当前版本无需更新，发布签名已验证。'} {status.releaseUrl&&<a href={status.releaseUrl} target="_blank" rel="noreferrer">查看版本说明与安装包</a>}</p>}
+      {status.verified&&<p>{status.available?`发现 ${status.latestVersion}，发布签名已验证。`:'已是最新版本，发布签名已验证。'} {status.releaseUrl&&<a href={status.releaseUrl} target="_blank" rel="noreferrer">查看版本说明与安装包</a>}</p>}
       {status.checkedAt&&<p className="fine-print">上次检查：{new Date(status.checkedAt).toLocaleString()}</p>}
       {status.commands&&status.available&&<><p>在部署机的 Mote 目录执行。命令先校验下载并准备程序，再备份、切换和检查健康状态。新版启动失败时保留快照，使用回退命令恢复。</p><pre><code>{status.commands.update}</code></pre><details><summary>需要回退时</summary><p>回退恢复升级前的数据快照；升级后的资料会另行保留。不要直接用旧程序打开已升级的数据。</p><pre><code>{status.commands.rollback}</code></pre></details></>}
       {!status.commands&&status.verified&&<p>此节点未由命名部署环境管理。请先按部署文档建立对应环境，再使用更新命令；本页面不会直接重启当前服务。</p>}

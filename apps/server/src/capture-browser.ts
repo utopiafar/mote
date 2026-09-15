@@ -25,6 +25,13 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,'采集记录不存在或已被清理。');
     return record;
   };
+  app.post('/api/capture-browser/reconcile',{bodyLimit:16384},async req=>{
+    const input=z.object({deviceId:z.string().min(1).max(128),ids:z.array(z.string().uuid()).max(100)}).strict().parse(req.body);
+    const c=credential(req);if(c)connections.assertOwnDevice(c,input);
+    const records=new Map(store.evidence(input.ids).filter(record=>record.deviceId===input.deviceId).map(record=>[record.id,record]));
+    // Missing, deleted and foreign IDs are indistinguishable. Presence alone is never an upload ACK.
+    return {checkedAt:new Date().toISOString(),items:input.ids.map(id=>({id,state:records.has(id)?'present':'unavailable'}))};
+  });
   app.get('/api/capture-browser',async req=>{
     const query=range.parse(req.query),c=credential(req);
     if(c){

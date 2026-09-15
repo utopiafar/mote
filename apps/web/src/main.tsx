@@ -1,3 +1,5 @@
+import { restoreSession } from "./session";
+import {systemEventText} from '@mote/shared';
 import React, {
   useCallback,
   useEffect,
@@ -102,14 +104,7 @@ const periodNames: Record<string, string> = {
 };
 const readConnection = () => {
   try {
-    const value = JSON.parse(
-      sessionStorage.getItem("mote.connection") || "null",
-    );
-    return value &&
-      typeof value.url === "string" &&
-      typeof value.token === "string"
-      ? (value as Connection)
-      : null;
+    return restoreSession(sessionStorage.getItem("mote.connection"), window.location.origin);
   } catch {
     return null;
   }
@@ -321,15 +316,12 @@ function CaptureCard({
   );
 }
 
-function ConnectionDialog({ initial, destination, onConnected, onClose }: {
-  initial: Connection | null;
+function LoginDialog({ destination, onConnected, onClose }: {
   destination: string;
   onConnected: (value: Connection) => void;
   onClose: () => void;
 }) {
-  const [url, setUrl] = useState(initial?.url ?? "");
   const [token, setToken] = useState("");
-  const [advanced, setAdvanced] = useState(Boolean(initial?.url));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const active = useRef<AbortController | null>(null);
@@ -340,17 +332,8 @@ function ConnectionDialog({ initial, destination, onConnected, onClose }: {
     const controller = new AbortController(); active.current = controller;
     setBusy(true); setError("");
     try {
-      const endpoint = advanced ? url.trim().replace(/\/+$/, "") : "";
-      if (endpoint) {
-        let parsed: URL;
-        try { parsed = new URL(endpoint); }
-        catch { throw new Error("请输入完整的节点地址，或使用当前网站。"); }
-        const local = ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
-        if ((!local && parsed.protocol !== "https:") || !["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash || !["/", ""].includes(parsed.pathname))
-          throw new Error("远程节点须使用 HTTPS，地址不能包含路径、账号或查询参数。");
-      }
       if (!token.trim()) throw new Error("请输入管理访问令牌。");
-      const connection = {url: endpoint, token: token.trim()};
+      const connection = {token: token.trim()};
       // A collector credential must never unlock owner-only management pages.
       await createApi(connection).request("/api/configuration", {signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])});
       if (!controller.signal.aborted) onConnected(connection);
@@ -368,16 +351,11 @@ function ConnectionDialog({ initial, destination, onConnected, onClose }: {
       <div className="modal-icon"><ShieldCheck size={24}/></div>
       <div className="eyebrow">MOTE · 中央管理界面</div>
       <h2 id="connect-title">登录 Mote</h2>
-      <p className="muted-copy">验证管理令牌后，进入「{destination}」。采集由手机和电脑上的客户端完成。</p>
+      <p className="muted-copy">此服务就是中央节点，负责接收和归档客户端采集的数据。验证管理令牌后，进入「{destination}」。</p>
       <form onSubmit={connect}>
-        <p className="login-endpoint">当前节点 <strong>{advanced && url.trim() ? url.trim() : window.location.origin}</strong></p>
+        <p className="login-endpoint">当前服务 <strong>{window.location.origin}</strong></p>
         <label>管理访问令牌<input aria-label="管理访问令牌" autoFocus type="password" autoComplete="off" placeholder="输入此节点的管理令牌" value={token} onChange={e=>setToken(e.target.value)} required disabled={busy}/></label>
         <div className="field-note"><ShieldCheck size={15}/>令牌只保留在当前标签页会话，退出登录后清除。</div>
-        <details className="login-advanced" open={advanced} onToggle={e=>{const open=e.currentTarget.open;if(open!==advanced){setAdvanced(open);setToken("");setError("");}}}>
-          <summary>高级：登录其他节点</summary>
-          <label>节点地址<input aria-label="登录节点地址" value={url} disabled={busy} onChange={e=>{setUrl(e.target.value);setToken("");}} placeholder="https://mote.example.com"/></label>
-          <small>一般无需修改。切换地址后，请输入目标节点的管理令牌。</small>
-        </details>
         {error && <ErrorNotice text={error}/>}
         <button className="button primary full" disabled={busy}>{busy ? <Spinner label="正在验证令牌…"/> : <>登录并继续<ArrowRight size={16}/></>}</button>
       </form>
@@ -497,7 +475,7 @@ function EvidenceDialog({
                 {capture.mood && <p className="note-mood-tag">我标注的心情 · {capture.mood}</p>}
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
                 <pre aria-label={capture.source === 'screen' ? 'OCR 全文' : '记录全文'}>
-                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
+                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
                 </pre>
                 {(capture.source==='media'||capture.metadata?.media)&&<MediaSnapshot media={capture.metadata?.media} observedAt={capture.metadata?.observedAt??capture.capturedAt} screenLocked={capture.metadata?.state?.screenLocked} collection={capture.privacy.collection}/>}
                 <dl>
@@ -1188,13 +1166,11 @@ function Ask({
 function Vault({
   api,
   status,
-  connection,
   refresh,
   disconnect,
 }: {
   api: Api;
   status: Status;
-  connection: Connection;
   refresh: () => void;
   disconnect: () => void;
 }) {
@@ -1473,14 +1449,14 @@ function Vault({
             <Database size={21} />
           </div>
           <div>
-            <strong>当前中央节点</strong>
-            <p>{connection.url || window.location.origin}</p>
+            <strong>当前服务（中央节点）</strong>
+            <p>{window.location.origin}</p>
             <small>访问令牌只保留在当前标签页会话中</small>
           </div>
         </div>
         <button className="button subtle" onClick={disconnect}>
           <Unplug size={15} />
-          断开连接
+          退出登录
         </button>
       </section>
     </>
@@ -1833,7 +1809,7 @@ function App() {
             <>
               {error && <ErrorNotice text={error} retry={refresh} />}
               {!verified && <button className="button subtle" onClick={disconnect}>退出登录</button>}
-              {page === "notes" && api && verified && <Notes key={connection.url || window.location.origin} api={api} namespace={connection.url || window.location.origin} revision={timelineRevision} onOpen={setEvidenceId} onSaved={refresh} />}
+              {page === "notes" && api && verified && <Notes key={window.location.origin} api={api} namespace={window.location.origin} revision={timelineRevision} onOpen={setEvidenceId} onSaved={refresh} />}
               {!verified
                 ? !error && (
                     <div className="initial-loading">
@@ -1886,18 +1862,17 @@ function App() {
                         <><PageBack title="设置" onBack={()=>onPage("settings")}/><Vault
                           api={api}
                           status={status}
-                          connection={connection}
                           refresh={refresh}
                           disconnect={disconnect}
                         /></>
                       )}
                       {page === "sources" && <Sources api={api} onOpen={setEvidenceId} />}
                       {page === "memories" && <Memories api={api} range={range} onOpen={setEvidenceId} />}
-                      <div hidden={page!=="settings"}><ServerSettings key={connection.url || window.location.origin} api={api} onNavigate={onPage} onModelApplied={refresh}/></div>
+                      <div hidden={page!=="settings"}><ServerSettings key={window.location.origin} api={api} onNavigate={onPage} onModelApplied={refresh}/></div>
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
-                      {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={connection.url || window.location.origin} devices={devices}/></>}
+                      {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
                       {page === "developer" && status && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
-                      {page === "about" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">你的资料，由你保管</div><h1>关于 Mote</h1><p>AI 原生个人上下文采集与中央归档。</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>当前中央节点</h2><p>{connection.url || window.location.origin}</p><p className="fine-print">访问令牌只保留在当前标签页会话。</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>退出登录</button></section></>}
+                      {page === "about" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">你的资料，由你保管</div><h1>关于 Mote</h1><p>AI 原生个人上下文采集与中央归档。</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>当前服务（中央节点）</h2><p>{window.location.origin}</p><p className="fine-print">访问令牌只保留在当前标签页会话。</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>退出登录</button></section></>}
                     </>
                   )}
             </>
@@ -1913,8 +1888,7 @@ function App() {
         </footer>
       </main>
       {showConnect && (
-        <ConnectionDialog
-          initial={connection}
+        <LoginDialog
           destination={pageLabels[page]}
           onConnected={connected}
           onClose={() => setShowConnect(false)}

@@ -8,28 +8,37 @@ import android.content.Intent
 object Notifications {
     const val ID = 4101
     private const val MEDIA_ID = 4102
+    private var screenStatus: String? = null
+    private var mediaStatus: String? = null
+    private var eventStatus: String? = null
     private const val CHANNEL = "mote_capture"
     fun create(context: Context) {
-        context.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "屏幕采集状态", NotificationManager.IMPORTANCE_LOW))
+        context.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "采集状态", NotificationManager.IMPORTANCE_LOW))
     }
-    fun notification(context: Context, text: String): Notification {
+    @Synchronized fun notification(context: Context, text: String): Notification {
+        screenStatus = text
+        return build(context)
+    }
+    private fun build(context: Context): Notification {
+        val text = listOfNotNull(screenStatus?.let { "屏幕：$it" }, mediaStatus?.let { "媒体：$it" }, eventStatus).joinToString("\n")
         // Launcher semantics bring the existing task (including a detail screen) forward.
         val open = PendingIntent.getActivity(context, 0, Intent.makeMainActivity(android.content.ComponentName(context, MainActivity::class.java)), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getBroadcast(context, 1, Intent(context, StopReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_mote).setContentTitle("Mote · 屏幕采集")
+        return Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_mote).setContentTitle("Mote · 采集状态")
             .setContentText(text).setStyle(Notification.BigTextStyle().bigText(text)).setContentIntent(open)
             .setOngoing(true).setOnlyAlertOnce(true).addAction(Notification.Action.Builder(null, "停止采集", stop).build()).build()
     }
-    fun show(context: Context, text: String) {
-        if (context.getSystemService(NotificationManager::class.java).areNotificationsEnabled())
-            context.getSystemService(NotificationManager::class.java).notify(ID, notification(context, text))
+    @Synchronized fun show(context: Context, text: String) { screenStatus = text; publish(context) }
+    @Synchronized fun clear(context: Context) { screenStatus = null; publish(context) }
+    @Synchronized fun showMedia(context: Context, text: String) { mediaStatus = text; publish(context) }
+    @Synchronized fun clearMedia(context: Context) { mediaStatus = null; publish(context) }
+    @Synchronized fun showEvents(context: Context, text: String?) { eventStatus = text; publish(context) }
+    private fun publish(context: Context) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        manager.cancel(MEDIA_ID) // Remove the separate notification left by older versions.
+        if (screenStatus == null && mediaStatus == null && eventStatus == null) manager.cancel(ID)
+        else if (manager.areNotificationsEnabled()) manager.notify(ID, build(context))
     }
-    fun clear(context: Context) { context.getSystemService(NotificationManager::class.java).cancel(ID) }
-    fun showMedia(context: Context, text: String) {
-        if (context.getSystemService(NotificationManager::class.java).areNotificationsEnabled())
-            context.getSystemService(NotificationManager::class.java).notify(MEDIA_ID, Notification.Builder.recoverBuilder(context, notification(context, text)).setContentTitle("Mote · 媒体采集").build())
-    }
-    fun clearMedia(context: Context) { context.getSystemService(NotificationManager::class.java).cancel(MEDIA_ID) }
 }
 
 class StopReceiver : BroadcastReceiver() {
@@ -42,6 +51,7 @@ class StopReceiver : BroadcastReceiver() {
         CaptureAccessibilityService.instance?.stopCapture()
         Notifications.clear(context)
         Notifications.clearMedia(context)
+        Notifications.showEvents(context, null)
         MediaCollection.clear(); MediaCollectionService.refresh()
         runCatching { UploadWorker.schedule(context, settings.read()) }
     }

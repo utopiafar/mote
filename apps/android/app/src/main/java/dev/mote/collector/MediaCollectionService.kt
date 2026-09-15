@@ -21,10 +21,11 @@ import org.json.JSONObject
 import java.time.Instant
 import java.util.UUID
 
-/** System-bound observer; never reads notifications, records sound, or sends transport controls. */
+/** System-bound read-only observer for independently configured media, notifications and device events. */
 class MediaCollectionService : NotificationListenerService() {
     private lateinit var thread: HandlerThread
     private lateinit var worker: Handler
+    private lateinit var events: SystemEventCollector
     private lateinit var settings: Settings
     private lateinit var preferences: SharedPreferences
     private val timeline = MediaTimeline()
@@ -40,6 +41,11 @@ class MediaCollectionService : NotificationListenerService() {
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_BATTERY_CHANGED) { timeline.reset(); MediaCollection.clear() }
+            when (intent?.action) {
+                Intent.ACTION_SCREEN_ON -> events.state("screen_on")
+                Intent.ACTION_SCREEN_OFF -> { events.state("screen_off"); worker.postDelayed({ events.state("state_observed") }, 1000) }
+                Intent.ACTION_USER_PRESENT -> events.state("user_present")
+            }
             refresh()
         }
     }
@@ -58,6 +64,7 @@ class MediaCollectionService : NotificationListenerService() {
         settings = Settings(this)
         thread = HandlerThread("mote-media-observer").apply { start() }
         worker = Handler(thread.looper)
+        events = SystemEventCollector(this, worker)
         preferences = getSharedPreferences("mote", MODE_PRIVATE)
         preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
         val filter = IntentFilter().apply {
@@ -77,9 +84,18 @@ class MediaCollectionService : NotificationListenerService() {
         connected = false; MediaCollection.clear()
         worker.post {
             platformConnected = false; connected = false
+            events.reset(); Notifications.showEvents(this, null)
             detach(); timeline.reset(); publishUnavailable("unavailable")
         }
         super.onListenerDisconnected()
+    }
+    override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification) {
+        runCatching { events.notification(sbn, false) }
+            .onFailure { settings.status("error", "系统通知无法读取，部分事件可能缺失") }
+    }
+    override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification, rankingMap: RankingMap, reason: Int) {
+        runCatching { events.notification(sbn, true, reason) }
+            .onFailure { settings.status("error", "系统通知移除事件无法读取") }
     }
     private fun eligible(): Boolean = runCatching {
         val c = settings.read()
@@ -91,6 +107,7 @@ class MediaCollectionService : NotificationListenerService() {
     private fun refresh() {
         try {
             val c = settings.read()
+            events.refresh()
             if (previousConfig != c) { timeline.reset(); lastStatus = null; previousConfig = c; detach() }
             if (!settings.enabled || !c.mediaCollectionEnabled || !c.metadataEnabled) {
                 detach(); timeline.reset(); lastStatus = null
@@ -251,14 +268,14 @@ class MediaCollectionService : NotificationListenerService() {
         preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
         unregisterReceiver(screenReceiver)
         worker.removeCallbacksAndMessages(null)
-        worker.post { platformConnected = false; detach(); timeline.reset(); publishUnavailable("unavailable"); MediaCollection.clear(); Notifications.clearMedia(this); thread.quitSafely() }
+        worker.post { platformConnected = false; detach(); timeline.reset(); publishUnavailable("unavailable"); MediaCollection.clear(); Notifications.clearMedia(this); Notifications.showEvents(this, null); thread.quitSafely() }
         super.onDestroy()
     }
     companion object {
         @Volatile var instance: MediaCollectionService? = null; private set
         @Volatile var connected = false; private set
-        private val configurationKeys = setOf("enabled", "screenCollectionEnabled", "mediaCollectionEnabled", "metadataEnabled", "appCollectionRules", "excluded", "chargingOnly", "batteryPauseBelowPct", "server", "token", "maxQueue", "syncMode", "wifiOnly")
-        fun suspendObservation() { MediaCollection.epoch.incrementAndGet(); MediaCollection.clear(); instance?.let { it.worker.post { it.detach(); it.timeline.reset() } } }
+        private val configurationKeys = setOf("enabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "screenCollectionEnabled", "mediaCollectionEnabled", "metadataEnabled", "appCollectionRules", "excluded", "chargingOnly", "batteryPauseBelowPct", "server", "token", "maxQueue", "syncMode", "wifiOnly")
+        fun suspendObservation() { MediaCollection.epoch.incrementAndGet(); MediaCollection.clear(); instance?.let { it.worker.post { it.detach(); it.timeline.reset(); it.events.reset() } } }
         fun refresh() { instance?.let { it.worker.post { it.refresh() } } }
     }
 }

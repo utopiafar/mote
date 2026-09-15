@@ -63,13 +63,14 @@ class ActivityStatsActivity : Activity() {
                     if (getSharedPreferences("operation-health", 0).getBoolean("incomplete", false)) append("⚠ 曾有统计写入失败，本周期数据不完整。\n")
                     append("\n累计结果\n截图请求 ${count(OperationKind.CAPTURE_REQUESTED)} · 收到画面 ${count(OperationKind.FRAME_RECEIVED)}\n")
                     append("已保存截图 ${count(OperationKind.SCREEN_QUEUED)} · 已保存随手记 ${count(OperationKind.NOTE_QUEUED)}\n")
+                    append("系统事件已保存 ${count(OperationKind.SYSTEM_EVENT_QUEUED)} · 已确认 ${count(OperationKind.SYSTEM_EVENT_ACK)}\n")
                     append("媒体已保存 ${count(OperationKind.MEDIA_QUEUED)} · 已确认 ${count(OperationKind.MEDIA_ACK)} · 失败 ${count(OperationKind.MEDIA_FAILED)}\n")
                     append("应用活动已保存 ${count(OperationKind.ACTIVITY_QUEUED)} · 已确认 ${count(OperationKind.ACTIVITY_ACK)} · 失败 ${count(OperationKind.ACTIVITY_FAILED)}（无内容）\n")
                     append("已丢弃画面 ${count(OperationKind.FRAME_BLOCKED)} · 截图/处理失败 ${count(OperationKind.CAPTURE_FAILED)}\n")
                     append("截图已确认上传 ${count(OperationKind.SCREEN_ACK)} · 随手记已确认上传 ${count(OperationKind.NOTE_ACK)}\n")
                     append("上传待重试结果 ${count(OperationKind.UPLOAD_RETRY)} · 来源版本已确认 ${count(OperationKind.SOURCE_ACK)} / 失败 ${count(OperationKind.SOURCE_FAILED)}\n设备心跳失败 ${count(OperationKind.HEARTBEAT_FAILED)}\n")
                     append("已确认上传 JSON 字节 ${size(state.getLong("confirmedUploadBytes"))}（不含 TLS/HTTP 开销）\n")
-                    append("\n当前本机记录\n加密保留：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 媒体 ${queue.optInt("media")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
+                    append("\n当前本机记录\n加密保留：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 媒体 ${queue.optInt("media")} / 系统事件 ${queue.optInt("systemEvents")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
                     append("\n资料在哪里\n队列存储：${size(queue.getLong("bytes"))} / 上限 ${config.maxQueueMiB} MiB\n${QueueStorage(this@ActivityStatsActivity).current().path}\n")
                     append("待 OCR 文字预留：${size(queue.getLong("reservedOcrBytes"))}（计入存储上限，完成识别后按实际大小计）\n")
                     append("来源待确认版本：$sourcePending · 本机来源缓存 ${size(bytes(sources))}\n${sources.absolutePath}\n")
@@ -108,7 +109,7 @@ class ActivityStatsActivity : Activity() {
         for (i in pendingPage * 10 until minOf((pendingPage + 1) * 10, pending.length())) {
             val item = pending.getJSONObject(i)
             history.addView(Button(this).apply {
-                text = "${if (item.optBoolean("archiveMissing")) "中央不可更新" else if (item.optBoolean("uploaded")) "已同步保留" else "待确认"} · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; "media" -> "媒体状态"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
+                text = "${if (item.optBoolean("archiveMissing")) "中央不可更新" else if (item.optBoolean("uploaded")) "已同步保留" else "待确认"} · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; "media" -> "媒体状态"; "notification" -> "通知事件"; "device_event" -> "设备事件"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
                 setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n加密条目字节：${item.getLong("bytes")}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。").setPositiveButton("关闭", null).show() }
             })
         }
@@ -172,6 +173,7 @@ class ActivityStatsActivity : Activity() {
             OperationKind.NOTE_QUEUED -> "随手记已加密保存"; OperationKind.SCREEN_ACK -> "截图已确认上传"; OperationKind.NOTE_ACK -> "随手记已确认上传"
             OperationKind.FRAME_BLOCKED -> "画面已丢弃，未入队"; OperationKind.CAPTURE_FAILED -> "截图或处理失败"; OperationKind.CAPTURE_PAUSED -> "采集暂停原因变化"
             OperationKind.HEARTBEAT_FAILED -> "设备心跳未确认"
+            OperationKind.SYSTEM_EVENT_QUEUED -> "系统事件已入队"; OperationKind.SYSTEM_EVENT_ACK -> "系统事件已确认上传"
             OperationKind.UPLOAD_RETRY -> "同步未完成，保留队列待重试"; OperationKind.SOURCE_ACK -> "来源版本已确认"; OperationKind.SOURCE_FAILED -> "来源同步失败"
             OperationKind.CONNECTION_OK -> "连接身份校验成功"; OperationKind.CONNECTION_FAILED -> "连接失败"; OperationKind.CAPTURE_STARTED -> "用户启用采集"; OperationKind.CAPTURE_STOPPED -> "用户停止采集"
             OperationKind.MEDIA_QUEUED -> "媒体状态已保存"; OperationKind.MEDIA_ACK -> "媒体状态已确认上传"; OperationKind.MEDIA_FAILED -> "媒体状态保存失败"

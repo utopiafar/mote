@@ -50,3 +50,12 @@ test('invalid or unauthenticated sync snapshots are rejected before overwriting 
   const saved = (await client.app.inject({ url: '/api/devices', headers: client.headers })).json().items[0];
   assert.deepEqual(saved.sync, snapshot); assert.equal(saved.status, beat.status);
 });
+
+ test('retained copies, OCR backlog and blocked records are distinct optional heartbeat counts',async t=>{
+  const client=await fixture(t);
+  const sync={...snapshot,retainedRecords:8,blockedRecords:2,awaitingOcrRecords:3};
+  assert.equal((await client.app.inject({method:'POST',url:'/api/devices/heartbeat',headers:client.headers,payload:{...beat,sync}})).statusCode,200);
+  const device=(await client.app.inject({url:'/api/devices',headers:client.headers})).json().items[0];
+  assert.deepEqual(device.sync,sync);
+  assert.equal((await client.app.inject({method:'POST',url:'/api/devices/heartbeat',headers:client.headers,payload:{...beat,sync:{...sync,blockedRecords:-1}}})).statusCode,400);
+});

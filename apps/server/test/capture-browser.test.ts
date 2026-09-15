@@ -99,3 +99,44 @@ test('browser pagination, status fallbacks and empty completed OCR remain honest
   assert.equal((await app.inject({url:'/api/capture-browser?before=2026-09-13T12:00:00Z',headers:auth()})).json().totalCount,0);
   for(const query of ['limit=61','after=bad','cursor=bad','ocrStatus=guess','after=2026-09-14T00:00:00Z&before=2026-09-13T00:00:00Z'])assert.equal((await app.inject({url:'/api/capture-browser?'+query,headers:auth()})).statusCode,400);
 });
+
+test('generated Android system events upload with device scope, idempotency, search and export',async t=>{
+  const {app,store,paired}=await fixture(t),phone=await paired(),headers=auth(phone.token);
+  const at='2026-09-15T01:02:03.000Z';
+  const base={deviceId:'phone',deviceName:'Generated phone',platform:'android',capturedAt:at,durationMs:0,
+    privacy:{collection:'content',mode:'none'},metadata:{version:1,observedAt:at,collector:{method:'notification_listener'},observation:{sessionId:randomUUID(),elapsedRealtimeMs:1000}}};
+  const notification={id:randomUUID(),...base,source:'notification',appId:'fixture.navigation',appName:'Fixture Navigation',
+    metadata:{...base.metadata,notification:{action:'posted',notificationKey:'ab'.repeat(32),postedAt:at,ongoing:true,groupSummary:false,category:'navigation',title:'Generated route 2048',text:'Turn toward fixture park'}}};
+  const device={id:randomUUID(),...base,source:'device_event',metadata:{...base.metadata,deviceEvent:{action:'screen_off',keyguardLocked:false,screenInteractive:false}}};
+  for(const payload of [notification,device]){
+    const created=await app.inject({method:'POST',url:'/api/captures',headers,payload});assert.equal(created.statusCode,201,created.body);
+    assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload})).statusCode,200);
+    const detail=await app.inject({url:`/api/capture-browser/${payload.id}`,headers});assert.deepEqual(detail.json().metadata,payload.metadata);
+  }
+  assert.equal(store.search({query:'2048'}).length,1);
+  assert.equal((await app.inject({url:'/api/capture-browser?source=notification',headers})).json().totalCount,1);
+  assert.equal((await app.inject({url:'/api/capture-browser?source=device_event',headers})).json().totalCount,1);
+  assert.equal(store.activity({}).totalDurationMs,0,'No inferred activity time from notifications or screen events');
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:{...notification,id:randomUUID(),deviceId:'foreign'}})).statusCode,403);
+  const invalid=await app.inject({method:'POST',url:'/api/captures',headers,payload:{...notification,id:randomUUID(),privacy:{...base.privacy,collection:'activity'}}});assert.equal(invalid.statusCode,400);
+  const exported=(await app.inject({url:'/api/export',headers:auth()})).json();
+  const restored=await fixture(t);const imported=await restored.app.inject({method:'POST',url:'/api/import',headers:auth(),payload:exported});assert.equal(imported.statusCode,200,imported.body);
+  assert.deepEqual(restored.store.evidence([device.id])[0].metadata,device.metadata);
+});
+
+test('sync reconciliation is read-only, device-scoped and cannot acknowledge or resurrect records',async t=>{
+  const {app,store,capture,paired}=await fixture(t),phone=await paired(),headers=auth(phone.token);
+  const own=capture(),foreign=capture('other'),deleted=capture(),missing=randomUUID();
+  for(const payload of [own,foreign,deleted])assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload})).statusCode,201);
+  store.delete(deleted.id);
+  const url='/api/capture-browser/reconcile',payload={deviceId:'phone',ids:[own.id,foreign.id,deleted.id,missing]};
+  assert.equal((await app.inject({method:'POST',url,payload})).statusCode,401);
+  assert.equal((await app.inject({method:'POST',url,headers,payload:{...payload,deviceId:'other'}})).statusCode,403);
+  const response=await app.inject({method:'POST',url,headers,payload});assert.equal(response.statusCode,200,response.body);
+  assert.deepEqual(response.json().items,payload.ids.map((id,index)=>({id,state:index===0?'present':'unavailable'})));
+  assert.equal(store.evidence([deleted.id]).length,0);
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:deleted})).statusCode,410,'Full replay cannot undo a central deletion');
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:own})).statusCode,200,'Lost acknowledgement safely replays the same event');
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:{...own,appName:'Changed content'}})).statusCode,409);
+  assert.equal((await app.inject({method:'POST',url,headers,payload:{...payload,ids:Array(101).fill(own.id)}})).statusCode,400);
+});

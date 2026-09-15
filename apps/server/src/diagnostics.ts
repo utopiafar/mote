@@ -35,7 +35,7 @@ function describeError(error:unknown):{status:number;category:string;message:str
   if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:'操作已取消或超时，请稍后重试。'};
   if(typeof e.code==='string'&&['embedding_http','embedding_invalid','embedding_transport'].includes(e.code))return {status:502,category:e.code,message:'索引模型请求未完成，请检查模型配置或稍后重试。'};
   const status=typeof e.statusCode==='number'&&Number.isInteger(e.statusCode)&&e.statusCode>=400&&e.statusCode<=599?e.statusCode:500;
-  const fixed:Record<number,[string,string]>={400:['validation','输入格式无效，请检查必填项和取值范围。'],401:['unauthorized','请连接中央节点并输入有效访问令牌。'],403:['forbidden','此操作不可用。'],404:['not_found','未找到所请求的资料。'],409:['conflict','资料状态已变化或当前配置不支持此操作，请刷新后重试。'],410:['deleted','该条目已删除，排队重试不能恢复它。'],413:['too_large','内容超过大小限制，请分批处理。'],429:['rate_limited','请求过于频繁或已有任务运行，请稍后重试。'],503:['unavailable','服务暂不可用，请检查节点状态与模型配置。'],507:['storage_full','存储容量已满，请清理空间或调整容量限制。']};
+  const fixed:Record<number,[string,string]>={400:['validation','输入格式无效，请检查必填项和取值范围。'],401:['unauthorized','访问凭据无效或已失效，请重新验证身份。'],403:['forbidden','此操作不可用。'],404:['not_found','未找到所请求的资料。'],409:['conflict','资料状态已变化或当前配置不支持此操作，请刷新后重试。'],410:['deleted','该条目已删除，排队重试不能恢复它。'],413:['too_large','内容超过大小限制，请分批处理。'],429:['rate_limited','请求过于频繁或已有任务运行，请稍后重试。'],503:['unavailable','服务暂不可用，请检查节点状态与模型配置。'],507:['storage_full','存储容量已满，请清理空间或调整容量限制。']};
   const [category,message]=fixed[status]??['internal','请求未完成，请使用请求编号查看诊断记录。'];
   return {status,category,message};
 }
