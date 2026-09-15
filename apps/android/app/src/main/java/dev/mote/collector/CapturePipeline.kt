@@ -81,7 +81,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                 dedupeSignature = null; dedupeReference = null
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
-                settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型 · ${context.queue().depth()} 条保存在本机")
+                settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型")
                 scheduleUpload(config)
             } catch (error: QueueFull) { Operations.record(context, OperationKind.ACTIVITY_FAILED, OperationReason.QUEUE_FULL); pause(error.message ?: "队列已满", OperationReason.QUEUE_FULL) }
             catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause("应用活动未保存，请检查本机队列；未采集内容") }
@@ -211,7 +211,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 lastPause = null
                 previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
-                settings.status("capturing", "采集中 · ${if (duplicate) "图片去重命中，仅元数据已保存" else if (runOcr) "本地遮罩/OCR 已完成" else "图片已保存，充电后补做 OCR"} · ${context.queue().depth()} 条保存在本机")
+                settings.status("capturing", "采集中 · ${if (duplicate) "图片去重命中，仅元数据已保存" else if (runOcr) "本地遮罩/OCR 已完成" else "图片已保存，充电后补做 OCR"}")
                 if (!runOcr && !duplicate) CaptureOcrWorker.schedule(context, config)
                 scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }

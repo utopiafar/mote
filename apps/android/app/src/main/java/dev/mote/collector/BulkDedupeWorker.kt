@@ -14,7 +14,7 @@ import java.time.Instant
 class BulkDedupeStore(context: Context) {
     private val dir = File(context.noBackupFilesDir, "bulk-dedupe").apply { check(isDirectory || mkdirs()) }
     private val cipher = SecretBox()
-    fun quarantine() = DurableQueue(File(dir, "pending"), cipher)
+    fun quarantine() = DurableQueue(File(dir, "pending"), cipher).apply { onMutation = { LocalStateChanges.changed(records = it, storage = true) } }
     @Synchronized fun read(name: String): JSONObject {
         require(name in listOf("report", "plan"))
         val file = File(dir, "$name.enc")
@@ -59,7 +59,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
         if (inputData.getString("action") == "scan") scan() else resolve()
     } catch (error: Exception) {
         Result.failure(workDataOf("message" to (error.message ?: "操作失败，未处理记录已保留")))
-    }
+    } finally { LocalStateChanges.changed(immediate = true) }
     private fun scan(): Result {
         val mode = ScreenshotDedupeHelper.Mode.fromRaw(inputData.getString("mode"))
         store.write("report", JSONObject().put("complete", false))

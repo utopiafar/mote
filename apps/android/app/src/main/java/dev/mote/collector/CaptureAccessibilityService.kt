@@ -62,7 +62,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             stopCapture(); return
         }
         if (pipeline == null) pipeline = CapturePipeline(this)
-        Notifications.show(this, settings.message())
+        Notifications.show(this, LocalStateRepository.get(this).state.value.captureLabel)
         if (inFlight || System.currentTimeMillis() < nextCapture || pipeline!!.isBusy()) return
         val snapshot = windowSnapshot()
         val mode = CapturePipeline.policy(config, snapshot)

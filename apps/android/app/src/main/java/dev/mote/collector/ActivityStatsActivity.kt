@@ -17,6 +17,8 @@ class ActivityStatsActivity : Activity() {
     private lateinit var history: LinearLayout
     private val executor = Executors.newSingleThreadExecutor()
     private var loading = false
+    private var localStateJob: kotlinx.coroutines.Job? = null
+    private var refreshPending = false
     private var historyPage = 0
     private var pendingPage = 0
     private var snapshot: JSONObject? = null
@@ -37,16 +39,17 @@ class ActivityStatsActivity : Activity() {
         button("重置统计起点（保留队列和数据）") {
             AlertDialog.Builder(this).setTitle("重置本机统计").setMessage("只清空累计数字和最近事件，并记录新起算时间。不会删除队列、模型、配置或中央资料。")
                 .setNegativeButton("取消", null).setPositiveButton("重置") { _, _ ->
-                    Operations.ledger(this).reset(); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit(); refresh()
+                    Operations.ledger(this).reset(); LocalStateChanges.changed(immediate = true); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit(); refresh()
                 }.show()
         }
         text("最近结果", 20f)
         history = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(history)
         MoteUi.styleTree(body)
     }
-    override fun onResume() { super.onResume(); refresh() }
+    override fun onResume() { super.onResume(); localStateJob = observeLocalState { refresh() } }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; super.onPause() }
     private fun refresh() {
-        if (loading) return; loading = true
+        if (loading) { refreshPending = true; return }; loading = true
         progress.visibility = android.view.View.VISIBLE
         executor.execute {
             try {
@@ -62,7 +65,7 @@ class ActivityStatsActivity : Activity() {
                     append("统计起点：${when (state.getString("epochReason")) { "recovered" -> "统计文件曾不可读，已重新起算"; "user_reset" -> "用户主动重置"; else -> "首次建立统计，之前历史不可用" }}\n")
                     if (getSharedPreferences("operation-health", 0).getBoolean("incomplete", false)) append("⚠ 曾有统计写入失败，本周期数据不完整。\n")
                     append("\n累计结果\n截图请求 ${count(OperationKind.CAPTURE_REQUESTED)} · 收到画面 ${count(OperationKind.FRAME_RECEIVED)}\n")
-                    append("已保存截图 ${count(OperationKind.SCREEN_QUEUED)} · 已保存随手记 ${count(OperationKind.NOTE_QUEUED)}\n")
+                    append("累计截图记录 ${count(OperationKind.SCREEN_QUEUED)} · 已保存随手记 ${count(OperationKind.NOTE_QUEUED)}\n")
                     append("系统事件已保存 ${count(OperationKind.SYSTEM_EVENT_QUEUED)} · 已确认 ${count(OperationKind.SYSTEM_EVENT_ACK)}\n")
                     append("媒体已保存 ${count(OperationKind.MEDIA_QUEUED)} · 已确认 ${count(OperationKind.MEDIA_ACK)} · 失败 ${count(OperationKind.MEDIA_FAILED)}\n")
                     append("应用活动已保存 ${count(OperationKind.ACTIVITY_QUEUED)} · 已确认 ${count(OperationKind.ACTIVITY_ACK)} · 失败 ${count(OperationKind.ACTIVITY_FAILED)}（无内容）\n")
@@ -70,7 +73,8 @@ class ActivityStatsActivity : Activity() {
                     append("截图已确认上传 ${count(OperationKind.SCREEN_ACK)} · 随手记已确认上传 ${count(OperationKind.NOTE_ACK)}\n")
                     append("上传待重试结果 ${count(OperationKind.UPLOAD_RETRY)} · 来源版本已确认 ${count(OperationKind.SOURCE_ACK)} / 失败 ${count(OperationKind.SOURCE_FAILED)}\n设备心跳失败 ${count(OperationKind.HEARTBEAT_FAILED)}\n")
                     append("已确认上传 JSON 字节 ${size(state.getLong("confirmedUploadBytes"))}（不含 TLS/HTTP 开销）\n")
-                    append("\n当前本机记录\n加密保留：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 媒体 ${queue.optInt("media")} / 系统事件 ${queue.optInt("systemEvents")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
+                    append("\n${LocalStateRepository.get(this@ActivityStatsActivity).state.value.storageLabel()}\n")
+                    append("\n记录明细抽样\n采集区保留：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 媒体 ${queue.optInt("media")} / 系统事件 ${queue.optInt("systemEvents")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
                     append("\n资料在哪里\n队列存储：${size(queue.getLong("bytes"))} / 上限 ${config.maxQueueMiB} MiB\n${QueueStorage(this@ActivityStatsActivity).current().path}\n")
                     append("待 OCR 文字预留：${size(queue.getLong("reservedOcrBytes"))}（计入存储上限，完成识别后按实际大小计）\n")
                     append("来源待确认版本：$sourcePending · 本机来源缓存 ${size(bytes(sources))}\n${sources.absolutePath}\n")
@@ -88,10 +92,10 @@ class ActivityStatsActivity : Activity() {
                 runOnUiThread {
                     if (isDestroyed) return@runOnUiThread
                     renderSummary(content); history.removeAllViews()
-                    snapshot = state; queueSnapshot = queue; historyPage = 0; pendingPage = 0; renderHistory()
+                    snapshot = state; queueSnapshot = queue; historyPage = historyPage.coerceAtMost(((state.getJSONArray("events").length() - 1) / 10).coerceAtLeast(0)); pendingPage = pendingPage.coerceAtMost(((queue.getJSONArray("pending").length() - 1) / 10).coerceAtLeast(0)); renderHistory()
                 }
             } catch (_: Exception) { runOnUiThread { if (!isDestroyed) renderSummary("统计或队列暂不可读取，不能按零展示；原始文件保留，请查看支持诊断。") } }
-            finally { runOnUiThread { loading = false; if (!isDestroyed) progress.visibility = android.view.View.GONE } }
+            finally { runOnUiThread { loading = false; if (!isDestroyed) { progress.visibility = android.view.View.GONE; if (refreshPending) { refreshPending = false; refresh() } } } }
         }
     }
     private fun pager(page: Int, total: Int, select: (Int) -> Unit) {
@@ -128,6 +132,8 @@ class ActivityStatsActivity : Activity() {
         if (events.length() == 0) history.addView(TextView(this).apply { text = "此统计周期还没有事件，不能推断此前没有采集。" })
     }
     private fun renderSummary(content: String) {
+        val expanded = (0 until summary.childCount).map { summary.getChildAt(it) }.filterIsInstance<TextView>()
+            .filter { it !is Button && it.visibility == android.view.View.VISIBLE }.map { it.text.toString().substringBefore('\n') }.toSet()
         summary.removeAllViews()
         content.split("\n\n").filter { it.isNotBlank() }.forEachIndexed { index, block ->
             val value = android.text.SpannableString(block)
@@ -136,7 +142,7 @@ class ActivityStatsActivity : Activity() {
                 text = value; textSize = 15f; setLineSpacing(5f, 1f); setPadding(moteDp(16), moteDp(16), moteDp(16), moteDp(16)); setTextColor(MoteUi.ink); background = MoteUi.shape(this@ActivityStatsActivity)
             }
             if (index > 1) {
-                detail.visibility = android.view.View.GONE
+                detail.visibility = if (block.substringBefore('\n') in expanded) android.view.View.VISIBLE else android.view.View.GONE
                 summary.addView(MoteUi.button(Button(this).apply {
                     text = block.substringBefore('\n') + " · 展开 / 收起"
                     setOnClickListener { detail.visibility = if (detail.visibility == android.view.View.GONE) android.view.View.VISIBLE else android.view.View.GONE }

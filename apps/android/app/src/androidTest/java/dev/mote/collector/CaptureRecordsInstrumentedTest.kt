@@ -220,6 +220,13 @@ class CaptureRecordsInstrumentedTest {
                 assertTrue(all.filterIsInstance<ImageView>().any { it.contentDescription == "采集图片" && it.drawable != null })
                 all.filterIsInstance<TextView>().first { it.isShown && it.text.toString() == "关闭" }.performClick()
             }
+            // Dialog dismissal is asynchronous at the window manager: wait for the Activity
+            // to regain input focus before injecting back into its native dispatcher.
+            waitUntil {
+                var focused = false
+                scenario.onActivity { focused = it.hasWindowFocus() }
+                focused
+            }
             // The system back event must reach the API 33+ native dispatcher and return to albums.
             shell("input keyevent KEYCODE_BACK")
             waitUntil {

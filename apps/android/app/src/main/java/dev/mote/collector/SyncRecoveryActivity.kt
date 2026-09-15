@@ -20,6 +20,7 @@ class SyncRecoveryActivity : Activity() {
     private lateinit var issues: LinearLayout
     private lateinit var result: TextView
     private var reading = false
+    private var localStateJob: kotlinx.coroutines.Job? = null
     private val refresh = object : Runnable { override fun run() { refreshStatus(); handler.postDelayed(this, 3000) } }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -55,8 +56,8 @@ class SyncRecoveryActivity : Activity() {
         reading = true
         executor.execute {
             val value = runCatching {
-                val settings = Settings(this); val c = queue().syncInventory(); val sources = localSources().pendingSync()
-                "本机保留 ${c.getInt("retained")} 条 · 待发 ${c.getInt("pending")} 条\n需处理 ${c.getInt("blocked")} 条 · 等待 OCR ${c.getInt("awaitingOcr")} 张\n来源待发 ${sources.count} 个版本 / ${sources.pendingUpdates} 项设置\n\n${SyncSchedule.waitingReason(this, settings.read()) ?: settings.uploadStatus()}\n最后收到上传确认：${settings.lastUploadAt() ?: "尚无"}"
+                val settings = Settings(this); val local = LocalStateRepository.get(this).state.value; val c = local.active ?: error("正在读取存储状态"); val sources = localSources().pendingSync()
+                "${local.imageLabel()}\n本机保留 ${c.records} 条 · 待发 ${c.pending} 条\n需处理 ${c.blocked} 条 · 等待 OCR ${c.awaitingOcr} 张\n来源待发 ${sources.count} 个版本 / ${sources.pendingUpdates} 项设置\n\n${SyncSchedule.waitingReason(this, settings.read()) ?: settings.uploadStatus()}\n最后收到上传确认：${settings.lastUploadAt() ?: "尚无"}"
             }.getOrElse { "本机状态暂不可读：${it.message ?: "请检查存储"}" }
             val failures = runCatching { queue().syncIssues() }.getOrDefault(emptyList())
             val report = getSharedPreferences("sync-recovery", MODE_PRIVATE).getString("message", "尚未执行检查或全量补传")
@@ -83,7 +84,7 @@ class SyncRecoveryActivity : Activity() {
             } }
         }
     }
-    override fun onResume() { super.onResume(); handler.post(refresh) }
-    override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
+    override fun onResume() { super.onResume(); localStateJob = observeLocalState { refreshStatus() }; handler.post(refresh) }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; handler.removeCallbacks(refresh); super.onPause() }
     override fun onDestroy() { handler.removeCallbacksAndMessages(null); executor.shutdownNow(); super.onDestroy() }
 }
