@@ -18,6 +18,14 @@ CLI 不自动初始化，已有 profile 不会被覆盖；重复 init 报错后�
 
 ## 日常开发
 
+已构建中央服务并配置命名 Tunnel 的本机 DEV，可用一个命令前台运行两者：
+
+```sh
+npm run up
+```
+
+该命令使用 DEV 中已有的 Tunnel 凭据并自动启用隧道，先启动中央服务再启动 cloudflared；按 Ctrl+C 同时停止两者，任一进程退出也会停止另一个。已有中央或隧道实例时会拒绝重复启动。它不执行构建、不启动屏幕采集，也不创建 Cloudflare 域名路由。中央日志仍在 `.mote/profiles/dev/logs/central.log`；cloudflared 原始输出仍由运行器抑制。其他原生 profile 可使用 `node scripts/mote.mjs run-all --profile NAME`。
+
 ```sh
 npm run dev
 ```
