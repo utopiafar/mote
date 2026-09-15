@@ -56,6 +56,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS source_heads (source_id TEXT NOT NULL,external_id TEXT NOT NULL,capture_id TEXT NOT NULL,observed_at TEXT NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(source_id,external_id));
       CREATE INDEX IF NOT EXISTS source_head_capture ON source_heads(capture_id);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
       PRAGMA user_version=1;`);
     this.db.function('mote_ocr_status',{deterministic:true},json=>captureOcrState(JSON.parse(String(json))).status);
@@ -320,7 +322,7 @@ export class Store {
     return mediaActivity((function*(){for(const row of rows)yield record(row as unknown as Row);})(),range);
   }
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
-  logicalBytes() {return Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n)+Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM (SELECT json FROM captures UNION ALL SELECT json FROM memories UNION ALL SELECT json FROM source_connections)').get() as {n:number}).n);}
+  logicalBytes() {return Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n)+Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM (SELECT json FROM captures UNION ALL SELECT json FROM memories UNION ALL SELECT json FROM source_connections UNION ALL SELECT json FROM conversations)').get() as {n:number}).n);}
   stats() {
     const counts=this.db.prepare("SELECT COUNT(*) AS captures, COUNT(blob_hash) AS imageCaptures, SUM(CASE WHEN json_extract(json,'$.source')='activity' THEN 1 ELSE 0 END) AS activityEvents, SUM(CASE WHEN json_extract(json,'$.source')='media' THEN 1 ELSE 0 END) AS mediaEvents, MIN(captured_at) AS firstCaptureAt,MAX(captured_at) AS lastCaptureAt FROM captures").get() as {captures:number;imageCaptures:number;activityEvents:number|null;mediaEvents:number|null;firstCaptureAt:string|null;lastCaptureAt:string|null};
     const blob=this.db.prepare('SELECT COUNT(*) AS blobs,COALESCE(SUM(bytes),0) AS imageBytes FROM blobs').get() as {blobs:number;imageBytes:number};
@@ -345,7 +347,7 @@ export class Store {
       const result=this.db.prepare('DELETE FROM captures WHERE id=?').run(id);this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(id);
       if(result.changes)this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,'delete',new Date().toISOString());
       // Derived retrospectives can refer to removed evidence; invalidate, rather than retain stale personal facts.
-      if(result.changes){this.db.exec('DELETE FROM insights; DELETE FROM memories');this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);}
+      if(result.changes){this.db.exec('DELETE FROM insights; DELETE FROM memories');this.invalidateConversationAnswers();this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);}
       this.db.exec('COMMIT');this.sweep();return {deleted:Number(result.changes)};
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
@@ -355,8 +357,19 @@ export class Store {
       this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE captured_at < ?").run(new Date().toISOString(),before);
       this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE captured_at < ?)').run(before);
       const result=this.db.prepare('DELETE FROM captures WHERE captured_at < ?').run(before);
-      if(result.changes){this.db.exec('DELETE FROM insights; DELETE FROM memories; UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');}this.db.exec('COMMIT');this.sweep();return Number(result.changes);
+      if(result.changes){this.db.exec('DELETE FROM insights; DELETE FROM memories; UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();return Number(result.changes);
     }catch(e){this.db.exec('ROLLBACK');throw e;}
+  }
+  private invalidateConversationAnswers() {
+    // As with insights, a model reply may contain removed facts even without an
+    // explicit citation. Keep authored questions, but never retain derived copies.
+    const rows=this.db.prepare('SELECT id,json FROM conversations').all() as {id:string;json:string}[];
+    for(const row of rows) {
+      const value=JSON.parse(row.json) as {turns:{result:{answer:string;citations:unknown[];trace:unknown[];runId:string};evidenceDeleted?:boolean}[]};
+      if(value.turns.every(turn=>turn.evidenceDeleted))continue;
+      for(const turn of value.turns){turn.evidenceDeleted=true;turn.result={answer:'原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。',citations:[],trace:[],runId:turn.result.runId};}
+      this.db.prepare('UPDATE conversations SET json=? WHERE id=?').run(JSON.stringify(value),row.id);
+    }
   }
   sweep() {
     this.db.exec('DELETE FROM blobs WHERE hash NOT IN (SELECT blob_hash FROM captures WHERE blob_hash IS NOT NULL)');

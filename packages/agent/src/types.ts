@@ -73,6 +73,11 @@ export interface QueryInput {
   before?: string;
   deviceId?: string;
   timeZone?: string;
+  /** Server-owned dialogue context. Earlier model prose is not original evidence. */
+  conversation?: {
+    turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean}[];
+    omittedTurns:number;
+  };
 }
 export interface Citation {
   id: string;

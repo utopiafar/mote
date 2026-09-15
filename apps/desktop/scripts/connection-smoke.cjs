@@ -20,7 +20,7 @@ const oldToken = 'old-synthetic-owner-token-' + 'o'.repeat(32), token = 'new-syn
 const config = { ...defaultConfig(), deviceName: 'Synthetic onboarding Mac', serverUrl: 'http://127.0.0.1:1', excludedAppIds: ['dev.synthetic.private'], masks: [{ x: 0, y: 0, width: 0.1, height: 0.1 }], ocrEnabled: false, metadataEnabled: false };
 writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config, encryptedToken: safeStorage.encryptString(oldToken).toString('base64') }));
 mkdirSync(join(profile, 'models')); writeFileSync(join(profile, 'models', 'preserved-fixture'), 'synthetic-model-marker');
-let releaseFirstRedeem, selected, origin, invitation, failRedeem = true, requests = 0, ownerApiHeaders = [], finished = false, responseToken = token, uploadsAllowed = false; const uploadBodies = [];
+let releaseFirstRedeem, releaseSecondRedeem, releaseImport, delayImport = false, selected, origin, invitation, failRedeem = true, requests = 0, ownerApiHeaders = [], finished = false, responseToken = token, uploadsAllowed = false; const uploadBodies = [];
 const server = createServer(async (req, res) => {
   const chunks = []; for await (const chunk of req) chunks.push(chunk);
   res.setHeader('Content-Type', 'application/json');
@@ -28,6 +28,7 @@ const server = createServer(async (req, res) => {
     requests++; assert.equal(req.headers.authorization, undefined);
     const body = JSON.parse(Buffer.concat(chunks).toString()); assert.equal(body.deviceId, config.deviceId); assert.equal(body.code, invitation.code); assert.equal(body.platform, 'macos');
     if (requests === 1) await new Promise(resolve => { releaseFirstRedeem = resolve; });
+    if (requests === 2) await new Promise(resolve => { releaseSecondRedeem = resolve; });
     if (failRedeem) { res.writeHead(503); res.end('{"ignored":"provider body"}'); return; }
     res.end(JSON.stringify({ serverUrl: origin, token: responseToken, credentialId: 'fixture-collector', scope: 'collector' })); return;
   }
@@ -52,7 +53,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal((await js('window.mote.status()')).running, false);
       const originalFile = await readFile(join(profile, 'config.json'));
       const original = (await js('window.mote.status()')).config;
-      await js(`document.querySelector('#idle').value = '456'; document.querySelector('#idle').dispatchEvent(new Event('input', {bubbles: true}))`);
+      await js(`document.querySelector('#device-name').value = 'Discarded manual draft'; document.querySelector('#device-name').dispatchEvent(new Event('input', {bubbles: true}))`);
       await js('document.querySelector("#connection-input").value=' + JSON.stringify(connectionUri(invitation)) + '; document.querySelector("#connection-preview").click()');
       await until(() => js('!document.querySelector("#connection-confirmation").hidden'));
       assert.equal(requests, 0); assert(await js('document.querySelector("#connection-connect").disabled'));
@@ -65,18 +66,44 @@ app.on('browser-window-created', (_event, window) => {
       releaseFirstRedeem(); await until(() => js('!document.querySelector("#connection-preview").disabled'));
       assert.deepEqual(await readFile(join(profile, 'config.json')), originalFile);
       failRedeem = false;
+      // Leaving and reopening while the file picker is pending cannot restore its old preview.
+      selected = join(profile, 'invitation.json'); delayImport = true;
+      await js('document.querySelector("#connection-json").click()'); await until(() => releaseImport);
+      await js(`document.querySelector('[data-nav="settings"]').click(); document.querySelector('[data-nav="connection"]').click()`);
+      releaseImport(); delayImport = false;
+      await until(() => js('!document.querySelector("#connection-json").disabled'));
+      assert(await js('document.querySelector("#connection-confirmation").hidden'));
+      assert.equal(await js('document.querySelector("#device-name").value'), original.deviceName);
       // File and QR imports each only preview; neither sends a pairing request.
       selected = join(profile, 'invitation.json'); await js('document.querySelector("#connection-json").click()'); await until(() => js('!document.querySelector("#connection-confirmation").hidden'));
       await until(() => js('!document.querySelector("#connection-qr").disabled')); assert.equal(requests, 1);
       selected = join(profile, 'invitation.png'); await js('document.querySelector("#connection-qr").click()'); await until(() => js('!document.querySelector("#connection-confirmation").hidden'));
       await until(() => js('!document.querySelector("#connection-preview").disabled')); assert.equal(requests, 1);
+      await js(`document.querySelector('#server-url').value = 'https://stale-draft.example'; document.querySelector('#server-url').dispatchEvent(new Event('input', {bubbles: true})); document.querySelector('#token').value = 'stale-synthetic-token';`);
       await js('document.querySelector("#connection-confirm-origin").click(); document.querySelector("#connection-connect").click()');
+      await until(() => releaseSecondRedeem);
+      await js(`document.querySelector('[data-nav="settings"]').click()`);
+      assert(await js(`document.querySelector('#settings-save-bar').hidden && document.querySelector('#settings-pending').hidden`));
+      await js(`document.querySelector('[data-nav="connection"]').click()`);
+      assert(await js('document.querySelector("#connection-confirmation").hidden'));
+      releaseSecondRedeem();
       await until(async () => (await js('window.mote.status()')).config.credentialScope === 'collector');
       const paired = await js('window.mote.status()'); assert.equal(paired.config.serverUrl, origin); assert.equal(paired.config.deviceId, original.deviceId); assert.deepEqual(paired.config.masks, original.masks); assert.deepEqual(paired.config.excludedAppIds, original.excludedAppIds); assert.equal(paired.running, false);
       await until(() => js('!document.querySelector("#connection-preview").disabled'));
-      assert.equal(await js(`document.querySelector('#idle').value`), '456');
-      assert(await js(`!document.querySelector('#settings-pending').hidden`), 'Pairing preserves unsaved settings in other pages');
+      assert.equal(await js(`document.querySelector('#server-url').value`), origin);
+      assert.equal(await js(`document.querySelector('#token').value`), '');
+      assert(await js(`document.querySelector('#settings-pending').hidden`), 'Successful pairing replaces abandoned manual settings with the committed config');
       const persisted = JSON.parse(await readFile(join(profile, 'config.json'), 'utf8')); assert.equal(safeStorage.decryptString(Buffer.from(persisted.encryptedToken, 'base64')), token); assert(!JSON.stringify(persisted).includes(token));
+      assert.equal(persisted.config.serverUrl, origin);
+      await js(`document.querySelector('[data-nav="capture"]').click(); document.querySelector('#idle').value = '456'; document.querySelector('#idle').dispatchEvent(new Event('input', {bubbles: true})); document.querySelector('#settings').requestSubmit()`);
+      await until(() => js('!document.querySelector("#settings-fields").disabled'));
+      const afterSettingsSave = JSON.parse(await readFile(join(profile, 'config.json'), 'utf8'));
+      assert.equal(afterSettingsSave.config.serverUrl, origin); assert.equal(afterSettingsSave.config.idlePauseSeconds, 456);
+      assert.equal(safeStorage.decryptString(Buffer.from(afterSettingsSave.encryptedToken, 'base64')), token);
+      const reloaded = new Promise(resolve => window.webContents.once('did-finish-load', resolve)); window.webContents.reload(); await reloaded;
+      await until(() => js('document.querySelector("#server-url").value === ' + JSON.stringify(origin)));
+      await js(`document.querySelector('[data-nav="connection"]').click()`);
+      assert.equal(await js(`document.querySelector('#server-url').value`), origin, 'Reopening uses the paired URL after another settings save');
       assert.equal((await js('window.mote.testConnection()')).identity.credential.scope, 'collector');
       await assert.rejects(js('window.mote.openCentral()'), /采集权限/);
       await js('document.querySelector("#connection-owner-token").value=' + JSON.stringify(owner) + '; document.querySelector("#connection-owner-open").click()');
@@ -101,7 +128,7 @@ app.on('browser-window-created', (_event, window) => {
       await until(() => js('!document.querySelector("#connection-preview").disabled'));
       await js('window.mote.retry()'); await until(async () => (await js('window.mote.status()')).queueDepth === 0);
       assert.equal(requests, 3); assert.deepEqual(uploadBodies.at(-1), previousUpload);
-      console.log(JSON.stringify({ ok: true, fixtureOnly: true, jsonAndUriPreview: true, nativeVisionQrImport: true, explicitOriginRequired: true, connectingCannotPretendCancel: true, failedPairRetainsConfig: true, secureStoreAdapterUsed: true, existingDevicePrivacyAndModelPreserved: true, collectorCannotOpenAdmin: true, ephemeralOwnerOnlyInMain: true, pendingNoteBlocksOtherOrigin: true, sameOriginExplicitReauthorizationResumesNote: true, screenshotCaptureStayedStopped: true, realKeychainUntouched: true }));
+      console.log(JSON.stringify({ ok: true, fixtureOnly: true, jsonAndUriPreview: true, nativeVisionQrImport: true, explicitOriginRequired: true, connectingCannotPretendCancel: true, failedPairRetainsConfig: true, abandonedPreviewDiscarded: true, pairingSurvivesNavigation: true, newConnectionSurvivesLaterSettingsSaveAndReload: true, secureStoreAdapterUsed: true, existingDevicePrivacyAndModelPreserved: true, collectorCannotOpenAdmin: true, ephemeralOwnerOnlyInMain: true, pendingNoteBlocksOtherOrigin: true, sameOriginExplicitReauthorizationResumesNote: true, screenshotCaptureStayedStopped: true, realKeychainUntouched: true }));
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write('Connection fixture failed: ' + error.message + '\n'); app.exit(1); });
   });
@@ -112,6 +139,6 @@ app.on('quit', () => { server.closeAllConnections(); server.close(); if (finishe
   invitation = { format: 'mote.connection', version: 1, serverUrl: origin, code: 'a'.repeat(43), expiresAt: new Date(Date.now() + 300000).toISOString() };
   writeFileSync(join(profile, 'invitation.json'), JSON.stringify(invitation));
   await QRCode.toFile(join(profile, 'invitation.png'), connectionUri(invitation), { width: 900, margin: 4 });
-  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
+  dialog.showOpenDialog = async () => { if (delayImport) await new Promise(resolve => { releaseImport = resolve; }); return { canceled: false, filePaths: [selected] }; };
   require('../dist/main');
 })().catch(error => { process.stderr.write('Connection fixture setup failed: ' + error.message + '\n'); app.exit(1); });

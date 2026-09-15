@@ -26,7 +26,7 @@ class MainActivity : Activity() {
     private lateinit var settings: Settings
     private lateinit var content: LinearLayout
     private var loadedServer: String? = null
-    private var loadedToken: String? = null
+    private lateinit var loadedConfig: CollectorConfig
     private var projectionRequestStamp: String? = null
     private var applyingConnectionFields = false
     private lateinit var status: TextView
@@ -51,6 +51,7 @@ class MainActivity : Activity() {
     private var initializing = true
     private var buildingPage = Page.OVERVIEW
     private var currentPage = Page.OVERVIEW
+    private var draftGeneration = 0
     private enum class Page(val title: String, val parent: String? = null) {
         OVERVIEW("概览"), NOTES("随手记"), SOURCES("来源"), SETTINGS("设置"),
         CONNECTION("连接与同步", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
@@ -58,7 +59,7 @@ class MainActivity : Activity() {
         ABOUT("关于与更新", "SETTINGS"), DEVELOPER("开发者选项", "ABOUT"),
         DIAGNOSTICS("诊断与支持", "DEVELOPER"), MODEL("模型高级设置", "DEVELOPER")
     }
-    private data class RetainedDraft(val fields: Map<String, String>, val server: String?, val token: String?)
+    private data class RetainedDraft(val fields: Map<String, String>, val config: CollectorConfig)
     private lateinit var server: EditText
     private lateinit var token: EditText
     private lateinit var name: EditText
@@ -94,6 +95,7 @@ class MainActivity : Activity() {
     private lateinit var chargingOnly: CheckBox
     private lateinit var ocrChargingOnly: CheckBox
     private lateinit var diagnosticEnabled: CheckBox
+    private lateinit var imageDedupeDiagnosticsEnabled: CheckBox
     private lateinit var diagnosticInterval: EditText
     private lateinit var nsfwEnabled: CheckBox
     private lateinit var nsfwPolicy: EditText
@@ -125,7 +127,7 @@ class MainActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
         settings = Settings(this)
         val config = runCatching { settings.read() }.getOrElse { CollectorConfig() }
-        loadedServer = config.server; loadedToken = config.token
+        loadedServer = config.server; loadedConfig = config
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setBackgroundColor(MoteUi.background); moteInsets()
         }
@@ -170,15 +172,7 @@ class MainActivity : Activity() {
         buildModel(config)
         baseline = controlValues()
         (lastNonConfigurationInstance as? RetainedDraft)?.let { retained ->
-            applyingConnectionFields = true
-            val connectionChanged = retained.server != config.server || retained.token != config.token
-            try { controls.forEach { view -> retained.fields[view.tag as String]?.let { value ->
-                if (!connectionChanged || view !in listOf(server, token, name, http)) when (view) {
-                    is EditText -> view.setText(value)
-                    is CheckBox -> view.isChecked = value.toBoolean()
-                    is Spinner -> view.setSelection(value.toInt())
-                }
-            } } } finally { applyingConnectionFields = false }
+            if (retained.config == config) restoreControlValues(retained.fields)
         }
         initializing = false
         val restoredPage = savedInstanceState?.getString("page")?.let { value -> Page.entries.find { it.name == value } } ?: Page.OVERVIEW
@@ -265,7 +259,7 @@ class MainActivity : Activity() {
         syncBatteryNotLow = check("低电量时暂停同步", config.syncBatteryNotLow)
         text("适用于记录、来源文件和 OCR 结果。立即同步与全量补传也遵守这些条件；低电量由系统判定。", 13, MoteUi.muted)
         section("中央节点")
-        menu("扫码或导入邀请", "推荐使用中央节点生成的一次性邀请", "sync") { startActivity(Intent(this, ConnectionActivity::class.java)) }
+        menu("扫码或导入邀请", "推荐使用中央节点生成的一次性邀请", "sync") { discardPageDraft(); startActivity(Intent(this, ConnectionActivity::class.java)) }
         section("节点与设备")
         connectionSummary = text("", 13, MoteUi.muted)
         server = field("节点 URL（可留空，仅在本机记录）", config.server, "https://mote.example.com", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
@@ -470,6 +464,10 @@ class MainActivity : Activity() {
     private fun buildDeveloper(config: CollectorConfig) {
         page(Page.DEVELOPER, "用于排查问题和调整本机高级行为")
         menu("诊断与支持", "运行状态、数值采样与安全支持包", "chart") { showPage(Page.DIAGNOSTICS) }
+        section("图片去重排查")
+        imageDedupeDiagnosticsEnabled = check("临时保留图片去重对比记录", config.imageDedupeDiagnosticsEnabled)
+        text("默认关闭。开启并保存后，将已去重图片及对比原图临时加密保存在本机，供核对分数与判断依据。最多 20 组、32 MiB，24 小时后到期；读取时清理，系统可能延后后台清理。关闭并保存后清空。保留的都是通过隐私检查和遮罩后的图片。", 13, MoteUi.muted)
+        menu("查看图片去重记录", "对比两张图片、分数与依据，可随时清空", "chart") { startActivity(Intent(this, ImageDedupeDiagnosticsActivity::class.java)) }
         menu("模型高级设置", "审查指令、下载来源与推理参数", "settings") { showPage(Page.MODEL) }
         section("调试连接")
         http = check("允许调试局域网 HTTP（明文，仅私有 IP）", config.debugHttp).apply { isEnabled = BuildConfig.DEBUG }
@@ -549,16 +547,30 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    private fun draft() = CollectorConfig(
-        checked(server) { server.text.toString().trim().let { if (it.isBlank()) "" else PrivacyRules.validateEndpoint(it, http.isChecked, BuildConfig.DEBUG) } },
-        checked(token) { token.text.toString().trim().also { require(it.isBlank() || it.length >= 32) { "令牌至少需要 32 个字符；未连接时可留空" } } },
-        checked(name) { name.text.toString().trim().also { require(it.isNotBlank() && it.length <= 128) { "请填写 1..128 字符的设备名称" } } },
-        number(interval, 5..300), number(maxQueue, 8..4096), wifi.isChecked,
-        excludes.text.toString(), checked(masks) { masks.text.toString().also { Mask.parse(it) } },
-        checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } }, http.isChecked,
-        if (projectionMode.isChecked) "projection" else "accessibility", nsfwDraft(), number(jpegQuality, 40..95), number(captureMaxSide, 640..2560),
-        chargingOnly.isChecked, number(batteryBelow, 0..95), diagnosticEnabled.isChecked, number(diagnosticInterval, 15..3600),
-        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500), ocrChargingOnly.isChecked, mediaCollectionEnabled.isChecked, screenCollectionEnabled.isChecked, notificationCollectionEnabled.isChecked, deviceEventCollectionEnabled.isChecked, syncChargingOnly.isChecked, syncBatteryNotLow.isChecked, imageDedupeModes[imageDedupeMode.selectedItemPosition])
+    /** A settings page can only change its own fields in the latest saved snapshot. */
+    private fun draft(current: CollectorConfig = settings.read()): CollectorConfig = when (currentPage) {
+        Page.CONNECTION -> current.copy(
+            server = checked(server) { server.text.toString().trim().let { if (it.isBlank()) "" else PrivacyRules.validateEndpoint(it, current.debugHttp, BuildConfig.DEBUG) } },
+            token = checked(token) { token.text.toString().trim().also { require(it.isBlank() || it.length >= 32) { "令牌至少需要 32 个字符；未连接时可留空" } } },
+            deviceName = checked(name) { name.text.toString().trim().also { require(it.isNotBlank() && it.length <= 128) { "请填写 1..128 字符的设备名称" } } },
+            wifiOnly = wifi.isChecked, syncMode = syncModes[syncMode.selectedItemPosition], syncIntervalMinutes = number(syncInterval, 15..1440),
+            syncBatchSize = number(syncBatch, 1..500), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
+        Page.CAPTURE -> current.copy(
+            intervalSeconds = number(interval, 5..300), maxQueueMiB = number(maxQueue, 8..4096), mode = if (projectionMode.isChecked) "projection" else "accessibility",
+            jpegQuality = number(jpegQuality, 40..95), captureMaxSide = number(captureMaxSide, 640..2560), chargingOnly = chargingOnly.isChecked,
+            batteryPauseBelowPct = number(batteryBelow, 0..95), ocrChargingOnly = ocrChargingOnly.isChecked, mediaCollectionEnabled = mediaCollectionEnabled.isChecked,
+            screenCollectionEnabled = screenCollectionEnabled.isChecked, notificationCollectionEnabled = notificationCollectionEnabled.isChecked,
+            deviceEventCollectionEnabled = deviceEventCollectionEnabled.isChecked, imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])
+        Page.PRIVACY -> current.copy(
+            excludedPackages = excludes.text.toString(), masks = checked(masks) { masks.text.toString().also { Mask.parse(it) } },
+            appCollectionRules = checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() },
+            metadataEnabled = metadataEnabled.isChecked, nsfw = current.nsfw.copy(enabled = nsfwEnabled.isChecked))
+        Page.MODEL -> current.copy(nsfw = nsfwDraft().copy(enabled = current.nsfw.enabled),
+            localReviewUrl = checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } })
+        Page.DIAGNOSTICS -> current.copy(diagnosticsEnabled = diagnosticEnabled.isChecked, diagnosticsIntervalSeconds = number(diagnosticInterval, 15..3600))
+        Page.DEVELOPER -> current.copy(debugHttp = http.isChecked, imageDedupeDiagnosticsEnabled = imageDedupeDiagnosticsEnabled.isChecked)
+        else -> current
+    }
     private fun nsfwDraft(): NsfwConfig {
         val value = NsfwConfig(enabled = nsfwEnabled.isChecked, threads = number(nsfwThreads, 1..8),
             timeoutMs = number(nsfwTimeout, 5000..180000).toLong(), source = nsfwSources[nsfwSource.selectedItemPosition],
@@ -586,33 +598,45 @@ class MainActivity : Activity() {
         throw IllegalArgumentException(message, error)
     }
     private fun saveNsfw(after: () -> Unit) = try {
-        val next = settings.read().copy(nsfw = nsfwDraft()); val saved = controlValues()
-        applySettings(next) {
-            baseline = baseline + listOf(nsfwEnabled, nsfwThreads, nsfwTimeout, nsfwSource, nsfwCustom, nsfwPolicy, nsfwMaxTokens, nsfwMaxSide)
-                .associate { it.tag as String to saved.getValue(it.tag as String) }
-            after()
-        }
+        val current = freshConfig()
+        val next = current.copy(nsfw = current.nsfw.copy(enabled = nsfwEnabled.isChecked))
+        applySettings(next, expected = current, appliedFields = setOf(nsfwEnabled.tag as String), saved = after)
     } catch (error: Exception) { toast(error.message ?: "请检查 NSFW 配置") }
     private fun saveConfig(bindLocal: Boolean = false, after: () -> Unit = {}): Unit = try {
-        val c = draft().also { it.validate() }
+        val current = freshConfig()
+        val c = draft(current).also { it.validate() }
         if (c.hasSyncConnection() && settings.dataOrigin().isBlank() && settings.hasPendingData() && !bindLocal) {
             AlertDialog.Builder(this).setTitle("将本机资料绑定到此节点？")
                 .setMessage("${c.server}\n\n本机已有尚未绑定的截图、笔记或来源资料。确认后会绑定到这个档案地址，并按你的同步策略发送。请核对这是你自己的节点。")
                 .setNegativeButton("继续保存在本机", null).setPositiveButton("确认绑定并保存") { _, _ -> saveConfig(true, after) }.show()
         } else {
-            val saved = controlValues()
-            applySettings(c, bindLocal) { loadedServer = c.server; loadedToken = c.token; baseline = saved; after() }
+            applySettings(c, bindLocal, expected = current, saved = after)
         }
         Unit
     } catch (e: Exception) { toast(e.message ?: "请检查配置输入") }
-    private fun applySettings(config: CollectorConfig, bindLocal: Boolean = false, saved: () -> Unit) {
+    private fun freshConfig(): CollectorConfig {
+        val current = settings.read()
+        if (current != loadedConfig) { reloadSettings(current); throw SettingsChangedFailure() }
+        return current
+    }
+    private fun applySettings(config: CollectorConfig, bindLocal: Boolean = false, expected: CollectorConfig,
+        appliedFields: Set<String> = pageControlValues().keys, saved: () -> Unit) {
         if (applyingSettings) return
+        val submitted = baseline + controlValues().filterKeys { it in appliedFields }; val generation = draftGeneration
         applyingSettings = true; updateSaveBar()
-        RuntimeSettings.apply(this, config, bindLocal) { result ->
+        RuntimeSettings.apply(this, config, bindLocal, expected = expected) { result ->
             applyingSettings = false
             if (isDestroyed) return@apply
-            result.onSuccess { saved(); toast("设置已保存"); resumeProjectionAfterSettings() }
-                .onFailure { toast(it.message ?: "设置未保存，请重试") }
+            result.onSuccess {
+                // Keep edits made after this save started, including edits on a newly opened page.
+                val comparison = if (generation == draftGeneration) submitted else baseline
+                val laterEdits = pageControlValues().filter { (key, value) -> comparison[key] != value }
+                reloadSettings(settings.read()); restoreControlValues(laterEdits)
+                saved(); toast("设置已保存"); resumeProjectionAfterSettings()
+            }.onFailure {
+                if (settings.read() != loadedConfig) reloadSettings(settings.read())
+                toast(it.message ?: "设置未保存，请重试")
+            }
             updateSaveBar(); refreshStatus()
         }
     }
@@ -807,19 +831,14 @@ class MainActivity : Activity() {
         resumed = true
         updatePermissionSummary()
         RuntimeSettings.observeProjectionConsent { resumeProjectionAfterSettings() }
-        if (::server.isInitialized) {
-            val c = settings.read()
-            if (c.server != loadedServer || c.token != loadedToken) {
-                applyingConnectionFields = true
-                try {
-                    server.setText(c.server); token.setText(c.token); name.setText(c.deviceName); http.isChecked = c.debugHttp; loadedServer = c.server; loadedToken = c.token
-                    baseline = baseline + listOf(server, token, name).associate { it.tag as String to it.text.toString() } + (http.tag as String to http.isChecked.toString())
-                } finally { applyingConnectionFields = false }
-            }
+        RuntimeSettings.observeConfiguration {
+            if (!applyingSettings && !isDestroyed) runCatching { settings.read() }.onSuccess { if (it != loadedConfig) reloadSettings(it) }
         }
+        if (::server.isInitialized) settings.read().let { if (it != loadedConfig) reloadSettings(it) }
         handler.post(refresh)
     }
-    override fun onPause() { resumed = false; RuntimeSettings.observeProjectionConsent(null); handler.removeCallbacks(refresh); super.onPause() }
+    override fun onPause() { resumed = false; RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null); handler.removeCallbacks(refresh); super.onPause() }
+    override fun onStop() { if (!isChangingConfigurations) discardPageDraft(); super.onStop() }
     override fun onDestroy() { statusExecutor.shutdownNow(); handler.removeCallbacks(refresh); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
@@ -844,7 +863,8 @@ class MainActivity : Activity() {
     private fun showPage(page: Page) {
         if (page == Page.PERMISSIONS) updatePermissionSummary()
         if (currentPage != page) {
-            pages[currentPage]?.let { scrollPositions[currentPage] = it.scrollY }
+            if (pageControlValues().isNotEmpty()) discardPageDraft()
+            else pages[currentPage]?.let { scrollPositions[currentPage] = it.scrollY }
             currentFocus?.clearFocus()
             getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(pagesHost.windowToken, 0)
         }
@@ -875,10 +895,6 @@ class MainActivity : Activity() {
         when {
             currentPage.parent != null -> showPage(Page.valueOf(currentPage.parent!!))
             currentPage != Page.OVERVIEW -> showPage(Page.OVERVIEW)
-            controlValues() != baseline -> AlertDialog.Builder(this).setTitle("设置尚未保存")
-                .setMessage("继续编辑，或放弃本次设置更改并退出。随手记草稿已单独加密保存。")
-                .setNegativeButton("继续编辑") { _, _ -> showPage(Page.SETTINGS) }
-                .setPositiveButton("放弃并退出") { _, _ -> finish() }.show()
             else -> finish()
         }
     }
@@ -890,17 +906,71 @@ class MainActivity : Activity() {
 
     // Keep unsaved sensitive settings in memory across rotation; never serialize credentials to a Bundle.
     @Deprecated("Native Activity in-memory configuration retention")
-    override fun onRetainNonConfigurationInstance(): Any = RetainedDraft(controlValues(), loadedServer, loadedToken)
+    override fun onRetainNonConfigurationInstance(): Any = RetainedDraft(pageControlValues(), loadedConfig)
 
     private fun updateSaveBar() {
         if (!::saveBar.isInitialized || initializing) return
-        val dirty = controlValues() != baseline
-        saveBar.visibility = if (dirty || applyingSettings) View.VISIBLE else View.GONE
+        val current = pageControlValues()
+        val dirty = current.any { (key, value) -> baseline[key] != value }
+        saveBar.visibility = if (current.isNotEmpty() && (dirty || applyingSettings)) View.VISIBLE else View.GONE
         (saveBar.getChildAt(1) as Button).isEnabled = !applyingSettings && !ConnectionGuard.reconfiguring()
         saveHint.text = if (applyingSettings) "正在保存…" else "有未保存的更改"
     }
 
-    private fun controlValues() = controls.associate { view ->
+    private fun pageControlValues() = controlValues(controls.filter { controlPages[it] == currentPage })
+
+    private fun restoreControlValues(values: Map<String, String>) {
+        val wasApplying = applyingConnectionFields
+        applyingConnectionFields = true
+        try { controls.forEach { view -> values[view.tag as String]?.let { value -> when (view) {
+            is EditText -> { if (view.text.toString() != value) view.setText(value); view.error = null }
+            is CheckBox -> view.isChecked = value.toBoolean()
+            is Spinner -> view.setSelection(value.toInt())
+        } } } } finally { applyingConnectionFields = wasApplying }
+        updateSyncFields(); updateSaveBar()
+    }
+
+    private fun discardPageDraft() {
+        if (initializing) return
+        val discarded = controls.filter { controlPages[it] == currentPage }
+        if (discarded.isEmpty()) return
+        draftGeneration++
+        val config = settings.read()
+        if (config != loadedConfig) reloadSettings(config) else {
+            initializing = true; applyingConnectionFields = true
+            try {
+                pages.remove(currentPage)?.let(pagesHost::removeView)
+                discarded.forEach { controls.remove(it); controlPages.remove(it); if (it is EditText) fieldLabels.remove(it) }
+                buildSettingsPage(currentPage, config)
+                baseline = baseline + pageControlValues()
+            } finally { initializing = false; applyingConnectionFields = false }
+            showPage(currentPage)
+        }
+        scrollPositions.remove(currentPage); pages[currentPage]?.scrollTo(0, 0)
+    }
+
+    private fun buildSettingsPage(page: Page, config: CollectorConfig) = when (page) {
+        Page.CONNECTION -> buildConnection(config); Page.CAPTURE -> buildCapture(config); Page.PRIVACY -> buildPrivacy(config)
+        Page.DEVELOPER -> buildDeveloper(config); Page.DIAGNOSTICS -> buildDiagnostics(config); Page.MODEL -> buildModel(config)
+        else -> Unit
+    }
+
+    /** Rebuild every settings form from the committed snapshot after pairing or another activity saves. */
+    private fun reloadSettings(config: CollectorConfig) {
+        initializing = true; applyingConnectionFields = true
+        try {
+            val editablePages = controlPages.values.toSet()
+            editablePages.forEach { page -> pages.remove(page)?.let(pagesHost::removeView) }
+            controls.forEach { if (it is EditText) fieldLabels.remove(it) }
+            controls.clear(); controlPages.clear()
+            loadedConfig = config; loadedServer = config.server
+            editablePages.forEach { buildSettingsPage(it, config) }
+            baseline = controlValues()
+        } finally { applyingConnectionFields = false; initializing = false }
+        showPage(currentPage)
+    }
+
+    private fun controlValues(views: List<View> = controls) = views.associate { view ->
         view.tag as String to when (view) {
             is EditText -> view.text.toString()
             is CheckBox -> view.isChecked.toString()

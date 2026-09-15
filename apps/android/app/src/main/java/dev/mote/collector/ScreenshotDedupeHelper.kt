@@ -7,7 +7,8 @@ import kotlin.math.abs
 /**
  * 截图近似去重的纯算法工具。
  *
- * 输入使用已经裁剪系统栏后的灰度缩略图，避免算法依赖 Android Bitmap，便于 JVM 单测覆盖。
+ * 输入是完成隐私检查、遮罩和缩放后的像素；近似档位额外缩略采样。
+ * 不依赖 Android Bitmap，便于 JVM 单测覆盖。
  */
 object ScreenshotDedupeHelper {
     private const val SIGNATURE_VERSION = "v2"
@@ -30,6 +31,8 @@ object ScreenshotDedupeHelper {
         CONSERVATIVE("conservative", 4, 0.008, 2),
         BALANCED("balanced", 8, 0.015, 4),
         AGGRESSIVE("aggressive", 14, 0.03, 8);
+
+        val maxChangedRowsCols: Int get() = when (this) { EXACT -> 0; CONSERVATIVE -> 2; BALANCED -> 4; AGGRESSIVE -> 8 }
 
         companion object {
             fun fromRaw(raw: String?): Mode {
@@ -161,12 +164,7 @@ object ScreenshotDedupeHelper {
                 thumbDiff.changedCols
             )
         }
-        val rowColThreshold = when (mode) {
-            Mode.EXACT -> 0
-            Mode.CONSERVATIVE -> 2
-            Mode.BALANCED -> 4
-            Mode.AGGRESSIVE -> 8
-        }
+        val rowColThreshold = mode.maxChangedRowsCols
         if (thumbDiff.changedRows > rowColThreshold || thumbDiff.changedCols > rowColThreshold) {
             return CompareResult(
                 false,

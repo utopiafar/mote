@@ -12,12 +12,25 @@ let settingsDirty = false;
 let captureStorageDirectory = '';
 let settingsApplying = false;
 let wasRunningBeforeSave = false;
+let pageRevision = 0;
 const pageScroll = new Map<Page, number>();
 const settingsPages = new Set<Page>(['connection', 'sync', 'capture', 'privacy', 'developer']);
 
 function showPage(page: Page, focus = true): void {
-  pageScroll.set(currentPage, window.scrollY);
-  if (page !== currentPage) feedback('');
+  if (settingsPages.has(currentPage)) pageScroll.delete(currentPage);
+  else pageScroll.set(currentPage, window.scrollY);
+  if (page !== currentPage) {
+    pageRevision++;
+    feedback('');
+    if (initialized && settingsPages.has(currentPage)) fillConfig(currentStatus.config);
+    if (currentPage === 'connection') {
+      clearConnectionPreview();
+      byId<HTMLTextAreaElement>('connection-input').value = '';
+      byId<HTMLInputElement>('connection-owner-token').value = '';
+      // Confirmed pairing still commits if the user navigates away while it is running.
+      if (!settingsApplying) void desktopApi.cancelConnection().catch(() => {});
+    }
+  }
   currentPage = page;
   const selected = settingsPages.has(page) || page === 'about' ? 'settings' : page === 'activity' ? 'overview' : page;
   for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-page]'))) element.hidden = element.dataset.page !== page;
@@ -37,9 +50,9 @@ for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-na
   if (pageNames.includes(page)) showPage(page);
 });
 function updateSettingsHint(): void {
-  byId('settings-save-bar').hidden = !(settingsPages.has(currentPage) || (currentPage === 'settings' && settingsDirty));
+  byId('settings-save-bar').hidden = !settingsPages.has(currentPage);
   byId('settings-pending').hidden = !settingsDirty;
-  byId('save-hint').textContent = currentStatus?.running ? '保存后立即应用；必要时会短暂暂停并自动恢复采集。' : settingsDirty ? '有未保存的修改，切换页面会为你保留。' : '设置保存后立即生效；采集保持当前开停状态。';
+  byId('save-hint').textContent = settingsDirty ? '有未保存的修改，离开此页会丢弃。保存后立即生效。' : currentStatus?.running ? '保存后立即应用；必要时会短暂暂停并自动恢复采集。' : '设置保存后立即生效；采集保持当前开停状态。';
   byId<HTMLButtonElement>('settings-reset').disabled = !settingsDirty || busy;
 }
 function markSettingsDirty(): void { settingsDirty = true; updateSettingsHint(); }
@@ -49,7 +62,7 @@ byId('settings-reset').addEventListener('click', () => {
   if (!currentStatus || busy) return;
   fillConfig(currentStatus.config); feedback('已还原为上次保存的设置。', true);
 });
-// Inputs stay mounted across pages. Reveal an invalid field before native validation focuses it.
+// Reveal collapsed or custom inputs before native validation focuses them.
 settingsForm.noValidate = true;
 function revealField(element: HTMLElement): void {
   const page = element.closest<HTMLElement>('[data-page]')?.dataset.page as Page | undefined;
@@ -194,8 +207,9 @@ function renderStorage(): void {
 }
 byId('storage-restart').addEventListener('click', () => void desktopApi.restartForStorageRecovery());
 byId('capture-directory-choose').addEventListener('click', () => void perform(async () => {
+  const revision = pageRevision;
   const result = await desktopApi.chooseCaptureDirectory();
-  if (!result.canceled && result.directory) { captureStorageDirectory = result.directory; markSettingsDirty(); renderStorage(); }
+  if (revision === pageRevision && !result.canceled && result.directory) { captureStorageDirectory = result.directory; markSettingsDirty(); renderStorage(); }
 }));
 byId('capture-directory-default').addEventListener('click', () => { captureStorageDirectory = ''; markSettingsDirty(); renderStorage(); });
 byId('capture-directory-open').addEventListener('click', () => void perform(() => desktopApi.openCaptureDirectory()));
@@ -330,7 +344,7 @@ byId('settings').addEventListener('submit', event => {
       ...(token ? { token } : {}),
     });
     } finally { settingsApplying = false; wasRunningBeforeSave = false; }
-    fillConfig(updated.config); render(updated); feedback(updated.running ? '设置已保存并立即生效，采集已恢复。' : '设置已保存并立即生效，采集保持停止。', true);
+    render(updated); fillConfig(updated.config); feedback(updated.running ? '设置已保存并立即生效，采集已恢复。' : '设置已保存并立即生效，采集保持停止。', true);
   });
 });
 byId('start').addEventListener('click', () => {
@@ -540,8 +554,18 @@ function showConnectionPreview(value: import('./connection').ConnectionPreview):
   byId('connection-confirmation').hidden = false; byId<HTMLButtonElement>('connection-connect').disabled = true;
 }
 byId('connection-input').addEventListener('input', () => { clearConnectionPreview(); void desktopApi.cancelConnection(); });
-byId('connection-preview').addEventListener('click', () => void perform(async () => { clearConnectionPreview(); showConnectionPreview(await desktopApi.previewConnection(readInput('connection-input'))); }));
-for (const kind of ['json', 'qr'] as const) byId('connection-' + kind).addEventListener('click', () => void perform(async () => { clearConnectionPreview(); byId<HTMLTextAreaElement>('connection-input').value = ''; const result = await desktopApi.importConnection(kind); if (!result.canceled && result.preview) showConnectionPreview(result.preview); }));
+async function previewForCurrentPage(operation: () => Promise<import('./connection').ConnectionPreview | undefined>): Promise<void> {
+  const revision = pageRevision;
+  clearConnectionPreview();
+  const preview = await operation();
+  if (revision !== pageRevision) { await desktopApi.cancelConnection(); return; }
+  if (preview) showConnectionPreview(preview);
+}
+byId('connection-preview').addEventListener('click', () => void perform(() => previewForCurrentPage(() => desktopApi.previewConnection(readInput('connection-input')))));
+for (const kind of ['json', 'qr'] as const) byId('connection-' + kind).addEventListener('click', () => void perform(() => previewForCurrentPage(async () => {
+  byId<HTMLTextAreaElement>('connection-input').value = '';
+  const result = await desktopApi.importConnection(kind); return result.canceled ? undefined : result.preview;
+})));
 byId('connection-confirm-origin').addEventListener('change', () => { if (currentStatus) render(currentStatus); });
 byId('connection-cancel').addEventListener('click', () => { clearConnectionPreview(); byId<HTMLTextAreaElement>('connection-input').value = ''; void desktopApi.cancelConnection(); });
 byId('connection-connect').addEventListener('click', () => void perform(async () => {
@@ -552,13 +576,9 @@ byId('connection-connect').addEventListener('click', () => void perform(async ()
   try { status = await desktopApi.confirmConnection(connectionPreview.id, connectionPreview.serverUrl); }
   finally { settingsApplying = false; wasRunningBeforeSave = false; }
   clearConnectionPreview();
-  if (settingsDirty) {
-    // Pairing changes connection credentials only; preserve edits in other settings pages.
-    byId<HTMLInputElement>('server-url').value = status.config.serverUrl;
-    byId<HTMLInputElement>('token').value = '';
-    byId<HTMLInputElement>('token').placeholder = '已安全保存；留空保留已有令牌';
-  } else fillConfig(status.config);
-  render(status); renderConnection(await desktopApi.connectionStatus()); feedback('连接已安全保存；原设备 ID、隐私设置和本地模型保留。', true);
+  // Invitation confirmation replaces the connection page draft with the committed config.
+  render(status); fillConfig(status.config);
+  renderConnection(await desktopApi.connectionStatus()); feedback('连接已安全保存；原设备 ID、隐私设置和本地模型保留。', true);
 }));
 byId('connection-test').addEventListener('click', () => void perform(async () => renderConnection(await desktopApi.testConnection())));
 byId('connection-owner-open').addEventListener('click', () => { const token = readInput('connection-owner-token').trim(); byId<HTMLInputElement>('connection-owner-token').value = ''; void perform(() => desktopApi.openCentralOwner(token)); });

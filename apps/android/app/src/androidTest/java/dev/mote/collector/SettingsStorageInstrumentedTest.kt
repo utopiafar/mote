@@ -50,6 +50,40 @@ class SettingsStorageInstrumentedTest {
         } finally { release.countDown(); background.join(5000); QueueStorage.recovering = false }
         assertEquals(0, context.queue().depth())
     }
+    @Test fun staleSettingsSnapshotCannotOverwriteANewerInvitationConnection() {
+        val settings = Settings(context); val original = settings.read()
+        try {
+            val previous = original.copy(server = "https://old.generated.invalid", token = "old-generated-token-1234567890123456", syncMode = "manual")
+            settings.save(previous)
+            settings.saveConnection("https://new.generated.invalid", "new-generated-token-1234567890123456", "Generated paired device", false)
+            val connected = settings.read()
+            assertThrows(SettingsChangedFailure::class.java) { settings.save(previous.copy(intervalSeconds = 47), expected = previous) }
+            assertEquals(connected, settings.read())
+            val next = connected.copy(intervalSeconds = 47)
+            settings.save(next, expected = connected)
+            assertEquals(next, settings.read())
+        } finally { settings.save(original) }
+    }
+    @Test fun imageDiagnosticsDefaultOffAndDisablingDeletesStoredPairsBeforeReadingThem() {
+        assertFalse(CollectorConfig().imageDedupeDiagnosticsEnabled)
+        val settings = Settings(context); val original = settings.read()
+        val directory = File(context.noBackupFilesDir, "image-dedupe-diagnostics")
+        require(directory.listFiles().orEmpty().isEmpty())
+        try {
+            val enabled = original.copy(server = "", token = "", syncMode = "manual", imageDedupeDiagnosticsEnabled = true)
+            apply(enabled); assertTrue(settings.read().imageDedupeDiagnosticsEnabled)
+            val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.BLUE) }
+            val image = ByteArrayOutputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it); it.toByteArray() }; bitmap.recycle()
+            assertNotNull(context.imageDedupeDiagnostics().record(JSONObject().put("generatedOnly", true), image, image))
+            assertTrue(directory.listFiles().orEmpty().isNotEmpty())
+            apply(enabled.copy(imageDedupeDiagnosticsEnabled = false))
+            assertFalse(settings.read().imageDedupeDiagnosticsEnabled)
+            assertTrue("Disabling removes files without waiting for the viewer or periodic cleanup", directory.listFiles().orEmpty().isEmpty())
+        } finally {
+            context.imageDedupeDiagnostics().clear(); settings.save(original)
+            WorkManager.getInstance(context).cancelAllWork().result.get(20, TimeUnit.SECONDS)
+        }
+    }
     @Test fun activeSettingsApplyWithoutManualStopAndConcurrentStopIsRespected() {
         val settings = Settings(context); val original = settings.read()
         try {

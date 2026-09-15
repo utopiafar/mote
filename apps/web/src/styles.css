@@ -3605,3 +3605,23 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .welcome-art {overflow:clip;}
 
 .connection-help summary {cursor:pointer;}
+.conversation-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 24px; align-items: start; }
+.conversation-history { padding: 18px; position: sticky; top: 24px; }
+.conversation-history-heading, .conversation-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.conversation-history h2, .conversation-heading h2 { margin: 0 0 14px; font-size: 16px; overflow-wrap: anywhere; }
+.conversation-heading p { margin: 0 0 18px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.conversation-list { display: grid; gap: 6px; margin-top: 16px; max-height: 55vh; overflow-y: auto; }
+.conversation-item { display: grid; gap: 8px; width: 100%; padding: 12px; text-align: left; border: 1px solid transparent; border-radius: 10px; background: transparent; }
+.conversation-item strong { font-size: 13px; font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.conversation-item span { font-size: 11px; color: var(--muted); }
+.conversation-item:hover, .conversation-item.active { background: var(--soft); border-color: var(--line); }
+.conversation-content { min-width: 0; }
+.conversation-content .answer-panel { margin-bottom: 20px; }
+.conversation-content .asked-question { display: flex; gap: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.conversation-content .asked-question svg { flex-shrink: 0; margin-top: 3px; }
+.conversation-content .thinking-panel strong { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 1000px) {
+  .conversation-layout { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .conversation-history { position: static; }
+  .conversation-list { max-height: 200px; }
+}

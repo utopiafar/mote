@@ -27,11 +27,12 @@ object ConnectionGuard {
         if (!lock.readLock().tryLock()) return null
         return try { if (updating.get()) null else action() } finally { lock.readLock().unlock() }
     }
-    fun <T> reconfigure(context: Context, nextServer: String, bindLocal: Boolean = false, action: () -> T): T {
+    fun <T> reconfigure(context: Context, nextServer: String, bindLocal: Boolean = false, expected: CollectorConfig? = null, action: () -> T): T {
         check(updating.get())
         if (!lock.writeLock().tryLock(120, TimeUnit.SECONDS)) throw ConnectionFailure("busy")
         try {
             check(processing.get() == 0) { "采集处理尚未结束" }
+            if (expected != null && Settings(context).read() != expected) throw SettingsChangedFailure()
             validateOrigin(context, nextServer, bindLocal)
             return action()
         } finally { lock.writeLock().unlock() }

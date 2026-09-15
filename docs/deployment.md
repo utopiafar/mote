@@ -156,6 +156,8 @@ node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restor
 
 ## 备份、恢复和迁移
 
+对话历史保存在中央 SQLite 数据库，随完整离线备份和恢复迁移。中央界面的 HTTP JSON 导出仍只包含原始资料、来源与记忆，不包含对话历史。
+
 小资料库可在中央界面导出/导入 JSON；导出包含原文和图片，按私密数据保管。超过 HTTP 导出限制的仓库使用离线备份：
 
 ```sh

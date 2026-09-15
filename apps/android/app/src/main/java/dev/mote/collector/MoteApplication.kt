@@ -16,6 +16,10 @@ class MoteApplication : Application() {
                 try {
                     queue().recoverOrphans()
                     val config = settings.read()
+                    runCatching {
+                        imageDedupeDiagnostics().prune()
+                        ImageDedupeDiagnosticsMaintenance.configure(this@MoteApplication, config.imageDedupeDiagnosticsEnabled)
+                    }
                     if (settings.syncState() == "uploading") settings.syncStatus(if (config.syncMode == "manual") "manual" else "waiting", "上次同步已中断，记录保留在本机")
                     UploadWorker.schedule(this@MoteApplication, config)
                     CaptureOcrWorker.schedule(this@MoteApplication, config)

@@ -3,7 +3,6 @@ import {systemEventText} from '@mote/shared';
 import React, {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +10,7 @@ import React, {
 import { createRoot } from "react-dom/client";
 import {captureOcrState, type CapturePreview} from '@mote/shared';
 import { AnswerMarkdown } from "./AnswerMarkdown";
+import { Conversations } from "./Conversations";
 import {captureDateRange, localDateInput, ocrPresentation} from './capture-presentation';
 import {
   ArrowDownToLine,
@@ -900,7 +900,6 @@ function Ask({
   status,
   devices,
   range,
-  scopeKey,
   insights,
   onOpen,
   onInsight,
@@ -909,68 +908,12 @@ function Ask({
   status: Status;
   devices: Device[];
   range: Range;
-  scopeKey: string;
   insights: Answer[];
   onOpen: (id: string) => void;
   onInsight: () => void;
 }) {
-  const [question, setQuestion] = useState("");
-  const [selectedDevice, setSelectedDevice] = useState("");
-  const [asked, setAsked] = useState("");
-  const [answer, setAnswer] = useState<Answer | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [tab, setTab] = useState<"ask" | "insights">("ask");
   const [selectedInsight, setSelectedInsight] = useState<string | null>(null);
-  const queryGeneration = useRef(0);
-  const pendingQuery = useRef<AbortController | null>(null);
-  // Invalidate the previous scope before a user can submit against the newly committed controls.
-  useLayoutEffect(() => {
-    queryGeneration.current += 1;
-    pendingQuery.current?.abort();
-    pendingQuery.current = null;
-    setAnswer(null);
-    setAsked("");
-    setError("");
-    setBusy(false);
-    return () => {
-      queryGeneration.current += 1;
-      pendingQuery.current?.abort();
-    };
-  }, [scopeKey, selectedDevice]);
-  async function submit(e?: React.FormEvent, sample?: string) {
-    e?.preventDefault();
-    const text = sample || question.trim();
-    if (!text || busy) return;
-    setQuestion(text);
-    setAsked(text);
-    setBusy(true);
-    setError("");
-    setAnswer(null);
-    const generation = ++queryGeneration.current;
-    const controller = new AbortController();
-    pendingQuery.current = controller;
-    try {
-      const result = await api.request<Answer>("/api/query", {
-        method: "POST",
-        signal: controller.signal,
-        body: JSON.stringify({
-          question: text,
-          ...range,
-          ...(selectedDevice ? { deviceId: selectedDevice } : {}),
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }),
-      });
-      if (queryGeneration.current === generation) setAnswer(result);
-    } catch (e) {
-      if (queryGeneration.current === generation) setError(errorMessage(e));
-    } finally {
-      if (queryGeneration.current === generation) {
-        pendingQuery.current = null;
-        setBusy(false);
-      }
-    }
-  }
   return (
     <>
       <div className="page-heading">
@@ -1009,99 +952,7 @@ function Ask({
         </div>
       )}
       {tab === "ask" ? (
-        <>
-          <div className="filter-bar">
-            <label>
-              <Monitor size={15} />
-              <span>筛选设备</span>
-              <select
-                aria-label="问答设备"
-                value={selectedDevice}
-                disabled={busy}
-                onChange={(event) => setSelectedDevice(event.target.value)}
-              >
-                <option value="">全部设备</option>
-                {devices.map((device) => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {device.deviceName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <form className="ask-form" onSubmit={(e) => void submit(e)}>
-            <textarea
-              aria-label="向 Mote 提问"
-              placeholder="比如，我最近都在忙什么？"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
-                  void submit(e);
-              }}
-              maxLength={8000}
-              rows={3}
-            />
-            <div>
-              <span>
-                <ShieldCheck size={14} />
-                只读查询 · 回答附带原始证据
-              </span>
-              <button
-                className="send-button"
-                type="submit"
-                disabled={busy || !question.trim() || !status.agent.configured}
-                aria-label="发送问题"
-              >
-                {busy ? (
-                  <LoaderCircle className="spin" size={19} />
-                ) : (
-                  <ArrowUp size={19} />
-                )}
-              </button>
-            </div>
-          </form>
-          {!answer && !busy && !asked && (
-            <div className="suggestions">
-              <span>从一个小问题开始</span>
-              {[
-                "我最近都做了些什么？",
-                "这周的时间主要花在了哪里？",
-                "最近有哪些值得接着做的事情？",
-              ].map((sample) => (
-                <button
-                  key={sample}
-                  onClick={() => void submit(undefined, sample)}
-                  disabled={!status.agent.configured}
-                >
-                  {sample}
-                  <ArrowRight size={14} />
-                </button>
-              ))}
-            </div>
-          )}
-          {busy && (
-            <div className="thinking-panel">
-              <span className="mote-symbol">m</span>
-              <div>
-                <Spinner label="正在查阅你的上下文…" />
-                <p>Agent 会选择检索工具、核对记录，再组织回答。</p>
-              </div>
-            </div>
-          )}
-          {error && (
-            <ErrorNotice
-              text={error}
-              retry={() => void submit(undefined, asked)}
-            />
-          )}
-          {answer && (
-            <div className="answer-panel">
-              <div className="asked-question">{asked}</div>
-              <AnswerView answer={answer} onOpen={onOpen} />
-            </div>
-          )}
-        </>
+        <Conversations api={api} configured={status.agent.configured} devices={devices} range={range} renderAnswer={answer => <AnswerView answer={answer} onOpen={onOpen}/>}/>
       ) : (
         <>
           {insights.length ? (
@@ -1849,7 +1700,6 @@ function App() {
                           devices={devices}
                           status={status}
                           range={range}
-                          scopeKey={period}
                           insights={insights}
                           onOpen={setEvidenceId}
                           onInsight={() => void generate()}
@@ -1868,7 +1718,7 @@ function App() {
                       )}
                       {page === "sources" && <Sources api={api} onOpen={setEvidenceId} />}
                       {page === "memories" && <Memories api={api} range={range} onOpen={setEvidenceId} />}
-                      <div hidden={page!=="settings"}><ServerSettings key={window.location.origin} api={api} onNavigate={onPage} onModelApplied={refresh}/></div>
+                      {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
                       {page === "developer" && status && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}

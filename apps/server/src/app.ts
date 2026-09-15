@@ -7,7 +7,7 @@ import { existsSync,readFileSync } from 'node:fs';
 import { join,dirname } from 'node:path';
 import { z } from 'zod';
 import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,type QueryResult,type CaptureRecord } from '@mote/shared';
-import { AgentNotConfiguredError,type ContextReader } from '@mote/agent';
+import { AgentNotConfiguredError,type ContextReader,type QueryInput } from '@mote/agent';
 import { modelProvider } from '@mote/shared/models';
 import { ModelSettingsStore,ModelSettingsError } from './model-settings.js';
 import { ReloadableAgent,modelSettingsFromConfig,applyModelSettings,createModelAgent,testModelConnection,type ModelAgentFactory } from './model-agent.js';
@@ -22,12 +22,13 @@ import { MemoryStore,MEMORY_EXTRACTION_PROMPT } from './memory.js';
 import {createUpdateService,registerUpdateRoutes} from './updates.js';
 import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
 import {registerCaptureBrowser} from './capture-browser.js';
+import {Conversations} from './conversations.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
-export interface QueryAgent {configured:boolean;query(args:QueryScope&{question:string}):Promise<QueryResult>;close():Promise<void>}
+export interface QueryAgent {configured:boolean;query(args:QueryInput):Promise<QueryResult>;close():Promise<void>}
 const scopeFields={after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),deviceId:z.string().min(1).max(200).optional(),timeZone:z.string().min(1).max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},{message:'Unknown time zone'}).optional()};
 const validRange=(v:QueryScope)=>!v.after||!v.before||Date.parse(v.after)<Date.parse(v.before);
-const querySchema=z.object({question:z.string().trim().min(1).max(8000),...scopeFields}).strict().refine(validRange,{message:'Invalid time range'});
+const querySchema=z.object({question:z.string().trim().min(1).max(8000),conversationId:z.string().uuid().optional(),after:scopeFields.after.nullable(),before:scopeFields.before.nullable(),deviceId:scopeFields.deviceId.nullable(),timeZone:scopeFields.timeZone.nullable()}).strict();
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
 export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory}) {
@@ -36,7 +37,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
   const indexer=new Indexer(store,config,diagnostics);
-  const sources=new SourceStore(store),memories=new MemoryStore(store);
+  const sources=new SourceStore(store),memories=new MemoryStore(store),conversations=new Conversations(store);
   const connections=dependencies?.connections??new Connections(store,sources);await connections.init();
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const credential=(req:FastifyRequest)=>identities.get(req);
@@ -66,7 +67,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const app=Fastify({logger:false,genReqId:()=>randomUUID(),requestIdHeader:false,bodyLimit:12*1024*1024,requestTimeout:180000,frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:'请求格式无效。',requestId});}});
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
-    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query',insights:'insights',index:'index',export:'export',import:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
+    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query',conversations:'query',insights:'insights',index:'index',export:'export',import:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
   };
   app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);done();}));
   app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
@@ -165,7 +166,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   });
   let closing=false;
   const activeQueries=new Set<Promise<QueryResult>>();
-  function queryAgent(input:QueryScope&{question:string},operation:'query'|'insight'='query') {
+  function queryAgent(input:QueryInput,operation:'query'|'insight'='query') {
     if(closing)throw new StoreError('Central node is shutting down',503);
     if(activeQueries.size>=2)throw new StoreError('Two Agent queries are already running; retry shortly',429);
     const revision=store.deletionRevision();
@@ -176,9 +177,27 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
   app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const scope=insightSchema.parse(req.body??{}),model=config.model;return memories.extract(await queryAgent({...scope,question:MEMORY_EXTRACTION_PROMPT}),model);});
+  app.get('/api/conversations',async req=>conversations.list(z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1000).optional()}).strict().parse(req.query)));
+  app.get('/api/conversations/:id',async req=>conversations.get(z.object({id:z.string().uuid()}).parse(req.params).id));
+  app.delete('/api/conversations/:id',async req=>conversations.delete(z.object({id:z.string().uuid()}).parse(req.params).id));
+  const runningConversations=new Set<string>();
   app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>{
     if(!agent.configured)throw new AgentNotConfiguredError();
-    return queryAgent(querySchema.parse(req.body));
+    const {conversationId,question,...selected}=querySchema.parse(req.body);
+    if(conversationId&&runningConversations.has(conversationId))throw new StoreError('An answer is already running in this conversation',409);
+    const previous=conversationId?conversations.get(conversationId):undefined;
+    if(previous&&previous.turnCount>=200)throw new StoreError('Conversation has reached its turn limit; start a new conversation',409);
+    const scope:QueryScope={};
+    for(const key of ['after','before','deviceId','timeZone'] as const) {
+      const value=selected[key]===undefined?previous?.scope[key]:selected[key];
+      if(value!==undefined&&value!==null)scope[key]=value;
+    }
+    insightSchema.parse(scope);
+    if(conversationId)runningConversations.add(conversationId);
+    try {
+      const result=await queryAgent({question,...scope,...(previous?{conversation:conversations.context(previous)}:{})});
+      return {...result,...conversations.append(previous,{question,...scope},result)};
+    }finally{if(conversationId)runningConversations.delete(conversationId);}
   });
   async function insight(range:QueryScope) {
     if(!agent.configured)throw new AgentNotConfiguredError();

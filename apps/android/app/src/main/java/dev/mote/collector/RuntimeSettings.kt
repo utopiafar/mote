@@ -13,12 +13,15 @@ object RuntimeSettings {
     private val executor = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private val projectionConsent = ProjectionConsentHandoff()
+    private var configurationObserver: (() -> Unit)? = null
+    fun observeConfiguration(observer: (() -> Unit)?) { configurationObserver = observer }
     fun takeProjectionConsentRequest() = projectionConsent.take()
     fun observeProjectionConsent(observer: (() -> Unit)?) { if (observer == null) projectionConsent.detach() else projectionConsent.attach(observer) }
     fun cancelProjectionConsentRequest() = projectionConsent.cancel()
     data class Applied(val projectionConsentRequired: Boolean)
     fun apply(context: Context, next: CollectorConfig, bindLocal: Boolean = false, change: (() -> Unit)? = null,
-        nextServer: String = if (next.hasSyncConnection()) next.server else "", finished: (kotlin.Result<Applied>) -> Unit) {
+        nextServer: String = if (next.hasSyncConnection()) next.server else "", expected: CollectorConfig? = null,
+        finished: (kotlin.Result<Applied>) -> Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
         val app = context.applicationContext; val settings = Settings(app)
         next.validate()
@@ -42,8 +45,13 @@ object RuntimeSettings {
                     check(SystemClock.elapsedRealtime() < deadline) { "当前处理暂未结束，原设置已保留，请稍后重试" }
                     Thread.sleep(25)
                 }
-                ConnectionGuard.reconfigure(app, nextServer, bindLocal) {
-                    if (change == null) settings.save(next) else change()
+                ConnectionGuard.reconfigure(app, nextServer, bindLocal, expected) {
+                    if (change == null) {
+                        val discardImageComparisons = settings.read().imageDedupeDiagnosticsEnabled && !next.imageDedupeDiagnosticsEnabled
+                        settings.save(next, expected)
+                        if (discardImageComparisons) app.imageDedupeDiagnostics().clear()
+                        ImageDedupeDiagnosticsMaintenance.configure(app, next.imageDedupeDiagnosticsEnabled)
+                    } else change()
                 }
             }
             // Also validate the still-saved configuration after a failed apply. The selected
@@ -88,6 +96,9 @@ object RuntimeSettings {
                     scheduled.isFailure -> kotlin.Result.failure(scheduled.exceptionOrNull()!!)
                     else -> applied
                 })
+                // The originating Activity may already be closed or replaced by a rotation.
+                // Deliver the committed snapshot to whichever MainActivity is currently visible.
+                configurationObserver?.invoke()
             }
         }
     }

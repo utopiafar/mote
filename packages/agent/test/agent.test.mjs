@@ -229,6 +229,7 @@ test(
     try {
       const result = await agent.query({
         question: "What do my synthetic research notes show?",
+        conversation: {turns:[{question:'Synthetic earlier request: review the observatory notes',answer:'Synthetic earlier answer is unverified.',scope:{},createdAt:'2026-09-12T08:00:00Z'}],omittedTurns:2},
       });
       assert.equal(requests.length, 3);
       assert.deepEqual(
@@ -236,6 +237,10 @@ test(
         ["search_context", "evidence"],
       );
       assert.equal(result.citations[0].id, record.id);
+      const firstUser=requests[0].messages.find(message=>message.role==='user');
+      assert.ok(JSON.stringify(firstUser).includes('Synthetic earlier request'));
+      assert.ok(JSON.stringify(firstUser).includes('omittedTurns'));
+      assert.ok(!JSON.stringify(requests[0].messages.filter(message=>message.role==='system')).includes('Synthetic earlier request'));
       for (const body of requests) {
         assert.deepEqual(body.thinking, {type:"enabled"});
         assert.equal(body.reasoning_effort, "high");
