@@ -36,6 +36,14 @@ app.on('browser-window-created', (_event, window) => {
         }
         throw new Error(`Settings operation did not complete: ${phase}`);
       };
+      const recordsIdle = async phase => {
+        currentPhase = phase;
+        for (let i = 0; i < 400; i++) {
+          if (await js(`document.querySelector('#records-status').getAttribute('aria-busy') === 'false'`)) return;
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        throw new Error(`Capture thumbnails did not settle: ${phase}`);
+      };
       const navigate = async page => {
         currentPhase = 'navigate ' + page;
         await js(`document.querySelector('[data-nav="${page}"]').click(); new Promise(resolve => setTimeout(resolve, 180))`);
@@ -225,13 +233,24 @@ app.on('browser-window-created', (_event, window) => {
       writeFileSync(fixtureArchive, JSON.stringify({ format: 'mote-desktop-queue', version: 1, records: fixtureRecords, blobs: { [hash]: generatedJpeg.toString('base64') } }));
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixtureArchive] });
       assert.equal((await js('window.mote.importQueue()')).imported, 31);
-      await navigate('records');
-      for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 30`); i++) await new Promise(resolve => setTimeout(resolve, 20));
-      assert.equal(await js(`document.querySelectorAll('.record-card').length`), 30);
-      assert(await js(`document.querySelector('#records-status').textContent.includes('31')`));
+      const captureBrowser = require('../dist/capture-browser');
+      const originalCaptureImage = captureBrowser.captureImage;
+      let releaseThumbnails;
+      const thumbnailsReady = new Promise(resolve => { releaseThumbnails = resolve; });
+      captureBrowser.captureImage = async (...args) => { if (args[4]) await thumbnailsReady; return originalCaptureImage(...args); };
+      try {
+        await navigate('records');
+        for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 30`); i++) await new Promise(resolve => setTimeout(resolve, 20));
+        assert.equal(await js(`document.querySelectorAll('.record-card').length`), 30);
+        assert(await js(`document.querySelector('#records-status').getAttribute('aria-busy') === 'true'`), 'Cards appear while generated thumbnails are still loading');
+        releaseThumbnails();
+        await recordsIdle('first capture page thumbnails');
+        assert(await js(`document.querySelector('#records-status').textContent.includes('31')`));
+      } finally { releaseThumbnails(); captureBrowser.captureImage = originalCaptureImage; }
       await js(`document.querySelector('#records-next').click()`);
       for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 1`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       assert.equal(await js(`document.querySelectorAll('.record-card').length`), 1);
+      await recordsIdle('second capture page thumbnails');
       await js(`document.querySelector('.record-card').click()`);
       for (let i = 0; i < 100 && await js(`!document.querySelector('#record-detail-image').src.startsWith('data:image/jpeg')`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       assert(await js(`document.querySelector('#record-detail-text').textContent.includes('<script>不可执行的证据</script>')`));

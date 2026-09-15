@@ -13,8 +13,8 @@ android {
         applicationId = "dev.mote.collector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 31
-        versionName = "0.0.20"
+        versionCode = 32
+        versionName = "0.0.21"
         buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
