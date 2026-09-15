@@ -3,10 +3,14 @@ import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import {FILE_PART_BYTES} from '@mote/shared';
 import {FileStore} from './files.js';
+import {FileReviews} from './file-reviews.js';
+import {fileExportEntries,exportTar} from './file-export.js';
+import {isLoopback,readProcessorJson} from './file-processors.js';
 import {FileProcessing} from './file-processing.js';
 import {StoreError} from './store.js';
 
 export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined){
+  const reviews=new FileReviews(files,processing);
   const grants=new Map<string,{id:string;until:number;check:()=>void}>();
   const cookieName=(id:string)=>'mote_file_'+id.replace(/-/g,'');
   const id=(req:FastifyRequest)=>(req.params as {id:string}).id;
@@ -20,7 +24,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.put('/api/file-sync/v1/uploads/:id/parts/:part',{bodyLimit:FILE_PART_BYTES},async req=>{if(!Buffer.isBuffer(req.body))throw new StoreError('Binary part required');return files.part(id(req),Number((req.params as {part:string}).part),req.body,check(req));});
   app.post('/api/file-sync/v1/uploads/:id/commit',async req=>files.commit(id(req),check(req)));
   app.put('/api/file-sync/v1/revisions',{bodyLimit:32768,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>files.revision(req.body,check(req)));
-  app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
+  app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
   app.get('/api/files/:id',async req=>file(req));
   app.get('/api/files/:id/chunks',async req=>{file(req);const q=z.object({offset:z.coerce.number().int().min(0).default(0)}).strict().parse(req.query);const items=files.chunks(id(req),q.offset);return {items,nextOffset:items.length===100?q.offset+100:null};});
   app.post('/api/files/:id/playback',async(req,reply)=>{
@@ -40,7 +44,14 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   // Owner-only routes are excluded from the collector route allowlist.
   app.delete('/api/files/:id',async req=>files.forget(id(req)));
   app.post('/api/files/:id/allow-again',async req=>{const q=z.object({sourceId:z.string(),externalId:z.string()}).strict().parse(req.body);files.store.db.prepare('DELETE FROM file_forgotten WHERE source_id=? AND external_id=?').run(q.sourceId,q.externalId);return {allowed:true};});
-  app.post('/api/files/:id/retry',async req=>{const q=z.object({stage:z.enum(['transcribe','summary']).default('transcribe')}).strict().parse(req.body??{});return processing.retry(id(req),q.stage);});
+  app.post('/api/files/:id/retry',async req=>{const q=z.object({stage:z.enum(['transcribe','diarize','summary']).default('transcribe')}).strict().parse(req.body??{});return processing.retry(id(req),q.stage);});
+  app.get('/api/files/:id/export',async(req,reply)=>{file(req);return reply.header('Content-Disposition',`attachment; filename="mote-recording-${id(req)}.tar.gz"`).type('application/gzip').send(exportTar(fileExportEntries(files,id(req))));});
+  app.get('/api/files/:id/assets',async(req,reply)=>{file(req);const q=z.object({artifactId:z.string().uuid(),name:z.string().max(100)}).strict().parse(req.query);const asset=files.asset(id(req),q.artifactId,q.name);return reply.header('Cache-Control','no-store').type(asset.mime).send(asset.bytes);});
+  app.get('/api/files/:id/reviews',async req=>{file(req);return reviews.list(id(req));});
+  app.post('/api/files/:id/reviews',{bodyLimit:16384,config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{file(req);return reviews.propose(id(req),req.body);});
+  app.post('/api/files/:id/reviews/:reviewId',{bodyLimit:65536},async req=>{file(req);return reviews.confirm(id(req),(req.params as {reviewId:string}).reviewId,req.body);});
+  app.post('/api/files/:id/speakers',{bodyLimit:16384},async req=>{file(req);return reviews.nameSpeakers(id(req),req.body);});
+  app.post('/api/file-processing/test-local',async()=>{const settings=processing.currentSettings();if(!isLoopback(settings.localEndpoint))throw new StoreError('Local worker must use loopback');const endpoint=new URL(settings.localEndpoint);endpoint.pathname='/health';const response=await fetch(endpoint,{headers:settings.localWorkerApiKey?{Authorization:`Bearer ${settings.localWorkerApiKey}`}:{},signal:AbortSignal.timeout(10000),redirect:'error'});return z.object({version:z.number(),execution:z.literal('local'),asr:z.boolean(),diarization:z.boolean()}).strict().parse(await readProcessorJson(response,4096));});
   app.get('/api/file-processing',async()=>processing.view());
   app.put('/api/file-processing',{bodyLimit:16384},async req=>processing.update(req.body));
   return (req:FastifyRequest)=>{

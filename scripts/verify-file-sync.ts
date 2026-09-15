@@ -32,7 +32,7 @@ console.info(JSON.stringify({transport:'passed',originals:report.originals.lengt
 
 if(process.argv.includes('--live-model')){
  const status=await request('/api/status');assert.equal(status.agent.configured,true);report.model=status.agent.model;
- const settings=await request('/api/file-processing');await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,summarize:true,endpoint:process.env.MOTE_FILE_TEST_ASR??'http://127.0.0.1:59019/transcribe',dailyAudioMinutes:10}},'PUT');
+ const settings=await request('/api/file-processing');await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',summarize:true,endpoint:process.env.MOTE_FILE_TEST_ASR??'http://127.0.0.1:59019/transcribe',dailyAudioMinutes:10}},'PUT');
  const audio=android.initialFiles.find((f:any)=>f.item.mimeType==='audio/wav');assert.ok(audio);
  const targets=android.initialFiles.filter((f:any)=>/^(audio|text)\//.test(f.item.mimeType));
  const deadline=Date.now()+240000;let details:any[]=[];

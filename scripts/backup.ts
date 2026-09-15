@@ -85,7 +85,7 @@ try {
   } finally { db.close(); }
   // Upload staging is deliberately excluded. Restored clients reopen sessions and resume from their encrypted staging.
   const restored = new DatabaseSync(join(out, 'mote.sqlite'));
-  try { if(restored.prepare("SELECT 1 FROM sqlite_master WHERE name='file_uploads'").get()) restored.exec("PRAGMA foreign_keys=ON; DELETE FROM file_uploads; UPDATE file_jobs SET state='waiting' WHERE state='running'; UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running'"); } finally { restored.close(); }
+  try { if(restored.prepare("SELECT 1 FROM sqlite_master WHERE name='file_uploads'").get()) restored.exec("PRAGMA foreign_keys=ON; DELETE FROM file_uploads; UPDATE file_jobs SET state='waiting' WHERE state='running'; UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running'"); if(restored.prepare("SELECT 1 FROM sqlite_master WHERE name='file_steps'").get())restored.exec("UPDATE file_steps SET state='waiting' WHERE state='running'"); } finally { restored.close(); }
   checksums['mote.sqlite'] = await sum(join(out, 'mote.sqlite'));
   await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, createdAt: new Date().toISOString(), checksums, note: 'Tokens and data encryption keys are intentionally excluded. Preserve MOTE_DATA_KEY separately if enabled.' }, null, 2), { mode: 0o600, flag: 'wx' });
   console.info(`Consistent vault backup written to ${out}. Restore into an empty data directory; keep the same data encryption key.`);

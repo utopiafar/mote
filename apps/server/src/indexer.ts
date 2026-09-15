@@ -1,3 +1,4 @@
+import {isLoopback} from './file-processors.js';
 import type {FileStore} from './files.js';
 import type { Config } from './config.js';
 import type { Store, Range } from './store.js';
@@ -46,12 +47,12 @@ export class Indexer {
   private async run() {
     for(const item of this.store.pending(8)) {
       if(this.closing)break;
-      if(item.source==='activity')continue;
+      if(item.source==='activity'||this.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(item.id))continue;
       const task=async()=>{const vector=await this.embed([item.appName,item.windowTitle,item.ocrText,...(item.mood === undefined?[]:[`User-provided mood: ${item.mood}`])].join('\n'));if(!this.closing)this.store.indexed(item.id,vector,this.config.embeddingModel);return vector;};
       try {if(this.diagnostics)await this.diagnostics.measure('index','embedding',task,()=>({count:1}));else await task();}
       catch(e){if(!this.closing)this.store.indexFailed(item.id,e instanceof EmbeddingError?e.message:'Embedding operation failed');}
     }
-    for(const item of this.files?.pendingIndex(this.config.embeddingModel)??[]){
+    for(const item of this.files?.pendingIndex(this.config.embeddingModel,isLoopback(this.config.embeddingBaseUrl))??[]){
       if(this.closing)break;
       try{const vector=await this.embed(item.text);if(!this.closing)this.files!.indexed(item.id,vector,this.config.embeddingModel);}catch{if(!this.closing)this.files!.indexFailed(item.id);}
     }

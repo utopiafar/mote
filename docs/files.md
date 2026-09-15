@@ -1,3 +1,7 @@
+# 文件处理更新
+
+中央文件处理现已接入 Cordis，支持本地多人录音、说话人分离、导出和人工复核。最新部署与扩展说明见 [中央文件处理](file-processing.md)。
+
 # 文件归档与中央处理
 
 实现与扩展设计见 [文件同步设计](file-sync-design.md)，实测记录见 [文件同步验证](file-sync-validation.md)。
@@ -55,15 +59,9 @@
 
 ### 可选本机 Whisper 服务
 
-在独立 Python 环境安装 `faster-whisper==1.2.1`，准备好相应的本地模型目录，再启动：
+安装固定版本依赖、FFmpeg 并预先准备模型。最新启动命令、多人说话人分离、本地模型配置及持续运行的服务模板见 [中央文件处理](file-processing.md#在中央主机启动本地服务)。
 
-```sh
-python scripts/transcription-server.py --model /absolute/path/to/model --port 9009
-```
-
-服务只绑定 loopback，不自动下载模型。每次解码和识别使用单独子进程，超时终止；原始音频临时文件在完成后删除。可通过环境变量 `MOTE_TRANSCRIPTION_TOKEN` 设置服务密钥。
-
-本轮实测使用英文 `tiny.en` 模型和模拟器 TTS 生成的 WAV。中文通话、多说话人、噪声、长录音及实际手机编码仍需对应模型和样本验收；该示例不自动辨认说话人。
+仅英文 tiny.en 合成录音属于链路验收；中文、嘈杂环境、长录音仍需对应模型与样本验证。
 
 ### 自定义转写实现
 

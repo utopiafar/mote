@@ -63,7 +63,10 @@ export function configFromEnv() {
     catch{throw new ConfigError(name,`${name} must be a JSON object up to 16 KiB`);}
   };
   const modelHeaders=jsonObject('MOTE_MODEL_HEADERS') as Record<string,string>,modelExtraBody=jsonObject('MOTE_MODEL_EXTRA_BODY');
+  let fileProcessorModules:string[]=[];
+  try{fileProcessorModules=JSON.parse(env.MOTE_FILE_PROCESSOR_PLUGINS??'[]');if(!Array.isArray(fileProcessorModules)||fileProcessorModules.length>30||fileProcessorModules.some(s=>typeof s!=='string'||s.length>2000))throw Error();}catch{throw new ConfigError('MOTE_FILE_PROCESSOR_PLUGINS','Use a JSON array of trusted installed plugin modules');}
   const config={
+    fileProcessorModules,
     host:env.MOTE_HOST||'127.0.0.1',port:number('MOTE_PORT',47832,1,65535,true),dataDir,
     profile,tokenFromEnvironment:Boolean(env.MOTE_TOKEN?.trim()),
     updateRepository:text('MOTE_UPDATE_REPOSITORY','utopiafar/mote'),updateChannel:choice('MOTE_UPDATE_CHANNEL',['stable','preview'] as const,'stable'),
@@ -125,5 +128,5 @@ export function configFromEnv() {
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='fileProcessorModules'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

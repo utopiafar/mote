@@ -10,7 +10,8 @@ import {privateDirectory,privateFile} from './private-storage.js';
 
 type Upload={id:string;source_id:string;manifest:string;fingerprint:string;created_at:string;ack:string|null};
 type Version={capture_id:string;source_id:string;external_id:string;revision:string;manifest:string;object_hash:string|null};
-type Chunk={id:string;capture_id:string;artifact_id:string;start_ms:number|null;end_ms:number|null;text:string};
+type Chunk={id:string;capture_id:string;artifact_id:string;start_ms:number|null;end_ms:number|null;text:string;metadata?:string};
+const activeChunks="a.current=1 AND NOT EXISTS (SELECT 1 FROM file_artifacts preferred WHERE preferred.capture_id=a.capture_id AND preferred.current=1 AND ((preferred.kind='corrected-dialogue' AND a.kind!='corrected-dialogue') OR (preferred.kind='dialogue' AND a.kind IN ('transcript','text','image-text'))))";
 const timestamp=()=>new Date().toISOString();
 function durable(path:string,bytes:Buffer){writeFileSync(path,bytes,{mode:0o600,flag:'wx'});const fd=openSync(path,'r');try{fsyncSync(fd);}finally{closeSync(fd);}}
 function syncDir(path:string){const fd=openSync(path,'r');try{fsyncSync(fd);}finally{closeSync(fd);}}
@@ -109,7 +110,26 @@ export class FileStore {
     });
   }
   version(id:string){const v=this.store.db.prepare('SELECT * FROM file_versions WHERE capture_id=?').get(id) as Version|undefined;if(!v)throw new StoreError('File not found',404);return v;}
-  detail(id:string){const v=this.version(id),head=this.store.db.prepare('SELECT origin_missing FROM file_heads WHERE capture_id=?').get(id) as {origin_missing:number}|undefined;return {captureId:id,...JSON.parse(v.manifest),hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job:this.store.db.prepare('SELECT state,stage,attempts,error,summary_state FROM file_jobs WHERE capture_id=?').get(id)??null,artifacts:(this.store.db.prepare('SELECT id,kind,created_at,json FROM file_artifacts WHERE capture_id=? AND current=1 ORDER BY created_at').all(id) as {id:string;kind:string;created_at:string;json:string}[]).map(a=>({id:a.id,kind:a.kind,createdAt:a.created_at,...JSON.parse(a.json)}))};}
+  detail(id:string,includeArtifacts=true){
+    const v=this.version(id),db=this.store.db,head=db.prepare('SELECT origin_missing FROM file_heads WHERE capture_id=?').get(id) as {origin_missing:number}|undefined;
+    const artifacts=includeArtifacts?(db.prepare('SELECT id,kind,created_at,json FROM file_artifacts WHERE capture_id=? AND current=1 ORDER BY created_at').all(id) as {id:string;kind:string;created_at:string;json:string}[]).map(a=>{
+      const {transcript,segments,...data}=JSON.parse(a.json);return {id:a.id,kind:a.kind,createdAt:a.created_at,...data,...(transcript?{durationMs:transcript.durationMs,segments:transcript.segments.length,warnings:transcript.warnings}:segments?{segments:Array.isArray(segments)?segments.length:segments}:{})};
+    }):[];
+    return {captureId:id,...JSON.parse(v.manifest),hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job:db.prepare('SELECT state,stage,attempts,error,summary_state,local_only FROM file_jobs WHERE capture_id=?').get(id)??null,artifacts,steps:includeArtifacts?db.prepare('SELECT step,processor,version,state,attempts,error FROM file_steps WHERE capture_id=? ORDER BY rowid').all(id):[]};
+  }
+  saveAsset(artifactId:string,name:string,mime:string,bytes:Buffer){
+    if(!/^speaker_samples\/SPEAKER_[0-9]{1,2}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');
+    this.store.reserveMetadata(bytes.length+1024);const hash=sha256(bytes),destination=join(this.objects,hash);
+    if(!existsSync(destination)){const temp=destination+'.'+randomUUID()+'.tmp';privateDirectory(temp);try{durable(join(temp,'0'),this.seal(bytes));syncDir(temp);renameSync(temp,destination);syncDir(this.objects);}finally{rmSync(temp,{force:true,recursive:true});}}
+    this.store.db.prepare('INSERT OR IGNORE INTO file_objects VALUES(?,?,?)').run(hash,bytes.length,1);
+    this.store.db.prepare('INSERT INTO file_assets VALUES(?,?,?,?)').run(artifactId,name,mime,hash);
+  }
+  asset(captureId:string,artifactId:string,name:string){
+    this.version(captureId);const row=this.store.db.prepare('SELECT f.object_hash,f.mime FROM file_assets f JOIN file_artifacts a ON a.id=f.artifact_id WHERE a.capture_id=? AND a.id=? AND f.name=?').get(captureId,artifactId,name) as {object_hash:string;mime:string}|undefined;
+    if(!row||!/^[a-f0-9]{64}$/.test(row.object_hash))throw new StoreError('Asset not found',404);
+    return {mime:row.mime,bytes:this.unseal(this.readPart(join(this.objects,row.object_hash),0))};
+  }
+
   list(args:ContextRange&{sourceId?:string;query?:string;mimePrefix?:string}={}){
     const clauses=['h.capture_id=v.capture_id','c.id=v.capture_id'],values:(string|number)[]=[];
     for(const [key,column] of [['sourceId','v.source_id'],['deviceId','c.device_id'],['after','c.captured_at'],['before','c.captured_at']] as const){if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(args[key]!);}}
@@ -117,7 +137,7 @@ export class FileStore {
     if(args.mimePrefix){clauses.push("instr(json_extract(v.manifest,'$.item.mimeType'),?)=1");values.push(args.mimePrefix);}
     const offset=Number(args.cursor??0);if(!Number.isSafeInteger(offset)||offset<0)throw new StoreError('Invalid cursor');
     const limit=Math.min(200,Math.max(1,args.limit??50)),rows=this.store.db.prepare(`SELECT v.capture_id FROM file_versions v,file_heads h,captures c WHERE ${clauses.join(' AND ')} ORDER BY c.captured_at DESC,c.id LIMIT ? OFFSET ?`).all(...values,limit+1,offset) as {capture_id:string}[];
-    return {items:rows.slice(0,limit).map(r=>this.detail(r.capture_id)),nextCursor:rows.length>limit?String(offset+limit):null};
+    return {items:rows.slice(0,limit).map(r=>this.detail(r.capture_id,false)),nextCursor:rows.length>limit?String(offset+limit):null};
   }
   private readPart(directory:string,part:number){privateDirectory(directory);const path=join(directory,String(part));privateFile(path);return readFileSync(path);}
   *bytes(id:string,start=0,end?:number):Generator<Buffer>{const v=this.version(id);if(!v.object_hash)throw new StoreError('Original is not archived',404);if(!/^[a-f0-9]{64}$/.test(v.object_hash))throw new StoreError('Invalid object identifier',500);const m=JSON.parse(v.manifest) as FileRevision;end??=m.sizeBytes-1;
@@ -125,23 +145,23 @@ export class FileStore {
     for(let p=Math.floor(start/FILE_PART_BYTES);p<=Math.floor(end/FILE_PART_BYTES);p++){this.version(id);const bytes=this.unseal(this.readPart(join(this.objects,v.object_hash),p));yield bytes.subarray(Math.max(0,start-p*FILE_PART_BYTES),Math.min(bytes.length,end-p*FILE_PART_BYTES+1));}
   }
   stream(id:string,start=0,end?:number){return Readable.from(this.bytes(id,start,end));}
-  chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND a.current=1 ORDER BY c.start_ms,c.rowid LIMIT ? OFFSET ?').all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
-  private chunkRecord(c:Chunk):CaptureRecord & ContextRecord{const record=this.store.evidence([c.capture_id])[0],v=this.version(c.capture_id);return {...record,id:c.id,capturedAt:record.capturedAt,deviceId:record.deviceId,appName:record.appName,windowTitle:record.windowTitle,sourceType:'file',ocrText:c.text,durationMs:0,provenance:{...record.provenance!,layer:'derived'},fileEvidence:fileEvidenceSchema.parse({captureId:c.capture_id,revision:v.revision,artifactId:c.artifact_id,chunkId:c.id,...(c.start_ms===null?{}:{startMs:c.start_ms,endMs:c.end_ms})})};}
+  chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
+  private chunkRecord(c:Chunk):CaptureRecord & ContextRecord{const record=this.store.evidence([c.capture_id])[0],v=this.version(c.capture_id);return {...record,id:c.id,capturedAt:record.capturedAt,deviceId:record.deviceId,appName:record.appName,windowTitle:record.windowTitle,sourceType:'file',ocrText:((JSON.parse(c.metadata??'{}') as {speaker?:string}).speaker?`[${JSON.parse(c.metadata??'{}').speaker}] `:'')+c.text,durationMs:0,provenance:{...record.provenance!,layer:'derived'},fileEvidence:fileEvidenceSchema.parse({captureId:c.capture_id,revision:v.revision,artifactId:c.artifact_id,chunkId:c.id,...JSON.parse(c.metadata??'{}'),...(c.start_ms===null?{}:{startMs:c.start_ms,endMs:c.end_ms})})};}
   evidence(ids:string[]){return ids.flatMap(id=>{const c=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1').get(id) as Chunk|undefined;return c?[this.chunkRecord(c)]:[];});}
   search(args:ContextRange&{query?:string}){if(args.source&&args.source!=='file'||args.collection==='activity')return [];const q=args.query?.trim();if(!q)return [];
-    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id','a.current=1','r.id=c.capture_id'],values:(string|number)[]=[];
+    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id'],values:(string|number)[]=[];
     for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.captured_at'],['before','r.captured_at']] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(args[key]!);}
     const base=`FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')}`;
     let rows:Chunk[];try{rows=this.store.db.prepare(`SELECT c.* ${base} AND c.id IN (SELECT id FROM file_chunks_fts WHERE file_chunks_fts MATCH ?) LIMIT ?`).all(...values,q,Math.min(args.limit??30,100)) as Chunk[];}catch{rows=[];}
     if(!rows.length)rows=this.store.db.prepare(`SELECT c.* ${base} AND instr(lower(c.text),lower(?))>0 LIMIT ?`).all(...values,q,Math.min(args.limit??30,100)) as Chunk[];
     return rows.map(c=>this.chunkRecord(c));
   }
-  pendingIndex(model:string){return this.store.db.prepare('SELECT c.id,c.text FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE a.current=1 AND c.index_error IS NULL AND (c.embedding IS NULL OR c.embedding_model!=?) ORDER BY c.rowid LIMIT 8').all(model) as {id:string;text:string}[];}
+  pendingIndex(model:string,allowLocalOnly=false){return this.store.db.prepare(`SELECT c.id,c.text FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_jobs j ON j.capture_id=c.capture_id WHERE ${activeChunks} AND (?=1 OR j.local_only=0) AND c.index_error IS NULL AND (c.embedding IS NULL OR c.embedding_model!=?) ORDER BY c.rowid LIMIT 8`).all(Number(allowLocalOnly),model) as {id:string;text:string}[];}
   indexed(id:string,vector:number[],model:string){const json=JSON.stringify(vector);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('UPDATE file_chunks SET embedding=?,embedding_model=?,index_error=NULL WHERE id=? AND artifact_id IN (SELECT id FROM file_artifacts WHERE current=1)').run(json,model,id);}
   indexFailed(id:string){this.store.db.prepare("UPDATE file_chunks SET index_error='provider_failed' WHERE id=?").run(id);}
   vectorSearch(vector:number[],model:string,args:ContextRange){
     if(args.source&&args.source!=='file'||args.collection==='activity')return [];
-    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id','a.current=1','r.id=c.capture_id','c.embedding_model=?','c.embedding IS NOT NULL'],values:(string|number)[]=[model];
+    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id','c.embedding_model=?','c.embedding IS NOT NULL'],values:(string|number)[]=[model];
     for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.captured_at'],['before','r.captured_at']] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(args[key]!);}
     const rows=this.store.db.prepare(`SELECT c.* FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')}`).iterate(...values);
     const norm=Math.hypot(...vector),best:{row:Chunk;score:number}[]=[],limit=Math.min(args.limit??30,100);
@@ -153,7 +173,7 @@ export class FileStore {
   forget(id:string){const v=this.version(id);this.store.db.prepare('INSERT OR IGNORE INTO file_forgotten VALUES(?,?)').run(v.source_id,v.external_id);const ids=this.store.db.prepare('SELECT capture_id FROM file_versions WHERE source_id=? AND external_id=?').all(v.source_id,v.external_id) as {capture_id:string}[];for(const r of ids)this.store.delete(r.capture_id);this.sweep();return {deleted:ids.length};}
   sweep(){
     for(const u of this.store.db.prepare('SELECT id FROM file_uploads WHERE ack IS NOT NULL OR created_at<?').all(new Date(Date.now()-7*86400000).toISOString()) as {id:string}[]){rmSync(join(this.uploads,u.id),{recursive:true,force:true});this.store.db.prepare('DELETE FROM file_uploads WHERE id=?').run(u.id);}
-    this.store.db.exec('DELETE FROM file_objects WHERE hash NOT IN (SELECT object_hash FROM file_versions WHERE object_hash IS NOT NULL)');
+    this.store.db.exec('DELETE FROM file_objects WHERE hash NOT IN (SELECT object_hash FROM file_versions WHERE object_hash IS NOT NULL UNION SELECT object_hash FROM file_assets)');
     for(const name of readdirSync(this.objects)){const path=join(this.objects,name);if(Date.now()-statSync(path).mtimeMs<3600000)continue;if(!/^[a-f0-9]{64}(\.[a-f0-9-]+\.tmp)?$/.test(name))continue;if(!this.store.db.prepare('SELECT 1 FROM file_objects WHERE hash=?').get(name))rmSync(path,{recursive:true,force:true});}
   }
 }
