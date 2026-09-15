@@ -103,7 +103,7 @@ class CaptureRecordsActivity : Activity() {
         val zone = ZoneId.systemDefault(); val after = date.atStartOfDay(zone).toInstant().toString(); val before = date.plusDays(1).atStartOfDay(zone).toInstant().toString()
         val cursor = cursors.last(); val pageNumber = cursors.size
         dateButton.text = date.toString(); nextDay.isEnabled = date < LocalDate.now()
-        previousPage.isEnabled = false; nextPage.isEnabled = false; status.text = "正在读取${if (remote) "中央归档" else "本机记录"}…"
+        previousPage.isEnabled = false; nextPage.isEnabled = false; status.text = "正在读取${if (remote) "中央归档" else "本机记录"} · 第 $pageNumber 页 · 每页最多 20 条…"
         clearList(); imageExecutor.queue.clear()
         repeat(6) { text(list, "▧  正在读取记录…", 15f).apply {
             minHeight = moteDp(88); gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(0xffeeeeee.toInt())
@@ -114,7 +114,9 @@ class CaptureRecordsActivity : Activity() {
                 val settings = Settings(this); val config = settings.read()
                 if (remote && !config.hasSyncConnection()) error("请先在连接与同步中配置中央节点")
                 val client = if (remote) CaptureRecordClient(config, settings.deviceId) else null
-                val page = client?.page(after, before, cursor, source) ?: queue().capturePage(after, before, cursor, source = source)
+                val page = client?.page(after, before, cursor, source) ?: queue().capturePage(after, before, cursor, source = source, onCount = { total ->
+                    runOnUiThread { if (!isDestroyed && stamp == generation) status.text = "本机记录 · 当天 $total 条 · 第 $pageNumber 页 · 正在读取本页…" }
+                })
                 val items = page.getJSONArray("items")
                 val records = (0 until items.length()).map { items.getJSONObject(it).also { item -> java.util.UUID.fromString(item.getString("id")); Instant.parse(item.getString("capturedAt")) } }
                 val total = page.getInt("totalCount")

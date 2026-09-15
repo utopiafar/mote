@@ -123,7 +123,9 @@ async function loadRecords(): Promise<void> {
     byId('records-page').textContent = page.items.length ? `第 ${recordsPage + 1} 页 · 每页最多 30 张` : '';
     byId<HTMLButtonElement>('records-previous').disabled = recordsPage === 0;
     byId<HTMLButtonElement>('records-next').disabled = !recordsNext;
-    if (page.items.length) byId('records-status').textContent = `${location === 'local' ? '本机保留' : '中央已归档'} · 列表已读取 ${page.items.length} 条，正在加载缩略图…`;
+    const pageStatus = `${location === 'local' ? '本机保留' : '中央已归档'} · 当天共 ${page.totalCount} 张截图 · 本页 ${page.items.length} 条`;
+    if (page.items.length) byId('records-status').textContent = `${pageStatus} · 正在加载缩略图…`;
+    byId('records-status').setAttribute('aria-busy', 'false');
     const images: { element: HTMLImageElement; item: import('./capture-browser').BrowserCapture }[] = [];
     for (const item of page.items) {
       const card = document.createElement('button'); card.type = 'button'; card.className = 'record-card';
@@ -133,7 +135,8 @@ async function loadRecords(): Promise<void> {
       const time = document.createElement('time'); time.dateTime = item.capturedAt; time.textContent = new Date(item.capturedAt).toLocaleTimeString();
       const state = document.createElement('small'); state.textContent = item.syncError ? `同步需处理 · ${ocrLabel(item)}` : `${location === 'local' ? item.uploaded ? '图片已同步 · ' : '本机待同步 · ' : ''}${ocrLabel(item)}`;
       caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => void openRecord(item, location, revision));
-      byId('records-grid').append(card); images.push({ element: image, item });
+      byId('records-grid').append(card); if (item.hasImage) images.push({ element: image, item });
+      else image.alt = '此记录没有图片';
     }
     let next = 0, completed = 0, failed = 0;
     await Promise.all(Array.from({ length: Math.min(4, images.length) }, async () => {
@@ -142,7 +145,7 @@ async function loadRecords(): Promise<void> {
         try { const image = await desktopApi.captureImage(location, item.id, true); if (revision === recordsRevision) element.src = image; }
         catch { failed++; if (revision === recordsRevision) element.alt = '缩略图暂不可用；点击查看详情或刷新'; }
         completed++;
-        if (revision === recordsRevision) byId('records-status').textContent = `正在加载缩略图 ${completed}/${images.length} · 失败 ${failed}`;
+        if (revision === recordsRevision) byId('records-status').textContent = `${pageStatus} · 正在加载缩略图 ${completed}/${images.length} · 失败 ${failed}`;
       }
     }));
     if (revision === recordsRevision && page.items.length) byId('records-status').textContent = `${location === 'local' ? '本机保留' : '中央已归档'} · 当天共 ${page.totalCount} 张截图 · 缩略图成功 ${completed - failed}/${images.length}${failed ? ` · ${failed} 张失败，可刷新重试` : ''}`;

@@ -12,6 +12,17 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-desktop-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 describe('durable capture queue', () => {
+  it('pages only matching screenshots and isolates returned records from the durable queue', async () => {
+    const first = event(), second = {...event('f50650f0-fb31-4215-90cd-c96dc62d5e93'), capturedAt: '2026-09-14T13:00:00.000Z'};
+    await queue.enqueue({...first, capturedAt: '2026-09-14T12:00:00.000Z'}, image);
+    await queue.enqueue(second, image);
+    const page = queue.pageForBrowser('2026-09-14T00:00:00.000Z', '2026-09-15T00:00:00.000Z', 0, 1);
+    expect(page.totalCount).toBe(2); expect(page.records.map(r => r.event.id)).toEqual([second.id]);
+    page.records[0].event.ocrText = 'mutated';
+    expect(queue.recordForBrowser(second.id)?.event.ocrText).toBe(second.ocrText);
+    expect(queue.pageForBrowser('2026-09-14T00:00:00.000Z', '2026-09-15T00:00:00.000Z', 1, 1).records.map(r => r.event.id)).toEqual([first.id]);
+    expect(queue.pageForBrowser('2026-09-15T00:00:00.000Z', '2026-09-16T00:00:00.000Z', 0, 1).totalCount).toBe(0);
+  });
   it('makes progress at the byte limit by consuming pre-reserved OCR space, including worst-case escaping', async () => {
     const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const } };
     await queue.enqueue(original, image); await queue.acknowledge(original.id);

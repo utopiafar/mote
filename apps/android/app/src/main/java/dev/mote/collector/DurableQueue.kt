@@ -259,27 +259,37 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         return event
     }
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
-    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen"): JSONObject = guarded {
+    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen", onCount: ((Int) -> Unit)? = null): JSONObject = guarded {
         require(limit in 1..60)
         require(source in setOf("screen", "media", "notification", "device_event", "note", "activity"))
         val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
         val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
         val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
-        val files = records()
+        // No last-modified sort or full-day materialization. Keep only limit + 1 candidates.
+        val files = dir.listFiles()?.filter { it.extension == "event" } ?: error("无法读取本机存储目录")
         val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
         cache.keys.retainAll(files.map { it.name }.toSet())
-        val matching = files.asSequence().map { it to eventStats(it, cache) }
-            .filter { it.second.source == source }
-            .map { (file, stats) -> file to java.time.Instant.parse(stats.capturedAt) }
-            .filter { (_, date) -> date >= start && date < end }
-            .sortedWith(compareByDescending<Pair<File, java.time.Instant>> { it.second }.thenByDescending { it.first.nameWithoutExtension }).toList()
-        val page = matching.filter { (file, date) -> at == null || date < at || (date == at && file.nameWithoutExtension < id!!) }.take(limit + 1)
+        val order = compareBy<Pair<File, java.time.Instant>> { it.second }.thenBy { it.first.nameWithoutExtension }
+        val candidates = java.util.PriorityQueue(limit + 1, order)
+        var total = 0
+        for (file in files) {
+            val stats = eventStats(file, cache)
+            if (stats.source != source) continue
+            val date = java.time.Instant.parse(stats.capturedAt)
+            if (date < start || date >= end) continue
+            total++
+            if (at != null && (date > at || (date == at && file.nameWithoutExtension >= id!!))) continue
+            candidates.add(file to date)
+            if (candidates.size > limit + 1) candidates.poll()
+        }
+        onCount?.invoke(total)
+        val page = candidates.sortedWith(order.reversed())
         val items = page.take(limit).map { read(it.first) }
         val next = if (page.size <= limit) null else items.last().let {
             Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject().put("at", it.getString("capturedAt")).put("id", it.getString("id")).toString().toByteArray())
         }
         JSONObject().put("items", org.json.JSONArray(items.map { display(it).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
-            .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
+            .put("totalCount", total).put("nextCursor", next ?: JSONObject.NULL)
     }
     fun summary(): JSONObject = guarded {
         val files = records(); var screens = 0; var notes = 0; var activities = 0; var media = 0; var systemEvents = 0; var unreadable = 0

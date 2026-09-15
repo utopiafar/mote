@@ -1,16 +1,16 @@
 import type { DiagnosticsRecorder } from '@mote/diagnostics';
 import { randomUUID } from 'node:crypto';
-import { desktopCapturer, nativeImage, powerMonitor, screen, systemPreferences } from 'electron';
-import type { NativeImage } from 'electron';
+import { desktopCapturer, powerMonitor, screen, systemPreferences } from 'electron';
 import type { Config, Status, Platform, CaptureEvent, NsfwGate } from './contracts';
 import { decideSync } from './sync-policy';
 import type { LocalSourceManager } from './source-manager';
 import { MAX_IMAGE_BYTES, publicConfig } from './config';
 import { DurableQueue, QueueFullError } from './queue';
 import { activeApplication, foregroundApplication, recognizeText, readPowerState } from './native';
-import { maskBitmap, reviewLocally } from './privacy';
+import { reviewLocally } from './privacy';
 import { collectionForApp, permitsVisibleContent } from './app-collection';
 import { collectRecordMetadata } from './record-metadata';
+import { prepareScreenshot, maskScreenshot } from './capture-frame';
 import { heartbeat, uploadCapture, uploadDeferredOcr, DeletedCaptureFailure } from './transport';
 import { EventJournal, failureCode, TransportFailure, type EventStage } from './support';
 
@@ -176,10 +176,6 @@ export class Collector {
     } catch { if (id && !abort.signal.aborted) await this.queue.deferOcr(id).catch(() => undefined); }
     finally { this.ocrBusy = false; }
   }
-  private finalImage(image: NativeImage, rectangles: Config['masks']): NativeImage {
-    const { width, height } = image.getSize();
-    return nativeImage.createFromBitmap(maskBitmap(image.toBitmap(), width, height, rectangles), { width, height });
-  }
   private async capture(): Promise<void> {
     if (!this.running || this.capturing) return;
     this.capturing = true;
@@ -241,7 +237,7 @@ export class Collector {
       if (!valid()) return;
       if (before.appId !== after.appId || before.pid !== after.pid || collectionForApp(after.appId, cfg) !== 'content' || !permitsVisibleContent(after.visibleAppIds, after.unknownVisibleWindows, cfg) || before.visibleAppIds.join('\n') !== after.visibleAppIds.join('\n') || before.unknownVisibleWindows !== after.unknownVisibleWindows) { this.pause('采样期间屏幕应用发生变化或存在排除窗口，已跳过本次采集'); return; }
       // All unredacted pixels remain only in process memory. Never write a raw image.
-      let sanitized = this.finalImage(source.thumbnail, cfg.masks);
+      let sanitized = maskScreenshot(prepareScreenshot(source.thumbnail, display.size, cfg.captureMaxSide), cfg.masks);
       let appliedMasks = cfg.masks.length;
       if (cfg.nsfwEnabled) {
         stage = 'MODEL';
@@ -260,7 +256,7 @@ export class Collector {
         const decision = await reviewLocally(cfg.privacyModelUrl, sanitized.toJPEG(cfg.jpegQuality), abort.signal);
         if (!valid()) return;
         if (!decision.allow) { void this.events?.record('PRIVACY', 'FILTERED'); this.pause('本地隐私模型拒绝本次采集'); return; }
-        sanitized = this.finalImage(sanitized, decision.rectangles);
+        sanitized = maskScreenshot(sanitized, decision.rectangles);
         appliedMasks += decision.rectangles.length;
       }
       const jpeg = sanitized.toJPEG(cfg.jpegQuality);

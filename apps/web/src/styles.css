@@ -901,7 +901,7 @@ strong {
 .capture-image img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: top;
   display: block;
 }
@@ -1125,6 +1125,8 @@ strong {
   box-shadow: 0 0 0 4px #e7ecde;
 }
 .load-more {
+  gap: 12px;
+  flex-wrap: wrap;
   min-height: 38px;
   display: flex;
   justify-content: center;

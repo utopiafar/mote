@@ -4,9 +4,19 @@ import android.app.Application
 import java.util.concurrent.Executors
 
 class MoteApplication : Application() {
+    companion object { @Volatile var visibleActivities = 0; private set }
     override fun onCreate() {
         super.onCreate()
         if (getProcessName() != packageName) return
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: android.app.Activity) { visibleActivities++; ProjectionService.instance?.onWindowChanged() }
+            override fun onActivityStopped(activity: android.app.Activity) { visibleActivities = (visibleActivities - 1).coerceAtLeast(0) }
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
         Notifications.create(this)
         QueueStorage.recovering = true
         Executors.newSingleThreadExecutor().apply {

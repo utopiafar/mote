@@ -688,7 +688,8 @@ function Timeline({
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const marker = useRef<HTMLDivElement>(null);
+  const [pageCursors, setPageCursors] = useState<(string | undefined)[]>([undefined]);
+  const [pageIndex, setPageIndex] = useState(0);
   const requestVersion = useRef(0);
   const inFlight = useRef(false);
   const request = useRef<AbortController | null>(null);
@@ -718,16 +719,7 @@ function Timeline({
           totalCount: number;
         }>(`/api/capture-browser${queryString(range, { limit: 24, cursor: next })}`, {signal: controller.signal});
         if (requestVersion.current !== version || controller.signal.aborted) return;
-        setItems((previous) =>
-          next
-            ? [
-                ...previous,
-                ...result.items.filter(
-                  (item) => !previous.some((old) => old.id === item.id),
-                ),
-              ]
-            : result.items,
-        );
+        setItems(result.items);
         setCursor(result.nextCursor);
         setTotalCount(result.totalCount);
       } catch (e) {
@@ -746,21 +738,21 @@ function Timeline({
     setItems([]);
     setCursor(null);
     setTotalCount(undefined);
+    setPageCursors([undefined]);
+    setPageIndex(0);
     inFlight.current = false;
     void load(undefined, version);
     return () => {request.current?.abort();requestVersion.current++;};
   }, [load, revision, refreshVersion]);
-  useEffect(() => {
-    if (!cursor || loading || error || !marker.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) void load(cursor);
-      },
-      { rootMargin: "160px" },
-    );
-    observer.observe(marker.current);
-    return () => observer.disconnect();
-  }, [cursor, loading, error, load]);
+  function goToPage(index: number, next?: string) {
+    if (loading) return;
+    const version = ++requestVersion.current;
+    setPageIndex(index);
+    setPageCursors(previous => { const values = previous.slice(0, index + 1); values[index] = next; return values; });
+    setItems([]);
+    setCursor(null);
+    void load(next, version);
+  }
   const groups = useMemo(() => {
     const result = new Map<string, CapturePreview[]>();
     for (const item of items) {
@@ -841,13 +833,13 @@ function Timeline({
             清除筛选
           </button>
         )}
-        <span className="filter-count">已读取 {items.length}{totalCount === undefined ? '' : ` / ${totalCount}`} 条</span>
+        <span className="filter-count">{totalCount === undefined ? '正在统计记录…' : `共 ${totalCount} 条 · 第 ${pageIndex + 1} 页 · 本页 ${items.length} 条 / 每页 24 条`}</span>
       </div>
       <p className="capture-browse-note">日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；待充电的 OCR 由采集端补做，结果同步后可刷新查看。</p>
       {error && (
         <ErrorNotice
           text={error}
-          retry={() => void load(cursor || undefined)}
+          retry={() => void load(pageCursors[pageIndex])}
         />
       )}
       {groups.map(([day, records]) => (
@@ -881,16 +873,11 @@ function Timeline({
           </Empty>
         </div>
       )}
-      <div ref={marker} className="load-more">
-        {cursor && !loading && (
-          <button className="button subtle" onClick={() => void load(cursor)}>
-            加载更早的记录 <ChevronDown size={14} />
-          </button>
-        )}
-        {!cursor && items.length > 0 && !loading && (
-          <span>已经走到这些片刻的起点了。</span>
-        )}
-      </div>
+      <nav className="load-more" aria-label="采集记录分页">
+        <button className="button subtle" disabled={loading || pageIndex === 0} onClick={() => goToPage(pageIndex - 1, pageCursors[pageIndex - 1])}>上一页</button>
+        <span>第 {pageIndex + 1} 页{totalCount !== undefined ? ` / ${Math.max(1, Math.ceil(totalCount / 24))} 页 · 共 ${totalCount} 条` : ' · 正在统计…'}</span>
+        <button className="button subtle" disabled={loading || !cursor} onClick={() => cursor && goToPage(pageIndex + 1, cursor)}>下一页</button>
+      </nav>
     </>
   );
 }

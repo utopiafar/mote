@@ -170,6 +170,16 @@ export class DurableQueue {
   }
   contains(id: string): boolean { return this.records.has(id); }
   recordsForBrowser(): QueueRecord[] { return structuredClone([...this.records.values()].filter(r => r.event.source === 'screen')); }
+  pageForBrowser(after: string, before: string, offset: number, limit: number): { records: QueueRecord[]; totalCount: number } {
+    const matching = [...this.records.values()].filter(r => r.event.source === 'screen' && r.event.capturedAt >= after && r.event.capturedAt < before)
+      .sort((a, b) => b.event.capturedAt.localeCompare(a.event.capturedAt) || b.event.id.localeCompare(a.event.id));
+    // Copy only the requested page, never all retained OCR and metadata.
+    return { records: structuredClone(matching.slice(offset, offset + limit)), totalCount: matching.length };
+  }
+  recordForBrowser(id: string): QueueRecord | undefined {
+    const record = this.records.get(id);
+    return record?.event.source === 'screen' ? structuredClone(record) : undefined;
+  }
   async imageForBrowser(id: string): Promise<Buffer | undefined> {
     return this.exclusive(async () => {
       const record = this.records.get(id);

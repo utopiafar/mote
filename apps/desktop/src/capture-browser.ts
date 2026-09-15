@@ -67,8 +67,8 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
   if (input.location === 'local') {
     const offset = input.cursor ? Number(input.cursor) : 0;
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('分页参数无效');
-    const all = queue.recordsForBrowser().filter(r => r.event.capturedAt >= range.after && r.event.capturedAt < range.before).sort((a,b) => b.event.capturedAt.localeCompare(a.event.capturedAt) || b.event.id.localeCompare(a.event.id));
-    return { items: all.slice(offset, offset + PAGE_SIZE).map(r => preview(r.event, r)), totalCount: all.length, ...(offset + PAGE_SIZE < all.length ? { nextCursor: String(offset + PAGE_SIZE) } : {}) };
+    const page = queue.pageForBrowser(range.after, range.before, offset, PAGE_SIZE);
+    return { items: page.records.map(r => preview(r.event, r)), totalCount: page.totalCount, ...(offset + PAGE_SIZE < page.totalCount ? { nextCursor: String(offset + PAGE_SIZE) } : {}) };
   }
   const params = new URLSearchParams({ ...range, deviceId: config.deviceId, source: 'screen', limit: String(PAGE_SIZE), ...(input.cursor ? { cursor: input.cursor } : {}) });
   const response = JSON.parse(await readResponseText(await request(config, `/api/capture-browser?${params}`), 512 * 1024)) as { items?: (Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string })[]; totalCount?: number; nextCursor?: string | null };
@@ -79,7 +79,7 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
 export async function captureDetail(queue: DurableQueue, config: Config, source: CaptureLocation, id: string): Promise<BrowserDetail> {
   location(source); validId(id);
   if (source === 'local') {
-    const record = queue.recordsForBrowser().find(r => r.event.id === id); if (!record) throw new Error('该记录已完成同步，请切换到中央已归档查看');
+    const record = queue.recordForBrowser(id); if (!record) throw new Error('该记录已完成同步，请切换到中央已归档查看');
     return { ...preview(record.event, record), ocrText: record.ocrResult ?? record.event.ocrText ?? '', deviceName: record.event.deviceName };
   }
   const value = await remoteDetail(config, id);
@@ -89,7 +89,12 @@ export async function captureImage(queue: DurableQueue, config: Config, source: 
   location(source); validId(id); if (typeof thumbnail !== 'boolean') throw new Error('图片参数无效');
   let bytes: Buffer | undefined;
   if (source === 'local') bytes = await queue.imageForBrowser(id);
-  else { await remoteDetail(config, id); bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image${thumbnail ? '?thumbnail=1' : ''}`), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES); }
+  else {
+    const params = new URLSearchParams({ deviceId: config.deviceId, source: 'screen', ...(thumbnail ? { thumbnail: '1' } : {}) });
+    bytes = await imageBytes(await request(config, `/api/capture-browser/${id}/image?${params}`), thumbnail ? 1024 * 1024 : MAX_IMAGE_BYTES);
+    // The server returns an authorized JPEG thumbnail; avoid decoding and re-encoding it in the main process.
+    if (thumbnail) return `data:image/jpeg;base64,${bytes.toString('base64')}`;
+  }
   if (!bytes) throw new Error('图片已同步，请切换到中央已归档查看');
   const image = nativeImage.createFromBuffer(bytes); if (image.isEmpty()) throw new Error('图片无法读取');
   const size = image.getSize();

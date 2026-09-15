@@ -39,6 +39,7 @@ test('capture browser isolates collector lists, details, thumbnails and OCR writ
   assert.equal((await app.inject({url:'/api/capture-browser?deviceId=other',headers:auth(phone.token)})).statusCode,403);
   for(const suffix of ['', '/image', '/image?thumbnail=1'])assert.equal((await app.inject({url:`/api/capture-browser/${foreign.id}${suffix}`,headers:auth(phone.token)})).statusCode,404);
   assert.equal((await app.inject({method:'POST',url:`/api/capture-browser/${foreign.id}/ocr`,headers:auth(phone.token),payload:{status:'completed',ocrText:'No access'}})).statusCode,404);
+  for (const scope of ['deviceId=other', 'source=activity']) assert.equal((await app.inject({url:`/api/capture-browser/${own.id}/image?thumbnail=1&${scope}`,headers:auth()})).statusCode,404);
   const thumb=await app.inject({url:`/api/capture-browser/${own.id}/image?thumbnail=1`,headers:auth(phone.token)});
   assert.equal(thumb.statusCode,200);assert.equal(thumb.headers['content-type'],'image/jpeg');assert.equal(thumb.headers['cache-control'],'no-store');
   const meta=await sharp(thumb.rawPayload).metadata();assert.equal(meta.width,480);assert.equal(meta.height,320);

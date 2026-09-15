@@ -43,6 +43,7 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS captures_time ON captures(captured_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS captures_device ON captures(device_id,captured_at DESC);
+      CREATE INDEX IF NOT EXISTS captures_device_source_time ON captures(device_id,json_extract(json,'$.source'),captured_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS captures_app ON captures(json_extract(json,'$.appId'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_source ON captures(json_extract(json,'$.source'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_collection ON captures(COALESCE(json_extract(json,'$.privacy.collection'),'content'),captured_at DESC);
@@ -202,7 +203,7 @@ export class Store {
   }
   list(range:Range={}) {
     const {where,values}=this.clauses(range);const limit=Math.min(200,Math.max(1,range.limit??50));
-    const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY captured_at DESC,id DESC LIMIT ?`).all(...values,limit+1) as unknown as Row[];
+    const rows=this.db.prepare(`SELECT id,json,received_at,blob_hash,mime,index_status,summary FROM captures${where} ORDER BY captured_at DESC,id DESC LIMIT ?`).all(...values,limit+1) as unknown as Row[];
     const {cursor:_cursor,...scope}=range;const totalScope=this.clauses(scope);
     const totalCount=Number((this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}`).get(...totalScope.values) as {count:number}).count);
     const more=rows.length>limit;const items=rows.slice(0,limit).map(r=>this.record(r));const last=items.at(-1);

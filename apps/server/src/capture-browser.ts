@@ -44,7 +44,8 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
   app.get('/api/capture-browser/:id',async req=>ownRecord(req));
   app.get('/api/capture-browser/:id/image',async(req,reply)=>{
     const record=ownRecord(req);
-    const {thumbnail}=z.object({thumbnail:z.enum(['1','true']).optional()}).strict().parse(req.query);
+    const {thumbnail,deviceId,source}=z.object({thumbnail:z.enum(['1','true']).optional(),deviceId:z.string().min(1).max(128).optional(),source:sourceSchema.optional()}).strict().parse(req.query);
+    if((deviceId && record.deviceId!==deviceId)||(source && record.source!==source))throw new ConnectionError('capture_not_found',404,'采集记录不存在或已被清理。');
     if(!record.blobHash)throw new StoreError('Capture has no image',404);
     if(!thumbnail){const image=store.image(record.id);return reply.type(image.mime!).send(image.bytes);}
     let bytes=thumbnails.get(record.blobHash);
