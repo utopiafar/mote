@@ -24,6 +24,10 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private val nsfwInstance = lazy { NsfwClient(context) }
     private val ocrInstance = lazy { CaptureOcr(context) }
     private val nsfw by nsfwInstance
+    private var dedupeSignature: String? = null
+    private var dedupeConfig: CollectorConfig? = null
+    private var dedupeSize: Pair<Int, Int>? = null
+    private var dedupeApp: String? = null
     private var previousTime: Long? = null
     private var previousApp: String? = null
     private var previousMode: AppCollectionMode? = null
@@ -32,7 +36,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private var lastPause: OperationReason? = null
     fun pause(reason: String, category: OperationReason = OperationReason.STATE_CHANGED) {
         if (lastPause != category) { Operations.record(context, OperationKind.CAPTURE_PAUSED, category); lastPause = category }
-        previousTime = null; previousApp = null; previousMode = null
+        previousTime = null; previousApp = null; previousMode = null; dedupeSignature = null
         settings.status("paused", reason)
     }
     fun canCapture(config: CollectorConfig, windows: WindowSnapshot) = canCollect(config, windows, AppCollectionMode.CONTENT)
@@ -73,6 +77,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
                 settings.ensureDataOrigin(config)
                 context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                dedupeSignature = null
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
                 settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型 · ${context.queue().depth()} 条保存在本机")
                 scheduleUpload(config)
@@ -136,6 +141,18 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     reviewed = true
                 }
                 if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
+                if (dedupeConfig != config || dedupeApp != windows.foreground || dedupeSize != (output.width to output.height)) dedupeSignature = null
+                val dedupeMode = ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)
+                val features = if (config.imageDedupeMode != "off") {
+                    val size = ScreenshotDedupeHelper.sampleSizeForMode(output.width, output.height, dedupeMode)
+                    val sample = Bitmap.createScaledBitmap(output, size.width, size.height, true)
+                    try {
+                        val pixels = IntArray(sample.width * sample.height)
+                        sample.getPixels(pixels, 0, sample.width, 0, 0, sample.width, sample.height)
+                        ScreenshotDedupeHelper.buildFeatures(sample.width, sample.height, pixels)
+                    } finally { if (sample !== output) sample.recycle() }
+                } else null
+                val duplicate = features?.let { ScreenshotDedupeHelper.shouldSkip(dedupeSignature, it, dedupeMode).duplicate } == true
                 val now = observedAtMs
                 val duration = duration(now, windows.foreground, AppCollectionMode.CONTENT, config.intervalSeconds)
                 val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
@@ -150,16 +167,26 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", masks.isNotEmpty() || modelMaskApplied).put("mode", "local").put("collection", "content")
                         .put("reason", (if (config.nsfw.enabled) "local NSFW model passed; " else "") +
                             if (reviewed) "configured masks and local model review" else if (masks.isNotEmpty()) "configured masks applied" else "user configured capture without masks"))
+                if (duplicate) {
+                    event.remove("imageMime")
+                    event.put("ocrText", "").put("ocr", JSONObject().put("status", "disabled"))
+                    val metadata = event.optJSONObject("metadata") ?: JSONObject().put("version", 1).put("observedAt", capturedAt)
+                    val capture = metadata.optJSONObject("capture") ?: JSONObject()
+                    capture.put("ocrEnabled", false).put("deduplication", JSONObject().put("mode", config.imageDedupeMode).put("duplicate", true))
+                    event.put("metadata", metadata.put("capture", capture))
+                }
                 stage = EventStage.QUEUE
                 settings.ensureDataOrigin(config)
-                context.queue().enqueue(event, jpeg(output, config.jpegQuality), config.maxQueueMiB * 1024L * 1024L)
+                context.queue().enqueue(event, if (duplicate) null else jpeg(output, config.jpegQuality), config.maxQueueMiB * 1024L * 1024L)
+                if (!duplicate) dedupeSignature = features?.toSignature()
+                dedupeConfig = config; dedupeApp = windows.foreground; dedupeSize = output.width to output.height
                 SupportEvents.record(context, stage, EventCode.OK)
                 diagnostics.add("capturedCount")
                 lastPause = null
                 previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
-                settings.status("capturing", "采集中 · ${if (runOcr) "本地遮罩/OCR 已完成" else "图片已保存，充电后补做 OCR"} · ${context.queue().depth()} 条保存在本机")
-                if (!runOcr) CaptureOcrWorker.schedule(context, config)
+                settings.status("capturing", "采集中 · ${if (duplicate) "图片去重命中，仅元数据已保存" else if (runOcr) "本地遮罩/OCR 已完成" else "图片已保存，充电后补做 OCR"} · ${context.queue().depth()} 条保存在本机")
+                if (!runOcr && !duplicate) CaptureOcrWorker.schedule(context, config)
                 scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
             catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: "队列已满") }

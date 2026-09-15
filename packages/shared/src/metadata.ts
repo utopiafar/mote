@@ -83,6 +83,7 @@ export const recordMetadataSchema = z.object({
     intervalMs: z.number().int().min(0).max(300000).optional(),
     width: z.number().int().min(1).max(32768).optional(), height: z.number().int().min(1).max(32768).optional(),
     displayScale: z.number().positive().max(16).optional(), ocrEnabled: z.boolean().optional(),
+    deduplication: z.object({mode: z.enum(['exact', 'conservative', 'balanced', 'aggressive']), duplicate: z.literal(true)}).strict().optional(),
     maskCount: z.number().int().min(0).max(200).optional(),
   }).strict().optional(),
   media: mediaMetadataSchema.optional(),

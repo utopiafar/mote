@@ -1,6 +1,7 @@
 import type {CapturePreview} from '@mote/shared';
 
-export function ocrPresentation(state: CapturePreview['ocr'], text: string) {
+export function ocrPresentation(state: CapturePreview['ocr'], text: string, duplicate = false) {
+  if (duplicate) return {label: '图片去重 · 仅元数据', description: '画面命中所选去重档位，只保留时间、应用和采样元数据，未保存图片或 OCR 文本。', tone: 'muted'};
   switch (state.status) {
     case 'pending': return state.reason === 'charging'
       ? {label: 'OCR 待充电', description: '截图已保存，采集端接入电源后会自动补做文字识别，再同步识别结果。', tone: 'amber'}

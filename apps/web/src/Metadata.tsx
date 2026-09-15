@@ -25,6 +25,7 @@ export function Metadata({metadata,source,modifiedAt}: {metadata?:RecordMetadata
     ['温度状态',s?.thermalState ? thermal[s.thermalState] : undefined],['网络类型',s?.networkType ? network[s.networkType] : undefined],['计量网络',bool(s?.networkMetered)],
     ['屏幕可交互',bool(s?.screenInteractive)],['屏幕锁定',bool(s?.screenLocked)],['已空闲',s?.idleSeconds === undefined ? undefined : `${s.idleSeconds} 秒`],
     ['设备可用存储',s?.availableStorageBytes === undefined ? undefined : bytes(s.availableStorageBytes)],
+    ['图片去重命中',bool(c?.deduplication?.duplicate)],['图片去重档位',c?.deduplication ? ({exact:'精确',conservative:'保守',balanced:'均衡',aggressive:'激进'}[c.deduplication.mode]) : undefined],
     ['采样间隔',c?.intervalMs === undefined ? undefined : `${c.intervalMs / 1000} 秒`],['画面宽度',c?.width],['画面高度',c?.height],['显示缩放',c?.displayScale],['启用 OCR',bool(c?.ocrEnabled)],['应用遮罩数',c?.maskCount],
     ['源文件大小',f?.sizeBytes === undefined ? undefined : bytes(f.sizeBytes)],['文件创建时间',time(f?.createdAt)],['源内容修改时间',time(modifiedAt)],
     ['文件访问时间（文件系统）',time(f?.accessedAt)],['文件属性变更时间',time(f?.metadataChangedAt)],['扫描发现来源消失的时间',time(f?.deletionObservedAt)],

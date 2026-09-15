@@ -12,6 +12,24 @@ class DeferredOcrQueueTest {
         .put("capturedAt", at).put("privacy", JSONObject().put("excluded", false)).put("imageMime", "image/jpeg").put("ocrText", "")
         .put("ocr", JSONObject().put("status", if (pending) "pending" else "completed").apply { if (pending) put("reason", "charging") })
 
+    @Test fun duplicateHasNoBlobOrDeferredOcrAndSurvivesRestart() {
+        val directory = Files.createTempDirectory("mote-dedupe").toFile()
+        try {
+            val item = event("2026-09-14T00:00:00Z", false)
+            item.remove("imageMime")
+            item.put("ocr", JSONObject().put("status", "disabled"))
+            item.put("metadata", JSONObject().put("capture", JSONObject().put("deduplication", JSONObject().put("mode", "balanced").put("duplicate", true))))
+            DurableQueue(directory, cipher).enqueue(item, null, 100000)
+            val queue = DurableQueue(directory, cipher)
+            assertNull(queue.image(item.getString("id")))
+            assertNull(queue.pendingOcr())
+            assertEquals(0L, queue.reservedOcrBytes())
+            assertFalse(queue.peek()!!.has("imageBase64"))
+            assertTrue(directory.listFiles()!!.none { it.extension == "blob" })
+            queue.acknowledge(item.getString("id"))
+            assertEquals(0, queue.depth())
+        } finally { directory.deleteRecursively() }
+    }
     @Test fun acknowledgedPendingImageSurvivesRestartWithoutBlockingLaterUploadsAndKeepsOriginalWireEvent() {
         val directory = Files.createTempDirectory("mote-ocr-queue").toFile()
         try {

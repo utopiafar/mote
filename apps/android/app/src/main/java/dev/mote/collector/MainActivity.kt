@@ -84,6 +84,8 @@ class MainActivity : Activity() {
     private lateinit var deviceEventCollectionEnabled: CheckBox
     private lateinit var screenCollectionEnabled: CheckBox
     private lateinit var mediaStatus: TextView
+    private lateinit var imageDedupeMode: Spinner
+    private val imageDedupeModes = listOf("off", "exact", "conservative", "balanced", "aggressive")
     private lateinit var jpegQuality: EditText
     private lateinit var captureMaxSide: EditText
     private lateinit var batteryBelow: EditText
@@ -313,6 +315,13 @@ class MainActivity : Activity() {
         section("画面质量与电量")
         jpegQuality = presetNumber("图像质量 · 数值越高清晰度越高", config.jpegQuality, "75", 40..95, listOf(50, 65, 75, 85, 95))
         captureMaxSide = presetNumber("图片最长边 / px", config.captureMaxSide, "1280", 640..2560, listOf(640, 960, 1280, 1920, 2560))
+        text("图片去重", 15)
+        imageDedupeMode = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("关闭", "精确", "保守", "均衡", "激进"))
+            setSelection(imageDedupeModes.indexOf(config.imageDedupeMode).coerceAtLeast(0))
+        }
+        content.addView(imageDedupeMode, LinearLayout.LayoutParams(-1, dp(56))); track(imageDedupeMode, "imageDedupeMode")
+        text("与同一应用最近保存的画面比较。命中后只保存时间、应用、时长和去重标记，不保存图片或文字。近似档位可能忽略细小变化；重启后重新建立基准。", 13, MoteUi.muted)
         chargingOnly = check("仅充电时采集屏幕、活动和媒体", config.chargingOnly)
         ocrChargingOnly = check("仅充电时 OCR", config.ocrChargingOnly)
         text("使用电池时保存图片，充电后识别文字；图片和识别结果按同步设置上传。待识别图片与文字预留空间计入存储上限。", 13, MoteUi.muted)
@@ -549,7 +558,7 @@ class MainActivity : Activity() {
         checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } }, http.isChecked,
         if (projectionMode.isChecked) "projection" else "accessibility", nsfwDraft(), number(jpegQuality, 40..95), number(captureMaxSide, 640..2560),
         chargingOnly.isChecked, number(batteryBelow, 0..95), diagnosticEnabled.isChecked, number(diagnosticInterval, 15..3600),
-        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500), ocrChargingOnly.isChecked, mediaCollectionEnabled.isChecked, screenCollectionEnabled.isChecked, notificationCollectionEnabled.isChecked, deviceEventCollectionEnabled.isChecked, syncChargingOnly.isChecked, syncBatteryNotLow.isChecked)
+        checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() }, metadataEnabled.isChecked, syncModes[syncMode.selectedItemPosition], number(syncInterval, 15..1440), number(syncBatch, 1..500), ocrChargingOnly.isChecked, mediaCollectionEnabled.isChecked, screenCollectionEnabled.isChecked, notificationCollectionEnabled.isChecked, deviceEventCollectionEnabled.isChecked, syncChargingOnly.isChecked, syncBatteryNotLow.isChecked, imageDedupeModes[imageDedupeMode.selectedItemPosition])
     private fun nsfwDraft(): NsfwConfig {
         val value = NsfwConfig(enabled = nsfwEnabled.isChecked, threads = number(nsfwThreads, 1..8),
             timeoutMs = number(nsfwTimeout, 5000..180000).toLong(), source = nsfwSources[nsfwSource.selectedItemPosition],

@@ -89,3 +89,15 @@ test('zero-duration observations count as samples but never consume another meas
   await store.ingest(event('activity',{capturedAt:at(20),durationMs:15000,appId:'measured'}));
   assert.equal(store.activity().totalDurationMs,15000);assert.equal(store.activity({appId:'measured'}).totalDurationMs,15000);assert.equal(store.activity().captures,2);
 });
+
+ test('duplicate screenshots persist only metadata and round-trip through archives', async t=>{
+  const store=fixture(t), restored=fixture(t);
+  const capture=event('screen',{ocrText:'',windowTitle:'',ocr:{status:'disabled'},metadata:{...metadata,capture:{deduplication:{mode:'balanced',duplicate:true},ocrEnabled:false}}});
+  await store.ingest(capture);
+  const saved=store.evidence([capture.id])[0];
+  assert.equal(saved.blobHash,null);assert.equal(saved.ocrText,'');assert.deepEqual(saved.metadata,capture.metadata);
+  await restored.importArchive(store.exportArchive(1_000_000));
+  assert.deepEqual(restored.evidence([capture.id])[0].metadata,capture.metadata);
+  await assert.rejects(store.ingest({...capture,id:randomUUID(),ocrText:'content'}));
+  await assert.rejects(store.ingest({...capture,id:randomUUID(),ocr:{status:'pending'}}));
+ });

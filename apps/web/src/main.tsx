@@ -429,7 +429,7 @@ function EvidenceDialog({
       setBusy(false);
     }
   }
-  const ocr = capture ? ocrPresentation(captureOcrState(capture), capture.ocrText) : null;
+  const ocr = capture ? ocrPresentation(captureOcrState(capture), capture.ocrText, capture.metadata?.capture?.deduplication?.duplicate) : null;
   return (
     <div
       className="modal-backdrop"

@@ -25,3 +25,11 @@ Mac 的图片位置和节点连接需要分别保存。如果提示提交状态�
 Android 普通设置变更在已有投屏会话内应用。切换到需要新投屏会话的采集方式，或系统已结束原授权时，应用引导系统授权流程；不能绕过系统确认。Android 14 及以上的投屏授权不能重复创建会话，现有会话的尺寸变化应更新原虚拟显示与输出表面。[Android 官方投屏说明](https://developer.android.com/media/grow/media-projection)
 
 Android 应用专用外部空间可能随存储卡卸载而不可用，卸载应用也会删除应用专用文件。目录选择不会改变系统的这些存储规则。[Android 官方应用文件说明](https://developer.android.com/training/data-storage/app-specific)
+
+### Android 图片去重
+
+在采集设置的“画面质量与电量”中选择关闭（默认）、精确、保守、均衡或激进。使用 SHA-256、dHash 和缩略图像素/块/行列差异，参考截图去重算法的四档阈值。比较隐私处理后、JPEG 编码前的画面；近似档位最长边采样为 96px，精确档使用完整输出像素。没有额外裁剪系统栏。
+
+与当前应用最近成功入队的非重复画面比较；重复帧不推进基准。应用、尺寸或配置变化、暂停、服务重启会重建基准，签名仅留在内存。命中时仍记录本次时间、应用和采样时长，保存去重档位标记，省略图片与 OCR 文本，不安排延迟 OCR。关闭可选设备元数据时仍保留最小去重标记。隐私检查照常执行。此设置当前适用于 Android，服务端需同步升级以接收纯元数据截图记录。
+
+联合回归：构建 Android development 与 developmentAndroidTest APK、共享包/服务端/Web 和桌面 TypeScript 后，启动专用 `mote_fixture_api35` 模拟器，运行 `node_modules/.bin/electron scripts/dedupe-cross-e2e.cjs`。可用 `MOTE_FIXTURE_SERIAL` 指定模拟器序号。测试使用生成画面并关闭模型审查，经过真实 Android 上传队列、临时本地服务端、桌面客户端和 Web 页面；报告位于 `apps/android/app/build/reports/dedupe-cross/`，不纳入版本控制。

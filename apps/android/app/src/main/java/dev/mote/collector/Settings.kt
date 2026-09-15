@@ -16,7 +16,7 @@ data class CollectorConfig(
     val syncMode: String = "realtime", val syncIntervalMinutes: Int = 15, val syncBatchSize: Int = 20,
     val ocrChargingOnly: Boolean = false, val mediaCollectionEnabled: Boolean = false, val screenCollectionEnabled: Boolean = true,
     val notificationCollectionEnabled: Boolean = false, val deviceEventCollectionEnabled: Boolean = false,
-    val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false
+    val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off"
 ) {
     fun observesSystem() = (mediaCollectionEnabled && metadataEnabled) || notificationCollectionEnabled || deviceEventCollectionEnabled
     fun effectiveMode() = if (AppCollectionRules.parse(appCollectionRules).mayCollectContent()) mode else "accessibility"
@@ -30,6 +30,7 @@ data class CollectorConfig(
         if (server.isNotBlank()) PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
         require(token.isBlank() || token.length >= 32) { "节点令牌至少需要 32 个字符；留空时仅保存在本机" }
         syncPolicy().validate()
+        require(imageDedupeMode in setOf("off", "exact", "conservative", "balanced", "aggressive")) { "图片去重档位无效" }
         require(deviceName.isNotBlank() && deviceName.length <= 128) { "请填写 1..128 字符的设备名称" }
         require(intervalSeconds in 5..300) { "采集间隔为 5..300 秒" }
         require(maxQueueMiB in 8..4096) { "队列上限为 8..4096 MiB" }
@@ -76,13 +77,13 @@ class Settings(private val context: Context) {
         syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20),
         ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false), mediaCollectionEnabled = prefs.getBoolean("mediaCollectionEnabled", false), screenCollectionEnabled = prefs.getBoolean("screenCollectionEnabled", true),
         notificationCollectionEnabled = prefs.getBoolean("notificationCollectionEnabled", false), deviceEventCollectionEnabled = prefs.getBoolean("deviceEventCollectionEnabled", false),
-        syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false)
+        syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!
     ) }
     fun save(c: CollectorConfig) = synchronized(Settings::class.java) {
         c.validate()
         val origin = originAfterChange(c)
         val values = mapOf<String, Any>(
-            "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
+            "imageDedupeMode" to c.imageDedupeMode, "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
             "syncChargingOnly" to c.syncChargingOnly, "syncBatteryNotLow" to c.syncBatteryNotLow,
             "syncBatchSize" to c.syncBatchSize, "server" to c.server.trim().trimEnd('/'),
             "token" to Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP),

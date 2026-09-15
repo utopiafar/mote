@@ -30,3 +30,10 @@ test('day filters use local midnight across both daylight-saving boundaries', ()
     else process.env.TZ = previous;
   }
 });
+
+test('deduplicated records explain that no image or OCR text was saved', () => {
+  const display = ocrPresentation({status:'disabled'}, '', true);
+  assert.equal(display.label, '图片去重 · 仅元数据');
+  assert.match(display.description, /未保存图片或 OCR 文本/);
+  assert.doesNotMatch(display.description, /截图仍可查看/);
+});

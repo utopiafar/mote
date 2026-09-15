@@ -28,11 +28,12 @@ export const captureSchema = z.object({
   metadata: recordMetadataSchema.optional(),
   privacy: privacySchema.default({excluded:false,redacted:false,mode:'local'}),
 }).strict().superRefine((v,ctx) => {
+  if (v.metadata?.capture?.deduplication && (v.source !== 'screen' || v.imageBase64 || v.imageMime || v.ocrText || v.ocr?.status !== 'disabled')) ctx.addIssue({code:'custom',message:'Duplicate screenshots require metadata only and disabled OCR'});
   if (v.ocr && v.source !== 'screen') ctx.addIssue({code:'custom',message:'OCR processing state belongs only to screenshots'});
   if (v.ocr?.status === 'pending' && (!v.imageBase64 || v.ocrText)) ctx.addIssue({code:'custom',message:'Pending OCR requires a screenshot without recognized text'});
   if (Boolean(v.imageBase64) !== Boolean(v.imageMime)) ctx.addIssue({code:'custom',message:'imageBase64 and imageMime must be supplied together'});
   if (v.privacy.excluded) ctx.addIssue({code:'custom',message:'Excluded captures must never be uploaded'});
-  if (!v.imageBase64 && !v.ocrText.trim() && !v.provenance && !['activity','media','notification','device_event'].includes(v.source)) ctx.addIssue({code:'custom',message:'An image or text is required'});
+  if (!v.imageBase64 && !v.ocrText.trim() && !v.provenance && !v.metadata?.capture?.deduplication && !['activity','media','notification','device_event'].includes(v.source)) ctx.addIssue({code:'custom',message:'An image or text is required'});
   if (v.source === 'activity') {
     if (v.privacy.collection !== 'activity' || !v.appId.trim() || v.imageBase64 !== undefined || v.imageMime !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.privacy.redacted)
       ctx.addIssue({code:'custom',message:'Activity records require an app identity and activity collection, without content, images or source references'});

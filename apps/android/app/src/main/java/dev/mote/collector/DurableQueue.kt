@@ -128,12 +128,19 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             statistics[dir.absolutePath]?.remove(file.name)
         } finally { temp.delete() }
     }
+    private fun isDuplicate(event: JSONObject): Boolean {
+        val dedupe = event.optJSONObject("metadata")?.optJSONObject("capture")?.optJSONObject("deduplication") ?: return false
+        return event.optString("source") == "screen" && dedupe.optBoolean("duplicate") &&
+            dedupe.optString("mode") in setOf("exact", "conservative", "balanced", "aggressive") &&
+            event.optString("ocrText").isEmpty() && event.optJSONObject("ocr")?.optString("status") == "disabled" &&
+            !event.has("imageMime") && !event.has("imageBase64")
+    }
     fun enqueue(event: JSONObject, image: ByteArray?, maxBytes: Long) = guarded {
         require(!event.getJSONObject("privacy").optBoolean("excluded")) { "Excluded captures must never be queued" }
         val id = UUID.fromString(event.getString("id")).toString()
         val file = File(dir, "$id.event")
         val source = event.optString("source", "screen")
-        if (image == null) require(source in setOf("note", "activity", "media", "notification", "device_event") && !event.has("imageMime") && !event.has("imageBase64")) { "Only notes, activity or media can omit images" }
+        if (image == null) require((source in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event)) && !event.has("imageMime") && !event.has("imageBase64")) { "Only notes, activity or media can omit images" }
         if (source == "activity") {
             require(image == null && event.getJSONObject("privacy").optString("collection") == "activity" && event.optString("appId").isNotBlank())
             require(listOf("ocrText", "title", "windowTitle", "mood", "provenance", "imageMime", "imageBase64").none(event::has)) { "Activity must not contain content" }
@@ -160,7 +167,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val event = read(file)
         localFields.forEach(event::remove)
         val hash = event.optString("_blob", "")
-        if (hash.isEmpty()) { require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event")); event.remove("_blob"); return event }
+        if (hash.isEmpty()) { require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event)); event.remove("_blob"); return event }
         require(hash.matches(Regex("[a-f0-9]{64}")))
         event.remove("_blob")
         event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
