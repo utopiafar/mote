@@ -77,6 +77,20 @@ class FileSources(private val context: Context, private val cancel: Cancellation
 }
 
 object FileUpload {
+    /** Bounded response decoding also works on Android 10–12 (no readNBytes API). */
+    internal fun readResponse(input: java.io.InputStream): ByteArray {
+        val limit = 1024 * 1024
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = input.read(buffer, 0, minOf(buffer.size, limit - output.size() + 1))
+            if (count < 0) break
+            check(output.size() + count <= limit) { "中央响应超过 1 MiB" }
+            output.write(buffer, 0, count)
+        }
+        return output.toByteArray()
+    }
+
     private fun request(config: CollectorConfig, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
         val connection = URL(config.server.trimEnd('/') + path).openConnection() as HttpURLConnection
         try {
@@ -84,7 +98,7 @@ object FileUpload {
             connection.setRequestProperty("Authorization", "Bearer ${config.token}")
             if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { it.write(body) } }
             check(connection.responseCode in 200..299) { if (connection.responseCode == 404) "中央未支持文件同步，请先升级" else "中央未确认文件（HTTP ${connection.responseCode}）" }
-            val bytes = connection.inputStream.use { it.readNBytes(1024 * 1024 + 1) }; check(bytes.size <= 1024 * 1024)
+            val bytes = connection.inputStream.use { readResponse(it) }
             return JSONObject(String(bytes, Charsets.UTF_8))
         } finally { connection.disconnect() }
     }

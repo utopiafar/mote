@@ -9,6 +9,20 @@ import java.io.ByteArrayInputStream
 import java.util.UUID
 
 class FileArchiveQueueTest {
+    @Test fun responseReaderHandlesShortReadsAndExactLimit() {
+        val expected = ByteArray(1024 * 1024) { (it % 251).toByte() }
+        val input = object : ByteArrayInputStream(expected) {
+            override fun read(buffer: ByteArray, offset: Int, count: Int): Int = super.read(buffer, offset, minOf(count, 13))
+        }
+        assertArrayEquals(expected, FileUpload.readResponse(input))
+        assertArrayEquals(byteArrayOf(), FileUpload.readResponse(ByteArrayInputStream(byteArrayOf())))
+    }
+    @Test fun oversizedResponseIsRejectedWithoutConsumingItsTail() {
+        val input = ByteArrayInputStream(ByteArray(2 * 1024 * 1024))
+        assertThrows(IllegalStateException::class.java) { FileUpload.readResponse(input) }
+        assertEquals(1024 * 1024 - 1, input.available())
+    }
+
     @get:Rule val folder = TemporaryFolder()
     private val cipher = object : ByteCipher { override fun seal(bytes: ByteArray) = bytes.map { (it.toInt() xor 91).toByte() }.toByteArray(); override fun open(bytes: ByteArray) = seal(bytes) }
     private fun source(mode: String = "archive", initial: String = "all") = LocalSource(id = "file-test", name = "Generated", kind = "local-files", retention = mode, uri = "content://fixture/tree/root", tree = true, extensions = "wav,txt", initialSync = initial)
