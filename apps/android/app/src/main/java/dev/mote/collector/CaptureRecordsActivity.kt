@@ -46,13 +46,14 @@ class CaptureRecordsActivity : Activity() {
     @Volatile private var generation = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
         date = savedInstanceState?.getString("date")?.let(LocalDate::parse) ?: date
         central = savedInstanceState?.getBoolean("central") ?: false
         album = savedInstanceState?.getString("album")?.let(::JSONObject)
         recordSource = savedInstanceState?.getString("recordSource")?.takeIf { it in recordSources } ?: "screen"
         grid = true
         body = moteDetailPage()
-        body.getChildAt(0).setOnClickListener { if (album != null) closeAlbum() else finish() }
+        body.getChildAt(0).setOnClickListener { navigateBack() }
         text(body, "采集记录", 27f)
         text(body, "截图按时间段与 App 分组，点开相册查看图片。", 14f)
         val source = Spinner(this).apply {
@@ -97,8 +98,11 @@ class CaptureRecordsActivity : Activity() {
     }
     private fun reload() { album = null; cursors.clear(); cursors.add(null); load() }
     private fun closeAlbum() { album = null; cursors.clear(); cursors.addAll(albumCursors); load() }
-    @Deprecated("Activity back navigation")
-    override fun onBackPressed() { if (album != null) closeAlbum() else super.onBackPressed() }
+    private fun navigateBack() { if (album != null) closeAlbum() else finish() }
+    // API 33+ uses the native dispatcher above; keep the API 29–32 fallback.
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Deprecated("Native Activity back navigation")
+    override fun onBackPressed() = navigateBack()
     private fun load() {
         val stamp = ++generation; val remote = central; val source = recordSource; val selected = album
         backToAlbums.visibility = if (selected != null) View.VISIBLE else View.GONE

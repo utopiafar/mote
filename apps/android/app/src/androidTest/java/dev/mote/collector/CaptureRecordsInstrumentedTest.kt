@@ -220,6 +220,17 @@ class CaptureRecordsInstrumentedTest {
                 assertTrue(all.filterIsInstance<ImageView>().any { it.contentDescription == "采集图片" && it.drawable != null })
                 all.filterIsInstance<TextView>().first { it.isShown && it.text.toString() == "关闭" }.performClick()
             }
+            // The system back event must reach the API 33+ native dispatcher and return to albums.
+            shell("input keyevent KEYCODE_BACK")
+            waitUntil {
+                var returned = false
+                scenario.onActivity { activity ->
+                    val content = views(activity.window.decorView)
+                    returned = !activity.isFinishing && content.count { it.tag?.toString()?.startsWith("album:") == true } == 1 &&
+                        content.none { it.tag?.toString()?.startsWith("capture:") == true }
+                }
+                returned
+            }
         }
     }
 

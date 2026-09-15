@@ -32,3 +32,9 @@ The central server maintains its own SQLite `capture_gallery` projection, backfi
 - Tests cover app/time boundaries, cold/rebuilt indexes, interrupted commits, thumbnail retention, deletion, device authorization/revocation, and grid pagination with concurrent new capture insertion.
 - `CaptureRecordsInstrumentedTest#localBrowserDisplaysGeneratedThumbnailsPagesAndOcrDetail` passed on the dedicated read-only `mote_fixture_api35` emulator (3.762 s). It verifies no screenshot views at album level, immediate grid placeholders after tapping, page navigation, and generated image/OCR detail.
 - No physical-device capture, personal screenshots, live model calls, or production installation were performed. Central transport behavior was verified by server fixtures; the emulator interaction test used the local queue.
+
+### Release follow-up
+
+The initial v0.0.14 release was blocked by Android's `GestureBackNavigation` lint check. The v0.0.15 fix registers the native `OnBackInvokedDispatcher` on API 33+, with the legacy callback used only as an API 29–32 fallback. The header and system back actions share the same album-return behavior.
+
+After the fix, local release/development lint both reported zero errors, all 113 debug JVM tests passed, and the expanded API 35 emulator test passed in 4.238 s. It sends a real system back event and verifies that the activity remains open at the album list after leaving the grid. Physical-device and live-model validation remain unperformed.
