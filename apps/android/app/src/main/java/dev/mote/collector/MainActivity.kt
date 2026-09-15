@@ -115,7 +115,9 @@ class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private val statusExecutor = Executors.newSingleThreadExecutor()
     private var statusLoading = false
+    private var statusRefreshPending = false
     private var resumed = false
+    private var localStateJob: kotlinx.coroutines.Job? = null
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
         val totals: String, val technical: String, val connection: String, val model: String, val media: String)
     private val refresh = object : Runnable {
@@ -745,7 +747,8 @@ class MainActivity : Activity() {
         if (!::status.isInitialized) return
         if (QueueStorage.recovering) { captureProgress.visibility = View.VISIBLE; status.text = "正在恢复并验证本机存储…"; return }
         if (ConnectionGuard.reconfiguring()) { status.text = "正在应用设置，已有记录保持加密保存"; updateSaveBar(); return }
-        if (statusLoading || isDestroyed) return
+        if (isDestroyed) return
+        if (statusLoading) { statusRefreshPending = true; return }
         statusLoading = true
         // Queue recovery, Keystore reads and diagnostic writes may wait for a worker.
         // Keep one request in flight; a slow scan must never accumulate refresh jobs.
@@ -764,20 +767,22 @@ class MainActivity : Activity() {
                     mediaStatus.text = snapshot.media
                     updateSaveBar()
                 }.onFailure { captureProgress.visibility = View.GONE; status.text = "状态暂不可读取，已有记录保留在本机；稍后自动重试" }
+                if (statusRefreshPending) { statusRefreshPending = false; refreshStatus() }
             }
         }
     }
     private fun readStatus(): StatusSnapshot {
         val c = runCatching { settings.read() }.getOrNull()
+        val local = LocalStateRepository.get(this).state.value
         if (c != null) runCatching { Diagnostics(this).sample(c) }
         val screenLive = c?.screenCollectionEnabled == true && (if (c.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
         val live = screenLive || (c?.observesSystem() == true && MediaCollectionService.connected)
-        val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else settings.message()
+        val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else local.captureLabel
         val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
-        val totals = if (stats == null) "统计暂不可读取" else "本周期保存截图 ${stats.optLong("SCREEN_QUEUED")} · 应用活动 ${stats.optLong("ACTIVITY_QUEUED")} · 媒体 ${stats.optLong("MEDIA_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED") + stats.optLong("MEDIA_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
-        val queueStats = runCatching { queue().stats() }.getOrNull()
-        val pending = runCatching { queueStats?.pendingSync?.count?.plus(localSources().pendingSync().count) }.getOrNull()
-        val bytes = queueStats?.bytes?.div(1024.0 * 1024)
+        val totals = if (stats == null) "统计暂不可读取" else "本周期累计截图记录 ${stats.optLong("SCREEN_QUEUED")} · 应用活动 ${stats.optLong("ACTIVITY_QUEUED")} · 媒体 ${stats.optLong("MEDIA_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED") + stats.optLong("MEDIA_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
+        val queueStats = local.active
+        val pending = local.pending
+        val bytes = queueStats?.quotaBytes?.div(1024.0 * 1024)
         val modelMissing = c != null && c.screenCollectionEnabled && c.nsfw.enabled && AppCollectionRules.parse(c.appCollectionRules).mayCollectContent() && !NsfwModelStore(this).hasFile()
         val queueFull = c != null && bytes != null && bytes >= c.maxQueueMiB
         val title = when {
@@ -800,7 +805,7 @@ class MainActivity : Activity() {
             else -> settings.uploadStatus()
         }
         val syncText = "${pending?.let { "待同步 $it 条" } ?: "队列暂不可读取"}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}\n$syncMessage"
-        val totalsText = if (stats == null) "统计暂不可读取" else "截图 ${stats.optLong("SCREEN_QUEUED")}    活动 ${stats.optLong("ACTIVITY_QUEUED")}    媒体 ${stats.optLong("MEDIA_QUEUED")}    随手记 ${stats.optLong("NOTE_QUEUED")}\n本周期已同步 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")} 条"
+        val totalsText = local.imageLabel() + "\n" + if (stats == null) "累计统计暂不可读取" else "本周期累计截图记录 ${stats.optLong("SCREEN_QUEUED")}    活动 ${stats.optLong("ACTIVITY_QUEUED")}    媒体 ${stats.optLong("MEDIA_QUEUED")}    随手记 ${stats.optLong("NOTE_QUEUED")}\n本周期已同步 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")} 条"
         val technicalText = "$state\n$totals\n$syncText\n${settings.uploadStatus()}\n无障碍 ${if (CaptureAccessibilityService.connected) "已连接" else "未连接"} · 使用情况 ${if (ForegroundApps.usageAllowed(this)) "已授权" else "未授权"}\n最近采集 ${settings.lastCapture() ?: "无"}"
         val connectionText = if (c?.server.isNullOrBlank()) "尚未连接中央节点，请导入邀请或填写下方设置。" else "已保存节点：${c?.server}"
         val model = NsfwModelStore(this)
@@ -836,9 +841,10 @@ class MainActivity : Activity() {
             if (!applyingSettings && !isDestroyed) runCatching { settings.read() }.onSuccess { if (it != loadedConfig) reloadSettings(it) }
         }
         if (::server.isInitialized) settings.read().let { if (it != loadedConfig) reloadSettings(it) }
+        localStateJob = observeLocalState { refreshStatus() }
         handler.post(refresh)
     }
-    override fun onPause() { resumed = false; RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null); handler.removeCallbacks(refresh); super.onPause() }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; resumed = false; RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null); handler.removeCallbacks(refresh); super.onPause() }
     override fun onStop() { if (!isChangingConfigurations) discardPageDraft(); super.onStop() }
     override fun onDestroy() { statusExecutor.shutdownNow(); handler.removeCallbacks(refresh); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)

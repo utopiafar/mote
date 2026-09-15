@@ -16,17 +16,21 @@ class StorageActivity : Activity() {
     private lateinit var content: LinearLayout
     private val executor = Executors.newSingleThreadExecutor()
     private var working = false
+    private var localStateJob: kotlinx.coroutines.Job? = null
+    private lateinit var inventory: TextView
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage()
         text(body, "图片保存位置", 27f)
         text(body, "这里保存本机待同步、待 OCR 的加密图片，以及同一队列的随手记和应用活动。已归档图片仍保存在中央节点，可在采集记录中查看。")
         text(body, "选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。模型、草稿、设置及来源缓存保留在内部空间。")
+        inventory = TextView(this).apply { textSize = 15f }; body.addView(inventory)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(content)
         text(body, "这些是本应用专用目录，图片保持加密，不是共享相册；卸载应用会删除本机文件。移除存储卡后会停止使用该位置并提示，不会切到空目录；重新连接后可恢复。")
         MoteUi.styleTree(body)
     }
-    override fun onResume() { super.onResume(); refresh() }
+    override fun onResume() { super.onResume(); localStateJob = observeLocalState { inventory.text = it.storageLabel() }; refresh() }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; super.onPause() }
     private fun text(parent: LinearLayout, value: String, size: Float = 15f) {
         parent.addView(TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(8), 0, moteDp(8)); setTextColor(MoteUi.ink) })
     }
@@ -39,11 +43,10 @@ class StorageActivity : Activity() {
             val selected = runCatching { storage.selected() }
             val current = runCatching { storage.current() }
             val choices = runCatching { storage.choices() }
-            val bytes = runCatching { applicationContext.queue().diskBytes() }
             runOnUiThread {
                 working = false; if (isDestroyed) return@runOnUiThread
                 content.removeAllViews()
-                selected.getOrNull()?.let { location -> text(content, "当前保存位置\n${location.path}\n本机加密队列：${bytes.getOrNull()?.let(::size) ?: "暂不可读取"}") }
+                selected.getOrNull()?.let { location -> text(content, "当前保存位置\n${location.path}") }
                 current.exceptionOrNull()?.let { text(content, "位置不可用：${it.message}\n已保留原位置，请重新连接原介质后重试。") }
                 choices.onSuccess { entries ->
                     for (choice in entries) {

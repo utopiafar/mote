@@ -136,7 +136,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 queue.acknowledge(event.getString("id"), event.toString().toByteArray(Charsets.UTF_8).size.toLong())
                 SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                 pendingRecordId = null
-                settings.syncStatus("uploading", "已确认上传；待同步 ${SyncSchedule.pending(applicationContext).count} 条", uploaded = true)
+                settings.syncStatus("uploading", "已收到上传确认", uploaded = true)
             }
             stage = EventStage.HEARTBEAT
             if (!queue.pendingSync().hasWork) finishStatus()

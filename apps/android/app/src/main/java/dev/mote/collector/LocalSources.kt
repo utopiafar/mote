@@ -97,6 +97,7 @@ data class SourceScan(val items: List<JSONObject>, val complete: Boolean, val ob
 
 /** Encrypted snapshots plus immutable pending revisions. State changes are atomic and ACKs target-specific. */
 class LocalSourceStore(private val directory: File, private val cipher: ByteCipher) {
+    internal var onMutation: (() -> Unit)? = null
     init { directory.mkdirs() }
     fun sources(): List<LocalSource> = synchronized(lock) {
         val array = read(File(directory, "config.enc")).optJSONArray("sources") ?: JSONArray()
@@ -157,7 +158,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     }
     fun resetSyncedSnapshots() = synchronized(lock) {
         val all = sources(); check(all.all { (state(it.id).optJSONArray("pending")?.length() ?: 0) == 0 })
-        all.forEach { if (file(it.id).exists()) check(file(it.id).delete()) }
+        all.forEach { if (file(it.id).exists()) { check(file(it.id).delete()); onMutation?.invoke() } }
     }
     fun selectTarget(id: String, target: String) = synchronized(lock) {
         val state = state(id)
@@ -228,7 +229,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     private fun write(file: File, body: JSONObject) = writeBytes(file, cipher.seal(body.toString().toByteArray(Charsets.UTF_8)))
     private fun writeBytes(file: File, bytes: ByteArray) {
         val temp = File(directory, "${UUID.randomUUID()}.tmp")
-        try { FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }; check(temp.renameTo(file)) { "无法保存加密来源状态" } } finally { temp.delete() }
+        try { FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }; check(temp.renameTo(file)) { "无法保存加密来源状态" }; onMutation?.invoke() } finally { temp.delete() }
     }
     companion object { private val lock = Any() }
 }

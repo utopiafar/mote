@@ -32,6 +32,9 @@ class BulkDedupeActivity : Activity() {
     @Volatile private var pending = false
     private var page = 0
     private var busy = false
+    private var localStateJob: kotlinx.coroutines.Job? = null
+    private var polling: java.util.concurrent.ScheduledFuture<*>? = null
+    private var lastRecordsRevision = -1L
     private var stamp = ""
     @Volatile private var refresh = true
     private val modeValues = listOf("exact", "conservative", "balanced", "aggressive")
@@ -68,8 +71,16 @@ class BulkDedupeActivity : Activity() {
         action(body, "上一页") { if (page > 0) { page--; render() } }
         action(body, "下一页") { if ((page + 1) * 10 < rows.size) { page++; render() } }
         MoteUi.styleTree(body)
-        executor.scheduleWithFixedDelay({ poll() }, 0, 700, TimeUnit.MILLISECONDS)
     }
+    override fun onResume() {
+        super.onResume()
+        refresh = true
+        polling = executor.scheduleWithFixedDelay({ poll() }, 0, 700, TimeUnit.MILLISECONDS)
+        localStateJob = observeLocalState {
+            if (it.revision.records != lastRecordsRevision) { lastRecordsRevision = it.revision.records; refresh = true }
+        }
+    }
+    override fun onPause() { polling?.cancel(false); polling = null; localStateJob?.cancel(); localStateJob = null; super.onPause() }
     private fun id(pair: JSONObject) = pair.getJSONObject("candidate").getString("id")
     private fun poll() {
         try {
@@ -77,6 +88,7 @@ class BulkDedupeActivity : Activity() {
             val active = info != null && !info.state.isFinished
             val key = "${info?.id}:${info?.state}"
             val changed = refresh || key != stamp
+            val recordsVersion = LocalStateRepository.get(this).state.value.revision.records
             val store = BulkDedupeStore(this)
             val showingPending = pending
             var loaded: List<JSONObject>? = null
@@ -94,7 +106,7 @@ class BulkDedupeActivity : Activity() {
                         .filter { queue.dedupeRow(id(it))?.optString("blob") == it.getJSONObject("candidate").optString("blob") } else emptyList()
                     title = if (report.optBoolean("complete")) "扫描结果 · ${report.optString("mode")} · ${if (report.optString("comparison") == "last_retained") "与上一张保留图比较" else "旧规则结果，请重新扫描"}\n扫描 ${report.optInt("scanned")} 张 · 失败 ${report.optInt("errors")} 张 · 候选 ${loaded.size} 张\n时间 ${report.optString("at")}" else "尚无完整扫描结果；取消或中断后请重新扫描。"
                 }
-                refresh = false
+                refresh = LocalStateRepository.get(this).state.value.revision.records != recordsVersion
             }
             stamp = key
             val data = info?.progress ?: Data.EMPTY

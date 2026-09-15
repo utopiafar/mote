@@ -41,6 +41,10 @@ class CaptureRecordsActivity : Activity() {
     private var nextCursor: String? = null
     private var date = LocalDate.now()
     private var central = false
+    private var localStateJob: kotlinx.coroutines.Job? = null
+    private var lastRecordsRevision = -1L
+    private var metadataLoading = false
+    private var refreshAfterLoad = false
     private val recordSources = listOf("screen", "media", "notification", "device_event", "note", "activity")
     private var recordSource = "screen"
     @Volatile private var generation = 0
@@ -96,6 +100,20 @@ class CaptureRecordsActivity : Activity() {
         load()
         intent.getStringExtra("recordId")?.let { detail(it, false, null, generation) }
     }
+    override fun onResume() {
+        super.onResume()
+        lastRecordsRevision = -1L
+        localStateJob = observeLocalState { snapshot ->
+            if (snapshot.revision.records != lastRecordsRevision) {
+                if (!central && snapshot.active != null && snapshot.error == null) {
+                    lastRecordsRevision = snapshot.revision.records
+                    thumbnails.evictAll()
+                    if (metadataLoading) refreshAfterLoad = true else load(backgroundRefresh = true)
+                }
+            }
+        }
+    }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; super.onPause() }
     private fun reload() { album = null; cursors.clear(); cursors.add(null); load() }
     private fun closeAlbum() { album = null; cursors.clear(); cursors.addAll(albumCursors); load() }
     private fun navigateBack() { if (album != null) closeAlbum() else finish() }
@@ -103,7 +121,10 @@ class CaptureRecordsActivity : Activity() {
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Deprecated("Native Activity back navigation")
     override fun onBackPressed() = navigateBack()
-    private fun load() {
+    private fun load(backgroundRefresh: Boolean = false) {
+        metadataLoading = true
+        val scroll = body.parent as? ScrollView
+        val scrollY = scroll?.scrollY ?: 0
         val stamp = ++generation; val remote = central; val source = recordSource; val selected = album
         backToAlbums.visibility = if (selected != null) View.VISIBLE else View.GONE
         progress.visibility = View.VISIBLE; progress.isIndeterminate = true
@@ -111,14 +132,14 @@ class CaptureRecordsActivity : Activity() {
         val cursor = cursors.last(); val pageNumber = cursors.size
         dateButton.text = date.toString(); nextDay.isEnabled = date < LocalDate.now()
         previousPage.isEnabled = false; nextPage.isEnabled = false; status.text = "正在读取${if (remote) "中央归档" else "本机记录"}…"
-        clearList(); imageExecutor.queue.clear()
-        if (selected != null) repeat(3) {
+        if (!backgroundRefresh) clearList(); imageExecutor.queue.clear()
+        if (!backgroundRefresh && selected != null) repeat(3) {
             val placeholders = row(list)
             repeat(2) { text(placeholders, "加载预览…", 13f).apply {
                 layoutParams = LinearLayout.LayoutParams(0, moteDp(188), 1f).apply { marginEnd = moteDp(6) }
                 gravity = Gravity.CENTER; setBackgroundColor(0xffeeeeee.toInt())
             } }
-        } else repeat(6) { text(list, "正在读取 App 与时间…", 15f).apply {
+        } else if (!backgroundRefresh) repeat(6) { text(list, "正在读取 App 与时间…", 15f).apply {
             minHeight = moteDp(88); gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(0xffeeeeee.toInt())
         } }
         executor.execute {
@@ -142,7 +163,11 @@ class CaptureRecordsActivity : Activity() {
                 val images = mutableListOf<Pair<JSONObject, ImageView>>()
                 runOnUiThread {
                     if (isDestroyed || stamp != generation) return@runOnUiThread
+                    if (backgroundRefresh && records.isEmpty() && cursors.size > 1) {
+                        cursors.removeAt(cursors.lastIndex); load(backgroundRefresh = true); return@runOnUiThread
+                    }
                     clearList()
+                    if (backgroundRefresh) list.post { if (!isDestroyed && stamp == generation) scroll?.scrollTo(0, scrollY) }
                     if (cacheConfig != config) { thumbnails.evictAll(); cacheConfig = config }
                     nextCursor = next
                     if (source == "screen" && selected == null) {
@@ -218,6 +243,13 @@ class CaptureRecordsActivity : Activity() {
                 }
             } catch (error: Exception) {
                 runOnUiThread { if (!isDestroyed && stamp == generation) { clearList(); progress.visibility = View.GONE; status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1 } }
+            } finally {
+                runOnUiThread {
+                    if (!isDestroyed && stamp == generation) {
+                        metadataLoading = false
+                        if (refreshAfterLoad) { refreshAfterLoad = false; load(backgroundRefresh = true) }
+                    }
+                }
             }
         }
     }

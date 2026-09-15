@@ -29,11 +29,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         }
         private const val MAX_CACHED_EVENTS = 50_000
         private data class EventStamp(val bytes: Long, val modifiedAt: Long)
-        private data class EventStats(val stamp: EventStamp, val pending: Boolean, val reservedBytes: Long, val source: String, val capturedAt: String, val blocked: Boolean, val awaitingOcr: Boolean, val uploaded: Boolean)
+        private data class EventStats(val stamp: EventStamp, val pending: Boolean, val reservedBytes: Long, val source: String, val capturedAt: String, val blocked: Boolean, val awaitingOcr: Boolean, val uploaded: Boolean, val imageHash: String)
         private val statistics = object : LinkedHashMap<String, MutableMap<String, EventStats>>(MAX_CACHED_DIRECTORIES, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MutableMap<String, EventStats>>?) = size > MAX_CACHED_DIRECTORIES
         }
     }
+    /** Nonblocking invalidation only; listeners must never read storage inside this callback. */
+    internal var onMutation: ((Boolean) -> Unit)? = null
     internal var assertCurrent: (() -> Unit)? = null
     private inline fun <T> guarded(action: () -> T): T = synchronized(lock) { assertCurrent?.invoke(); action() }
     init { check(dir.isDirectory || createMissing && dir.mkdirs()) { "本机存储目录不可用" } }
@@ -63,9 +65,23 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             cache.remove(file.name)
             val event = read(file)
             EventStats(stamp, !syncFailed(event) && (!event.optBoolean("_uploaded") || event.has("_ocrResult")),
-                ocrReserve(event), event.optString("source", "screen"), event.optString("capturedAt"), syncFailed(event), event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult"), event.optBoolean("_uploaded"))
+                ocrReserve(event), event.optString("source", "screen"), event.optString("capturedAt"), syncFailed(event), event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult"), event.optBoolean("_uploaded"), event.optString("_blob"))
                 .also { if (cache.size < MAX_CACHED_EVENTS) cache[file.name] = it }
         }
+    }
+    /** Exact inventory of committed records, distinct from cumulative operation counters. */
+    fun inventory(): QueueInventory = guarded {
+        val files = dir.listFiles() ?: error("无法读取本机存储目录")
+        val events = files.filter { it.extension == "event" }
+        val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
+        cache.keys.retainAll(events.map { it.name }.toSet())
+        val values = events.map { eventStats(it, cache) }
+        val hashes = values.map { it.imageHash }.filter(String::isNotBlank).toSet()
+        val blobs = files.filter { it.extension == "blob" }.mapTo(mutableSetOf()) { it.nameWithoutExtension }
+        check(blobs.containsAll(hashes)) { "部分图片文件缺失，保留上次统计" }
+        QueueInventory(events.size, values.count { it.imageHash.isNotBlank() }, hashes.size,
+            values.count { it.pending }, values.count { it.awaitingOcr && !it.blocked }, values.count { it.blocked },
+            files.filter { it.isFile }.sumOf { it.length() }, values.sumOf { it.reservedBytes })
     }
     fun syncInventory(): JSONObject = guarded {
         val files = records(); val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
@@ -130,6 +146,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             if (file.extension == "event") browseIndex().invalidate(file.nameWithoutExtension)
             FileOutputStream(temp).use { it.write(cipher.seal(bytes)); it.fd.sync() }
             check(temp.renameTo(file)) { "无法原子写入队列" }
+            onMutation?.invoke(file.extension == "event")
             // Atomic replacements may have the same length and timestamp on coarse filesystems.
             statistics[dir.absolutePath]?.remove(file.name)
             if (file.extension == "event") browseIndex().changed(file, JSONObject(String(bytes, Charsets.UTF_8)))
@@ -193,6 +210,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val hash = record.optString("_blob", "")
         browseIndex().invalidate(file.nameWithoutExtension)
         check(file.delete()) { "无法删除已确认记录" }
+        onMutation?.invoke(true)
         browseIndex().changed(file, null)
         statistics[dir.absolutePath]?.remove(file.name)
         if (hash.isNotEmpty() && records().none { read(it).optString("_blob", "") == hash }) {
@@ -409,6 +427,6 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     fun recoverOrphans() = guarded {
         // Validate every file stamp; missing/stale index entries are rebuilt before orphan cleanup.
         val referenced = browseIndex().entries(browseFiles(), ::read).map { it.optString("blob") }.toSet()
-        dir.listFiles()?.filter { it.extension == "tmp" || (it.extension in setOf("blob", "thumb") && it.nameWithoutExtension !in referenced) }?.forEach { it.delete() }
+        dir.listFiles()?.filter { it.extension == "tmp" || (it.extension in setOf("blob", "thumb") && it.nameWithoutExtension !in referenced) }?.forEach { if (it.delete()) onMutation?.invoke(false) }
     }
 }
