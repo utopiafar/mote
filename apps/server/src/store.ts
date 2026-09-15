@@ -60,6 +60,23 @@ export class Store {
       CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
       PRAGMA user_version=1;`);
+    // Materialized browsing projection: album navigation never reads OCR/metadata JSON or blobs.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS capture_gallery (
+        id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,
+        device_id TEXT NOT NULL, captured_at TEXT NOT NULL, app_id TEXT NOT NULL, app_name TEXT NOT NULL, has_image INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS gallery_device_time ON capture_gallery(device_id,captured_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS gallery_app_time ON capture_gallery(device_id,app_id,captured_at DESC,id DESC);
+      CREATE TRIGGER IF NOT EXISTS gallery_insert AFTER INSERT ON captures WHEN json_extract(NEW.json,'$.source')='screen' BEGIN
+        INSERT INTO capture_gallery VALUES(NEW.id,NEW.device_id,NEW.captured_at,COALESCE(json_extract(NEW.json,'$.appId'),''),COALESCE(json_extract(NEW.json,'$.appName'),''),NEW.blob_hash IS NOT NULL);
+      END;
+    `);
+    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='gallery-v1'").get()) {
+      this.db.exec(`BEGIN IMMEDIATE;
+        INSERT OR IGNORE INTO capture_gallery SELECT id,device_id,captured_at,COALESCE(json_extract(json,'$.appId'),''),COALESCE(json_extract(json,'$.appName'),''),blob_hash IS NOT NULL FROM captures WHERE json_extract(json,'$.source')='screen';
+        INSERT INTO settings(key,value) VALUES('gallery-v1','1'); COMMIT;`);
+    }
     this.db.function('mote_ocr_status',{deterministic:true},json=>captureOcrState(JSON.parse(String(json))).status);
     const marker=this.db.prepare('SELECT value FROM settings WHERE key=?').get('encryption') as {value:string}|undefined;
     const expected=this.key ? sha256(this.key) : 'none';
@@ -219,6 +236,39 @@ export class Store {
       ...(record.metadata?.media?{media:record.metadata.media}:{}),
       textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:'未观察到媒体会话',disabled:'媒体采集已关闭',permission_required:'媒体权限未授予',unavailable:'媒体信息暂不可用'}[record.metadata?.media?.status??'unavailable'])):record.source==='notification'||record.source==='device_event'?systemEventText(record.metadata):record.ocrText).slice(0,160)}));
     return {...page,items};
+  }
+  gallery(range:{after:string;before:string;deviceId?:string;appId?:string;cursor?:string;limit:number}, albums:boolean) {
+    const filters=['captured_at>=?','captured_at<?',"(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0))"];const args:(string|number)[]=[new Date(range.after).toISOString(),new Date(range.before).toISOString()];
+    if(range.deviceId){filters.push('device_id=?');args.push(range.deviceId);}
+    if(range.appId!==undefined){filters.push('app_id=?');args.push(range.appId);}
+    let cursor: {at:string;id:string}|{after:string;deviceId:string;appId:string}|undefined;
+    if(range.cursor){
+      try{cursor=(albums?z.object({after:z.string().datetime(),deviceId:z.string(),appId:z.string()}):z.object({at:z.string().datetime(),id:z.string().uuid()})).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}
+      catch{throw new StoreError('Invalid album cursor');}
+    }
+    const scope=`FROM capture_gallery WHERE ${filters.join(' AND ')}`;
+    const totalCount=Number(this.db.prepare(`SELECT COUNT(*) AS n ${scope}`).get(...args)!.n);
+    if(!albums){
+      const position=cursor as {at:string;id:string}|undefined;
+      const seek=position?' AND (captured_at<? OR (captured_at=? AND id<?))':'';
+      const rows=this.db.prepare(`SELECT id,device_id AS deviceId,captured_at AS capturedAt,app_id AS appId,app_name AS appName,has_image AS hasImage ${scope}${seek} ORDER BY captured_at DESC,id DESC LIMIT ?`).all(...args,...(position?[position.at,position.at,position.id]:[]),range.limit+1);
+      const items=rows.slice(0,range.limit).map(row=>({...row,source:'screen',hasImage:Boolean(row.hasImage)}));
+      const last=items.at(-1) as {capturedAt:string;id:string}|undefined;
+      return {items,totalCount,nextCursor:rows.length>range.limit&&last?Buffer.from(JSON.stringify({at:last.capturedAt,id:last.id})).toString('base64url'):null};
+    }
+    const bucket="CAST(strftime('%s',captured_at) AS INTEGER)/900";
+    const group=`${scope} GROUP BY device_id,app_id,${bucket}`;
+    const albumCount=Number(this.db.prepare(`SELECT COUNT(*) AS n FROM (SELECT 1 ${group})`).get(...args)!.n);
+    const position=cursor as {after:string;deviceId:string;appId:string}|undefined;
+    const seek=position?` HAVING (${bucket}<? OR (${bucket}=? AND (device_id>? OR (device_id=? AND app_id>?))))`:'';
+    const boundary=position?Math.floor(Date.parse(position.after)/900000):0;
+    const rows=this.db.prepare(`SELECT id,device_id AS deviceId,app_id AS appId,app_name AS appName,MIN(captured_at) AS firstAt,MAX(captured_at) AS capturedAt,COUNT(*) AS count,SUM(has_image) AS imageCount ${group}${seek} ORDER BY ${bucket} DESC,device_id,app_id LIMIT ?`).all(...args,...(position?[boundary,boundary,position.deviceId,position.deviceId,position.appId]:[]),range.limit+1);
+    const items=rows.slice(0,range.limit).map(row=>{const start=Math.floor(Date.parse(String(row.capturedAt))/900000)*900000;return {...row,after:new Date(start).toISOString(),before:new Date(start+900000).toISOString()};});
+    const last=items.at(-1) as {after:string;deviceId:string;appId:string}|undefined;
+    return {items,totalCount,albumCount,nextCursor:rows.length>range.limit&&last?Buffer.from(JSON.stringify({after:last.after,deviceId:last.deviceId,appId:last.appId})).toString('base64url'):null};
+  }
+  imageReference(id:string) {
+    return this.db.prepare('SELECT device_id AS deviceId,blob_hash AS blobHash FROM captures WHERE id=?').get(id) as {deviceId:string;blobHash:string|null}|undefined;
   }
   completeOcr(id:string,update:{status:'completed'|'failed';ocrText:string}) {
     const row=this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as (Row&{fingerprint:string})|undefined;

@@ -149,3 +149,11 @@ Final answers must have a string body and declared retrieved citation IDs. Only 
 相同版本重复提交安全；相同版本但内容不同返回冲突。离线客户端需持久化版本与请求正文，严格确认后再移除。参考实现使用内容与前一版本的哈希链，支持“修改→删除→恢复相同内容”，而旧重试不会移动当前指针。
 
 外部 Chatbot 接口另见 [MCP 与连接器](connectors.md)。内部查询 Agent 没有写入能力。
+
+### Screenshot albums
+
+`GET /api/capture-browser/albums` and `GET /api/capture-browser/album-images` require ISO `after` (inclusive), `before` (exclusive), and accept `deviceId`, `limit` (1–60, default 20), and an opaque `cursor`. Grid requests also require exact `appId`, including an empty string for system/unknown apps. Keep the range and device/app filters unchanged across pages. Collector credentials are restricted to their own device; owner requests may specify a device.
+
+Albums group screenshots into fixed 15-minute UTC clock buckets per device and app. These are browsing buckets, not inferred activities, sessions or tasks. Album rows return `id`, `deviceId`, `appId`, `appName`, `firstAt`, `capturedAt`, bucket `after`/`before`, `count` and `imageCount`. The response includes `totalCount`, `albumCount`, and `nextCursor`. Albums use bucket/device/app keyset pagination; images use capture-time/ID keyset pagination, so new captures do not shift already-read pages.
+
+Grid rows contain only `id`, `deviceId`, `source`, `capturedAt`, `appId`, `appName`, and `hasImage`, plus response `totalCount` and `nextCursor`. Neither endpoint returns OCR, raw metadata or image bytes. SQLite maintains a separate `capture_gallery` projection on capture insertion and cascades deletion with its parent capture; existing rows are backfilled once. The existing detail/image routes remain available. Image authorization reads only ownership and blob reference, without loading full evidence JSON.

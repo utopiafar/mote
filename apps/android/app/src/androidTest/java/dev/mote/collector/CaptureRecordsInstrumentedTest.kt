@@ -184,7 +184,19 @@ class CaptureRecordsInstrumentedTest {
             waitUntil { shown("当天 21 条") }
             scenario.onActivity { activity ->
                 assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
-                assertEquals(20, views(activity.window.decorView).count { it.tag?.toString()?.startsWith("capture:") == true })
+                assertEquals(0, views(activity.window.decorView).count { it.tag?.toString()?.startsWith("capture:") == true })
+                val albums = views(activity.window.decorView).filter { it.tag?.toString()?.startsWith("album:") == true }
+                assertEquals(1, albums.size)
+                assertFalse(views(activity.window.decorView).filterIsInstance<ImageView>().any { it.contentDescription == "采集图片缩略图" })
+                albums.single().performClick()
+                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text == "加载预览…" })
+            }
+            waitUntil {
+                var count = 0
+                scenario.onActivity { count = views(it.window.decorView).count { view -> view.tag?.toString()?.startsWith("capture:") == true } }
+                count == 20
+            }
+            scenario.onActivity { activity ->
                 views(activity.window.decorView).filterIsInstance<TextView>().single { it.text.toString() == "下一页" }.performClick()
             }
             waitUntil { shown("第 2 页") }

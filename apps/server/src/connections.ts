@@ -103,7 +103,7 @@ export class Connections {
     this.assertActive(credential);
     if(route==='/api/connections/self'&&['GET','HEAD'].includes(method))return;
     if(credential.scope!=='collector')throw denied();
-    const permitted:Record<string,string[]>={'/api/captures':['POST'],'/api/capture-browser/reconcile':['POST'],'/api/capture-browser':['GET','HEAD'],'/api/capture-browser/:id':['GET','HEAD'],'/api/capture-browser/:id/image':['GET','HEAD'],'/api/capture-browser/:id/ocr':['POST'],'/api/media-activity':['GET','HEAD'],'/api/notes':['POST'],'/api/devices/heartbeat':['POST'],'/api/sources':['GET','HEAD','POST'],'/api/sources/:id':['PATCH'],'/api/sources/:id/items':['GET','HEAD','PUT'],'/api/sources/:id/item':['GET','HEAD'],'/api/sources/:id/history':['GET','HEAD'],'/api/source-items':['GET','HEAD']};
+    const permitted:Record<string,string[]>={'/api/captures':['POST'],'/api/capture-browser/reconcile':['POST'],'/api/capture-browser':['GET','HEAD'],'/api/capture-browser/albums':['GET','HEAD'],'/api/capture-browser/album-images':['GET','HEAD'],'/api/capture-browser/:id':['GET','HEAD'],'/api/capture-browser/:id/image':['GET','HEAD'],'/api/capture-browser/:id/ocr':['POST'],'/api/media-activity':['GET','HEAD'],'/api/notes':['POST'],'/api/devices/heartbeat':['POST'],'/api/sources':['GET','HEAD','POST'],'/api/sources/:id':['PATCH'],'/api/sources/:id/items':['GET','HEAD','PUT'],'/api/sources/:id/item':['GET','HEAD'],'/api/sources/:id/history':['GET','HEAD'],'/api/source-items':['GET','HEAD']};
     if(!permitted[route]?.includes(method))throw denied();
   }
   assertOwnDevice(c:ConnectionCredential,body:unknown){this.assertActive(c);if(!body||typeof body!=='object'||(body as {deviceId?:unknown}).deviceId!==c.deviceId)throw denied();}

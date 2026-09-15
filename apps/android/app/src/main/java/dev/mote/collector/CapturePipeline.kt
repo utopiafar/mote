@@ -185,6 +185,12 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 // The local pair is never included in the upload event or upload queue.
                 val encoded = if (!duplicate) jpeg(output, config.jpegQuality) else null
                 context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L)
+                if (!duplicate) runCatching {
+                    val ratio = minOf(1f, 320f / maxOf(output.width, output.height))
+                    val thumb = Bitmap.createScaledBitmap(output, maxOf(1, (output.width * ratio).roundToInt()), maxOf(1, (output.height * ratio).roundToInt()), true)
+                    try { context.queue().cacheThumbnail(event.getString("id"), jpeg(thumb, 70), config.maxQueueMiB * 1024L * 1024L) }
+                    finally { if (thumb !== output) thumb.recycle() }
+                }
                 if (duplicate && config.imageDedupeDiagnosticsEnabled && features != null) {
                     val reference = dedupeReference?.takeIf { it.signature == previousSignature }
                     if (reference != null) runCatching {
