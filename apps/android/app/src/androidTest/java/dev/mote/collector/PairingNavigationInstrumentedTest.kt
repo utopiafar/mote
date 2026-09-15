@@ -127,6 +127,7 @@ class PairingNavigationInstrumentedTest {
                 waitUntil { settings.read().server == node && !ConnectionGuard.changing() }
                 assertEquals(newToken, settings.read().token); assertEquals(deviceId, settings.deviceId)
                 assertEquals(listOf("/api/connections/redeem", "/api/connections/self"), requests.toList())
+                scenario.awaitUiText(node)
                 scenario.onActivity { activity ->
                     assertEquals(node, editor(activity, "https://mote.example.com").text.toString())
                     assertEquals(newToken, editor(activity, "建议通过邀请获取本设备凭据").text.toString())

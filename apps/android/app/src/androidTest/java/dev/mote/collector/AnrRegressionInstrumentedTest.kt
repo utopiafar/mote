@@ -111,6 +111,17 @@ class AnrRegressionInstrumentedTest {
         lateinit var activity: MainActivity
         lateinit var executor: ExecutorService
         val updates = AtomicInteger()
+        val updatesAtDestroy = AtomicInteger(-1)
+        val application = context.applicationContext as android.app.Application
+        val lifecycle = object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityDestroyed(value: android.app.Activity) { if (value === activity) updatesAtDestroy.set(updates.get()) }
+            override fun onActivityCreated(value: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityStarted(value: android.app.Activity) = Unit
+            override fun onActivityResumed(value: android.app.Activity) = Unit
+            override fun onActivityPaused(value: android.app.Activity) = Unit
+            override fun onActivityStopped(value: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(value: android.app.Activity, state: android.os.Bundle) = Unit
+        }
         try {
             scenario.onActivity {
                 activity = it
@@ -119,6 +130,7 @@ class AnrRegressionInstrumentedTest {
                 // Keep the Activity resumed while removing automatic requests.
                 field<Handler>(it, "handler").removeCallbacks(field<Runnable>(it, "refresh"))
             }
+            application.registerActivityLifecycleCallbacks(lifecycle)
             executor.submit {}.get(10, TimeUnit.SECONDS)
             instrumentation.runOnMainSync {
                 assertFalse(field<Boolean>(activity, "statusLoading"))
@@ -152,8 +164,12 @@ class AnrRegressionInstrumentedTest {
                 assertTrue(executor.isShutdown)
             }
             assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS))
-            instrumentation.runOnMainSync { assertEquals("a destroyed Activity must not receive the late snapshot", 2, updates.get()) }
-        } finally { scenario.close() }
+            instrumentation.runOnMainSync {
+                // Cached status can arrive before close; only updates after destruction are forbidden.
+                assertTrue(updatesAtDestroy.get() >= 2)
+                assertEquals("a destroyed Activity must not receive the late snapshot", updatesAtDestroy.get(), updates.get())
+            }
+        } finally { scenario.close(); application.unregisterActivityLifecycleCallbacks(lifecycle) }
     }
 
     @Test fun savingANoteAndNavigatingStayResponsiveWhileTheQueueIsLocked() {
