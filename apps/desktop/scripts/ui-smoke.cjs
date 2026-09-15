@@ -79,14 +79,22 @@ app.on('browser-window-created', (_event, window) => {
       // Simulate only the renderer running state; the collector never starts in this fixture.
       // Settings must remain editable while capturing, independently of actual native capture.
       const send = window.webContents.send.bind(window.webContents);
+      const { Collector } = require('../dist/collector');
+      const originalStatus = Collector.prototype.status;
+      // Both pushed events and the renderer's periodic status query must see the same fixture.
+      // Only the returned view changes; the collector itself remains stopped.
+      Collector.prototype.status = function() { const value = originalStatus.call(this); assert.equal(value.running, false); return { ...value, running: true, state: 'capturing' }; };
       window.webContents.send = (channel, ...args) => send(channel, ...(channel === 'mote:status' ? [{ ...args[0], running: true, state: 'capturing' }] : args));
-      window.webContents.send('mote:status', { ...status, running: true, state: 'capturing' });
-      await navigate('capture');
-      assert(await js(`!document.querySelector('#settings-fields').disabled`));
-      assert(await js(`document.querySelector('#save-hint').textContent.includes('立即应用')`));
-      await navigate('overview');
-      window.webContents.send = send;
-      window.webContents.send('mote:status', status);
+      try {
+        window.webContents.send('mote:status', { ...status, running: true, state: 'capturing' });
+        await navigate('capture');
+        assert.equal((await js('window.mote.status()')).running, true, 'Status polling agrees with pushed synthetic capture state');
+        // Cross a full polling interval to reproduce the previous event/poll race deterministically.
+        await js(`new Promise(resolve => setTimeout(resolve, 1100))`);
+        assert(await js(`!document.querySelector('#settings-fields').disabled`));
+        assert(await js(`document.querySelector('#save-hint').textContent.includes('立即应用')`));
+        await navigate('overview');
+      } finally { Collector.prototype.status = originalStatus; window.webContents.send = send; window.webContents.send('mote:status', status); }
       await navigate('notes');
       for (let i = 0; i < 50 && await js(`document.querySelector('#note-text').disabled`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       await js(`document.querySelector('#note-text').value = '跨页面保留的合成草稿'; document.querySelector('#note-text').dispatchEvent(new Event('input', {bubbles: true}));`);

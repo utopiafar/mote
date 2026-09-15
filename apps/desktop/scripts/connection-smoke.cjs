@@ -130,7 +130,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(requests, 3); assert.deepEqual(uploadBodies.at(-1), previousUpload);
       console.log(JSON.stringify({ ok: true, fixtureOnly: true, jsonAndUriPreview: true, nativeVisionQrImport: true, explicitOriginRequired: true, connectingCannotPretendCancel: true, failedPairRetainsConfig: true, abandonedPreviewDiscarded: true, pairingSurvivesNavigation: true, newConnectionSurvivesLaterSettingsSaveAndReload: true, secureStoreAdapterUsed: true, existingDevicePrivacyAndModelPreserved: true, collectorCannotOpenAdmin: true, ephemeralOwnerOnlyInMain: true, pendingNoteBlocksOtherOrigin: true, sameOriginExplicitReauthorizationResumesNote: true, screenshotCaptureStayedStopped: true, realKeychainUntouched: true }));
       finished = true; clearTimeout(timeout); app.quit();
-    })().catch(error => { process.stderr.write('Connection fixture failed: ' + error.message + '\n'); app.exit(1); });
+    })().catch(error => { process.stderr.write('Connection fixture failed: ' + error.stack + '\n'); app.exit(1); });
   });
 });
 app.on('quit', () => { server.closeAllConnections(); server.close(); if (finished) void rm(profile, { recursive: true, force: true }); });
