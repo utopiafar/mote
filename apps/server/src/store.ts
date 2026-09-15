@@ -1,3 +1,4 @@
+import {fileSchema} from './file-schema.js';
 import {systemEventText} from '@mote/shared';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
@@ -60,6 +61,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
       PRAGMA user_version=1;`);
+    fileSchema(this.db);
     // Materialized browsing projection: album navigation never reads OCR/metadata JSON or blobs.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS capture_gallery (
@@ -98,7 +100,7 @@ export class Store {
     return {...JSON.parse(row.json),receivedAt:row.received_at,blobHash:row.blob_hash,imageMime:row.mime,indexingStatus:row.index_status,...(row.summary?{summary:row.summary}:{})};
   }
   private clauses(range:Range={}) {
-    const clauses:string[]=["(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0))"]; const values:(string|number)[]=[];
+    const clauses:string[]=["(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
     if(range.after) {clauses.push('captured_at >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push('captured_at < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
@@ -238,7 +240,7 @@ export class Store {
     return {...page,items};
   }
   gallery(range:{after:string;before:string;deviceId?:string;appId?:string;cursor?:string;limit:number}, albums:boolean) {
-    const filters=['captured_at>=?','captured_at<?',"(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0))"];const args:(string|number)[]=[new Date(range.after).toISOString(),new Date(range.before).toISOString()];
+    const filters=['captured_at>=?','captured_at<?',"(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0) OR id IN (SELECT capture_id FROM file_heads))"];const args:(string|number)[]=[new Date(range.after).toISOString(),new Date(range.before).toISOString()];
     if(range.deviceId){filters.push('device_id=?');args.push(range.deviceId);}
     if(range.appId!==undefined){filters.push('app_id=?');args.push(range.appId);}
     let cursor: {at:string;id:string}|{after:string;deviceId:string;appId:string}|undefined;
@@ -372,15 +374,17 @@ export class Store {
     return mediaActivity((function*(){for(const row of rows)yield record(row as unknown as Row);})(),range);
   }
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
-  logicalBytes() {return Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n)+Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM (SELECT json FROM captures UNION ALL SELECT json FROM memories UNION ALL SELECT json FROM source_connections UNION ALL SELECT json FROM conversations)').get() as {n:number}).n);}
+  logicalBytes() {return Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_objects').get()!.n)+Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_parts p JOIN file_uploads u ON u.id=p.upload_id WHERE u.ack IS NULL').get()!.n)+Number(this.db.prepare('SELECT COALESCE(SUM(length(CAST(text AS BLOB))+COALESCE(length(embedding),0)),0) AS n FROM file_chunks').get()!.n)+Number(this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM file_artifacts').get()!.n)+Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n)+Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM (SELECT json FROM captures UNION ALL SELECT json FROM memories UNION ALL SELECT json FROM source_connections UNION ALL SELECT json FROM conversations UNION ALL SELECT manifest AS json FROM file_versions UNION ALL SELECT manifest AS json FROM file_uploads)').get() as {n:number}).n);}
   stats() {
     const counts=this.db.prepare("SELECT COUNT(*) AS captures, COUNT(blob_hash) AS imageCaptures, SUM(CASE WHEN json_extract(json,'$.source')='activity' THEN 1 ELSE 0 END) AS activityEvents, SUM(CASE WHEN json_extract(json,'$.source')='media' THEN 1 ELSE 0 END) AS mediaEvents, MIN(captured_at) AS firstCaptureAt,MAX(captured_at) AS lastCaptureAt FROM captures").get() as {captures:number;imageCaptures:number;activityEvents:number|null;mediaEvents:number|null;firstCaptureAt:string|null;lastCaptureAt:string|null};
     const blob=this.db.prepare('SELECT COUNT(*) AS blobs,COALESCE(SUM(bytes),0) AS imageBytes FROM blobs').get() as {blobs:number;imageBytes:number};
     const indexing=this.db.prepare('SELECT index_status AS status,COUNT(*) AS count FROM captures GROUP BY index_status').all();
-    const physicalBytes=[join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p))].reduce((n,p)=>n+(existsSync(p)?statSync(p).size:0),0);
+    const filePaths:string[]=[];const fileRoot=join(this.directory,'files');if(existsSync(fileRoot))for(const entry of readdirSync(fileRoot,{recursive:true,withFileTypes:true}))if(entry.isFile())filePaths.push(join(entry.parentPath,entry.name));
+    const physicalBytes=[...filePaths,join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p))].reduce((n,p)=>n+(existsSync(p)?statSync(p).size:0),0);
     return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:Boolean(this.key)};
   }
   exportArchive(maxBytes:number) {
+    if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError('文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。',409);
     const stats=this.stats() as {logicalBytes:number;captures:number};
     // Portable v1 embeds a blob for EACH observation. Account for expanded repetitions before allocation.
     const estimated=Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(c.json AS BLOB)) + 4 * ((COALESCE(b.bytes,0) + 2) / 3) + 240),0) AS n FROM captures c LEFT JOIN blobs b ON b.hash=c.blob_hash').get() as {n:number}).n)+200;
@@ -404,13 +408,13 @@ export class Store {
   prune(before:string) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE captured_at < ?").run(new Date().toISOString(),before);
-      this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE captured_at < ?)').run(before);
-      const result=this.db.prepare('DELETE FROM captures WHERE captured_at < ?').run(before);
+      this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
+      this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
+      const result=this.db.prepare('DELETE FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
       if(result.changes){this.db.exec('DELETE FROM insights; DELETE FROM memories; UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();return Number(result.changes);
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
-  private invalidateConversationAnswers() {
+  invalidateConversationAnswers() {
     // As with insights, a model reply may contain removed facts even without an
     // explicit citation. Keep authored questions, but never retain derived copies.
     const rows=this.db.prepare('SELECT id,json FROM conversations').all() as {id:string;json:string}[];
@@ -436,7 +440,7 @@ export class Store {
   }
   indexed(id:string,embedding:number[],model:string) {this.db.prepare("UPDATE captures SET embedding=?,embedding_model=?,index_status='indexed',index_error=NULL WHERE id=?").run(JSON.stringify(embedding),model,id);}
   indexFailed(id:string,error:string) {this.db.prepare("UPDATE captures SET index_status='failed',index_error=?,attempts=attempts+1 WHERE id=?").run(error.slice(0,500),id);}
-  retryIndex() {return {queued:Number(this.db.prepare("UPDATE captures SET index_status='pending' WHERE json_extract(json,'$.source')!='activity' AND length(trim(json_extract(json,'$.ocrText')))>0").run().changes)};}
+  retryIndex() {this.db.exec('UPDATE file_chunks SET index_error=NULL');return {queued:Number(this.db.prepare("UPDATE captures SET index_status='pending' WHERE json_extract(json,'$.source')!='activity' AND length(trim(json_extract(json,'$.ocrText')))>0").run().changes)};}
   updates(cursor:number,limit=100) {
     const rows=this.db.prepare('SELECT seq,id,operation,changed_at FROM changes WHERE seq>? ORDER BY seq LIMIT ?').all(cursor,limit) as {seq:number;id:string;operation:string;changed_at:string}[];
     return {items:rows.map(r=>({...r,record:r.operation==='upsert'?this.evidence([r.id])[0]??null:null})),nextCursor:rows.at(-1)?.seq??cursor};

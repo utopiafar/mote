@@ -7,7 +7,7 @@ export const sourceConnectionSchema=z.object({
   id:sourceIdSchema,name:z.string().trim().min(1).max(200),
   kind:z.enum(['local-calendar','local-files','google-calendar','mcp','upload','custom']),
   deviceId:sourceIdSchema,platform:z.enum(['macos','windows','linux','android','import']),
-  retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
+  initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();
 export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};
 export const calendarSchema=z.object({start:timestamp,end:timestamp,allDay:z.boolean(),timeZone:z.string().max(100).optional(),status:z.enum(['confirmed','tentative','cancelled']).default('confirmed')}).strict().refine(v=>Date.parse(v.end)>=Date.parse(v.start),{message:'Calendar end must not precede start'});

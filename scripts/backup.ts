@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const usage = 'Stop the central node first. Usage: npm run backup -- --data ./data --out /absolute/new-backup-directory';
-if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image blobs and checksums. Tokens/keys are excluded; preserve your data key separately.'); process.exit(0); }
+if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image/file objects, processing layers and checksums. Tokens/keys are excluded; preserve your data key separately.'); process.exit(0); }
 function argument(name: string, fallback?: string) {
   const index = args.indexOf(name);
   if (index < 0 && fallback !== undefined) return fallback;
@@ -64,6 +64,16 @@ try {
       if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid blob hash in backup source');
       await ordinarySource(join(source, 'blobs', hash));
     }
+    const fileObjects = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_objects'").get()
+      ? db.prepare('SELECT hash,parts FROM file_objects').all() as {hash:string;parts:number}[] : [];
+    for(const object of fileObjects){
+      if(!/^[a-f0-9]{64}$/.test(object.hash)||!Number.isSafeInteger(object.parts)||object.parts<0||object.parts>128)throw new Error('Invalid file object in backup source');
+      await mkdir(join(out,'files','objects',object.hash),{recursive:true,mode:0o700});
+      for(let part=0;part<object.parts;part++){
+        const path=join('files','objects',object.hash,String(part));await ordinarySource(join(source,path));
+        await copyFile(join(source,path),join(out,path),constants.COPYFILE_EXCL);await chmod(join(out,path),0o600);checksums[path]=await sum(join(out,path));
+      }
+    }
     await backup(db, join(out, 'mote.sqlite'));
     await chmod(join(out, 'mote.sqlite'), 0o600);
     for (const row of rows) {
@@ -73,6 +83,9 @@ try {
       checksums['blobs/' + hash] = await sum(join(out, 'blobs', hash));
     }
   } finally { db.close(); }
+  // Upload staging is deliberately excluded. Restored clients reopen sessions and resume from their encrypted staging.
+  const restored = new DatabaseSync(join(out, 'mote.sqlite'));
+  try { if(restored.prepare("SELECT 1 FROM sqlite_master WHERE name='file_uploads'").get()) restored.exec("PRAGMA foreign_keys=ON; DELETE FROM file_uploads; UPDATE file_jobs SET state='waiting' WHERE state='running'; UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running'"); } finally { restored.close(); }
   checksums['mote.sqlite'] = await sum(join(out, 'mote.sqlite'));
   await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, createdAt: new Date().toISOString(), checksums, note: 'Tokens and data encryption keys are intentionally excluded. Preserve MOTE_DATA_KEY separately if enabled.' }, null, 2), { mode: 0o600, flag: 'wx' });
   console.info(`Consistent vault backup written to ${out}. Restore into an empty data directory; keep the same data encryption key.`);

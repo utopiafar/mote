@@ -40,6 +40,12 @@ android {
             buildConfigField("String", "DEFAULT_SERVER", "\"http://127.0.0.1:47842\"")
             matchingFallbacks += "debug"
         }
+        create("fileFixture") {
+            initWith(getByName("development"))
+            applicationIdSuffix = ".filefixture"
+            versionNameSuffix = "-filefixture"
+            matchingFallbacks += "development"
+        }
         release {
             manifestPlaceholders["cleartextAllowed"] = "false"
             isMinifyEnabled = false
@@ -55,6 +61,11 @@ android {
     sourceSets.getByName("test").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("androidTest").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("development").apply {
+        java.srcDir("src/debug/java")
+        res.srcDir("src/debug/res")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
+    }
+    sourceSets.getByName("fileFixture").apply {
         java.srcDir("src/debug/java")
         res.srcDir("src/debug/res")
         manifest.srcFile("src/debug/AndroidManifest.xml")

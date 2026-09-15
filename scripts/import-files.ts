@@ -6,11 +6,11 @@ import { SourceSync, sourceHash } from '../apps/desktop/src/source-sync.js';
 import { scanSourceFiles } from '../apps/desktop/src/source-files.js';
 import { DEFAULT_SOURCE_OPTIONS, normalizeSourceOptions, redactSourceText, type SourceDefinition, type SourceRequest } from '../apps/desktop/src/source-types.js';
 const args = process.argv.slice(2);
-const usage = 'Usage: npm run import:files -- --root /explicit/folder-or-file [--extensions .md,.txt,.json,.csv,.ics] [--retention snapshot|reference] [--exclude relative/path,...] [--redact-literal exact-text] [--track-deletions] [--dry-run] [--watch]\nOnly explicitly selected UTF-8 files, max 100 KB each. No symlinks or hidden traversal. Reference sends metadata only. Deletion tracking is opt-in; historical versions remain. Select a node with MOTE_ENV_FILE or the profile CLI.';
+const usage = 'Usage: npm run import:files -- --root /explicit/folder-or-file [--extensions .md,.txt,.json,.csv,.ics] [--retention snapshot|reference] [--initial-sync all|new_only] [--exclude relative/path,...] [--redact-literal exact-text] [--track-deletions] [--dry-run] [--watch]\nOnly explicitly selected UTF-8 files, max 100 KB each. No symlinks or hidden traversal. Reference sends metadata only. Deletion tracking is opt-in; historical versions remain. Select a node with MOTE_ENV_FILE or the profile CLI.';
 if (args.includes('--help')) { console.info(usage); process.exit(0); }
 const values = new Map<string, string[]>();
 const flags = new Set(['--dry-run', '--watch', '--track-deletions']);
-const valued = new Set(['--root', '--extensions', '--retention', '--exclude', '--redact-literal']);
+const valued = new Set(['--root', '--extensions', '--retention', '--initial-sync', '--exclude', '--redact-literal']);
 for (let i = 0; i < args.length; i++) {
   const arg = args[i]!;
   if (flags.has(arg)) { values.set(arg, []); continue; }
@@ -24,12 +24,12 @@ if ((await lstat(selectedPath)).isSymbolicLink()) throw new Error('Selected root
 const root = await realpath(selectedPath);
 const options = normalizeSourceOptions({ ...DEFAULT_SOURCE_OPTIONS,
   extensions: (get('--extensions') || DEFAULT_SOURCE_OPTIONS.extensions.join(',')).split(',').map(s => s.trim()),
-  retention: get('--retention') || 'snapshot', trackDeletions: values.has('--track-deletions'),
+  retention: get('--retention') || 'snapshot', initialSync:get('--initial-sync')||'all', trackDeletions: values.has('--track-deletions'),
   excludedPaths: (get('--exclude') || '').split(',').filter(Boolean), redactLiterals: values.get('--redact-literal') || [],
 });
 const deviceId = 'files-' + sourceHash(hostname() + ':' + resolvedConnection.profile).slice(0, 24);
 const id = 'files-' + sourceHash(deviceId + ':' + root).slice(0, 32);
-const source: SourceDefinition = { id, deviceId, name: redactSourceText(basename(root), options.redactLiterals).slice(0, 200) || '本地文件', kind: 'local-files', platform: 'import', retention: options.retention, enabled: true };
+const source: SourceDefinition = { id, deviceId, name: redactSourceText(basename(root), options.redactLiterals).slice(0, 200) || '本地文件', kind: 'local-files', platform: 'import', retention: options.retention, initialSync:options.initialSync, enabled: true };
 const stateDirectory = resolvedConnection.profileDirectory ? join(resolvedConnection.profileDirectory, 'file-sync') : resolve(resolvedConnection.baseDir, '.mote/file-sync');
 const client = values.has('--dry-run') ? undefined : apiClient();
 const statePath = join(stateDirectory, id + '-' + (client?.binding.slice(0, 16) || 'dry-run') + '.json');
@@ -69,7 +69,7 @@ try {
       const registered = await request('/api/sources', source, 'POST', controller.signal) as { id?: unknown };
       if (registered?.id !== id) throw new Error('Source registration ACK mismatch');
       // Explicit CLI options are the local owner's desired retention. Never override central enabled/pause.
-      const patched = await request('/api/sources/' + id, { retention: options.retention, name: source.name }, 'PATCH', controller.signal) as { id?: unknown };
+      const patched = await request('/api/sources/' + id, { retention: options.retention, initialSync:options.initialSync, name: source.name }, 'PATCH', controller.signal) as { id?: unknown };
       if (patched?.id !== id) throw new Error('Source configuration ACK mismatch');
       };
       const synced = await engine.syncScan(result, options.trackDeletions, source, request, controller.signal, prepare);

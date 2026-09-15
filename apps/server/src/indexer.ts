@@ -1,3 +1,4 @@
+import type {FileStore} from './files.js';
 import type { Config } from './config.js';
 import type { Store, Range } from './store.js';
 import type { ServerDiagnostics } from './diagnostics.js';
@@ -14,7 +15,7 @@ export class Indexer {
   private current?:Promise<void>;
   private closing=false;
   private abort=new AbortController();
-  constructor(private store:Store,private config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>,private diagnostics?:ServerDiagnostics) {}
+  constructor(private store:Store,private config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>,private diagnostics?:ServerDiagnostics,private files?:FileStore) {}
   get configured() {return Boolean(this.config.embeddingModel&&this.config.embeddingBaseUrl);}
   async embed(text:string):Promise<number[]> {
     const url=this.config.embeddingBaseUrl.replace(/\/$/,'')+'/embeddings';
@@ -50,13 +51,17 @@ export class Indexer {
       try {if(this.diagnostics)await this.diagnostics.measure('index','embedding',task,()=>({count:1}));else await task();}
       catch(e){if(!this.closing)this.store.indexFailed(item.id,e instanceof EmbeddingError?e.message:'Embedding operation failed');}
     }
+    for(const item of this.files?.pendingIndex(this.config.embeddingModel)??[]){
+      if(this.closing)break;
+      try{const vector=await this.embed(item.text);if(!this.closing)this.files!.indexed(item.id,vector,this.config.embeddingModel);}catch{if(!this.closing)this.files!.indexFailed(item.id);}
+    }
     const counts=this.store.indexCounts();this.diagnostics?.record('queue.snapshot',{pending:counts.pending,failed:counts.failed});
   }
   async close() {this.closing=true;this.abort.abort();await this.current;}
   async search(args:Range&{query?:string}) {
-    if(!this.configured||!args.query||args.source==='activity'||args.source==='media'||args.collection==='activity')return this.store.search(args);
+    if(!this.configured||!args.query||args.source==='activity'||args.source==='media'||args.collection==='activity')return [...(this.files?.search(args)??[]),...this.store.search(args)].slice(0,args.limit??50);
     const vector=await this.embed(args.query);
-    const semantic=this.store.vectorSearch(vector,this.config.embeddingModel,args);const lexical=this.store.search(args);
+    const semantic=[...(this.files?.vectorSearch(vector,this.config.embeddingModel,args)??[]),...this.store.vectorSearch(vector,this.config.embeddingModel,args)];const lexical=[...(this.files?.search(args)??[]),...this.store.search(args)];
     // Interleave two retrieval primitives; semantic interpretation remains entirely with the Agent.
     const results=new Map();for(let i=0;i<Math.max(semantic.length,lexical.length);i++){if(semantic[i])results.set(semantic[i].id,semantic[i]);if(lexical[i])results.set(lexical[i].id,lexical[i]);}
     return [...results.values()].slice(0,args.limit??50);

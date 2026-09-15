@@ -47,6 +47,8 @@ test('model memories disclose overview/detail/evidence and invalidate on revisio
  const {store,sources}=fixture(t),memories=new MemoryStore(store);const ack=await sources.upsert('fixture',item());
  const result={answer:JSON.stringify({memories:[{title:'合成资料尚未完成',statement:`当前仍是计划 [${ack.id}]`,uncertainty:'未有完成证据',evidenceIds:[ack.id]}]}),citations:[{id:ack.id,capturedAt:item().observedAt,appName:'fixture',excerpt:'计划'}],trace:[],runId:'fixture-run'};
  const saved=memories.extract(result,'fixture-model');assert.equal(saved.items.length,1);assert.ok(!('statement' in memories.list()[0]));assert.equal(memories.get(saved.items[0].id).statement,saved.items[0].statement);
+ assert.equal(memories.extract({...result,answer:JSON.stringify({...JSON.parse(result.answer),citationIds:[ack.id]})},'fixture-model').items[0].id,saved.items[0].id);
+ assert.throws(()=>memories.extract({...result,answer:JSON.stringify({...JSON.parse(result.answer),citationIds:[]})},'fixture-model'),{statusCode:502});
  assert.equal(memories.list({deviceId:'other'}).length,0);memories.publish(saved.items[0].id);
  await sources.upsert('fixture',item('r2','2026-09-12T11:00:00Z'));assert.equal(memories.list().length,0);assert.equal(memories.get(saved.items[0].id).status,'stale');assert.throws(()=>memories.publish(saved.items[0].id),{statusCode:409});
  store.delete(ack.id);assert.equal(memories.list({includeStale:true}).length,0);

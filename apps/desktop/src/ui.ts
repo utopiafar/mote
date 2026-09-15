@@ -448,7 +448,7 @@ let localSourceRows: import('./source-types').SourceStatus[] = [];
 let sourceEditingId: string | undefined;
 let sourceBusy = false;
 function sourceOptions(): import('./source-types').SourceOptions {
-  return { retention: readInput('source-retention') as 'snapshot' | 'reference', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
+  return { initialSync: readInput('source-initial-sync') as 'all' | 'new_only', retention: readInput('source-retention') as 'snapshot' | 'reference', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
 }
 function editSource(id?: string): void {
   sourceEditingId = id;
@@ -460,7 +460,7 @@ function editSource(id?: string): void {
   if (editor) editor.open = true;
   byId('source-editor-title').scrollIntoView({ block: 'start', behavior: 'instant' });
   byId('source-retention').focus({ preventScroll: true });
-  byId<HTMLSelectElement>('source-retention').value = source.retention; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
+  byId<HTMLSelectElement>('source-initial-sync').value=source.initialSync??'all'; byId<HTMLSelectElement>('source-retention').value = source.retention; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
   byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
   byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n'); refreshPresets();
 }

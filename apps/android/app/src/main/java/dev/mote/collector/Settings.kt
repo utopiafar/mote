@@ -141,7 +141,7 @@ class Settings(private val context: Context) {
         val old = read()
         return if (prefs.contains("server") && old.server.isNotBlank()) old.server.trimEnd('/') else ""
     }
-    fun hasPendingData(): Boolean = context.queue().depth() > 0 || QuickNotes.draft(context).read().prepared != null ||
+    fun hasPendingData(): Boolean = context.fileArchives().pendingSync().count > 0 || context.queue().depth() > 0 || QuickNotes.draft(context).read().prepared != null ||
         context.localSources().sources().any { (context.localSources().state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }
     private fun originAfterChange(next: CollectorConfig): String {
         val previous = dataOrigin()

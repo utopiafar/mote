@@ -3,6 +3,7 @@ export interface Connection {
   token: string;
 }
 export interface Capture {
+  fileEvidence?:{captureId:string;startMs?:number};
   id: string;
   capturedAt: string;
   appName: string;
@@ -133,7 +134,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
     const response = await fetch(path, {
       ...init,
       redirect: "error",
-      credentials: "omit",
+      credentials: path.startsWith("/api/files/") ? "same-origin" : "omit",
       signal,
       headers: {
         ...(init.body ? { "Content-Type": "application/json" } : {}),

@@ -1,0 +1,122 @@
+package dev.mote.collector
+
+import android.content.Context
+import android.net.Uri
+import android.os.CancellationSignal
+import android.provider.DocumentsContract
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.time.Instant
+
+fun Context.fileArchives() = FileArchiveQueue(File(noBackupFilesDir, "file-archives"), SecretBox())
+fun LocalSource.binaryFiles() = kind == "local-files" && retention in setOf("archive", "reference")
+
+/** Persistent traversal checkpoints; every directory is eventually reached within bounded slices. */
+class FileSources(private val context: Context, private val cancel: CancellationSignal = CancellationSignal()) {
+    private val resolver = context.contentResolver
+    private val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+    fun metadata(uri: Uri, source: LocalSource): JSONObject? = resolver.query(uri, projection, null, null, null, cancel)?.use { c ->
+        if (!c.moveToFirst()) return@use null
+        val name = c.getString(1) ?: "file"; val mime = c.getString(2) ?: "application/octet-stream"
+        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) return@use null
+        val item = JSONObject().put("externalId", uri.toString()).put("uri", uri.toString()).put("title", name.take(2000)).put("kind", "file").put("layer", if (source.retention == "archive") "original" else "reference").put("text", "").put("mimeType", mime.take(200)).put("observedAt", Instant.now().toString())
+        if (!c.isNull(3) && c.getLong(3) >= 0) item.put("metadata", JSONObject().put("version", 1).put("file", JSONObject().put("sizeBytes", c.getLong(3))))
+        if (!c.isNull(4) && c.getLong(4) > 0) item.put("modifiedAt", Instant.ofEpochMilli(c.getLong(4)).toString())
+        item
+    }
+    fun scan(source: LocalSource): Boolean {
+        val queue = context.fileArchives(); val state = queue.configure(source); val generation = state.getString("generation"); val root = Uri.parse(source.uri)
+        if (!source.tree) {
+            val item = metadata(root, source) ?: throw IllegalStateException("所选文件不可用")
+            if (SourceRules.include(item.getString("title"), source)) queue.observe(source, item, generation)
+            queue.finish(source, generation) { false }; return true
+        }
+        val stack = state.optJSONArray("stack") ?: JSONArray().put(JSONObject().put("id", DocumentsContract.getTreeDocumentId(root)).put("offset", 0).put("path", ""))
+        var examined = 0
+        while (stack.length() > 0 && examined < 200) {
+            cancel.throwIfCanceled()
+            val current = stack.getJSONObject(stack.length() - 1); val children = DocumentsContract.buildChildDocumentsUriUsingTree(root, current.getString("id"))
+            var finished = true; val nested = mutableListOf<JSONObject>()
+            resolver.query(children, projection, null, null, null, cancel)?.use { c ->
+                var index = 0
+                while (c.moveToNext()) {
+                    if (index++ < current.getInt("offset")) continue
+                    if (examined++ >= 200) { finished = false; break }
+                    cancel.throwIfCanceled(); current.put("offset", index)
+                    val name = c.getString(1) ?: "file"; val path = (current.getString("path").takeIf { it.isNotEmpty() }?.plus("/") ?: "") + name
+                    if (SourceRules.patterns(source.excluded).any { it.matches(path) }) continue
+                    val documentId = c.getString(0)
+                    if (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        check(path.count { it == '/' } < 32) { "目录层级超过上限" }
+                        nested.add(JSONObject().put("id", documentId).put("offset", 0).put("path", path))
+                    } else if (SourceRules.include(path, source)) {
+                        val uri = DocumentsContract.buildDocumentUriUsingTree(root, documentId)
+                        val item = metadata(uri, source) ?: throw IllegalStateException("文件枚举期间不可用")
+                        queue.observe(source, item.put("_relativePath", path), generation)
+                    }
+                }
+            } ?: throw IllegalStateException("目录不可用，保留已有档案")
+            if (finished) stack.remove(stack.length() - 1)
+            nested.forEach { stack.put(it) }; check(stack.length() <= 10000) { "待扫描目录超过上限" }
+            state.put("stack", stack).put("scanComplete", false); queue.saveState(source.id, state)
+        }
+        if (stack.length() == 0) {
+            queue.finish(source, generation) { external ->
+                // A permissions/provider failure is unknown, never a removal.
+                runCatching { resolver.query(Uri.parse(external), arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null, cancel)?.use { !it.moveToFirst() } ?: false }.getOrDefault(false)
+            }; return true
+        }
+        return false
+    }
+    fun prepare(source: LocalSource, anchor: ((String) -> String?)? = null) = context.fileArchives().prepare(source, anchor = anchor,
+        open = { resolver.openInputStream(Uri.parse(it.getString("uri"))) ?: throw IllegalStateException("文件无法打开") },
+        unchanged = { old -> metadata(Uri.parse(old.getString("uri")), source)?.let { context.fileArchives().signature(it) == context.fileArchives().signature(JSONObject(old.toString()).apply { remove("_relativePath") }) } ?: false })
+}
+
+object FileUpload {
+    private fun request(config: CollectorConfig, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
+        val connection = URL(config.server.trimEnd('/') + path).openConnection() as HttpURLConnection
+        try {
+            connection.instanceFollowRedirects = false; connection.requestMethod = method; connection.connectTimeout = 15000; connection.readTimeout = 30000
+            connection.setRequestProperty("Authorization", "Bearer ${config.token}")
+            if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { it.write(body) } }
+            check(connection.responseCode in 200..299) { if (connection.responseCode == 404) "中央未支持文件同步，请先升级" else "中央未确认文件（HTTP ${connection.responseCode}）" }
+            val bytes = connection.inputStream.use { it.readNBytes(1024 * 1024 + 1) }; check(bytes.size <= 1024 * 1024)
+            return JSONObject(String(bytes, Charsets.UTF_8))
+        } finally { connection.disconnect() }
+    }
+    /** At most two network parts per dispatch so other record queues can run. */
+    fun sync(context: Context, source: LocalSource, config: CollectorConfig, stillSelected: () -> Boolean): Boolean {
+        val queue = context.fileArchives(); val row = queue.next(source.id) ?: FileSources(context).prepare(source) { external ->
+            check(stillSelected())
+            val q = "sourceId=" + java.net.URLEncoder.encode(source.id, "UTF-8") + "&externalId=" + java.net.URLEncoder.encode(external, "UTF-8")
+            val head = request(config, "/api/file-sync/v1/head?$q", "GET")
+            check(!head.optBoolean("forgotten")) { "中央已忘记此文件，需要在中央重新允许同步" }
+            head.optString("revision").takeIf { head.has("revision") && !head.isNull("revision") && it.isNotEmpty() }
+        } ?: return queue.pendingCount(source.id) == 0
+        fun checkSelection() { check(stillSelected()); check(SyncSchedule.waitingReason(context, config) == null) }
+        checkSelection()
+        val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
+        if (!manifest.has("sha256")) {
+            val ack = request(config, "/api/file-sync/v1/revisions", "PUT", manifest.toString().toByteArray(Charsets.UTF_8)); checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0
+        }
+        val begun = request(config, "/api/file-sync/v1/uploads", "POST", manifest.toString().toByteArray(Charsets.UTF_8))
+        val uploadId = begun.getString("uploadId"); check(uploadId.matches(Regex("[a-fA-F0-9-]{36}"))); check(begun.getInt("partBytes") == FileArchiveQueue.PART_BYTES)
+        begun.optJSONObject("ack")?.let { ack -> checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0 }
+        val parts = begun.getJSONArray("parts"); val received = (0 until parts.length()).map { parts.getJSONObject(it).getInt("part") }.toSet()
+        val total = ((manifest.getLong("sizeBytes") + FileArchiveQueue.PART_BYTES - 1) / FileArchiveQueue.PART_BYTES).toInt(); var sent = 0
+        for (part in 0 until total) if (part !in received) {
+            if (sent++ >= 2) return false
+            checkSelection(); val bytes = queue.part(source.id, part)
+            val ack = request(config, "/api/file-sync/v1/uploads/$uploadId/parts/$part", "PUT", bytes, true)
+            val hash = MessageDigestCompat.hash(bytes)
+            check(ack.getInt("part") == part && ack.getInt("bytes") == bytes.size && ack.getString("hash") == hash) { "文件块确认不匹配" }
+        }
+        checkSelection(); val ack = request(config, "/api/file-sync/v1/uploads/$uploadId/commit", "POST", "{}".toByteArray()); checkSelection(); queue.acknowledge(source.id, row, ack)
+        return queue.pendingCount(source.id) == 0
+    }
+}
+private object MessageDigestCompat { fun hash(bytes: ByteArray) = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) } }

@@ -16,12 +16,18 @@ class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(cont
         val store = applicationContext.localSources(); val settings = Settings(applicationContext)
         return try {
             settings.ensureDataOrigin(settings.read())
-            for (source in store.sources().filter { it.enabled }) {
+            for (source in store.sources().filter { it.enabled && (inputData.getString("sourceId") == null || it.id == inputData.getString("sourceId")) }) {
                 if (isStopped) return Result.retry()
                 if (!SourceAccess.available(applicationContext, source)) { store.status(source.id, "permission"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
-                val last = store.state(source.id).optString("lastScan")
+                val last = (if (source.binaryFiles()) applicationContext.fileArchives().state(source.id) else store.state(source.id)).optString("lastScan")
                 if (!inputData.getBoolean("manual", false) && last.isNotEmpty() && Instant.parse(last).plusSeconds(source.intervalMinutes * 60L).isAfter(Instant.now())) continue
                 try {
+                    if (source.binaryFiles()) {
+                        val complete = FileSources(applicationContext, cancellation).scan(source)
+                        store.status(source.id, if (complete) "scanned" else "partial")
+                        if (!complete) SourceWork.continueScan(applicationContext, source.id, inputData.getBoolean("syncExplicit", false))
+                        continue
+                    }
                     val scan = SourceProviders(applicationContext.contentResolver, cancellation).scan(source)
                     store.scan(source, scan, minOf(64L, settings.read().maxQueueMiB.toLong()) * 1024 * 1024)
                     SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.OK)
@@ -39,7 +45,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
     override fun doWork(): Result = ConnectionGuard.sync { work() } ?: Result.retry()
     private fun work(): Result {
         val store = applicationContext.localSources(); val settings = Settings(applicationContext)
-        var failed = false; var more = false; var submitted = 0
+        var failed = false; var more = false; var submitted = 0; var delayedFiles = false
         val manualOnly = settings.read().syncMode == "manual" && inputData.getBoolean("manual", false)
         fun failure(): Result {
             settings.syncStatus("error", "部分来源尚未同步，记录保留在本机；${if (manualOnly) "请再次点击立即同步" else "稍后自动重试"}")
@@ -57,7 +63,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
                 if (!SourceAccess.available(applicationContext, source)) { store.status(source.id, "permission"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
                 try {
-                    fun stillSelected(): Boolean = store.sources().any { it == source && it.enabled } && settings.read().let { SourceRules.target(it.server, it.token) == target }
+                    fun stillSelected(): Boolean = !isStopped && !ConnectionGuard.reconfiguring() && store.sources().any { it == source && it.enabled } && settings.read().let { SourceRules.target(it.server, it.token) == target }
                     if (!stillSelected()) return Result.retry()
                     store.selectTarget(source.id, target)
                     if (!store.state(source.id).optBoolean("registered")) {
@@ -66,9 +72,16 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         if (!registration.optBoolean("enabled", true)) { store.status(source.id, "paused"); continue }
                         if (!stillSelected()) return Result.retry()
                         val (patchCode, updated) = HttpJson.request("PATCH", "${config.server}/api/sources/${source.id}",
-                            org.json.JSONObject().put("name", source.name).put("retention", source.retention), config.token)
+                            org.json.JSONObject().put("name", source.name).put("initialSync", source.initialSync).put("retention", source.retention), config.token)
                         if (patchCode !in 200..299 || updated?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(patchCode), httpStatus = patchCode); store.status(source.id, "http"); failed = true; continue }
                         store.registered(source.id, target)
+                    }
+                    if (source.binaryFiles()) {
+                        val finished = FileUpload.sync(applicationContext, source, config, ::stillSelected)
+                        if (!finished) { more = true; if (applicationContext.fileArchives().next(source.id) == null) delayedFiles = true }
+                        store.status(source.id, if (finished) "synced" else "scanned")
+                        if (finished) settings.syncStatus("uploading", "文件原件已归档；手机原文件保留", uploaded = true)
+                        continue
                     }
                     while (submitted < 20) {
                         if (isStopped || !stillSelected()) return Result.retry()
@@ -89,7 +102,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 } catch (_: Exception) { store.status(source.id, "offline"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.NETWORK); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.NETWORK); failed = true }
             }
             if (failed) failure()
-            else if (more) { SourceWork.enqueueUpload(applicationContext, settings.read(), inputData.getBoolean("manual", false), continuation = true); Result.success() }
+            else if (more) { SourceWork.enqueueUpload(applicationContext, settings.read(), inputData.getBoolean("manual", false), continuation = true, delaySeconds = if (delayedFiles) 60 else 0); Result.success() }
             else {
                 SyncHealth.finish(applicationContext)
                 // Explicit source sync has its own final report because manual mode sends no later automatic heartbeat.
@@ -128,10 +141,15 @@ object SourceWork {
         manager.enqueueUniquePeriodicWork("mote-source-periodic", ExistingPeriodicWorkPolicy.UPDATE, periodic)
         if (!syncExplicit) upload(context)
     }
+    internal fun continueScan(context: Context, id: String, explicit: Boolean) {
+        val request = OneTimeWorkRequestBuilder<SourceScanWorker>().setInitialDelay(1, TimeUnit.SECONDS)
+            .setInputData(workDataOf("manual" to true, "syncExplicit" to explicit, "sourceId" to id)).build()
+        WorkManager.getInstance(context).enqueueUniqueWork("mote-source-scan", ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+    }
     fun upload(context: Context, explicit: Boolean = false) = UploadWorker.schedule(context, Settings(context).read(), explicit)
-    internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean, continuation: Boolean = false) {
+    internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean, continuation: Boolean = false, delaySeconds: Long = 0) {
         if (context.localSources().sources().none { it.enabled }) return
-        val request = OneTimeWorkRequestBuilder<SourceUploadWorker>().setConstraints(SyncSchedule.constraints(config))
+        val request = OneTimeWorkRequestBuilder<SourceUploadWorker>().setInitialDelay(delaySeconds, TimeUnit.SECONDS).setConstraints(SyncSchedule.constraints(config))
             .setInputData(workDataOf("manual" to explicit, "syncStamp" to SyncSchedule.stamp(config)))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueueUniqueWork("mote-source-upload", if (continuation) ExistingWorkPolicy.APPEND_OR_REPLACE else if (explicit) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
