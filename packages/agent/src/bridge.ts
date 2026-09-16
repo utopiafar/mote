@@ -1,3 +1,4 @@
+import {actionEvidenceText} from '@mote/shared';
 import {reportProgress} from './types.js';
 import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -175,7 +176,7 @@ export async function startBridge(
   if(bounds.evidenceRanges&&!restricted)throw Error('Evidence ranges require explicit evidence IDs');
   if(restricted){
     if(!bounds.evidenceIds?.length||bounds.evidenceIds.length>100||ranges.length>100||ranges.some(r=>!bounds.evidenceIds!.includes(r.id)||!Number.isSafeInteger(r.offset)||r.offset<0||!Number.isSafeInteger(r.length)||r.length<1||r.length>100000)||ranges.reduce((n,r)=>n+r.length,0)>100000)throw Error('Invalid extraction evidence scope');
-    for(const record of await reader.evidence({ids:bounds.evidenceIds}))if(bounds.evidenceIds.includes(record.id))permitted.set(record.id,record);
+    for(const record of await reader.evidence({ids:bounds.evidenceIds}))if(bounds.evidenceIds.includes(record.id))permitted.set(record.id,bounds.skill==='calendar-extraction'?{...record,ocrText:actionEvidenceText(record)}:record);
     const scope=range({},bounds);
     for(const id of bounds.evidenceIds){
       const record=permitted.get(id);

@@ -1,6 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -19,6 +20,7 @@
         <activity android:name=".MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
+        <activity android:name=".CalendarActionsActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".SourcesActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".AppUpdatesActivity" android:exported="false" />
         <activity android:name=".ConnectionActivity" android:exported="true" android:windowSoftInputMode="adjustResize">

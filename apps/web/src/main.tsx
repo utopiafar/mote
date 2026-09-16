@@ -1,3 +1,4 @@
+import {Actions} from './Actions';
 import {CaptureSessions} from './CaptureSessions';
 import {ContentStorage} from './ContentStorage';
 import { restoreSession } from "./session";
@@ -91,8 +92,9 @@ import {SourceDocumentDetails} from './SourceDocumentDetails';
 declare global {
   interface Window { moteCentralSession?: {close: () => void} }
 }
-type Page = "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
+type Page = "actions" | "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
+  {id:"actions" as const,label:"行动",icon:Clock3,group:"日常"},
   { id: "overview" as const, label: "总览", icon: LayoutDashboard, group: "日常" },
   { id: "timeline" as const, label: "采集记录", icon: Clock3, group: "日常" },
   { id: "notes" as const, label: "随手记", icon: FileText, group: "日常" },
@@ -104,7 +106,7 @@ const nav = [
   { id: "devices" as const, label: "设备", icon: Monitor, group: "管理" },
   { id: "sources" as const, label: "来源", icon: Link2, group: "管理" },
 ];
-const pageLabels: Record<Page,string> = {imports:'导入',insights:'洞察',overview:'总览',timeline:'采集记录',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
+const pageLabels: Record<Page,string> = {actions:'行动',imports:'导入',insights:'洞察',overview:'总览',timeline:'采集记录',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
 const periodNames: Record<string, string> = {
   today: "今天",
   week: "过去 7 天",
@@ -1601,6 +1603,7 @@ function App() {
                       {page === "sources" && <Sources api={api} onOpen={setEvidenceId} onImport={()=>onPage("imports")} />}
                       {page === "imports" && <Imports api={api} refreshVersion={timelineRevision} onOpen={setEvidenceId} onMemories={()=>onPage("memories")} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
                       {page === "insights" && <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured??false} onOpen={setEvidenceId} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
+                      {page === "actions" && <Actions api={api} onOpen={setEvidenceId}/> }
                       {page === "memories" && <Memories api={api} range={range} refreshVersion={timelineRevision} onOpen={setEvidenceId} />}
                       {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}

@@ -261,3 +261,5 @@ MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to
 目前优先支持 macOS 采集与 Android，Windows/Linux 采集适配尚未完成。桌面分发仅采用 ad-hoc 签名，尚未完成 Developer ID 签名与公证；K90 Pro Max / HyperOS 的实际后台稳定性和耗电需要真机验收。自动化 fixture、模拟器、真实模型和真机测试分别记录，不能互相替代。
 
 来源与分层记忆的测试范围、真实模型复测与目标环境限制见 [0.4.0 验收记录](docs/sources-validation.md)；发布和升级的验证见 [0.5.1 验收记录](docs/update-validation.md)。
+
+日程功能：在中央「行动」开启发现并授权设备，逐条确认后写入 Android / Mac 已有日历。详见[日程与行动平台](docs/calendar-actions.md)。

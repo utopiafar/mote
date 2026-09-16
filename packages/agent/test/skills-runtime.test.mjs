@@ -100,3 +100,16 @@ test('dedicated import Harness uses native skill, read, write and shell tools to
     assert.equal(JSON.parse(await readFile(join(workspace,'dispositions.json'),'utf8')).items[0].status,'parsed');
   }finally{await agent.close();await fixture.close();await rm(workspace,{recursive:true,force:true});}
 });
+
+test('calendar skill receives notification evidence without OCR and exposes no write tools', {timeout:60000},async()=>{
+  const text='合成通知：2099年9月18日15点到16点方案评审。';
+  const notification={...record,ocrText:'',source:'notification',metadata:{version:1,observedAt:record.capturedAt,notification:{action:'posted',notificationKey:'ab'.repeat(32),postedAt:record.capturedAt,ongoing:false,groupSummary:false,text}}};
+  const fixture=await provider((request,stage)=>{
+    const names=request.tools.map(t=>t.function.name);assert.ok(names.includes('skill'));assert.ok(!names.some(n=>['bash','write','calendar_create','create_event'].includes(n)));
+    assert.ok(JSON.stringify(request.messages).includes(text));assert.ok(JSON.stringify(request.messages).includes('calendar-extraction'));
+    if(stage===0)return {tool:{name:'skill',args:{name:'calendar-extraction'}}};
+    return {answer:{answer:'{"actions":[]}',citationIds:[]}};
+  });
+  const agent=createAgent({reader:{...reader,evidence:async()=>[notification]},model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:45000});
+  try{const result=await agent.query({question:'只读分析合成日程',skill:'calendar-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:text.length}],timeZone:'Asia/Shanghai'});assert.deepEqual(JSON.parse(result.answer),{actions:[]});assert.deepEqual(fixture.errors,[]);}finally{await agent.close();await fixture.close();}
+});

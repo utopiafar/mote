@@ -140,3 +140,5 @@ export * from './files.js';
 export * from './file-policy.js';
 
 export * from './capture-sessions.js';
+
+export * from './actions.js';

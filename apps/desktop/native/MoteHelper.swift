@@ -32,7 +32,7 @@ do {
             }
         }
         try output(["applications": applications.map { ["appId": $0.key, "appName": $0.value] }])
-    case "calendar-permission", "calendar-list", "calendar-scan":
+    case "calendar-permission", "calendar-list", "calendar-scan", "calendar-create":
         let command = CommandLine.arguments[1]
         let store = EKEventStore()
         func fullAccess() -> Bool {
@@ -51,8 +51,34 @@ do {
             while !completed && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
         }
         guard fullAccess() else { try output(["permission": "required", "calendars": []]); break }
+        if command == "calendar-create" {
+            let input = FileHandle.standardInput.readDataToEndOfFile()
+            guard input.count < 16384, let q = try JSONSerialization.jsonObject(with: input) as? [String: Any],
+                  let id = q["id"] as? String, UUID(uuidString: id) != nil,
+                  let calendarID = q["calendarId"] as? String, let calendar = store.calendar(withIdentifier: calendarID), calendar.allowsContentModifications,
+                  let title = q["title"] as? String, !title.isEmpty, title.count <= 200,
+                  let startValue = q["start"] as? String, let endValue = q["end"] as? String,
+                  let zoneValue = q["timeZone"] as? String, let zone = TimeZone(identifier: zoneValue),
+                  let allDay = q["allDay"] as? Bool else { throw NSError(domain: "Mote", code: 4) }
+            func date(_ value: String) -> Date? {
+                if allDay { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = zone; f.dateFormat = "yyyy-MM-dd"; f.isLenient = false; return f.date(from: value) }
+                let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                return f.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+            }
+            guard let start = date(startValue), let end = date(endValue), end > start, end.timeIntervalSince(start) <= 366 * 86400 else { throw NSError(domain: "Mote", code: 4) }
+            let marker = "[Mote:\(id)]"
+            let found = store.events(matching: store.predicateForEvents(withStart: start.addingTimeInterval(-366 * 86400), end: end.addingTimeInterval(366 * 86400), calendars: [calendar])).filter { ($0.notes ?? "").contains(marker) }
+            if found.count == 1 { try output(["externalId": found[0].calendarItemIdentifier]); break }
+            guard found.isEmpty, q["createAllowed"] as? Bool == true, end > Date() else { throw NSError(domain: "Mote", code: 5) }
+            let event = EKEvent(eventStore: store); event.calendar = calendar; event.title = title
+            event.startDate = start; event.endDate = end; event.timeZone = zone; event.isAllDay = allDay
+            event.location = q["location"] as? String; event.notes = q["description"] as? String
+            guard (event.notes ?? "").contains(marker) else { throw NSError(domain: "Mote", code: 4) }
+            try store.save(event, span: .thisEvent, commit: true)
+            try output(["externalId": event.calendarItemIdentifier]); break
+        }
         if command != "calendar-scan" {
-            try output(["permission": "granted", "calendars": store.calendars(for: .event).map { ["id": $0.calendarIdentifier, "title": $0.title] }]); break
+            try output(["permission": "granted", "calendars": store.calendars(for: .event).map { ["id": $0.calendarIdentifier, "title": $0.title, "writable": $0.allowsContentModifications] }]); break
         }
         let input = FileHandle.standardInput.readDataToEndOfFile()
         guard input.count < 16384,

@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { sourceHash } from './source-sync';
 import { redactSourceText, type CalendarChoice, type SourceOptions, type SourceScan } from './source-types';
 export class CalendarPermissionError extends Error { constructor() { super('日历未授权或权限已撤销，请点击连接日历并检查系统设置'); } }
-export async function calendarHelper(path: string, command: 'calendar-permission' | 'calendar-list' | 'calendar-scan', input?: unknown, signal?: AbortSignal): Promise<unknown> {
+export async function calendarHelper(path: string, command: 'calendar-permission' | 'calendar-list' | 'calendar-scan' | 'calendar-create', input?: unknown, signal?: AbortSignal): Promise<unknown> {
   if (process.platform !== 'darwin') throw new Error('本地日历当前仅支持 macOS');
   return new Promise((resolve, reject) => {
     const child = spawn(path, [command], { stdio: ['pipe', 'pipe', 'ignore'] });
