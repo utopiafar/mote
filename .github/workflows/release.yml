@@ -68,6 +68,7 @@ jobs:
           node_modules/.bin/electron scripts/test-web-navigation.cjs
           node_modules/.bin/electron scripts/test-web-content-storage.cjs
           node_modules/.bin/electron scripts/test-web-conversations.cjs
+          node_modules/.bin/electron scripts/test-calendar-actions-ui.cjs
           node_modules/.bin/electron apps/web/scripts/capture-browser-smoke.cjs
       - name: Verify client onboarding, central UI and update networking with generated data
         run: |

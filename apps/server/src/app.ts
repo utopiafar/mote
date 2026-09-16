@@ -2,6 +2,7 @@ import {CodingMemoryQueue} from './coding-memory-queue.js';
 import {codexModels,ModelCatalogError} from './model-catalog.js';
 import {UsageLedger} from './usage.js';
 import {QueryRuns} from './query-runs.js';
+import {Actions,registerActions} from './actions.js';
 import {InsightRuns} from './insight-runs.js';
 import Fastify,{type FastifyReply,type FastifyRequest} from 'fastify';
 import cors from '@fastify/cors';
@@ -137,6 +138,8 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     if(error instanceof ModelSettingsError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});
     reply.code(failure.status).send({error:failure.category,message:failure.message,...(failure.reason?{reason:failure.reason}:{}),requestId:req.id});
   });
+  const actions=new Actions(store,files,input=>agent.query(input),()=>agent.configured);
+  registerActions(app,actions,connections,credential);
   const connectors=await registerConnectors(app,{files,sources,store,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
   const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
   app.post('/api/connections/invitations',{bodyLimit:8192,config:connectionRate},async req=>connections.invite(req.body));
@@ -396,6 +399,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
       return payload;
     });
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:'未找到所请求的资料。',requestId:req.id}));
+  const actionTimer=setInterval(()=>void actions.tick().catch(()=>{}),15000);actionTimer.unref();
   const fileTimer=setInterval(()=>void processing.tick().catch(()=>{diagnostics.record('file.failed',{category:'internal'},'error');}),5000);fileTimer.unref();
   const indexTimer=setInterval(()=>void indexer.tick().catch(()=>{diagnostics.record('index.failed',{category:'internal'},'error');}),5000);indexTimer.unref();
   const maintenance=()=>{files.sweep();if(config.retentionDays>0)void diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted}))).catch(()=>{});};
@@ -417,13 +421,14 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   app.addHook('onClose',async()=>{
     closing=true;clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);
     codingMemoryQueue.close();
+    clearInterval(actionTimer);const actionClose=actions.close();
     const memoryClose=memoryPipeline.close();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
     await contentStorage.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
-    await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose]);await backgroundInsight;await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
+    await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose,actionClose]);await backgroundInsight;await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,codingMemoryQueue,indexer,agent,diagnostics,connections,modelSettings,insightRuns};
+  return {app,actions,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,codingMemoryQueue,indexer,agent,diagnostics,connections,modelSettings,insightRuns};
 }

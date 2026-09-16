@@ -1,0 +1,6 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {calendarInstant,calendarWallTime,actionEvidenceText} from '../dist/actions.js';
+import {createRequire} from 'node:module';
+test('desktop CommonJS runtime can load the public actions entry',()=>{const actions=createRequire(import.meta.url)('@mote/shared/actions');assert.equal(actions.calendarInstant,calendarInstant);assert.equal(typeof actions.calendarEventSchema.parse,'function');});
+test('calendar wall time uses chosen zone and rejects DST gaps and overlaps',()=>{assert.equal(calendarInstant('2026-09-18T15:00','Asia/Shanghai'),'2026-09-18T07:00:00.000Z');assert.equal(calendarWallTime('2026-09-18T07:00:00Z','Asia/Shanghai'),'2026-09-18T15:00:00');assert.throws(()=>calendarInstant('2026-03-08T02:30','America/New_York'));assert.throws(()=>calendarInstant('2026-11-01T01:30','America/New_York'));assert.equal(calendarInstant('2026-11-01T06:30','UTC'),'2026-11-01T06:30:00.000Z');});
+test('notification projection preserves original strings and never interprets intent',()=>{assert.equal(actionEvidenceText({ocrText:'',metadata:{notification:{title:'合成通知',text:'明天下午见',textLines:['原样保留']}}}),'合成通知\n明天下午见\n原样保留');assert.equal(actionEvidenceText({ocrText:'原文'}),'原文');});

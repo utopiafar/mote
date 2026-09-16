@@ -1,3 +1,4 @@
+import {nativeCalendarActions} from './calendar-actions';
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
 import { createHash } from 'node:crypto';
@@ -38,6 +39,17 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
     if (!central.isDestroyed() && event.sender === central.webContents && event.senderFrame === central.webContents.mainFrame) central.close();
   };
   ipcMain.on('mote:central-close', closeSession);
+  const calendar=nativeCalendarActions(config,app.isPackaged?join(process.resourcesPath,'native','mote-helper'):join(__dirname,'..','native','bin','mote-helper'),app.getPath('userData'));
+  const channel=`mote:calendar:${central.webContents.id}`;
+  ipcMain.handle(channel,async(event,command:string,id?:string)=>{
+    if(central.isDestroyed()||event.sender!==central.webContents||event.senderFrame!==central.webContents.mainFrame||!centralRequestAllowed(event.senderFrame.url,origin))throw Error('Unauthorized calendar request');
+    if(command==='connect')return calendar.connect();
+    if(command==='execute'&&typeof id==='string')return calendar.execute(id);
+    throw Error('Unsupported calendar request');
+  });
+  const calendarChannel=(event:Electron.IpcMainEvent)=>{if(event.sender===central.webContents&&event.senderFrame===central.webContents.mainFrame)event.returnValue=channel;};
+  ipcMain.on('mote:calendar-channel',calendarChannel);
+
   central.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const target = new URL(url);
@@ -57,6 +69,7 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
   central.webContents.on('will-redirect', (event, url) => { if (!centralRequestAllowed(url, origin)) event.preventDefault(); });
   central.on('closed', () => {
     ipcMain.removeListener('mote:central-close', closeSession);
+    ipcMain.removeHandler(channel);ipcMain.removeListener('mote:calendar-channel',calendarChannel);
     isolated.removeListener('will-download', downloadListener);
     if (guardOwners.get(partition) !== owner) return;
     // Persistent drafts survive, but service workers / keepalive requests get no network after close.

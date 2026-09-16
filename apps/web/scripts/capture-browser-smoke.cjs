@@ -49,7 +49,8 @@ async function finish(code) {
   wc.session.webRequest.onBeforeRequest((details,callback)=>{requests.push(details.url);callback({});});
   wc.on('console-message',(_event,level,message)=>{if(level>=3)errors.push(message);});
   const js=code=>wc.executeJavaScript(code);
-  const clickNav=label=>js(`Array.from(document.querySelectorAll('.sidebar button')).find(button=>button.innerText===${JSON.stringify(label)}).click()`);
+  const recordsView=()=>until(()=>js(`(()=>{const button=Array.from(document.querySelectorAll('[aria-label="记录视图"] button')).find(button=>button.innerText==='全部记录');if(!button)return false;button.click();return true;})()`),'select individual record view');
+  const clickNav=async label=>{await js(`Array.from(document.querySelectorAll('.sidebar button')).find(button=>button.innerText===${JSON.stringify(label)}).click()`);if(label==='采集记录')await recordsView();};
   await window.loadURL(url);
   await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'authenticated app');
@@ -94,6 +95,7 @@ async function finish(code) {
   await js(`Array.from(document.querySelectorAll('.segmented-nav button')).find(button=>button.innerText==='应用活动').click()`);
   await until(()=>js(`document.querySelector('.activity-panel')!==null`),'archive tab after one click');
   await js(`Array.from(document.querySelectorAll('.segmented-nav button')).find(button=>button.innerText==='全部记录').click()`);
+  await recordsView();
   await until(()=>js(`document.querySelector('.timeline-group')!==null`),'records tab after one click');
   const mediaNow=Date.now(),mediaSession={sessionId:'fixture-media-session',appId:'fixture.player',appName:'合成播放器',playbackState:'playing',appVisibility:'background',playbackType:'local',title:'合成章节 · 海边的声音',artist:'合成作者',positionMs:0,durationMs:180000,playbackSpeed:1};
   const mediaFixtures=[
