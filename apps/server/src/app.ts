@@ -33,6 +33,9 @@ import {Conversations} from './conversations.js';
 import {ArchivedFileStore} from './archived-files.js';
 import {ImportStore,type ImportPreparation,type ImportPreparationResult} from './imports.js';
 import {prepareImportInput} from './import-runtime.js';
+import {MemoryLifecycle,type LifecycleExtension} from './memory-lifecycle.js';
+import {registerMemoryExtensions} from './lifecycle-extensions.js';
+import {WorkingMemory} from './working-memory.js';
 import {MemoryPipeline} from './memory-pipeline.js';
 import {ContentStorageService,registerContentStorage} from './content-storage.js';
 import {insightResult} from './insights.js';
@@ -45,7 +48,7 @@ const querySchema=z.object({question:z.string().trim().min(1).max(8000),conversa
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
 const insightRequestSchema=z.object({...scopeFields,prompt:z.string().trim().max(8000).optional()}).strict().refine(validRange,{message:'Invalid time range'});
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
+export async function buildApp(config:Config,dependencies?:{memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   config={...config};
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
   const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
@@ -72,7 +75,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
       sourceHistory:async args=>{const record=store.evidence([args.id])[0];if(!record?.provenance)return [];return context(store.evidence(sources.history(record.provenance.sourceId,record.provenance.externalId).filter(i=>{const at=sourceContentTime({capturedAt:i.observedAt,provenance:{document:i.document}});return (!args.after||Date.parse(i.calendar?.end??at)>=Date.parse(args.after))&&(!args.before||Date.parse(i.calendar?.start??at)<Date.parse(args.before));}).map(i=>i.captureId)).filter(r=>!args.deviceId||r.deviceId===args.deviceId));},
       sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
       sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:context(store.evidence(page.items.map(i=>i.captureId)))};},
-      memories:async args=>{if(!args.id)return {items:memories.list({...args,level:'overview'})};const items=memories.list({...args,level:'detail',limit:100}).filter(m=>m.id===args.id);return {items,evidence:allEvidence(items.flatMap(m=>'evidenceIds' in m?m.evidenceIds:[]))};},
+      memories:async args=>{const page=memories.page({...args,level:args.id?'detail':'overview'});return {...page,...(args.id?{evidence:allEvidence(page.items.flatMap(m=>'evidenceIds' in m?m.evidenceIds:[]))}:{})};},
       search:async args=>diagnostics.measure('source','search',async()=>context(await indexer.search(args)),rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>allEvidence(args.ids),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const factory=dependencies?.createModelAgent??createModelAgent;
@@ -175,8 +178,9 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   app.get('/api/sources/:id/item',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {item:sources.getItem(id,externalId)??null};});
   app.get('/api/sources/:id/history',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {items:sources.history(id,externalId)};});
   app.get('/api/layers',async()=>({...sources.summary(),memories:Number((store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)}));
-  app.get('/api/memories',async req=>{const q=z.object({level:z.enum(['overview','detail']).default('overview'),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return {items:memories.list({...q,includeStale:q.includeStale==='true'})};});
+  app.get('/api/memories',async req=>{const q=z.object({level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),cursor:z.string().max(1000).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return memories.page({...q,includeStale:q.includeStale==='true'});});
   app.get('/api/memories/:id',async req=>memories.get((req.params as {id:string}).id));
+  app.get('/api/memories/:id/text',async(req,reply)=>reply.type('text/markdown; charset=utf-8').header('Content-Disposition','attachment; filename=memory.md').send(memories.text(z.string().uuid().parse((req.params as {id:string}).id))));
   app.get('/api/memories/:id/evidence',async req=>{const m=memories.get((req.params as {id:string}).id);return {items:allEvidence(m.evidenceIds),status:m.status};});
   app.post('/api/memories/:id/publish',async req=>memories.publish((req.params as {id:string}).id));
   app.delete('/api/memories/:id',async req=>memories.delete((req.params as {id:string}).id));
@@ -247,7 +251,12 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     }).catch(error=>{meter.finish('failed');throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
-  const memoryPipeline=new MemoryPipeline({store,memories,query:input=>queryAgent(input,'query','memories'),model:()=>config.model,configured:()=>agent.configured,skillVersion:`memory-extraction@${SKILL_VERSION}`});
+  const memoryPipeline=new MemoryPipeline({store,memories,query:input=>queryAgent(input,'query','memories'),model:()=>config.model,configured:()=>agent.configured,skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours),working=new WorkingMemory(store,conversations);
+  registerMemoryExtensions({lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>config.model});
+  for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
+  app.get('/api/memory-settings',async()=>lifecycle.view());
+  app.put('/api/memory-settings',{bodyLimit:8192},async req=>lifecycle.configure(req.body));
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
   let importQueue:Promise<unknown>=Promise.resolve();
   const imports=new ImportStore(store,archivedFiles,sources,{
@@ -259,13 +268,9 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
       try{runtime=createImportAgent(settings);importAgents.add(runtime);const result=await runtime.prepare(prepared,dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,meter.update);meter.finish('completed');return result;}
       catch(error){meter.finish('failed');throw error;}finally{try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
     }),
-    onImported:async(evidenceIds,importJobId)=>{
-      // An export can include several revisions of one object. Keep them all in
-      // source history, but extract current memory only from new current evidence.
-      const currentIds=evidenceIds.filter(id=>store.isCurrentEvidence(id));
-      if(!currentIds.length)return {};
-      const job=memoryPipeline.create({evidenceIds:currentIds,importJobId});void memoryPipeline.run(job.id).catch(()=>{});return {memoryJobId:job.id};
-    },
+    // Capture/file journals are durable. Import completion only queues increments;
+    // the lifecycle applies the owner's interval AND change threshold.
+    onImported:async()=>({}),
   });
   function launchImport(id:string,task:()=>Promise<unknown>){
     if(closing)throw new StoreError('Central node is shutting down',503);
@@ -332,7 +337,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     insightSchema.parse(scope);
     if(conversationId)runningConversations.add(conversationId);
     try {
-      const result=await queryAgent({question,...scope,onProgress,...(previous?{conversation:conversations.context(previous)}:{})});
+      const result=await queryAgent({question,...scope,onProgress,...(previous?{conversation:working.context(previous,lifecycle.settings())}:{})});
       return {...result,...conversations.append(previous,{question,...scope},result)};
     }finally{if(conversationId)runningConversations.delete(conversationId);}
   }
@@ -397,29 +402,21 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const indexTimer=setInterval(()=>void indexer.tick().catch(()=>{diagnostics.record('index.failed',{category:'internal'},'error');}),5000);indexTimer.unref();
   const maintenance=()=>{files.sweep();if(config.retentionDays>0)void diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted}))).catch(()=>{});};
   maintenance();const retentionTimer=setInterval(maintenance,3600000);retentionTimer.unref();
-  let backgroundInsight:Promise<void>|undefined;
-  const insightTimer=config.insightIntervalHours>0?setInterval(()=>{
-    if(backgroundInsight||!agent.configured||closing)return;
-    try {
-      const id=randomUUID(),scope={after:new Date(Date.now()-config.insightIntervalHours*3600000).toISOString(),before:new Date().toISOString()};
-      insightRuns.start(id,scope,observe=>diagnostics.run(id,()=>insight(scope,observe)));
-      backgroundInsight=insightRuns.close().finally(()=>{backgroundInsight=undefined;});
-    } catch { /* An admitted manual review takes precedence over the scheduled run. */ }
-  },config.insightIntervalHours*3600000):undefined;insightTimer?.unref();
+  const lifecycleTimer=setInterval(()=>{if(!closing)void lifecycle.tick().catch(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));},60000);lifecycleTimer.unref();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
-    for(const row of store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])void memoryPipeline.run(row.id).catch(()=>{});
+    for(const row of store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.status')='queued' AND coalesce(json_extract(json,'$.importJobId'),'') NOT LIKE 'lifecycle:%'").all() as {id:string}[])void memoryPipeline.run(row.id).catch(()=>{});
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('onClose',async()=>{
-    closing=true;clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);
+    closing=true;clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
     const memoryClose=memoryPipeline.close();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
     await contentStorage.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
-    await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose]);await backgroundInsight;await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
+    await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose]);await lifecycleClose;await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns};
+  return {app,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

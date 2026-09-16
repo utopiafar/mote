@@ -39,11 +39,12 @@ export class MemoryPipeline {
       batches:batches.map(({chunks:_chunks,...batch})=>batch)};
   }
   list(limit=30):MemoryJob[]{return (this.store.db.prepare('SELECT id FROM memory_jobs ORDER BY created_at DESC,id DESC LIMIT ?').all(Math.max(1,Math.min(limit,100))) as {id:string}[]).map(row=>{const {batches:_batches,...job}=this.get(row.id);return job;});}
-  create(raw:{evidenceIds:string[];importJobId?:string;timeZone?:string}):MemoryJobDetail {
+  create(raw:{evidenceIds:string[];importJobId?:string;timeZone?:string;batchCharacters?:number}):MemoryJobDetail {
     if(this.closed)throw new StoreError('Memory pipeline is closed',503);
-    const input=z.object({evidenceIds:z.array(z.string().uuid()).min(1).max(20000),importJobId:z.string().max(200).optional(),timeZone:z.string().max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Invalid time zone').optional()}).strict().parse(raw);
+    const input=z.object({batchCharacters:z.number().int().min(256).max(12000).optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000),importJobId:z.string().max(200).optional(),timeZone:z.string().max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Invalid time zone').optional()}).strict().parse(raw);
     // Import completion may be replayed after a process interruption.
     if(input.importJobId){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.importJobId')=?").get(input.importJobId) as {id:string}|undefined;if(prior)return this.get(prior.id);}
+    const budget=input.batchCharacters??this.budget;
     const evidenceIds=[...new Set(input.evidenceIds)],skillVersion=this.options.skillVersion??MEMORY_SKILL_VERSION,all:Chunk[]=[];
     let skippedChunks=0;
     for(const id of evidenceIds){
@@ -52,7 +53,7 @@ export class MemoryPipeline {
       if(!record.ocrText.length||record.provenance?.layer==='reference'){skippedChunks++;continue;}
       const fingerprint=memoryEvidenceFingerprint(record);
       for(let offset=0;offset<record.ocrText.length;){
-        let end=Math.min(offset+this.budget,record.ocrText.length);
+        let end=Math.min(offset+budget,record.ocrText.length);
         if(end<record.ocrText.length&&/[\uD800-\uDBFF]/.test(record.ocrText[end-1])&&/[\uDC00-\uDFFF]/.test(record.ocrText[end]))end--;
         const chunk:Chunk={id,offset,length:end-offset,fingerprint,key:sha256(JSON.stringify([id,fingerprint,offset,end-offset,skillVersion]))};
         if(this.checkpoint(chunk))skippedChunks++;else all.push(chunk);
@@ -61,7 +62,7 @@ export class MemoryPipeline {
       }
     }
     const groups:Chunk[][]=[];let group:Chunk[]=[],characters=0;
-    for(const chunk of all){if(group.length&&(characters+chunk.length>this.budget||group.length>=20)){groups.push(group);group=[];characters=0;}group.push(chunk);characters+=chunk.length;}
+    for(const chunk of all){if(group.length&&(characters+chunk.length>budget||group.length>=20)){groups.push(group);group=[];characters=0;}group.push(chunk);characters+=chunk.length;}
     if(group.length)groups.push(group);
     const now=new Date().toISOString(),job:MemoryJob={id:randomUUID(),importJobId:input.importJobId,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
     const batches:StoredBatch[]=groups.map((chunks,index)=>({id:randomUUID(),index,status:'pending',chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),attempts:0,memoryIds:[]}));

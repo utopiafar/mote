@@ -3733,3 +3733,7 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .usage-groups td{vertical-align:top;min-width:105px}
 .usage-pricing>summary{font-weight:600;cursor:pointer;padding:4px 0}
 .usage-pricing[open]>summary{margin-bottom:16px}
+
+.memory-settings fieldset{border:1px solid var(--border,#ddd);border-radius:10px;margin:16px 0;padding:16px}.memory-settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:12px}.memory-settings-grid label,.memory-search label{display:flex;flex-direction:column;gap:6px}.memory-settings input[type=number],.memory-search input,.memory-search select{padding:10px;border:1px solid var(--border,#ddd);border-radius:8px;background:var(--surface,#fff);color:inherit}.memory-search{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:16px 0}
+
+.memory-settings{padding:28px;min-width:0}.memory-settings fieldset{min-width:0}.memory-settings-grid input{width:100%;min-width:0;box-sizing:border-box}@media(max-width:760px){.memory-settings{padding:18px}.memory-settings-grid{grid-template-columns:1fr}}

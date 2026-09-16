@@ -51,6 +51,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS insights (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL, operation TEXT NOT NULL, changed_at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS changes_entity_operation ON changes(id,operation);
       CREATE TABLE IF NOT EXISTS capture_ocr_receipts (id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE, original_fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS source_connections (id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS source_versions (source_id TEXT NOT NULL,external_id TEXT NOT NULL,revision TEXT NOT NULL,capture_id TEXT NOT NULL UNIQUE,hash TEXT NOT NULL,PRIMARY KEY(source_id,external_id,revision));
@@ -94,6 +95,11 @@ export class Store {
       INSERT OR IGNORE INTO memory_batch_dependencies SELECT d.batch_id,c.capture_id FROM memory_batch_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;`);
     try{this.contentEncryption=new ContentEncryption(directory,this.db,options);}catch(error){this.db.close();throw error;}
     this.db.function('mote_search_text',{deterministic:true},json=>searchText(JSON.parse(String(json))));
+    this.db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS captures_trigram USING fts5(id UNINDEXED,text,tokenize='trigram');
+      CREATE TRIGGER IF NOT EXISTS captures_trigram_insert AFTER INSERT ON captures BEGIN INSERT INTO captures_trigram(id,text) VALUES(new.id,mote_search_text(new.json)); END;
+      CREATE TRIGGER IF NOT EXISTS captures_trigram_delete AFTER DELETE ON captures BEGIN DELETE FROM captures_trigram WHERE id=old.id; END;
+      CREATE TRIGGER IF NOT EXISTS captures_trigram_update AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN DELETE FROM captures_trigram WHERE id=old.id; INSERT INTO captures_trigram(id,text) VALUES(new.id,mote_search_text(new.json)); END;`);
+    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='trigram-v1'").get())this.db.exec("BEGIN IMMEDIATE; INSERT INTO captures_trigram(id,text) SELECT id,mote_search_text(json) FROM captures; INSERT INTO settings VALUES('trigram-v1','1'); COMMIT");
     if(!this.db.prepare('SELECT value FROM settings WHERE key=? AND value=?').get('search_text_version','2')){
       this.db.exec('BEGIN IMMEDIATE');
       try{
@@ -214,7 +220,7 @@ export class Store {
       if(blobHash!==undefined&&blobHash!==p.hash)throw new StoreError('Archive image checksum mismatch');
       prepared.push(p);
     }
-    const memoryEntries=z.array(memorySchema).max(1000).parse(archive.memories??[]);
+    const memoryEntries=z.array(memorySchema).max(100000).parse(archive.memories??[]);
     const archivedFiles=new ArchivedFileStore(this),portableFiles=archivedFiles.preparePortable(archive.files??[]);
     const fileLinks=z.array(z.object({captureId:z.string().uuid(),fileId:z.string().uuid()}).strict()).max(100000).parse(archive.captureFiles??[]);
     const captureIds=new Set(prepared.map(p=>p.input.id)),fileIds=new Set(portableFiles.map(p=>p.file.id));
@@ -233,7 +239,7 @@ export class Store {
       for(const m of memoryEntries){if(m.evidenceIds.some(id=>!this.evidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');for(const e of m.evidence??[]){const record=this.evidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record||(e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote)))throw new StoreError('Memory archive evidence quote mismatch');}this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,JSON.stringify({...m,status:'stale',staleReason:'restored_archive'}));for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);}
       // Merging individually valid archives must still respect the destination's total limits.
       if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM source_connections').get()!.n)>500)throw new StoreError('Maximum 500 sources',413);
-      if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n)>1000)throw new StoreError('Memory limit reached',507);
+      if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n)>100000)throw new StoreError('Memory limit reached',507);
       this.reserveMetadata(0);
       this.db.exec('COMMIT');return {imported,duplicates};
     }catch(e){this.db.exec('ROLLBACK');this.sweep();archivedFiles.sweepOrphans();throw e;}
@@ -362,12 +368,14 @@ export class Store {
   search(range:Range&{query?:string}) {
     if(!range.query?.trim())return this.list(range).items;
     const {where,values}=this.clauses(range); const conjunction=where?' AND ':' WHERE ';
-    const query=range.query.trim().slice(0,1000); const terms=query.split(/\s+/).filter(Boolean).slice(0,12).map(s=>'"'+s.replaceAll('"','""')+'"').join(' OR ');
-    // Generic lexical primitive. The Agent, never keyword intent routing, chooses search expressions.
-    const ids=this.db.prepare(`SELECT id FROM captures_fts WHERE captures_fts MATCH ? ORDER BY rank LIMIT 500`).all(terms) as {id:string}[];
-    const placeholders=ids.map(()=>'?').join(',');
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}(instr(lower(mote_search_text(json)),lower(?))>0${ids.length?` OR id IN (${placeholders})`:''}) ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`)
-      .all(...values,query,...ids.map(i=>i.id),Math.min(range.limit??50,200)) as unknown as Row[];
+    const query=range.query.trim().slice(0,1000);if(!query)return this.list(range).items; const terms=query.split(/\s+/).filter(Boolean).slice(0,12).map(s=>'"'+s.replaceAll('"','""')+'"').join(' OR ');
+    // Apply time/device scope before limiting, including old matches in large archives.
+    const longTerms=query.split(/\s+/u).filter(t=>Array.from(t).length>=3).slice(0,12).map(t=>'"'+t.replaceAll('"','""')+'"').join(' OR ');
+    const lexical=["id IN (SELECT id FROM captures_fts WHERE captures_fts MATCH ?)"],args:(string|number)[]=[terms];
+    if(longTerms){lexical.push('id IN (SELECT id FROM captures_trigram WHERE captures_trigram MATCH ?)');args.push(longTerms);}
+    else {lexical.push('instr(lower(mote_search_text(json)),lower(?))>0');args.push(query);}
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}(${lexical.join(' OR ')}) ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`)
+      .all(...values,...args,Math.min(range.limit??50,200)) as unknown as Row[];
     return rows.map(r=>this.record(r));
   }
   vectorSearch(vector:number[], model:string, range:Range={}) {
@@ -445,7 +453,7 @@ export class Store {
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() {
     const tables=new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {name:string}[]).map(row=>row.name));
-    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices'].filter(name=>tables.has(name));
+    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_lifecycle_state','working_memories'].filter(name=>tables.has(name));
     const bytes=Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n);
     const files=tables.has('file_blobs')?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
     const scalar=(sql:string)=>Number(this.db.prepare(sql).get()!.n);
@@ -498,6 +506,7 @@ export class Store {
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   invalidateConversationAnswers() {
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='working_memories'").get())this.db.exec('DELETE FROM working_memories');
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='query_runs'").get()){
       for(const row of this.db.prepare('SELECT id,json FROM query_runs').all() as {id:string;json:string}[]){
         const run=JSON.parse(row.json);run.events=run.events.map(({message:_,...event}: {message?:string;[key:string]:unknown})=>event);

@@ -26,6 +26,7 @@ export const TOOL_NAMES = [
   "source_history",
   "memories",
   "file_chunks",
+  "changes",
 ] as const;
 
 function dateValue(value: unknown, field: string): string | undefined {
@@ -250,6 +251,7 @@ export async function startBridge(
           "Tool call budget reached; finish using the evidence already retrieved",
         );
       reportProgress(bounds,{stage:'tool',tool,phase:'started'});
+      if(bounds.skill==='working-memory')throw Error('Working memory uses only the supplied dialogue; retrieval is disabled');
       if(restricted){
         if(tool!=='evidence')throw Error('This extraction session uses only the supplied evidence ranges');
         if(!Array.isArray(args.ids)||!args.ids.length||args.ids.some(id=>typeof id!=='string'||!permitted.has(id)))throw Error('Evidence is outside this extraction batch');
@@ -293,11 +295,15 @@ export async function startBridge(
       else if(tool==='memories'){
         const scope=range(args,bounds);
         if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw Error('Invalid memory id');
-        effective={...scope,id:args.id};
-        const result=await reader.memories?.({...scope,id:args.id as string|undefined})??{items:[]};
+        if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw Error('Invalid memory query');
+        if(args.tier!==undefined&&!['episode','consolidated'].includes(String(args.tier)))throw Error('Invalid memory tier');
+        if(args.kind!==undefined&&!['episodic','semantic','procedural'].includes(String(args.kind)))throw Error('Invalid memory kind');
+        const search={query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
+        effective={...scope,id:args.id,...search};
+        const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
         const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>project(r,0,2000,bounds.timeZone));
         memoryEvidence=evidence;
-        value={items:result.items,evidence};
+        value={items:result.items,evidence};pagination={nextCursor:result.nextCursor??null};
       }
       else if (tool === "evidence") {
         if (
@@ -323,7 +329,14 @@ export async function startBridge(
       } else {
         const filters = range(args, bounds);
         effective = { ...filters };
-        if (tool === "search_context") {
+        if(tool==='changes'){
+        const ids=bounds.incrementalEvidenceIds??[],offset=args.cursor===undefined?0:Number(args.cursor),limit=Math.min(Number(args.limit??30),30);
+        if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1)throw Error('Invalid changes page');
+        const scope=range({},bounds);
+        value=(await reader.evidence({ids:ids.slice(offset,offset+limit)})).filter(r=>{const at=sourceContentTime(r);return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));});
+        pagination={nextCursor:offset+limit<ids.length?String(offset+limit):null,totalCount:ids.length};
+      }
+      else if (tool === "search_context") {
           if (
             args.query !== undefined &&
             (typeof args.query !== "string" || args.query.length > 2000)
@@ -362,7 +375,7 @@ export async function startBridge(
       if (
         tool === "search_context" ||
         tool === "timeline" ||
-        tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks'
+        tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes'
       ) {
         if (!Array.isArray(value))
           throw new Error("Context reader returned invalid records");
@@ -381,7 +394,7 @@ export async function startBridge(
           "Context result exceeds the evidence budget; request a smaller range",
         );
       // Only a successfully serialized, deliverable tool result authorizes evidence.
-      if (tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks') {
+      if (tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes') {
         for (const record of safeValue as ContextRecord[])
           records.set(record.id, record);
       }

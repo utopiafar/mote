@@ -685,7 +685,7 @@ function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Ap
 
 function Timeline(props:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number}) {
   const [view,setView]=useState('sessions');
-  return <><div className="filter-bar" role="group" aria-label="记录视图"><button className={'button '+(view==='sessions'?'primary':'')} onClick={()=>setView('sessions')}>Session / App 分组</button><button className={'button '+(view==='records'?'primary':'')} onClick={()=>setView('records')}>全部记录</button></div>{view==='sessions'?<><div className="page-heading"><div className="eyebrow">沿着连续的记录回看</div><h1>采集记录</h1><p>先看一段，再展开其中的截图与上下文。</p></div><CaptureSessions {...props}/></>:<RecordTimeline {...props}/>}</>;
+  return <><div className="filter-bar" role="group" aria-label="记录视图"><button className={'button '+(view==='sessions'?'primary':'')} onClick={()=>setView('sessions')}>Session / App 分组</button><button className={'button '+(view==='records'?'primary':'')} onClick={()=>setView('records')}>全部记录</button></div>{view==='sessions'?<><div className="page-heading"><div className="eyebrow">沿着连续的记录回看</div><h2>采集记录</h2><p>先看一段，再展开其中的截图与上下文。</p></div><CaptureSessions {...props}/></>:<RecordTimeline {...props}/>}</>;
 }
 function RecordTimeline({
   api,

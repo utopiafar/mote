@@ -59,14 +59,14 @@ export class Conversations {
     return {deleted:Number(this.store.db.prepare('DELETE FROM conversations WHERE id=?').run(id).changes)};
   }
 
-  context(conversation:Conversation):NonNullable<QueryInput['conversation']> {
+  context(conversation:Conversation,maxTurns=20,maxCharacters=60000):NonNullable<QueryInput['conversation']> {
     const turns:NonNullable<QueryInput['conversation']>['turns']=[];
     let length=0;
     for(const turn of [...conversation.turns].reverse()) {
       const answer=turn.result.answer.slice(0,20000);
       const value={question:turn.question,answer,scope:turn.scope,createdAt:turn.createdAt,...(answer.length<turn.result.answer.length?{answerTruncated:true}:{}),...(turn.evidenceDeleted?{evidenceDeleted:true}:{})};
       const size=JSON.stringify(value).length;
-      if(turns.length===20||length+size>60000)break;
+      if(turns.length===maxTurns||length+size>maxCharacters)break;
       turns.unshift(value);length+=size;
     }
     return {turns,omittedTurns:conversation.turns.length-turns.length};
