@@ -125,7 +125,9 @@ node scripts/mote.mjs token --profile dev
 node scripts/mote.mjs exec --profile dev -- npm run dev -w @mote/server
 ```
 
-该命令会先重建服务端依赖的 `@mote/shared` 和 `@mote/agent`，避免拉取新代码后因旧的 `dist` 产物出现缺少导出的错误。修改这些依赖库的源码后，需重新运行该命令以更新构建产物。
+拉取新代码后，如果 `package.json` 或 `package-lock.json` 有变化，先在仓库根目录运行 `npm ci` 同步依赖。构建工作区库不会安装新增的第三方依赖。
+
+该命令会先检查服务端依赖是否已安装，缺失时列出包名并提示运行 `npm ci`；随后重建服务端依赖的 `@mote/shared` 和 `@mote/agent`，避免因旧的 `dist` 产物出现缺少导出的错误。修改这些依赖库的源码后，需重新运行该命令以更新构建产物。
 
 配置、数据、日志分别放在 `.mote/profiles/dev/` 下。修改 `mote.env` 后停止并重新启动该环境：
 

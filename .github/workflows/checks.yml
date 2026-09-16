@@ -23,6 +23,7 @@ jobs:
       - run: npm run build -w @mote/server -w @mote/web
       - run: node --import tsx scripts/test-live-metadata.ts --prepare-only --out .mote/ci-metadata-fixture
       - run: npm test
+      - run: node --test scripts/check-dependencies-tests.mjs
       - run: npm run test:privacy
       - run: npm run test:e2e
       - run: npm run test:media-e2e
