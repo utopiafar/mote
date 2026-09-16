@@ -92,6 +92,8 @@ class LocalStateInstrumentedTest {
             }
             ActivityScenario.launch(ActivityStatsActivity::class.java).use { scenario ->
                 textAppears(scenario, "采集区 1 张 · 待决定区 1 张")
+                textAppears(scenario, "目录大小为最近测量值")
+                scenario.onActivity { a -> views(a.window.decorView).filterIsInstance<Button>().first { it.text == "刷新实际存储与统计" }.performClick() }
                 restore(b); stock(2, 0); textAppears(scenario, "采集区 2 张 · 待决定区 0 张")
                 move(b, a); stock(1, 1); textAppears(scenario, "采集区 1 张 · 待决定区 1 张")
             }

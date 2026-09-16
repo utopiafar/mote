@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, lstat, copyFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, lstat, copyFile, symlink, link, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
@@ -88,10 +88,36 @@ test('rollback privately retains connector credentials and selection, clears for
   const restoredDb = new DatabaseSync(join(restored, 'mote.sqlite')); restoredDb.close();
   const credential = { version: 1, tokens: { refresh_token: 'synthetic-private-refresh-token' }, calendars: [{ id: source.id }], checkpoints: { synthetic: { syncToken: 'synthetic-forward-checkpoint' } } };
   await writeFile(join(oldData, 'connectors/google-calendar.json'), JSON.stringify(credential), { mode: 0o600 });
+  const contentKey = 'ab'.repeat(32) + '\n';
+  await writeFile(join(oldData, 'content-key'), contentKey, { mode: 0o600 });
   const p = { directory, dataDir: oldData, meta: { runtime: 'native' } }, handoff = await preserveConnectorState(p);
   await restoreConnectorState({ ...p, dataDir: restored }, handoff);
   const file = join(restored, 'connectors/google-calendar.json'), saved = JSON.parse(await readFile(file, 'utf8'));
   assert.deepEqual(saved.tokens, credential.tokens); assert.deepEqual(saved.calendars, credential.calendars); assert.deepEqual(saved.checkpoints, {}); assert.equal((await lstat(file)).mode & 0o777, 0o600);
   const restoredRead = new DatabaseSync(join(restored, 'mote.sqlite')); assert.deepEqual(JSON.parse(restoredRead.prepare('SELECT json FROM source_connections').get().json), source); restoredRead.close();
   assert.deepEqual(JSON.parse(await readFile(join(oldData, 'connectors/google-calendar.json'), 'utf8')), credential);
+  assert.equal(await readFile(join(restored, 'content-key'), 'utf8'), contentKey);
+  assert.equal((await lstat(join(restored, 'content-key'))).mode & 0o777, 0o600);
+  assert.equal(await readFile(join(oldData, 'content-key'), 'utf8'), contentKey);
+}));
+
+test('private content-key rollback rejects links, malformed keys and overwriting an existing destination', async () => fixture(async directory => {
+  const dataDir = join(directory, 'data'); await mkdir(dataDir); await mkdir(join(directory, 'backups'));
+  const db = new DatabaseSync(join(dataDir, 'mote.sqlite')); db.close();
+  const p = { directory, dataDir, meta: { runtime: 'native' } }, key = join(dataDir, 'content-key'), outside = join(directory, 'key');
+  await writeFile(outside, 'cd'.repeat(32) + '\n');
+  for (const kind of ['symlink', 'hardlink', 'directory', 'invalid']) {
+    if (kind === 'symlink') await symlink(outside, key);
+    else if (kind === 'hardlink') await link(outside, key);
+    else if (kind === 'directory') await mkdir(key);
+    else await writeFile(key, 'not a generated key');
+    await assert.rejects(preserveConnectorState(p), /[Cc]ontent key/);
+    assert.deepEqual(await readdir(join(directory, 'backups')), [], 'Failed private handoffs are removed');
+    await rm(key, { recursive: true, force: true });
+  }
+  await copyFile(outside, key);
+  const handoff = await preserveConnectorState(p), restored = join(directory, 'restored'); await mkdir(restored);
+  await writeFile(join(restored, 'content-key'), 'Existing destination must remain untouched');
+  await assert.rejects(restoreConnectorState({ ...p, dataDir: restored }, handoff), { code: 'EEXIST' });
+  assert.equal(await readFile(join(restored, 'content-key'), 'utf8'), 'Existing destination must remain untouched');
 }));

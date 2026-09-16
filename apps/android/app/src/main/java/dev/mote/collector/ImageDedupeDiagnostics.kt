@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 
 /** Separate from the upload queue, export, support bundle and shared image gallery. */
 fun Context.imageDedupeDiagnostics() = ImageDedupeDiagnosticsStore(
-    File(noBackupFilesDir, "image-dedupe-diagnostics"), SecretBox(),
+    File(noBackupFilesDir, "image-dedupe-diagnostics"), localContentCipher(),
     enabled = { Settings(this).read().imageDedupeDiagnosticsEnabled }
 )
 

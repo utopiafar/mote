@@ -24,7 +24,7 @@ class LocalSourcesInstrumentedTest {
         try {
             val result = scanner.scan(calendar, now); assertTrue(result.complete); assertEquals(1, result.items.size)
             assertEquals(now.toString(), result.items.single().getString("observedAt")); assertEquals("2026-09-15T03:00:00Z", result.items.single().getJSONObject("calendar").getString("start"))
-            val store = LocalSourceStore(directory, SecretBox()); store.save(calendar); store.scan(calendar, result)
+            val store = LocalSourceStore(directory, LocalContentCipher()); store.save(calendar); store.scan(calendar, result)
             prefs.edit().putString("mode", "hidden").commit(); assertThrows(IllegalStateException::class.java) { scanner.scan(calendar, now) }
             assertEquals(1, store.state(calendar.id).getJSONArray("pending").length())
             prefs.edit().putString("mode", "full").commit()
@@ -60,7 +60,7 @@ class LocalSourcesInstrumentedTest {
         org.junit.Assume.assumeTrue("Only explicit synthetic central fixture configuration enables network testing", connectionFile.exists())
         val connection = org.json.JSONObject(connectionFile.readText()); val base = connection.optString("url", connection.optString("server")); val token = connection.getString("token")
         require(base == "http://127.0.0.1:57559" && token.length >= 32 && BuildConfig.MOTE_PROFILE == "dev")
-        val directory = File(context.noBackupFilesDir, "source-wire-test-${System.nanoTime()}"); val store = LocalSourceStore(directory, SecretBox())
+        val directory = File(context.noBackupFilesDir, "source-wire-test-${System.nanoTime()}"); val store = LocalSourceStore(directory, LocalContentCipher())
         val authority = context.packageName + ".source-fixtures"; val prefs = context.getSharedPreferences("source-fixture", 0)
         val scanner = SourceProviders(context.contentResolver, calendarsUri = Uri.parse("content://$authority/calendar/calendars"), instancesUri = Uri.parse("content://$authority/calendar/instances"))
         val now = Instant.parse("2026-09-14T00:00:00Z")
@@ -79,7 +79,7 @@ class LocalSourcesInstrumentedTest {
                 val first = HttpJson.request("PUT", "$base/api/sources/${selected.id}/items", pending, token)
                 assertTrue(first.first in 200..299); assertTrue(SourceRules.validAck(selected.id, pending, first.second))
                 // Deliberately lose the first ACK; reconstruct local storage then send the identical revision.
-                val restored = LocalSourceStore(directory, SecretBox()); val retry = restored.next(selected.id, "fixture-target")!!
+                val restored = LocalSourceStore(directory, LocalContentCipher()); val retry = restored.next(selected.id, "fixture-target")!!
                 assertEquals(pending.toString(), retry.toString())
                 val repeated = HttpJson.request("PUT", "$base/api/sources/${selected.id}/items", retry, token)
                 assertTrue(repeated.first in 200..299); assertTrue(SourceRules.validAck(selected.id, retry, repeated.second)); assertTrue(repeated.second!!.getBoolean("duplicate")); assertEquals(first.second!!.getString("id"), repeated.second!!.getString("id"))

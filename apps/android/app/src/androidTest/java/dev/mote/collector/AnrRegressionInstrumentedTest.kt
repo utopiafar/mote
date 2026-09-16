@@ -94,7 +94,7 @@ class AnrRegressionInstrumentedTest {
                 val launchedAt = SystemClock.elapsedRealtime()
                 scenario = ActivityScenario.launch(MainActivity::class.java).awaitMainUi()
                 // Cold view inflation gets more budget than an input callback, but cannot wait on the 20 s lock.
-                assertTrue("home must launch without waiting for encrypted queue work",
+                assertTrue("home must launch without waiting for queue work",
                     SystemClock.elapsedRealtime() - launchedAt < 4000)
                 for (label in listOf("设置", "随手记", "来源", "概览")) {
                     val started = SystemClock.elapsedRealtime()
@@ -241,7 +241,7 @@ class AnrRegressionInstrumentedTest {
         }
     }
 
-    @Test fun v001EncryptedScreenshotBacklogReopensWithoutChangingEventsOrImages() {
+    @Test fun v001EncryptedScreenshotBacklogMigratesToReadableFilesWithoutChangingContent() {
         val directory = File(context.noBackupFilesDir, "generated-v001-backlog-${UUID.randomUUID()}").apply { mkdirs() }
         val bitmap = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.CYAN) }
         val image = ByteArrayOutputStream().use { bitmap.compress(Bitmap.CompressFormat.JPEG, 80, it); it.toByteArray() }
@@ -269,7 +269,7 @@ class AnrRegressionInstrumentedTest {
             }
             val before = directory.listFiles()!!.associate { it.name to NsfwModelStore.sha256(it) }
             val bytes = directory.listFiles()!!.sumOf { it.length() }
-            val reopened = DurableQueue(directory, SecretBox())
+            val reopened = DurableQueue(directory, LocalContentCipher())
             reopened.recoverOrphans()
             assertEquals(ids.size, reopened.depth())
             assertEquals(PendingSync(ids.size, firstAt), reopened.pendingSync())
@@ -284,7 +284,14 @@ class AnrRegressionInstrumentedTest {
             assertEquals("recovery and status must preserve the old encrypted files byte for byte", before,
                 directory.listFiles()!!.filter { it.name in before }.associate { it.name to NsfwModelStore.sha256(it) })
             assertFalse(image.contentEquals(File(directory, "$blob.blob").readBytes()))
-            assertEquals(ids.size, DurableQueue(directory, SecretBox()).pendingSync().count)
+            reopened.migrateLegacyContent()
+            assertArrayEquals(image, File(directory, "$blob.blob").readBytes())
+            ids.forEachIndexed { index, id ->
+                val readable = JSONObject(File(directory, "$id.event").readText())
+                assertEquals(id, readable.getString("id"))
+                assertEquals("GENERATED V001 SCREEN $index", readable.getString("ocrText"))
+            }
+            assertEquals(ids.size, DurableQueue(directory, LocalContentCipher()).pendingSync().count)
         } finally { directory.deleteRecursively() }
     }
 }

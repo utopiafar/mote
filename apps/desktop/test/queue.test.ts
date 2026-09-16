@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableQueue, imageHash, QueueFullError, retryDelay } from '../src/queue';
@@ -12,6 +12,22 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-desktop-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 describe('durable capture queue', () => {
+  it('stores directly readable JSON and original JPEG bytes and reopens them without a content decryption key', async () => {
+    const original = { ...event(), ocrText: '合成明文记录\n可直接读取的 OCR' };
+    await queue.enqueue(original, image);
+    const eventPath = join(directory, 'events', `${original.id}.json`);
+    const imagePath = join(directory, 'blobs', `${imageHash(image)}.jpg`);
+    expect(JSON.parse(await readFile(eventPath, 'utf8')).event).toEqual(original);
+    expect(await readFile(imagePath)).toEqual(image);
+    if (process.platform !== 'win32') {
+      expect((await stat(eventPath)).mode & 0o777).toBe(0o600);
+      expect((await stat(imagePath)).mode & 0o777).toBe(0o600);
+    }
+    const reopened = new DurableQueue(directory, limits);
+    await reopened.initialize();
+    expect((await reopened.next())?.record.event).toEqual(original);
+    expect(await reopened.imageForBrowser(original.id)).toEqual(image);
+  });
   it('makes progress at the byte limit by consuming pre-reserved OCR space, including worst-case escaping', async () => {
     const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const } };
     await queue.enqueue(original, image); await queue.acknowledge(original.id);

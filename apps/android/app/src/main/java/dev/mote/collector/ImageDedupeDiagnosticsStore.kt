@@ -87,6 +87,16 @@ class ImageDedupeDiagnosticsStore(
 
     fun clear() = synchronized(lock) { clearFiles() }
     fun prune() = synchronized(lock) { if (!enabled()) clearFiles() else retained().let { Unit } }
+    fun migrateLegacyContent(shouldStop: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
+        val files = synchronized(lock) { retained().map { it.file } }
+        var changed = 0
+        for ((index, file) in files.withIndex()) {
+            if (shouldStop()) break
+            synchronized(lock) { if (LocalContentMigration.migrate(file, cipher) { decode(file.nameWithoutExtension, file.readBytes()) }) changed++ }
+            onProgress(index + 1, files.size)
+        }
+        return changed
+    }
 
     private data class Entry(val file: File, val record: ImageDedupeDiagnosticRecord)
 

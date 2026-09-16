@@ -95,10 +95,20 @@ object SourceRules {
 
 data class SourceScan(val items: List<JSONObject>, val complete: Boolean, val observedAt: String, val from: Long? = null, val until: Long? = null, val skipped: Int = 0)
 
-/** Encrypted snapshots plus immutable pending revisions. State changes are atomic and ACKs target-specific. */
+/** Local snapshots plus immutable pending revisions. State changes are atomic and ACKs target-specific. */
 class LocalSourceStore(private val directory: File, private val cipher: ByteCipher) {
     internal var onMutation: (() -> Unit)? = null
     init { directory.mkdirs() }
+    fun migrateLegacyContent(shouldStop: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
+        val files = synchronized(lock) { directory.listFiles()?.filter { it.extension == "enc" }.orEmpty() }
+        var changed = 0
+        for ((index, file) in files.withIndex()) {
+            if (shouldStop()) break
+            synchronized(lock) { if (LocalContentMigration.migrate(file, cipher) { JSONObject(String(it, Charsets.UTF_8)) }) { changed++; onMutation?.invoke() } }
+            onProgress(index + 1, files.size)
+        }
+        return changed
+    }
     fun sources(): List<LocalSource> = synchronized(lock) {
         val array = read(File(directory, "config.enc")).optJSONArray("sources") ?: JSONArray()
         (0 until array.length()).map { LocalSource.from(array.getJSONObject(it)) }
@@ -241,7 +251,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     private fun write(file: File, body: JSONObject) = writeBytes(file, cipher.seal(body.toString().toByteArray(Charsets.UTF_8)))
     private fun writeBytes(file: File, bytes: ByteArray) {
         val temp = File(directory, "${UUID.randomUUID()}.tmp")
-        try { FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }; check(temp.renameTo(file)) { "无法保存加密来源状态" }; onMutation?.invoke() } finally { temp.delete() }
+        try { FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }; check(temp.renameTo(file)) { "无法保存来源状态" }; onMutation?.invoke() } finally { temp.delete() }
     }
     companion object { private val lock = Any() }
 }

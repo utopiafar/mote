@@ -139,7 +139,7 @@ class SettingsStorageInstrumentedTest {
             assertEquals(original, settings.read()); assertFalse(settings.enabled); assertEquals("generated stop during failed save", settings.message())
         } finally { settings.enabled = false; settings.save(original) }
     }
-    @Test fun realAppStorageMigrationUsesEncryptedFilesAndKeepsSettingsAndQueueBinding() {
+    @Test fun realAppStorageMigrationKeepsReadableFilesSettingsAndQueueBinding() {
         val settings = Settings(context); val original = settings.read(); val storage = QueueStorage(context); val initial = storage.current()
         require(initial.baseId == "internal")
         val target = storage.choices().first { it.id != "internal" }
@@ -150,16 +150,17 @@ class SettingsStorageInstrumentedTest {
             .put("privacy", JSONObject().put("excluded", false)).put("imageMime", "image/png").put("ocrText", "generated fixture")
             .put("ocr", JSONObject().put("status", "completed"))
         try {
-            val config = original.copy(server = "", token = "", syncMode = "manual", nsfw = original.nsfw.copy(enabled = false))
+            val config = original.copy(server = "", token = "", syncMode = "manual", contentEncryptionEnabled = false, nsfw = original.nsfw.copy(enabled = false))
             settings.save(config); val origin = settings.dataOrigin(); val stale = context.queue()
             stale.enqueue(event, image, 2000000)
-            val encrypted = File(initial.path).listFiles()!!.single { it.extension == "blob" }.readBytes()
-            assertFalse(image.contentEquals(encrypted))
+            val storedImage = File(initial.path).listFiles()!!.single { it.extension == "blob" }.readBytes()
+            assertArrayEquals(image, storedImage)
+            assertEquals(id, JSONObject(File(initial.path, "$id.event").readText()).getString("id"))
             apply(config, change = { storage.migrate(target.id) })
             assertEquals(target.id, storage.current().baseId); assertEquals(config, settings.read()); assertEquals(origin, settings.dataOrigin())
             assertArrayEquals(image, context.queue().image(id)); assertFalse(File(initial.path).exists())
             assertThrows(IllegalStateException::class.java) { stale.acknowledge(id) }
-            assertArrayEquals(encrypted, File(storage.current().path).listFiles()!!.single { it.extension == "blob" }.readBytes())
+            assertArrayEquals(storedImage, File(storage.current().path).listFiles()!!.single { it.extension == "blob" }.readBytes())
             apply(config, change = { storage.migrate("internal") })
             assertEquals("internal", storage.current().baseId); assertArrayEquals(image, context.queue().image(id))
             context.queue().acknowledge(id); assertEquals(0, context.queue().depth())

@@ -27,7 +27,8 @@ Prefix commands with: node scripts/mote.mjs
 No command installs launchd, publishes images, deletes old volumes or changes the legacy root .env.
 Tunnel tokens are accepted only through private files, never argument values or environment.
 Native tunnel-run is foreground; generated launchd services are never installed automatically.
-Only token intentionally prints a central credential. Backups exclude credentials and encryption keys.`;
+Only token intentionally prints a central credential. Backups exclude credentials and encryption keys.
+When encryption has been used, preserve MOTE_DATA_KEY or the vault content-key file separately for restore.`;
 const split = process.argv.indexOf('--');
 const raw = process.argv.slice(2, split < 0 ? undefined : split);
 const tail = split < 0 ? [] : process.argv.slice(split + 1);

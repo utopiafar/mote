@@ -20,6 +20,18 @@ function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): S
 }
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
 describe('source revisions and durable acknowledgments', () => {
+  it('keeps the source index and pending snapshot readable as ordinary JSON across restart', async () => {
+    const engine = await create();
+    await engine.stage(scan([item]), false, '2026-09-14T01:00:00Z');
+    const disk = JSON.parse(await readFile(join(directory, 'state.json'), 'utf8'));
+    expect(disk.pending).toHaveLength(1);
+    expect(disk.pending[0]).toMatchObject({ externalId: item.externalId, text: item.text });
+    expect(Object.values(disk.known)).toEqual([expect.objectContaining({ item: expect.objectContaining({ externalId: item.externalId, title: item.title }) })]);
+    const reopened = await create();
+    const sent: SourceItem[] = [];
+    await reopened.flush(source, transport(sent));
+    expect(sent).toHaveLength(1); expect(sent[0].text).toBe(item.text);
+  });
   it('reopens an ACK-lost revision with the identical ID/time/body, removes only verified ACK, then avoids reimport', async () => {
     let engine = await create(); const saved: SourceItem[] = [];
     expect(await engine.stage(scan([item]), false, '2026-09-14T01:00:00Z')).toBe(1);

@@ -67,18 +67,19 @@ class ImageDedupeDiagnosticsInstrumentedTest {
                 screenCollectionEnabled = true, notificationCollectionEnabled = false, deviceEventCollectionEnabled = false, mediaCollectionEnabled = false,
                 chargingOnly = false, batteryPauseBelowPct = 0, ocrChargingOnly = true, localReviewUrl = "", metadataEnabled = false,
                 masks = "0,0,0.25,1", excludedPackages = "", appCollectionRules = AppCollectionRules.LEGACY_DEFAULT,
-                imageDedupeMode = "balanced", imageDedupeDiagnosticsEnabled = false, nsfw = settings.read().nsfw.copy(enabled = false))
+                imageDedupeMode = "balanced", imageDedupeDiagnosticsEnabled = false, contentEncryptionEnabled = false, nsfw = settings.read().nsfw.copy(enabled = false))
             settings.save(base); settings.enabled = true
-            fun capture(config: CollectorConfig, gray: Int, privateColor: Int = Color.RED): JSONObject {
+            fun capture(config: CollectorConfig, gray: Int, privateColor: Int = Color.RED, source: String = "screen"): JSONObject {
                 val at = start.plusSeconds(++sequence).toString()
                 pipeline.submit(generated(gray, privateColor), WindowSnapshot(setOf("dev.mote.generated"), "dev.mote.generated", true), config, at, sequence * 30000)
                 waitUntil("pipeline $sequence") { !pipeline.isBusy() }
-                val rows = context.queue().capturePage(start.toString(), start.plusSeconds(1000).toString(), limit = 60).getJSONArray("items")
+                val rows = context.queue().capturePage(start.toString(), start.plusSeconds(1000).toString(), limit = 60, source = source).getJSONArray("items")
                 val item = (0 until rows.length()).map { rows.getJSONObject(it) }.singleOrNull { it.getString("capturedAt") == at }
                 assertNotNull("Generated capture persisted: ${settings.message()}", item)
                 return context.queue().capture(item!!.getString("id"))!!.also { ids += it.getString("id") }
             }
-            capture(base, 240); val silentDuplicate = capture(base, 235)
+            capture(base, 240); val silentDuplicate = capture(base, 235, source = "activity")
+            assertEquals("activity", silentDuplicate.getString("source"))
             assertNull(context.queue().image(silentDuplicate.getString("id")))
             assertTrue(context.imageDedupeDiagnostics().list().isEmpty()); assertTrue(directory.listFiles().orEmpty().isEmpty())
 
@@ -106,7 +107,7 @@ class ImageDedupeDiagnosticsInstrumentedTest {
                 assertFalse(event.toString().contains("referenceCaptureId")); assertFalse(event.toString().contains("hashSimilarityPercent"))
             }
             assertTrue(directory.listFiles().orEmpty().all { it.extension == "enc" })
-            assertFalse(directory.listFiles().orEmpty().any { String(it.readBytes()).contains("referenceCaptureId") })
+            assertTrue(directory.listFiles().orEmpty().all { String(it.readBytes()).contains("referenceCaptureId") })
 
             val blocked = enabled.copy(excludedPackages = "dev.mote.generated"); settings.save(blocked)
             val queuedBefore = context.queue().depth()
@@ -145,7 +146,7 @@ class ImageDedupeDiagnosticsInstrumentedTest {
             capture(enabled, 240); capture(enabled, 235); assertEquals(1, store.list().size)
             settings.save(base)
             assertTrue(store.list().isEmpty()); assertTrue(directory.listFiles().orEmpty().isEmpty())
-            capture(base, 240); capture(base, 235); assertTrue(store.list().isEmpty())
+            capture(base, 240); capture(base, 235, source = "activity"); assertTrue(store.list().isEmpty())
             File(context.filesDir, "dedupe-diagnostics-result.json").writeText(JSONObject().put("generatedOnly", true).put("passed", true)
                 .put("pairsVerified", 2).put("lastAcceptedReference", true).put("privacyMasks", true).put("excludedFrameBlocked", true)
                 .put("disabledNoRetention", true).put("localOnly", true).put("bothImagesAndMetricsDisplayed", true).put("deleteAndClear", true).toString())
@@ -153,8 +154,11 @@ class ImageDedupeDiagnosticsInstrumentedTest {
             settings.enabled = false; waitUntil("pipeline cleanup") { !pipeline.isBusy() }; pipeline.close(); cancel(context)
             context.imageDedupeDiagnostics().clear()
             // Discover successful enqueues even when an assertion failed before its ID was recorded.
-            val remaining = context.queue().capturePage(start.toString(), start.plusSeconds(1000).toString(), limit = 60).getJSONArray("items")
-            val cleanupIds = (ids + (0 until remaining.length()).map { remaining.getJSONObject(it).getString("id") }).distinct()
+            val remaining = listOf("screen", "activity").flatMap { source ->
+                val page = context.queue().capturePage(start.toString(), start.plusSeconds(1000).toString(), limit = 60, source = source).getJSONArray("items")
+                (0 until page.length()).map { page.getJSONObject(it).getString("id") }
+            }
+            val cleanupIds = (ids + remaining).distinct()
             cleanupIds.forEach { id ->
                 context.queue().capture(id)?.let { context.queue().acknowledge(id)
                     if (context.queue().capture(id) != null) { context.queue().completeOcr(id, "", "failed", 64 * 1024 * 1024); context.queue().acknowledgeOcr(id) }

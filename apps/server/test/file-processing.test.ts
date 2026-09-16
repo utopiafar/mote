@@ -20,7 +20,7 @@ const raw:Transcript={durationMs:3000,segments:[{startMs:0,endMs:1000,text:'使�
 const wave=Buffer.alloc(32044);wave.write('RIFF');wave.writeUInt32LE(wave.length-8,4);wave.write('WAVEfmt ',8);wave.writeUInt32LE(16,16);wave.writeUInt16LE(1,20);wave.writeUInt16LE(1,22);wave.writeUInt32LE(16000,24);wave.writeUInt32LE(32000,28);wave.writeUInt16LE(2,32);wave.writeUInt16LE(16,34);wave.write('data',36);wave.writeUInt32LE(32000,40);
 const diary=diarizationSchema.parse({durationMs:3000,engine:'synthetic',expectedSpeakers:2,observedSpeakers:2,overlapDetection:'unknown',segments:[{startMs:0,endMs:1100,speaker:'SPEAKER_0'},{startMs:1400,endMs:2600,speaker:'SPEAKER_1'}],samples:[{speaker:'SPEAKER_0',startMs:0,endMs:1000,wavBase64:wave.toString('base64')}]});
 async function fixture(t:any,options:any={}){
- const dir=mkdtempSync(join(tmpdir(),'mote-processing-')),store=new Store(dir,{dataKey:'41'.repeat(32)}),sources=new SourceStore(store),files=new FileStore(store,sources);
+ const dir=mkdtempSync(join(tmpdir(),'mote-processing-')),store=new Store(dir,{dataKey:'41'.repeat(32),contentEncryptionEnabled:true}),sources=new SourceStore(store),files=new FileStore(store,sources);
  sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});
  const manifest={sourceId:'phone',item:{externalId:'fixture.wav',revision:'1',observedAt:new Date().toISOString(),title:'Synthetic interview.wav',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},sizeBytes:wave.length,sha256:sha256(wave)};
  const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,wave,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
@@ -60,7 +60,7 @@ test('export contains raw and speaker transcripts, valid tar headers, encrypted 
  for(const name of ['原始转写_未校正.md','带说话人_未校正完整记录.csv','diarization.rttm','diarization.json','diarization.csv','speaker_samples/SPEAKER_0.wav'])assert.ok(entries.some(e=>e.name===name),name);
  const parts:Buffer[]=[];for await(const part of exportTar(entries))parts.push(part);const tar=gunzipSync(Buffer.concat(parts));let offset=0;
  for(const entry of entries){const header=tar.subarray(offset,offset+512);assert.equal(header.subarray(0,100).toString().replace(/\0.*$/s,''),entry.name);const length=parseInt(header.subarray(124,136).toString(),8);assert.equal(length,entry.bytes.length);assert.deepEqual(tar.subarray(offset+512,offset+512+length),entry.bytes);offset+=512+Math.ceil(length/512)*512;}
- const hash=String(f.store.db.prepare('SELECT object_hash FROM file_assets').get()!.object_hash);assert.notDeepEqual(readFileSync(join(f.files.objects,hash,'0')),wave);
+ const hash=String(f.store.db.prepare('SELECT object_hash FROM file_assets').get()!.object_hash);assert.notDeepEqual(readFileSync(join(f.files.objects,hash,'0.aes')),wave);
  assert.throws(()=>f.files.asset(f.id,f.files.detail(f.id).artifacts.find((a:any)=>a.kind==='diarization')!.id,'../original'),{statusCode:404});
  f.files.forget(f.id);for(const table of ['file_steps','file_assets','file_reviews','file_chunks'])assert.equal(f.store.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n,0);
 });

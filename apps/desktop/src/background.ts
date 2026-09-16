@@ -1,6 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
 import type { Rectangle } from './contracts';
+import { localContentPolicy } from './local-content';
 
 export interface WorkProgress { message: string; completed?: number; total?: number }
 export type BackgroundRequest =
@@ -47,7 +48,7 @@ export class BackgroundLane {
     this.worker.ref();
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: value => resolve(value as T), reject, progress });
-      try { this.worker!.postMessage({ id, request }); }
+      try { this.worker!.postMessage({ id, request, contentPolicy: ['json-read', 'json-write', 'archive-export'].includes(request.kind) ? localContentPolicy() : { enabled: false } }); }
       catch (error) { this.pending.delete(id); if (!this.pending.size) this.worker!.unref(); reject(error); }
     });
   }

@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -41,6 +42,96 @@ class BulkDedupeInstrumentedTest {
         val manager = WorkManager.getInstance(context)
         waitFor("worker $id") { manager.getWorkInfoById(id).get()!!.state.isFinished }
         return manager.getWorkInfoById(id).get()!!.also { assertEquals(it.outputData.toString(), WorkInfo.State.SUCCEEDED, it.state) }
+    }
+    @Test fun twoThousandGeneratedImagesScanAndDeleteThroughWorkerWithoutBlockingUi() {
+        require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
+        require(shell("getprop ro.boot.qemu.avd_name").trim() == "mote_fixture_api35")
+        require(!Settings(context).enabled && !CaptureAccessibilityService.connected && !ProjectionService.running)
+        waitFor("storage recovery") { !QueueStorage.recovering }
+        val store = BulkDedupeStore(context)
+        val queue = context.queue()
+        require(queue.depth() == 0 && store.quarantine().depth() == 0)
+        val settings = Settings(context); val original = settings.read()
+        val manager = WorkManager.getInstance(context)
+        val ids = mutableListOf<String>()
+        try {
+            manager.cancelAllWork().result.get()
+            settings.save(original.copy(server = "", token = "", syncMode = "manual", ocrChargingOnly = true))
+            val bitmap = Bitmap.createBitmap(96, 160, Bitmap.Config.ARGB_8888)
+            val start = Instant.parse("2026-09-01T00:00:00Z")
+            try {
+                queue.withDeferredIndexWrites {
+                    repeat(100) { group ->
+                        bitmap.eraseColor(Color.rgb(group * 2, group, 255 - group))
+                        val png = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+                        repeat(20) { offset ->
+                            val id = UUID.randomUUID().toString(); ids += id
+                            queue.enqueue(JSONObject().put("id", id).put("source", "screen")
+                                .put("capturedAt", start.plusSeconds(group * 20L + offset).toString())
+                                .put("appId", "fixture.bulk").put("appName", "Generated bulk fixture")
+                                .put("privacy", JSONObject().put("excluded", false))
+                                .put("ocr", JSONObject().put("status", "disabled")), png, 1_000_000_000)
+                        }
+                    }
+                }
+            } finally { bitmap.recycle() }
+            var maxUiMs = 0L
+            var scanMs = 0L
+            var deleteMs = 0L
+            ActivityScenario.launch(BulkDedupeActivity::class.java).use { scenario ->
+                fun responsiveWhileRunning(work: UUID) {
+                    val deadline = System.currentTimeMillis() + 60_000
+                    do {
+                        val before = android.os.SystemClock.elapsedRealtime()
+                        scenario.onActivity { activity ->
+                            assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text == "本机图片批量去重" })
+                        }
+                        val uiMs = android.os.SystemClock.elapsedRealtime() - before
+                        maxUiMs = maxOf(maxUiMs, uiMs)
+                        assertTrue("UI stalled for $uiMs ms with 2000 images", uiMs < 1500)
+                        check(System.currentTimeMillis() < deadline) { "2000-image worker did not finish within 60 seconds" }
+                        Thread.sleep(100)
+                    } while (!manager.getWorkInfoById(work).get()!!.state.isFinished)
+                    finish(work)
+                }
+                val scanStart = android.os.SystemClock.elapsedRealtime()
+                responsiveWhileRunning(launch(workDataOf("action" to "scan", "mode" to "exact")))
+                scanMs = android.os.SystemClock.elapsedRealtime() - scanStart
+                val report = store.read("report")
+                val pairs = report.getJSONArray("pairs")
+                assertEquals(2000, report.getInt("scanned")); assertEquals(0, report.getInt("errors"))
+                assertEquals(1900, pairs.length())
+                waitFor("2000-image result first page") {
+                    var ready = false
+                    scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("候选 1900 张") } }
+                    ready
+                }
+                scenario.onActivity { activity ->
+                    val thumbnails = views(activity.window.decorView).filterIsInstance<ImageView>()
+                    assertEquals("Only the visible page creates thumbnails", 20, thumbnails.size)
+                    views(activity.window.decorView).filterIsInstance<Button>().first { it.text == "选择全部候选" }.performClick()
+                    assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("已选 1900 条") })
+                    thumbnails.zip(views(activity.window.decorView).filterIsInstance<ImageView>()).forEach { (before, after) -> assertSame(before, after) }
+                }
+                val job = UUID.randomUUID().toString()
+                store.write("plan", JSONObject().put("job", job).put("items", pairs))
+                val deleteStart = android.os.SystemClock.elapsedRealtime()
+                responsiveWhileRunning(launch(workDataOf("action" to "delete", "job" to job)))
+                deleteMs = android.os.SystemClock.elapsedRealtime() - deleteStart
+                assertEquals(100, queue.depth())
+                repeat(100) { assertNotNull("Retained reference must remain readable", queue.image(ids[it * 20])) }
+            }
+            java.io.File(context.filesDir, "bulk-dedupe-performance.json").writeText(JSONObject()
+                .put("fixtureImages", 2000).put("distinctImages", 100).put("deleted", 1900)
+                .put("scanMs", scanMs).put("deleteMs", deleteMs).put("maxUiMs", maxUiMs).toString())
+        } finally {
+            manager.cancelUniqueWork(BulkDedupeWorker.NAME).result.get()
+            queue.withDeferredIndexWrites {
+                ids.forEach { id -> queue.dedupeRow(id)?.let { queue.resolveDedupe(id, it.getString("blob"), null, null, null) } }
+            }
+            settings.save(original)
+            store.write("report", JSONObject()); store.write("plan", JSONObject())
+        }
     }
     @Test fun generatedImagesScanPreviewLifecycleMoveRestoreDeleteAndCancel() {
         require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
@@ -97,8 +188,13 @@ class BulkDedupeInstrumentedTest {
                 scenario.recreate()
                 waitFor("persistent result UI") { var ready = false; scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("候选 102 张") } }; ready }
                 scenario.onActivity { activity ->
+                    val thumbnails = views(activity.window.decorView).filterIsInstance<ImageView>()
+                    assertTrue(thumbnails.isNotEmpty())
                     views(activity.window.decorView).filterIsInstance<Button>().first { it.text == "选择全部候选" }.performClick()
                     assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("已选 102 条") })
+                    val afterSelection = views(activity.window.decorView).filterIsInstance<ImageView>()
+                    assertEquals("Selecting candidates must preserve decoded thumbnails", thumbnails.size, afterSelection.size)
+                    thumbnails.zip(afterSelection).forEach { (before, after) -> assertSame(before, after) }
                     views(activity.window.decorView).filterIsInstance<Button>().first { it.text == "取消全部选择" }.performClick()
                     views(activity.window.decorView).filterIsInstance<Button>().first { it.text == "预览图片与保留图" }.performClick()
                 }

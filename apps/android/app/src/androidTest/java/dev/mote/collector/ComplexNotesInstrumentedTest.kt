@@ -65,7 +65,7 @@ class ComplexNotesInstrumentedTest {
         }
         val settings = Settings(context)
         context.getSharedPreferences("mote", 0).edit().putString("deviceId", "android-complex-${UUID.randomUUID()}").commit()
-        val config = settings.read().copy(server = url, token = token, deviceName = "Android complex synthetic round $round", debugHttp = true, wifiOnly = false)
+        val config = settings.read().copy(server = url, token = token, deviceName = "Android complex synthetic round $round", debugHttp = true, wifiOnly = false, contentEncryptionEnabled = false)
         settings.save(config); val drafts = QuickNotes.draft(context); drafts.clear()
         val records = JSONArray()
         val fixtures = ComplexNoteFixtures.cases(round)
@@ -82,7 +82,7 @@ class ComplexNotesInstrumentedTest {
                 }
             }
             val id = QuickNotes.save(context, fixture.text, fixture.mood)
-            val saved = JSONObject(String(SecretBox().open(File(context.noBackupFilesDir, "queue/$id.event").readBytes()), Charsets.UTF_8))
+            val saved = JSONObject(File(context.noBackupFilesDir, "queue/$id.event").readText())
             records.put(JSONObject().put("id", id).put("name", fixture.name).put("text", fixture.text).put("mood", fixture.mood).put("capturedAt", saved.getString("capturedAt")))
             assertEquals("", drafts.read().text)
         }

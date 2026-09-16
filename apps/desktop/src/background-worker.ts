@@ -7,6 +7,7 @@ import { prepareVisionImage } from './vision-image';
 import { maskBitmap } from './privacy';
 import { validateRecord, validateImage, type QueueArchive, type QueueRecord } from './queue';
 import type { BackgroundRequest, WorkProgress } from './background';
+import { configureLocalContent, encodeLocalContent, readLocalContent, type ContentPolicy } from './local-content';
 
 async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void): Promise<unknown> {
   switch (request.kind) {
@@ -16,17 +17,18 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
       return { ids: rows.slice(request.offset, request.offset + request.limit).map(record => record.id), total: rows.length };
     }
     case 'json-read': {
-      try { return JSON.parse(await readFile(request.path, 'utf8')); }
+      try { return JSON.parse((await readLocalContent(request.path)).toString('utf8')); }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
     }
     case 'json-write': {
       const body = JSON.stringify(request.value);
-      if (request.maximum !== undefined && Buffer.byteLength(body) > request.maximum) throw new Error('来源待同步队列已满，请恢复网络后重试');
+      const encoded = encodeLocalContent(body);
+      if (request.maximum !== undefined && encoded.length > request.maximum) throw new Error('来源待同步队列已满，请恢复网络后重试');
       await mkdir(dirname(request.path), { recursive: true, mode: 0o700 });
       const temporary = request.path + '.' + randomUUID() + '.tmp';
       try {
         const handle = await open(temporary, 'wx', 0o600);
-        try { await handle.writeFile(body); await handle.sync(); } finally { await handle.close(); }
+        try { await handle.writeFile(encoded); await handle.sync(); } finally { await handle.close(); }
         await rename(temporary, request.path);
         if (process.platform !== 'win32') { const directory = await open(dirname(request.path), 'r'); try { await directory.sync(); } finally { await directory.close(); } }
       } finally { await unlink(temporary).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }); }
@@ -55,7 +57,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
       try {
         await file.writeFile('{"format":"mote-desktop-queue","version":1,"records":[');
         for (let i = 0; i < names.length; i++) {
-          const record = validateRecord(JSON.parse(await readFile(join(request.directory, 'events', names[i]), 'utf8')));
+          const record = validateRecord(JSON.parse((await readLocalContent(join(request.directory, 'events', names[i]))).toString('utf8')));
           if (record.blobHash) blobs.add(record.blobHash);
           await file.writeFile((i ? ',' : '') + JSON.stringify(record));
           progress({ message: '正在导出记录', completed: i + 1, total: names.length });
@@ -63,7 +65,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
         await file.writeFile('],"blobs":{');
         let count = 0;
         for (const hash of blobs) {
-          const bytes = await readFile(join(request.directory, 'blobs', hash + '.jpg')); validateImage(bytes, hash);
+          const bytes = await readLocalContent(join(request.directory, 'blobs', hash + '.jpg')); validateImage(bytes, hash);
           await file.writeFile((count ? ',' : '') + JSON.stringify(hash) + ':' + JSON.stringify(bytes.toString('base64')));
           progress({ message: '正在导出图片', completed: ++count, total: blobs.size });
         }
@@ -111,10 +113,11 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
   }
 }
 let chain = Promise.resolve();
-parentPort!.on('message', ({ id, request }: { id: number; request: BackgroundRequest }) => {
+parentPort!.on('message', ({ id, request, contentPolicy }: { id: number; request: BackgroundRequest; contentPolicy: ContentPolicy }) => {
   chain = chain.then(async () => {
     let lastProgress = 0;
     try {
+      configureLocalContent(contentPolicy);
       const value = await execute(request, progress => {
         const now = Date.now(); if (now - lastProgress < 100 && progress.completed !== progress.total) return;
         lastProgress = now; parentPort!.postMessage({ id, progress });

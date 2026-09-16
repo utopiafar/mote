@@ -12,7 +12,7 @@ import {FileProcessing,type TranscriptionProvider} from '../src/file-processing.
 import {buildApp} from '../src/app.js';
 import {configFromEnv} from '../src/config.js';
 
-function fixture(t:any,key?:string){const dir=mkdtempSync(join(tmpdir(),'mote-files-'));const options={dataKey:key,maxStorageBytes:100*1024*1024};const store=new Store(dir,options);const sources=new SourceStore(store),files=new FileStore(store,sources);sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {dir,store,sources,files,options};}
+function fixture(t:any,key?:string){const dir=mkdtempSync(join(tmpdir(),'mote-files-'));const options={dataKey:key,contentEncryptionEnabled:Boolean(key),maxStorageBytes:100*1024*1024};const store=new Store(dir,options);const sources=new SourceStore(store),files=new FileStore(store,sources);sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {dir,store,sources,files,options};}
 const owner=()=>{};
 function manifest(bytes:Buffer,revision='v1',previousRevision:string|null=null):FileRevision{return {sourceId:'phone',previousRevision,item:{externalId:'content://generated/recording',revision,observedAt:new Date().toISOString(),title:'合成录音.wav',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},relativePath:'calls/合成录音.wav',sizeBytes:bytes.length,sha256:sha256(bytes)};}
 async function upload(files:FileStore,input:FileRevision,bytes:Buffer){const session=files.begin(input,owner);for(let n=0;n<Math.ceil(bytes.length/FILE_PART_BYTES);n++)files.part(session.uploadId,n,bytes.subarray(n*FILE_PART_BYTES,(n+1)*FILE_PART_BYTES),owner);return files.commit(session.uploadId,owner);}
@@ -26,7 +26,7 @@ test('original bytes resume after reconstruction, ACK loss, encryption and range
  resumed.part(begun.uploadId,1,bytes.subarray(FILE_PART_BYTES),owner);const ack=await resumed.commit(begun.uploadId,owner);
  assert.equal(ack.sha256,sha256(bytes));assert.deepEqual(await resumed.commit(begun.uploadId,owner),ack);
  assert.deepEqual(Buffer.concat([...resumed.bytes(ack.id)]),bytes);assert.deepEqual(Buffer.concat([...resumed.bytes(ack.id,FILE_PART_BYTES-20,FILE_PART_BYTES+20)]),bytes.subarray(FILE_PART_BYTES-20,FILE_PART_BYTES+21));
- assert.notDeepEqual(readFileSync(join(resumed.objects,ack.sha256,'0')),bytes.subarray(0,FILE_PART_BYTES));
+ assert.notDeepEqual(readFileSync(join(resumed.objects,ack.sha256,'0.aes')),bytes.subarray(0,FILE_PART_BYTES));
  assert.equal(store.list().items.length,1);assert.equal(resumed.list().items.length,1);assert.equal(store.prune('2099-01-01T00:00:00Z'),0);
  assert.throws(()=>store.exportArchive(10000000),{statusCode:409});
  resumed.sweep();assert.throws(()=>resumed.upload(begun.uploadId,owner),{statusCode:404});

@@ -11,7 +11,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 
-fun Context.fileArchives() = FileArchiveQueue(File(noBackupFilesDir, "file-archives"), SecretBox())
+fun Context.fileArchives() = FileArchiveQueue(File(noBackupFilesDir, "file-archives"), localContentCipher())
 fun LocalSource.binaryFiles() = kind == "local-files" && retention in setOf("archive", "reference")
 
 /** Persistent traversal checkpoints; every directory is eventually reached within bounded slices. */

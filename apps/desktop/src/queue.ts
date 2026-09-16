@@ -1,13 +1,20 @@
 import { recordMetadataSchema } from '@mote/shared/metadata';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, lstat, readFile, readdir, rename, unlink, open, chmod, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, lstat, readdir, rename, unlink, open, chmod, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import { archiveWork, imageWork, previewWork, type WorkProgress } from './background';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { ConnectionBindingStore } from './connection-binding';
 import type { CaptureEvent, Config } from './contracts';
 import { MAX_IMAGE_BYTES } from './config';
+import { encodeLocalContent, readLocalContent } from './local-content';
+
+function readFile(path: string): Promise<Buffer>;
+function readFile(path: string, encoding: 'utf8'): Promise<string>;
+async function readFile(path: string, encoding?: 'utf8'): Promise<Buffer | string> {
+  const bytes = await readLocalContent(path); return encoding ? bytes.toString(encoding) : bytes;
+}
 
 export interface QueueRecord {
   event: CaptureEvent;
@@ -43,8 +50,11 @@ const HASH = /^[a-f0-9]{64}$/;
 // A 100,000-character OCR result can expand to six bytes per JSON-escaped character.
 // Reserve before accepting a pending image, so a full queue can still persist OCR and release it.
 export const OCR_RESULT_RESERVE_BYTES = 600128;
+// Reserve envelope/escape overhead even for mixed-mode files so a later OCR rewrite
+// cannot exceed the quota merely because the user enabled content encryption.
+const CONTENT_FILE_ALLOWANCE = 64;
 function recordBytes(record: QueueRecord): number {
-  return Buffer.byteLength(JSON.stringify(record)) + (record.event.ocr?.status === 'pending' && record.ocrResult === undefined ? OCR_RESULT_RESERVE_BYTES : 0);
+  return Buffer.byteLength(JSON.stringify(record)) + CONTENT_FILE_ALLOWANCE + (record.event.ocr?.status === 'pending' && record.ocrResult === undefined ? OCR_RESULT_RESERVE_BYTES : 0);
 }
 
 function validateEvent(value: unknown): CaptureEvent {
@@ -88,7 +98,7 @@ export function validateImage(image: Buffer, hash?: string): void {
 async function atomicWrite(path: string, data: string | Buffer): Promise<void> {
   const tmp = `${path}.${randomUUID()}.tmp`;
   const file = await open(tmp, 'wx', 0o600);
-  try { await file.writeFile(data); await file.sync(); } finally { await file.close(); }
+  try { await file.writeFile(basename(path) === 'connection-binding.json' ? data : encodeLocalContent(data)); await file.sync(); } finally { await file.close(); }
   await rename(tmp, path);
   // Persist the rename itself as well as file bytes, including sudden power loss.
   await syncDirectory(dirname(path));
@@ -136,6 +146,7 @@ export class DurableQueue {
     this.chain = result.catch(() => undefined);
     return result;
   }
+  withContentMaintenance<T>(work: () => Promise<T>): Promise<T> { return this.exclusive(work); }
   private eventsPath(id: string): string { return join(this.directory, 'events', `${id}.json`); }
   private blobPath(hash: string): string { return join(this.directory, 'blobs', `${hash}.jpg`); }
   private assertReady(): void { if (!this.initialized) throw new Error('持久队列尚未初始化'); }
@@ -239,7 +250,7 @@ export class DurableQueue {
     let oldestPendingAt: string | undefined;
     for (const record of this.records.values()) {
       if (!oldestPendingAt || record.event.capturedAt < oldestPendingAt) oldestPendingAt = record.event.capturedAt;
-      if (record.blobHash) blobs.set(record.blobHash, record.blobBytes);
+      if (record.blobHash) blobs.set(record.blobHash, record.blobBytes + CONTENT_FILE_ALLOWANCE);
       metadataBytes += this.sizeOf(record);
       if (!record.syncBlocked && record.nextAttemptAt > 0) nextRetry = Math.min(nextRetry ?? Infinity, record.nextAttemptAt);
     }
@@ -273,7 +284,7 @@ export class DurableQueue {
   private async insertRecord(record: QueueRecord, image?: Buffer): Promise<void> {
     const hasBlob = [...this.records.values()].some(r => r.blobHash === record.blobHash);
     const size = this.stats();
-    if (size.depth + 1 > this.limits.maxQueueEvents || size.bytes + (hasBlob ? 0 : image?.length ?? 0) + recordBytes(record) > this.limits.maxQueueBytes) throw new QueueFullError();
+    if (size.depth + 1 > this.limits.maxQueueEvents || size.bytes + (hasBlob || !image ? 0 : image.length + CONTENT_FILE_ALLOWANCE) + recordBytes(record) > this.limits.maxQueueBytes) throw new QueueFullError();
     if (image && record.blobHash && !hasBlob) await atomicWrite(this.blobPath(record.blobHash), image);
     await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
     this.cachedStats = undefined; this.records.set(record.event.id, record);
@@ -350,7 +361,7 @@ export class DurableQueue {
             continue;
           }
           unique.push(record); extraBytes += this.sizeOf(record);
-          if (record.blobHash && !knownBlobs.has(record.blobHash)) { extraBytes += record.blobBytes; knownBlobs.add(record.blobHash); }
+          if (record.blobHash && !knownBlobs.has(record.blobHash)) { extraBytes += record.blobBytes + CONTENT_FILE_ALLOWANCE; knownBlobs.add(record.blobHash); }
         }
         const stats = this.stats();
         if (stats.depth + unique.length > this.limits.maxQueueEvents || stats.bytes + extraBytes > this.limits.maxQueueBytes) throw new QueueFullError();
@@ -407,7 +418,7 @@ export class DurableQueue {
       let extraBytes = 0;
       for (const record of unique.values()) {
         extraBytes += recordBytes(record);
-        if (!knownBlobs.has(record.blobHash)) { extraBytes += record.blobBytes; knownBlobs.add(record.blobHash); }
+        if (record.blobHash && !knownBlobs.has(record.blobHash)) { extraBytes += record.blobBytes + CONTENT_FILE_ALLOWANCE; knownBlobs.add(record.blobHash); }
       }
       if (stats.depth + unique.size > this.limits.maxQueueEvents || stats.bytes + extraBytes > this.limits.maxQueueBytes) throw new QueueFullError();
       for (const record of unique.values()) await this.insertRecord(record, record.blobHash ? images.get(record.blobHash)! : undefined);

@@ -24,6 +24,7 @@ import { acknowledgeInstalledUpdate } from './update-install';
 import { QueueStorage, StorageCommitUncertainError } from './queue-storage';
 import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
+import { LocalContentKeyStore, decryptLocalContent, emptyDecryptionProgress } from './local-content';
 import { browseCaptures, captureDetail, captureImage, type BrowseRequest, type CaptureLocation } from './capture-browser';
 import { NsfwController } from './nsfw';
 import type { Config, ConfigUpdate, Status } from './contracts';
@@ -137,12 +138,15 @@ else {
   void app.whenReady().then(async () => {
     await mkdir(profile.dataDirectory, { recursive: true, mode: 0o700 });
     const dataDirectory = await realpath(profile.dataDirectory);
-    const store = new ConfigStore(dataDirectory, {
+    const secrets = {
       available: encryptedStorageAvailable,
-      encrypt: value => safeStorage.encryptString(value),
-      decrypt: value => safeStorage.decryptString(value),
-    }, () => profileDefaults(profile, {}), () => profileDefaults(profile, process.env));
+      encrypt: (value: string) => safeStorage.encryptString(value),
+      decrypt: (value: Buffer) => safeStorage.decryptString(value),
+    };
+    const store = new ConfigStore(dataDirectory, secrets, () => profileDefaults(profile, {}), () => profileDefaults(profile, process.env));
     settings = await store.load();
+    const contentKeys = new LocalContentKeyStore(dataDirectory, secrets);
+    await contentKeys.initialize(settings.localContentEncryption);
     await store.save(settings); // Persist stable device identity before the first observation.
     void events.record('APP', 'STARTED');
     const noteDrafts = new NoteDraftStore(join(dataDirectory, 'notes')); await noteDrafts.initialize();
@@ -153,6 +157,9 @@ else {
     await storage.recover(queue.directory);
     storageStatus = () => ({ directory: queue.directory, defaultDirectory: storage.defaultDirectory, custom: queue.directory !== storage.defaultDirectory, cleanupPending: storage.cleanupPending, recoveryRequired });
     let pendingStorageDirectory: string | undefined;
+    let decryption = emptyDecryptionProgress();
+    let decryptionAbort: AbortController | undefined;
+    app.on('before-quit', () => decryptionAbort?.abort());
     pendingNoteStatus = () => ({ count: noteDrafts.hasPrepared() && !queue.contains(noteDrafts.get().id) ? 1 : 0, unbound: queue.binding.unbound() && (!localSources || localSources.nodeBinding.unbound()) && (!noteDrafts.hasPrepared() || noteDrafts.hasUnboundPrepared()), baseRecords: queue.stats().depth + (localSources?.pendingStats().pendingRecords ?? 0) });
     const helperPath = app.isPackaged ? join(process.resourcesPath, 'native', 'mote-helper') : join(__dirname, '..', 'native', 'bin', 'mote-helper');
     const bundlePath = app.isPackaged ? await realpath(resolve(process.resourcesPath, '../..')) : undefined;
@@ -245,6 +252,7 @@ else {
       const wasDownloading = modelSourceChanged && nsfw.status().downloading;
       let saved = false;
       try {
+        await contentKeys.setEnabled(updated.localContentEncryption);
         if (modelSourceChanged) await nsfw.cancelDownload();
         if (profile.legacy && updated.openAtLogin !== previous.openAtLogin) {
           app.setLoginItemSettings({ openAtLogin: updated.openAtLogin });
@@ -263,6 +271,7 @@ else {
           throw new Error(recoveryRequired);
         }
         try {
+          await contentKeys.setEnabled(previous.localContentEncryption);
           await localSources!.changeConnection(previous);
           settings = previous; collector.updateConfig(previous); await configureDiagnostics();
           if (profile.legacy && updated.openAtLogin !== previous.openAtLogin) {
@@ -393,6 +402,24 @@ else {
       updateUi(clientStatus()); if (!quitting) void collector.upload(); return result;
     })));
     handle('mote:storage-restart', () => { app.relaunch(); app.quit(); });
+    handle('mote:content-decryption-status', () => ({ ...decryption }));
+    handle('mote:content-decryption-cancel', () => { decryptionAbort?.abort(); });
+    handle('mote:content-decrypt', () => {
+      if (decryptionAbort) throw new Error('本机内容解密正在进行');
+      decryptionAbort = new AbortController();
+      const abort = decryptionAbort;
+      decryption = { ...emptyDecryptionProgress(), state: 'running', message: '正在准备解密；采集与同步会暂时暂停' };
+      return serialize(() => pausedSettings(async () => {
+        await applySettings({ ...settings, localContentEncryption: false });
+        return queue.withContentMaintenance(() => noteDrafts.withContentMaintenance(() => decryptLocalContent([
+          join(queue.directory, 'events'), join(queue.directory, 'blobs'), join(queue.directory, 'sync-checkpoint.json'),
+          join(dataDirectory, 'notes'), join(dataDirectory, 'local-sources'),
+        ], abort.signal, value => { decryption = value; })));
+      })).catch(error => {
+        decryption = { ...decryption, state: 'failed', message: error instanceof Error ? error.message : '解密未完成，原文件保留' };
+        throw error;
+      }).finally(() => { decryptionAbort = undefined; updateUi(clientStatus()); });
+    });
     handle('mote:storage-choose', () => serialize(async () => {
       const selected = await dialog.showOpenDialog(window!, { title: '选择本机截图保存位置', buttonLabel: '选择位置', properties: ['openDirectory', 'createDirectory'] });
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };

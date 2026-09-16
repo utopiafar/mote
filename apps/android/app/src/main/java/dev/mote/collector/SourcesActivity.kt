@@ -72,7 +72,7 @@ class SourcesActivity : Activity() {
                 rendering = false
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 list.removeAllViews()
-                if (rows.isFailure) list.addView(TextView(this).apply { text = "加密来源配置不可读；请保留应用数据，检查设备密钥。" })
+                if (rows.isFailure) list.addView(TextView(this).apply { text = "来源配置不可读；请保留应用数据，检查存储状态。" })
                 else {
                     if (rows.getOrThrow().isEmpty()) list.addView(TextView(this).apply { text = "尚未连接来源。权限只在点击连接时申请。" })
                     for ((source, summary) in rows.getOrThrow()) {

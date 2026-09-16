@@ -185,6 +185,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   };
   for (const [id, value] of Object.entries(values)) byId<HTMLInputElement>(id).value = String(value);
   byId<HTMLInputElement>('metadata-enabled').checked = config.metadataEnabled;
+  byId<HTMLInputElement>('local-content-encryption').checked = config.localContentEncryption;
   byId('app-collection-rules').replaceChildren();
   for (const [id, mode] of Object.entries(config.appCollectionRules)) addAppRule(id, mode);
   byId<HTMLInputElement>('diagnostics-enabled').checked = config.diagnosticsEnabled;
@@ -330,6 +331,7 @@ byId('settings').addEventListener('submit', event => {
     let updated: import('./contracts').Status;
     try { updated = await desktopApi.configure({
       captureStorageDirectory,
+      localContentEncryption: byId<HTMLInputElement>('local-content-encryption').checked,
       metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
       defaultCollection: readInput('default-collection') as import('./contracts').CollectionMode, appCollectionRules,
       diagnosticsEnabled: byId<HTMLInputElement>('diagnostics-enabled').checked, diagnosticIntervalSeconds: numberInput('diagnostic-interval'),
@@ -358,6 +360,30 @@ byId('stop').addEventListener('click', () => { wasRunningBeforeSave = false; voi
 byId('retry').addEventListener('click', () => void perform(async () => { render(await desktopApi.retry()); feedback(currentStatus.sync.message, currentStatus.sync.state !== 'error' && currentStatus.sync.state !== 'unconfigured'); }));
 byId('permissions').addEventListener('click', () => void perform(() => desktopApi.openPermissions()));
 byId('data-folder').addEventListener('click', () => void perform(() => desktopApi.openDataFolder()));
+function renderContentDecryption(value: import('./local-content').DecryptionProgress): void {
+  byId('content-decryption-status').textContent = value.message + (value.total ? ` · ${value.processed}/${value.total}` : '');
+  const progress = byId<HTMLProgressElement>('content-decryption-progress');
+  progress.max = Math.max(1, value.total); progress.value = value.processed;
+  byId<HTMLButtonElement>('content-decrypt').disabled = value.state === 'running';
+  byId<HTMLButtonElement>('content-decrypt-cancel').disabled = value.state !== 'running';
+}
+byId('content-decrypt').addEventListener('click', () => {
+  if (settingsDirty) { feedback('请先保存或还原设置修改，再执行批量解密'); return; }
+  byId<HTMLButtonElement>('content-decrypt').disabled = true;
+  byId<HTMLButtonElement>('content-decrypt-cancel').disabled = false;
+  byId('content-decryption-status').textContent = '正在开始后台解密…';
+  void desktopApi.decryptLocalContent().then(async value => {
+    renderContentDecryption(value);
+    const latest = await desktopApi.status(); render(latest); if (!settingsDirty) fillConfig(latest.config);
+  }).catch(error => { byId('content-decryption-status').textContent = error instanceof Error ? error.message : '解密未完成，原文件保留'; });
+});
+byId('content-decrypt-cancel').addEventListener('click', () => {
+  byId<HTMLButtonElement>('content-decrypt-cancel').disabled = true;
+  void desktopApi.cancelContentDecryption().catch(() => {});
+});
+setInterval(() => {
+  if (currentPage === 'developer') void desktopApi.contentDecryptionStatus().then(renderContentDecryption).catch(() => {});
+}, 500);
 byId('export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportQueue(); if (!result.canceled) feedback(`队列备份已保存至 ${result.path}`, true); }));
 byId('import').addEventListener('click', () => void perform(async () => { const result = await desktopApi.importQueue(); if (!result.canceled) feedback(`已导入 ${result.imported} 条待上传记录，重复记录自动跳过。`, true); }));
 byId('model-download').addEventListener('click', () => void perform(async () => { render(await desktopApi.downloadModel()); feedback('模型下载已开始，支持断点续传；截图不会发送给下载源。', true); }));

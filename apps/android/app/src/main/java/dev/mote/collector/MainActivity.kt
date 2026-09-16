@@ -98,6 +98,11 @@ class MainActivity : Activity() {
     private lateinit var ocrChargingOnly: CheckBox
     private lateinit var diagnosticEnabled: CheckBox
     private lateinit var imageDedupeDiagnosticsEnabled: CheckBox
+    private lateinit var contentEncryptionEnabled: CheckBox
+    private lateinit var decryptStatus: TextView
+    private lateinit var decryptProgress: ProgressBar
+    private lateinit var decryptAction: Button
+    private lateinit var decryptCancel: Button
     private lateinit var diagnosticInterval: EditText
     private lateinit var nsfwEnabled: CheckBox
     private lateinit var nsfwPolicy: EditText
@@ -126,6 +131,9 @@ class MainActivity : Activity() {
         val totals: String, val technical: String, val connection: String, val model: String, val media: String, val config: CollectorConfig?)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 2000) }
+    }
+    private val decryptPoll = object : Runnable {
+        override fun run() { refreshContentDecryption(); handler.postDelayed(this, 500) }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -199,8 +207,8 @@ class MainActivity : Activity() {
         card(MoteUi.tint) {
             text("此刻的 Mote", 12, MoteUi.accent)
             captureTitle = text("采集已暂停", 26)
-            status = text("正在读取状态…", 14, MoteUi.muted)
-            captureProgress = ProgressBar(this@MainActivity, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true }
+            status = text(settings.message(), 14, MoteUi.muted)
+            captureProgress = ProgressBar(this@MainActivity, null, android.R.attr.progressBarStyleHorizontal).apply { isIndeterminate = true; visibility = View.GONE }
             content.addView(captureProgress)
             captureAction = button("开始采集", true) { if (settings.enabled) stopCapture() else startCapture() }
             text("未连接节点也能采集；随时可以暂停。", 12, MoteUi.muted)
@@ -215,7 +223,7 @@ class MainActivity : Activity() {
         menu("采集记录", "按天查看本机与中央归档的图片、OCR 状态和文字", "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         menu("采集与存储详情", "查看累计结果、队列与使用空间", "chart") { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
         menu("权限与后台运行", "管理采集权限和省电设置", "settings") { showPage(Page.PERMISSIONS) }
-        text("本机采集与同步独立运行。记录加密保存在本机，空间达到上限会暂停新增。", 12, MoteUi.muted)
+        text("本机采集与同步独立运行。默认以明文保存，可在开发者选项开启本地内容加密；空间达到上限会暂停新增。", 12, MoteUi.muted)
     }
 
     private fun buildSettings() {
@@ -223,7 +231,7 @@ class MainActivity : Activity() {
         section("偏好设置")
         menu("连接与同步", "中央节点、设备名称与上传网络", "sync") { showPage(Page.CONNECTION) }
         menu("采集与存储", "采样频率、图像质量与电量策略", "capture") { showPage(Page.CAPTURE) }
-        menu("图片保存位置", "本机待同步与待 OCR 图片的加密存储", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
+        menu("图片保存位置", "本机待同步与待 OCR 图片及记录", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
         menu("隐私与应用规则", "应用采集级别、遮罩与本机过滤", "shield") { showPage(Page.PRIVACY) }
         section("应用")
         menu("权限与后台运行", "系统授权、电池优化与自启动", "settings") { showPage(Page.PERMISSIONS) }
@@ -317,7 +325,7 @@ class MainActivity : Activity() {
         interval = presetNumber("采集间隔 / 秒", config.intervalSeconds, "30", 5..300, listOf(5, 15, 30, 60, 120, 300))
         menu("图片保存位置", "选择应用存储空间并迁移已有记录", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
         maxQueue = presetNumber("本机存储上限 / MiB", config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
-        text("默认最长边 1280px、JPEG 75，生效数值可在统计详情查看。相同图片共用加密存储，满后暂停；收到节点确认且 OCR 已处理后才清理本机图片。时间统计是采样设备时间。", 13)
+        text("默认最长边 1280px、JPEG 75，生效数值可在统计详情查看。相同图片共用本机文件，满后暂停；收到节点确认且 OCR 已处理后才清理本机图片。时间统计是采样设备时间。", 13)
         projectionMode = check("使用投屏模式（备用，每次需授权）", config.mode == "projection")
         text("默认无障碍截图模式适用 Android 11+：系统重新连接服务时可恢复你已启用的采集。投屏模式锁屏/被杀后必须重新授权。Android 10 请选投屏模式。", 13)
         section("画面质量与电量")
@@ -370,7 +378,7 @@ class MainActivity : Activity() {
         note.minLines = 7; note.gravity = Gravity.TOP
         val mood = field("此刻心情 · 可选", "", "")
         note.filters = arrayOf(android.text.InputFilter.LengthFilter(100000)); mood.filters = arrayOf(android.text.InputFilter.LengthFilter(80))
-        val progress = text("正在读取加密草稿…", 13, MoteUi.muted)
+        val progress = text("正在读取草稿…", 13, MoteUi.muted)
         var changingDraft = false
         var readable = false
         var editRevision = 0
@@ -399,24 +407,24 @@ class MainActivity : Activity() {
             override fun run() {
                 if (isDestroyed) return
                 if (resumed && !task.busy) persisted.get()?.takeIf { it.first == editRevision }?.let {
-                    progress.text = if (it.second) "草稿已加密保存" else "草稿保存失败，请保持页面打开并检查可用空间"
+                    progress.text = if (it.second) "草稿已保存" else "草稿保存失败，请保持页面打开并检查可用空间"
                 }
                 handler.postDelayed(this, 500)
             }
         }
         notePoll = draftPoll; if (resumed) handler.post(draftPoll)
         editable(false)
-        task.start("正在读取加密草稿…", { progress.text = it }, { QuickNotes.draft(app).read() }) { result ->
+        task.start("正在读取草稿…", { progress.text = it }, { QuickNotes.draft(app).read() }) { result ->
             result.onSuccess { replace(it); readable = true; editable(true); progress.text = "草稿已载入" }
-                .onFailure { progress.text = "加密草稿读取失败，原文件保留。明确点击新建才清除旧草稿。" }
+                .onFailure { progress.text = "草稿读取失败，原文件保留。明确点击新建才清除旧草稿。" }
         }
         button("保存随手记", true) {
             if (!task.busy && readable) {
                 val value = note.text.toString() to mood.text.toString()
                 editable(false)
-                task.start("正在加密保存随手记…", { progress.text = it }, { QuickNotes.save(app, value.first, value.second) }) { result ->
+                task.start("正在保存随手记…", { progress.text = it }, { QuickNotes.save(app, value.first, value.second) }) { result ->
                     editable(true); persisted.set(null)
-                    result.onSuccess { replace(NoteDraft()); persisted.set(null); progress.text = "随手记已加密保存；同步按你的设置运行"; refreshStatus() }
+                    result.onSuccess { replace(NoteDraft()); persisted.set(null); progress.text = "随手记已保存；同步按你的设置运行"; refreshStatus() }
                         .onFailure { progress.text = it.message ?: "随手记保存失败，草稿已保留" }
                 }
             }
@@ -527,9 +535,25 @@ class MainActivity : Activity() {
     private fun buildDeveloper(config: CollectorConfig) {
         page(Page.DEVELOPER, "用于排查问题和调整本机高级行为")
         menu("诊断与支持", "运行状态、数值采样与安全支持包", "chart") { showPage(Page.DIAGNOSTICS) }
+        section("本地内容存储")
+        contentEncryptionEnabled = check("加密保存本地内容（默认关闭）", config.contentEncryptionEnabled)
+        text("保存后应用于新写入的图片、记录、索引、草稿和来源资料。已有加密文件仍可读取；关闭开关后不会自动改写全部旧文件。连接令牌始终使用系统安全存储。", 13, MoteUi.muted)
+        decryptStatus = text("关闭内容加密并保存后，可一次性解密已有本地数据。", 13, MoteUi.muted)
+        decryptProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { visibility = View.GONE }
+        content.addView(decryptProgress)
+        decryptAction = button("批量解密已有本地数据") {
+            if (contentEncryptionEnabled.isChecked || loadedConfig.contentEncryptionEnabled) toast("请先关闭本地内容加密并保存设置")
+            else {
+                LocalContentDecryptor.start(applicationContext)
+                refreshContentDecryption()
+            }
+        }
+        decryptCancel = button("取消批量解密") { LocalContentDecryptor.cancel(); refreshContentDecryption() }
+        text("在后台逐个转换图片、记录、索引和来源文件，可继续浏览与采集。取消会保留已完成结果，未完成文件仍可正常读取；再次运行可继续处理。", 13, MoteUi.muted)
+        refreshContentDecryption()
         section("图片去重排查")
         imageDedupeDiagnosticsEnabled = check("临时保留图片去重对比记录", config.imageDedupeDiagnosticsEnabled)
-        text("默认关闭。开启并保存后，将已去重图片及对比原图临时加密保存在本机，供核对分数与判断依据。最多 20 组、32 MiB，24 小时后到期；读取时清理，系统可能延后后台清理。关闭并保存后清空。保留的都是通过隐私检查和遮罩后的图片。", 13, MoteUi.muted)
+        text("默认关闭。开启并保存后，将已去重图片及对比原图临时保存在本机，供核对分数与判断依据。最多 20 组、32 MiB，24 小时后到期；读取时清理，系统可能延后后台清理。关闭并保存后清空。保留的都是通过隐私检查和遮罩后的图片。", 13, MoteUi.muted)
         menu("本机图片批量去重", "全量扫描、对比预览、移入待决定区或删除", "chart") { startActivity(Intent(this, BulkDedupeActivity::class.java)) }
         menu("查看图片去重记录", "对比两张图片、分数与依据，可随时清空", "chart") { startActivity(Intent(this, ImageDedupeDiagnosticsActivity::class.java)) }
         menu("模型高级设置", "审查指令、下载来源与推理参数", "settings") { showPage(Page.MODEL) }
@@ -552,6 +576,18 @@ class MainActivity : Activity() {
         text("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT} · ${Build.MANUFACTURER} ${Build.MODEL}", 12, MoteUi.muted)
         text("相机权限用于扫码连接。", 13, MoteUi.muted)
         text("本构建尚未在 K90 Pro Max 真机验证。", 12, MoteUi.muted)
+    }
+
+    private fun refreshContentDecryption() {
+        if (!::decryptStatus.isInitialized) return
+        val snapshot = LocalContentDecryptor.snapshot
+        decryptStatus.text = snapshot.message
+        decryptProgress.visibility = if (snapshot.running) View.VISIBLE else View.GONE
+        decryptProgress.isIndeterminate = snapshot.total == 0
+        decryptProgress.max = maxOf(1, snapshot.total); decryptProgress.progress = snapshot.checked
+        decryptAction.isEnabled = !snapshot.running && !loadedConfig.contentEncryptionEnabled && !ConnectionGuard.reconfiguring()
+        decryptCancel.visibility = if (snapshot.running) View.VISIBLE else View.GONE
+        contentEncryptionEnabled.isEnabled = !snapshot.running
     }
 
     private fun buildPermissions() {
@@ -628,7 +664,8 @@ class MainActivity : Activity() {
         Page.MODEL -> current.copy(nsfw = nsfwDraft().copy(enabled = current.nsfw.enabled),
             localReviewUrl = checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } })
         Page.DIAGNOSTICS -> current.copy(diagnosticsEnabled = diagnosticEnabled.isChecked, diagnosticsIntervalSeconds = number(diagnosticInterval, 15..3600))
-        Page.DEVELOPER -> current.copy(debugHttp = http.isChecked, imageDedupeDiagnosticsEnabled = imageDedupeDiagnosticsEnabled.isChecked)
+        Page.DEVELOPER -> current.copy(debugHttp = http.isChecked, imageDedupeDiagnosticsEnabled = imageDedupeDiagnosticsEnabled.isChecked,
+            contentEncryptionEnabled = contentEncryptionEnabled.isChecked)
         else -> current
     }
     private fun nsfwDraft(): NsfwConfig {
@@ -823,7 +860,16 @@ class MainActivity : Activity() {
     }
     private fun refreshStatus() {
         if (!::status.isInitialized) return
-        if (QueueStorage.recovering) { captureProgress.visibility = View.VISIBLE; status.text = "正在恢复并验证本机存储…"; return }
+        // Capture controls reflect cheap live state before optional statistics/diagnostics.
+        // A slow inventory must not make a successful Start look unresponsive.
+        val action = if (settings.enabled) "暂停采集" else "开始采集"
+        if (captureAction.text != action) {
+            captureAction.text = action
+            captureTitle.text = if (settings.enabled) "正在本机采集" else "采集已暂停"
+            captureProgress.visibility = if (settings.enabled) View.VISIBLE else View.GONE
+            status.text = settings.message()
+        }
+        if (QueueStorage.recovering) { status.text = "正在连接本机存储，文件整理将在后台继续…"; return }
         if (ConnectionGuard.reconfiguring()) { status.text = RuntimeSettings.progressLabel(); updateSaveBar(); saveHint.text = RuntimeSettings.progressLabel(); return }
         if (isDestroyed) return
         if (statusLoading) { statusRefreshPending = true; return }
@@ -856,7 +902,7 @@ class MainActivity : Activity() {
         if (c != null) runCatching { Diagnostics(this).sample(c) }
         val screenLive = c?.screenCollectionEnabled == true && (if (c.effectiveMode() == "projection") ProjectionService.running else CaptureAccessibilityService.connected)
         val live = screenLive || (c?.observesSystem() == true && MediaCollectionService.connected)
-        val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else local.captureLabel
+        val state = if (settings.enabled && !live) "采集服务未连接：请恢复权限" else if (settings.state() == "capturing") "正在采集" else settings.message()
         val stats = runCatching { Operations.ledger(this).read().getJSONObject("counts") }.getOrNull()
         val totals = if (stats == null) "统计暂不可读取" else "本周期累计截图记录 ${stats.optLong("SCREEN_QUEUED")} · 应用活动 ${stats.optLong("ACTIVITY_QUEUED")} · 媒体 ${stats.optLong("MEDIA_QUEUED")} · 笔记 ${stats.optLong("NOTE_QUEUED")} · 已确认 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")}\n拦截 ${stats.optLong("FRAME_BLOCKED")} · 失败 ${stats.optLong("CAPTURE_FAILED") + stats.optLong("ACTIVITY_FAILED") + stats.optLong("MEDIA_FAILED")} · 重试结果 ${stats.optLong("UPLOAD_RETRY")}"
         val queueStats = local.active
@@ -884,7 +930,7 @@ class MainActivity : Activity() {
             else -> settings.uploadStatus()
         }
         val syncText = "${pending?.let { "待同步 $it 条" } ?: "队列暂不可读取"}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}\n$syncMessage"
-        val totalsText = local.imageLabel() + "\n" + if (stats == null) "累计统计暂不可读取" else "本周期累计截图记录 ${stats.optLong("SCREEN_QUEUED")}    活动 ${stats.optLong("ACTIVITY_QUEUED")}    媒体 ${stats.optLong("MEDIA_QUEUED")}    随手记 ${stats.optLong("NOTE_QUEUED")}\n本周期已同步 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")} 条"
+        val totalsText = local.imageLabel() + (if (QueueStorage.maintaining) " · 后台整理中，可正常采集" else "") + "\n" + if (stats == null) "累计统计暂不可读取" else "本周期累计截图记录 ${stats.optLong("SCREEN_QUEUED")}    活动 ${stats.optLong("ACTIVITY_QUEUED")}    媒体 ${stats.optLong("MEDIA_QUEUED")}    随手记 ${stats.optLong("NOTE_QUEUED")}\n本周期已同步 ${stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK")} 条"
         val technicalText = "$state\n$totals\n$syncText\n${settings.uploadStatus()}\n无障碍 ${if (CaptureAccessibilityService.connected) "已连接" else "未连接"} · 使用情况 ${if (ForegroundApps.usageAllowed(this)) "已授权" else "未授权"}\n最近采集 ${settings.lastCapture() ?: "无"}"
         val connectionText = if (c?.server.isNullOrBlank()) "尚未连接中央节点，请导入邀请或填写下方设置。" else "已保存节点：${c?.server}"
         val model = NsfwModelStore(this)
@@ -922,8 +968,9 @@ class MainActivity : Activity() {
         }
         localStateJob = observeLocalState { refreshStatus() }
         handler.post(refresh)
+        handler.post(decryptPoll)
     }
-    override fun onPause() { localStateJob?.cancel(); localStateJob = null; resumed = false; notePoll?.let(handler::removeCallbacks); RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null); handler.removeCallbacks(refresh); super.onPause() }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; resumed = false; notePoll?.let(handler::removeCallbacks); RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null); handler.removeCallbacks(refresh); handler.removeCallbacks(decryptPoll); super.onPause() }
     override fun onStop() { if (!isChangingConfigurations) discardPageDraft(); super.onStop() }
     override fun onDestroy() { statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)

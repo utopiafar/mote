@@ -43,7 +43,7 @@ export async function updateEnvironment(p, values) {
 }
 export async function initializeFixture(home, profile, options = {}) {
   await cli(home, profile, 'init', ['--port', String(await freePort()), ...(options.runtime ? ['--runtime', options.runtime] : []), ...(options.image ? ['--image', options.image] : [])]);
-  return updateEnvironment(await loadProfile(profilePaths(profile, home)), { MOTE_DATA_KEY: options.dataKey ?? randomBytes(32).toString('hex'), MOTE_DIAGNOSTICS_ENABLED: '1' });
+  return updateEnvironment(await loadProfile(profilePaths(profile, home)), { MOTE_CONTENT_ENCRYPTION: '1', MOTE_DATA_KEY: options.dataKey ?? randomBytes(32).toString('hex'), MOTE_DIAGNOSTICS_ENABLED: '1' });
 }
 export async function request(p, path, { status = 200, method = 'GET', body, token = p.env.MOTE_TOKEN, binary = false } = {}) {
   const response = await fetch(p.url + path, { method, redirect: 'error', signal: AbortSignal.timeout(15000), headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });

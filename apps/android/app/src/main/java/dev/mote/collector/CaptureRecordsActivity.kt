@@ -26,9 +26,10 @@ class CaptureRecordsActivity : Activity() {
     private lateinit var previousPage: Button
     private lateinit var nextPage: Button
     private lateinit var nextDay: Button
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>())
     private val imageExecutor = java.util.concurrent.ThreadPoolExecutor(3, 3, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>())
-    // Bounded memory only: decrypted thumbnails never go to disk.
+    private val thumbnailWriter = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>())
+    // Bound decoded bitmap memory independently of the file-backed thumbnail cache.
     private val thumbnails = object : android.util.LruCache<String, Bitmap>(12 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
@@ -45,9 +46,11 @@ class CaptureRecordsActivity : Activity() {
     private var lastRecordsRevision = -1L
     private var metadataLoading = false
     private var refreshAfterLoad = false
+    private var renderedPage: String? = null
     private val recordSources = listOf("screen", "media", "notification", "device_event", "note", "activity")
     private var recordSource = "screen"
     @Volatile private var generation = 0
+    @Volatile private var loadGeneration = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
@@ -102,12 +105,10 @@ class CaptureRecordsActivity : Activity() {
     }
     override fun onResume() {
         super.onResume()
-        lastRecordsRevision = -1L
         localStateJob = observeLocalState { snapshot ->
             if (snapshot.revision.records != lastRecordsRevision) {
                 if (!central && snapshot.active != null && snapshot.error == null) {
                     lastRecordsRevision = snapshot.revision.records
-                    thumbnails.evictAll()
                     if (metadataLoading) refreshAfterLoad = true else load(backgroundRefresh = true)
                 }
             }
@@ -125,14 +126,17 @@ class CaptureRecordsActivity : Activity() {
         metadataLoading = true
         val scroll = body.parent as? ScrollView
         val scrollY = scroll?.scrollY ?: 0
-        val stamp = ++generation; val remote = central; val source = recordSource; val selected = album
+        val request = ++loadGeneration; val remote = central; val source = recordSource; val selected = album
+        if (!backgroundRefresh) { generation++; renderedPage = null }
         backToAlbums.visibility = if (selected != null) View.VISIBLE else View.GONE
-        progress.visibility = View.VISIBLE; progress.isIndeterminate = true
+        if (!backgroundRefresh) { progress.visibility = View.VISIBLE; progress.isIndeterminate = true }
         val zone = ZoneId.systemDefault(); val after = date.atStartOfDay(zone).toInstant().toString(); val before = date.plusDays(1).atStartOfDay(zone).toInstant().toString()
         val cursor = cursors.last(); val pageNumber = cursors.size
         dateButton.text = date.toString(); nextDay.isEnabled = date < LocalDate.now()
-        previousPage.isEnabled = false; nextPage.isEnabled = false; status.text = "正在读取${if (remote) "中央归档" else "本机记录"}…"
-        if (!backgroundRefresh) clearList(); imageExecutor.queue.clear()
+        if (!backgroundRefresh) {
+            previousPage.isEnabled = false; nextPage.isEnabled = false; status.text = "正在读取${if (remote) "中央归档" else "本机记录"}…"
+            clearList(); imageExecutor.queue.clear(); thumbnailWriter.queue.clear()
+        }
         if (!backgroundRefresh && selected != null) repeat(3) {
             val placeholders = row(list)
             repeat(2) { text(placeholders, "加载预览…", 13f).apply {
@@ -142,9 +146,10 @@ class CaptureRecordsActivity : Activity() {
         } else if (!backgroundRefresh) repeat(6) { text(list, "正在读取 App 与时间…", 15f).apply {
             minHeight = moteDp(88); gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(0xffeeeeee.toInt())
         } }
+        executor.queue.clear() // Switching dates/pages keeps only the newest pending query.
         executor.execute {
             try {
-                if (stamp != generation) return@execute
+                if (request != loadGeneration) return@execute
                 val settings = Settings(this); val config = settings.read()
                 if (remote && !config.hasSyncConnection()) error("请先在连接与同步中配置中央节点")
                 val client = if (remote) CaptureRecordClient(config, settings.deviceId) else null
@@ -162,7 +167,14 @@ class CaptureRecordsActivity : Activity() {
                 val next = if (page.isNull("nextCursor")) null else page.getString("nextCursor").takeIf(String::isNotBlank)
                 val images = mutableListOf<Pair<JSONObject, ImageView>>()
                 runOnUiThread {
-                    if (isDestroyed || stamp != generation) return@runOnUiThread
+                    if (isDestroyed || request != loadGeneration) return@runOnUiThread
+                    val fingerprint = page.toString()
+                    // Inventory/OCR changes outside this page must not discard existing
+                    // views, cancel previews or restart thumbnail decryption.
+                    if (backgroundRefresh && renderedPage == fingerprint && cacheConfig == config) return@runOnUiThread
+                    val stamp = if (backgroundRefresh) ++generation else generation
+                    imageExecutor.queue.clear(); thumbnailWriter.queue.clear()
+                    renderedPage = fingerprint
                     if (backgroundRefresh && records.isEmpty() && cursors.size > 1) {
                         cursors.removeAt(cursors.lastIndex); load(backgroundRefresh = true); return@runOnUiThread
                     }
@@ -221,31 +233,48 @@ class CaptureRecordsActivity : Activity() {
                             thumbnails.get(key)?.let { display(it); return }
                             imageExecutor.execute {
                                 if (stamp != generation || isDestroyed) return@execute
+                                var thumbnailToSave: Bitmap? = null
                                 val bitmap = runCatching {
                                     if (client != null) CapturePreview.decode(client.image(id, true), 320)
                                     else {
                                         val local = queue()
                                         val cached = local.thumbnail(id)
                                         val bitmap = (cached ?: local.image(id))?.let { CapturePreview.decode(it, 320) }
-                                        if (cached == null && bitmap != null) runCatching {
-                                            val output = java.io.ByteArrayOutputStream()
-                                            bitmap.compress(Bitmap.CompressFormat.JPEG, 70, output)
-                                            local.cacheThumbnail(id, output.toByteArray(), config.maxQueueMiB * 1024L * 1024L)
-                                        }
+                                        if (cached == null) thumbnailToSave = bitmap
                                         bitmap
                                     }
                                 }.getOrNull()
+                                // Encode while this worker owns the bitmap; after posting,
+                                // the UI may discard/recycle a stale generation immediately.
+                                val thumbnailBytes = thumbnailToSave?.takeIf { stamp == generation && !isDestroyed }?.let { preview ->
+                                    runCatching {
+                                        val output = java.io.ByteArrayOutputStream()
+                                        preview.compress(Bitmap.CompressFormat.JPEG, 70, output)
+                                        output.toByteArray()
+                                    }.getOrNull()
+                                }
+                                // Display decoded pixels before any cache encryption/fsync.
                                 runOnUiThread { display(bitmap) }
+                                if (thumbnailBytes != null && !thumbnailWriter.isShutdown) runCatching {
+                                    thumbnailWriter.execute {
+                                        if (stamp == generation && !isDestroyed) runCatching {
+                                            queue().cacheThumbnail(id, thumbnailBytes, config.maxQueueMiB * 1024L * 1024L)
+                                        }
+                                    }
+                                }
                             }
                         }
                         requestImage(true)
                     }
                 }
             } catch (error: Exception) {
-                runOnUiThread { if (!isDestroyed && stamp == generation) { clearList(); progress.visibility = View.GONE; status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1 } }
+                runOnUiThread { if (!isDestroyed && request == loadGeneration) {
+                    if (!backgroundRefresh) { clearList(); progress.visibility = View.GONE }
+                    status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1
+                } }
             } finally {
                 runOnUiThread {
-                    if (!isDestroyed && stamp == generation) {
+                    if (!isDestroyed && request == loadGeneration) {
                         metadataLoading = false
                         if (refreshAfterLoad) { refreshAfterLoad = false; load(backgroundRefresh = true) }
                     }
@@ -358,5 +387,5 @@ class CaptureRecordsActivity : Activity() {
     private fun button(parent: LinearLayout, label: String, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { action() } }).also { parent.addView(it, if (parent.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2)) }
     private fun clearList() { list.removeAllViews() }
     override fun onSaveInstanceState(outState: Bundle) { outState.putString("date", date.toString()); outState.putString("album", album?.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
-    override fun onDestroy() { generation++; executor.shutdownNow(); imageExecutor.shutdownNow(); detailExecutor.shutdownNow(); clearList(); thumbnails.evictAll(); super.onDestroy() }
+    override fun onDestroy() { generation++; loadGeneration++; executor.shutdownNow(); imageExecutor.shutdownNow(); thumbnailWriter.shutdown(); detailExecutor.shutdownNow(); clearList(); thumbnails.evictAll(); super.onDestroy() }
 }

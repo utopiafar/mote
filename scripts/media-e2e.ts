@@ -28,7 +28,7 @@ const fixture=createServer(async(req,res)=>{
   res.end('data: [DONE]\n\n');
 });
 await new Promise<void>(resolve=>fixture.listen(0,'127.0.0.1',resolve));
-const config:Config={dataDir:directory,token:'generated-fixture-only-credential',tokenPath:'unused',host:'127.0.0.1',port:0,dataKey:'4a'.repeat(32),maxStorageBytes:10000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-provider',modelBaseUrl:`http://127.0.0.1:${(fixture.address() as AddressInfo).port}/v1`,apiKey:'generated-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+const config:Config={dataDir:directory,token:'generated-fixture-only-credential',tokenPath:'unused',host:'127.0.0.1',port:0,contentEncryptionEnabled:true,dataKey:'4a'.repeat(32),maxStorageBytes:10000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'generated-provider',modelBaseUrl:`http://127.0.0.1:${(fixture.address() as AddressInfo).port}/v1`,apiKey:'generated-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
 const {app}=await buildApp(config);
 const headers={authorization:`Bearer ${config.token}`};
 try {

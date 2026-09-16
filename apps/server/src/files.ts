@@ -1,22 +1,21 @@
-import {createCipheriv,createDecipheriv,randomBytes,randomUUID,createHash} from 'node:crypto';
-import {readFileSync,existsSync,mkdirSync,writeFileSync,renameSync,rmSync,readdirSync,openSync,closeSync,fsyncSync,statSync} from 'node:fs';
+import {randomUUID,createHash} from 'node:crypto';
+import {existsSync,renameSync,rmSync,readdirSync,openSync,closeSync,fsyncSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,type FileRevision,type CaptureRecord,fileEvidenceSchema} from '@mote/shared';
 import type {ContextRecord,ContextRange} from '@mote/agent';
 import {Store,StoreError,sha256} from './store.js';
 import {SourceStore} from './sources.js';
-import {privateDirectory,privateFile} from './private-storage.js';
+import {privateDirectory} from './private-storage.js';
 
 type Upload={id:string;source_id:string;manifest:string;fingerprint:string;created_at:string;ack:string|null};
 type Version={capture_id:string;source_id:string;external_id:string;revision:string;manifest:string;object_hash:string|null};
 type Chunk={id:string;capture_id:string;artifact_id:string;start_ms:number|null;end_ms:number|null;text:string;metadata?:string};
 const activeChunks="a.current=1 AND NOT EXISTS (SELECT 1 FROM file_artifacts preferred WHERE preferred.capture_id=a.capture_id AND preferred.current=1 AND ((preferred.kind='corrected-dialogue' AND a.kind!='corrected-dialogue') OR (preferred.kind='dialogue' AND a.kind IN ('transcript','text','image-text'))))";
 const timestamp=()=>new Date().toISOString();
-function durable(path:string,bytes:Buffer){writeFileSync(path,bytes,{mode:0o600,flag:'wx'});const fd=openSync(path,'r');try{fsyncSync(fd);}finally{closeSync(fd);}}
 function syncDir(path:string){const fd=openSync(path,'r');try{fsyncSync(fd);}finally{closeSync(fd);}}
 
-/** Bounded, encrypted parts. No caller supplies a filesystem path. */
+/** Bounded parts using the configured content write policy. No caller supplies a filesystem path. */
 export class FileStore {
   readonly objects:string;
   readonly uploads:string;
@@ -26,8 +25,6 @@ export class FileStore {
     this.objects=join(root,'objects');this.uploads=join(root,'uploads');privateDirectory(this.objects);privateDirectory(this.uploads);
   }
   capabilities(){return {version:1,modes:['archive','reference'],partBytes:FILE_PART_BYTES,maxFileBytes:FILE_MAX_BYTES,initialSync:['all','new_only'],deletionPolicy:'retain_central'};}
-  private seal(bytes:Buffer){if(!this.store.key)return bytes;const iv=randomBytes(12),c=createCipheriv('aes-256-gcm',this.store.key,iv);return Buffer.concat([iv,c.update(bytes),c.final(),c.getAuthTag()]);}
-  private unseal(bytes:Buffer){if(!this.store.key)return bytes;if(bytes.length<28)throw new StoreError('Invalid encrypted file part',500);const d=createDecipheriv('aes-256-gcm',this.store.key,bytes.subarray(0,12));d.setAuthTag(bytes.subarray(-16));return Buffer.concat([d.update(bytes.subarray(12,-16)),d.final()]);}
   async serialize<T>(key:string,action:()=>Promise<T>):Promise<T>{const prior=this.pending.get(key)??Promise.resolve();const next=prior.catch(()=>{}).then(action);this.pending.set(key,next);try{return await next;}finally{if(this.pending.get(key)===next)this.pending.delete(key);}}
   private allowed(input:FileRevision){
     const source=this.sources.getSource(input.sourceId);
@@ -63,8 +60,8 @@ export class FileStore {
     const hash=sha256(bytes),prior=this.store.db.prepare('SELECT hash FROM file_parts WHERE upload_id=? AND part=?').get(id,part) as {hash:string}|undefined;
     if(prior){if(prior.hash!==hash)throw new StoreError('Part content conflicts',409);return {part,hash,bytes:bytes.length};}
     this.store.reserveMetadata(bytes.length+128);
-    const path=join(this.uploads,id,String(part)),temp=path+'.'+randomUUID()+'.tmp';
-    try{durable(temp,this.seal(bytes));renameSync(temp,path);syncDir(join(this.uploads,id));this.store.db.prepare('INSERT INTO file_parts VALUES(?,?,?,?)').run(id,part,hash,bytes.length);}finally{rmSync(temp,{force:true});}
+    const path=join(this.uploads,id,String(part));
+    this.store.contentEncryption.write(path,bytes);this.store.db.prepare('INSERT INTO file_parts VALUES(?,?,?,?)').run(id,part,hash,bytes.length);
     return {part,hash,bytes:bytes.length};
   }
   async commit(id:string,authorize:(sourceId:string)=>void){return this.serialize('upload:'+id,async()=>{
@@ -72,13 +69,13 @@ export class FileStore {
     const input=JSON.parse(row.manifest) as FileRevision,parts=this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').all(id) as {part:number;hash:string;bytes:number}[];
     if(parts.length!==Math.ceil(input.sizeBytes/FILE_PART_BYTES))throw new StoreError('Upload is incomplete',409);
     const total=createHash('sha256');let size=0;
-    for(const [i,p] of parts.entries()){if(p.part!==i)throw new StoreError('Missing file part',409);const bytes=this.unseal(this.readPart(join(this.uploads,id),i));if(bytes.length!==p.bytes||sha256(bytes)!==p.hash)throw new StoreError('File part checksum failed',409);total.update(bytes);size+=bytes.length;}
+    for(const [i,p] of parts.entries()){if(p.part!==i)throw new StoreError('Missing file part',409);const bytes=this.readPart(join(this.uploads,id),i);if(bytes.length!==p.bytes||sha256(bytes)!==p.hash)throw new StoreError('File part checksum failed',409);total.update(bytes);size+=bytes.length;}
     if(size!==input.sizeBytes||total.digest('hex')!==input.sha256)throw new StoreError('File checksum failed',409);
     const hash=input.sha256!,destination=join(this.objects,hash);
     if(!existsSync(destination)){
       const staging=destination+'.'+randomUUID()+'.tmp';privateDirectory(staging);
-      try{for(const p of parts)durable(join(staging,String(p.part)),this.readPart(join(this.uploads,id),p.part));syncDir(staging);renameSync(staging,destination);syncDir(this.objects);}finally{rmSync(staging,{recursive:true,force:true});}
-    }
+      try{for(const p of parts)this.store.contentEncryption.write(join(staging,String(p.part)),this.readPart(join(this.uploads,id),p.part));syncDir(staging);renameSync(staging,destination);syncDir(this.objects);}finally{rmSync(staging,{recursive:true,force:true});}
+    }else this.verifyObject(destination,hash,input.sizeBytes,parts.length);
     const ack=await this.revision(input,authorize,(captureId)=>{
       const value={id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:hash,sha256:hash,sizeBytes:input.sizeBytes,duplicate:false};
       this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(value),id);return value;
@@ -122,14 +119,15 @@ export class FileStore {
   saveAsset(artifactId:string,name:string,mime:string,bytes:Buffer){
     if(!/^speaker_samples\/SPEAKER_[0-9]{1,2}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');
     this.store.reserveMetadata(bytes.length+1024);const hash=sha256(bytes),destination=join(this.objects,hash);
-    if(!existsSync(destination)){const temp=destination+'.'+randomUUID()+'.tmp';privateDirectory(temp);try{durable(join(temp,'0'),this.seal(bytes));syncDir(temp);renameSync(temp,destination);syncDir(this.objects);}finally{rmSync(temp,{force:true,recursive:true});}}
+    if(!existsSync(destination)){const temp=destination+'.'+randomUUID()+'.tmp';privateDirectory(temp);try{this.store.contentEncryption.write(join(temp,'0'),bytes);syncDir(temp);renameSync(temp,destination);syncDir(this.objects);}finally{rmSync(temp,{force:true,recursive:true});}}
+    else this.verifyObject(destination,hash,bytes.length,1);
     this.store.db.prepare('INSERT OR IGNORE INTO file_objects VALUES(?,?,?)').run(hash,bytes.length,1);
     this.store.db.prepare('INSERT INTO file_assets VALUES(?,?,?,?)').run(artifactId,name,mime,hash);
   }
   asset(captureId:string,artifactId:string,name:string){
     this.version(captureId);const row=this.store.db.prepare('SELECT f.object_hash,f.mime FROM file_assets f JOIN file_artifacts a ON a.id=f.artifact_id WHERE a.capture_id=? AND a.id=? AND f.name=?').get(captureId,artifactId,name) as {object_hash:string;mime:string}|undefined;
     if(!row||!/^[a-f0-9]{64}$/.test(row.object_hash))throw new StoreError('Asset not found',404);
-    return {mime:row.mime,bytes:this.unseal(this.readPart(join(this.objects,row.object_hash),0))};
+    return {mime:row.mime,bytes:this.readPart(join(this.objects,row.object_hash),0)};
   }
 
   list(args:ContextRange&{sourceId?:string;query?:string;mimePrefix?:string}={}){
@@ -141,10 +139,20 @@ export class FileStore {
     const limit=Math.min(200,Math.max(1,args.limit??50)),rows=this.store.db.prepare(`SELECT v.capture_id FROM file_versions v,file_heads h,captures c WHERE ${clauses.join(' AND ')} ORDER BY c.captured_at DESC,c.id LIMIT ? OFFSET ?`).all(...values,limit+1,offset) as {capture_id:string}[];
     return {items:rows.slice(0,limit).map(r=>this.detail(r.capture_id,false)),nextCursor:rows.length>limit?String(offset+limit):null};
   }
-  private readPart(directory:string,part:number){privateDirectory(directory);const path=join(directory,String(part));privateFile(path);return readFileSync(path);}
+  private readPart(directory:string,part:number){privateDirectory(directory);return this.store.contentEncryption.read(join(directory,String(part)));}
+  private verifyObject(directory:string,hash:string,expectedSize:number,parts:number){
+    privateDirectory(directory);
+    const digest=createHash('sha256');let size=0;
+    for(let part=0;part<parts;part++){
+      const bytes=this.readPart(directory,part);
+      if(bytes.length!==Math.min(FILE_PART_BYTES,expectedSize-part*FILE_PART_BYTES))throw new StoreError('Stored file part checksum failed',409);
+      digest.update(bytes);size+=bytes.length;
+    }
+    if(size!==expectedSize||digest.digest('hex')!==hash)throw new StoreError('Stored file checksum failed',409);
+  }
   *bytes(id:string,start=0,end?:number):Generator<Buffer>{const v=this.version(id);if(!v.object_hash)throw new StoreError('Original is not archived',404);if(!/^[a-f0-9]{64}$/.test(v.object_hash))throw new StoreError('Invalid object identifier',500);const m=JSON.parse(v.manifest) as FileRevision;end??=m.sizeBytes-1;
     if(start<0||end>=m.sizeBytes||start>end){if(m.sizeBytes===0&&start===0)return;throw new StoreError('Invalid byte range',416);}
-    for(let p=Math.floor(start/FILE_PART_BYTES);p<=Math.floor(end/FILE_PART_BYTES);p++){this.version(id);const bytes=this.unseal(this.readPart(join(this.objects,v.object_hash),p));yield bytes.subarray(Math.max(0,start-p*FILE_PART_BYTES),Math.min(bytes.length,end-p*FILE_PART_BYTES+1));}
+    for(let p=Math.floor(start/FILE_PART_BYTES);p<=Math.floor(end/FILE_PART_BYTES);p++){this.version(id);const bytes=this.readPart(join(this.objects,v.object_hash),p);yield bytes.subarray(Math.max(0,start-p*FILE_PART_BYTES),Math.min(bytes.length,end-p*FILE_PART_BYTES+1));}
   }
   stream(id:string,start=0,end?:number){return Readable.from(this.bytes(id,start,end));}
   chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}

@@ -1,3 +1,4 @@
+import {ContentStorage} from './ContentStorage';
 import { restoreSession } from "./session";
 import {systemEventText} from '@mote/shared';
 import React, {
@@ -1028,11 +1029,11 @@ function Vault({
           </div>
           <dl>
             <div>
-              <dt>影像加密</dt>
+              <dt>新图片存储</dt>
               <dd>
                 {storage.imagesEncrypted
-                  ? "AES-256-GCM 已启用"
-                  : "未启用应用层加密"}
+                  ? "加密已启用（仅后续写入）"
+                  : "明文保存（默认）"}
               </dd>
             </div>
             <div>
@@ -1053,7 +1054,7 @@ function Vault({
             </div>
           </dl>
           <p className="fine-print">
-            数据库元数据的静态保护依赖主机加密磁盘。影像加密和保留策略在中央节点配置。
+            内容加密默认关闭，可在开发者选项中启用或一次性解密已有文件。数据库正文和索引保存在 SQLite 中。
           </p>
         </section>
         <section className="panel transfer-panel">
@@ -1599,7 +1600,7 @@ function App() {
                       {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
-                      {page === "developer" && status && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
+                      {page === "developer" && status && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><ContentStorage api={api} onChange={refresh}/><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
                       {page === "about" && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">你的资料，由你保管</div><h1>关于 Mote</h1><p>AI 原生个人上下文采集与中央归档。</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>当前服务（中央节点）</h2><p>{window.location.origin}</p><p className="fine-print">访问令牌只保留在当前标签页会话。</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>退出登录</button></section></>}
                     </>
                   )}

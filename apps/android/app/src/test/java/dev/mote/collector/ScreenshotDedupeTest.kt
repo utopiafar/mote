@@ -2,6 +2,16 @@ package dev.mote.collector
 import org.junit.Assert.*
 import org.junit.Test
 class ScreenshotDedupeTest {
+    @Test fun exactDigestMatchesExistingSignaturesAcrossChunkBoundaries() {
+        for ((width, height) in listOf(1 to 1, 32 to 64, 33 to 65, 240 to 400)) {
+            val pixels = IntArray(width * height) { (it * 2654435761L).toInt() }
+            val bytes = java.nio.ByteBuffer.allocate(8 + pixels.size * 4).putInt(width).putInt(height)
+            pixels.forEach(bytes::putInt)
+            val expected = java.security.MessageDigest.getInstance("SHA-256").digest(bytes.array())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            assertEquals(expected, ScreenshotDedupeHelper.buildFeatures(width, height, pixels).exactHash)
+        }
+    }
     @Test fun modesAndDimensions() {
         val h = ScreenshotDedupeHelper
         val pixels = IntArray(96 * 96) { 0xff303030.toInt() }
@@ -13,6 +23,9 @@ class ScreenshotDedupeTest {
         }
         pixels[0]++
         val changed = h.buildFeatures(96, 96, pixels)
+        for (mode in ScreenshotDedupeHelper.Mode.entries) {
+            assertEquals(h.shouldSkip(first.toSignature(), changed, mode), h.compareFeatures(first, changed, mode))
+        }
         assertFalse(h.shouldSkip(first.toSignature(), changed, ScreenshotDedupeHelper.Mode.EXACT).duplicate)
         assertTrue(h.shouldSkip(first.toSignature(), changed, ScreenshotDedupeHelper.Mode.CONSERVATIVE).duplicate)
         val tiny = h.buildFeatures(1, 1, intArrayOf(0))

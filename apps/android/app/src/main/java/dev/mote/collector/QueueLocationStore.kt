@@ -11,7 +11,7 @@ data class QueueLocation(val id: String, val baseId: String, val path: String) {
     companion object { fun parse(value: JSONObject) = QueueLocation(UUID.fromString(value.getString("id")).toString(), value.getString("baseId"), value.getString("path")) }
 }
 
-/** The pointer and recovery journal always stay on internal storage. Files are copied while encrypted. */
+/** The pointer and recovery journal always stay on internal storage. Files are copied byte-for-byte and verified before switching. */
 class QueueLocationStore(private val control: File, private val legacy: File, private val cipher: ByteCipher,
     private val validate: (QueueLocation) -> Unit = {}, private val checkpoint: (String) -> Unit = {},
     private val syncDirectory: (File) -> Unit = { java.nio.channels.FileChannel.open(it.toPath(), java.nio.file.StandardOpenOption.READ).use { channel -> channel.force(true) } }) {
@@ -76,6 +76,9 @@ class QueueLocationStore(private val control: File, private val legacy: File, pr
                 val destination = File(targetDirectory, file.name)
                 FileOutputStream(destination).use { output -> file.inputStream().use { it.copyTo(output) }; output.fd.sync() }
                 check(file.length() == destination.length() && hash(file).contentEquals(hash(destination))) { "复制校验失败，原数据已保留" }
+                // Keep indexed event stamps and oldest-pending time valid across relocation.
+                // If a filesystem cannot preserve it, ordinary metadata validation rebuilds it.
+                destination.setLastModified(file.lastModified())
             }
             progress("正在验证目标记录与图片")
             DurableQueue(targetDirectory, cipher, createMissing = false).verifyIntegrity()

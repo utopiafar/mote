@@ -11,6 +11,7 @@ import { sourceConnectionSchema, sourceItemSchema, captureSchema, captureOcrStat
 import {privateDirectory,privateFile} from './private-storage.js';
 import {mediaActivity,type MediaActivityRange} from './media-activity.js';
 import {ArchivedFileStore} from './archived-files.js';
+import {ContentEncryption,replaceContentFile} from './content-encryption.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
@@ -26,14 +27,11 @@ function searchText(record:Pick<CaptureInput,'appId'|'appName'|'windowTitle'|'oc
 export class Store {
   db:DatabaseSync;
   blobsDir:string;
-  key?:Buffer;
-  constructor(public directory:string, private options:{dataKey?:string;maxStorageBytes?:number;embeddingEnabled?:boolean}={}) {
+  readonly contentEncryption:ContentEncryption;
+  get key(){return this.contentEncryption.key;}
+  constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;maxStorageBytes?:number;embeddingEnabled?:boolean}={}) {
     privateDirectory(directory);
     this.blobsDir=join(directory,'blobs'); privateDirectory(this.blobsDir);
-    if(options.dataKey) {
-      if(!/^[0-9a-f]{64}$/i.test(options.dataKey)) throw new Error('MOTE_DATA_KEY must be 64 hexadecimal characters');
-      this.key=Buffer.from(options.dataKey,'hex');
-    }
     privateFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new DatabaseSync(join(directory,'mote.sqlite'));
@@ -94,10 +92,7 @@ export class Store {
     this.db.exec("INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) SELECT memories.id,entry.value FROM memories,json_each(memories.json,'$.evidenceIds') entry");
     this.db.exec(`INSERT OR IGNORE INTO memory_dependencies SELECT d.memory_id,c.capture_id FROM memory_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;
       INSERT OR IGNORE INTO memory_batch_dependencies SELECT d.batch_id,c.capture_id FROM memory_batch_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;`);
-    const marker=this.db.prepare('SELECT value FROM settings WHERE key=?').get('encryption') as {value:string}|undefined;
-    const expected=this.key ? sha256(this.key) : 'none';
-    if(marker && marker.value!==expected) {this.db.close();throw new Error('Vault encryption key mismatch. Restore the original MOTE_DATA_KEY; do not change keys on an existing vault.');}
-    this.db.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)').run('encryption',expected);
+    try{this.contentEncryption=new ContentEncryption(directory,this.db,options);}catch(error){this.db.close();throw error;}
     this.db.function('mote_search_text',{deterministic:true},json=>searchText(JSON.parse(String(json))));
     if(!this.db.prepare('SELECT value FROM settings WHERE key=? AND value=?').get('search_text_version','2')){
       this.db.exec('BEGIN IMMEDIATE');
@@ -155,8 +150,8 @@ export class Store {
     const path=join(this.blobsDir,hash);
     if(existsSync(path))return;
     let stored=bytes;
-    if(this.key) {
-      const nonce=randomBytes(12); const cipher=createCipheriv('aes-256-gcm',this.key,nonce);
+    if(this.contentEncryption.enabled) {
+      const nonce=randomBytes(12); const cipher=createCipheriv('aes-256-gcm',this.key!,nonce);
       const ciphertext=Buffer.concat([cipher.update(bytes),cipher.final()]);
       stored=Buffer.concat([Buffer.from('MOTE1'),nonce,cipher.getAuthTag(),ciphertext]);
     }
@@ -359,13 +354,19 @@ export class Store {
   private readBlob(hash:string) {
     const raw=readFileSync(join(this.blobsDir,hash));
     let bytes=raw;
-    if(this.key) {
-      if(raw.subarray(0,5).toString()!=='MOTE1')throw new StoreError('Invalid encrypted blob header',500);
+    if(raw.subarray(0,5).toString()==='MOTE1') {
+      if(!this.key)throw new StoreError('Encrypted image requires its original key',500);
       const decipher=createDecipheriv('aes-256-gcm',this.key,raw.subarray(5,17));decipher.setAuthTag(raw.subarray(17,33));
       bytes=Buffer.concat([decipher.update(raw.subarray(33)),decipher.final()]);
     }
     if(sha256(bytes)!==hash)throw new StoreError('Image checksum failed',500);
     return bytes;
+  }
+  decryptImage(hash:string):boolean {
+    if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid image hash');
+    const path=join(this.blobsDir,hash);if(!existsSync(path))return false;
+    const raw=readFileSync(path);if(raw.subarray(0,5).toString()!=='MOTE1')return false;
+    const plain=this.readBlob(hash);replaceContentFile(path,plain);return true;
   }
   heartbeat(beat:Heartbeat) {
     const record:DeviceRecord={...beat,lastSeenAt:new Date().toISOString()};
@@ -430,7 +431,7 @@ export class Store {
     const filePaths:string[]=[];const fileRoot=join(this.directory,'files');if(existsSync(fileRoot))for(const entry of readdirSync(fileRoot,{recursive:true,withFileTypes:true}))if(entry.isFile())filePaths.push(join(entry.parentPath,entry.name));
     const physicalBytes=[...filePaths,join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p))].reduce((n,p)=>n+(existsSync(p)?statSync(p).size:0),0);
     const fileBytes=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='file_blobs'").get()?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
-    return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,fileBytes,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:Boolean(this.key)};
+    return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,fileBytes,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:this.contentEncryption.enabled};
   }
   exportArchive(maxBytes:number) {
     if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError('文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。',409);

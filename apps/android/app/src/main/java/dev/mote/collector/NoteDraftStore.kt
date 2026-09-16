@@ -7,10 +7,16 @@ import java.util.UUID
 
 data class NoteDraft(val text: String = "", val mood: String = "", val prepared: JSONObject? = null, val server: String? = null)
 
-/** One editable encrypted draft; a prepared submission survives enqueue/clear crash boundaries. */
+/** One editable local draft; a prepared submission survives enqueue/clear crash boundaries. */
 class NoteDraftStore(private val directory: File, private val cipher: ByteCipher) {
     private val file = File(directory, "draft.enc")
     init { directory.mkdirs() }
+    fun migrateLegacyContent(shouldStop: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int = synchronized(lock) {
+        if (shouldStop()) return@synchronized 0
+        val changed = LocalContentMigration.migrate(file, cipher) { read() }
+        onProgress(1, 1)
+        if (changed) 1 else 0
+    }
     fun read(): NoteDraft = synchronized(lock) {
         if (!file.exists()) return@synchronized NoteDraft()
         val json = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8))
@@ -44,7 +50,7 @@ class NoteDraftStore(private val directory: File, private val cipher: ByteCipher
         val temp = File(directory, "${UUID.randomUUID()}.tmp")
         try {
             FileOutputStream(temp).use { out -> out.write(cipher.seal(value.toString().toByteArray(Charsets.UTF_8))); out.fd.sync() }
-            check(temp.renameTo(file)) { "无法保存加密草稿" }
+            check(temp.renameTo(file)) { "无法保存草稿" }
         } finally { temp.delete() }
     }
     companion object { private val lock = Any() }

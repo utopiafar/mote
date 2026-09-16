@@ -20,6 +20,7 @@ object ScreenshotDedupeHelper {
     private const val THUMB_CELL_DIFF_THRESHOLD = 64
     private const val THUMB_BLOCK_DIFF_THRESHOLD = 32
     private const val THUMB_ROW_COL_DIFF_THRESHOLD = 64
+    private const val HEX = "0123456789abcdef"
 
     enum class Mode(
         val rawValue: String,
@@ -59,7 +60,7 @@ object ScreenshotDedupeHelper {
                 "${width}x${height}",
                 exactHash,
                 dHash.toULong().toString(16).padStart(16, '0'),
-                thumb.joinToString(separator = "") { "%02x".format(it.toInt() and 0xff) }
+                toHex(thumb)
             ).joinToString("|")
         }
     }
@@ -120,9 +121,11 @@ object ScreenshotDedupeHelper {
         previousSignature: String?,
         current: FrameFeatures,
         mode: Mode
-    ): CompareResult {
-        val previous = parseSignature(previousSignature)
-            ?: return CompareResult(false, "no_previous_signature")
+    ): CompareResult = compareFeatures(parseSignature(previousSignature), current, mode)
+
+    /** Bulk scans already hold compact features; no signature round trip is needed per frame. */
+    fun compareFeatures(previous: FrameFeatures?, current: FrameFeatures, mode: Mode): CompareResult {
+        if (previous == null) return CompareResult(false, "no_previous_signature")
 
         if (previous.width != current.width || previous.height != current.height) {
             return CompareResult(false, "size_changed")
@@ -280,10 +283,20 @@ object ScreenshotDedupeHelper {
         val digest = MessageDigest.getInstance("SHA-256")
         updateInt(digest, width)
         updateInt(digest, height)
+        // Updating a native digest once per byte is disproportionately expensive for
+        // full-resolution exact mode. Preserve the signature byte order in bounded chunks.
+        val chunk = ByteArray(8192)
+        var used = 0
         for (i in 0 until width * height) {
-            updateInt(digest, argbPixels[i])
+            val pixel = argbPixels[i]
+            chunk[used++] = (pixel ushr 24).toByte()
+            chunk[used++] = (pixel ushr 16).toByte()
+            chunk[used++] = (pixel ushr 8).toByte()
+            chunk[used++] = pixel.toByte()
+            if (used == chunk.size) { digest.update(chunk); used = 0 }
         }
-        return digest.digest().joinToString(separator = "") { "%02x".format(it.toInt() and 0xff) }
+        if (used > 0) digest.update(chunk, 0, used)
+        return toHex(digest.digest())
     }
 
     private fun computeDHash(width: Int, height: Int, argbPixels: IntArray): Long {
@@ -352,6 +365,13 @@ object ScreenshotDedupeHelper {
 
     private fun hammingDistance(a: Long, b: Long): Int {
         return java.lang.Long.bitCount(a xor b)
+    }
+
+    private fun toHex(bytes: ByteArray): String = buildString(bytes.size * 2) {
+        bytes.forEach { byte ->
+            val value = byte.toInt() and 0xff
+            append(HEX[value ushr 4]); append(HEX[value and 15])
+        }
     }
 
     private fun hexToBytes(hex: String): ByteArray? {

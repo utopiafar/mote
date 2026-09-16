@@ -20,6 +20,8 @@ class BulkDedupeActivity : Activity() {
     private lateinit var list: LinearLayout
     private lateinit var progress: ProgressBar
     private lateinit var selectionStatus: TextView
+    private lateinit var cancel: Button
+    private val selectionChecks = mutableMapOf<String, CheckBox>()
     private val pageBitmaps = mutableListOf<android.graphics.Bitmap>()
     private val dialogs = mutableListOf<AlertDialog>()
     @Volatile private var imageGeneration = 0
@@ -32,10 +34,12 @@ class BulkDedupeActivity : Activity() {
     @Volatile private var pending = false
     private var page = 0
     private var busy = false
+    private var cancellationRequested = false
     private var localStateJob: kotlinx.coroutines.Job? = null
     private var polling: java.util.concurrent.ScheduledFuture<*>? = null
     private var lastRecordsRevision = -1L
     private var stamp = ""
+    private var renderedRowsKey = ""
     @Volatile private var refresh = true
     private val modeValues = listOf("exact", "conservative", "balanced", "aggressive")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,7 +50,8 @@ class BulkDedupeActivity : Activity() {
         page = savedInstanceState?.getInt("page") ?: 0
         body = moteDetailPage()
         label(body, "本机图片批量去重", 25f)
-        label(body, "扫描开始时本机保存的全部采集图片，按时间从早到晚扫描，与上一张保留图比较；相似则标记为重复，否则更新保留图。应用或尺寸变化时重新开始比较，不限制时间间隔。只处理本机副本；已上传中央的记录仍然保留。待决定区独立加密保存，不参与同步和自动清理，仍占用磁盘空间。")
+        label(body, "扫描开始时本机保存的全部采集图片，按时间从早到晚扫描，与上一张保留图比较；相似则标记为重复，否则更新保留图。应用或尺寸变化时重新开始比较，不限制时间间隔。只处理本机副本；已上传中央的记录仍然保留。待决定区独立保存在本机，不参与同步和自动清理，仍占用磁盘空间。")
+        label(body, "扫描和处理均在后台执行，可以离开本页。取消后已完成的处理保留，剩余记录留在原处。")
         modes = Spinner(this).apply {
             adapter = ArrayAdapter(this@BulkDedupeActivity, android.R.layout.simple_spinner_dropdown_item, listOf("精确", "保守", "均衡", "激进"))
             isEnabled = false
@@ -57,20 +62,26 @@ class BulkDedupeActivity : Activity() {
         }
         status = label(body, "正在读取后台任务…")
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal); body.addView(progress)
-        val cancel = Button(this).apply { text = "取消后台任务"; setOnClickListener {
+        cancel = Button(this).apply { text = "取消后台任务"; isEnabled = false; setOnClickListener {
+            cancellationRequested = true
+            text = "正在取消…"; isEnabled = false
             WorkManager.getInstance(this@BulkDedupeActivity).cancelUniqueWork(BulkDedupeWorker.NAME)
         } }; body.addView(cancel)
-        action(body, "切换：扫描结果 / 待决定区") { pending = !pending; page = 0; selected.clear(); refresh = true }
+        action(body, "切换：扫描结果 / 待决定区") {
+            pending = !pending; page = 0; selected.clear(); rows = emptyList(); renderedRowsKey = ""
+            summary.text = "正在读取${if (pending) "待决定区" else "扫描结果"}…"; render(); refresh = true
+        }
         summary = label(body, "")
-        action(body, "选择本页") { rows.drop(page * 10).take(10).forEach { selected += id(it) }; render() }
-        action(body, "选择全部候选") { rows.forEach { selected += id(it) }; render() }
-        action(body, "取消全部选择") { selected.clear(); render() }
+        action(body, "选择本页") { rows.drop(page * 10).take(10).forEach { selected += id(it) }; updateSelection() }
+        action(body, "选择全部候选") { rows.forEach { selected += id(it) }; updateSelection() }
+        action(body, "取消全部选择") { selected.clear(); updateSelection() }
         action(body, "移入待决定区 / 恢复所选") { confirm(if (pending) "restore" else "move") }
         action(body, "永久删除所选") { confirm(if (pending) "purge" else "delete") }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(list)
-        action(body, "上一页") { if (page > 0) { page--; render() } }
-        action(body, "下一页") { if ((page + 1) * 10 < rows.size) { page++; render() } }
+        action(body, "上一页", requiresIdle = false) { if (page > 0) { page--; render() } }
+        action(body, "下一页", requiresIdle = false) { if ((page + 1) * 10 < rows.size) { page++; render() } }
         MoteUi.styleTree(body)
+        render()
         executor.execute {
             val mode = runCatching { Settings(applicationContext).read().imageDedupeMode }
             runOnUiThread { if (!isDestroyed) { mode.onSuccess { modes.setSelection(modeValues.indexOf(it).coerceAtLeast(0)) }; modes.isEnabled = !busy } }
@@ -97,19 +108,26 @@ class BulkDedupeActivity : Activity() {
             val showingPending = pending
             var loaded: List<JSONObject>? = null
             var title = ""
+            var rowsKey = ""
             if (changed && !active) {
                 if (showingPending) {
                     val queue = store.quarantine()
                     loaded = queue.dedupeIds().mapNotNull { queue.dedupeRow(it)?.let { row -> JSONObject().put("candidate", row) } }
-                    title = "待决定区 · ${loaded.size} 条 · 加密记录与图片，可恢复"
+                    title = "待决定区 · ${loaded.size} 条 · 本机记录与图片，可恢复"
+                    rowsKey = "pending"
                 } else {
                     val report = store.read("report")
                     val pairs = report.optJSONArray("pairs") ?: JSONArray()
                     val queue = queue()
+                    // Membership is sufficient for browsing a report. Exact candidate and
+                    // reference blobs are revalidated at the mutation boundary by the worker.
+                    val available = queue.dedupeIds().toHashSet()
                     loaded = if (report.optBoolean("complete")) (0 until pairs.length()).map { pairs.getJSONObject(it) }
-                        .filter { queue.dedupeRow(id(it))?.optString("blob") == it.getJSONObject("candidate").optString("blob") } else emptyList()
+                        .filter { id(it) in available } else emptyList()
                     title = if (report.optBoolean("complete")) "扫描结果 · ${report.optString("mode")} · ${if (report.optString("comparison") == "last_retained") "与上一张保留图比较" else "旧规则结果，请重新扫描"}\n扫描 ${report.optInt("scanned")} 张 · 失败 ${report.optInt("errors")} 张 · 候选 ${loaded.size} 张\n时间 ${report.optString("at")}" else "尚无完整扫描结果；取消或中断后请重新扫描。"
+                    rowsKey = "report:${report.optString("at")}:${report.optString("mode")}:${report.optBoolean("complete")}"
                 }
+                rowsKey += loaded.joinToString(separator = "|") { id(it) + ":" + it.getJSONObject("candidate").optString("blob") }
                 refresh = LocalStateRepository.get(this).state.value.revision.records != recordsVersion
             }
             stamp = key
@@ -121,12 +139,17 @@ class BulkDedupeActivity : Activity() {
             runOnUiThread {
                 if (isDestroyed) return@runOnUiThread
                 busy = active; controls.forEach { it.isEnabled = !active }
+                selectionChecks.values.forEach { it.isEnabled = !active }
+                if (!active) cancellationRequested = false
+                cancel.isEnabled = active && !cancellationRequested
+                cancel.text = if (cancellationRequested) "正在取消…" else "取消后台任务"
                 status.text = message
                 progress.isIndeterminate = active && data.getInt("total", 0) == 0
                 progress.max = data.getInt("total", 1).coerceAtLeast(1); progress.progress = data.getInt("done", 0)
                 if (loaded != null && pending == showingPending) {
                     rows = loaded; selected.retainAll(rows.map(::id).toSet()); page = page.coerceAtMost(((rows.size - 1) / 10).coerceAtLeast(0))
-                    summary.text = title; render()
+                    summary.text = title
+                    if (rowsKey != renderedRowsKey) { renderedRowsKey = rowsKey; render() }
                 } else if (loaded != null) refresh = true
             }
         } catch (error: Exception) { runOnUiThread { if (!isDestroyed) status.text = "读取失败：${error.message}" } }
@@ -134,27 +157,27 @@ class BulkDedupeActivity : Activity() {
     private fun render() {
         imageGeneration++
         val generation = imageGeneration
-        list.removeAllViews(); pageBitmaps.forEach { it.recycle() }; pageBitmaps.clear()
+        list.removeAllViews(); selectionChecks.clear(); pageBitmaps.forEach { it.recycle() }; pageBitmaps.clear()
         selectionStatus = label(list, "")
         selectionSummary()
         if (rows.isEmpty()) label(list, "没有待处理图片。")
+        val usePending = pending
+        val source by lazy { if (usePending) BulkDedupeStore(this).quarantine() else queue() }
         rows.drop(page * 10).take(10).forEach { pair ->
             val row = pair.getJSONObject("candidate")
             val check = CheckBox(this).apply {
                 text = "${row.optString("capturedAt")}\n${row.optString("appName").ifBlank { row.optString("appId") }}"
                 isChecked = id(pair) in selected; isEnabled = !busy
                 setOnCheckedChangeListener { _, checked -> if (checked) selected += id(pair) else selected -= id(pair); selectionSummary() }
-            }; list.addView(check)
+            }; list.addView(check); selectionChecks[id(pair)] = check
             pair.optJSONObject("reference")?.let { label(list, "保留 ${it.optString("capturedAt")}\n${pair.optString("reason")} · 哈希距离 ${pair.optInt("hashDistance")} · 变化像素 ${"%.2f".format(pair.optDouble("changedPixelRatio") * 100)}%\n变化块 ${pair.optInt("changedBlocks")} · 行 ${pair.optInt("changedRows")} · 列 ${pair.optInt("changedCols")}") }
             val thumbnails = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }; list.addView(thumbnails)
-            val usePending = pending
             listOfNotNull(pair.optJSONObject("reference"), pair.getJSONObject("candidate")).forEach { row ->
                 val image = ImageView(this).apply { contentDescription = if (row === pair.optJSONObject("reference")) "保留图缩略图" else "候选图缩略图"; setOnClickListener { preview(pair) } }
                 thumbnails.addView(image, LinearLayout.LayoutParams(0, moteDp(160), 1f))
                 images.execute {
                     if (generation != imageGeneration) return@execute
                     val bitmap = runCatching {
-                        val source = if (usePending) BulkDedupeStore(this).quarantine() else queue()
                         source.image(row.getString("id"))?.let { decodePreview(it, 320) }
                     }.getOrNull()
                     runOnUiThread {
@@ -169,7 +192,7 @@ class BulkDedupeActivity : Activity() {
     }
     private fun preview(pair: JSONObject) {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        label(content, "正在后台解密图片…")
+        label(content, "正在后台读取图片…")
         val dialog = AlertDialog.Builder(this).setTitle("双指缩放 · 拖动查看 · 双击复位").setView(ScrollView(this).apply { addView(content) }).setPositiveButton("关闭", null).create()
         val bitmaps = mutableListOf<android.graphics.Bitmap>()
         dialog.setOnDismissListener { content.removeAllViews(); bitmaps.forEach { it.recycle() }; bitmaps.clear() }
@@ -208,10 +231,14 @@ class BulkDedupeActivity : Activity() {
         selectionStatus.text = "第 ${page + 1}/${((rows.size + 9) / 10).coerceAtLeast(1)} 页 · 已选 ${selected.size} 条" +
             if (bytes > 0) " · 图片合计 ${"%.1f".format(bytes / 1048576.0)} MiB（共享文件实际释放可能更少）" else ""
     }
+    private fun updateSelection() {
+        selectionChecks.forEach { (id, check) -> check.isChecked = id in selected }
+        selectionSummary()
+    }
     private fun confirm(action: String) {
         val items = rows.filter { id(it) in selected }
         if (items.isEmpty()) { Toast.makeText(this, "请先选择图片", Toast.LENGTH_SHORT).show(); return }
-        val verb = when (action) { "move" -> "移入加密待决定区"; "restore" -> "恢复到本机采集队列"; else -> "永久删除本机记录及图片" }
+        val verb = when (action) { "move" -> "移入待决定区"; "restore" -> "恢复到本机采集队列"; else -> "永久删除本机记录及图片" }
         AlertDialog.Builder(this).setTitle("确认$verb？").setMessage("所选 ${items.size} 条。${if (action in listOf("delete", "purge")) "无法撤销。" else ""}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。")
             .setNegativeButton("取消", null).setPositiveButton("确认") { _, _ ->
                 val job = UUID.randomUUID().toString()
@@ -219,7 +246,7 @@ class BulkDedupeActivity : Activity() {
             }.show()
     }
     private fun submit(data: Data, plan: JSONObject? = null) {
-        busy = true; controls.forEach { it.isEnabled = false }; status.text = "正在提交后台任务…"
+        busy = true; cancellationRequested = false; controls.forEach { it.isEnabled = false }; status.text = "正在提交后台任务…"
         executor.execute {
             try {
                 val manager = WorkManager.getInstance(this)
@@ -231,7 +258,9 @@ class BulkDedupeActivity : Activity() {
         }
     }
     private fun label(parent: LinearLayout, value: String, size: Float = 14f) = TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(6), 0, moteDp(6)) }.also(parent::addView)
-    private fun action(parent: LinearLayout, value: String, callback: () -> Unit) = Button(this).apply { text = value; setOnClickListener { if (!busy) callback() } }.also { parent.addView(it); controls += it }
+    private fun action(parent: LinearLayout, value: String, requiresIdle: Boolean = true, callback: () -> Unit) = Button(this).apply {
+        text = value; setOnClickListener { if (!requiresIdle || !busy) callback() }
+    }.also { parent.addView(it); if (requiresIdle) controls += it }
     override fun onSaveInstanceState(outState: Bundle) { outState.putStringArrayList("selected", ArrayList(selected)); outState.putInt("page", page); outState.putBoolean("pending", pending); super.onSaveInstanceState(outState) }
     override fun onDestroy() { imageGeneration++; dialogs.forEach { it.dismiss() }; list.removeAllViews(); pageBitmaps.forEach { it.recycle() }; pageBitmaps.clear(); executor.shutdownNow(); images.shutdownNow(); super.onDestroy() }
 }

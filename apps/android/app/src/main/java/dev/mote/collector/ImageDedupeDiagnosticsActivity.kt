@@ -28,7 +28,7 @@ class ImageDedupeDiagnosticsActivity : Activity() {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage()
         text(body, "图片去重诊断", 27f)
-        text(body, "仅保留开启诊断后命中的图片对。图片已完成隐私检查和遮罩，仅在本机加密保存，不会同步。", 14f)
+        text(body, "仅保留开启诊断后命中的图片对。图片已完成隐私检查和遮罩，仅在本机保存，不会同步。", 14f)
         text(body, "最多 20 组、32 MiB，保存期限 24 小时。读取时清理过期记录；系统休眠可能延后后台清理。关闭诊断后清空。", 12f)
         status = text(body, "正在读取…", 14f)
         refresh = button(body, "刷新诊断") { load() }

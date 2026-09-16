@@ -1,8 +1,9 @@
 import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
 import { randomUUID } from 'node:crypto';
 import { join, basename } from 'node:path';
-import { readFile, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
+import { readLocalContent } from './local-content';
 import { scanSourceFiles } from './source-files';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices, decodeCalendarScan } from './source-calendar';
 import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
@@ -37,7 +38,7 @@ export class LocalSourceManager {
   private connectionBinding(): string { return sourceHash(this.connection.serverUrl + ':' + (this.connection.token ?? '')); }
   async initialize(): Promise<void> {
     try {
-      const saved = JSON.parse(await readFile(join(this.directory, 'sources.json'), 'utf8')) as { version: number; sources: LocalSource[]; metadataDirty: string[]; metadataDirtyAt?: string };
+      const saved = JSON.parse((await readLocalContent(join(this.directory, 'sources.json'))).toString('utf8')) as { version: number; sources: LocalSource[]; metadataDirty: string[]; metadataDirtyAt?: string };
       if (saved.version !== 1 || !Array.isArray(saved.sources) || saved.sources.length > 40) throw new Error('本地来源配置无效');
       this.sources = saved.sources.map(s => {
         if (!/^local-[a-f0-9-]{36}$/.test(s.id) || typeof s.name !== 'string' || s.name.length > 200 || typeof s.enabled !== 'boolean' || !['local-files', 'local-calendar'].includes(s.kind) || (s.kind === 'local-files' ? typeof s.path !== 'string' : typeof s.calendarId !== 'string')) throw new Error('本地来源配置无效');

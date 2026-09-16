@@ -55,6 +55,7 @@ jobs:
         run: |
           node_modules/.bin/electron apps/desktop/scripts/ui-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/complex-ui-smoke.cjs
+          node_modules/.bin/electron apps/desktop/scripts/content-storage-smoke.cjs
       - name: Verify offline first binding and explicit sync against a generated central node
         timeout-minutes: 5
         run: |
@@ -65,6 +66,7 @@ jobs:
         run: |
           node_modules/.bin/electron scripts/test-web-login.cjs
           node_modules/.bin/electron scripts/test-web-navigation.cjs
+          node_modules/.bin/electron scripts/test-web-content-storage.cjs
           node_modules/.bin/electron scripts/test-web-conversations.cjs
           node_modules/.bin/electron apps/web/scripts/capture-browser-smoke.cjs
       - name: Verify client onboarding, central UI and update networking with generated data

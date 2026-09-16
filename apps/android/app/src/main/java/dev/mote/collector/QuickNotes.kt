@@ -8,7 +8,7 @@ import java.util.UUID
 
 object QuickNotes {
     internal val io = java.util.concurrent.Executors.newSingleThreadExecutor()
-    fun draft(context: Context) = NoteDraftStore(File(context.noBackupFilesDir, "note-draft"), SecretBox())
+    fun draft(context: Context) = NoteDraftStore(File(context.noBackupFilesDir, "note-draft"), context.localContentCipher())
     fun save(context: Context, text: String, mood: String): String = save(context, text, mood) { config -> UploadWorker.schedule(context, config) }
     internal fun save(context: Context, text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String = ConnectionGuard.sync { saveCurrent(context, text, mood, scheduleUpload) } ?: throw ConnectionFailure("busy")
     private fun saveCurrent(context: Context, text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String {

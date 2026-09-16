@@ -48,7 +48,7 @@ class CaptureRecordsInstrumentedTest {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
-            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", excludedPackages = "", appCollectionRules = AppCollectionRules.LEGACY_DEFAULT))
+            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", excludedPackages = "", contentEncryptionEnabled = false, appCollectionRules = AppCollectionRules.LEGACY_DEFAULT))
             test(context, settings, ids)
         } finally {
             settings.enabled = false; cancel(); shell("dumpsys battery reset")
@@ -159,7 +159,7 @@ class CaptureRecordsInstrumentedTest {
             try { assertTrue(Color.red(image.getPixel(10, 80)) < 10) } finally { image.recycle() }
             settings.enabled = false; pipeline.close()
             val original = context.queue().peek()!!.toString()
-            assertFalse(String(File(context.noBackupFilesDir, "queue/$id.event").readBytes()).contains("charging"))
+            assertEquals("charging", JSONObject(File(context.noBackupFilesDir, "queue/$id.event").readText()).getJSONObject("ocr").getString("reason"))
             shell("dumpsys battery set ac 1"); shell("dumpsys battery set status 2")
             waitUntil { Diagnostics.battery(context).second }
             CaptureOcrWorker.schedule(context, config, replace = true)
@@ -295,6 +295,13 @@ class CaptureRecordsInstrumentedTest {
                 else {
                     val value = when {
                         route == "/api/devices/heartbeat" -> JSONObject().put("ok", true)
+                        method == "POST" && route == "/api/captures/batch" -> {
+                            val items = json.getJSONArray("captures"); check(items.length() == 1)
+                            val capture = items.getJSONObject(0)
+                            check(capture.keys().asSequence().none { it.startsWith("_") })
+                            captures.incrementAndGet(); original = capture
+                            JSONObject().put("results", org.json.JSONArray().put(JSONObject().put("id", capture.getString("id")).put("status", 201)))
+                        }
                         route == "/api/captures" -> { check(json.keys().asSequence().none { it.startsWith("_") }); captures.incrementAndGet(); original = json; JSONObject().put("id", json.getString("id")) }
                         method == "POST" && route.endsWith("/ocr") -> {
                             patches.incrementAndGet(); check(original != null); check(json.getString("ocrText") == "Generated PATCH OCR"); result = json

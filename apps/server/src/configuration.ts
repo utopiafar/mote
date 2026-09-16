@@ -66,7 +66,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
         field('maxStorageBytes', '资料容量上限', config.maxStorageBytes, '限制去重图片与记录 JSON 的逻辑字节；SQLite 索引、WAL、日志等额外占盘，不是全磁盘硬配额。达到上限返回 507，端点保留待传队列。', 'MOTE_MAX_STORAGE_MB', { unit: 'bytes' }),
         field('retentionDays', '历史保留天数', config.retentionDays, '0 表示不自动按时间删除；正数按采集时间清理过期记录和无引用图片，并使关联洞察失效。', 'MOTE_RETENTION_DAYS', { unit: 'days' }),
         field('maxExportBytes', 'HTTP 归档大小上限', config.maxExportBytes, '应用于 HTTP 导出/导入；最多 20,000 条记录，较大仓库使用离线备份。导出含可读原文与图片。', 'MOTE_MAX_EXPORT_MB', { unit: 'bytes' }),
-        field('dataKeyConfigured', '图片加密密钥已配置', Boolean(config.dataKey), '只显示是否设置。AES-256-GCM 仅加密图片对象；SQLite 原文仍需磁盘加密。已有仓库不能直接更换密钥。', 'MOTE_DATA_KEY', secret),
+        field('dataKeyConfigured', '图片加密密钥已配置', Boolean(config.dataKey), '只表示部署密钥是否配置，不表示已启用加密；默认明文保存，可在开发者选项单独开启。已有密文需保留原密钥。', 'MOTE_DATA_KEY', secret),
       ] },
       { id: 'model', title: '问答与洞察模型', description: `${options.modelSource === 'saved' ? '使用已保存的模型设置。' : '使用部署环境中的模型设置。'}模型设置保存后立即生效，现有问答继续使用原配置。此投影不展示 API key 或高级参数原文。`, fields: [
         field('modelProvider', '模型服务商', modelProvider(config.modelProvider ?? 'deepseek')?.name ?? config.modelProvider ?? 'DeepSeek', '提供商预设只设置协议与地址；模型 ID 和账户权限由服务商确定。', 'MOTE_MODEL_PROVIDER'),

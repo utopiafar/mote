@@ -69,7 +69,7 @@ test('bounded capacity rejects new data but still acknowledges already saved ret
   assert.equal((await store.ingest(sample)).duplicate,true);
 });
 test('encrypted image blobs round trip; export contains plaintext evidence but never secrets',async t=>{
-  const key='a3'.repeat(32);const store=vault(t,{dataKey:key});const f=await fixture();const saved=await store.ingest(f);
+  const key='a3'.repeat(32);const store=vault(t,{dataKey:key,contentEncryptionEnabled:true});const f=await fixture();const saved=await store.ingest(f);
   const physical=readFileSync(join(store.blobsDir,saved.blobHash!));assert.equal(physical.subarray(0,5).toString(),'MOTE1');
   assert.equal(store.image(f.id).bytes.toString('base64'),f.imageBase64);
   const archive=store.exportArchive(1000000);assert.equal(archive.captures[0].imageBase64,f.imageBase64);assert.ok(!JSON.stringify(archive).includes(key));

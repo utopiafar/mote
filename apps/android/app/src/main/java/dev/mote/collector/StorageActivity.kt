@@ -10,7 +10,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import java.util.concurrent.Executors
 
-/** Selects actual app-owned queue storage; encrypted files stay outside shared photos. */
+/** Selects actual app-owned queue storage; files stay outside shared photos. */
 class StorageActivity : Activity() {
     private lateinit var body: LinearLayout
     private lateinit var content: LinearLayout
@@ -26,11 +26,11 @@ class StorageActivity : Activity() {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage()
         text(body, "图片保存位置", 27f)
-        text(body, "这里保存本机待同步、待 OCR 的加密图片，以及同一队列的随手记和应用活动。已归档图片仍保存在中央节点，可在采集记录中查看。")
+        text(body, "这里保存本机待同步、待 OCR 的图片，以及同一队列的随手记和应用活动。已归档图片仍保存在中央节点，可在采集记录中查看。")
         text(body, "选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。模型、草稿、设置及来源缓存保留在内部空间。")
         inventory = TextView(this).apply { textSize = 15f }; body.addView(inventory)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(content)
-        text(body, "这些是本应用专用目录，图片保持加密，不是共享相册；卸载应用会删除本机文件。移除存储卡后会停止使用该位置并提示，不会切到空目录；重新连接后可恢复。")
+        text(body, "默认明文保存：记录和索引为 JSON，图片保留原始格式。开发者选项可开启本地内容加密，也可批量解密旧文件。这些是本应用专用目录，不是共享相册；卸载应用会删除本机文件。移除存储卡后会停止使用该位置并提示，不会切到空目录；重新连接后可恢复。")
         MoteUi.styleTree(body)
     }
     override fun onResume() { super.onResume(); localStateJob = observeLocalState { inventory.text = it.storageLabel() }; handler.post(poll); refresh() }
@@ -71,13 +71,13 @@ class StorageActivity : Activity() {
     private fun confirm(choice: QueueStorageChoice) {
         if (working || ConnectionGuard.reconfiguring()) return
         AlertDialog.Builder(this).setTitle("迁移本机保存位置")
-            .setMessage("迁移到${choice.title}：\n${choice.base.absolutePath}\n\n已有加密图片、待 OCR 结果和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。")
+            .setMessage("迁移到${choice.title}：\n${choice.base.absolutePath}\n\n已有图片、待 OCR 结果和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。")
             .setNegativeButton("取消", null).setPositiveButton("迁移并应用") { _, _ -> migrate(choice) }.show()
     }
     private fun migrate(choice: QueueStorageChoice) {
         val current = config ?: return
         working = true; content.removeAllViews()
-        migrationLabel = TextView(this).apply { text = "正在迁移并验证加密记录，请保持存储介质连接…"; content.addView(this) }
+        migrationLabel = TextView(this).apply { text = "正在迁移并验证记录，请保持存储介质连接…"; content.addView(this) }
         content.addView(android.widget.ProgressBar(this))
         RuntimeSettings.apply(this, current, change = { QueueStorage(applicationContext).migrate(choice.id) }) { result ->
             migrationLabel = null; working = false; if (isDestroyed) return@apply

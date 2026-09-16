@@ -9,10 +9,21 @@ import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 
-/** Encrypted per-file journal. A pending manifest and its bytes never change during retry. */
+/** Local per-file journal. A pending manifest and its bytes never change during retry. */
 class FileArchiveQueue(private val directory: File, private val cipher: ByteCipher) {
     companion object { const val PART_BYTES = 4 * 1024 * 1024; const val MAX_BYTES = 512L * 1024 * 1024; private val lock = Any() }
     init { directory.mkdirs() }
+    fun migrateLegacyContent(shouldStop: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
+        val files = synchronized(lock) { directory.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+            .filter { it.isFile && (it.extension == "enc" || it.parentFile?.name == "spool" && it.name.toIntOrNull() != null) }.toList() }
+        var changed = 0
+        for ((index, file) in files.withIndex()) {
+            if (shouldStop()) break
+            synchronized(lock) { if (LocalContentMigration.migrate(file, cipher) { if (file.extension == "enc") JSONObject(String(it, Charsets.UTF_8)) }) changed++ }
+            onProgress(index + 1, files.size)
+        }
+        return changed
+    }
     private fun root(id: String): File { require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}"))); return File(directory, id).apply { mkdirs() } }
     private fun stateFile(id: String) = File(root(id), "state.enc")
     private fun itemFile(id: String, external: String) = File(root(id), "item-${SourceRules.hash(external)}.enc")

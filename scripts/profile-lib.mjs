@@ -52,7 +52,7 @@ export async function initialize(paths, options = {}) {
   const version = JSON.parse(await readFile(join(repository, 'package.json'), 'utf8')).version;
   const values = {
     MOTE_PROFILE: paths.profile, MOTE_HOST: '127.0.0.1', MOTE_PORT: String(port), MOTE_DATA_DIR: options['data-dir'] ? dataDir : './data',
-    MOTE_TOKEN: randomBytes(32).toString('hex'), MOTE_DATA_KEY: '', MOTE_ALLOWED_ORIGINS: paths.profile === 'test' ? 'http://localhost:5174,http://127.0.0.1:5174' : 'http://localhost:5173,http://127.0.0.1:5173',
+    MOTE_TOKEN: randomBytes(32).toString('hex'), MOTE_DATA_KEY: '', MOTE_CONTENT_ENCRYPTION: '0', MOTE_ALLOWED_ORIGINS: paths.profile === 'test' ? 'http://localhost:5174,http://127.0.0.1:5174' : 'http://localhost:5173,http://127.0.0.1:5173',
     MOTE_MODEL: '', MOTE_MODEL_BASE_URL: 'https://api.deepseek.com', MOTE_MODEL_API_KEY: '', MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL: '0',
     MOTE_MODEL_REASONING_EFFORT: 'high', MOTE_MODEL_MAX_TOKENS: '8192', MOTE_MODEL_TIMEOUT_MS: '120000',
     MOTE_EMBEDDING_MODEL: '', MOTE_EMBEDDING_BASE_URL: '', MOTE_EMBEDDING_API_KEY: '',
@@ -313,9 +313,10 @@ export async function verifiedBackup(backup) {
   const manifest = await readJson(manifestPath);
   if (manifest.version !== 1 || !manifest.checksums || !Object.hasOwn(manifest.checksums, 'mote.sqlite')) throw Error('Invalid backup manifest');
   for (const [name, hash] of Object.entries(manifest.checksums)) {
-    const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})$/.exec(name);
-    if (!(name === 'mote.sqlite' || /^(?:blobs|files)\/[a-f0-9]{64}$/.test(name) || (part && Number(part[1]) < 128)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
-    if (!(await lstat(join(directory, name))).isFile() || (await realpath(join(directory, name))) !== join(directory, name)) throw Error('Backup links are not allowed');
+    const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})(?:\.plain|\.aes)?$/.exec(name);
+    if (!(name === 'mote.sqlite' || /^blobs\/[a-f0-9]{64}$/.test(name) || /^files\/[a-f0-9]{64}(?:\.plain|\.aes)?$/.test(name) || (part && Number(part[1]) < 128)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
+    const info = await lstat(join(directory, name));
+    if (!info.isFile() || info.nlink !== 1 || (await realpath(join(directory, name))) !== join(directory, name)) throw Error('Backup links are not allowed');
     if (await sha(join(directory, name)) !== hash) throw Error('Backup checksum mismatch; active data was not changed');
   }
   return { directory, names: Object.keys(manifest.checksums), checksums: manifest.checksums };

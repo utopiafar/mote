@@ -13,25 +13,25 @@ data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes:
     val bytes: Long get() = diskBytes + reservedOcrBytes
 }
 
-/** Atomic encrypted events + content-addressed blobs. All callers share the process lock. */
+/** Atomic events + content-addressed blobs. All callers share the process lock. */
 class DurableQueue(private val dir: File, private val cipher: ByteCipher, createMissing: Boolean = true, private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
     companion object {
         private val lock = Any()
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
         // 100,000 UTF-16 code units can require six JSON bytes each, plus result fields.
-        private const val OCR_RESERVE_BYTES = 600_256L
+        internal const val OCR_RESERVE_BYTES = 600_256L
         private val localFields = listOf("_uploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts", "_uploadConflict")
         // Only fixed statistics and date/source index fields are cached, never capture content. A bounded process cache
-        // is shared by the short-lived queue handles; the encrypted files remain authoritative.
+        // is shared by the short-lived queue handles; the record files remain authoritative.
         private const val MAX_CACHED_DIRECTORIES = 4
         private val browseIndexes = object : LinkedHashMap<String, QueueBrowseIndex>(4, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, QueueBrowseIndex>?) = size > MAX_CACHED_DIRECTORIES
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, QueueBrowseIndex>?) =
+                size > MAX_CACHED_DIRECTORIES && eldest?.value?.isBatching == false
         }
-        private const val MAX_CACHED_EVENTS = 50_000
-        private data class EventStamp(val bytes: Long, val modifiedAt: Long)
-        private data class EventStats(val stamp: EventStamp, val pending: Boolean, val reservedBytes: Long, val source: String, val capturedAt: String, val blocked: Boolean, val awaitingOcr: Boolean, val uploaded: Boolean, val imageHash: String)
-        private val statistics = object : LinkedHashMap<String, MutableMap<String, EventStats>>(MAX_CACHED_DIRECTORIES, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MutableMap<String, EventStats>>?) = size > MAX_CACHED_DIRECTORIES
+
+        private data class BlobStamp(val bytes: Long, val modified: Long)
+        private val validatedBlobs = object : LinkedHashMap<String, BlobStamp>(256, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, BlobStamp>?) = size > 4096
         }
     }
     /** Nonblocking invalidation only; listeners must never read storage inside this callback. */
@@ -42,65 +42,52 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private fun browseFiles() = dir.listFiles()?.filter { it.extension == "event" } ?: error("无法读取本机存储目录")
     private fun browseIndex() = browseIndexes.getOrPut(dir.absolutePath) { QueueBrowseIndex(dir, cipher) }
     private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
-    fun stats(): QueueStats = guarded {
-        val files = dir.listFiles() ?: error("无法读取本机存储目录")
-        val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
-        val eventNames = files.filter { it.extension == "event" }.mapTo(mutableSetOf()) { it.name }
-        cache.keys.retainAll(eventNames)
-        var diskBytes = 0L; var reservedBytes = 0L; var pending = 0; var oldestAt: Long? = null
-        for (file in files) {
-            val length = file.length()
-            if (file.isFile) diskBytes += length
-            if (file.extension != "event") continue
-            val stamp = EventStamp(length, file.lastModified())
-            val cached = eventStats(file, cache)
-            reservedBytes += cached.reservedBytes
-            if (cached.pending) { pending++; oldestAt = oldestAt?.let { minOf(it, stamp.modifiedAt) } ?: stamp.modifiedAt }
-        }
-        QueueStats(eventNames.size, diskBytes, reservedBytes, PendingSync(pending, oldestAt))
-    }
-    private fun eventStats(file: File, cache: MutableMap<String, EventStats>): EventStats {
-        val stamp = EventStamp(file.length(), file.lastModified())
-        return cache[file.name]?.takeIf { it.stamp == stamp } ?: run {
-            cache.remove(file.name)
-            val event = read(file)
-            EventStats(stamp, !syncFailed(event) && (!event.optBoolean("_uploaded") || event.has("_ocrResult")),
-                ocrReserve(event), event.optString("source", "screen"), event.optString("capturedAt"), syncFailed(event), event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult"), event.optBoolean("_uploaded"), event.optString("_blob"))
-                .also { if (cache.size < MAX_CACHED_EVENTS) cache[file.name] = it }
+    private fun metadata(files: List<File> = browseFiles()) = browseIndex().entries(files, ::read, requireStatistics = true)
+    fun stats(): QueueStats {
+        prepareIndex()
+        return guarded {
+            val rows = metadata()
+            val pending = rows.filter { it.optBoolean("pending") }
+            QueueStats(rows.size, diskBytes(), rows.sumOf { it.optLong("reservedBytes") },
+                PendingSync(pending.size, pending.minOfOrNull { it.getLong("modified") }))
         }
     }
     /** Exact inventory of committed records, distinct from cumulative operation counters. */
-    fun inventory(): QueueInventory = guarded {
-        val files = dir.listFiles() ?: error("无法读取本机存储目录")
-        val events = files.filter { it.extension == "event" }
-        val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
-        cache.keys.retainAll(events.map { it.name }.toSet())
-        val values = events.map { eventStats(it, cache) }
-        val hashes = values.map { it.imageHash }.filter(String::isNotBlank).toSet()
-        val blobs = files.filter { it.extension == "blob" }.mapTo(mutableSetOf()) { it.nameWithoutExtension }
-        check(blobs.containsAll(hashes)) { "部分图片文件缺失，保留上次统计" }
-        QueueInventory(events.size, values.count { it.imageHash.isNotBlank() }, hashes.size,
-            values.count { it.pending }, values.count { it.awaitingOcr && !it.blocked }, values.count { it.blocked },
-            files.filter { it.isFile }.sumOf { it.length() }, values.sumOf { it.reservedBytes })
+    fun inventory(): QueueInventory {
+        prepareIndex()
+        return guarded {
+            val values = metadata()
+            val files = dir.listFiles() ?: error("无法读取本机存储目录")
+            val hashes = values.map { it.optString("blob") }.filter(String::isNotBlank).toSet()
+            val blobs = files.filter { it.extension == "blob" }.mapTo(mutableSetOf()) { it.nameWithoutExtension }
+            check(blobs.containsAll(hashes)) { "部分图片文件缺失，保留上次统计" }
+            QueueInventory(values.size, values.count { it.optBoolean("hasImage") }, hashes.size,
+                values.count { it.optBoolean("pending") }, values.count { it.optBoolean("awaitingOcr") && !it.optBoolean("blocked") }, values.count { it.optBoolean("blocked") },
+                files.filter { it.isFile }.sumOf { it.length() }, values.sumOf { it.optLong("reservedBytes") })
+        }
     }
-    fun syncInventory(): JSONObject = guarded {
-        val files = records(); val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
-        cache.keys.retainAll(files.map { it.name }.toSet())
-        val values = files.map { eventStats(it, cache) }
-        JSONObject().put("retained", values.size).put("pending", values.count { it.pending })
-            .put("blocked", values.count { it.blocked }).put("awaitingOcr", values.count { it.awaitingOcr && !it.blocked })
-            .put("uploadedRetained", values.count { it.uploaded })
+    fun syncInventory(): JSONObject {
+        prepareIndex()
+        return guarded {
+            val values = metadata()
+            JSONObject().put("retained", values.size).put("pending", values.count { it.optBoolean("pending") })
+                .put("blocked", values.count { it.optBoolean("blocked") }).put("awaitingOcr", values.count { it.optBoolean("awaitingOcr") && !it.optBoolean("blocked") })
+                .put("uploadedRetained", values.count { it.optBoolean("uploaded") })
+        }
     }
-    fun syncIssues(limit: Int = 20): List<JSONObject> = guarded {
-        require(limit in 1..100)
-        val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
-        records().asSequence().filter { eventStats(it, cache).blocked }.take(limit).map { file ->
-            val event = read(file)
-            JSONObject().put("id", file.nameWithoutExtension).put("source", event.optString("source", "screen"))
-                .put("capturedAt", event.getString("capturedAt"))
-                .put("retryable", !event.optBoolean("_archiveMissing"))
-                .put("reason", if (event.optBoolean("_archiveMissing")) "中央不可用 / 已删除" else if (event.optBoolean("_ocrConflict")) "OCR 内容冲突" else "记录内容冲突")
-        }.toList()
+    fun syncIssues(limit: Int = 20): List<JSONObject> {
+        prepareIndex()
+        return guarded {
+            require(limit in 1..100)
+            metadata().asSequence().filter { it.optBoolean("blocked") }.sortedBy { it.getLong("modified") }.take(limit).map { row ->
+                val file = File(dir, "${row.getString("id")}.event")
+                val event = read(file)
+                JSONObject().put("id", file.nameWithoutExtension).put("source", event.optString("source", "screen"))
+                    .put("capturedAt", event.getString("capturedAt"))
+                    .put("retryable", !event.optBoolean("_archiveMissing"))
+                    .put("reason", if (event.optBoolean("_archiveMissing")) "中央不可用 / 已删除" else if (event.optBoolean("_ocrConflict")) "OCR 内容冲突" else "记录内容冲突")
+            }.toList()
+        }
     }
     fun syncIds(after: String? = null, limit: Int = 100): List<String> = guarded {
         require(limit in 1..100)
@@ -140,15 +127,16 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private fun read(file: File): JSONObject = JSONObject(String(cipher.open(file.readBytes()), Charsets.UTF_8))
     private fun syncFailed(event: JSONObject) = event.optBoolean("_archiveMissing") || event.optBoolean("_ocrConflict") || event.optBoolean("_uploadConflict")
     private fun ocrReserve(event: JSONObject) = if (event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult") && !syncFailed(event)) OCR_RESERVE_BYTES else 0L
-    private fun atomic(file: File, bytes: ByteArray) {
+    private fun atomic(file: File, bytes: ByteArray, modifiedAt: Long? = null) {
         val temp = File(dir, "${UUID.randomUUID()}.tmp")
         try {
             if (file.extension == "event") browseIndex().invalidate(file.nameWithoutExtension)
             FileOutputStream(temp).use { it.write(cipher.seal(bytes)); it.fd.sync() }
             check(temp.renameTo(file)) { "无法原子写入队列" }
+            if (modifiedAt != null) file.setLastModified(modifiedAt)
+            if (file.extension == "blob") validatedBlobs.remove(file.absolutePath)
             onMutation?.invoke(file.extension == "event")
             // Atomic replacements may have the same length and timestamp on coarse filesystems.
-            statistics[dir.absolutePath]?.remove(file.name)
             if (file.extension == "event") browseIndex().changed(file, JSONObject(String(bytes, Charsets.UTF_8)))
         } finally { temp.delete() }
     }
@@ -159,7 +147,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             event.optString("ocrText").isEmpty() && event.optJSONObject("ocr")?.optString("status") == "disabled" &&
             !event.has("imageMime") && !event.has("imageBase64")
     }
-    fun enqueue(event: JSONObject, image: ByteArray?, maxBytes: Long) = guarded {
+    private fun capacityUpperBound(): Long = diskBytes() + browseIndex().pendingDiskBytes() + browseIndex().reservationUpperBound(browseFiles())
+    fun enqueue(event: JSONObject, image: ByteArray?, maxBytes: Long) {
+        // Sufficient upper-bound headroom permits capture before a legacy index has finished
+        // rebuilding. Otherwise discover the exact reservation without monopolizing the lock.
+        val maximumAddition = event.toString().toByteArray().size + 4096L + (image?.size ?: 0) + ocrReserve(event)
+        if (guarded { capacityUpperBound() > maxBytes - maximumAddition }) prepareIndex()
+        guarded {
         require(!event.getJSONObject("privacy").optBoolean("excluded")) { "Excluded captures must never be queued" }
         val id = UUID.fromString(event.getString("id")).toString()
         val file = File(dir, "$id.event")
@@ -181,35 +175,41 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val blob = hash?.let { File(dir, "$it.blob") }
         val body = stored.toString().toByteArray()
         val added = body.size + 2048L + if (blob == null || blob.exists()) 0 else image!!.size + 64L
-        if (bytes() + added + ocrReserve(stored) > maxBytes) throw QueueFull()
+        val required = added + ocrReserve(stored)
+        val upperBound = capacityUpperBound()
+        if (upperBound > maxBytes - required && bytes() + browseIndex().pendingDiskBytes() > maxBytes - required) throw QueueFull()
         if (blob != null && !blob.exists()) atomic(blob, image!!)
         atomic(file, body)
         onChange?.invoke(when (source) { "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
+        }
     }
     fun peek(): JSONObject? = peekBatch(1).firstOrNull()
     /** Bound both count and UTF-8 transport size; never acknowledges while selecting. */
-    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024): List<JSONObject> = guarded {
-        require(maxCount in 1..25 && maxBytes > 0)
-        val result = mutableListOf<JSONObject>()
-        var bytes = 32L
-        for (file in records()) {
-            val event = read(file)
-            if (event.optBoolean("_uploaded") || syncFailed(event)) continue
-            localFields.forEach(event::remove)
-            val hash = event.optString("_blob", "")
-            event.remove("_blob")
-            if (hash.isEmpty()) require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event))
-            else {
-                require(hash.matches(Regex("[a-f0-9]{64}")))
-                event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
-            }
-            val size = event.toString().toByteArray(Charsets.UTF_8).size + 1L
-            if (result.isNotEmpty() && bytes + size > maxBytes) break
-            result.add(event); bytes += size
-            // A single oversized record is returned alone so the uploader can report it.
-            if (result.size == maxCount || bytes >= maxBytes) break
+    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024): List<JSONObject> {
+        prepareIndex()
+        return guarded {
+            require(maxCount in 1..25 && maxBytes > 0)
+            val result = mutableListOf<JSONObject>()
+            var bytes = 32L
+            for (row in metadata().sortedWith(compareBy<JSONObject> { it.getLong("modified") }.thenBy { it.getString("id") })) {
+                if (row.optBoolean("uploaded") || row.optBoolean("blocked")) continue
+                val event = read(File(dir, "${row.getString("id")}.event"))
+                localFields.forEach(event::remove)
+                val hash = event.optString("_blob", "")
+                event.remove("_blob")
+                if (hash.isEmpty()) require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event))
+                else {
+                    require(hash.matches(Regex("[a-f0-9]{64}")))
+                    event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
+                }
+                val size = event.toString().toByteArray(Charsets.UTF_8).size + 1L
+                if (result.isNotEmpty() && bytes + size > maxBytes) break
+                result.add(event); bytes += size
+                // A single oversized record is returned alone so the uploader can report it.
+                if (result.size == maxCount || bytes >= maxBytes) break
         }
         result
+        }
     }
     fun acknowledge(id: String, uploadedBytes: Long = 0): Unit = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
@@ -222,18 +222,21 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     private fun remove(file: File, record: JSONObject) {
         val hash = record.optString("_blob", "")
+        val lastReference = hash.isNotEmpty() && browseIndex().references(hash, ::browseFiles, ::read) == 1
         browseIndex().invalidate(file.nameWithoutExtension)
         check(file.delete()) { "无法删除已确认记录" }
         onMutation?.invoke(true)
         browseIndex().changed(file, null)
-        statistics[dir.absolutePath]?.remove(file.name)
-        if (hash.isNotEmpty() && records().none { read(it).optString("_blob", "") == hash }) {
+        if (lastReference) {
             File(dir, "$hash.blob").delete(); File(dir, "$hash.thumb").delete()
         }
     }
-    fun pendingOcr(): JSONObject? = guarded {
-        records().asSequence().map(::read).firstOrNull { it.optJSONObject("ocr")?.optString("status") == "pending" && !it.has("_ocrResult") && !syncFailed(it) }
-            ?.apply { remove("_blob"); remove("_uploaded") }
+    fun pendingOcr(): JSONObject? {
+        prepareIndex()
+        return guarded {
+            metadata().asSequence().filter { it.optBoolean("awaitingOcr") && !it.optBoolean("blocked") }.minByOrNull { it.getLong("modified") }
+                ?.let { read(File(dir, "${it.getString("id")}.event")) }?.apply { remove("_blob"); remove("_uploaded") }
+        }
     }
     fun completeOcr(id: String, text: String, status: String, maxBytes: Long) = guarded {
         require(status in setOf("completed", "failed") && text.length <= 100_000)
@@ -256,9 +259,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         atomic(file, event.put("_ocrAttempts", attempts).toString().toByteArray())
         attempts
     }
-    fun nextOcrUpdate(): JSONObject? = guarded {
-        records().asSequence().map(::read).firstOrNull { it.optBoolean("_uploaded") && it.has("_ocrResult") && !syncFailed(it) }
-            ?.let { JSONObject(it.getJSONObject("_ocrResult").toString()).put("id", it.getString("id")) }
+    fun nextOcrUpdate(): JSONObject? {
+        prepareIndex()
+        return guarded {
+            metadata().asSequence().filter { it.optBoolean("uploaded") && it.optBoolean("hasOcrResult") && !it.optBoolean("blocked") }.minByOrNull { it.getLong("modified") }
+                ?.let { read(File(dir, "${it.getString("id")}.event")) }
+                ?.let { JSONObject(it.getJSONObject("_ocrResult").toString()).put("id", it.getString("id")) }
+        }
     }
     fun acknowledgeOcr(id: String) = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
@@ -276,6 +283,33 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (!file.exists()) return
         atomic(file, read(file).put("_ocrConflict", true).toString().toByteArray())
     }
+    /** The caller's work never holds the queue lock; each mutation still commits atomically.
+     * A crash during a batch leaves invalidated shards absent and rebuildable from events.
+     */
+    fun <T> withDeferredIndexWrites(action: () -> T): T {
+        val index = guarded { browseIndex().also { it.beginBatch() } }
+        try { return action() } finally { synchronized(lock) { index.endBatch() } }
+    }
+    /** Upgrade/rebuild derived metadata in small lock acquisitions so collection can proceed. */
+    fun prepareIndex(requireStatistics: Boolean = true, shouldStop: () -> Boolean = { false }) = withDeferredIndexWrites {
+        val files = guarded { browseIndex().missing(browseFiles(), requireStatistics) }
+        for (chunk in files.chunked(8)) {
+            if (shouldStop()) break
+            guarded { chunk.filter(File::exists).forEach { browseIndex().entry(it, ::read, requireStatistics = requireStatistics) } }
+        }
+    }
+    private fun verifiedBlob(hash: String, readBytes: Boolean = false): ByteArray? {
+        require(hash.matches(Regex("[a-f0-9]{64}")))
+        val file = File(dir, "$hash.blob")
+        if (!file.isFile) throw java.io.FileNotFoundException("图片文件缺失，原记录已保留")
+        val stamp = BlobStamp(file.length(), file.lastModified())
+        if (!readBytes && validatedBlobs[file.absolutePath] == stamp) return null
+        val bytes = cipher.open(file.readBytes())
+        val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        check(actual == hash) { "图片校验失败，原记录已保留" }
+        validatedBlobs[file.absolutePath] = stamp
+        return bytes
+    }
     /** IDs only: callers read one record per lock acquisition while scanning in a worker. */
     fun dedupeIds(): List<String> = guarded { browseFiles().map { it.nameWithoutExtension } }
     fun dedupeRow(id: String): JSONObject? = guarded {
@@ -291,27 +325,28 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (referenceId != null) {
             require(referenceId != id)
             val reference = File(dir, "${UUID.fromString(referenceId)}.event")
-            if (!reference.exists() || read(reference).optString("_blob") != referenceHash || image(referenceId) == null) return@guarded false
+            if (!reference.exists() || read(reference).optString("_blob") != referenceHash) return@guarded false
+            verifiedBlob(requireNotNull(referenceHash))
         }
         if (destination != null) {
             destination.assertCurrent?.invoke()
             require(destination.dir.canonicalFile != dir.canonicalFile)
             val target = File(destination.dir, file.name)
-            // A previous interrupted move may already have committed its destination.
+            val blob = File(destination.dir, "$hash.blob")
+            // Validate the source and any already-committed destination before removing anything.
+            verifiedBlob(hash)
             if (target.exists()) check(destination.read(target).toString() == event.toString()) { "目标已有不同记录，保留两份以供检查" }
             else {
-                require(hash.matches(Regex("[a-f0-9]{64}")))
-                val bytes = cipher.open(File(dir, "$hash.blob").readBytes())
                 val additional = event.toString().toByteArray().size + 2048L + ocrReserve(event) +
-                    if (File(destination.dir, "$hash.blob").exists()) 0L else bytes.size + 64L
-                if (destination.bytes() > destinationMaxBytes - additional) throw QueueFull()
-                destination.atomic(File(destination.dir, "$hash.blob"), bytes)
+                    if (blob.exists()) 0L else File(dir, "$hash.blob").length() + 64L
+                if (destination.bytes() + destination.browseIndex().pendingDiskBytes() > destinationMaxBytes - additional) throw QueueFull()
+                if (!blob.exists()) destination.atomic(blob, requireNotNull(verifiedBlob(hash, readBytes = true)))
+                destination.verifiedBlob(hash)
                 destination.atomic(target, event.toString().toByteArray())
                 check(destination.read(target).toString() == event.toString())
-                check(destination.image(id)!!.contentEquals(bytes))
             }
-            // Also validate a destination left by an interrupted earlier attempt.
-            check(destination.image(id)?.contentEquals(requireNotNull(image(id))) == true) { "目标图片校验失败，原记录已保留" }
+            // This also validates a destination left by an interrupted earlier attempt.
+            destination.verifiedBlob(hash)
         }
         remove(file, event)
         true
@@ -342,31 +377,34 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         return event
     }
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
-    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen"): JSONObject = guarded {
-        require(limit in 1..60)
-        require(source in setOf("screen", "media", "notification", "device_event", "note", "activity"))
-        val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
-        val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
-        val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
-        val files = records()
-        val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
-        cache.keys.retainAll(files.map { it.name }.toSet())
-        val matching = files.asSequence().map { it to eventStats(it, cache) }
-            .filter { it.second.source == source }
-            .map { (file, stats) -> file to java.time.Instant.parse(stats.capturedAt) }
-            .filter { (_, date) -> date >= start && date < end }
-            .sortedWith(compareByDescending<Pair<File, java.time.Instant>> { it.second }.thenByDescending { it.first.nameWithoutExtension }).toList()
-        val page = matching.filter { (file, date) -> at == null || date < at || (date == at && file.nameWithoutExtension < id!!) }.take(limit + 1)
-        val items = page.take(limit).map { read(it.first) }
-        val next = if (page.size <= limit) null else items.last().let {
-            Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject().put("at", it.getString("capturedAt")).put("id", it.getString("id")).toString().toByteArray())
+    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen"): JSONObject {
+        prepareIndex(requireStatistics = false)
+        return guarded {
+            require(limit in 1..60)
+            require(source in setOf("screen", "media", "notification", "device_event", "note", "activity"))
+            val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
+            val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
+            val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
+            val matching = browseIndex().entries(browseFiles(), ::read).asSequence()
+                .filter { it.optString("source") == source }
+                .map { it to java.time.Instant.parse(it.getString("capturedAt")) }
+                .filter { (_, date) -> date >= start && date < end }
+                .sortedWith(compareByDescending<Pair<JSONObject, java.time.Instant>> { it.second }.thenByDescending { it.first.getString("id") }).toList()
+            val page = matching.filter { (row, date) -> at == null || date < at || (date == at && row.getString("id") < id!!) }.take(limit + 1)
+            val items = page.take(limit).map { read(File(dir, "${it.first.getString("id")}.event")) }
+            val next = if (page.size <= limit) null else items.last().let {
+                Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject().put("at", it.getString("capturedAt")).put("id", it.getString("id")).toString().toByteArray())
         }
         JSONObject().put("items", org.json.JSONArray(items.map { display(it).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
             .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
+        }
     }
     /** Album/grid paths never deserialize full capture records or OCR text. */
-    fun albumPage(after: String, before: String, cursor: String? = null): JSONObject = guarded {
-        CaptureAlbums.page(browseRows(after, before), cursor)
+    fun albumPage(after: String, before: String, cursor: String? = null): JSONObject {
+        prepareIndex(requireStatistics = false)
+        return guarded {
+            CaptureAlbums.page(browseRows(after, before), cursor)
+        }
     }
     private fun browseRows(after: String, before: String): List<JSONObject> {
         val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
@@ -376,20 +414,23 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             it.optString("source") == "screen" && at >= start && at < end
         }
     }
-    fun albumImages(after: String, before: String, appId: String, cursor: String? = null, limit: Int = 20): JSONObject = guarded {
-        require(limit in 1..60)
-        val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
-        val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
-        val rows = browseRows(after, before).filter { it.optString("appId") == appId }
-            .sortedWith(compareByDescending<JSONObject> { java.time.Instant.parse(it.getString("capturedAt")) }.thenByDescending { it.getString("id") })
-        val page = rows.filter { at == null || java.time.Instant.parse(it.getString("capturedAt")) < at ||
-            java.time.Instant.parse(it.getString("capturedAt")) == at && it.getString("id") < id!! }.take(limit + 1)
-        val items = page.take(limit).map { row -> JSONObject().apply {
-            for (key in listOf("id", "capturedAt", "source", "appId", "appName", "hasImage")) put(key, row.get(key))
-        } }
-        JSONObject().put("items", org.json.JSONArray(items)).put("totalCount", rows.size)
-            .put("nextCursor", if (page.size > limit) Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject()
-                .put("at", items.last().getString("capturedAt")).put("id", items.last().getString("id")).toString().toByteArray()) else JSONObject.NULL)
+    fun albumImages(after: String, before: String, appId: String, cursor: String? = null, limit: Int = 20): JSONObject {
+        prepareIndex(requireStatistics = false)
+        return guarded {
+            require(limit in 1..60)
+            val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
+            val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
+            val rows = browseRows(after, before).filter { it.optString("appId") == appId }
+                .sortedWith(compareByDescending<JSONObject> { java.time.Instant.parse(it.getString("capturedAt")) }.thenByDescending { it.getString("id") })
+            val page = rows.filter { at == null || java.time.Instant.parse(it.getString("capturedAt")) < at ||
+                java.time.Instant.parse(it.getString("capturedAt")) == at && it.getString("id") < id!! }.take(limit + 1)
+            val items = page.take(limit).map { row -> JSONObject().apply {
+                for (key in listOf("id", "capturedAt", "source", "appId", "appName", "hasImage")) put(key, row.get(key))
+            } }
+            JSONObject().put("items", org.json.JSONArray(items)).put("totalCount", rows.size)
+                .put("nextCursor", if (page.size > limit) Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject()
+                    .put("at", items.last().getString("capturedAt")).put("id", items.last().getString("id")).toString().toByteArray()) else JSONObject.NULL)
+        }
     }
     /** Encrypted derived thumbnail; the owning event remains authoritative for access/retention. */
     fun thumbnail(id: String): ByteArray? = guarded {
@@ -407,20 +448,23 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val hash = browseIndex().entry(file, ::read).optString("blob")
         if (!hash.matches(Regex("[a-f0-9]{64}"))) return@guarded
         val target = File(dir, "$hash.thumb")
-        if (!target.exists() && this.bytes() + bytes.size + 64 <= maxBytes) atomic(target, bytes)
+        if (!target.exists() && capacityUpperBound() + bytes.size + 64 <= maxBytes) atomic(target, bytes)
     }
-    fun summary(): JSONObject = guarded {
-        val files = records(); var screens = 0; var notes = 0; var activities = 0; var media = 0; var systemEvents = 0; var unreadable = 0
-        val pending = org.json.JSONArray()
-        files.take(100).forEach { file -> try {
-            val body = read(file); val source = body.optString("source", "screen"); val id = UUID.fromString(body.getString("id")).toString()
-            val at = java.time.Instant.parse(body.getString("capturedAt")).toString()
-            when (source) { "screen" -> screens++; "note" -> notes++; "activity" -> activities++; "media" -> media++; "notification", "device_event" -> systemEvents++; else -> error("unknown") }
-            pending.put(JSONObject().put("id", id).put("kind", source).put("createdAt", at).put("bytes", file.length())
-                .put("uploaded", body.optBoolean("_uploaded")).put("archiveMissing", body.optBoolean("_archiveMissing")))
-        } catch (_: Exception) { unreadable++ } }
-        JSONObject().put("total", files.size).put("screens", screens).put("notes", notes).put("activities", activities).put("media", media).put("systemEvents", systemEvents).put("unreadable", unreadable)
-            .put("uninspected", (files.size - 100).coerceAtLeast(0)).put("bytes", diskBytes()).put("reservedOcrBytes", reservedOcrBytes()).put("pending", pending)
+    fun summary(): JSONObject {
+        prepareIndex()
+        return guarded {
+            val files = records(); var screens = 0; var notes = 0; var activities = 0; var media = 0; var systemEvents = 0; var unreadable = 0
+            val pending = org.json.JSONArray()
+            files.take(100).forEach { file -> try {
+                val body = read(file); val source = body.optString("source", "screen"); val id = UUID.fromString(body.getString("id")).toString()
+                val at = java.time.Instant.parse(body.getString("capturedAt")).toString()
+                when (source) { "screen" -> screens++; "note" -> notes++; "activity" -> activities++; "media" -> media++; "notification", "device_event" -> systemEvents++; else -> error("unknown") }
+                pending.put(JSONObject().put("id", id).put("kind", source).put("createdAt", at).put("bytes", file.length())
+                    .put("uploaded", body.optBoolean("_uploaded")).put("archiveMissing", body.optBoolean("_archiveMissing")))
+            } catch (_: Exception) { unreadable++ } }
+            JSONObject().put("total", files.size).put("screens", screens).put("notes", notes).put("activities", activities).put("media", media).put("systemEvents", systemEvents).put("unreadable", unreadable)
+                .put("uninspected", (files.size - 100).coerceAtLeast(0)).put("bytes", diskBytes()).put("reservedOcrBytes", reservedOcrBytes()).put("pending", pending)
+        }
     }
     fun verifyIntegrity() = guarded {
         val checked = mutableSetOf<String>()
@@ -438,9 +482,47 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             }
         }
     }
-    fun recoverOrphans() = guarded {
-        // Validate every file stamp; missing/stale index entries are rebuilt before orphan cleanup.
-        val referenced = browseIndex().entries(browseFiles(), ::read).map { it.optString("blob") }.toSet()
-        dir.listFiles()?.filter { it.extension == "tmp" || (it.extension in setOf("blob", "thumb") && it.nameWithoutExtension !in referenced) }?.forEach { if (it.delete()) onMutation?.invoke(false) }
+    /** Each authenticated legacy file is replaced atomically, independently of other files.
+     * A failed read leaves the original untouched; mixed old/new libraries remain readable.
+     */
+    fun migrateLegacyContent(onProgress: (Int, Int) -> Unit = { _, _ -> }, shouldStop: () -> Boolean = { false }): Int {
+        val codec = cipher as? LocalContentCipher ?: return 0
+        var migrated = 0
+        codec.withPlaintextWrites { withDeferredIndexWrites {
+            val files = guarded { dir.listFiles()?.filter { it.extension in setOf("event", "blob", "thumb") || it.name.startsWith(".browse-v1-") } ?: error("无法读取本机存储目录") }
+            for ((position, file) in files.withIndex()) {
+                if (shouldStop()) break
+                guarded {
+                    if (file.exists()) {
+                        val original = file.readBytes()
+                        if (codec.isLegacy(original)) {
+                            val decoded = codec.open(original)
+                            when (file.extension) {
+                                "event" -> {
+                                    val event = JSONObject(String(decoded, Charsets.UTF_8))
+                                    check(event.getString("id") == file.nameWithoutExtension)
+                                    java.time.Instant.parse(event.getString("capturedAt"))
+                                }
+                                "blob" -> check(MessageDigest.getInstance("SHA-256").digest(decoded).joinToString("") { "%02x".format(it) } == file.nameWithoutExtension) { "图片校验失败，原文件已保留" }
+                            }
+                            atomic(file, decoded, file.lastModified())
+                            migrated++
+                        }
+                    }
+                }
+                onProgress(position + 1, files.size)
+            }
+        } }
+        return migrated
+    }
+    fun recoverOrphans() {
+        // Legacy metadata upgrades release the lock between small chunks. Final reconciliation
+        // and unlinking share the lock so a newly committed capture can never lose its blob.
+        prepareIndex()
+        guarded {
+            val referenced = browseIndex().entries(browseFiles(), ::read).map { it.optString("blob") }.toSet()
+            dir.listFiles()?.filter { it.extension == "tmp" || (it.extension in setOf("blob", "thumb") && it.nameWithoutExtension !in referenced) }
+                ?.forEach { if (it.delete()) onMutation?.invoke(false) }
+        }
     }
 }

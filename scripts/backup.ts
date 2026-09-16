@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const usage = 'Stop the central node first. Usage: npm run backup -- --data ./data --out /absolute/new-backup-directory';
-if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image/file originals, processing layers and checksums. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve your data key separately.'); process.exit(0); }
+if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image/file originals, processing layers and checksums. Plaintext, encrypted and legacy content keep their stored formats. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used.'); process.exit(0); }
 function argument(name: string, fallback?: string) {
   const index = args.indexOf(name);
   if (index < 0 && fallback !== undefined) return fallback;
@@ -53,6 +53,18 @@ async function ordinarySource(path: string) {
   const info = await lstat(path);
   if (!info.isFile() || info.nlink !== 1 || await realpath(path) !== path) throw new Error('Backup source links and special files are not allowed');
 }
+async function selectedContentPath(base: string): Promise<string> {
+  // Match the mixed-format reader without opening or decrypting content. A present
+  // unsafe preferred variant is an error, never permission to follow a fallback.
+  for (const suffix of ['.plain', '.aes', '']) {
+    const path = base + suffix;
+    try { await lstat(join(source, path)); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error; }
+    await ordinarySource(join(source, path));
+    return path;
+  }
+  throw Object.assign(new Error(`ENOENT: referenced content is missing: ${base}`), { code: 'ENOENT' });
+}
 try {
   await mkdir(join(out, 'blobs'), { mode: 0o700 });
   await ordinarySource(join(source, 'mote.sqlite'));
@@ -71,11 +83,11 @@ try {
     }
     for (const { hash } of fileRows) {
       if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid file hash in backup source');
-      paths.push('files/'+hash);
+      paths.push(await selectedContentPath('files/'+hash));
     }
     for(const object of fileObjects){
       if(typeof object.hash!=='string'||!/^[a-f0-9]{64}$/.test(object.hash)||typeof object.parts!=='number'||!Number.isSafeInteger(object.parts)||object.parts<0||object.parts>128)throw new Error('Invalid file object in backup source');
-      for(let part=0;part<object.parts;part++)paths.push(`files/objects/${object.hash}/${part}`);
+      for(let part=0;part<object.parts;part++)paths.push(await selectedContentPath(`files/objects/${object.hash}/${part}`));
     }
     for(const path of paths)await ordinarySource(join(source,path));
     await backup(db, join(out, 'mote.sqlite'));
@@ -115,6 +127,6 @@ try {
     }
   } finally { db.close(); }
   checksums['mote.sqlite'] = await sum(join(out, 'mote.sqlite'));
-  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, createdAt: new Date().toISOString(), checksums, note: 'Referenced image and file originals are included. Import workspaces/scripts, tokens and data encryption keys are excluded. Unfinished imports require a fresh analysis and preview after restore. Preserve MOTE_DATA_KEY separately if enabled.' }, null, 2), { mode: 0o600, flag: 'wx' });
-  console.info(`Consistent vault backup written to ${out}. Restore into an empty data directory; keep the same data encryption key.`);
+  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, createdAt: new Date().toISOString(), checksums, note: 'Referenced image and file originals are included in their selected stored formats; checksums retain explicit .plain, .aes or legacy filenames. Import workspaces/scripts, tokens and encryption keys are excluded. Unfinished imports require a fresh analysis and preview after restore. Preserve MOTE_DATA_KEY or the vault content-key file separately when encryption has been used, including after disabling new encrypted writes.' }, null, 2), { mode: 0o600, flag: 'wx' });
+  console.info(`Consistent vault backup written to ${out}. Restore into an empty data directory; separately restore the original MOTE_DATA_KEY or content-key when encryption has been used.`);
 } catch (error) { await rm(out, { recursive: true, force: true }); throw error; }

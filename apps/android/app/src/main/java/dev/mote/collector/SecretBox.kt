@@ -13,7 +13,7 @@ interface ByteCipher {
     fun open(bytes: ByteArray): ByteArray
 }
 
-/** Keys stay in Android Keystore; neither preferences nor queue hold plaintext credentials/images. */
+/** Keystore protection for credentials, optional content encryption and legacy content reads. */
 class SecretBox : ByteCipher {
     private fun key(): SecretKey = synchronized(SecretBox::class.java) {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

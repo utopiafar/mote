@@ -9,6 +9,8 @@ data class QueueStorageChoice(val id: String, val title: String, val base: File,
 class QueueStorage(private val context: Context) {
     companion object {
         @Volatile internal var recovering = false
+        /** Rebuildable index/orphan maintenance; never a capture authorization gate. */
+        @Volatile internal var maintaining = false
         @Volatile internal var recoveryFailure: String? = null
     }
     private fun requireUiReady() {
@@ -26,7 +28,7 @@ class QueueStorage(private val context: Context) {
             }
         }
     }
-    private fun store() = QueueLocationStore(context.noBackupFilesDir, File(context.noBackupFilesDir, "queue"), SecretBox(), validate = { location ->
+    private fun store() = QueueLocationStore(context.noBackupFilesDir, File(context.noBackupFilesDir, "queue"), context.localContentCipher(), validate = { location ->
         val choice = choices().singleOrNull { it.id == location.baseId } ?: error("所选存储介质不可用，请重新连接；不会切换为空目录")
         val path = File(location.path)
         check(path.parentFile?.canonicalFile == choice.base.canonicalFile &&
@@ -45,7 +47,7 @@ class QueueStorage(private val context: Context) {
         requireUiReady()
         return DurableQueue.exclusive {
         val state = store(); val location = state.current()
-        DurableQueue(File(location.path), SecretBox(), createMissing = false) { kind, bytes, id -> Operations.record(context, kind, bytes = bytes, recordId = id) }
+        DurableQueue(File(location.path), context.localContentCipher(), createMissing = false) { kind, bytes, id -> Operations.record(context, kind, bytes = bytes, recordId = id) }
             .apply { onMutation = { LocalStateChanges.changed(records = it, storage = true) }; assertCurrent = { state.assertCurrent(location) }; recoveryFailure = null }
         }
     }

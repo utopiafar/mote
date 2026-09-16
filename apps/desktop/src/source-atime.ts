@@ -1,6 +1,6 @@
-import { readFile } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { atomicSourceJson, sourceHash } from './source-sync';
+import { readLocalContent } from './local-content';
 interface Entry { identity: string; readAtimeMs: number; reportedAtimeMs: number }
 /** Private local scanner markers. They describe file-system timestamps, never proof of human access. */
 export class FileAccessMarkers {
@@ -10,7 +10,7 @@ export class FileAccessMarkers {
   async initialize(): Promise<void> {
     if (!this.path) return;
     try {
-      const value = JSON.parse(await readFile(this.path, 'utf8')) as { version: number; entries: Record<string, Entry> };
+      const value = JSON.parse((await readLocalContent(this.path)).toString('utf8')) as { version: number; entries: Record<string, Entry> };
       if (value.version !== 1 || !value.entries || Object.keys(value.entries).length > 5000) throw new Error('invalid markers');
       for (const [key, entry] of Object.entries(value.entries)) {
         if (!/^[a-f0-9]{64}$/.test(key) || !entry || typeof entry.identity !== 'string' || !/^[a-f0-9]{64}$/.test(entry.identity) || !Number.isFinite(entry.readAtimeMs) || !Number.isFinite(entry.reportedAtimeMs)) throw new Error('invalid markers');

@@ -9,8 +9,11 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class NotesDiagnosticsInstrumentedTest {
-    @Test fun encryptedDraftRestoresNativeEditorAfterActivityRecreation() {
+    @Test fun readableDraftRestoresNativeEditorAfterActivityRecreation() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val preferences = context.getSharedPreferences("mote", 0)
+        val originalEncryption = preferences.getBoolean("contentEncryptionEnabled", false)
+        preferences.edit().putBoolean("contentEncryptionEnabled", false).commit()
         val drafts = QuickNotes.draft(context); drafts.clear()
         val value = "合成草稿：页面重建后仍保留\n  以及原来的空白。"
         fun editor(view: android.view.View): android.widget.EditText? {
@@ -24,10 +27,10 @@ class NotesDiagnosticsInstrumentedTest {
                 QuickNotes.io.submit {}.get(5, java.util.concurrent.TimeUnit.SECONDS)
                 assertEquals(value, drafts.read().text)
                 val stored = java.io.File(context.noBackupFilesDir, "note-draft/draft.enc").readBytes()
-                assertFalse(String(stored).contains("合成草稿"))
+                assertEquals(value, JSONObject(String(stored, Charsets.UTF_8)).getString("text"))
                 activity.recreate(); activity.awaitMainUi()
                 activity.onActivity { assertEquals(value, editor(it.window.decorView)!!.text.toString()) }
-            } finally { drafts.clear() }
+            } finally { drafts.clear(); preferences.edit().putBoolean("contentEncryptionEnabled", originalEncryption).commit() }
         }
     }
     @Test fun numericDiagnosticsContainOnlyAllowedFieldsAndRespectOptIn() {

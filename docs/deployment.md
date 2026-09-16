@@ -171,14 +171,14 @@ CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，复�
 
 ```sh
 node scripts/mote.mjs init --profile prod --home /srv/mote-new/profiles --runtime docker
-# 如启用图片加密，在新环境 mote.env 设置原来的 MOTE_DATA_KEY
+# 如备份含密文，在新环境设置原 MOTE_DATA_KEY，或单独恢复原 content-key
 node scripts/mote.mjs restore --profile prod --home /srv/mote-new/profiles --from /srv/mote-backups/mote-2026-09-13
 node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 ```
 
 恢复会验证 manifest、文件类型、所有 SHA-256，并二次校验复制结果；活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
 
-`MOTE_DATA_KEY` 是可选的 64 位十六进制 AES-256-GCM 图片及文件原件加密密钥，必须单独备份；解析文本、元数据与导入工作产物并不因此加密，需要 FileVault/LUKS 或 NAS 加密卷提供全盘保护。不要在已有仓库上变更加密密钥。丢失密钥不能通过重新下载模型或更换访问令牌恢复图片和原件。
+内容加密默认关闭，`MOTE_DATA_KEY` 本身不再开启加密；可以在开发者页面或首次启动时用 `MOTE_CONTENT_ENCRYPTION=1` 主动开启，界面保存的选择优先。`MOTE_DATA_KEY` 是可选的 64 位十六进制 AES-256-GCM 图片及文件原件密钥；显式开启且未配置时会生成资料库私有的 `content-key` 文件。存在密文时必须单独备份原环境密钥或该文件，离线内容备份不携带密钥。解析文本、元数据与导入工作产物保持明文。尚有密文时不要更换原密钥；丢失密钥不能通过重新下载模型或更换访问令牌恢复内容。已有内容可在开发者页面一次性批量解密，详见[内容存储设置](content-storage.md)。
 
 ## 验证范围
 

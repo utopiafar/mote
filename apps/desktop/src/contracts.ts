@@ -14,6 +14,7 @@ export interface Config {
   maxQueueBytes: number;
   maxQueueEvents: number;
   captureStorageDirectory: string;
+  localContentEncryption: boolean;
   excludedAppIds: string[];
   defaultCollection: CollectionMode;
   appCollectionRules: Record<string, CollectionMode>;
@@ -106,6 +107,9 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  contentDecryptionStatus(): Promise<import('./local-content').DecryptionProgress>;
+  decryptLocalContent(): Promise<import('./local-content').DecryptionProgress>;
+  cancelContentDecryption(): Promise<void>;
   restartForStorageRecovery(): Promise<void>;
   chooseCaptureDirectory(): Promise<{ canceled: boolean; directory?: string }>;
   openCaptureDirectory(): Promise<void>;

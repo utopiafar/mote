@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  contentDecryptionStatus: () => ipcRenderer.invoke('mote:content-decryption-status'),
+  decryptLocalContent: () => ipcRenderer.invoke('mote:content-decrypt'),
+  cancelContentDecryption: () => ipcRenderer.invoke('mote:content-decryption-cancel'),
   browseCaptures: input => ipcRenderer.invoke('mote:captures-browse', input),
   captureDetail: (location, id) => ipcRenderer.invoke('mote:captures-detail', location, id),
   captureImage: (location, id, thumbnail) => ipcRenderer.invoke('mote:captures-image', location, id, thumbnail),

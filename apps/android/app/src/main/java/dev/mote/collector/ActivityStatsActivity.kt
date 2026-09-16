@@ -14,6 +14,7 @@ import java.util.concurrent.Executors
 class ActivityStatsActivity : Activity() {
     private lateinit var body: LinearLayout
     private lateinit var summary: LinearLayout
+    private lateinit var inventory: TextView
     private lateinit var history: LinearLayout
     private val executor = Executors.newSingleThreadExecutor()
     private val task by lazy { UiTask(this) }
@@ -25,17 +26,21 @@ class ActivityStatsActivity : Activity() {
     private var pendingPage = 0
     private var snapshot: JSONObject? = null
     private var queueSnapshot: JSONObject? = null
+    private val directorySizes = mutableMapOf<String, Long>()
+    private var directorySizesAt = 0L
+    @Volatile private var refreshDirectorySizes = true
     private lateinit var progress: ProgressBar
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage()
         text("采集与存储详情", 27f)
         text("这些统计始终在本机保存，与开发者诊断开关独立。记录固定结果与数字，不记录画面、文字、应用名、邀请或令牌。")
+        inventory = TextView(this).apply { textSize = 15f }; body.addView(inventory)
         summary = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(summary)
         renderSummary("正在读取本机统计…")
         progress = ProgressBar(this); body.addView(progress)
         operationStatus = TextView(this); body.addView(operationStatus)
-        button("刷新实际存储与统计") { refresh() }
+        button("刷新实际存储与统计") { refreshDirectorySizes = true; refresh() }
         button("设置图片保存位置") { startActivity(Intent(this, StorageActivity::class.java)) }
         button("查看采集记录") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         button("导出无正文统计 JSON") { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-activity-stats.json"), 1) }
@@ -52,13 +57,20 @@ class ActivityStatsActivity : Activity() {
         history = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(history)
         MoteUi.styleTree(body)
     }
-    override fun onResume() { super.onResume(); localStateJob = observeLocalState { refresh() } }
+    override fun onResume() { super.onResume(); localStateJob = observeLocalState { inventory.text = it.storageLabel(); refresh() } }
     override fun onPause() { localStateJob?.cancel(); localStateJob = null; super.onPause() }
     private fun refresh() {
         if (loading) { refreshPending = true; return }; loading = true
         progress.visibility = android.view.View.VISIBLE
         executor.execute {
             try {
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (refreshDirectorySizes || now - directorySizesAt > 30000) {
+                    refreshDirectorySizes = false; directorySizes.clear(); directorySizesAt = now
+                }
+                // Live inventory is published independently. Directory sizes are expensive,
+                // approximate diagnostics and need not walk every file on every record change.
+                fun directoryBytes(file: File): Long = directorySizes.getOrPut(file.absolutePath) { bytes(file) }
                 val state = Operations.ledger(this).read(); val counts = state.getJSONObject("counts")
                 val queue = queue().summary(); val config = Settings(this).read()
                 fun count(kind: OperationKind) = counts.getLong(kind.name)
@@ -79,20 +91,20 @@ class ActivityStatsActivity : Activity() {
                     append("截图已确认上传 ${count(OperationKind.SCREEN_ACK)} · 随手记已确认上传 ${count(OperationKind.NOTE_ACK)}\n")
                     append("上传待重试结果 ${count(OperationKind.UPLOAD_RETRY)} · 来源版本已确认 ${count(OperationKind.SOURCE_ACK)} / 失败 ${count(OperationKind.SOURCE_FAILED)}\n设备心跳失败 ${count(OperationKind.HEARTBEAT_FAILED)}\n")
                     append("已确认上传 JSON 字节 ${size(state.getLong("confirmedUploadBytes"))}（不含 TLS/HTTP 开销）\n")
-                    append("\n${LocalStateRepository.get(this@ActivityStatsActivity).state.value.storageLabel()}\n")
                     append("\n记录明细抽样\n采集区保留：${queue.getInt("total")} 条，截图 ${queue.getInt("screens")} / 活动 ${queue.getInt("activities")} / 媒体 ${queue.optInt("media")} / 系统事件 ${queue.optInt("systemEvents")} / 笔记 ${queue.getInt("notes")} / 无法读取 ${queue.getInt("unreadable")} / 未检查 ${queue.getInt("uninspected")}（分类最多读取100条）\n")
                     append("\n资料在哪里\n队列存储：${size(queue.getLong("bytes"))} / 上限 ${config.maxQueueMiB} MiB\n${QueueStorage(this@ActivityStatsActivity).current().path}\n")
                     append("待 OCR 文字预留：${size(queue.getLong("reservedOcrBytes"))}（计入存储上限，完成识别后按实际大小计）\n")
-                    append("来源待确认版本：$sourcePending · 本机来源缓存 ${size(bytes(sources))}\n${sources.absolutePath}\n")
-                    append("模型及下载断点：${size(bytes(models))}\n${models.absolutePath}\n")
-                    append("临时缓存：${size(bytes(cacheDir))}\n${cacheDir.absolutePath}\n")
-                    append("应用私有文件合计：${size(bytes(File(applicationInfo.dataDir)))}\n设备此分区可用：${size(noBackupFilesDir.usableSpace)}\n")
+                    append("来源待确认版本：$sourcePending · 本机来源缓存 ${size(directoryBytes(sources))}\n${sources.absolutePath}\n")
+                    append("模型及下载断点：${size(directoryBytes(models))}\n${models.absolutePath}\n")
+                    append("临时缓存：${size(directoryBytes(cacheDir))}\n${cacheDir.absolutePath}\n")
+                    append("应用私有文件合计：${size(directoryBytes(File(applicationInfo.dataDir)))}\n设备此分区可用：${size(noBackupFilesDir.usableSpace)}\n")
+                    append("目录大小为最近测量值，最多缓存 30 秒；可点击上方刷新重新测量。\n")
                     append("\n生效设置\n实际配置：每 ${config.intervalSeconds} 秒，JPEG ${config.jpegQuality}，最长边 ${config.captureMaxSide}px\n")
                     append("仅非计费 Wi-Fi：${if (config.wifiOnly) "开启" else "关闭"} · 仅充电采集：${if (config.chargingOnly) "开启" else "关闭"} · 低于 ${config.batteryPauseBelowPct}% 暂停（0 关闭）\n")
                     append("仅充电 OCR：${if (config.ocrChargingOnly) "开启，充电后补做历史图片" else "关闭"}\n")
                     append("本机过滤：${if (config.nsfw.enabled) "开启" else "关闭"} · ${config.nsfw.threads} 线程 · ${config.nsfw.timeoutMs}ms 超时\n")
                     append("设备元数据：${if (config.metadataEnabled) "上传新记录的实际状态" else "新记录不附带"} · 应用规则 ${AppCollectionRules.parse(config.appCollectionRules).apps.size} 项\n")
-                    append("\n统计口径与限制\n已保存表示加密入队成功；已上传表示节点已确认收到。待 OCR 的图片在确认上传后仍会加密保留，补做结果也同步成功后才清理。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含待识别和同步失败保留的图片。\n")
+                    append("\n统计口径与限制\n已保存表示本机入队成功；已上传表示节点已确认收到。待 OCR 的图片在确认上传后仍会保留，补做结果也同步成功后才清理。被过滤的画面不会入队。暂停是原因变更次数，不等于丢弃截图次数；请求可能因系统/进程中断没有后续结果。统计与队列分开持久化，进程在两次写入之间终止时累计数可能少记；当前队列数量包含待识别和同步失败保留的图片。\n")
                     append("文件字节合计不是 Android 系统的安装占用；不含 APK、系统配额或其他分区。目录仅可由本应用读取，不是共享相册。")
                 }
                 runOnUiThread {
@@ -120,7 +132,7 @@ class ActivityStatsActivity : Activity() {
             val item = pending.getJSONObject(i)
             history.addView(Button(this).apply {
                 text = "${if (item.optBoolean("archiveMissing")) "中央不可更新" else if (item.optBoolean("uploaded")) "已同步保留" else "待确认"} · ${when (item.getString("kind")) { "screen" -> "截图"; "activity" -> "应用活动"; "media" -> "媒体状态"; "notification" -> "通知事件"; "device_event" -> "设备事件"; else -> "随手记" }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
-                setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n加密条目字节：${item.getLong("bytes")}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。").setPositiveButton("关闭", null).show() }
+                setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle("本机记录").setMessage("记录 ID：${item.getString("id")}\n创建：${item.getString("createdAt")}\n条目字节：${item.getLong("bytes")}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。").setPositiveButton("关闭", null).show() }
             })
         }
         pager(pendingPage, pending.length()) { pendingPage = it; renderHistory() }
@@ -182,8 +194,8 @@ class ActivityStatsActivity : Activity() {
         }
         private fun size(value: Long) = when { value < 0 -> "文件过多，未完成统计"; value >= 1073741824 -> "%.2f GiB".format(value / 1073741824.0); value >= 1048576 -> "%.1f MiB".format(value / 1048576.0); value >= 1024 -> "%.1f KiB".format(value / 1024.0); else -> "$value B" }
         fun kind(value: OperationKind): String = when (value) {
-            OperationKind.CAPTURE_REQUESTED -> "请求截图"; OperationKind.FRAME_RECEIVED -> "收到内存画面"; OperationKind.SCREEN_QUEUED -> "截图已加密保存"
-            OperationKind.NOTE_QUEUED -> "随手记已加密保存"; OperationKind.SCREEN_ACK -> "截图已确认上传"; OperationKind.NOTE_ACK -> "随手记已确认上传"
+            OperationKind.CAPTURE_REQUESTED -> "请求截图"; OperationKind.FRAME_RECEIVED -> "收到内存画面"; OperationKind.SCREEN_QUEUED -> "截图已保存"
+            OperationKind.NOTE_QUEUED -> "随手记已保存"; OperationKind.SCREEN_ACK -> "截图已确认上传"; OperationKind.NOTE_ACK -> "随手记已确认上传"
             OperationKind.FRAME_BLOCKED -> "画面已丢弃，未入队"; OperationKind.CAPTURE_FAILED -> "截图或处理失败"; OperationKind.CAPTURE_PAUSED -> "采集暂停原因变化"
             OperationKind.HEARTBEAT_FAILED -> "设备心跳未确认"
             OperationKind.SYSTEM_EVENT_QUEUED -> "系统事件已入队"; OperationKind.SYSTEM_EVENT_ACK -> "系统事件已确认上传"

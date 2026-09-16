@@ -17,19 +17,19 @@ test('generic originals preserve bytes, names and MIME with content-addressed de
   assert.throws(()=>files.put({name:'../escape',bytes}),/traverse/);assert.throws(()=>files.put({name:'/escape',bytes}),/Invalid/);
 });
 test('originals honor vault blob encryption and detect corrupted content',t=>{
-  const directory=mkdtempSync(join(tmpdir(),'mote-files-')),store=new Store(directory,{dataKey:'ab'.repeat(32)}),files=new ArchivedFileStore(store);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  const directory=mkdtempSync(join(tmpdir(),'mote-files-')),store=new Store(directory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:true}),files=new ArchivedFileStore(store);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   const bytes=Buffer.from('synthetic original'),file=files.put({name:'fixture.bin',bytes});
-  assert.deepEqual(files.read(file.id),bytes);assert.notDeepEqual(readFileSync(join(directory,'files',file.hash)),bytes);
+  assert.deepEqual(files.read(file.id),bytes);assert.notDeepEqual(readFileSync(join(directory,'files',file.hash+'.aes')),bytes);
 });
 test('portable archive restores original bytes, stable file IDs and attachment relations',async t=>{
  const originDirectory=mkdtempSync(join(tmpdir(),'mote-file-origin-')),restoreDirectory=mkdtempSync(join(tmpdir(),'mote-file-restore-'));
- const origin=new Store(originDirectory,{dataKey:'ab'.repeat(32)}),restored=new Store(restoreDirectory,{dataKey:'cd'.repeat(32)});t.after(()=>{origin.close();restored.close();rmSync(originDirectory,{recursive:true,force:true});rmSync(restoreDirectory,{recursive:true,force:true});});
+ const origin=new Store(originDirectory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:true}),restored=new Store(restoreDirectory,{dataKey:'cd'.repeat(32),contentEncryptionEnabled:true});t.after(()=>{origin.close();restored.close();rmSync(originDirectory,{recursive:true,force:true});rmSync(restoreDirectory,{recursive:true,force:true});});
  const files=new ArchivedFileStore(origin),sources=new SourceStore(origin),file=files.put({name:'synthetic.docx',bytes:Buffer.from('synthetic original bytes'),mimeType:'application/x-fixture'}),attachment=files.put({name:'synthetic.bin',bytes:Buffer.from([0,255,8])});
  sources.register({id:'portable-files',name:'Synthetic archive',kind:'upload',deviceId:'synthetic',platform:'import',retention:'archive'});
  const capture=await sources.upsert('portable-files',{externalId:'entry',revision:'v1',observedAt:'2026-09-15T12:00:00Z',kind:'file',layer:'original',text:'Synthetic authored text',document:{fileId:file.id,timeBasis:'unknown',contentRole:'authored',attachments:[{id:attachment.id,name:attachment.name}]}});files.attach(capture.id,[file.id,attachment.id]);
  const archive=origin.exportArchive(100000);assert.equal(archive.files.length,2);assert.equal('import_jobs'in archive,false);assert.equal('settings'in archive,false);
  await restored.importArchive(archive);const restoredFiles=new ArchivedFileStore(restored);assert.deepEqual(restoredFiles.get(file.id),file);assert.equal(restoredFiles.read(file.id).toString(),'synthetic original bytes');assert.deepEqual(restoredFiles.read(attachment.id),Buffer.from([0,255,8]));assert.equal(restoredFiles.listForCapture(capture.id).length,2);
- assert.equal(restored.evidence([capture.id])[0].provenance?.document?.fileId,file.id);assert.notDeepEqual(readFileSync(join(restoreDirectory,'files',file.hash)),restoredFiles.read(file.id));
+ assert.equal(restored.evidence([capture.id])[0].provenance?.document?.fileId,file.id);assert.notDeepEqual(readFileSync(join(restoreDirectory,'files',file.hash+'.aes')),restoredFiles.read(file.id));
  assert.equal((await restored.importArchive(archive)).duplicates,1);
 });
 test('portable file preflight, quota and late rollback leave no partial originals',async t=>{

@@ -44,7 +44,7 @@ data class LocalStateSnapshot(
     fun storageLabel(): String = if (active == null || quarantine == null) imageLabel() else
         imageLabel() + "\n采集区 ${active.records} 条记录 · 待同步 ${active.pending} 条 · 等待 OCR ${active.awaitingOcr} 张" +
             "\n采集区图片文件 ${active.imageFiles} 个 · 待决定区图片文件 ${quarantine.imageFiles} 个" +
-            "\n加密队列 ${size(active.diskBytes)} · OCR 预留 ${size(active.reservedOcrBytes)} · 待决定区 ${size(quarantine.diskBytes)}"
+            "\n本机队列 ${size(active.diskBytes)} · OCR 预留 ${size(active.reservedOcrBytes)} · 待决定区 ${size(quarantine.diskBytes)}"
     private fun size(bytes: Long) = "%.1f MiB".format(bytes / 1048576.0)
 }
 
@@ -66,6 +66,12 @@ class LocalStateRepository private constructor(context: Context) {
                 val previous = mutable.value
                 val next = try {
                     check(!QueueStorage.recovering) { "正在恢复本机存储" }
+                    // Index upgrades inspect a few records per lock acquisition; starting capture
+                    // must not wait behind decrypting an entire legacy library.
+                    if (previous.active == null || previous.error != null || previous.revision.storage != LocalStateChanges.revisions.value.storage) {
+                        app.queue().prepareIndex()
+                        BulkDedupeStore(app).quarantine().prepareIndex()
+                    }
                     val (revision, active, pending) = DurableQueue.exclusive {
                         val version = LocalStateChanges.revisions.value
                         if (previous.error == null && previous.active != null && previous.quarantine != null && previous.revision.storage == version.storage)

@@ -17,22 +17,47 @@ class MoteApplication : Application() {
                 SupportEvents.record(this@MoteApplication, EventStage.APP, EventCode.STARTED)
                 val settings = Settings(this@MoteApplication)
                 try {
-                    queue().recoverOrphans()
+                    // Only resolve the selected location (including an interrupted migration)
+                    // before accepting captures. Library maintenance is independent work.
+                    val local = queue()
                     val config = settings.read()
-                    runCatching {
-                        imageDedupeDiagnostics().prune()
-                        ImageDedupeDiagnosticsMaintenance.configure(this@MoteApplication, config.imageDedupeDiagnosticsEnabled)
-                    }
-                    if (settings.syncState() == "uploading") settings.syncStatus(if (config.syncMode == "manual") "manual" else "waiting", "上次同步已中断，记录保留在本机")
-                    UploadWorker.schedule(this@MoteApplication, config)
-                    CaptureOcrWorker.schedule(this@MoteApplication, config)
-                    SourceWork.schedule(this@MoteApplication)
                     if (settings.enabled && config.screenCollectionEnabled && config.mode == "projection" && !config.observesSystem()) {
                         settings.enabled = false
                         settings.status("permission_required", "投屏会话已结束，请点击开始并重新授权；已有记录保留，同步按所选策略运行")
                     }
-                } catch (error: Exception) { QueueStorage.recoveryFailure = error.message ?: "本机存储恢复失败"; SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE); settings.status("error", "本地加密队列无法读取：${error.message ?: "请检查所选存储介质与设备密钥，保留应用数据"}") }
-                finally { QueueStorage.recovering = false; LocalStateChanges.changed(records = true, immediate = true) }
+                    QueueStorage.recovering = false
+                    QueueStorage.maintaining = true
+                    LocalStateChanges.changed(immediate = true)
+                    CaptureAccessibilityService.instance?.refreshSchedule()
+                    MediaCollectionService.refresh()
+                    if (settings.syncState() == "uploading") settings.syncStatus(if (config.syncMode == "manual") "manual" else "waiting", "上次同步已中断，记录保留在本机")
+                    // This scan yields the queue lock between records; it never gates Start.
+                    runCatching { local.recoverOrphans() }.onFailure {
+                        SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)
+                    }
+                    runCatching {
+                        BulkDedupeStore(this@MoteApplication).quarantine().recoverOrphans()
+                    }.onFailure {
+                        SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)
+                    }
+                    runCatching {
+                        imageDedupeDiagnostics().prune()
+                        ImageDedupeDiagnosticsMaintenance.configure(this@MoteApplication, config.imageDedupeDiagnosticsEnabled)
+                    }
+                    // Launch noninteractive consumers after warming the legacy metadata;
+                    // they must not race to rebuild the same library under a longer lock.
+                    val current = settings.read()
+                    UploadWorker.schedule(this@MoteApplication, current)
+                    CaptureOcrWorker.schedule(this@MoteApplication, current)
+                    SourceWork.schedule(this@MoteApplication)
+                } catch (error: Exception) {
+                    SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)
+                    if (QueueStorage.recovering) {
+                        QueueStorage.recoveryFailure = error.message ?: "本机存储恢复失败"
+                        settings.status("error", "本地队列无法读取：${error.message ?: "请检查所选存储介质，保留应用数据"}")
+                    }
+                }
+                finally { QueueStorage.recovering = false; QueueStorage.maintaining = false; LocalStateChanges.changed(records = true, immediate = true) }
             }
             shutdown()
         }

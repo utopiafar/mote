@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, readdir, unlink, stat } from 'node:fs/promises';
+import { mkdir, open, rename, readdir, unlink, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CaptureEvent, Config, Platform } from './contracts';
 import type { DurableQueue } from './queue';
+import { encodeLocalContent, readLocalContent } from './local-content';
 export interface NoteDraft { id: string; text: string; mood: string; revision: number; prepared?: boolean }
 interface StoredDraft { draft: NoteDraft; submission?: CaptureEvent; targetOrigin?: string; completed?: { draftId: string; eventId: string } }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -18,6 +19,7 @@ export class NoteDraftStore {
   private chain: Promise<unknown> = Promise.resolve();
   constructor(private directory: string) {}
   private exclusive<T>(fn: () => Promise<T>): Promise<T> { const task = this.chain.then(fn); this.chain = task.catch(() => undefined); return task; }
+  withContentMaintenance<T>(work: () => Promise<T>): Promise<T> { return this.exclusive(work); }
   async initialize(): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     try {
@@ -25,7 +27,7 @@ export class NoteDraftStore {
       // Prepared submissions include a second copy; JSON can escape each UTF-16 unit as six bytes.
       const maxBytes = 512 * 1024;
       if ((await stat(path)).size > maxBytes) throw new Error('oversized');
-      const data = await readFile(path, 'utf8');
+      const data = (await readLocalContent(path)).toString('utf8');
       if (Buffer.byteLength(data) > maxBytes) throw new Error('oversized');
       const value = JSON.parse(data) as StoredDraft; validateDraft(value.draft);
       if (value.completed && (!uuid.test(value.completed.draftId) || !uuid.test(value.completed.eventId))) throw new Error('invalid completion');
@@ -44,7 +46,7 @@ export class NoteDraftStore {
     const temporary = join(this.directory, randomUUID() + '.tmp');
     try {
       const file = await open(temporary, 'wx', 0o600);
-      try { await file.writeFile(JSON.stringify(value)); await file.sync(); } finally { await file.close(); }
+      try { await file.writeFile(encodeLocalContent(JSON.stringify(value))); await file.sync(); } finally { await file.close(); }
       await rename(temporary, join(this.directory, 'draft.json'));
       if (process.platform !== 'win32') { const directory = await open(this.directory, 'r'); try { await directory.sync(); } finally { await directory.close(); } }
       this.value = value;

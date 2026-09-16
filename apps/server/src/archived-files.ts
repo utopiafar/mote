@@ -1,9 +1,9 @@
-import {createCipheriv,createDecipheriv,randomBytes,randomUUID} from 'node:crypto';
-import {existsSync,readFileSync,readdirSync,renameSync,unlinkSync,writeFileSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
+import {readdirSync,unlinkSync} from 'node:fs';
 import {basename,join} from 'node:path';
 import {z} from 'zod';
 import type {ArchivedFile} from '@mote/shared';
-import {privateDirectory,privateFile} from './private-storage.js';
+import {privateDirectory} from './private-storage.js';
 import {Store,StoreError,sha256} from './store.js';
 
 export const MAX_FILE_BYTES=64*1024*1024;
@@ -41,20 +41,19 @@ export class ArchivedFileStore {
   }
   private writeBytes(hash:string,original:Buffer){
     const path=join(this.directory,hash);
-    if(!existsSync(path)){
-      let bytes=original;
-      if(this.store.key){const iv=randomBytes(12),cipher=createCipheriv('aes-256-gcm',this.store.key,iv);bytes=Buffer.concat([iv,cipher.update(bytes),cipher.final(),cipher.getAuthTag()]);}
-      const temporary=join(this.directory,`${hash}.${randomBytes(6).toString('hex')}.tmp`);
-      try{writeFileSync(temporary,bytes,{mode:0o600,flag:'wx'});renameSync(temporary,path);}finally{if(existsSync(temporary))unlinkSync(temporary);}
-    }else privateFile(path);
+    if(!this.store.contentEncryption.exists(path))this.store.contentEncryption.write(path,original);
   }
+
   get(id:string):ArchivedFile {const row=this.store.db.prepare('SELECT json FROM archived_files WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Archived file not found',404);return JSON.parse(row.json);}
   read(id:string):Buffer {
-    const file=this.get(id),path=join(this.directory,file.hash);privateFile(path);const bytes=readFileSync(path);
-    let original=bytes;
-    if(this.store.key){const decipher=createDecipheriv('aes-256-gcm',this.store.key,bytes.subarray(0,12));decipher.setAuthTag(bytes.subarray(-16));original=Buffer.concat([decipher.update(bytes.subarray(12,-16)),decipher.final()]);}
+    const file=this.get(id),original=this.store.contentEncryption.read(join(this.directory,file.hash));
     if(sha256(original)!==file.hash)throw new StoreError('Archived file checksum mismatch',500);return original;
   }
+  decrypt(hash:string):boolean {
+    if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid file hash');
+    return this.store.contentEncryption.decrypt(join(this.directory,hash),bytes=>{if(sha256(bytes)!==hash)throw new StoreError('Archived file checksum mismatch',500);});
+  }
+
   attach(captureId:string,fileIds:string[]):void {
     if(!this.store.evidence([captureId]).length)throw new StoreError('Attachment evidence is missing',409);
     for(const id of new Set(fileIds)){this.get(id);this.store.db.prepare('INSERT OR IGNORE INTO capture_files(capture_id,file_id) VALUES(?,?)').run(captureId,id);}
@@ -88,7 +87,7 @@ export class ArchivedFileStore {
   }
   sweepOrphans(){
     const known=new Set((this.store.db.prepare('SELECT hash FROM file_blobs').all() as {hash:string}[]).map(row=>row.hash));
-    for(const name of readdirSync(this.directory))if((/^[a-f0-9]{64}$/.test(name)&&!known.has(name))||/^[a-f0-9]{64}\.[a-f0-9]+\.tmp$/.test(name))unlinkSync(join(this.directory,name));
+    for(const name of readdirSync(this.directory))if((/^[a-f0-9]{64}(?:\.plain|\.aes)?$/.test(name)&&!known.has(name.split('.')[0]))||/^[a-f0-9]{64}(?:\.plain|\.aes)?\.[a-f0-9-]+\.tmp$/.test(name))unlinkSync(join(this.directory,name));
   }
   removeUnreferenced(fileIds:string[],retained:Set<string>):{files:number;bytes:number}{
     let files=0,bytes=0;
@@ -98,7 +97,7 @@ export class ArchivedFileStore {
       this.store.db.prepare('DELETE FROM archived_files WHERE id=?').run(id);files++;
       if(!this.store.db.prepare('SELECT 1 FROM archived_files WHERE hash=? LIMIT 1').get(row.hash)){
         const blob=this.store.db.prepare('SELECT bytes FROM file_blobs WHERE hash=?').get(row.hash) as {bytes:number}|undefined;
-        this.store.db.prepare('DELETE FROM file_blobs WHERE hash=?').run(row.hash);const path=join(this.directory,row.hash);if(existsSync(path))unlinkSync(path);bytes+=blob?.bytes??0;
+        this.store.db.prepare('DELETE FROM file_blobs WHERE hash=?').run(row.hash);this.store.contentEncryption.remove(join(this.directory,row.hash));bytes+=blob?.bytes??0;
       }
     }
     return {files,bytes};

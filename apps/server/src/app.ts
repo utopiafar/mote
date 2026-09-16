@@ -30,6 +30,7 @@ import {ArchivedFileStore} from './archived-files.js';
 import {ImportStore,type ImportPreparation,type ImportPreparationResult} from './imports.js';
 import {prepareImportInput} from './import-runtime.js';
 import {MemoryPipeline} from './memory-pipeline.js';
+import {ContentStorageService,registerContentStorage} from './content-storage.js';
 import {insightResult} from './insights.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
@@ -42,7 +43,7 @@ const insightRequestSchema=z.object({...scopeFields,prompt:z.string().trim().max
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
 export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   config={...config};
-  const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
+  const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
   const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
   const sources=new SourceStore(store),files=new FileStore(store,sources);
@@ -50,6 +51,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const allEvidence=(ids:string[])=>[...store.evidence(ids),...files.evidence(ids)];
   const memories=new MemoryStore(store,allEvidence,id=>files.isCurrentEvidence(id)||store.isCurrentEvidence(id)),conversations=new Conversations(store);
   const archivedFiles=new ArchivedFileStore(store);
+  const contentStorage=new ContentStorageService(store,files,archivedFiles);
   const connections=dependencies?.connections??new Connections(store,sources);await connections.init();
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const credential=(req:FastifyRequest)=>identities.get(req);
@@ -141,6 +143,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   });
   const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
   registerUpdateRoutes(app,softwareUpdate);
+  registerContentStorage(app,contentStorage);
   registerCaptureBrowser(app,{store,connections,credential});
   playbackAuthorization=registerFileRoutes(app,files,processing,sourceOwner,req=>credential(req)?.deviceId,diagnostics);
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
@@ -367,6 +370,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     const memoryClose=memoryPipeline.close();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
+    await contentStorage.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
     await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose]);await backgroundInsight;await connectors.close();await softwareUpdate.close();await connections.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
