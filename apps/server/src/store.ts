@@ -1,3 +1,4 @@
+import {textSearch} from './text-search.js';
 import {fileSchema} from './file-schema.js';
 import {systemEventText,sourceContentTime} from '@mote/shared';
 import {memorySchema} from './memory-schema.js';
@@ -368,14 +369,10 @@ export class Store {
   search(range:Range&{query?:string}) {
     if(!range.query?.trim())return this.list(range).items;
     const {where,values}=this.clauses(range); const conjunction=where?' AND ':' WHERE ';
-    const query=range.query.trim().slice(0,1000);if(!query)return this.list(range).items; const terms=query.split(/\s+/).filter(Boolean).slice(0,12).map(s=>'"'+s.replaceAll('"','""')+'"').join(' OR ');
-    // Apply time/device scope before limiting, including old matches in large archives.
-    const longTerms=query.split(/\s+/u).filter(t=>Array.from(t).length>=3).slice(0,12).map(t=>'"'+t.replaceAll('"','""')+'"').join(' OR ');
-    const lexical=["id IN (SELECT id FROM captures_fts WHERE captures_fts MATCH ?)"],args:(string|number)[]=[terms];
-    if(longTerms){lexical.push('id IN (SELECT id FROM captures_trigram WHERE captures_trigram MATCH ?)');args.push(longTerms);}
-    else {lexical.push('instr(lower(mote_search_text(json)),lower(?))>0');args.push(query);}
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}(${lexical.join(' OR ')}) ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`)
-      .all(...values,...args,Math.min(range.limit??50,200)) as unknown as Row[];
+    const lexical=textSearch(range.query,{id:'captures.id',text:'mote_search_text(captures.json)',words:'captures_fts',trigrams:'captures_trigram'});
+    // Apply the complete lexical/time/device scope before limiting results.
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}${lexical.sql} ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`)
+      .all(...values,...lexical.values,Math.min(range.limit??50,200)) as unknown as Row[];
     return rows.map(r=>this.record(r));
   }
   vectorSearch(vector:number[], model:string, range:Range={}) {

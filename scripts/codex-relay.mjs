@@ -45,7 +45,7 @@ export async function startCodexRelay({binary=process.env.MOTE_CODEX_BINARY??(ex
     let deadline;const result=new Promise((resolve,reject)=>{turns.set(thread.thread.id,{resolve,reject,text:'',usage:null});deadline=setTimeout(()=>{turns.delete(thread.thread.id);reject(Error('Codex inference timeout'));},300000);});
     await call('turn/start',{threadId:thread.thread.id,model,effort,input:[{type:'text',text:JSON.stringify({messages:request.messages,tools:request.tools??[]})}],outputSchema:schema});
     try{const value=await result,parsed=JSON.parse(value.text);const allowed=new Set((request.tools??[]).map(t=>t.function.name));for(const t of parsed.toolCalls){if(!allowed.has(t.name))throw Error('Model requested undeclared tool');JSON.parse(t.arguments);}
-      const detail={index:++count,model,effort,nativeTools:0,tools:parsed.toolCalls.map(t=>t.name),usage:value.usage,...(parsed.content?{content:parsed.content}:{})};calls.push(detail);onCall(detail);return {...parsed,usage:value.usage};
+      const detail={index:++count,model,effort,nativeTools:0,tools:parsed.toolCalls.map(t=>t.name),toolCalls:parsed.toolCalls,usage:value.usage,...(parsed.content?{content:parsed.content}:{})};calls.push(detail);onCall(detail);return {...parsed,usage:value.usage};
     }finally{clearTimeout(deadline);turns.delete(thread.thread.id);await call('thread/unsubscribe',{threadId:thread.thread.id}).catch(()=>{});}
   }
   const token=randomUUID(),server=createServer(async(req,res)=>{if(req.headers.authorization!==`Bearer ${token}`){res.writeHead(401).end();return;}if(req.url==='/v1/models'){res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[{id:model}]}));return;}

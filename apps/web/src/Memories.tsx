@@ -16,7 +16,8 @@ interface Memory {
   tier?:string;kind?:string;status:string;createdAt:string;updatedAt?:string;model?:string;skillVersion?:string;staleReason?:string;
 }
 const labels:Record<string,string>={proposed:'待确认',published:'已确认',stale:'需要重验'};
-export function Memories({api,range,onOpen,refreshVersion=0}:{refreshVersion?:number;api:Api;range:Range;onOpen:(id:string)=>void}){
+export function Memories({api,range,onOpen,refreshVersion=0,embedded=false}:{embedded?:boolean;refreshVersion?:number;api:Api;range:Range;onOpen:(id:string)=>void}){
+  const Heading=embedded?'h2':'h1';
   const [items,setItems]=useState<Memory[]>([]),[detail,setDetail]=useState<Memory|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[filter,setFilter]=useState('all'),[confirmDelete,setConfirmDelete]=useState(false);
   const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[tier,setTier]=useState(''),[cursor,setCursor]=useState<string>(),[nextCursor,setNextCursor]=useState<string|null>(null);
   const [jobId,setJobId]=useState<string>(),[jobs,setJobs]=useState<MemoryJob[]>([]),[revision,setRevision]=useState(0);
@@ -41,7 +42,7 @@ export function Memories({api,range,onOpen,refreshVersion=0}:{refreshVersion?:nu
   async function retry(){if(!job)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+encodeURIComponent(job.id)+'/retry',{method:'POST'});reloadJob();refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   const visible=items.filter(item=>filter==='all'||item.status===filter);
   const evidence:MemoryEvidence[]=detail?.evidence?.length?detail.evidence:(detail?.evidenceIds??[]).map(id=>({id,capturedAt:detail!.createdAt,receivedAt:detail!.createdAt,contentHash:''}));
-  return <section className="memories-page"><div className="page-heading split-heading"><div><div className="eyebrow">有依据，才值得记住</div><h1>记忆</h1><p>从资料中提取可复用的事实与经验。每条记忆都能回到原始证据，由你确认。</p></div><button className="button primary" disabled={busy||job?.status==='running'||job?.status==='queued'} onClick={()=>void extract()}>{busy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>}提取当前范围的记忆</button></div>
+  return <section className="memories-page"><div className="page-heading split-heading"><div><div className="eyebrow">有依据，才值得记住</div><Heading>记忆</Heading><p>从资料中提取可复用的事实与经验。每条记忆都能回到原始证据，由你确认。</p></div><button className="button primary" disabled={busy||job?.status==='running'||job?.status==='queued'} onClick={()=>void extract()}>{busy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>}提取当前范围的记忆</button></div>
     {error&&<div className="error-banner" role="alert">{error}</div>}{jobError&&<div className="error-banner" role="alert">记忆进度暂时无法更新：{jobError}</div>}
     {job&&<MemoryProgress job={job} onRetry={()=>void retry()} busy={busy}/>}
     {jobs.length>0&&<details className="memory-job-history"><summary>提取记录（{jobs.length}）</summary><div className="evidence-buttons">{jobs.map(item=><button className="button subtle" key={item.id} onClick={()=>setJobId(item.id)}>{dateTime(item.createdAt)} · {item.memoryIds.length} 条候选</button>)}</div></details>}

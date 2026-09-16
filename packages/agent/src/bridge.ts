@@ -303,7 +303,7 @@ export async function startBridge(
         const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
         const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>project(r,0,2000,bounds.timeZone));
         memoryEvidence=evidence;
-        value={items:result.items,evidence};pagination={nextCursor:result.nextCursor??null};
+        value={items:result.items,evidence,coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
       }
       else if (tool === "evidence") {
         if (

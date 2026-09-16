@@ -16,7 +16,7 @@ export class WorkingMemory {
   }
   context(conversation:Conversation,settings:LifecycleSettings):NonNullable<QueryInput['conversation']>{
     const summary=this.get(conversation),tail={...conversation,turns:conversation.turns.slice(summary?.coveredTurns??0)};
-    const result=this.conversations.context(tail,settings.recentTurns,settings.contextCharacters-(summary?.text.length??0));
+    const result=this.conversations.context(tail,20,settings.contextCharacters-(summary?.text.length??0));
     return {...result,omittedTurns:conversation.turns.length-result.turns.length-(summary?.coveredTurns??0),...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
   }
   async compact(id:string,settings:LifecycleSettings,query:(input:QueryInput)=>Promise<QueryResult>){

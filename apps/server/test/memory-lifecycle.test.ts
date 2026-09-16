@@ -39,6 +39,7 @@ test('480 originals across six months replay all current segments; FTS finds old
   assert.equal(data.currentIds.length,472);assert.equal(store.list({limit:1}).totalCount,472);
   assert.equal(store.search({query:'离线索引实验',after:'2026-03-01T00:00:00Z',before:'2026-04-01T00:00:00Z'})[0].id,data.anchors.late);
   assert.ok(store.search({query:'uncertain outcome',deviceId:'fixture-device-0',limit:200}).every(e=>e.deviceId==='fixture-device-0'));
+  for(const query of ['林岚 清晨','清晨 开会','林岚 喜欢 清晨 开会'])assert.deepEqual(store.search({query}).map(r=>r.id),[data.anchors['other-person']],query+' finds embedded short Chinese words');
   const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture-only',query:async input=>{for(const id of input.evidenceIds)seen.add(id);assert.ok(input.evidenceRanges.reduce((n,r)=>n+r.length,0)<=12000);return empty();}});t.after(()=>pipeline.close());
   const job=await pipeline.run(pipeline.create({evidenceIds:data.currentIds}).id);assert.equal(job.status,'completed');assert.equal(seen.size,472);assert.equal(pipeline.create({evidenceIds:data.currentIds}).totalBatches,0);
   for(const id of data.currentIds.slice(0,160)){const record=store.evidence([id])[0];memories.extract({answer:JSON.stringify({memories:[{title:'索引候选 '+id,statement:`原文记录 [${id}]`,uncertainty:'合成验证',evidenceIds:[id],evidence:[{id,offset:0,quote:record.ocrText}]}]}),citations:[{id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()},'fixture-only');}
@@ -50,6 +51,7 @@ test('480 originals across six months replay all current segments; FTS finds old
 test('working summary preserves prefix, discloses recent turns and cannot survive source deletion or conversation deletion',async t=>{
   const store=fixture(t),conversations=new Conversations(store),working=new WorkingMemory(store,conversations),lifecycle=new MemoryLifecycle(store,()=>true),settings=lifecycle.settings();t.after(()=>lifecycle.close());
   let id:string|undefined;for(let i=0;i<20;i++){const result=conversations.append(id?conversations.get(id):undefined,{question:'合成问题 '+i},{answer:'合成回答 '+i,citations:[],trace:[],runId:randomUUID()});id=result.conversationId;}
+  assert.equal(working.context(conversations.get(id!),settings).turns.length,20,'Retain available context while periodic compaction is pending');
   await working.compact(id!,settings,async input=>{assert.equal(input.skill,'working-memory');return {...empty(),answer:'早期决定：只处理合成资料；待办：验证分页。'};});
   const context=working.context(conversations.get(id!),settings);assert.equal(context.turns.length,8);assert.equal(context.workingMemory?.coveredTurns,12);assert.equal(context.omittedTurns,0);
   store.invalidateConversationAnswers();assert.equal(working.get(conversations.get(id!)),undefined);
