@@ -1,3 +1,4 @@
+import {discoverCodingAgents} from './coding-agents';
 import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, Tray } from 'electron';
@@ -367,6 +368,8 @@ else {
       platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,
       environment: `桌面客户端 · ${['dev', 'test', 'prod', 'legacy'].includes(profile.name) ? profile.name : '自定义环境'}`,
     })));
+    handle('mote:coding-agents', () => discoverCodingAgents());
+    handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error('不支持的 Coding Agent'); return localSources!.addCodingAgent(provider, options); }));
     handle('mote:sources', () => localSources!.status());
     handle('mote:source-sync', async () => { await localSources!.sync(true); await collector.retry(); });
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));

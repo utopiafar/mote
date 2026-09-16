@@ -1,3 +1,4 @@
+import {scanCodingAgent} from './coding-agents';
 import {compressionPreview} from './compression-preview';
 import { parentPort } from 'node:worker_threads';
 import { createHash, randomUUID } from 'node:crypto';
@@ -12,6 +13,7 @@ import { configureLocalContent, encodeLocalContent, readLocalContent, type Conte
 
 async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void): Promise<unknown> {
   switch (request.kind) {
+    case 'coding-scan': return scanCodingAgent(request.root,request.provider,request.options,request.checkpoint);
     case 'compression-preview': return compressionPreview(request.quality,request.maxSide);
     case 'browse': {
       const rows = request.records.filter(record => record.at >= request.after && record.at < request.before)

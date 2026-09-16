@@ -135,6 +135,8 @@ export interface DesktopApi {
   revealUpdate(): Promise<void>;
   releaseNotes(): Promise<void>;
   openFeedback(): Promise<void>;
+  codingAgents(): Promise<Awaited<ReturnType<typeof import('./coding-agents').discoverCodingAgents>>>;
+  addCodingAgent(provider: import('./coding-agents').CodingProvider, options: import('./source-types').SourceOptions): Promise<void>;
   sources(): Promise<import('./source-types').SourceStatus[]>;
   chooseSourceFiles(mode: 'files' | 'directory', options: import('./source-types').SourceOptions): Promise<{ canceled: boolean }>;
   authorizeCalendar(): Promise<import('./source-types').CalendarChoice[]>;

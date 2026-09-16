@@ -1,18 +1,20 @@
 export type SourceRetention = 'snapshot' | 'reference';
 export interface SourceDefinition {
   initialSync?: 'all' | 'new_only';
-  id: string; name: string; kind: 'local-calendar' | 'local-files'; deviceId: string;
+  id: string; name: string; kind: 'local-calendar' | 'local-files' | 'coding-agent'; deviceId: string;
   platform: 'macos' | 'import'; retention: SourceRetention; enabled: boolean;
 }
 export interface SourceItem {
   metadata?: import('@mote/shared').SourceMetadata;
   externalId: string; revision: string; observedAt: string; modifiedAt?: string;
-  title: string; text: string; uri?: string; kind: 'calendar' | 'file';
+  title: string; text: string; uri?: string; kind: 'calendar' | 'file' | 'message';
+  document?: import('@mote/shared').SourceDocument;
   layer: SourceRetention; mimeType?: string; deleted?: boolean;
   calendar?: { start: string; end: string; allDay: boolean; timeZone?: string; status: 'confirmed' | 'tentative' | 'cancelled' };
 }
 export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'>;
 export interface SourceScan {
+  checkpoint?: import('./coding-agents').CodingCheckpoint;
   items: ScannedItem[]; seen: string[]; complete: boolean; skipped: number;
   scope?: { start: string; end: string };
 }
@@ -22,7 +24,7 @@ export interface SourceOptions {
   extensions: string[]; excludedPaths: string[]; redactLiterals: string[];
 }
 export interface LocalSource extends SourceDefinition, SourceOptions {
-  path?: string; calendarId?: string;
+  path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi';
 }
 export interface SourceStatus {
   source: LocalSource; state: 'idle' | 'syncing' | 'paused' | 'error' | 'permission_required';

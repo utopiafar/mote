@@ -93,7 +93,7 @@ export const USAGE_NO_SKILL = '__none__';
 const usageLabels: Record<'agent'|'module'|'skill', Record<string,string>> = {
   agent: {'context-query':'上下文查询 Agent','file-analysis':'文件分析 Agent','document-import':'文档导入 Agent'},
   module: {conversations:'问答',insights:'洞察',memories:'记忆',files:'文件分析',imports:'资料导入'},
-  skill: {'personal-insight':'个人洞察','memory-extraction':'记忆提取','document-import':'文档导入'},
+  skill: {'personal-insight':'个人洞察','memory-extraction':'记忆提取','coding-memory':'编码经验提取','document-import':'文档导入'},
 };
 export function usageLabel(dimension:'agent'|'module'|'skill',id:string):string {
   if(id===USAGE_UNKNOWN)return '历史未标记';

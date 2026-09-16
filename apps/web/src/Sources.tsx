@@ -5,7 +5,7 @@ import {type Api,errorMessage,dateTime} from './api';
 import {sourceMetadataSchema} from '@mote/shared';
 import {Metadata} from './Metadata';
 const layerNames:Record<string,string>={reference:'引用 / Shadow',snapshot:'内容快照',original:'原始文本',derived:'派生记录'};
-const kindNames:Record<string,string>={'local-files':'客户端文件','local-calendar':'本地日历','google-calendar':'Google Calendar',mcp:'MCP 来源',upload:'文件导入',custom:'自定义来源'};
+const kindNames:Record<string,string>={'coding-agent':'编码 Agent 对话','local-files':'客户端文件','local-calendar':'本地日历','google-calendar':'Google Calendar',mcp:'MCP 来源',upload:'文件导入',custom:'自定义来源'};
 export function Sources({api,onOpen,onImport}:{api:Api;onOpen:(id:string)=>void;onImport:()=>void}){
  const [sources,setSources]=useState<SourceConnection[]>([]),[items,setItems]=useState<SourceItemRecord[]>([]),[selected,setSelected]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[history,setHistory]=useState<SourceItemRecord[]|null>(null),[cursor,setCursor]=useState<string|null>(null);
  const [adding,setAdding]=useState(false),[addKind,setAddKind]=useState<'files'|'reference'|'connectors'>('files');

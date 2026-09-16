@@ -5,6 +5,7 @@ import { localContentPolicy } from './local-content';
 
 export interface WorkProgress { message: string; completed?: number; total?: number }
 export type BackgroundRequest =
+  | {kind:'coding-scan';root:string;provider:import('./coding-agents').CodingProvider;options:import('./source-types').SourceOptions;checkpoint?:import('./coding-agents').CodingCheckpoint}
   | { kind: 'compression-preview'; quality: number; maxSide: number }
   | { kind: 'json-write'; path: string; value: unknown; maximum?: number }
   | { kind: 'json-read'; path: string }

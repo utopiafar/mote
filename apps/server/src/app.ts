@@ -1,3 +1,4 @@
+import {CodingMemoryQueue} from './coding-memory-queue.js';
 import {codexModels,ModelCatalogError} from './model-catalog.js';
 import {UsageLedger} from './usage.js';
 import {QueryRuns} from './query-runs.js';
@@ -171,7 +172,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   function scopedSourceRange(req:FastifyRequest){const q=sourceRange.parse(req.query),c=credential(req);if(c){connections.assertActive(c);if(q.deviceId&&q.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,'只能读取本设备来源。');if(q.sourceId)sourceOwner(req,q.sourceId);q.deviceId=c.deviceId;}return {...q,includeDeleted:q.includeDeleted==='true'};}
   app.get('/api/source-items',async req=>sources.listItems(scopedSourceRange(req)));
   app.get('/api/sources/:id/items',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.listItems({...scopedSourceRange(req),sourceId:id});});
-  app.put('/api/sources/:id/items',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.upsert(id,req.body,credential(req)?()=>sourceOwner(req,id):undefined);});
+  app.put('/api/sources/:id/items',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.upsert(id,req.body,credential(req)?()=>sourceOwner(req,id):undefined,ack=>codingMemoryQueue.stage(ack.id));});
   app.get('/api/sources/:id/item',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {item:sources.getItem(id,externalId)??null};});
   app.get('/api/sources/:id/history',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {items:sources.history(id,externalId)};});
   app.get('/api/layers',async()=>({...sources.summary(),memories:Number((store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)}));
@@ -248,6 +249,8 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
   const memoryPipeline=new MemoryPipeline({store,memories,query:input=>queryAgent(input,'query','memories'),model:()=>config.model,configured:()=>agent.configured,skillVersion:`memory-extraction@${SKILL_VERSION}`});
+  const codingMemoryQueue=new CodingMemoryQueue(store,memoryPipeline,()=>agent.configured);
+  codingMemoryQueue.start();
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
   let importQueue:Promise<unknown>=Promise.resolve();
   const imports=new ImportStore(store,archivedFiles,sources,{
@@ -413,6 +416,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   });
   app.addHook('onClose',async()=>{
     closing=true;clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);
+    codingMemoryQueue.close();
     const memoryClose=memoryPipeline.close();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
@@ -421,5 +425,5 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose]);await backgroundInsight;await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns};
+  return {app,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,codingMemoryQueue,indexer,agent,diagnostics,connections,modelSettings,insightRuns};
 }

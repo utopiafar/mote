@@ -3,14 +3,14 @@ import {z} from 'zod';
 import {validateInlineCitations} from '@mote/agent';
 import {fileEvidenceSchema,sourceContentTime,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
-import {type Memory,type MemoryEvidence,type EvidenceRange} from './memory-schema.js';
+import {codingMemorySchema,type Memory,type MemoryEvidence,type EvidenceRange} from './memory-schema.js';
 export type {Memory,MemoryEvidence,EvidenceRange} from './memory-schema.js';
 
 const spanSchema=z.object({id:z.string().uuid(),offset:z.number().int().min(0).max(100000),length:z.number().int().min(1).max(12000).optional(),quote:z.string().min(1).max(12000)}).strict();
-const claimSchema=z.object({title:z.string().trim().min(1).max(160),statement:z.string().trim().min(1).max(6000),uncertainty:z.string().max(2000),evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(spanSchema).min(1).max(30).optional()}).strict();
+const claimSchema=z.object({coding:codingMemorySchema.optional(),title:z.string().trim().min(1).max(160),statement:z.string().trim().min(1).max(6000),uncertainty:z.string().max(2000),evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(spanSchema).min(1).max(30).optional()}).strict();
 const validationFeedback={
   json:'The answer field must be a string containing one valid JSON object with a memories array. Do not put Markdown fences or prose around that JSON.',
-  schema:'Use exactly a memories array with at most 8 objects. Each object requires string title, string statement, string uncertainty, and a nonempty evidenceIds array of complete UUIDs. Optional evidence entries require id, a nonnegative integer offset, and an exact quote; optional length must equal the UTF-16 quote length. Do not add other keys.',
+  schema:'Use exactly a memories array with at most 8 objects. Each object requires string title, string statement, string uncertainty, and a nonempty evidenceIds array of complete UUIDs. Optional evidence entries require id, a nonnegative integer offset, and an exact quote; optional length must equal the UTF-16 quote length. For coding-memory extraction also include the required coding object (kind, scope, applicability, validation). Do not add other keys.',
   citations:'Use complete supporting evidence UUIDs in inline [UUID] citations and declare those same IDs in the inner evidenceIds and outer citationIds. Every declared ID must have been retrieved in this same supplied scope.',
   scope:'Use only original evidence IDs and exact text segments supplied for this batch. Do not introduce other records, derived memories, or evidence outside the supplied ranges.',
   quote:'A quote did not exactly match the original text at its declared offset. Copy an exact substring from the supplied original segment and calculate its absolute UTF-16 offset in the full original text. If length is supplied, it must equal quote.length in UTF-16 code units.',
@@ -37,7 +37,7 @@ function reference(record:MemoryRecord,span?:{offset:number;length:number;quote?
     ...(record.fileEvidence?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...span,contentHash:memoryEvidenceFingerprint(record)};
 }
-export type MemoryExtractOptions={skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
+export type MemoryExtractOptions={profile?:'personal'|'coding';skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
 export class MemoryStore {
   constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){}
   isCurrentEvidence(id:string):boolean {
@@ -59,12 +59,13 @@ export class MemoryStore {
   }
   list(args:{level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
     const rows=(this.store.db.prepare('SELECT json FROM memories ORDER BY created_at DESC LIMIT 1000').all() as {json:string}[]).map(r=>this.refresh(JSON.parse(r.json) as Memory));
-    return rows.filter(m=>(args.includeStale||m.status!=='stale')&&m.evidenceIds.every(id=>{const e=this.readEvidence([id])[0],time=e&&sourceContentTime(e);return (!args.deviceId&&!args.after&&!args.before)||e&&(!args.deviceId||e.deviceId===args.deviceId)&&(!args.after||Date.parse(time!)>=Date.parse(args.after))&&(!args.before||Date.parse(time!)<Date.parse(args.before));})).slice(0,Math.min(args.limit??30,100)).map(m=>args.level==='detail'?m:{id:m.id,title:m.title,status:m.status,createdAt:m.createdAt,evidenceCount:m.evidenceIds.length,disclosure:{detail:'/api/memories/'+m.id,evidence:'/api/memories/'+m.id+'/evidence'}});
+    return rows.filter(m=>(args.includeStale||m.status!=='stale')&&m.evidenceIds.every(id=>{const e=this.readEvidence([id])[0],time=e&&sourceContentTime(e);return (!args.deviceId&&!args.after&&!args.before)||e&&(!args.deviceId||e.deviceId===args.deviceId)&&(!args.after||Date.parse(time!)>=Date.parse(args.after))&&(!args.before||Date.parse(time!)<Date.parse(args.before));})).slice(0,Math.min(args.limit??30,100)).map(m=>args.level==='detail'?m:{id:m.id,title:m.title,status:m.status,createdAt:m.createdAt,domain:m.domain??'personal',coding:m.coding,scopeRefs:m.scopeRefs,evidenceCount:m.evidenceIds.length,disclosure:{detail:'/api/memories/'+m.id,evidence:'/api/memories/'+m.id+'/evidence'}});
   }
   get(id:string):Memory{const row=this.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Memory not found',404);return this.refresh(JSON.parse(row.json));}
   extract(result:QueryResult,model:string,options:MemoryExtractOptions={}) {
     let input:unknown;try{input=JSON.parse(result.answer);}catch{throw new MemoryOutputValidationError('json','Model returned an invalid memory format; no memories were saved');}
     const parsed=z.object({memories:z.array(claimSchema).max(8),citationIds:z.array(z.string().uuid()).max(240).optional()}).strict().safeParse(input);
+    if(parsed.success&&options.profile==='coding'&&parsed.data.memories.length>3)throw new MemoryOutputValidationError('schema','Coding extraction allows at most three durable memories');
     if(!parsed.success)throw new MemoryOutputValidationError('schema','Model returned an invalid memory structure; no memories were saved');
     const allowed=new Set(result.citations.map(c=>c.id)),now=new Date().toISOString(),items:Memory[]=[];
     if(parsed.data.citationIds){const repeated=new Set(parsed.data.citationIds);if(repeated.size!==allowed.size||[...repeated].some(id=>!allowed.has(id)))throw new MemoryOutputValidationError('citations','Repeated memory citation envelope does not match verified evidence');}
@@ -86,6 +87,10 @@ export class MemoryStore {
           records.set(id,record);
         }
         try{validateInlineCitations(m.statement+'\n'+m.uncertainty,ids,allowed);}catch{throw new MemoryOutputValidationError('citations','Memory inline citations do not match the declared retrieved evidence');}
+        if(options.profile==='coding'&&(!m.coding||!m.evidence||[...records.values()].some(r=>!r.provenance?.document?.coding)))throw new MemoryOutputValidationError('schema','Coding memories require typed original evidence, quotes and applicability');
+        if(options.profile!=='coding'&&m.coding)throw new MemoryOutputValidationError('schema','Coding output requires the coding extraction profile');
+        if(m.coding?.scope==='shared'&&!['principle','preference'].includes(m.coding.kind))throw new MemoryOutputValidationError('schema','Only principles and preferences can be shared');
+        const scopeRefs=[...new Map([...records.values()].flatMap(r=>{const c=r.provenance?.document?.coding;return c?[[JSON.stringify([c.provider,c.sessionId,c.projectKey]),{provider:c.provider,sessionId:c.sessionId,projectKey:c.projectKey}] as const]:[]})).values()];
         const evidence:MemoryEvidence[]=[];
         if(m.evidence){
           for(const span of m.evidence){const record=records.get(span.id),length=span.length??span.quote.length;
@@ -95,9 +100,9 @@ export class MemoryStore {
           }
           if(ids.some(id=>!evidence.some(e=>e.id===id)))throw new MemoryOutputValidationError('missing_quote','Every memory evidence ID needs a matching quote');
         }else for(const id of ids){const ranges=options.evidenceRanges?.filter(range=>range.id===id);if(ranges?.length)for(const range of ranges)evidence.push(reference(records.get(id)!,{offset:range.offset,length:range.length}));else evidence.push(reference(records.get(id)!));}
-        return {...m,evidenceIds:ids,evidence};
+        return {...m,evidenceIds:ids,evidence,domain:options.profile??'personal',...(scopeRefs.length?{scopeRefs}:{})};
       });
-      for(const m of claims){const fingerprint=sha256(JSON.stringify([m.statement,[...m.evidenceIds].sort(),m.evidence.map(e=>[e.id,e.contentHash,e.offset,e.length])]));
+      for(const m of claims){const fingerprint=sha256(JSON.stringify([m.coding??null,m.statement,[...m.evidenceIds].sort(),m.evidence.map(e=>[e.id,e.contentHash,e.offset,e.length])]));
         const duplicate=this.store.db.prepare("SELECT json FROM memories WHERE json_extract(json,'$.fingerprint')=? AND json_extract(json,'$.status')!='stale'").get(fingerprint) as {json:string}|undefined;
         if(duplicate){items.push(JSON.parse(duplicate.json));continue;}
         const value:Memory={...m,id:randomUUID(),createdAt:now,status:'proposed',model,runId:result.runId,skillVersion:options.skillVersion??MEMORY_SKILL_VERSION,fingerprint};

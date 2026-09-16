@@ -200,6 +200,15 @@ app.on('browser-window-created', (_event, window) => {
       }
       assert(await window.webContents.executeJavaScript('!document.querySelector("#settings-fields").disabled'));
       await navigate('sources');
+      ipcMain.removeHandler('mote:coding-agents');
+      ipcMain.handle('mote:coding-agents', () => [{provider:'codex',name:'合成 Codex',path:'/generated/codex',available:true}]);
+      let selectedCodingAgent;
+      ipcMain.removeHandler('mote:source-coding');
+      ipcMain.handle('mote:source-coding', (_event, provider) => { selectedCodingAgent = provider; });
+      await js(`document.querySelector('#source-agent-discover').click(); new Promise(resolve => setTimeout(resolve, 150))`);
+      assert.equal(await js(`document.querySelector('#source-agent-choice').options.length`), 1);
+      await js(`document.querySelector('#source-agent-add').click(); new Promise(resolve => setTimeout(resolve, 150))`);
+      assert.equal(selectedCodingAgent, 'codex', 'Explicit coding source selection reaches IPC without reading personal sessions');
       await window.webContents.executeJavaScript(`document.querySelector('#source-files').click()`);
       let sources;
       for (let i = 0; i < 100; i++) { sources = await window.webContents.executeJavaScript('window.mote.sources()'); if (sources[0]?.pending === 1) break; await new Promise(resolve => setTimeout(resolve, 50)); }
