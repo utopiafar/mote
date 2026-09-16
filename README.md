@@ -118,6 +118,14 @@ node scripts/mote.mjs token --profile dev
 
 开发节点默认是 `http://127.0.0.1:47842`。打开节点界面，点击「登录 Mote」并输入最后一个命令显示的管理令牌；默认使用当前网站地址。该令牌用于管理私人资料；采集 App 建议使用下一步的独立配对凭据。
 
+开发时可在已初始化的环境中单独启动服务端热重载：
+
+```sh
+node scripts/mote.mjs exec --profile dev -- npm run dev -w @mote/server
+```
+
+该命令会先重建服务端依赖的 `@mote/shared` 和 `@mote/agent`，避免拉取新代码后因旧的 `dist` 产物出现缺少导出的错误。修改这些依赖库的源码后，需重新运行该命令以更新构建产物。
+
 配置、数据、日志分别放在 `.mote/profiles/dev/` 下。修改 `mote.env` 后停止并重新启动该环境：
 
 ```sh
