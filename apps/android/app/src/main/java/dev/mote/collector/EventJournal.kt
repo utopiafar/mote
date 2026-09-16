@@ -9,7 +9,7 @@ import java.net.SocketTimeoutException
 import java.util.concurrent.TimeoutException
 import javax.net.ssl.SSLException
 
-enum class EventStage { APP, CONFIG, CAPTURE, MODEL, MODEL_DOWNLOAD, OCR, PRIVACY, QUEUE, UPLOAD, HEARTBEAT, NOTE, SOURCE, SUPPORT, UPDATE }
+enum class EventStage { APP, CONFIG, CAPTURE, MODEL, MODEL_DOWNLOAD, OCR, PRIVACY, QUEUE, UPLOAD, HEARTBEAT, NOTE, SOURCE, SUPPORT, UPDATE, UI, FILE_SCAN, FILE_PREPARE, FILE_UPLOAD, FILE_PART, FILE_COMMIT, DEDUPE }
 enum class EventCode { STARTED, STOPPED, OK, FILTERED, WAIT_NETWORK, PERMISSION, CONFIG_INVALID, NETWORK, TIMEOUT, TLS, AUTH, CONFLICT, SERVER, RESPONSE, STORAGE, MODEL_UNAVAILABLE, SCHEDULER, CANCELLED, OTHER }
 
 /** Fixed schema only: no exception messages, endpoints, IDs, content or arbitrary string attributes. */
@@ -74,6 +74,7 @@ class EventJournal(private val file: File, private val limit: Int = 500) {
                 when (current) {
                     is SocketTimeoutException, is TimeoutException -> return EventCode.TIMEOUT
                     is SSLException -> return EventCode.TLS
+                    is InterruptedException, is java.util.concurrent.CancellationException -> return EventCode.CANCELLED
                     is SecurityException -> return EventCode.PERMISSION
                     is IllegalArgumentException -> return EventCode.CONFIG_INVALID
                 }
@@ -81,9 +82,9 @@ class EventJournal(private val file: File, private val limit: Int = 500) {
             }
             return when (stage) {
                 EventStage.CONFIG -> EventCode.CONFIG_INVALID
-                EventStage.QUEUE, EventStage.NOTE, EventStage.SUPPORT -> EventCode.STORAGE
+                EventStage.QUEUE, EventStage.NOTE, EventStage.SUPPORT, EventStage.FILE_SCAN, EventStage.FILE_PREPARE, EventStage.DEDUPE -> EventCode.STORAGE
                 EventStage.MODEL -> EventCode.MODEL_UNAVAILABLE
-                EventStage.UPLOAD, EventStage.HEARTBEAT, EventStage.MODEL_DOWNLOAD -> if (error is IOException) EventCode.NETWORK else EventCode.RESPONSE
+                EventStage.UPLOAD, EventStage.HEARTBEAT, EventStage.MODEL_DOWNLOAD, EventStage.FILE_UPLOAD, EventStage.FILE_PART, EventStage.FILE_COMMIT -> if (error is IOException) EventCode.NETWORK else EventCode.RESPONSE
                 else -> EventCode.OTHER
             }
         }

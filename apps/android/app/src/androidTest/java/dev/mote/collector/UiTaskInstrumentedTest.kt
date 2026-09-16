@@ -46,4 +46,19 @@ class UiTaskInstrumentedTest {
             Thread.sleep(650); assertEquals(destroyed, progress.get()); assertEquals(0, completed.get())
         } finally { release.countDown(); scenario.close() }
     }
+    @Test fun rejectedExecutorFinishesInsteadOfLeavingTaskBusy() {
+        val done = CountDownLatch(1)
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor().apply { shutdown() }
+        ActivityScenario.launch(FixtureActivity::class.java).use { scenario ->
+            lateinit var task: UiTask
+            scenario.onActivity { activity ->
+                task = UiTask(activity, executor, false)
+                assertTrue(task.start("合成拒绝任务", {}, { error("must not run") }) { result ->
+                    assertTrue(result.exceptionOrNull() is java.util.concurrent.RejectedExecutionException)
+                    assertFalse(task.busy); done.countDown()
+                })
+            }
+            assertTrue(done.await(3, TimeUnit.SECONDS))
+        }
+    }
 }

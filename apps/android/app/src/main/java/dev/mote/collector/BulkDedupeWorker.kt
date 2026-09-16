@@ -55,11 +55,18 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
     private fun progress(stage: String, done: Int, total: Int, found: Int = 0, errors: Int = 0) {
         setProgressAsync(workDataOf("stage" to stage, "done" to done, "total" to total, "found" to found, "errors" to errors)).get()
     }
-    override fun doWork(): Result = try {
-        if (inputData.getString("action") == "scan") scan() else resolve()
-    } catch (error: Exception) {
-        Result.failure(workDataOf("message" to (error.message ?: "操作失败，未处理记录已保留")))
-    } finally { LocalStateChanges.changed(immediate = true) }
+    override fun doWork(): Result {
+        val started = android.os.SystemClock.elapsedRealtime()
+        SupportEvents.record(applicationContext, EventStage.DEDUPE, EventCode.STARTED)
+        return try {
+            (if (inputData.getString("action") == "scan") scan() else resolve()).also {
+                SupportEvents.record(applicationContext, EventStage.DEDUPE, if (isStopped) EventCode.CANCELLED else EventCode.STOPPED, android.os.SystemClock.elapsedRealtime() - started)
+            }
+        } catch (error: Exception) {
+            SupportEvents.record(applicationContext, EventStage.DEDUPE, EventJournal.failure(error, EventStage.DEDUPE), android.os.SystemClock.elapsedRealtime() - started)
+            Result.failure(workDataOf("message" to (error.message ?: "操作失败，未处理记录已保留")))
+        } finally { LocalStateChanges.changed(immediate = true) }
+    }
     private fun scan(): Result {
         val mode = ScreenshotDedupeHelper.Mode.fromRaw(inputData.getString("mode"))
         store.write("report", JSONObject().put("complete", false))
@@ -85,7 +92,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
                         .put("changedPixelRatio", comparison.changedPixelRatio).put("changedBlocks", comparison.changedBlocks)
                         .put("changedRows", comparison.changedRows).put("changedCols", comparison.changedCols))
                 } else { reference = row; signature = features.toSignature() }
-            } catch (_: Exception) { errors++; reference = null; signature = null }
+            } catch (error: Exception) { SupportEvents.record(applicationContext, EventStage.DEDUPE, EventJournal.failure(error, EventStage.DEDUPE)); errors++; reference = null; signature = null }
             if (index % 5 == 0 || index == rows.lastIndex) progress("比较图片", index + 1, rows.size, pairs.length(), errors)
         }
         if (isStopped) return Result.failure()
@@ -110,7 +117,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
                 val ok = source.resolveDedupe(row.getString("id"), row.getString("blob"),
                     if (source === queue) ref!!.getString("id") else null, ref?.getString("blob"), target, if (action == "restore") restoreLimit else Long.MAX_VALUE)
                 if (ok) done++ else skipped++
-            } catch (_: Exception) { skipped++ }
+            } catch (error: Exception) { SupportEvents.record(applicationContext, EventStage.DEDUPE, EventJournal.failure(error, EventStage.DEDUPE)); skipped++ }
             progress("处理记录", index + 1, items.length(), done, skipped)
         }
         return Result.success(workDataOf("message" to "处理完成：成功 $done，失效或失败 $skipped；失败记录保留，可重新扫描或重试"))

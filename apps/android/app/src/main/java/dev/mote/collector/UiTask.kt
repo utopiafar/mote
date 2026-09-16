@@ -46,7 +46,17 @@ internal class UiTask(
             else { poll = null; finished(completed) }
         }
         progress(label)
-        executor.execute { result.set(runCatching { work(state) }) }
+        try {
+            executor.execute {
+                SupportEvents.record(activity.applicationContext, EventStage.UI, EventCode.STARTED)
+                val outcome = runCatching { work(state) }
+                SupportEvents.record(activity.applicationContext, EventStage.UI, outcome.exceptionOrNull()?.let { EventJournal.failure(it, EventStage.UI) } ?: EventCode.OK, SystemClock.elapsedRealtime() - state.started)
+                result.set(outcome)
+            }
+        } catch (error: java.util.concurrent.RejectedExecutionException) {
+            // A rejected submission still completes through the normal UI result path.
+            result.set(Result.failure(error))
+        }
         handler.removeCallbacks(tick); handler.post(tick)
         return true
     }

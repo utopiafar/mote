@@ -11,6 +11,13 @@ import java.net.SocketTimeoutException
 import javax.net.ssl.SSLException
 
 class EventJournalTest {
+    @org.junit.Test fun fileTransportFailuresAndCancellationKeepTheirCategory() {
+        assertEquals(EventCode.NETWORK, EventJournal.failure(java.io.IOException("synthetic private URL"), EventStage.FILE_PART))
+        assertEquals(EventCode.RESPONSE, EventJournal.failure(IllegalStateException("synthetic response"), EventStage.FILE_COMMIT))
+        assertEquals(EventCode.CANCELLED, EventJournal.failure(java.util.concurrent.CancellationException("synthetic"), EventStage.UI))
+        assertEquals(EventCode.STORAGE, EventJournal.failure(java.io.IOException("synthetic path"), EventStage.FILE_PREPARE))
+    }
+
     @org.junit.Test fun rawTextIsNotParsedAndLevelsArePersisted() {
         val path = File(folder.root, "raw-events.json")
         val journal = EventJournal(path)

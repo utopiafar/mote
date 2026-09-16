@@ -1,3 +1,4 @@
+import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
 import { randomUUID } from 'node:crypto';
 import { join, basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
@@ -32,7 +33,7 @@ export class LocalSourceManager {
   private binding: string;
   readonly nodeBinding: ConnectionBindingStore;
   private readable = new Set<string>();
-  constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false) { this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); }
+  constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false, private events?: EventJournal) { this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); }
   private connectionBinding(): string { return sourceHash(this.connection.serverUrl + ':' + (this.connection.token ?? '')); }
   async initialize(): Promise<void> {
     try {
@@ -143,6 +144,7 @@ export class LocalSourceManager {
       // Failed attempts use a bounded retry interval as well; a timer never floods an unavailable node.
       if (!force && last && (last as SourceStatus & { attemptAt?: number }).attemptAt && Date.now() - (last as SourceStatus & { attemptAt: number }).attemptAt < Math.max(30000, source.intervalSeconds * 1000)) continue;
       const status: SourceStatus & { attemptAt: number } = { source, state: 'syncing', message: '读取所选来源并同步', pending: 0, items: 0, skipped: 0, ...last, attemptAt: Date.now() }; status.state = 'syncing'; this.states.set(source.id, status);
+      const started = Date.now(); void this.events?.record('SOURCE', 'STARTED');
       this.readable.delete(source.id);
       try {
         let engine = this.engines.get(source.id);
@@ -166,7 +168,9 @@ export class LocalSourceManager {
             Object.assign(status, engine.status(), { state: ready === 'paused' ? 'paused' : 'idle', message: ready === 'paused' ? '中央已暂停该来源；待上传版本保留在本机' : scan.complete ? '已同步；后台定时检查变化' : '已同步可读取项；扫描不完整，未判断删除' });
           }
         }
+        void this.events?.record('SOURCE', scan.complete ? 'OK' : 'SCHEDULER', { elapsedMs: Date.now() - started });
       } catch (e) {
+        void this.events?.record('SOURCE', signal.aborted ? 'CANCELLED' : e instanceof CalendarPermissionError ? 'PERMISSION' : failureCode(e, 'SOURCE'), { elapsedMs: Date.now() - started });
         Object.assign(status, this.engines.get(source.id)?.status(), { state: e instanceof CalendarPermissionError ? 'permission_required' : 'error', message: signal.aborted ? '同步已取消，待传版本已保留' : e instanceof CalendarPermissionError ? e.message : '同步未完成：检查权限、网络或来源路径后重试；待传版本已保留' });
       }
     }
@@ -175,7 +179,7 @@ export class LocalSourceManager {
     return async (path, body, method, requestSignal) => {
       if (!this.connection.serverUrl || !this.connection.token || !this.nodeBinding.matches(this.connection)) throw new Error('本地来源没有匹配的中央连接');
       const response = await fetch(this.connection.serverUrl + path, { method, headers: { Authorization: 'Bearer ' + this.connection.token, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
-      if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new Error(response.status === 401 ? '中央认证失败，请检查令牌' : response.status === 409 ? '中央来源已暂停，请在中央来源页恢复' : '中央同步失败，已保留本地版本，稍后重试'); }
+      if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? '中央认证失败，请检查令牌' : response.status === 409 ? '中央来源已暂停，请在中央来源页恢复' : '中央同步失败，已保留本地版本，稍后重试', httpFailure(response.status), response.status); }
       return JSON.parse(await readResponseText(response, 1024 * 1024));
     };
   }

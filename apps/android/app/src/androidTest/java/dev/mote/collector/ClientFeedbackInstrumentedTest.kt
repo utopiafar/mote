@@ -80,27 +80,24 @@ class ClientFeedbackInstrumentedTest {
             }
         }
     }
-    @Test fun logFiltersAndPaginationDoNotDuplicateRows() {
+    @Test fun rawLogsPreserveTextAndAllowSelection() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val journal = SupportEvents.journal(context)
-        repeat(45) { journal.record(EventStage.APP, EventCode.OK) }
-        journal.record(EventStage.UPLOAD, EventCode.AUTH)
+        repeat(45) { journal.record(EventStage.UPLOAD, if (it == 44) EventCode.AUTH else EventCode.OK, it.toLong()) }
+        val expected = journal.readRaw()
         ActivityScenario.launch(LogViewerActivity::class.java).use { scenario ->
-            val deadline = android.os.SystemClock.elapsedRealtime() + 10000
             var ready = false
+            val deadline = android.os.SystemClock.elapsedRealtime() + 15000
             while (!ready && android.os.SystemClock.elapsedRealtime() < deadline) {
-                scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("HTTP：") } }
+                scenario.onActivity { activity -> ready = views(activity.window.decorView).filterIsInstance<android.widget.EditText>().any { it.text.toString() == expected } }
                 if (!ready) Thread.sleep(50)
             }
             assertTrue(ready)
             scenario.onActivity { activity ->
-                assertEquals(20, views(activity.window.decorView).filterIsInstance<TextView>().count { it.text.contains("HTTP：") })
-                views(activity.window.decorView).filterIsInstance<Spinner>().single().setSelection(3)
-            }
-            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-            scenario.onActivity { activity ->
-                val rows = views(activity.window.decorView).filterIsInstance<TextView>().filter { it.text.contains("HTTP：") }
-                assertTrue(rows.isNotEmpty()); assertTrue(rows.all { it.text.contains("错误") })
+                val output = views(activity.window.decorView).filterIsInstance<android.widget.EditText>().single()
+                assertEquals(expected, output.text.toString()); assertNull(output.keyListener)
+                views(activity.window.decorView).filterIsInstance<android.widget.Button>().single { it.text.toString() == "全选" }.performClick()
+                assertEquals(0, output.selectionStart); assertEquals(expected.length, output.selectionEnd)
             }
             scenario.recreate()
         }

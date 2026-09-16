@@ -27,7 +27,14 @@ class FileSources(private val context: Context, private val cancel: Cancellation
         if (!c.isNull(4) && c.getLong(4) > 0) item.put("modifiedAt", Instant.ofEpochMilli(c.getLong(4)).toString())
         item
     }
-    fun scan(source: LocalSource): Boolean {
+    fun scan(source: LocalSource): Boolean = measured(EventStage.FILE_SCAN) { scanSlice(source) }
+    private fun <T> measured(stage: EventStage, work: () -> T): T {
+        val started = android.os.SystemClock.elapsedRealtime()
+        SupportEvents.record(context, stage, EventCode.STARTED)
+        try { return work().also { SupportEvents.record(context, stage, EventCode.OK, android.os.SystemClock.elapsedRealtime() - started) } }
+        catch (error: Exception) { SupportEvents.record(context, stage, EventJournal.failure(error, stage), android.os.SystemClock.elapsedRealtime() - started); throw error }
+    }
+    private fun scanSlice(source: LocalSource): Boolean {
         val queue = context.fileArchives(); val state = queue.configure(source); val generation = state.getString("generation"); val root = Uri.parse(source.uri)
         if (!source.tree) {
             val item = metadata(root, source) ?: throw IllegalStateException("所选文件不可用")
@@ -71,9 +78,9 @@ class FileSources(private val context: Context, private val cancel: Cancellation
         }
         return false
     }
-    fun prepare(source: LocalSource, anchor: ((String) -> String?)? = null) = context.fileArchives().prepare(source, anchor = anchor,
+    fun prepare(source: LocalSource, anchor: ((String) -> String?)? = null) = measured(EventStage.FILE_PREPARE) { context.fileArchives().prepare(source, anchor = anchor,
         open = { resolver.openInputStream(Uri.parse(it.getString("uri"))) ?: throw IllegalStateException("文件无法打开") },
-        unchanged = { old -> metadata(Uri.parse(old.getString("uri")), source)?.let { context.fileArchives().signature(it) == context.fileArchives().signature(JSONObject(old.toString()).apply { remove("_relativePath") }) } ?: false })
+        unchanged = { old -> metadata(Uri.parse(old.getString("uri")), source)?.let { context.fileArchives().signature(it) == context.fileArchives().signature(JSONObject(old.toString()).apply { remove("_relativePath") }) } ?: false }) }
 }
 
 object FileUpload {
@@ -91,23 +98,27 @@ object FileUpload {
         return output.toByteArray()
     }
 
-    private fun request(config: CollectorConfig, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
+    private fun request(context: Context, stage: EventStage, config: CollectorConfig, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
+        val started = android.os.SystemClock.elapsedRealtime()
+        SupportEvents.record(context, stage, EventCode.STARTED)
         val connection = URL(config.server.trimEnd('/') + path).openConnection() as HttpURLConnection
+        var status: Int? = null
         try {
             connection.instanceFollowRedirects = false; connection.requestMethod = method; connection.connectTimeout = 15000; connection.readTimeout = 30000
             connection.setRequestProperty("Authorization", "Bearer ${config.token}")
             if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { it.write(body) } }
-            check(connection.responseCode in 200..299) { if (connection.responseCode == 404) "中央未支持文件同步，请先升级" else "中央未确认文件（HTTP ${connection.responseCode}）" }
+            status = connection.responseCode
+            check(status in 200..299) { if (connection.responseCode == 404) "中央未支持文件同步，请先升级" else "中央未确认文件（HTTP ${connection.responseCode}）" }
             val bytes = connection.inputStream.use { readResponse(it) }
-            return JSONObject(String(bytes, Charsets.UTF_8))
-        } finally { connection.disconnect() }
+            return JSONObject(String(bytes, Charsets.UTF_8)).also { SupportEvents.record(context, stage, EventCode.OK, android.os.SystemClock.elapsedRealtime() - started, status) }
+        } catch (error: Exception) { SupportEvents.record(context, stage, status?.takeIf { it !in 200..299 }?.let { EventJournal.httpFailure(it) } ?: EventJournal.failure(error, stage), android.os.SystemClock.elapsedRealtime() - started, status); throw error } finally { connection.disconnect() }
     }
     /** At most two network parts per dispatch so other record queues can run. */
     fun sync(context: Context, source: LocalSource, config: CollectorConfig, stillSelected: () -> Boolean): Boolean {
         val queue = context.fileArchives(); val row = queue.next(source.id) ?: FileSources(context).prepare(source) { external ->
             check(stillSelected())
             val q = "sourceId=" + java.net.URLEncoder.encode(source.id, "UTF-8") + "&externalId=" + java.net.URLEncoder.encode(external, "UTF-8")
-            val head = request(config, "/api/file-sync/v1/head?$q", "GET")
+            val head = request(context, EventStage.FILE_UPLOAD, config, "/api/file-sync/v1/head?$q", "GET")
             check(!head.optBoolean("forgotten")) { "中央已忘记此文件，需要在中央重新允许同步" }
             head.optString("revision").takeIf { head.has("revision") && !head.isNull("revision") && it.isNotEmpty() }
         } ?: return queue.pendingCount(source.id) == 0
@@ -115,9 +126,9 @@ object FileUpload {
         checkSelection()
         val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
         if (!manifest.has("sha256")) {
-            val ack = request(config, "/api/file-sync/v1/revisions", "PUT", manifest.toString().toByteArray(Charsets.UTF_8)); checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0
+            val ack = request(context, EventStage.FILE_UPLOAD, config, "/api/file-sync/v1/revisions", "PUT", manifest.toString().toByteArray(Charsets.UTF_8)); checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0
         }
-        val begun = request(config, "/api/file-sync/v1/uploads", "POST", manifest.toString().toByteArray(Charsets.UTF_8))
+        val begun = request(context, EventStage.FILE_UPLOAD, config, "/api/file-sync/v1/uploads", "POST", manifest.toString().toByteArray(Charsets.UTF_8))
         val uploadId = begun.getString("uploadId"); check(uploadId.matches(Regex("[a-fA-F0-9-]{36}"))); check(begun.getInt("partBytes") == FileArchiveQueue.PART_BYTES)
         begun.optJSONObject("ack")?.let { ack -> checkSelection(); queue.acknowledge(source.id, row, ack); return queue.pendingCount(source.id) == 0 }
         val parts = begun.getJSONArray("parts"); val received = (0 until parts.length()).map { parts.getJSONObject(it).getInt("part") }.toSet()
@@ -125,11 +136,11 @@ object FileUpload {
         for (part in 0 until total) if (part !in received) {
             if (sent++ >= 2) return false
             checkSelection(); val bytes = queue.part(source.id, part)
-            val ack = request(config, "/api/file-sync/v1/uploads/$uploadId/parts/$part", "PUT", bytes, true)
+            val ack = request(context, EventStage.FILE_PART, config, "/api/file-sync/v1/uploads/$uploadId/parts/$part", "PUT", bytes, true)
             val hash = MessageDigestCompat.hash(bytes)
             check(ack.getInt("part") == part && ack.getInt("bytes") == bytes.size && ack.getString("hash") == hash) { "文件块确认不匹配" }
         }
-        checkSelection(); val ack = request(config, "/api/file-sync/v1/uploads/$uploadId/commit", "POST", "{}".toByteArray()); checkSelection(); queue.acknowledge(source.id, row, ack)
+        checkSelection(); val ack = request(context, EventStage.FILE_COMMIT, config, "/api/file-sync/v1/uploads/$uploadId/commit", "POST", "{}".toByteArray()); checkSelection(); queue.acknowledge(source.id, row, ack)
         return queue.pendingCount(source.id) == 0
     }
 }

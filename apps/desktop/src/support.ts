@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import type { Status } from './contracts';
 import type { DesktopProfile } from './profile';
 
-export const stages = ['APP','CONFIG','CAPTURE','MODEL','MODEL_DOWNLOAD','OCR','PRIVACY','QUEUE','UPLOAD','HEARTBEAT','NOTE','SUPPORT'] as const;
+export const stages = ['APP','CONFIG','CAPTURE','MODEL','MODEL_DOWNLOAD','OCR','PRIVACY','QUEUE','UPLOAD','HEARTBEAT','NOTE','SUPPORT','SOURCE','CONNECTION','UPDATE'] as const;
 export type EventStage = typeof stages[number];
 export const codes = ['STARTED','STOPPED','OK','FILTERED','WAIT_NETWORK','PERMISSION','CONFIG_INVALID','NETWORK','TIMEOUT','TLS','AUTH','CONFLICT','SERVER','RESPONSE','STORAGE','MODEL_UNAVAILABLE','SCHEDULER','CANCELLED','OTHER'] as const;
 export type EventCode = typeof codes[number];

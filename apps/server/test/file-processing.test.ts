@@ -1,3 +1,4 @@
+import {ServerDiagnostics} from '../src/diagnostics.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
@@ -24,11 +25,12 @@ async function fixture(t:any,options:any={}){
  const manifest={sourceId:'phone',item:{externalId:'fixture.wav',revision:'1',observedAt:new Date().toISOString(),title:'Synthetic interview.wav',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},sizeBytes:wave.length,sha256:sha256(wave)};
  const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,wave,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
  const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return diary;}});return()=>{disposed=true;dispose();};});}};
- const processing=new FileProcessing(files,{transcribe:async()=>{asrCalls++;return raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{plugins:[plugin],analyze:options.analyze});
+ const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
+ const processing=new FileProcessing(files,{transcribe:async()=>{asrCalls++;return raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{plugins:[plugin],analyze:options.analyze,diagnostics});
  await processing.runtime.ready;
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:true,...options.settings}});
- t.after(async()=>{await processing.close();store.close();rmSync(dir,{recursive:true,force:true});});
- return {dir,store,sources,files,processing,id:ack.id,counts:()=>({asrCalls,diaryCalls,summaries,disposed})};
+ t.after(async()=>{await processing.close();await diagnostics.close();store.close();rmSync(dir,{recursive:true,force:true});});
+ return {dir,store,sources,files,processing,diagnostics,id:ack.id,counts:()=>({asrCalls,diaryCalls,summaries,disposed})};
 }
 
 test('actual Cordis registration and disposal; local pipeline checkpoints resume without repeating ASR',async t=>{
@@ -103,4 +105,19 @@ test('calendar association is model-proposed, requires evidence from both sides,
 
 test('changing defaults cannot send completed local-only transcripts into a cloud summary',async t=>{
  const f=await fixture(t);await f.processing.tick();f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,audioProcessor:'audio.http',summarize:true}});await f.processing.tick();assert.equal(f.counts().summaries,0);assert.equal(f.files.detail(f.id).job.local_only,1);
+});
+
+
+test('file diagnostics trace retries and checkpoint reuse without original content or provider errors',async t=>{
+ const f=await fixture(t,{failFirst:true});await f.processing.tick();
+ f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();await f.processing.tick();
+ const events=f.diagnostics.events().items;
+ assert.ok(events.some(e=>e.event==='file.step.started'&&e.operation==='extract'&&e.level==='debug'));
+ assert.ok(events.some(e=>e.event==='file.step.failed'&&e.operation==='diarize'&&e.level==='error'));
+ assert.ok(events.some(e=>e.event==='file.failed'&&e.attempt===1&&e.retryAfterMs===30000));
+ assert.ok(events.some(e=>e.event==='file.cached'&&e.operation==='extract'));
+ assert.ok(events.some(e=>e.event==='file.completed'&&e.attempt===2));
+ assert.ok(events.some(e=>e.event==='file.blocked'&&e.category==='local_only'));
+ assert.ok(events.filter(e=>e.operation==='extract').every(e=>e.jobId===f.id&&e.requestId));
+ const serialized=JSON.stringify(events);for(const privateText of ['Synthetic interview','generated failure','使用扣迪斯','fixture.diarize'])assert.ok(!serialized.includes(privateText));
 });
