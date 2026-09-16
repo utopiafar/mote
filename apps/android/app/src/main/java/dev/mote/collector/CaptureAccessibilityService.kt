@@ -15,21 +15,43 @@ class CaptureAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var settings: Settings
     private var pipeline: CapturePipeline? = null
+    private val pixels = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue<Runnable>(1))
+    private var destroyed = false
+    private val screenReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context, intent: android.content.Intent) { refreshSchedule() }
+    }
     private var inFlight = false
     private var nextCapture = 0L
     private var configurationGeneration = 0L
     private val tick = object : Runnable {
         override fun run() {
             try { collectIfEnabled() }
-            catch (_: Exception) { settings.status("paused", "无障碍采集暂不可用，下一周期重试") }
-            handler.postDelayed(this, 1000)
+            catch (_: Exception) { inFlight = false; settings.status("paused", "无障碍采集暂不可用，下一周期重试") }
+            if (shouldSchedule()) handler.postDelayed(this, (nextCapture - android.os.SystemClock.elapsedRealtime()).coerceIn(1000L, 300_000L))
         }
     }
     override fun onServiceConnected() {
         super.onServiceConnected()
         settings = Settings(this)
         instance = this; connected = true
-        handler.removeCallbacks(tick); handler.post(tick)
+        val filter = android.content.IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_SCREEN_OFF); addAction(android.content.Intent.ACTION_SCREEN_ON)
+            addAction(android.content.Intent.ACTION_USER_PRESENT)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, filter, RECEIVER_NOT_EXPORTED) else registerReceiver(screenReceiver, filter)
+        refreshSchedule()
+    }
+    private fun shouldSchedule(): Boolean = !destroyed && ::settings.isInitialized && settings.enabled &&
+        settings.read().let { it.screenCollectionEnabled && it.effectiveMode() == "accessibility" } && CapturePipeline.unlocked(this)
+    fun refreshSchedule() {
+        handler.post {
+            handler.removeCallbacks(tick)
+            if (shouldSchedule()) handler.post(tick)
+            else if (::settings.isInitialized) {
+                if (!settings.enabled) stopCapture()
+                else { configurationGeneration++; inFlight = false; nextCapture = 0; pipeline?.pause("锁屏或熄屏，暂停采集", OperationReason.LOCKED) }
+            }
+        }
     }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) { ProjectionService.instance?.onWindowChanged() /* Never read event/node text. */ }
     override fun onInterrupt() {
@@ -63,12 +85,13 @@ class CaptureAccessibilityService : AccessibilityService() {
         }
         if (pipeline == null) pipeline = CapturePipeline(this)
         Notifications.show(this, LocalStateRepository.get(this).state.value.captureLabel)
-        if (inFlight || System.currentTimeMillis() < nextCapture || pipeline!!.isBusy()) return
+        if (inFlight || android.os.SystemClock.elapsedRealtime() < nextCapture || pipeline!!.isBusy()) return
+        nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
         val snapshot = windowSnapshot()
         val mode = CapturePipeline.policy(config, snapshot)
         if (mode == AppCollectionMode.ACTIVITY) {
             if (pipeline!!.canCollect(config, snapshot, mode)) {
-                nextCapture = System.currentTimeMillis() + config.intervalSeconds * 1000L
+                nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
                 pipeline!!.submitActivity(snapshot, config)
             }; return
         }
@@ -77,20 +100,35 @@ class CaptureAccessibilityService : AccessibilityService() {
         val capturePipeline = pipeline!!
         val generation = configurationGeneration
         inFlight = true
-        nextCapture = System.currentTimeMillis() + config.intervalSeconds * 1000L
+        nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
         val at = Instant.now().toString()
         val observedAtMs = android.os.SystemClock.elapsedRealtime()
         Operations.record(this, OperationKind.CAPTURE_REQUESTED)
+        Diagnostics(this).add("captureRequests")
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 try {
                     val current = windowSnapshot()
-                    if (generation != configurationGeneration || ConnectionGuard.reconfiguring() || !settings.enabled || current != snapshot || CapturePipeline.policy(settings.read(), current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) return
-                    val hardware = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace) ?: return
-                    val bitmap = hardware.copy(Bitmap.Config.ARGB_8888, false)
-                    hardware.recycle()
-                    capturePipeline.submit(bitmap, current, config, at, observedAtMs)
-                } finally { result.hardwareBuffer.close(); if (generation == configurationGeneration) inFlight = false }
+                    if (generation != configurationGeneration || ConnectionGuard.reconfiguring() || !settings.enabled || current != snapshot || CapturePipeline.policy(settings.read(), current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) { result.hardwareBuffer.close(); if (generation == configurationGeneration) inFlight = false; return }
+                    // Transfer ownership to a worker; no full-size pixel copy on the main looper.
+                    pixels.execute {
+                        val bitmap = try {
+                            val hardware = Bitmap.wrapHardwareBuffer(result.hardwareBuffer, result.colorSpace)
+                            try { hardware?.copy(Bitmap.Config.ARGB_8888, false) } finally { hardware?.recycle() }
+                        } catch (_: Exception) { null } finally { result.hardwareBuffer.close() }
+                        handler.post {
+                            if (generation == configurationGeneration) inFlight = false
+                            if (bitmap != null) {
+                                if (!destroyed && generation == configurationGeneration && settings.enabled && settings.read() == config && windowSnapshot() == snapshot && CapturePipeline.unlocked(this@CaptureAccessibilityService))
+                                    capturePipeline.submit(bitmap, snapshot, config, at, observedAtMs)
+                                else bitmap.recycle()
+                            }
+                        }
+                    }
+                    return
+                } catch (_: java.util.concurrent.RejectedExecutionException) { /* service stopped */ }
+                if (generation == configurationGeneration) inFlight = false
+                result.hardwareBuffer.close()
             }
             override fun onFailure(errorCode: Int) {
                 if (generation != configurationGeneration) return
@@ -101,13 +139,15 @@ class CaptureAccessibilityService : AccessibilityService() {
         })
     }
     fun stopCapture() {
+        handler.removeCallbacks(tick)
         configurationGeneration++; nextCapture = 0; inFlight = false
         pipeline?.close(); pipeline = null
         if (!ProjectionService.running) Notifications.clear(this)
     }
     override fun onDestroy() {
-        connected = false; instance = null
-        handler.removeCallbacksAndMessages(null)
+        destroyed = true; connected = false; instance = null
+        runCatching { unregisterReceiver(screenReceiver) }; pixels.shutdown()
+        handler.removeCallbacks(tick)
         stopCapture()
         if (::settings.isInitialized && settings.enabled) {
             val c = settings.read()

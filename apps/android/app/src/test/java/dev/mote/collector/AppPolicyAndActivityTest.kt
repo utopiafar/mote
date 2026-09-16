@@ -9,7 +9,7 @@ import java.util.UUID
 
 class AppPolicyAndActivityTest {
     @Test fun defaultContentIncludesLauncherSystemAndUnidentifiedSurfaces() {
-        val defaults = AppCollectionRules.parse(AppCollectionRules.DEFAULT)
+        val defaults = AppCollectionRules.parse(AppCollectionRules.LEGACY_DEFAULT)
         val launcher = CollectionWindows.snapshot(listOf(CollectionWindow(1, "com.example.launcher")), "com.example.launcher")
         val system = CollectionWindows.snapshot(listOf(CollectionWindow(3, "com.android.systemui")), null)
         val absent = WindowSnapshot(emptySet(), null, false)

@@ -17,10 +17,12 @@ data class CollectorConfig(
     val ocrChargingOnly: Boolean = false, val mediaCollectionEnabled: Boolean = false, val screenCollectionEnabled: Boolean = true,
     val notificationCollectionEnabled: Boolean = false, val deviceEventCollectionEnabled: Boolean = false,
     val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off",
+    val ocrMode: String = "chinese", val ocrAppModes: String = "{}",
     val imageDedupeDiagnosticsEnabled: Boolean = false
 ) {
     fun observesSystem() = (mediaCollectionEnabled && metadataEnabled) || notificationCollectionEnabled || deviceEventCollectionEnabled
-    fun effectiveMode() = if (AppCollectionRules.parse(appCollectionRules).mayCollectContent()) mode else "accessibility"
+    val collectionRules by lazy { AppCollectionRules.parse(appCollectionRules) }
+    fun effectiveMode() = if (collectionRules.mayCollectContent()) mode else "accessibility"
     fun hasSyncConnection() = server.isNotBlank() && token.length >= 32
     fun syncPolicy() = SyncPolicy(syncMode, syncIntervalMinutes, syncBatchSize)
     fun validateConnection() {
@@ -31,6 +33,7 @@ data class CollectorConfig(
         if (server.isNotBlank()) PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
         require(token.isBlank() || token.length >= 32) { "节点令牌至少需要 32 个字符；留空时仅保存在本机" }
         syncPolicy().validate()
+        OcrPolicy.validate(ocrMode, ocrAppModes)
         require(imageDedupeMode in setOf("off", "exact", "conservative", "balanced", "aggressive")) { "图片去重档位无效" }
         require(deviceName.isNotBlank() && deviceName.length <= 128) { "请填写 1..128 字符的设备名称" }
         require(intervalSeconds in 5..300) { "采集间隔为 5..300 秒" }
@@ -57,10 +60,21 @@ class Settings(private val context: Context) {
     var enabled: Boolean get() = prefs.getBoolean("enabled", false); set(value) {
         if (!value) MediaCollectionService.suspendObservation()
         prefs.edit().putBoolean("enabled", value).commit()
+        CaptureAccessibilityService.instance?.refreshSchedule()
+        runCatching { HeartbeatWorker.stateChanged(context, read()) }
     }
-    fun read(): CollectorConfig = synchronized(Settings::class.java) { CollectorConfig(
+    fun read(): CollectorConfig = synchronized(Settings::class.java) {
+        if (!prefs.contains("appCollectionRules")) {
+            val initial = if (prefs.contains("interval") || prefs.contains("enabled")) AppCollectionRules.LEGACY_DEFAULT else AppCollectionRules.DEFAULT
+            if (!prefs.edit().putString("appCollectionRules", initial).commit()) throw SettingsWriteFailure()
+        }
+        // SharedPreferences already keeps values in memory. Compare only configuration keys,
+        // so status/counter writes never rebuild a snapshot or decrypt credentials.
+        val values = prefs.all.filterKeys { it in configurationKeys }
+        if (cachedPrefs === prefs && cachedValues == values) return@synchronized requireNotNull(cachedConfig)
+        val config = CollectorConfig(
         server = prefs.getString("server", BuildConfig.DEFAULT_SERVER)!!,
-        token = prefs.getString("token", null)?.let { String(secret.open(Base64.decode(it, Base64.NO_WRAP))) } ?: "",
+        token = credentials(prefs.getString("token", null)),
         deviceName = prefs.getString("deviceName", Build.MODEL)!!,
         intervalSeconds = prefs.getInt("interval", 30), maxQueueMiB = prefs.getInt("maxQueue", 256),
         wifiOnly = prefs.getBoolean("wifiOnly", true), excludedPackages = prefs.getString("excluded", "")!!,
@@ -73,21 +87,33 @@ class Settings(private val context: Context) {
         jpegQuality = prefs.getInt("jpegQuality", 75), captureMaxSide = prefs.getInt("captureMaxSide", 1280),
         chargingOnly = prefs.getBoolean("chargingOnly", false), batteryPauseBelowPct = prefs.getInt("batteryPauseBelowPct", 0),
         diagnosticsEnabled = prefs.getBoolean("diagnosticsEnabled", false), diagnosticsIntervalSeconds = prefs.getInt("diagnosticsIntervalSeconds", 60),
-        appCollectionRules = prefs.getString("appCollectionRules", AppCollectionRules.DEFAULT)!!,
+        appCollectionRules = prefs.getString("appCollectionRules", if (prefs.contains("interval") || prefs.contains("enabled")) AppCollectionRules.LEGACY_DEFAULT else AppCollectionRules.DEFAULT)!!,
         metadataEnabled = prefs.getBoolean("metadataEnabled", true),
         syncMode = prefs.getString("syncMode", "realtime")!!,
         syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20),
         ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false), mediaCollectionEnabled = prefs.getBoolean("mediaCollectionEnabled", false), screenCollectionEnabled = prefs.getBoolean("screenCollectionEnabled", true),
         notificationCollectionEnabled = prefs.getBoolean("notificationCollectionEnabled", false), deviceEventCollectionEnabled = prefs.getBoolean("deviceEventCollectionEnabled", false),
         syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!,
-        imageDedupeDiagnosticsEnabled = prefs.getBoolean("imageDedupeDiagnosticsEnabled", false)
-    ) }
+        imageDedupeDiagnosticsEnabled = prefs.getBoolean("imageDedupeDiagnosticsEnabled", false),
+        ocrMode = prefs.getString("ocrMode", "chinese")!!, ocrAppModes = prefs.getString("ocrAppModes", "{}")!!
+    )
+        cachedPrefs = prefs; cachedValues = values; cachedConfig = config
+        config
+    }
+    private fun credentials(ciphertext: String?): String {
+        if (ciphertext == null) return ""
+        if (cachedCiphertext != ciphertext) {
+            cachedToken = String(secret.open(Base64.decode(ciphertext, Base64.NO_WRAP)))
+            cachedCiphertext = ciphertext
+        }
+        return cachedToken
+    }
     fun save(c: CollectorConfig, expected: CollectorConfig? = null) = synchronized(Settings::class.java) {
         if (expected != null && read() != expected) throw SettingsChangedFailure()
         c.validate()
         val origin = originAfterChange(c)
         val values = mapOf<String, Any>(
-            "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
+            "ocrMode" to c.ocrMode, "ocrAppModes" to c.ocrAppModes, "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
             "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
             "syncChargingOnly" to c.syncChargingOnly, "syncBatteryNotLow" to c.syncBatteryNotLow,
             "syncBatchSize" to c.syncBatchSize, "server" to c.server.trim().trimEnd('/'),
@@ -160,14 +186,28 @@ class Settings(private val context: Context) {
     fun lastUploadAt(): String? = prefs.getString("lastUploadAt", null)
     fun syncState(): String = prefs.getString("syncState", "idle")!!
     fun syncStatus(state: String, message: String, uploaded: Boolean = false) {
+        if (!uploaded && syncState() == state && uploadStatus() == message) return
         val edit = prefs.edit().putString("syncState", state).putString("uploadStatus", message)
         if (uploaded) edit.putString("lastUploadAt", java.time.Instant.now().toString())
         edit.apply()
     }
+    companion object {
+        private var cachedPrefs: android.content.SharedPreferences? = null
+        private var cachedValues: Map<String, *>? = null
+        private var cachedConfig: CollectorConfig? = null
+        private var cachedCiphertext: String? = null
+        private var cachedToken = ""
+        private val configurationKeys = setOf("appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
+    }
     fun saveNsfw(value: NsfwConfig) {
         save(read().copy(nsfw = value))
     }
-    fun status(state: String, message: String) { prefs.edit().putString("state", state).putString("message", message).putLong("statusAt", System.currentTimeMillis()).apply() }
+    fun status(state: String, message: String) {
+        val changed = state() != state
+        if (!changed && message() == message) return
+        prefs.edit().putString("state", state).putString("message", message).putLong("statusAt", System.currentTimeMillis()).apply()
+        if (changed) runCatching { HeartbeatWorker.stateChanged(context, read()) }
+    }
     fun state(): String = prefs.getString("state", "paused")!!
     fun message(): String = prefs.getString("message", "尚未开始采集")!!
     fun statusAt(): Long = prefs.getLong("statusAt", 0)

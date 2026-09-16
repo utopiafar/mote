@@ -73,8 +73,9 @@ object RuntimeSettings {
             val result = runCatching {
                 reportProgress("正在等待后台处理结束")
                 val work = WorkManager.getInstance(app)
-                listOf("mote-sync-recovery", "mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic", "mote-capture-ocr", "mote-capture-ocr-recovery")
+                listOf("mote-heartbeat", "mote-heartbeat-now", "mote-sync-recovery", "mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic", "mote-capture-ocr", "mote-capture-ocr-recovery")
                     .forEach { work.cancelUniqueWork(it).result.get(10, TimeUnit.SECONDS) }
+                SyncSchedule.invalidate()
                 val deadline = SystemClock.elapsedRealtime() + 120_000
                 while (ConnectionGuard.processing.get() > 0) {
                     check(SystemClock.elapsedRealtime() < deadline) { "当前处理暂未结束，原设置已保留，请稍后重试" }
@@ -120,6 +121,7 @@ object RuntimeSettings {
                     Applied(needsConsent)
                 }.onFailure { executor.execute { settings.enabled = false }; settings.status("error", "采集恢复失败：${it.message ?: "请检查权限和所选存储位置"}") }
                 ConnectionGuard.endReconfiguration()
+                CaptureAccessibilityService.instance?.refreshSchedule()
                 MediaCollectionService.refresh()
                 if (result.isSuccess && applied.getOrNull()?.projectionConsentRequired == true) projectionConsent.request()
                 executor.execute {

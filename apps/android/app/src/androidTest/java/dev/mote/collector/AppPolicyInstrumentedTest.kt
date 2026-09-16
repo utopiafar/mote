@@ -155,7 +155,7 @@ class AppPolicyInstrumentedTest {
         }
         try {
             val c = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-timing-fixture-only-123456789", intervalSeconds = 15,
-                excludedPackages = "", appCollectionRules = AppCollectionRules.DEFAULT, nsfw = settings.read().nsfw.copy(enabled = false))
+                excludedPackages = "", appCollectionRules = AppCollectionRules.LEGACY_DEFAULT, nsfw = settings.read().nsfw.copy(enabled = false))
             settings.save(c); settings.enabled = true; pipeline = CapturePipeline(context) { }
             pipeline.submit(generated(), windows, c, "2026-09-14T00:00:00Z", 0)
             waitUntil { context.queue().depth() == 1 && pipeline?.isBusy() == false }

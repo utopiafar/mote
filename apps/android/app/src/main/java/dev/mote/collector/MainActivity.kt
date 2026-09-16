@@ -93,6 +93,8 @@ class MainActivity : Activity() {
     private lateinit var syncChargingOnly: CheckBox
     private lateinit var syncBatteryNotLow: CheckBox
     private lateinit var chargingOnly: CheckBox
+    private lateinit var ocrMode: Spinner
+    private lateinit var ocrAppModes: EditText
     private lateinit var ocrChargingOnly: CheckBox
     private lateinit var diagnosticEnabled: CheckBox
     private lateinit var imageDedupeDiagnosticsEnabled: CheckBox
@@ -327,8 +329,16 @@ class MainActivity : Activity() {
             setSelection(imageDedupeModes.indexOf(config.imageDedupeMode).coerceAtLeast(0))
         }
         content.addView(imageDedupeMode, LinearLayout.LayoutParams(-1, dp(56))); track(imageDedupeMode, "imageDedupeMode")
-        text("与同一应用最近保存的画面比较。命中后只保存时间、应用、时长和去重标记，不保存图片或文字。近似档位可能忽略细小变化；重启后重新建立基准。", 13, MoteUi.muted)
+        text("与同一应用最近保存的画面比较。重处理前命中时仅记录应用活动，不保存或审查当前图片，也不沿用旧文字。开启图片对比诊断时保留审查后的对比链路。近似档位可能忽略细小变化；重启后重新建立基准。", 13, MoteUi.muted)
         chargingOnly = check("仅充电时采集屏幕、活动和媒体", config.chargingOnly)
+        text("OCR 识别方式", 15)
+        ocrMode = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("中文与拉丁文（单引擎）", "仅拉丁文", "双引擎（高质量）"))
+            setSelection(OcrPolicy.modes.indexOf(config.ocrMode).coerceAtLeast(0))
+        }
+        content.addView(ocrMode); track(ocrMode, "ocrMode")
+        ocrAppModes = field("按应用指定 OCR（JSON）", config.ocrAppModes, "{}")
+        text("可填写包名到 chinese、latin 或 dual 的映射；未指定的应用使用上方模式。", 13, MoteUi.muted)
         ocrChargingOnly = check("仅充电时 OCR", config.ocrChargingOnly)
         text("使用电池时保存图片，充电后识别文字；图片和识别结果按同步设置上传。待识别图片与文字预留空间计入存储上限。", 13, MoteUi.muted)
         batteryBelow = presetNumber("低于此电量暂停 / % · 0 为关闭", config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
@@ -607,6 +617,7 @@ class MainActivity : Activity() {
         Page.CAPTURE -> current.copy(
             intervalSeconds = number(interval, 5..300), maxQueueMiB = number(maxQueue, 8..4096), mode = if (projectionMode.isChecked) "projection" else "accessibility",
             jpegQuality = number(jpegQuality, 40..95), captureMaxSide = number(captureMaxSide, 640..2560), chargingOnly = chargingOnly.isChecked,
+            ocrMode = OcrPolicy.modes[ocrMode.selectedItemPosition], ocrAppModes = ocrAppModes.text.toString(),
             batteryPauseBelowPct = number(batteryBelow, 0..95), ocrChargingOnly = ocrChargingOnly.isChecked, mediaCollectionEnabled = mediaCollectionEnabled.isChecked,
             screenCollectionEnabled = screenCollectionEnabled.isChecked, notificationCollectionEnabled = notificationCollectionEnabled.isChecked,
             deviceEventCollectionEnabled = deviceEventCollectionEnabled.isChecked, imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])

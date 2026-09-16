@@ -21,7 +21,8 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
     }
     fun json(): String = JSONObject().put("default", defaultMode.wire).put("apps", JSONObject().apply { apps.toSortedMap().forEach { (key, value) -> put(key, value.wire) } }).toString()
     companion object {
-        const val DEFAULT = "{\"default\":\"content\",\"apps\":{}}"
+        const val DEFAULT = "{\"default\":\"activity\",\"apps\":{}}"
+        const val LEGACY_DEFAULT = "{\"default\":\"content\",\"apps\":{}}"
         private val packagePattern = Regex("[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)*")
         fun parse(value: String): AppCollectionRules {
             require(value.toByteArray(Charsets.UTF_8).size <= 32768) { "应用规则超过大小上限" }

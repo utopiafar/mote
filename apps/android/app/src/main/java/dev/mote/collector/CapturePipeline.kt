@@ -30,6 +30,11 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private var dedupeApp: String? = null
     private data class DedupeReference(val signature: String, val captureId: String, val capturedAt: String, val image: ByteArray)
     private var dedupeReference: DedupeReference? = null
+    private var earlySignature: String? = null
+    private var earlyConfig: CollectorConfig? = null
+    private var earlyWindows: WindowSnapshot? = null
+    private var earlySize: Pair<Int, Int>? = null
+    private var featurePixels = IntArray(0)
     private var previousTime: Long? = null
     private var previousApp: String? = null
     private var previousMode: AppCollectionMode? = null
@@ -38,7 +43,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private var lastPause: OperationReason? = null
     fun pause(reason: String, category: OperationReason = OperationReason.STATE_CHANGED) {
         if (lastPause != category) { Operations.record(context, OperationKind.CAPTURE_PAUSED, category); lastPause = category }
-        previousTime = null; previousApp = null; previousMode = null; dedupeSignature = null; dedupeReference = null
+        previousTime = null; previousApp = null; previousMode = null; dedupeSignature = null; dedupeReference = null; earlySignature = null
         settings.status("paused", reason)
     }
     fun canCapture(config: CollectorConfig, windows: WindowSnapshot) = canCollect(config, windows, AppCollectionMode.CONTENT)
@@ -96,20 +101,45 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         if (closed || !busy.compareAndSet(false, true)) { bitmap.recycle(); return }
         ConnectionGuard.processing.incrementAndGet()
         try { executor.execute {
+            val pipelineStart = SystemClock.elapsedRealtime()
             var output: Bitmap? = null
             var stage = EventStage.CAPTURE
             try {
                 Operations.record(context, OperationKind.FRAME_RECEIVED)
+                diagnostics.add("receivedFrames")
                 if (!settings.enabled || !unlocked(context) || closed || settings.read() != config || policy(config, windows) != AppCollectionMode.CONTENT) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
                 if (reason != null) { Operations.record(context, OperationKind.FRAME_BLOCKED, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); pause(reason); return@execute }
                 stage = EventStage.QUEUE
                 checkStorage(config)
+                // Approximate matches only discard this frame. They never inherit an approval,
+                // image, or OCR result. Diagnostics deliberately retains the reviewed-pair path.
+                if (earlyConfig != config || earlyWindows != windows || earlySize != (bitmap.width to bitmap.height)) earlySignature = null
+                val earlyFeatures = if (config.imageDedupeMode != "off" && !config.imageDedupeDiagnosticsEnabled && windows.trustworthy && windows.foreground != null)
+                    features(bitmap, ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)) else null
+                if (earlyFeatures != null && ScreenshotDedupeHelper.shouldSkip(earlySignature, earlyFeatures, ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)).duplicate) {
+                    if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) return@execute
+                    val appId = requireNotNull(windows.foreground)
+                    val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
+                        .put("deviceName", config.deviceName).put("platform", "android").put("capturedAt", capturedAt)
+                        .put("durationMs", duration(observedAtMs, appId, AppCollectionMode.CONTENT, config.intervalSeconds))
+                        .put("appId", appId).put("appName", CollectorMetadata.appName(context, appId)).put("source", "activity")
+                        .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none").put("collection", "activity"))
+                        .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context,
+                            if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L, activityOnly = true)) }
+                    settings.ensureDataOrigin(config)
+                    context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
+                    diagnostics.add("earlySkippedFrames")
+                    previousTime = observedAtMs; previousApp = appId; previousMode = AppCollectionMode.CONTENT
+                    settings.captured(capturedAt); settings.status("capturing", "重复画面已丢弃，仅保存应用活动；未执行审查与 OCR")
+                    scheduleUpload(config)
+                    return@execute
+                }
                 val inferenceStart = SystemClock.elapsedRealtime()
                 stage = EventStage.MODEL
                 if (config.nsfw.enabled) settings.status("capturing", "已收到画面，正在加载模型并进行本机隐私检查…")
                 if (config.nsfw.enabled) SupportEvents.record(context, stage, EventCode.STARTED)
-                val decision = if (config.nsfw.enabled) nsfw.check(bitmap, config.nsfw) else null
+                val decision = if (config.nsfw.enabled) { diagnostics.add("modelCalls"); nsfw.check(bitmap, config.nsfw) } else null
                 if (decision != null) diagnostics.timing("inferenceMs", SystemClock.elapsedRealtime() - inferenceStart)
                 if (decision?.allow == false) {
                     SupportEvents.record(context, stage, EventCode.FILTERED, SystemClock.elapsedRealtime() - inferenceStart)
@@ -131,7 +161,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 if (runOcr) settings.status("capturing", "隐私检查已完成，正在识别文字…")
                 val ocrStart = SystemClock.elapsedRealtime()
                 SupportEvents.record(context, stage, if (runOcr) EventCode.STARTED else EventCode.SCHEDULER)
-                var text = if (runOcr) ocrInstance.value.recognize(output) else ""
+                var text = if (runOcr) ocrInstance.value.recognize(output, config, windows.foreground) else ""
                 if (runOcr) SupportEvents.record(context, stage, EventCode.OK, SystemClock.elapsedRealtime() - ocrStart)
                 var reviewed = false
                 var modelMaskApplied = false
@@ -147,22 +177,14 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     require(code == 200 && response != null && response.has("allow") && response.get("allow") is Boolean) { "隐私模型响应无效" }
                     if (!response.getBoolean("allow")) { SupportEvents.record(context, stage, EventCode.FILTERED); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.LOCAL_DENIED); pause("本机隐私模型阻止此帧", OperationReason.LOCAL_DENIED); return@execute }
                     val extraMasks = ReviewResponse.masks(response)
-                    if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = if (runOcr) ocrInstance.value.recognize(output) else ""; modelMaskApplied = true; appliedMaskCount += extraMasks.size }
+                    if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = if (runOcr) ocrInstance.value.recognize(output, config, windows.foreground) else ""; modelMaskApplied = true; appliedMaskCount += extraMasks.size }
                     reviewed = true
                     SupportEvents.record(context, stage, EventCode.OK)
                 }
                 if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 if (dedupeConfig != config || dedupeApp != windows.foreground || dedupeSize != (output.width to output.height)) { dedupeSignature = null; dedupeReference = null }
                 val dedupeMode = ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)
-                val features = if (config.imageDedupeMode != "off") {
-                    val size = ScreenshotDedupeHelper.sampleSizeForMode(output.width, output.height, dedupeMode)
-                    val sample = Bitmap.createScaledBitmap(output, size.width, size.height, true)
-                    try {
-                        val pixels = IntArray(sample.width * sample.height)
-                        sample.getPixels(pixels, 0, sample.width, 0, 0, sample.width, sample.height)
-                        ScreenshotDedupeHelper.buildFeatures(sample.width, sample.height, pixels)
-                    } finally { if (sample !== output) sample.recycle() }
-                } else null
+                val features = if (config.imageDedupeMode != "off") features(output, dedupeMode) else null
                 val previousSignature = dedupeSignature
                 val comparison = features?.let { ScreenshotDedupeHelper.shouldSkip(previousSignature, it, dedupeMode) }
                 val duplicate = comparison?.duplicate == true
@@ -193,8 +215,12 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 settings.ensureDataOrigin(config)
                 // Diagnostic pixels are encoded only after every privacy gate and final state check.
                 // The local pair is never included in the upload event or upload queue.
+                val encodeStart = SystemClock.elapsedRealtime()
                 val encoded = if (!duplicate) jpeg(output, config.jpegQuality) else null
+                if (!duplicate) diagnostics.timing("encodeMs", SystemClock.elapsedRealtime() - encodeStart)
+                val queueStart = SystemClock.elapsedRealtime()
                 context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L)
+                diagnostics.timing("queueMs", SystemClock.elapsedRealtime() - queueStart)
                 if (!duplicate) runCatching {
                     val ratio = minOf(1f, 320f / maxOf(output.width, output.height))
                     val thumb = Bitmap.createScaledBitmap(output, maxOf(1, (output.width * ratio).roundToInt()), maxOf(1, (output.height * ratio).roundToInt()), true)
@@ -215,6 +241,11 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     dedupeReference = if (config.imageDedupeDiagnosticsEnabled && dedupeSignature != null && encoded != null)
                         DedupeReference(dedupeSignature!!, event.getString("id"), capturedAt, encoded) else null
                 }
+                // Reference advances only after durable storage of an accepted new frame.
+                if (!duplicate) {
+                    earlySignature = earlyFeatures?.toSignature(); earlyConfig = config
+                    earlyWindows = windows; earlySize = bitmap.width to bitmap.height
+                }
                 dedupeConfig = config; dedupeApp = windows.foreground; dedupeSize = output.width to output.height
                 SupportEvents.record(context, stage, EventCode.OK)
                 diagnostics.add("capturedCount")
@@ -227,15 +258,25 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
             catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: "队列已满") }
             catch (error: Exception) { Operations.record(context, OperationKind.CAPTURE_FAILED, Operations.failure(error, stage)); SupportEvents.record(context, stage, EventJournal.failure(error, stage)); diagnostics.add("failedCount"); pause("本机 OCR、隐私审查或存储失败，此帧未入队；下一周期重试") }
-            finally { output?.recycle(); bitmap.recycle(); busy.set(false); ConnectionGuard.processing.decrementAndGet() }
+            finally { output?.recycle(); bitmap.recycle(); runCatching { diagnostics.timing("pipelineMs", SystemClock.elapsedRealtime() - pipelineStart) }; busy.set(false); ConnectionGuard.processing.decrementAndGet() }
         } } catch (_: java.util.concurrent.RejectedExecutionException) { ConnectionGuard.processing.decrementAndGet(); busy.set(false); bitmap.recycle(); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.CANCELLED) }
+    }
+    private fun features(bitmap: Bitmap, mode: ScreenshotDedupeHelper.Mode): ScreenshotDedupeHelper.FrameFeatures {
+        val size = ScreenshotDedupeHelper.sampleSizeForMode(bitmap.width, bitmap.height, mode)
+        val sample = Bitmap.createScaledBitmap(bitmap, size.width, size.height, true)
+        try {
+            val count = sample.width * sample.height
+            if (featurePixels.size != count) featurePixels = IntArray(count)
+            sample.getPixels(featurePixels, 0, sample.width, 0, 0, sample.width, sample.height)
+            return ScreenshotDedupeHelper.buildFeatures(sample.width, sample.height, featurePixels)
+        } finally { if (sample !== bitmap) sample.recycle() }
     }
     private fun jpeg(bitmap: Bitmap, quality: Int): ByteArray = ByteArrayOutputStream().use { stream ->
         check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)); stream.toByteArray()
     }
     @Synchronized fun close() { if (closed) return; closed = true; dedupeReference = null; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (ocrInstance.isInitialized()) ocrInstance.value.close() }; executor.shutdown() }
     companion object {
-        fun policy(config: CollectorConfig, windows: WindowSnapshot) = AppCollectionRules.parse(config.appCollectionRules).decide(windows, PrivacyRules.exclusions(config.excludedPackages))
+        fun policy(config: CollectorConfig, windows: WindowSnapshot) = config.collectionRules.decide(windows, PrivacyRules.exclusions(config.excludedPackages))
         fun unlocked(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isInteractive &&
             !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
     }

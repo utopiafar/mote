@@ -18,6 +18,19 @@ class DurableQueueTest {
     private fun event(excluded: Boolean = false) = JSONObject().put("id", UUID.randomUUID().toString())
         .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 30000)
         .put("privacy", JSONObject().put("excluded", excluded))
+    @Test fun `batch selection is bounded and partial acknowledgement survives restart`() {
+        val dir = folder.newFolder(); val queue = DurableQueue(dir, cipher)
+        repeat(4) { queue.enqueue(event(), ByteArray(500) { it.toByte() }, 100000) }
+        assertEquals(2, queue.peekBatch(2).size)
+        assertEquals(1, queue.peekBatch(25, 10).size)
+        val selected = queue.peekBatch()
+        assertEquals(4, queue.depth())
+        queue.acknowledge(selected.first().getString("id"))
+        val remaining = DurableQueue(dir, cipher).peekBatch()
+        assertEquals(3, remaining.size)
+        assertFalse(remaining.any { it.getString("id") == selected.first().getString("id") })
+        assertTrue(remaining.all { it.getString("imageBase64").isNotBlank() })
+    }
     @Test fun `retries and process restart preserve exact id metadata and bytes`() {
         val dir = folder.newFolder()
         val queue = DurableQueue(dir, cipher)

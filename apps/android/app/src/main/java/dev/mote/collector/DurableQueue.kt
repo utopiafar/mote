@@ -186,16 +186,30 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         atomic(file, body)
         onChange?.invoke(when (source) { "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
     }
-    fun peek(): JSONObject? = guarded {
-        val file = records().firstOrNull { val event = read(it); !event.optBoolean("_uploaded") && !syncFailed(event) } ?: return null
-        val event = read(file)
-        localFields.forEach(event::remove)
-        val hash = event.optString("_blob", "")
-        if (hash.isEmpty()) { require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event)); event.remove("_blob"); return event }
-        require(hash.matches(Regex("[a-f0-9]{64}")))
-        event.remove("_blob")
-        event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
-        event
+    fun peek(): JSONObject? = peekBatch(1).firstOrNull()
+    /** Bound both count and UTF-8 transport size; never acknowledges while selecting. */
+    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024): List<JSONObject> = guarded {
+        require(maxCount in 1..25 && maxBytes > 0)
+        val result = mutableListOf<JSONObject>()
+        var bytes = 32L
+        for (file in records()) {
+            val event = read(file)
+            if (event.optBoolean("_uploaded") || syncFailed(event)) continue
+            localFields.forEach(event::remove)
+            val hash = event.optString("_blob", "")
+            event.remove("_blob")
+            if (hash.isEmpty()) require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event))
+            else {
+                require(hash.matches(Regex("[a-f0-9]{64}")))
+                event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
+            }
+            val size = event.toString().toByteArray(Charsets.UTF_8).size + 1L
+            if (result.isNotEmpty() && bytes + size > maxBytes) break
+            result.add(event); bytes += size
+            // A single oversized record is returned alone so the uploader can report it.
+            if (result.size == maxCount || bytes >= maxBytes) break
+        }
+        result
     }
     fun acknowledge(id: String, uploadedBytes: Long = 0): Unit = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")

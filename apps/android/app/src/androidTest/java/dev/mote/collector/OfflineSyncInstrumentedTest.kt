@@ -29,7 +29,7 @@ class OfflineSyncInstrumentedTest {
         val settings = Settings(context)
         require(!settings.enabled && context.queue().depth() == 0 && QuickNotes.draft(context).read().text.isEmpty() && context.localSources().sources().isEmpty())
         val prefs = context.getSharedPreferences("mote", 0); val original = prefs.all.toMap()
-        fun cancel() { listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic").forEach {
+        fun cancel() { listOf("mote-heartbeat", "mote-heartbeat-now", "mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic").forEach {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
@@ -50,7 +50,7 @@ class OfflineSyncInstrumentedTest {
         val id = QuickNotes.save(context, text, "")
         assertEquals(1, context.queue().depth()); assertEquals(text, context.queue().peek()!!.getString("ocrText"))
         assertEquals("", settings.dataOrigin()); assertEquals("unconfigured", settings.syncState())
-        assertFalse(String(File(context.noBackupFilesDir, "queue/$id.event").readBytes()).contains(text))
+        assertFalse(String(File(QueueStorage(context).current().path, "$id.event").readBytes()).contains(text))
         assertTrue(QuickNotes.draft(context).read().text.isEmpty())
     }
     @Test fun generatedActivityCaptureIsLocalWithoutEndpointOrModel() = fixture { context, settings ->
@@ -115,11 +115,11 @@ class OfflineSyncInstrumentedTest {
             val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "batch", syncBatchSize = 2)
             settings.save(config)
             QuickNotes.save(context, "Generated batch one", "")
-            Thread.sleep(500); assertEquals(0, archive.requests.get())
+            Thread.sleep(500); assertEquals(0, archive.notes.get())
             QuickNotes.save(context, "Generated batch two", "")
             waitUntil { context.queue().depth() == 0 && archive.notes.get() == 2 && settings.syncState() == "idle" }
             val id = QuickNotes.save(context, "Generated overdue single", "")
-            assertTrue(File(context.noBackupFilesDir, "queue/$id.event").setLastModified(System.currentTimeMillis() - 16 * 60_000))
+            assertTrue(File(QueueStorage(context).current().path, "$id.event").setLastModified(System.currentTimeMillis() - 16 * 60_000))
             UploadWorker.schedule(context, config)
             waitUntil { context.queue().depth() == 0 && archive.notes.get() == 3 && settings.syncState() == "idle" }
         }
@@ -129,7 +129,7 @@ class OfflineSyncInstrumentedTest {
             val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "interval", syncIntervalMinutes = 15)
             settings.save(config); settings.syncDispatched(System.currentTimeMillis())
             QuickNotes.save(context, "Generated timed note", "")
-            Thread.sleep(500); assertEquals(0, archive.requests.get())
+            Thread.sleep(500); assertEquals(0, archive.notes.get())
             settings.syncDispatched(System.currentTimeMillis() - 16 * 60_000)
             UploadWorker.schedule(context, config)
             waitUntil { context.queue().depth() == 0 && archive.notes.get() == 1 && settings.syncState() == "idle" }
@@ -180,13 +180,52 @@ class OfflineSyncInstrumentedTest {
             UploadWorker.schedule(context, config, true)
             waitUntil { archive.notes.get() == 25 && context.queue().depth() == 0 && archive.lastSync?.optString("state") == "idle" }
             assertEquals(0, archive.lastSync!!.getInt("pendingRecords"))
+            assertEquals("25 notes use one transport request", 1, archive.batches.get())
+        }
+    }
+    @Test fun oldCollectorRouteDenialFallsBackToIndividualAcks() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
+            settings.save(config); archive.fault = "legacy"
+            repeat(2) { QuickNotes.save(context, "Generated legacy $it", "") }
+            UploadWorker.schedule(context, config, true)
+            waitUntil { context.queue().depth() == 0 && settings.syncState() == "idle" }
+            assertEquals(2, archive.notes.get()); assertEquals(1, archive.batches.get())
+        }
+    }
+    @Test fun partialBatchAcknowledgementKeepsOnlyUnconfirmedRecords() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
+            settings.save(config); archive.fault = "partial"
+            repeat(2) { QuickNotes.save(context, "Generated partial $it", "") }
+            UploadWorker.schedule(context, config, true)
+            waitUntil { context.queue().depth() == 1 && settings.syncState() == "error" &&
+                WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().any { it.state == WorkInfo.State.FAILED } }
+            val retained = context.queue().peek()!!.getString("id")
+            assertTrue(WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().any { it.state == WorkInfo.State.FAILED })
+            archive.fault = ""; UploadWorker.schedule(context, config, true)
+            waitUntil { context.queue().depth() == 0 }
+            assertNotNull(retained); assertEquals(2, archive.batches.get())
+        }
+    }
+    @Test fun emptyRealtimeQueueNeverStartsDataUploadSession() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime", diagnosticsEnabled = true)
+            settings.save(config)
+            val counters = context.getSharedPreferences("numeric_diagnostics", 0)
+            val before = counters.getLong("uploadSessions", 0)
+            repeat(20) { UploadWorker.heartbeat(context, config); UploadWorker.schedule(context, config) }
+            waitUntil { archive.heartbeats.get() >= 1 }
+            Thread.sleep(300)
+            assertEquals(1, archive.heartbeats.get()); assertEquals(0, archive.notes.get())
+            assertEquals(before, counters.getLong("uploadSessions", 0))
         }
     }
     private fun waitUntil(check: () -> Boolean) { val deadline = System.currentTimeMillis() + 30_000; while (!check()) { require(System.currentTimeMillis() < deadline) { "Generated sync fixture timeout" }; Thread.sleep(50) } }
     private class LoopbackArchive : Closeable {
         private val socket = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))
         val url = "http://127.0.0.1:${socket.localPort}"
-        val requests = AtomicInteger(); val notes = AtomicInteger(); val heartbeats = AtomicInteger()
+        val requests = AtomicInteger(); val notes = AtomicInteger(); val heartbeats = AtomicInteger(); val batches = AtomicInteger()
         @Volatile var fault = ""
         @Volatile var lastSync: JSONObject? = null
         @Volatile private var running = true
@@ -200,8 +239,20 @@ class OfflineSyncInstrumentedTest {
                 require(length in 0..1_000_000); val data = ByteArray(length); var read = 0
                 while (read < length) { val count = input.read(data, read, length - read); require(count > 0); read += count }
                 val body = JSONObject(String(data, Charsets.UTF_8)); requests.incrementAndGet()
+                var responseStatus = 200
                 val result = when (route) {
                     "/api/devices/heartbeat" -> { heartbeats.incrementAndGet(); require(body.has("sync")); lastSync = body.getJSONObject("sync"); JSONObject().put("ok", true) }
+                    "/api/captures/batch" -> {
+                        batches.incrementAndGet()
+                        if (fault == "legacy") { responseStatus = 403; JSONObject().put("error", "forbidden") }
+                        else {
+                            val captures = body.getJSONArray("captures"); notes.addAndGet(captures.length())
+                            if (fault == "dropNote") return@use
+                            JSONObject().put("results", org.json.JSONArray().apply {
+                                for (i in 0 until if (fault == "partial") 1 else captures.length()) put(JSONObject().put("id", if (fault == "wrongNoteAck") "wrong-id" else captures.getJSONObject(i).getString("id")).put("status", 201))
+                            })
+                        }
+                    }
                     "/api/captures" -> { notes.incrementAndGet(); if (fault == "dropNote") return@use; JSONObject().put("id", if (fault == "wrongNoteAck") "wrong-id" else body.getString("id")) }
                     "/api/sources" -> JSONObject().put("id", body.getString("id")).put("enabled", true)
                     else -> if (route?.endsWith("/items") == true) JSONObject().put("id", UUID.randomUUID().toString()).put("duplicate", false)
@@ -210,7 +261,7 @@ class OfflineSyncInstrumentedTest {
                     else if (route?.startsWith("/api/sources/") == true) JSONObject().put("id", route.substringAfterLast('/'))
                     else error("Unexpected fixture route")
                 }.toString().toByteArray(Charsets.UTF_8)
-                client.getOutputStream().write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${result.size}\r\nConnection: close\r\n\r\n".toByteArray())
+                client.getOutputStream().write("HTTP/1.1 $responseStatus Fixture\r\nContent-Type: application/json\r\nContent-Length: ${result.size}\r\nConnection: close\r\n\r\n".toByteArray())
                 client.getOutputStream().write(result); client.getOutputStream().flush()
             } } catch (error: Exception) { if (running) throw error }
         }.apply { isDaemon = true; start() }

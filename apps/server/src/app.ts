@@ -155,7 +155,27 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   app.get('/api/memories/:id/evidence',async req=>{const m=memories.get((req.params as {id:string}).id);return {items:allEvidence(m.evidenceIds),status:m.status};});
   app.post('/api/memories/:id/publish',async req=>memories.publish((req.params as {id:string}).id));
   app.delete('/api/memories/:id',async req=>memories.delete((req.params as {id:string}).id));
-  app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
+  app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));store.captureReceived(input.deviceId);return reply.code(result.duplicate?200:201).send(result);});
+  // Bounded transport batch with independent durable acknowledgements. Validate the
+  // entire envelope and credential scope before writing any member of the batch.
+  app.post('/api/captures/batch',{bodyLimit:12*1024*1024},async req=>{
+    const {captures}=z.object({captures:z.array(captureSchema).min(1).max(25)}).strict().parse(req.body);
+    if(new Set(captures.map(c=>c.id)).size!==captures.length)throw new StoreError('Duplicate IDs in batch');
+    const c=credential(req);
+    if(c)for(const input of captures)connections.assertCapture(c,input);
+    const results=[];
+    for(const input of captures){
+      try {
+        const result=await diagnostics.measure('ingest','capture',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));
+        store.captureReceived(input.deviceId);
+        results.push({...result,status:result.duplicate?200:201});
+      } catch(error) {
+        const failure=safeError(error);
+        results.push({id:input.id,status:failure.status,error:failure.category});
+      }
+    }
+    return {results};
+  });
   app.get('/api/captures',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
     return diagnostics.measure('source','timeline',()=>store.list({...args,cursor:raw.cursor}),page=>({count:page.items.length}));

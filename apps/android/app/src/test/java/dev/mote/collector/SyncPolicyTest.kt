@@ -9,9 +9,11 @@ class SyncPolicyTest {
         assertNull(SyncPolicy("manual").delayMillis(now, 500, 1, 0))
         assertEquals(0L, SyncPolicy("manual").delayMillis(now, 500, 1, 0, explicit = true))
     }
-    @Test fun realtimeDispatchesQueueAndHeartbeatImmediately() {
+    @Test fun realtimeDispatchesDataButNeverAnEmptySession() {
         assertEquals(0L, SyncPolicy().delayMillis(now, 1, now, 0))
-        assertEquals(0L, SyncPolicy().delayMillis(now, 0, null, now))
+        assertNull(SyncPolicy().delayMillis(now, 0, null, now))
+        assertNull(SyncPolicy("interval").delayMillis(now, 0, null, 1))
+        assertEquals(0L, SyncPolicy().delayMillis(now, 0, null, now, pendingUpdates = 1))
     }
     @Test fun intervalWaitsFromLastDispatchAndExplicitFlushOverridesIt() {
         val policy = SyncPolicy("interval", 30)

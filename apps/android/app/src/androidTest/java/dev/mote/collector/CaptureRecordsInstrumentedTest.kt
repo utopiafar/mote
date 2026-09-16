@@ -48,7 +48,7 @@ class CaptureRecordsInstrumentedTest {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
-            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", excludedPackages = "", appCollectionRules = AppCollectionRules.DEFAULT))
+            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", excludedPackages = "", appCollectionRules = AppCollectionRules.LEGACY_DEFAULT))
             test(context, settings, ids)
         } finally {
             settings.enabled = false; cancel(); shell("dumpsys battery reset")

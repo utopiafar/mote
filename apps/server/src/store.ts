@@ -338,6 +338,10 @@ export class Store {
     const record:DeviceRecord={...beat,lastSeenAt:new Date().toISOString()};
     this.db.prepare('INSERT INTO devices(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(beat.deviceId,JSON.stringify(record));return {ok:true};
   }
+  captureReceived(deviceId:string) {
+    // Receipt proves contact now, not that the screen is currently being captured.
+    this.db.prepare("UPDATE devices SET json=json_set(json,'$.lastSeenAt',?) WHERE id=?").run(new Date().toISOString(),deviceId);
+  }
   devices():DeviceRecord[] {return (this.db.prepare('SELECT json FROM devices').all() as {json:string}[]).map(r=>JSON.parse(r.json));}
   activity(range:Range={}):Activity {
     // Assign overlapping sample intervals once per device before applying content/app filters.

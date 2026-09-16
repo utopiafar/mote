@@ -7,6 +7,8 @@ class MoteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         if (getProcessName() != packageName) return
+        HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
+        HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }
         Notifications.create(this)
         QueueStorage.recovering = true
         LocalStateRepository.get(this)
