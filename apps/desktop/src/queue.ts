@@ -62,7 +62,7 @@ function validateEvent(value: unknown): CaptureEvent {
   const v = value as CaptureEvent;
   if (!UUID.test(v.id) || !UUID.test(v.deviceId) || !['macos', 'windows', 'linux'].includes(v.platform) || !Number.isFinite(Date.parse(v.capturedAt)) || !Number.isInteger(v.durationMs) || v.durationMs < 0 || v.durationMs > 300000 || !['screen', 'note', 'activity'].includes(v.source)) throw new Error('队列事件元数据无效');
   for (const [key, max] of [['deviceName', 128], ['appId', 256], ['appName', 200]] as const) {
-    if (typeof v[key] !== 'string' || !v[key] || v[key].length > max) throw new Error('队列事件应用或设备信息无效');
+    if (typeof v[key] !== 'string' || !v[key].trim() || v[key].length > max) throw new Error('队列事件应用或设备信息无效');
   }
   if (v.ocrText !== undefined && (typeof v.ocrText !== 'string' || v.ocrText.length > 100000)) throw new Error('OCR 文本超出限制');
   if (v.privacy?.excluded !== false || typeof v.privacy?.redacted !== 'boolean') throw new Error('队列隐私标记无效');

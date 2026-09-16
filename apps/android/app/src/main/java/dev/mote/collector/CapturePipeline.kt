@@ -173,6 +173,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     PrivacyRules.validateLocalReview(config.localReviewUrl)
                     val request = JSONObject().put("version", 1).put("imageBase64", Base64.encodeToString(jpeg(output, config.jpegQuality), Base64.NO_WRAP))
                         .put("imageMime", "image/jpeg").put("ocrText", text).put("appId", windows.foreground)
+                        .put("appName", windows.foreground?.let { CollectorMetadata.appName(context, it) })
                     val (code, response) = HttpJson.post(config.localReviewUrl, request)
                     require(code == 200 && response != null && response.has("allow") && response.get("allow") is Boolean) { "隐私模型响应无效" }
                     if (!response.getBoolean("allow")) { SupportEvents.record(context, stage, EventCode.FILTERED); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.LOCAL_DENIED); pause("本机隐私模型阻止此帧", OperationReason.LOCAL_DENIED); return@execute }

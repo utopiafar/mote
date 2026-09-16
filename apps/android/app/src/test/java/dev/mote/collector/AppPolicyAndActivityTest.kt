@@ -69,7 +69,7 @@ class AppPolicyAndActivityTest {
             val changes = mutableListOf<OperationKind>()
             val queue = DurableQueue(directory, cipher) { kind, _, _ -> changes += kind }
             val event = JSONObject().put("id", UUID.randomUUID().toString()).put("capturedAt", "2026-09-14T00:00:00Z")
-                .put("source", "activity").put("appId", "com.example.chat").put("durationMs", 0)
+                .put("source", "activity").put("appId", "com.example.chat").put("appName", "Generated Chat").put("durationMs", 0)
                 .put("privacy", JSONObject().put("excluded", false).put("collection", "activity"))
                 .put("metadata", JSONObject().put("version", 1).put("capture", JSONObject().put("intervalMs", 30000)))
             queue.enqueue(event, null, 100000); queue.enqueue(event, null, 100000)

@@ -219,9 +219,14 @@ test('collector can send only its own content-free activity and bounded heartbea
 
 test('capture batches isolate per-item failure, retry idempotently and validate scope before writes',async t=>{
   const {app}=await fixture(t);const client=await paired(app);
-  const capture=(deviceId='synthetic-phone')=>({id:randomUUID(),deviceId,deviceName:'Synthetic phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:0,source:'activity',appId:'fixture.reader',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
+  const capture=(deviceId='synthetic-phone')=>({id:randomUUID(),deviceId,deviceName:'Synthetic phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:0,source:'activity',appId:'fixture.reader',appName:'Generated reader',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
   const a=capture(),b=capture();
   const post=(captures:unknown[],token=client.token)=>app.inject({method:'POST',url:'/api/captures/batch',headers:headers(token),payload:{captures}});
+  for(const appName of [undefined,'',' \t\n']) {
+    const invalid={...capture(),appName};
+    assert.equal((await post([invalid])).statusCode,400);
+    assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:headers(client.token),payload:invalid})).statusCode,400);
+  }
   assert.equal((await post([a,capture('someone-else')])).statusCode,403);
   assert.equal((await app.inject({url:`/api/captures/${a.id}`,headers:headers()})).statusCode,404);
   const initial=await post([a,b]);assert.equal(initial.statusCode,200);
@@ -241,7 +246,7 @@ test('capture batches isolate per-item failure, retry idempotently and validate 
 
 test('batch quota failures preserve accepted receipts and permit idempotent replay',async t=>{
   const {app}=await fixture(t,{maxStorageBytes:4096});
-  const captures=Array.from({length:25},()=>({id:randomUUID(),deviceId:'quota-fixture',deviceName:'Synthetic quota fixture',platform:'android',capturedAt:new Date().toISOString(),durationMs:0,source:'activity',appId:'fixture.reader',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}}));
+  const captures=Array.from({length:25},()=>({id:randomUUID(),deviceId:'quota-fixture',deviceName:'Synthetic quota fixture',platform:'android',capturedAt:new Date().toISOString(),durationMs:0,source:'activity',appId:'fixture.reader',appName:'Generated reader',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}}));
   const send=()=>app.inject({method:'POST',url:'/api/captures/batch',headers:headers(),payload:{captures}});
   const first=await send();assert.equal(first.statusCode,200);
   const statuses=first.json().results.map((r:{status:number})=>r.status);

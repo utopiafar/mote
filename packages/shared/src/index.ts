@@ -29,6 +29,7 @@ export const captureSchema = z.object({
   metadata: recordMetadataSchema.optional(),
   privacy: privacySchema.default({excluded:false,redacted:false,mode:'local'}),
 }).strict().superRefine((v,ctx) => {
+  if (v.appId && !v.appName.trim()) ctx.addIssue({code:'custom',path:['appName'],message:'An application identifier requires a nonblank application name'});
   if (v.metadata?.capture?.deduplication && (v.source !== 'screen' || v.imageBase64 || v.imageMime || v.ocrText || v.ocr?.status !== 'disabled')) ctx.addIssue({code:'custom',message:'Duplicate screenshots require metadata only and disabled OCR'});
   if (v.ocr && v.source !== 'screen') ctx.addIssue({code:'custom',message:'OCR processing state belongs only to screenshots'});
   if (v.ocr?.status === 'pending' && (!v.imageBase64 || v.ocrText)) ctx.addIssue({code:'custom',message:'Pending OCR requires a screenshot without recognized text'});

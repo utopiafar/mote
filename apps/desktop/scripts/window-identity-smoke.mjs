@@ -18,6 +18,13 @@ let absent = foregroundIdentity(bundleID: nil, name: nil, pid: nil)
 precondition(absent.id == "dev.mote.unknown-foreground" && absent.pid == 0)
 let desktop = foregroundIdentity(bundleID: "com.apple.finder", name: "Finder", pid: 42)
 precondition(desktop.id == "com.apple.finder" && desktop.pid == 42)
+precondition(desktop.name == "Finder")
+for name in [nil, "", "  "] as [String?] {
+  let app = foregroundIdentity(bundleID: "dev.generated", name: name, pid: 42)
+  precondition(app.id == "dev.generated" && app.name == "未知应用")
+}
+precondition(foregroundIdentity(bundleID: "dev.generated", name: "  生成的应用  ", pid: 42).name == "生成的应用")
+precondition(foregroundIdentity(bundleID: "dev.generated", name: String(repeating: "A", count: 300), pid: 42).name.count == 200)
 let bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
 func resolve(_ pid: Int32) -> String? { return pid == 1 ? "dev.generated" : nil }
 for layer in [0, 3, 100, -1] {

@@ -7,7 +7,7 @@ const bytes = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 /** Provider-reported media facts. No inferred genre, activity, or listening intent. */
 export const mediaSessionSchema = z.object({
   sessionId: z.string().min(1).max(128),
-  appId: z.string().min(1).max(300), appName: label,
+  appId: z.string().min(1).max(300), appName: label.refine(value => value.trim().length > 0, 'Application name cannot be blank'),
   playbackState: z.enum(['playing', 'paused', 'stopped', 'buffering', 'connecting', 'seeking', 'skipping', 'error', 'none', 'unknown']),
   appVisibility: z.enum(['foreground', 'background', 'unknown']),
   playbackType: z.enum(['local', 'remote', 'unknown']),

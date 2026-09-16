@@ -57,6 +57,7 @@ class LocalStateInstrumentedTest {
         fun add(image: Boolean = true): String {
             val id = UUID.randomUUID().toString(); ids += id
             val row = JSONObject().put("id", id).put("source", if (image) "screen" else "note").put("appId", "fixture.state")
+                .put("appName", "Generated state fixture")
                 .put("capturedAt", at).put("privacy", JSONObject().put("excluded", false)).put("ocr", JSONObject().put("status", if (image) "pending" else "disabled"))
             queue.enqueue(row, if (image) bytes else null, 100000000)
             return id

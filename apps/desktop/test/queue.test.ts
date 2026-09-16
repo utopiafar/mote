@@ -12,6 +12,13 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-desktop-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 describe('durable capture queue', () => {
+  it('rejects a blank application name before accepting an upload record', async () => {
+    for (const appName of ['', '  \t\n']) await expect(queue.enqueue({ ...event(), appName }, image)).rejects.toThrow();
+    expect(queue.stats().depth).toBe(0);
+    await queue.enqueue({ ...event(), appName: '生成的应用' }, image);
+    const restarted = new DurableQueue(directory, limits); await restarted.initialize();
+    expect((await restarted.next())?.record.event.appName).toBe('生成的应用');
+  });
   it('stores directly readable JSON and original JPEG bytes and reopens them without a content decryption key', async () => {
     const original = { ...event(), ocrText: '合成明文记录\n可直接读取的 OCR' };
     await queue.enqueue(original, image);

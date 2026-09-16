@@ -43,6 +43,8 @@ test('activity-only privacy rejects media content fields even when attached to a
   }
 });
 test('media has bounded strict metadata and does not accept semantic classifications or arbitrary notification data',()=>{
+  for(const appName of [undefined,'',' \t\n'])
+    assert.equal(recordMetadataSchema.safeParse({...metadata,media:{status:'available',sessions:[{...session,appName}]}}).success,false);
   for(const patch of [{title:'x'.repeat(1001)},{notificationText:'private'},{genre:'audiobook'},{playbackSpeed:Infinity},{positionMs:-1},{durationMs:Number.MAX_SAFE_INTEGER+1}])
     assert.equal(recordMetadataSchema.safeParse({...metadata,media:{status:'available',sessions:[{...session,...patch}]}}).success,false);
   assert.equal(recordMetadataSchema.safeParse({...metadata,media:{status:'available',sessions:Array.from({length:17},(_,i)=>({...session,sessionId:String(i)}))}}).success,false);

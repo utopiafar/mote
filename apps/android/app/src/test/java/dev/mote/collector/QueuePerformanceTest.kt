@@ -27,7 +27,7 @@ class QueuePerformanceTest {
     private val before = "2026-09-15T00:00:00Z"
     private fun event(index: Int) = JSONObject().put("id", UUID.randomUUID().toString()).put("source", "screen")
         .put("capturedAt", java.time.Instant.parse(after).plusMillis(index.toLong()).toString())
-        .put("privacy", JSONObject().put("excluded", false)).put("appId", "generated.app")
+        .put("privacy", JSONObject().put("excluded", false)).put("appId", "generated.app").put("appName", "Generated app")
         .put("imageMime", "image/png").put("ocrText", "GENERATED_PRIVATE_OCR".repeat(40))
     private fun copy(source: File, target: File) {
         target.mkdirs()

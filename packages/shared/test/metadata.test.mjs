@@ -7,6 +7,17 @@ const identity={id:'fe7269a5-baea-4b3d-85e1-7d68a5d5b72e',deviceId:'fixture-devi
 const metadata={version:1,observedAt:at,collector:{version:'0.7.0',method:'accessibility'},device:{model:'Generated',osVersion:'15'},state:{batteryPercent:0,charging:false,screenLocked:false,networkType:'none',availableStorageBytes:0},capture:{intervalMs:15000}};
 const activity={...identity,source:'activity',appId:'test.generated',appName:'Generated app',durationMs:15000,privacy:{collection:'activity',excluded:false,redacted:false,mode:'none'},metadata};
 
+test('an app identifier always travels with a nonblank name, independently of optional device metadata',()=>{
+  for (const source of ['screen','activity','note']) {
+    const record={...activity,source,durationMs:0,metadata:undefined,...(source==='activity'?{}:{ocrText:'Generated original',privacy:{mode:'none'}})};
+    for(const appName of [undefined,'',' \t\n']) assert.equal(captureSchema.safeParse({...record,appName}).success,false);
+    assert.equal(captureSchema.parse(record).appName,'Generated app');
+    assert.equal(captureSchema.parse({...record,appName:'未知应用'}).appId,record.appId);
+  }
+  const noApp={...identity,durationMs:0,ocrText:'Generated original'};
+  assert.equal(captureSchema.parse(noApp).appName,'','Do not invent an app for an unattributed capture');
+});
+
 test('activity-only wire records contain identity and measured metadata without a content placeholder',()=>{
   const parsed=captureSchema.parse(activity);
   assert.equal(parsed.ocrText,'');assert.equal(parsed.windowTitle,'');assert.equal(parsed.imageBase64,undefined);

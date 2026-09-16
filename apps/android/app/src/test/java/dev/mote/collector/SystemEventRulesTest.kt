@@ -9,7 +9,7 @@ import java.util.UUID
 class SystemEventRulesTest {
     private fun event() = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", "fixture")
         .put("deviceName", "Generated phone").put("platform", "android").put("capturedAt", "2026-09-15T00:00:00Z")
-        .put("durationMs", 0).put("source", "notification").put("appId", "fixture.app")
+        .put("durationMs", 0).put("source", "notification").put("appId", "fixture.app").put("appName", "Generated app")
         .put("privacy", JSONObject().put("excluded", false).put("collection", "content"))
         .put("metadata", JSONObject().put("version", 1).put("observedAt", "2026-09-15T00:00:00Z")
             .put("collector", JSONObject().put("method", "notification_listener"))

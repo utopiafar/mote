@@ -181,7 +181,7 @@ test('sessions split app returns and five-minute gaps, cross clock buckets, and 
   const {app,capture,paired}=await fixture(t),phone=await paired();
   const rows=[['a',899000],['a',900000],['a',1200000],['a',1500001],['b',1500002],['a',1500003]] as const;
   for(const [appId,ms] of rows)assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture(),appId,appName:appId,capturedAt:new Date(Date.UTC(2026,8,13)+ms).toISOString()}})).statusCode,201);
-  await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture('foreign'),appId:'a'}});
+  assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture('foreign'),appId:'a',appName:'Generated A'}})).statusCode,201);
   const url='/api/capture-browser/sessions?after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z';
   assert.equal((await app.inject(url)).statusCode,401);
   const response=await app.inject({url,headers:auth(phone.token)});assert.equal(response.statusCode,200,response.body);
@@ -203,7 +203,7 @@ test('sessions split app returns and five-minute gaps, cross clock buckets, and 
 test('session members sharing a timestamp stay separate and pages do not include a returned app',async t=>{
   const {app,capture}=await fixture(t),at='2026-09-13T12:00:00.000Z';
   const ids=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333'];
-  for(let i=0;i<ids.length;i++)await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture(),id:ids[i],appId:i===1?'b':'a',capturedAt:at}});
+  for(let i=0;i<ids.length;i++)assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture(),id:ids[i],appId:i===1?'b':'a',appName:i===1?'Generated B':'Generated A',capturedAt:at}})).statusCode,201);
   const url='/api/capture-browser/sessions?after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z';
   assert.equal((await app.inject({url,headers:auth()})).json().sessionCount,3);
   for(const id of ids){const page=(await app.inject({url:url+'&sessionId='+id,headers:auth()})).json();assert.deepEqual(page.items.map((r:any)=>r.id),[id]);}

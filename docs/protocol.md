@@ -33,6 +33,8 @@ Deleted event IDs have tombstones: later upload/import of that ID into the same 
 
 ## Activity-only and metadata (0.7.0)
 
+Every record with a nonempty `appId` must also include a nonblank `appName` (maximum 200 characters), including screen, activity, notification and media records. Media sessions carry the same pair. Names are the platform-reported application labels at collection time, independent of the optional device metadata switch. If the platform cannot provide a label, collectors use the explicit `未知应用` label and preserve the identifier; they never infer a name from content. The server rejects missing/blank names. Already archived evidence is not rewritten. Records without an application, such as device state observations, remain unattributed.
+
 App collection rules resolve locally to `content`, `activity`, or `off`; legacy exclusions override all rules. `off` creates no event. `activity` never acquires pixels, a window title or body. Example:
 
 ```json

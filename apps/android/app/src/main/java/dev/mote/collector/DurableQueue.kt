@@ -171,6 +171,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (guarded { capacityUpperBound() > maxBytes - maximumAddition }) prepareIndex()
         guarded {
         require(!event.getJSONObject("privacy").optBoolean("excluded")) { "Excluded captures must never be queued" }
+        fun requireAppName(value: JSONObject) {
+            if (value.optString("appId").isNotEmpty()) require(value.opt("appName") is String && value.getString("appName").isNotBlank() && value.getString("appName").length <= 200) { "应用标识必须同时包含应用名称" }
+        }
+        requireAppName(event)
+        event.optJSONObject("metadata")?.optJSONObject("media")?.optJSONArray("sessions")?.let { sessions ->
+            for (i in 0 until sessions.length()) requireAppName(sessions.getJSONObject(i))
+        }
         val id = UUID.fromString(event.getString("id")).toString()
         val file = File(dir, "$id.event")
         val source = event.optString("source", "screen")

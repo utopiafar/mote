@@ -4,7 +4,8 @@ import AppKit
 // The collector still enforces explicit application restrictions when this identity is unknown.
 func foregroundIdentity(bundleID: String?, name: String?, pid: Int32?) -> (id: String, name: String, pid: Int) {
     guard let id = bundleID, !id.isEmpty else { return ("dev.mote.unknown-foreground", "无前台应用", 0) }
-    return (id, name ?? id, Int(pid ?? 0))
+    let label = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return (id, label.isEmpty ? "未知应用" : String(label.prefix(200)), Int(pid ?? 0))
 }
 
 // Pure window-description policy: no OS query and no title reads. Layer is deliberately irrelevant.

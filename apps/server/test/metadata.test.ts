@@ -13,6 +13,21 @@ const metadata={version:1,observedAt:at(1),collector:{version:'fixture-1',method
 const event=(source='screen',overrides:Record<string,unknown>={})=>({id:randomUUID(),deviceId:'synthetic-device',deviceName:'Synthetic',platform:'macos',capturedAt:at(15),durationMs:15000,appId:'synthetic.app',appName:'Same visible name',windowTitle:source==='activity'?'':'Synthetic title',ocrText:source==='activity'?'':'Synthetic original evidence',source,privacy:{excluded:false,redacted:false,mode:'none',collection:source==='activity'?'activity':'content'},...overrides});
 function fixture(t:{after(fn:()=>void):void},embeddingEnabled=false){const directory=mkdtempSync(join(tmpdir(),'mote-metadata-')),store=new Store(directory,{embeddingEnabled});t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return store;}
 
+test('application names are required with identifiers and survive ingestion, browsing, search and export',async t=>{
+  const store=fixture(t),restored=fixture(t);
+  for(const appName of [undefined,'',' \t\n']) await assert.rejects(store.ingest(event('screen',{appName})));
+  assert.equal(store.stats().captures,0);
+  const capture=event('screen',{appName:'生成的应用',metadata:undefined});
+  await store.ingest(capture);
+  assert.equal(store.evidence([capture.id])[0].appName,capture.appName);
+  assert.equal(store.previews({}).items[0].appName,capture.appName);
+  assert.equal(store.search({query:'生成的应用'})[0].appId,capture.appId);
+  assert.equal(store.gallery({after:at(0),before:at(59),limit:20},false).items[0].appName,capture.appName);
+  await restored.importArchive(store.exportArchive(1_000_000));
+  assert.equal(restored.evidence([capture.id])[0].appName,capture.appName);
+  assert.equal((await store.ingest(capture)).duplicate,true);
+});
+
 test('bounded observed device metadata remains distinct from capture/arrival time and round-trips unchanged',async t=>{
   const store=fixture(t),restored=fixture(t),capture=event('activity',{metadata});
   await store.ingest(capture);const saved=store.evidence([capture.id])[0];
