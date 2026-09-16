@@ -39,6 +39,8 @@ async function run(){
   await window.loadURL(url);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'connected UI');
   assert.ok(await click('采集记录'));
+  await until(()=>js(`!!document.querySelector('[aria-label="记录视图"]')`),'record view selector');
+  await js(`Array.from(document.querySelectorAll('[aria-label="记录视图"] button')).find(button=>button.innerText==='全部记录').click()`);
   await until(()=>js(`document.querySelectorAll('.capture-card').length===2`),'two records');
   await js(`(()=>{const s=document.querySelector('[aria-label="筛选采集级别"]');s.value='activity';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   await until(()=>js(`document.querySelectorAll('.capture-card').length===1&&document.querySelector('.capture-card').innerText.includes('合成阅读器')`),'activity filter');
