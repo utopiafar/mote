@@ -16,7 +16,7 @@ export class SourceStore {
     if(this.listSources().length>=500)throw new StoreError('Maximum 500 sources',413);
     const now=new Date().toISOString(),value={...input,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return value;
   }
-  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention']}):SourceConnection {
+  update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only'}):SourceConnection {
     const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch});
     const value={...existing,...input,updatedAt:new Date().toISOString()};
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));

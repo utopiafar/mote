@@ -39,14 +39,14 @@ class QueueStorage(private val context: Context) {
     fun current(): QueueLocation { requireUiReady(); return DurableQueue.exclusive { store().current().also { recoveryFailure = null } } }
     fun migrate(id: String): QueueLocation = DurableQueue.exclusive {
         val target = choices().singleOrNull { it.id == id } ?: error("所选目标存储暂不可用")
-        store().migrate(target.id, target.base)
+        try { store().migrate(target.id, target.base, RuntimeSettings::reportProgress) } finally { LocalStateChanges.changed(records = true) }
     }
     fun openQueue(): DurableQueue {
         requireUiReady()
         return DurableQueue.exclusive {
         val state = store(); val location = state.current()
         DurableQueue(File(location.path), SecretBox(), createMissing = false) { kind, bytes, id -> Operations.record(context, kind, bytes = bytes, recordId = id) }
-            .apply { assertCurrent = { state.assertCurrent(location) }; recoveryFailure = null }
+            .apply { onMutation = { LocalStateChanges.changed(records = it, storage = true) }; assertCurrent = { state.assertCurrent(location) }; recoveryFailure = null }
         }
     }
 }

@@ -10,6 +10,7 @@ data class SyncPolicy(val mode: String = "realtime", val intervalMinutes: Int = 
     fun delayMillis(now: Long, pending: Int, oldestAt: Long?, lastDispatch: Long, explicit: Boolean = false, pendingUpdates: Int = 0): Long? {
         validate()
         if (explicit) return 0
+        if (pending == 0 && pendingUpdates == 0) return null
         val interval = intervalMinutes * 60_000L
         return when (mode) {
             "manual" -> null

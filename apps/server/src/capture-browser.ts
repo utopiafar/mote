@@ -41,9 +41,26 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     }
     return store.previews(query);
   });
+  const galleryRange=z.object({after:z.string().datetime({offset:true}),before:z.string().datetime({offset:true}),
+    deviceId:z.string().min(1).max(128).optional(),appId:z.string().max(300).optional(),
+    limit:z.coerce.number().int().min(1).max(60).default(20),cursor:z.string().min(1).max(2048).optional(),
+  }).strict().refine(value=>Date.parse(value.after)<Date.parse(value.before),{message:'Invalid time range'});
+  for(const mode of ['albums','album-images'] as const) app.get(`/api/capture-browser/${mode}`,async req=>{
+    const query=galleryRange.parse(req.query),c=credential(req);
+    if(c){connections.assertActive(c);if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,'只能读取本设备的采集记录。');query.deviceId=c.deviceId;}
+    if(mode==='album-images'&&query.appId===undefined)throw new StoreError('Album appId is required');
+    return store.gallery(query,mode==='albums');
+  });
+  const ownImage=(req:FastifyRequest)=>{
+    const id=z.string().uuid().parse((req.params as {id:string}).id),c=credential(req);
+    if(c)connections.assertActive(c);
+    const record=store.imageReference(id);
+    if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,'采集记录不存在或已被清理。');
+    return {...record,id};
+  };
   app.get('/api/capture-browser/:id',async req=>ownRecord(req));
   app.get('/api/capture-browser/:id/image',async(req,reply)=>{
-    const record=ownRecord(req);
+    const record=ownImage(req);
     const {thumbnail}=z.object({thumbnail:z.enum(['1','true']).optional()}).strict().parse(req.query);
     if(!record.blobHash)throw new StoreError('Capture has no image',404);
     if(!thumbnail){const image=store.image(record.id);return reply.type(image.mime!).send(image.bytes);}
@@ -51,7 +68,7 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     if(bytes){thumbnails.delete(record.blobHash);thumbnails.set(record.blobHash,bytes);}
     else {
       bytes=await sharp(store.image(record.id).bytes,{limitInputPixels:24_000_000}).resize({width:480,height:480,fit:'inside',withoutEnlargement:true}).jpeg({quality:72}).toBuffer();
-      ownRecord(req); // Re-check access and retention after asynchronous image processing.
+      ownImage(req); // Re-check access and retention after asynchronous image processing.
       while(thumbnails.size>=200||cachedBytes+bytes.length>16*1024*1024){
         const oldest=thumbnails.keys().next().value;if(oldest===undefined)break;
         cachedBytes-=thumbnails.get(oldest)!.length;thumbnails.delete(oldest);

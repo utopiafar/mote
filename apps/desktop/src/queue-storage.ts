@@ -127,7 +127,7 @@ export class QueueStorage {
       await unlink(this.journalPath); this.cleanupPending = false;
     } catch { this.cleanupPending = true; } // The selected directory stays authoritative after commit.
   }
-  async migrate(source: string, target: string, activate: () => Promise<void>, selectedDirectory: () => Promise<string>): Promise<void> {
+  async migrate(source: string, target: string, activate: () => Promise<void>, selectedDirectory: () => Promise<string>, progress?: (value: import('./background').WorkProgress) => void): Promise<void> {
     if (source === target) { await activate(); return; }
     if (await exists(this.journalPath)) { await this.recover(source); if (await exists(this.journalPath)) throw new Error('上次迁移副本尚未清理，请确认旧磁盘可用后重试'); }
     await this.assertOwned(source); this.checkRelationship(source, target); await this.checkDirectory(dirname(target));
@@ -141,7 +141,11 @@ export class QueueStorage {
     try {
       await mkdir(staging, { mode: 0o700 }); await writeJson(join(staging, OWNER), { ...this.owner, migrationId: id });
       await mkdir(join(staging, 'events'), { mode: 0o700 }); await mkdir(join(staging, 'blobs'), { mode: 0o700 });
-      for (const file of files) await copyVerified(join(source, file.path), join(staging, file.path));
+      let completed = 0;
+      for (const file of files) {
+        await copyVerified(join(source, file.path), join(staging, file.path));
+        progress?.({ message: '正在复制并校验存储文件', completed: ++completed, total: files.length });
+      }
       const copied = await filesIn(staging);
       const sizes = new Map(files.map(file => [file.path, file.bytes]));
       if (copied.length !== files.length || copied.some(file => sizes.get(file.path) !== file.bytes)) throw new Error('迁移校验未通过，原目录保持有效');

@@ -48,3 +48,20 @@ it('support export includes safe counters and fixed events, never arbitrary stat
   expect(output).not.toContain('private'); expect(output).not.toContain(c.deviceId); expect(output).not.toContain('Infinity');
   expect(JSON.parse(output)).toMatchObject({ app:{profile:'dev'}, state:{queueDepth:2}, diagnostics:{counters:{saved:1}}, events:[{stage:'UPLOAD',code:'AUTH'}] });
 });
+it('raw viewer preserves whitespace, unicode and malformed records without parsing; bounds reads', async () => {
+  const journal = new EventJournal(directory, () => true);
+  expect(await journal.readRaw()).toBe('');
+  const raw = '  {"level":"debug"}\nmalformed <script>中文 fixture</script>\n';
+  await writeFile(join(directory, 'events.json'), raw);
+  expect(await journal.readRaw()).toBe(raw);
+  expect(await readFile(join(directory, 'events.json'), 'utf8')).toBe(raw);
+  await writeFile(join(directory, 'events.json'), 'x'.repeat(256 * 1024 + 1));
+  await expect(journal.readRaw()).rejects.toThrow('上限');
+});
+it('records severity at the source and preserves original serialized log text', async () => {
+  const journal = new EventJournal(directory, () => true);
+  await journal.record('MODEL', 'STARTED'); await journal.record('MODEL', 'OK');
+  await journal.record('OCR', 'SCHEDULER'); await journal.record('UPLOAD', 'AUTH');
+  expect((await journal.read()).map(row => row.level)).toEqual(['debug', 'info', 'warn', 'error']);
+  expect(await journal.readRaw()).toBe(await readFile(join(directory, 'events.json'), 'utf8'));
+});

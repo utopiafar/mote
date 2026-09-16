@@ -36,6 +36,14 @@ app.on('browser-window-created', (_event, window) => {
         }
         throw new Error(`Settings operation did not complete: ${phase}`);
       };
+      const recordsIdle = async phase => {
+        currentPhase = phase;
+        for (let i = 0; i < 400; i++) {
+          if (await js(`document.querySelector('#records-status').getAttribute('aria-busy') === 'false'`)) return;
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        throw new Error(`Capture thumbnails did not settle: ${phase}`);
+      };
       const navigate = async page => {
         currentPhase = 'navigate ' + page;
         await js(`document.querySelector('[data-nav="${page}"]').click(); new Promise(resolve => setTimeout(resolve, 180))`);
@@ -71,33 +79,45 @@ app.on('browser-window-created', (_event, window) => {
       // Simulate only the renderer running state; the collector never starts in this fixture.
       // Settings must remain editable while capturing, independently of actual native capture.
       const send = window.webContents.send.bind(window.webContents);
+      const { Collector } = require('../dist/collector');
+      const originalStatus = Collector.prototype.status;
+      // Both pushed events and the renderer's periodic status query must see the same fixture.
+      // Only the returned view changes; the collector itself remains stopped.
+      Collector.prototype.status = function() { const value = originalStatus.call(this); assert.equal(value.running, false); return { ...value, running: true, state: 'capturing' }; };
       window.webContents.send = (channel, ...args) => send(channel, ...(channel === 'mote:status' ? [{ ...args[0], running: true, state: 'capturing' }] : args));
-      window.webContents.send('mote:status', { ...status, running: true, state: 'capturing' });
-      await navigate('capture');
-      assert(await js(`!document.querySelector('#settings-fields').disabled`));
-      assert(await js(`document.querySelector('#save-hint').textContent.includes('立即应用')`));
-      await navigate('overview');
-      window.webContents.send = send;
-      window.webContents.send('mote:status', status);
+      try {
+        window.webContents.send('mote:status', { ...status, running: true, state: 'capturing' });
+        await navigate('capture');
+        assert.equal((await js('window.mote.status()')).running, true, 'Status polling agrees with pushed synthetic capture state');
+        // Cross a full polling interval to reproduce the previous event/poll race deterministically.
+        await js(`new Promise(resolve => setTimeout(resolve, 1100))`);
+        assert(await js(`!document.querySelector('#settings-fields').disabled`));
+        assert(await js(`document.querySelector('#save-hint').textContent.includes('立即应用')`));
+        await navigate('overview');
+      } finally { Collector.prototype.status = originalStatus; window.webContents.send = send; window.webContents.send('mote:status', status); }
       await navigate('notes');
       for (let i = 0; i < 50 && await js(`document.querySelector('#note-text').disabled`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       await js(`document.querySelector('#note-text').value = '跨页面保留的合成草稿'; document.querySelector('#note-text').dispatchEvent(new Event('input', {bubbles: true}));`);
       await navigate('settings'); await navigate('notes');
       assert.equal(await js(`document.querySelector('#note-text').value`), '跨页面保留的合成草稿');
       await navigate('settings'); await navigate('developer');
-      ipcMain.removeHandler('mote:events-read');
-      ipcMain.handle('mote:events-read', () => Array.from({ length: 45 }, (_, index) => ({ atMs: 1700000000000 + index, stage: 'UPLOAD', code: index === 44 ? 'AUTH' : 'OK', elapsedMs: index })));
-      await js(`document.querySelector('#events-open').click()`);
-      await settingsIdle('read logs');
-      assert(await js(`document.querySelector('#events-viewer').textContent.includes('45 条')`));
-      assert(await js(`document.querySelector('#events-viewer').textContent.includes('第 1/3 页')`));
-      await js(`const filter = document.querySelector('[aria-label="日志级别"]'); filter.value = '错误'; filter.dispatchEvent(new Event('change'))`);
-      assert(await js(`document.querySelector('#events-viewer').textContent.includes('1 条') && document.querySelector('#events-viewer pre').textContent.includes('AUTH') && !document.querySelector('#events-viewer pre').textContent.includes('OK')`));
-      ipcMain.removeHandler('mote:events-read');
-      ipcMain.handle('mote:events-read', () => { throw new Error('generated read failure'); });
-      await js(`document.querySelector('#events-open').click()`);
-      await settingsIdle('failed logs');
+      const rawFixture = '  {"level":"info","code":"OK"}\nmalformed <script>fixture</script> 中文\n';
+      ipcMain.removeHandler('mote:events-raw');
+      ipcMain.handle('mote:events-raw', () => rawFixture);
+      await js(`document.querySelector('#events-open').click(); new Promise(resolve => setTimeout(resolve, 100))`);
+      assert.equal(await js(`document.querySelector('[aria-label="原始日志"]').value`), rawFixture);
+      assert(await js(`document.querySelector('[aria-label="原始日志"]').readOnly`));
+      await js(`Array.from(document.querySelectorAll('#events-viewer button')).find(b => b.textContent === '全选').click()`);
+      assert.equal(await js(`document.querySelector('[aria-label="原始日志"]').selectionEnd`), rawFixture.length);
+      await js(`Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.fixtureCopiedLog = text; } } }); Array.from(document.querySelectorAll('#events-viewer button')).find(b => b.textContent === '复制全部').click(); new Promise(resolve => setTimeout(resolve, 20))`);
+      assert.equal(await js(`window.fixtureCopiedLog`), rawFixture);
+      await js(`navigator.clipboard.writeText = async () => { throw new Error('synthetic denied clipboard'); }; Array.from(document.querySelectorAll('#events-viewer button')).find(b => b.textContent === '复制全部').click(); new Promise(resolve => setTimeout(resolve, 20))`);
+      assert(await js(`document.querySelector('#events-viewer [role="status"]').textContent.includes('剪贴板不可用')`));
+      ipcMain.removeHandler('mote:events-raw');
+      ipcMain.handle('mote:events-raw', () => { throw new Error('generated read failure'); });
+      await js(`document.querySelector('#events-open').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(await js(`document.querySelector('#events-viewer').textContent.includes('日志读取失败')`));
+      assert.equal(await js(`document.querySelector('[aria-label="原始日志"]').value`), rawFixture);
       await js(`document.querySelector('#jpeg-quality').value = '10'; document.querySelector('#jpeg-quality').dispatchEvent(new Event('input', {bubbles: true}));`);
       await js(`document.querySelector('#settings').requestSubmit()`);
       assert(await js(`!document.querySelector('[data-page="developer"]').hidden && document.activeElement.id === 'jpeg-quality'`), 'Invalid field is revealed and focused');
@@ -225,13 +245,24 @@ app.on('browser-window-created', (_event, window) => {
       writeFileSync(fixtureArchive, JSON.stringify({ format: 'mote-desktop-queue', version: 1, records: fixtureRecords, blobs: { [hash]: generatedJpeg.toString('base64') } }));
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixtureArchive] });
       assert.equal((await js('window.mote.importQueue()')).imported, 31);
-      await navigate('records');
-      for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 30`); i++) await new Promise(resolve => setTimeout(resolve, 20));
-      assert.equal(await js(`document.querySelectorAll('.record-card').length`), 30);
-      assert(await js(`document.querySelector('#records-status').textContent.includes('31')`));
+      const captureBrowser = require('../dist/capture-browser');
+      const originalCaptureImage = captureBrowser.captureImage;
+      let releaseThumbnails;
+      const thumbnailsReady = new Promise(resolve => { releaseThumbnails = resolve; });
+      captureBrowser.captureImage = async (...args) => { if (args[4]) await thumbnailsReady; return originalCaptureImage(...args); };
+      try {
+        await navigate('records');
+        for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 30`); i++) await new Promise(resolve => setTimeout(resolve, 20));
+        assert.equal(await js(`document.querySelectorAll('.record-card').length`), 30);
+        assert(await js(`document.querySelector('#records-status').getAttribute('aria-busy') === 'true'`), 'Cards appear while generated thumbnails are still loading');
+        releaseThumbnails();
+        await recordsIdle('first capture page thumbnails');
+        assert(await js(`document.querySelector('#records-status').textContent.includes('31')`));
+      } finally { releaseThumbnails(); captureBrowser.captureImage = originalCaptureImage; }
       await js(`document.querySelector('#records-next').click()`);
       for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 1`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       assert.equal(await js(`document.querySelectorAll('.record-card').length`), 1);
+      await recordsIdle('second capture page thumbnails');
       await js(`document.querySelector('.record-card').click()`);
       for (let i = 0; i < 100 && await js(`!document.querySelector('#record-detail-image').src.startsWith('data:image/jpeg')`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       assert(await js(`document.querySelector('#record-detail-text').textContent.includes('<script>不可执行的证据</script>')`));

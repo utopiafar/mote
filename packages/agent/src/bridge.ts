@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { displayTime } from './time.js';
-import {recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime} from '@mote/shared';
+import {fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime} from '@mote/shared';
 import type {
   ContextReader,
   ContextRecord,
@@ -23,6 +23,7 @@ export const TOOL_NAMES = [
   "source_items",
   "source_history",
   "memories",
+  "file_chunks",
 ] as const;
 
 function dateValue(value: unknown, field: string): string | undefined {
@@ -88,6 +89,7 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
   const document = documentSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.document);
   const contentAt = sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
   return {
+    ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     id: record.id,
     capturedAt: record.capturedAt,
     displayCapturedAt: displayTime(record.capturedAt, timeZone),
@@ -264,6 +266,14 @@ export async function startBridge(
         if (bounds.deviceId && Array.isArray(value)) value = value.filter(device => device.deviceId === bounds.deviceId);
         if (Array.isArray(value)) value = value.map(device => projectDevice(device, bounds.timeZone));
       }
+      else if(tool==='file_chunks'){
+        if(typeof args.id!=='string'||!records.has(args.id))throw Error('Discover the file before reading its chunks');
+        const offset=args.offset??0;if(!Number.isSafeInteger(offset)||Number(offset)<0)throw Error('Invalid chunk offset');
+        const scope=range({},bounds);effective={...scope,id:args.id,offset,limit:30};
+        value=await reader.fileChunks?.({...scope,id:args.id,offset:Number(offset)})??[];
+        if(Array.isArray(value))value=value.filter(r=>{const document=documentSchema.safeParse(r.provenance?.document),at=sourceContentTime({capturedAt:r.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));});
+        pagination={nextCursor:Array.isArray(value)&&value.length===30?String(Number(offset)+30):null};
+      }
       else if(tool==='source_history'){
         if(typeof args.id!=='string'||!records.has(args.id))throw Error('Discover a source record before requesting history');
         const scope=range({},bounds);effective={...scope,id:args.id};value=await reader.sourceHistory?.({...scope,id:args.id})??[];
@@ -341,7 +351,7 @@ export async function startBridge(
       if (
         tool === "search_context" ||
         tool === "timeline" ||
-        tool === "evidence" || tool==='source_items' || tool==='source_history'
+        tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks'
       ) {
         if (!Array.isArray(value))
           throw new Error("Context reader returned invalid records");
@@ -360,7 +370,7 @@ export async function startBridge(
           "Context result exceeds the evidence budget; request a smaller range",
         );
       // Only a successfully serialized, deliverable tool result authorizes evidence.
-      if (tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history') {
+      if (tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks') {
         for (const record of safeValue as ContextRecord[])
           records.set(record.id, record);
       }

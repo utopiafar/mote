@@ -1,6 +1,6 @@
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {ArrowDownToLine, RefreshCw} from 'lucide-react';
-import {type Api, bytes, duration, dateTime, errorMessage} from './api';
+import {type Api, bytes, duration, errorMessage} from './api';
 
 interface Snapshot {
   enabled:boolean;level:string;instanceId:string;lastSeq:number;retainedEvents:number;
@@ -10,29 +10,28 @@ interface Snapshot {
   services:{agentConfigured:boolean;embeddingConfigured:boolean;activeQueries:number};
   queue:{index:{pending:number;failed:number;indexed:number;textReady:number};devices:number;reportedPending:number};
 }
-interface Event {
-  seq:number;at:string;event:string;level:string;requestId?:string;operation?:string;
-  route?:string;category?:string;durationMs?:number;statusCode?:number;count?:number;
-}
-
 export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
   const [snapshot,setSnapshot]=useState<Snapshot>();
-  const [events,setEvents]=useState<Event[]>([]);
+  const [rawLog,setRawLog]=useState('');
+  const [wrap,setWrap]=useState(true);
+  const [logFile,setLogFile]=useState(0);
+  const [copyStatus,setCopyStatus]=useState('');
+  const logRef=useRef<HTMLTextAreaElement>(null);
   const [revision,setRevision]=useState(0);
   const [busy,setBusy]=useState(false);
   const [exporting,setExporting]=useState(false);
   const [error,setError]=useState('');
-  const [filter,setFilter]=useState('');
   useEffect(()=>{
     const controller=new AbortController();let active=true;
     setBusy(true);setError('');
     void (async()=>{
       const value=await api.request<Snapshot>('/api/diagnostics',{signal:controller.signal});
-      const recent=await api.request<{items:Event[]}>(`/api/diagnostics/events?afterSeq=${Math.max(0,value.lastSeq-200)}&limit=200`,{signal:controller.signal});
-      if(active){setSnapshot(value);setEvents(recent.items);}
+      const response=await api.raw(`/api/diagnostics/logs?file=${logFile}`,{signal:controller.signal});
+      const raw=await response.text();
+      if(active){setSnapshot(value);setRawLog(raw);setCopyStatus('');}
     })().catch(e=>{if(active)setError(errorMessage(e));}).finally(()=>{if(active)setBusy(false);});
     return()=>{active=false;controller.abort();};
-  },[api,revision]);
+  },[api,revision,logFile]);
   async function download() {
     setExporting(true);setError('');
     try{
@@ -42,7 +41,10 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
       setTimeout(()=>URL.revokeObjectURL(url),1000);
     }catch(e){setError(errorMessage(e));}finally{setExporting(false);}
   }
-  const visible=events.filter(event=>!filter.trim()||event.requestId?.includes(filter.trim())).slice().reverse();
+  async function copyLogs() {
+    try {await navigator.clipboard.writeText(rawLog);setCopyStatus('已复制全部原始日志。');}
+    catch {logRef.current?.focus();logRef.current?.select();setCopyStatus('剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。');}
+  }
   return <section className="panel diagnostics-panel" aria-labelledby="diagnostics-title">
     <div className="section-heading"><div><h2 id="diagnostics-title">运行诊断</h2><p>环境 · {profile||'legacy'} · 中央节点</p></div>
       <div className="diagnostics-actions">
@@ -62,12 +64,21 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
       </div>
       <p className="fine-print">日志 {snapshot.enabled?snapshot.level:'已关闭'} · 最多 {snapshot.limits.maxFiles} 个文件，每个 {bytes(snapshot.limits.maxFileBytes)} · 内存保留 {snapshot.retainedEvents} 条事件。端点队列来自最近心跳，可能不是当前值。</p>
       {(snapshot.writeFailures>0||snapshot.readFailures>0||snapshot.droppedEvents>0)&&<div className="notice" role="status">日志读取失败 {snapshot.readFailures} 次，写入失败 {snapshot.writeFailures} 次，未写入 {snapshot.droppedEvents} 条。请检查日志目录权限与磁盘空间。</div>}
-      <details className="diagnostics-events"><summary>最近运行事件 · {events.length} 条</summary>
-        <label className="diagnostics-filter">按请求编号定位<input aria-label="诊断请求编号" placeholder="粘贴错误提示中的请求编号" value={filter} onChange={e=>setFilter(e.target.value)} maxLength={36}/></label>
-        <div className="diagnostics-table-scroll"><table><thead><tr><th>时间</th><th>事件 / 阶段</th><th>结果</th><th>耗时</th><th>请求编号</th></tr></thead>
-          <tbody>{visible.map(event=><tr key={event.seq}><td>{dateTime(event.at)}</td><td><code>{event.event}</code><small>{event.operation||event.route}</small></td><td>{event.category||event.statusCode||event.level}</td><td>{event.durationMs===undefined?'—':`${Math.round(event.durationMs)} ms`}</td><td><code className="diagnostic-request-id">{event.requestId||'—'}</code></td></tr>)}</tbody></table></div>
-        {!visible.length&&<p className="fine-print">{filter?'最近事件中没有这个请求编号；较早的事件可在节点日志中定位。':snapshot.enabled?'暂时没有运行事件。':'运行日志已关闭，可在中央节点配置中开启。'}</p>}
-      </details>
+      <section className="diagnostics-events" aria-labelledby="raw-log-title">
+        <div className="section-heading"><div><h3 id="raw-log-title">日志中心</h3><p>原始顺序 · 刷新时更新</p></div>
+          <div className="diagnostics-actions">
+            <select aria-label="日志文件" value={logFile} disabled={busy} onChange={e=>{setRawLog('');setLogFile(Number(e.target.value));}}>
+              {Array.from({length:snapshot.limits.maxFiles},(_,index)=><option key={index} value={index}>central.{index}.ndjson{index===0?' · 当前':' · 历史 '+index}</option>)}
+            </select>
+            <button className="button subtle" disabled={!rawLog} onClick={()=>void copyLogs()}>复制全部</button>
+            <button className="button subtle" disabled={!rawLog} onClick={()=>{logRef.current?.focus();logRef.current?.select();}}>全选</button>
+            <button className="button subtle" aria-pressed={wrap} onClick={()=>setWrap(v=>!v)}>自动换行</button>
+          </div>
+        </div>
+        <p className="fine-print">直接显示所选日志文件，不拆字段或重排。可拖动选中，使用 ⌘/Ctrl+A、C 复制；历史编号越大，文件越早。</p>
+        <textarea ref={logRef} className="raw-log-output" aria-label="原始日志" readOnly spellCheck={false} wrap={wrap?'soft':'off'} value={rawLog} placeholder={snapshot.enabled?'暂无日志。':'运行日志已关闭，历史仍可查看。'}/>
+        <p className="fine-print" role="status">{copyStatus}</p>
+      </section>
     </>}
   </section>;
 }

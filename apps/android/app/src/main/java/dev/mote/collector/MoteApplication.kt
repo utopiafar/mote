@@ -7,8 +7,11 @@ class MoteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         if (getProcessName() != packageName) return
+        HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
+        HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }
         Notifications.create(this)
         QueueStorage.recovering = true
+        LocalStateRepository.get(this)
         Executors.newSingleThreadExecutor().apply {
             execute {
                 SupportEvents.record(this@MoteApplication, EventStage.APP, EventCode.STARTED)
@@ -29,7 +32,7 @@ class MoteApplication : Application() {
                         settings.status("permission_required", "投屏会话已结束，请点击开始并重新授权；已有记录保留，同步按所选策略运行")
                     }
                 } catch (error: Exception) { QueueStorage.recoveryFailure = error.message ?: "本机存储恢复失败"; SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE); settings.status("error", "本地加密队列无法读取：${error.message ?: "请检查所选存储介质与设备密钥，保留应用数据"}") }
-                finally { QueueStorage.recovering = false }
+                finally { QueueStorage.recovering = false; LocalStateChanges.changed(records = true, immediate = true) }
             }
             shutdown()
         }

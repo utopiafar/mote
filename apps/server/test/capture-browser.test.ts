@@ -140,3 +140,39 @@ test('sync reconciliation is read-only, device-scoped and cannot acknowledge or 
   assert.equal((await app.inject({method:'POST',url:'/api/captures',headers,payload:{...own,appName:'Changed content'}})).statusCode,409);
   assert.equal((await app.inject({method:'POST',url,headers,payload:{...payload,ids:Array(101).fill(own.id)}})).statusCode,400);
 });
+
+test('album and grid browsing use the lightweight projection, scope devices and keep clock boundaries',async t=>{
+  const {app,store,capture,paired}=await fixture(t),phone=await paired();
+  const records=[
+    {...capture(),appId:'a',appName:'Generated A',capturedAt:'2026-09-13T12:14:59Z'},
+    {...capture(),appId:'a',appName:'Generated A',capturedAt:'2026-09-13T12:15:00Z'},
+    {...capture(),appId:'b',appName:'Generated B',capturedAt:'2026-09-13T12:15:01Z'},
+    {...capture('other'),appId:'a',appName:'Other generated device'},
+  ];
+  for(const record of records) assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:record})).statusCode,201);
+  const originalEvidence=store.evidence.bind(store),originalImage=store.image.bind(store);
+  store.evidence=()=>{throw Error('Album/grid must not load evidence');};
+  store.image=()=>{throw Error('Album/grid must not read image bytes');};
+  const range='after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z',headers=auth(phone.token);
+  const first=await app.inject({url:`/api/capture-browser/albums?${range}&limit=2`,headers});
+  assert.equal(first.statusCode,200,first.body);assert.equal(first.json().albumCount,3);assert.equal(first.json().totalCount,3);
+  assert.equal(first.json().items.length,2);assert.ok(first.json().nextCursor);
+  assert.equal((await app.inject({url:`/api/capture-browser/albums?${range}&limit=2&cursor=${first.json().nextCursor}`,headers})).json().items.length,1);
+  const album=first.json().items.find((item:{appId:string})=>item.appId==='a');
+  const query=new URLSearchParams({after:album.after,before:album.before,appId:album.appId});
+  const grid=await app.inject({url:`/api/capture-browser/album-images?${query}`,headers});
+  assert.equal(grid.statusCode,200,grid.body);assert.equal(grid.json().items[0].id,records[1].id);assert.equal(grid.json().totalCount,1);
+  assert.equal(grid.json().items[0].hasImage,true);
+  for(const key of ['ocr','ocrText','metadata','blobHash','textPreview']) assert.equal(key in grid.json().items[0],false);
+  for(const path of ['albums','album-images']) {
+    assert.equal((await app.inject({url:`/api/capture-browser/${path}?${range}&appId=a`})).statusCode,401);
+    assert.equal((await app.inject({url:`/api/capture-browser/${path}?${range}&deviceId=other&appId=a`,headers})).statusCode,403);
+  }
+  assert.equal((await app.inject({url:`/api/capture-browser/albums?${range}&cursor=-1`,headers})).statusCode,400);
+  assert.equal((await app.inject({url:`/api/capture-browser/album-images?${range}`,headers})).statusCode,400);
+  store.evidence=originalEvidence;store.image=originalImage;
+  assert.equal((await app.inject({method:'DELETE',url:`/api/captures/${records[1].id}`,headers:auth()})).statusCode,200);
+  assert.equal((await app.inject({url:`/api/capture-browser/album-images?${query}`,headers})).json().totalCount,0);
+  await app.inject({method:'DELETE',url:`/api/connections/${phone.credentialId}`,headers:auth()});
+  assert.equal((await app.inject({url:`/api/capture-browser/albums?${range}`,headers})).statusCode,401);
+});

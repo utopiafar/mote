@@ -2,7 +2,19 @@ import type {RecordMetadata, SourceMetadata, OcrResult, CaptureRecord} from '@mo
 export interface Connection {
   token: string;
 }
+export interface FileEvidence {
+  captureId: string;
+  revision: string;
+  artifactId: string;
+  chunkId: string;
+  startMs?: number;
+  endMs?: number;
+  speaker?: string;
+  uncertain?: boolean;
+  overlap?: boolean;
+}
 export interface Capture {
+  fileEvidence?: FileEvidence;
   id: string;
   capturedAt: string;
   appName: string;
@@ -93,6 +105,7 @@ export interface Answer {
     appName: string;
     excerpt: string;
     contentAt?: string;
+    fileEvidence?: FileEvidence;
     provenance?: {sourceId?:string;externalId?:string;revision?:string;layer?:string;document?:import('@mote/shared').SourceDocument};
   }[];
   trace: { tool: string; arguments: unknown; count: number }[];
@@ -136,7 +149,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
     const response = await fetch(path, {
       ...init,
       redirect: "error",
-      credentials: "omit",
+      credentials: path.startsWith("/api/files/") ? "same-origin" : "omit",
       signal,
       headers: {
         ...(init.body ? { "Content-Type": "application/json" } : {}),

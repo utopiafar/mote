@@ -38,9 +38,10 @@ export class ImportStore {
       catch{missingOriginals=true;job.inputs=[];job.blockedArchive=true;const warning='Some archived originals are missing from this restored vault. Upload the original files again to analyze them.';if(!job.warnings.includes(warning))job.warnings=[...job.warnings,warning].slice(-200);}
       const missingPreview=(job.status==='awaiting_confirmation'||job.status==='importing'||job.failurePhase==='import')&&!existsSync(join(workspace,'prepared.jsonl'));
       if(job.status!=='completed'&&(relocated||missingPreview)){
-        job.status='failed';job.processingStatus='blocked';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.manifestHash=undefined;
+        job.status=job.blockedArchive?'failed':'queued';job.processingStatus=job.blockedArchive?'blocked':'archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.manifestHash=undefined;
         job.progress={total:0,processed:0,imported:0,duplicates:0};
-        job.error=missingOriginals?'This backup is missing original files. Upload them again to continue.':'Restored backup: original files are retained. Analyze this import again and review a new preview before continuing.';
+        if(missingOriginals)job.error='This backup is missing original files. Upload them again to continue.';
+        else if(!job.blockedArchive)job.error='Restored backup: original files are retained. Analyze this import again and review a new preview before continuing.';
       }else if(job.status==='preparing'||job.status==='importing'){
         job.failurePhase=job.status==='importing'?'import':'prepare';job.status='failed';job.processingStatus='blocked';job.error='The server stopped during processing. Retry to resume.';
       }

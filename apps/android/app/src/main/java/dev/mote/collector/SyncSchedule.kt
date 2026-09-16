@@ -27,8 +27,8 @@ object SyncSchedule {
         Settings(context).syncStatus("waiting", "正在应用设置，请完成后重试本次扫描或立即同步")
     }
     fun pending(context: Context): PendingSync {
-        val captures = context.queue().pendingSync(); val sources = context.localSources().pendingSync()
-        return PendingSync(captures.count + sources.count, listOfNotNull(captures.oldestAt, sources.oldestAt).minOrNull(), sources.pendingUpdates)
+        val captures = context.queue().pendingSync(); val sources = context.localSources().pendingSync(); val files = context.fileArchives().pendingSync()
+        return PendingSync(captures.count + sources.count + files.count, listOfNotNull(captures.oldestAt, sources.oldestAt, files.oldestAt).minOrNull(), sources.pendingUpdates)
     }
     fun stamp(config: CollectorConfig) = SourceRules.hash(listOf(config.server, config.token, config.syncMode, config.syncIntervalMinutes, config.syncBatchSize, config.wifiOnly, config.syncChargingOnly, config.syncBatteryNotLow).joinToString("\u0000"))
     fun delay(context: Context, config: CollectorConfig, explicit: Boolean = false): Long? {
@@ -58,27 +58,38 @@ object SyncSchedule {
         }
         scheduleNow(context, config, explicit)
     }
+    fun invalidate() { synchronized(this) { registeredStamp = null }; HeartbeatWorker.invalidate() }
     internal fun continueUpload(context: Context, config: CollectorConfig, explicit: Boolean) {
         val request = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config))
             .setInputData(workDataOf("manual" to explicit, "syncStamp" to stamp(config), "continuation" to true))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueueUniqueWork("mote-upload", ExistingWorkPolicy.APPEND_OR_REPLACE, request)
     }
-    private fun scheduleNow(context: Context, config: CollectorConfig, explicit: Boolean) {
+    private var registeredStamp: String? = null
+    @Synchronized private fun scheduleNow(context: Context, config: CollectorConfig, explicit: Boolean) {
         val manager = WorkManager.getInstance(context); val settings = Settings(context)
         if (!config.hasSyncConnection()) {
-            listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload").forEach(manager::cancelUniqueWork)
+            HeartbeatWorker.configure(context, config)
+            if (registeredStamp != stamp(config)) {
+                listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload").forEach(manager::cancelUniqueWork)
+                registeredStamp = stamp(config)
+            }
             settings.syncStatus("unconfigured", "仅保存在本机 · 连接节点后可同步")
             return
         }
+        HeartbeatWorker.configure(context, config)
         if (config.syncMode == "manual") {
-            manager.cancelUniqueWork("mote-upload-timer"); manager.cancelUniqueWork("mote-upload-recovery")
+            if (registeredStamp != stamp(config)) {
+                manager.cancelUniqueWork("mote-upload-timer"); manager.cancelUniqueWork("mote-upload-recovery")
+                registeredStamp = stamp(config)
+            }
             if (!explicit) { if (settings.syncState() !in setOf("uploading", "error", "waiting")) settings.syncStatus("manual", "手动同步 · 记录持续保存在本机"); return }
-        } else {
+        } else if (registeredStamp != stamp(config)) {
             val periodic = PeriodicWorkRequestBuilder<UploadWorker>(15, TimeUnit.MINUTES).setConstraints(constraints(config))
                 .setInputData(workDataOf("syncStamp" to stamp(config)))
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
             manager.enqueueUniquePeriodicWork("mote-upload-recovery", ExistingPeriodicWorkPolicy.UPDATE, periodic)
+            registeredStamp = stamp(config)
         }
         val wait = delay(context, config, explicit) ?: return
         val request = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config))

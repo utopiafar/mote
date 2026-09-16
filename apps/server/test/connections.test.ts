@@ -17,8 +17,8 @@ const inactive:QueryAgent={configured:false,query:async()=>{throw Error('No mode
 const owner='synthetic-owner-for-connection-tests';
 const headers=(token=owner)=>({authorization:`Bearer ${token}`});
 function config(directory:string):Config{return {dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:4*1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:['https://synthetic.invalid'],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};}
-async function fixture(t:TestContext,options:{clock?:()=>number;mcp?:boolean}={}){
-  const directory=await mkdtemp(join(tmpdir(),'mote-connections-')),cfg=config(directory),store=new Store(directory),sources=new SourceStore(store);
+async function fixture(t:TestContext,options:{clock?:()=>number;mcp?:boolean;maxStorageBytes?:number}={}){
+  const directory=await mkdtemp(join(tmpdir(),'mote-connections-')),cfg=config(directory),store=new Store(directory,{maxStorageBytes:options.maxStorageBytes}),sources=new SourceStore(store);
   if(options.mcp)cfg.connectors={directory:join(directory,'connectors'),mcpEnabled:true,mcpReadToken:'synthetic-static-read-mcp-token-123456789',mcpWriteEnabled:true,mcpWriteToken:'synthetic-static-write-mcp-token-123456789',mcpWriteSourceIds:['allowed']};
   const connections=new Connections(store,sources,{clock:options.clock});
   const value=await buildApp(cfg,{store,agent:inactive,connections});
@@ -215,4 +215,36 @@ test('collector can send only its own content-free activity and bounded heartbea
   assert.equal(beat.statusCode,200);assert.deepEqual(store.devices().find(d=>d.deviceId==='synthetic-phone')!.metadata,metadata);
   assert.equal(store.activity().activityEvents,1);assert.equal(store.activity().contentCaptures,0);assert.equal(store.stats().imageCaptures,0);
   const log=JSON.stringify(diagnostics.events(0,500));for(const privateField of ['synthetic.activity','Synthetic forbidden hidden activity content','Synthetic forbidden window title','Synthetic OS',key.token])assert.ok(!log.includes(privateField));
+});
+
+test('capture batches isolate per-item failure, retry idempotently and validate scope before writes',async t=>{
+  const {app}=await fixture(t);const client=await paired(app);
+  const capture=(deviceId='synthetic-phone')=>({id:randomUUID(),deviceId,deviceName:'Synthetic phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:0,source:'activity',appId:'fixture.reader',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
+  const a=capture(),b=capture();
+  const post=(captures:unknown[],token=client.token)=>app.inject({method:'POST',url:'/api/captures/batch',headers:headers(token),payload:{captures}});
+  assert.equal((await post([a,capture('someone-else')])).statusCode,403);
+  assert.equal((await app.inject({url:`/api/captures/${a.id}`,headers:headers()})).statusCode,404);
+  const initial=await post([a,b]);assert.equal(initial.statusCode,200);
+  assert.deepEqual(initial.json().results.map((r:{status:number})=>r.status),[201,201]);
+  assert.deepEqual((await post([a,b])).json().results.map((r:{status:number})=>r.status),[200,200]);
+  const c=capture();const partial=await post([{...a,durationMs:1000},c]);
+  assert.deepEqual(partial.json().results.map((r:{status:number})=>r.status),[409,201]);
+  await app.inject({method:'DELETE',url:`/api/captures/${b.id}`,headers:headers()});
+  assert.equal((await post([b])).json().results[0].status,410);
+  assert.equal((await post([a,a])).statusCode,400);
+  assert.equal((await post([])).statusCode,400);
+  assert.equal((await post(Array.from({length:26},()=>capture()))).statusCode,400);
+  const unseen=capture();assert.equal((await post([unseen,{...capture(),privacy:{excluded:true}}])).statusCode,400);
+  assert.equal((await app.inject({url:`/api/captures/${unseen.id}`,headers:headers()})).statusCode,404);
+  assert.equal((await post([capture()],'invalid')).statusCode,401);
+});
+
+test('batch quota failures preserve accepted receipts and permit idempotent replay',async t=>{
+  const {app}=await fixture(t,{maxStorageBytes:4096});
+  const captures=Array.from({length:25},()=>({id:randomUUID(),deviceId:'quota-fixture',deviceName:'Synthetic quota fixture',platform:'android',capturedAt:new Date().toISOString(),durationMs:0,source:'activity',appId:'fixture.reader',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}}));
+  const send=()=>app.inject({method:'POST',url:'/api/captures/batch',headers:headers(),payload:{captures}});
+  const first=await send();assert.equal(first.statusCode,200);
+  const statuses=first.json().results.map((r:{status:number})=>r.status);
+  assert.ok(statuses.includes(201));assert.ok(statuses.includes(507));
+  assert.deepEqual((await send()).json().results.map((r:{status:number})=>r.status),statuses.map((s:number)=>s===201?200:s));
 });

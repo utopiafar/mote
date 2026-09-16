@@ -1,0 +1,27 @@
+# Copy to /etc/systemd/system only after adjusting paths/user and installing models.
+[Unit]
+Description=Mote local audio transcription and speaker diarization
+After=local-fs.target
+
+[Service]
+Type=simple
+User=mote
+Group=mote
+WorkingDirectory=/opt/mote
+Environment=HF_HUB_OFFLINE=1
+Environment=TRANSFORMERS_OFFLINE=1
+EnvironmentFile=-/etc/mote/audio.env
+ExecStart=/opt/mote/.mote/audio/venv/bin/python /opt/mote/scripts/transcription-server.py --model /var/lib/mote-models/whisper-small --segmentation-model /var/lib/mote-models/segmentation.onnx --speaker-model /var/lib/mote-models/3dspeaker.onnx --threads 4 --timeout 600 --port 9009
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

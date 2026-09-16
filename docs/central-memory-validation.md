@@ -4,7 +4,7 @@
 
 ## 自动验证
 
-最终结果：`npm test` 全工作区 **527/527** 通过；`node --test scripts/security-tests.mjs` **6/6** 通过。中央服务 188 项、网页 45 项、Agent 62 项，其余覆盖桌面与共享工作区。`npm run typecheck` 全部通过。
+合并 `origin/main` 的 0.0.23 后，`npm test` 全工作区首轮 **590/590** 通过；补齐文件片段批次 API 后，完整服务端复测 **238/238** 通过，最终对应全工作区 **591 项**（桌面 198、中央 238、网页 47、Agent 67、诊断 5、本地推理 13、共享 23）。`npm run typecheck` 全部通过。安全、MCP 连接及升级相关脚本合计 **22/22**，其中安全与备份 **9/9**；Python 合成归档与音频检查 **12/12**。
 
 - 通用文件：原件字节与散列、加密、附件关联、ZIP 边界、目录导入、逐文件处置、预览确认、重复导入、部分失败重试、共享引用删除。
 - 解析辅助程序：文本、JSON/JSONL、CSV、YAML、带文本层/无文本层 PDF、DOCX、XLSX；保留页码/坐标，明确标注截断、无 OCR 和公式不求值。
@@ -15,7 +15,9 @@
 - 导出恢复：便携 JSON 包含文件原件、文件 ID 和附件关系，目标密钥重新加密；旧 v1 兼容；校验失败及容量超限回滚。
 - 完整备份：包含图片与文件原件的校验；部分导入迁移到新目录后重新分析、去重并继续 Memory，不读取或删除旧仓库的工作路径。
 
-主要测试文件：`apps/server/test/{central-workflow,files,imports,import-runtime,memory-pipeline,insights}.test.ts`、`packages/agent/test/{skills-runtime,import-lifecycle}.test.mjs`、`apps/web/test/archive-workflows.test.ts`。
+主要测试文件：`apps/server/test/{central-workflow,archived-files,files,imports,import-runtime,memory-pipeline,memory-files,insights}.test.ts`、`packages/agent/test/{skills-runtime,import-lifecycle}.test.mjs`、`apps/web/test/archive-workflows.test.ts`。
+
+合并验证还覆盖客户端分块原件与通用上传原件同时存在的加密备份恢复、转写/人工校正片段到父文件的依赖、源文件消失后的中央副本、校正和删除竞态，以及 205 个片段跨页提取。端到端媒体、隐私网关、stdio MCP、独立 profile 升级回滚与 tunnel 生命周期检查通过，均使用生成数据。
 
 ## 浏览器人工验证
 
@@ -27,11 +29,11 @@
 4. 生成洞察，检查 HTML 排版、独立证据按钮与文字版切换。
 5. 检查 390px 手机宽度布局，再恢复默认尺寸。
 
-以上操作通过，浏览器未记录前端 warning/error。原件下载字节由 API 测试核对。
+以上操作通过，浏览器未记录前端 warning/error。原件下载字节由 API 测试核对。合并后的 Electron 实际浏览器导航、模型设置草稿、诊断、配置导出及桌面/手机布局回归也通过。
 
 ## 构建与未覆盖范围
 
-共享库、Agent、中央服务和网页构建通过；全工作区 TypeScript 检查通过。根目录完整 `npm run build` 到桌面原生模型阶段失败：本工作树缺少固定版本的 `vendor/llama.cpp`。本次没有修改或构建该原生模型组件。
+共享库、Agent、中央服务和网页构建通过；全工作区 TypeScript 检查通过。根目录完整 `npm run build` 到桌面原生模型阶段失败：本工作树缺少固定版本的 `vendor/llama.cpp`。本次本地没有修改或构建该原生模型组件；发布流水线单独执行原生客户端打包及集成检查。
 
 模拟模型验证工具和流程契约，不代表真实模型能正确理解所有导出格式。未执行个人资料导入、物理 Android/Mac 采集验证、真实 NAS 断电恢复或 Docker 镜像运行。未做令牌节省比例或吞吐量承诺。
 

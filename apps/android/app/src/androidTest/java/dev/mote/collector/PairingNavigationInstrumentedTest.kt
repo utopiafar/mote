@@ -87,7 +87,7 @@ class PairingNavigationInstrumentedTest {
         }
         try {
             settings.save(settings.read().copy(server = "https://old.generated.invalid", token = "generated-old-token-1234567890123456", deviceName = "Generated device", debugHttp = true, syncMode = "manual", intervalSeconds = 30))
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 val monitor = instrumentation.addMonitor(ConnectionActivity::class.java.name, null, false)
                 scenario.onActivity { activity ->
                     click(activity, "设置"); menu(activity, "连接与同步")
@@ -96,6 +96,11 @@ class PairingNavigationInstrumentedTest {
                 }
                 val connection = instrumentation.waitForMonitorWithTimeout(monitor, 10_000) as? ConnectionActivity ?: error("Invitation page did not open")
                 instrumentation.removeMonitor(monitor)
+                waitUntil {
+                    var ready = false
+                    instrumentation.runOnMainSync { ready = views(connection.window.decorView).filterIsInstance<TextView>().any { it.text.toString() == "确认连接此节点" } }
+                    ready
+                }
                 val invitation = JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", node)
                     .put("code", "A".repeat(43)).put("expiresAt", Instant.ofEpochMilli(System.currentTimeMillis() + 600_000).toString()).toString()
                 instrumentation.runOnMainSync {
@@ -122,6 +127,7 @@ class PairingNavigationInstrumentedTest {
                 waitUntil { settings.read().server == node && !ConnectionGuard.changing() }
                 assertEquals(newToken, settings.read().token); assertEquals(deviceId, settings.deviceId)
                 assertEquals(listOf("/api/connections/redeem", "/api/connections/self"), requests.toList())
+                scenario.awaitUiText(node)
                 scenario.onActivity { activity ->
                     assertEquals(node, editor(activity, "https://mote.example.com").text.toString())
                     assertEquals(newToken, editor(activity, "建议通过邀请获取本设备凭据").text.toString())
@@ -136,7 +142,7 @@ class PairingNavigationInstrumentedTest {
                 }
                 waitUntil { settings.read().intervalSeconds == 47 && !ConnectionGuard.changing() }
                 assertEquals(node, settings.read().server); assertEquals(newToken, settings.read().token)
-                scenario.recreate()
+                scenario.recreate(); scenario.awaitMainUi()
                 scenario.onActivity { activity ->
                     assertFalse(saveVisible(activity)); menu(activity, "连接与同步")
                     assertEquals(node, editor(activity, "https://mote.example.com").text.toString())
@@ -146,9 +152,14 @@ class PairingNavigationInstrumentedTest {
                 ConnectionGuard.processing.incrementAndGet()
                 try {
                     scenario.onActivity { activity -> editor(activity, "30").setText("60"); click(activity, "保存设置") }
-                    scenario.recreate()
+                    scenario.recreate(); scenario.awaitMainUi()
                 } finally { ConnectionGuard.processing.decrementAndGet() }
                 waitUntil { settings.read().intervalSeconds == 60 && !ConnectionGuard.changing() }
+                waitUntil {
+                    var delivered = false
+                    scenario.onActivity { delivered = editor(it, "30").text.toString() == "60" && !saveVisible(it) }
+                    delivered
+                }
                 scenario.onActivity { activity ->
                     assertEquals("60", editor(activity, "30").text.toString()); assertFalse(saveVisible(activity))
                     assertEquals(node, editor(activity, "https://mote.example.com").text.toString())

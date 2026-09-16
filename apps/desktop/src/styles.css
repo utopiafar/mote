@@ -329,3 +329,5 @@ progress::-webkit-progress-value { border-radius: 5px; background: #759664; }
 .page [aria-busy="true"]::before, #feedback[aria-busy="true"]::before { content: ''; display: inline-block; width: 12px; height: 12px; margin-right: 8px; border: 2px solid #dce3d9; border-top-color: #1c6754; border-radius: 50%; animation: mote-busy 1s linear infinite; }
 @keyframes mote-busy { to { transform: rotate(360deg); } }
 #events-viewer pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.raw-log-output { width: 100%; min-height: 360px; max-height: 70vh; resize: vertical; overflow: auto; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; user-select: text; -webkit-user-select: text; cursor: text; tab-size: 2; }

@@ -1,6 +1,6 @@
 {
   "name": "@mote/web",
-  "version": "0.0.13",
+  "version": "0.0.24",
   "private": true,
   "type": "module",
   "scripts": {

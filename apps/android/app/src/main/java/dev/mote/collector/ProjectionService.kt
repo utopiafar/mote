@@ -32,6 +32,8 @@ class ProjectionService : Service() {
     private var config: CollectorConfig? = null
     private var lastTick = 0L
     private var closed = false
+    private var copying = false
+    private val pixels = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue<Runnable>(1))
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() {
             RuntimeSettings.cancelProjectionConsentRequest()
@@ -63,7 +65,7 @@ class ProjectionService : Service() {
                 if (pending != null && SystemClock.elapsedRealtime() - pending!!.requestedAt > 5000) {
                     clearPending(); pipeline?.pause("未收到屏幕帧；下一采样周期重试")
                 }
-                if (pending == null && SystemClock.elapsedRealtime() - lastTick >= c.intervalSeconds * 1000L) {
+                if (pending == null && !copying && SystemClock.elapsedRealtime() - lastTick >= c.intervalSeconds * 1000L) {
                     when (CapturePipeline.policy(c, windows)) {
                         AppCollectionMode.ACTIVITY -> if (pipeline?.canCollect(c, windows, AppCollectionMode.ACTIVITY) == true) {
                             lastTick = SystemClock.elapsedRealtime(); pipeline?.submitActivity(windows, c)
@@ -74,7 +76,7 @@ class ProjectionService : Service() {
                         AppCollectionMode.OFF -> pipeline?.canCollect(c, windows, AppCollectionMode.OFF)
                     }
                 }
-                Notifications.show(this@ProjectionService, settings.message())
+                Notifications.show(this@ProjectionService, LocalStateRepository.get(this@ProjectionService).state.value.captureLabel)
             } catch (_: Exception) { pipeline?.pause("投屏帧暂不可用，下一周期重试") }
             handler.postDelayed(this, 1000)
         }
@@ -122,18 +124,32 @@ class ProjectionService : Service() {
             val image = available.acquireLatestImage() ?: return@setOnImageAvailableListener
             display?.surface = null
             pending = null
-            try {
-                val plane = image.planes[0]
-                val paddedWidth = image.width + (plane.rowStride - plane.pixelStride * image.width) / plane.pixelStride
-                val padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
-                padded.copyPixelsFromBuffer(plane.buffer)
-                val cropped = Bitmap.createBitmap(padded, 0, 0, image.width, image.height)
-                if (cropped !== padded) padded.recycle()
-                pipeline?.submit(cropped, current, c, ticket.at, ticket.requestedAt) ?: cropped.recycle()
-            } catch (_: Exception) { pipeline?.pause("投屏帧读取失败，未保存内容") }
-            finally { image.close(); if (reader === available) { reader = null; available.setOnImageAvailableListener(null, null); available.close() } }
+            // The worker owns this detached image/reader until its copy completes.
+            reader = null; available.setOnImageAvailableListener(null, null); copying = true
+            val capturePipeline = pipeline
+            try { pixels.execute {
+                var padded: Bitmap? = null
+                val cropped = try {
+                    val plane = image.planes[0]
+                    val paddedWidth = image.width + (plane.rowStride - plane.pixelStride * image.width) / plane.pixelStride
+                    padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+                    padded.copyPixelsFromBuffer(plane.buffer)
+                    Bitmap.createBitmap(padded, 0, 0, image.width, image.height).also { if (it === padded) padded = null }
+                } catch (_: Exception) { null }
+                finally { padded?.recycle(); image.close(); available.close() }
+                handler.post {
+                    copying = false
+                    if (cropped != null) {
+                        if (!closed && !ConnectionGuard.reconfiguring() && settings.enabled && settings.read() == c &&
+                            CapturePipeline.unlocked(this@ProjectionService) && ForegroundApps.snapshot(this@ProjectionService) == ticket.windows)
+                            capturePipeline?.submit(cropped, current, c, ticket.at, ticket.requestedAt) ?: cropped.recycle()
+                        else cropped.recycle()
+                    } else pipeline?.pause("投屏帧读取失败，未保存内容")
+                }
+            } } catch (_: java.util.concurrent.RejectedExecutionException) { copying = false; image.close(); available.close() }
         }, handler)
         Operations.record(this, OperationKind.CAPTURE_REQUESTED)
+        Diagnostics(this).add("captureRequests")
         display?.surface = source.surface
     }
     private fun clearPending() {
@@ -182,7 +198,7 @@ class ProjectionService : Service() {
     override fun onDestroy() {
         if (!closed) {
             closed = true; running = false; instance = null
-            handler.removeCallbacksAndMessages(null)
+            handler.removeCallbacks(tick); pixels.shutdown()
             pipeline?.close(); pipeline = null
             clearPending(); display?.release(); display = null
             projection?.unregisterCallback(callback); projection?.stop(); projection = null

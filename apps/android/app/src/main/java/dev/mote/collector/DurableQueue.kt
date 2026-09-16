@@ -24,16 +24,23 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         // Only fixed statistics and date/source index fields are cached, never capture content. A bounded process cache
         // is shared by the short-lived queue handles; the encrypted files remain authoritative.
         private const val MAX_CACHED_DIRECTORIES = 4
+        private val browseIndexes = object : LinkedHashMap<String, QueueBrowseIndex>(4, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, QueueBrowseIndex>?) = size > MAX_CACHED_DIRECTORIES
+        }
         private const val MAX_CACHED_EVENTS = 50_000
         private data class EventStamp(val bytes: Long, val modifiedAt: Long)
-        private data class EventStats(val stamp: EventStamp, val pending: Boolean, val reservedBytes: Long, val source: String, val capturedAt: String, val blocked: Boolean, val awaitingOcr: Boolean, val uploaded: Boolean)
+        private data class EventStats(val stamp: EventStamp, val pending: Boolean, val reservedBytes: Long, val source: String, val capturedAt: String, val blocked: Boolean, val awaitingOcr: Boolean, val uploaded: Boolean, val imageHash: String)
         private val statistics = object : LinkedHashMap<String, MutableMap<String, EventStats>>(MAX_CACHED_DIRECTORIES, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MutableMap<String, EventStats>>?) = size > MAX_CACHED_DIRECTORIES
         }
     }
+    /** Nonblocking invalidation only; listeners must never read storage inside this callback. */
+    internal var onMutation: ((Boolean) -> Unit)? = null
     internal var assertCurrent: (() -> Unit)? = null
     private inline fun <T> guarded(action: () -> T): T = synchronized(lock) { assertCurrent?.invoke(); action() }
     init { check(dir.isDirectory || createMissing && dir.mkdirs()) { "本机存储目录不可用" } }
+    private fun browseFiles() = dir.listFiles()?.filter { it.extension == "event" } ?: error("无法读取本机存储目录")
+    private fun browseIndex() = browseIndexes.getOrPut(dir.absolutePath) { QueueBrowseIndex(dir, cipher) }
     private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
     fun stats(): QueueStats = guarded {
         val files = dir.listFiles() ?: error("无法读取本机存储目录")
@@ -58,9 +65,23 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             cache.remove(file.name)
             val event = read(file)
             EventStats(stamp, !syncFailed(event) && (!event.optBoolean("_uploaded") || event.has("_ocrResult")),
-                ocrReserve(event), event.optString("source", "screen"), event.optString("capturedAt"), syncFailed(event), event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult"), event.optBoolean("_uploaded"))
+                ocrReserve(event), event.optString("source", "screen"), event.optString("capturedAt"), syncFailed(event), event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult"), event.optBoolean("_uploaded"), event.optString("_blob"))
                 .also { if (cache.size < MAX_CACHED_EVENTS) cache[file.name] = it }
         }
+    }
+    /** Exact inventory of committed records, distinct from cumulative operation counters. */
+    fun inventory(): QueueInventory = guarded {
+        val files = dir.listFiles() ?: error("无法读取本机存储目录")
+        val events = files.filter { it.extension == "event" }
+        val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
+        cache.keys.retainAll(events.map { it.name }.toSet())
+        val values = events.map { eventStats(it, cache) }
+        val hashes = values.map { it.imageHash }.filter(String::isNotBlank).toSet()
+        val blobs = files.filter { it.extension == "blob" }.mapTo(mutableSetOf()) { it.nameWithoutExtension }
+        check(blobs.containsAll(hashes)) { "部分图片文件缺失，保留上次统计" }
+        QueueInventory(events.size, values.count { it.imageHash.isNotBlank() }, hashes.size,
+            values.count { it.pending }, values.count { it.awaitingOcr && !it.blocked }, values.count { it.blocked },
+            files.filter { it.isFile }.sumOf { it.length() }, values.sumOf { it.reservedBytes })
     }
     fun syncInventory(): JSONObject = guarded {
         val files = records(); val cache = statistics.getOrPut(dir.absolutePath) { mutableMapOf() }
@@ -122,10 +143,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private fun atomic(file: File, bytes: ByteArray) {
         val temp = File(dir, "${UUID.randomUUID()}.tmp")
         try {
+            if (file.extension == "event") browseIndex().invalidate(file.nameWithoutExtension)
             FileOutputStream(temp).use { it.write(cipher.seal(bytes)); it.fd.sync() }
             check(temp.renameTo(file)) { "无法原子写入队列" }
+            onMutation?.invoke(file.extension == "event")
             // Atomic replacements may have the same length and timestamp on coarse filesystems.
             statistics[dir.absolutePath]?.remove(file.name)
+            if (file.extension == "event") browseIndex().changed(file, JSONObject(String(bytes, Charsets.UTF_8)))
         } finally { temp.delete() }
     }
     private fun isDuplicate(event: JSONObject): Boolean {
@@ -156,22 +180,36 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (file.exists()) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { "相同记录 ID 的内容发生变化" }; return@guarded }
         val blob = hash?.let { File(dir, "$it.blob") }
         val body = stored.toString().toByteArray()
-        val added = body.size + 64L + if (blob == null || blob.exists()) 0 else image!!.size + 64L
+        val added = body.size + 2048L + if (blob == null || blob.exists()) 0 else image!!.size + 64L
         if (bytes() + added + ocrReserve(stored) > maxBytes) throw QueueFull()
         if (blob != null && !blob.exists()) atomic(blob, image!!)
         atomic(file, body)
         onChange?.invoke(when (source) { "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
     }
-    fun peek(): JSONObject? = guarded {
-        val file = records().firstOrNull { val event = read(it); !event.optBoolean("_uploaded") && !syncFailed(event) } ?: return null
-        val event = read(file)
-        localFields.forEach(event::remove)
-        val hash = event.optString("_blob", "")
-        if (hash.isEmpty()) { require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event)); event.remove("_blob"); return event }
-        require(hash.matches(Regex("[a-f0-9]{64}")))
-        event.remove("_blob")
-        event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
-        event
+    fun peek(): JSONObject? = peekBatch(1).firstOrNull()
+    /** Bound both count and UTF-8 transport size; never acknowledges while selecting. */
+    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024): List<JSONObject> = guarded {
+        require(maxCount in 1..25 && maxBytes > 0)
+        val result = mutableListOf<JSONObject>()
+        var bytes = 32L
+        for (file in records()) {
+            val event = read(file)
+            if (event.optBoolean("_uploaded") || syncFailed(event)) continue
+            localFields.forEach(event::remove)
+            val hash = event.optString("_blob", "")
+            event.remove("_blob")
+            if (hash.isEmpty()) require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event))
+            else {
+                require(hash.matches(Regex("[a-f0-9]{64}")))
+                event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
+            }
+            val size = event.toString().toByteArray(Charsets.UTF_8).size + 1L
+            if (result.isNotEmpty() && bytes + size > maxBytes) break
+            result.add(event); bytes += size
+            // A single oversized record is returned alone so the uploader can report it.
+            if (result.size == maxCount || bytes >= maxBytes) break
+        }
+        result
     }
     fun acknowledge(id: String, uploadedBytes: Long = 0): Unit = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
@@ -184,9 +222,14 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     private fun remove(file: File, record: JSONObject) {
         val hash = record.optString("_blob", "")
+        browseIndex().invalidate(file.nameWithoutExtension)
         check(file.delete()) { "无法删除已确认记录" }
+        onMutation?.invoke(true)
+        browseIndex().changed(file, null)
         statistics[dir.absolutePath]?.remove(file.name)
-        if (hash.isNotEmpty() && records().none { read(it).optString("_blob", "") == hash }) File(dir, "$hash.blob").delete()
+        if (hash.isNotEmpty() && records().none { read(it).optString("_blob", "") == hash }) {
+            File(dir, "$hash.blob").delete(); File(dir, "$hash.thumb").delete()
+        }
     }
     fun pendingOcr(): JSONObject? = guarded {
         records().asSequence().map(::read).firstOrNull { it.optJSONObject("ocr")?.optString("status") == "pending" && !it.has("_ocrResult") && !syncFailed(it) }
@@ -233,10 +276,50 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (!file.exists()) return
         atomic(file, read(file).put("_ocrConflict", true).toString().toByteArray())
     }
+    /** IDs only: callers read one record per lock acquisition while scanning in a worker. */
+    fun dedupeIds(): List<String> = guarded { browseFiles().map { it.nameWithoutExtension } }
+    fun dedupeRow(id: String): JSONObject? = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) null else JSONObject(browseIndex().entry(file, ::read).toString())
+    }
+    /** Commit only against the exact blobs reviewed. Never remove the retained reference. */
+    fun resolveDedupe(id: String, hash: String, referenceId: String?, referenceHash: String?, destination: DurableQueue?, destinationMaxBytes: Long = Long.MAX_VALUE): Boolean = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) return@guarded false
+        val event = read(file)
+        if (event.optString("_blob") != hash) return@guarded false
+        if (referenceId != null) {
+            require(referenceId != id)
+            val reference = File(dir, "${UUID.fromString(referenceId)}.event")
+            if (!reference.exists() || read(reference).optString("_blob") != referenceHash || image(referenceId) == null) return@guarded false
+        }
+        if (destination != null) {
+            destination.assertCurrent?.invoke()
+            require(destination.dir.canonicalFile != dir.canonicalFile)
+            val target = File(destination.dir, file.name)
+            // A previous interrupted move may already have committed its destination.
+            if (target.exists()) check(destination.read(target).toString() == event.toString()) { "目标已有不同记录，保留两份以供检查" }
+            else {
+                require(hash.matches(Regex("[a-f0-9]{64}")))
+                val bytes = cipher.open(File(dir, "$hash.blob").readBytes())
+                val additional = event.toString().toByteArray().size + 2048L + ocrReserve(event) +
+                    if (File(destination.dir, "$hash.blob").exists()) 0L else bytes.size + 64L
+                if (destination.bytes() > destinationMaxBytes - additional) throw QueueFull()
+                destination.atomic(File(destination.dir, "$hash.blob"), bytes)
+                destination.atomic(target, event.toString().toByteArray())
+                check(destination.read(target).toString() == event.toString())
+                check(destination.image(id)!!.contentEquals(bytes))
+            }
+            // Also validate a destination left by an interrupted earlier attempt.
+            check(destination.image(id)?.contentEquals(requireNotNull(image(id))) == true) { "目标图片校验失败，原记录已保留" }
+        }
+        remove(file, event)
+        true
+    }
     fun image(id: String): ByteArray? = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return null
-        val hash = read(file).optString("_blob")
+        val hash = browseIndex().entry(file, ::read).optString("blob")
         if (hash.isBlank()) return null
         require(hash.matches(Regex("[a-f0-9]{64}")))
         cipher.open(File(dir, "$hash.blob").readBytes())
@@ -281,6 +364,51 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         JSONObject().put("items", org.json.JSONArray(items.map { display(it).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
             .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
     }
+    /** Album/grid paths never deserialize full capture records or OCR text. */
+    fun albumPage(after: String, before: String, cursor: String? = null): JSONObject = guarded {
+        CaptureAlbums.page(browseRows(after, before), cursor)
+    }
+    private fun browseRows(after: String, before: String): List<JSONObject> {
+        val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
+        require(start < end)
+        return browseIndex().entries(browseFiles(), ::read).filter {
+            val at = java.time.Instant.parse(it.getString("capturedAt"))
+            it.optString("source") == "screen" && at >= start && at < end
+        }
+    }
+    fun albumImages(after: String, before: String, appId: String, cursor: String? = null, limit: Int = 20): JSONObject = guarded {
+        require(limit in 1..60)
+        val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
+        val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
+        val rows = browseRows(after, before).filter { it.optString("appId") == appId }
+            .sortedWith(compareByDescending<JSONObject> { java.time.Instant.parse(it.getString("capturedAt")) }.thenByDescending { it.getString("id") })
+        val page = rows.filter { at == null || java.time.Instant.parse(it.getString("capturedAt")) < at ||
+            java.time.Instant.parse(it.getString("capturedAt")) == at && it.getString("id") < id!! }.take(limit + 1)
+        val items = page.take(limit).map { row -> JSONObject().apply {
+            for (key in listOf("id", "capturedAt", "source", "appId", "appName", "hasImage")) put(key, row.get(key))
+        } }
+        JSONObject().put("items", org.json.JSONArray(items)).put("totalCount", rows.size)
+            .put("nextCursor", if (page.size > limit) Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject()
+                .put("at", items.last().getString("capturedAt")).put("id", items.last().getString("id")).toString().toByteArray()) else JSONObject.NULL)
+    }
+    /** Encrypted derived thumbnail; the owning event remains authoritative for access/retention. */
+    fun thumbnail(id: String): ByteArray? = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) return@guarded null
+        val hash = browseIndex().entry(file, ::read).optString("blob")
+        if (!hash.matches(Regex("[a-f0-9]{64}"))) return@guarded null
+        val thumbnail = File(dir, "$hash.thumb")
+        if (thumbnail.exists()) runCatching { cipher.open(thumbnail.readBytes()) }.getOrNull() else null
+    }
+    fun cacheThumbnail(id: String, bytes: ByteArray, maxBytes: Long) = guarded {
+        require(bytes.size <= 256 * 1024)
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) return@guarded
+        val hash = browseIndex().entry(file, ::read).optString("blob")
+        if (!hash.matches(Regex("[a-f0-9]{64}"))) return@guarded
+        val target = File(dir, "$hash.thumb")
+        if (!target.exists() && this.bytes() + bytes.size + 64 <= maxBytes) atomic(target, bytes)
+    }
     fun summary(): JSONObject = guarded {
         val files = records(); var screens = 0; var notes = 0; var activities = 0; var media = 0; var systemEvents = 0; var unreadable = 0
         val pending = org.json.JSONArray()
@@ -311,8 +439,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         }
     }
     fun recoverOrphans() = guarded {
-        // Read every event first. Corruption is surfaced; never silently discard an event.
-        val referenced = records().map { read(it).optString("_blob", "") }.toSet()
-        dir.listFiles()?.filter { it.extension == "tmp" || (it.extension == "blob" && it.nameWithoutExtension !in referenced) }?.forEach { it.delete() }
+        // Validate every file stamp; missing/stale index entries are rebuilt before orphan cleanup.
+        val referenced = browseIndex().entries(browseFiles(), ::read).map { it.optString("blob") }.toSet()
+        dir.listFiles()?.filter { it.extension == "tmp" || (it.extension in setOf("blob", "thumb") && it.nameWithoutExtension !in referenced) }?.forEach { if (it.delete()) onMutation?.invoke(false) }
     }
 }

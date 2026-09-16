@@ -30,6 +30,7 @@
         <activity android:name=".SyncRecoveryActivity" android:exported="false" />
         <activity android:name=".CaptureRecordsActivity" android:exported="false" />
         <activity android:name=".LogViewerActivity" android:exported="false" />
+        <activity android:name=".BulkDedupeActivity" android:exported="false" />
         <activity android:name=".ImageDedupeDiagnosticsActivity" android:exported="false" />
         <service android:name=".ProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection" />
         <service android:name=".NsfwInferenceService" android:exported="false" android:process=":nsfw" />

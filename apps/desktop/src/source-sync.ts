@@ -1,28 +1,21 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { createHash } from 'node:crypto';
+import { sourceWork } from './background';
+import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { SourceDefinition, SourceItem, SourceRequest, SourceScan, ScannedItem } from './source-types';
 export const sourceHash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = path + '.' + randomUUID() + '.tmp';
-  try {
-    const handle = await open(temporary, 'wx', 0o600);
-    try { await handle.writeFile(JSON.stringify(value)); await handle.sync(); } finally { await handle.close(); }
-    await rename(temporary, path);
-    if (process.platform !== 'win32') { const directory = await open(dirname(path), 'r'); try { await directory.sync(); } finally { await directory.close(); } }
-  }
-  finally { await rm(temporary, { force: true }); }
+  await sourceWork.run({ kind: 'json-write', path, value });
 }
 interface Known { contentHash: string; revision: string; item: ScannedItem }
-interface State { policy?: string; version: 1; known: Record<string, Known>; pending: SourceItem[]; lastSyncAt?: string }
+interface State { initialized?:boolean; baseline?:string[]; policy?: string; version: 1; known: Record<string, Known>; pending: SourceItem[]; lastSyncAt?: string }
 // All transitions are persisted before network I/O. Callers serialize one source at a time.
 export class SourceSync {
   private data: State = { version: 1, known: {}, pending: [] };
   constructor(private readonly path: string, private readonly limits = { maxEvents: 4000, maxBytes: 32 * 1024 * 1024 }) {}
   async initialize(): Promise<void> {
     try {
-      const value = JSON.parse(await readFile(this.path, 'utf8')) as State;
+      const value = await sourceWork.run<State | undefined>({ kind: 'json-read', path: this.path });
+      if (value === undefined) return;
       if (value.version !== 1 || !value.known || !Array.isArray(value.pending) || value.pending.length > 4000) throw new Error('来源同步状态无法读取，请保留文件后修复');
       this.data = value;
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
@@ -44,8 +37,15 @@ export class SourceSync {
     const next = { ...this.data, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '' }])), pending: [] };
     await this.commit(next);
   }
-  async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString()): Promise<number> {
-    const next: State = structuredClone(this.data); let changes = 0;
+  async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all'|'new_only'='all'): Promise<number> {
+    const next: State = { ...this.data, known: { ...this.data.known }, pending: [...this.data.pending] }; let changes = 0;
+    if(initialSync==='new_only'&&!next.initialized&&Object.keys(next.known).length===0){
+      next.baseline=[...new Set([...(next.baseline??[]),...scan.seen])];
+      next.initialized=scan.complete;await this.commit(next, this.limits.maxBytes);return 0;
+    }
+    if(initialSync==='all')next.baseline=[];
+    if(scan.complete)next.initialized=true;
+    const baseline=new Set(next.baseline??[]);
     const stage = (item: ScannedItem) => {
       const key = sourceHash(item.externalId); const previous = next.known[key];
       const contentHash = sourceHash(JSON.stringify(item));
@@ -55,7 +55,7 @@ export class SourceSync {
       // Persist only metadata for deletion detection; original text lives solely in the bounded pending queue.
       next.known[key] = { contentHash, revision, item: { ...item, text: '' } }; changes++;
     };
-    for (const item of scan.items) stage(item);
+    for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
     if (trackDeletions && scan.complete) {
       const seen = new Set(scan.seen);
       for (const previous of Object.values(this.data.known)) {
@@ -66,8 +66,8 @@ export class SourceSync {
         stage({ ...item, text: '', deleted: true, ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
       }
     }
-    if (next.pending.length > this.limits.maxEvents || Buffer.byteLength(JSON.stringify(next)) > this.limits.maxBytes) throw new Error('来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试');
-    await this.commit(next); return changes;
+    if (next.pending.length > this.limits.maxEvents) throw new Error('来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试');
+    await this.commit(next, this.limits.maxBytes); return changes;
   }
   async syncScan(scan: SourceScan, trackDeletions: boolean, source: SourceDefinition, request: SourceRequest, signal?: AbortSignal, prepare?: () => Promise<void>): Promise<{ changes: number; state: 'ready' | 'paused' }> {
     let precedingError: unknown;
@@ -79,7 +79,7 @@ export class SourceSync {
       } catch (error) { precedingError = error; }
     }
     signal?.throwIfAborted();
-    const changes = await this.stage(scan, trackDeletions);
+    const changes = await this.stage(scan, trackDeletions,undefined,source.initialSync);
     if (precedingError) throw precedingError; // Offline changes remain durable; avoid a second failing request in this cycle.
     await prepare?.();
     return { changes, state: await this.flush(source, request, signal) };
@@ -98,5 +98,5 @@ export class SourceSync {
     }
     await this.commit({ ...this.data, lastSyncAt: new Date().toISOString() }); return 'ready';
   }
-  private async commit(next: State): Promise<void> { await atomicSourceJson(this.path, next); this.data = next; }
+  private async commit(next: State, maximum?: number): Promise<void> { await sourceWork.run({ kind: 'json-write', path: this.path, value: next, maximum }); this.data = next; }
 }

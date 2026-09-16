@@ -47,9 +47,9 @@ export class MemoryPipeline {
     const evidenceIds=[...new Set(input.evidenceIds)],skillVersion=this.options.skillVersion??MEMORY_SKILL_VERSION,all:Chunk[]=[];
     let skippedChunks=0;
     for(const id of evidenceIds){
-      const record=this.store.evidence([id])[0];
-      if(!record||!this.store.isCurrentEvidence(id))throw new StoreError('Memory input evidence is missing or superseded',409);
-      if(!record.ocrText.length||record.provenance?.layer==='reference'||record.provenance?.layer==='derived'){skippedChunks++;continue;}
+      const record=this.options.memories.readEvidence([id])[0];
+      if(!record||!this.options.memories.isCurrentEvidence(id))throw new StoreError('Memory input evidence is missing or superseded',409);
+      if(!record.ocrText.length||record.provenance?.layer==='reference'){skippedChunks++;continue;}
       const fingerprint=memoryEvidenceFingerprint(record);
       for(let offset=0;offset<record.ocrText.length;){
         let end=Math.min(offset+this.budget,record.ocrText.length);
@@ -69,7 +69,7 @@ export class MemoryPipeline {
     try{
       this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(job))+batches.reduce((sum,b)=>sum+Buffer.byteLength(JSON.stringify(b)),0));
       this.store.db.prepare('INSERT INTO memory_jobs(id,created_at,json) VALUES(?,?,?)').run(job.id,now,JSON.stringify(job));
-      for(const batch of batches){this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,job.id,batch.index,JSON.stringify(batch));for(const id of new Set(batch.chunks.map(c=>c.id)))this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);}
+      for(const batch of batches){this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,job.id,batch.index,JSON.stringify(batch));for(const id of new Set(batch.chunks.flatMap(c=>this.options.memories.dependencyIds(c.id))))this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);}
       this.store.db.exec('COMMIT');
     }catch(error){this.store.db.exec('ROLLBACK');throw error;}
     return this.get(job.id);
@@ -92,7 +92,7 @@ export class MemoryPipeline {
     for(const batch of this.batches(id))if(batch.status==='failed'){batch.status='pending';delete batch.errorCode;this.saveBatch(batch);}
     job.status='queued';delete job.errorCode;this.saveJob(job);return this.run(id);
   }
-  private valid(chunk:Chunk):boolean {const record=this.store.evidence([chunk.id])[0];return Boolean(record&&this.store.isCurrentEvidence(chunk.id)&&memoryEvidenceFingerprint(record)===chunk.fingerprint);}
+  private valid(chunk:Chunk):boolean {const record=this.options.memories.readEvidence([chunk.id])[0];return Boolean(record&&this.options.memories.isCurrentEvidence(chunk.id)&&memoryEvidenceFingerprint(record)===chunk.fingerprint);}
   private async execute(id:string):Promise<MemoryJobDetail> {
     let job=this.storedJob(id);
     if(job.status==='completed'||job.status==='cancelled'||this.closed)return this.get(id);

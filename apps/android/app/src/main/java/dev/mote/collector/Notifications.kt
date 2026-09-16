@@ -8,19 +8,31 @@ import android.content.Intent
 object Notifications {
     const val ID = 4101
     private const val MEDIA_ID = 4102
+    private var lastPublished: String? = null
+    private var initialized = false
     private var screenStatus: String? = null
     private var mediaStatus: String? = null
     private var eventStatus: String? = null
+    private var localState: LocalStateSnapshot? = null
+    @Synchronized fun showLocalState(context: Context, state: LocalStateSnapshot) {
+        val changed = localState?.imageLabel() != state.imageLabel() || (screenStatus != null && screenStatus != state.captureLabel)
+        localState = state
+        if (screenStatus != null) screenStatus = state.captureLabel
+        if (changed && (screenStatus != null || mediaStatus != null || eventStatus != null)) publish(context)
+    }
     private const val CHANNEL = "mote_capture"
     fun create(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "采集状态", NotificationManager.IMPORTANCE_LOW))
     }
     @Synchronized fun notification(context: Context, text: String): Notification {
         screenStatus = text
+        initialized = true; lastPublished = visibleText()
+        context.getSystemService(NotificationManager::class.java).cancel(MEDIA_ID)
         return build(context)
     }
+    private fun visibleText() = listOfNotNull(screenStatus?.let { "屏幕：$it" }, mediaStatus?.let { "媒体：$it" }, eventStatus, localState?.imageLabel()).joinToString("\n")
     private fun build(context: Context): Notification {
-        val text = listOfNotNull(screenStatus?.let { "屏幕：$it" }, mediaStatus?.let { "媒体：$it" }, eventStatus).joinToString("\n")
+        val text = visibleText()
         // Launcher semantics bring the existing task (including a detail screen) forward.
         val open = PendingIntent.getActivity(context, 0, Intent.makeMainActivity(android.content.ComponentName(context, MainActivity::class.java)), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getBroadcast(context, 1, Intent(context, StopReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -35,9 +47,11 @@ object Notifications {
     @Synchronized fun showEvents(context: Context, text: String?) { eventStatus = text; publish(context) }
     private fun publish(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.cancel(MEDIA_ID) // Remove the separate notification left by older versions.
-        if (screenStatus == null && mediaStatus == null && eventStatus == null) manager.cancel(ID)
-        else if (manager.areNotificationsEnabled()) manager.notify(ID, build(context))
+        if (!initialized) { manager.cancel(MEDIA_ID); manager.cancel(ID); initialized = true }
+        val text = if (screenStatus == null && mediaStatus == null && eventStatus == null) null else visibleText()
+        if (text == lastPublished) return
+        if (text == null) { manager.cancel(ID); lastPublished = null; Diagnostics(context).add("notificationCancels") }
+        else if (manager.areNotificationsEnabled()) { manager.notify(ID, build(context)); lastPublished = text; Diagnostics(context).add("notificationPublishes") }
     }
 }
 

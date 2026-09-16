@@ -61,6 +61,7 @@ export interface CaptureEvent {
   privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; collection?: 'content' | 'activity'; reason?: string };
 }
 export interface Status {
+  operations?: import('./background-jobs').BackgroundJob[];
   storage?: { directory: string; defaultDirectory: string; custom: boolean; cleanupPending: boolean; recoveryRequired?: string };
   sync: SyncStatus;
   environment?: { profile: string; legacy: boolean; dataDirectory: string };
@@ -143,6 +144,7 @@ export interface DesktopApi {
   openCentral(): Promise<void>;
   exportSupport(): Promise<{ canceled: boolean }>;
   exportDiagnostics(): Promise<{ canceled: boolean }>;
+  readRawEvents(): Promise<string>;
   readEvents(): Promise<import('./support').SupportEvent[]>;
   sampleDiagnostics(): Promise<Status>;
   configure(update: ConfigUpdate): Promise<Status>;

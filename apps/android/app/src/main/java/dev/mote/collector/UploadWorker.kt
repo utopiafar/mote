@@ -10,9 +10,13 @@ import java.net.URL
 import java.util.concurrent.TimeUnit
 
 object HttpJson {
+    @Volatile var onRequest: (() -> Unit)? = null
+    @Volatile var onComplete: ((Long) -> Unit)? = null
     fun post(url: String, body: JSONObject, token: String? = null): Pair<Int, JSONObject?> = request("POST", url, body, token)
     fun get(url: String, token: String? = null): Pair<Int, JSONObject?> = request("GET", url, null, token)
     fun request(method: String, url: String, body: JSONObject?, token: String? = null): Pair<Int, JSONObject?> {
+        val started = android.os.SystemClock.elapsedRealtime()
+        runCatching { onRequest?.invoke() }
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method
@@ -41,7 +45,7 @@ object HttpJson {
                 output.toString("UTF-8")
             }
             return code to response?.let { runCatching { JSONObject(it) }.getOrNull() }
-        } finally { connection.disconnect() }
+        } finally { connection.disconnect(); runCatching { onComplete?.invoke(android.os.SystemClock.elapsedRealtime() - started) } }
     }
 }
 
@@ -77,9 +81,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             val queue = applicationContext.queue()
             settings.syncStatus("uploading", "正在同步本机记录")
             if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
-            stage = EventStage.HEARTBEAT
-            SyncHeartbeat.send(applicationContext, settings, config, queue)
-            repeat(25) {
+            Diagnostics(applicationContext).add("uploadSessions")
+            var remaining = 25
+            while (remaining > 0) {
+                remaining--
                 if (isStopped || ConnectionGuard.reconfiguring()) return Result.retry()
                 SyncSchedule.waitingReason(applicationContext, config)?.let {
                     settings.syncStatus("waiting", it); return Result.retry()
@@ -94,53 +99,73 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     if ((code == 404 && response?.optString("error") == "capture_not_found") || code == 410) {
                         queue.archiveMissing(id); pendingRecordId = null
                         settings.syncStatus("error", "中央记录已不可更新；本机保留图片和失败状态，不会重新创建记录")
-                        return@repeat
+                        continue
                     }
                     if (code == 409) {
                         queue.ocrConflict(id); pendingRecordId = null
                         settings.syncStatus("error", "OCR 更新与中央记录冲突；本机图片和文字已保留，请在采集记录中查看")
-                        return@repeat
+                        continue
                     }
                     if (code !in 200..299 || response?.optString("id") != id) return failed(if (code == 404) "中央节点可能需要升级，OCR 结果已保留" else "OCR 更新未确认（HTTP $code）")
                     Diagnostics(applicationContext).add("uploadBytes", body.toString().toByteArray(Charsets.UTF_8).size.toLong())
                     queue.acknowledgeOcr(id); pendingRecordId = null
                     settings.syncStatus("uploading", "文字识别已更新至中央归档", uploaded = true)
-                    return@repeat
+                    continue
                 }
-                val event = queue.peek() ?: run {
-                    stage = EventStage.HEARTBEAT
+                val events = queue.peekBatch(remaining + 1)
+                if (events.isEmpty()) {
                     finishStatus()
-                    SyncHeartbeat.send(applicationContext, settings, config, queue)
+                    runCatching { SyncHeartbeat.send(applicationContext, settings, config, queue) }
                     return Result.success()
                 }
                 stage = EventStage.UPLOAD
-                pendingRecordId = event.getString("id")
-                val (code, response) = HttpJson.post("${config.server}/api/captures", event, config.token)
-                if (code == 409) {
-                    queue.uploadConflict(event.getString("id")); pendingRecordId = null
-                    settings.syncStatus("error", "记录 ID 与中央内容冲突；保留本机副本，继续发送其他记录")
-                    return@repeat
+                val capability = applicationContext.getSharedPreferences("batch-capability", Context.MODE_PRIVATE)
+                val legacy = capability.getString("server", null) == config.server &&
+                    System.currentTimeMillis() - capability.getLong("at", 0) in 0 until 86_400_000L
+                var sent = if (legacy) events.take(1) else events
+                pendingRecordId = sent.first().getString("id")
+                val body = JSONObject().put("captures", org.json.JSONArray(sent))
+                var response = if (legacy) HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
+                    else HttpJson.post("${config.server}/api/captures/batch", body, config.token)
+                var individual = legacy
+                if (!legacy && response.first in setOf(403, 404, 405, 413)) {
+                    if (response.first != 413) capability.edit().putString("server", config.server).putLong("at", System.currentTimeMillis()).apply()
+                    sent = events.take(1); individual = true
+                    response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
                 }
-                if (code == 410) {
-                    queue.archiveMissing(event.getString("id")); pendingRecordId = null
-                    settings.syncStatus("error", "中央记录已删除；本机保留图片和失败状态，不会重新创建记录")
-                    return@repeat
+                val receipts = if (individual) {
+                    if (response.first in setOf(200, 201) && response.second?.optString("id") != pendingRecordId) return failed("上传确认 ID 不匹配")
+                    mapOf(pendingRecordId!! to response.first)
+                } else {
+                    if (response.first != 200) return failed("批量上传未确认（HTTP ${response.first}）", response.first !in setOf(400, 401, 403, 413))
+                    BatchUpload.receipts(sent.map { it.getString("id") }.toSet(), response.second)
                 }
-                if (code !in setOf(200, 201) || response?.optString("id") != event.getString("id")) {
-                    SupportEvents.record(applicationContext, stage, EventJournal.httpFailure(code), httpStatus = code)
-                    Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.httpReason(code), httpStatus = code, recordId = pendingRecordId)
-                    return failed(if (code == 400 && event.has("ocr")) "当前截图协议未被接受，请先确认中央节点已升级至 0.0.2 或更新版本" else "上传未确认（HTTP $code）", retryable = code !in setOf(400, 401, 403, 413))
+                var retry = false
+                var permanent = false
+                for (event in sent) {
+                    val id = event.getString("id")
+                    val code = receipts[id]
+                    when (code) {
+                        200, 201 -> {
+                            val bytes = event.toString().toByteArray(Charsets.UTF_8).size.toLong()
+                            queue.acknowledge(id, bytes)
+                            Diagnostics(applicationContext).add("uploadBytes", bytes)
+                            SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
+                            settings.syncStatus("uploading", "已收到上传确认", uploaded = true)
+                        }
+                        409 -> queue.uploadConflict(id)
+                        410 -> queue.archiveMissing(id)
+                        else -> { retry = true; if (code in setOf(400, 401, 403, 413)) permanent = true }
+                    }
                 }
-                Diagnostics(applicationContext).add("uploadBytes", event.toString().toByteArray(Charsets.UTF_8).size.toLong())
-                stage = EventStage.QUEUE
-                queue.acknowledge(event.getString("id"), event.toString().toByteArray(Charsets.UTF_8).size.toLong())
-                SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                 pendingRecordId = null
-                settings.syncStatus("uploading", "已确认上传；待同步 ${SyncSchedule.pending(applicationContext).count} 条", uploaded = true)
+                remaining -= sent.size - 1
+                if (retry) return failed("部分记录未确认", !permanent)
+
             }
             stage = EventStage.HEARTBEAT
             if (!queue.pendingSync().hasWork) finishStatus()
-            SyncHeartbeat.send(applicationContext, settings, config, queue)
+            runCatching { SyncHeartbeat.send(applicationContext, settings, config, queue) }
             // A successful chunk may continue the same explicit operation; failures never retry in manual mode.
             if (queue.pendingSync().hasWork) SyncSchedule.continueUpload(applicationContext, config, explicit)
             Result.success()
@@ -152,11 +177,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
     }
     private fun finishStatus() = SyncHealth.finish(applicationContext)
     companion object {
-        private var lastHeartbeatRequest = 0L
-        @Synchronized fun heartbeat(context: Context, config: CollectorConfig) {
-            val now = android.os.SystemClock.elapsedRealtime()
-            if (now - lastHeartbeatRequest >= 30_000) { lastHeartbeatRequest = now; schedule(context, config) }
-        }
+        fun heartbeat(context: Context, config: CollectorConfig) = HeartbeatWorker.stateChanged(context, config)
         fun schedule(context: Context, config: CollectorConfig, manual: Boolean = false) = SyncSchedule.schedule(context, config, manual)
         fun isWifi(context: Context): Boolean {
             val manager = context.getSystemService(ConnectivityManager::class.java)
@@ -167,10 +188,16 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
 }
 
 internal object SyncHeartbeat {
-    fun send(context: Context, settings: Settings, config: CollectorConfig, queue: DurableQueue) {
-        if (SyncSchedule.waitingReason(context, config) != null) return
+    @Synchronized fun send(context: Context, settings: Settings, config: CollectorConfig, queue: DurableQueue): Boolean {
+        val prefs = context.getSharedPreferences("sync-heartbeat", Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val state = "${SyncSchedule.stamp(config)}:${settings.enabled}:${settings.state()}"
+        val last = prefs.getLong("at", 0)
+        if (now >= last && now - last < 15 * 60_000 && prefs.getString("state", null) == state) return true
+        if (now >= last && now - last < 60_000 && prefs.getString("stamp", null) == SyncSchedule.stamp(config)) return false
+        if (SyncSchedule.waitingReason(context, config) != null) return false
         val runtimeAlive = (config.screenCollectionEnabled && (CaptureAccessibilityService.connected || ProjectionService.running)) || (config.observesSystem() && MediaCollectionService.connected)
-        val status = if (settings.enabled && !runtimeAlive) "permission_required" else settings.state()
+        val status = if (!settings.enabled) "paused" else if (!runtimeAlive) "permission_required" else settings.state()
         val inventory = queue.syncInventory()
         val body = JSONObject().put("deviceId", settings.deviceId).put("deviceName", config.deviceName).put("platform", "android")
             .put("status", status).put("queueDepth", queue.depth()).put("lastCaptureAt", settings.lastCapture())
@@ -184,11 +211,14 @@ internal object SyncHeartbeat {
         if (status == "permission_required") body.put("error", if (!runtimeAlive && settings.enabled)
             "采集服务未连接，请打开手机应用恢复权限" else settings.message())
         else if (status == "error") body.put("error", settings.message())
+        Diagnostics(context).add("heartbeatRequests")
         val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.token)
         if (code !in 200..299 || response?.optBoolean("ok") != true) SupportEvents.record(context, EventStage.HEARTBEAT, EventJournal.httpFailure(code), httpStatus = code)
         if (code !in 200..299 || response?.optBoolean("ok") != true) {
             Operations.record(context, OperationKind.HEARTBEAT_FAILED, Operations.httpReason(code), httpStatus = code)
             throw RecordedHeartbeatFailure()
         }
+        prefs.edit().putLong("at", now).putString("state", state).putString("stamp", SyncSchedule.stamp(config)).apply()
+        return true
     }
 }

@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {fileEvidenceSchema} from '@mote/shared';
 
 const timestamp=z.string().max(64).datetime({offset:true});
 export const memoryEvidenceSchema=z.object({
@@ -7,6 +8,7 @@ export const memoryEvidenceSchema=z.object({
   fileId:z.string().max(200).optional(),path:z.string().max(4000).optional(),uri:z.string().max(4000).optional(),
   timeBasis:z.enum(['recorded','occurred','unknown']).optional(),contentRole:z.enum(['authored','transcript','summary','reference','other']).optional(),
   offset:z.number().int().min(0).max(100000).optional(),length:z.number().int().min(0).max(100000).optional(),quote:z.string().max(12000).optional(),
+  fileEvidence:fileEvidenceSchema.optional(),
   contentHash:z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 export const memorySchema=z.object({

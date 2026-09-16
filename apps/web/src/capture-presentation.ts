@@ -1,4 +1,24 @@
 import type {CapturePreview} from '@mote/shared';
+import type {Capture} from './api';
+
+/** Imported originals and device-synced files use separate archive APIs. */
+export function evidencePresentation(capture: Pick<Capture, 'id' | 'source' | 'platform' | 'provenance' | 'fileEvidence'>) {
+  const imported = capture.platform === 'import' || Boolean(capture.provenance?.document);
+  const nativeFile = capture.fileEvidence
+    ? {captureId: capture.fileEvidence.captureId, startMs: capture.fileEvidence.startMs}
+    : capture.source === 'file' && !imported ? {captureId: capture.id} : undefined;
+  const textLabel = capture.fileEvidence ? '转写片段'
+    : capture.source === 'media' ? '媒体观察'
+    : capture.source === 'activity' ? '应用活动'
+    : capture.source === 'note' ? '用户原文'
+    : capture.source === 'screen' ? 'OCR 全文'
+    : imported ? '原始文本'
+    : nativeFile ? '文件元信息' : '捕获文本';
+  const deleteDescription = nativeFile
+    ? '删除中央文件归档及其派生内容和依赖记忆，并清除已有洞察；来源设备上的原文件保留。'
+    : '删除这条原始记录及不再被引用的影像，并清除依赖记忆和已有洞察。' + (capture.provenance?.document?.fileId ? '导入仍保留原始文件与解析资料；如需一并删除，请到导入页删除整次导入。' : '');
+  return {nativeFile, textLabel, deleteDescription};
+}
 
 export function ocrPresentation(state: CapturePreview['ocr'], text: string, duplicate = false) {
   if (duplicate) return {label: '图片去重 · 仅元数据', description: '画面命中所选去重档位，只保留时间、应用和采样元数据，未保存图片或 OCR 文本。', tone: 'muted'};

@@ -13,8 +13,8 @@ android {
         applicationId = "dev.mote.collector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 24
-        versionName = "0.0.13"
+        versionCode = 35
+        versionName = "0.0.24"
         buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -40,6 +40,12 @@ android {
             buildConfigField("String", "DEFAULT_SERVER", "\"http://127.0.0.1:47842\"")
             matchingFallbacks += "debug"
         }
+        create("fileFixture") {
+            initWith(getByName("development"))
+            applicationIdSuffix = ".filefixture"
+            versionNameSuffix = "-filefixture"
+            matchingFallbacks += "development"
+        }
         release {
             manifestPlaceholders["cleartextAllowed"] = "false"
             isMinifyEnabled = false
@@ -59,12 +65,18 @@ android {
         res.srcDir("src/debug/res")
         manifest.srcFile("src/debug/AndroidManifest.xml")
     }
+    sourceSets.getByName("fileFixture").apply {
+        java.srcDir("src/debug/java")
+        res.srcDir("src/debug/res")
+        manifest.srcFile("src/debug/AndroidManifest.xml")
+    }
     testBuildType = providers.gradleProperty("mote.testBuildType").orElse("debug").get()
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/modelAssets"))
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     lint { abortOnError = true }
 }
 dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.google.zxing:core:3.5.4")
     implementation("com.android.tools.build:apksig:8.11.1")

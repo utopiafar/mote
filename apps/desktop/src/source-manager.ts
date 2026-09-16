@@ -1,3 +1,4 @@
+import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
 import { randomUUID } from 'node:crypto';
 import { join, basename } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
@@ -11,8 +12,8 @@ import { ConnectionBindingStore } from './connection-binding';
 import { decideSync } from './sync-policy';
 type SourceConnection = Pick<Config, 'serverUrl' | 'token' | 'deviceId'> & Partial<Pick<Config, 'syncMode' | 'syncIntervalMinutes' | 'syncBatchSize'>>;
 export function sourceDefinition(source: LocalSource): SourceDefinition {
-  const { id, name, kind, deviceId, platform, retention, enabled } = source;
-  return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || '本地来源', kind, deviceId, platform, retention, enabled };
+  const { id, name, kind, deviceId, platform, retention, enabled, initialSync } = source;
+  return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || '本地来源', kind, deviceId, platform, retention, enabled, initialSync };
 }
 export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
 export class LocalSourceManager {
@@ -32,7 +33,7 @@ export class LocalSourceManager {
   private binding: string;
   readonly nodeBinding: ConnectionBindingStore;
   private readable = new Set<string>();
-  constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false) { this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); }
+  constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false, private events?: EventJournal) { this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); }
   private connectionBinding(): string { return sourceHash(this.connection.serverUrl + ':' + (this.connection.token ?? '')); }
   async initialize(): Promise<void> {
     try {
@@ -143,6 +144,7 @@ export class LocalSourceManager {
       // Failed attempts use a bounded retry interval as well; a timer never floods an unavailable node.
       if (!force && last && (last as SourceStatus & { attemptAt?: number }).attemptAt && Date.now() - (last as SourceStatus & { attemptAt: number }).attemptAt < Math.max(30000, source.intervalSeconds * 1000)) continue;
       const status: SourceStatus & { attemptAt: number } = { source, state: 'syncing', message: '读取所选来源并同步', pending: 0, items: 0, skipped: 0, ...last, attemptAt: Date.now() }; status.state = 'syncing'; this.states.set(source.id, status);
+      const started = Date.now(); void this.events?.record('SOURCE', 'STARTED');
       this.readable.delete(source.id);
       try {
         let engine = this.engines.get(source.id);
@@ -154,19 +156,21 @@ export class LocalSourceManager {
         status.skipped = scan.skipped;
         this.readable.add(source.id);
         if (this.managedUploads) {
-          await engine.stage(scan, source.trackDeletions);
+          await engine.stage(scan, source.trackDeletions,undefined,source.initialSync);
           Object.assign(status, engine.status(), { state: 'idle', message: !this.connection.serverUrl || !this.connection.token ? '已保存在本机；尚未配置中央同步' : '已检查本地变化，按同步设置等待上传' });
         } else {
           const pending = this.pendingStats();
           const policy = decideSync({ ...this.connection, syncMode: this.connection.syncMode ?? 'realtime', syncIntervalMinutes: this.connection.syncIntervalMinutes ?? 15, syncBatchSize: this.connection.syncBatchSize ?? 20 }, pending, Date.now(), force);
-          if (!policy.ready) { await engine.stage(scan, source.trackDeletions); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
+          if (!policy.ready) { await engine.stage(scan, source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
           else {
             const request = this.request(signal);
             const { state: ready } = await engine.syncScan(scan, source.trackDeletions, sourceDefinition(source), request, signal, () => this.prepareSource(source, request, signal));
             Object.assign(status, engine.status(), { state: ready === 'paused' ? 'paused' : 'idle', message: ready === 'paused' ? '中央已暂停该来源；待上传版本保留在本机' : scan.complete ? '已同步；后台定时检查变化' : '已同步可读取项；扫描不完整，未判断删除' });
           }
         }
+        void this.events?.record('SOURCE', scan.complete ? 'OK' : 'SCHEDULER', { elapsedMs: Date.now() - started });
       } catch (e) {
+        void this.events?.record('SOURCE', signal.aborted ? 'CANCELLED' : e instanceof CalendarPermissionError ? 'PERMISSION' : failureCode(e, 'SOURCE'), { elapsedMs: Date.now() - started });
         Object.assign(status, this.engines.get(source.id)?.status(), { state: e instanceof CalendarPermissionError ? 'permission_required' : 'error', message: signal.aborted ? '同步已取消，待传版本已保留' : e instanceof CalendarPermissionError ? e.message : '同步未完成：检查权限、网络或来源路径后重试；待传版本已保留' });
       }
     }
@@ -175,7 +179,7 @@ export class LocalSourceManager {
     return async (path, body, method, requestSignal) => {
       if (!this.connection.serverUrl || !this.connection.token || !this.nodeBinding.matches(this.connection)) throw new Error('本地来源没有匹配的中央连接');
       const response = await fetch(this.connection.serverUrl + path, { method, headers: { Authorization: 'Bearer ' + this.connection.token, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
-      if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new Error(response.status === 401 ? '中央认证失败，请检查令牌' : response.status === 409 ? '中央来源已暂停，请在中央来源页恢复' : '中央同步失败，已保留本地版本，稍后重试'); }
+      if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? '中央认证失败，请检查令牌' : response.status === 409 ? '中央来源已暂停，请在中央来源页恢复' : '中央同步失败，已保留本地版本，稍后重试', httpFailure(response.status), response.status); }
       return JSON.parse(await readResponseText(response, 1024 * 1024));
     };
   }
@@ -183,7 +187,7 @@ export class LocalSourceManager {
     if (!this.metadataDirty.has(source.id)) return;
     const registered = await request('/api/sources', sourceDefinition(source), 'POST', signal) as { id?: string };
     if (registered?.id !== source.id) throw new Error('中央来源注册确认无效');
-    const patched = await request('/api/sources/' + source.id, { retention: source.retention, name: sourceDefinition(source).name }, 'PATCH', signal) as { id?: string };
+    const patched = await request('/api/sources/' + source.id, { retention: source.retention, initialSync: source.initialSync, name: sourceDefinition(source).name }, 'PATCH', signal) as { id?: string };
     if (patched?.id !== source.id) throw new Error('中央来源配置确认无效');
     this.metadataDirty.delete(source.id); if (!this.metadataDirty.size) this.metadataDirtyAt = undefined; await this.persist();
   }

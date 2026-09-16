@@ -5,19 +5,19 @@ import { mkdir, open, readdir, rename, stat, unlink,type FileHandle } from 'node
 import { join } from 'node:path';
 
 export type LogLevel = 'debug'|'info'|'warn'|'error'|'silent';
-export type Stage = 'ingest'|'index'|'agent'|'source'|'maintenance';
-export type Operation = 'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention';
+export type Stage = 'ingest'|'index'|'agent'|'source'|'maintenance'|'file';
+export type Operation = 'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention'|'extract'|'diarize'|'align'|'turns'|'summary'|'file_upload'|'file_part'|'file_commit'|'file_revision'|'file_process'|'file_settings'|'file_retry';
 const levels = ['debug','info','warn','error','silent'] as const;
-const operations:Operation[] = ['capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention'];
-const events = new Set(['server.started','server.stopping','request.completed','request.failed','queue.snapshot','support.exported',...['ingest','index','agent','source','maintenance'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
-const routes = new Set(['health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
-const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal']);
-const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted'] as const;
+const operations:Operation[] = ['capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
+const events = new Set(['server.started','server.stopping','request.started','request.completed','request.failed','queue.snapshot','support.exported','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
+const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
+const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
+const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part'] as const;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const bounded=(n:number|undefined,fallback:number,min:number,max:number)=>Math.min(max,Math.max(min,Math.floor(typeof n==='number'&&Number.isFinite(n)?n:fallback)));
 const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
-export type EventFields = Metrics & { requestId?:string;operation?:Operation;route?:string;category?:string };
+export type EventFields = Metrics & { requestId?:string;jobId?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string };
 export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'> }
 export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxFiles?:number;maxEntries?:number }
 
@@ -44,6 +44,8 @@ function fields(raw:unknown):EventFields {
   const value=raw as Record<string,unknown>,out:EventFields={};
   for(const key of numberKeys){const n=value[key];if(typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER)out[key]=Math.round(n*1000)/1000;}
   if(typeof value.requestId==='string'&&uuid.test(value.requestId))out.requestId=value.requestId;
+  if(typeof value.jobId==='string'&&uuid.test(value.jobId))out.jobId=value.jobId;
+  if(typeof value.method==='string'&&['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(value.method))out.method=value.method as EventFields['method'];
   if(operations.includes(value.operation as Operation))out.operation=value.operation as Operation;
   if(typeof value.route==='string'&&routes.has(value.route))out.route=value.route;
   if(typeof value.category==='string'&&categories.has(value.category))out.category=value.category;
@@ -148,7 +150,7 @@ export class ServerDiagnostics {
   async measure<T>(stage:Stage,operation:Operation,task:()=>Promise<T>|T,metrics?:(result:T)=>Metrics):Promise<T> {
     const start=performance.now();this.record(`${stage}.started`,{operation},'debug');
     try {const result=await task();let extra:Metrics={};try{extra=metrics?.(result)??{};}catch{}this.record(`${stage}.completed`,{operation,durationMs:performance.now()-start,...extra});return result;}
-    catch(error){this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:safeError(error).category},'error');throw error;}
+    catch(error){const failure=safeError(error);this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:failure.category},failure.status>=500?'error':'warn');throw error;}
   }
   private startWrite() {
     if(this.pending)return;
@@ -175,6 +177,23 @@ export class ServerDiagnostics {
   snapshot() {return {enabled:!this.closed&&this.enabled&&this.level!=='silent',level:this.level,instanceId:this.instanceId,retainedEvents:this.entries.length,lastSeq:this.seq,pendingWrites:this.queue.length+this.writingCount,droppedEvents:this.dropped,writeFailures:this.writeFailures,readFailures:this.readFailures,limits:{maxFileBytes:this.maxBytes,maxFiles:this.maxFiles,maxEvents:this.maxEntries},runtime:{uptimeMs:Math.round(process.uptime()*1000),rssBytes:process.memoryUsage().rss,cpuUserMicros:process.cpuUsage().user,cpuSystemMicros:process.cpuUsage().system}};}
   events(afterSeq=0,limit=500) {const items=this.entries.filter(e=>e.seq>afterSeq).slice(0,Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));return {items,nextSeq:items.at(-1)?.seq??afterSeq,oldestSeq:this.entries[0]?.seq??null};}
   recent(limit=500) {return this.entries.slice(-Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));}
+  /** Return the current file verbatim, including incomplete/malformed text for troubleshooting. */
+  async readRaw(index=0):Promise<string> {
+    if(!Number.isInteger(index)||index<0||index>=this.maxFiles)throw Object.assign(new Error('Invalid log file'),{statusCode:400});
+    await this.flush();
+    try {
+      const file=await open(this.path(index),constants.O_RDONLY|constants.O_NOFOLLOW);
+      try {
+        if((await file.stat()).size>this.maxBytes)throw new Error('Log exceeds read limit');
+        const buffer=Buffer.alloc(this.maxBytes);
+        const {bytesRead}=await file.read(buffer,0,buffer.length,0);
+        return buffer.subarray(0,bytesRead).toString('utf8');
+      } finally {await file.close();}
+    } catch(error) {
+      if((error as NodeJS.ErrnoException).code==='ENOENT')return '';
+      this.readFailures++;throw error;
+    }
+  }
   async flush() {while(this.pending)await this.pending;}
   close():Promise<void> {if(this.closingPromise)return this.closingPromise;this.closed=true;this.closingPromise=this.finishClose();return this.closingPromise;}
   private async finishClose() {

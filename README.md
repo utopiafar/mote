@@ -6,7 +6,7 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 
 采集器是独立的 **macOS App** 和 **Android App**。中央节点可放在 Mac mini、Linux 服务器或 NAS 上；它提供 API 与管理界面，Mac App 内可直接打开。更换服务器时迁移归档并更新客户端地址即可。
 
-两端均可在未配置服务端时先记录到本机。上传可选实时、定时、积攒一批或仅手动，截图、随手记与本地来源共用策略；常用配置支持预设、应用选择和遮挡区域编辑。完整行为见 [采集与上传说明](docs/collection-and-sync.md)。
+两端均可在未配置服务端时先记录到本机。上传可选实时、定时、积攒一批或仅手动，截图、随手记与本地来源共用策略；常用配置支持预设、应用选择和遮挡区域编辑。完整行为见 [采集与上传说明](docs/collection-and-sync.md)，Android 的处理与省电边界见 [采集开销优化](docs/android-power-optimization.md)。
 
 客户端设置保存后自动应用，保留当前采集开停状态；图片保存位置可在“采集与存储”中查看和更改，已有队列随之迁移。见 [设置生效与图片位置](docs/client-settings-and-storage.md)。
 
@@ -118,6 +118,14 @@ node scripts/mote.mjs token --profile dev
 ```
 
 开发节点默认是 `http://127.0.0.1:47842`。打开节点界面，点击「登录 Mote」并输入最后一个命令显示的管理令牌；默认使用当前网站地址。该令牌用于管理私人资料；采集 App 建议使用下一步的独立配对凭据。
+
+开发时可在已初始化的环境中单独启动服务端热重载：
+
+```sh
+node scripts/mote.mjs exec --profile dev -- npm run dev -w @mote/server
+```
+
+该命令会先重建服务端依赖的 `@mote/shared` 和 `@mote/agent`，避免拉取新代码后因旧的 `dist` 产物出现缺少导出的错误。修改这些依赖库的源码后，需重新运行该命令以更新构建产物。
 
 配置、数据、日志分别放在 `.mote/profiles/dev/` 下。修改 `mote.env` 后停止并重新启动该环境：
 

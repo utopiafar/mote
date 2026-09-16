@@ -1,6 +1,6 @@
 {
   "name": "@mote/desktop",
-  "version": "0.0.13",
+  "version": "0.0.24",
   "private": true,
   "description": "Mote privacy-first personal context collector",
   "main": "dist/main.js",
@@ -20,7 +20,8 @@
   "dependencies": {
     "@mote/local-inference": "0.1.0",
     "@mote/diagnostics": "0.1.0",
-    "@mote/shared": "0.1.0"
+    "@mote/shared": "0.1.0",
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

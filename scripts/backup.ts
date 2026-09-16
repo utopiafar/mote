@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const usage = 'Stop the central node first. Usage: npm run backup -- --data ./data --out /absolute/new-backup-directory';
-if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image/file originals and checksums. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve your data key separately.'); process.exit(0); }
+if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image/file originals, processing layers and checksums. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve your data key separately.'); process.exit(0); }
 function argument(name: string, fallback?: string) {
   const index = args.indexOf(name);
   if (index < 0 && fallback !== undefined) return fallback;
@@ -61,51 +61,57 @@ try {
     const rows = db.prepare('SELECT hash FROM blobs').all() as { hash: unknown }[];
     const fileRows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='file_blobs'").get()
       ? db.prepare('SELECT hash FROM file_blobs').all() as { hash: unknown }[] : [];
+    const fileObjects = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_objects'").get()
+      ? db.prepare('SELECT hash,parts FROM file_objects').all() as {hash:unknown;parts:unknown}[] : [];
+    const paths:string[]=[];
     // Restored databases are data, never authority to read arbitrary vault files.
     for (const { hash } of rows) {
       if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid blob hash in backup source');
-      await ordinarySource(join(source, 'blobs', hash));
+      paths.push('blobs/'+hash);
     }
     for (const { hash } of fileRows) {
       if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid file hash in backup source');
-      await ordinarySource(join(source, 'files', hash));
+      paths.push('files/'+hash);
     }
+    for(const object of fileObjects){
+      if(typeof object.hash!=='string'||!/^[a-f0-9]{64}$/.test(object.hash)||typeof object.parts!=='number'||!Number.isSafeInteger(object.parts)||object.parts<0||object.parts>128)throw new Error('Invalid file object in backup source');
+      for(let part=0;part<object.parts;part++)paths.push(`files/objects/${object.hash}/${part}`);
+    }
+    for(const path of paths)await ordinarySource(join(source,path));
     await backup(db, join(out, 'mote.sqlite'));
     await chmod(join(out, 'mote.sqlite'), 0o600);
     // Workspaces contain generated programs, not authoritative evidence. Reconstruct inputs
     // from archived originals and obtain a fresh reviewed manifest after restoration.
     const snapshot = new DatabaseSync(join(out, 'mote.sqlite'));
     try {
-      snapshot.exec('PRAGMA journal_mode=DELETE');
-      if (snapshot.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='import_jobs'").get()) {
-        const jobs = snapshot.prepare('SELECT id,json FROM import_jobs').all() as {id:string;json:string}[];
-        snapshot.exec('BEGIN IMMEDIATE');
-        try {
+      snapshot.exec('PRAGMA journal_mode=DELETE; PRAGMA foreign_keys=ON; BEGIN IMMEDIATE');
+      const hasTable=(name:string)=>!!snapshot.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+      try{
+        // Upload staging is excluded. Clients open new sessions from their own durable queues.
+        if(hasTable('file_uploads'))snapshot.exec('DELETE FROM file_uploads');
+        if(hasTable('file_parts'))snapshot.exec('DELETE FROM file_parts');
+        if(hasTable('file_jobs'))snapshot.exec("UPDATE file_jobs SET state='waiting' WHERE state='running'; UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running'");
+        if(hasTable('file_steps'))snapshot.exec("UPDATE file_steps SET state='waiting' WHERE state='running'");
+        if(hasTable('import_jobs')){
+          const jobs = snapshot.prepare('SELECT id,json FROM import_jobs').all() as {id:string;json:string}[];
           for (const row of jobs) {
             const job=JSON.parse(row.json);
             delete job.workspace;delete job.inputs;delete job.manifestHash;
             if(job.status!=='completed'){
-              job.status='failed';job.processingStatus='blocked';job.failurePhase='prepare';
+              job.status=job.blockedArchive?'failed':'queued';job.processingStatus=job.blockedArchive?'blocked':'archived';job.failurePhase='prepare';
               job.progress={total:0,processed:0,imported:0,duplicates:0};delete job.preview;delete job.dispositions;
-              job.error='Restored backup: original files are retained. Analyze this import again and review a new preview before continuing.';
+              if(!job.blockedArchive)job.error='Restored backup: original files are retained. Analyze this import again and review a new preview before continuing.';
             }
             snapshot.prepare('UPDATE import_jobs SET json=? WHERE id=?').run(JSON.stringify(job),row.id);
           }
-          snapshot.exec('COMMIT');
-        }catch(error){snapshot.exec('ROLLBACK');throw error;}
-      }
+        }
+        snapshot.exec('COMMIT');
+      }catch(error){snapshot.exec('ROLLBACK');throw error;}
     }finally{snapshot.close();}
-    for (const row of rows) {
-      const hash = row.hash as string;
-      await copyFile(join(source, 'blobs', hash), join(out, 'blobs', hash), constants.COPYFILE_EXCL);
-      await chmod(join(out, 'blobs', hash), 0o600);
-      checksums['blobs/' + hash] = await sum(join(out, 'blobs', hash));
-    }
-    if(fileRows.length)await mkdir(join(out,'files'),{mode:0o700});
-    for(const row of fileRows){
-      const hash=row.hash as string;
-      await copyFile(join(source,'files',hash),join(out,'files',hash),constants.COPYFILE_EXCL);
-      await chmod(join(out,'files',hash),0o600);checksums['files/'+hash]=await sum(join(out,'files',hash));
+    for(const path of paths){
+      await mkdir(dirname(join(out,path)),{recursive:true,mode:0o700});
+      await copyFile(join(source,path),join(out,path),constants.COPYFILE_EXCL);
+      await chmod(join(out,path),0o600);checksums[path]=await sum(join(out,path));
     }
   } finally { db.close(); }
   checksums['mote.sqlite'] = await sum(join(out, 'mote.sqlite'));

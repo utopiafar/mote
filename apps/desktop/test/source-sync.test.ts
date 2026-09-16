@@ -86,3 +86,13 @@ describe('source revisions and durable acknowledgments', () => {
     const saved: SourceItem[] = []; await engine.flush(source, transport(saved)); expect(saved[0].text).toBe('');
   });
 });
+
+ it('new-only baselines survive partial scans and restart, then explicit all backfills without duplicating new items', async () => {
+   let engine=await create();const old={...item,externalId:'old'},second={...item,externalId:'old-second'},fresh={...item,externalId:'new'};
+   expect(await engine.stage(scan([old],false),true,undefined,'new_only')).toBe(0);
+   engine=await create();expect(await engine.stage(scan([second],true),true,undefined,'new_only')).toBe(0);
+   expect(await engine.stage(scan([old,second,fresh]),true,undefined,'new_only')).toBe(1);
+   const saved:SourceItem[]=[];await engine.flush(source,transport(saved));expect(saved.map(i=>i.externalId)).toEqual(['new']);
+   engine=await create();expect(await engine.stage(scan([old,second,fresh]),true,undefined,'all')).toBe(2);
+   await engine.flush(source,transport(saved));expect(new Set(saved.map(i=>i.externalId)).size).toBe(3);
+ });

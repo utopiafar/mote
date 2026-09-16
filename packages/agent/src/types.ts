@@ -1,4 +1,4 @@
-import type {CaptureInput,SourceDocument} from '@mote/shared';
+import type {CaptureInput,SourceDocument,fileEvidenceSchema} from '@mote/shared';
 import type {MoteSkillId} from './skills.js';
 import type {ModelProtocol} from '@mote/shared/models';
 export interface ContextRecord {
@@ -44,6 +44,7 @@ export interface ContextReader {
   activity(args: ContextRange): Promise<unknown>;
   mediaActivity?(args: MediaContextRange): Promise<unknown>;
   devices(): Promise<unknown>;
+  fileChunks?(args:ContextRange & {id:string;offset?:number}):Promise<ContextRecord[]>;
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
@@ -91,6 +92,7 @@ export interface Citation {
   appName: string;
   excerpt: string;
   contentAt?:string;
+  fileEvidence?:ReturnType<typeof fileEvidenceSchema.parse>;
   provenance?:{sourceId?:string;externalId?:string;revision?:string;layer?:string;document?:SourceDocument};
 }
 export interface ToolTrace {

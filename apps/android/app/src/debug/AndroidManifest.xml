@@ -1,3 +1,3 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application><activity android:name=".FixtureActivity" android:exported="false" /><provider android:name=".SourceFixtureProvider" android:authorities="${applicationId}.source-fixtures" android:exported="false" android:grantUriPermissions="true" /></application>
+    <application><activity android:name=".FixtureActivity" android:exported="false" /><provider android:name=".SourceFixtureProvider" android:authorities="${applicationId}.source-fixtures" android:exported="false" android:grantUriPermissions="true" /><provider android:name=".FileFixtureProvider" android:authorities="${applicationId}.file-fixtures" android:exported="true" android:permission="android.permission.MANAGE_DOCUMENTS" android:grantUriPermissions="true" /></application>
 </manifest>

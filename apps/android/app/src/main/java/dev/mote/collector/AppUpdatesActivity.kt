@@ -11,7 +11,6 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.WindowManager
 import android.widget.*
-import java.util.concurrent.Executors
 
 class AppUpdatesActivity : Activity() {
     private lateinit var store: AppUpdateStore
@@ -20,41 +19,57 @@ class AppUpdatesActivity : Activity() {
     private lateinit var channel: Spinner
     private lateinit var wifi: CheckBox
     private val handler = Handler(Looper.getMainLooper())
-    private val executor = Executors.newSingleThreadExecutor()
+    private val task by lazy { UiTask(this) }
+    private val cancelTask by lazy { UiTask(this) }
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 1000) } }
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE); store = AppUpdateStore(this)
+        super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        val loading = moteDetailPage(); val label = TextView(this); loading.addView(label)
+        task.start("正在读取更新设置…", { label.text = it }, {
+            val value = AppUpdateStore(applicationContext); value to value.config()
+        }) { result ->
+            result.onSuccess { (value, config) -> store = value; buildUi(config); if (foreground) background("正在读取安装状态…") { AppUpdateInstaller.reconcile(applicationContext) } }
+                .onFailure { label.text = "更新设置读取失败，请重试" }
+        }
+    }
+    private fun buildUi(initialConfig: UpdateConfig) {
         val body = moteDetailPage()
         fun text(value: String, size: Float = 14f) = TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(10), 0, moteDp(10)) }.also(body::addView)
         fun button(label: String, action: () -> Unit) = Button(this).apply { text = label; setOnClickListener { runCatching(action).onFailure { Toast.makeText(this@AppUpdatesActivity, message((it as? UpdateFailure)?.code ?: "failed"), Toast.LENGTH_LONG).show() } } }.also(body::addView)
         text("应用更新", 28f); text("当前 ${BuildConfig.VERSION_NAME} · code ${BuildConfig.VERSION_CODE}\n${packageName}\n检查和下载由你发起，最终由 Android 系统确认安装。")
         text("发布仓库（owner/repository）")
-        repository = EditText(this).apply { setSingleLine(); setText(store.config().repository); contentDescription = "更新发布仓库" }; body.addView(repository)
-        channel = Spinner(this).apply { adapter = ArrayAdapter(this@AppUpdatesActivity, android.R.layout.simple_spinner_dropdown_item, listOf("稳定版 stable", "预览版 preview")); setSelection(if (store.config().channel == "preview") 1 else 0) }; body.addView(channel)
-        wifi = CheckBox(this).apply { text = "仅非计费 Wi-Fi 下载 APK"; isChecked = store.config().wifiOnly }; body.addView(wifi)
+        repository = EditText(this).apply { setSingleLine(); setText(initialConfig.repository); contentDescription = "更新发布仓库" }; body.addView(repository)
+        channel = Spinner(this).apply { adapter = ArrayAdapter(this@AppUpdatesActivity, android.R.layout.simple_spinner_dropdown_item, listOf("稳定版 stable", "预览版 preview")); setSelection(if (initialConfig.channel == "preview") 1 else 0) }; body.addView(channel)
+        wifi = CheckBox(this).apply { text = "仅非计费 Wi-Fi 下载 APK"; isChecked = initialConfig.wifiOnly }; body.addView(wifi)
         text("其他仓库必须发布由 Mote 内置 RSA 公钥签署的清单。不会信任服务器下发的新公钥，也不会发送中央节点令牌。")
         button("保存渠道并检查更新") {
             val config = UpdateConfig(repository.text.toString().trim(), if (channel.selectedItemPosition == 1) "preview" else "stable", wifi.isChecked)
-            config.validate(); AppUpdateWork.cancel(this); store.save(config); AppUpdateWork.enqueue(this, "check")
+            config.validate(); background("正在保存渠道…") { AppUpdateWork.cancel(applicationContext); store.save(config); AppUpdateWork.enqueue(applicationContext, "check") }
         }
         status = text("等待检查", 16f).apply { setPadding(0, 24, 0, 24) }
-        button("下载 / 继续下载") { AppUpdateWork.enqueue(this, "download") }
-        button("取消下载（保留断点）") { AppUpdateWork.cancel(this) }
+        button("下载 / 继续下载") { background("正在提交下载…") { AppUpdateWork.enqueue(applicationContext, "download") } }
+        button("取消下载（保留断点）") { background("正在取消下载…", cancelTask) { AppUpdateWork.cancel(applicationContext) } }
         button("交给系统安装") {
             if (!packageManager.canRequestPackageInstalls()) startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
             else AlertDialog.Builder(this).setTitle("安装更新").setMessage("系统会替换同包名、同签名的应用，保留设置、队列、草稿、模型和数据。采集可能短暂中断；投屏模式更新后需重新授权。不会自动卸载。")
                 .setNegativeButton("取消", null).setPositiveButton("继续") { _, _ ->
-                    runCatching { val ticket = AppUpdateInstaller.request(this); executor.execute { runCatching { AppUpdateInstaller.stage(this, ticket) } } }.onFailure { store.state((it as? UpdateFailure)?.code ?: "install_failed") }
+                    background("正在准备安装…") { val ticket = AppUpdateInstaller.request(applicationContext); AppUpdateInstaller.stage(applicationContext, ticket) }
                 }.show()
         }
-        button("取消待确认的安装") { AppUpdateInstaller.cancelSession(this) }
+        button("取消待确认的安装") { background("正在取消安装…", cancelTask) { AppUpdateInstaller.cancelSession(applicationContext) } }
         text("签名不一致会阻止更新，不会删除旧应用。0.4.0 本机 debug 安装包只能接受同一证书签名的后续包。系统安装权限、小米安装校验或省电限制仍需你在系统确认；安装失败时保留现有数据。")
         MoteUi.styleTree(body)
     }
-    override fun onResume() { super.onResume(); foreground = true; runCatching { AppUpdateInstaller.reconcile(this) }; handler.post(refresh) }
+    override fun onResume() { super.onResume(); foreground = true; if (::store.isInitialized && ::status.isInitialized) background("正在读取安装状态…") { AppUpdateInstaller.reconcile(applicationContext) }; handler.post(refresh) }
     override fun onPause() { foreground = false; handler.removeCallbacks(refresh); super.onPause() }
-    override fun onDestroy() { executor.shutdown(); super.onDestroy() }
+    private fun background(label: String, runner: UiTask = task, action: () -> Unit) {
+        runner.start(label, { status.text = message(store.prefs.getString("state", "idle")!!) + "\n" + it }, { action() }) { result ->
+            result.onFailure { Toast.makeText(this, message((it as? UpdateFailure)?.code ?: "failed"), Toast.LENGTH_LONG).show() }
+            render()
+        }
+    }
     private fun render() {
+        if (!::status.isInitialized || task.busy || cancelTask.busy) return
         val version = store.prefs.getString("availableVersion", "")!!; val size = store.prefs.getLong("size", 0); val bytes = store.prefs.getLong("bytes", 0)
         status.text = message(store.prefs.getString("state", "idle")!!) + if (version.isEmpty()) "" else "\n清单版本 $version · %.1f MiB\n已下载 %.1f MiB".format(size / 1048576.0, bytes / 1048576.0)
     }

@@ -216,6 +216,9 @@ byId('capture-directory-open').addEventListener('click', () => void perform(() =
 let connectionPreview: import('./connection').ConnectionPreview | undefined;
 function render(status: import('./contracts').Status): void {
   currentStatus = status; renderStorage();
+  const operations = status.operations ?? [];
+  byId('background-progress').hidden = !operations.length;
+  byId('background-progress').textContent = operations.map(job => `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${job.state === 'running' ? ` · 已用 ${Math.floor((Date.now() - job.startedAt) / 1000)} 秒` : ''}`).join('；');
   byId('connection-device').textContent = `设备：${status.config.deviceName} · ID ${status.config.deviceId}。迁移已有设备时，请在中央邀请中选择此 ID。`;
   byId('environment').textContent = status.environment ? `环境：${status.environment.profile}${status.environment.legacy ? '（原日常目录）' : ' · 独立数据'} · ${status.environment.dataDirectory}` : '';
   const names = { stopped: '采集已停止', capturing: '正在采集', paused: '采集已暂停', permission_required: '需要屏幕录制权限', error: '采集已停止 · 需要处理' };
@@ -415,32 +418,43 @@ byId('note-form').addEventListener('submit', event => {
 byId('open-feedback').addEventListener('click', () => void perform(() => desktopApi.openFeedback()));
 byId('diagnostics-sample').addEventListener('click', () => void perform(async () => render(await desktopApi.sampleDiagnostics())));
 byId('diagnostics-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportDiagnostics(); if (!result.canceled) feedback('数值诊断已导出。', true); }));
-let logRows: import('./support').SupportEvent[] = [];
-let logPage = 0;
-let logLevel = 'all';
-function logSeverity(code: string): string {
-  return ['STARTED','STOPPED','OK','FILTERED','CANCELLED'].includes(code) ? '信息'
-    : ['WAIT_NETWORK','SCHEDULER','PERMISSION','MODEL_UNAVAILABLE'].includes(code) ? '警告' : '错误';
-}
+let logText = '';
+let logWrap = true;
 function renderLogs(): void {
   const viewer = byId('events-viewer'); viewer.replaceChildren();
-  const filter = document.createElement('select'); filter.setAttribute('aria-label', '日志级别');
-  for (const value of ['all', '信息', '警告', '错误']) { const option = document.createElement('option'); option.value = value; option.textContent = value === 'all' ? '全部级别' : value; filter.append(option); }
-  filter.value = logLevel; filter.onchange = () => { logLevel = filter.value; logPage = 0; renderLogs(); }; viewer.append(filter);
-  const rows = logRows.filter(row => logLevel === 'all' || logSeverity(row.code) === logLevel);
-  const summary = document.createElement('p'); summary.textContent = `${rows.length} 条 · 第 ${logPage + 1}/${Math.max(1, Math.ceil(rows.length / 20))} 页 · 每页 20 条`; viewer.append(summary);
-  const output = document.createElement('pre'); output.textContent = rows.slice(logPage * 20, (logPage + 1) * 20).map(event => `${new Date(event.atMs).toLocaleString()}  ${logSeverity(event.code)} · ${event.stage} · ${event.code}\n耗时 ${event.elapsedMs ?? '未测量'} ms · HTTP ${event.httpStatus ?? '无'}`).join('\n\n') || '暂无符合条件的日志。诊断关闭时停止新增，历史仍可查看。'; viewer.append(output);
-  for (const [label, offset] of [['上一页', -1], ['下一页', 1]] as const) {
+  const actions = document.createElement('div'); actions.className = 'actions';
+  const output = document.createElement('textarea'); output.readOnly = true;
+  output.setAttribute('aria-label', '原始日志'); output.spellcheck = false;
+  output.className = 'raw-log-output'; output.wrap = logWrap ? 'soft' : 'off'; output.value = logText;
+  output.placeholder = '暂无日志。诊断关闭时停止新增，历史仍可查看。';
+  const notice = document.createElement('p'); notice.setAttribute('role', 'status');
+  notice.textContent = '按文件原始顺序显示，可拖动选中或使用 ⌘/Ctrl+A、C 复制。';
+  for (const label of ['刷新日志', '复制全部', '全选', '自动换行']) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
-    button.disabled = offset === -1 ? logPage === 0 : (logPage + 1) * 20 >= rows.length;
-    button.onclick = () => { logPage += offset; renderLogs(); }; viewer.append(button);
+    if (label === '刷新日志') button.onclick = () => void loadLogs();
+    if (label === '全选') button.onclick = () => { output.focus(); output.select(); };
+    if (label === '自动换行') {
+      button.setAttribute('aria-pressed', String(logWrap));
+      button.onclick = () => { logWrap = !logWrap; output.wrap = logWrap ? 'soft' : 'off'; button.setAttribute('aria-pressed', String(logWrap)); };
+    }
+    if (label === '复制全部') {
+      button.disabled = !logText;
+      button.onclick = () => { void navigator.clipboard.writeText(logText).then(() => { notice.textContent = '已复制全部原始日志。'; }, () => { output.focus(); output.select(); notice.textContent = '剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。'; }); };
+    }
+    actions.append(button);
   }
+  viewer.append(actions, notice, output);
 }
-byId('events-open').addEventListener('click', () => void perform(async () => {
-  const viewer = byId('events-viewer'); viewer.hidden = false; viewer.textContent = '正在读取本地日志…';
-  try { logRows = (await desktopApi.readEvents()).slice().reverse(); logPage = 0; renderLogs(); }
-  catch (error) { viewer.textContent = '日志读取失败，请点击查看本地日志重试。'; throw error; }
-}));
+let logLoading = false;
+async function loadLogs(): Promise<void> {
+  if (logLoading) return;
+  logLoading = true;
+  const viewer = byId('events-viewer'); viewer.hidden = false;
+  try { logText = await desktopApi.readRawEvents(); renderLogs(); }
+  catch { let notice = viewer.querySelector('[role="status"]'); if (!notice) { notice = document.createElement('p'); notice.setAttribute('role', 'status'); viewer.append(notice); } notice.textContent = '日志读取失败，请点击查看本地日志重试。'; }
+  finally { logLoading = false; }
+}
+byId('events-open').addEventListener('click', () => void loadLogs());
 
 byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(); if (!result.canceled) feedback('支持包已导出；只含数值、配置开关和固定阶段事件。', true); }));
 
@@ -448,7 +462,7 @@ let localSourceRows: import('./source-types').SourceStatus[] = [];
 let sourceEditingId: string | undefined;
 let sourceBusy = false;
 function sourceOptions(): import('./source-types').SourceOptions {
-  return { retention: readInput('source-retention') as 'snapshot' | 'reference', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
+  return { initialSync: readInput('source-initial-sync') as 'all' | 'new_only', retention: readInput('source-retention') as 'snapshot' | 'reference', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
 }
 function editSource(id?: string): void {
   sourceEditingId = id;
@@ -460,11 +474,15 @@ function editSource(id?: string): void {
   if (editor) editor.open = true;
   byId('source-editor-title').scrollIntoView({ block: 'start', behavior: 'instant' });
   byId('source-retention').focus({ preventScroll: true });
-  byId<HTMLSelectElement>('source-retention').value = source.retention; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
+  byId<HTMLSelectElement>('source-initial-sync').value=source.initialSync??'all'; byId<HTMLSelectElement>('source-retention').value = source.retention; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
   byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
   byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n'); refreshPresets();
 }
+let sourcesReading = false;
 async function refreshSources(): Promise<void> {
+  if (sourcesReading) return;
+  sourcesReading = true;
+  try {
   const rows = await desktopApi.sources(); localSourceRows = rows;
   const list = byId('source-list'); list.replaceChildren();
   if (!rows.length) { const p = document.createElement('p'); p.className = 'helper'; p.textContent = '尚未连接本地来源。选择只包含你希望归档资料的目录。'; list.append(p); }
@@ -479,6 +497,7 @@ async function refreshSources(): Promise<void> {
     pause.addEventListener('click', () => void sourceAction(async () => { await desktopApi.updateSource(row.source.id, { ...row.source, enabled: !row.source.enabled }); }));
     actions.append(edit, pause); card.append(title, detail, status, actions); list.append(card);
   }
+  } finally { sourcesReading = false; }
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
   if (sourceBusy) return; sourceBusy = true; byId('source-feedback').textContent = '正在处理，请稍候…';
@@ -503,7 +522,7 @@ byId('source-save-edit').addEventListener('click', () => void sourceAction(async
   await desktopApi.updateSource(source.id, { ...sourceOptions(), enabled: source.enabled }); editSource();
 }));
 void refreshSources().catch(() => { byId('source-feedback').textContent = '来源状态暂不可用，请重新打开应用'; });
-setInterval(() => { if (!sourceBusy) void refreshSources().catch(() => {}); }, 3000);
+setInterval(() => { void refreshSources().catch(() => {}); }, 3000);
 
 let updateState: import('./updater').UpdateStatus | undefined;
 function renderUpdate(value: import('./updater').UpdateStatus): void {
@@ -525,7 +544,7 @@ function renderUpdate(value: import('./updater').UpdateStatus): void {
 byId('update-channel').addEventListener('change', () => void perform(async () => renderUpdate(await desktopApi.updateChannel(readInput('update-channel') as 'stable' | 'preview'))));
 byId('update-check').addEventListener('click', () => { void desktopApi.checkUpdate().then(renderUpdate).catch(() => feedback('更新检查未完成，请重试。')); });
 byId('update-download').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.downloadUpdate())));
-byId('update-cancel').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.cancelUpdate())));
+byId('update-cancel').addEventListener('click', () => { void desktopApi.cancelUpdate().then(renderUpdate).catch(error => feedback(String(error))); });
 byId('update-reveal').addEventListener('click', () => void perform(() => desktopApi.revealUpdate()));
 byId('update-notes').addEventListener('click', () => void perform(() => desktopApi.releaseNotes()));
 byId('update-install').addEventListener('click', () => {
@@ -540,7 +559,14 @@ byId('update-install').addEventListener('click', () => {
   });
 });
 void desktopApi.updateStatus().then(renderUpdate).catch(() => {});
-setInterval(() => { void desktopApi.updateStatus().then(renderUpdate).catch(() => {}); }, 1000);
+// One polling request at a time, even if a slow disk or worker delays a reply.
+let statusReading = false;
+setInterval(() => {
+  if (statusReading || document.hidden) return;
+  statusReading = true;
+  void Promise.allSettled([desktopApi.status().then(render), desktopApi.updateStatus().then(renderUpdate)])
+    .finally(() => { statusReading = false; });
+}, 1000);
 
 function renderConnection(value: import('./connection').ConnectionStatus): void {
   byId('connection-state').textContent = value.message + (value.checkedAt ? ' · ' + new Date(value.checkedAt).toLocaleTimeString() : '');

@@ -13,20 +13,23 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.TimeUnit
 
 class CaptureOcr(private val context: Context) : AutoCloseable {
-    private val latin = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    private val chinese = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-    fun recognize(bitmap: Bitmap, canContinue: () -> Boolean = { true }): String {
+    private val latin = lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val chinese = lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
+    fun recognize(bitmap: Bitmap, config: CollectorConfig = Settings(context).read(), appId: String? = null, canContinue: () -> Boolean = { true }): String {
         val started = SystemClock.elapsedRealtime()
         val input = InputImage.fromBitmap(bitmap, 0)
         if (!canContinue()) throw java.util.concurrent.CancellationException()
-        val chineseText = Tasks.await(chinese.process(input), 30, TimeUnit.SECONDS).text
-        if (!canContinue()) throw java.util.concurrent.CancellationException()
-        val latinText = Tasks.await(latin.process(input), 30, TimeUnit.SECONDS).text
+        val texts = OcrPolicy.engines(config.ocrMode, config.ocrAppModes, appId).map { engine ->
+            if (!canContinue()) throw java.util.concurrent.CancellationException()
+            Diagnostics(context).add("ocrCalls")
+            val client = if (engine == "latin") latin.value else chinese.value
+            Tasks.await(client.process(input), 30, TimeUnit.SECONDS).text
+        }
         if (!canContinue()) throw java.util.concurrent.CancellationException()
         Diagnostics(context).timing("ocrMs", SystemClock.elapsedRealtime() - started)
-        return listOf(chineseText, latinText).filter(String::isNotBlank).distinct().joinToString("\n").take(100_000)
+        return texts.filter(String::isNotBlank).distinct().joinToString("\n").take(100_000)
     }
-    override fun close() { latin.close(); chinese.close() }
+    override fun close() { if (latin.isInitialized()) latin.value.close(); if (chinese.isInitialized()) chinese.value.close() }
 }
 
 /** Reads only already masked, encrypted queue images. It never requests a screen capture. */
@@ -49,7 +52,7 @@ class CaptureOcrWorker(context: Context, params: WorkerParameters) : Worker(cont
                     try {
                         val bytes = queue.image(id) ?: return@repeat
                         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("Invalid stored image")
-                        val text = try { ocr.recognize(bitmap) { !isStopped && !ConnectionGuard.reconfiguring() && (!settings.read().ocrChargingOnly || Diagnostics.battery(applicationContext).second) } } finally { bitmap.recycle() }
+                        val text = try { ocr.recognize(bitmap, config, event.optString("appId")) { !isStopped && !ConnectionGuard.reconfiguring() && (!settings.read().ocrChargingOnly || Diagnostics.battery(applicationContext).second) } } finally { bitmap.recycle() }
                         if (isStopped || (settings.read().ocrChargingOnly && !Diagnostics.battery(applicationContext).second)) return@sync Result.retry()
                         queue.completeOcr(id, text, "completed", config.maxQueueMiB * 1024L * 1024L)
                     } catch (error: Exception) {
@@ -70,7 +73,7 @@ class CaptureOcrWorker(context: Context, params: WorkerParameters) : Worker(cont
         fun schedule(context: Context, config: CollectorConfig, replace: Boolean = false) {
             val constraints = Constraints.Builder().setRequiresCharging(config.ocrChargingOnly).build()
             val recovery = PeriodicWorkRequestBuilder<CaptureOcrWorker>(15, TimeUnit.MINUTES).setConstraints(constraints).build()
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork("mote-capture-ocr-recovery", ExistingPeriodicWorkPolicy.UPDATE, recovery)
+            WorkManager.getInstance(context).enqueueUniquePeriodicWork("mote-capture-ocr-recovery", if (replace) ExistingPeriodicWorkPolicy.UPDATE else ExistingPeriodicWorkPolicy.KEEP, recovery)
             val request = OneTimeWorkRequestBuilder<CaptureOcrWorker>()
                 .setConstraints(constraints)
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()

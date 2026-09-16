@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {captureOcrState} from '@mote/shared';
-import {captureDateRange, localDateInput, ocrPresentation} from '../src/capture-presentation';
+import {captureDateRange, evidencePresentation, localDateInput, ocrPresentation} from '../src/capture-presentation';
 
 test('OCR distinguishes deferred, failed and completed-with-no-text screenshots without guessing from an empty body', () => {
   assert.equal(ocrPresentation({status:'pending',reason:'charging'}, '').label, 'OCR 待充电');
@@ -36,4 +36,23 @@ test('deduplicated records explain that no image or OCR text was saved', () => {
   assert.equal(display.label, '图片去重 · 仅元数据');
   assert.match(display.description, /未保存图片或 OCR 文本/);
   assert.doesNotMatch(display.description, /截图仍可查看/);
+});
+
+test('imported file records keep their archived-original controls separate from device file processing', () => {
+  const imported = evidencePresentation({id:'import-record',source:'file',platform:'import',provenance:{sourceId:'import-source',externalId:'note-1',revision:'1',layer:'snapshot',deleted:false,document:{fileId:'archived-original',path:'export/note.md'}}});
+  assert.equal(imported.nativeFile, undefined);
+  assert.equal(imported.textLabel, '原始文本');
+  assert.match(imported.deleteDescription, /导入仍保留原始文件/);
+  assert.doesNotMatch(imported.deleteDescription, /删除中央文件归档/);
+  const metadata = evidencePresentation({id:'device-file',source:'file',platform:'android'});
+  assert.deepEqual(metadata.nativeFile, {captureId:'device-file'});
+  assert.equal(metadata.textLabel, '文件元信息');
+  assert.match(metadata.deleteDescription, /来源设备上的原文件保留/);
+});
+
+test('native transcript citations open their parent file at the cited offset', () => {
+  const segment = evidencePresentation({id:'chunk',source:'file',platform:'android',fileEvidence:{captureId:'parent',revision:'v2',artifactId:'transcript',chunkId:'chunk',startMs:12500,endMs:16750,speaker:'S1'}});
+  assert.deepEqual(segment.nativeFile, {captureId:'parent',startMs:12500});
+  assert.equal(segment.textLabel, '转写片段');
+  assert.match(segment.deleteDescription, /依赖记忆/);
 });

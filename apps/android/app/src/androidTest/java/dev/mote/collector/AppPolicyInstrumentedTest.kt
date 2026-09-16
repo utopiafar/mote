@@ -94,7 +94,7 @@ class AppPolicyInstrumentedTest {
                 mode = "projection", nsfw = settings.read().nsfw.copy(enabled = true), appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config)
             assertEquals("accessibility", config.effectiveMode())
-            androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity -> MainActivity::class.java.getDeclaredMethod("startCapture").apply { isAccessible = true }.invoke(activity) }
                 assertTrue(settings.enabled); assertFalse(ProjectionService.running)
                 openFixture()
@@ -155,7 +155,7 @@ class AppPolicyInstrumentedTest {
         }
         try {
             val c = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-timing-fixture-only-123456789", intervalSeconds = 15,
-                excludedPackages = "", appCollectionRules = AppCollectionRules.DEFAULT, nsfw = settings.read().nsfw.copy(enabled = false))
+                excludedPackages = "", appCollectionRules = AppCollectionRules.LEGACY_DEFAULT, nsfw = settings.read().nsfw.copy(enabled = false))
             settings.save(c); settings.enabled = true; pipeline = CapturePipeline(context) { }
             pipeline.submit(generated(), windows, c, "2026-09-14T00:00:00Z", 0)
             waitUntil { context.queue().depth() == 1 && pipeline?.isBusy() == false }
@@ -193,7 +193,7 @@ class AppPolicyInstrumentedTest {
                 settings.save(c)
                 val before = Operations.ledger(context).read().getJSONObject("counts")
                 fun delta(key: String) = Operations.ledger(context).read().getJSONObject("counts").getLong(key) - before.getLong(key)
-                androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                     scenario.onActivity { activity -> MainActivity::class.java.getDeclaredMethod("startCapture").apply { isAccessible = true }.invoke(activity) }
                     // Only a generated-only task AVD may accept the real Android consent dialog.
                     waitUntil {

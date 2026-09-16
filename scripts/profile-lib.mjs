@@ -313,7 +313,8 @@ export async function verifiedBackup(backup) {
   const manifest = await readJson(manifestPath);
   if (manifest.version !== 1 || !manifest.checksums || !Object.hasOwn(manifest.checksums, 'mote.sqlite')) throw Error('Invalid backup manifest');
   for (const [name, hash] of Object.entries(manifest.checksums)) {
-    if (!(name === 'mote.sqlite' || /^(?:blobs|files)\/[a-f0-9]{64}$/.test(name)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
+    const part=/^files\/objects\/[a-f0-9]{64}\/(0|[1-9][0-9]{0,2})$/.exec(name);
+    if (!(name === 'mote.sqlite' || /^(?:blobs|files)\/[a-f0-9]{64}$/.test(name) || (part && Number(part[1]) < 128)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
     if (!(await lstat(join(directory, name))).isFile() || (await realpath(join(directory, name))) !== join(directory, name)) throw Error('Backup links are not allowed');
     if (await sha(join(directory, name)) !== hash) throw Error('Backup checksum mismatch; active data was not changed');
   }

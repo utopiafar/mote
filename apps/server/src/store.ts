@@ -1,3 +1,4 @@
+import {fileSchema} from './file-schema.js';
 import {systemEventText,sourceContentTime} from '@mote/shared';
 import {memorySchema} from './memory-schema.js';
 import { DatabaseSync } from 'node:sqlite';
@@ -69,10 +70,30 @@ export class Store {
       CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
       PRAGMA user_version=1;`);
+    fileSchema(this.db);
+    // Materialized browsing projection: album navigation never reads OCR/metadata JSON or blobs.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS capture_gallery (
+        id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,
+        device_id TEXT NOT NULL, captured_at TEXT NOT NULL, app_id TEXT NOT NULL, app_name TEXT NOT NULL, has_image INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS gallery_device_time ON capture_gallery(device_id,captured_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS gallery_app_time ON capture_gallery(device_id,app_id,captured_at DESC,id DESC);
+      CREATE TRIGGER IF NOT EXISTS gallery_insert AFTER INSERT ON captures WHEN json_extract(NEW.json,'$.source')='screen' BEGIN
+        INSERT INTO capture_gallery VALUES(NEW.id,NEW.device_id,NEW.captured_at,COALESCE(json_extract(NEW.json,'$.appId'),''),COALESCE(json_extract(NEW.json,'$.appName'),''),NEW.blob_hash IS NOT NULL);
+      END;
+    `);
+    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='gallery-v1'").get()) {
+      this.db.exec(`BEGIN IMMEDIATE;
+        INSERT OR IGNORE INTO capture_gallery SELECT id,device_id,captured_at,COALESCE(json_extract(json,'$.appId'),''),COALESCE(json_extract(json,'$.appName'),''),blob_hash IS NOT NULL FROM captures WHERE json_extract(json,'$.source')='screen';
+        INSERT INTO settings(key,value) VALUES('gallery-v1','1'); COMMIT;`);
+    }
     this.db.function('mote_ocr_status',{deterministic:true},json=>captureOcrState(JSON.parse(String(json))).status);
     this.db.function('mote_context_time',{deterministic:true},json=>new Date(sourceContentTime(JSON.parse(String(json)))).toISOString());
     // Add precise dependency rows for archives written before this table existed.
     this.db.exec("INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) SELECT memories.id,entry.value FROM memories,json_each(memories.json,'$.evidenceIds') entry");
+    this.db.exec(`INSERT OR IGNORE INTO memory_dependencies SELECT d.memory_id,c.capture_id FROM memory_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;
+      INSERT OR IGNORE INTO memory_batch_dependencies SELECT d.batch_id,c.capture_id FROM memory_batch_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;`);
     const marker=this.db.prepare('SELECT value FROM settings WHERE key=?').get('encryption') as {value:string}|undefined;
     const expected=this.key ? sha256(this.key) : 'none';
     if(marker && marker.value!==expected) {this.db.close();throw new Error('Vault encryption key mismatch. Restore the original MOTE_DATA_KEY; do not change keys on an existing vault.');}
@@ -93,7 +114,7 @@ export class Store {
     return {...JSON.parse(row.json),receivedAt:row.received_at,blobHash:row.blob_hash,imageMime:row.mime,indexingStatus:row.index_status,...(row.summary?{summary:row.summary}:{})};
   }
   private clauses(range:Range={}) {
-    const clauses:string[]=["(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0))"]; const values:(string|number)[]=[];
+    const clauses:string[]=["(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
     if(range.after) {clauses.push('mote_context_time(json) >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push('mote_context_time(json) < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
@@ -239,7 +260,7 @@ export class Store {
     this.db.exec('DELETE FROM insights');
     if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
     else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);
-    this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id=?').run(id);
+    this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id=? OR evidence_id IN (SELECT evidence_id FROM memory_batch_dependencies WHERE batch_id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?))').run(id,id);
     this.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','invalidated','$.errorCode',?) WHERE id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?)").run(deleted?'evidence_deleted':'evidence_changed',id);
   }
   previews(range:Range={}) {
@@ -250,6 +271,39 @@ export class Store {
       ...(record.metadata?.media?{media:record.metadata.media}:{}),
       textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:'未观察到媒体会话',disabled:'媒体采集已关闭',permission_required:'媒体权限未授予',unavailable:'媒体信息暂不可用'}[record.metadata?.media?.status??'unavailable'])):record.source==='notification'||record.source==='device_event'?systemEventText(record.metadata):record.ocrText).slice(0,160)}));
     return {...page,items};
+  }
+  gallery(range:{after:string;before:string;deviceId?:string;appId?:string;cursor?:string;limit:number}, albums:boolean) {
+    const filters=['captured_at>=?','captured_at<?',"(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0) OR id IN (SELECT capture_id FROM file_heads))"];const args:(string|number)[]=[new Date(range.after).toISOString(),new Date(range.before).toISOString()];
+    if(range.deviceId){filters.push('device_id=?');args.push(range.deviceId);}
+    if(range.appId!==undefined){filters.push('app_id=?');args.push(range.appId);}
+    let cursor: {at:string;id:string}|{after:string;deviceId:string;appId:string}|undefined;
+    if(range.cursor){
+      try{cursor=(albums?z.object({after:z.string().datetime(),deviceId:z.string(),appId:z.string()}):z.object({at:z.string().datetime(),id:z.string().uuid()})).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}
+      catch{throw new StoreError('Invalid album cursor');}
+    }
+    const scope=`FROM capture_gallery WHERE ${filters.join(' AND ')}`;
+    const totalCount=Number(this.db.prepare(`SELECT COUNT(*) AS n ${scope}`).get(...args)!.n);
+    if(!albums){
+      const position=cursor as {at:string;id:string}|undefined;
+      const seek=position?' AND (captured_at<? OR (captured_at=? AND id<?))':'';
+      const rows=this.db.prepare(`SELECT id,device_id AS deviceId,captured_at AS capturedAt,app_id AS appId,app_name AS appName,has_image AS hasImage ${scope}${seek} ORDER BY captured_at DESC,id DESC LIMIT ?`).all(...args,...(position?[position.at,position.at,position.id]:[]),range.limit+1);
+      const items=rows.slice(0,range.limit).map(row=>({...row,source:'screen',hasImage:Boolean(row.hasImage)}));
+      const last=items.at(-1) as {capturedAt:string;id:string}|undefined;
+      return {items,totalCount,nextCursor:rows.length>range.limit&&last?Buffer.from(JSON.stringify({at:last.capturedAt,id:last.id})).toString('base64url'):null};
+    }
+    const bucket="CAST(strftime('%s',captured_at) AS INTEGER)/900";
+    const group=`${scope} GROUP BY device_id,app_id,${bucket}`;
+    const albumCount=Number(this.db.prepare(`SELECT COUNT(*) AS n FROM (SELECT 1 ${group})`).get(...args)!.n);
+    const position=cursor as {after:string;deviceId:string;appId:string}|undefined;
+    const seek=position?` HAVING (${bucket}<? OR (${bucket}=? AND (device_id>? OR (device_id=? AND app_id>?))))`:'';
+    const boundary=position?Math.floor(Date.parse(position.after)/900000):0;
+    const rows=this.db.prepare(`SELECT id,device_id AS deviceId,app_id AS appId,app_name AS appName,MIN(captured_at) AS firstAt,MAX(captured_at) AS capturedAt,COUNT(*) AS count,SUM(has_image) AS imageCount ${group}${seek} ORDER BY ${bucket} DESC,device_id,app_id LIMIT ?`).all(...args,...(position?[boundary,boundary,position.deviceId,position.deviceId,position.appId]:[]),range.limit+1);
+    const items=rows.slice(0,range.limit).map(row=>{const start=Math.floor(Date.parse(String(row.capturedAt))/900000)*900000;return {...row,after:new Date(start).toISOString(),before:new Date(start+900000).toISOString()};});
+    const last=items.at(-1) as {after:string;deviceId:string;appId:string}|undefined;
+    return {items,totalCount,albumCount,nextCursor:rows.length>range.limit&&last?Buffer.from(JSON.stringify({after:last.after,deviceId:last.deviceId,appId:last.appId})).toString('base64url'):null};
+  }
+  imageReference(id:string) {
+    return this.db.prepare('SELECT device_id AS deviceId,blob_hash AS blobHash FROM captures WHERE id=?').get(id) as {deviceId:string;blobHash:string|null}|undefined;
   }
   completeOcr(id:string,update:{status:'completed'|'failed';ocrText:string}) {
     const row=this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as (Row&{fingerprint:string})|undefined;
@@ -317,6 +371,10 @@ export class Store {
     const record:DeviceRecord={...beat,lastSeenAt:new Date().toISOString()};
     this.db.prepare('INSERT INTO devices(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(beat.deviceId,JSON.stringify(record));return {ok:true};
   }
+  captureReceived(deviceId:string) {
+    // Receipt proves contact now, not that the screen is currently being captured.
+    this.db.prepare("UPDATE devices SET json=json_set(json,'$.lastSeenAt',?) WHERE id=?").run(new Date().toISOString(),deviceId);
+  }
   devices():DeviceRecord[] {return (this.db.prepare('SELECT json FROM devices').all() as {json:string}[]).map(r=>JSON.parse(r.json));}
   activity(range:Range={}):Activity {
     // Assign overlapping sample intervals once per device before applying content/app filters.
@@ -355,21 +413,27 @@ export class Store {
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() {
     const tables=new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {name:string}[]).map(row=>row.name));
-    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs'].filter(name=>tables.has(name));
+    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews'].filter(name=>tables.has(name));
     const bytes=Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n);
     const files=tables.has('file_blobs')?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
-    return bytes+files+Number(this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM ('+jsonTables.map(name=>'SELECT json FROM '+name).join(' UNION ALL ')+')').get()!.n);
+    const scalar=(sql:string)=>Number(this.db.prepare(sql).get()!.n);
+    const nativeBytes=scalar('SELECT COALESCE(SUM(bytes),0) AS n FROM file_objects')
+      +scalar('SELECT COALESCE(SUM(bytes),0) AS n FROM file_parts p JOIN file_uploads u ON u.id=p.upload_id WHERE u.ack IS NULL')
+      +scalar('SELECT COALESCE(SUM(length(CAST(text AS BLOB))+COALESCE(length(embedding),0)),0) AS n FROM file_chunks')
+      +scalar('SELECT COALESCE(SUM(length(CAST(manifest AS BLOB))),0) AS n FROM (SELECT manifest FROM file_versions UNION ALL SELECT manifest FROM file_uploads)');
+    return bytes+files+nativeBytes+Number(this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM ('+jsonTables.map(name=>'SELECT json FROM '+name).join(' UNION ALL ')+')').get()!.n);
   }
   stats() {
     const counts=this.db.prepare("SELECT COUNT(*) AS captures, COUNT(blob_hash) AS imageCaptures, SUM(CASE WHEN json_extract(json,'$.source')='activity' THEN 1 ELSE 0 END) AS activityEvents, SUM(CASE WHEN json_extract(json,'$.source')='media' THEN 1 ELSE 0 END) AS mediaEvents, MIN(captured_at) AS firstCaptureAt,MAX(captured_at) AS lastCaptureAt FROM captures").get() as {captures:number;imageCaptures:number;activityEvents:number|null;mediaEvents:number|null;firstCaptureAt:string|null;lastCaptureAt:string|null};
     const blob=this.db.prepare('SELECT COUNT(*) AS blobs,COALESCE(SUM(bytes),0) AS imageBytes FROM blobs').get() as {blobs:number;imageBytes:number};
     const indexing=this.db.prepare('SELECT index_status AS status,COUNT(*) AS count FROM captures GROUP BY index_status').all();
-    const filesDir=join(this.directory,'files'),files=existsSync(filesDir)?readdirSync(filesDir).map(p=>join(filesDir,p)):[];
-    const physicalBytes=[join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p)),...files].reduce((n,p)=>n+(existsSync(p)&&statSync(p).isFile()?statSync(p).size:0),0);
+    const filePaths:string[]=[];const fileRoot=join(this.directory,'files');if(existsSync(fileRoot))for(const entry of readdirSync(fileRoot,{recursive:true,withFileTypes:true}))if(entry.isFile())filePaths.push(join(entry.parentPath,entry.name));
+    const physicalBytes=[...filePaths,join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p))].reduce((n,p)=>n+(existsSync(p)?statSync(p).size:0),0);
     const fileBytes=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='file_blobs'").get()?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
     return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,fileBytes,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:Boolean(this.key)};
   }
   exportArchive(maxBytes:number) {
+    if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError('文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。',409);
     const stats=this.stats() as {logicalBytes:number;captures:number};
     const archivedFiles=new ArchivedFileStore(this);
     // Portable v1 embeds a blob for EACH observation. Account for expanded repetitions before allocation.
@@ -394,14 +458,14 @@ export class Store {
   prune(before:string) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const removed=this.db.prepare('SELECT id FROM captures WHERE captured_at < ?').all(before) as {id:string}[];
-      this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE captured_at < ?").run(new Date().toISOString(),before);
-      this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE captured_at < ?)').run(before);
-      const result=this.db.prepare('DELETE FROM captures WHERE captured_at < ?').run(before);
+      const removed=this.db.prepare('SELECT id FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions)').all(before) as {id:string}[];
+      this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
+      this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
+      const result=this.db.prepare('DELETE FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
       if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();return Number(result.changes);
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
-  private invalidateConversationAnswers() {
+  invalidateConversationAnswers() {
     // As with insights, a model reply may contain removed facts even without an
     // explicit citation. Keep authored questions, but never retain derived copies.
     const rows=this.db.prepare('SELECT id,json FROM conversations').all() as {id:string;json:string}[];
@@ -417,7 +481,7 @@ export class Store {
     const known=new Set((this.db.prepare('SELECT hash FROM blobs').all() as {hash:string}[]).map(r=>r.hash));
     for(const file of readdirSync(this.blobsDir))if((/^[a-f0-9]{64}$/.test(file)&&!known.has(file))||/^[a-f0-9]{64}\.[a-f0-9]+\.tmp$/.test(file))unlinkSync(join(this.blobsDir,file));
   }
-  pending(limit=10) {return (this.db.prepare("SELECT * FROM captures WHERE index_status='pending' AND json_extract(json,'$.source')!='activity' ORDER BY received_at LIMIT ?").all(limit) as unknown as Row[]).map(r=>this.record(r));}
+  pending(limit=10) {return (this.db.prepare("SELECT * FROM captures WHERE index_status='pending' AND id NOT IN (SELECT capture_id FROM file_versions) AND json_extract(json,'$.source')!='activity' ORDER BY received_at LIMIT ?").all(limit) as unknown as Row[]).map(r=>this.record(r));}
   indexCounts() {
     const result={pending:0,failed:0,indexed:0,textReady:0};
     for(const row of this.db.prepare('SELECT index_status AS status,COUNT(*) AS count FROM captures GROUP BY index_status').all() as {status:string;count:number}[]) {
@@ -427,7 +491,7 @@ export class Store {
   }
   indexed(id:string,embedding:number[],model:string) {this.db.prepare("UPDATE captures SET embedding=?,embedding_model=?,index_status='indexed',index_error=NULL WHERE id=?").run(JSON.stringify(embedding),model,id);}
   indexFailed(id:string,error:string) {this.db.prepare("UPDATE captures SET index_status='failed',index_error=?,attempts=attempts+1 WHERE id=?").run(error.slice(0,500),id);}
-  retryIndex() {return {queued:Number(this.db.prepare("UPDATE captures SET index_status='pending' WHERE json_extract(json,'$.source')!='activity' AND length(trim(json_extract(json,'$.ocrText')))>0").run().changes)};}
+  retryIndex() {this.db.exec('UPDATE file_chunks SET index_error=NULL');return {queued:Number(this.db.prepare("UPDATE captures SET index_status='pending' WHERE json_extract(json,'$.source')!='activity' AND length(trim(json_extract(json,'$.ocrText')))>0").run().changes)};}
   updates(cursor:number,limit=100) {
     const rows=this.db.prepare('SELECT seq,id,operation,changed_at FROM changes WHERE seq>? ORDER BY seq LIMIT ?').all(cursor,limit) as {seq:number;id:string;operation:string;changed_at:string}[];
     return {items:rows.map(r=>({...r,record:r.operation==='upsert'?this.evidence([r.id])[0]??null:null})),nextCursor:rows.at(-1)?.seq??cursor};
