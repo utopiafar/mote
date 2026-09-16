@@ -15,6 +15,7 @@ export interface ConnectorConfig {
   syncIntervalMs?: number;
 }
 export interface ConnectorContext {
+  files?: import('../files.js').FileStore;
   sources: SourceStore;
   store: Store;
   config: {dataDir: string;token: string;allowedOrigins: string[];connectors?: ConnectorConfig};

@@ -11,8 +11,8 @@ import { ConnectionBindingStore } from './connection-binding';
 import { decideSync } from './sync-policy';
 type SourceConnection = Pick<Config, 'serverUrl' | 'token' | 'deviceId'> & Partial<Pick<Config, 'syncMode' | 'syncIntervalMinutes' | 'syncBatchSize'>>;
 export function sourceDefinition(source: LocalSource): SourceDefinition {
-  const { id, name, kind, deviceId, platform, retention, enabled } = source;
-  return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || '本地来源', kind, deviceId, platform, retention, enabled };
+  const { id, name, kind, deviceId, platform, retention, enabled, initialSync } = source;
+  return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || '本地来源', kind, deviceId, platform, retention, enabled, initialSync };
 }
 export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
 export class LocalSourceManager {
@@ -154,12 +154,12 @@ export class LocalSourceManager {
         status.skipped = scan.skipped;
         this.readable.add(source.id);
         if (this.managedUploads) {
-          await engine.stage(scan, source.trackDeletions);
+          await engine.stage(scan, source.trackDeletions,undefined,source.initialSync);
           Object.assign(status, engine.status(), { state: 'idle', message: !this.connection.serverUrl || !this.connection.token ? '已保存在本机；尚未配置中央同步' : '已检查本地变化，按同步设置等待上传' });
         } else {
           const pending = this.pendingStats();
           const policy = decideSync({ ...this.connection, syncMode: this.connection.syncMode ?? 'realtime', syncIntervalMinutes: this.connection.syncIntervalMinutes ?? 15, syncBatchSize: this.connection.syncBatchSize ?? 20 }, pending, Date.now(), force);
-          if (!policy.ready) { await engine.stage(scan, source.trackDeletions); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
+          if (!policy.ready) { await engine.stage(scan, source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
           else {
             const request = this.request(signal);
             const { state: ready } = await engine.syncScan(scan, source.trackDeletions, sourceDefinition(source), request, signal, () => this.prepareSource(source, request, signal));
@@ -183,7 +183,7 @@ export class LocalSourceManager {
     if (!this.metadataDirty.has(source.id)) return;
     const registered = await request('/api/sources', sourceDefinition(source), 'POST', signal) as { id?: string };
     if (registered?.id !== source.id) throw new Error('中央来源注册确认无效');
-    const patched = await request('/api/sources/' + source.id, { retention: source.retention, name: sourceDefinition(source).name }, 'PATCH', signal) as { id?: string };
+    const patched = await request('/api/sources/' + source.id, { retention: source.retention, initialSync: source.initialSync, name: sourceDefinition(source).name }, 'PATCH', signal) as { id?: string };
     if (patched?.id !== source.id) throw new Error('中央来源配置确认无效');
     this.metadataDirty.delete(source.id); if (!this.metadataDirty.size) this.metadataDirtyAt = undefined; await this.persist();
   }

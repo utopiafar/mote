@@ -19,6 +19,16 @@ internal class CaptureRecordClient(private val config: CollectorConfig, private 
         cursor?.let { uri.appendQueryParameter("cursor", it) }
         return JSONObject(String(request(uri.toString(), false), Charsets.UTF_8))
     }
+    fun albums(after: String, before: String, cursor: String?): JSONObject = browse("albums", after, before, cursor)
+    fun albumImages(after: String, before: String, appId: String, cursor: String?): JSONObject = browse("album-images", after, before, cursor, appId)
+    private fun browse(path: String, after: String, before: String, cursor: String?, appId: String? = null): JSONObject {
+        val uri = Uri.parse("${config.server}/api/capture-browser/$path").buildUpon()
+            .appendQueryParameter("after", after).appendQueryParameter("before", before)
+            .appendQueryParameter("deviceId", deviceId).appendQueryParameter("limit", "20")
+        cursor?.let { uri.appendQueryParameter("cursor", it) }
+        appId?.let { uri.appendQueryParameter("appId", it) }
+        return JSONObject(String(request(uri.toString(), false), Charsets.UTF_8))
+    }
     fun detail(id: String) = JSONObject(String(request("${config.server}/api/capture-browser/${UUID.fromString(id)}", false), Charsets.UTF_8))
     fun image(id: String, thumbnail: Boolean) = request("${config.server}/api/capture-browser/${UUID.fromString(id)}/image${if (thumbnail) "?thumbnail=1" else ""}", true, thumbnail)
     private fun request(url: String, image: Boolean, thumbnail: Boolean = false): ByteArray {

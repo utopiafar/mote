@@ -43,6 +43,7 @@ export interface ContextReader {
   activity(args: ContextRange): Promise<unknown>;
   mediaActivity?(args: MediaContextRange): Promise<unknown>;
   devices(): Promise<unknown>;
+  fileChunks?(args:ContextRange & {id:string;offset?:number}):Promise<ContextRecord[]>;
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
@@ -73,6 +74,11 @@ export interface QueryInput {
   before?: string;
   deviceId?: string;
   timeZone?: string;
+  /** Server-owned dialogue context. Earlier model prose is not original evidence. */
+  conversation?: {
+    turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean}[];
+    omittedTurns:number;
+  };
 }
 export interface Citation {
   id: string;

@@ -21,20 +21,31 @@ const errors = [];
 const externalUrls = [];
 shell.openExternal = async url => { externalUrls.push(url); };
 let finished = false;
-const timeout = setTimeout(() => { process.stderr.write('UI smoke timeout\n'); app.exit(1); }, 30000);
+let currentPhase = 'startup';
+const timeout = setTimeout(() => { process.stderr.write('UI smoke timeout: ' + currentPhase + '\n'); app.exit(1); }, 45000);
 app.on('browser-window-created', (_event, window) => {
   window.webContents.on('console-message', (_event, level, message) => { if (level >= 3) errors.push(message); });
   window.webContents.once('did-finish-load', () => {
     void (async () => {
       const js = code => window.webContents.executeJavaScript(code);
       const settingsIdle = async phase => {
+        currentPhase = phase;
         for (let i = 0; i < 200; i++) {
           if (await js(`!document.querySelector('#settings-fields').disabled`)) return;
           await new Promise(resolve => setTimeout(resolve, 25));
         }
         throw new Error(`Settings operation did not complete: ${phase}`);
       };
+      const recordsIdle = async phase => {
+        currentPhase = phase;
+        for (let i = 0; i < 400; i++) {
+          if (await js(`document.querySelector('#records-status').getAttribute('aria-busy') === 'false'`)) return;
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+        throw new Error(`Capture thumbnails did not settle: ${phase}`);
+      };
       const navigate = async page => {
+        currentPhase = 'navigate ' + page;
         await js(`document.querySelector('[data-nav="${page}"]').click(); new Promise(resolve => setTimeout(resolve, 180))`);
         assert(await js(`Array.from(document.querySelectorAll('[data-page]')).every(element => element.hidden === (element.dataset.page !== '${page}'))`), `Only ${page} should be visible`);
         assert(await js(`document.activeElement.matches('[data-page-title]')`), 'Navigation focuses the page heading');
@@ -68,14 +79,22 @@ app.on('browser-window-created', (_event, window) => {
       // Simulate only the renderer running state; the collector never starts in this fixture.
       // Settings must remain editable while capturing, independently of actual native capture.
       const send = window.webContents.send.bind(window.webContents);
+      const { Collector } = require('../dist/collector');
+      const originalStatus = Collector.prototype.status;
+      // Both pushed events and the renderer's periodic status query must see the same fixture.
+      // Only the returned view changes; the collector itself remains stopped.
+      Collector.prototype.status = function() { const value = originalStatus.call(this); assert.equal(value.running, false); return { ...value, running: true, state: 'capturing' }; };
       window.webContents.send = (channel, ...args) => send(channel, ...(channel === 'mote:status' ? [{ ...args[0], running: true, state: 'capturing' }] : args));
-      window.webContents.send('mote:status', { ...status, running: true, state: 'capturing' });
-      await navigate('capture');
-      assert(await js(`!document.querySelector('#settings-fields').disabled`));
-      assert(await js(`document.querySelector('#save-hint').textContent.includes('立即应用')`));
-      await navigate('overview');
-      window.webContents.send = send;
-      window.webContents.send('mote:status', status);
+      try {
+        window.webContents.send('mote:status', { ...status, running: true, state: 'capturing' });
+        await navigate('capture');
+        assert.equal((await js('window.mote.status()')).running, true, 'Status polling agrees with pushed synthetic capture state');
+        // Cross a full polling interval to reproduce the previous event/poll race deterministically.
+        await js(`new Promise(resolve => setTimeout(resolve, 1100))`);
+        assert(await js(`!document.querySelector('#settings-fields').disabled`));
+        assert(await js(`document.querySelector('#save-hint').textContent.includes('立即应用')`));
+        await navigate('overview');
+      } finally { Collector.prototype.status = originalStatus; window.webContents.send = send; window.webContents.send('mote:status', status); }
       await navigate('notes');
       for (let i = 0; i < 50 && await js(`document.querySelector('#note-text').disabled`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       await js(`document.querySelector('#note-text').value = '跨页面保留的合成草稿'; document.querySelector('#note-text').dispatchEvent(new Event('input', {bubbles: true}));`);
@@ -100,16 +119,30 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`document.querySelector('#events-viewer').textContent.includes('日志读取失败')`));
       assert.equal(await js(`document.querySelector('[aria-label="原始日志"]').value`), rawFixture);
       await js(`document.querySelector('#jpeg-quality').value = '10'; document.querySelector('#jpeg-quality').dispatchEvent(new Event('input', {bubbles: true}));`);
-      await navigate('capture');
       await js(`document.querySelector('#settings').requestSubmit()`);
-      assert(await js(`!document.querySelector('[data-page="developer"]').hidden && document.activeElement.id === 'jpeg-quality'`), 'Invalid hidden field is revealed and focused');
+      assert(await js(`!document.querySelector('[data-page="developer"]').hidden && document.activeElement.id === 'jpeg-quality'`), 'Invalid field is revealed and focused');
       await js(`document.querySelector('#settings-reset').click()`);
       assert.equal(await js(`document.querySelector('#jpeg-quality').value`), String(status.config.jpegQuality));
       assert(await js(`document.querySelector('#settings-pending').hidden`));
       await navigate('connection');
       await js(`document.querySelector('#device-name').value = '未保存的设备名称'; document.querySelector('#device-name').dispatchEvent(new Event('input', {bubbles: true}));`);
-      await navigate('overview'); await navigate('connection');
-      assert.equal(await js(`document.querySelector('#device-name').value`), '未保存的设备名称');
+      assert(await js(`!document.querySelector('#settings-pending').hidden`));
+      await js(`document.querySelector('[data-page="connection"] .back-button').click()`);
+      assert(await js(`!document.querySelector('[data-page="settings"]').hidden`));
+      assert(await js(`document.querySelector('#settings-save-bar').hidden && document.querySelector('#settings-pending').hidden`), 'Settings menu has no abandoned draft or save bar');
+      await navigate('connection');
+      assert.equal(await js(`document.querySelector('#device-name').value`), status.config.deviceName, 'Back navigation discards unsaved settings');
+      await js(`document.querySelector('#server-url').value = 'https://discarded.example'; document.querySelector('#server-url').dispatchEvent(new Event('input', {bubbles: true}));`);
+      await navigate('overview');
+      assert(await js(`document.querySelector('#settings-save-bar').hidden`));
+      await navigate('connection');
+      assert.equal(await js(`document.querySelector('#server-url').value`), status.config.serverUrl, 'Sidebar navigation discards unsaved settings');
+      await js(`document.querySelector('#device-name').value = 'Discard with Escape'; document.querySelector('#device-name').dispatchEvent(new Event('input', {bubbles: true})); document.dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',bubbles:true}));`);
+      assert(await js(`!document.querySelector('[data-page="settings"]').hidden && document.querySelector('#settings-save-bar').hidden`));
+      await navigate('connection');
+      assert.equal(await js(`document.querySelector('#device-name').value`), status.config.deviceName, 'Escape discards unsaved settings');
+      await js(`document.querySelector('#device-name').value = 'UI Fixture Renamed'; document.querySelector('#device-name').dispatchEvent(new Event('input', {bubbles: true})); document.querySelector('#settings').requestSubmit();`);
+      await settingsIdle('save connection settings');
       const update = await window.webContents.executeJavaScript('window.mote.updateStatus()');
       assert.equal(update.currentVersion, app.getVersion()); assert.equal(update.state, 'idle'); assert.equal(update.canInstall, false);
       assert(await window.webContents.executeJavaScript('Boolean(document.querySelector("#update-install"))'));
@@ -123,15 +156,20 @@ app.on('browser-window-created', (_event, window) => {
       await js(`document.querySelector('#use-installed-app').click(); document.querySelector('#app-collection-rules select').value = 'off'; document.querySelector('[data-mask=notification]').click()`);
       assert.equal(await js(`document.querySelectorAll('#mask-editor input[type=range]').length`), 4);
       await js(`const width = document.querySelector('[aria-label="区域 1 宽度"]'); width.value = '25'; width.dispatchEvent(new Event('input', { bubbles: true }));`);
+      await js(`document.querySelector('#default-collection').value = 'activity'; document.querySelector('#settings').requestSubmit()`);
+      await settingsIdle('save privacy settings');
       await navigate('capture');
       await js(`document.querySelector('#ocr-charging').checked = true; document.querySelector('#ocr-charging').dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#interval-preset').value = '60'; document.querySelector('#interval-preset').dispatchEvent(new Event('change', { bubbles: true }));`);
+      await js(`document.querySelector('#settings').requestSubmit()`);
+      await settingsIdle('save capture settings');
       await navigate('sync');
       for (const mode of ['interval', 'batch', 'manual']) {
         await js(`document.querySelector('[name=sync-mode][value=${mode}]').click()`);
         assert.equal(await js(`document.querySelector('#sync-batch-field').hidden`), mode !== 'batch');
         assert.equal(await js(`document.querySelector('#sync-interval-field').hidden`), mode === 'manual');
       }
-      await js(`document.querySelector('#device-name').value = 'UI Fixture Renamed'; document.querySelector('#default-collection').value = 'activity'; document.querySelector('#settings').requestSubmit();`);
+      await js(`document.querySelector('#settings').requestSubmit();`);
+      await settingsIdle('save sync settings');
       let updated;
       for (let i = 0; i < 50; i++) {
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -207,13 +245,24 @@ app.on('browser-window-created', (_event, window) => {
       writeFileSync(fixtureArchive, JSON.stringify({ format: 'mote-desktop-queue', version: 1, records: fixtureRecords, blobs: { [hash]: generatedJpeg.toString('base64') } }));
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fixtureArchive] });
       assert.equal((await js('window.mote.importQueue()')).imported, 31);
-      await navigate('records');
-      for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 30`); i++) await new Promise(resolve => setTimeout(resolve, 20));
-      assert.equal(await js(`document.querySelectorAll('.record-card').length`), 30);
-      assert(await js(`document.querySelector('#records-status').textContent.includes('31')`));
+      const captureBrowser = require('../dist/capture-browser');
+      const originalCaptureImage = captureBrowser.captureImage;
+      let releaseThumbnails;
+      const thumbnailsReady = new Promise(resolve => { releaseThumbnails = resolve; });
+      captureBrowser.captureImage = async (...args) => { if (args[4]) await thumbnailsReady; return originalCaptureImage(...args); };
+      try {
+        await navigate('records');
+        for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 30`); i++) await new Promise(resolve => setTimeout(resolve, 20));
+        assert.equal(await js(`document.querySelectorAll('.record-card').length`), 30);
+        assert(await js(`document.querySelector('#records-status').getAttribute('aria-busy') === 'true'`), 'Cards appear while generated thumbnails are still loading');
+        releaseThumbnails();
+        await recordsIdle('first capture page thumbnails');
+        assert(await js(`document.querySelector('#records-status').textContent.includes('31')`));
+      } finally { releaseThumbnails(); captureBrowser.captureImage = originalCaptureImage; }
       await js(`document.querySelector('#records-next').click()`);
       for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 1`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       assert.equal(await js(`document.querySelectorAll('.record-card').length`), 1);
+      await recordsIdle('second capture page thumbnails');
       await js(`document.querySelector('.record-card').click()`);
       for (let i = 0; i < 100 && await js(`!document.querySelector('#record-detail-image').src.startsWith('data:image/jpeg')`); i++) await new Promise(resolve => setTimeout(resolve, 20));
       assert(await js(`document.querySelector('#record-detail-text').textContent.includes('<script>不可执行的证据</script>')`));
@@ -278,7 +327,7 @@ app.on('browser-window-created', (_event, window) => {
           await navigate('overview'); assert(await js(`!document.querySelector('#storage-restart').hidden`));
         } finally { ConfigStore.prototype.save = originalSave; }
       } finally { QueueStorage.prototype.migrate = originalMigration; await rm(external, { recursive: true, force: true }); }
-      process.stdout.write(JSON.stringify({ slowMigrationWaitsForSettingsCompletion: true, failedSettingsRolledBack: true, ambiguousCommitPreservesBothAndBlocksWrites: true, captureStorageNativePickerAndMigration: true, arbitraryStoragePathRejected: true, captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, nativeSettingsMenu: true, settingsEditableWhileCapturing: true, draftAndConfigRetainedAcrossPages: true, hiddenInvalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
+      process.stdout.write(JSON.stringify({ slowMigrationWaitsForSettingsCompletion: true, failedSettingsRolledBack: true, ambiguousCommitPreservesBothAndBlocksWrites: true, captureStorageNativePickerAndMigration: true, arbitraryStoragePathRejected: true, captureBrowserPagingAndOcrDetails: true, chargingOcrSettingSaved: true, feedbackLink: true, localOnlyStartIpcStub: true, uploadModeControls: true, installedAppPickerFixture: true, maskPresetsAndSlider: true, friendlyPresetsSaved: true, localBacklogConsent: true, navigationAndKeyboardFocus: true, nativeSettingsMenu: true, settingsEditableWhileCapturing: true, noteDraftRetainedAcrossPages: true, settingsDiscardedOnBackSidebarAndEscape: true, settingsMenuHasNoSaveBar: true, invalidSettingsRevealed: true, discardSettings: true, sourceEditorRevealed: true, minimumWindowLayout: true, gradedCollectionUiAndIpc: true, metadataDisabled: true, updatesUiAndChannelIpc: true, noUpdateNetworkRequest: true, ok: true, fixtureOnly: true, rendererLoaded: true, preloadIpc: true, savedSettings: true, offlineNotePersisted: true, captureStayedStopped: true, nativeFilePickerAndOfflineSource: true, calendarPermissionNotRequested: true, screenshot: output }) + '\n');
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write(`UI smoke failed: ${error.message}\n`); app.exit(1); });
   });

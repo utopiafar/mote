@@ -74,7 +74,7 @@ class ProjectionService : Service() {
                         AppCollectionMode.OFF -> pipeline?.canCollect(c, windows, AppCollectionMode.OFF)
                     }
                 }
-                Notifications.show(this@ProjectionService, settings.message())
+                Notifications.show(this@ProjectionService, LocalStateRepository.get(this@ProjectionService).state.value.captureLabel)
             } catch (_: Exception) { pipeline?.pause("投屏帧暂不可用，下一周期重试") }
             handler.postDelayed(this, 1000)
         }

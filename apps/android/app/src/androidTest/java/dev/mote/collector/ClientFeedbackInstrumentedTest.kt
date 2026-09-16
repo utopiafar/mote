@@ -36,7 +36,7 @@ class ClientFeedbackInstrumentedTest {
     }
     @Test fun notificationPreservesCurrentMainPageAndDraft() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             var original: MainActivity? = null
             scenario.onActivity { activity ->
                 original = activity
@@ -54,7 +54,7 @@ class ClientFeedbackInstrumentedTest {
     }
     @Test fun notificationPreservesAnOpenDetailActivity() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { it.startActivity(android.content.Intent(it, CaptureRecordsActivity::class.java)) }
             instrumentation.waitForIdleSync()
             var original: android.app.Activity? = null

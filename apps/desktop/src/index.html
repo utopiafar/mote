@@ -37,6 +37,7 @@
     </div>
   </aside>
   <main id="main-content">
+    <div id="background-progress" class="helper" role="status" hidden></div>
     <div id="feedback" role="alert" hidden></div>
 
     <section data-page="overview" class="page overview-page">
@@ -80,7 +81,7 @@
       <div class="section-heading"><h2>已连接的来源</h2><button id="source-sync" class="text-button" type="button">立即检查并上传</button></div>
       <div id="source-list" aria-live="polite"></div>
       <details class="panel source-rules"><summary id="source-editor-title">新来源的保留与过滤规则</summary><p class="helper">新来源使用以下规则。已有来源可在对应卡片中单独编辑。</p>
-        <div class="form-grid spaced"><label>保留方式<select id="source-retention"><option value="snapshot">快照 · 保存文字</option><option value="reference">引用 · 仅元数据</option></select></label><label>检查间隔（秒）<input id="source-interval" type="number" min="30" max="3600" value="300"></label><label>所选扩展名（可补充）<input id="source-extensions" value=".md,.txt,.json,.csv,.ics"><small>每份 ≤100 KB UTF-8；跳过隐藏项和符号链接。</small></label><label>排除相对路径（每行一项）<textarea id="source-excludes" rows="2" placeholder="private&#10;notes/private.md"></textarea><small>精确路径或目录前缀，仅用于文件来源。</small></label></div>
+        <div class="form-grid spaced"><label>首次同步范围<select id="source-initial-sync"><option value="all">已有内容分批导入（默认）</option><option value="new_only">完成首次清点后，只同步新条目</option></select></label><label>保留方式<select id="source-retention"><option value="snapshot">快照 · 保存文字</option><option value="reference">引用 · 仅元数据</option></select></label><label>检查间隔（秒）<input id="source-interval" type="number" min="30" max="3600" value="300"></label><label>所选扩展名（可补充）<input id="source-extensions" value=".md,.txt,.json,.csv,.ics"><small>每份 ≤100 KB UTF-8；跳过隐藏项和符号链接。</small></label><label>排除相对路径（每行一项）<textarea id="source-excludes" rows="2" placeholder="private&#10;notes/private.md"></textarea><small>精确路径或目录前缀，仅用于文件来源。</small></label></div>
         <label class="spaced">上传前遮盖的确切文字（每行一项，可选）<textarea id="source-redacts" rows="2" placeholder="由你指定原文，不自动推断"></textarea><small>同时处理标题和正文。配置遮盖后不上传文件位置 URI，避免位置包含原文。</small></label>
         <label class="checkbox"><input id="source-deletions" type="checkbox"><span>跟踪删除<small>仅完整成功扫描后标记范围内消失项；中央历史版本仍保留。默认关闭。</small></span></label><div class="actions spaced"><button id="source-save-edit" class="primary" type="button" hidden>保存所选来源规则</button><button id="source-cancel-edit" class="secondary" type="button" hidden>结束编辑</button></div>
       </details>

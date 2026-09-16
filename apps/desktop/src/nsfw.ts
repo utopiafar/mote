@@ -4,7 +4,8 @@ import type { Config, NsfwGate, NsfwStatus } from './contracts';
 import { InferenceProcess, type InferenceChild } from './inference-process';
 import { nativeInferenceChild } from './native-inference-child';
 import { EventJournal, failureCode } from './support';
-import { prepareVisionImage } from './vision-image';
+import { imageWork } from './background';
+import type { prepareVisionImage } from './vision-image';
 type VisionFiles = Pick<VisionModelStore, 'inspect' | 'verifiedPaths' | 'download' | 'importFiles'>;
 interface NativeVisionResult { text: string; status: string; backend: string; durationMs: number; loadMs: number; visionMs: number; tokens: number }
 
@@ -60,7 +61,7 @@ export class NsfwController implements NsfwGate {
     const result = await this.worker.request<NativeVisionResult>({ ...this.verifiedPaths, threads: config.nsfwThreads,
       system: REVIEW_SYSTEM, grammar: REVIEW_GRAMMAR,
       prompt: config.reviewPolicy, maxTokens: config.reviewMaxTokens,
-      ...prepareVisionImage(image.bitmap, image.width, image.height, config.reviewMaxSide),
+      ...await imageWork.run<ReturnType<typeof prepareVisionImage>>({ kind: 'vision', bytes: image.bitmap, width: image.width, height: image.height, maxSide: config.reviewMaxSide }),
     }, config.nsfwTimeoutMs, signal);
     let decision: VisionDecision;
     try {

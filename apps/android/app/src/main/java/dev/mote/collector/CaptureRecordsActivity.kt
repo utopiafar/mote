@@ -34,22 +34,32 @@ class CaptureRecordsActivity : Activity() {
     }
     private var cacheConfig: CollectorConfig? = null
     private var grid = true
+    private var album: JSONObject? = null
+    private var albumCursors = listOf<String?>(null)
+    private lateinit var backToAlbums: Button
     private val cursors = mutableListOf<String?>(null)
     private var nextCursor: String? = null
     private var date = LocalDate.now()
     private var central = false
+    private var localStateJob: kotlinx.coroutines.Job? = null
+    private var lastRecordsRevision = -1L
+    private var metadataLoading = false
+    private var refreshAfterLoad = false
     private val recordSources = listOf("screen", "media", "notification", "device_event", "note", "activity")
     private var recordSource = "screen"
     @Volatile private var generation = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
         date = savedInstanceState?.getString("date")?.let(LocalDate::parse) ?: date
         central = savedInstanceState?.getBoolean("central") ?: false
+        album = savedInstanceState?.getString("album")?.let(::JSONObject)
         recordSource = savedInstanceState?.getString("recordSource")?.takeIf { it in recordSources } ?: "screen"
-        grid = getPreferences(MODE_PRIVATE).getBoolean("grid", true)
+        grid = true
         body = moteDetailPage()
+        body.getChildAt(0).setOnClickListener { navigateBack() }
         text(body, "采集记录", 27f)
-        text(body, "按日期查看截图、媒体、通知和设备事件。", 14f)
+        text(body, "截图按时间段与 App 分组，点开相册查看图片。", 14f)
         val source = Spinner(this).apply {
             adapter = ArrayAdapter(this@CaptureRecordsActivity, android.R.layout.simple_spinner_dropdown_item, listOf("本机记录", "中央归档"))
             setSelection(if (central) 1 else 0)
@@ -71,13 +81,7 @@ class CaptureRecordsActivity : Activity() {
                 if (recordSource != chosen) { recordSource = chosen; reload() }
             }
         }
-        button(body, if (grid) "布局：网格 · 切换为列表" else "布局：列表 · 切换为网格", {}).apply {
-            setOnClickListener {
-                grid = !grid; getPreferences(MODE_PRIVATE).edit().putBoolean("grid", grid).apply()
-                text = if (grid) "布局：网格 · 切换为列表" else "布局：列表 · 切换为网格"
-                load()
-            }
-        }
+        backToAlbums = button(body, "‹ 返回 App 相册") { closeAlbum() }.apply { visibility = View.GONE }
         val days = row(body)
         button(days, "前一天") { date = date.minusDays(1); reload() }
         dateButton = button(days, "选择日期") {
@@ -96,16 +100,46 @@ class CaptureRecordsActivity : Activity() {
         load()
         intent.getStringExtra("recordId")?.let { detail(it, false, null, generation) }
     }
-    private fun reload() { cursors.clear(); cursors.add(null); load() }
-    private fun load() {
-        val stamp = ++generation; val remote = central; val source = recordSource
+    override fun onResume() {
+        super.onResume()
+        lastRecordsRevision = -1L
+        localStateJob = observeLocalState { snapshot ->
+            if (snapshot.revision.records != lastRecordsRevision) {
+                if (!central && snapshot.active != null && snapshot.error == null) {
+                    lastRecordsRevision = snapshot.revision.records
+                    thumbnails.evictAll()
+                    if (metadataLoading) refreshAfterLoad = true else load(backgroundRefresh = true)
+                }
+            }
+        }
+    }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; super.onPause() }
+    private fun reload() { album = null; cursors.clear(); cursors.add(null); load() }
+    private fun closeAlbum() { album = null; cursors.clear(); cursors.addAll(albumCursors); load() }
+    private fun navigateBack() { if (album != null) closeAlbum() else finish() }
+    // API 33+ uses the native dispatcher above; keep the API 29–32 fallback.
+    @android.annotation.SuppressLint("GestureBackNavigation")
+    @Deprecated("Native Activity back navigation")
+    override fun onBackPressed() = navigateBack()
+    private fun load(backgroundRefresh: Boolean = false) {
+        metadataLoading = true
+        val scroll = body.parent as? ScrollView
+        val scrollY = scroll?.scrollY ?: 0
+        val stamp = ++generation; val remote = central; val source = recordSource; val selected = album
+        backToAlbums.visibility = if (selected != null) View.VISIBLE else View.GONE
         progress.visibility = View.VISIBLE; progress.isIndeterminate = true
         val zone = ZoneId.systemDefault(); val after = date.atStartOfDay(zone).toInstant().toString(); val before = date.plusDays(1).atStartOfDay(zone).toInstant().toString()
         val cursor = cursors.last(); val pageNumber = cursors.size
         dateButton.text = date.toString(); nextDay.isEnabled = date < LocalDate.now()
         previousPage.isEnabled = false; nextPage.isEnabled = false; status.text = "正在读取${if (remote) "中央归档" else "本机记录"}…"
-        clearList(); imageExecutor.queue.clear()
-        repeat(6) { text(list, "▧  正在读取记录…", 15f).apply {
+        if (!backgroundRefresh) clearList(); imageExecutor.queue.clear()
+        if (!backgroundRefresh && selected != null) repeat(3) {
+            val placeholders = row(list)
+            repeat(2) { text(placeholders, "加载预览…", 13f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, moteDp(188), 1f).apply { marginEnd = moteDp(6) }
+                gravity = Gravity.CENTER; setBackgroundColor(0xffeeeeee.toInt())
+            } }
+        } else if (!backgroundRefresh) repeat(6) { text(list, "正在读取 App 与时间…", 15f).apply {
             minHeight = moteDp(88); gravity = Gravity.CENTER_VERTICAL; setBackgroundColor(0xffeeeeee.toInt())
         } }
         executor.execute {
@@ -114,7 +148,14 @@ class CaptureRecordsActivity : Activity() {
                 val settings = Settings(this); val config = settings.read()
                 if (remote && !config.hasSyncConnection()) error("请先在连接与同步中配置中央节点")
                 val client = if (remote) CaptureRecordClient(config, settings.deviceId) else null
-                val page = client?.page(after, before, cursor, source) ?: queue().capturePage(after, before, cursor, source = source)
+                val page = if (source == "screen" && selected == null) {
+                    client?.albums(after, before, cursor) ?: queue().albumPage(after, before, cursor)
+                } else if (source == "screen" && selected != null) {
+                    val start = maxOf(Instant.parse(after), Instant.parse(selected.getString("after"))).toString()
+                    val end = minOf(Instant.parse(before), Instant.parse(selected.getString("before"))).toString()
+                    val appId = selected.getString("appId")
+                    client?.albumImages(start, end, appId, cursor) ?: queue().albumImages(start, end, appId, cursor)
+                } else client?.page(after, before, cursor, source) ?: queue().capturePage(after, before, cursor, source = source)
                 val items = page.getJSONArray("items")
                 val records = (0 until items.length()).map { items.getJSONObject(it).also { item -> java.util.UUID.fromString(item.getString("id")); Instant.parse(item.getString("capturedAt")) } }
                 val total = page.getInt("totalCount")
@@ -122,11 +163,24 @@ class CaptureRecordsActivity : Activity() {
                 val images = mutableListOf<Pair<JSONObject, ImageView>>()
                 runOnUiThread {
                     if (isDestroyed || stamp != generation) return@runOnUiThread
+                    if (backgroundRefresh && records.isEmpty() && cursors.size > 1) {
+                        cursors.removeAt(cursors.lastIndex); load(backgroundRefresh = true); return@runOnUiThread
+                    }
                     clearList()
+                    if (backgroundRefresh) list.post { if (!isDestroyed && stamp == generation) scroll?.scrollTo(0, scrollY) }
                     if (cacheConfig != config) { thumbnails.evictAll(); cacheConfig = config }
                     nextCursor = next
+                    if (source == "screen" && selected == null) {
+                        status.text = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · ${page.getInt("albumCount")} 个相册 · 第 $pageNumber 页"
+                        progress.visibility = View.GONE
+                        text(list, "每 15 分钟按 App 汇集 · 点开查看", 12f)
+                        if (records.isEmpty()) text(list, "当天没有截图记录。", 14f)
+                        for (item in records) albumRow(item, stamp)
+                        previousPage.isEnabled = cursors.size > 1; nextPage.isEnabled = nextCursor != null
+                        return@runOnUiThread
+                    }
                     val thumbnailCount = records.count(CapturePreview::hasImage)
-                    val pageStatus = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · 第 $pageNumber 页"
+                    val pageStatus = "${selected?.optString("appName")?.ifBlank { selected.optString("appId").ifBlank { "系统画面" } } ?: if (remote) "中央归档" else "本机记录"} · $total 条 · 第 $pageNumber 页"
                     status.text = pageStatus + if (thumbnailCount > 0) " · 正在加载缩略图（0/$thumbnailCount）" else ""
                     if (records.isEmpty()) text(list, if (source != "screen") "当天没有此类记录。请开启相应采集来源并授权，记录按同步策略上传。" else if (remote) "当天没有此设备的中央截图记录。" else "当天没有本机截图。已同步且完成 OCR 的图片可在中央归档查看。", 14f)
                     progress.isIndeterminate = false; progress.max = maxOf(1, thumbnailCount); progress.progress = 0
@@ -149,7 +203,7 @@ class CaptureRecordsActivity : Activity() {
                         fun requestImage(countProgress: Boolean) {
                             placeholder.text = "正在加载…"; placeholder.setOnClickListener(null); placeholder.isClickable = false
                             fun display(bitmap: Bitmap?) {
-                                if (isDestroyed || stamp != generation) return
+                                if (isDestroyed || stamp != generation) { bitmap?.recycle(); return }
                                 if (bitmap != null) {
                                     thumbnails.put(key, bitmap); image.setImageBitmap(bitmap); placeholder.visibility = View.GONE
                                     if (failedForImage) { failed--; failedForImage = false }
@@ -168,8 +222,18 @@ class CaptureRecordsActivity : Activity() {
                             imageExecutor.execute {
                                 if (stamp != generation || isDestroyed) return@execute
                                 val bitmap = runCatching {
-                                    val bytes = client?.image(id, true) ?: queue().image(id)
-                                    bytes?.let { CapturePreview.decode(it, 256) }
+                                    if (client != null) CapturePreview.decode(client.image(id, true), 320)
+                                    else {
+                                        val local = queue()
+                                        val cached = local.thumbnail(id)
+                                        val bitmap = (cached ?: local.image(id))?.let { CapturePreview.decode(it, 320) }
+                                        if (cached == null && bitmap != null) runCatching {
+                                            val output = java.io.ByteArrayOutputStream()
+                                            bitmap.compress(Bitmap.CompressFormat.JPEG, 70, output)
+                                            local.cacheThumbnail(id, output.toByteArray(), config.maxQueueMiB * 1024L * 1024L)
+                                        }
+                                        bitmap
+                                    }
                                 }.getOrNull()
                                 runOnUiThread { display(bitmap) }
                             }
@@ -179,7 +243,38 @@ class CaptureRecordsActivity : Activity() {
                 }
             } catch (error: Exception) {
                 runOnUiThread { if (!isDestroyed && stamp == generation) { clearList(); progress.visibility = View.GONE; status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1 } }
+            } finally {
+                runOnUiThread {
+                    if (!isDestroyed && stamp == generation) {
+                        metadataLoading = false
+                        if (refreshAfterLoad) { refreshAfterLoad = false; load(backgroundRefresh = true) }
+                    }
+                }
             }
+        }
+    }
+    private fun albumRow(item: JSONObject, stamp: Int) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(moteDp(12), moteDp(12), moteDp(12), moteDp(12))
+            background = MoteUi.clickable(this@CaptureRecordsActivity); isFocusable = true
+            tag = "album:${item.getString("id")}"; setOnClickListener {
+                albumCursors = cursors.toList(); album = item; cursors.clear(); cursors.add(null); load()
+            }
+        }
+        list.addView(card, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(8) })
+        val icon = ImageView(this).apply { setImageResource(android.R.drawable.sym_def_app_icon); contentDescription = "应用图标" }
+        card.addView(icon, LinearLayout.LayoutParams(moteDp(40), moteDp(40)))
+        val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(14), 0, 0, 0) }
+        card.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+        text(labels, item.optString("appName").ifBlank { item.optString("appId").ifBlank { "桌面 / 系统画面" } }, 17f)
+        text(labels, "${time(item.getString("firstAt"))} – ${time(item.getString("capturedAt"))} · ${item.getInt("count")} 条 · ${item.getInt("imageCount")} 张截图", 13f)
+        text(card, "›", 24f)
+        val appId = item.optString("appId")
+        if (appId.isNotBlank()) imageExecutor.execute {
+            if (stamp != generation) return@execute
+            val drawable = runCatching { packageManager.getApplicationIcon(appId) }.getOrNull()
+            runOnUiThread { if (!isDestroyed && stamp == generation && drawable != null) icon.setImageDrawable(drawable) }
         }
     }
     private fun recordRow(item: JSONObject, remote: Boolean, client: CaptureRecordClient?, stamp: Int, parent: LinearLayout, grid: Boolean): ImageView {
@@ -201,6 +296,7 @@ class CaptureRecordsActivity : Activity() {
         row.addView(preview, LinearLayout.LayoutParams(if (grid) -1 else moteDp(88), moteDp(if (grid) 160 else 88)))
         val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(12), 0, 0, 0) }
         row.addView(labels, if (grid) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f))
+        if (grid) { text(labels, time(item.getString("capturedAt")), 13f); return image }
         text(labels, "${time(item.getString("capturedAt"))} · ${item.optString("appName").ifBlank { item.optString("appId").ifBlank { if (item.optString("source") == "media") "媒体会话状态" else if (item.optString("source") == "device_event") "设备状态" else "桌面 / 系统画面" } }}", 15f)
         text(labels, if (item.optString("source") in SystemEventRules.sources) SystemEventRules.label(item) else if (item.optString("source") == "media") CapturePreview.mediaLabel(item) else CapturePreview.ocrLabel(item), 12f)
         if (!remote) text(labels, when (item.optString("syncError")) { "archive_missing" -> "中央记录不可更新 · 本机图片已保留"; "ocr_conflict" -> "OCR 更新冲突 · 本机图片和文字已保留"; "upload_conflict" -> "记录内容冲突 · 本机副本已保留"; else -> if (item.optBoolean("uploaded")) "图片已同步 · 本机保留待更新 OCR" else "保存在本机 · 待同步" }, 12f)
@@ -261,6 +357,6 @@ class CaptureRecordsActivity : Activity() {
     private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply { text = value; textSize = size; setTextColor(MoteUi.ink); setLineSpacing(moteDp(3).toFloat(), 1f); setPadding(0, moteDp(5), 0, moteDp(5)) }.also(parent::addView)
     private fun button(parent: LinearLayout, label: String, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { action() } }).also { parent.addView(it, if (parent.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2)) }
     private fun clearList() { list.removeAllViews() }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putString("date", date.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putString("date", date.toString()); outState.putString("album", album?.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
     override fun onDestroy() { generation++; executor.shutdownNow(); imageExecutor.shutdownNow(); detailExecutor.shutdownNow(); clearList(); thumbnails.evictAll(); super.onDestroy() }
 }

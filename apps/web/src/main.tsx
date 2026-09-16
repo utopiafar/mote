@@ -3,7 +3,6 @@ import {systemEventText} from '@mote/shared';
 import React, {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +10,7 @@ import React, {
 import { createRoot } from "react-dom/client";
 import {captureOcrState, type CapturePreview} from '@mote/shared';
 import { AnswerMarkdown } from "./AnswerMarkdown";
+import { Conversations } from "./Conversations";
 import {captureDateRange, localDateInput, ocrPresentation} from './capture-presentation';
 import {
   ArrowDownToLine,
@@ -79,6 +79,7 @@ import {Metadata, sourceLabels, activityExplanation} from './Metadata';
 import {MediaSnapshot,MediaActivitySummary} from './Media';
 import {mediaCardText,mediaStatus,mediaExplanation} from './media-presentation';
 
+import {Files,FileDetail} from './Files';
 import {Sources} from "./Sources";
 import {Memories} from "./Memories";
 
@@ -369,11 +370,13 @@ function EvidenceDialog({
   api,
   onClose,
   onDeleted,
+  onOpen,
 }: {
   id: string;
   api: Api;
   onClose: () => void;
   onDeleted: () => void;
+  onOpen: (id:string) => void;
 }) {
   const [capture, setCapture] = useState<Capture | null>(null);
   const [error, setError] = useState("");
@@ -387,6 +390,7 @@ function EvidenceDialog({
     setConfirm(false);
     void api
       .request<Capture>(`/api/capture-browser/${encodeURIComponent(id)}`, {signal: controller.signal})
+      .catch(()=>api.request<Capture>(`/api/captures/${encodeURIComponent(id)}`,{signal:controller.signal}))
       .then((value) => active && setCapture(value))
       .catch((e) => active && setError(errorMessage(e)));
     return () => {
@@ -459,6 +463,7 @@ function EvidenceDialog({
             <X size={20} />
           </button>
         </div>
+        {capture?.source==='file'&&<FileDetail api={api} id={capture.fileEvidence?.captureId??id} startMs={capture.fileEvidence?.startMs} onOpen={onOpen}/>}
         {error && <ErrorNotice text={error} />}
         {!capture && !error && (
           <div className="panel-pad">
@@ -470,12 +475,12 @@ function EvidenceDialog({
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <AuthImage api={api} capture={capture} full />}
               <div className="evidence-text">
-                <span className="eyebrow">{capture.source==='media'?'媒体观察':capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : '捕获文本'}</span>
+                <span className="eyebrow">{capture.source==='media'?'媒体观察':capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : capture.source==='file'?(capture.fileEvidence?'转写片段':'文件元信息'):'捕获文本'}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || "原始上下文"}</h3>
                 {capture.mood && <p className="note-mood-tag">我标注的心情 · {capture.mood}</p>}
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
                 <pre aria-label={capture.source === 'screen' ? 'OCR 全文' : '记录全文'}>
-                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
+                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || capture.ocrText || (capture.provenance?.deleted ? '来源已报告删除；本次只保留来源元数据。' : capture.provenance?.layer === 'reference' ? '此来源仅保留引用与元数据，未导入正文。' : capture.source==='file'&&capture.provenance?.layer==='original'?'原件单独保存；转写与摘要见上方。':capture.blobHash ? '暂无文字。' : '此记录没有正文。')}
                 </pre>
                 {(capture.source==='media'||capture.metadata?.media)&&<MediaSnapshot media={capture.metadata?.media} observedAt={capture.metadata?.observedAt??capture.capturedAt} screenLocked={capture.metadata?.state?.screenLocked} collection={capture.privacy.collection}/>}
                 <dl>
@@ -522,7 +527,7 @@ function EvidenceDialog({
               {confirm ? (
                 <>
                   <p>
-                    删除原始记录及不再被引用的影像，并清除已有洞察。此操作无法撤销。
+                    {capture.source==='file'?'删除中央文件归档及其派生内容；手机原文件保留。':'删除原始记录及不再被引用的影像，并清除已有洞察。'}此操作无法撤销。
                   </p>
                   <button
                     className="button subtle"
@@ -660,9 +665,9 @@ function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,ran
 
 function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>应用活动概况</h2><p>前台应用采样时长 · {duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。</p></>:<Empty icon={Clock3} title="这段时间还没有活动采样"><p>设备完成同步后，可以在这里查看应用时间分布。</p></Empty>}</section>;}
 
-type ArchiveTab = 'records'|'activity'|'media'|'memories';
+type ArchiveTab = 'records'|'files'|'activity'|'media'|'memories';
 function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
- return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动与播放分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['activity','应用活动'],['media','媒体播放'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen}/>}</div>;
+ return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动与播放分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['files','文件'],['activity','应用活动'],['media','媒体播放'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='files'&&<Files api={api} onOpen={onOpen}/>} {tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen}/>}</div>;
 }
 
 function Timeline({
@@ -900,7 +905,6 @@ function Ask({
   status,
   devices,
   range,
-  scopeKey,
   insights,
   onOpen,
   onInsight,
@@ -909,68 +913,12 @@ function Ask({
   status: Status;
   devices: Device[];
   range: Range;
-  scopeKey: string;
   insights: Answer[];
   onOpen: (id: string) => void;
   onInsight: () => void;
 }) {
-  const [question, setQuestion] = useState("");
-  const [selectedDevice, setSelectedDevice] = useState("");
-  const [asked, setAsked] = useState("");
-  const [answer, setAnswer] = useState<Answer | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [tab, setTab] = useState<"ask" | "insights">("ask");
   const [selectedInsight, setSelectedInsight] = useState<string | null>(null);
-  const queryGeneration = useRef(0);
-  const pendingQuery = useRef<AbortController | null>(null);
-  // Invalidate the previous scope before a user can submit against the newly committed controls.
-  useLayoutEffect(() => {
-    queryGeneration.current += 1;
-    pendingQuery.current?.abort();
-    pendingQuery.current = null;
-    setAnswer(null);
-    setAsked("");
-    setError("");
-    setBusy(false);
-    return () => {
-      queryGeneration.current += 1;
-      pendingQuery.current?.abort();
-    };
-  }, [scopeKey, selectedDevice]);
-  async function submit(e?: React.FormEvent, sample?: string) {
-    e?.preventDefault();
-    const text = sample || question.trim();
-    if (!text || busy) return;
-    setQuestion(text);
-    setAsked(text);
-    setBusy(true);
-    setError("");
-    setAnswer(null);
-    const generation = ++queryGeneration.current;
-    const controller = new AbortController();
-    pendingQuery.current = controller;
-    try {
-      const result = await api.request<Answer>("/api/query", {
-        method: "POST",
-        signal: controller.signal,
-        body: JSON.stringify({
-          question: text,
-          ...range,
-          ...(selectedDevice ? { deviceId: selectedDevice } : {}),
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        }),
-      });
-      if (queryGeneration.current === generation) setAnswer(result);
-    } catch (e) {
-      if (queryGeneration.current === generation) setError(errorMessage(e));
-    } finally {
-      if (queryGeneration.current === generation) {
-        pendingQuery.current = null;
-        setBusy(false);
-      }
-    }
-  }
   return (
     <>
       <div className="page-heading">
@@ -1009,99 +957,7 @@ function Ask({
         </div>
       )}
       {tab === "ask" ? (
-        <>
-          <div className="filter-bar">
-            <label>
-              <Monitor size={15} />
-              <span>筛选设备</span>
-              <select
-                aria-label="问答设备"
-                value={selectedDevice}
-                disabled={busy}
-                onChange={(event) => setSelectedDevice(event.target.value)}
-              >
-                <option value="">全部设备</option>
-                {devices.map((device) => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {device.deviceName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <form className="ask-form" onSubmit={(e) => void submit(e)}>
-            <textarea
-              aria-label="向 Mote 提问"
-              placeholder="比如，我最近都在忙什么？"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
-                  void submit(e);
-              }}
-              maxLength={8000}
-              rows={3}
-            />
-            <div>
-              <span>
-                <ShieldCheck size={14} />
-                只读查询 · 回答附带原始证据
-              </span>
-              <button
-                className="send-button"
-                type="submit"
-                disabled={busy || !question.trim() || !status.agent.configured}
-                aria-label="发送问题"
-              >
-                {busy ? (
-                  <LoaderCircle className="spin" size={19} />
-                ) : (
-                  <ArrowUp size={19} />
-                )}
-              </button>
-            </div>
-          </form>
-          {!answer && !busy && !asked && (
-            <div className="suggestions">
-              <span>从一个小问题开始</span>
-              {[
-                "我最近都做了些什么？",
-                "这周的时间主要花在了哪里？",
-                "最近有哪些值得接着做的事情？",
-              ].map((sample) => (
-                <button
-                  key={sample}
-                  onClick={() => void submit(undefined, sample)}
-                  disabled={!status.agent.configured}
-                >
-                  {sample}
-                  <ArrowRight size={14} />
-                </button>
-              ))}
-            </div>
-          )}
-          {busy && (
-            <div className="thinking-panel">
-              <span className="mote-symbol">m</span>
-              <div>
-                <Spinner label="正在查阅你的上下文…" />
-                <p>Agent 会选择检索工具、核对记录，再组织回答。</p>
-              </div>
-            </div>
-          )}
-          {error && (
-            <ErrorNotice
-              text={error}
-              retry={() => void submit(undefined, asked)}
-            />
-          )}
-          {answer && (
-            <div className="answer-panel">
-              <div className="asked-question">{asked}</div>
-              <AnswerView answer={answer} onOpen={onOpen} />
-            </div>
-          )}
-        </>
+        <Conversations api={api} configured={status.agent.configured} devices={devices} range={range} renderAnswer={answer => <AnswerView answer={answer} onOpen={onOpen}/>}/>
       ) : (
         <>
           {insights.length ? (
@@ -1849,7 +1705,6 @@ function App() {
                           devices={devices}
                           status={status}
                           range={range}
-                          scopeKey={period}
                           insights={insights}
                           onOpen={setEvidenceId}
                           onInsight={() => void generate()}
@@ -1868,7 +1723,7 @@ function App() {
                       )}
                       {page === "sources" && <Sources api={api} onOpen={setEvidenceId} />}
                       {page === "memories" && <Memories api={api} range={range} onOpen={setEvidenceId} />}
-                      <div hidden={page!=="settings"}><ServerSettings key={window.location.origin} api={api} onNavigate={onPage} onModelApplied={refresh}/></div>
+                      {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
                       {page === "developer" && status && <><PageBack title="设置" onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">开发与维护</div><h1>开发者选项</h1><p>查看运行诊断，按需调整日志与高级部署配置。</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
@@ -1898,6 +1753,7 @@ function App() {
         <EvidenceDialog
           id={evidenceId}
           api={api}
+          onOpen={setEvidenceId}
           onClose={() => setEvidenceId(null)}
           onDeleted={refresh}
         />

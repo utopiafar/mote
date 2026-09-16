@@ -22,7 +22,7 @@ class ProfileSupportInstrumentedTest {
         val settings = Settings(context); assertFalse(settings.enabled)
         val original = settings.read(); assertEquals("http://127.0.0.1:47842", original.server)
         assumeTrue("Fresh development fixture only", original.token.isBlank() && QuickNotes.draft(context).read().text.isBlank() && context.queue().depth() == 0)
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
                 val texts = mutableListOf<String>()
                 fun visit(view: android.view.View) {

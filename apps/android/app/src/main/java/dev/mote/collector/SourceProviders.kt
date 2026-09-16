@@ -15,7 +15,7 @@ import java.io.File
 import java.time.Instant
 import org.json.JSONObject
 
-fun Context.localSources() = LocalSourceStore(File(noBackupFilesDir, "local-sources"), SecretBox())
+fun Context.localSources() = LocalSourceStore(File(noBackupFilesDir, "local-sources"), SecretBox()).apply { onMutation = { LocalStateChanges.changed() } }
 
 object SourceAccess {
     fun available(context: Context, source: LocalSource): Boolean = if (source.kind == "local-calendar")

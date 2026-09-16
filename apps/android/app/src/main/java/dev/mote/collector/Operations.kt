@@ -8,6 +8,7 @@ object Operations {
     fun record(context: Context, kind: OperationKind, reason: OperationReason = OperationReason.NONE, bytes: Long = 0, httpStatus: Int? = null, elapsedMs: Long? = null, recordId: String? = null) {
         try { ledger(context).record(kind, reason, bytes, httpStatus, elapsedMs, recordId) }
         catch (_: Exception) { context.getSharedPreferences("operation-health", 0).edit().putBoolean("incomplete", true).commit() }
+        finally { LocalStateChanges.changed() }
     }
     fun httpReason(status: Int) = when (status) { 401, 403 -> OperationReason.AUTH; in 200..299 -> OperationReason.ACK; else -> OperationReason.HTTP }
     fun failure(error: Throwable, stage: EventStage) = when (EventJournal.failure(error, stage)) {

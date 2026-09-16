@@ -37,7 +37,7 @@ class ConnectionClient(private val context: Context) {
             Operations.record(context, OperationKind.CONNECTION_FAILED, reason = failureReason(category))
             throw ConnectionFailure(category)
         }
-    }
+    }.also { scheduleUploads() }
     fun pendingServer(): String? {
         if (!pending.exists()) return null
         val response = readPending(); return response.getString("serverUrl")
@@ -54,6 +54,7 @@ class ConnectionClient(private val context: Context) {
             PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
             validateResponse(response, server); applyResponse(response, deviceName, debugHttp)
         }
+        scheduleUploads()
     }
     private fun applyResponse(response: JSONObject, deviceName: String, debugHttp: Boolean) {
         require(deviceName.isNotBlank() && deviceName.length <= 128)
@@ -63,7 +64,12 @@ class ConnectionClient(private val context: Context) {
         check(settings.read().let { it.server == server && it.token == response.getString("token") })
         prefs.edit().putString("credentialId", response.getString("credentialId")).putString("scope", "collector").putString("targetHash", SourceRules.target(server, response.getString("token"))).putString("status", "connected").putLong("at", System.currentTimeMillis()).commit()
         pending.delete(); Operations.record(context, OperationKind.CONNECTION_OK)
-        runCatching { UploadWorker.schedule(context, settings.read()); SourceWork.upload(context) }
+    }
+    private fun scheduleUploads() {
+        // RuntimeSettings schedules once producers can run again. Enqueuing here while its
+        // gate is closed makes workers retry; KEEP would then retain that backoff after resume.
+        // Standalone connect/resume also reach this only after releasing their write lock.
+        if (!ConnectionGuard.reconfiguring()) runCatching { UploadWorker.schedule(context, settings.read()) }
     }
     private fun validateResponse(body: JSONObject?, server: String) {
         if (body == null || body.opt("scope") != "collector" || body.opt("serverUrl") != server ||

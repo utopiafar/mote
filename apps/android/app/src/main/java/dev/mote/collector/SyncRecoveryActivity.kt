@@ -19,7 +19,9 @@ class SyncRecoveryActivity : Activity() {
     private lateinit var summary: TextView
     private lateinit var issues: LinearLayout
     private lateinit var result: TextView
+    private val task by lazy { UiTask(this) }
     private var reading = false
+    private var localStateJob: kotlinx.coroutines.Job? = null
     private val refresh = object : Runnable { override fun run() { refreshStatus(); handler.postDelayed(this, 3000) } }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -39,7 +41,7 @@ class SyncRecoveryActivity : Activity() {
                 .setNegativeButton("取消", null).setPositiveButton("开始补传") { _, _ -> runAction { SyncRecoveryWorker.start(this, true) } }.show()
         }
         result = text("尚未执行检查或全量补传")
-        button("停止本次检查 / 准备补传") { WorkManager.getInstance(this).cancelUniqueWork("mote-sync-recovery"); getSharedPreferences("sync-recovery", MODE_PRIVATE).edit().putString("message", "已请求停止检查；已进入待发队列的记录按同步策略保留").apply(); refreshStatus() }
+        button("停止本次检查 / 准备补传") { runAction { WorkManager.getInstance(this).cancelUniqueWork("mote-sync-recovery"); getSharedPreferences("sync-recovery", MODE_PRIVATE).edit().putString("message", "已请求停止检查；已进入待发队列的记录按同步策略保留").apply() } }
         issues = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(issues)
         button("查看记录与冲突") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         button("查看来源同步状态") { startActivity(Intent(this, SourcesActivity::class.java)) }
@@ -47,20 +49,21 @@ class SyncRecoveryActivity : Activity() {
         MoteUi.styleTree(body)
     }
     private fun runAction(action: () -> Unit) {
-        runCatching { action() }.onFailure { result.text = it.message ?: "请先配置连接" }
-        refreshStatus()
+        task.start("正在提交后台任务…", { result.text = it }, { action() }) { outcome ->
+            outcome.onSuccess { refreshStatus() }.onFailure { result.text = it.message ?: "请先配置连接" }
+        }
     }
     private fun refreshStatus() {
         if (reading || isDestroyed) return
         reading = true
         executor.execute {
             val value = runCatching {
-                val settings = Settings(this); val c = queue().syncInventory(); val sources = localSources().pendingSync()
-                "本机保留 ${c.getInt("retained")} 条 · 待发 ${c.getInt("pending")} 条\n需处理 ${c.getInt("blocked")} 条 · 等待 OCR ${c.getInt("awaitingOcr")} 张\n来源待发 ${sources.count} 个版本 / ${sources.pendingUpdates} 项设置\n\n${SyncSchedule.waitingReason(this, settings.read()) ?: settings.uploadStatus()}\n最后收到上传确认：${settings.lastUploadAt() ?: "尚无"}"
+                val settings = Settings(this); val local = LocalStateRepository.get(this).state.value; val c = local.active ?: error("正在读取存储状态"); val sources = localSources().pendingSync()
+                "${local.imageLabel()}\n本机保留 ${c.records} 条 · 待发 ${c.pending} 条\n需处理 ${c.blocked} 条 · 等待 OCR ${c.awaitingOcr} 张\n来源待发 ${sources.count} 个版本 / ${sources.pendingUpdates} 项设置\n\n${SyncSchedule.waitingReason(this, settings.read()) ?: settings.uploadStatus()}\n最后收到上传确认：${settings.lastUploadAt() ?: "尚无"}"
             }.getOrElse { "本机状态暂不可读：${it.message ?: "请检查存储"}" }
             val failures = runCatching { queue().syncIssues() }.getOrDefault(emptyList())
             val report = getSharedPreferences("sync-recovery", MODE_PRIVATE).getString("message", "尚未执行检查或全量补传")
-            runOnUiThread { reading = false; if (!isDestroyed) { summary.text = value; result.text = report
+            runOnUiThread { reading = false; if (!isDestroyed) { summary.text = value; if (!task.busy) result.text = report
                 issues.removeAllViews()
                 failures.forEach { item -> issues.addView(MoteUi.button(Button(this).apply {
                     text = "${item.getString("reason")} · ${item.getString("capturedAt")}\n${item.getString("id").take(8)} · 点按查看本机副本"
@@ -83,7 +86,7 @@ class SyncRecoveryActivity : Activity() {
             } }
         }
     }
-    override fun onResume() { super.onResume(); handler.post(refresh) }
-    override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
+    override fun onResume() { super.onResume(); localStateJob = observeLocalState { refreshStatus() }; handler.post(refresh) }
+    override fun onPause() { localStateJob?.cancel(); localStateJob = null; handler.removeCallbacks(refresh); super.onPause() }
     override fun onDestroy() { handler.removeCallbacksAndMessages(null); executor.shutdownNow(); super.onDestroy() }
 }

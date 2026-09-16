@@ -28,6 +28,8 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private var dedupeConfig: CollectorConfig? = null
     private var dedupeSize: Pair<Int, Int>? = null
     private var dedupeApp: String? = null
+    private data class DedupeReference(val signature: String, val captureId: String, val capturedAt: String, val image: ByteArray)
+    private var dedupeReference: DedupeReference? = null
     private var previousTime: Long? = null
     private var previousApp: String? = null
     private var previousMode: AppCollectionMode? = null
@@ -36,7 +38,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private var lastPause: OperationReason? = null
     fun pause(reason: String, category: OperationReason = OperationReason.STATE_CHANGED) {
         if (lastPause != category) { Operations.record(context, OperationKind.CAPTURE_PAUSED, category); lastPause = category }
-        previousTime = null; previousApp = null; previousMode = null; dedupeSignature = null
+        previousTime = null; previousApp = null; previousMode = null; dedupeSignature = null; dedupeReference = null
         settings.status("paused", reason)
     }
     fun canCapture(config: CollectorConfig, windows: WindowSnapshot) = canCollect(config, windows, AppCollectionMode.CONTENT)
@@ -79,9 +81,9 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 settings.ensureDataOrigin(config)
                 context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.OK)
-                dedupeSignature = null
+                dedupeSignature = null; dedupeReference = null
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
-                settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型 · ${context.queue().depth()} 条保存在本机")
+                settings.captured(capturedAt); settings.status("capturing", "仅应用活动已保存；未请求截图、OCR或模型")
                 scheduleUpload(config)
             } catch (error: QueueFull) { Operations.record(context, OperationKind.ACTIVITY_FAILED, OperationReason.QUEUE_FULL); pause(error.message ?: "队列已满", OperationReason.QUEUE_FULL) }
             catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause("应用活动未保存，请检查本机队列；未采集内容") }
@@ -150,7 +152,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     SupportEvents.record(context, stage, EventCode.OK)
                 }
                 if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
-                if (dedupeConfig != config || dedupeApp != windows.foreground || dedupeSize != (output.width to output.height)) dedupeSignature = null
+                if (dedupeConfig != config || dedupeApp != windows.foreground || dedupeSize != (output.width to output.height)) { dedupeSignature = null; dedupeReference = null }
                 val dedupeMode = ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)
                 val features = if (config.imageDedupeMode != "off") {
                     val size = ScreenshotDedupeHelper.sampleSizeForMode(output.width, output.height, dedupeMode)
@@ -161,7 +163,9 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                         ScreenshotDedupeHelper.buildFeatures(sample.width, sample.height, pixels)
                     } finally { if (sample !== output) sample.recycle() }
                 } else null
-                val duplicate = features?.let { ScreenshotDedupeHelper.shouldSkip(dedupeSignature, it, dedupeMode).duplicate } == true
+                val previousSignature = dedupeSignature
+                val comparison = features?.let { ScreenshotDedupeHelper.shouldSkip(previousSignature, it, dedupeMode) }
+                val duplicate = comparison?.duplicate == true
                 val now = observedAtMs
                 val duration = duration(now, windows.foreground, AppCollectionMode.CONTENT, config.intervalSeconds)
                 val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
@@ -187,15 +191,37 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 stage = EventStage.QUEUE
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.STARTED)
                 settings.ensureDataOrigin(config)
-                context.queue().enqueue(event, if (duplicate) null else jpeg(output, config.jpegQuality), config.maxQueueMiB * 1024L * 1024L)
-                if (!duplicate) dedupeSignature = features?.toSignature()
+                // Diagnostic pixels are encoded only after every privacy gate and final state check.
+                // The local pair is never included in the upload event or upload queue.
+                val encoded = if (!duplicate) jpeg(output, config.jpegQuality) else null
+                context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L)
+                if (!duplicate) runCatching {
+                    val ratio = minOf(1f, 320f / maxOf(output.width, output.height))
+                    val thumb = Bitmap.createScaledBitmap(output, maxOf(1, (output.width * ratio).roundToInt()), maxOf(1, (output.height * ratio).roundToInt()), true)
+                    try { context.queue().cacheThumbnail(event.getString("id"), jpeg(thumb, 70), config.maxQueueMiB * 1024L * 1024L) }
+                    finally { if (thumb !== output) thumb.recycle() }
+                }
+                if (duplicate && config.imageDedupeDiagnosticsEnabled && features != null) {
+                    val reference = dedupeReference?.takeIf { it.signature == previousSignature }
+                    if (reference != null) runCatching {
+                        context.imageDedupeDiagnostics().record(ImageDedupeDiagnosticsDetails.metadata(dedupeMode, comparison!!,
+                            reference.captureId, reference.capturedAt, event.getString("id"), capturedAt, windows.foreground,
+                            output.width, output.height, features.width, features.height), reference.image, jpeg(output, config.jpegQuality))
+                    }.onFailure { SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE) }
+                }
+                if (!duplicate) {
+                    dedupeSignature = features?.toSignature()
+                    // Retain the accepted reference, not the immediately preceding rejected frame.
+                    dedupeReference = if (config.imageDedupeDiagnosticsEnabled && dedupeSignature != null && encoded != null)
+                        DedupeReference(dedupeSignature!!, event.getString("id"), capturedAt, encoded) else null
+                }
                 dedupeConfig = config; dedupeApp = windows.foreground; dedupeSize = output.width to output.height
                 SupportEvents.record(context, stage, EventCode.OK)
                 diagnostics.add("capturedCount")
                 lastPause = null
                 previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
-                settings.status("capturing", "采集中 · ${if (duplicate) "图片去重命中，仅元数据已保存" else if (runOcr) "本地遮罩/OCR 已完成" else "图片已保存，充电后补做 OCR"} · ${context.queue().depth()} 条保存在本机")
+                settings.status("capturing", "采集中 · ${if (duplicate) "图片去重命中，仅元数据已保存" else if (runOcr) "本地遮罩/OCR 已完成" else "图片已保存，充电后补做 OCR"}")
                 if (!runOcr && !duplicate) CaptureOcrWorker.schedule(context, config)
                 scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: "本机 NSFW 不可用，当前帧已跳过") }
@@ -207,7 +233,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private fun jpeg(bitmap: Bitmap, quality: Int): ByteArray = ByteArrayOutputStream().use { stream ->
         check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, stream)); stream.toByteArray()
     }
-    @Synchronized fun close() { if (closed) return; closed = true; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (ocrInstance.isInitialized()) ocrInstance.value.close() }; executor.shutdown() }
+    @Synchronized fun close() { if (closed) return; closed = true; dedupeReference = null; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (ocrInstance.isInitialized()) ocrInstance.value.close() }; executor.shutdown() }
     companion object {
         fun policy(config: CollectorConfig, windows: WindowSnapshot) = AppCollectionRules.parse(config.appCollectionRules).decide(windows, PrivacyRules.exclusions(config.excludedPackages))
         fun unlocked(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isInteractive &&

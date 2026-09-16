@@ -1,6 +1,9 @@
 import { recordMetadataSchema } from '@mote/shared/metadata';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, lstat, readFile, readdir, rename, unlink, open, chmod } from 'node:fs/promises';
+import { mkdir, lstat, readFile, readdir, rename, unlink, open, chmod, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { setImmediate as yieldTurn } from 'node:timers/promises';
+import { archiveWork, imageWork, previewWork, type WorkProgress } from './background';
 import { dirname, join } from 'node:path';
 import { ConnectionBindingStore } from './connection-binding';
 import type { CaptureEvent, Config } from './contracts';
@@ -71,7 +74,7 @@ function validateEvent(value: unknown): CaptureEvent {
   const ocr = v.ocr ? { status: v.ocr.status, ...(v.ocr.reason ? { reason: v.ocr.reason } : {}), ...(v.ocr.updatedAt ? { updatedAt: v.ocr.updatedAt } : {}) } : undefined;
   return { ...base, ocrText: v.ocrText, ...(ocr ? { ocr } : {}), source: 'screen', imageMime: 'image/jpeg', privacy: { excluded: false, redacted: v.privacy.redacted, mode: 'local', ...(v.privacy.collection ? { collection: v.privacy.collection } : {}), reason: v.privacy.reason } };
 }
-function validateRecord(value: unknown): QueueRecord {
+export function validateRecord(value: unknown): QueueRecord {
   const v = value as QueueRecord;
   const event = validateEvent(v?.event);
   if ((event.source === 'screen' ? (!v.blobHash || !HASH.test(v.blobHash) || !Number.isInteger(v.blobBytes) || v.blobBytes < 4 || v.blobBytes > MAX_IMAGE_BYTES) : (v.blobHash !== undefined || v.blobBytes !== 0)) || !Number.isInteger(v.attempts) || v.attempts < 0 || !Number.isFinite(v.nextAttemptAt) || v.nextAttemptAt < 0) throw new Error('队列记录无效');
@@ -79,7 +82,7 @@ function validateRecord(value: unknown): QueueRecord {
   if ((v.syncBlocked !== undefined && typeof v.syncBlocked !== 'boolean') || (v.syncError !== undefined && (typeof v.syncError !== 'string' || v.syncError.length > 300))) throw new Error('同步失败状态无效');
   return { event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt, ...(v.uploaded ? { uploaded: true } : {}), ...(v.ocrResult !== undefined ? { ocrResult: v.ocrResult } : {}), ...(v.ocrRetryAt ? { ocrRetryAt: v.ocrRetryAt } : {}), ...(v.syncBlocked ? { syncBlocked: true, syncError: v.syncError } : {}) };
 }
-function validateImage(image: Buffer, hash?: string): void {
+export function validateImage(image: Buffer, hash?: string): void {
   if (image.length < 4 || image.length > MAX_IMAGE_BYTES || image[0] !== 0xff || image[1] !== 0xd8 || image.at(-2) !== 0xff || image.at(-1) !== 0xd9 || (hash && imageHash(image) !== hash)) throw new Error('队列图片格式、大小或校验和不正确');
 }
 async function atomicWrite(path: string, data: string | Buffer): Promise<void> {
@@ -99,6 +102,8 @@ async function syncDirectory(path: string): Promise<void> {
 
 export class DurableQueue {
   private records = new Map<string, QueueRecord>();
+  private cachedStats?: QueueStats;
+  private recordSizes = new WeakMap<QueueRecord, number>();
   private chain: Promise<unknown> = Promise.resolve();
   private initialized = false;
   private storageGuard?: () => Promise<void>;
@@ -111,7 +116,7 @@ export class DurableQueue {
   get directory(): string { return this.storageDirectory; }
   get binding(): ConnectionBindingStore { return this.storageBinding; }
   /** All file readers/writers queue behind this transaction; memory records keep the same IDs. */
-  async relocate(target: string, storage: import('./queue-storage').QueueStorage, commitConfig: () => Promise<void>, selectedDirectory: () => Promise<string>): Promise<void> {
+  async relocate(target: string, storage: import('./queue-storage').QueueStorage, commitConfig: () => Promise<void>, selectedDirectory: () => Promise<string>, progress?: (value: WorkProgress) => void): Promise<void> {
     await this.exclusive(async () => {
       this.assertReady();
       await storage.migrate(this.directory, target, async () => {
@@ -123,11 +128,11 @@ export class DurableQueue {
         await commitConfig();
         // No fallible operation after the durable pointer commit and before activation.
         this.storageDirectory = target; this.storageBinding = binding;
-      }, selectedDirectory);
+      }, selectedDirectory, progress);
     });
   }
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
-    const result = this.chain.then(async () => { await this.storageGuard?.(); return fn(); });
+    const result = this.chain.then(async () => { await this.storageGuard?.(); try { return await fn(); } finally { this.cachedStats = undefined; } });
     this.chain = result.catch(() => undefined);
     return result;
   }
@@ -151,12 +156,12 @@ export class DurableQueue {
         if (name !== `${record.event.id}.json`) throw new Error('队列文件名与事件 ID 不匹配');
         if (record.blobHash && !checked.has(record.blobHash)) {
           const data = await readFile(this.blobPath(record.blobHash));
-          validateImage(data, record.blobHash);
+          validateImage(data); if (await imageWork.run<string>({ kind: 'hash', bytes: data }) !== record.blobHash) throw new Error('队列图片校验和不正确');
           if (data.length !== record.blobBytes) throw new Error('队列图片长度不匹配');
           checked.set(record.blobHash, data.length);
         }
         if (record.blobHash && checked.get(record.blobHash) !== record.blobBytes) throw new Error('同一队列图片的长度元数据不一致');
-        restored.set(record.event.id, record);
+        this.sizeOf(record); restored.set(record.event.id, record);
       }
       this.records = restored;
       for (const name of await readdir(join(this.directory, 'blobs'))) {
@@ -170,18 +175,35 @@ export class DurableQueue {
   }
   contains(id: string): boolean { return this.records.has(id); }
   recordsForBrowser(): QueueRecord[] { return structuredClone([...this.records.values()].filter(r => r.event.source === 'screen')); }
+  async pageForBrowser(after: string, before: string, offset: number, limit: number): Promise<{ records: QueueRecord[]; total: number }> {
+    // Snapshot immutable references while uploads may continue, then send only IDs/times to the worker.
+    const snapshot = new Map(this.records), records: { id: string; at: string }[] = [];
+    let index = 0;
+    for (const record of snapshot.values()) {
+      if (++index % 256 === 0) await yieldTurn();
+      if (record.event.source === 'screen') records.push({ id: record.event.id, at: record.event.capturedAt });
+    }
+    const page = await previewWork.run<{ ids: string[]; total: number }>({ kind: 'browse', records, after, before, offset, limit });
+    return { records: page.ids.map(id => structuredClone(snapshot.get(id)!)), total: page.total };
+  }
+  recordForBrowser(id: string): QueueRecord | undefined { const record = this.records.get(id); return record?.event.source === 'screen' ? structuredClone(record) : undefined; }
+  private sizeOf(record: QueueRecord): number {
+    let bytes = this.recordSizes.get(record);
+    if (bytes === undefined) { bytes = recordBytes(record); this.recordSizes.set(record, bytes); }
+    return bytes;
+  }
   async imageForBrowser(id: string): Promise<Buffer | undefined> {
     return this.exclusive(async () => {
       const record = this.records.get(id);
       if (!record?.blobHash) return undefined;
-      const image = await readFile(this.blobPath(record.blobHash)); validateImage(image, record.blobHash); return image;
+      const image = await readFile(this.blobPath(record.blobHash)); validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error('队列图片校验和不正确'); return image;
     });
   }
   async nextOcr(now = Date.now()): Promise<{ record: QueueRecord; image: Buffer } | undefined> {
     return this.exclusive(async () => {
       const record = [...this.records.values()].find(r => !r.syncBlocked && r.event.ocr?.status === 'pending' && r.ocrResult === undefined && (r.ocrRetryAt ?? 0) <= now);
       if (!record?.blobHash) return undefined;
-      const image = await readFile(this.blobPath(record.blobHash)); validateImage(image, record.blobHash);
+      const image = await readFile(this.blobPath(record.blobHash)); validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error('队列图片校验和不正确');
       return { record: structuredClone(record), image };
     });
   }
@@ -191,25 +213,26 @@ export class DurableQueue {
       const prior = this.records.get(id); if (!prior || prior.event.ocr?.status !== 'pending') return;
       const record = { ...prior, ocrResult: text, ocrRetryAt: 0, nextAttemptAt: 0 };
       // This consumes the record's pre-reserved budget, even if the user since lowered the limit.
-      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.records.set(id, record);
+      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
     });
   }
   async deferOcr(id: string): Promise<void> {
     await this.exclusive(async () => {
       const prior = this.records.get(id); if (!prior) return;
       const record = { ...prior, ocrRetryAt: Date.now() + 60000 };
-      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.records.set(id, record);
+      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
     });
   }
   async blockSync(id: string, message: string): Promise<void> {
     await this.exclusive(async () => {
       const prior = this.records.get(id); if (!prior) return;
       const record = { ...prior, syncBlocked: true, syncError: message.slice(0, 300), nextAttemptAt: 0 };
-      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.records.set(id, record);
+      await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
     });
   }
   setLimits(limits: QueueLimits): void { this.limits = limits; }
   stats(): QueueStats {
+    if (this.cachedStats) return { ...this.cachedStats };
     const blobs = new Map<string, number>();
     let metadataBytes = 0;
     let nextRetry: number | undefined = this.sourceRetryAt ? Date.parse(this.sourceRetryAt) : undefined;
@@ -217,13 +240,14 @@ export class DurableQueue {
     for (const record of this.records.values()) {
       if (!oldestPendingAt || record.event.capturedAt < oldestPendingAt) oldestPendingAt = record.event.capturedAt;
       if (record.blobHash) blobs.set(record.blobHash, record.blobBytes);
-      metadataBytes += recordBytes(record);
+      metadataBytes += this.sizeOf(record);
       if (!record.syncBlocked && record.nextAttemptAt > 0) nextRetry = Math.min(nextRetry ?? Infinity, record.nextAttemptAt);
     }
     const values = [...this.records.values()];
-    return { depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt,
+    this.cachedStats = { depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt,
       eligibleDepth: values.filter(r => !r.syncBlocked && (!r.uploaded || r.ocrResult !== undefined)).length,
       waitingOcr: values.filter(r => r.uploaded && r.ocrResult === undefined).length, blocked: values.filter(r => r.syncBlocked).length };
+    return { ...this.cachedStats };
   }
   async syncCheckpoint(lastUploadAt = this.lastUploadAt, nextRetryAt?: string): Promise<void> {
     await this.exclusive(async () => { await atomicWrite(join(this.directory, 'sync-checkpoint.json'), JSON.stringify({ lastUploadAt, nextRetryAt })); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; });
@@ -235,7 +259,7 @@ export class DurableQueue {
       event = validateEvent(event);
       if (event.source === 'screen') { if (!image) throw new Error('截图缺少图像'); validateImage(image); }
       else if (image) throw new Error('随手记或仅活动记录不得包含图片');
-      const hash = image ? imageHash(image) : undefined;
+      const hash = image ? await imageWork.run<string>({ kind: 'hash', bytes: image }) : undefined;
       const existing = this.records.get(event.id);
       if (existing) {
         if (existing.blobHash !== hash || JSON.stringify(existing.event) !== JSON.stringify(event)) throw new Error('相同事件 ID 的内容发生变化');
@@ -252,7 +276,7 @@ export class DurableQueue {
     if (size.depth + 1 > this.limits.maxQueueEvents || size.bytes + (hasBlob ? 0 : image?.length ?? 0) + recordBytes(record) > this.limits.maxQueueBytes) throw new QueueFullError();
     if (image && record.blobHash && !hasBlob) await atomicWrite(this.blobPath(record.blobHash), image);
     await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
-    this.records.set(record.event.id, record);
+    this.cachedStats = undefined; this.records.set(record.event.id, record);
   }
   async next(now = Date.now()): Promise<{ record: QueueRecord; image?: Buffer } | undefined> {
     return this.exclusive(async () => {
@@ -260,7 +284,7 @@ export class DurableQueue {
       const record = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now && (!r.uploaded || r.ocrResult !== undefined)).sort((a, b) => a.event.capturedAt.localeCompare(b.event.capturedAt))[0];
       if (!record) return undefined;
       const image = record.blobHash ? await readFile(this.blobPath(record.blobHash)) : undefined;
-      if (image) validateImage(image, record.blobHash);
+      if (image) { validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error('队列图片校验和不正确'); }
       return { record: structuredClone(record), image };
     });
   }
@@ -271,12 +295,12 @@ export class DurableQueue {
       if (!record) return;
       if (record.event.ocr?.status === 'pending' && !ocrComplete) {
         const retained = { ...record, uploaded: true, attempts: 0, nextAttemptAt: 0 };
-        await atomicWrite(this.eventsPath(id), JSON.stringify(retained)); this.records.set(id, retained); return;
+        await atomicWrite(this.eventsPath(id), JSON.stringify(retained)); this.cachedStats = undefined; this.records.set(id, retained); return;
       }
       await unlink(this.eventsPath(id));
       // The event deletion must be durable before the last referenced blob is removed.
       await syncDirectory(join(this.directory, 'events'));
-      this.records.delete(id);
+      this.records.delete(id); this.cachedStats = undefined;
       if (record.blobHash && ![...this.records.values()].some(r => r.blobHash === record.blobHash)) await unlink(this.blobPath(record.blobHash)).catch(error => { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; });
     });
   }
@@ -286,7 +310,7 @@ export class DurableQueue {
       if (!prior) return;
       const record = { ...prior, attempts: prior.attempts + 1, nextAttemptAt: now + retryDelay(prior.attempts + 1, random) };
       await atomicWrite(this.eventsPath(id), JSON.stringify(record));
-      this.records.set(id, record);
+      this.cachedStats = undefined; this.records.set(id, record);
     });
   }
   async resetRetries(): Promise<void> {
@@ -295,8 +319,55 @@ export class DurableQueue {
       for (const prior of this.records.values()) {
         const record = { ...prior, nextAttemptAt: 0, syncBlocked: false, syncError: undefined };
         await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
-        this.records.set(record.event.id, record);
+        this.cachedStats = undefined; this.records.set(record.event.id, record);
       }
+    });
+  }
+  async exportArchiveFile(path: string, progress?: (value: WorkProgress) => void): Promise<void> {
+    return this.exclusive(async () => {
+      this.assertReady();
+      const reservation = [...this.records.values()].filter(r => r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
+      if (this.stats().bytes - reservation > 256 * 1024 * 1024) throw new Error('队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹');
+      await archiveWork.run({ kind: 'archive-export', directory: this.directory, path }, progress);
+    });
+  }
+  async importArchiveFile(path: string, progress?: (value: WorkProgress) => void): Promise<number> {
+    return this.exclusive(async () => {
+      this.assertReady();
+      const staging = await mkdtemp(join(tmpdir(), 'mote-queue-import-'));
+      try {
+        await chmod(staging, 0o700);
+        await archiveWork.run({ kind: 'archive-prepare', path, staging }, progress);
+        const names = await readdir(join(staging, 'events'));
+        const unique: QueueRecord[] = [];
+        const knownBlobs = new Set([...this.records.values()].map(r => r.blobHash));
+        let extraBytes = 0;
+        for (const name of names) {
+          const record = validateRecord(JSON.parse(await readFile(join(staging, 'events', name), 'utf8')));
+          const existing = this.records.get(record.event.id);
+          if (existing) {
+            if (existing.blobHash !== record.blobHash || JSON.stringify(existing.event) !== JSON.stringify(record.event)) throw new Error('备份包含冲突的事件 ID');
+            continue;
+          }
+          unique.push(record); extraBytes += this.sizeOf(record);
+          if (record.blobHash && !knownBlobs.has(record.blobHash)) { extraBytes += record.blobBytes; knownBlobs.add(record.blobHash); }
+        }
+        const stats = this.stats();
+        if (stats.depth + unique.length > this.limits.maxQueueEvents || stats.bytes + extraBytes > this.limits.maxQueueBytes) throw new QueueFullError();
+        // Validate the entire backup, conflicts and capacity before the first queue mutation.
+        const writtenBlobs = new Set([...this.records.values()].map(r => r.blobHash));
+        let completed = 0;
+        for (const record of unique) {
+          if (record.blobHash && !writtenBlobs.has(record.blobHash)) {
+            await atomicWrite(this.blobPath(record.blobHash), await readFile(join(staging, 'blobs', record.blobHash + '.jpg')));
+            writtenBlobs.add(record.blobHash);
+          }
+          await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
+          this.records.set(record.event.id, record); this.cachedStats = undefined;
+          progress?.({ message: '正在保存导入记录', completed: ++completed, total: unique.length });
+        }
+        return unique.length;
+      } finally { await rm(staging, { recursive: true, force: true }); }
     });
   }
   async exportArchive(): Promise<QueueArchive> {
@@ -317,12 +388,13 @@ export class DurableQueue {
       const unique = new Map<string, QueueRecord>();
       const images = new Map<string, Buffer>();
       // Validate every record before the first write.
-      for (const item of archive.records) {
+      for (const [index, item] of archive.records.entries()) {
+        if (index % 100 === 0) await yieldTurn();
         const record = validateRecord(item);
         if (record.blobHash) {
         const encoded = archive.blobs[record.blobHash];
         if (typeof encoded !== 'string' || encoded.length > MAX_IMAGE_BYTES * 1.4) throw new Error('备份图片缺失或太大');
-        if (!images.has(record.blobHash)) { const data = Buffer.from(encoded, 'base64'); validateImage(data, record.blobHash); images.set(record.blobHash, data); }
+        if (!images.has(record.blobHash)) { const data = Buffer.from(encoded, 'base64'); validateImage(data); if (await imageWork.run<string>({ kind: 'hash', bytes: data }) !== record.blobHash) throw new Error('队列图片校验和不正确'); images.set(record.blobHash, data); }
         if (images.get(record.blobHash)!.length !== record.blobBytes) throw new Error('备份图片长度不匹配');
         }
         const existing = this.records.get(record.event.id) ?? unique.get(record.event.id);

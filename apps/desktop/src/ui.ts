@@ -12,12 +12,25 @@ let settingsDirty = false;
 let captureStorageDirectory = '';
 let settingsApplying = false;
 let wasRunningBeforeSave = false;
+let pageRevision = 0;
 const pageScroll = new Map<Page, number>();
 const settingsPages = new Set<Page>(['connection', 'sync', 'capture', 'privacy', 'developer']);
 
 function showPage(page: Page, focus = true): void {
-  pageScroll.set(currentPage, window.scrollY);
-  if (page !== currentPage) feedback('');
+  if (settingsPages.has(currentPage)) pageScroll.delete(currentPage);
+  else pageScroll.set(currentPage, window.scrollY);
+  if (page !== currentPage) {
+    pageRevision++;
+    feedback('');
+    if (initialized && settingsPages.has(currentPage)) fillConfig(currentStatus.config);
+    if (currentPage === 'connection') {
+      clearConnectionPreview();
+      byId<HTMLTextAreaElement>('connection-input').value = '';
+      byId<HTMLInputElement>('connection-owner-token').value = '';
+      // Confirmed pairing still commits if the user navigates away while it is running.
+      if (!settingsApplying) void desktopApi.cancelConnection().catch(() => {});
+    }
+  }
   currentPage = page;
   const selected = settingsPages.has(page) || page === 'about' ? 'settings' : page === 'activity' ? 'overview' : page;
   for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-page]'))) element.hidden = element.dataset.page !== page;
@@ -37,9 +50,9 @@ for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-na
   if (pageNames.includes(page)) showPage(page);
 });
 function updateSettingsHint(): void {
-  byId('settings-save-bar').hidden = !(settingsPages.has(currentPage) || (currentPage === 'settings' && settingsDirty));
+  byId('settings-save-bar').hidden = !settingsPages.has(currentPage);
   byId('settings-pending').hidden = !settingsDirty;
-  byId('save-hint').textContent = currentStatus?.running ? '保存后立即应用；必要时会短暂暂停并自动恢复采集。' : settingsDirty ? '有未保存的修改，切换页面会为你保留。' : '设置保存后立即生效；采集保持当前开停状态。';
+  byId('save-hint').textContent = settingsDirty ? '有未保存的修改，离开此页会丢弃。保存后立即生效。' : currentStatus?.running ? '保存后立即应用；必要时会短暂暂停并自动恢复采集。' : '设置保存后立即生效；采集保持当前开停状态。';
   byId<HTMLButtonElement>('settings-reset').disabled = !settingsDirty || busy;
 }
 function markSettingsDirty(): void { settingsDirty = true; updateSettingsHint(); }
@@ -49,7 +62,7 @@ byId('settings-reset').addEventListener('click', () => {
   if (!currentStatus || busy) return;
   fillConfig(currentStatus.config); feedback('已还原为上次保存的设置。', true);
 });
-// Inputs stay mounted across pages. Reveal an invalid field before native validation focuses it.
+// Reveal collapsed or custom inputs before native validation focuses them.
 settingsForm.noValidate = true;
 function revealField(element: HTMLElement): void {
   const page = element.closest<HTMLElement>('[data-page]')?.dataset.page as Page | undefined;
@@ -194,14 +207,18 @@ function renderStorage(): void {
 }
 byId('storage-restart').addEventListener('click', () => void desktopApi.restartForStorageRecovery());
 byId('capture-directory-choose').addEventListener('click', () => void perform(async () => {
+  const revision = pageRevision;
   const result = await desktopApi.chooseCaptureDirectory();
-  if (!result.canceled && result.directory) { captureStorageDirectory = result.directory; markSettingsDirty(); renderStorage(); }
+  if (revision === pageRevision && !result.canceled && result.directory) { captureStorageDirectory = result.directory; markSettingsDirty(); renderStorage(); }
 }));
 byId('capture-directory-default').addEventListener('click', () => { captureStorageDirectory = ''; markSettingsDirty(); renderStorage(); });
 byId('capture-directory-open').addEventListener('click', () => void perform(() => desktopApi.openCaptureDirectory()));
 let connectionPreview: import('./connection').ConnectionPreview | undefined;
 function render(status: import('./contracts').Status): void {
   currentStatus = status; renderStorage();
+  const operations = status.operations ?? [];
+  byId('background-progress').hidden = !operations.length;
+  byId('background-progress').textContent = operations.map(job => `${job.message}${job.total !== undefined ? ` · ${job.completed ?? 0}/${job.total}` : ''}${job.state === 'running' ? ` · 已用 ${Math.floor((Date.now() - job.startedAt) / 1000)} 秒` : ''}`).join('；');
   byId('connection-device').textContent = `设备：${status.config.deviceName} · ID ${status.config.deviceId}。迁移已有设备时，请在中央邀请中选择此 ID。`;
   byId('environment').textContent = status.environment ? `环境：${status.environment.profile}${status.environment.legacy ? '（原日常目录）' : ' · 独立数据'} · ${status.environment.dataDirectory}` : '';
   const names = { stopped: '采集已停止', capturing: '正在采集', paused: '采集已暂停', permission_required: '需要屏幕录制权限', error: '采集已停止 · 需要处理' };
@@ -330,7 +347,7 @@ byId('settings').addEventListener('submit', event => {
       ...(token ? { token } : {}),
     });
     } finally { settingsApplying = false; wasRunningBeforeSave = false; }
-    fillConfig(updated.config); render(updated); feedback(updated.running ? '设置已保存并立即生效，采集已恢复。' : '设置已保存并立即生效，采集保持停止。', true);
+    render(updated); fillConfig(updated.config); feedback(updated.running ? '设置已保存并立即生效，采集已恢复。' : '设置已保存并立即生效，采集保持停止。', true);
   });
 });
 byId('start').addEventListener('click', () => {
@@ -445,7 +462,7 @@ let localSourceRows: import('./source-types').SourceStatus[] = [];
 let sourceEditingId: string | undefined;
 let sourceBusy = false;
 function sourceOptions(): import('./source-types').SourceOptions {
-  return { retention: readInput('source-retention') as 'snapshot' | 'reference', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
+  return { initialSync: readInput('source-initial-sync') as 'all' | 'new_only', retention: readInput('source-retention') as 'snapshot' | 'reference', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
 }
 function editSource(id?: string): void {
   sourceEditingId = id;
@@ -457,11 +474,15 @@ function editSource(id?: string): void {
   if (editor) editor.open = true;
   byId('source-editor-title').scrollIntoView({ block: 'start', behavior: 'instant' });
   byId('source-retention').focus({ preventScroll: true });
-  byId<HTMLSelectElement>('source-retention').value = source.retention; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
+  byId<HTMLSelectElement>('source-initial-sync').value=source.initialSync??'all'; byId<HTMLSelectElement>('source-retention').value = source.retention; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
   byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
   byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n'); refreshPresets();
 }
+let sourcesReading = false;
 async function refreshSources(): Promise<void> {
+  if (sourcesReading) return;
+  sourcesReading = true;
+  try {
   const rows = await desktopApi.sources(); localSourceRows = rows;
   const list = byId('source-list'); list.replaceChildren();
   if (!rows.length) { const p = document.createElement('p'); p.className = 'helper'; p.textContent = '尚未连接本地来源。选择只包含你希望归档资料的目录。'; list.append(p); }
@@ -476,6 +497,7 @@ async function refreshSources(): Promise<void> {
     pause.addEventListener('click', () => void sourceAction(async () => { await desktopApi.updateSource(row.source.id, { ...row.source, enabled: !row.source.enabled }); }));
     actions.append(edit, pause); card.append(title, detail, status, actions); list.append(card);
   }
+  } finally { sourcesReading = false; }
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
   if (sourceBusy) return; sourceBusy = true; byId('source-feedback').textContent = '正在处理，请稍候…';
@@ -500,7 +522,7 @@ byId('source-save-edit').addEventListener('click', () => void sourceAction(async
   await desktopApi.updateSource(source.id, { ...sourceOptions(), enabled: source.enabled }); editSource();
 }));
 void refreshSources().catch(() => { byId('source-feedback').textContent = '来源状态暂不可用，请重新打开应用'; });
-setInterval(() => { if (!sourceBusy) void refreshSources().catch(() => {}); }, 3000);
+setInterval(() => { void refreshSources().catch(() => {}); }, 3000);
 
 let updateState: import('./updater').UpdateStatus | undefined;
 function renderUpdate(value: import('./updater').UpdateStatus): void {
@@ -522,7 +544,7 @@ function renderUpdate(value: import('./updater').UpdateStatus): void {
 byId('update-channel').addEventListener('change', () => void perform(async () => renderUpdate(await desktopApi.updateChannel(readInput('update-channel') as 'stable' | 'preview'))));
 byId('update-check').addEventListener('click', () => { void desktopApi.checkUpdate().then(renderUpdate).catch(() => feedback('更新检查未完成，请重试。')); });
 byId('update-download').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.downloadUpdate())));
-byId('update-cancel').addEventListener('click', () => void perform(async () => renderUpdate(await desktopApi.cancelUpdate())));
+byId('update-cancel').addEventListener('click', () => { void desktopApi.cancelUpdate().then(renderUpdate).catch(error => feedback(String(error))); });
 byId('update-reveal').addEventListener('click', () => void perform(() => desktopApi.revealUpdate()));
 byId('update-notes').addEventListener('click', () => void perform(() => desktopApi.releaseNotes()));
 byId('update-install').addEventListener('click', () => {
@@ -537,7 +559,14 @@ byId('update-install').addEventListener('click', () => {
   });
 });
 void desktopApi.updateStatus().then(renderUpdate).catch(() => {});
-setInterval(() => { void desktopApi.updateStatus().then(renderUpdate).catch(() => {}); }, 1000);
+// One polling request at a time, even if a slow disk or worker delays a reply.
+let statusReading = false;
+setInterval(() => {
+  if (statusReading || document.hidden) return;
+  statusReading = true;
+  void Promise.allSettled([desktopApi.status().then(render), desktopApi.updateStatus().then(renderUpdate)])
+    .finally(() => { statusReading = false; });
+}, 1000);
 
 function renderConnection(value: import('./connection').ConnectionStatus): void {
   byId('connection-state').textContent = value.message + (value.checkedAt ? ' · ' + new Date(value.checkedAt).toLocaleTimeString() : '');
@@ -551,8 +580,18 @@ function showConnectionPreview(value: import('./connection').ConnectionPreview):
   byId('connection-confirmation').hidden = false; byId<HTMLButtonElement>('connection-connect').disabled = true;
 }
 byId('connection-input').addEventListener('input', () => { clearConnectionPreview(); void desktopApi.cancelConnection(); });
-byId('connection-preview').addEventListener('click', () => void perform(async () => { clearConnectionPreview(); showConnectionPreview(await desktopApi.previewConnection(readInput('connection-input'))); }));
-for (const kind of ['json', 'qr'] as const) byId('connection-' + kind).addEventListener('click', () => void perform(async () => { clearConnectionPreview(); byId<HTMLTextAreaElement>('connection-input').value = ''; const result = await desktopApi.importConnection(kind); if (!result.canceled && result.preview) showConnectionPreview(result.preview); }));
+async function previewForCurrentPage(operation: () => Promise<import('./connection').ConnectionPreview | undefined>): Promise<void> {
+  const revision = pageRevision;
+  clearConnectionPreview();
+  const preview = await operation();
+  if (revision !== pageRevision) { await desktopApi.cancelConnection(); return; }
+  if (preview) showConnectionPreview(preview);
+}
+byId('connection-preview').addEventListener('click', () => void perform(() => previewForCurrentPage(() => desktopApi.previewConnection(readInput('connection-input')))));
+for (const kind of ['json', 'qr'] as const) byId('connection-' + kind).addEventListener('click', () => void perform(() => previewForCurrentPage(async () => {
+  byId<HTMLTextAreaElement>('connection-input').value = '';
+  const result = await desktopApi.importConnection(kind); return result.canceled ? undefined : result.preview;
+})));
 byId('connection-confirm-origin').addEventListener('change', () => { if (currentStatus) render(currentStatus); });
 byId('connection-cancel').addEventListener('click', () => { clearConnectionPreview(); byId<HTMLTextAreaElement>('connection-input').value = ''; void desktopApi.cancelConnection(); });
 byId('connection-connect').addEventListener('click', () => void perform(async () => {
@@ -563,13 +602,9 @@ byId('connection-connect').addEventListener('click', () => void perform(async ()
   try { status = await desktopApi.confirmConnection(connectionPreview.id, connectionPreview.serverUrl); }
   finally { settingsApplying = false; wasRunningBeforeSave = false; }
   clearConnectionPreview();
-  if (settingsDirty) {
-    // Pairing changes connection credentials only; preserve edits in other settings pages.
-    byId<HTMLInputElement>('server-url').value = status.config.serverUrl;
-    byId<HTMLInputElement>('token').value = '';
-    byId<HTMLInputElement>('token').placeholder = '已安全保存；留空保留已有令牌';
-  } else fillConfig(status.config);
-  render(status); renderConnection(await desktopApi.connectionStatus()); feedback('连接已安全保存；原设备 ID、隐私设置和本地模型保留。', true);
+  // Invitation confirmation replaces the connection page draft with the committed config.
+  render(status); fillConfig(status.config);
+  renderConnection(await desktopApi.connectionStatus()); feedback('连接已安全保存；原设备 ID、隐私设置和本地模型保留。', true);
 }));
 byId('connection-test').addEventListener('click', () => void perform(async () => renderConnection(await desktopApi.testConnection())));
 byId('connection-owner-open').addEventListener('click', () => { const token = readInput('connection-owner-token').trim(); byId<HTMLInputElement>('connection-owner-token').value = ''; void perform(() => desktopApi.openCentralOwner(token)); });

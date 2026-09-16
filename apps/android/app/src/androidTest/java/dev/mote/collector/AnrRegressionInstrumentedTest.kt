@@ -92,7 +92,7 @@ class AnrRegressionInstrumentedTest {
         try {
             HeldQueue().use {
                 val launchedAt = SystemClock.elapsedRealtime()
-                scenario = ActivityScenario.launch(MainActivity::class.java)
+                scenario = ActivityScenario.launch(MainActivity::class.java).awaitMainUi()
                 // Cold view inflation gets more budget than an input callback, but cannot wait on the 20 s lock.
                 assertTrue("home must launch without waiting for encrypted queue work",
                     SystemClock.elapsedRealtime() - launchedAt < 4000)
@@ -107,17 +107,30 @@ class AnrRegressionInstrumentedTest {
     }
 
     @Test fun repeatedRefreshesCoalesceAndDestroyDoesNotWaitForQueueWork() {
-        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        val scenario = ActivityScenario.launch(MainActivity::class.java).awaitMainUi()
         lateinit var activity: MainActivity
         lateinit var executor: ExecutorService
         val updates = AtomicInteger()
+        val updatesAtDestroy = AtomicInteger(-1)
+        val application = context.applicationContext as android.app.Application
+        val lifecycle = object : android.app.Application.ActivityLifecycleCallbacks {
+            override fun onActivityDestroyed(value: android.app.Activity) { if (value === activity) updatesAtDestroy.set(updates.get()) }
+            override fun onActivityCreated(value: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityStarted(value: android.app.Activity) = Unit
+            override fun onActivityResumed(value: android.app.Activity) = Unit
+            override fun onActivityPaused(value: android.app.Activity) = Unit
+            override fun onActivityStopped(value: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(value: android.app.Activity, state: android.os.Bundle) = Unit
+        }
         try {
             scenario.onActivity {
                 activity = it
                 executor = field(it, "statusExecutor")
-                // Keep the Activity resumed while removing the timer so this test controls refresh requests.
+                field<kotlinx.coroutines.Job?>(it, "localStateJob")?.cancel()
+                // Keep the Activity resumed while removing automatic requests.
                 field<Handler>(it, "handler").removeCallbacks(field<Runnable>(it, "refresh"))
             }
+            application.registerActivityLifecycleCallbacks(lifecycle)
             executor.submit {}.get(10, TimeUnit.SECONDS)
             instrumentation.runOnMainSync {
                 assertFalse(field<Boolean>(activity, "statusLoading"))
@@ -137,10 +150,10 @@ class AnrRegressionInstrumentedTest {
                 assertTrue("refresh requests must not wait for the queue", SystemClock.elapsedRealtime() - started < 1000)
                 assertEquals(0, updates.get())
             }
-            // This marker runs after all work submitted by the 30 requests. All their UI posts precede the main marker.
-            executor.submit {}.get(10, TimeUnit.SECONDS)
+            // One in-flight read and one merged follow-up; drain both without waiting on main.
+            repeat(2) { executor.submit {}.get(10, TimeUnit.SECONDS); instrumentation.runOnMainSync {} }
             instrumentation.runOnMainSync {
-                assertEquals("busy refreshes must produce one snapshot, without a backlog", 1, updates.get())
+                assertEquals("busy refreshes must merge into one follow-up, without a backlog", 2, updates.get())
                 assertFalse(field<Boolean>(activity, "statusLoading"))
             }
             HeldQueue().use {
@@ -151,8 +164,81 @@ class AnrRegressionInstrumentedTest {
                 assertTrue(executor.isShutdown)
             }
             assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS))
-            instrumentation.runOnMainSync { assertEquals("a destroyed Activity must not receive the late snapshot", 1, updates.get()) }
-        } finally { scenario.close() }
+            instrumentation.runOnMainSync {
+                // Cached status can arrive before close; only updates after destruction are forbidden.
+                assertTrue(updatesAtDestroy.get() >= 2)
+                assertEquals("a destroyed Activity must not receive the late snapshot", updatesAtDestroy.get(), updates.get())
+            }
+        } finally { scenario.close(); application.unregisterActivityLifecycleCallbacks(lifecycle) }
+    }
+
+    @Test fun savingANoteAndNavigatingStayResponsiveWhileTheQueueIsLocked() {
+        val scenario = ActivityScenario.launch(MainActivity::class.java).awaitMainUi()
+        var id: String? = null
+        try {
+            scenario.onActivity { activity ->
+                navigate(activity, "随手记")
+                views(activity.window.decorView).filterIsInstance<android.widget.EditText>()
+                    .single { it.hint?.toString() == "记下此刻的想法…" }.setText("GENERATED ASYNC NOTE 🧑🏽‍💻")
+            }
+            QuickNotes.io.submit {}.get(5, TimeUnit.SECONDS)
+            HeldQueue().use {
+                val started = SystemClock.elapsedRealtime()
+                scenario.onActivity { activity ->
+                    views(activity.window.decorView).filterIsInstance<TextView>()
+                        .single { it.isShown && it.text.toString() == "保存随手记" }.performClick()
+                    navigate(activity, "来源"); navigate(activity, "设置")
+                }
+                assertTrue("saving a note cannot join the locked queue on the UI thread", SystemClock.elapsedRealtime() - started < 1000)
+            }
+            QuickNotes.io.submit {}.get(10, TimeUnit.SECONDS)
+            val saved = context.queue().peek()!!; id = saved.getString("id")
+            assertEquals("GENERATED ASYNC NOTE 🧑🏽‍💻", saved.getString("ocrText"))
+            assertEquals("", QuickNotes.draft(context).read().text)
+            assertFalse(Settings(context).enabled)
+        } finally {
+            scenario.close(); id?.let { context.queue().acknowledge(it) }
+            QuickNotes.io.submit {}.get(10, TimeUnit.SECONDS); QuickNotes.draft(context).clear()
+        }
+    }
+
+    @Test fun acceptedSettingsSaveSurvivesRotationWhilePreflightIsBlocked() {
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            val interval = if (Settings(context).read().intervalSeconds == 60) 61 else 60
+            scenario.onActivity { activity ->
+                navigate(activity, "设置")
+                views(activity.window.decorView).single { it.tag == "menu:采集与存储" }.performClick()
+                views(activity.window.decorView).filterIsInstance<android.widget.EditText>()
+                    .single { it.hint?.toString() == "30" }.setText(interval.toString())
+            }
+            val entered = CountDownLatch(1); val release = CountDownLatch(1)
+            val holder = Thread {
+                synchronized(Settings::class.java) { entered.countDown(); release.await(20, TimeUnit.SECONDS) }
+            }.apply { start() }
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                val started = SystemClock.elapsedRealtime()
+                scenario.onActivity { activity ->
+                    views(activity.window.decorView).filterIsInstance<TextView>()
+                        .single { it.isShown && it.text.toString() == "保存设置" }.performClick()
+                }
+                scenario.recreate()
+                assertTrue("save and rotation must not join the settings lock", SystemClock.elapsedRealtime() - started < 2000)
+            } finally { release.countDown(); holder.join(5000) }
+            scenario.awaitMainUi()
+            val deadline = SystemClock.elapsedRealtime() + 15_000
+            var delivered = false
+            while (!delivered && SystemClock.elapsedRealtime() < deadline) {
+                scenario.onActivity { activity ->
+                    delivered = field<CollectorConfig>(activity, "loadedConfig").intervalSeconds == interval &&
+                        !field<View>(activity, "saveBar").isShown
+                }
+                if (!delivered) Thread.sleep(25)
+            }
+            assertTrue("accepted save must commit and refresh the replacement Activity", delivered)
+            assertEquals(interval, Settings(context).read().intervalSeconds)
+            assertFalse(Settings(context).enabled)
+        }
     }
 
     @Test fun v001EncryptedScreenshotBacklogReopensWithoutChangingEventsOrImages() {
@@ -187,7 +273,8 @@ class AnrRegressionInstrumentedTest {
             reopened.recoverOrphans()
             assertEquals(ids.size, reopened.depth())
             assertEquals(PendingSync(ids.size, firstAt), reopened.pendingSync())
-            assertEquals("legacy inline OCR must not acquire a new pending-OCR reservation", bytes, reopened.bytes())
+            assertEquals("legacy inline OCR must not acquire a new pending-OCR reservation", 0L, reopened.reservedOcrBytes())
+            assertTrue("storage accounting also includes the generated browse index", reopened.bytes() >= bytes)
             val first = reopened.peek()!!
             assertEquals(ids.first(), first.getString("id"))
             assertEquals("GENERATED V001 SCREEN 0", first.getString("ocrText"))
@@ -195,7 +282,7 @@ class AnrRegressionInstrumentedTest {
             assertArrayEquals(image, Base64.getDecoder().decode(first.getString("imageBase64")))
             assertArrayEquals(image, reopened.image(ids.last()))
             assertEquals("recovery and status must preserve the old encrypted files byte for byte", before,
-                directory.listFiles()!!.associate { it.name to NsfwModelStore.sha256(it) })
+                directory.listFiles()!!.filter { it.name in before }.associate { it.name to NsfwModelStore.sha256(it) })
             assertFalse(image.contentEquals(File(directory, "$blob.blob").readBytes()))
             assertEquals(ids.size, DurableQueue(directory, SecretBox()).pendingSync().count)
         } finally { directory.deleteRecursively() }

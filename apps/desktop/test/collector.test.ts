@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import sharp from 'sharp';
 import { EventEmitter } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -51,7 +52,10 @@ beforeEach(async () => {
   }));
 });
 afterEach(async () => {
-  collector?.stop(); await collector?.settleCapture(); collector?.shutdown(); collector = undefined;
+  collector?.stop(); await collector?.settleCapture(); collector?.shutdown();
+  // Background encoders add async boundaries; wait for the final uploader before removing fixture files.
+  if (collector) { const release = await collector.holdConnection(); release(); }
+  collector = undefined;
   (powerMonitor as unknown as EventEmitter).removeAllListeners();
   await rm(directory, { recursive: true, force: true }); vi.unstubAllGlobals();
 });
@@ -69,9 +73,9 @@ describe.skipIf(process.platform !== 'darwin')('collector pipeline with generate
     const archive = await queue.exportArchive();
     expect(archive.records).toHaveLength(1);
     const stored = Buffer.from(Object.values(archive.blobs)[0], 'base64');
-    const pixels = stored.subarray(2, -2);
-    for (let i = 0; i < 32; i += 4) expect([...pixels.subarray(i, i + 4)]).toEqual([0, 0, 0, 255]);
-    expect(pixels.subarray(32)).toEqual(Buffer.alloc(32, 123));
+    const pixels = await sharp(stored).removeAlpha().raw().toBuffer();
+    for (const value of pixels.subarray(0, 24)) expect(value).toBeLessThan(12);
+    for (const value of pixels.subarray(24)) expect(Math.abs(value - 123)).toBeLessThan(12);
     expect(mocks.ocr.mock.calls[0][1]).toEqual(stored);
     expect(archive.records[0].event).not.toHaveProperty('windowTitle');
     expect(archive.records[0].event.durationMs).toBe(0);
@@ -373,7 +377,7 @@ describe.skipIf(process.platform !== 'darwin')('immediate settings with generate
     collector.updateConfig(config); await resume(); await collector.settleCapture();
     expect(collector.status().running).toBe(true);
     const stored = Object.values((await queue.exportArchive()).blobs).map(value => Buffer.from(value, 'base64')); expect(stored).toHaveLength(1);
-    for (let i = 2; i < stored[0].length - 2; i += 4) expect([...stored[0].subarray(i, i + 4)]).toEqual([0, 0, 0, 255]);
+    expect([...(await sharp(stored[0]).removeAlpha().raw().toBuffer())].every(value => value === 0)).toBe(true);
     expect((collector as unknown as { timer: { _idleTimeout: number } }).timer._idleTimeout).toBeGreaterThan(290000);
     await resume(); expect(mocks.capture).toHaveBeenCalledTimes(2);
   });

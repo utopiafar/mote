@@ -16,7 +16,8 @@ data class CollectorConfig(
     val syncMode: String = "realtime", val syncIntervalMinutes: Int = 15, val syncBatchSize: Int = 20,
     val ocrChargingOnly: Boolean = false, val mediaCollectionEnabled: Boolean = false, val screenCollectionEnabled: Boolean = true,
     val notificationCollectionEnabled: Boolean = false, val deviceEventCollectionEnabled: Boolean = false,
-    val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off"
+    val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off",
+    val imageDedupeDiagnosticsEnabled: Boolean = false
 ) {
     fun observesSystem() = (mediaCollectionEnabled && metadataEnabled) || notificationCollectionEnabled || deviceEventCollectionEnabled
     fun effectiveMode() = if (AppCollectionRules.parse(appCollectionRules).mayCollectContent()) mode else "accessibility"
@@ -45,6 +46,7 @@ data class CollectorConfig(
 }
 
 class SettingsWriteFailure : IllegalStateException("无法持久保存设置，请检查存储空间")
+class SettingsChangedFailure : IllegalStateException("已保存设置发生变化，页面已更新；请检查后重新保存")
 
 class Settings(private val context: Context) {
     private val prefs = context.getSharedPreferences("mote", Context.MODE_PRIVATE)
@@ -77,13 +79,16 @@ class Settings(private val context: Context) {
         syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20),
         ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false), mediaCollectionEnabled = prefs.getBoolean("mediaCollectionEnabled", false), screenCollectionEnabled = prefs.getBoolean("screenCollectionEnabled", true),
         notificationCollectionEnabled = prefs.getBoolean("notificationCollectionEnabled", false), deviceEventCollectionEnabled = prefs.getBoolean("deviceEventCollectionEnabled", false),
-        syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!
+        syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!,
+        imageDedupeDiagnosticsEnabled = prefs.getBoolean("imageDedupeDiagnosticsEnabled", false)
     ) }
-    fun save(c: CollectorConfig) = synchronized(Settings::class.java) {
+    fun save(c: CollectorConfig, expected: CollectorConfig? = null) = synchronized(Settings::class.java) {
+        if (expected != null && read() != expected) throw SettingsChangedFailure()
         c.validate()
         val origin = originAfterChange(c)
         val values = mapOf<String, Any>(
-            "imageDedupeMode" to c.imageDedupeMode, "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
+            "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
+            "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
             "syncChargingOnly" to c.syncChargingOnly, "syncBatteryNotLow" to c.syncBatteryNotLow,
             "syncBatchSize" to c.syncBatchSize, "server" to c.server.trim().trimEnd('/'),
             "token" to Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP),
@@ -136,7 +141,7 @@ class Settings(private val context: Context) {
         val old = read()
         return if (prefs.contains("server") && old.server.isNotBlank()) old.server.trimEnd('/') else ""
     }
-    fun hasPendingData(): Boolean = context.queue().depth() > 0 || QuickNotes.draft(context).read().prepared != null ||
+    fun hasPendingData(): Boolean = context.fileArchives().pendingSync().count > 0 || context.queue().depth() > 0 || QuickNotes.draft(context).read().prepared != null ||
         context.localSources().sources().any { (context.localSources().state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }
     private fun originAfterChange(next: CollectorConfig): String {
         val previous = dataOrigin()

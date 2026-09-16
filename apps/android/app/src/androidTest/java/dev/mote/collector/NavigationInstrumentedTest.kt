@@ -35,7 +35,7 @@ class NavigationInstrumentedTest {
     @Test fun everyBottomTabSwitchesOnItsFirstTouch() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(true)
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             for (label in listOf("随手记", "来源", "设置", "概览", "设置", "随手记", "概览")) {
                 instrumentation.waitForIdleSync()
                 var x = 0f; var y = 0f
@@ -62,7 +62,7 @@ class NavigationInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         assertFalse(Settings(context).enabled)
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
                 tab(activity, "设置"); menu(activity, "权限与后台运行")
                 assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any {
@@ -87,9 +87,10 @@ class NavigationInstrumentedTest {
         assertFalse(Settings(context).enabled)
     }
 
-    @Test fun settingsAreSeparateAndUnsavedInputsSurviveNavigationAndRotation() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+    @Test fun leavingSettingsPagesDiscardsInputsAndHidesSaveBar() {
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
+                val saved = Settings(activity).read()
                 assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
                 assertFalse(editor(activity, "https://mote.example.com").isShown)
                 assertFalse(editor(activity, "记下此刻的想法…").isShown)
@@ -98,24 +99,44 @@ class NavigationInstrumentedTest {
                 editor(activity, "https://mote.example.com").setText("https://127.0.0.1:1")
                 editor(activity, "建议通过邀请获取本设备凭据").setText("generated-navigation-fixture-token-1234567890")
                 tab(activity, "设置"); menu(activity, "采集与存储")
+                assertEquals(saved.server, editor(activity, "https://mote.example.com").text.toString())
+                assertEquals(saved.token, editor(activity, "建议通过邀请获取本设备凭据").text.toString())
                 editor(activity, "30").setText("47")
                 tab(activity, "随手记")
                 assertTrue(editor(activity, "记下此刻的想法…").isShown)
+                assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text == "保存设置" })
                 tab(activity, "设置"); menu(activity, "采集与存储")
+                assertEquals(saved.intervalSeconds.toString(), editor(activity, "30").text.toString())
+                editor(activity, "30").setText("")
+                activity.onBackPressed()
+                assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text == "保存设置" })
+                menu(activity, "采集与存储")
+                assertEquals(saved.intervalSeconds.toString(), editor(activity, "30").text.toString())
+                assertNull(editor(activity, "30").error)
+                assertEquals(saved, Settings(activity).read())
+                assertFalse(Settings(activity).enabled)
+            }
+        }
+    }
+
+    @Test fun activePageDraftSurvivesRotationButNotLeavingTheActivity() {
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            val saved = Settings(InstrumentationRegistry.getInstrumentation().targetContext).read()
+            scenario.onActivity { activity ->
+                tab(activity, "设置"); menu(activity, "采集与存储")
+                editor(activity, "30").setText("47")
+            }
+            scenario.recreate(); scenario.awaitMainUi()
+            scenario.onActivity { activity ->
+                assertTrue(editor(activity, "30").isShown)
                 assertEquals("47", editor(activity, "30").text.toString())
             }
-            scenario.recreate()
+            scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+            scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
             scenario.onActivity { activity ->
-                val interval = editor(activity, "30")
-                assertTrue(interval.isShown)
-                assertEquals("47", interval.text.toString())
-                assertEquals("generated-navigation-fixture-token-1234567890", editor(activity, "建议通过邀请获取本设备凭据").text.toString())
-                interval.setText("")
-                tab(activity, "概览")
-                tab(activity, "保存设置")
-                assertTrue("Saving must reveal the invalid hidden field", interval.isShown)
-                assertNotNull(interval.error)
-                assertFalse(Settings(activity).enabled)
+                assertEquals(saved.intervalSeconds.toString(), editor(activity, "30").text.toString())
+                assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text == "保存设置" })
+                assertEquals(saved, Settings(activity).read())
             }
         }
     }
@@ -132,35 +153,39 @@ class NavigationInstrumentedTest {
                 instrumentation.waitForIdleSync()
                 instrumentation.runOnMainSync {
                     val selected = dialogViews().filterIsInstance<TextView>().firstOrNull { it !is EditText && it.isShown && it.text.toString() == label } ?: return@runOnMainSync
-                    val list = selected.parent as? android.widget.ListView
-                    if (list != null) assertTrue(list.performItemClick(selected, list.getPositionForView(selected), list.getItemIdAtPosition(list.getPositionForView(selected))))
-                    else assertTrue(selected.performClick())
+                    var row: View = selected
+                    while (row.parent is View && row.parent !is android.widget.ListView) row = row.parent as View
+                    val list = row.parent as? android.widget.ListView
+                    if (list != null) {
+                        val position = list.getPositionForView(row)
+                        assertTrue(list.performItemClick(row, position, list.getItemIdAtPosition(position)))
+                    } else assertTrue("Dialog choice must be clickable: $label", selected.performClick())
                     clicked = true
                 }
                 if (!clicked) { check(SystemClock.elapsedRealtime() < deadline) { "Generated dialog choice did not appear: $label" }; Thread.sleep(50) }
             }
             instrumentation.waitForIdleSync()
         }
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity -> tab(activity, "设置"); menu(activity, "采集与存储"); assertNull(editor(activity, "30").keyListener); editor(activity, "30").performClick() }
             clickDialogLabel("60")
             scenario.onActivity { activity ->
                 assertEquals("60", editor(activity, "30").text.toString())
-                tab(activity, "设置"); menu(activity, "隐私与应用规则"); tab(activity, "从已安装应用中选择")
+                tab(activity, "设置"); menu(activity, "隐私与应用规则"); tab(activity, "管理应用 · 查看每个应用的记录方式")
             }
             val appName = instrumentation.targetContext.applicationInfo.loadLabel(instrumentation.targetContext.packageManager).toString()
             instrumentation.waitForIdleSync()
             instrumentation.runOnMainSync {
                 dialogViews().filterIsInstance<EditText>().single { it.hint?.toString() == "搜索应用名称" }.setText(appName)
             }
-            clickDialogLabel(appName); clickDialogLabel("仅应用活动")
+            clickDialogLabel(appName); clickDialogLabel("仅应用和时长 · 不保存截图"); clickDialogLabel("完成")
             scenario.onActivity { activity ->
                 assertTrue(editor(activity, "com.example.chat=activity\ncom.example.private=off").text.contains("${activity.packageName}=activity"))
                 tab(activity, "遮住顶部 8%"); tab(activity, "遮住底部 12%")
                 assertEquals(2, Mask.parse(editor(activity, "0,0,1,0.08").text.toString()).size)
                 assertFalse(editor(activity, "0,0,1,0.08").isShown)
             }
-            scenario.recreate()
+            scenario.recreate(); scenario.awaitMainUi()
             scenario.onActivity { activity -> assertEquals(2, Mask.parse(editor(activity, "0,0,1,0.08").text.toString()).size) }
         }
     }
@@ -173,7 +198,7 @@ class NavigationInstrumentedTest {
         require(!Settings(context).enabled && context.queue().depth() == 0)
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             listOf("概览" to "overview", "随手记" to "notes", "来源" to "sources", "设置" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings").forEach { (label, file) ->
                 scenario.onActivity { if (file.endsWith("-settings")) { tab(it, "设置"); menu(it, label) } else tab(it, label) }
                 instrumentation.waitForIdleSync()
