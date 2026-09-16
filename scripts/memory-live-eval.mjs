@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,writeFile} from 'node:fs/promises';
+import {mkdtemp,rm,writeFile,readFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {startCodexRelay} from './codex-relay.mjs';
 import {seedMemoryFixtures} from './memory-fixtures.ts';
+import {parseAnswer} from '@mote/agent';
 import {Store} from '../apps/server/src/store.ts';
 import {buildApp} from '../apps/server/src/app.ts';
 import {createModelAgent} from '../apps/server/src/model-agent.ts';
@@ -19,7 +20,9 @@ try{
   node=await buildApp({dataDir:directory,token:'generated-live-fixture',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:100000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],modelProvider:'openai',modelProtocol:'openai-completions',model:relay.model,modelBaseUrl:relay.baseUrl,apiKey:relay.apiKey,allowUnauthenticatedLocal:false,modelReasoningEffort:'max',modelMaxTokens:32768,modelTimeoutMs:600000,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false},{store,createModelAgent:async(settings,reader)=>{const runtime=await createModelAgent(settings,reader);return {configured:runtime.configured,close:()=>runtime.close(),query:async input=>{try{return await runtime.query(input);}catch(error){console.error('HARNESS',error.name,error.message,error.reason);throw error;}}};}});
   const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'])settings[key].enabled=false;node.lifecycle.configure(settings);
   const anchorIds=['preference-old','preference-new','procedure','cancel'].map(key=>fixture.anchors[key]);
-  const job=await node.memoryPipeline.run(node.memoryPipeline.create({evidenceIds:anchorIds,timeZone:'Asia/Shanghai'}).id);
+  let job;
+  if(process.env.MOTE_MEMORY_REPLAY_EXTRACTION){const captured=JSON.parse(await readFile(process.env.MOTE_MEMORY_REPLAY_EXTRACTION,'utf8')),sample=captured.calls.find(c=>c.content);assert.equal(captured.model,relay.model);assert.equal(captured.effort,'max');const parsed=parseAnswer(sample.content,new Map(anchorIds.map(id=>[id,store.evidence([id])[0]])));const saved=node.memories.extract({...parsed,trace:[],runId:randomUUID()},relay.model,{skillVersion:'memory-extraction@1.1.0'});job={status:'completed',memoryIds:saved.items.map(m=>m.id)};report.extractionGeneration='Previously captured live output, replayed after fixing stream timeout; not a new model generation';}
+  else job=await node.memoryPipeline.run(node.memoryPipeline.create({evidenceIds:anchorIds,timeZone:'Asia/Shanghai'}).id);
   assert.equal(job.status,'completed',JSON.stringify(job));assert.ok(job.memoryIds.length>=3);report.checks.push({name:'extraction',status:'passed',records:anchorIds.length,candidates:job.memoryIds.length,memories:job.memoryIds.map(id=>node.memories.get(id))});console.log('PASS extraction',job.memoryIds.length);
   // Independent procedure, same Harness/read-only bridge. Model reads source memory
   // cards, searches originals and proposes durable text rather than overwriting them.

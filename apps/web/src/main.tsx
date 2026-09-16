@@ -1164,7 +1164,7 @@ function Vault({
             <span>自动回顾</span>
             <strong>
               {status.insightIntervalHours
-                ? `每 ${status.insightIntervalHours} 小时`
+                ? `每 ${status.insightIntervalHours} 小时且有足够新增资料`
                 : "手动生成"}
             </strong>
             <small>使用同一只读 Agent 与来源引用</small>

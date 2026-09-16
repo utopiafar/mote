@@ -47,3 +47,12 @@ test('lookalike timeouts are sanitized as provider failures and validation remai
   await assert.rejects(agent.query({question:'Synthetic invalid output'}),error=>error===primary&&error.statusCode===502);
   next=fake;await assert.rejects(agent.query({question:'Synthetic lookalike text'}),error=>error instanceof AgentProviderError&&!(error instanceof AgentTimeoutError)&&!String(error).includes(marker));
 });
+
+test('configured request deadline also permits buffered providers to exceed the former 30-second idle window',async()=>{
+  const {createRuntimePatch}=await import('../dist/index.js');
+  for(const protocol of ['deepseek','openai-completions']){
+    const patch=JSON.parse(createRuntimePatch('/generated/plugin.mjs','generated','http://127.0.0.1:1/v1','max',8192,{protocol,timeoutMs:600000}));
+    const profile=protocol==='deepseek'?patch.find(p=>p.id==='llm-deepseek').config:patch.find(p=>p.insert?.some(i=>i.id==='mote-llm')).insert[0].config.providers['mote-model'];
+    assert.equal(profile.streamIdleTimeoutMs,600000);
+  }
+});

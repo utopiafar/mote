@@ -59,7 +59,7 @@ export function createRuntimePatch(
   baseUrl?: string,
   reasoningEffort?: AgentOptions["reasoningEffort"],
   maxTokens = DEFAULT_MODEL_MAX_TOKENS,
-  connection: Pick<AgentOptions, 'protocol' | 'provider'> = {},
+  connection: Pick<AgentOptions, 'protocol' | 'provider' | 'timeoutMs'> = {},
 ): string {
   // JSON is valid YAML. No executable YAML expressions or untrusted path interpolation.
   return JSON.stringify(

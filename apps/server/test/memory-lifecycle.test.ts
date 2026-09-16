@@ -56,3 +56,10 @@ test('working summary preserves prefix, discloses recent turns and cannot surviv
   await working.compact(id!,settings,async()=>{conversations.delete(id!);return {...empty(),answer:'禁止复活'};}).then(()=>assert.fail('Deleted conversation resurrected'),()=>{});
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM working_memories').get()!.n,0);
 });
+
+test('lexical scope is applied before the former 500-candidate global limit',async t=>{
+  const store=fixture(t);const {SourceStore}=await import('../src/sources.js');const sources=new SourceStore(store);sources.register({id:'scope-fixture',name:'Generated scope boundary',kind:'custom',deviceId:'generated',platform:'import'});
+  for(let i=0;i<501;i++)await sources.upsert('scope-fixture',{externalId:String(i),revision:'1',observedAt:'2026-08-01T00:00:00Z',text:'shared lexical fixture',kind:'file',layer:'original'});
+  const late=await sources.upsert('scope-fixture',{externalId:'late',revision:'1',observedAt:'2026-08-02T00:00:00Z',text:'shared lexical fixture',kind:'file',layer:'original',document:{recordedAt:'2026-03-01T00:00:00Z',timeBasis:'recorded',contentRole:'authored'}});
+  assert.deepEqual(store.search({query:'shared',after:'2026-03-01T00:00:00Z',before:'2026-04-01T00:00:00Z'}).map(r=>r.id),[late.id]);
+});

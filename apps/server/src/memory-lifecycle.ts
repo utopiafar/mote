@@ -41,8 +41,12 @@ export class MemoryLifecycle {
     `);
     if(!store.db.prepare('SELECT 1 FROM memory_lifecycle_settings').get()){
       const settings=structuredClone(defaultLifecycleSettings);if(legacyInsightHours>0)settings.insights.intervalHours=legacyInsightHours;
-      store.db.prepare('INSERT INTO memory_lifecycle_settings VALUES(1,?)').run(JSON.stringify(settings));
-      store.db.exec("INSERT INTO memory_events(stream,entity) SELECT 'memory',id FROM memories; INSERT INTO memory_events(stream,entity) SELECT 'conversation',id FROM conversations");
+      store.db.exec('BEGIN IMMEDIATE');
+      try{
+        const inserted=store.db.prepare('INSERT OR IGNORE INTO memory_lifecycle_settings VALUES(1,?)').run(JSON.stringify(settings));
+        if(inserted.changes)store.db.exec("INSERT INTO memory_events(stream,entity) SELECT 'memory',id FROM memories; INSERT INTO memory_events(stream,entity) SELECT 'conversation',id FROM conversations");
+        store.db.exec('COMMIT');
+      }catch(error){store.db.exec('ROLLBACK');throw error;}
     }
   }
   register(extension:LifecycleExtension){
