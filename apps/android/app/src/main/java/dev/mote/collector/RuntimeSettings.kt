@@ -74,14 +74,14 @@ object RuntimeSettings {
                 reportProgress("正在等待后台处理结束")
                 val work = WorkManager.getInstance(app)
                 listOf("mote-heartbeat", "mote-heartbeat-now", "mote-sync-recovery", "mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic", "mote-capture-ocr", "mote-capture-ocr-recovery")
-                    .forEach { work.cancelUniqueWork(it).result.get(10, TimeUnit.SECONDS) }
+                    .map { work.cancelUniqueWork(it).result }.forEach { it.get(10, TimeUnit.SECONDS) }
                 SyncSchedule.invalidate()
                 val deadline = SystemClock.elapsedRealtime() + 120_000
                 while (ConnectionGuard.processing.get() > 0) {
                     check(SystemClock.elapsedRealtime() < deadline) { "当前处理暂未结束，原设置已保留，请稍后重试" }
                     Thread.sleep(25)
                 }
-                reportProgress("正在验证并保存设置")
+                reportProgress("正在保存设置")
                 ConnectionGuard.reconfigure(app, nextServer, bindLocal, expected) {
                     if (change == null) {
                         val discardImageComparisons = settings.read().imageDedupeDiagnosticsEnabled && !next.imageDedupeDiagnosticsEnabled
@@ -93,9 +93,9 @@ object RuntimeSettings {
             }
             // Also validate the still-saved configuration after a failed apply. The selected
             // directory can wait behind recovery/migration; keep that wait off the UI thread.
-            reportProgress("正在验证存储并恢复运行")
+            reportProgress("正在应用设置")
             val current = runCatching {
-                settings.read().also { app.queue().depth() }
+                settings.read().also { if (change != null) app.queue().depth() }
             }
             currentConfiguration = current.getOrNull()
             main.post {
@@ -124,24 +124,16 @@ object RuntimeSettings {
                 CaptureAccessibilityService.instance?.refreshSchedule()
                 MediaCollectionService.refresh()
                 if (result.isSuccess && applied.getOrNull()?.projectionConsentRequired == true) projectionConsent.request()
+                finished(if (result.isFailure) kotlin.Result.failure(result.exceptionOrNull()!!) else applied)
+                configurationObserver?.invoke()
                 executor.execute {
-                    val scheduled = runCatching {
+                    runCatching {
                         if (applied.isSuccess) current.getOrNull()?.let { config ->
                             UploadWorker.schedule(app, config)
                             CaptureOcrWorker.schedule(app, config, replace = true)
                             SourceWork.schedule(app)
                         }
                     }.onFailure { settings.uploadStatus("设置已保存，同步调度暂不可用：${it.message ?: "请稍后重试"}") }
-                    main.post {
-                        finished(when {
-                            result.isFailure -> kotlin.Result.failure(result.exceptionOrNull()!!)
-                            applied.isFailure -> applied
-                            scheduled.isFailure -> kotlin.Result.failure(scheduled.exceptionOrNull()!!)
-                            else -> applied
-                        })
-                        // Deliver the committed snapshot to whichever MainActivity is now visible.
-                        configurationObserver?.invoke()
-                    }
                 }
             }
         }

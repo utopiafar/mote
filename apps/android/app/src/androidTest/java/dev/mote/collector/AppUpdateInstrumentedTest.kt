@@ -39,10 +39,10 @@ class AppUpdateInstrumentedTest {
     @Test fun nativeUpdatePageDoesNotGrantInstallPermissionOrTriggerNetwork() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val before = context.packageManager.canRequestPackageInstalls(); val store = AppUpdateStore(context); val operation = store.prefs.getString("operation", null)
-        ActivityScenario.launch(AppUpdatesActivity::class.java).awaitUiText("保存渠道并检查更新").use { scenario -> scenario.onActivity { activity ->
+        ActivityScenario.launch(AppUpdatesActivity::class.java).awaitUiText("检查更新").use { scenario -> scenario.onActivity { activity ->
             val labels = mutableListOf<String>()
             fun walk(view: android.view.View) { if (view is android.widget.TextView) labels += view.text.toString(); if (view is android.view.ViewGroup) repeat(view.childCount) { walk(view.getChildAt(it)) } }
-            walk(activity.window.decorView); assertTrue(labels.contains("保存渠道并检查更新")); assertTrue(labels.contains("交给系统安装"))
+            walk(activity.window.decorView); assertTrue(labels.contains("检查更新")); assertFalse(labels.contains("交给系统安装"))
         } }
         assertEquals(before, context.packageManager.canRequestPackageInstalls()); assertEquals(operation, store.prefs.getString("operation", null))
     }

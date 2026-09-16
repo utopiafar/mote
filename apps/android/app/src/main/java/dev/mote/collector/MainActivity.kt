@@ -55,6 +55,7 @@ class MainActivity : Activity() {
     private enum class Page(val title: String, val parent: String? = null) {
         OVERVIEW("概览"), NOTES("随手记"), SOURCES("来源"), SETTINGS("设置"),
         CONNECTION("连接与同步", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
+        PROCESSING("图像与文字识别", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
         PRIVACY("隐私与应用规则", "SETTINGS"), PERMISSIONS("权限与后台运行", "SETTINGS"),
         ABOUT("关于与更新", "SETTINGS"), DEVELOPER("开发者选项", "ABOUT"),
         DIAGNOSTICS("诊断与支持", "DEVELOPER"), MODEL("模型高级设置", "DEVELOPER")
@@ -64,6 +65,7 @@ class MainActivity : Activity() {
     private lateinit var token: EditText
     private lateinit var name: EditText
     private lateinit var interval: EditText
+    private lateinit var uploadedRetention: EditText
     private lateinit var maxQueue: EditText
     private lateinit var excludes: EditText
     private lateinit var masks: EditText
@@ -186,6 +188,8 @@ class MainActivity : Activity() {
         buildSettings()
         buildConnection(config)
         buildCapture(config)
+        buildProcessing(config)
+        buildStorage(config)
         buildPrivacy(config)
         buildPermissions()
         buildAbout()
@@ -216,28 +220,28 @@ class MainActivity : Activity() {
         section("同步状态")
         card {
             syncStatus = text("正在读取同步状态…", 14)
-            rowButtons("立即同步", { retrySync() }, "同步与恢复", { startActivity(Intent(this, SyncRecoveryActivity::class.java)) })
+            rowButtons("立即同步", { retrySync() }, "待上传队列", { startActivity(Intent(this, SyncQueueActivity::class.java)) })
         }
         section("本机记录")
         totalsStatus = text("正在读取统计…", 15)
         menu("采集记录", "按天查看本机与中央归档的图片、OCR 状态和文字", "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         menu("采集与存储详情", "查看累计结果、队列与使用空间", "chart") { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
         menu("权限与后台运行", "管理采集权限和省电设置", "settings") { showPage(Page.PERMISSIONS) }
-        text("本机采集与同步独立运行。默认以明文保存，可在开发者选项开启本地内容加密；空间达到上限会暂停新增。", 12, MoteUi.muted)
     }
 
     private fun buildSettings() {
         page(Page.SETTINGS, "按你的习惯，照顾好每一份记录")
-        section("偏好设置")
+        section("记录与数据")
         menu("连接与同步", "中央节点、设备名称与上传网络", "sync") { showPage(Page.CONNECTION) }
         menu("采集与存储", "采样频率、图像质量与电量策略", "capture") { showPage(Page.CAPTURE) }
-        menu("图片保存位置", "本机待同步与待 OCR 图片及记录", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
+        menu("本机存储", "保留时间、空间上限与保存位置", "folder") { showPage(Page.STORAGE) }
+        menu("导入与导出", "迁移配置、备份与恢复本机记录", "folder") { startActivity(Intent(this, BackupActivity::class.java)) }
         menu("隐私与应用规则", "应用采集级别、遮罩与本机过滤", "shield") { showPage(Page.PRIVACY) }
         section("应用")
         menu("权限与后台运行", "系统授权、电池优化与自启动", "settings") { showPage(Page.PERMISSIONS) }
         menu("关于与更新", "版本信息、应用更新与开发者选项", "info") { showPage(Page.ABOUT) }
         menu("反馈", "前往 GitHub，可附图片或诊断包", "note") { openFeedback() }
-        text("设置在保存后生效。切换页面会保留尚未保存的输入。", 12, MoteUi.muted)
+        text("修改后请保存，再切换页面。", 12, MoteUi.muted)
     }
 
     private fun openFeedback() {
@@ -254,7 +258,8 @@ class MainActivity : Activity() {
     private fun buildSources() {
         page(Page.SOURCES, "把你选择的生活线索，收进同一份档案")
         section("已支持的来源")
-        menu("屏幕与应用活动", "按你的隐私规则采集，可随时暂停", "capture") { showPage(Page.PRIVACY) }
+        menu("屏幕与应用活动", "采集来源、频率与电量策略", "capture") { showPage(Page.CAPTURE) }
+        menu("应用采集规则", "为普通与系统应用设置记录方式", "shield") { showPage(Page.PRIVACY) }
         menu("随手记", "记录此刻的想法", "note") { showPage(Page.NOTES) }
         menu("日历与文件", "连接日历、选择文件或授权目录", "folder") { startActivity(Intent(this, SourcesActivity::class.java)) }
         card(MoteUi.tint) {
@@ -274,7 +279,7 @@ class MainActivity : Activity() {
         syncInterval = presetNumber("同步间隔 / 分钟（批量模式下也是最长等待时间）", config.syncIntervalMinutes, "15", 15..1440, listOf(15, 30, 60, 180, 360, 720, 1440))
         syncBatch = presetNumber("批量达到多少条时同步", config.syncBatchSize, "20", 1..500, listOf(5, 10, 20, 50, 100, 200, 500))
         updateSyncFields()
-        text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。", 13, MoteUi.muted)
+        help("同步方式说明", "定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。")
         section("同步条件")
         wifi = check("仅非计费 Wi-Fi 同步", config.wifiOnly)
         syncChargingOnly = check("仅充电时同步", config.syncChargingOnly)
@@ -299,7 +304,8 @@ class MainActivity : Activity() {
         name = field("设备名称", config.deviceName, "我的 K90 Pro Max")
         text("中央节点可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；跨设备请填写局域网 IP 或 HTTPS 域名。", 13, MoteUi.muted)
         button("立即重试同步") { retrySync() }
-        menu("同步与恢复", "待发、两端检查、全量补传与冲突处理", "sync") { startActivity(Intent(this, SyncRecoveryActivity::class.java)) }
+        menu("待上传队列", "查看采集、随手记和来源待发条目", "sync") { startActivity(Intent(this, SyncQueueActivity::class.java)) }
+        menu("同步与恢复", "两端检查、补传与冲突处理", "sync") { startActivity(Intent(this, SyncRecoveryActivity::class.java)) }
     }
 
     private fun buildCapture(config: CollectorConfig) {
@@ -308,9 +314,9 @@ class MainActivity : Activity() {
         screenCollectionEnabled = check("采集屏幕与前台应用活动", config.screenCollectionEnabled)
         notificationCollectionEnabled = check("采集通知（正文、持续状态、更新与移除）", config.notificationCollectionEnabled)
         deviceEventCollectionEnabled = check("采集亮屏、熄屏与锁定 / 解锁事件", config.deviceEventCollectionEnabled)
-        text("通知与设备事件可独立开启，通过系统通知服务观察，按同步策略上传。通知遵循应用规则：仅活动不读取正文，不记录会完全跳过。系统可能隐藏敏感内容；熄屏不等同于锁定。", 13, MoteUi.muted)
+        help("通知与设备事件说明", "通知与设备事件可独立开启，通过系统通知服务观察，按同步策略上传。通知遵循应用规则：仅活动不读取正文，不记录会完全跳过。系统可能隐藏敏感内容；熄屏不等同于锁定。")
         mediaCollectionEnabled = check("采集媒体播放状态（需通知使用权）", config.mediaCollectionEnabled)
-        text("媒体采集可单独开启，在前台、后台和锁屏时观察播放器公开的状态、应用及曲目/章节信息；不录音、不控制播放。普通通知由单独的通知采集开关控制。使用概览页的开始/暂停控制采集。媒体沿用应用隐私规则、电量限制和同步策略；关闭元数据会同时暂停媒体。", 13, MoteUi.muted)
+        help("媒体采集说明", "媒体采集可单独开启，在前台、后台和锁屏时观察播放器公开的状态、应用及曲目/章节信息；不录音、不控制播放。普通通知由单独的通知采集开关控制。使用概览页的开始/暂停控制采集。媒体沿用应用隐私规则、电量限制和同步策略；关闭元数据会同时暂停媒体。")
         mediaStatus = text("媒体状态正在读取…", 13, MoteUi.muted)
         button("授权通知、媒体与设备事件") { mediaPermission() }
         button("重新授权投屏（已开启的媒体可继续）") {
@@ -320,15 +326,29 @@ class MainActivity : Activity() {
             else if (!settings.enabled) startCapture()
             else requestProjectionConsent()
         }
-        text("约每30秒及状态变化时记录。系统休眠、终止服务或播放器未公开媒体会话时可能缺失；仅统计连续观测的播放时段。", 13, MoteUi.muted)
+        help("播放时间如何计算", "约每30秒及状态变化时记录。系统休眠、终止服务或播放器未公开媒体会话时可能缺失；仅统计连续观测的播放时段。")
         section("采样与空间")
         interval = presetNumber("采集间隔 / 秒", config.intervalSeconds, "30", 5..300, listOf(5, 15, 30, 60, 120, 300))
-        menu("图片保存位置", "选择应用存储空间并迁移已有记录", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
-        maxQueue = presetNumber("本机存储上限 / MiB", config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
-        text("默认最长边 1280px、JPEG 75，生效数值可在统计详情查看。相同图片共用本机文件，满后暂停；收到节点确认且 OCR 已处理后才清理本机图片。时间统计是采样设备时间。", 13)
         projectionMode = check("使用投屏模式（备用，每次需授权）", config.mode == "projection")
-        text("默认无障碍截图模式适用 Android 11+：系统重新连接服务时可恢复你已启用的采集。投屏模式锁屏/被杀后必须重新授权。Android 10 请选投屏模式。", 13)
-        section("画面质量与电量")
+        help("截图模式说明", "默认无障碍截图模式适用 Android 11+：系统重新连接服务时可恢复你已启用的采集。投屏模式锁屏/被杀后必须重新授权。Android 10 请选投屏模式。")
+        section("电量策略")
+        chargingOnly = check("仅充电时采集屏幕、活动和媒体", config.chargingOnly)
+        batteryBelow = presetNumber("低于此电量暂停 / % · 0 为关闭", config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
+        section("更多采集设置")
+        menu("图像与文字识别", "清晰度、图片去重与 OCR", "capture") { showPage(Page.PROCESSING) }
+        menu("本机存储", "上传后保留时间、空间上限与保存位置", "folder") { showPage(Page.STORAGE) }
+    }
+    private fun buildStorage(config: CollectorConfig) {
+        page(Page.STORAGE, "保留你需要回看的本机副本")
+        menu("图片保存位置", "选择应用存储空间并迁移已有记录", "folder") { startActivity(Intent(this, StorageActivity::class.java)) }
+        uploadedRetention = presetNumber("上传后本机保留 / 天（0 为立即清理）", config.uploadedRetentionDays, "7", 0..365, listOf(0, 1, 7, 14, 30, 90, 365))
+        maxQueue = presetNumber("本机存储上限 / MiB", config.maxQueueMiB, "256", 8..4096, listOf(64, 128, 256, 512, 1024, 2048, 4096))
+        text("完成上传与 OCR 后开始计时，到期自动清理本机副本；中央归档继续保留。未上传和冲突记录不会自动删除。", 13, MoteUi.muted)
+        menu("导入与导出", "备份配置与本机记录", "folder") { startActivity(Intent(this, BackupActivity::class.java)) }
+    }
+    private fun buildProcessing(config: CollectorConfig) {
+        page(Page.PROCESSING, "图像质量与 OCR")
+        section("图像质量")
         jpegQuality = presetNumber("图像质量 · 数值越高清晰度越高", config.jpegQuality, "75", 40..95, listOf(50, 65, 75, 85, 95))
         captureMaxSide = presetNumber("图片最长边 / px", config.captureMaxSide, "1280", 640..2560, listOf(640, 960, 1280, 1920, 2560))
         text("图片去重", 15)
@@ -337,8 +357,7 @@ class MainActivity : Activity() {
             setSelection(imageDedupeModes.indexOf(config.imageDedupeMode).coerceAtLeast(0))
         }
         content.addView(imageDedupeMode, LinearLayout.LayoutParams(-1, dp(56))); track(imageDedupeMode, "imageDedupeMode")
-        text("与同一应用最近保存的画面比较。重处理前命中时仅记录应用活动，不保存或审查当前图片，也不沿用旧文字。开启图片对比诊断时保留审查后的对比链路。近似档位可能忽略细小变化；重启后重新建立基准。", 13, MoteUi.muted)
-        chargingOnly = check("仅充电时采集屏幕、活动和媒体", config.chargingOnly)
+        help("图片去重说明", "与同一应用最近保存的画面比较。重处理前命中时仅记录应用活动，不保存或审查当前图片，也不沿用旧文字。开启图片对比诊断时保留审查后的对比链路。近似档位可能忽略细小变化；重启后重新建立基准。")
         text("OCR 识别方式", 15)
         ocrMode = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("中文与拉丁文（单引擎）", "仅拉丁文", "双引擎（高质量）"))
@@ -349,8 +368,6 @@ class MainActivity : Activity() {
         text("可填写包名到 chinese、latin 或 dual 的映射；未指定的应用使用上方模式。", 13, MoteUi.muted)
         ocrChargingOnly = check("仅充电时 OCR", config.ocrChargingOnly)
         text("使用电池时保存图片，充电后识别文字；图片和识别结果按同步设置上传。待识别图片与文字预留空间计入存储上限。", 13, MoteUi.muted)
-        batteryBelow = presetNumber("低于此电量暂停 / % · 0 为关闭", config.batteryPauseBelowPct, "0", 0..95, listOf(0, 10, 15, 20, 30, 50))
-        menu("权限与后台运行", "调整系统授权与后台运行设置", "settings") { showPage(Page.PERMISSIONS) }
     }
 
     private fun buildDiagnostics(config: CollectorConfig) {
@@ -358,12 +375,12 @@ class MainActivity : Activity() {
         technicalStatus = text("正在读取运行状态…", 13)
         diagnosticEnabled = check("记录数值与事件诊断", config.diagnosticsEnabled)
         diagnosticInterval = field("诊断采样间隔 / 秒（15–3600）", config.diagnosticsIntervalSeconds.toString(), "60", InputType.TYPE_CLASS_NUMBER)
-        text("仅在应用/采集运行时采样，最多 1440 条。记录整机电量、队列/模型空间、入队/拦截/失败计数、推理/OCR 耗时和上传字节，不包含截图、文字、笔记、令牌或审查理由。电量变化是整机变化，不能归因于 Mote。", 13)
+        help("数值诊断说明", "仅在应用/采集运行时采样，最多 1440 条。记录整机电量、队列/模型空间、入队/拦截/失败计数、推理/OCR 耗时和上传字节，不包含截图、文字、笔记、令牌或审查理由。电量变化是整机变化，不能归因于 Mote。")
         button("导出数值诊断 JSON") {
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-diagnostics.json"), 103)
         }
         button("打开本地日志查看器") { startActivity(Intent(this, LogViewerActivity::class.java)) }
-        text("事件日志最多 500 条，只记录固定阶段、错误类别与数值。支持包不包含节点地址、设备名、截图、笔记、OCR、令牌、提示词或审查理由；关闭诊断后停止新增，已有记录保留。", 13)
+        help("支持包包含什么", "事件日志最多 500 条，只记录固定阶段、错误类别与数值。支持包不包含节点地址、设备名、截图、笔记、OCR、令牌、提示词或审查理由；关闭诊断后停止新增，已有记录保留。")
         button("导出安全支持包 JSON") {
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-${BuildConfig.MOTE_PROFILE}-support.json"), 104)
         }
@@ -522,7 +539,7 @@ class MainActivity : Activity() {
         }
         track(nsfwSource, "nsfwSource")
         nsfwCustom = field("自定义 HTTPS 目录（model.gguf / mmproj.gguf）", config.nsfw.customUrl, "https://your-nas.example/models/qwen", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
-        text("双模型共约 703 MiB。自动先尝试国内 ModelScope，失败回退 Hugging Face；支持断点续传，取消后保留断点。可在自定义目录托管两个固定文件，或分两次导入本地 GGUF；每次加载前核对完整 SHA-256。下载速度取决于网络。", 13)
+        help("模型下载说明", "双模型共约 703 MiB。自动先尝试国内 ModelScope，失败回退 Hugging Face；支持断点续传，取消后保留断点。可在自定义目录托管两个固定文件，或分两次导入本地 GGUF；每次加载前核对完整 SHA-256。下载速度取决于网络。")
         button("重载推理进程") {
             uiTask.start("正在重载推理进程…", { nsfwStatus.text = it }, {
                 NsfwClient.resetAll(); NsfwModelStore(applicationContext).inferenceStatus("已重置推理进程，下一帧重新校验并加载")
@@ -556,7 +573,7 @@ class MainActivity : Activity() {
         }
         section("图片去重排查")
         imageDedupeDiagnosticsEnabled = check("临时保留图片去重对比记录", config.imageDedupeDiagnosticsEnabled)
-        text("默认关闭。开启并保存后，将已去重图片及对比原图临时保存在本机，供核对分数与判断依据。最多 20 组、32 MiB，24 小时后到期；读取时清理，系统可能延后后台清理。关闭并保存后清空。保留的都是通过隐私检查和遮罩后的图片。", 13, MoteUi.muted)
+        help("图片对比诊断说明", "默认关闭。开启并保存后，将已去重图片及对比原图临时保存在本机，供核对分数与判断依据。最多 20 组、32 MiB，24 小时后到期；读取时清理，系统可能延后后台清理。关闭并保存后清空。保留的都是通过隐私检查和遮罩后的图片。")
         menu("本机图片批量去重", "全量扫描、对比预览、移入待决定区或删除", "chart") { startActivity(Intent(this, BulkDedupeActivity::class.java)) }
         menu("查看图片去重记录", "对比两张图片、分数与依据，可随时清空", "chart") { startActivity(Intent(this, ImageDedupeDiagnosticsActivity::class.java)) }
         menu("模型高级设置", "审查指令、下载来源与推理参数", "settings") { showPage(Page.MODEL) }
@@ -577,8 +594,6 @@ class MainActivity : Activity() {
         menu("应用更新", "检查新版本与安装更新", "sync") { startActivity(Intent(this, AppUpdatesActivity::class.java)) }
         menu("开发者选项", "诊断、模型高级参数与构建信息", "settings") { showPage(Page.DEVELOPER) }
         text("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT} · ${Build.MANUFACTURER} ${Build.MODEL}", 12, MoteUi.muted)
-        text("相机权限用于扫码连接。", 13, MoteUi.muted)
-        text("本构建尚未在 K90 Pro Max 真机验证。", 12, MoteUi.muted)
     }
 
     private fun refreshContentDecryption() {
@@ -603,13 +618,13 @@ class MainActivity : Activity() {
                 .setNegativeButton("取消", null).setPositiveButton("打开系统设置") { _, _ -> safeOpen(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
         }
         button("授权通知与媒体（通知使用权）") { mediaPermission() }
-        text("HyperOS 通知使用权：请按需打开实时、对话、通知、静音类别。旧版曾禁用这些类别；更新后若仍是灰色，可关闭再重新授予通知使用权。类别和应用级开关会影响可接收的事件。", 13, MoteUi.muted)
+        help("HyperOS 通知设置帮助", "HyperOS 通知使用权：请按需打开实时、对话、通知、静音类别。旧版曾禁用这些类别；更新后若仍是灰色，可关闭再重新授予通知使用权。类别和应用级开关会影响可接收的事件。")
         notificationButton = button("通知权限") { notifications() }
         usageButton = button("使用情况权限") { safeOpen(Intent(SystemSettings.ACTION_USAGE_ACCESS_SETTINGS)) }
         batteryButton = button("电池优化设置") { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
         button("自启动设置 · 需在系统确认") { autostart() }
         button("应用详情 / 受限制设置") { safeOpen(detailsIntent()) }
-        text("小米 / HyperOS：在系统应用设置中允许 Mote 自启动，将省电策略设为无限制，并允许通知；可在最近任务中锁定应用。菜单随系统版本变化。若侧载 APK 的无障碍开关受限，请在应用详情的菜单中检查“允许受限制的设置”。这些设置不能保证系统永不终止采集。", 13)
+        help("HyperOS 后台设置帮助", "小米 / HyperOS：在系统应用设置中允许 Mote 自启动，将省电策略设为无限制，并允许通知；可在最近任务中锁定应用。菜单随系统版本变化。若侧载 APK 的无障碍开关受限，请在应用详情的菜单中检查“允许受限制的设置”。这些设置不能保证系统永不终止采集。")
     }
 
     private fun updatePermissionSummary() {
@@ -654,12 +669,15 @@ class MainActivity : Activity() {
             wifiOnly = wifi.isChecked, syncMode = syncModes[syncMode.selectedItemPosition], syncIntervalMinutes = number(syncInterval, 15..1440),
             syncBatchSize = number(syncBatch, 1..500), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
         Page.CAPTURE -> current.copy(
-            intervalSeconds = number(interval, 5..300), maxQueueMiB = number(maxQueue, 8..4096), mode = if (projectionMode.isChecked) "projection" else "accessibility",
-            jpegQuality = number(jpegQuality, 40..95), captureMaxSide = number(captureMaxSide, 640..2560), chargingOnly = chargingOnly.isChecked,
+            intervalSeconds = number(interval, 5..300), mode = if (projectionMode.isChecked) "projection" else "accessibility",
+            chargingOnly = chargingOnly.isChecked, batteryPauseBelowPct = number(batteryBelow, 0..95),
+            mediaCollectionEnabled = mediaCollectionEnabled.isChecked, screenCollectionEnabled = screenCollectionEnabled.isChecked,
+            notificationCollectionEnabled = notificationCollectionEnabled.isChecked, deviceEventCollectionEnabled = deviceEventCollectionEnabled.isChecked)
+        Page.STORAGE -> current.copy(maxQueueMiB = number(maxQueue, 8..4096), uploadedRetentionDays = number(uploadedRetention, 0..365))
+        Page.PROCESSING -> current.copy(
+            jpegQuality = number(jpegQuality, 40..95), captureMaxSide = number(captureMaxSide, 640..2560),
             ocrMode = OcrPolicy.modes[ocrMode.selectedItemPosition], ocrAppModes = ocrAppModes.text.toString(),
-            batteryPauseBelowPct = number(batteryBelow, 0..95), ocrChargingOnly = ocrChargingOnly.isChecked, mediaCollectionEnabled = mediaCollectionEnabled.isChecked,
-            screenCollectionEnabled = screenCollectionEnabled.isChecked, notificationCollectionEnabled = notificationCollectionEnabled.isChecked,
-            deviceEventCollectionEnabled = deviceEventCollectionEnabled.isChecked, imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])
+            ocrChargingOnly = ocrChargingOnly.isChecked, imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])
         Page.PRIVACY -> current.copy(
             excludedPackages = excludes.text.toString(), masks = checked(masks) { masks.text.toString().also { Mask.parse(it) } },
             appCollectionRules = checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() },
@@ -708,6 +726,10 @@ class MainActivity : Activity() {
         val c = runCatching { draft(current).also { it.validate() } }.getOrElse { toast(it.message ?: "请检查配置输入"); return }
         val savedFields = pageControlValues().keys
         val submitted = baseline + controlValues().filterKeys { it in savedFields }; val generation = draftGeneration
+        if (c.server == current.server && c.token == current.token) {
+            applySettings(c, bindLocal, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after)
+            return
+        }
         applyingSettings = true; updateSaveBar()
         val app = applicationContext
         // The accepted save must survive rotation while preflight is waiting on storage.
@@ -986,6 +1008,12 @@ class MainActivity : Activity() {
     override fun onDestroy() { statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
+    private fun help(title: String, message: String) {
+        text(title + "  ›", 13, MoteUi.accent).apply {
+            minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
+            setOnClickListener { AlertDialog.Builder(this@MainActivity).setTitle(title).setMessage(message).setPositiveButton("知道了", null).show() }
+        }
+    }
     private fun page(page: Page, subtitle: String) {
         buildingPage = page
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(18), dp(22), dp(28)) }
@@ -1096,6 +1124,7 @@ class MainActivity : Activity() {
 
     private fun buildSettingsPage(page: Page, config: CollectorConfig) = when (page) {
         Page.CONNECTION -> buildConnection(config); Page.CAPTURE -> buildCapture(config); Page.PRIVACY -> buildPrivacy(config)
+        Page.PROCESSING -> buildProcessing(config); Page.STORAGE -> buildStorage(config)
         Page.DEVELOPER -> buildDeveloper(config); Page.DIAGNOSTICS -> buildDiagnostics(config); Page.MODEL -> buildModel(config)
         else -> Unit
     }
@@ -1217,7 +1246,7 @@ class MainActivity : Activity() {
         }.setNegativeButton("取消", null).show()
     }
     private fun chooseInstalledApp() {
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val configured = AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).apps.keys + PrivacyRules.exclusions(excludes.text.toString())
         var apps = emptyList<Pair<String, String>>()
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), dp(8)) }
         val search = MoteUi.field(EditText(this)).apply { hint = "搜索应用名称"; setSingleLine() }; body.addView(search)
@@ -1257,7 +1286,7 @@ class MainActivity : Activity() {
             override fun afterTextChanged(s: Editable?) { filter() }
         }); filter(); dialog.show()
         uiTask.start("正在读取已安装应用…", { if (dialog.isShowing) summary.text = it }, {
-            packageManager.queryIntentActivities(intent, 0).map { it.activityInfo.packageName to it.loadLabel(packageManager).toString() }.distinctBy { it.first }.sortedBy { it.second }
+            InstalledApps.load(packageManager, configured)
         }) { result ->
             if (dialog.isShowing) result.onSuccess { apps = it; filter() }.onFailure { summary.text = "应用列表读取失败，请关闭后重试" }
         }

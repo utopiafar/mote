@@ -26,7 +26,7 @@ class StorageActivity : Activity() {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         body = moteDetailPage()
         text(body, "图片保存位置", 27f)
-        text(body, "这里保存本机待同步、待 OCR 的图片，以及同一队列的随手记和应用活动。已归档图片仍保存在中央节点，可在采集记录中查看。")
+        text(body, "本机保存待同步、待 OCR 与保留期内的记录和图片。上传后仍可回看，到期才清理。")
         text(body, "选择内部应用空间，或系统提供的本机／存储卡应用空间。迁移会自动暂停处理、复制并验证已有记录，然后继续原来的采集与同步。模型、草稿、设置及来源缓存保留在内部空间。")
         inventory = TextView(this).apply { textSize = 15f }; body.addView(inventory)
         content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; body.addView(content)

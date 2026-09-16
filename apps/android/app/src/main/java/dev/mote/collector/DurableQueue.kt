@@ -20,7 +20,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
         // 100,000 UTF-16 code units can require six JSON bytes each, plus result fields.
         internal const val OCR_RESERVE_BYTES = 600_256L
-        private val localFields = listOf("_uploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts", "_uploadConflict")
+        private val localFields = listOf("_uploaded", "_retainedUntil", "_ocrUploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts", "_uploadConflict")
         // Only fixed statistics and date/source index fields are cached, never capture content. A bounded process cache
         // is shared by the short-lived queue handles; the record files remain authoritative.
         private const val MAX_CACHED_DIRECTORIES = 4
@@ -89,6 +89,22 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             }.toList()
         }
     }
+    /** Paginated metadata only; never loads image payloads to render the upload queue. */
+    fun pendingPage(offset: Int = 0, limit: Int = 30): JSONObject {
+        require(offset >= 0 && limit in 1..60)
+        prepareIndex()
+        return guarded {
+            val rows = metadata().filter { it.optBoolean("pending") || it.optBoolean("blocked") || it.optBoolean("awaitingOcr") }
+                .sortedWith(compareBy<JSONObject> { it.getLong("modified") }.thenBy { it.getString("id") })
+            val items = rows.drop(offset).take(limit).map { row -> JSONObject(row.toString()).put("status", when {
+                row.optBoolean("blocked") -> "需处理"
+                row.optBoolean("uploaded") && row.optBoolean("hasOcrResult") -> "OCR 待上传"
+                row.optBoolean("uploaded") -> "等待 OCR"
+                else -> "等待上传"
+            }) }
+            JSONObject().put("total", rows.size).put("items", org.json.JSONArray(items))
+        }
+    }
     fun syncIds(after: String? = null, limit: Int = 100): List<String> = guarded {
         require(limit in 1..100)
         records().map { it.nameWithoutExtension }.filter { after == null || it > after }.sorted().take(limit)
@@ -99,7 +115,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         for (file in records()) {
             val event = read(file)
             if (syncFailed(event)) continue
-            if (event.optBoolean("_uploaded")) { event.remove("_uploaded"); atomic(file, event.toString().toByteArray()) }
+            if (event.optBoolean("_uploaded")) { event.remove("_uploaded"); event.remove("_ocrUploaded"); event.remove("_retainedUntil"); atomic(file, event.toString().toByteArray()) }
             count++
         }; count
     }
@@ -211,14 +227,36 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         result
         }
     }
-    fun acknowledge(id: String, uploadedBytes: Long = 0): Unit = guarded {
+    fun acknowledge(id: String, uploadedBytes: Long = 0, retentionDays: Int = 0, now: Long = System.currentTimeMillis()): Unit = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return
         val record = read(file)
         if (record.optBoolean("_uploaded")) return
         if (record.optJSONObject("ocr")?.optString("status") == "pending") atomic(file, record.put("_uploaded", true).toString().toByteArray())
-        else remove(file, record)
+        else retainOrRemove(file, record, retentionDays, now)
         onChange?.invoke(when (record.optString("source")) { "notification", "device_event" -> OperationKind.SYSTEM_EVENT_ACK; "media" -> OperationKind.MEDIA_ACK; "activity" -> OperationKind.ACTIVITY_ACK; "note" -> OperationKind.NOTE_ACK; else -> OperationKind.SCREEN_ACK }, uploadedBytes, id)
+    }
+    private fun retainOrRemove(file: File, record: JSONObject, days: Int, now: Long) {
+        require(days in 0..365)
+        if (days == 0) remove(file, record)
+        else atomic(file, record.put("_uploaded", true).put("_retainedUntil", now + days * 86_400_000L).toString().toByteArray())
+    }
+    /** Never prune pending uploads, pending OCR or conflict records. Deadline starts at final ACK. */
+    fun pruneUploaded(now: Long = System.currentTimeMillis()): Int {
+        prepareIndex()
+        val ids = guarded { metadata().filter { it.optLong("retainedUntil") in 1..now && !it.optBoolean("pending") && !it.optBoolean("blocked") && !it.optBoolean("awaitingOcr") }.map { it.getString("id") } }
+        var count = 0
+        withDeferredIndexWrites {
+            for (id in ids) guarded {
+                val file = File(dir, "$id.event")
+                if (file.exists()) {
+                    val event = read(file)
+                    if (event.optBoolean("_uploaded") && event.optLong("_retainedUntil") in 1..now && !syncFailed(event) &&
+                        (event.optJSONObject("ocr")?.optString("status") != "pending" || event.optBoolean("_ocrUploaded"))) { remove(file, event); count++ }
+                }
+            }
+        }
+        return count
     }
     private fun remove(file: File, record: JSONObject) {
         val hash = record.optString("_blob", "")
@@ -262,16 +300,17 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     fun nextOcrUpdate(): JSONObject? {
         prepareIndex()
         return guarded {
-            metadata().asSequence().filter { it.optBoolean("uploaded") && it.optBoolean("hasOcrResult") && !it.optBoolean("blocked") }.minByOrNull { it.getLong("modified") }
+            metadata().asSequence().filter { it.optBoolean("uploaded") && it.optBoolean("hasOcrResult") && !it.optBoolean("ocrUploaded") && !it.optBoolean("blocked") }.minByOrNull { it.getLong("modified") }
                 ?.let { read(File(dir, "${it.getString("id")}.event")) }
                 ?.let { JSONObject(it.getJSONObject("_ocrResult").toString()).put("id", it.getString("id")) }
         }
     }
-    fun acknowledgeOcr(id: String) = guarded {
+    fun acknowledgeOcr(id: String, retentionDays: Int = 0, now: Long = System.currentTimeMillis()) = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return
         val event = read(file); require(event.optBoolean("_uploaded") && event.has("_ocrResult"))
-        remove(file, event)
+        if (event.optBoolean("_ocrUploaded")) return
+        retainOrRemove(file, event.put("_ocrUploaded", true), retentionDays, now)
     }
     fun archiveMissing(id: String) = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
@@ -351,6 +390,14 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         remove(file, event)
         true
     }
+    fun archiveRecord(id: String): Pair<JSONObject, ByteArray?>? = guarded {
+        val file = File(dir, "${UUID.fromString(id)}.event")
+        if (!file.exists()) null else {
+            val event = read(file)
+            val hash = event.optString("_blob")
+            event to if (hash.isBlank()) null else verifiedBlob(hash, readBytes = true)
+        }
+    }
     fun image(id: String): ByteArray? = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return null
@@ -365,6 +412,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         display(read(file))
     }
     private fun display(event: JSONObject): JSONObject {
+        event.put("ocrSynced", event.optBoolean("_ocrUploaded")).put("retainedUntil", event.optLong("_retainedUntil"))
         event.put("hasImage", event.optString("_blob").isNotBlank()).put("uploaded", event.optBoolean("_uploaded"))
         event.optJSONObject("_ocrResult")?.let { result ->
             event.put("ocrText", result.getString("ocrText"))

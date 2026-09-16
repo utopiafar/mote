@@ -8,10 +8,12 @@ import java.io.File
 
 object SupportEvents {
     fun record(context: Context, stage: EventStage, code: EventCode, elapsedMs: Long? = null, httpStatus: Int? = null) {
+        runCatching { runtime(context).event(stage, code, elapsedMs, httpStatus) }
         if (!context.getSharedPreferences("mote", Context.MODE_PRIVATE).getBoolean("diagnosticsEnabled", false)) return
         // Diagnostic storage failure never changes capture/queue correctness.
         runCatching { journal(context).record(stage, code, elapsedMs, httpStatus) }
     }
+    fun runtime(context: Context) = RuntimeLog(File(context.noBackupFilesDir, "mote.log"))
     fun journal(context: Context) = EventJournal(File(context.noBackupFilesDir, "support-events.json"))
     fun export(context: Context): String {
         val settings = Settings(context); val config = runCatching { settings.read() }.getOrNull()

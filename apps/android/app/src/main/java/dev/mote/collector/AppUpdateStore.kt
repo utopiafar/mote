@@ -111,7 +111,14 @@ class AppUpdateStore(val context: Context) {
     }
     fun apk(asset: AppReleaseAsset) = File(directory, "${asset.sha256}.apk")
     fun active(id: String) = prefs.getString("operation", "") == id
-    fun state(code: String, operation: String? = null, bytes: Long? = null) { if (operation != null && !active(operation)) return; prefs.edit().putString("state", code).putLong("changedAt", System.currentTimeMillis()).apply { if (bytes != null) putLong("bytes", bytes) }.commit() }
+    fun beginOperation(id: String, action: String) = synchronized(stateLock) { check(prefs.edit().putString("operation", id).putString("action", action).commit()) }
+    fun cancelOperation() = synchronized(stateLock) { check(prefs.edit().putString("operation", UUID.randomUUID().toString()).commit()); state("cancelled") }
+    fun state(code: String, operation: String? = null, bytes: Long? = null, expectedState: String? = null) = synchronized(stateLock) {
+        if (operation != null && !active(operation)) return@synchronized
+        if (expectedState != null && prefs.getString("state", "idle") != expectedState) return@synchronized
+        prefs.edit().putString("state", code).putLong("changedAt", System.currentTimeMillis()).apply { if (bytes != null) putLong("bytes", bytes) }.commit()
+        Unit
+    }
     fun publish(raw: ByteArray, release: AppRelease, asset: AppReleaseAsset, operation: String) {
         if (!active(operation)) throw InterruptedIOException()
         val temporary = File(directory, "manifest.tmp"); FileOutputStream(temporary).use { it.write(raw); it.fd.sync() }
@@ -120,7 +127,7 @@ class AppUpdateStore(val context: Context) {
         prefs.edit().putString("availableVersion", release.version).putLong("availableCode", asset.versionCode).putLong("size", asset.size).commit()
     }
     fun <T> locked(action: () -> T): T = synchronized(lock) { RandomAccessFile(File(directory, "writer.lock"), "rw").use { it.channel.use { channel -> channel.lock().use { action() } } } }
-    companion object { private val lock = Any() }
+    companion object { private val lock = Any(); private val stateLock = Any() }
 }
 
 class AppUpdateWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
@@ -136,23 +143,30 @@ class AppUpdateWorker(context: Context, params: WorkerParameters) : Worker(conte
                 val release = AppReleaseVerifier.verify(raw, store.key(), config, network.selectedVersion)
                 val asset = release.asset(applicationContext.packageName) ?: throw UpdateFailure("asset_missing")
                 store.publish(raw, release, asset, operation)
-                store.state(if (asset.versionCode <= AndroidUpdateVerifier.installed(applicationContext).longVersionCode) "current" else if (AndroidUpdateVerifier.certificates(applicationContext) != setOf(asset.certificateSha256)) "certificate" else "available", operation)
+                val state = if (asset.versionCode <= AndroidUpdateVerifier.installed(applicationContext).longVersionCode) "current"
+                    else if (AndroidUpdateVerifier.certificates(applicationContext) != setOf(asset.certificateSha256)) "certificate"
+                    else if (store.apk(asset).exists()) {
+                        try { AndroidUpdateVerifier.verify(applicationContext, store.apk(asset), asset); "ready" }
+                        catch (error: UpdateFailure) { if (error.code != "checksum") throw error; store.apk(asset).delete(); "available" }
+                    } else "available"
+                store.state(state, operation)
             } else {
                 val asset = store.candidate()?.second ?: throw UpdateFailure("asset_missing")
                 if (asset.versionCode <= AndroidUpdateVerifier.installed(applicationContext).longVersionCode) throw UpdateFailure("not_newer")
                 if (AndroidUpdateVerifier.certificates(applicationContext) != setOf(asset.certificateSha256)) throw UpdateFailure("certificate")
-                if (store.config().wifiOnly && !UploadWorker.isWifi(applicationContext)) { store.state("waiting_network", operation); return@locked Result.retry() }
+                if (store.config().wifiOnly && applicationContext.getSystemService(android.net.ConnectivityManager::class.java).isActiveNetworkMetered) { store.state("waiting_wifi", operation); return@locked Result.retry() }
                 val apk = store.apk(asset)
                 if (!apk.exists()) { val part = File(store.directory, "${asset.sha256}.part"); store.state("downloading", operation, part.length()); network.download(asset, part) { store.state("downloading", operation, it) }
                     if (!store.active(operation) || isStopped) throw InterruptedIOException()
                     store.state("verifying", operation); AndroidUpdateVerifier.verify(applicationContext, part, asset)
                     if (!part.renameTo(apk)) throw UpdateFailure("storage")
-                } else AndroidUpdateVerifier.verify(applicationContext, apk, asset)
+                } else try { AndroidUpdateVerifier.verify(applicationContext, apk, asset) }
+                    catch (error: UpdateFailure) { if (error.code == "checksum") apk.delete(); throw error }
                 store.state("ready", operation, asset.size)
             }
             SupportEvents.record(applicationContext, EventStage.UPDATE, EventCode.OK); Result.success()
         }
-    } catch (_: InterruptedIOException) { store.state("cancelled", operation); Result.failure() }
+    } catch (_: InterruptedIOException) { store.state(if (isStopped) "waiting_network" else "network", operation); if (isStopped) Result.failure() else Result.retry() }
     catch (e: UpdateFailure) { store.state(e.code, operation); SupportEvents.record(applicationContext, EventStage.UPDATE, EventCode.RESPONSE); if (e.code in setOf("network", "rate_limit")) Result.retry() else Result.failure() }
     catch (_: IOException) { store.state("network", operation); SupportEvents.record(applicationContext, EventStage.UPDATE, EventCode.NETWORK); Result.retry() }
     catch (_: Exception) { store.state("failed", operation); SupportEvents.record(applicationContext, EventStage.UPDATE, EventCode.OTHER); Result.failure() }
@@ -162,11 +176,31 @@ object AppUpdateWork {
     const val NAME = "mote-app-update"
     fun enqueue(context: Context, action: String) {
         require(action in setOf("check", "download")); val store = AppUpdateStore(context); val id = UUID.randomUUID().toString()
-        store.prefs.edit().putString("operation", id).commit(); store.state("waiting_network", id)
+        if (store.prefs.getBoolean("installRequestActive", false)) throw UpdateFailure("install_pending")
+        if (action == "download") {
+            val asset = store.candidate()?.second ?: throw UpdateFailure("asset_missing")
+            if (asset.versionCode <= AndroidUpdateVerifier.installed(context).longVersionCode) throw UpdateFailure("not_newer")
+        }
+        store.beginOperation(id, action)
+        val network = context.getSystemService(android.net.ConnectivityManager::class.java)
+        store.state(if (network.activeNetwork == null) "waiting_network" else if (action == "download" && store.config().wifiOnly && network.isActiveNetworkMetered) "waiting_wifi" else "queued", id)
         val request = OneTimeWorkRequestBuilder<AppUpdateWorker>().setInputData(workDataOf("action" to action, "operation" to id))
             .setConstraints(Constraints.Builder().setRequiredNetworkType(if (action == "download" && store.config().wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED).build())
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request)
+        try {
+            store.prefs.edit().putString("workId", request.id.toString()).commit()
+            WorkManager.getInstance(context).enqueueUniqueWork(NAME, ExistingWorkPolicy.REPLACE, request).result.get(10, TimeUnit.SECONDS)
+        } catch (error: Exception) { store.state("scheduler", id); throw UpdateFailure("scheduler") }
     }
-    fun cancel(context: Context) { val store = AppUpdateStore(context); store.prefs.edit().putString("operation", UUID.randomUUID().toString()).commit(); WorkManager.getInstance(context).cancelUniqueWork(NAME); store.state("cancelled") }
+    fun reconcile(context: Context) {
+        val store = AppUpdateStore(context)
+        val id = store.prefs.getString("workId", null) ?: return
+        val operation = store.prefs.getString("operation", "")!!
+        val state = store.prefs.getString("state", "idle")!!
+        if (state !in UpdatePresentation.transferStates) return
+        val work = WorkManager.getInstance(context).getWorkInfoById(UUID.fromString(id)).get(10, TimeUnit.SECONDS)
+        if (store.prefs.getString("workId", null) != id) return
+        if (work == null || work.state.isFinished) store.state("scheduler", operation, expectedState = state)
+    }
+    fun cancel(context: Context) { val store = AppUpdateStore(context); store.cancelOperation(); WorkManager.getInstance(context).cancelUniqueWork(NAME) }
 }

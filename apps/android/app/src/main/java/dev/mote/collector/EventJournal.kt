@@ -62,7 +62,7 @@ class EventJournal(private val file: File, private val limit: Int = 500) {
     }
     companion object {
         private val lock = Any()
-        private fun level(code: EventCode) = when (code) {
+        internal fun level(code: EventCode) = when (code) {
             EventCode.STARTED -> "debug"
             EventCode.STOPPED, EventCode.OK, EventCode.FILTERED, EventCode.CANCELLED -> "info"
             EventCode.WAIT_NETWORK, EventCode.SCHEDULER, EventCode.PERMISSION, EventCode.MODEL_UNAVAILABLE -> "warn"

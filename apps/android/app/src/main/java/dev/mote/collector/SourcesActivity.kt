@@ -30,7 +30,7 @@ class SourcesActivity : Activity() {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val content = moteDetailPage()
         content.addView(TextView(this).apply { text = "日历与文件"; textSize = 28f })
-        content.addView(TextView(this).apply { text = "只读取你主动选择的来源。日历记录计划时间，不代表实际参加；文件由系统选择器授权，不扫描整个手机。\n环境：${BuildConfig.MOTE_PROFILE}。中央节点沿用「连接与同步」中已保存的配置。"; textSize = 14f })
+        content.addView(TextView(this).apply { text = "选择要归档的日历与文件。"; textSize = 14f })
         fun action(label: String, callback: () -> Unit) { content.addView(Button(this).apply { text = label; setOnClickListener { callback() } }) }
         operationStatus = TextView(this); content.addView(operationStatus)
         action("连接本机日历") {
@@ -41,7 +41,7 @@ class SourcesActivity : Activity() {
         action("选择文件目录") { pick(true) }
         action("选择录音目录 · 原件归档") { pick(true, true) }
         action("立即扫描并同步") { work("正在调度扫描与同步…") { SourceWork.schedule(applicationContext, true, syncExplicit = true) } }
-        content.addView(TextView(this).apply { text = "默认扩展名 md/txt/json/csv/ics，正文只接受 UTF-8；单文件 100 KiB、100000 字符，单次最多 200 项和 4 MiB，来源缓存最多 64 MiB（也遵守采集与存储中的队列上限）。超限或扫描不完整会提示，绝不把漏扫项当作删除。\n系统后台任务约每 15 分钟检查一次来源各自的间隔；省电或强行停止可能推迟，重新打开应用可恢复。原件归档每文件最多 512 MiB，Mote 文件暂存最多 1 GiB；自动等待稳定后上传，断网续传。引用模式不读取原件，不受原件大小限制。"; textSize = 13f })
+        action("来源限制与同步说明") { AlertDialog.Builder(this).setTitle("来源说明").setMessage("默认扩展名 md/txt/json/csv/ics，正文只接受 UTF-8；单文件 100 KiB、100000 字符，单次最多 200 项和 4 MiB，来源缓存最多 64 MiB（也遵守采集与存储中的队列上限）。超限或扫描不完整会提示，绝不把漏扫项当作删除。\n系统后台任务约每 15 分钟检查一次来源各自的间隔；省电或强行停止可能推迟，重新打开应用可恢复。原件归档每文件最多 512 MiB，Mote 文件暂存最多 1 GiB；自动等待稳定后上传，断网续传。引用模式不读取原件，不受原件大小限制。").setPositiveButton("知道了", null).show() }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(list)
         MoteUi.styleTree(content)
     }

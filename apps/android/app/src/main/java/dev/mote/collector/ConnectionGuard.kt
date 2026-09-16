@@ -39,6 +39,8 @@ object ConnectionGuard {
     }
     private fun validateOrigin(context: Context, nextServer: String, bindLocal: Boolean) {
         val settings = Settings(context); val origin = settings.dataOrigin(); val next = nextServer.trim().trimEnd('/')
+        if (next == origin && origin.isNotBlank()) return
+        if (next.isBlank() && settings.read().server.isBlank()) return
         val pending = settings.hasPendingData()
         if (pending && next.isNotBlank() && origin.isNotBlank() && origin != next) throw ConnectionFailure("pending")
         if (pending && next.isNotBlank() && origin.isBlank() && !bindLocal) throw ConnectionFailure("local_confirmation")

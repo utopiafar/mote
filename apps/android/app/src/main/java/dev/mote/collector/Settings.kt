@@ -18,7 +18,7 @@ data class CollectorConfig(
     val notificationCollectionEnabled: Boolean = false, val deviceEventCollectionEnabled: Boolean = false,
     val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off",
     val ocrMode: String = "chinese", val ocrAppModes: String = "{}",
-    val imageDedupeDiagnosticsEnabled: Boolean = false, val contentEncryptionEnabled: Boolean = false
+    val imageDedupeDiagnosticsEnabled: Boolean = false, val contentEncryptionEnabled: Boolean = false, val uploadedRetentionDays: Int = 7
 ) {
     fun observesSystem() = (mediaCollectionEnabled && metadataEnabled) || notificationCollectionEnabled || deviceEventCollectionEnabled
     val collectionRules by lazy { AppCollectionRules.parse(appCollectionRules) }
@@ -37,6 +37,7 @@ data class CollectorConfig(
         require(imageDedupeMode in setOf("off", "exact", "conservative", "balanced", "aggressive")) { "图片去重档位无效" }
         require(deviceName.isNotBlank() && deviceName.length <= 128) { "请填写 1..128 字符的设备名称" }
         require(intervalSeconds in 5..300) { "采集间隔为 5..300 秒" }
+        require(uploadedRetentionDays in 0..365) { "本机保留时间为 0..365 天" }
         require(maxQueueMiB in 8..4096) { "队列上限为 8..4096 MiB" }
         Mask.parse(masks)
         AppCollectionRules.parse(appCollectionRules)
@@ -96,6 +97,7 @@ class Settings(private val context: Context) {
         syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!,
         imageDedupeDiagnosticsEnabled = prefs.getBoolean("imageDedupeDiagnosticsEnabled", false),
         contentEncryptionEnabled = prefs.getBoolean("contentEncryptionEnabled", false),
+        uploadedRetentionDays = prefs.getInt("uploadedRetentionDays", 7),
         ocrMode = prefs.getString("ocrMode", "chinese")!!, ocrAppModes = prefs.getString("ocrAppModes", "{}")!!
     )
         cachedPrefs = prefs; cachedValues = values; cachedConfig = config
@@ -114,12 +116,13 @@ class Settings(private val context: Context) {
         c.validate()
         val origin = originAfterChange(c)
         val values = mapOf<String, Any>(
-            "contentEncryptionEnabled" to c.contentEncryptionEnabled,
+            "contentEncryptionEnabled" to c.contentEncryptionEnabled, "uploadedRetentionDays" to c.uploadedRetentionDays,
             "ocrMode" to c.ocrMode, "ocrAppModes" to c.ocrAppModes, "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
             "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
             "syncChargingOnly" to c.syncChargingOnly, "syncBatteryNotLow" to c.syncBatteryNotLow,
             "syncBatchSize" to c.syncBatchSize, "server" to c.server.trim().trimEnd('/'),
-            "token" to Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP),
+            "token" to (prefs.getString("token", null)?.takeIf { credentials(it) == c.token }
+                ?: Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP)),
             "deviceName" to c.deviceName, "interval" to c.intervalSeconds, "maxQueue" to c.maxQueueMiB,
             "wifiOnly" to c.wifiOnly, "excluded" to c.excludedPackages, "masks" to c.masks, "localReview" to c.localReviewUrl,
             "debugHttp" to c.debugHttp, "mode" to c.mode, "appCollectionRules" to c.appCollectionRules, "metadataEnabled" to c.metadataEnabled,
@@ -173,6 +176,8 @@ class Settings(private val context: Context) {
         context.localSources().sources().any { (context.localSources().state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }
     private fun originAfterChange(next: CollectorConfig): String {
         val previous = dataOrigin()
+        val current = read()
+        if (current.server == next.server && current.token == next.token) return previous
         if (!hasPendingData()) return if (next.hasSyncConnection()) next.server.trimEnd('/') else ""
         require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { "待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定" }
         return previous.ifBlank { if (next.hasSyncConnection()) next.server.trimEnd('/') else "" }
@@ -199,7 +204,7 @@ class Settings(private val context: Context) {
         private var cachedConfig: CollectorConfig? = null
         private var cachedCiphertext: String? = null
         private var cachedToken = ""
-        private val configurationKeys = setOf("contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
+        private val configurationKeys = setOf("uploadedRetentionDays", "contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
     }
     fun saveNsfw(value: NsfwConfig) {
         save(read().copy(nsfw = value))

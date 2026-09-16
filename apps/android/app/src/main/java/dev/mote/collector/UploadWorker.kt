@@ -108,7 +108,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     }
                     if (code !in 200..299 || response?.optString("id") != id) return failed(if (code == 404) "中央节点可能需要升级，OCR 结果已保留" else "OCR 更新未确认（HTTP $code）")
                     Diagnostics(applicationContext).add("uploadBytes", body.toString().toByteArray(Charsets.UTF_8).size.toLong())
-                    queue.acknowledgeOcr(id); pendingRecordId = null
+                    queue.acknowledgeOcr(id, config.uploadedRetentionDays); pendingRecordId = null
                     settings.syncStatus("uploading", "文字识别已更新至中央归档", uploaded = true)
                     continue
                 }
@@ -148,7 +148,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     when (code) {
                         200, 201 -> {
                             val bytes = event.toString().toByteArray(Charsets.UTF_8).size.toLong()
-                            queue.acknowledge(id, bytes)
+                            queue.acknowledge(id, bytes, config.uploadedRetentionDays)
                             Diagnostics(applicationContext).add("uploadBytes", bytes)
                             SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                             settings.syncStatus("uploading", "已收到上传确认", uploaded = true)

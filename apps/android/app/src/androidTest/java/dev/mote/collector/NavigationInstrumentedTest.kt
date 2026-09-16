@@ -78,7 +78,7 @@ class NavigationInstrumentedTest {
                 instrumentation.waitForIdleSync()
                 scenario.onActivity { activity ->
                     assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
-                    loaded = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("每页 20 条") }
+                    loaded = views(activity.window.decorView).filterIsInstance<TextView>().any { it.text.contains("原始日志 ·") || it.text.toString() == "暂无日志。" }
                 }
                 if (!loaded) Thread.sleep(50)
             }
@@ -199,8 +199,8 @@ class NavigationInstrumentedTest {
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            listOf("概览" to "overview", "随手记" to "notes", "来源" to "sources", "设置" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings").forEach { (label, file) ->
-                scenario.onActivity { if (file.endsWith("-settings")) { tab(it, "设置"); menu(it, label) } else tab(it, label) }
+            listOf("概览" to "overview", "随手记" to "notes", "来源" to "sources", "设置" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
+                scenario.onActivity { if (file.endsWith("-settings")) { tab(it, "设置"); if (file == "processing-settings") menu(it, "采集与存储"); menu(it, label) } else tab(it, label) }
                 instrumentation.waitForIdleSync()
                 scenario.onActivity { activity ->
                     assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)

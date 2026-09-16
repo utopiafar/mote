@@ -17,12 +17,14 @@ class LogViewerActivity : Activity() {
     private lateinit var refresh: Button
     private var revision = 0
     private var rawLog = ""
+    private var selectedLevel: String? = null
+    private fun showLog() { if (::output.isInitialized) output.setText(rawLog.lineSequence().filter { selectedLevel == null || it.split(' ').getOrNull(1) == selectedLevel }.joinToString("\n")) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val body = moteDetailPage()
         text(body, "日志中心", 27f)
-        text(body, "按文件原始顺序显示，长按可选中复制。刷新时更新，诊断关闭后历史仍可查看。", 14f)
+        text(body, "mote.log · 时间 / 级别 / 线程 / 模块 / 事件", 14f)
         status = text(body, "正在读取日志…", 13f)
         refresh = Button(this).apply { text = "刷新日志"; setOnClickListener { load() } }; body.addView(refresh)
         body.addView(Button(this).apply { text = "复制全部"; setOnClickListener {
@@ -32,6 +34,14 @@ class LogViewerActivity : Activity() {
             }
         } })
         body.addView(Button(this).apply { text = "全选"; setOnClickListener { output.requestFocus(); output.selectAll() } })
+        val levels = Spinner(this).apply { adapter = ArrayAdapter(this@LogViewerActivity, android.R.layout.simple_spinner_dropdown_item, listOf("全部级别", "DEBUG", "INFO", "WARN", "ERROR")) }
+        body.addView(levels)
+        levels.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                selectedLevel = if (position == 0) null else levels.selectedItem.toString(); showLog()
+            }
+        }
         body.addView(CheckBox(this).apply { text = "自动换行"; isChecked = true; setOnCheckedChangeListener { _, checked -> output.setHorizontallyScrolling(!checked) } })
         output = EditText(this).apply {
             keyListener = null; setTextIsSelectable(true); setHorizontallyScrolling(false)
@@ -47,11 +57,11 @@ class LogViewerActivity : Activity() {
         val stamp = ++revision
         refresh.isEnabled = false; status.text = "正在读取日志…"
         executor.execute {
-            val result = runCatching { SupportEvents.journal(this).readRaw() }
+            val result = runCatching { SupportEvents.runtime(this).readRaw() }
             runOnUiThread {
                 if (isDestroyed || isFinishing || stamp != revision) return@runOnUiThread
                 refresh.isEnabled = true
-                result.onSuccess { raw -> rawLog = raw; output.setText(raw); status.text = if (raw.isEmpty()) "暂无日志。" else "原始日志 · 长按选中复制" }
+                result.onSuccess { raw -> rawLog = raw; showLog(); status.text = if (raw.isEmpty()) "暂无日志。" else "原始日志 · 长按选中复制" }
                     .onFailure { status.text = "日志读取失败，请重试；原文件保留。" }
             }
         }

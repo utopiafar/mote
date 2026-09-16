@@ -6,6 +6,7 @@ import java.io.File
 object Operations {
     fun ledger(context: Context) = OperationLedger(File(context.noBackupFilesDir, "operation-ledger.json"))
     fun record(context: Context, kind: OperationKind, reason: OperationReason = OperationReason.NONE, bytes: Long = 0, httpStatus: Int? = null, elapsedMs: Long? = null, recordId: String? = null) {
+        runCatching { SupportEvents.runtime(context).operation(kind, reason) }
         try { ledger(context).record(kind, reason, bytes, httpStatus, elapsedMs, recordId) }
         catch (_: Exception) { context.getSharedPreferences("operation-health", 0).edit().putBoolean("incomplete", true).commit() }
         finally { LocalStateChanges.changed() }

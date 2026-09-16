@@ -52,6 +52,7 @@ internal class UiTask(
                 val outcome = runCatching { work(state) }
                 SupportEvents.record(activity.applicationContext, EventStage.UI, outcome.exceptionOrNull()?.let { EventJournal.failure(it, EventStage.UI) } ?: EventCode.OK, SystemClock.elapsedRealtime() - state.started)
                 result.set(outcome)
+                handler.post { if (!closed && visible) { handler.removeCallbacks(tick); tick.run() } }
             }
         } catch (error: java.util.concurrent.RejectedExecutionException) {
             // A rejected submission still completes through the normal UI result path.

@@ -15,6 +15,9 @@ import android.widget.*
 class AppUpdatesActivity : Activity() {
     private lateinit var store: AppUpdateStore
     private lateinit var status: TextView
+    private lateinit var primary: Button
+    private lateinit var cancel: Button
+    private lateinit var progress: ProgressBar
     private lateinit var repository: EditText
     private lateinit var channel: Spinner
     private lateinit var wifi: CheckBox
@@ -28,7 +31,7 @@ class AppUpdatesActivity : Activity() {
         task.start("正在读取更新设置…", { label.text = it }, {
             val value = AppUpdateStore(applicationContext); value to value.config()
         }) { result ->
-            result.onSuccess { (value, config) -> store = value; buildUi(config); if (foreground) background("正在读取安装状态…") { AppUpdateInstaller.reconcile(applicationContext) } }
+            result.onSuccess { (value, config) -> store = value; buildUi(config); if (foreground) background("正在读取安装状态…") { AppUpdateInstaller.reconcile(applicationContext); AppUpdateWork.reconcile(applicationContext) } }
                 .onFailure { label.text = "更新设置读取失败，请重试" }
         }
     }
@@ -36,33 +39,50 @@ class AppUpdatesActivity : Activity() {
         val body = moteDetailPage()
         fun text(value: String, size: Float = 14f) = TextView(this).apply { text = value; textSize = size; setPadding(0, moteDp(10), 0, moteDp(10)) }.also(body::addView)
         fun button(label: String, action: () -> Unit) = Button(this).apply { text = label; setOnClickListener { runCatching(action).onFailure { Toast.makeText(this@AppUpdatesActivity, message((it as? UpdateFailure)?.code ?: "failed"), Toast.LENGTH_LONG).show() } } }.also(body::addView)
-        text("应用更新", 28f); text("当前 ${BuildConfig.VERSION_NAME} · code ${BuildConfig.VERSION_CODE}\n${packageName}\n检查和下载由你发起，最终由 Android 系统确认安装。")
-        text("发布仓库（owner/repository）")
-        repository = EditText(this).apply { setSingleLine(); setText(initialConfig.repository); contentDescription = "更新发布仓库" }; body.addView(repository)
-        channel = Spinner(this).apply { adapter = ArrayAdapter(this@AppUpdatesActivity, android.R.layout.simple_spinner_dropdown_item, listOf("稳定版 stable", "预览版 preview")); setSelection(if (initialConfig.channel == "preview") 1 else 0) }; body.addView(channel)
-        wifi = CheckBox(this).apply { text = "仅非计费 Wi-Fi 下载 APK"; isChecked = initialConfig.wifiOnly }; body.addView(wifi)
-        text("其他仓库必须发布由 Mote 内置 RSA 公钥签署的清单。不会信任服务器下发的新公钥，也不会发送中央节点令牌。")
-        button("保存渠道并检查更新") {
-            val config = UpdateConfig(repository.text.toString().trim(), if (channel.selectedItemPosition == 1) "preview" else "stable", wifi.isChecked)
-            config.validate(); background("正在保存渠道…") { AppUpdateWork.cancel(applicationContext); store.save(config); AppUpdateWork.enqueue(applicationContext, "check") }
+        text("应用更新", 28f)
+        text("当前版本 ${BuildConfig.VERSION_NAME}")
+        status = text("等待检查", 16f)
+        progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { max = 100 }; body.addView(progress)
+        primary = button("检查更新") {
+            when (UpdatePresentation.action(store.prefs.getString("state", "idle")!!, store.prefs.getLong("availableCode", 0) > BuildConfig.VERSION_CODE)) {
+                "download" -> background("正在提交下载…") { AppUpdateWork.enqueue(applicationContext, "download") }
+                "install" -> {
+                    if (!packageManager.canRequestPackageInstalls()) startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                    else background("正在准备安装…") { val ticket = AppUpdateInstaller.request(applicationContext); AppUpdateInstaller.stage(applicationContext, ticket) }
+                }
+                "check" -> background("正在检查更新…") { AppUpdateWork.enqueue(applicationContext, "check") }
+            }
         }
-        status = text("等待检查", 16f).apply { setPadding(0, 24, 0, 24) }
-        button("下载 / 继续下载") { background("正在提交下载…") { AppUpdateWork.enqueue(applicationContext, "download") } }
-        button("取消下载（保留断点）") { background("正在取消下载…", cancelTask) { AppUpdateWork.cancel(applicationContext) } }
-        button("交给系统安装") {
-            if (!packageManager.canRequestPackageInstalls()) startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
-            else AlertDialog.Builder(this).setTitle("安装更新").setMessage("系统会替换同包名、同签名的应用，保留设置、队列、草稿、模型和数据。采集可能短暂中断；投屏模式更新后需重新授权。不会自动卸载。")
-                .setNegativeButton("取消", null).setPositiveButton("继续") { _, _ ->
-                    background("正在准备安装…") { val ticket = AppUpdateInstaller.request(applicationContext); AppUpdateInstaller.stage(applicationContext, ticket) }
-                }.show()
+        cancel = button("取消") {
+            background("正在取消…", cancelTask) {
+                if (store.prefs.getString("state", "") in UpdatePresentation.installStates) AppUpdateInstaller.cancelSession(applicationContext)
+                else AppUpdateWork.cancel(applicationContext)
+            }
         }
-        button("取消待确认的安装") { background("正在取消安装…", cancelTask) { AppUpdateInstaller.cancelSession(applicationContext) } }
-        text("签名不一致会阻止更新，不会删除旧应用。0.4.0 本机 debug 安装包只能接受同一证书签名的后续包。系统安装权限、小米安装校验或省电限制仍需你在系统确认；安装失败时保留现有数据。")
+        val advanced = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
+        button("更新设置") { advanced.visibility = if (advanced.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE }
+        body.addView(advanced)
+        advanced.addView(TextView(this).apply { text = "发布仓库" })
+        repository = EditText(this).apply { setSingleLine(); setText(initialConfig.repository); contentDescription = "更新发布仓库" }; advanced.addView(repository)
+        channel = Spinner(this).apply { adapter = ArrayAdapter(this@AppUpdatesActivity, android.R.layout.simple_spinner_dropdown_item, listOf("稳定版", "预览版")); setSelection(if (initialConfig.channel == "preview") 1 else 0) }; advanced.addView(channel)
+        wifi = CheckBox(this).apply { text = "仅非计费网络下载"; isChecked = initialConfig.wifiOnly }; advanced.addView(wifi)
+        advanced.addView(Button(this).apply { text = "保存并检查更新"; setOnClickListener {
+            runCatching {
+                val config = UpdateConfig(repository.text.toString().trim(), if (channel.selectedItemPosition == 1) "preview" else "stable", wifi.isChecked)
+                config.validate()
+                background("正在保存更新设置…") { AppUpdateWork.cancel(applicationContext); store.save(config); AppUpdateWork.enqueue(applicationContext, "check") }
+            }.onFailure { Toast.makeText(this@AppUpdatesActivity, message((it as? UpdateFailure)?.code ?: "failed"), Toast.LENGTH_LONG).show() }
+        } })
+        text("更新保留设置与本机记录，安装由系统确认。", 13f)
         MoteUi.styleTree(body)
+        MoteUi.button(primary, true)
+        render()
     }
-    override fun onResume() { super.onResume(); foreground = true; if (::store.isInitialized && ::status.isInitialized) background("正在读取安装状态…") { AppUpdateInstaller.reconcile(applicationContext) }; handler.post(refresh) }
+    override fun onResume() { super.onResume(); foreground = true; if (::store.isInitialized && ::status.isInitialized) background("正在读取安装状态…") { AppUpdateInstaller.reconcile(applicationContext); AppUpdateWork.reconcile(applicationContext) }; handler.post(refresh) }
     override fun onPause() { foreground = false; handler.removeCallbacks(refresh); super.onPause() }
     private fun background(label: String, runner: UiTask = task, action: () -> Unit) {
+        if (runner.busy) { Toast.makeText(this, "操作正在进行", Toast.LENGTH_SHORT).show(); return }
+        primary.isEnabled = false
         runner.start(label, { status.text = message(store.prefs.getString("state", "idle")!!) + "\n" + it }, { action() }) { result ->
             result.onFailure { Toast.makeText(this, message((it as? UpdateFailure)?.code ?: "failed"), Toast.LENGTH_LONG).show() }
             render()
@@ -71,15 +91,24 @@ class AppUpdatesActivity : Activity() {
     private fun render() {
         if (!::status.isInitialized || task.busy || cancelTask.busy) return
         val version = store.prefs.getString("availableVersion", "")!!; val size = store.prefs.getLong("size", 0); val bytes = store.prefs.getLong("bytes", 0)
-        status.text = message(store.prefs.getString("state", "idle")!!) + if (version.isEmpty()) "" else "\n清单版本 $version · %.1f MiB\n已下载 %.1f MiB".format(size / 1048576.0, bytes / 1048576.0)
+        val state = store.prefs.getString("state", "idle")!!
+        val action = UpdatePresentation.action(state, store.prefs.getLong("availableCode", 0) > BuildConfig.VERSION_CODE)
+        primary.text = when (action) { "download" -> "下载更新"; "install" -> "安装更新"; "busy" -> "处理中…"; else -> "检查更新" }
+        primary.isEnabled = action != "busy"
+        cancel.visibility = if (state in UpdatePresentation.transferStates || state in UpdatePresentation.installStates) android.view.View.VISIBLE else android.view.View.GONE
+        progress.visibility = if (state in UpdatePresentation.transferStates || state in UpdatePresentation.installStates) android.view.View.VISIBLE else android.view.View.GONE
+        progress.isIndeterminate = state != "downloading" || size <= 0
+        if (size > 0) progress.progress = (bytes * 100 / size).toInt().coerceIn(0, 100)
+        status.text = message(state) + if (version.isEmpty()) "" else "\n版本 $version · %.1f MiB\n已下载 %.1f MiB".format(size / 1048576.0, bytes / 1048576.0)
     }
     companion object {
         @Volatile var foreground = false; private set
         fun message(code: String): String = when (code) {
+            "queued" -> "已提交，等待系统启动任务"; "waiting_wifi" -> "等待非计费网络，可在更新设置中调整"; "scheduler" -> "上次任务未完成，请重试";
             "idle" -> "尚未检查更新"; "waiting_network" -> "等待网络和系统后台调度"; "checking" -> "检查 GitHub 发布并验证清单签名…"
-            "current", "not_newer" -> "没有可安装的更高 versionCode；不会降级"; "available" -> "发现已验证发布，可下载"
+            "current", "not_newer" -> "已是最新版本"; "available" -> "发现已验证发布，可下载"
             "downloading" -> "正在下载，退出页面后仍按系统调度继续"; "verifying" -> "正在校验 APK 大小、SHA-256 和签名"
-            "ready" -> "APK 已校验，点击交给系统安装"; "preparing" -> "正在重新校验安装文件，可取消"; "staging" -> "正在提交安装文件给 Android"
+            "ready" -> "下载完成，可以安装"; "preparing" -> "正在重新校验安装文件，可取消"; "staging" -> "正在提交安装文件给 Android"
             "install_pending", "awaiting_user" -> "等待系统安装确认；未弹出时查看通知，或取消待确认安装后重试"
             "installed" -> "系统已完成更新；已有应用数据保留"; "install_permission" -> "请在系统允许此应用安装更新，返回后再次点击安装"
             "certificate", "apk_signature" -> "APK 签名与当前应用不兼容或无效，已阻止更新；不会卸载旧应用"

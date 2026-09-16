@@ -9,7 +9,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <queries>
+        <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /></intent>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
     </queries>
     <application android:name=".MoteApplication" android:label="@string/app_name" android:icon="@drawable/ic_mote"
@@ -27,6 +29,8 @@
         <activity android:name=".ConnectionScanActivity" android:exported="false" />
         <activity android:name=".StorageActivity" android:exported="false" />
         <activity android:name=".ActivityStatsActivity" android:exported="false" />
+        <activity android:name=".BackupActivity" android:exported="false" />
+        <activity android:name=".SyncQueueActivity" android:exported="false" />
         <activity android:name=".SyncRecoveryActivity" android:exported="false" />
         <activity android:name=".CompressionPreviewActivity" android:exported="false" />
         <activity android:name=".CaptureRecordsActivity" android:exported="false" />

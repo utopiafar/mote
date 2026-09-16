@@ -90,6 +90,17 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         val state = state(source.id).put("initialized", true).put("scanComplete", true).put("lastScan", Instant.now().toString()).put("generation", UUID.randomUUID().toString())
         state.remove("stack"); saveState(source.id, state)
     }
+    fun pendingPage(id: String, offset: Int, limit: Int = 30): JSONObject = synchronized(lock) {
+        require(offset >= 0 && limit in 1..60); indexed(id)
+        val all = markers(id).sortedBy { it.name }
+        val items = all.drop(offset).take(limit).map { marker ->
+            val row = read(File(root(id), "item-${marker.name.removePrefix("todo-")}.enc"))
+            val item = row.optJSONObject("candidate") ?: JSONObject()
+            JSONObject().put("name", item.optString("title", item.optString("externalId")))
+                .put("size", item.optLong("size")).put("status", if (row.has("pending")) "等待上传 / 续传" else "等待准备")
+        }
+        JSONObject().put("total", all.size).put("items", JSONArray(items))
+    }
     fun pendingCount(id: String): Int = synchronized(lock) { indexed(id); markers(id).size }
     fun pendingSync(): PendingSync = synchronized(lock) {
         var count = 0; var oldest: Long? = null

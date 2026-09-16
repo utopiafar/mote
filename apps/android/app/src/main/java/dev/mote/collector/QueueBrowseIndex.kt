@@ -78,13 +78,14 @@ internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteC
             .put("source", event.optString("source", "screen")).put("appId", event.optString("appId"))
             .put("appName", event.optString("appName")).put("hasImage", event.optString("_blob").isNotBlank())
             .put("blob", event.optString("_blob")).put("bytes", file.length()).put("modified", file.lastModified())
-            .put("metadataVersion", 2).put("blocked", blocked).put("awaitingOcr", awaitingOcr)
+            .put("metadataVersion", 3).put("blocked", blocked).put("awaitingOcr", awaitingOcr)
+            .put("retainedUntil", event.optLong("_retainedUntil")).put("ocrUploaded", event.optBoolean("_ocrUploaded"))
             .put("uploaded", event.optBoolean("_uploaded")).put("hasOcrResult", event.has("_ocrResult"))
-            .put("pending", !blocked && (!event.optBoolean("_uploaded") || event.has("_ocrResult")))
+            .put("pending", !blocked && (!event.optBoolean("_uploaded") || event.has("_ocrResult") && !event.optBoolean("_ocrUploaded")))
             .put("reservedBytes", if (awaitingOcr && !blocked) DurableQueue.OCR_RESERVE_BYTES else 0L)
     }
     private fun valid(row: JSONObject?, eventFile: File, requireStatistics: Boolean) = row != null &&
-        (!requireStatistics || row.optInt("metadataVersion") == 2) &&
+        (!requireStatistics || row.optInt("metadataVersion") == 3) &&
         row.optLong("bytes") == eventFile.length() && row.optLong("modified") == eventFile.lastModified()
 
     fun missing(files: List<File>, requireStatistics: Boolean): List<File> = files.filter { eventFile ->

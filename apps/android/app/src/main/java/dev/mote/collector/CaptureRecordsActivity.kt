@@ -342,7 +342,7 @@ class CaptureRecordsActivity : Activity() {
         if (grid) { text(labels, time(item.getString("capturedAt")), 13f); return image }
         text(labels, "${time(item.getString("capturedAt"))} · ${item.optString("appName").ifBlank { item.optString("appId").ifBlank { if (item.optString("source") == "media") "媒体会话状态" else if (item.optString("source") == "device_event") "设备状态" else "桌面 / 系统画面" } }}", 15f)
         text(labels, if (item.optString("source") in SystemEventRules.sources) SystemEventRules.label(item) else if (item.optString("source") == "media") CapturePreview.mediaLabel(item) else CapturePreview.ocrLabel(item), 12f)
-        if (!remote) text(labels, when (item.optString("syncError")) { "archive_missing" -> "中央记录不可更新 · 本机图片已保留"; "ocr_conflict" -> "OCR 更新冲突 · 本机图片和文字已保留"; "upload_conflict" -> "记录内容冲突 · 本机副本已保留"; else -> if (item.optBoolean("uploaded")) "图片已同步 · 本机保留待更新 OCR" else "保存在本机 · 待同步" }, 12f)
+        if (!remote) text(labels, when (item.optString("syncError")) { "archive_missing" -> "中央记录不可更新 · 本机图片已保留"; "ocr_conflict" -> "OCR 更新冲突 · 本机图片和文字已保留"; "upload_conflict" -> "记录内容冲突 · 本机副本已保留"; else -> if (item.optBoolean("uploaded")) if (item.optLong("retainedUntil") > 0) "已同步 · 本机保留至 ${java.time.Instant.ofEpochMilli(item.getLong("retainedUntil")).atZone(java.time.ZoneId.systemDefault()).toLocalDate()}" else "图片已同步 · 本机保留待更新 OCR" else "保存在本机 · 待同步" }, 12f)
         item.optString("textPreview").takeIf(String::isNotBlank)?.let { text(labels, it.take(if (grid) 48 else 100), 12f) }
         return image
     }

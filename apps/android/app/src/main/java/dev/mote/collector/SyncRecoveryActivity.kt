@@ -29,8 +29,9 @@ class SyncRecoveryActivity : Activity() {
         fun text(value: String, size: Float = 14f) = TextView(this).apply { text = value; textSize = size; setPadding(0,moteDp(8),0,moteDp(8)) }.also(body::addView)
         fun button(label: String, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { action() } }).also { body.addView(it, LinearLayout.LayoutParams(-1,-2)) }
         text("同步与恢复", 27f)
-        text("手机负责采集，中央端负责归档。手机收到确认后会清理已完成处理的副本，因此两端记录数量通常不同。")
+        text("手机负责采集，中央端负责归档。已上传的本机副本按保留时间清理。")
         summary = text("正在读取本机同步状态…")
+        button("查看待上传队列") { startActivity(Intent(this, SyncQueueActivity::class.java)) }
         button("立即同步待发记录") { runAction { UploadWorker.schedule(this, Settings(this).read(), true) } }
         text("从未确认的记录继续发送；上传中断只重发未确认记录。同一条记录重试不会生成重复副本。仍遵守 Wi-Fi 设置。")
         button("检查两端记录状态") { runAction { SyncRecoveryWorker.start(this, false) } }

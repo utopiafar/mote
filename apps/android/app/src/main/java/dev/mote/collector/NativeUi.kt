@@ -38,8 +38,12 @@ object MoteUi {
 
     fun button(button: Button, primary: Boolean = false) = button.apply {
         isAllCaps = false; textSize = 14f; minHeight = context.moteDp(50)
-        setTextColor(if (primary) Color.WHITE else accent)
-        backgroundTintList = null; background = clickable(context, if (primary) accent else tint, 14)
+        setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(muted, if (primary) Color.WHITE else accent)))
+        setTag(R.id.mote_primary, primary)
+        backgroundTintList = null; background = android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(-android.R.attr.state_enabled), shape(context, MoteUi.background, 24))
+            addState(intArrayOf(), clickable(context, if (primary) accent else tint, 24))
+        }
         setPadding(context.moteDp(14), context.moteDp(12), context.moteDp(14), context.moteDp(12))
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
@@ -55,13 +59,13 @@ object MoteUi {
     fun styleTree(view: View) {
         when (view) {
             is Button -> if (view !is CompoundButton) {
-                button(view)
+                button(view, view.getTag(R.id.mote_primary) == true)
                 (view.layoutParams as? LinearLayout.LayoutParams)?.let { it.bottomMargin = view.context.moteDp(8) }
             }
             is EditText -> field(view)
             is TextView -> { view.setTextColor(ink); view.setLineSpacing(view.context.moteDp(3).toFloat(), 1f) }
         }
-        if (view is CompoundButton) { view.buttonTintList = ColorStateList.valueOf(accent); view.minHeight = view.context.moteDp(48) }
+        if (view is CompoundButton) { view.setTextColor(ink); view.textSize = 15f; view.buttonTintList = ColorStateList.valueOf(accent); view.minHeight = view.context.moteDp(48) }
         if (view is ViewGroup) for (index in 0 until view.childCount) styleTree(view.getChildAt(index))
     }
 }
@@ -108,14 +112,14 @@ fun Activity.moteDetailPage(): LinearLayout {
         orientation = LinearLayout.VERTICAL
         setPadding(moteDp(22), moteDp(12), moteDp(22), moteDp(32))
     }
-    val scroll = ScrollView(this).apply {
-        isFillViewport = true; setBackgroundColor(MoteUi.background); addView(body); moteInsets()
-    }
-    setContentView(scroll)
-    body.addView(TextView(this).apply {
+    val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(MoteUi.background); moteInsets() }
+    root.addView(TextView(this).apply {
         text = "‹  返回"; textSize = 15f; setTextColor(MoteUi.accent)
         gravity = Gravity.CENTER_VERTICAL; minHeight = moteDp(48)
+        setPadding(moteDp(22), moteDp(4), moteDp(22), moteDp(4))
         contentDescription = "返回上一页"; isFocusable = true; setOnClickListener { finish() }
-    }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = moteDp(12) })
+    }, LinearLayout.LayoutParams(-1, -2))
+    root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
+    setContentView(root)
     return body
 }

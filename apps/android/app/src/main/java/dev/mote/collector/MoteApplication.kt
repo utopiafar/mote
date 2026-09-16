@@ -47,6 +47,8 @@ class MoteApplication : Application() {
                     // Launch noninteractive consumers after warming the legacy metadata;
                     // they must not race to rebuild the same library under a longer lock.
                     val current = settings.read()
+                    local.pruneUploaded()
+                    RetentionWorker.schedule(this@MoteApplication)
                     UploadWorker.schedule(this@MoteApplication, current)
                     CaptureOcrWorker.schedule(this@MoteApplication, current)
                     SourceWork.schedule(this@MoteApplication)
