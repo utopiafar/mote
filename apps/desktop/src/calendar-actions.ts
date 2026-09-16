@@ -1,7 +1,7 @@
 import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {moteActionMarker,calendarEventSchema,calendarDescription,type ActionProposal} from '@mote/shared';
+import {moteActionMarker,calendarEventSchema,calendarDescription,type ActionProposal} from '@mote/shared/actions';
 import {calendarHelper} from './source-calendar';
 import {validateServerUrl} from './config';
 import type {Config} from './contracts';
