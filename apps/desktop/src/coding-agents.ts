@@ -32,7 +32,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
     if(row.type!=='response_item'||!p)return [];
     if(p.type==='message'&&['user','assistant'].includes(p.role))add(p.role,textParts(p.content));
     if(['function_call','custom_tool_call'].includes(p.type))add('tool_call',JSON.stringify({name:p.name,arguments:p.arguments??p.input}),p.call_id);
-    if(['function_call_output','custom_tool_call_output'].includes(p.type))add('tool_result',typeof p.output==='string'?p.output:JSON.stringify(p.output??''),p.call_id);
+    if(['function_call_output','custom_tool_call_output'].includes(p.type))add('tool_result',typeof p.output==='string'?p.output:Array.isArray(p.output)?textParts(p.output)||JSON.stringify(p.output):JSON.stringify(p.output??''),p.call_id);
   }else if(provider==='claude'){
     if(typeof row.cwd==='string')context.cwd=row.cwd;
     if(typeof row.sessionId==='string')context.sessionId=row.sessionId;
@@ -103,7 +103,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
             const eventId=hash(`${key}:${cursor.generation}:${cursor.offset}:${eventIndex}`),body=redactSourceText(event.text,options.redactLiterals);
             const pieces:string[]=[];for(let offset=0;offset<body.length;){let end=Math.min(offset+8000,body.length);if(end<body.length&&/[\uD800-\uDBFF]/.test(body[end-1]))end--;pieces.push(body.slice(offset,end));offset=end;}
             const cwd=context.cwd?redactSourceText(context.cwd,options.redactLiterals):undefined;
-            for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention,title:`${codingProviders[provider]} · ${context.sessionId.slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:context.sessionId.slice(0,500),projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,eventId,role:event.role,callId:event.callId?.slice(0,500),parentSessionId:context.parentSessionId?.slice(0,500),part,parts:pieces.length}}});
+            for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention,title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,eventId,role:event.role,callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
           }
           if(result.items.length+items.length>Math.max(limits.items,500)||bytes+raw.length>Math.max(limits.bytes,4*1024*1024)){result.complete=false;break;}
           result.items.push(...items);result.seen.push(...items.map(i=>i.externalId));bytes+=raw.length;

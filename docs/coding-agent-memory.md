@@ -39,7 +39,7 @@
 - `kind`: pitfall / decision / principle / preference，由模型判断。
 - `scope`: session / project / shared。项目约束留在项目；跨项目仅允许 principle/preference，必须说明条件和例外。shared 指这个所有者跨项目参考，不表示对外发布。
 - `validation`: observed / user_confirmed / tested / unverified。助手说“完成”不自动等于测试通过，工具调用请求不等于工具执行成功。
-- `applicability`、`uncertainty`、原文精确引用和 UTF-16 偏移；session/project/provider 引用由宿主从原文分配。
+- `applicability`、`uncertainty`、原文精确引用和宿主保存的 UTF-16 偏移（唯一逐字匹配可省略模型偏移；多处匹配或错误显式偏移会拒绝）；session/project/provider 引用由宿主从原文分配。
 
 每批最多三条，可以零条；仍为 proposed，确认后才 published。系统不声称能自动裁决所有矛盾、跨会话语义去重或保证经验完整。相同证据的重试由检查点去重；不同证据表达同一理念仍可能产生多个候选。本期共享原则与项目经验都直接引用原始对话，未另建无原文依据的摘要级“记忆的记忆”。
 

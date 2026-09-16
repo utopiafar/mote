@@ -5,7 +5,7 @@ import type {QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION,memoryEvidenceFingerprint,type EvidenceRange} from './memory.js';
 
-type Chunk=EvidenceRange&{profile?:'personal'|'coding';group?:string;fingerprint:string;key:string};
+type Chunk=EvidenceRange&{profile?:'personal'|'coding';profileVersion?:string;group?:string;fingerprint:string;key:string};
 export type MemoryBatch={id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];errorCode?:string};
 type StoredBatch=MemoryBatch&{chunks:Chunk[]};
 export type MemoryJob={id:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];errorCode?:string};
@@ -56,7 +56,7 @@ export class MemoryPipeline {
       for(let offset=0;offset<record.ocrText.length;){
         let end=Math.min(offset+this.budget,record.ocrText.length);
         if(end<record.ocrText.length&&/[\uD800-\uDBFF]/.test(record.ocrText[end-1])&&/[\uDC00-\uDFFF]/.test(record.ocrText[end]))end--;
-        const chunk:Chunk={id,profile:profile.id,group:profile.group,offset,length:end-offset,fingerprint,key:sha256(JSON.stringify([id,fingerprint,offset,end-offset,profile.id==='coding'?profile.version:skillVersion]))};
+        const chunk:Chunk={id,profile:profile.id,profileVersion:profile.version,group:profile.group,offset,length:end-offset,fingerprint,key:sha256(JSON.stringify([id,fingerprint,offset,end-offset,profile.id==='coding'?profile.version:skillVersion]))};
         if(this.checkpoint(chunk))skippedChunks++;else all.push(chunk);
         if(all.length>10000)throw new StoreError('Memory input exceeds 10000 chunks; use smaller jobs',413);
         offset=end;
@@ -105,6 +105,7 @@ export class MemoryPipeline {
       // Re-read after each await: source edits/deletions may invalidate queued batches.
       const batch=this.batches(id).find(b=>b.id===original.id)!;
       if(batch.status!=='pending')continue;
+      if(batch.chunks.some(chunk=>{const record=this.options.memories.readEvidence([chunk.id])[0];return record&&chunk.profile==='coding'&&chunk.profileVersion&&chunk.profileVersion!==memoryProfile(record).version;})){batch.status='invalidated';batch.errorCode='skill_changed';this.saveBatch(batch);continue;}
       if(!batch.chunks.every(chunk=>this.valid(chunk))){batch.status='invalidated';batch.errorCode='evidence_changed';this.saveBatch(batch);continue;}
       const chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));
       job=this.storedJob(id);job.skippedChunks+=batch.chunks.length-chunks.length;this.saveJob(job);

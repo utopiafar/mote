@@ -6,14 +6,14 @@ import {Store,StoreError,sha256} from './store.js';
 import {codingMemorySchema,type Memory,type MemoryEvidence,type EvidenceRange} from './memory-schema.js';
 export type {Memory,MemoryEvidence,EvidenceRange} from './memory-schema.js';
 
-const spanSchema=z.object({id:z.string().uuid(),offset:z.number().int().min(0).max(100000),length:z.number().int().min(1).max(12000).optional(),quote:z.string().min(1).max(12000)}).strict();
+const spanSchema=z.object({id:z.string().uuid(),offset:z.number().int().min(0).max(100000).optional(),length:z.number().int().min(1).max(12000).optional(),quote:z.string().min(1).max(12000)}).strict();
 const claimSchema=z.object({coding:codingMemorySchema.optional(),title:z.string().trim().min(1).max(160),statement:z.string().trim().min(1).max(6000),uncertainty:z.string().max(2000),evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(spanSchema).min(1).max(30).optional()}).strict();
 const validationFeedback={
   json:'The answer field must be a string containing one valid JSON object with a memories array. Do not put Markdown fences or prose around that JSON.',
-  schema:'Use exactly a memories array with at most 8 objects. Each object requires string title, string statement, string uncertainty, and a nonempty evidenceIds array of complete UUIDs. Optional evidence entries require id, a nonnegative integer offset, and an exact quote; optional length must equal the UTF-16 quote length. For coding-memory extraction also include the required coding object (kind, scope, applicability, validation). Do not add other keys.',
+  schema:'Use exactly a memories array with at most 8 objects. Each object requires string title, string statement, string uncertainty, and a nonempty evidenceIds array of complete UUIDs. Optional evidence entries require id, a nonnegative integer offset, and an exact quote; optional length must equal the UTF-16 quote length. For coding-memory extraction use at most 3 objects, include the required coding object (kind, scope, applicability, validation), and preferably omit quote offsets for host resolution of a unique exact match. Do not add other keys.',
   citations:'Use complete supporting evidence UUIDs in inline [UUID] citations and declare those same IDs in the inner evidenceIds and outer citationIds. Every declared ID must have been retrieved in this same supplied scope.',
   scope:'Use only original evidence IDs and exact text segments supplied for this batch. Do not introduce other records, derived memories, or evidence outside the supplied ranges.',
-  quote:'A quote did not exactly match the original text at its declared offset. Copy an exact substring from the supplied original segment and calculate its absolute UTF-16 offset in the full original text. If length is supplied, it must equal quote.length in UTF-16 code units.',
+  quote:'A quote did not exactly match the original text at its declared offset, or had no unique match. Copy an exact substring from the supplied original segment. In coding-memory mode, prefer omitting offset so the host resolves a unique exact match within the supplied ranges; never guess an offset. Other modes require an absolute UTF-16 offset. If length is supplied, it must equal quote.length in UTF-16 code units.',
   quote_range:'A quote was outside its supplied evidence segment. Keep the entire quote within one supplied range and use an absolute UTF-16 offset in the full original text.',
   missing_quote:'When supplying evidence spans, include an exact matching quote and absolute UTF-16 offset for every ID in evidenceIds.',
 } as const;
@@ -93,10 +93,16 @@ export class MemoryStore {
         const scopeRefs=[...new Map([...records.values()].flatMap(r=>{const c=r.provenance?.document?.coding;return c?[[JSON.stringify([c.provider,c.sessionId,c.projectKey]),{provider:c.provider,sessionId:c.sessionId,projectKey:c.projectKey}] as const]:[]})).values()];
         const evidence:MemoryEvidence[]=[];
         if(m.evidence){
-          for(const span of m.evidence){const record=records.get(span.id),length=span.length??span.quote.length;
-            if(!record||length!==span.quote.length||record.ocrText.slice(span.offset,span.offset+length)!==span.quote)throw new MemoryOutputValidationError('quote','Memory quote does not match original evidence at its offset');
-            if(options.evidenceRanges&&!options.evidenceRanges.some(range=>range.id===span.id&&span.offset>=range.offset&&span.offset+length<=range.offset+range.length))throw new MemoryOutputValidationError('quote_range','Memory quote is outside the supplied segment');
-            evidence.push(reference(record,{offset:span.offset,length,quote:span.quote}));
+          for(const span of m.evidence){const record=records.get(span.id),length=span.length??span.quote.length;let offset=span.offset;
+            if(offset===undefined&&record&&options.profile==='coding'){
+              // Exact, scope-limited text addressing only; never fuzzy matching or semantic repair.
+              const positions=new Set<number>(),ranges=options.evidenceRanges?.filter(r=>r.id===span.id)??[{offset:0,length:record.ocrText.length}];
+              for(const range of ranges){for(let at=record.ocrText.indexOf(span.quote,range.offset);at>=0&&at+length<=range.offset+range.length;at=record.ocrText.indexOf(span.quote,at+1)){positions.add(at);if(positions.size>1)break;}if(positions.size>1)break;}
+              if(positions.size===1)offset=[...positions][0];
+            }
+            if(!record||offset===undefined||length!==span.quote.length||record.ocrText.slice(offset,offset+length)!==span.quote)throw new MemoryOutputValidationError('quote','Memory quote does not match original evidence at a unique authorized position');
+            if(options.evidenceRanges&&!options.evidenceRanges.some(range=>range.id===span.id&&offset!>=range.offset&&offset!+length<=range.offset+range.length))throw new MemoryOutputValidationError('quote_range','Memory quote is outside the supplied segment');
+            evidence.push(reference(record,{offset,length,quote:span.quote}));
           }
           if(ids.some(id=>!evidence.some(e=>e.id===id)))throw new MemoryOutputValidationError('missing_quote','Every memory evidence ID needs a matching quote');
         }else for(const id of ids){const ranges=options.evidenceRanges?.filter(range=>range.id===id);if(ranges?.length)for(const range of ranges)evidence.push(reference(records.get(id)!,{offset:range.offset,length:range.length}));else evidence.push(reference(records.get(id)!));}
