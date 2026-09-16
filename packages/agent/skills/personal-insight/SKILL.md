@@ -1,7 +1,7 @@
 ---
 name: personal-insight
 description: Create a personal insight report from cited archive evidence.
-version: 1.0.1
+version: 1.0.2
 ---
 
 # Personal insights

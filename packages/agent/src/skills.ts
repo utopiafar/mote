@@ -1,6 +1,6 @@
 import {readFileSync} from 'node:fs';
 
-export const SKILL_VERSION = '1.0.1';
+export const SKILL_VERSION = '1.0.2';
 const catalog = [
   {id:'personal-insight',name:'personal-insight',description:'Review personal context, distinguish evidence from inference, and create a cited HTML insight report.'},
   {id:'memory-extraction',name:'memory-extraction',description:'Propose durable memories from an explicit batch of original evidence, preserving attribution and provenance.'},

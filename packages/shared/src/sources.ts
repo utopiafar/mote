@@ -19,7 +19,7 @@ const originalMetadataSchema=z.record(z.unknown()).superRefine((value,ctx)=>{
 });
 export const documentSchema=z.object({
   fileId:z.string().min(1).max(200).optional(),path:z.string().max(4000).optional(),
-  recordedAt:timestamp.optional(),occurredAt:timestamp.optional(),
+  recordedAt:timestamp.describe('Explicit original authored/recording date; never the import or observation time. Omit when unknown.').optional(),occurredAt:timestamp.describe('Explicit time of the described event; omit when unknown.').optional(),
   timeBasis:z.enum(['recorded','occurred','unknown']).optional(),
   contentRole:z.enum(['authored','transcript','summary','reference','other']).optional(),
   attachments:z.array(z.object({id:z.string().min(1).max(200).optional(),name:z.string().max(1000).optional(),path:z.string().max(4000).optional(),uri:z.string().max(4000).optional(),mimeType:z.string().max(200).optional()}).strict()).max(100).optional(),
@@ -42,7 +42,7 @@ export const sourceConnectionSchema=z.object({
 export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};
 export const calendarSchema=z.object({start:timestamp,end:timestamp,allDay:z.boolean(),timeZone:z.string().max(100).optional(),status:z.enum(['confirmed','tentative','cancelled']).default('confirmed')}).strict().refine(v=>Date.parse(v.end)>=Date.parse(v.start),{message:'Calendar end must not precede start'});
 export const sourceItemSchema=z.object({
-  externalId:z.string().min(1).max(1000),revision:z.string().min(1).max(200),observedAt:timestamp,modifiedAt:timestamp.optional(),
+  externalId:z.string().min(1).max(1000),revision:z.string().min(1).max(200),observedAt:timestamp.describe('Actual source observation time. For document imports without an explicit source observation timestamp, copy the request importedAt exactly. Never substitute recordedAt, createdAt, modifiedAt, or an event date.'),modifiedAt:timestamp.optional(),
   title:z.string().max(2000).default(''),text:z.string().max(100000).default(''),
   uri:z.string().max(4000).optional(),kind:z.enum(['calendar','file','event','message','metric','memory']),
   layer:z.enum(['snapshot','reference','original','derived']),mimeType:z.string().max(200).optional(),calendar:calendarSchema.optional(),

@@ -1,7 +1,7 @@
 ---
 name: document-import
 description: Convert arbitrary user-selected document exports into reviewable source records.
-version: 1.0.1
+version: 1.0.2
 ---
 
 # Generic document import
@@ -13,6 +13,8 @@ The request's manifestSchema is the authoritative complete schema. If schemaPath
 This must work for arbitrary file/export formats, without app-name dispatch. Use helper extractFile(path) for PDF, DOCX, XLSX, plain text and structured text, or inspect selected input bytes/JSON/XML with available native tools. The helper also supports CLI calls with the supplied nodeExecutable: run helperPath extract INPUT_PATH or helperPath validate RECORDS_PATH. Its API is sufficient; reading project or dependency code is unnecessary. The helper returns parsed text and structural data; its findings are not semantic labels. The model chooses meaning and attribution. Never claim OCR or transcription if the input could not be parsed.
 
 Write records.jsonl in the workspace. Each line is {"item":SourceItem,"evidencePaths":["inputs/path"],"attachments":["inputs/path"]}. Include original text, not a newly invented summary. Preserve provider IDs, titles, timestamps and original metadata. Use stable externalId. Preserve an explicit provider revision when the export supplies one; otherwise derive a deterministic content-based revision (crypto SHA-256), never a random revision or current time as identity. Versions of one source object retain the same externalId and their distinct revisions; preserve every supplied version, in source observation order from old to new.
+
+Timestamp mapping is a separate validation step before returning the manifest. For example, an input containing only recordedAt="2023-02-01T09:00:00+08:00" provides NO observation timestamp: copy request.importedAt into item.observedAt and retain that 2023 value only in item.document.recordedAt. Do not use originalMetadata or a different field name to relabel an authored date as an observation. Inspect the generated converter and output for this distinction.
 
 Preserve observedAt when the source explicitly supplies its actual observation timestamp, including historical observations in version exports. Otherwise use the supplied import time for observedAt. Do not replace a known source observation with import time, or substitute authored/event dates for an unknown observation. recordedAt/occurredAt in document describe explicit authored/event dates only and remain unknown when absent. Distinguish authored/transcript/summary/reference/other. AI summaries use layer derived; reference means no stored original text, so full collected articles use original/snapshot with contentRole reference. A filename or import time alone does not establish an event date. Host assigns source IDs, file IDs and attachment IDs. Keep record text below 100000 characters; split longer documents into deterministic numbered sections with stable identities and preserved source metadata.
 
