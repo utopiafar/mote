@@ -48,7 +48,7 @@ export interface ContextReader {
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
-  memories?(args:ContextRange & {id?:string}): Promise<{items:unknown[];evidence?:ContextRecord[]}>;
+  memories?(args:ContextRange & {id?:string;query?:string;tier?:'episode'|'consolidated';kind?:'episodic'|'semantic'|'procedural'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[]}>;
 }
 
 export interface AgentOptions {
@@ -74,10 +74,13 @@ export interface QueryInput {
   onProgress?: (event: AgentProgress) => void;
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
+  responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;
   /** A bounded extraction session may read only these original evidence ranges. */
   evidenceIds?: string[];
+  /** Host snapshot for paginated change disclosure; does not restrict historical retrieval. */
+  incrementalEvidenceIds?:string[];
   evidenceRanges?: {id:string;offset:number;length:number}[];
   after?: string;
   before?: string;
@@ -87,6 +90,7 @@ export interface QueryInput {
   conversation?: {
     turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean}[];
     omittedTurns:number;
+    workingMemory?:{text:string;coveredTurns:number;generatedAt:string};
   };
 }
 export interface AgentProgress {

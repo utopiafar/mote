@@ -22,7 +22,7 @@ const forbiddenBody = new Set([
   'apikey', 'baseurl', 'url', 'headers', 'httpoptions', 'fetch',
 ]);
 const normalizedKey = (key: string) => key.toLowerCase().replace(/[_-]/g, '');
-type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'maxTokens' | 'headers' | 'extraBody'>;
+type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'maxTokens' | 'headers' | 'extraBody' | 'timeoutMs'>;
 
 /** Keep errors value-free: advanced fields can contain credentials. */
 export function validateModelOptions(options: ConnectionOptions): void {
@@ -77,7 +77,7 @@ export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
   const model = {id: options.model!, name: options.model!, contextWindow: 128_000, maxTokens};
   if (protocol === 'deepseek') return [{id: 'llm-deepseek', config: {
     ...(effort === 'auto' ? {thinking: 'disabled'} : {thinking: effort === 'off' ? 'disabled' : 'enabled', reasoningEffort: effort}),
-    maxTokens, streamIdleTimeoutMs: 30_000, baseURL: baseUrl, models: [model],
+    maxTokens, streamIdleTimeoutMs: Math.max(30_000, options.timeoutMs ?? 30_000), baseURL: baseUrl, models: [model],
   }}];
   return [
     {id: 'llm-deepseek', disabled: true},
@@ -88,7 +88,7 @@ export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
         models: [{...model, input: ['text'], reasoningEfforts: effort === 'auto' ? false : {off: null, low: 'low', high: 'high', max: 'max'}}],
         ...(effort === 'auto' ? {} : {reasoning: effort}),
         ...(protocol === 'openai-completions' ? {compat: {supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: effort !== 'auto', maxTokensField: completionTokenProviders.has(options.provider ?? '') ? 'max_completion_tokens' : 'max_tokens'}} : {}),
-        transport: 'sse', streamIdleTimeoutMs: 30_000,
+        transport: 'sse', streamIdleTimeoutMs: Math.max(30_000, options.timeoutMs ?? 30_000),
       },
     }}}]},
   ];

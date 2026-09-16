@@ -25,7 +25,7 @@ COPY --from=build /app/packages/agent/dist ./packages/agent/dist
 COPY --from=build /app/packages/agent/skills ./packages/agent/skills
 COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
-RUN test -x /bin/bash && node --input-type=module -e "import {accessSync} from 'node:fs'; import {createRequire} from 'node:module'; import {bundledSkills} from './packages/agent/dist/skills.js'; accessSync('./apps/server/dist/import-parser.mjs'); if(!['document-import','memory-extraction','personal-insight','calendar-extraction'].every(id=>bundledSkills.some(skill=>skill.id===id && skill.content.length>0)) || typeof createRequire(import.meta.url)('node-pty').spawn!=='function') throw Error('Import runtime is incomplete');"
+RUN test -x /bin/bash && node --input-type=module -e "import {accessSync} from 'node:fs'; import {createRequire} from 'node:module'; import {bundledSkills} from './packages/agent/dist/skills.js'; accessSync('./apps/server/dist/import-parser.mjs'); if(!['personal-insight','memory-extraction','memory-consolidation','working-memory','document-import','calendar-extraction','coding-memory'].every(id=>bundledSkills.some(s=>s.id===id && s.content.length>0)) || typeof createRequire(import.meta.url)('node-pty').spawn!=='function') throw Error('Import runtime is incomplete');"
 COPY deploy/empty.env ./deploy/empty.env
 COPY scripts/backup.ts ./scripts/backup.ts
 RUN mkdir -p /data && chown node:node /data

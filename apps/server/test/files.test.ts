@@ -60,9 +60,9 @@ test('processor builds timestamped layers and tail search, source removal retain
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'blocked');
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,summarize:true}});await processing.tick();
  assert.equal(calls,1);assert.equal(files.detail(ack.id).job.state,'succeeded');assert.equal(files.detail(ack.id).job.summary_state,'succeeded');
- const tail=files.search({query:'青杉'});assert.equal(tail.length,1);assert.equal((tail[0].fileEvidence as any).startMs,89000);assert.equal(files.search({query:'青杉',deviceId:'other'}).length,0);
+ const tail=files.search({query:'青杉'});assert.equal(tail.length,1);assert.deepEqual(files.search({query:'青杉 金额'}).map(r=>r.id),tail.map(r=>r.id));assert.deepEqual(files.search({query:'青杉 三百元'}).map(r=>r.id),tail.map(r=>r.id));assert.equal((tail[0].fileEvidence as any).startMs,89000);assert.equal(files.search({query:'青杉',deviceId:'other'}).length,0);
  const deletion=manifest(bytes,'removed','v1');delete deletion.sha256;deletion.item.deleted=true;await files.revision(deletion,owner);assert.equal(files.search({query:'青杉'}).length,1);
- files.forget(ack.id);assert.equal(files.evidence(tail.map(r=>r.id)).length,0);assert.equal(files.search({query:'青杉'}).length,0);
+ files.forget(ack.id);assert.equal(files.evidence(tail.map(r=>r.id)).length,0);assert.equal(files.search({query:'青杉'}).length,0);assert.equal(store.db.prepare('SELECT count(*) AS n FROM file_chunks_trigram WHERE id=?').get(tail[0].id)!.n,0);
  await assert.rejects(upload(files,manifest(bytes,'v3','removed'),bytes),{statusCode:410});
  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM file_artifacts').get()!.n,0);
 });

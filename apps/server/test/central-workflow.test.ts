@@ -33,7 +33,7 @@ test('central UI APIs complete original import → exact Memory → cited static
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${cfg.token}`},request=(method:'GET'|'POST',url:string,payload?:unknown)=>node.app.inject({method,url,headers,payload:payload as any});
   assert.equal((await node.app.inject('/api/imports')).statusCode,401);
-  assert.ok((await request('GET','/api/skills')).json().items.some((skill:{id:string})=>skill.id==='coding-memory'));
+  const skills=(await request('GET','/api/skills')).json().items as {id:string}[];assert.ok(['coding-memory','memory-consolidation','working-memory','calendar-extraction'].every(id=>skills.some(skill=>skill.id===id)));
   const uploaded=await request('POST','/api/imports',{name:'合成通用资料',instruction:'导入原始日记',files:[{name:'journal.custom',dataBase64:Buffer.from(original).toString('base64')}]});
   assert.equal(uploaded.statusCode,202,uploaded.body);const id=uploaded.json().id;
   const preview=await until(async()=>(await request('GET',`/api/imports/${id}`)).json(),job=>job.status==='awaiting_confirmation');
@@ -41,7 +41,9 @@ test('central UI APIs complete original import → exact Memory → cited static
   assert.equal((await request('POST',`/api/imports/${id}/confirm`)).statusCode,202);
   const imported=await until(async()=>(await request('GET',`/api/imports/${id}`)).json(),job=>job.status==='completed');
   assert.equal(imported.progress.imported,1);assert.equal(imported.captureIds.length,1);
-  const memory=await until(async()=>(await request('GET',`/api/memory-jobs/${imported.memoryJobId}`)).json(),job=>job.status==='failed');
+  assert.equal(imported.memoryJobId,undefined);assert.equal(queries.length,0,'Imports only queue increments');
+  const manual=(await request('POST','/api/memory-jobs',{evidenceIds:imported.captureIds})).json();
+  const memory=await until(async()=>(await request('GET',`/api/memory-jobs/${manual.id}`)).json(),job=>job.status==='failed');
   assert.equal(memory.failedBatches,1);assert.equal(node.store.list().items.length,1);
   assert.equal((await request('POST',`/api/memory-jobs/${memory.id}/retry`)).statusCode,202);
   const completed=await until(async()=>(await request('GET',`/api/memory-jobs/${memory.id}`)).json(),job=>job.status==='completed');
@@ -75,6 +77,9 @@ test('an import with historical revisions completes and extracts only the newly 
   assert.equal((await node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers})).statusCode,202);
   const imported=await until(async()=>node.imports.get(id),job=>job.status==='completed');
   assert.equal(imported.captureIds.length,2);assert.equal(node.sources.history(imported.sourceId,'same-object').length,2);
-  await until(async()=>node.memoryPipeline.get(imported.memoryJobId!),job=>job.status==='completed');
+  assert.equal(imported.memoryJobId,undefined);assert.equal(seen.length,0);
+  const policy=node.lifecycle.settings();policy.extraction.minChanges=1;node.lifecycle.configure(policy);
+  node.store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json,'$.lastSuccess',0) WHERE id='extraction'").run();
+  await node.lifecycle.tick();
   assert.equal(seen.length,1);assert.deepEqual(seen[0].evidenceIds,[imported.captureIds[1]]);
 });

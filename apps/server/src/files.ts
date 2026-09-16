@@ -1,3 +1,4 @@
+import {textSearch} from './text-search.js';
 import {randomUUID,createHash} from 'node:crypto';
 import {existsSync,renameSync,rmSync,readdirSync,openSync,closeSync,fsyncSync,statSync} from 'node:fs';
 import {join} from 'node:path';
@@ -166,8 +167,8 @@ export class FileStore {
     const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id'],values:(string|number)[]=[];
     for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.captured_at'],['before','r.captured_at']] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(args[key]!);}
     const base=`FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')}`;
-    let rows:Chunk[];try{rows=this.store.db.prepare(`SELECT c.* ${base} AND c.id IN (SELECT id FROM file_chunks_fts WHERE file_chunks_fts MATCH ?) LIMIT ?`).all(...values,q,Math.min(args.limit??30,100)) as Chunk[];}catch{rows=[];}
-    if(!rows.length)rows=this.store.db.prepare(`SELECT c.* ${base} AND instr(lower(c.text),lower(?))>0 LIMIT ?`).all(...values,q,Math.min(args.limit??30,100)) as Chunk[];
+    const lexical=textSearch(q,{id:'c.id',text:'c.text',words:'file_chunks_fts',trigrams:'file_chunks_trigram'});
+    const rows=this.store.db.prepare(`SELECT c.* ${base} AND ${lexical.sql} ORDER BY r.captured_at DESC,c.id LIMIT ?`).all(...values,...lexical.values,Math.min(args.limit??30,100)) as Chunk[];
     return rows.map(c=>this.chunkRecord(c));
   }
   pendingIndex(model:string,allowLocalOnly=false){return this.store.db.prepare(`SELECT c.id,c.text FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_jobs j ON j.capture_id=c.capture_id WHERE ${activeChunks} AND (?=1 OR j.local_only=0) AND c.index_error IS NULL AND (c.embedding IS NULL OR c.embedding_model!=?) ORDER BY c.rowid LIMIT 8`).all(Number(allowLocalOnly),model) as {id:string;text:string}[];}

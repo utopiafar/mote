@@ -14,6 +14,12 @@ export function fileSchema(db:DatabaseSync){db.exec(`
  CREATE VIRTUAL TABLE IF NOT EXISTS file_chunks_fts USING fts5(id UNINDEXED,text,tokenize='unicode61');
  CREATE TRIGGER IF NOT EXISTS file_chunk_fts_insert AFTER INSERT ON file_chunks BEGIN INSERT INTO file_chunks_fts VALUES(NEW.id,NEW.text); END;
  CREATE TRIGGER IF NOT EXISTS file_chunk_fts_delete AFTER DELETE ON file_chunks BEGIN DELETE FROM file_chunks_fts WHERE id=OLD.id; END;
+ CREATE VIRTUAL TABLE IF NOT EXISTS file_chunks_trigram USING fts5(id UNINDEXED,text,tokenize='trigram');
+ CREATE TRIGGER IF NOT EXISTS file_chunk_trigram_insert AFTER INSERT ON file_chunks BEGIN INSERT INTO file_chunks_trigram VALUES(NEW.id,NEW.text); END;
+ CREATE TRIGGER IF NOT EXISTS file_chunk_trigram_delete AFTER DELETE ON file_chunks BEGIN DELETE FROM file_chunks_trigram WHERE id=OLD.id; END;
+ CREATE TRIGGER IF NOT EXISTS file_chunk_trigram_update AFTER UPDATE OF text ON file_chunks WHEN NEW.text!=OLD.text BEGIN DELETE FROM file_chunks_trigram WHERE id=OLD.id; INSERT INTO file_chunks_trigram VALUES(NEW.id,NEW.text); DELETE FROM file_chunks_fts WHERE id=OLD.id; INSERT INTO file_chunks_fts VALUES(NEW.id,NEW.text); END;
+ INSERT INTO file_chunks_trigram(id,text) SELECT id,text FROM file_chunks WHERE id NOT IN (SELECT id FROM file_chunks_trigram);
+
  CREATE TABLE IF NOT EXISTS file_usage(day TEXT PRIMARY KEY,audio_ms REAL NOT NULL DEFAULT 0);
  CREATE INDEX IF NOT EXISTS file_artifact_capture_kind ON file_artifacts(capture_id,kind,current);
  CREATE TABLE IF NOT EXISTS file_steps(capture_id TEXT NOT NULL REFERENCES file_versions(capture_id) ON DELETE CASCADE,step TEXT NOT NULL,processor TEXT NOT NULL,version TEXT NOT NULL,fingerprint TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,artifact_id TEXT,error TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(capture_id,step));

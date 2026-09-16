@@ -59,7 +59,7 @@
 
 ## 中央与 Harness 模块化
 
-`coding-agents.ts` 解码；通用 SourceSync 管持久队列/认证/幂等。中央来源 upsert 和 coding_memory_inbox 同事务，原文稳定 ID 入队。停写约 60 秒后形成同一会话的 Memory 任务；不同 session/project/profile 不在一个批次。无模型时保留 inbox。模型失败显示在 Memory 任务并可重试，不回滚原文同步。
+`coding-agents.ts` 解码；通用 SourceSync 管持久队列/认证/幂等。中央来源 upsert 和通用 changes 增量日志同事务。0.0.31 起自动提取统一由 Memory 生命周期调度，默认周期 6 小时且新增变化达到 25 条；高频上传不立即调用模型。不同 session/project/profile 仍不在同一提取批次；无模型时保留增量，失败保留任务和窗口并重试，不回滚原文同步。0.0.30 遗留 inbox 中的原文已存在于 changes 日志，统一游标从该日志处理，历史提取 checkpoint 避免重复提取。
 
 `memory-profiles.ts` 声明 Skill、版本、分组及输出政策；`coding-memory/SKILL.md` 负责判断价值。现有 DeepSeek Harness 保持只读工具、范围授权和引用校验。`MemoryPipeline` 负责预算、版本检查、一次结构修复、检查点；`MemoryStore` 负责结构与证据校验、候选保存/失效。无需复制 Harness 或按渠道建立三个 Memory 引擎。
 
