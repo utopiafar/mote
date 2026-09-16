@@ -12,7 +12,7 @@ export function QueryProgress({run,error}:{run:QueryRun;error:string}) {
   useEffect(()=>{if(run.status!=='running')return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[run.status]);
   const seconds=Math.max(0,Math.floor(((run.status==='running'?now:Date.parse(run.updatedAt))-Date.parse(run.createdAt))/1000));
   return <section className="panel query-progress" aria-label="对话执行进度"><div className="section-heading"><h3>{run.status==='running'?<LoaderCircle size={18} className="spin"/>:run.status==='completed'?<CheckCircle2 size={18}/>:<AlertCircle size={18}/>} {run.status==='running'?'正在处理':run.status==='completed'?'回答已归档':'此次未完成'}</h3><span className="badge muted">{Math.floor(seconds/60)} 分 {seconds%60} 秒</span></div>
-    <p role="status">{run.status==='running'?(run.events.length?progressLabel(run.events.at(-1)!):'正在启动 Agent…'):run.error?.message??'可继续提问。'}</p>
+    <p role={run.status==='failed'?'alert':'status'}>{run.status==='running'?(run.events.length?progressLabel(run.events.at(-1)!):'正在启动 Agent…'):run.error?.message??'可继续提问。'}</p>
     {run.status==='running'&&<p className="fine-print">可以切换页面或刷新，中央节点会继续执行。</p>}
     {error&&<p className="notice error" role="alert">{error} 正在自动重新连接；请勿重复发送。</p>}
     <details open={run.status==='running'}><summary>执行记录 · {run.events.length} 条</summary><ol className="query-steps">{run.events.map((e,i)=><li key={`${e.at}-${i}`}><time>{new Date(e.at).toLocaleTimeString()}</time><span>{progressLabel(e)}</span></li>)}</ol></details>
