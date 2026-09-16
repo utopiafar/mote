@@ -63,6 +63,6 @@
 
 `memory-profiles.ts` 声明 Skill、版本、分组及输出政策；`coding-memory/SKILL.md` 负责判断价值。现有 DeepSeek Harness 保持只读工具、范围授权和引用校验。`MemoryPipeline` 负责预算、版本检查、一次结构修复、检查点；`MemoryStore` 负责结构与证据校验、候选保存/失效。无需复制 Harness 或按渠道建立三个 Memory 引擎。
 
-`coding_memory_inbox` 是持久逐项队列，没有“最新成功时间之前都已成功”的假设。先创建带 originKey 的幂等任务，再确认 inbox，因此崩溃重启不会丢批。记忆保存与完成检查点同事务。
+统一生命周期只在连续变更窗口成功后推进进度；失败保留原窗口、任务和配置，运行期间的新变化留到下一轮，不能用后来的成功跳过旧失败。记忆保存与完成检查点同事务。长期整理在独立的编码领域进度下复查候选与原文，仍保留项目范围和验证程度，详见 [Memory 生命周期](memory-lifecycle.md)。
 
 Chat 和洞察继续使用原有只读来源、证据、Memory 工具；记忆页显示编码类型、适用范围和验证程度。没有新增外部 Agent recall API 或自动注入功能。
