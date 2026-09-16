@@ -62,7 +62,7 @@ export interface ModelTestResult {
   durationMs: number;
 }
 
-/** Model IDs are deliberately entered by the owner: availability varies by region and account. */
+/** Provider defaults; discover account-specific model IDs from its catalog and retain manual overrides. */
 export const MODEL_PROVIDER_PRESETS: readonly ModelProviderPreset[] = [
   { id: 'custom', name: '自定义接口', group: 'custom', protocol: 'openai-completions', baseUrl: '', description: '选择接口协议，填写服务基址和支持工具调用的模型 ID。高级配置可设置请求头和厂商参数。', docsUrl: '', reasoningEffort: 'auto' },
   { id: 'deepseek', name: 'DeepSeek', group: 'china', protocol: 'deepseek', baseUrl: 'https://api.deepseek.com', description: 'DeepSeek 官方接口，保留其推理与多轮工具调用格式。模型 ID 以控制台为准。', docsUrl: 'https://api-docs.deepseek.com/', reasoningEffort: 'high' },

@@ -21,9 +21,27 @@ export function ModelSettingsEditor({api, revision, onApplied}: {api: Api; revis
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [conflict, setConflict] = useState(false);
   const [probe, setProbe] = useState<ModelTestResult>(), [restoreReview, setRestoreReview] = useState(false), [reload, setReload] = useState(0);
   const [customBudget,setCustomBudget]=useState(false);
+  const [catalog,setCatalog]=useState<{id:string;name:string}[]>([]),[catalogError,setCatalogError]=useState(''),[catalogLoading,setCatalogLoading]=useState(false),[catalogSource,setCatalogSource]=useState('provider'),[catalogReload,setCatalogReload]=useState(0);
   const requestRef = useRef<AbortController | undefined>(undefined), loadRef = useRef<AbortController | undefined>(undefined), epoch = useRef(0);
   const active = state?.api === api ? state : undefined;
   const busy = loading || !!operation;
+  const catalogKey=active?JSON.stringify([active.snapshot.revision,active.draft.provider,active.draft.protocol,active.draft.baseUrl,active.draft.apiKeyAction,active.draft.apiKey,active.draft.headersAction,active.draft.headers,active.draft.extraBodyAction,active.draft.extraBody,active.draft.allowCredentialReuse]):'';
+  useEffect(()=>{
+    const controller=new AbortController();setCatalog([]);setCatalogError('');setCatalogLoading(false);
+    if(!active)return;
+    const timer=setTimeout(()=>{
+      let body:unknown;
+      try{if(catalogSource==='provider')body=modelSettingsRequest(active.snapshot,active.draft);}
+      catch(e){setCatalogError(errorMessage(e));return;}
+      setCatalogLoading(true);
+      void api.request<{items:{id:string;name:string}[]}>(catalogSource==='provider'?'/api/model-settings/models':'/api/model-settings/codex-models',{method:catalogSource==='provider'?'POST':'GET',...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal})
+        .then(result=>{if(!controller.signal.aborted)setCatalog(result.items);})
+        .catch(e=>{if(!controller.signal.aborted)setCatalogError(errorMessage(e));})
+        .finally(()=>{if(!controller.signal.aborted)setCatalogLoading(false);});
+    },500);
+    return()=>{clearTimeout(timer);controller.abort();};
+  },[api,catalogKey,catalogSource,catalogReload]);
+
   useEffect(() => {
     setState(undefined);
     setError(''); setNotice(''); setProbe(undefined); setOperation(undefined); setConflict(false); setRestoreReview(false);
@@ -107,7 +125,7 @@ export function ModelSettingsEditor({api, revision, onApplied}: {api: Api; revis
               const next = MODEL_PROVIDER_PRESETS.find(p => p.id === e.target.value);
               if (next) change({provider: next.id, ...(next.id !== 'custom' ? {baseUrl: next.baseUrl, protocol: next.protocol, reasoningEffort: next.reasoningEffort ?? 'auto', allowUnauthenticatedLocal: next.allowUnauthenticatedLocal ?? false} : {})});
             }}>{!preset && <option value={draft.provider}>当前自定义服务 · {draft.provider}</option>}{Object.entries(groupNames).map(([group, name]) => <optgroup key={group} label={name}>{MODEL_PROVIDER_PRESETS.filter(p => p.group === group).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>)}</select><small>{preset?.description || '选择预设后仍可自定义地址、协议与模型名称。'}</small></label>
-            <label className="preference-field">模型名称<input aria-label="模型名称" autoComplete="off" spellCheck={false} value={draft.model} onChange={e => change({model: e.target.value})} placeholder="填写服务提供的模型标识"/><small>支持自定义模型或部署 ID；留空会关闭问答与模型回顾。</small></label>
+            <div className="preference-field"><label>模型目录来源<select aria-label="模型目录来源" value={catalogSource} onChange={e=>setCatalogSource(e.target.value)}><option value="provider">当前服务 API</option><option value="codex">本机 Codex App Server</option></select></label><label>可用模型<select aria-label="可用模型" value={catalog.some(m=>m.id===draft.model)?draft.model:''} onChange={e=>{if(e.target.value)change({model:e.target.value});}} disabled={catalogLoading}><option value="">{catalogLoading?'正在读取模型列表…':'选择模型，或在下方手动填写'}</option>{catalog.map(m=><option key={m.id} value={m.id}>{m.name===m.id?m.id:`${m.name} · ${m.id}`}</option>)}</select></label><label>模型名称<input aria-label="模型名称" autoComplete="off" spellCheck={false} value={draft.model} onChange={e => change({model: e.target.value})} placeholder="模型 ID 或私有部署名称"/></label><button type="button" className="text-button" disabled={catalogLoading} onClick={()=>setCatalogReload(n=>n+1)}>刷新模型列表</button>{catalogError&&<small role="status">{catalogError}</small>}{!catalogError&&!catalogLoading&&!catalog.length&&<small>目录暂无可用模型，可手动填写。</small>}<small>{catalogSource==='codex'?'目录使用中央节点本机 Codex 的登录账户。选择只填写模型 ID；实际请求仍使用本页配置的 API 协议与凭据。':'根据当前地址和凭据自动加载；目录可见不代表支持工具调用，可使用下方测试连接验证。'} 留空会关闭问答与模型回顾。</small></div>
             <label className="preference-field">接口协议<select aria-label="接口协议" value={draft.protocol} onChange={e => change({protocol: e.target.value as ModelSettingsDraft['protocol']})}>{Object.entries(protocolNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><small>兼容地址应使用服务支持的协议；自定义参数按此协议传递。</small></label>
             <label className="preference-field">模型服务地址<input aria-label="模型服务地址" type="url" autoComplete="off" spellCheck={false} value={draft.baseUrl} onChange={e => change({baseUrl: e.target.value})}/><small>填写 API 基础地址；不包含 API key 或查询参数。</small></label>
           </div>

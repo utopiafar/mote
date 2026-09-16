@@ -97,6 +97,7 @@ export interface Status {
   serverTime: string;
 }
 export interface Answer {
+  usage?:import('@mote/shared').UsageReceipt;
   answer: string;
   runId: string;
   citations: {

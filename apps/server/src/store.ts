@@ -445,7 +445,7 @@ export class Store {
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() {
     const tables=new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {name:string}[]).map(row=>row.name));
-    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs'].filter(name=>tables.has(name));
+    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices'].filter(name=>tables.has(name));
     const bytes=Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n);
     const files=tables.has('file_blobs')?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
     const scalar=(sql:string)=>Number(this.db.prepare(sql).get()!.n);
@@ -498,6 +498,12 @@ export class Store {
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   invalidateConversationAnswers() {
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='query_runs'").get()){
+      for(const row of this.db.prepare('SELECT id,json FROM query_runs').all() as {id:string;json:string}[]){
+        const run=JSON.parse(row.json);run.events=run.events.map(({message:_,...event}: {message?:string;[key:string]:unknown})=>event);
+        this.db.prepare('UPDATE query_runs SET json=? WHERE id=?').run(JSON.stringify(run),row.id);
+      }
+    }
     // As with insights, a model reply may contain removed facts even without an
     // explicit citation. Keep authored questions, but never retain derived copies.
     const rows=this.db.prepare('SELECT id,json FROM conversations').all() as {id:string;json:string}[];

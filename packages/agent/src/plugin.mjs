@@ -3,7 +3,7 @@ import { apply as applySkillTool } from "@deepseek-ai/dsh-tool-skill";
 
 export const name = "mote-context";
 export const inject = ["tools", "skills", "agents"];
-const names = ["search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories", "file_chunks"];
+const names = ["progress_update", "search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories", "file_chunks"];
 const range = {
   after: { type: "string", description: "Inclusive ISO timestamp lower bound" },
   before: {
@@ -129,6 +129,7 @@ export async function apply(ctx) {
     return result;
   }
   const definitions = [
+    ['progress_update', 'Send a brief public progress update to the user: what you are checking next or which retrieval stage you completed. This is a display-only status, not a request for user input. Do not include internal chain-of-thought, secrets, quoted source contents, or unsupported conclusions. Prefer one short sentence in the user language; send before the first retrieval and when the plan materially changes.', {message:{type:'string',required:true,description:'Public status in 1–600 characters'}}],
     ['media_activity', 'Read measured media playback intervals, separately from foreground activity. Only standalone media records count; attached screenshot snapshots do not. Totals union overlapping intervals per device and sum across devices. App and state breakdowns may overlap and must not be added together. Playback is reported by the app, not proof of hearing, attention, or finished reading. Gaps, permission loss and unavailable sessions are unknown coverage. Use timeline/search_context with source=media and evidence for provider titles, states and citations; this aggregate does not discover or authorize evidence ids.', {
       ...contextFilters,
       appVisibility:{type:'string',description:'Exact observed player visibility: foreground, background or unknown'},

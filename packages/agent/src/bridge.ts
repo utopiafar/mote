@@ -14,6 +14,7 @@ import type {
 } from "./types.js";
 
 export const TOOL_NAMES = [
+  "progress_update",
   "search_context",
   "timeline",
   "evidence",
@@ -193,6 +194,7 @@ export async function startBridge(
   if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw Error('Extraction evidence exceeds the byte budget');
   for(const record of seedEvidence)records.set(record.id,record);
   let calls = 0;
+  let progressMessages=0;
   let ready = false;
   const server: Server = createServer(async (req, res) => {
     const given = Buffer.from(req.headers.authorization ?? "");
@@ -233,6 +235,12 @@ export async function startBridge(
         res.writeHead(404).end('{"error":"Unknown tool"}');
         return;
       }
+      if(tool==='progress_update'){
+        if(typeof args.message!=='string'||!args.message.trim()||args.message.length>600)throw new Error('Progress message must contain 1–600 characters');
+        if(++progressMessages>16)throw new Error('Progress message limit reached');
+        reportProgress(bounds,{stage:'model',message:args.message.trim()});
+        res.end('{"ok":true}');return;
+      }
       if (!['timeline','search_context','activity','media_activity'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
         throw new Error('App/source/collection filters require a context or activity tool');
       if (tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
@@ -241,6 +249,7 @@ export async function startBridge(
         throw new Error(
           "Tool call budget reached; finish using the evidence already retrieved",
         );
+      reportProgress(bounds,{stage:'tool',tool,phase:'started'});
       if(restricted){
         if(tool!=='evidence')throw Error('This extraction session uses only the supplied evidence ranges');
         if(!Array.isArray(args.ids)||!args.ids.length||args.ids.some(id=>typeof id!=='string'||!permitted.has(id)))throw Error('Evidence is outside this extraction batch');
@@ -255,7 +264,7 @@ export async function startBridge(
           });
         }
         trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
-        reportProgress(bounds,{stage:'tool',tool,count:data.length});
+        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:data.length});
         res.end(JSON.stringify({source:'untrusted_personal_context',data}));return;
       }
       let value: unknown;
@@ -386,7 +395,7 @@ export async function startBridge(
             ? 0
             : 1,
       });
-      reportProgress(bounds,{stage:'tool',tool,count:trace.at(-1)!.count});
+      reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:trace.at(-1)!.count});
       res.end(serialized);
     } catch (error) {
       res

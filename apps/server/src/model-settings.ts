@@ -1,3 +1,4 @@
+import {providerModels} from './model-catalog.js';
 import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -277,6 +278,10 @@ export class ModelSettingsStore {
       this.expectedRevision(parsed.data.revision);
       return this.commit(null);
     });
+  }
+
+  models(body: unknown) {
+    return this.serialize(async () => this.draft(body)).then(settings => providerModels(settings));
   }
 
   test(body: unknown): Promise<ModelTestResult> {

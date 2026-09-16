@@ -1,3 +1,5 @@
+import type {TokenUsage} from '@mote/shared';
+import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {DeepSeekHarness,RequestTimeoutError,type HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
@@ -20,7 +22,7 @@ export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLau
   options={...options,headers:options.headers&&{...options.headers},extraBody:options.extraBody&&structuredClone(options.extraBody)};
   const connection=modelConnection(options),active=new Set<DeepSeekHarness>(),pending=new Set<Promise<ImportAgentResult>>();
   let closed=false;
-  async function execute(input:ImportAgentInput,observer?:ImportAgentObserver):Promise<ImportAgentResult>{
+  async function execute(input:ImportAgentInput,observer?:ImportAgentObserver,onUsage?:(usage:TokenUsage)=>void):Promise<ImportAgentResult>{
     const local=options.allowUnauthenticatedLocal&&options.baseUrl&&['localhost','127.0.0.1','[::1]'].includes(new URL(options.baseUrl).hostname);
     if(!options.model||(!options.apiKey&&!local))throw new AgentNotConfiguredError();
     if(closed)throw new AgentProviderError();
@@ -55,7 +57,11 @@ export function apply(ctx){
           MOTE_MODEL_TRANSPORT:JSON.stringify({baseUrl:connection.baseUrl,protocol:connection.protocol,reasoningEffort:connection.effort,provider:options.provider,headers:options.headers,extraBody:options.extraBody}),
           MOTE_SKILLS:JSON.stringify(bundledSkills.filter(s=>s.id==='document-import'))}});
       active.add(harness);
-      const runOptions={sessionId:runId,...(observer?{onNotification:(notification:HarnessNotification)=>{try{void Promise.resolve(observer(structuredClone(notification))).catch(()=>{});}catch{/* Optional observation must not change import execution. */}}}:{})};
+      const observeUsage=observeHarness({question:'',onUsage},runId,connection.protocol!=='deepseek');
+      const runOptions={sessionId:runId,onNotification:(notification:HarnessNotification)=>{
+        observeUsage(notification);
+        try{if(observer)void Promise.resolve(observer(structuredClone(notification))).catch(()=>{});}catch{/* Optional observation must not change import execution. */}
+      }};
       const checkResult=(result:Awaited<ReturnType<DeepSeekHarness['run']>>)=>{
         const end=[...result.events].reverse().find(e=>e.type==='turn/end');
         if((end?.data as {reason?:{kind?:string}})?.reason?.kind==='error')throw new AgentProviderError();
@@ -87,7 +93,7 @@ export function apply(ctx){
     }
   }
   return {
-    prepare(input:ImportAgentInput,observer?:ImportAgentObserver){const task=execute(input,observer);pending.add(task);void task.then(()=>pending.delete(task),()=>pending.delete(task));return task;},
+    prepare(input:ImportAgentInput,observer?:ImportAgentObserver,onUsage?:(usage:TokenUsage)=>void){const task=execute(input,observer,onUsage);pending.add(task);void task.then(()=>pending.delete(task),()=>pending.delete(task));return task;},
     async close(){
       closed=true;
       const cleanup=await Promise.allSettled([...active].map(h=>h.close()));

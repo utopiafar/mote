@@ -1,6 +1,7 @@
+import {QueryProgress,type QueryRun} from './QueryProgress';
 import {useEffect, useRef, useState, type ReactNode} from 'react';
 import {ArrowRight, ArrowUp, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, ShieldCheck, Trash2} from 'lucide-react';
-import {dateTime, errorMessage, type Answer, type Api, type Device, type Range} from './api';
+import {ApiError,dateTime, errorMessage, type Answer, type Api, type Device, type Range} from './api';
 
 interface ConversationSummary {
   id: string;
@@ -35,6 +36,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
   const [pendingQuestion, setPendingQuestion] = useState(''), [confirmDelete, setConfirmDelete] = useState(false);
   const operation = useRef<AbortController | null>(null), historyRequest = useRef<AbortController | null>(null);
   const end = useRef<HTMLDivElement>(null);
+  const [run,setRun]=useState<QueryRun|null>(null),[pollError,setPollError]=useState('');
 
   async function loadHistory(next?: string) {
     historyRequest.current?.abort();
@@ -49,15 +51,48 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     finally { if (!controller.signal.aborted) setLoading(false); }
   }
   useEffect(() => {
-    void loadHistory();
-    return () => {operation.current?.abort(); historyRequest.current?.abort();};
+    void loadHistory();setOpening(true);
+    const controller=new AbortController();
+    void api.request<{items:QueryRun[]}>('/api/query-runs',{signal:controller.signal}).then(page=>{
+      if(controller.signal.aborted)return;
+      const recent=page.items.find(r=>r.status==='running')??page.items[0];
+      if(recent){setRun(recent);setBusy(recent.status==='running');}
+      if(recent?.status==='running'&&recent.conversationId)void api.request<Conversation>(`/api/conversations/${recent.conversationId}`,{signal:controller.signal}).then(saved=>{if(!controller.signal.aborted){setConversation(saved);setSelectedDevice(saved.scope.deviceId??'');}}).catch(()=>{});
+    }).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));}).finally(()=>{if(!controller.signal.aborted)setOpening(false);});
+    return () => {controller.abort();operation.current?.abort(); historyRequest.current?.abort();};
   }, [api]);
   useEffect(() => {if (conversation?.turns.length) end.current?.scrollIntoView({block: 'nearest'});}, [conversation?.id, conversation?.turns.length]);
+
+  useEffect(()=>{
+    if(!run)return;
+    const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
+    const update=async()=>{
+      try{
+        const current=await api.request<QueryRun>(`/api/query-runs/${run.id}`,{signal:controller.signal});
+        if(controller.signal.aborted)return;
+        setRun(current);setPollError('');
+        if(current.status==='running'){setBusy(true);timer=setTimeout(()=>void update(),1000);return;}
+        if(current.status==='completed'&&current.conversationId){
+          const saved=await api.request<Conversation>(`/api/conversations/${current.conversationId}`,{signal:controller.signal});
+          if(controller.signal.aborted)return;
+          setConversation(saved);setSelectedDevice(saved.scope.deviceId??'');setQuestion('');void loadHistory();
+        }
+        if(current.status==='failed'&&pendingQuestion)setQuestion(pendingQuestion);
+        setBusy(false);setPendingQuestion('');operation.current=null;
+      }catch(e){if(!controller.signal.aborted){
+        if(e instanceof ApiError&&e.status===404){setRun(null);setBusy(false);setPendingQuestion('');operation.current=null;setError('对话或运行记录已删除。');return;}
+        setPollError(errorMessage(e));timer=setTimeout(()=>void update(),3000);
+      }}
+    };
+    void update();
+    return()=>{controller.abort();clearTimeout(timer);};
+  },[api,run?.id]);
 
   async function open(id: string) {
     if (busy) return;
     operation.current?.abort();
     const controller = new AbortController(); operation.current = controller;
+    setRun(null);setPollError('');
     setOpening(true); setError(''); setConfirmDelete(false); setQuestion(''); setPendingQuestion('');
     // Clear the old answer immediately, so a failed read cannot be mistaken for the selected conversation.
     setConversation(null);
@@ -70,33 +105,30 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
   function startNew() {
     if (busy) return;
     operation.current?.abort(); operation.current = null;
+    setRun(null);setPollError('');
     setConversation(null); setOpening(false); setQuestion(''); setPendingQuestion(''); setError(''); setConfirmDelete(false);
   }
   async function submit(event?: {preventDefault(): void}, sample?: string) {
     event?.preventDefault();
     const text = (sample ?? question).trim();
-    if (!text || operation.current || !configured) return;
+    if (!text || busy || opening || operation.current || !configured) return;
     const controller = new AbortController(); operation.current = controller;
-    setBusy(true); setError(''); setConfirmDelete(false); setPendingQuestion(text);
+    setRun(null);setBusy(true); setError(''); setConfirmDelete(false); setPendingQuestion(text);
     try {
-      const result = await api.request<Answer & {conversationId: string; turnId: string}>('/api/query', {
-        method: 'POST', signal: controller.signal,
-        body: JSON.stringify({question: text, ...(conversation ? {conversationId: conversation.id} : {}),
-          after: range.after ?? null, before: range.before ?? null, deviceId: selectedDevice || null,
-          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone}),
-      });
-      if (controller.signal.aborted) return;
-      // The successful query is already durable. Keep it visible even if refreshing the history list fails.
-      const now = new Date().toISOString();
-      const turn: ConversationTurn = {id: result.turnId, question: text, result, createdAt: now};
-      setConversation(previous => ({id: result.conversationId, title: previous?.title ?? Array.from(text).slice(0, 80).join(''),
-        createdAt: previous?.createdAt ?? now, updatedAt: now, turnCount: (previous?.turnCount ?? 0) + 1,
-        scope: {...range, ...(selectedDevice ? {deviceId: selectedDevice} : {})}, turns: [...(previous?.turns ?? []), turn]}));
-      setQuestion(''); setPendingQuestion('');
-      void loadHistory();
+      const id=crypto.randomUUID();
+      const body=JSON.stringify({id,input:{question:text,...(conversation?{conversationId:conversation.id}:{}),after:range.after??null,before:range.before??null,deviceId:selectedDevice||null,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
+      let accepted:QueryRun;
+      try{accepted=await api.request<QueryRun>('/api/query-runs',{method:'POST',signal:controller.signal,body});}
+      catch(e){
+        if(controller.signal.aborted)throw e;
+        // Retry the identical admission ID; the server deduplicates ambiguous responses.
+        accepted=await api.request<QueryRun>('/api/query-runs',{method:'POST',signal:controller.signal,body});
+      }
+      if(controller.signal.aborted)return;
+      setRun(accepted);setPollError('');setQuestion('');
     } catch (e) {
-      if (!controller.signal.aborted) {setQuestion(text); setPendingQuestion(''); setError(`${errorMessage(e)} 可刷新历史检查结果后再重试。`);}
-    } finally {if (!controller.signal.aborted) {setBusy(false); operation.current = null;}}
+      if (!controller.signal.aborted) {setBusy(false);setQuestion(text); setPendingQuestion(''); setError(`${errorMessage(e)} 可刷新历史检查结果后再重试。`);}
+    } finally {if (!controller.signal.aborted) {operation.current = null;}}
   }
   async function remove() {
     if (!conversation || operation.current) return;
@@ -105,7 +137,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     try {
       await api.request(`/api/conversations/${encodeURIComponent(conversation.id)}`, {method: 'DELETE', signal: controller.signal});
       if (controller.signal.aborted) return;
-      setConversation(null); setQuestion(''); setConfirmDelete(false); void loadHistory();
+      setRun(null);setConversation(null); setQuestion(''); setConfirmDelete(false); void loadHistory();
     } catch (e) {if (!controller.signal.aborted) setError(errorMessage(e));}
     finally {if (!controller.signal.aborted) {setBusy(false); operation.current = null;}}
   }
@@ -129,7 +161,8 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
         <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}</span></div>
         {turn.evidenceDeleted ? <p className="notice">相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。</p> : renderAnswer(turn.result)}
       </article>)}
-      {pendingQuestion && <div className="thinking-panel" role="status"><LoaderCircle size={18} className="spin"/><div><strong>{pendingQuestion}</strong><p>正在查阅上下文并组织回答…</p></div></div>}
+      {pendingQuestion && <div className="asked-question"><MessageSquare size={16}/><span>{pendingQuestion}</span></div>}
+      {run&&<QueryProgress run={run} error={pollError}/>}
       <div ref={end}/>
       {error && <p className="notice error" role="alert">{error}</p>}
       <div className="filter-bar"><label><Monitor size={15}/><span>筛选设备</span><select aria-label="问答设备" value={selectedDevice} disabled={busy || opening} onChange={event => setSelectedDevice(event.target.value)}>

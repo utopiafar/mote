@@ -53,7 +53,11 @@ export class Conversations {
     return {conversationId:id,turnId:turn.id};
   }
 
-  delete(id:string) {return {deleted:Number(this.store.db.prepare('DELETE FROM conversations WHERE id=?').run(id).changes)};}
+  delete(id:string) {
+    // Public status messages can contain derived facts; remove them with the dialogue.
+    if(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='query_runs'").get())this.store.db.prepare("DELETE FROM query_runs WHERE json_extract(json,'$.conversationId')=?").run(id);
+    return {deleted:Number(this.store.db.prepare('DELETE FROM conversations WHERE id=?').run(id).changes)};
+  }
 
   context(conversation:Conversation):NonNullable<QueryInput['conversation']> {
     const turns:NonNullable<QueryInput['conversation']>['turns']=[];

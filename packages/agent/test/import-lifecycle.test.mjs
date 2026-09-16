@@ -77,3 +77,19 @@ test('optional import launch hook receives the isolated root and only forwards i
   const agent=createImportAgent(options,async paths=>{launched=paths;return {dshBin:paths.runtimeRoot+'/generated-launch.mjs',extraEnvironment:{IGNORED:'generated'}};});t.after(()=>agent.close());
   await agent.prepare(input);assert.equal(launched.workspace,input.workspace);assert.match(launched.runtimeRoot,/mote-import-agent-/);
 });
+
+test('import usage includes the formatting repair and stays outside model input',async t=>{
+  let turn=0;const usage=[];
+  t.mock.method(DeepSeekHarness.prototype,'run',async function(prompt,runOptions){
+    const parsed=JSON.parse(prompt);assert.equal(parsed.onUsage,undefined);assert.equal(parsed.observer,undefined);
+    turn++;
+    const emit=(type,data)=>runOptions.onNotification({method:'session.event',params:{sessionId:runOptions.sessionId,event:{type,data:{turn,step:1,...data}}}});
+    emit('step/start',{});emit('assistant/message',{usage:{inputTokens:10,cacheReadTokens:5,cacheWriteTokens:0,outputTokens:2,totalTokens:17}});
+    return {events:[],finalResponse:turn===1?'Generated invalid JSON':JSON.stringify({summary:'Generated repair'})};
+  });
+  t.mock.method(DeepSeekHarness.prototype,'close',async()=>{});
+  const agent=createImportAgent(options);t.after(()=>agent.close());
+  const result=await agent.prepare(input,()=>{throw Error('Observer failure');},v=>{usage.push(v);throw Error('Usage observer failure');});
+  assert.equal(result.summary,'Generated repair');
+  assert.deepEqual(usage.at(-1),{requests:2,reportedRequests:2,inputTokens:30,outputTokens:4,totalTokens:34,cacheReadTokens:10,cacheWriteTokens:0});
+});

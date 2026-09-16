@@ -48,7 +48,7 @@ export class InsightRuns {
       if(run.status!=='running'||run.events.length>=80)return;
       // Explicit projection prevents future observers leaking free-form content.
       if(!['starting','model','tool','validating'].includes(event.stage))return;
-      const next={stage:event.stage,...(event.tool?{tool:event.tool.slice(0,80)}:{}),...(Number.isSafeInteger(event.count)&&event.count!>=0?{count:event.count}:{}),at:new Date().toISOString()};
+      const next={stage:event.stage,...(event.phase?{phase:event.phase}:{}),...(event.tool?{tool:event.tool.slice(0,80)}:{}),...(Number.isSafeInteger(event.count)&&event.count!>=0?{count:event.count}:{}),at:new Date().toISOString()};
       run.events.push(next);run.updatedAt=next.at;this.save(run);
     };
     const task=Promise.resolve().then(()=>work(observe)).then(result=>{

@@ -227,14 +227,16 @@ test(
       timeoutMs: 60_000,
     });
     try {
-      const progress=[];
+      const progress=[],usage=[];
       const result = await agent.query({
         onProgress:event=>progress.push(event),
+        onUsage:value=>usage.push(value),
         question: "What do my synthetic research notes show?",
         conversation: {turns:[{question:'Synthetic earlier request: review the observatory notes',answer:'Synthetic earlier answer is unverified.',scope:{},createdAt:'2026-09-12T08:00:00Z'}],omittedTurns:2},
       });
       assert.equal(requests.length, 3);
-      assert.deepEqual(progress.filter(event=>event.stage==='tool').map(event=>event.tool),['search_context','evidence']);
+      assert.equal(usage.at(-1).totalTokens,360);assert.equal(usage.at(-1).requests,3);assert.equal(usage.at(-1).reportedRequests,3);
+      assert.deepEqual(progress.filter(event=>event.stage==='tool'&&event.phase==='completed').map(event=>event.tool),['search_context','evidence']);
       assert.equal(progress[0].stage,'starting');assert.equal(progress.at(-1).stage,'validating');
       assert.ok(progress.every(event=>!('arguments' in event)));
       assert.deepEqual(

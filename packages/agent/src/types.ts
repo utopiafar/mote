@@ -72,6 +72,7 @@ export interface AgentOptions {
 export interface QueryInput {
   /** Host-only observation, never serialized into model prompts or tool arguments. */
   onProgress?: (event: AgentProgress) => void;
+  onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;
@@ -90,6 +91,10 @@ export interface QueryInput {
 }
 export interface AgentProgress {
   stage: 'starting' | 'model' | 'tool' | 'validating';
+  /** Deliberately authored public status, never raw reasoning deltas. */
+  message?: string;
+  phase?: 'started' | 'completed';
+  step?: number;
   tool?: string;
   count?: number;
 }
