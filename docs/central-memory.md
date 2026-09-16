@@ -118,6 +118,8 @@ HTML 布局由模型生成，展示失败时仍可查看文字和引用。引用
 
 ## 扩展一个 Skill
 
+编码 Agent 对话另有按证据领域分流的 `coding-memory` Skill，采集、适用范围和验证口径见[编码经验设计](coding-agent-memory.md)。
+
 内置 Skill 在 [`packages/agent/skills/`](../packages/agent/skills/)：`document-import`、`memory-extraction`、`personal-insight`。Harness 使用原生 Skill 注册与加载；Skill 是可复用任务说明，不是每个主题独立运行的常驻 Agent。
 
 1. 在 `packages/agent/skills/<id>/SKILL.md` 写明输入、工作过程、输出结构、证据要求和失败时如何表达。资料内容始终作为不可信证据。

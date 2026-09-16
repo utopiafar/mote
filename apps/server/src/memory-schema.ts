@@ -11,7 +11,13 @@ export const memoryEvidenceSchema=z.object({
   fileEvidence:fileEvidenceSchema.optional(),
   contentHash:z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
+export const codingMemorySchema=z.object({
+  kind:z.enum(['pitfall','decision','principle','preference']),scope:z.enum(['session','project','shared']),
+  applicability:z.string().trim().min(1).max(2000),validation:z.enum(['observed','user_confirmed','tested','unverified']),
+}).strict();
 export const memorySchema=z.object({
+  domain:z.enum(['personal','coding']).optional(),coding:codingMemorySchema.optional(),
+  scopeRefs:z.array(z.object({provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict()).max(30).optional(),
   id:z.string().uuid(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),relatedMemoryIds:z.array(z.string().uuid()).max(50).optional(),validFrom:timestamp.optional(),validUntil:timestamp.optional(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),
   evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(memoryEvidenceSchema).max(100).optional(),
   createdAt:timestamp,updatedAt:timestamp.optional(),status:z.enum(['proposed','published','stale']),

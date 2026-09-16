@@ -224,6 +224,7 @@ class MainActivity : Activity() {
         }
         section("本机记录")
         totalsStatus = text("正在读取统计…", 15)
+        menu("日程建议", "逐条确认，添加到手机已有日历", "folder") { startActivity(Intent(this, CalendarActionsActivity::class.java)) }
         menu("采集记录", "按天查看本机与中央归档的图片、OCR 状态和文字", "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         menu("采集与存储详情", "查看累计结果、队列与使用空间", "chart") { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
         menu("权限与后台运行", "管理采集权限和省电设置", "settings") { showPage(Page.PERMISSIONS) }

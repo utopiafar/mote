@@ -260,6 +260,7 @@ export class Store {
   /** Called inside the evidence mutation transaction so in-flight extraction cannot revive old claims. */
   invalidateMemoryEvidence(id:string,deleted=false) {
     this.db.exec('DELETE FROM insights');
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='working_memories'").get())this.db.exec('DELETE FROM working_memories');
     if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
     else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);
     this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id=? OR evidence_id IN (SELECT evidence_id FROM memory_batch_dependencies WHERE batch_id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?))').run(id,id);
@@ -450,7 +451,7 @@ export class Store {
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() {
     const tables=new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {name:string}[]).map(row=>row.name));
-    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_lifecycle_state','working_memories'].filter(name=>tables.has(name));
+    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_lifecycle_state','working_memories','action_meta','action_proposals','action_targets'].filter(name=>tables.has(name));
     const bytes=Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n);
     const files=tables.has('file_blobs')?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
     const scalar=(sql:string)=>Number(this.db.prepare(sql).get()!.n);

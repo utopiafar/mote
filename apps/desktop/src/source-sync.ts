@@ -7,7 +7,7 @@ export async function atomicSourceJson(path: string, value: unknown): Promise<vo
   await sourceWork.run({ kind: 'json-write', path, value });
 }
 interface Known { contentHash: string; revision: string; item: ScannedItem }
-interface State { initialized?:boolean; baseline?:string[]; policy?: string; version: 1; known: Record<string, Known>; pending: SourceItem[]; lastSyncAt?: string }
+interface State { collectedItems?:number; checkpoint?: import('./coding-agents').CodingCheckpoint; initialized?:boolean; baseline?:string[]; policy?: string; version: 1; known: Record<string, Known>; pending: SourceItem[]; lastSyncAt?: string }
 // All transitions are persisted before network I/O. Callers serialize one source at a time.
 export class SourceSync {
   private data: State = { version: 1, known: {}, pending: [] };
@@ -20,8 +20,9 @@ export class SourceSync {
       this.data = value;
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   }
+  checkpoint() { return structuredClone(this.data.checkpoint); }
   status(): { pending: number; items: number; lastSyncAt?: string; oldestPendingAt?: string } {
-    return { oldestPendingAt: this.data.pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: this.data.pending.length, items: Object.values(this.data.known).filter(v => !v.item.deleted).length, lastSyncAt: this.data.lastSyncAt };
+    return { oldestPendingAt: this.data.pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: this.data.pending.length, items: this.data.collectedItems ?? Object.values(this.data.known).filter(v => !v.item.deleted).length, lastSyncAt: this.data.lastSyncAt };
   }
   async checkpointTo(path: string): Promise<void> {
     // Used only while the manager holds all sync work after explicit same-node reauthorization.
@@ -34,12 +35,12 @@ export class SourceSync {
   }
   private async discardPendingForPolicyChange(policy: string): Promise<void> {
     // A changed privacy policy must never upload a previously staged body.
-    const next = { ...this.data, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '' }])), pending: [] };
+    const next = { ...this.data, checkpoint: undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '' }])), pending: [] };
     await this.commit(next);
   }
   async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all'|'new_only'='all'): Promise<number> {
     const next: State = { ...this.data, known: { ...this.data.known }, pending: [...this.data.pending] }; let changes = 0;
-    if(initialSync==='new_only'&&!next.initialized&&Object.keys(next.known).length===0){
+    if(!scan.checkpoint&&initialSync==='new_only'&&!next.initialized&&Object.keys(next.known).length===0){
       next.baseline=[...new Set([...(next.baseline??[]),...scan.seen])];
       next.initialized=scan.complete;await this.commit(next, this.limits.maxBytes);return 0;
     }
@@ -53,7 +54,7 @@ export class SourceSync {
       const revision = sourceHash(contentHash + ':' + (previous?.revision ?? ''));
       next.pending.push({ ...item, revision, observedAt });
       // Persist only metadata for deletion detection; original text lives solely in the bounded pending queue.
-      next.known[key] = { contentHash, revision, item: { ...item, text: '' } }; changes++;
+      if (!scan.checkpoint) next.known[key] = { contentHash, revision, item: { ...item, text: '' } }; changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
     if (trackDeletions && scan.complete) {
@@ -67,6 +68,7 @@ export class SourceSync {
       }
     }
     if (next.pending.length > this.limits.maxEvents) throw new Error('来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试');
+    if (scan.checkpoint) { next.checkpoint = scan.checkpoint; next.collectedItems = (next.collectedItems ?? 0) + changes; }
     await this.commit(next, this.limits.maxBytes); return changes;
   }
   async syncScan(scan: SourceScan, trackDeletions: boolean, source: SourceDefinition, request: SourceRequest, signal?: AbortSignal, prepare?: () => Promise<void>): Promise<{ changes: number; state: 'ready' | 'paused' }> {

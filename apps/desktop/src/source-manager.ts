@@ -4,6 +4,8 @@ import { join, basename } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
 import { readLocalContent } from './local-content';
+import { codingRoot, codingProviders, type CodingProvider } from './coding-agents';
+import { sourceWork } from './background';
 import { scanSourceFiles } from './source-files';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices, decodeCalendarScan } from './source-calendar';
 import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
@@ -41,7 +43,7 @@ export class LocalSourceManager {
       const saved = JSON.parse((await readLocalContent(join(this.directory, 'sources.json'))).toString('utf8')) as { version: number; sources: LocalSource[]; metadataDirty: string[]; metadataDirtyAt?: string };
       if (saved.version !== 1 || !Array.isArray(saved.sources) || saved.sources.length > 40) throw new Error('本地来源配置无效');
       this.sources = saved.sources.map(s => {
-        if (!/^local-[a-f0-9-]{36}$/.test(s.id) || typeof s.name !== 'string' || s.name.length > 200 || typeof s.enabled !== 'boolean' || !['local-files', 'local-calendar'].includes(s.kind) || (s.kind === 'local-files' ? typeof s.path !== 'string' : typeof s.calendarId !== 'string')) throw new Error('本地来源配置无效');
+        if (!/^local-[a-f0-9-]{36}$/.test(s.id) || typeof s.name !== 'string' || s.name.length > 200 || typeof s.enabled !== 'boolean' || !['local-files', 'local-calendar', 'coding-agent'].includes(s.kind) || (s.kind === 'local-calendar' ? typeof s.calendarId !== 'string' : typeof s.path !== 'string') || (s.kind === 'coding-agent' && !['claude','codex','kimi'].includes(s.agent ?? ''))) throw new Error('本地来源配置无效');
         return { ...s, ...normalizeSourceOptions(s), deviceId: this.connection.deviceId };
       });
       this.metadataDirty = new Set(saved.metadataDirty || []);
@@ -98,6 +100,10 @@ export class LocalSourceManager {
     await this.add({ calendarId: calendar.id, name: calendar.title.slice(0, 200) || '本地日历', kind: 'local-calendar' }, input);
   }
   async addFiles(path: string, input: unknown): Promise<void> { await this.add({ path, name: basename(path).slice(0, 200) || '本地文件', kind: 'local-files' }, input); }
+  async addCodingAgent(provider: CodingProvider, input: unknown): Promise<void> {
+    if (!Object.hasOwn(codingProviders, provider)) throw new Error('不支持的 Coding Agent');
+    await this.add({ path: codingRoot(provider), name: codingProviders[provider], kind: 'coding-agent', agent: provider }, { ...normalizeSourceOptions(input), trackDeletions: false });
+  }
   private async add(fields: Pick<LocalSource, 'name' | 'kind'> & Partial<LocalSource>, input: unknown): Promise<void> {
     const options = normalizeSourceOptions(input);
     if (this.sources.length >= 40) throw new Error('本机最多连接 40 个本地来源');
@@ -153,22 +159,24 @@ export class LocalSourceManager {
         await engine.ensurePolicy(sourcePolicy(source));
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
-        const scan = source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json')) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
-        status.skipped = scan.skipped;
+        const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint()}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json')) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        signal.throwIfAborted(); status.skipped = scan.skipped;
+        if (source.kind === 'coding-agent' && scan.skipped) status.message = '部分会话无法读取或格式不支持；保留游标，下次重试';
         this.readable.add(source.id);
         if (this.managedUploads) {
-          await engine.stage(scan, source.trackDeletions,undefined,source.initialSync);
+          await engine.stage(scan, source.kind !== 'coding-agent' && source.trackDeletions,undefined,source.initialSync);
           Object.assign(status, engine.status(), { state: 'idle', message: !this.connection.serverUrl || !this.connection.token ? '已保存在本机；尚未配置中央同步' : '已检查本地变化，按同步设置等待上传' });
         } else {
           const pending = this.pendingStats();
           const policy = decideSync({ ...this.connection, syncMode: this.connection.syncMode ?? 'realtime', syncIntervalMinutes: this.connection.syncIntervalMinutes ?? 15, syncBatchSize: this.connection.syncBatchSize ?? 20 }, pending, Date.now(), force);
-          if (!policy.ready) { await engine.stage(scan, source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
+          if (!policy.ready) { await engine.stage(scan, source.kind !== 'coding-agent' && source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
           else {
             const request = this.request(signal);
-            const { state: ready } = await engine.syncScan(scan, source.trackDeletions, sourceDefinition(source), request, signal, () => this.prepareSource(source, request, signal));
+            const { state: ready } = await engine.syncScan(scan, source.kind !== 'coding-agent' && source.trackDeletions, sourceDefinition(source), request, signal, () => this.prepareSource(source, request, signal));
             Object.assign(status, engine.status(), { state: ready === 'paused' ? 'paused' : 'idle', message: ready === 'paused' ? '中央已暂停该来源；待上传版本保留在本机' : scan.complete ? '已同步；后台定时检查变化' : '已同步可读取项；扫描不完整，未判断删除' });
           }
         }
+        if (source.kind === 'coding-agent' && !scan.complete) status.message = scan.skipped ? '部分会话无法读取或单条事件超过限制；已保留进度，下次重试' : '已保存当前批次；其余会话或未写完的尾行将在后续扫描继续';
         void this.events?.record('SOURCE', scan.complete ? 'OK' : 'SCHEDULER', { elapsedMs: Date.now() - started });
       } catch (e) {
         void this.events?.record('SOURCE', signal.aborted ? 'CANCELLED' : e instanceof CalendarPermissionError ? 'PERMISSION' : failureCode(e, 'SOURCE'), { elapsedMs: Date.now() - started });

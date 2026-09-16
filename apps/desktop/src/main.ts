@@ -1,3 +1,5 @@
+import {discoverCodingAgents} from './coding-agents';
+import {nativeCalendarActions} from './calendar-actions';
 import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, Tray } from 'electron';
@@ -176,6 +178,13 @@ else {
       queueBytes: queue.stats().bytes, modelBytes: nsfw.status().bytes, ...await readPowerState(helperPath).catch(() => ({})),
     }));
     collector = new Collector(settings, queue, helperPath, encryptedStorageAvailable, updateUi, nsfw, diagnostics, events, localSources);
+    let calendarDelivery:Promise<void>|undefined;
+    const calendarTimer=setInterval(()=>{
+      if(calendarDelivery||!settings.token||!settings.serverUrl||settings.syncMode==='manual'||process.platform!=='darwin')return;
+      calendarDelivery=nativeCalendarActions({...settings},helperPath,dataDirectory).deliver().catch(()=>{}).finally(()=>{calendarDelivery=undefined;});
+    },60000);calendarTimer.unref();
+    app.once('before-quit',()=>clearInterval(calendarTimer));
+
     await nsfw.initialize();
     await configureDiagnostics();
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
@@ -367,6 +376,8 @@ else {
       platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,
       environment: `桌面客户端 · ${['dev', 'test', 'prod', 'legacy'].includes(profile.name) ? profile.name : '自定义环境'}`,
     })));
+    handle('mote:coding-agents', () => discoverCodingAgents());
+    handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error('不支持的 Coding Agent'); return localSources!.addCodingAgent(provider, options); }));
     handle('mote:sources', () => localSources!.status());
     handle('mote:source-sync', async () => { await localSources!.sync(true); await collector.retry(); });
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));

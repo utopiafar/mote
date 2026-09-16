@@ -534,7 +534,7 @@ async function refreshSources(): Promise<void> {
   if (!rows.length) { const p = document.createElement('p'); p.className = 'helper'; p.textContent = '尚未连接本地来源。选择只包含你希望归档资料的目录。'; list.append(p); }
   for (const row of rows) {
     const card = document.createElement('article'); card.className = 'source-card';
-    const title = document.createElement('strong'); title.textContent = `${row.source.kind === 'local-calendar' ? '日历' : '文件'} · ${row.source.name} · ${row.source.retention === 'reference' ? '引用' : '快照'}`;
+    const title = document.createElement('strong'); title.textContent = `${row.source.kind === 'local-calendar' ? '日历' : row.source.kind === 'coding-agent' ? '编码对话' : '文件'} · ${row.source.name} · ${row.source.retention === 'reference' ? '引用' : '快照'}`;
     const detail = document.createElement('p'); detail.className = 'helper profile-path'; detail.textContent = row.source.path || '所选系统日历';
     const status = document.createElement('p'); status.className = 'helper'; status.textContent = `${row.source.enabled ? row.message : '本机已暂停'} · ${row.items} 项 · 待传 ${row.pending} · 跳过 ${row.skipped}${row.lastSyncAt ? ' · 最近同步 ' + new Date(row.lastSyncAt).toLocaleString() : ''}`;
     const actions = document.createElement('div'); actions.className = 'actions';
@@ -547,10 +547,10 @@ async function refreshSources(): Promise<void> {
 }
 async function sourceAction(action: () => Promise<void>): Promise<void> {
   if (sourceBusy) return; sourceBusy = true; byId('source-feedback').textContent = '正在处理，请稍候…';
-  for (const id of ['source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync']) byId<HTMLButtonElement>(id).disabled = true;
+  for (const id of ['source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync']) byId<HTMLButtonElement>(id).disabled = true;
   try { await action(); byId('source-feedback').textContent = '已处理，下面显示各来源的当前同步状态。'; }
   catch (error) { byId('source-feedback').textContent = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : '操作未完成，请检查权限与配置后重试'; }
-  finally { sourceBusy = false; for (const id of ['source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync']) byId<HTMLButtonElement>(id).disabled = false; await refreshSources().catch(() => {}); }
+  finally { sourceBusy = false; for (const id of ['source-agent-discover', 'source-agent-add', 'source-files', 'source-directory', 'source-calendar-connect', 'source-calendar-add', 'source-save-edit', 'source-sync']) byId<HTMLButtonElement>(id).disabled = false; await refreshSources().catch(() => {}); }
 }
 for (const mode of ['files', 'directory'] as const) byId('source-' + mode).addEventListener('click', () => void sourceAction(async () => { await desktopApi.chooseSourceFiles(mode, sourceOptions()); }));
 byId('source-calendar-connect').addEventListener('click', () => void sourceAction(async () => {
@@ -559,6 +559,13 @@ byId('source-calendar-connect').addEventListener('click', () => void sourceActio
   byId('source-calendars').hidden = !calendars.length;
   if (!calendars.length) throw new Error('已授权，但系统中没有可选日历；请在系统日历中添加后重试');
 }));
+byId('source-agent-discover').addEventListener('click', () => void sourceAction(async () => {
+  const agents = await desktopApi.codingAgents(); const select = byId<HTMLSelectElement>('source-agent-choice'); select.replaceChildren();
+  for (const agent of agents.filter(a => a.available)) { const option = document.createElement('option'); option.value = agent.provider; option.textContent = agent.name; select.append(option); }
+  select.hidden = !select.options.length; byId('source-agent-add').hidden = !select.options.length;
+  if (!select.options.length) throw new Error('本机默认目录中尚未发现受支持的 Agent 会话');
+}));
+byId('source-agent-add').addEventListener('click', () => void sourceAction(() => desktopApi.addCodingAgent(readInput('source-agent-choice') as import('./coding-agents').CodingProvider, sourceOptions())));
 byId('source-calendar-add').addEventListener('click', () => void sourceAction(async () => { await desktopApi.addCalendarSource(readInput('source-calendar-choice'), sourceOptions()); }));
 byId('source-sync').addEventListener('click', () => void sourceAction(() => desktopApi.syncSources()));
 byId('source-calendar-permissions').addEventListener('click', () => void sourceAction(() => desktopApi.openCalendarPermissions()));

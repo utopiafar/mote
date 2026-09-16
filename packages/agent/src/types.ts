@@ -74,7 +74,7 @@ export interface QueryInput {
   onProgress?: (event: AgentProgress) => void;
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
-  responseMode?: 'answer'|'personal-insight'|'memory-extraction';
+  responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;
   /** A bounded extraction session may read only these original evidence ranges. */

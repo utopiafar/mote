@@ -8,6 +8,12 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./actions": {
+      "types": "./dist/actions.d.ts",
+      "import": "./dist/actions.js",
+      "require": "./dist/actions.js",
+      "default": "./dist/actions.js"
+    },
     "./environment": {
       "types": "./dist/environment.d.ts",
       "import": "./dist/environment.js"
@@ -51,6 +57,9 @@
   },
   "typesVersions": {
     "*": {
+      "actions": [
+        "dist/actions.d.ts"
+      ],
       "feedback": [
         "dist/feedback.d.ts"
       ],

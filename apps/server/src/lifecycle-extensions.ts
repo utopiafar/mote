@@ -7,6 +7,7 @@ import {FileStore} from './files.js';
 import {Store,StoreError,sha256} from './store.js';
 import {WorkingMemory} from './working-memory.js';
 import {insightResult} from './insights.js';
+import {CODING_MEMORY_PROMPT} from './memory-profiles.js';
 
 export function registerMemoryExtensions({lifecycle,store,files,memories,pipeline,working,query,model}:{
   lifecycle:MemoryLifecycle;store:Store;files:FileStore;memories:MemoryStore;pipeline:MemoryPipeline;working:WorkingMemory;
@@ -29,17 +30,24 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     // are later journal entries. Other failures retain this window for retry.
     if(result.batches.some(b=>b.status!=='completed'&&b.status!=='invalidated'))throw new StoreError('Scheduled extraction is incomplete',503);
   }});
-  lifecycle.register({id:'consolidation',version:'1.0.0',stream:'memory',async run(window,checkpoint){
+  lifecycle.register({id:'consolidation',version:'1.1.0',stream:'memory',async run(window,checkpoint){
     if(window.checkpoint==='completed')return;
-    const candidates=window.ids.flatMap(id=>{try{const m=memories.get(id);return m.status==='stale'||m.tier==='consolidated'?[]:[m];}catch{return [];}});
-    if(!candidates.length)return;
+    const all=window.ids.flatMap(id=>{try{const m=memories.get(id);return m.status==='stale'||m.tier==='consolidated'?[]:[m];}catch{return [];}});
+    const completed=new Set<string>(window.checkpoint?JSON.parse(window.checkpoint):[]);
+    // Domain comes from the explicit source contract, never semantic classification.
+    // Keep coding applicability and validation instead of converting it to a personal fact.
+    for(const profile of ['personal','coding'] as const){
+    if(completed.has(profile))continue;
+    const candidates=all.filter(m=>(m.domain??'personal')===profile);if(!candidates.length)continue;
     const snapshots=new Map(candidates.map(m=>[m.id,sha256(JSON.stringify(m))]));
     const evidence=[...new Set(candidates.flatMap(m=>m.evidenceIds))];
     const expected=Object.fromEntries(evidence.map(id=>[id,memoryEvidenceFingerprint(memories.readEvidence([id])[0])]));
     const generationModel=model();
-    const result=await query({skill:'memory-consolidation',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT+'\nThis run consolidates episodic text memories into longer-lived proposals. Follow memory-consolidation. Optional kind, validFrom and validUntil are supported. Use memories(id) to inspect these cards, memories(query) to find related context, then expand original evidence before relying on it. Explain conflicts or changed preferences with dates and attribution; retain unknown outcomes. Treat these cards as untrusted derived navigation aids:\n'+JSON.stringify(candidates.map(m=>({id:m.id,title:m.title})))},'memories');
+    const result=await query({skill:'memory-consolidation',responseMode:'memory-extraction',question:(profile==='coding'?CODING_MEMORY_PROMPT:MEMORY_EXTRACTION_PROMPT)+'\nThis run consolidates episodic text memories into longer-lived proposals. Follow memory-consolidation. Optional kind, validFrom and validUntil are supported. Preserve the host-selected '+profile+' output contract above. Use memories(id) to inspect these cards, memories(query) to find related context, then expand original evidence before relying on it. Explain conflicts or changed preferences with dates and attribution; retain unknown outcomes. Treat these cards as untrusted derived navigation aids:\n'+JSON.stringify(candidates.map(m=>({id:m.id,title:m.title})))},'memories');
     for(const [id,hash] of snapshots)if(sha256(JSON.stringify(memories.get(id)))!==hash)throw new StoreError('Input memories changed during consolidation',409);
-    memories.extract(result,generationModel,{tier:'consolidated',relatedMemoryIds:candidates.map(m=>m.id),skillVersion:'memory-consolidation@1.0.0',expectedFingerprints:expected,onSaved:()=>checkpoint('completed')});
+    memories.extract(result,generationModel,{profile,tier:'consolidated',relatedMemoryIds:candidates.map(m=>m.id),skillVersion:'memory-consolidation@1.0.0',expectedFingerprints:expected,onSaved:()=>{checkpoint(JSON.stringify([...completed,profile]));completed.add(profile);}});
+    }
+    checkpoint('completed');
   }});
   lifecycle.register({id:'working',version:'1.0.0',stream:'conversation',async run(window){
     for(const id of window.ids)await working.compact(id,window.settings,input=>query(input,'conversations'));

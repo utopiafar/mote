@@ -1,4 +1,5 @@
 import {Usage,TurnUsage} from './Usage';
+import {Actions} from './Actions';
 import {CaptureSessions} from './CaptureSessions';
 import {ContentStorage} from './ContentStorage';
 import { restoreSession } from "./session";
@@ -92,8 +93,9 @@ import {SourceDocumentDetails} from './SourceDocumentDetails';
 declare global {
   interface Window { moteCentralSession?: {close: () => void} }
 }
-type Page = "usage" | "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
+type Page = "actions" | "usage" | "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
+  {id:"actions" as const,label:"行动",icon:Clock3,group:"日常"},
   { id: "usage" as const, label: "用量与费用", icon: Clock3, group: "管理" },
   { id: "overview" as const, label: "总览", icon: LayoutDashboard, group: "日常" },
   { id: "timeline" as const, label: "采集记录", icon: Clock3, group: "日常" },
@@ -106,7 +108,7 @@ const nav = [
   { id: "devices" as const, label: "设备", icon: Monitor, group: "管理" },
   { id: "sources" as const, label: "来源", icon: Link2, group: "管理" },
 ];
-const pageLabels: Record<Page,string> = {usage:'用量与费用',imports:'导入',insights:'洞察',overview:'总览',timeline:'采集记录',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
+const pageLabels: Record<Page,string> = {actions:'行动',usage:'用量与费用',imports:'导入',insights:'洞察',overview:'总览',timeline:'采集记录',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
 const periodNames: Record<string, string> = {
   today: "今天",
   week: "过去 7 天",
@@ -686,7 +688,7 @@ function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Ap
 function Timeline(props:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number;embedded?:boolean}) {
   const Heading=props.embedded?'h2':'h1';
   const [view,setView]=useState('sessions');
-  return <><div className="filter-bar" role="group" aria-label="记录视图"><button className={'button '+(view==='sessions'?'primary':'')} onClick={()=>setView('sessions')}>Session / App 分组</button><button className={'button '+(view==='records'?'primary':'')} onClick={()=>setView('records')}>全部记录</button></div>{view==='sessions'?<><div className="page-heading"><div className="eyebrow">沿着连续的记录回看</div><Heading>采集记录</Heading><p>先看一段，再展开其中的截图与上下文。</p></div><CaptureSessions {...props}/></>:<RecordTimeline {...props}/>}</>;
+  return <><div className="filter-bar" role="group" aria-label="记录视图"><button className={'button '+(view==='sessions'?'primary':'')} onClick={()=>setView('sessions')}>Session / App 分组</button><button className={'button '+(view==='records'?'primary':'')} onClick={()=>setView('records')}>全部记录</button></div>{view==='sessions'?<><div className="page-heading timeline-heading"><div className="eyebrow">沿着连续的记录回看</div><Heading>采集记录</Heading><p>先看一段，再展开其中的截图与上下文。</p></div><CaptureSessions {...props}/></>:<RecordTimeline {...props}/>}</>;
 }
 function RecordTimeline({
   api,
@@ -1606,6 +1608,7 @@ function App() {
                       {page === "imports" && <Imports api={api} refreshVersion={timelineRevision} onOpen={setEvidenceId} onMemories={()=>onPage("memories")} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
                       {page === "usage" && <Usage api={api}/>}
                       {page === "insights" && <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured??false} onOpen={setEvidenceId} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
+                      {page === "actions" && <Actions api={api} onOpen={setEvidenceId}/> }
                       {page === "memories" && <Memories api={api} range={range} refreshVersion={timelineRevision} onOpen={setEvidenceId} />}
                       {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}

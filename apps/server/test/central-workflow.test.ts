@@ -33,7 +33,7 @@ test('central UI APIs complete original import → exact Memory → cited static
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${cfg.token}`},request=(method:'GET'|'POST',url:string,payload?:unknown)=>node.app.inject({method,url,headers,payload:payload as any});
   assert.equal((await node.app.inject('/api/imports')).statusCode,401);
-  assert.equal((await request('GET','/api/skills')).json().items.length,5);
+  const skills=(await request('GET','/api/skills')).json().items as {id:string}[];assert.ok(['coding-memory','memory-consolidation','working-memory','calendar-extraction'].every(id=>skills.some(skill=>skill.id===id)));
   const uploaded=await request('POST','/api/imports',{name:'合成通用资料',instruction:'导入原始日记',files:[{name:'journal.custom',dataBase64:Buffer.from(original).toString('base64')}]});
   assert.equal(uploaded.statusCode,202,uploaded.body);const id=uploaded.json().id;
   const preview=await until(async()=>(await request('GET',`/api/imports/${id}`)).json(),job=>job.status==='awaiting_confirmation');

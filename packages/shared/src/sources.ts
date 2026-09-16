@@ -17,7 +17,16 @@ const originalMetadataSchema=z.record(z.unknown()).superRefine((value,ctx)=>{
   }
   if(!valid||JSON.stringify(value).length>32000)ctx.addIssue({code:'custom',message:'Original metadata must be bounded JSON (32,000 characters, depth 8)'});
 });
+export const codingEvidenceSchema=z.object({
+  version:z.literal(1),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().min(1).max(500),
+  projectKey:z.string().min(1).max(200),cwd:z.string().max(4000).optional(),
+  eventId:z.string().min(1).max(200),role:z.enum(['user','assistant','tool_call','tool_result','assistant_delta','tool_call_delta']),
+  callId:z.string().max(500).optional(),parentSessionId:z.string().max(500).optional(),
+  part:z.number().int().min(0),parts:z.number().int().min(1),
+}).strict();
+export type CodingEvidence=z.infer<typeof codingEvidenceSchema>;
 export const documentSchema=z.object({
+  coding:codingEvidenceSchema.optional(),
   fileId:z.string().min(1).max(200).optional(),path:z.string().max(4000).optional(),
   recordedAt:timestamp.describe('Explicit original authored/recording date; never the import or observation time. Omit when unknown.').optional(),occurredAt:timestamp.describe('Explicit time of the described event; omit when unknown.').optional(),
   timeBasis:z.enum(['recorded','occurred','unknown']).optional(),
@@ -35,7 +44,7 @@ export function sourceContentTime(record:{capturedAt:string;provenance?:{documen
 export const sourceIdSchema=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 export const sourceConnectionSchema=z.object({
   id:sourceIdSchema,name:z.string().trim().min(1).max(200),
-  kind:z.enum(['local-calendar','local-files','google-calendar','mcp','upload','custom']),
+  kind:z.enum(['local-calendar','local-files','coding-agent','google-calendar','mcp','upload','custom']),
   deviceId:sourceIdSchema,platform:z.enum(['macos','windows','linux','android','import']),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();

@@ -54,6 +54,8 @@ test('working summary preserves prefix, discloses recent turns and cannot surviv
   assert.equal(working.context(conversations.get(id!),settings).turns.length,20,'Retain available context while periodic compaction is pending');
   await working.compact(id!,settings,async input=>{assert.equal(input.skill,'working-memory');return {...empty(),answer:'早期决定：只处理合成资料；待办：验证分页。'};});
   const context=working.context(conversations.get(id!),settings);assert.equal(context.turns.length,8);assert.equal(context.workingMemory?.coveredTurns,12);assert.equal(context.omittedTurns,0);
+  store.invalidateMemoryEvidence(randomUUID());assert.equal(working.get(conversations.get(id!)),undefined,'A source revision retires derived working context');
+  await working.compact(id!,settings,async()=>({...empty(),answer:'合成工作摘要'}));
   store.invalidateConversationAnswers();assert.equal(working.get(conversations.get(id!)),undefined);
   await working.compact(id!,settings,async()=>{conversations.delete(id!);return {...empty(),answer:'禁止复活'};}).then(()=>assert.fail('Deleted conversation resurrected'),()=>{});
   assert.equal(store.db.prepare('SELECT count(*) AS n FROM working_memories').get()!.n,0);
