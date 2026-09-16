@@ -1,7 +1,7 @@
 ---
 name: memory-extraction
 description: Extract proposed memories from an explicit evidence batch.
-version: 1.0.2
+version: 1.0.3
 ---
 
 # Memory extraction

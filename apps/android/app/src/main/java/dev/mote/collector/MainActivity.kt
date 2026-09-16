@@ -551,6 +551,9 @@ class MainActivity : Activity() {
         decryptCancel = button("取消批量解密") { LocalContentDecryptor.cancel(); refreshContentDecryption() }
         text("在后台逐个转换图片、记录、索引和来源文件，可继续浏览与采集。取消会保留已完成结果，未完成文件仍可正常读取；再次运行可继续处理。", 13, MoteUi.muted)
         refreshContentDecryption()
+        menu("图片压缩预览", "质量、文件大小、缩放比例与放大对比", "chart") {
+            @Suppress("DEPRECATION") startActivityForResult(Intent(this, CompressionPreviewActivity::class.java), 105)
+        }
         section("图片去重排查")
         imageDedupeDiagnosticsEnabled = check("临时保留图片去重对比记录", config.imageDedupeDiagnosticsEnabled)
         text("默认关闭。开启并保存后，将已去重图片及对比原图临时保存在本机，供核对分数与判断依据。最多 20 组、32 MiB，24 小时后到期；读取时清理，系统可能延后后台清理。关闭并保存后清空。保留的都是通过隐私检查和遮罩后的图片。", 13, MoteUi.muted)
@@ -813,6 +816,14 @@ class MainActivity : Activity() {
     @Deprecated("Platform consent result API retained for the minimal native Activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 105 && resultCode == RESULT_OK && data != null) {
+            val quality = data.getIntExtra("quality", 75); val side = data.getIntExtra("maxSide", 1280)
+            if (quality in 40..95 && side in 640..2560) {
+                showPage(Page.CAPTURE); jpegQuality.setText(quality.toString()); captureMaxSide.setText(side.toString())
+                toast("参数已带回采集设置，请点击保存后应用")
+            }
+            return
+        }
         if (requestCode in setOf(103, 104) && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!; val app = applicationContext
             uiTask.start("正在导出诊断包…", { technicalStatus.text = it }, {

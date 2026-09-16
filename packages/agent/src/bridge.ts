@@ -1,3 +1,4 @@
+import {reportProgress} from './types.js';
 import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
@@ -254,6 +255,7 @@ export async function startBridge(
           });
         }
         trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
+        reportProgress(bounds,{stage:'tool',tool,count:data.length});
         res.end(JSON.stringify({source:'untrusted_personal_context',data}));return;
       }
       let value: unknown;
@@ -384,6 +386,7 @@ export async function startBridge(
             ? 0
             : 1,
       });
+      reportProgress(bounds,{stage:'tool',tool,count:trace.at(-1)!.count});
       res.end(serialized);
     } catch (error) {
       res

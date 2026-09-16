@@ -1,4 +1,4 @@
-import type {ModelProtocol} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS,type ModelProtocol} from '@mote/shared/models';
 import {AgentConfigurationError, type AgentOptions} from './types.js';
 
 const protocols: ModelProtocol[] = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'];
@@ -73,7 +73,7 @@ export function modelConnection(options: ConnectionOptions) {
 /** Route selection is explicit protocol configuration, never semantic dispatch. */
 export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
   const {protocol, baseUrl, effort, route} = modelConnection(options);
-  const maxTokens = options.maxTokens ?? 8192;
+  const maxTokens = options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS;
   const model = {id: options.model!, name: options.model!, contextWindow: 128_000, maxTokens};
   if (protocol === 'deepseek') return [{id: 'llm-deepseek', config: {
     ...(effort === 'auto' ? {thinking: 'disabled'} : {thinking: effort === 'off' ? 'disabled' : 'enabled', reasoningEffort: effort}),

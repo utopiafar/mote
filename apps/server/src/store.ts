@@ -297,6 +297,37 @@ export class Store {
     const last=items.at(-1) as {after:string;deviceId:string;appId:string}|undefined;
     return {items,totalCount,albumCount,nextCursor:rows.length>range.limit&&last?Buffer.from(JSON.stringify({after:last.after,deviceId:last.deviceId,appId:last.appId})).toString('base64url'):null};
   }
+  sessions(range:{after:string;before:string;deviceId?:string;cursor?:string;limit:number;sessionId?:string}) {
+    const args:(string|number)[]=[new Date(range.after).toISOString(),new Date(range.before).toISOString()];
+    if(range.deviceId)args.push(range.deviceId);
+    // Partition before pagination. App switches remain boundaries even if the user
+    // subsequently opens only one app's session; overlapping devices never mix.
+    const cte=`WITH observed AS (
+      SELECT *,LAG(app_id) OVER w AS previous_app,LAG(captured_at) OVER w AS previous_at
+      FROM capture_gallery WHERE captured_at>=? AND captured_at<? ${range.deviceId?'AND device_id=?':''}
+      WINDOW w AS (PARTITION BY device_id ORDER BY captured_at,id)
+    ), segmented AS (
+      SELECT *,SUM(CASE WHEN previous_at IS NULL OR app_id='' OR app_id!=previous_app OR
+        (julianday(captured_at)-julianday(previous_at))*86400000>300000.1 THEN 1 ELSE 0 END)
+        OVER (PARTITION BY device_id ORDER BY captured_at,id) AS segment FROM observed
+    ), members AS (
+      SELECT *,FIRST_VALUE(id) OVER (PARTITION BY device_id,segment ORDER BY captured_at,id) AS session_id FROM segmented
+    )`;
+    let position:{at:string;id:string}|undefined;
+    if(range.cursor){try{position=z.object({at:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid session cursor');}}
+    if(range.sessionId){
+      const totalCount=Number(this.db.prepare(`${cte} SELECT COUNT(*) AS n FROM members WHERE session_id=?`).get(...args,range.sessionId)!.n);
+      if(!totalCount)throw new StoreError('Session changed or is no longer available; refresh the session list',404);
+      const rows=this.db.prepare(`${cte} SELECT id,device_id AS deviceId,captured_at AS capturedAt,app_id AS appId,app_name AS appName,has_image AS hasImage FROM members WHERE session_id=? ${position?'AND (captured_at<? OR (captured_at=? AND id<?))':''} ORDER BY captured_at DESC,id DESC LIMIT ?`).all(...args,range.sessionId,...(position?[position.at,position.at,position.id]:[]),range.limit+1);
+      const items=rows.slice(0,range.limit).map(row=>({...row,source:'screen',hasImage:Boolean(row.hasImage)})),last=rows.slice(0,range.limit).at(-1);
+      return {items,totalCount,nextCursor:rows.length>range.limit&&last?Buffer.from(JSON.stringify({at:last.capturedAt,id:last.id})).toString('base64url'):null};
+    }
+    const grouped=`, grouped AS (SELECT session_id AS id,device_id AS deviceId,app_id AS appId,app_name AS appName,MIN(captured_at) AS firstAt,MAX(captured_at) AS capturedAt,COUNT(*) AS count,SUM(has_image) AS imageCount FROM members GROUP BY device_id,segment)`;
+    const counts=this.db.prepare(`${cte}${grouped} SELECT COUNT(*) AS sessionCount,COALESCE(SUM(count),0) AS totalCount FROM grouped`).get(...args)!;
+    const rows=this.db.prepare(`${cte}${grouped} SELECT * FROM grouped ${position?'WHERE firstAt<? OR (firstAt=? AND id>?)':''} ORDER BY firstAt DESC,id LIMIT ?`).all(...args,...(position?[position.at,position.at,position.id]:[]),range.limit+1);
+    const items=rows.slice(0,range.limit).map(row=>({...row,after:row.firstAt,before:new Date(Date.parse(String(row.capturedAt))+1).toISOString()})),last=rows.slice(0,range.limit).at(-1);
+    return {items,...counts,gapMs:300000,nextCursor:rows.length>range.limit&&last?Buffer.from(JSON.stringify({at:last.firstAt,id:last.id})).toString('base64url'):null};
+  }
   imageReference(id:string) {
     return this.db.prepare('SELECT device_id AS deviceId,blob_hash AS blobHash FROM captures WHERE id=?').get(id) as {deviceId:string;blobHash:string|null}|undefined;
   }
@@ -414,7 +445,7 @@ export class Store {
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() {
     const tables=new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {name:string}[]).map(row=>row.name));
-    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews'].filter(name=>tables.has(name));
+    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs'].filter(name=>tables.has(name));
     const bytes=Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n);
     const files=tables.has('file_blobs')?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
     const scalar=(sql:string)=>Number(this.db.prepare(sql).get()!.n);

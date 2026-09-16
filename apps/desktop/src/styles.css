@@ -331,3 +331,9 @@ progress::-webkit-progress-value { border-radius: 5px; background: #759664; }
 #events-viewer pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .raw-log-output { width: 100%; min-height: 360px; max-height: 70vh; resize: vertical; overflow: auto; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; user-select: text; -webkit-user-select: text; cursor: text; tab-size: 2; }
+
+.record-session{display:grid;gap:10px;padding:20px;text-align:left;background:#fff;border:1px solid #e4ded4;border-radius:14px;cursor:pointer;color:inherit}.record-session:hover{border-color:#947357}.record-session strong{font-size:17px}.record-session small{color:#777}
+
+.compression-compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0}.compression-compare>div{min-width:0}.compression-viewport{height:430px;overflow:auto;border:1px solid #ddd;border-radius:10px;background:#eee}.compression-viewport img{display:block;height:auto}@media(max-width:650px){.compression-compare{grid-template-columns:1fr}.compression-viewport{height:300px}}
+
+.compression-controls{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}#compression-stats{font-size:13px;line-height:1.6}.compression-compare h3{font-size:15px}.compression-viewport{height:300px}@media(max-width:650px){.compression-controls{grid-template-columns:1fr}}

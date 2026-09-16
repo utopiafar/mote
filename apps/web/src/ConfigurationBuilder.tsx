@@ -16,7 +16,7 @@ export function ConfigurationBuilder({config,category,sources=[],sourcesError=''
   const choice=(key:string,label:string,options:[string,string][])=>{const selected=value(key);return <label className="preference-field">{label}<select aria-label={label} value={selected} onChange={e=>set(key,e.target.value)}>{!options.some(([v])=>v===selected)&&<option value={selected}>当前自定义值 · {selected||'未设置'}</option>}{options.map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label>;};
   const toggle=(key:string,label:string,hint:string)=><label className="preference-toggle"><span><strong>{label}</strong><small>{hint}</small></span><input type="checkbox" role="switch" checked={value(key)==='1'} onChange={e=>set(key,e.target.checked?'1':'0')}/></label>;
   function validate() {
-    const limits:Record<string,[number,number]>={MOTE_RETENTION_DAYS:[0,36500],MOTE_MAX_STORAGE_MB:[1,1000000],MOTE_MODEL_TIMEOUT_MS:[5000,600000],MOTE_MODEL_MAX_TOKENS:[256,32768],MOTE_INSIGHT_INTERVAL_HOURS:[0,168],MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS:[60,86400]};
+    const limits:Record<string,[number,number]>={MOTE_RETENTION_DAYS:[0,36500],MOTE_MAX_STORAGE_MB:[1,1000000],MOTE_MODEL_TIMEOUT_MS:[5000,600000],MOTE_MODEL_MAX_TOKENS:[1,128000],MOTE_INSIGHT_INTERVAL_HOURS:[0,168],MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS:[60,86400]};
     for(const [key,v] of Object.entries(changes)) {if(limits[key]){const n=Number(v),[min,max]=limits[key];if(!v||!Number.isInteger(n)||n<min||n>max)throw Error(`${key} 需要 ${min}–${max} 之间的整数。`);}if(/BASE_URL$/.test(key)&&v){const u=new URL(v);if(!['http:','https:'].includes(u.protocol)||u.username||u.password||u.search||u.hash)throw Error('模型地址须为不含凭据或参数的 HTTP(S) 地址。');}}
     return environmentFragment(changes);
   }

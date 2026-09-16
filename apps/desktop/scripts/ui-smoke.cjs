@@ -24,6 +24,8 @@ let finished = false;
 let currentPhase = 'startup';
 const timeout = setTimeout(() => { process.stderr.write('UI smoke timeout: ' + currentPhase + '\n'); app.exit(1); }, 45000);
 app.on('browser-window-created', (_event, window) => {
+  // Fixture screenshots and animation-frame checks must run even if another app is foreground.
+  window.webContents.setBackgroundThrottling(false);
   window.webContents.on('console-message', (_event, level, message) => { if (level >= 3) errors.push(message); });
   window.webContents.once('did-finish-load', () => {
     void (async () => {
@@ -238,6 +240,16 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`document.documentElement.scrollWidth <= window.innerWidth`), 'No horizontal overflow at minimum window width');
       writeFileSync(join(require('node:path').dirname(output), 'compact-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       assert.equal((await js('window.mote.status()')).running, false);
+      await navigate('developer');await navigate('compression');
+      for(let i=0;i<200&&await js(`document.querySelector('#compression-apply').disabled`);i++)await new Promise(resolve=>setTimeout(resolve,30));
+      assert(await js(`document.querySelector('#compression-stats').textContent.includes('文件大小为原图的')`));
+      await js(`document.querySelector('#compression-zoom').value='2';document.querySelector('#compression-zoom').dispatchEvent(new Event('change'))`);
+      assert.equal(await js(`document.querySelector('#compression-after').style.width`),'5120px');
+      await js(`document.querySelector('#compression-zoom').value='fit';document.querySelector('#compression-zoom').dispatchEvent(new Event('change'))`);
+      writeFileSync(join(require('node:path').dirname(output), 'compression-preview-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
+      await js(`document.querySelector('#compression-apply').click()`);
+      assert(await js(`!document.querySelector('#settings-pending').hidden`));
+      await navigate('overview');
       const generatedJpeg = nativeImage.createFromBitmap(Buffer.alloc(64 * 64 * 4, 160), { width: 64, height: 64 }).toJPEG(75);
       const hash = imageHash(generatedJpeg), day = new Date(), fixtureRecords = [];
       for (let index = 0; index < 31; index++) fixtureRecords.push({ event: { id: randomUUID(), deviceId: status.config.deviceId, deviceName: '合成截图设备', platform: 'macos', capturedAt: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 12, 0, index).toISOString(), durationMs: 0, appId: 'dev.mote.fixture', appName: '合成截图', imageMime: 'image/jpeg', ocrText: '合成 OCR <script>不可执行的证据</script>', ocr: { status: 'completed' }, source: 'screen', privacy: { excluded: false, redacted: false, mode: 'local', reason: 'generated fixture only' } }, blobHash: hash, blobBytes: generatedJpeg.length, attempts: 0, nextAttemptAt: 0 });
@@ -252,6 +264,11 @@ app.on('browser-window-created', (_event, window) => {
       captureBrowser.captureImage = async (...args) => { if (args[4]) await thumbnailsReady; return originalCaptureImage(...args); };
       try {
         await navigate('records');
+        await recordsIdle('sessions metadata only');
+        assert.equal(await js(`document.querySelectorAll('.record-session').length`),1);
+        assert.equal(await js(`document.querySelectorAll('.record-card').length`),0);
+        writeFileSync(join(require('node:path').dirname(output), 'capture-sessions-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
+        await js(`document.querySelector('.record-session').click()`);
         for (let i = 0; i < 100 && await js(`document.querySelectorAll('.record-card').length !== 30`); i++) await new Promise(resolve => setTimeout(resolve, 20));
         assert.equal(await js(`document.querySelectorAll('.record-card').length`), 30);
         assert(await js(`document.querySelector('#records-status').getAttribute('aria-busy') === 'true'`), 'Cards appear while generated thumbnails are still loading');

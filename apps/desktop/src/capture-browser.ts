@@ -1,3 +1,4 @@
+import {captureSessions,type CaptureSession} from '@mote/shared/capture-sessions';
 import { previewWork } from './background';
 import type { Config, CaptureEvent } from './contracts';
 import type { DurableQueue, QueueRecord } from './queue';
@@ -6,13 +7,13 @@ import { readResponseText } from './response-body';
 import { captureOcrState } from '@mote/shared/metadata';
 
 export type CaptureLocation = 'local' | 'central';
-export interface BrowseRequest { location: CaptureLocation; day: string; cursor?: string }
+export interface BrowseRequest { location: CaptureLocation; day: string; cursor?: string; grouping?: 'sessions' | 'records'; sessionId?: string }
 export interface BrowserCapture {
   id: string; capturedAt: string; appName: string; appId: string;
   ocr: { status: 'pending' | 'completed' | 'disabled' | 'failed' | 'unknown'; reason?: 'charging' };
   textPreview: string; uploaded?: boolean; hasImage: boolean; syncError?: string;
 }
-export interface BrowserPage { items: BrowserCapture[]; totalCount: number; nextCursor?: string }
+export interface BrowserPage { items: BrowserCapture[]; totalCount: number; nextCursor?: string; sessions?: CaptureSession[]; sessionCount?: number }
 export interface BrowserDetail extends BrowserCapture { ocrText: string; deviceName?: string }
 const PAGE_SIZE = 30;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,6 +65,30 @@ async function imageBytes(response: Response, maximum: number): Promise<Buffer> 
 export async function browseCaptures(queue: DurableQueue, config: Config, input: BrowseRequest): Promise<BrowserPage> {
   location(input?.location); const range = captureDayRange(input.day);
   if (input.cursor !== undefined && (typeof input.cursor !== 'string' || input.cursor.length > 2048)) throw new Error('分页参数无效');
+  if (input.grouping !== undefined && !['sessions','records'].includes(input.grouping)) throw new Error('分组方式无效');
+  if (input.sessionId) validId(input.sessionId);
+  if (input.grouping === 'sessions') {
+    if (input.location === 'central') {
+      const params = new URLSearchParams({...range,deviceId:config.deviceId,limit:String(PAGE_SIZE),...(input.cursor?{cursor:input.cursor}:{}),...(input.sessionId?{sessionId:input.sessionId}:{})});
+      const value = JSON.parse(await readResponseText(await request(config, `/api/capture-browser/sessions?${params}`),512*1024));
+      if (!Array.isArray(value.items) || value.items.length>PAGE_SIZE || !Number.isSafeInteger(value.totalCount) || value.items.some((item: CaptureSession)=>item.deviceId!==config.deviceId)) throw new Error('中央 Session 数据无效');
+      return input.sessionId?{items:value.items.map((item: Partial<CaptureEvent>)=>preview(item)),totalCount:value.totalCount,nextCursor:value.nextCursor??undefined}:{items:[],sessions:value.items,sessionCount:value.sessionCount,totalCount:value.totalCount,nextCursor:value.nextCursor??undefined};
+    }
+    const samples = await queue.sessionSamples(range.after,range.before), sessions = captureSessions(samples);
+    const position = input.cursor ? JSON.parse(Buffer.from(input.cursor,'base64url').toString()) as {at:string;id:string} : undefined;
+    if (position && (!Number.isFinite(Date.parse(position.at)) || !UUID.test(position.id))) throw new Error('Session 分页参数无效');
+    if (!input.sessionId) {
+      const page = sessions.filter(s=>!position || Date.parse(s.firstAt)<Date.parse(position.at) || Date.parse(s.firstAt)===Date.parse(position.at)&&s.id>position.id).slice(0,PAGE_SIZE+1),last=page.slice(0,PAGE_SIZE).at(-1);
+      return {items:[],sessions:page.slice(0,PAGE_SIZE),sessionCount:sessions.length,totalCount:samples.length,nextCursor:page.length>PAGE_SIZE&&last?Buffer.from(JSON.stringify({at:last.firstAt,id:last.id})).toString('base64url'):undefined};
+    }
+    const selected = sessions.find(s=>s.id===input.sessionId);
+    if (!selected) throw new Error('Session 已变化或被清理，请返回并刷新分组');
+    // The first/last IDs disambiguate switches sharing the same millisecond.
+    const ordered = samples.filter(s=>s.deviceId===selected.deviceId).sort((a,b)=>Date.parse(a.capturedAt)-Date.parse(b.capturedAt)||a.id.localeCompare(b.id));
+    const members=ordered.slice(ordered.findIndex(s=>s.id===selected.id),ordered.findIndex(s=>s.id===selected.id)+selected.count).reverse();
+    const page=members.filter(s=>!position||Date.parse(s.capturedAt)<Date.parse(position.at)||Date.parse(s.capturedAt)===Date.parse(position.at)&&s.id<position.id).slice(0,PAGE_SIZE+1),last=page.slice(0,PAGE_SIZE).at(-1);
+    return {items:page.slice(0,PAGE_SIZE).flatMap(s=>{const record=queue.recordForBrowser(s.id);return record?[preview(record.event,record)]:[];}),totalCount:members.length,nextCursor:page.length>PAGE_SIZE&&last?Buffer.from(JSON.stringify({at:last.capturedAt,id:last.id})).toString('base64url'):undefined};
+  }
   if (input.location === 'local') {
     const offset = input.cursor ? Number(input.cursor) : 0;
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('分页参数无效');

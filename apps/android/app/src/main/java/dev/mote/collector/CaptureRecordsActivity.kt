@@ -49,6 +49,7 @@ class CaptureRecordsActivity : Activity() {
     private var renderedPage: String? = null
     private val recordSources = listOf("screen", "media", "notification", "device_event", "note", "activity")
     private var recordSource = "screen"
+    private var sessionGrouping = true
     @Volatile private var generation = 0
     @Volatile private var loadGeneration = 0
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,11 +59,12 @@ class CaptureRecordsActivity : Activity() {
         central = savedInstanceState?.getBoolean("central") ?: false
         album = savedInstanceState?.getString("album")?.let(::JSONObject)
         recordSource = savedInstanceState?.getString("recordSource")?.takeIf { it in recordSources } ?: "screen"
+        sessionGrouping = savedInstanceState?.getBoolean("sessionGrouping", true) ?: true
         grid = true
         body = moteDetailPage()
         body.getChildAt(0).setOnClickListener { navigateBack() }
         text(body, "采集记录", 27f)
-        text(body, "截图按时间段与 App 分组，点开相册查看图片。", 14f)
+        text(body, "截图支持按连续 Session 或 App 分组，点开查看图片。", 14f)
         val source = Spinner(this).apply {
             adapter = ArrayAdapter(this@CaptureRecordsActivity, android.R.layout.simple_spinner_dropdown_item, listOf("本机记录", "中央归档"))
             setSelection(if (central) 1 else 0)
@@ -84,7 +86,17 @@ class CaptureRecordsActivity : Activity() {
                 if (recordSource != chosen) { recordSource = chosen; reload() }
             }
         }
-        backToAlbums = button(body, "‹ 返回 App 相册") { closeAlbum() }.apply { visibility = View.GONE }
+        val grouping = Spinner(this).apply {
+            adapter = ArrayAdapter(this@CaptureRecordsActivity, android.R.layout.simple_spinner_dropdown_item, listOf("按 Session · 连续记录", "按 App · 每 15 分钟"))
+            setSelection(if (sessionGrouping) 0 else 1)
+        }; body.addView(grouping)
+        grouping.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (sessionGrouping != (position == 0)) { sessionGrouping = position == 0; reload() }
+            }
+        }
+        backToAlbums = button(body, "‹ 返回分组") { closeAlbum() }.apply { visibility = View.GONE }
         val days = row(body)
         button(days, "前一天") { date = date.minusDays(1); reload() }
         dateButton = button(days, "选择日期") {
@@ -126,7 +138,7 @@ class CaptureRecordsActivity : Activity() {
         metadataLoading = true
         val scroll = body.parent as? ScrollView
         val scrollY = scroll?.scrollY ?: 0
-        val request = ++loadGeneration; val remote = central; val source = recordSource; val selected = album
+        val request = ++loadGeneration; val remote = central; val source = recordSource; val selected = album; val sessions = sessionGrouping
         if (!backgroundRefresh) { generation++; renderedPage = null }
         backToAlbums.visibility = if (selected != null) View.VISIBLE else View.GONE
         if (!backgroundRefresh) { progress.visibility = View.VISIBLE; progress.isIndeterminate = true }
@@ -153,7 +165,9 @@ class CaptureRecordsActivity : Activity() {
                 val settings = Settings(this); val config = settings.read()
                 if (remote && !config.hasSyncConnection()) error("请先在连接与同步中配置中央节点")
                 val client = if (remote) CaptureRecordClient(config, settings.deviceId) else null
-                val page = if (source == "screen" && selected == null) {
+                val page = if (source == "screen" && sessions) {
+                    client?.sessions(after, before, cursor, selected?.getString("id")) ?: queue().sessionPage(after, before, cursor, selected?.getString("id"))
+                } else if (source == "screen" && selected == null) {
                     client?.albums(after, before, cursor) ?: queue().albumPage(after, before, cursor)
                 } else if (source == "screen" && selected != null) {
                     val start = maxOf(Instant.parse(after), Instant.parse(selected.getString("after"))).toString()
@@ -183,9 +197,9 @@ class CaptureRecordsActivity : Activity() {
                     if (cacheConfig != config) { thumbnails.evictAll(); cacheConfig = config }
                     nextCursor = next
                     if (source == "screen" && selected == null) {
-                        status.text = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · ${page.getInt("albumCount")} 个相册 · 第 $pageNumber 页"
+                        status.text = "${if (remote) "中央归档" else "本机记录"} · 当天 $total 条 · ${page.getInt(if (sessions) "sessionCount" else "albumCount")} 个${if (sessions) "Session" else "相册"} · 第 $pageNumber 页"
                         progress.visibility = View.GONE
-                        text(list, "每 15 分钟按 App 汇集 · 点开查看", 12f)
+                        text(list, if (sessions) "同应用连续采样归为一段；切换应用或间隔超过 5 分钟分段。仅按本页日期与现存截图分组，起止范围不代表使用时长。" else "每 15 分钟按 App 汇集 · 点开查看", 12f)
                         if (records.isEmpty()) text(list, "当天没有截图记录。", 14f)
                         for (item in records) albumRow(item, stamp)
                         previousPage.isEnabled = cursors.size > 1; nextPage.isEnabled = nextCursor != null
@@ -386,6 +400,6 @@ class CaptureRecordsActivity : Activity() {
     private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply { text = value; textSize = size; setTextColor(MoteUi.ink); setLineSpacing(moteDp(3).toFloat(), 1f); setPadding(0, moteDp(5), 0, moteDp(5)) }.also(parent::addView)
     private fun button(parent: LinearLayout, label: String, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { action() } }).also { parent.addView(it, if (parent.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2)) }
     private fun clearList() { list.removeAllViews() }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putString("date", date.toString()); outState.putString("album", album?.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("sessionGrouping", sessionGrouping); outState.putString("date", date.toString()); outState.putString("album", album?.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
     override fun onDestroy() { generation++; loadGeneration++; executor.shutdownNow(); imageExecutor.shutdownNow(); thumbnailWriter.shutdown(); detailExecutor.shutdownNow(); clearList(); thumbnails.evictAll(); super.onDestroy() }
 }

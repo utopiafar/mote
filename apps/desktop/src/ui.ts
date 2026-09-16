@@ -5,7 +5,7 @@ let initialized = false;
 let busy = false;
 const fields = byId<HTMLFieldSetElement>('settings-fields');
 const settingsForm = byId<HTMLFormElement>('settings');
-const pageNames = ['overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity'] as const;
+const pageNames = ['overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression'] as const;
 type Page = typeof pageNames[number];
 let currentPage: Page = 'overview';
 let settingsDirty = false;
@@ -32,7 +32,7 @@ function showPage(page: Page, focus = true): void {
     }
   }
   currentPage = page;
-  const selected = settingsPages.has(page) || page === 'about' ? 'settings' : page === 'activity' ? 'overview' : page;
+  const selected = settingsPages.has(page) || page === 'about' || page === 'compression' ? 'settings' : page === 'activity' ? 'overview' : page;
   for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-page]'))) element.hidden = element.dataset.page !== page;
   for (const button of Array.from(document.querySelectorAll<HTMLElement>('aside [data-nav]'))) {
     const active = button.dataset.nav === selected;
@@ -42,6 +42,7 @@ function showPage(page: Page, focus = true): void {
   updateSettingsHint();
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
+  if (page === 'compression') { byId<HTMLInputElement>('compression-quality').value=String(currentStatus.config.jpegQuality); const side=byId<HTMLSelectElement>('compression-side');if(!Array.from(side.options).some(o=>o.value===String(currentStatus.config.captureMaxSide)))side.add(new Option(String(currentStatus.config.captureMaxSide),String(currentStatus.config.captureMaxSide)));side.value=String(currentStatus.config.captureMaxSide); void refreshCompression(); }
   if (page === 'records') void loadRecords();
   if (page === 'overview' && initialized) void desktopApi.status().then(render).catch(() => feedback('状态读取失败，请重试。'));
 }
@@ -75,7 +76,8 @@ function revealField(element: HTMLElement): void {
 }
 document.addEventListener('keydown', event => {
   if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); showPage('settings'); }
-  if (event.key === 'Escape' && (settingsPages.has(currentPage) || currentPage === 'about')) showPage('settings');
+  if (event.key === 'Escape' && currentPage === 'compression') showPage('developer');
+  else if (event.key === 'Escape' && (settingsPages.has(currentPage) || currentPage === 'about')) showPage('settings');
   else if (event.key === 'Escape' && currentPage === 'activity') showPage('overview');
 });
 desktopApi.onNavigate?.(page => { if (pageNames.includes(page)) showPage(page); });
@@ -86,6 +88,7 @@ function feedback(message: string, success = false): void {
 }
 function setText(id: string, value: string): void { const element = byId(id); if (element.textContent !== value) element.textContent = value; }
 
+let selectedSession: import('@mote/shared/capture-sessions').CaptureSession | undefined;
 let recordsRevision = 0, recordsPage = 0, recordsNext: string | undefined;
 let recordsCursors: (string | undefined)[] = [undefined];
 const recordsDate = new Date();
@@ -94,7 +97,7 @@ const ocrNames = { pending: '等待 OCR', completed: 'OCR 已完成', disabled: 
 function ocrLabel(value: import('./capture-browser').BrowserCapture): string {
   return value.ocr.status === 'pending' && value.ocr.reason === 'charging' ? '待接通电源后 OCR' : ocrNames[value.ocr.status];
 }
-function resetRecords(): void { recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
+function resetRecords(): void { selectedSession = undefined; recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
 async function openRecord(item: import('./capture-browser').BrowserCapture, location: import('./capture-browser').CaptureLocation, revision: number): Promise<void> {
   const panel = byId('record-detail'); panel.hidden = false;
   panel.setAttribute('aria-busy', 'true');
@@ -112,6 +115,7 @@ async function openRecord(item: import('./capture-browser').BrowserCapture, loca
     byId('record-detail-text').textContent = detail.ocrText || (detail.ocr.status === 'completed' ? '未识别到文字。' : ocrLabel(detail));
     detailRead = true;
     byId<HTMLImageElement>('record-detail-image').alt = '正在加载原图…';
+    if (!detail.hasImage) { byId<HTMLImageElement>('record-detail-image').alt='此采样没有图片'; return; }
     const image = await desktopApi.captureImage(location, id, false);
     if (revision === recordsRevision && panel.dataset.recordId === id && !panel.hidden) { byId<HTMLImageElement>('record-detail-image').src = image; byId<HTMLImageElement>('record-detail-image').alt = '当前选择的采集截图'; }
   } catch (error) { if (revision === recordsRevision && panel.dataset.recordId === id) {
@@ -124,12 +128,14 @@ async function openRecord(item: import('./capture-browser').BrowserCapture, loca
 async function loadRecords(): Promise<void> {
   const revision = ++recordsRevision;
   const location = readInput('records-location') as import('./capture-browser').CaptureLocation;
+  byId('records-back').hidden = !selectedSession;
+  byId('records-selection').textContent = selectedSession ? `${selectedSession.appName || '应用未知'} · ${new Date(selectedSession.firstAt).toLocaleTimeString()} — ${new Date(selectedSession.capturedAt).toLocaleTimeString()}` : '';
   byId('record-detail').hidden = true; byId('records-grid').replaceChildren();
   byId('records-status').textContent = '正在读取采集记录…';
   byId('records-status').setAttribute('aria-busy', 'true');
   byId<HTMLButtonElement>('records-previous').disabled = true; byId<HTMLButtonElement>('records-next').disabled = true;
   try {
-    const page = await desktopApi.browseCaptures({ location, day: readInput('records-day'), cursor: recordsCursors[recordsPage] });
+    const page = await desktopApi.browseCaptures({ location, day: readInput('records-day'), cursor: recordsCursors[recordsPage], grouping: readInput('records-grouping') as 'sessions' | 'records', sessionId: selectedSession?.id });
     if (revision !== recordsRevision) return;
     recordsNext = page.nextCursor;
     byId('records-status').textContent = page.items.length ? `${location === 'local' ? '本机保留' : '中央已归档'} · 当天共 ${page.totalCount} 张截图` : location === 'local' ? '当天没有本机待处理截图。已同步的截图可切换到“中央已归档”查看。' : '当天没有已归档截图。';
@@ -137,6 +143,18 @@ async function loadRecords(): Promise<void> {
     byId<HTMLButtonElement>('records-previous').disabled = recordsPage === 0;
     byId<HTMLButtonElement>('records-next').disabled = !recordsNext;
     if (page.items.length) byId('records-status').textContent = `${location === 'local' ? '本机保留' : '中央已归档'} · 列表已读取 ${page.items.length} 条，正在加载缩略图…`;
+    if (page.sessions) {
+      byId('records-status').textContent = `${location === 'local' ? '本机保留' : '中央已归档'} · ${page.totalCount} 条记录 · ${page.sessionCount} 个 Session`;
+      byId('records-page').textContent = `第 ${recordsPage + 1} 页`;
+      for (const session of page.sessions) {
+        const card=document.createElement('button');card.type='button';card.className='record-session';
+        const title=document.createElement('strong');title.textContent=session.appName||'应用未知';
+        const span=document.createElement('span');span.textContent=`${new Date(session.firstAt).toLocaleTimeString()} — ${new Date(session.capturedAt).toLocaleTimeString()}`;
+        const count=document.createElement('small');count.textContent=`${session.count} 条记录 · ${session.imageCount} 张图片 · 展开 →`;
+        card.append(title,span,count);card.addEventListener('click',()=>{selectedSession=session;recordsPage=0;recordsCursors=[undefined];void loadRecords();});byId('records-grid').append(card);
+      }
+      return;
+    }
     const images: { element: HTMLImageElement; item: import('./capture-browser').BrowserCapture }[] = [];
     for (const item of page.items) {
       const card = document.createElement('button'); card.type = 'button'; card.className = 'record-card';
@@ -146,7 +164,7 @@ async function loadRecords(): Promise<void> {
       const time = document.createElement('time'); time.dateTime = item.capturedAt; time.textContent = new Date(item.capturedAt).toLocaleTimeString();
       const state = document.createElement('small'); state.textContent = item.syncError ? `同步需处理 · ${ocrLabel(item)}` : `${location === 'local' ? item.uploaded ? '图片已同步 · ' : '本机待同步 · ' : ''}${ocrLabel(item)}`;
       caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => void openRecord(item, location, revision));
-      byId('records-grid').append(card); images.push({ element: image, item });
+      byId('records-grid').append(card); if(item.hasImage) images.push({ element: image, item }); else image.alt='无图片 · 点击查看采样记录';
     }
     let next = 0, completed = 0, failed = 0;
     await Promise.all(Array.from({ length: Math.min(4, images.length) }, async () => {
@@ -162,6 +180,8 @@ async function loadRecords(): Promise<void> {
   } catch (error) { if (revision === recordsRevision) { byId('records-status').textContent = error instanceof Error ? error.message : '读取采集记录失败，请重试'; byId('records-page').textContent = ''; } }
   finally { if (revision === recordsRevision) byId('records-status').setAttribute('aria-busy', 'false'); }
 }
+byId('records-back').addEventListener('click', resetRecords);
+byId('records-grouping').addEventListener('change', resetRecords);
 byId('records-day').addEventListener('change', resetRecords);
 byId('records-location').addEventListener('change', resetRecords);
 byId('records-refresh').addEventListener('click', resetRecords);
@@ -836,3 +856,24 @@ for (const [extension, title] of extensionChoices) {
 extensionInput.closest('label')!.before(extensionBox);
 extensionInput.addEventListener('input', refreshExtensionChoices);
 refreshExtensionChoices();
+
+let compressionRevision=0, compressionWidth=2560;
+function compressionZoom():void {
+  const zoom=readInput('compression-zoom');
+  for(const id of ['compression-before','compression-after']){const img=byId<HTMLImageElement>(id);img.style.width=zoom==='fit'?'100%':`${compressionWidth*Number(zoom)}px`;img.style.maxWidth='none';}
+}
+async function refreshCompression():Promise<void>{
+  const revision=++compressionRevision,quality=numberInput('compression-quality');
+  byId('compression-quality-label').textContent=String(quality);byId('compression-stats').textContent='正在生成压缩预览…';byId<HTMLButtonElement>('compression-apply').disabled=true;
+  try{const result=await desktopApi.compressionPreview(quality,numberInput('compression-side'));if(revision!==compressionRevision)return;
+    byId<HTMLImageElement>('compression-before').src=result.original;byId<HTMLImageElement>('compression-after').src=result.compressed;compressionWidth=result.originalWidth;compressionZoom();
+    const ratio=result.compressedBytes/result.originalBytes;
+    byId('compression-stats').textContent=`${result.originalWidth} × ${result.originalHeight} → ${result.width} × ${result.height} · 边长缩放 ${(result.width/result.originalWidth*100).toFixed(1)}% · PNG ${(result.originalBytes/1024).toFixed(1)} KB → JPEG ${(result.compressedBytes/1024).toFixed(1)} KB · 文件大小为原图的 ${(ratio*100).toFixed(1)}%（${ratio<=1?'减少':'增加'} ${(Math.abs(1-ratio)*100).toFixed(1)}%）`;
+    byId<HTMLButtonElement>('compression-apply').disabled=false;
+  }catch(error){if(revision===compressionRevision)byId('compression-stats').textContent=error instanceof Error?error.message:'预览失败，请调整参数重试';}
+}
+let compressionTimer:ReturnType<typeof setTimeout>|undefined;
+for(const id of ['compression-quality','compression-side'])byId(id).addEventListener('input',()=>{clearTimeout(compressionTimer);compressionRevision++;byId<HTMLButtonElement>('compression-apply').disabled=true;compressionTimer=setTimeout(()=>void refreshCompression(),180);});
+byId('compression-zoom').addEventListener('change',compressionZoom);
+for(const [source,target] of [['compression-before-pane','compression-after-pane'],['compression-after-pane','compression-before-pane']])byId(source).addEventListener('scroll',()=>{const a=byId(source),b=byId(target);if(b.scrollLeft!==a.scrollLeft)b.scrollLeft=a.scrollLeft;if(b.scrollTop!==a.scrollTop)b.scrollTop=a.scrollTop;});
+byId('compression-apply').addEventListener('click',()=>{const quality=readInput('compression-quality'),side=readInput('compression-side');showPage('developer');byId<HTMLInputElement>('jpeg-quality').value=quality;byId<HTMLInputElement>('capture-max-side').value=side;markSettingsDirty();feedback('压缩参数已带回设置，请点击保存后应用。',true);});

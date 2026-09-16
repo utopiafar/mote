@@ -63,6 +63,7 @@ test('endpoint safety and numeric bounds are checked before any request', () => 
   for (const baseUrl of ['https://u:p@fixture.example/v1', 'https://fixture.example/v1?key=secret', 'https://fixture.example/v1#key', 'file:///tmp/fixture', 'http://remote.fixture.example/v1']) assert.throws(() => modelSettingsRequest(snapshot, {...draft, baseUrl, allowCredentialReuse: true}));
   assert.throws(() => modelSettingsRequest(snapshot, {...draft, allowUnauthenticatedLocal: true}), /回环地址/);
   for (const maxTokens of ['', '0', '128001', 'NaN']) assert.throws(() => modelSettingsRequest(snapshot, {...draft, maxTokens}), /token 上限/);
+  for (const maxTokens of ['65536','96000','128000']) {const request=modelSettingsRequest(snapshot,{...draft,maxTokens});assert.equal(request.settings.maxTokens,Number(maxTokens));assert.equal(Object.hasOwn(request.settings,'apiKey'),false);}
   for (const timeoutSeconds of ['', '4', '601', 'NaN']) assert.throws(() => modelSettingsRequest(snapshot, {...draft, timeoutSeconds}), /等待时间/);
   const local = modelSettingsRequest(snapshot, {...draft, baseUrl: 'http://127.0.0.1:11434/v1', allowUnauthenticatedLocal: true, apiKeyAction: 'clear', headersAction: 'clear', extraBodyAction: 'clear'});
   assert.equal(local.settings.timeoutMs, 120000);

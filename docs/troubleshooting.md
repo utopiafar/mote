@@ -60,6 +60,8 @@ debug 开关只增加固定事件，不记录请求正文、模型输入输出�
 | `agent.completed` | Agent 已交付符合接口格式的回答；引用数和工具调用数可见，但这不证明内容语义正确 |
 | `model_not_configured` | 未配置 Agent；检查本 profile 的模型、地址和凭据配置 |
 | `agent_response` | 模型输出未通过回答/证据格式检查；保留请求编号后重试或检查模型能力与配置 |
+
+回答校验错误现在附带固定 `reason`：`output_limit` 表示模型明确报告输出 token 耗尽；`invalid_json` / `invalid_shape` 表示结构不合法；`unretrieved_citation` / `truncated_citation` / `undeclared_citation` 分别表示未检索资料、缩写引用或引用列表不一致。事件与 HTTP 响应只保存这些枚举，不包含原始模型输出、推理或具体引用值。旧事件没有此字段，无法据其还原更细原因。输出超限处理见[回答截断与输出预算](query-output-budget.md)。
 | `embedding_http` / `embedding_invalid` / `embedding_transport` | 索引服务分别出现 HTTP、向量格式或连接问题；修复配置后使用索引重试入口 |
 | `rate_limited` | 请求太频繁或任务并发额度已占用；稍后重试 |
 | `storage_full` | 达到资料库存储上限；清理或调整容量后重试 |

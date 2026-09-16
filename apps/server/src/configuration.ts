@@ -1,6 +1,6 @@
 import { join, resolve } from 'node:path';
 import type { ConfigurationField, ConfigurationValue, ServerConfiguration } from '@mote/shared';
-import { modelProvider } from '@mote/shared/models';
+import { DEFAULT_MODEL_MAX_TOKENS, modelProvider } from '@mote/shared/models';
 import { repositoryRoot, type Config } from './config.js';
 
 /** Strip credential-bearing URL components even for programmatic Config callers that bypass env validation. */
@@ -79,7 +79,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
         field('modelHeadersConfigured', '自定义请求头已配置', Boolean(Object.keys(config.modelHeaders ?? {}).length), '请求头可能含凭据，仅显示配置状态。', 'MOTE_MODEL_HEADERS', secret),
         field('modelExtraBodyConfigured', '高级请求参数已配置', Boolean(Object.keys(config.modelExtraBody ?? {}).length), '请求参数可能含凭据，仅显示配置状态。', 'MOTE_MODEL_EXTRA_BODY', secret),
         field('modelReasoningEffort', '模型推理强度', config.modelReasoningEffort ?? 'high', 'auto 使用服务商默认行为；也可选择 off、low、high、max。实际可用的推理参数取决于模型。', 'MOTE_MODEL_REASONING_EFFORT'),
-        field('modelMaxTokens', '单轮模型输出上限', config.modelMaxTokens ?? 8192, '模型生成输出的 token 上限，不是资料库容量或检索条数。', 'MOTE_MODEL_MAX_TOKENS', { unit: 'tokens' }),
+        field('modelMaxTokens', '单轮模型输出上限', config.modelMaxTokens ?? DEFAULT_MODEL_MAX_TOKENS, '模型生成输出的 token 上限，不是资料库容量或检索条数。', 'MOTE_MODEL_MAX_TOKENS', { unit: 'tokens' }),
         field('modelTimeoutMs', 'Agent 运行期限', config.modelTimeoutMs ?? 120000, '查询、洞察与记忆提取共用，5000–600000 毫秒整数。超时返回 504；入口代理可能有更短的等待限制。普通上传期限保持不变。', 'MOTE_MODEL_TIMEOUT_MS', { unit: 'ms' }),
         field('allowUnauthenticatedLocal', '允许本机免密模型', config.allowUnauthenticatedLocal, '只对 localhost、127.0.0.1 或 ::1 的模型地址生效；容器 loopback 指容器本身。', 'MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL'),
         field('insightIntervalHours', '后台洞察间隔', config.insightIntervalHours, '0 关闭定时洞察；正数按小时请求已配置的 Agent，模型服务可能产生费用。', 'MOTE_INSIGHT_INTERVAL_HOURS', { unit: 'hours' }),

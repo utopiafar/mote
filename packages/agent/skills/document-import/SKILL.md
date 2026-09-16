@@ -1,7 +1,7 @@
 ---
 name: document-import
 description: Convert arbitrary user-selected document exports into reviewable source records.
-version: 1.0.2
+version: 1.0.3
 ---
 
 # Generic document import

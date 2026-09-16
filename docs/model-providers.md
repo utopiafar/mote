@@ -89,7 +89,7 @@ MOTE_MODEL_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 MOTE_MODEL=填写控制台提供的模型ID
 MOTE_MODEL_API_KEY=填写该地域的API密钥
 MOTE_MODEL_REASONING_EFFORT=auto
-MOTE_MODEL_MAX_TOKENS=8192
+MOTE_MODEL_MAX_TOKENS=65536
 MOTE_MODEL_TIMEOUT_MS=120000
 MOTE_MODEL_HEADERS={}
 MOTE_MODEL_EXTRA_BODY={}
@@ -114,6 +114,10 @@ MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
 | `DELETE /api/model-settings` | 接受 `{revision}`；恢复本次启动的环境模型配置并递增 revision |
 
 `settings` 的基础字段为 `provider`、`protocol`、`baseUrl`、`model`、`reasoningEffort`、`maxTokens`、`timeoutMs`、`allowUnauthenticatedLocal`。`provider` 必须是注册预设 ID，未列出的服务使用 `custom`。模型名称可留空关闭 AI；只允许在模型也为空时省略实际地址内容。`maxTokens` 为 1–128000 的整数，`timeoutMs` 为 5000–600000 毫秒整数；厂商模型限制可能更低。
+
+在「设置 → 问答与回顾 → 模型服务 → 高级设置」调整输出预算。默认值为 **65,536 tokens**，提供 8,192、16,384、32,768、65,536、128,000 档位和自定义输入；保存后立即生效，重启后保留。已显式保存或在环境文件设置的旧值不会因软件升级被覆盖。单次响应预算包含正文、HTML 和服务商计入的推理 token，不是整个 Agent 任务的累计用量，也不等于字数、图片尺寸或文件大小。达到输出上限时会尝试一次更简短的完整回答；仍失败会显示明确的输出超限提示。
+
+预算选择与真实模型复现记录见[回答截断与输出预算](query-output-budget.md)。
 
 `apiKey`、`headers`、`extraBody` 省略表示保留当前值，`null` 表示清除，提供新值表示整体替换。修改 provider、protocol 或 baseUrl 后，任何保留的非空敏感字段都需要 `allowCredentialReuse:true`。协议和地址改变不自动复用凭据，不自动尝试其他厂商。
 

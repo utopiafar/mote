@@ -176,3 +176,35 @@ test('album and grid browsing use the lightweight projection, scope devices and 
   await app.inject({method:'DELETE',url:`/api/connections/${phone.credentialId}`,headers:auth()});
   assert.equal((await app.inject({url:`/api/capture-browser/albums?${range}`,headers})).statusCode,401);
 });
+
+test('sessions split app returns and five-minute gaps, cross clock buckets, and enforce collector scope',async t=>{
+  const {app,capture,paired}=await fixture(t),phone=await paired();
+  const rows=[['a',899000],['a',900000],['a',1200000],['a',1500001],['b',1500002],['a',1500003]] as const;
+  for(const [appId,ms] of rows)assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture(),appId,appName:appId,capturedAt:new Date(Date.UTC(2026,8,13)+ms).toISOString()}})).statusCode,201);
+  await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture('foreign'),appId:'a'}});
+  const url='/api/capture-browser/sessions?after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z';
+  assert.equal((await app.inject(url)).statusCode,401);
+  const response=await app.inject({url,headers:auth(phone.token)});assert.equal(response.statusCode,200,response.body);
+  const result=response.json();assert.equal(result.sessionCount,4);assert.equal(result.totalCount,6);assert.deepEqual(result.items.map((s:any)=>s.count),[1,1,1,3]);
+  assert.ok(result.items.every((s:any)=>s.deviceId==='phone'));
+  const images=await app.inject({url:url+'&sessionId='+result.items[3].id,headers:auth(phone.token)});
+  assert.equal(images.statusCode,200,images.body);assert.equal(images.json().items.length,3);assert.ok(!images.body.includes('ocrText'));
+  assert.equal((await app.inject({url:url+'&deviceId=foreign',headers:auth(phone.token)})).statusCode,403);
+  const other=(await app.inject({url:url+'&deviceId=foreign',headers:auth()})).json().items[0];
+  assert.equal((await app.inject({url:url+'&sessionId='+other.id,headers:auth(phone.token)})).statusCode,404);
+  const first=(await app.inject({url:url+'&limit=2',headers:auth(phone.token)})).json();
+  const second=(await app.inject({url:url+'&limit=2&cursor='+first.nextCursor,headers:auth(phone.token)})).json();
+  assert.deepEqual([...first.items,...second.items].map(s=>s.id),result.items.map((s:any)=>s.id));
+  assert.equal((await app.inject({url:url+'&cursor=invalid',headers:auth(phone.token)})).statusCode,400);
+  await app.inject({method:'DELETE',url:`/api/connections/${phone.credentialId}`,headers:auth()});
+  assert.equal((await app.inject({url,headers:auth(phone.token)})).statusCode,401);
+});
+
+test('session members sharing a timestamp stay separate and pages do not include a returned app',async t=>{
+  const {app,capture}=await fixture(t),at='2026-09-13T12:00:00.000Z';
+  const ids=['11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222','33333333-3333-4333-8333-333333333333'];
+  for(let i=0;i<ids.length;i++)await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:{...capture(),id:ids[i],appId:i===1?'b':'a',capturedAt:at}});
+  const url='/api/capture-browser/sessions?after=2026-09-13T00:00:00Z&before=2026-09-14T00:00:00Z';
+  assert.equal((await app.inject({url,headers:auth()})).json().sessionCount,3);
+  for(const id of ids){const page=(await app.inject({url:url+'&sessionId='+id,headers:auth()})).json();assert.deepEqual(page.items.map((r:any)=>r.id),[id]);}
+});

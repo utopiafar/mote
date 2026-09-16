@@ -1,3 +1,4 @@
+import {CaptureSessions} from './CaptureSessions';
 import {ContentStorage} from './ContentStorage';
 import { restoreSession } from "./session";
 import {systemEventText} from '@mote/shared';
@@ -679,7 +680,11 @@ function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Ap
  return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动与播放分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['files','文件'],['activity','应用活动'],['media','媒体播放'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='files'&&<Files api={api} onOpen={onOpen}/>} {tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen} refreshVersion={revision}/>}</div>;
 }
 
-function Timeline({
+function Timeline(props:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number}) {
+  const [view,setView]=useState('sessions');
+  return <><div className="filter-bar" role="group" aria-label="记录视图"><button className={'button '+(view==='sessions'?'primary':'')} onClick={()=>setView('sessions')}>Session / App 分组</button><button className={'button '+(view==='records'?'primary':'')} onClick={()=>setView('records')}>全部记录</button></div>{view==='sessions'?<><div className="page-heading"><div className="eyebrow">沿着连续的记录回看</div><h1>采集记录</h1><p>先看一段，再展开其中的截图与上下文。</p></div><CaptureSessions {...props}/></>:<RecordTimeline {...props}/>}</>;
+}
+function RecordTimeline({
   api,
   devices,
   onOpen,

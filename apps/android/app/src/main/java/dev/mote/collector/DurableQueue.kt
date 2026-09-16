@@ -406,6 +406,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             CaptureAlbums.page(browseRows(after, before), cursor)
         }
     }
+    fun sessionPage(after: String, before: String, cursor: String? = null, sessionId: String? = null): JSONObject {
+        prepareIndex(requireStatistics = false)
+        return guarded {
+            val rows = browseRows(after, before)
+            if (sessionId == null) CaptureSessions.page(rows, cursor) else CaptureSessions.images(rows, sessionId, cursor)
+        }
+    }
     private fun browseRows(after: String, before: String): List<JSONObject> {
         val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
         require(start < end)

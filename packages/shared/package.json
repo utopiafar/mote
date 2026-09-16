@@ -41,6 +41,12 @@
       "import": "./dist/model-providers.js",
       "require": "./dist/model-providers.js",
       "default": "./dist/model-providers.js"
+    },
+    "./capture-sessions": {
+      "types": "./dist/capture-sessions.d.ts",
+      "import": "./dist/capture-sessions.js",
+      "require": "./dist/capture-sessions.js",
+      "default": "./dist/capture-sessions.js"
     }
   },
   "typesVersions": {
@@ -59,6 +65,9 @@
       ],
       "models": [
         "dist/model-providers.d.ts"
+      ],
+      "capture-sessions": [
+        "dist/capture-sessions.d.ts"
       ]
     }
   },

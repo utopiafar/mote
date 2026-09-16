@@ -1,12 +1,18 @@
-# Android screenshot albums
+# Screenshot sessions and App albums
 
 ## Browsing flow
 
-The Android capture browser now opens a date-scoped list of App albums. Each album groups one app's captures within a fixed 15-minute clock bucket. It shows the observed first/last capture time, app name, record count and image count. Installed app icons resolve asynchronously; a system icon remains when a package is unavailable. This is a browsing grouping, not an inferred task or activity session.
+Screenshot browsing opens a date-scoped list of Sessions on Web, Mac and Android. A Session contains consecutive samples from the same device and app. Switching apps, a gap greater than five minutes, or an unknown app identity starts a new group. Exactly five minutes stays in the current group; returning to an app after another app starts a new group. Grouping happens before pagination and never merges devices. Equal timestamps use capture IDs for deterministic ordering. The first capture ID identifies the group and also selects its exact members.
+
+Cards show observed first/last capture time, app, record count and image count. These times describe the observation range, not continuous usage duration or an inferred task/topic. Grouping is limited to the selected date and the records retained in the selected store; local and central archives can therefore show different groups. Metadata-only captures remain visible and count as records, without claiming an image exists.
+
+Android and Web also offer App albums, grouping one app's captures within a fixed 15-minute clock bucket. Mac offers the existing individual-record view alongside Sessions. Android installed app icons resolve asynchronously; a system icon remains when a package is unavailable.
 
 Opening an album synchronously renders grid placeholders. Only the selected page's lightweight image references are then loaded; three background workers progressively fill the thumbnails. Images are capped at 20 records per page. Text/OCR/context details and the full-resolution image remain behind the individual image action. Returning goes back to the App albums. Date/source changes reset the album selection, and stale image work cannot update a newer page. Non-screen record browsing keeps its existing behavior.
 
-Both local and central screenshot browsing use this flow. Central browsing requires a server that supports the new album endpoints; older servers show an explicit unavailable/version error. Web and desktop browsing layouts are unchanged.
+Both local and central screenshot browsing use this flow. Central browsing requires a server that supports the selected grouping endpoint; older servers show an explicit unavailable/version error. Web retains the full record view with its existing filters. Mac session image pages use its existing 30-record page size; Web and Android use 20.
+
+For the current validation, see [Session and preview checks](session-preview-validation.md).
 
 ## Why the previous path was slow
 

@@ -5,6 +5,7 @@ import { localContentPolicy } from './local-content';
 
 export interface WorkProgress { message: string; completed?: number; total?: number }
 export type BackgroundRequest =
+  | { kind: 'compression-preview'; quality: number; maxSide: number }
   | { kind: 'json-write'; path: string; value: unknown; maximum?: number }
   | { kind: 'json-read'; path: string }
   | { kind: 'browse'; records: { id: string; at: string }[]; after: string; before: string; offset: number; limit: number }

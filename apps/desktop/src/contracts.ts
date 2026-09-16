@@ -113,6 +113,7 @@ export interface DesktopApi {
   restartForStorageRecovery(): Promise<void>;
   chooseCaptureDirectory(): Promise<{ canceled: boolean; directory?: string }>;
   openCaptureDirectory(): Promise<void>;
+  compressionPreview(quality: number, maxSide: number): Promise<import('./compression-preview').CompressionPreview>;
   browseCaptures(input: import('./capture-browser').BrowseRequest): Promise<import('./capture-browser').BrowserPage>;
   captureDetail(location: import('./capture-browser').CaptureLocation, id: string): Promise<import('./capture-browser').BrowserDetail>;
   captureImage(location: import('./capture-browser').CaptureLocation, id: string, thumbnail: boolean): Promise<string>;

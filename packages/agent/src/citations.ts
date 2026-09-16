@@ -23,12 +23,12 @@ export function validateInlineCitations(answer:string, declaredIds:Iterable<stri
           // strict prefix even when ambiguous; never guess or expand an evidence ID.
           // Exact custom reader IDs above remain valid, and ordinary labels stay text.
           if (id.length >= 8 && id.length < 36 && knownUuids.some(known => known.startsWith(id.toLowerCase()))) {
-            throw new AgentResponseError('The model used a truncated inline citation. Use the complete retrieved evidence ID.');
+            throw new AgentResponseError('The model used a truncated inline citation. Use the complete retrieved evidence ID.', 'truncated_citation');
           }
           continue;
         }
-        if (!retrieved.has(id)) throw new AgentResponseError('The model used an inline citation that was not retrieved in this run.');
-        if (!declared.has(id)) throw new AgentResponseError('The model used an inline citation missing from citationIds.');
+        if (!retrieved.has(id)) throw new AgentResponseError('The model used an inline citation that was not retrieved in this run.', 'unretrieved_citation');
+        if (!declared.has(id)) throw new AgentResponseError('The model used an inline citation missing from citationIds.', 'undeclared_citation');
       }
     }
     node.children?.forEach(visit);

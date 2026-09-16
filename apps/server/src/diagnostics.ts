@@ -13,25 +13,36 @@ const events = new Set(['server.started','server.stopping','request.started','re
 const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
 const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part'] as const;
+const responseReasons:Record<string,string>={
+  invalid_response:'模型未返回可验证的回答，请重试或检查模型配置。',
+  invalid_json:'模型返回的回答格式不完整或无效，请重试。',
+  invalid_shape:'模型返回的回答或引用列表格式无效，请重试。',
+  response_too_large:'模型回答超过大小限制，请缩小问题范围后重试。',
+  unretrieved_citation:'模型引用了本次未检索到的资料，回答未保存，请重试。',
+  truncated_citation:'模型未使用完整的资料引用编号，回答未保存，请重试。',
+  undeclared_citation:'模型正文与引用列表不一致，回答未保存，请重试。',
+  output_limit:'模型达到输出上限，回答未能完整生成。请缩小问题范围，或在模型服务设置中提高输出预算后重试。',
+  tools_unverified:'只读检索工具未能完成初始化，请重试或检查节点运行环境。',
+};
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const bounded=(n:number|undefined,fallback:number,min:number,max:number)=>Math.min(max,Math.max(min,Math.floor(typeof n==='number'&&Number.isFinite(n)?n:fallback)));
 const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
-export type EventFields = Metrics & { requestId?:string;jobId?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string };
+export type EventFields = Metrics & { requestId?:string;jobId?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string;reason?:string };
 export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'> }
 export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxFiles?:number;maxEntries?:number }
 
 /** Error text, stacks, headers, provider bodies and arbitrary codes never cross this boundary. */
-export function safeError(error:unknown):{status:number;category:string;message:string} {
+export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
   try{return describeError(error);}catch{return {status:500,category:'internal',message:'请求未完成，请使用请求编号查看诊断记录。'};}
 }
-function describeError(error:unknown):{status:number;category:string;message:string} {
-  const e=error&&typeof error==='object'?error as {name?:unknown;code?:unknown;statusCode?:unknown}:{};
+function describeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
+  const e=error&&typeof error==='object'?error as {name?:unknown;code?:unknown;statusCode?:unknown;reason?:unknown}:{};
   if(e.name==='ZodError')return {status:400,category:'validation',message:'输入格式无效，请检查必填项和取值范围。'};
   if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:'Agent 未配置，请在中央节点配置模型后重试。'};
   if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:'Agent 请求已超时，请稍后重试或缩小查询范围。'};
   if(e.name==='AgentProviderError')return {status:502,category:'agent_response',message:'模型服务请求未完成，请检查地址、凭据和模型配置。'};
-  if(e.name==='AgentResponseError')return {status:502,category:'agent_response',message:'模型未返回可验证的回答，请重试或检查模型配置。'};
+  if(e.name==='AgentResponseError') {const reason=typeof e.reason==='string'&&Object.hasOwn(responseReasons,e.reason)?e.reason:'invalid_response';return {status:502,category:'agent_response',reason,message:responseReasons[reason]};}
   if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:'操作已取消或超时，请稍后重试。'};
   if(typeof e.code==='string'&&['embedding_http','embedding_invalid','embedding_transport'].includes(e.code))return {status:502,category:e.code,message:'索引模型请求未完成，请检查模型配置或稍后重试。'};
   const status=typeof e.statusCode==='number'&&Number.isInteger(e.statusCode)&&e.statusCode>=400&&e.statusCode<=599?e.statusCode:500;
@@ -49,6 +60,7 @@ function fields(raw:unknown):EventFields {
   if(operations.includes(value.operation as Operation))out.operation=value.operation as Operation;
   if(typeof value.route==='string'&&routes.has(value.route))out.route=value.route;
   if(typeof value.category==='string'&&categories.has(value.category))out.category=value.category;
+  if(typeof value.reason==='string'&&Object.hasOwn(responseReasons,value.reason))out.reason=value.reason;
   return out;
 }
 function cleanEvent(value:unknown):DiagnosticEvent|undefined {
@@ -150,7 +162,7 @@ export class ServerDiagnostics {
   async measure<T>(stage:Stage,operation:Operation,task:()=>Promise<T>|T,metrics?:(result:T)=>Metrics):Promise<T> {
     const start=performance.now();this.record(`${stage}.started`,{operation},'debug');
     try {const result=await task();let extra:Metrics={};try{extra=metrics?.(result)??{};}catch{}this.record(`${stage}.completed`,{operation,durationMs:performance.now()-start,...extra});return result;}
-    catch(error){const failure=safeError(error);this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:failure.category},failure.status>=500?'error':'warn');throw error;}
+    catch(error){const failure=safeError(error);this.record(`${stage}.failed`,{operation,durationMs:performance.now()-start,category:failure.category,reason:failure.reason},failure.status>=500?'error':'warn');throw error;}
   }
   private startWrite() {
     if(this.pending)return;

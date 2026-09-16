@@ -175,7 +175,7 @@ class CaptureRecordsInstrumentedTest {
         val bytes = jpeg()
         repeat(21) { i ->
             val id = UUID.randomUUID().toString(); ids += id
-            context.queue().enqueue(JSONObject().put("id", id).put("source", "screen").put("capturedAt", start.plusSeconds(i + 1L).toString())
+            context.queue().enqueue(JSONObject().put("id", id).put("source", "screen").put("appId", "dev.mote.generated").put("appName", "合成应用").put("capturedAt", start.plusSeconds(i + 1L).toString())
                 .put("imageMime", "image/jpeg").put("ocrText", "Generated OCR $i").put("ocr", JSONObject().put("status", "completed"))
                 .put("privacy", JSONObject().put("excluded", false)), bytes, 1000000)
         }

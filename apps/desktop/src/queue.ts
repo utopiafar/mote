@@ -197,6 +197,16 @@ export class DurableQueue {
     const page = await previewWork.run<{ ids: string[]; total: number }>({ kind: 'browse', records, after, before, offset, limit });
     return { records: page.ids.map(id => structuredClone(snapshot.get(id)!)), total: page.total };
   }
+  async sessionSamples(after: string, before: string): Promise<import('@mote/shared/capture-sessions').SessionSample[]> {
+    const samples: import('@mote/shared/capture-sessions').SessionSample[] = [];
+    const start = Date.parse(after), end = Date.parse(before); let count = 0;
+    for (const record of [...this.records.values()]) {
+      if (++count % 256 === 0) await yieldTurn();
+      const event = record.event, at = Date.parse(event.capturedAt);
+      if (event.source === 'screen' && at >= start && at < end) samples.push({id:event.id,deviceId:event.deviceId,appId:event.appId,appName:event.appName,capturedAt:event.capturedAt,hasImage:Boolean(record.blobHash)});
+    }
+    return samples;
+  }
   recordForBrowser(id: string): QueueRecord | undefined { const record = this.records.get(id); return record?.event.source === 'screen' ? structuredClone(record) : undefined; }
   private sizeOf(record: QueueRecord): number {
     let bytes = this.recordSizes.get(record);

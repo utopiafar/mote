@@ -17,13 +17,13 @@ MOTE_MODEL_API_KEY=你的模型服务凭据
 MOTE_MODEL_REASONING_EFFORT=auto
 MOTE_MODEL_HEADERS={}
 MOTE_MODEL_EXTRA_BODY={}
-MOTE_MODEL_MAX_TOKENS=8192
+MOTE_MODEL_MAX_TOKENS=65536
 MOTE_MODEL_TIMEOUT_MS=120000
 ```
 
 使用 `MOTE_ENV_FILE` 选择独立配置文件，或通过 [环境 CLI](deployment.md) 启动。没有模型或凭据时 `/api/status` 返回 `agent.configured=false`，问答返回 503；采集、笔记、存档与时间线仍可使用。
 
-模型服务需要支持所选协议的流式输出和工具调用，不能把“兼容 OpenAI”理解成支持每个模型及参数。可选 DeepSeek、Chat Completions、Responses、Anthropic Messages、Google 原生 Gemini 五种协议。推理强度通常用 `auto` 交给模型决定；DeepSeek 预设保留既有的 `high` 默认，也可改成 `auto`。其余 `off`、`low`、`high`、`max` 需模型支持。输出预算默认 8192 token，范围 1–128000，实际不得超过所选模型限制；提高预算可能增加耗时和费用。
+模型服务需要支持所选协议的流式输出和工具调用，不能把“兼容 OpenAI”理解成支持每个模型及参数。可选 DeepSeek、Chat Completions、Responses、Anthropic Messages、Google 原生 Gemini 五种协议。推理强度通常用 `auto` 交给模型决定；DeepSeek 预设保留既有的 `high` 默认，也可改成 `auto`。其余 `off`、`low`、`high`、`max` 需模型支持。输出预算默认 65,536 token，范围 1–128000，实际不得超过所选模型限制；提高预算可能增加耗时和费用。
 
 显式设置 `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=1` 可使用无需凭据的 loopback 模型服务。它不允许远端免密地址；容器内的 loopback 指容器自身。
 
@@ -56,6 +56,10 @@ MOTE_MODEL_TIMEOUT_MS=120000
 输出格式错误时，可在同一会话内有限地要求模型修复格式；无效引用或最终仍无法验证的回答会报错。程序不会把失败回答改写成规则摘要。`trace` 是当前运行的实际工具名、参数与结果数量，`runId` 用于追踪该次回答。
 
 个人回顾使用相同的只读 Agent 入口，执行内置 `personal-insight` Skill。新的洞察可同时生成 HTML 报告与 Markdown 后备文本，保存 Skill 版本和运行编号；原文引用控件始终由中央网页提供。HTML 在脚本禁用、外部资源受限的 iframe 中展示，不能操作中央资料。见[报告展示与边界](central-memory.md#洞察是一个-skill-和一份报告)。
+
+宿主显式传入 `responseMode`：普通问答为 `answer`，洞察为 `personal-insight`，记忆提取为 `memory-extraction`。模型仍自行选择检索工具和 Skill；加载回顾 Skill 不会把普通聊天变成 HTML 报告。普通总结直接返回可读文字/Markdown，洞察页面才请求双份报告。此边界不按问题关键词分发。
+
+网页通过 `POST /api/insight-runs` 启动回顾并立即取得 HTTP 202 和运行编号；请求包含 UUID `requestId`、可选 `prompt` 及上述时间/设备范围。同一编号同一请求可安全重试，不会重复调用模型。`GET /api/insight-runs` 返回最近的运行，`GET /api/insight-runs/:id` 返回阶段、结果或错误。界面展示启动、模型处理、实际只读工具及返回数量、结果校验、完成/失败状态；这些是执行进度，不是模型的私有思维链。刷新或离开页面后仍可恢复运行状态；网络断开自动重连，节点重启造成的中断明确标为失败。旧的同步 `POST /api/insights` 继续兼容。运行记录只保留固定阶段与计数，不复制提示词、模型对话或报告正文；报告仍受原始证据删除失效规则约束。
 
 `MOTE_INSIGHT_INTERVAL_HOURS=0` 默认关闭周期回顾；设为非零后由中央节点调度，使用已配置模型。主题、习惯和待办判断属于模型推理，不是检索关键词的固定映射。
 

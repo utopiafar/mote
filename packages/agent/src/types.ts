@@ -70,6 +70,8 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Host-only observation, never serialized into model prompts or tool arguments. */
+  onProgress?: (event: AgentProgress) => void;
   question: string;
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;
@@ -85,6 +87,14 @@ export interface QueryInput {
     turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean}[];
     omittedTurns:number;
   };
+}
+export interface AgentProgress {
+  stage: 'starting' | 'model' | 'tool' | 'validating';
+  tool?: string;
+  count?: number;
+}
+export function reportProgress(input: QueryInput, event: AgentProgress): void {
+  try { input.onProgress?.(event); } catch { /* Observation cannot change evidence permissions or fail a query. */ }
 }
 export interface Citation {
   id: string;
@@ -117,9 +127,10 @@ export class AgentNotConfiguredError extends Error {
   }
 }
 
+export type AgentResponseReason = 'invalid_response' | 'invalid_json' | 'invalid_shape' | 'response_too_large' | 'unretrieved_citation' | 'truncated_citation' | 'undeclared_citation' | 'output_limit' | 'tools_unverified';
 export class AgentResponseError extends Error {
   readonly statusCode = 502;
-  constructor(message: string) {
+  constructor(message: string, readonly reason: AgentResponseReason = 'invalid_response') {
     super(message);
     this.name = "AgentResponseError";
   }

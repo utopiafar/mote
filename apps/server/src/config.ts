@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadEnvironment } from '@mote/shared/environment';
 import type { ConfigurationSource, ServerConfiguration } from '@mote/shared';
-import { MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, modelProvider } from '@mote/shared/models';
+import { DEFAULT_MODEL_MAX_TOKENS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, modelProvider } from '@mote/shared/models';
 import { validateModelOptions } from '@mote/agent';
 
 export interface ConfigurationContext {
@@ -72,7 +72,7 @@ export function configFromEnv() {
     updateRepository:text('MOTE_UPDATE_REPOSITORY','utopiafar/mote'),updateChannel:choice('MOTE_UPDATE_CHANNEL',['stable','preview'] as const,'stable'),
     dataKey:text('MOTE_DATA_KEY')||undefined,contentEncryptionEnabled:flag('MOTE_CONTENT_ENCRYPTION',false),
     modelProvider:modelProviderId,modelProtocol,modelHeaders,modelExtraBody,
-    modelReasoningEffort,modelMaxTokens:number('MOTE_MODEL_MAX_TOKENS',8192,1,128000,true),
+    modelReasoningEffort,modelMaxTokens:number('MOTE_MODEL_MAX_TOKENS',DEFAULT_MODEL_MAX_TOKENS,1,128000,true),
     modelTimeoutMs:number('MOTE_MODEL_TIMEOUT_MS',120000,5000,600000,true),
     maxStorageBytes:number('MOTE_MAX_STORAGE_MB',10240,1,1_000_000)*1024*1024,
     maxExportBytes:number('MOTE_MAX_EXPORT_MB',64,1,256)*1024*1024,

@@ -1,3 +1,4 @@
+import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, Tray } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
@@ -348,6 +349,7 @@ else {
       const requested = settings; const result = await operation(requested);
       if (settings !== requested) throw new Error('连接已改变，请刷新采集记录'); return result;
     };
+    handle('mote:compression-preview', (quality, maxSide) => previewWork.run({kind:'compression-preview', quality:quality as number,maxSide:maxSide as number}));
     handle('mote:captures-browse', input => browseWithConnection(config => browseCaptures(queue, config, input as BrowseRequest)));
     handle('mote:captures-detail', (location, id) => browseWithConnection(config => captureDetail(queue, config, location as CaptureLocation, id as string)));
     handle('mote:captures-image', (location, id, thumbnail) => browseWithConnection(config => captureImage(queue, config, location as CaptureLocation, id as string, thumbnail as boolean)));

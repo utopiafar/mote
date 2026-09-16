@@ -51,6 +51,14 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     if(mode==='album-images'&&query.appId===undefined)throw new StoreError('Album appId is required');
     return store.gallery(query,mode==='albums');
   });
+  const sessionRange=z.object({after:z.string().datetime({offset:true}),before:z.string().datetime({offset:true}),deviceId:z.string().min(1).max(128).optional(),
+    limit:z.coerce.number().int().min(1).max(60).default(20),cursor:z.string().min(1).max(2048).optional(),sessionId:z.string().uuid().optional(),
+  }).strict().refine(value=>Date.parse(value.after)<Date.parse(value.before)&&Date.parse(value.before)-Date.parse(value.after)<=32*86400000,{message:'Select up to 32 days for session browsing'});
+  app.get('/api/capture-browser/sessions',async req=>{
+    const query=sessionRange.parse(req.query),c=credential(req);
+    if(c){connections.assertActive(c);if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,'只能读取本设备的采集记录。');query.deviceId=c.deviceId;}
+    return store.sessions(query);
+  });
   const ownImage=(req:FastifyRequest)=>{
     const id=z.string().uuid().parse((req.params as {id:string}).id),c=credential(req);
     if(c)connections.assertActive(c);

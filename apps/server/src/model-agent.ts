@@ -1,5 +1,5 @@
 import { createAgent, AgentNotConfiguredError, AgentTimeoutError, AgentResponseError, type ContextReader } from '@mote/agent';
-import { modelProvider, type ModelSettings, type ModelTestResult } from '@mote/shared/models';
+import { DEFAULT_MODEL_MAX_TOKENS, modelProvider, type ModelSettings, type ModelTestResult } from '@mote/shared/models';
 import type { Config } from './config.js';
 import type { QueryAgent } from './app.js';
 import type { PreparedModelSettings } from './model-settings.js';
@@ -14,7 +14,7 @@ export function modelSettingsFromConfig(config: Config): ModelSettings {
     provider, protocol, baseUrl: config.modelBaseUrl || preset?.baseUrl || '', model: config.model,
     apiKey: config.apiKey, headers: structuredClone(config.modelHeaders ?? {}), extraBody: structuredClone(config.modelExtraBody ?? {}),
     reasoningEffort: config.modelReasoningEffort ?? (protocol === 'deepseek' ? 'high' : 'auto'),
-    maxTokens: config.modelMaxTokens ?? 8192, timeoutMs: config.modelTimeoutMs ?? 120000,
+    maxTokens: config.modelMaxTokens ?? DEFAULT_MODEL_MAX_TOKENS, timeoutMs: config.modelTimeoutMs ?? 120000,
     allowUnauthenticatedLocal: config.allowUnauthenticatedLocal,
   };
 }

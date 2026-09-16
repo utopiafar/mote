@@ -27,7 +27,7 @@ test('disabled and silent diagnostics neither read nor create files or events',a
 test('event whitelist excludes content even when supplied as Error-like fields and arbitrary metadata',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-whitelist-'));const d=new ServerDiagnostics({directory,debug:true});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   const requestId=randomUUID();
-  d.run(requestId,()=>d.record('source.completed',{operation:'evidence',count:2,durationMs:1.25,...{message:marker,error:marker,body:marker,token:marker,requestId:marker,route:marker,category:marker,bytes:NaN}} as never));
+  d.run(requestId,()=>d.record('source.completed',{operation:'evidence',count:2,durationMs:1.25,...{message:marker,error:marker,body:marker,token:marker,requestId:marker,route:marker,category:marker,reason:marker,bytes:NaN}} as never));
   d.record(marker,{count:3});d.record('request.completed',{operation:marker,requestId:marker} as never);
   await d.flush();const text=await readFile(join(directory,'central.0.ndjson'),'utf8');assert.ok(!text.includes(marker));assert.ok(!JSON.stringify(d.snapshot()).includes(directory));
   const rows=d.events().items;assert.equal(rows.length,2);assert.equal(rows[0].count,2);assert.equal(rows[0].durationMs,1.25);assert.equal(rows[0].requestId,undefined);assert.equal(rows[0].category,undefined);assert.equal(rows[0].bytes,undefined);
@@ -65,6 +65,9 @@ test('real agent error classes map to safe categories without exposing provider 
   assert.equal(safeError(new AgentNotConfiguredError()).category,'model_not_configured');assert.equal(safeError(new AgentNotConfiguredError()).status,503);
   const timeout=safeError(new AgentTimeoutError());assert.equal(timeout.status,504);assert.equal(timeout.category,'timeout');assert.ok(!JSON.stringify(timeout).includes(marker));
   const error=safeError(new AgentResponseError(marker));assert.equal(error.status,502);assert.equal(error.category,'agent_response');assert.ok(!JSON.stringify(error).includes(marker));
+  const limited=safeError(new AgentResponseError(marker,'output_limit'));assert.equal(limited.reason,'output_limit');assert.match(limited.message,/输出上限/);assert.ok(!JSON.stringify(limited).includes(marker));
+  const malformed=safeError(new AgentResponseError(marker,'invalid_json'));assert.equal(malformed.reason,'invalid_json');assert.notEqual(malformed.message,limited.message);
+  assert.equal(safeError(Object.assign(new AgentResponseError(marker),{reason:marker})).reason,'invalid_response');
   assert.ok(!JSON.stringify(safeError(Object.assign(new Error(marker),{name:marker,code:marker,statusCode:502}))).includes(marker));
   assert.equal(safeError({get name(){throw new Error(marker);}}).category,'internal');
 });

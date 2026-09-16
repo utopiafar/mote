@@ -1,3 +1,4 @@
+import {InsightRuns} from './insight-runs.js';
 import Fastify,{type FastifyReply,type FastifyRequest} from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
@@ -8,7 +9,7 @@ import { join,dirname } from 'node:path';
 import { z } from 'zod';
 import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,sourceContentTime,type QueryResult,type CaptureRecord } from '@mote/shared';
 import { AgentNotConfiguredError,createImportAgent,skillCatalog,SKILL_VERSION,type ContextReader,type QueryInput } from '@mote/agent';
-import { modelProvider } from '@mote/shared/models';
+import { DEFAULT_MODEL_MAX_TOKENS, modelProvider } from '@mote/shared/models';
 import { ModelSettingsStore,ModelSettingsError } from './model-settings.js';
 import { ReloadableAgent,modelSettingsFromConfig,applyModelSettings,createModelAgent,testModelConnection,type ModelAgentFactory } from './model-agent.js';
 import { Store,StoreError } from './store.js';
@@ -102,7 +103,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const app=Fastify({logger:false,genReqId:()=>randomUUID(),requestIdHeader:false,bodyLimit:12*1024*1024,requestTimeout:180000,frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:'请求格式无效。',requestId});}});
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
-    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories','memory-jobs':'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query',conversations:'conversations',files:'files','archived-files':'files','file-sync':'file-sync','file-processing':'file-processing',insights:'insights',index:'index',export:'export',import:'import',imports:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
+    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories','memory-jobs':'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query',conversations:'conversations',files:'files','archived-files':'files','file-sync':'file-sync','file-processing':'file-processing',insights:'insights','insight-runs':'insights',index:'index',export:'export',import:'import',imports:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
   };
   app.addHook('onRequest',(req,reply,done)=>diagnostics.run(req.id,()=>{reply.header('X-Request-Id',req.id);diagnostics.record('request.started',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url)},'debug');done();}));
   app.addHook('onResponse',async(req,reply)=>{diagnostics.record('request.completed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url),statusCode:reply.statusCode,durationMs:reply.elapsedTime},reply.statusCode>=500?'error':reply.statusCode>=400?'warn':'info');});
@@ -123,10 +124,10 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   });
   app.setErrorHandler((error,req,reply)=>{
     const failure=safeError(error);
-    diagnostics.record('request.failed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url),category:failure.category,statusCode:failure.status},failure.status>=500?'error':'warn');
+    diagnostics.record('request.failed',{requestId:req.id,method:req.method as import('./diagnostics.js').EventFields['method'],route:routeName(req.routeOptions.url),category:failure.category,reason:failure.reason,statusCode:failure.status},failure.status>=500?'error':'warn');
     if(error instanceof ConnectionError)return reply.code(error.statusCode).send({error:error.code,message:error.publicMessage,requestId:req.id});
     if(error instanceof ModelSettingsError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});
-    reply.code(failure.status).send({error:failure.category,message:failure.message,requestId:req.id});
+    reply.code(failure.status).send({error:failure.category,message:failure.message,...(failure.reason?{reason:failure.reason}:{}),requestId:req.id});
   });
   const connectors=await registerConnectors(app,{files,sources,store,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
   const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
@@ -147,7 +148,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   registerCaptureBrowser(app,{store,connections,credential});
   playbackAuthorization=registerFileRoutes(app,files,processing,sourceOwner,req=>credential(req)?.deviceId,diagnostics);
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
-  app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:modelProvider(config.modelProvider??'deepseek')?.name??config.modelProvider,runtime:'DeepSeek Harness',protocol:config.modelProtocol,model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??8192,timeoutMs:config.modelTimeoutMs??120000},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
+  app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:modelProvider(config.modelProvider??'deepseek')?.name??config.modelProvider,runtime:'DeepSeek Harness',protocol:config.modelProtocol,model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??DEFAULT_MODEL_MAX_TOKENS,timeoutMs:config.modelTimeoutMs??120000},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:config.insightIntervalHours,serverTime:new Date().toISOString()}));
   app.get('/api/configuration',async()=>serverConfiguration(config,{modelSource:modelSettings.view().source}));
   app.get('/api/model-settings',async()=>modelSettings.view());
   app.put('/api/model-settings',{bodyLimit:65536,config:connectionRate},async req=>modelSettings.update(req.body));
@@ -320,12 +321,23 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
       return {...result,...conversations.append(previous,{question,...scope},result)};
     }finally{if(conversationId)runningConversations.delete(conversationId);}
   });
-  async function insight(range:QueryScope&{prompt?:string}) {
+  async function insight(range:QueryScope&{prompt?:string},onProgress?:QueryInput['onProgress']) {
     if(!agent.configured)throw new AgentNotConfiguredError();
     const {prompt,...scope}=range;
-    const result=insightResult(await queryAgent({question:prompt||'请回顾这段时间的个人上下文，选择有证据支撑的发现。区分事实、推断与信息缺口，保留来源引用，用 personal-insight Skill 生成完整文字报告和静态 HTML 展示。',skill:'personal-insight',...scope},'insight'));
+    const result=insightResult(await queryAgent({question:prompt||'请回顾这段时间的个人上下文，选择有证据支撑的发现。区分事实、推断与信息缺口，保留来源引用，用 personal-insight Skill 生成完整文字报告和静态 HTML 展示。',skill:'personal-insight',...scope,onProgress},'insight'));
     store.saveInsight(result,result.runId);return result;
   }
+  const insightRuns=new InsightRuns(store);
+  app.post('/api/insight-runs',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
+    const body=z.object({...scopeFields,prompt:z.string().trim().max(8000).optional(),requestId:z.string().uuid()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body);
+    const {requestId,...input}=body;
+    if(!agent.configured)throw new AgentNotConfiguredError();
+    if(closing)throw new StoreError('Central node is shutting down',503);
+    const run=insightRuns.start(requestId,input,observe=>diagnostics.run(requestId,()=>insight(input,observe)));
+    return reply.code(202).send(run);
+  });
+  app.get('/api/insight-runs',async()=>({items:insightRuns.list()}));
+  app.get('/api/insight-runs/:id',async req=>insightRuns.detail(z.string().uuid().parse((req.params as {id:string}).id)));
   app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{return insight(insightRequestSchema.parse(req.body??{}));});
   app.get('/api/insights',async()=>({items:store.insights()}));
   app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=store.retryIndex();diagnostics.record('queue.snapshot',{pending:result.queued});return result;});
@@ -347,6 +359,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
       return reply.type('text/html').sendFile('index.html');
     });
     app.addHook('onSend',async(req,reply,payload)=>{
+      if(!req.url.startsWith('/api/')&&String(reply.getHeader('Content-Type')??'').startsWith('text/html'))reply.header('Cache-Control','no-store');
       if(!req.url.startsWith('/api/'))reply.header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
       return payload;
     });
@@ -358,7 +371,11 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   let backgroundInsight:Promise<void>|undefined;
   const insightTimer=config.insightIntervalHours>0?setInterval(()=>{
     if(backgroundInsight||!agent.configured||closing)return;
-    backgroundInsight=diagnostics.run(randomUUID(),()=>insight({after:new Date(Date.now()-config.insightIntervalHours*3600000).toISOString(),before:new Date().toISOString()})).then(()=>{},()=>{}).finally(()=>{backgroundInsight=undefined;});
+    try {
+      const id=randomUUID(),scope={after:new Date(Date.now()-config.insightIntervalHours*3600000).toISOString(),before:new Date().toISOString()};
+      insightRuns.start(id,scope,observe=>diagnostics.run(id,()=>insight(scope,observe)));
+      backgroundInsight=insightRuns.close().finally(()=>{backgroundInsight=undefined;});
+    } catch { /* An admitted manual review takes precedence over the scheduled run. */ }
   },config.insightIntervalHours*3600000):undefined;insightTimer?.unref();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
@@ -372,8 +389,8 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     await modelSettings.close();
     await contentStorage.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
-    await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose]);await backgroundInsight;await connectors.close();await softwareUpdate.close();await connections.close();
+    await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose]);await backgroundInsight;await insightRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings};
+  return {app,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns};
 }

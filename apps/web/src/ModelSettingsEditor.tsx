@@ -1,6 +1,6 @@
 import {useEffect, useRef, useState} from 'react';
 import {Check, ExternalLink, KeyRound, LoaderCircle, RotateCcw, Save, SlidersHorizontal, TestTube2} from 'lucide-react';
-import {MODEL_PROVIDER_PRESETS, type ModelSettingsView, type ModelTestResult} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS, type ModelSettingsView, type ModelTestResult} from '@mote/shared/models';
 import {ApiError, errorMessage, type Api} from './api';
 import {createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation, type CredentialAction, type ModelSettingsDraft} from './model-settings-form';
 
@@ -20,6 +20,7 @@ export function ModelSettingsEditor({api, revision, onApplied}: {api: Api; revis
   const [loading, setLoading] = useState(true), [operation, setOperation] = useState<'save' | 'test' | 'restore'>();
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [conflict, setConflict] = useState(false);
   const [probe, setProbe] = useState<ModelTestResult>(), [restoreReview, setRestoreReview] = useState(false), [reload, setReload] = useState(0);
+  const [customBudget,setCustomBudget]=useState(false);
   const requestRef = useRef<AbortController | undefined>(undefined), loadRef = useRef<AbortController | undefined>(undefined), epoch = useRef(0);
   const active = state?.api === api ? state : undefined;
   const busy = loading || !!operation;
@@ -118,8 +119,8 @@ export function ModelSettingsEditor({api, revision, onApplied}: {api: Api; revis
             <label className="preference-field">推理强度<select aria-label="推理强度" value={draft.reasoningEffort} onChange={e => change({reasoningEffort: e.target.value as ModelSettingsDraft['reasoningEffort']})}>{Object.entries(reasoningNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><small>选择“由模型决定”兼容更多模型；具体能力取决于所选模型。</small></label>
             <label className="preference-field">最长等待时间（秒）<input aria-label="最长等待时间（秒）" type="number" min={5} max={600} step={1} value={draft.timeoutSeconds} onChange={e => change({timeoutSeconds: e.target.value})}/><small>5–600 秒，适用于模型请求。</small></label>
           </div>
-          <details className="preference-advanced"><summary>高级选项：输出限制、请求头与请求参数</summary>
-            <div className="preference-grid"><label className="preference-field">输出 token 上限<input aria-label="输出 token 上限" type="number" min={1} max={128000} value={draft.maxTokens} onChange={e => change({maxTokens: e.target.value})}/><small>1–128000，仍须符合服务端模型限制。</small></label></div>
+          <details className="preference-advanced"><summary>高级设置 · 输出预算 {Number(draft.maxTokens).toLocaleString()} tokens</summary>
+            <div className="preference-grid"><label className="preference-field">输出预算档位<select aria-label="输出预算档位" value={!customBudget&&MODEL_OUTPUT_BUDGETS.some(n=>String(n)===draft.maxTokens)?draft.maxTokens:'custom'} onChange={e=>{setCustomBudget(e.target.value==='custom');if(e.target.value!=='custom')change({maxTokens:e.target.value});}}>{MODEL_OUTPUT_BUDGETS.map(n=><option key={n} value={n}>{n.toLocaleString()} tokens{n===DEFAULT_MODEL_MAX_TOKENS?' · 默认':''}</option>)}<option value="custom">自定义 · 在右侧填写</option></select><small>常用默认 65,536；选择支持当前预算的模型。</small></label><label className="preference-field">最大输出 token 数<input aria-label="输出 token 上限" type="number" min={1} max={128000} value={draft.maxTokens} onChange={e => change({maxTokens: e.target.value})}/><small>1–128000。单次响应的上限，包含正文、HTML 及服务商计入的推理 token，不是固定生成长度、字数或图片大小。保存后生效。</small></label></div>
             <label className="preference-toggle"><span><strong>允许本机模型免密访问</strong><small>只适用于回环地址；容器中的“本机”指容器本身。</small></span><input type="checkbox" role="switch" checked={draft.allowUnauthenticatedLocal} onChange={e => change({allowUnauthenticatedLocal: e.target.checked})}/></label>
             <div className="model-advanced-block">{credentialChoice('headersAction', '自定义请求头操作', active.snapshot.settings.headersConfigured)}{draft.headersAction === 'replace' && <label className="preference-field">自定义请求头 JSON<textarea aria-label="自定义请求头 JSON" rows={5} autoComplete="off" spellCheck={false} value={draft.headers} onChange={e => change({headers: e.target.value})} placeholder={'{"X-Custom-Header": "value"}'}/><small>名称与值均为字符串；整体替换。已有值不会读取或回显。</small></label>}</div>
             <div className="model-advanced-block">{credentialChoice('extraBodyAction', '高级请求参数操作', active.snapshot.settings.extraBodyConfigured)}{draft.extraBodyAction === 'replace' && <label className="preference-field">高级请求参数 JSON<textarea aria-label="高级请求参数 JSON" rows={6} autoComplete="off" spellCheck={false} value={draft.extraBody} onChange={e => change({extraBody: e.target.value})} placeholder={'{"temperature": 0.7}'}/><small>按当前协议填写 JSON 对象，整体替换。消息、工具与其他运行必需字段由 Mote 管理；已有值不会回显。</small></label>}</div>

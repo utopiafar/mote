@@ -87,7 +87,7 @@ for (const protocol of ['openai-completions','openai-responses','anthropic-messa
         if (protocol === 'openai-responses') {assert.equal(body.store,false);assert.equal(url,'/v1/responses');}
         if (protocol === 'openai-completions') assert.equal(url,'/v1/chat/completions');
         if (protocol === 'anthropic-messages') {assert.equal(url,'/v1/messages?beta=true');assert.equal(headers['x-api-key'],'generated-provider-secret');}
-        if (protocol === 'google-generative-ai') {assert.match(url,/^\/v1\/models\/fixture-model-not-in-catalog:streamGenerateContent\?alt=sse$/);assert.equal(headers['x-goog-api-key'],'generated-provider-secret');assert.equal(body.generationConfig.maxOutputTokens,8192);assert.equal(body.generationConfig.thinkingConfig,undefined);}
+        if (protocol === 'google-generative-ai') {assert.match(url,/^\/v1\/models\/fixture-model-not-in-catalog:streamGenerateContent\?alt=sse$/);assert.equal(headers['x-goog-api-key'],'generated-provider-secret');assert.equal(body.generationConfig.maxOutputTokens,65536);assert.equal(body.generationConfig.thinkingConfig,undefined);}
       }
       const replay = JSON.stringify(requests[2].body);
       assert.match(replay,/untrusted_personal_context/);

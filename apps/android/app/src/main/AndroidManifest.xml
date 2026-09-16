@@ -28,6 +28,7 @@
         <activity android:name=".StorageActivity" android:exported="false" />
         <activity android:name=".ActivityStatsActivity" android:exported="false" />
         <activity android:name=".SyncRecoveryActivity" android:exported="false" />
+        <activity android:name=".CompressionPreviewActivity" android:exported="false" />
         <activity android:name=".CaptureRecordsActivity" android:exported="false" />
         <activity android:name=".LogViewerActivity" android:exported="false" />
         <activity android:name=".BulkDedupeActivity" android:exported="false" />
