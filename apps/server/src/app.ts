@@ -6,8 +6,8 @@ import { timingSafeEqual,randomUUID } from 'node:crypto';
 import { existsSync,readFileSync } from 'node:fs';
 import { join,dirname } from 'node:path';
 import { z } from 'zod';
-import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,type QueryResult,type CaptureRecord } from '@mote/shared';
-import { AgentNotConfiguredError,type ContextReader,type QueryInput } from '@mote/agent';
+import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,sourceContentTime,type QueryResult,type CaptureRecord } from '@mote/shared';
+import { AgentNotConfiguredError,createImportAgent,skillCatalog,SKILL_VERSION,type ContextReader,type QueryInput } from '@mote/agent';
 import { modelProvider } from '@mote/shared/models';
 import { ModelSettingsStore,ModelSettingsError } from './model-settings.js';
 import { ReloadableAgent,modelSettingsFromConfig,applyModelSettings,createModelAgent,testModelConnection,type ModelAgentFactory } from './model-agent.js';
@@ -23,6 +23,11 @@ import {createUpdateService,registerUpdateRoutes} from './updates.js';
 import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
 import {registerCaptureBrowser} from './capture-browser.js';
 import {Conversations} from './conversations.js';
+import {ArchivedFileStore} from './archived-files.js';
+import {ImportStore,type ImportPreparation,type ImportPreparationResult} from './imports.js';
+import {prepareImportInput} from './import-runtime.js';
+import {MemoryPipeline} from './memory-pipeline.js';
+import {insightResult} from './insights.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface QueryAgent {configured:boolean;query(args:QueryInput):Promise<QueryResult>;close():Promise<void>}
@@ -30,14 +35,16 @@ const scopeFields={after:z.string().datetime({offset:true}).optional(),before:z.
 const validRange=(v:QueryScope)=>!v.after||!v.before||Date.parse(v.after)<Date.parse(v.before);
 const querySchema=z.object({question:z.string().trim().min(1).max(8000),conversationId:z.string().uuid().optional(),after:scopeFields.after.nullable(),before:scopeFields.before.nullable(),deviceId:scopeFields.deviceId.nullable(),timeZone:scopeFields.timeZone.nullable()}).strict();
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
+const insightRequestSchema=z.object({...scopeFields,prompt:z.string().trim().max(8000).optional()}).strict().refine(validRange,{message:'Invalid time range'});
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory}) {
+export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   config={...config};
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
   const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
   const indexer=new Indexer(store,config,diagnostics);
   const sources=new SourceStore(store),memories=new MemoryStore(store),conversations=new Conversations(store);
+  const archivedFiles=new ArchivedFileStore(store);
   const connections=dependencies?.connections??new Connections(store,sources);await connections.init();
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const credential=(req:FastifyRequest)=>identities.get(req);
@@ -45,7 +52,7 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
   const context=(records:CaptureRecord[])=>records.map(record=>({...record,sourceType:record.source,...(record.provenance?{revisionState:sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id?'current':'historical'}:{})}));
   const reader:ContextReader={
       mediaActivity:async args=>diagnostics.measure('source','activity',()=>store.mediaActivity(args),result=>({count:result.observations})),
-      sourceHistory:async args=>{const record=store.evidence([args.id])[0];if(!record?.provenance)return [];return context(store.evidence(sources.history(record.provenance.sourceId,record.provenance.externalId).filter(i=>(!args.after||Date.parse(i.calendar?.end??i.observedAt)>=Date.parse(args.after))&&(!args.before||Date.parse(i.calendar?.start??i.observedAt)<Date.parse(args.before))).map(i=>i.captureId)).filter(r=>!args.deviceId||r.deviceId===args.deviceId));},
+      sourceHistory:async args=>{const record=store.evidence([args.id])[0];if(!record?.provenance)return [];return context(store.evidence(sources.history(record.provenance.sourceId,record.provenance.externalId).filter(i=>{const at=sourceContentTime({capturedAt:i.observedAt,provenance:{document:i.document}});return (!args.after||Date.parse(i.calendar?.end??at)>=Date.parse(args.after))&&(!args.before||Date.parse(i.calendar?.start??at)<Date.parse(args.before));}).map(i=>i.captureId)).filter(r=>!args.deviceId||r.deviceId===args.deviceId));},
       sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
       sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:context(store.evidence(page.items.map(i=>i.captureId)))};},
       memories:async args=>{if(!args.id)return {items:memories.list({...args,level:'overview'})};const items=memories.list({...args,level:'detail',limit:100}).filter(m=>m.id===args.id);return {items,evidence:context(store.evidence(items.flatMap(m=>'evidenceIds' in m?m.evidenceIds:[])))};},
@@ -176,7 +183,54 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     }),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
-  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const scope=insightSchema.parse(req.body??{}),model=config.model;return memories.extract(await queryAgent({...scope,question:MEMORY_EXTRACTION_PROMPT}),model);});
+  const memoryPipeline=new MemoryPipeline({store,memories,query:input=>queryAgent(input),model:()=>config.model,configured:()=>agent.configured,skillVersion:`memory-extraction@${SKILL_VERSION}`});
+  const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
+  let importQueue:Promise<unknown>=Promise.resolve();
+  const imports=new ImportStore(store,archivedFiles,sources,{
+    prepare:dependencies?.prepareImport??(async input=>{
+      if(!agent.configured)throw new AgentNotConfiguredError();
+      const runtime=createImportAgent(modelSettingsFromConfig(config));importAgents.add(runtime);
+      try{return await runtime.prepare(await prepareImportInput(input),dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined);}finally{try{await runtime.close();}finally{importAgents.delete(runtime);}}
+    }),
+    onImported:async(evidenceIds,importJobId)=>{
+      // An export can include several revisions of one object. Keep them all in
+      // source history, but extract current memory only from new current evidence.
+      const currentIds=evidenceIds.filter(id=>store.isCurrentEvidence(id));
+      if(!currentIds.length)return {};
+      const job=memoryPipeline.create({evidenceIds:currentIds,importJobId});void memoryPipeline.run(job.id).catch(()=>{});return {memoryJobId:job.id};
+    },
+  });
+  function launchImport(id:string,task:()=>Promise<unknown>){
+    if(closing)throw new StoreError('Central node is shutting down',503);
+    if(importTasks.has(id))return;
+    const promise=importQueue.catch(()=>{}).then(()=>closing?undefined:task());
+    importQueue=promise;importTasks.set(id,promise);
+    void promise.finally(()=>importTasks.delete(id)).catch(()=>{diagnostics.record('agent.failed',{category:'internal'},'error');});
+  }
+  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
+  app.get('/api/skills',async()=>({items:skillCatalog()}));
+  app.get('/api/imports',async()=>({items:imports.list()}));
+  app.post('/api/imports',{bodyLimit:360*1024*1024,config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{const job=await imports.create(req.body);if(job.status==='queued')launchImport(job.id,()=>imports.prepare(job.id));return reply.code(202).send(imports.get(job.id));});
+  app.get('/api/imports/:id',async req=>imports.get(jobId(req.params)));
+  app.delete('/api/imports/:id',async req=>{const id=jobId(req.params);if(importTasks.has(id))throw new StoreError('Import is already processing',409);return imports.delete(id);});
+  app.post('/api/imports/:id/prepare',async(req,reply)=>{const id=jobId(req.params),body=z.object({instruction:z.string().max(12000).optional()}).strict().parse(req.body??{});if(importTasks.has(id))return reply.code(202).send(imports.get(id));if(body.instruction!==undefined)imports.updateInstruction(id,body.instruction);imports.get(id);launchImport(id,()=>imports.prepare(id));return reply.code(202).send(imports.get(id));});
+  app.post('/api/imports/:id/confirm',async(req,reply)=>{const id=jobId(req.params),job=imports.get(id);if(job.status!=='awaiting_confirmation'&&job.status!=='completed')throw new StoreError('Review an import preview before confirming',409);launchImport(id,()=>imports.confirm(id));return reply.code(202).send(imports.get(id));});
+  app.post('/api/imports/:id/retry',async(req,reply)=>{const id=jobId(req.params);imports.get(id);launchImport(id,()=>imports.retry(id));return reply.code(202).send(imports.get(id));});
+  app.get('/api/archived-files/:id',async req=>archivedFiles.get(jobId(req.params)));
+  app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.read(id));});
+  app.get('/api/captures/:id/archived-files',async req=>({items:archivedFiles.listForCapture(jobId(req.params))}));
+  app.get('/api/memory-jobs',async()=>({items:memoryPipeline.list()}));
+  app.get('/api/memory-jobs/:id',async req=>memoryPipeline.get(jobId(req.params)));
+  app.post('/api/memory-jobs',async(req,reply)=>{
+    const scope=z.object({...scopeFields,evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
+    let ids=scope.evidenceIds;
+    if(!ids){ids=[];let cursor:string|undefined;do{const page=store.list({...scope,limit:200,cursor});ids.push(...page.items.map(record=>record.id));cursor=page.nextCursor??undefined;if(ids.length>20000)throw new StoreError('Choose a smaller range for memory extraction',413);}while(cursor);}
+    if(!ids.length)throw new StoreError('No evidence in this range',409);
+    for(const record of store.evidence(ids)){const at=Date.parse(sourceContentTime(record));if((scope.deviceId&&record.deviceId!==scope.deviceId)||(scope.after&&at<Date.parse(scope.after))||(scope.before&&at>=Date.parse(scope.before)))throw new StoreError('Evidence is outside the selected range',409);}
+    const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send(job);
+  });
+  app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
+  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const scope=insightSchema.parse(req.body??{}),model=config.model;return memories.extract(await queryAgent({...scope,skill:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT}),model);});
   app.get('/api/conversations',async req=>conversations.list(z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1000).optional()}).strict().parse(req.query)));
   app.get('/api/conversations/:id',async req=>conversations.get(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.delete('/api/conversations/:id',async req=>conversations.delete(z.object({id:z.string().uuid()}).parse(req.params).id));
@@ -199,12 +253,13 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
       return {...result,...conversations.append(previous,{question,...scope},result)};
     }finally{if(conversationId)runningConversations.delete(conversationId);}
   });
-  async function insight(range:QueryScope) {
+  async function insight(range:QueryScope&{prompt?:string}) {
     if(!agent.configured)throw new AgentNotConfiguredError();
-    const result=await queryAgent({question:'请根据这段时间的上下文记录，生成中文个人回顾：我最近做了什么，时间花在哪里，哪些事情可能值得继续关注。自由选择工具检索并解释发现，区分事实、推断与信息缺口，每个具体发现引用原始记录。可用 media_activity 查看锁屏和后台的媒体播放采样；媒体播放与屏幕时长独立，不能相加为专注或真实劳动时间。音乐、有声书等内容类型依据原始媒体证据判断，播放状态不证明听完或投入注意力，权限缺失不证明未播放，不臆造待办或意图。',...range},'insight');
+    const {prompt,...scope}=range;
+    const result=insightResult(await queryAgent({question:prompt||'请回顾这段时间的个人上下文，选择有证据支撑的发现。区分事实、推断与信息缺口，保留来源引用，用 personal-insight Skill 生成完整文字报告和静态 HTML 展示。',skill:'personal-insight',...scope},'insight'));
     store.saveInsight(result,result.runId);return result;
   }
-  app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{return insight(insightSchema.parse(req.body??{}));});
+  app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{return insight(insightRequestSchema.parse(req.body??{}));});
   app.get('/api/insights',async()=>({items:store.insights()}));
   app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=store.retryIndex();diagnostics.record('queue.snapshot',{pending:result.queued});return result;});
   app.get('/api/export',async(_req,reply)=>reply.header('Content-Disposition',`attachment; filename="mote-${new Date().toISOString().slice(0,10)}.json"`).send(store.exportArchive(config.maxExportBytes)));
@@ -237,12 +292,18 @@ export async function buildApp(config:Config,dependencies?:{store?:Store;agent?:
     backgroundInsight=diagnostics.run(randomUUID(),()=>insight({after:new Date(Date.now()-config.insightIntervalHours*3600000).toISOString(),before:new Date().toISOString()})).then(()=>{},()=>{}).finally(()=>{backgroundInsight=undefined;});
   },config.insightIntervalHours*3600000):undefined;insightTimer?.unref();
   diagnostics.record('server.started');
+  app.addHook('onReady',async()=>{
+    for(const row of store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])void memoryPipeline.run(row.id).catch(()=>{});
+    for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
+  });
   app.addHook('onClose',async()=>{
     closing=true;clearInterval(indexTimer);clearInterval(retentionTimer);if(insightTimer)clearInterval(insightTimer);
+    const memoryClose=memoryPipeline.close();
+    await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
-    await Promise.allSettled([...activeQueries]);await backgroundInsight;await connectors.close();await softwareUpdate.close();await connections.close();
+    await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose]);await backgroundInsight;await connectors.close();await softwareUpdate.close();await connections.close();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,store,sources,memories,indexer,agent,diagnostics,connections,modelSettings};
+  return {app,store,sources,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings};
 }

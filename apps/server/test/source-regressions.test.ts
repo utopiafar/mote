@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
-import {MemoryStore} from '../src/memory.js';
+import {MemoryStore,MemoryOutputValidationError} from '../src/memory.js';
 
 function fixture(t:TestContext) {
  const directory=mkdtempSync(join(tmpdir(),'mote-source-regression-'));
@@ -86,7 +86,7 @@ test('each memory must declare its own inline evidence, even when another claim 
   {...second,statement:`错配但已在外层读取 [${a.id}]`},
   {...second,uncertainty:`限制也引用了未为本条声明的证据 [${a.id}]`},
  ]) {
-  assert.throws(()=>memories.extract(result([first,invalid]),'fixture-model'),/inline citation missing from citationIds/);
+  assert.throws(()=>memories.extract(result([first,invalid]),'fixture-model'),error=>error instanceof MemoryOutputValidationError&&error.code==='citations'&&error.statusCode===502);
   assert.equal(memories.list().length,0,'validation must finish before any memory is saved');
  }
  // Literal code copied from untrusted evidence is not a prose citation.

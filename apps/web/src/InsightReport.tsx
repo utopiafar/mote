@@ -1,0 +1,22 @@
+import {useState} from 'react';
+import {FileText,LayoutDashboard} from 'lucide-react';
+import {AnswerMarkdown} from './AnswerMarkdown';
+import {type Answer,dateTime} from './api';
+
+// This document contains only the report. The authenticated application's state and
+// controls stay outside the opaque-origin iframe.
+export function reportDocument(html:string):string {
+  const policy="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+  return '<!doctype html><html lang="zh-CN"><head><meta http-equiv="Content-Security-Policy" content="'+policy+'"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html{color-scheme:light}body{margin:0;padding:28px;font-family:system-ui,-apple-system,sans-serif;color:#253a2d;line-height:1.75;overflow-wrap:anywhere}img,svg{max-width:100%;height:auto}*{box-sizing:border-box}table{max-width:100%}a{pointer-events:none}</style></head><body>'+html+'</body></html>';
+}
+
+export function InsightReport({answer,onOpen}:{answer:Answer;onOpen:(id:string)=>void}){
+  const [view,setView]=useState<'report'|'text'>('report');
+  const artifact=answer.artifact;
+  return <article className="insight-report">
+    <header className="report-controls"><div><h2>{artifact?.title||'个人回顾'}</h2><p>{(artifact?.createdAt||answer.createdAt)&&dateTime(artifact?.createdAt||answer.createdAt!)} · {answer.citations.length} 条证据</p></div>{artifact&&<nav className="segmented-nav" aria-label="报告展示方式"><button className={view==='report'?'active':''} onClick={()=>setView('report')}><LayoutDashboard size={14}/>报告</button><button className={view==='text'?'active':''} onClick={()=>setView('text')}><FileText size={14}/>文字</button></nav>}</header>
+    {artifact&&view==='report'?<iframe className="report-frame" title={artifact.title||'洞察报告'} sandbox="" referrerPolicy="no-referrer" srcDoc={reportDocument(artifact.html)}/>:<div className="report-markdown"><AnswerMarkdown answer={answer} onOpen={onOpen}/></div>}
+    <section className="report-evidence" aria-label="报告引用的证据"><div className="section-heading"><div><h3>回到证据</h3><p>报告中的判断来自以下记录。点击查看完整原文。</p></div></div>{answer.citations.length?<div className="citation-grid">{answer.citations.map((citation,index)=><button key={citation.id} className="evidence-card" onClick={()=>onOpen(citation.id)}><span className="evidence-number">{index+1}</span><div><strong>{citation.appName||'原始记录'}</strong><small>{citation.contentAt?'资料时间':'观察时间'} · {dateTime(citation.contentAt??citation.capturedAt,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',hour12:false})}</small><p>{citation.excerpt||'查看原始记录'}</p></div></button>)}</div>:<p className="muted">这份报告没有可引用的记录；内容需要进一步核实。</p>}</section>
+    <details className="run-details"><summary>生成信息与检索过程</summary><dl><dt>运行编号</dt><dd>{answer.runId}</dd>{artifact&&<><dt>使用的 Skill</dt><dd>{artifact.skillId} · {artifact.skillVersion}</dd></>}</dl>{answer.trace.length>0?<ol>{answer.trace.map((step,index)=><li key={index}><strong>{step.tool}</strong> · {step.count} 条结果<pre>{JSON.stringify(step.arguments,null,2)}</pre></li>)}</ol>:<p className="muted">没有额外的检索步骤。</p>}</details>
+  </article>;
+}

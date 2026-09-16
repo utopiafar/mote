@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rename, unlink, open, stat, lstat, readdir, copyFile, rm, rmdir, realpath } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, unlink, open, stat, lstat, readdir, copyFile, rm, rmdir, realpath, chmod } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { resolve, join, dirname, relative, isAbsolute } from 'node:path';
@@ -313,7 +313,7 @@ export async function verifiedBackup(backup) {
   const manifest = await readJson(manifestPath);
   if (manifest.version !== 1 || !manifest.checksums || !Object.hasOwn(manifest.checksums, 'mote.sqlite')) throw Error('Invalid backup manifest');
   for (const [name, hash] of Object.entries(manifest.checksums)) {
-    if (!(name === 'mote.sqlite' || /^blobs\/[a-f0-9]{64}$/.test(name)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
+    if (!(name === 'mote.sqlite' || /^(?:blobs|files)\/[a-f0-9]{64}$/.test(name)) || !/^[a-f0-9]{64}$/.test(hash)) throw Error('Unsafe backup manifest entry');
     if (!(await lstat(join(directory, name))).isFile() || (await realpath(join(directory, name))) !== join(directory, name)) throw Error('Backup links are not allowed');
     if (await sha(join(directory, name)) !== hash) throw Error('Backup checksum mismatch; active data was not changed');
   }
@@ -324,7 +324,9 @@ export async function restoreProfile(p, backup) {
   const stage = join(p.meta.runtime === 'native' ? dirname(p.dataDir) : p.directory, `.mote-restore-${randomUUID()}`); await mkdir(join(stage, 'blobs'), { recursive: true, mode: 0o700 });
   try {
     for (const name of checked.names) {
+      await mkdir(dirname(join(stage,name)),{recursive:true,mode:0o700});
       await copyFile(join(checked.directory, name), join(stage, name));
+      await chmod(join(stage,name),0o600);
       if (await sha(join(stage, name)) !== checked.checksums[name]) throw Error('Backup changed while copying; active data was not changed');
     }
     if (p.meta.runtime === 'docker') {

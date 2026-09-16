@@ -26,7 +26,7 @@ export class SourceStore {
   private save(value:SourceConnection){this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(value));}
   reportStatus(id:string,status:NonNullable<SourceConnection['status']>){const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});}
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {
-    const p=c.provenance!;return {sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,observedAt:c.capturedAt,modifiedAt:p.modifiedAt,title:c.windowTitle,text:p.layer==='reference'||p.deleted?'':c.ocrText,uri:p.uri,kind:c.source as SourceItem['kind'],layer:p.layer,calendar:p.calendar,mimeType:p.mimeType,deleted:p.deleted,metadata:p.metadata,captureId:c.id,receivedAt:c.receivedAt,current};
+    const p=c.provenance!;return {sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,observedAt:c.capturedAt,modifiedAt:p.modifiedAt,title:c.windowTitle,text:p.layer==='reference'||p.deleted?'':c.ocrText,uri:p.uri,kind:c.source as SourceItem['kind'],layer:p.layer,calendar:p.calendar,mimeType:p.mimeType,deleted:p.deleted,metadata:p.metadata,document:p.document,captureId:c.id,receivedAt:c.receivedAt,current};
   }
   getItem(sourceId:string,externalId:string):SourceItemRecord|undefined {
     const head=this.store.db.prepare('SELECT * FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,externalId) as Head|undefined;
@@ -37,13 +37,13 @@ export class SourceStore {
     const rows=this.store.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? ORDER BY rowid DESC LIMIT 100').all(sourceId,externalId) as {capture_id:string}[];
     return this.store.evidence(rows.map(r=>r.capture_id)).map(c=>this.item(c,c.id===head?.captureId));
   }
-  async upsert(sourceId:string,raw:unknown,authorize?:()=>void) {
+  async upsert(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
     const item=sourceItemSchema.parse(raw),key=JSON.stringify([sourceId,item.externalId]);
     const prior=this.pending.get(key)??Promise.resolve();
-    const task=prior.catch(()=>{}).then(()=>this.commit(sourceId,item,authorize));this.pending.set(key,task);
+    const task=prior.catch(()=>{}).then(()=>this.commit(sourceId,item,authorize,transaction));this.pending.set(key,task);
     try{return await task;}finally{if(this.pending.get(key)===task)this.pending.delete(key);}
   }
-  private async commit(sourceId:string,raw:unknown,authorize?:()=>void) {
+  private async commit(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
     authorize?.();
     const source=this.getSource(sourceId);if(!source.enabled)throw new StoreError('Source is paused',409);
     const item=sourceItemSchema.parse(raw);
@@ -52,19 +52,20 @@ export class SourceStore {
     const {observedAt,...semantic}=item,hash=sha256(JSON.stringify(semantic));
     const prior=this.store.db.prepare('SELECT capture_id,hash FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(sourceId,item.externalId,item.revision) as Version|undefined;
     const response=(id:string,duplicate:boolean)=>({id,sourceId,externalId:item.externalId,revision:item.revision,duplicate});
-    if(prior){if(prior.hash!==hash)throw new StoreError('Revision already has different content',409);if(!this.store.evidence([prior.capture_id]).length)throw new StoreError('This revision was removed from the archive',410);return response(prior.capture_id,true);}
+    if(prior){if(prior.hash!==hash)throw new StoreError('Revision already has different content',409);if(!this.store.evidence([prior.capture_id]).length)throw new StoreError('This revision was removed from the archive',410);if(transaction){this.store.db.exec('BEGIN IMMEDIATE');try{authorize?.();transaction({id:prior.capture_id,duplicate:true});this.store.db.exec('COMMIT');}catch(error){this.store.db.exec('ROLLBACK');throw error;}}return response(prior.capture_id,true);}
     const id=uuid(JSON.stringify([sourceId,item.externalId,item.revision]));
-    const provenance={sourceId,externalId:item.externalId,revision:item.revision,layer:item.layer,mimeType:item.mimeType,uri:item.uri,modifiedAt:item.modifiedAt,calendar:item.calendar,deleted:item.deleted,metadata:item.metadata};
+    const provenance={sourceId,externalId:item.externalId,revision:item.revision,layer:item.layer,mimeType:item.mimeType,uri:item.uri,modifiedAt:item.modifiedAt,calendar:item.calendar,deleted:item.deleted,metadata:item.metadata,document:item.document};
     const text=item.deleted||item.layer==='reference'?'':item.text;
-    const result=await this.store.ingest({id,deviceId:source.deviceId,deviceName:source.name,platform:source.platform,capturedAt:observedAt,durationMs:0,appId:`mote.source.${source.kind}`,appName:source.name,windowTitle:item.title,ocrText:text,source:item.kind,provenance,privacy:{excluded:false,redacted:false,mode:'none'}},()=>{
+    const result=await this.store.ingest({id,deviceId:source.deviceId,deviceName:source.name,platform:source.platform,capturedAt:observedAt,durationMs:0,appId:`mote.source.${source.kind}`,appName:source.name,windowTitle:item.title,ocrText:text,source:item.kind,provenance,privacy:{excluded:false,redacted:false,mode:'none'}},ack=>{
       authorize?.();
       const head=this.store.db.prepare('SELECT * FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,item.externalId) as Head|undefined;
       this.store.db.prepare('INSERT INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(sourceId,item.externalId,item.revision,id,hash);
       // Older observations remain history; late retries never roll the current pointer backwards.
       if(!head||Date.parse(observedAt)>=Date.parse(head.observed_at)){
         this.store.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted').run(sourceId,item.externalId,id,new Date(observedAt).toISOString(),Number(item.deleted));
-        if(head){this.store.db.exec("DELETE FROM insights; UPDATE memories SET json=json_set(json,'$.status','stale')");this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
+        if(head){this.store.invalidateMemoryEvidence(head.capture_id);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
       }
+      transaction?.(ack);
     });
     return response(result.id,result.duplicate);
   }
@@ -74,13 +75,13 @@ export class SourceStore {
     if(args.deviceId){clauses.push('c.device_id=?');values.push(args.deviceId);}
     if(!args.includeDeleted)clauses.push('h.deleted=0');
     if(args.kind){clauses.push("json_extract(c.json,'$.source')=?");values.push(args.kind);}
-    // Calendar ranges overlap planned event time. Other items use observation time.
-    const start="COALESCE(json_extract(c.json,'$.provenance.calendar.start'),c.captured_at)",end="COALESCE(json_extract(c.json,'$.provenance.calendar.end'),c.captured_at)";
+    // Calendars use planned time; documents use explicit authored time, otherwise observation time.
+    const start="COALESCE(json_extract(c.json,'$.provenance.calendar.start'),mote_context_time(c.json))",end="COALESCE(json_extract(c.json,'$.provenance.calendar.end'),mote_context_time(c.json))";
     if(args.after){clauses.push(`julianday(${end})>=julianday(?)`);values.push(args.after);}
     if(args.before){clauses.push(`julianday(${start})<julianday(?)`);values.push(args.before);}
     let offset=0;if(args.cursor){if(!/^\d{1,9}$/.test(args.cursor))throw new StoreError('Invalid source cursor');offset=Number(args.cursor);}
     const limit=Math.max(1,Math.min(args.limit??50,200));
-    const rows=this.store.db.prepare(`SELECT c.id,h.deleted FROM captures c JOIN source_heads h ON c.id=h.capture_id WHERE ${clauses.join(' AND ')} ORDER BY c.captured_at DESC,c.id LIMIT ? OFFSET ?`).all(...values,limit+1,offset) as {id:string;deleted:number}[];
+    const rows=this.store.db.prepare(`SELECT c.id,h.deleted FROM captures c JOIN source_heads h ON c.id=h.capture_id WHERE ${clauses.join(' AND ')} ORDER BY mote_context_time(c.json) DESC,c.id LIMIT ? OFFSET ?`).all(...values,limit+1,offset) as {id:string;deleted:number}[];
     const items=rows.slice(0,limit).flatMap(r=>this.store.evidence([r.id]).map(c=>({...this.item(c,true),deleted:Boolean(r.deleted)})));
     return {items,nextCursor:rows.length>limit?String(offset+limit):null};
   }

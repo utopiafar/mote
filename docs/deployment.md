@@ -158,14 +158,14 @@ node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restor
 
 对话历史保存在中央 SQLite 数据库，随完整离线备份和恢复迁移。中央界面的 HTTP JSON 导出仍只包含原始资料、来源与记忆，不包含对话历史。
 
-小资料库可在中央界面导出/导入 JSON；导出包含原文和图片，按私密数据保管。超过 HTTP 导出限制的仓库使用离线备份：
+小资料库可在中央界面导出/导入 JSON；导出包含原文、图片、文件原件及附件关系，按私密数据保管。文件 ID 在恢复后保持不变，加密原件按目标仓库的密钥重新加密。JSON 不包含导入工作目录、运行脚本或批处理任务；恢复后的派生记忆需要重新核验。超过 HTTP 导出限制的仓库使用离线备份：
 
 ```sh
 node scripts/mote.mjs stop --profile prod --home /srv/mote/profiles
 node scripts/mote.mjs backup --profile prod --home /srv/mote/profiles --out /srv/mote-backups/mote-2026-09-13
 ```
 
-CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，复制引用的 blob，写 SHA-256 manifest。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
+CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，复制 `blobs/` 图片与 `files/` 原件，写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
 
 在另一台机器初始化新的空环境，然后恢复：
 
@@ -178,7 +178,7 @@ node scripts/mote.mjs start --profile prod --home /srv/mote-new/profiles
 
 恢复会验证 manifest、文件类型、所有 SHA-256，并二次校验复制结果；活动服务、非空数据目录/卷都会拒绝。Docker 恢复需已准备好 profile 选择的本地镜像。恢复不复制 `server.pid`、令牌、模型 API key 或数据加密 key；新节点使用自己的访问令牌。验证记录数量、原文、图片和时间线，再修改客户端 URL/令牌。保留旧节点备份直到迁移验收完成。
 
-`MOTE_DATA_KEY` 是可选的 64 位十六进制 AES-256-GCM 图片加密密钥，必须单独备份；原文与元数据仍在 SQLite，需要 FileVault/LUKS 或 NAS 加密卷提供全盘保护。不要在已有仓库上变更加密密钥。丢失密钥不能通过重新下载模型或更换访问令牌恢复图片。
+`MOTE_DATA_KEY` 是可选的 64 位十六进制 AES-256-GCM 图片及文件原件加密密钥，必须单独备份；解析文本、元数据与导入工作产物并不因此加密，需要 FileVault/LUKS 或 NAS 加密卷提供全盘保护。不要在已有仓库上变更加密密钥。丢失密钥不能通过重新下载模型或更换访问令牌恢复图片和原件。
 
 ## 验证范围
 

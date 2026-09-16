@@ -146,7 +146,7 @@ test("bridge authentication, bounded scope, evidence discovery and field project
       (await request("_ready", { tools: [...TOOL_NAMES, "bash"] })).status,
       400,
     );
-    assert.equal((await request("_ready", { tools: TOOL_NAMES })).status, 200);
+    assert.equal((await request("_ready", { tools: [...TOOL_NAMES,"skill"] })).status, 200);
     const response = await request("search_context", {
       query: "orbital observatory",
       after: "2020-01-01T00:00:00Z",
@@ -245,7 +245,7 @@ test(
         assert.deepEqual(body.thinking, {type:"enabled"});
         assert.equal(body.reasoning_effort, "high");
         const exposed = body.tools.map((tool) => tool.function.name).sort();
-        assert.deepEqual(exposed, [...TOOL_NAMES].sort());
+        assert.deepEqual(exposed, [...TOOL_NAMES,"skill"].sort());
         assert.ok(
           body.messages
             .filter((message) => message.role === "system")

@@ -17,12 +17,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@mote/shared": "0.1.0",
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/dsh": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-fs-local": "0.1.5-rc.2",
     "@deepseek-ai/dsh-llm-pi-ai": "0.1.5-rc.2",
     "@deepseek-ai/dsh-sdk-client": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-skill": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-fs": "0.1.5-rc.2",
+    "@deepseek-ai/dsh-tool-skill": "0.1.5-rc.2",
     "@deepseek-ai/dsh-tools": "0.1.5-rc.2",
+    "@mote/shared": "0.1.0",
     "remark-parse": "11.0.0",
     "unified": "11.0.5"
   },

@@ -9,7 +9,7 @@ import React, {
 } from "react";
 import { createRoot } from "react-dom/client";
 import {captureOcrState, type CapturePreview} from '@mote/shared';
-import { AnswerMarkdown } from "./AnswerMarkdown";
+import { AnswerMarkdown, answerPreview } from "./AnswerMarkdown";
 import { Conversations } from "./Conversations";
 import {captureDateRange, localDateInput, ocrPresentation} from './capture-presentation';
 import {
@@ -81,21 +81,27 @@ import {mediaCardText,mediaStatus,mediaExplanation} from './media-presentation';
 
 import {Sources} from "./Sources";
 import {Memories} from "./Memories";
+import {Imports} from "./Imports";
+import {Insights} from "./Insights";
+import {SourceDocumentDetails} from './SourceDocumentDetails';
 
 declare global {
   interface Window { moteCentralSession?: {close: () => void} }
 }
-type Page = "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
+type Page = "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
   { id: "overview" as const, label: "总览", icon: LayoutDashboard, group: "日常" },
   { id: "timeline" as const, label: "采集记录", icon: Clock3, group: "日常" },
   { id: "notes" as const, label: "随手记", icon: FileText, group: "日常" },
   { id: "ask" as const, label: "问一问", icon: MessageSquare, group: "日常" },
   { id: "archive" as const, label: "资料库", icon: Database, group: "日常" },
+  { id: "imports" as const, label: "导入", icon: ArrowUpFromLine, group: "资料" },
+  { id: "memories" as const, label: "记忆", icon: Layers3, group: "资料" },
+  { id: "insights" as const, label: "洞察", icon: Sparkles, group: "资料" },
   { id: "devices" as const, label: "设备", icon: Monitor, group: "管理" },
   { id: "sources" as const, label: "来源", icon: Link2, group: "管理" },
 ];
-const pageLabels: Record<Page,string> = {overview:'总览',timeline:'采集记录',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
+const pageLabels: Record<Page,string> = {imports:'导入',insights:'洞察',overview:'总览',timeline:'采集记录',notes:'随手记',ask:'问一问',archive:'资料库',memories:'记忆',devices:'设备',sources:'来源',settings:'设置',connections:'连接授权',developer:'开发者选项',about:'关于 Mote',vault:'数据与备份'};
 const periodNames: Record<string, string> = {
   today: "今天",
   week: "过去 7 天",
@@ -470,7 +476,7 @@ function EvidenceDialog({
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <AuthImage api={api} capture={capture} full />}
               <div className="evidence-text">
-                <span className="eyebrow">{capture.source==='media'?'媒体观察':capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : '捕获文本'}</span>
+                <span className="eyebrow">{capture.source==='media'?'媒体观察':capture.source === 'activity' ? '应用活动' : capture.source === 'note' ? '用户原文' : capture.source === 'screen' ? 'OCR 全文' : (capture.platform==='import'||capture.provenance?.document) ? '原始文本' : '捕获文本'}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || "原始上下文"}</h3>
                 {capture.mood && <p className="note-mood-tag">我标注的心情 · {capture.mood}</p>}
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
@@ -512,6 +518,7 @@ function EvidenceDialog({
                   </div>
                 </dl>
                 <Metadata metadata={capture.metadata} source={capture.provenance?.metadata} modifiedAt={capture.provenance?.modifiedAt}/>
+                <SourceDocumentDetails api={api} document={capture.provenance?.document}/>
                 {capture.privacy.reason && (
                   <p className="field-note">{capture.privacy.reason}</p>
                 )}
@@ -522,7 +529,7 @@ function EvidenceDialog({
               {confirm ? (
                 <>
                   <p>
-                    删除原始记录及不再被引用的影像，并清除已有洞察。此操作无法撤销。
+                    删除这条原始记录及不再被引用的影像，并清除依赖记忆和已有洞察。{capture.provenance?.document?.fileId?'导入仍保留原始文件与解析资料；如需一并删除，请到导入页删除整次导入。':''}此操作无法撤销。
                   </p>
                   <button
                     className="button subtle"
@@ -594,7 +601,7 @@ function AnswerView({
                 <div>
                   <strong>{cite.appName || "上下文记录"}</strong>
                   <p>{cite.excerpt || "查看原始记录"}</p>
-                  <time>{dateTime(cite.capturedAt)}</time>
+                  <time>{dateTime(cite.contentAt??cite.capturedAt)}</time>
                 </div>
                 <ArrowUp size={14} />
               </button>
@@ -646,7 +653,7 @@ function SetupSteps({ onPage }: { onPage: (page: Page) => void }) {
   );
 }
 
-function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,range,onMedia}: {api:Api;status:Status;devices:Device[];activity:Activity;recent:Capture[];insights:Answer[];onPage:(page:Page)=>void;onOpen:(id:string)=>void;range:Range;onMedia:()=>void;generate:()=>void;generating:boolean}) {
+function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,range,onMedia}: {api:Api;status:Status;devices:Device[];activity:Activity;recent:Capture[];insights:Answer[];onPage:(page:Page)=>void;onOpen:(id:string)=>void;range:Range;onMedia:()=>void}) {
  return <div className="home-page">
   <div className="greeting"><div><div className="eyebrow">你的个人上下文</div><h1>给生活留一点线索。</h1><p>记下的片刻，在需要时重新找到。</p></div><div className="greeting-mark" aria-hidden="true"><div/><div/><div/><span>m.</span></div></div>
   <div className="home-actions"><button className="home-action primary-action" onClick={()=>onPage('notes')}><FileText size={23}/><span><strong>写一条随手记</strong><small>留住此刻的想法</small></span><ArrowRight size={18}/></button><button className="home-action" onClick={()=>onPage('ask')}><MessageSquare size={23}/><span><strong>从记录里找答案</strong><small>带着来源，回看自己的经历</small></span><ArrowRight size={18}/></button></div>
@@ -654,7 +661,7 @@ function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,ran
   <MediaActivitySummary api={api} range={range} onOpen={onOpen} compact onExpand={onMedia}/>
   {!status.storage.captures&&<section className="panel first-record"><span className="preference-menu-icon"><Link2 size={23}/></span><div><h2>准备好接住第一份记录</h2><p>连接一台设备，或导入你选择的文件。采集范围与同步方式由你决定。</p></div><button className="button" onClick={()=>onPage('devices')}>连接设备<ArrowRight size={15}/></button></section>}
   <section className="recent-section"><div className="section-heading"><div><h2>最近留下的片刻</h2><p>来自你选择的设备与来源</p></div><button className="text-button" onClick={()=>onPage('timeline')}>全部记录<ArrowRight size={15}/></button></div>{recent.length?<div className="capture-grid">{recent.slice(0,4).map(capture=><CaptureCard key={capture.id} capture={capture} api={api} onOpen={onOpen}/>)}</div>:<div className="home-empty"><Layers3 size={23}/><p>记录会在同步完成后出现在这里。也可以先写一条随手记。</p></div>}</section>
-  {insights[0]&&<button className="home-insight" onClick={()=>onPage('ask')}><Sparkles size={21}/><div><strong>你最近的个人回顾</strong><p>{insights[0].answer.slice(0,125)}{insights[0].answer.length>125?'…':''}</p><small>{insights[0].citations.length} 条证据来源</small></div><ArrowRight size={18}/></button>}
+  {insights[0]&&<button className="home-insight" onClick={()=>onPage('insights')}><Sparkles size={21}/><div><strong>你最近的洞察</strong><p>{answerPreview(insights[0],125)}</p><small>{insights[0].citations.length} 条证据来源</small></div><ArrowRight size={18}/></button>}
  </div>;
 }
 
@@ -662,7 +669,7 @@ function ActivitySummary({activity}:{activity:Activity}) {return <section classN
 
 type ArchiveTab = 'records'|'activity'|'media'|'memories';
 function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
- return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动与播放分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['activity','应用活动'],['media','媒体播放'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen}/>}</div>;
+ return <div className="archive-page"><div className="page-heading"><div className="eyebrow">有来处，也有脉络</div><h1>资料库</h1><p>浏览原始记录、活动与播放分布，以及有证据支撑的记忆。</p></div><nav className="segmented-nav" aria-label="资料库分类">{([['records','全部记录'],['activity','应用活动'],['media','媒体播放'],['memories','记忆']] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='records'&&<Timeline api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories api={api} range={range} onOpen={onOpen} refreshVersion={revision}/>}</div>;
 }
 
 function Timeline({
@@ -895,123 +902,10 @@ function Timeline({
   );
 }
 
-function Ask({
-  api,
-  status,
-  devices,
-  range,
-  insights,
-  onOpen,
-  onInsight,
-}: {
-  api: Api;
-  status: Status;
-  devices: Device[];
-  range: Range;
-  insights: Answer[];
-  onOpen: (id: string) => void;
-  onInsight: () => void;
-}) {
-  const [tab, setTab] = useState<"ask" | "insights">("ask");
-  const [selectedInsight, setSelectedInsight] = useState<string | null>(null);
-  return (
-    <>
-      <div className="page-heading">
-        <div className="eyebrow">LESS SEARCHING, MORE UNDERSTANDING</div>
-        <h1>你只管问。</h1>
-        <p>让 Mote 沿着你的上下文，找回答案和它的来处。</p>
-      </div>
-      <div className="tabs">
-        <button
-          className={tab === "ask" ? "active" : ""}
-          onClick={() => setTab("ask")}
-        >
-          <MessageSquare size={15} />
-          问一问
-        </button>
-        <button
-          className={tab === "insights" ? "active" : ""}
-          onClick={() => setTab("insights")}
-        >
-          <Sparkles size={15} />
-          个人回顾 <span>{insights.length}</span>
-        </button>
-      </div>
-      {!status.agent.configured && (
-        <div className="notice model-notice">
-          <Sparkles size={19} />
-          <div>
-            <strong>再连接一个模型，让资料变成答案。</strong>
-            <p>
-              在中央节点的 <code>.env</code> 设置 <code>MOTE_MODEL</code>、
-              <code>MOTE_MODEL_BASE_URL</code> 与{" "}
-              <code>MOTE_MODEL_API_KEY</code>
-              ，然后重启服务。当前采集和归档可以继续使用。
-            </p>
-          </div>
-        </div>
-      )}
-      {tab === "ask" ? (
-        <Conversations api={api} configured={status.agent.configured} devices={devices} range={range} renderAnswer={answer => <AnswerView answer={answer} onOpen={onOpen}/>}/>
-      ) : (
-        <>
-          {insights.length ? (
-            <div className="insight-history">
-              {insights.map((item) => (
-                <article className="panel" key={item.runId}>
-                  <button
-                    className="insight-history-heading"
-                    onClick={() =>
-                      setSelectedInsight(
-                        selectedInsight === item.runId ? null : item.runId,
-                      )
-                    }
-                  >
-                    <div>
-                      <Sparkles size={17} />
-                      <strong>
-                        {item.createdAt ? dateTime(item.createdAt) : "个人回顾"}
-                      </strong>
-                      <span>{item.citations.length} 条证据</span>
-                    </div>
-                    <ChevronDown
-                      size={18}
-                      className={
-                        selectedInsight === item.runId ? "rotated" : ""
-                      }
-                    />
-                  </button>
-                  {selectedInsight === item.runId ? (
-                    <AnswerView answer={item} onOpen={onOpen} />
-                  ) : (
-                    <p className="history-preview">
-                      {item.answer.slice(0, 200)}
-                      {item.answer.length > 200 && "…"}
-                    </p>
-                  )}
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="panel">
-              <Empty icon={Sparkles} title="第一份回顾，等你开始">
-                <p>累积一些记录后，生成一份有证据的个人回顾。</p>
-                <button
-                  className="button primary"
-                  onClick={onInsight}
-                  disabled={
-                    !status.agent.configured || !status.storage.captures
-                  }
-                >
-                  生成个人回顾
-                </button>
-              </Empty>
-            </div>
-          )}
-        </>
-      )}
-    </>
-  );
+function Ask({api,status,devices,range,onOpen,onInsights,onSettings}: {api:Api;status:Status;devices:Device[];range:Range;onOpen:(id:string)=>void;onInsights:()=>void;onSettings:()=>void}) {
+  return <><div className="page-heading split-heading"><div><div className="eyebrow">带着问题，回到上下文</div><h1>你只管问。</h1><p>让 Mote 沿着你的上下文，找回答案和它的来处。</p></div><button className="button subtle" onClick={onInsights}><Sparkles size={15}/>查看洞察</button></div>
+  {!status.agent.configured&&<div className="notice model-notice"><Sparkles size={19}/><div><strong>再连接一个模型，让资料变成答案。</strong><p>在设置中配置模型后，就可以开始提问。</p><button className="button" onClick={onSettings}>打开模型设置</button></div></div>}
+  <Conversations api={api} configured={status.agent.configured} devices={devices} range={range} renderAnswer={answer=><AnswerView answer={answer} onOpen={onOpen}/>}/></>;
 }
 
 function Vault({
@@ -1339,7 +1233,6 @@ function App() {
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   const [evidenceId, setEvidenceId] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [notice, setNotice] = useState("");
   const [timelineRevision, setTimelineRevision] = useState(0);
   const disconnect = useCallback(() => {
@@ -1348,7 +1241,6 @@ function App() {
     setConnection(null);
     setVerified(false);
     setShowConnect(false);
-    setGenerating(false);
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
     setError("");
     setLoading(false);
@@ -1440,28 +1332,8 @@ function App() {
     setStatus(null);
     setDevices([]); setRecent([]); setInsights([]); setEvidenceId(null);
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
-    setGenerating(false);
     setShowConnect(false);
     setNotice("");
-  }
-  async function generate() {
-    if (!api || generating) return;
-    const generation = connectionGeneration.current;
-    setGenerating(true);
-    setNotice("");
-    try {
-      await api.request<Answer>("/api/insights", {
-        method: "POST",
-        body: JSON.stringify({ ...range, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
-      });
-      if (generation !== connectionGeneration.current) return;
-      setNotice("新的个人回顾已生成，打开「问一问 → 个人回顾」查看证据。");
-      refresh();
-    } catch (e) {
-      if (generation === connectionGeneration.current) setNotice(errorMessage(e));
-    } finally {
-      if (generation === connectionGeneration.current) setGenerating(false);
-    }
   }
   return (
     <div className="app-shell">
@@ -1478,10 +1350,10 @@ function App() {
         </button>
         <div className="workspace-label">中央管理界面</div>
         <nav>
-          {["日常", "管理"].map(group => <React.Fragment key={group}><div className="nav-group-label">{group}</div>{nav.filter(item=>item.group===group).map((item) => (
+          {["日常", "资料", "管理"].map(group => <React.Fragment key={group}><div className="nav-group-label">{group}</div>{nav.filter(item=>item.group===group).map((item) => (
             <button
               key={item.id}
-              className={(page === item.id || (page === "memories" && item.id === "archive")) ? "active" : ""}
+              className={page === item.id ? "active" : ""}
               aria-current={page === item.id ? "page" : undefined}
               onClick={() => onPage(item.id)}
             >
@@ -1545,7 +1417,7 @@ function App() {
                   <ShieldCheck size={14} />
                   私有节点
                 </span>
-                {(["overview", "ask", "memories"].includes(page) || (page === "archive" && archiveTab !== "records")) && (
+                {(["overview", "ask", "memories", "insights"].includes(page) || (page === "archive" && archiveTab !== "records")) && (
                   <select
                     className="period-select"
                     aria-label="选择时间范围"
@@ -1669,7 +1541,7 @@ function App() {
                   )
                 : api && (
                     <>
-                      {!["notes","devices","connections","settings","sources","archive","memories","about"].includes(page) && !status && !error && <Spinner label="正在读取节点状态…"/>}
+                      {!["notes","devices","connections","settings","sources","archive","memories","imports","insights","about"].includes(page) && !status && !error && <Spinner label="正在读取节点状态…"/>}
                       {page === "overview" && status && (
                         <Overview
                           api={api}
@@ -1682,8 +1554,6 @@ function App() {
                           onOpen={setEvidenceId}
                           range={range}
                           onMedia={()=>{setArchiveTab('media');onPage('archive');}}
-                          generate={() => void generate()}
-                          generating={generating}
                         />
                       )}
                       {page === "timeline" && (
@@ -1700,9 +1570,9 @@ function App() {
                           devices={devices}
                           status={status}
                           range={range}
-                          insights={insights}
                           onOpen={setEvidenceId}
-                          onInsight={() => void generate()}
+                          onInsights={()=>onPage("insights")}
+                          onSettings={()=>onPage("settings")}
                         />
                       )}
                       {page === "devices" && (
@@ -1716,8 +1586,10 @@ function App() {
                           disconnect={disconnect}
                         /></>
                       )}
-                      {page === "sources" && <Sources api={api} onOpen={setEvidenceId} />}
-                      {page === "memories" && <Memories api={api} range={range} onOpen={setEvidenceId} />}
+                      {page === "sources" && <Sources api={api} onOpen={setEvidenceId} onImport={()=>onPage("imports")} />}
+                      {page === "imports" && <Imports api={api} refreshVersion={timelineRevision} onOpen={setEvidenceId} onMemories={()=>onPage("memories")} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
+                      {page === "insights" && <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured??false} onOpen={setEvidenceId} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
+                      {page === "memories" && <Memories api={api} range={range} refreshVersion={timelineRevision} onOpen={setEvidenceId} />}
                       {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title="设备" onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}

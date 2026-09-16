@@ -81,7 +81,7 @@ for (const protocol of ['openai-completions','openai-responses','anthropic-messa
         assert.equal(headers['x-generated-header'],'fixture-header-secret');
         assert.equal(body.thinking,undefined);assert.equal(body.reasoning_effort,undefined);assert.equal(body.reasoning,undefined);
         const names = protocol === 'google-generative-ai' ? body.tools.flatMap(item=>item.functionDeclarations.map(tool=>tool.name)) : body.tools.map(tool=>tool.function?.name ?? tool.name);
-        assert.deepEqual(names.sort(),[...TOOL_NAMES].sort());
+        assert.deepEqual(names.sort(),[...TOOL_NAMES,"skill"].sort());
         assert.equal(protocol === 'google-generative-ai' ? body.generationConfig.temperature : body.temperature,0.23);
         assert.ok(!JSON.stringify(body).includes('fixture-private-token'));
         if (protocol === 'openai-responses') {assert.equal(body.store,false);assert.equal(url,'/v1/responses');}

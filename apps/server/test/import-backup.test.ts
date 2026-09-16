@@ -1,0 +1,31 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,readFileSync,realpathSync,rmSync,writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {execFileSync} from 'node:child_process';
+import {Store} from '../src/store.js';
+import {ArchivedFileStore} from '../src/archived-files.js';
+import {SourceStore} from '../src/sources.js';
+import {ImportStore,type ImportPreparation} from '../src/imports.js';
+import {restoreProfile} from '../../../scripts/profile-lib.mjs';
+
+test('restored import rebases all paths and replays a partial import without losing new evidence IDs',async t=>{
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-import-backup-'))),originalDirectory=join(root,'original'),snapshot=join(root,'snapshot'),target=join(root,'restored');
+ const original=new Store(originalDirectory,{dataKey:'ab'.repeat(32)}),files=new ArchivedFileStore(original),sources=new SourceStore(original);
+ let restored:Store|undefined;t.after(()=>{original.close();restored?.close();rmSync(root,{recursive:true,force:true});});
+ const parser=async({workspace,inputPaths}:ImportPreparation)=>{const rows=['first','second'].map(id=>({item:{externalId:id,revision:'v1',observedAt:'2026-09-15T12:00:00Z',title:id,text:'Synthetic preserved text '+id,kind:'file',layer:'original'},evidencePaths:inputPaths}));writeFileSync(join(workspace,'records.jsonl'),rows.map(row=>JSON.stringify(row)).join('\n'));return {summary:'Two synthetic records'};};
+ const imports=new ImportStore(original,files,sources,{prepare:parser}),job=await imports.create({files:[{name:'original.txt',dataBase64:Buffer.from('synthetic source').toString('base64')}]});await imports.prepare(job.id);
+ const attach=files.attach.bind(files);let fail=true;files.attach=(id,ids)=>{if(fail&&original.evidence([id])[0].provenance?.externalId==='second'){fail=false;throw Error('Synthetic interruption');}attach(id,ids);};
+ const partial=await imports.confirm(job.id);assert.equal(partial.progress.processed,1);const oldWorkspace=join(originalDirectory,'imports',job.id);writeFileSync(join(oldWorkspace,'generated-secret-script.mjs'),'synthetic original marker');
+ const completed=await imports.create({files:[{name:'completed.txt',dataBase64:Buffer.from('another synthetic source').toString('base64')}]});await imports.prepare(completed.id);await imports.confirm(completed.id);
+ execFileSync(process.execPath,[fileURLToPath(new URL('../../../scripts/backup.ts',import.meta.url)),'--data',originalDirectory,'--out',snapshot]);
+ await restoreProfile({meta:{runtime:'native'},dataDir:target,processFile:join(root,'missing-process.json')},snapshot);
+ restored=new Store(target,{dataKey:'ab'.repeat(32)});const resumedIds:string[][]=[];
+ const resumed=new ImportStore(restored,new ArchivedFileStore(restored),new SourceStore(restored),{prepare:async input=>{assert.ok(input.workspace.startsWith(target+'/imports/'));assert.ok(input.inputPaths.every(path=>path.startsWith(target+'/imports/')));assert.equal(readFileSync(input.inputPaths[0],'utf8'),'synthetic source');return parser(input);},onImported:async ids=>{resumedIds.push(ids);return {memoryJobId:'resumed-memory'};}});
+ const restoredJob=resumed.get(job.id);assert.equal(restoredJob.status,'failed');assert.equal(restoredJob.progress.processed,0);assert.deepEqual(restoredJob.captureIds,partial.captureIds);await assert.rejects(resumed.confirm(job.id),{statusCode:409});
+ assert.equal(resumed.get(completed.id).status,'completed');assert.equal((await resumed.confirm(completed.id)).status,'completed');assert.deepEqual(resumedIds,[]);
+ assert.equal((await resumed.retry(job.id)).status,'awaiting_confirmation');const finished=await resumed.confirm(job.id);assert.equal(finished.status,'completed');assert.equal(finished.progress.duplicates,1);assert.equal(finished.progress.imported,1);assert.equal(finished.captureIds.length,2);assert.deepEqual(resumedIds,[finished.captureIds]);assert.equal(restored.list().items.length,4);
+ resumed.delete(job.id);assert.equal(readFileSync(join(oldWorkspace,'generated-secret-script.mjs'),'utf8'),'synthetic original marker');
+});

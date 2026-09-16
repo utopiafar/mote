@@ -1,4 +1,5 @@
-import {systemEventText} from '@mote/shared';
+import {systemEventText,sourceContentTime} from '@mote/shared';
+import {memorySchema} from './memory-schema.js';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync, statSync, renameSync } from 'node:fs';
@@ -8,6 +9,7 @@ import {z} from 'zod';
 import { sourceConnectionSchema, sourceItemSchema, captureSchema, captureOcrState, type CapturePreview, type OcrState, type CaptureInput, type CaptureRecord, type Heartbeat, type DeviceRecord, type Activity } from '@mote/shared';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {mediaActivity,type MediaActivityRange} from './media-activity.js';
+import {ArchivedFileStore} from './archived-files.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
@@ -56,11 +58,21 @@ export class Store {
       CREATE TABLE IF NOT EXISTS source_heads (source_id TEXT NOT NULL,external_id TEXT NOT NULL,capture_id TEXT NOT NULL,observed_at TEXT NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(source_id,external_id));
       CREATE INDEX IF NOT EXISTS source_head_capture ON source_heads(capture_id);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memory_dependencies (memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,PRIMARY KEY(memory_id,evidence_id));
+      CREATE INDEX IF NOT EXISTS memory_dependencies_evidence ON memory_dependencies(evidence_id);
+      CREATE TABLE IF NOT EXISTS memory_jobs (id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memory_batches (id TEXT PRIMARY KEY,job_id TEXT NOT NULL REFERENCES memory_jobs(id) ON DELETE CASCADE,idx INTEGER NOT NULL,json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS memory_batch_dependencies (batch_id TEXT NOT NULL REFERENCES memory_batches(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,PRIMARY KEY(batch_id,evidence_id));
+      CREATE INDEX IF NOT EXISTS memory_batch_dependencies_evidence ON memory_batch_dependencies(evidence_id);
+      CREATE TABLE IF NOT EXISTS memory_checkpoints (key TEXT PRIMARY KEY,evidence_id TEXT NOT NULL,completed_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
       PRAGMA user_version=1;`);
     this.db.function('mote_ocr_status',{deterministic:true},json=>captureOcrState(JSON.parse(String(json))).status);
+    this.db.function('mote_context_time',{deterministic:true},json=>new Date(sourceContentTime(JSON.parse(String(json)))).toISOString());
+    // Add precise dependency rows for archives written before this table existed.
+    this.db.exec("INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) SELECT memories.id,entry.value FROM memories,json_each(memories.json,'$.evidenceIds') entry");
     const marker=this.db.prepare('SELECT value FROM settings WHERE key=?').get('encryption') as {value:string}|undefined;
     const expected=this.key ? sha256(this.key) : 'none';
     if(marker && marker.value!==expected) {this.db.close();throw new Error('Vault encryption key mismatch. Restore the original MOTE_DATA_KEY; do not change keys on an existing vault.');}
@@ -82,8 +94,8 @@ export class Store {
   }
   private clauses(range:Range={}) {
     const clauses:string[]=["(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0))"]; const values:(string|number)[]=[];
-    if(range.after) {clauses.push('captured_at >= ?');values.push(new Date(range.after).toISOString());}
-    if(range.before) {clauses.push('captured_at < ?');values.push(new Date(range.before).toISOString());}
+    if(range.after) {clauses.push('mote_context_time(json) >= ?');values.push(new Date(range.after).toISOString());}
+    if(range.before) {clauses.push('mote_context_time(json) < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
     if(range.appId!==undefined) {
       clauses.push("((json_extract(json,'$.source') != 'media' AND json_extract(json,'$.appId') = ?) OR (json_extract(json,'$.source') = 'media' AND EXISTS (SELECT 1 FROM json_each(captures.json,'$.metadata.media.sessions') AS session WHERE json_extract(session.value,'$.appId') = ?)))");
@@ -97,7 +109,7 @@ export class Store {
     if(range.collection==='activity')clauses.push("json_extract(json,'$.privacy.collection') = 'activity'");
     if(range.collection==='content')clauses.push("json_extract(json,'$.source') != 'activity' AND COALESCE(json_extract(json,'$.privacy.collection'),'content') = 'content'");
     if(range.cursor) {
-      try {const c=JSON.parse(Buffer.from(range.cursor,'base64url').toString());if(typeof c.t!=='string'||typeof c.id!=='string')throw Error();clauses.push('(captured_at < ? OR (captured_at = ? AND id < ?))');values.push(c.t,c.t,c.id);}catch {throw new StoreError('Invalid pagination cursor');}
+      try {const c=JSON.parse(Buffer.from(range.cursor,'base64url').toString());if(typeof c.t!=='string'||typeof c.id!=='string')throw Error();clauses.push('(mote_context_time(json) < ? OR (mote_context_time(json) = ? AND id < ?))');values.push(c.t,c.t,c.id);}catch {throw new StoreError('Invalid pagination cursor');}
     }
     return {where:clauses.length?' WHERE '+clauses.join(' AND '):'',values};
   }
@@ -173,7 +185,7 @@ export class Store {
     try {const result=this.insert(p);transaction?.(result);this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');this.sweep();throw e;}
   }
   async importArchive(raw:unknown) {
-    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[]};
+    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];files?:unknown[];captureFiles?:unknown[]};
     if(archive?.version!==1||!Array.isArray(archive.captures)||archive.captures.length>20000)throw new StoreError('Expected Mote archive version 1 (maximum 20,000 records per import)');
     const connections=(archive.sources??[]).map(v=>{const {createdAt,updatedAt,status,...fields}=v as Record<string,unknown>;const value=sourceConnectionSchema.parse(fields);return {...value,createdAt:typeof createdAt==='string'?createdAt:new Date().toISOString(),updatedAt:typeof updatedAt==='string'?updatedAt:new Date().toISOString()};});
     if(connections.length>500)throw new StoreError('Too many source connections');
@@ -186,31 +198,50 @@ export class Store {
       if(blobHash!==undefined&&blobHash!==p.hash)throw new StoreError('Archive image checksum mismatch');
       prepared.push(p);
     }
-    const memoryEntries=z.array(z.object({id:z.string().uuid(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),evidenceIds:z.array(z.string().uuid()).min(1).max(30),createdAt:z.string().datetime({offset:true}),status:z.enum(['proposed','published','stale']),model:z.string().max(200),runId:z.string().max(200),fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict()).max(1000).parse(archive.memories??[]);
+    const memoryEntries=z.array(memorySchema).max(1000).parse(archive.memories??[]);
+    const archivedFiles=new ArchivedFileStore(this),portableFiles=archivedFiles.preparePortable(archive.files??[]);
+    const fileLinks=z.array(z.object({captureId:z.string().uuid(),fileId:z.string().uuid()}).strict()).max(100000).parse(archive.captureFiles??[]);
+    const captureIds=new Set(prepared.map(p=>p.input.id)),fileIds=new Set(portableFiles.map(p=>p.file.id));
+    const knownFile=(id:string)=>fileIds.has(id)||Boolean(this.db.prepare('SELECT id FROM archived_files WHERE id=?').get(id));
+    for(const link of fileLinks)if((!captureIds.has(link.captureId)&&!this.evidence([link.captureId]).length)||!knownFile(link.fileId))throw new StoreError('Portable attachment references a missing capture or file');
+    if(archive.files!==undefined)for(const record of prepared){const document=record.input.provenance?.document;for(const id of [document?.fileId,...(document?.attachments??[]).map(a=>a.id)].filter((id):id is string=>Boolean(id))){if(!knownFile(id))throw new StoreError('Portable document references a missing original file');fileLinks.push({captureId:record.input.id,fileId:id});}}
     this.db.exec('BEGIN IMMEDIATE');
     try {
       let imported=0,duplicates=0;
+      archivedFiles.restorePortable(portableFiles);
       for(const p of prepared)this.insert(p).duplicate?duplicates++:imported++;
+      for(const link of fileLinks)archivedFiles.attach(link.captureId,[link.fileId]);
       for(const c of connections){const prior=this.db.prepare('SELECT json FROM source_connections WHERE id=?').get(c.id) as {json:string}|undefined;if(prior){const original=JSON.parse(prior.json);if(original.deviceId!==c.deviceId||original.kind!==c.kind)throw new StoreError('Source identity conflict',409);}else this.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?)').run(c.id,JSON.stringify({...c,enabled:false}));}
-      for(const rawVersion of archive.sourceVersions??[]){const v=rawVersion as Record<string,unknown>;if(typeof v.capture_id!=='string'||typeof v.source_id!=='string'||typeof v.external_id!=='string'||typeof v.revision!=='string'||typeof v.hash!=='string'||!(/^[a-f0-9]{64}$/.test(v.hash)))throw new StoreError('Invalid source revision');const e=this.evidence([v.capture_id])[0];if(!e?.provenance||e.provenance.sourceId!==v.source_id||e.provenance.externalId!==v.external_id||e.provenance.revision!==v.revision||!this.db.prepare('SELECT id FROM source_connections WHERE id=?').get(v.source_id))throw new StoreError('Source revision evidence mismatch');const p=e.provenance;const {observedAt:_,...semantic}=sourceItemSchema.parse({externalId:p.externalId,revision:p.revision,observedAt:e.capturedAt,modifiedAt:p.modifiedAt,title:e.windowTitle,text:p.deleted||p.layer==='reference'?'':e.ocrText,uri:p.uri,kind:e.source,layer:p.layer,mimeType:p.mimeType,calendar:p.calendar,deleted:p.deleted,metadata:p.metadata});if(sha256(JSON.stringify(semantic))!==v.hash)throw new StoreError('Source revision checksum mismatch');this.db.prepare('INSERT OR IGNORE INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(v.source_id,v.external_id,v.revision,v.capture_id,v.hash);}
-      for(const rawHead of archive.sourceHeads??[]){const h=rawHead as Record<string,unknown>;if(typeof h.capture_id!=='string'||typeof h.source_id!=='string'||typeof h.external_id!=='string'||typeof h.observed_at!=='string'||!Number.isFinite(Date.parse(h.observed_at))||![0,1].includes(Number(h.deleted)))throw new StoreError('Invalid source pointer');const v=this.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? AND capture_id=?').get(h.source_id,h.external_id,h.capture_id);if(!v)throw new StoreError('Source pointer has no revision');const e=this.evidence([h.capture_id])[0];if(!e||Date.parse(h.observed_at)!==Date.parse(e.capturedAt)||Number(h.deleted)!==Number(e.provenance?.deleted))throw new StoreError('Source pointer metadata mismatch');const priorHead=this.db.prepare('SELECT capture_id,observed_at FROM source_heads WHERE source_id=? AND external_id=?').get(h.source_id,h.external_id) as {capture_id:string;observed_at:string}|undefined;if(priorHead&&Date.parse(priorHead.observed_at)===Date.parse(h.observed_at)&&priorHead.capture_id!==h.capture_id)throw new StoreError('Equal observation times contain conflicting source heads',409);const moved=this.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted WHERE excluded.observed_at>source_heads.observed_at').run(h.source_id,h.external_id,h.capture_id,new Date(h.observed_at).toISOString(),Number(h.deleted));if(moved.changes&&priorHead&&priorHead.capture_id!==h.capture_id){this.db.exec("DELETE FROM insights; UPDATE memories SET json=json_set(json,'$.status','stale')");this.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(priorHead.capture_id,new Date().toISOString());}}
-      for(const m of memoryEntries){if(m.evidenceIds.some(id=>!this.evidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,JSON.stringify({...m,status:'stale'}));}
+      for(const rawVersion of archive.sourceVersions??[]){const v=rawVersion as Record<string,unknown>;if(typeof v.capture_id!=='string'||typeof v.source_id!=='string'||typeof v.external_id!=='string'||typeof v.revision!=='string'||typeof v.hash!=='string'||!(/^[a-f0-9]{64}$/.test(v.hash)))throw new StoreError('Invalid source revision');const e=this.evidence([v.capture_id])[0];if(!e?.provenance||e.provenance.sourceId!==v.source_id||e.provenance.externalId!==v.external_id||e.provenance.revision!==v.revision||!this.db.prepare('SELECT id FROM source_connections WHERE id=?').get(v.source_id))throw new StoreError('Source revision evidence mismatch');const p=e.provenance;const {observedAt:_,...semantic}=sourceItemSchema.parse({externalId:p.externalId,revision:p.revision,observedAt:e.capturedAt,modifiedAt:p.modifiedAt,title:e.windowTitle,text:p.deleted||p.layer==='reference'?'':e.ocrText,uri:p.uri,kind:e.source,layer:p.layer,mimeType:p.mimeType,calendar:p.calendar,deleted:p.deleted,metadata:p.metadata,document:p.document});if(sha256(JSON.stringify(semantic))!==v.hash)throw new StoreError('Source revision checksum mismatch');this.db.prepare('INSERT OR IGNORE INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(v.source_id,v.external_id,v.revision,v.capture_id,v.hash);}
+      for(const rawHead of archive.sourceHeads??[]){const h=rawHead as Record<string,unknown>;if(typeof h.capture_id!=='string'||typeof h.source_id!=='string'||typeof h.external_id!=='string'||typeof h.observed_at!=='string'||!Number.isFinite(Date.parse(h.observed_at))||![0,1].includes(Number(h.deleted)))throw new StoreError('Invalid source pointer');const v=this.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? AND capture_id=?').get(h.source_id,h.external_id,h.capture_id);if(!v)throw new StoreError('Source pointer has no revision');const e=this.evidence([h.capture_id])[0];if(!e||Date.parse(h.observed_at)!==Date.parse(e.capturedAt)||Number(h.deleted)!==Number(e.provenance?.deleted))throw new StoreError('Source pointer metadata mismatch');const priorHead=this.db.prepare('SELECT capture_id,observed_at FROM source_heads WHERE source_id=? AND external_id=?').get(h.source_id,h.external_id) as {capture_id:string;observed_at:string}|undefined;if(priorHead&&Date.parse(priorHead.observed_at)===Date.parse(h.observed_at)&&priorHead.capture_id!==h.capture_id)throw new StoreError('Equal observation times contain conflicting source heads',409);const moved=this.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted WHERE excluded.observed_at>source_heads.observed_at').run(h.source_id,h.external_id,h.capture_id,new Date(h.observed_at).toISOString(),Number(h.deleted));if(moved.changes&&priorHead&&priorHead.capture_id!==h.capture_id){this.invalidateMemoryEvidence(priorHead.capture_id);this.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(priorHead.capture_id,new Date().toISOString());}}
+      for(const m of memoryEntries){if(m.evidenceIds.some(id=>!this.evidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');for(const e of m.evidence??[]){const record=this.evidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record||(e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote)))throw new StoreError('Memory archive evidence quote mismatch');}this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,JSON.stringify({...m,status:'stale',staleReason:'restored_archive'}));for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);}
       // Merging individually valid archives must still respect the destination's total limits.
       if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM source_connections').get()!.n)>500)throw new StoreError('Maximum 500 sources',413);
       if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n)>1000)throw new StoreError('Memory limit reached',507);
       this.reserveMetadata(0);
       this.db.exec('COMMIT');return {imported,duplicates};
-    }catch(e){this.db.exec('ROLLBACK');this.sweep();throw e;}
+    }catch(e){this.db.exec('ROLLBACK');this.sweep();archivedFiles.sweepOrphans();throw e;}
   }
   list(range:Range={}) {
     const {where,values}=this.clauses(range);const limit=Math.min(200,Math.max(1,range.limit??50));
-    const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY captured_at DESC,id DESC LIMIT ?`).all(...values,limit+1) as unknown as Row[];
+    const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`).all(...values,limit+1) as unknown as Row[];
     const {cursor:_cursor,...scope}=range;const totalScope=this.clauses(scope);
     const totalCount=Number((this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}`).get(...totalScope.values) as {count:number}).count);
     const more=rows.length>limit;const items=rows.slice(0,limit).map(r=>this.record(r));const last=items.at(-1);
-    return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:last.capturedAt,id:last.id})).toString('base64url'):null,totalCount};
+    return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:new Date(sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null,totalCount};
   }
   evidence(ids:string[]) {return ids.slice(0,200).map(id=>this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));}
+  isCurrentEvidence(id:string):boolean {
+    return Boolean(this.db.prepare('SELECT id FROM captures WHERE id=? AND (id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0))').get(id));
+  }
+  /** Called inside the evidence mutation transaction so in-flight extraction cannot revive old claims. */
+  invalidateMemoryEvidence(id:string,deleted=false) {
+    this.db.exec('DELETE FROM insights');
+    if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
+    else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);
+    this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id=?').run(id);
+    this.db.prepare("UPDATE memory_batches SET json=json_set(json,'$.status','invalidated','$.errorCode',?) WHERE id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?)").run(deleted?'evidence_deleted':'evidence_changed',id);
+  }
   previews(range:Range={}) {
     const page=this.list(range);
     const items:CapturePreview[]=page.items.map(record=>({id:record.id,deviceId:record.deviceId,deviceName:record.deviceName,platform:record.platform,
@@ -243,7 +274,7 @@ export class Store {
         .run(json,fingerprint,this.options.embeddingEnabled&&update.ocrText.trim()?'pending':'text_ready',id);
       this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(id);
       this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(id,searchText(next));
-      this.db.exec("DELETE FROM insights; UPDATE memories SET json=json_set(json,'$.status','stale')");
+      this.invalidateMemoryEvidence(id);
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,ocr.updatedAt);
       this.db.exec('COMMIT');return {id,ocr,duplicate:false};
     } catch(error){this.db.exec('ROLLBACK');throw error;}
@@ -255,7 +286,7 @@ export class Store {
     // Generic lexical primitive. The Agent, never keyword intent routing, chooses search expressions.
     const ids=this.db.prepare(`SELECT id FROM captures_fts WHERE captures_fts MATCH ? ORDER BY rank LIMIT 500`).all(terms) as {id:string}[];
     const placeholders=ids.map(()=>'?').join(',');
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}(instr(lower(mote_search_text(json)),lower(?))>0${ids.length?` OR id IN (${placeholders})`:''}) ORDER BY captured_at DESC,id DESC LIMIT ?`)
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}(instr(lower(mote_search_text(json)),lower(?))>0${ids.length?` OR id IN (${placeholders})`:''}) ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`)
       .all(...values,query,...ids.map(i=>i.id),Math.min(range.limit??50,200)) as unknown as Row[];
     return rows.map(r=>this.record(r));
   }
@@ -322,22 +353,31 @@ export class Store {
     return mediaActivity((function*(){for(const row of rows)yield record(row as unknown as Row);})(),range);
   }
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
-  logicalBytes() {return Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n)+Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM (SELECT json FROM captures UNION ALL SELECT json FROM memories UNION ALL SELECT json FROM source_connections UNION ALL SELECT json FROM conversations)').get() as {n:number}).n);}
+  logicalBytes() {
+    const tables=new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {name:string}[]).map(row=>row.name));
+    const jsonTables=['captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs'].filter(name=>tables.has(name));
+    const bytes=Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n);
+    const files=tables.has('file_blobs')?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
+    return bytes+files+Number(this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM ('+jsonTables.map(name=>'SELECT json FROM '+name).join(' UNION ALL ')+')').get()!.n);
+  }
   stats() {
     const counts=this.db.prepare("SELECT COUNT(*) AS captures, COUNT(blob_hash) AS imageCaptures, SUM(CASE WHEN json_extract(json,'$.source')='activity' THEN 1 ELSE 0 END) AS activityEvents, SUM(CASE WHEN json_extract(json,'$.source')='media' THEN 1 ELSE 0 END) AS mediaEvents, MIN(captured_at) AS firstCaptureAt,MAX(captured_at) AS lastCaptureAt FROM captures").get() as {captures:number;imageCaptures:number;activityEvents:number|null;mediaEvents:number|null;firstCaptureAt:string|null;lastCaptureAt:string|null};
     const blob=this.db.prepare('SELECT COUNT(*) AS blobs,COALESCE(SUM(bytes),0) AS imageBytes FROM blobs').get() as {blobs:number;imageBytes:number};
     const indexing=this.db.prepare('SELECT index_status AS status,COUNT(*) AS count FROM captures GROUP BY index_status').all();
-    const physicalBytes=[join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p))].reduce((n,p)=>n+(existsSync(p)?statSync(p).size:0),0);
-    return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:Boolean(this.key)};
+    const filesDir=join(this.directory,'files'),files=existsSync(filesDir)?readdirSync(filesDir).map(p=>join(filesDir,p)):[];
+    const physicalBytes=[join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p)),...files].reduce((n,p)=>n+(existsSync(p)&&statSync(p).isFile()?statSync(p).size:0),0);
+    const fileBytes=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='file_blobs'").get()?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
+    return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,fileBytes,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:Boolean(this.key)};
   }
   exportArchive(maxBytes:number) {
     const stats=this.stats() as {logicalBytes:number;captures:number};
+    const archivedFiles=new ArchivedFileStore(this);
     // Portable v1 embeds a blob for EACH observation. Account for expanded repetitions before allocation.
-    const estimated=Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(c.json AS BLOB)) + 4 * ((COALESCE(b.bytes,0) + 2) / 3) + 240),0) AS n FROM captures c LEFT JOIN blobs b ON b.hash=c.blob_hash').get() as {n:number}).n)+200;
+    const estimated=Number((this.db.prepare('SELECT COALESCE(SUM(length(CAST(c.json AS BLOB)) + 4 * ((COALESCE(b.bytes,0) + 2) / 3) + 240),0) AS n FROM captures c LEFT JOIN blobs b ON b.hash=c.blob_hash').get() as {n:number}).n)+archivedFiles.portableEstimate()+200;
     if(estimated>maxBytes||stats.captures>20000)throw new StoreError('Archive too large for HTTP export; use npm run backup for a consistent database backup',413);
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
-    const archive={version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json))};
+    const archive={version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;
   }
@@ -347,17 +387,18 @@ export class Store {
       const result=this.db.prepare('DELETE FROM captures WHERE id=?').run(id);this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(id);
       if(result.changes)this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,'delete',new Date().toISOString());
       // Derived retrospectives can refer to removed evidence; invalidate, rather than retain stale personal facts.
-      if(result.changes){this.db.exec('DELETE FROM insights; DELETE FROM memories');this.invalidateConversationAnswers();this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);}
+      if(result.changes){this.invalidateMemoryEvidence(id,true);this.invalidateConversationAnswers();this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);}
       this.db.exec('COMMIT');this.sweep();return {deleted:Number(result.changes)};
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   prune(before:string) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      const removed=this.db.prepare('SELECT id FROM captures WHERE captured_at < ?').all(before) as {id:string}[];
       this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE captured_at < ?").run(new Date().toISOString(),before);
       this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE captured_at < ?)').run(before);
       const result=this.db.prepare('DELETE FROM captures WHERE captured_at < ?').run(before);
-      if(result.changes){this.db.exec('DELETE FROM insights; DELETE FROM memories; UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();return Number(result.changes);
+      if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();return Number(result.changes);
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   private invalidateConversationAnswers() {

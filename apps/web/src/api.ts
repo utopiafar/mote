@@ -18,7 +18,7 @@ export interface Capture {
   source: CaptureRecord['source'];
   privacy: { redacted: boolean; mode: string; reason?: string; collection?: 'content' | 'activity' };
   metadata?: RecordMetadata;
-  provenance?: {layer:string;modifiedAt?:string;deleted?:boolean;metadata?:SourceMetadata};
+  provenance?: CaptureRecord['provenance'];
   indexingStatus: string;
   summary?: string;
   mood?: string;
@@ -92,10 +92,13 @@ export interface Answer {
     capturedAt: string;
     appName: string;
     excerpt: string;
+    contentAt?: string;
+    provenance?: {sourceId?:string;externalId?:string;revision?:string;layer?:string;document?:import('@mote/shared').SourceDocument};
   }[];
   trace: { tool: string; arguments: unknown; count: number }[];
   createdAt?: string;
   id?: string;
+  artifact?: { id: string; title: string; html: string; createdAt: string; skillId: string; skillVersion: string };
 }
 export interface Range {
   after?: string;
@@ -146,7 +149,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
       let message = response.status === 524
         ? "入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。"
         : response.status === 413
-          ? "上传超过中央节点或公网入口的大小限制（413）。大型资料库请使用离线备份与恢复。"
+          ? "上传超过中央节点或公网入口的大小限制（413）。可以分批上传，或将文件放到中央服务器后从目录导入。"
           : response.status === 502
             ? "入口暂时无法连接中央服务（502）。请检查中央进程和隧道的 origin 地址。"
             : `请求未完成（${response.status}）`;

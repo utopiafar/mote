@@ -1,4 +1,5 @@
-import type {CaptureInput} from '@mote/shared';
+import type {CaptureInput,SourceDocument} from '@mote/shared';
+import type {MoteSkillId} from './skills.js';
 import type {ModelProtocol} from '@mote/shared/models';
 export interface ContextRecord {
   id: string;
@@ -69,6 +70,11 @@ export interface AgentOptions {
 
 export interface QueryInput {
   question: string;
+  /** Host-selected procedure, never selected from captured text. */
+  skill?: Exclude<MoteSkillId,'document-import'>;
+  /** A bounded extraction session may read only these original evidence ranges. */
+  evidenceIds?: string[];
+  evidenceRanges?: {id:string;offset:number;length:number}[];
   after?: string;
   before?: string;
   deviceId?: string;
@@ -84,6 +90,8 @@ export interface Citation {
   capturedAt: string;
   appName: string;
   excerpt: string;
+  contentAt?:string;
+  provenance?:{sourceId?:string;externalId?:string;revision?:string;layer?:string;document?:SourceDocument};
 }
 export interface ToolTrace {
   tool: string;

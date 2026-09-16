@@ -4,6 +4,18 @@ import type { Answer } from './api';
 interface MarkdownNode { type:string; value?:string; url?:string; children?:MarkdownNode[] }
 const citationHref = (id:string) => '#mote-evidence/' + encodeURIComponent(id);
 
+/** A compact display excerpt, with formatting and verified reference markers removed. */
+export function answerPreview(answer:Answer,limit=100) {
+  let value=answer.answer;
+  for(const citation of answer.citations)value=value.split('['+citation.id+']').join('');
+  value=value.replace(/!\[([^\]]*)\]\([^\n)]*\)/g,'$1')
+    .replace(/\[([^\]]+)\]\([^\n)]*\)/g,'$1')
+    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/gm,'')
+    .replace(/```[^\n]*\n?|\*\*|__|~~|`/g,'')
+    .replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+  return value.length>limit?value.slice(0,limit)+'…':value;
+}
+
 /** Format only verified citation IDs in prose; preserve code and authored links. */
 export function citationLinks(citations:Answer['citations']) {
   const indexes=new Map(citations.map((citation,index)=>[citation.id,index+1]));

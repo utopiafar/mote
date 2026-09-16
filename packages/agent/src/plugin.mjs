@@ -1,7 +1,8 @@
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import { apply as applySkillTool } from "@deepseek-ai/dsh-tool-skill";
 
 export const name = "mote-context";
-export const inject = ["tools"];
+export const inject = ["tools", "skills", "agents"];
 const names = ["search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories"];
 const range = {
   after: { type: "string", description: "Inclusive ISO timestamp lower bound" },
@@ -103,6 +104,10 @@ export function boundedModelFetch(transport, bridge, maximumBytes = 32 * 1024 * 
 }
 
 export async function apply(ctx) {
+  for (const skill of JSON.parse(process.env.MOTE_SKILLS || '[]')) {
+    ctx.skills.register({name:skill.name,description:skill.description,content:skill.content,source:'bundled',metadata:{version:skill.version}});
+  }
+  applySkillTool(ctx);
   const endpoint = process.env.MOTE_CONTEXT_BRIDGE;
   const token = process.env.MOTE_CONTEXT_BRIDGE_TOKEN;
   if (!endpoint || !token) throw new Error("Mote context bridge is missing");
@@ -197,11 +202,11 @@ export async function apply(ctx) {
   }
   // Monotonic deny: an accidental dependency must not grant the agent another capability.
   ctx.tools.guard((exec) =>
-    names.includes(exec.name)
+    (names.includes(exec.name) || exec.name === 'skill')
       ? undefined
       : "Mote exposes only read-only context tools",
   );
   const exposed = ctx.tools.schemas().map((tool) => tool.name);
   await call("_ready", { tools: exposed });
-  ctx.provide("moteReady", { tools: names });
+  ctx.provide("moteReady", { tools: [...names,'skill'] });
 }

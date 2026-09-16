@@ -22,6 +22,7 @@ COPY apps/server/package.json ./apps/server/package.json
 RUN npm ci --omit=dev --workspace=@mote/server --workspace=@mote/shared --workspace=@mote/agent --no-audit --no-fund && npm cache clean --force
 COPY --from=build /app/packages/shared/dist ./packages/shared/dist
 COPY --from=build /app/packages/agent/dist ./packages/agent/dist
+COPY --from=build /app/packages/agent/skills ./packages/agent/skills
 COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 COPY deploy/empty.env ./deploy/empty.env

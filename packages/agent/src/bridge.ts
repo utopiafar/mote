@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { displayTime } from './time.js';
-import {recordMetadataSchema, sourceMetadataSchema, sourceSchema} from '@mote/shared';
+import {recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime} from '@mote/shared';
 import type {
   ContextReader,
   ContextRecord,
@@ -85,10 +85,13 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
   const intervalStart = duration ? new Date(Date.parse(record.capturedAt) - duration).toISOString() : undefined;
   const metadata = recordMetadataSchema.safeParse(record.metadata);
   const sourceMetadata = sourceMetadataSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.metadata);
+  const document = documentSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.document);
+  const contentAt = sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
   return {
     id: record.id,
     capturedAt: record.capturedAt,
     displayCapturedAt: displayTime(record.capturedAt, timeZone),
+    contentAt,displayContentAt:displayTime(contentAt,timeZone),
     timeZone,
     ...(intervalStart ? { sampleInterval: {
       start: intervalStart, end: record.capturedAt,
@@ -103,6 +106,8 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
     ...(typeof record.windowTitle==='string'?{title:record.windowTitle.slice(0,2000)}:{}),
     ...(record.provenance&&typeof record.provenance==='object'?{provenance:{
       sourceId:(record.provenance as Record<string,unknown>).sourceId,
+      externalId:(record.provenance as Record<string,unknown>).externalId,
+      ...(document.success?{document:document.data}:{}),
       layer:(record.provenance as Record<string,unknown>).layer,
       deleted:(record.provenance as Record<string,unknown>).deleted,
       revision:(record.provenance as Record<string,unknown>).revision,
@@ -160,6 +165,30 @@ export async function startBridge(
   const token = randomBytes(32).toString("hex");
   const trace: ToolTrace[] = [];
   const records = new Map<string, ContextRecord>();
+  const restricted = bounds.evidenceIds !== undefined;
+  const permitted = new Map<string,ContextRecord>();
+  const ranges = bounds.evidenceRanges ?? bounds.evidenceIds?.map(id=>({id,offset:0,length:12000})) ?? [];
+  const splitsPair=(text:string,at:number)=>at>0&&at<text.length&&/[\uD800-\uDBFF]/.test(text[at-1])&&/[\uDC00-\uDFFF]/.test(text[at]);
+  if(bounds.evidenceRanges&&!restricted)throw Error('Evidence ranges require explicit evidence IDs');
+  if(restricted){
+    if(!bounds.evidenceIds?.length||bounds.evidenceIds.length>100||ranges.length>100||ranges.some(r=>!bounds.evidenceIds!.includes(r.id)||!Number.isSafeInteger(r.offset)||r.offset<0||!Number.isSafeInteger(r.length)||r.length<1||r.length>100000)||ranges.reduce((n,r)=>n+r.length,0)>100000)throw Error('Invalid extraction evidence scope');
+    for(const record of await reader.evidence({ids:bounds.evidenceIds}))if(bounds.evidenceIds.includes(record.id))permitted.set(record.id,record);
+    const scope=range({},bounds);
+    for(const id of bounds.evidenceIds){
+      const record=permitted.get(id);
+      if(!record)throw Error('Extraction evidence is missing');
+      const document=documentSchema.safeParse((record.provenance as Record<string,unknown>|undefined)?.document);
+      const at=sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
+      if((scope.deviceId&&record.deviceId!==scope.deviceId)||(scope.after&&Date.parse(at)<Date.parse(scope.after))||(scope.before&&Date.parse(at)>=Date.parse(scope.before)))throw Error('Extraction evidence is outside the selected scope');
+      if(!ranges.some(r=>r.id===id))throw Error('Every extraction evidence ID requires a delivered range');
+    }
+    for(const r of ranges){const text=permitted.get(r.id)!.ocrText;
+      if(bounds.evidenceRanges&&(r.offset+r.length>text.length||splitsPair(text,r.offset)||splitsPair(text,r.offset+r.length)))throw Error('Extraction range must stay inside original text and UTF-16 boundaries');
+    }
+  }
+  const seedEvidence=ranges.flatMap(r=>{const record=permitted.get(r.id);return record?[project(record,r.offset,r.length,bounds.timeZone)]:[];});
+  if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw Error('Extraction evidence exceeds the byte budget');
+  for(const record of seedEvidence)records.set(record.id,record);
   let calls = 0;
   let ready = false;
   const server: Server = createServer(async (req, res) => {
@@ -189,8 +218,8 @@ export async function startBridge(
         const exposed = args.tools;
         if (
           !Array.isArray(exposed) ||
-          exposed.length !== TOOL_NAMES.length ||
-          !TOOL_NAMES.every((name) => exposed.includes(name))
+          exposed.length !== TOOL_NAMES.length + 1 ||
+          ![...TOOL_NAMES,'skill'].every((name) => exposed.includes(name))
         )
           throw new Error("Unsafe Harness tool composition");
         ready = true;
@@ -209,6 +238,22 @@ export async function startBridge(
         throw new Error(
           "Tool call budget reached; finish using the evidence already retrieved",
         );
+      if(restricted){
+        if(tool!=='evidence')throw Error('This extraction session uses only the supplied evidence ranges');
+        if(!Array.isArray(args.ids)||!args.ids.length||args.ids.some(id=>typeof id!=='string'||!permitted.has(id)))throw Error('Evidence is outside this extraction batch');
+        let data=seedEvidence.filter(record=>(args.ids as string[]).includes(record.id));
+        if(args.offset!==undefined||args.length!==undefined){
+          const offset=args.offset??0,length=args.length??2000;
+          if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw Error('Invalid extraction evidence range');
+          data=(args.ids as string[]).map(id=>{
+            const record=permitted.get(id)!;
+            if(!ranges.some(r=>r.id===id&&Number(offset)>=r.offset&&Number(offset)+Number(length)<=r.offset+r.length)||splitsPair(record.ocrText,Number(offset))||splitsPair(record.ocrText,Number(offset)+Number(length)))throw Error('Evidence range is outside this extraction batch');
+            return project(record,Number(offset),Number(length),bounds.timeZone);
+          });
+        }
+        trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
+        res.end(JSON.stringify({source:'untrusted_personal_context',data}));return;
+      }
       let value: unknown;
       let effective: Record<string, unknown> = args;
       let textOffset = 0, textLength = 2000;
@@ -229,7 +274,7 @@ export async function startBridge(
         if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw Error('Invalid memory id');
         effective={...scope,id:args.id};
         const result=await reader.memories?.({...scope,id:args.id as string|undefined})??{items:[]};
-        const evidence=(result.evidence??[]).filter(r=>(!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||r.capturedAt>=scope.after)&&(!scope.before||r.capturedAt<scope.before)).slice(0,30).map(r=>project(r,0,2000,bounds.timeZone));
+        const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>project(r,0,2000,bounds.timeZone));
         memoryEvidence=evidence;
         value={items:result.items,evidence};
       }
@@ -354,6 +399,7 @@ export async function startBridge(
     token,
     trace,
     records,
+    seedEvidence,
     get ready() {
       return ready;
     },

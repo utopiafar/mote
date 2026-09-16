@@ -6,7 +6,7 @@ import { createHash } from 'node:crypto';
 
 const args = process.argv.slice(2);
 const usage = 'Stop the central node first. Usage: npm run backup -- --data ./data --out /absolute/new-backup-directory';
-if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image blobs and checksums. Tokens/keys are excluded; preserve your data key separately.'); process.exit(0); }
+if (args.includes('--help')) { console.info(usage + '\nBacks up SQLite, referenced image/file originals and checksums. Import scripts/workspaces and tokens/keys are excluded; unfinished imports must be analyzed again after restore. Preserve your data key separately.'); process.exit(0); }
 function argument(name: string, fallback?: string) {
   const index = args.indexOf(name);
   if (index < 0 && fallback !== undefined) return fallback;
@@ -59,21 +59,56 @@ try {
   const db = new DatabaseSync(join(source, 'mote.sqlite'), { readOnly: true });
   try {
     const rows = db.prepare('SELECT hash FROM blobs').all() as { hash: unknown }[];
+    const fileRows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='file_blobs'").get()
+      ? db.prepare('SELECT hash FROM file_blobs').all() as { hash: unknown }[] : [];
     // Restored databases are data, never authority to read arbitrary vault files.
     for (const { hash } of rows) {
       if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid blob hash in backup source');
       await ordinarySource(join(source, 'blobs', hash));
     }
+    for (const { hash } of fileRows) {
+      if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid file hash in backup source');
+      await ordinarySource(join(source, 'files', hash));
+    }
     await backup(db, join(out, 'mote.sqlite'));
     await chmod(join(out, 'mote.sqlite'), 0o600);
+    // Workspaces contain generated programs, not authoritative evidence. Reconstruct inputs
+    // from archived originals and obtain a fresh reviewed manifest after restoration.
+    const snapshot = new DatabaseSync(join(out, 'mote.sqlite'));
+    try {
+      snapshot.exec('PRAGMA journal_mode=DELETE');
+      if (snapshot.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='import_jobs'").get()) {
+        const jobs = snapshot.prepare('SELECT id,json FROM import_jobs').all() as {id:string;json:string}[];
+        snapshot.exec('BEGIN IMMEDIATE');
+        try {
+          for (const row of jobs) {
+            const job=JSON.parse(row.json);
+            delete job.workspace;delete job.inputs;delete job.manifestHash;
+            if(job.status!=='completed'){
+              job.status='failed';job.processingStatus='blocked';job.failurePhase='prepare';
+              job.progress={total:0,processed:0,imported:0,duplicates:0};delete job.preview;delete job.dispositions;
+              job.error='Restored backup: original files are retained. Analyze this import again and review a new preview before continuing.';
+            }
+            snapshot.prepare('UPDATE import_jobs SET json=? WHERE id=?').run(JSON.stringify(job),row.id);
+          }
+          snapshot.exec('COMMIT');
+        }catch(error){snapshot.exec('ROLLBACK');throw error;}
+      }
+    }finally{snapshot.close();}
     for (const row of rows) {
       const hash = row.hash as string;
       await copyFile(join(source, 'blobs', hash), join(out, 'blobs', hash), constants.COPYFILE_EXCL);
       await chmod(join(out, 'blobs', hash), 0o600);
       checksums['blobs/' + hash] = await sum(join(out, 'blobs', hash));
     }
+    if(fileRows.length)await mkdir(join(out,'files'),{mode:0o700});
+    for(const row of fileRows){
+      const hash=row.hash as string;
+      await copyFile(join(source,'files',hash),join(out,'files',hash),constants.COPYFILE_EXCL);
+      await chmod(join(out,'files',hash),0o600);checksums['files/'+hash]=await sum(join(out,'files',hash));
+    }
   } finally { db.close(); }
   checksums['mote.sqlite'] = await sum(join(out, 'mote.sqlite'));
-  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, createdAt: new Date().toISOString(), checksums, note: 'Tokens and data encryption keys are intentionally excluded. Preserve MOTE_DATA_KEY separately if enabled.' }, null, 2), { mode: 0o600, flag: 'wx' });
+  await writeFile(join(out, 'backup-manifest.json'), JSON.stringify({ version: 1, createdAt: new Date().toISOString(), checksums, note: 'Referenced image and file originals are included. Import workspaces/scripts, tokens and data encryption keys are excluded. Unfinished imports require a fresh analysis and preview after restore. Preserve MOTE_DATA_KEY separately if enabled.' }, null, 2), { mode: 0o600, flag: 'wx' });
   console.info(`Consistent vault backup written to ${out}. Restore into an empty data directory; keep the same data encryption key.`);
 } catch (error) { await rm(out, { recursive: true, force: true }); throw error; }

@@ -3,6 +3,7 @@ import {provenanceSchema} from './sources.js';
 import {recordMetadataSchema,ocrSchema,type OcrState,type MediaMetadata} from './metadata.js';
 export * from './sources.js';
 export * from './metadata.js';
+export * from './imports.js';
 export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource } from './configuration.js';
 
 export const platformSchema = z.enum(['macos', 'windows', 'linux', 'android', 'import']);

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AnswerMarkdown } from '../src/AnswerMarkdown.js';
+import { AnswerMarkdown, answerPreview } from '../src/AnswerMarkdown.js';
 import type { Answer } from '../src/api.js';
 const id='11111111-1111-4111-8111-111111111111';
 const answer:Answer={answer:'',runId:'fixture',trace:[],citations:[{id,appName:'合成随手记',capturedAt:'2026-09-12T00:00:00Z',excerpt:'合成原文'}]};
@@ -17,4 +17,10 @@ test('citation formatting preserves quoted code, unverified identifiers and auth
   assert.ok(!html.includes('inline-citation'));
   assert.match(html,/<code>\[11111111/);assert.match(html,/not-a-retrieved-id/);
   assert.match(html,/href="https:\/\/example.com"/);assert.ok(!html.includes('<script'));assert.ok(!html.includes('<img'));
+});
+test('history previews remove Markdown formatting and only verified citation markers',()=>{
+  const text=answerPreview({...answer,answer:`## 合成回顾\n\n- **完成检查** [${id}]\n\n[项目记录](https://example.com) [unverified]`},200);
+  assert.equal(text,'合成回顾 完成检查 项目记录 [unverified]');
+  assert.ok(!text.includes(id));
+  assert.equal(answerPreview({...answer,answer:'一二三四五'},3),'一二三…');
 });

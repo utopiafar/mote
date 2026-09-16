@@ -10,7 +10,7 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 
 客户端设置保存后自动应用，保留当前采集开停状态；图片保存位置可在“采集与存储”中查看和更改，已有队列随之迁移。见 [设置生效与图片位置](docs/client-settings-and-storage.md)。
 
-[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [资料分层](docs/context-layers.md) · [来源与 MCP](docs/connectors.md) · [排查问题](docs/troubleshooting.md)
+[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [中央记忆系统](docs/central-memory.md) · [资料分层](docs/context-layers.md) · [来源与 MCP](docs/connectors.md) · [排查问题](docs/troubleshooting.md)
 
 [下载安装包](https://github.com/utopiafar/mote/releases) · [扫码与 JSON 连接](docs/connections.md) · [保留设置地更新](docs/updating.md) · [发布与签名流程](docs/releasing.md)
 
@@ -23,6 +23,7 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 - **保留有用的元数据**：按开关上报设备与采样状态，文件和日历保留可得的大小、创建/修改/访问及删除观察时间；来源版本与证据可展开查看，未知字段不伪造。
 - **随手记录**：在采集 App 中写日记、杂事、心情；草稿与待同步笔记保存在本机，恢复网络后补传。中央界面也提供记录入口。
 - **来源接入**：Mac 本地日历与目录、Android 系统日历与文件选择器、中央 Google Calendar 只读同步；显式导入 MCP 资源，或通过 MCP 将其他 Chatbot 的可见资料写回指定来源。
+- **通用导入与洞察**：提交文件、ZIP 或服务器目录，用自然语言说明资料；先保留原件，再预览确认、写入记录并分批提取记忆。独立洞察页展示带证据的 HTML 报告和文字版，见[中央记忆系统](docs/central-memory.md)。
 - **分层记忆**：保留原始输入、不可变快照与外部引用；默认检索当前版本，按需展开历史。模型记忆按“概要 → 内容 → 原始证据”逐层披露。
 - **问答与回顾**：Agent 自主选择只读工具、查找材料、解释证据；答案附可点击的原始记录。对话历史保存在中央节点，刷新或重启后可选择旧对话继续，见[对话说明](docs/conversations.md)。可手动或按配置周期生成回顾。
 - **离线可用、资料可迁移**：持久上传队列、幂等确认、JSON 导入导出、离线完整备份、可选图片加密与保留期限。
@@ -216,7 +217,7 @@ MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to
 MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to/selected-notes --watch
 ```
 
-当前支持 UTF-8 文本 / Markdown 等显式扩展名，每文件最多 100 KB。文件目录不是整机自动扫描入口；PDF、Office、大文件分块与更多硬件连接器仍需扩展。
+上述 `import:files` 文本同步命令支持 UTF-8 文本 / Markdown 等显式扩展名，每文件最多 100 KB。中央网页的 **导入** 是另一条流程：保留原件后，使用模型和通用解析辅助程序处理文本、结构化导出、PDF 文本层、DOCX、XLSX 等资料，先预览再确认，并独立跟踪 Memory 批次。它不会自动执行扫描件 OCR 或音视频转写。格式、大小、离线行为和原生工具边界见[中央记忆系统](docs/central-memory.md)。
 
 ## 排查问题
 
@@ -235,6 +236,7 @@ MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to
 |---|---|
 | [部署与迁移](docs/deployment.md) | Mac mini、Docker、HTTPS、备份恢复、升级与回滚 |
 | [开发环境](docs/development.md) | 服务端与客户端隔离、开发命令、测试 |
+| [中央记忆系统](docs/central-memory.md) | 通用导入、原件与证据、分批 Memory、洞察 Skill、扩展与限制 |
 | [模型服务配置](docs/model-providers.md) | 厂商预设、协议、保存即生效、合成测试与私有凭据 |
 | [故障排查](docs/troubleshooting.md) | 日志、请求编号、诊断包与常见故障 |
 | [架构](docs/architecture.md) / [协议](docs/protocol.md) | 数据流、边界、扩展接入与一致性 |
