@@ -8,7 +8,7 @@
 - `test:e2e` 和 `test:media-e2e` 通过：生成的屏幕/媒体数据经过加密归档、去重、真实 DeepSeek Harness + fixture 模型、引用问答和导出往返。
 - 合并最新 main 后，端到端测试的旧工具清单缺少 `progress_update`；修正清单后通过，权限仍由只读 bridge 控制。
 
-这些测试不等于 Android 真机、真实截图采集或模型语义质量验收。全量发行还由 Release workflow 执行 Mac、Android、Docker 与签名资产检查。
+这些测试不等于 Android 真机、真实截图采集或模型语义质量验收。全量发行还由 Release workflow 执行 Mac、Android、Docker 与签名资产检查。首次 0.0.30 发行因合入的后台问答失败提示缺少 alert 标记，被中央 UI 测试拦截；补齐标记并复测后使用新标签 0.0.31，保留旧标签用于追溯。
 
 ## 经用户授权的真实会话和模型验收
 
