@@ -5,17 +5,32 @@ import {z} from 'zod';
 import {ConnectorError,type ConnectorContext} from './types.js';
 import {equalToken,registerMcp,RemoteMcp} from './mcp.js';
 import {GoogleCalendarConnector,type GoogleDependencies} from './google.js';
+import {LarkConnector} from './lark.js';
+import type {LarkRunner} from './lark-cli.js';
 export type {ConnectorConfig,ConnectorContext} from './types.js';
 
-export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:{google?:GoogleDependencies}) {
+export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:{google?:GoogleDependencies;lark?:LarkRunner}) {
   const ctx={...context,config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
   const google=new GoogleCalendarConnector(ctx,testing?.google),remote=new RemoteMcp(ctx),mcp=registerMcp(app,ctx);
   await google.init();
+  const lark=new LarkConnector(ctx,testing?.lark);await lark.init();
   const owner=async(req:FastifyRequest,reply:FastifyReply)=>{if(!equalToken(req.headers.authorization,ctx.config.token))return reply.code(401).send({error:'unauthorized'});reply.header('Cache-Control','no-store');};
   const action=(fn:(req:FastifyRequest)=>unknown)=>async(req:FastifyRequest,reply:FastifyReply)=>{
     try{return await fn(req);}catch(error){const known=error instanceof ConnectorError;return reply.code(known?error.statusCode:error instanceof z.ZodError?400:502).send({error:known?error.code:error instanceof z.ZodError?'connector_input_invalid':'connector_operation_failed',requestId:req.id});}
   };
   app.get('/api/connectors/status',{preHandler:owner},()=>({mcp:{enabled:Boolean(ctx.config.connectors.mcpEnabled),readConfigured:Boolean(ctx.config.connectors.mcpReadToken),writeEnabled:Boolean(ctx.config.connectors.mcpWriteEnabled&&ctx.config.connectors.mcpWriteToken&&ctx.config.connectors.mcpWriteSourceIds?.length),writeSourceIds:ctx.config.connectors.mcpWriteSourceIds??[],endpoint:'/mcp'},google:google.status()}));
+  const larkOptions={onRequest:owner,bodyLimit:16384,config:{rateLimit:{max:60,timeWindow:'1 minute'}}};
+  app.get('/api/connectors/lark',larkOptions,action(()=>lark.status()));
+  app.post('/api/connectors/lark/check',larkOptions,action(()=>lark.refresh()));
+  app.post('/api/connectors/lark/install',larkOptions,action(()=>lark.startInstall()));
+  app.post('/api/connectors/lark/setup',larkOptions,action(()=>lark.startSetup()));
+  app.post('/api/connectors/lark/configure',larkOptions,action(req=>lark.configure(req.body)));
+  app.post('/api/connectors/lark/login',larkOptions,action(()=>lark.login()));
+  app.post('/api/connectors/lark/cancel',larkOptions,action(()=>lark.cancel()));
+  app.get('/api/connectors/lark/calendars',larkOptions,action(()=>lark.calendars()));
+  app.put('/api/connectors/lark/selection',larkOptions,action(req=>lark.select(req.body)));
+  app.post('/api/connectors/lark/sync',larkOptions,action(()=>lark.startSync()));
+  app.delete('/api/connectors/lark',larkOptions,action(()=>lark.disconnect()));
   app.post('/api/connectors/mcp/discover',{preHandler:owner},action(req=>remote.discover(req.body)));
   app.post('/api/connectors/mcp/import',{preHandler:owner},action(req=>remote.import(req.body)));
   app.post('/api/connectors/google/start',{preHandler:owner},action(()=>google.start()));
@@ -29,5 +44,5 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
     catch{return reply.code(400).type('text/plain; charset=utf-8').send(moteText("授权未完成或已过期。请返回 Mote 重新连接 Google 日历。"));}
   });
   let closed=false;
-  return {close:async()=>{if(closed)return;closed=true;await Promise.all([google.close(),remote.close(),mcp.close()]);}};
+  return {close:async()=>{if(closed)return;closed=true;await Promise.all([google.close(),lark.close(),remote.close(),mcp.close()]);}};
 }

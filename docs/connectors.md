@@ -108,3 +108,7 @@ reference 模式只调用 `resources/list` 获取选中资源的元数据，不�
 `mote_timeline`、`mote_search`、`mote_activity` 支持精确 `appId`、`source`、`collection` 筛选；分页保持筛选一致。`source=activity` 是只有应用身份、采样区间和可选设备状态的记录，没有截图或正文。`mote_activity` 同时统计内容与活动样本，返回 `contentCaptures` 和 `activityEvents`，不能作为完成任务的证明。
 
 时间线与 `mote_evidence` 还提供 `appId`、`deviceId`、`durationMs`、`receivedAt`、`privacy`、`metadata`；文件与日历的稳定元数据在 `provenance.metadata` 或来源条目 `metadata` 中。通过写回工具提交来源元数据时，同一 revision 不可变，访问时间不证明人工阅读，删除观察不等于实际删除。详情见 [元数据语义](privacy-and-metadata.md)。
+
+## 飞书文档与日历
+
+中央「设置 → 飞书」支持服务端 CLI 安装、应用配置、扫码只读授权、范围选择及周期归档。使用统一信源版本链；详情和实际边界见[飞书接入](lark-integration.md)。

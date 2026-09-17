@@ -6,7 +6,7 @@ import {type Api,errorMessage,dateTime} from './api';
 import {sourceMetadataSchema} from '@mote/shared';
 import {Metadata} from './Metadata';
 const layerNames:Record<string,string>={reference:moteText("引用 / Shadow"),snapshot:moteText("内容快照"),original:moteText("原始文本"),derived:moteText("派生记录")};
-const kindNames:Record<string,string>={'coding-agent':moteText("编码 Agent 对话"),'local-files':moteText("客户端文件"),'local-calendar':moteText("本地日历"),'google-calendar':'Google Calendar',mcp:moteText("MCP 来源"),upload:moteText("文件导入"),custom:moteText("自定义来源")};
+const kindNames:Record<string,string>={'coding-agent':moteText("编码 Agent 对话"),'local-files':moteText("客户端文件"),'local-calendar':moteText("本地日历"),'google-calendar':'Google Calendar','lark-docs':moteText('飞书文档'),'lark-calendar':moteText('飞书日历'),mcp:moteText("MCP 来源"),upload:moteText("文件导入"),custom:moteText("自定义来源")};
 export function Sources({api,onOpen,onImport}:{api:Api;onOpen:(id:string)=>void;onImport:()=>void}){
  const [sources,setSources]=useState<SourceConnection[]>([]),[items,setItems]=useState<SourceItemRecord[]>([]),[selected,setSelected]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[history,setHistory]=useState<SourceItemRecord[]|null>(null),[cursor,setCursor]=useState<string|null>(null);
  const [adding,setAdding]=useState(false),[addKind,setAddKind]=useState<'files'|'reference'|'connectors'>('files');

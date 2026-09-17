@@ -1,3 +1,4 @@
+import {LarkSettings} from './LarkSettings';
 import { LanguageSelector } from './LanguageSelector';
 import { getLocale } from '@mote/shared/i18n';
 import { moteText } from '@mote/shared/i18n';
@@ -96,7 +97,7 @@ import {SourceDocumentDetails} from './SourceDocumentDetails';
 declare global {
   interface Window { moteCentralSession?: {close: () => void} }
 }
-type Page = "actions" | "usage" | "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
+type Page = "lark" | "actions" | "usage" | "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
   {id:"actions" as const,label:moteText("行动"),icon:Clock3,group:moteText("日常")},
   { id: "usage" as const, label: moteText("用量与费用"), icon: Clock3, group: moteText("管理") },
@@ -111,7 +112,7 @@ const nav = [
   { id: "devices" as const, label: moteText("设备"), icon: Monitor, group: moteText("管理") },
   { id: "sources" as const, label: moteText("来源"), icon: Link2, group: moteText("管理") },
 ];
-const pageLabels: Record<Page,string> = {actions:moteText("行动"),usage:moteText("用量与费用"),imports:moteText("导入"),insights:moteText("洞察"),overview:moteText("总览"),timeline:moteText("采集记录"),notes:moteText("随手记"),ask:moteText("问一问"),archive:moteText("资料库"),memories:moteText("记忆"),devices:moteText("设备"),sources:moteText("来源"),settings:moteText("设置"),connections:moteText("连接授权"),developer:moteText("开发者选项"),about:moteText("关于 Mote"),vault:moteText("数据与备份")};
+const pageLabels: Record<Page,string> = {lark:moteText("飞书"),actions:moteText("行动"),usage:moteText("用量与费用"),imports:moteText("导入"),insights:moteText("洞察"),overview:moteText("总览"),timeline:moteText("采集记录"),notes:moteText("随手记"),ask:moteText("问一问"),archive:moteText("资料库"),memories:moteText("记忆"),devices:moteText("设备"),sources:moteText("来源"),settings:moteText("设置"),connections:moteText("连接授权"),developer:moteText("开发者选项"),about:moteText("关于 Mote"),vault:moteText("数据与备份")};
 const periodNames: Record<string, string> = {
   today: moteText("今天"),
   week: moteText("过去 7 天"),
@@ -1374,7 +1375,7 @@ function App() {
           ))}</React.Fragment>)}
         </nav>
         <div className="sidebar-bottom"><LanguageSelector/>
-          <button aria-current={["settings","vault","developer","about","connections"].includes(page)?"page":undefined} className={"settings-nav "+(["settings","vault","developer","about","connections"].includes(page)?"active":"")} onClick={()=>onPage("settings")}><Settings2 size={18}/>{moteText("设置")}</button>
+          <button aria-current={["lark","settings","vault","developer","about","connections"].includes(page)?"page":undefined} className={"settings-nav "+(["lark","settings","vault","developer","about","connections"].includes(page)?"active":"")} onClick={()=>onPage("settings")}><Settings2 size={18}/>{moteText("设置")}</button>
           <div className="local-note">
             <span className="orbit-mark">✳</span>
             <p>
@@ -1596,6 +1597,7 @@ function App() {
                       {page === "insights" && <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured??false} onOpen={setEvidenceId} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
                       {page === "actions" && <Actions api={api} onOpen={setEvidenceId}/> }
                       {page === "memories" && <Memories api={api} range={range} refreshVersion={timelineRevision} onOpen={setEvidenceId} />}
+                      {page === "lark" && <LarkSettings api={api} onBack={()=>onPage("settings")} onSources={()=>onPage("sources")}/>}
                       {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title={moteText("设备")} onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}

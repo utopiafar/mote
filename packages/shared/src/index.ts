@@ -144,3 +144,4 @@ export * from './file-policy.js';
 export * from './capture-sessions.js';
 
 export * from './actions.js';
+export type {LarkSelection,LarkJob,LarkStatus,LarkCalendar} from './lark.js';
