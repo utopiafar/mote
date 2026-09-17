@@ -25,6 +25,7 @@ object HttpJson {
             connection.instanceFollowRedirects = false // Never leak owner tokens through redirects.
             connection.doOutput = body != null
             connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept-Language", MoteI18n.language())
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
                 val bytes = body.toString().toByteArray(Charsets.UTF_8)
@@ -39,7 +40,7 @@ object HttpJson {
                 while (true) {
                     val count = input.read(buffer)
                     if (count < 0) break
-                    require(output.size() + count <= 256 * 1024) { "响应超过 256 KiB" }
+                    require(output.size() + count <= 256 * 1024) { MoteI18n.text("响应超过 256 KiB") }
                     output.write(buffer, 0, count)
                 }
                 output.toString("UTF-8")
@@ -59,14 +60,14 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         var pendingRecordId: String? = null
         val manualOnly = settings.read().syncMode == "manual" && inputData.getBoolean("manual", false)
         fun failed(message: String, retryable: Boolean = true): Result {
-            settings.syncStatus("error", "$message；记录保留在本机，${if (manualOnly || !retryable) "请处理后点击立即同步" else "稍后自动重试"}")
+            settings.syncStatus("error", MoteI18n.text("{0}；记录保留在本机，{1}", message, if (manualOnly || !retryable) MoteI18n.text("请处理后点击立即同步") else MoteI18n.text("稍后自动重试")))
             return if (manualOnly || !retryable) Result.failure() else Result.retry()
         }
         return try {
             val config = settings.read()
             val explicit = inputData.getBoolean("manual", false)
-            if (!config.hasSyncConnection()) { settings.syncStatus("unconfigured", "仅保存在本机 · 尚未配置完整连接"); return Result.success() }
-            if (config.syncMode == "manual" && !explicit) { settings.syncStatus("manual", "手动同步 · 记录持续保存在本机"); return Result.success() }
+            if (!config.hasSyncConnection()) { settings.syncStatus("unconfigured", MoteI18n.text("仅保存在本机 · 尚未配置完整连接")); return Result.success() }
+            if (config.syncMode == "manual" && !explicit) { settings.syncStatus("manual", MoteI18n.text("手动同步 · 记录持续保存在本机")); return Result.success() }
             val requestedStamp = inputData.getString("syncStamp")
             if (requestedStamp != null && requestedStamp != SyncSchedule.stamp(config)) { SyncSchedule.schedule(applicationContext, config); return Result.success() }
             config.validate(); config.validateConnection()
@@ -79,7 +80,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             }
             stage = EventStage.QUEUE
             val queue = applicationContext.queue()
-            settings.syncStatus("uploading", "正在同步本机记录")
+            settings.syncStatus("uploading", MoteI18n.text("正在同步本机记录"))
             if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
             Diagnostics(applicationContext).add("uploadSessions")
             var remaining = 25
@@ -98,18 +99,18 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     val (code, response) = HttpJson.post("${config.server}/api/capture-browser/$id/ocr", body, config.token)
                     if ((code == 404 && response?.optString("error") == "capture_not_found") || code == 410) {
                         queue.archiveMissing(id); pendingRecordId = null
-                        settings.syncStatus("error", "中央记录已不可更新；本机保留图片和失败状态，不会重新创建记录")
+                        settings.syncStatus("error", MoteI18n.text("中央记录已不可更新；本机保留图片和失败状态，不会重新创建记录"))
                         continue
                     }
                     if (code == 409) {
                         queue.ocrConflict(id); pendingRecordId = null
-                        settings.syncStatus("error", "OCR 更新与中央记录冲突；本机图片和文字已保留，请在采集记录中查看")
+                        settings.syncStatus("error", MoteI18n.text("OCR 更新与中央记录冲突；本机图片和文字已保留，请在采集记录中查看"))
                         continue
                     }
-                    if (code !in 200..299 || response?.optString("id") != id) return failed(if (code == 404) "中央节点可能需要升级，OCR 结果已保留" else "OCR 更新未确认（HTTP $code）")
+                    if (code !in 200..299 || response?.optString("id") != id) return failed(if (code == 404) MoteI18n.text("中央节点可能需要升级，OCR 结果已保留") else MoteI18n.text("OCR 更新未确认（HTTP {0}）", code))
                     Diagnostics(applicationContext).add("uploadBytes", body.toString().toByteArray(Charsets.UTF_8).size.toLong())
                     queue.acknowledgeOcr(id, config.uploadedRetentionDays); pendingRecordId = null
-                    settings.syncStatus("uploading", "文字识别已更新至中央归档", uploaded = true)
+                    settings.syncStatus("uploading", MoteI18n.text("文字识别已更新至中央归档"), uploaded = true)
                     continue
                 }
                 val events = queue.peekBatch(remaining + 1)
@@ -134,10 +135,10 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
                 }
                 val receipts = if (individual) {
-                    if (response.first in setOf(200, 201) && response.second?.optString("id") != pendingRecordId) return failed("上传确认 ID 不匹配")
+                    if (response.first in setOf(200, 201) && response.second?.optString("id") != pendingRecordId) return failed(MoteI18n.text("上传确认 ID 不匹配"))
                     mapOf(pendingRecordId!! to response.first)
                 } else {
-                    if (response.first != 200) return failed("批量上传未确认（HTTP ${response.first}）", response.first !in setOf(400, 401, 403, 413))
+                    if (response.first != 200) return failed(MoteI18n.text("批量上传未确认（HTTP {0}）", response.first), response.first !in setOf(400, 401, 403, 413))
                     BatchUpload.receipts(sent.map { it.getString("id") }.toSet(), response.second)
                 }
                 var retry = false
@@ -151,7 +152,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                             queue.acknowledge(id, bytes, config.uploadedRetentionDays)
                             Diagnostics(applicationContext).add("uploadBytes", bytes)
                             SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
-                            settings.syncStatus("uploading", "已收到上传确认", uploaded = true)
+                            settings.syncStatus("uploading", MoteI18n.text("已收到上传确认"), uploaded = true)
                         }
                         409 -> queue.uploadConflict(id)
                         410 -> queue.archiveMissing(id)
@@ -160,7 +161,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 }
                 pendingRecordId = null
                 remaining -= sent.size - 1
-                if (retry) return failed("部分记录未确认", !permanent)
+                if (retry) return failed(MoteI18n.text("部分记录未确认"), !permanent)
 
             }
             stage = EventStage.HEARTBEAT
@@ -172,7 +173,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
         } catch (error: Exception) {
             SupportEvents.record(applicationContext, stage, EventJournal.failure(error, stage))
             if (error !is RecordedHeartbeatFailure) Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.failure(error, stage), recordId = pendingRecordId)
-            failed("同步失败，请检查连接")
+            failed(MoteI18n.text("同步失败，请检查连接"))
         }
     }
     private fun finishStatus() = SyncHealth.finish(applicationContext)
@@ -209,7 +210,7 @@ internal object SyncHeartbeat {
                     SyncSchedule.delay(context, config)?.takeIf { it > 0 }?.let { put("nextUploadAt", java.time.Instant.ofEpochMilli(System.currentTimeMillis() + it).toString()) } })
             .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (!config.screenCollectionEnabled) "media_session" else if (config.effectiveMode() == "projection") "media_projection" else "accessibility")) }
         if (status == "permission_required") body.put("error", if (!runtimeAlive && settings.enabled)
-            "采集服务未连接，请打开手机应用恢复权限" else settings.message())
+            MoteI18n.text("采集服务未连接，请打开手机应用恢复权限") else settings.message())
         else if (status == "error") body.put("error", settings.message())
         Diagnostics(context).add("heartbeatRequests")
         val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.token)

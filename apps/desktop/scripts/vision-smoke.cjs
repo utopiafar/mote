@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 const { app, nativeImage } = require('electron');
 const { resolve } = require('node:path');
 const assert = require('node:assert/strict');

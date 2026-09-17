@@ -89,11 +89,11 @@ object AppUpdateInstaller {
     }
     fun confirmation(context: Context, intent: Intent, sessionId: Int) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "应用更新", NotificationManager.IMPORTANCE_DEFAULT))
+        manager.createNotificationChannel(NotificationChannel(CHANNEL, MoteI18n.text("应用更新"), NotificationManager.IMPORTANCE_DEFAULT))
         val action = intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pending = PendingIntent.getActivity(context, sessionId, action, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         if (manager.areNotificationsEnabled()) manager.notify(NOTIFICATION, Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_mote)
-            .setContentTitle("Mote 更新需要系统确认").setContentText("点按继续安装；取消不会删除已有数据").setContentIntent(pending).setAutoCancel(true).build())
+            .setContentTitle(MoteI18n.text("Mote 更新需要系统确认")).setContentText(MoteI18n.text("点按继续安装；取消不会删除已有数据")).setContentIntent(pending).setAutoCancel(true).build())
         if (AppUpdatesActivity.foreground) runCatching { context.startActivity(action) }
     }
 }

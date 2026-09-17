@@ -58,6 +58,8 @@ export interface AgentOptions {
   model?: string;
   protocol?: ModelProtocol;
   provider?: string;
+  /** Server-owned launch configuration, never accepted from profile or query APIs. */
+  codex?: {executable?:string;home?:string};
   /** Custom request headers and JSON parameters are secrets, not diagnostics. */
   headers?: Record<string, string>;
   extraBody?: Record<string, unknown>;
@@ -70,6 +72,8 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Host-selected saved connection; never interpreted as prompt content. */
+  modelProfileId?: string;
   /** Host-only observation, never serialized into model prompts or tool arguments. */
   onProgress?: (event: AgentProgress) => void;
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;

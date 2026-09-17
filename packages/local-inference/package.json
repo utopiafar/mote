@@ -14,5 +14,8 @@
   },
   "devDependencies": {
     "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "@mote/shared": "0.1.0"
   }
 }

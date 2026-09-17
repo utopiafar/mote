@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 /** Provider-reported quantities. Optional buckets are unknown, never assumed zero. */
 export interface TokenUsage {
   requests: number;
@@ -96,9 +97,10 @@ const usageLabels: Record<'agent'|'module'|'skill', Record<string,string>> = {
   skill: {'personal-insight':'个人洞察','memory-extraction':'记忆提取','coding-memory':'编码经验提取','document-import':'文档导入'},
 };
 export function usageLabel(dimension:'agent'|'module'|'skill',id:string):string {
-  if(id===USAGE_UNKNOWN)return '历史未标记';
-  if(dimension==='skill'&&id===USAGE_NO_SKILL)return '未指定 Skill';
-  return usageLabels[dimension][id]??id;
+  if(id===USAGE_UNKNOWN)return moteText('历史未标记');
+  if(dimension==='skill'&&id===USAGE_NO_SKILL)return moteText('未指定 Skill');
+  const label=usageLabels[dimension][id];
+  return label ? moteText(label) : id;
 }
 export function usageIdentity(receipt:UsageReceipt) {
   return {

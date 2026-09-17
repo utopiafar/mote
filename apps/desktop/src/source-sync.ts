@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import { createHash } from 'node:crypto';
 import { sourceWork } from './background';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
@@ -16,7 +17,7 @@ export class SourceSync {
     try {
       const value = await sourceWork.run<State | undefined>({ kind: 'json-read', path: this.path });
       if (value === undefined) return;
-      if (value.version !== 1 || !value.known || !Array.isArray(value.pending) || value.pending.length > 4000) throw new Error('来源同步状态无法读取，请保留文件后修复');
+      if (value.version !== 1 || !value.known || !Array.isArray(value.pending) || value.pending.length > 4000) throw new Error(moteText("来源同步状态无法读取，请保留文件后修复"));
       this.data = value;
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   }
@@ -67,7 +68,7 @@ export class SourceSync {
         stage({ ...item, text: '', deleted: true, ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
       }
     }
-    if (next.pending.length > this.limits.maxEvents) throw new Error('来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试');
+    if (next.pending.length > this.limits.maxEvents) throw new Error(moteText("来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试"));
     if (scan.checkpoint) { next.checkpoint = scan.checkpoint; next.collectedItems = (next.collectedItems ?? 0) + changes; }
     await this.commit(next, this.limits.maxBytes); return changes;
   }
@@ -89,13 +90,13 @@ export class SourceSync {
   async flush(source: SourceDefinition, request: SourceRequest, signal?: AbortSignal): Promise<'ready' | 'paused'> {
     signal?.throwIfAborted();
     const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown };
-    if (!registered || registered.id !== source.id || typeof registered.enabled !== 'boolean') throw new Error('中央来源注册确认无效');
+    if (!registered || registered.id !== source.id || typeof registered.enabled !== 'boolean') throw new Error(moteText("中央来源注册确认无效"));
     if (!registered.enabled) return 'paused';
     while (this.data.pending.length) {
       signal?.throwIfAborted();
       const item = this.data.pending[0]!;
       const ack = await request(`/api/sources/${encodeURIComponent(source.id)}/items`, item, 'PUT', signal) as Record<string, unknown>;
-      if (!ack || ack.sourceId !== source.id || ack.externalId !== item.externalId || ack.revision !== item.revision || typeof ack.duplicate !== 'boolean' || typeof ack.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ack.id)) throw new Error('中央来源条目确认不匹配，已保留待重试版本');
+      if (!ack || ack.sourceId !== source.id || ack.externalId !== item.externalId || ack.revision !== item.revision || typeof ack.duplicate !== 'boolean' || typeof ack.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ack.id)) throw new Error(moteText("中央来源条目确认不匹配，已保留待重试版本"));
       await this.commit({ ...this.data, pending: this.data.pending.slice(1) });
     }
     await this.commit({ ...this.data, lastSyncAt: new Date().toISOString() }); return 'ready';

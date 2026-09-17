@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import {nativeCalendarActions} from './calendar-actions';
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
@@ -15,7 +16,7 @@ export function centralApiRequest(url: string, origin: string): boolean {
 export function centralPartition(origin: string): string { return 'persist:mote-central-' + createHash('sha256').update(validateServerUrl(origin)).digest('hex'); }
 export async function openCentralWindow(config: Config): Promise<BrowserWindow> {
   const origin = validateServerUrl(config.serverUrl);
-  if (!config.token) throw new Error('请先保存中央节点访问令牌');
+  if (!config.token) throw new Error(moteText("请先保存中央节点访问令牌"));
   const partition = centralPartition(origin), owner = Symbol(partition);
   guardOwners.set(partition, owner);
   const isolated = session.fromPartition(partition);
@@ -30,10 +31,10 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
   });
   const downloadListener = (_event: Electron.Event, item: Electron.DownloadItem) => {
     // Native save dialog remains available for the central export feature.
-    item.setSaveDialogOptions({ title: '保存中央仓库导出（包含个人资料）' });
+    item.setSaveDialogOptions({ title: moteText("保存中央仓库导出（包含个人资料）") });
   };
   isolated.on('will-download', downloadListener);
-  const central = new BrowserWindow({ width: 1280, height: 850, minWidth: 820, minHeight: 600, title: 'Mote · 中央仓库',
+  const central = new BrowserWindow({ width: 1280, height: 850, minWidth: 820, minHeight: 600, title: moteText("Mote · 中央仓库"),
     webPreferences: { session: isolated, preload: join(__dirname, 'central-preload.js'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, devTools: false } });
   const closeSession = (event: Electron.IpcMainEvent) => {
     if (!central.isDestroyed() && event.sender === central.webContents && event.senderFrame === central.webContents.mainFrame) central.close();
@@ -57,9 +58,9 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
         // Discard renderer-controlled query data. The private central page must not
         // send content or credentials out through an otherwise allowed feedback link.
         void shell.openExternal(githubFeedbackUrl({ version: app.getVersion(),
-          platform: `${process.platform === 'darwin' ? 'macOS' : process.platform} ${process.getSystemVersion()} · ${process.arch}（中央窗口宿主客户端）`,
-          environment: '桌面内嵌中央界面',
-        })).catch(() => { if (!central.isDestroyed()) void dialog.showMessageBox(central, { type: 'error', message: '无法打开 GitHub，请检查默认浏览器后重试。' }); });
+          platform: moteText("{0} {1} · {2}（中央窗口宿主客户端）", process.platform === 'darwin' ? 'macOS' : process.platform, process.getSystemVersion(), process.arch),
+          environment: moteText("桌面内嵌中央界面"),
+        })).catch(() => { if (!central.isDestroyed()) void dialog.showMessageBox(central, { type: 'error', message: moteText("无法打开 GitHub，请检查默认浏览器后重试。") }); });
       }
     } catch { /* All other external targets remain blocked. */ }
     return { action: 'deny' };
@@ -81,6 +82,6 @@ export async function openCentralWindow(config: Config): Promise<BrowserWindow> 
     });
     guardOwners.delete(partition);
   });
-  try { await central.loadURL(origin); } catch { central.close(); throw new Error('中央界面加载失败，请确认中央节点正在运行且提供前端页面'); }
+  try { await central.loadURL(origin); } catch { central.close(); throw new Error(moteText("中央界面加载失败，请确认中央节点正在运行且提供前端页面")); }
   return central;
 }

@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 // Isolated Electron networking fixture; never loads Mote main, user profiles or Keychain.
 // Optional --public-version=0.6.0 additionally verifies/downloads that existing public release.
 const { app, net, session } = require('electron');

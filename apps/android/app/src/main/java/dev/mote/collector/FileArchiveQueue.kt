@@ -73,7 +73,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     fun signature(item: JSONObject) = SourceRules.hash(SourceRules.canonical(JSONObject(item.toString()).apply { remove("observedAt"); remove("revision") }))
     fun observe(source: LocalSource, item: JSONObject, generation: String, now: Long = System.currentTimeMillis()) = synchronized(lock) {
         val path = itemFile(source.id, item.getString("externalId")); val row = read(path)
-        if (!path.exists()) check((root(source.id).listFiles()?.count { it.name.startsWith("item-") } ?: 0) < 50000) { "文件清单达到 50000 项上限，请缩小目录" }
+        if (!path.exists()) check((root(source.id).listFiles()?.count { it.name.startsWith("item-") } ?: 0) < 50000) { MoteI18n.text("文件清单达到 50000 项上限，请缩小目录") }
         if (row.optJSONObject("candidate")?.let { signature(it) } != signature(item)) row.put("stableSince", now)
         row.put("candidate", item).put("seen", generation)
         if (source.initialSync == "new_only" && !state(source.id).optBoolean("initialized")) row.put("baseline", true)
@@ -97,7 +97,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             val row = read(File(root(id), "item-${marker.name.removePrefix("todo-")}.enc"))
             val item = row.optJSONObject("candidate") ?: JSONObject()
             JSONObject().put("name", item.optString("title", item.optString("externalId")))
-                .put("size", item.optLong("size")).put("status", if (row.has("pending")) "等待上传 / 续传" else "等待准备")
+                .put("size", item.optLong("size")).put("status", if (row.has("pending")) MoteI18n.text("等待上传 / 续传") else MoteI18n.text("等待准备"))
         }
         JSONObject().put("total", all.size).put("items", JSONArray(items))
     }
@@ -127,21 +127,21 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         var hash: String? = null
         try {
             if (source.retention == "archive" && !item.optBoolean("deleted")) {
-                check(unchanged(candidate)) { "文件正在变化，稍后重新扫描" }
+                check(unchanged(candidate)) { MoteI18n.text("文件正在变化，稍后重新扫描") }
                 val digest = MessageDigest.getInstance("SHA-256"); size = 0; var part = 0
                 open(candidate).use { input ->
                     while (true) {
                         val buffer = ByteArray(PART_BYTES); var length = 0
                         while (length < buffer.size) { val n = input.read(buffer, length, buffer.size - length); if (n < 0) break; if (n == 0) continue; length += n }
                         if (length == 0) break
-                        size += length; check(size <= MAX_BYTES) { "文件超过 512 MiB" }
+                        size += length; check(size <= MAX_BYTES) { MoteI18n.text("文件超过 512 MiB") }
                         val used = directory.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-                        check(used + length + 64 < 1024L * 1024 * 1024) { "文件暂存达到 1 GiB 上限" }
+                        check(used + length + 64 < 1024L * 1024 * 1024) { MoteI18n.text("文件暂存达到 1 GiB 上限") }
                         val bytes = buffer.copyOf(length); digest.update(bytes)
                         FileOutputStream(File(spool, part.toString())).use { it.write(cipher.seal(bytes)); it.fd.sync() }; part++
                     }
                 }
-                check(unchanged(candidate)) { "复制期间文件已变化，保留原文件并稍后重试" }
+                check(unchanged(candidate)) { MoteI18n.text("复制期间文件已变化，保留原文件并稍后重试") }
                 hash = digest.digest().joinToString("") { "%02x".format(it) }
             }
             val manifest = JSONObject().put("sourceId", source.id).put("previousRevision", row.optString("revision").takeIf { it.isNotBlank() } ?: JSONObject.NULL)
@@ -155,8 +155,8 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     fun part(id: String, part: Int): ByteArray = synchronized(lock) { require(part >= 0); cipher.open(File(File(root(id), "spool"), part.toString()).readBytes()) }
     fun acknowledge(id: String, row: JSONObject, ack: JSONObject) = synchronized(lock) {
         val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
-        check(SourceRules.validAck(id, item, ack)) { "中央归档确认不匹配" }
-        if (manifest.has("sha256")) check(ack.optString("sha256") == manifest.getString("sha256") && ack.optLong("sizeBytes", -1) == manifest.getLong("sizeBytes")) { "中央原件校验确认不匹配" }
+        check(SourceRules.validAck(id, item, ack)) { MoteI18n.text("中央归档确认不匹配") }
+        if (manifest.has("sha256")) check(ack.optString("sha256") == manifest.getString("sha256") && ack.optLong("sizeBytes", -1) == manifest.getLong("sizeBytes")) { MoteI18n.text("中央原件校验确认不匹配") }
         val current = read(itemFile(id, item.getString("externalId")))
         check(current.optJSONObject("pending")?.getJSONObject("manifest")?.getJSONObject("item")?.getString("revision") == item.getString("revision"))
         current.put("signature", pending.getString("signature")).put("revision", item.getString("revision")).remove("pending")

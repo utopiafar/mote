@@ -37,16 +37,16 @@ object QueueArchive {
             ZipInputStream(input).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
-                    require(seen.size < 200_001 && seen.add(entry.name) && !entry.isDirectory) { "备份包含重复或过多条目" }
+                    require(seen.size < 200_001 && seen.add(entry.name) && !entry.isDirectory) { MoteI18n.text("备份包含重复或过多条目") }
                     val name = entry.name
-                    val cap = when { name == "archive.json" -> 16 * 1024; record.matches(name) -> 1024 * 1024; image.matches(name) -> 16 * 1024 * 1024; else -> error("备份条目无效") }
+                    val cap = when { name == "archive.json" -> 16 * 1024; record.matches(name) -> 1024 * 1024; image.matches(name) -> 16 * 1024 * 1024; else -> error(MoteI18n.text("备份条目无效")) }
                     val out = ByteArrayOutputStream(); val buffer = ByteArray(8192)
-                    while (true) { val n = zip.read(buffer); if (n < 0) break; total += n; require(total <= maxBytes && out.size() + n <= cap) { "备份超过本机空间上限" }; out.write(buffer, 0, n) }
+                    while (true) { val n = zip.read(buffer); if (n < 0) break; total += n; require(total <= maxBytes && out.size() + n <= cap) { MoteI18n.text("备份超过本机空间上限") }; out.write(buffer, 0, n) }
                     val bytes = out.toByteArray()
                     when {
                         name == "archive.json" -> {
                             val manifest = JSONObject(String(bytes, Charsets.UTF_8))
-                            require(manifest.getString("format") == "mote-android-records" && manifest.get("version") == 1) { "备份版本不支持" }
+                            require(manifest.getString("format") == "mote-android-records" && manifest.get("version") == 1) { MoteI18n.text("备份版本不支持") }
                             origin = manifest.getString("origin")
                         }
                         record.matches(name) -> {
@@ -59,13 +59,13 @@ object QueueArchive {
                         else -> {
                             val hash = name.removePrefix("images/").removeSuffix(".blob")
                             val actual = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-                            require(hash == actual) { "备份图片校验失败" }; File(directory, "$hash.blob").writeBytes(bytes)
+                            require(hash == actual) { MoteI18n.text("备份图片校验失败") }; File(directory, "$hash.blob").writeBytes(bytes)
                         }
                     }
                     zip.closeEntry()
                 }
             }
-            require(origin != null) { "缺少备份清单" }
+            require(origin != null) { MoteI18n.text("缺少备份清单") }
             val staged = DurableQueue(directory, plain)
             // Validate the same invariants as fresh captures, including image identities and privacy.
             val validatedDir = File(directory, "validated"); val validated = DurableQueue(validatedDir, plain)
@@ -90,15 +90,15 @@ object QueueArchive {
     private fun wire(event: JSONObject) = JSONObject(event.toString()).apply { keys().asSequence().filter { it.startsWith("_") }.toList().forEach(::remove) }
     /** Same IDs merge idempotently; a conflicting existing record is rejected before any writes. */
     fun restore(prepared: Prepared, target: DurableQueue, origin: String, maxBytes: Long): Int = DurableQueue.exclusive {
-        require(prepared.origin == origin) { "备份属于不同中央节点；请连接原节点后导入" }
+        require(prepared.origin == origin) { MoteI18n.text("备份属于不同中央节点；请连接原节点后导入") }
         val source = prepared.queue()
         val ids = source.dedupeIds()
         for (id in ids) {
             val existing = target.archiveRecord(id) ?: continue
             val incoming = requireNotNull(source.archiveRecord(id))
-            require(SourceRules.canonical(wire(existing.first)) == SourceRules.canonical(wire(incoming.first)) && existing.second.contentEquals(incoming.second)) { "备份中存在同 ID 内容冲突，未导入" }
+            require(SourceRules.canonical(wire(existing.first)) == SourceRules.canonical(wire(incoming.first)) && existing.second.contentEquals(incoming.second)) { MoteI18n.text("备份中存在同 ID 内容冲突，未导入") }
             val oldOcr = existing.first.optJSONObject("_ocrResult"); val newOcr = incoming.first.optJSONObject("_ocrResult")
-            require(oldOcr == null || newOcr == null || oldOcr.getString("ocrText") == newOcr.getString("ocrText") && oldOcr.getString("status") == newOcr.getString("status")) { "备份 OCR 与本机内容冲突，未导入" }
+            require(oldOcr == null || newOcr == null || oldOcr.getString("ocrText") == newOcr.getString("ocrText") && oldOcr.getString("status") == newOcr.getString("status")) { MoteI18n.text("备份 OCR 与本机内容冲突，未导入") }
         }
         var count = 0
         for (id in ids) {

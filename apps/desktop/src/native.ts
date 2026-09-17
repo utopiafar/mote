@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import { spawn } from 'node:child_process';
 import { UNKNOWN_FOREGROUND } from './app-collection';
 
@@ -14,11 +15,11 @@ export function runHelper(path: string, command: 'screen-permission' | 'active' 
       else chunks.push(data);
     });
     child.stderr.resume();
-    child.on('error', () => { clearTimeout(timeout); reject(new Error('本地 macOS 助手不可用')); });
+    child.on('error', () => { clearTimeout(timeout); reject(new Error(moteText("本地 macOS 助手不可用"))); });
     child.on('close', code => {
       clearTimeout(timeout);
-      if (code !== 0 || length > 1024 * 1024) { reject(new Error('本地 macOS 助手执行失败，本次采集已跳过')); return; }
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new Error('本地 macOS 助手返回值无效')); }
+      if (code !== 0 || length > 1024 * 1024) { reject(new Error(moteText("本地 macOS 助手执行失败，本次采集已跳过"))); return; }
+      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new Error(moteText("本地 macOS 助手返回值无效"))); }
     });
     child.stdin.on('error', () => undefined);
     child.stdin.end(input);
@@ -26,7 +27,7 @@ export function runHelper(path: string, command: 'screen-permission' | 'active' 
 }
 export async function readInstalledApplications(path: string): Promise<{ appId: string; appName: string }[]> {
   const value = await runHelper(path, 'installed-apps') as { applications?: unknown };
-  if (!Array.isArray(value?.applications) || value.applications.length > 2048) throw new Error('无法读取应用列表');
+  if (!Array.isArray(value?.applications) || value.applications.length > 2048) throw new Error(moteText("无法读取应用列表"));
   const applications = new Map<string, { appId: string; appName: string }>();
   for (const item of value.applications) {
     if (!item || typeof item.appId !== 'string' || !item.appId || item.appId.length > 256 || typeof item.appName !== 'string' || !item.appName || item.appName.length > 512) continue;
@@ -36,12 +37,12 @@ export async function readInstalledApplications(path: string): Promise<{ appId: 
 }
 export async function activeApplication(path: string, signal?: AbortSignal): Promise<ActiveApplication> {
   const value = await runHelper(path, 'active', undefined, signal) as ActiveApplication;
-  if (!value || typeof value.appId !== 'string' || !value.appId || value.appId.length > 256 || typeof value.appName !== 'string' || !value.appName || value.appName.length > 512 || !Number.isInteger(value.pid) || !Array.isArray(value.visibleAppIds) || value.visibleAppIds.some(id => typeof id !== 'string' || !id) || typeof value.unknownVisibleWindows !== 'boolean') throw new Error('无法确认屏幕应用身份，本次采集已跳过');
+  if (!value || typeof value.appId !== 'string' || !value.appId || value.appId.length > 256 || typeof value.appName !== 'string' || !value.appName || value.appName.length > 512 || !Number.isInteger(value.pid) || !Array.isArray(value.visibleAppIds) || value.visibleAppIds.some(id => typeof id !== 'string' || !id) || typeof value.unknownVisibleWindows !== 'boolean') throw new Error(moteText("无法确认屏幕应用身份，本次采集已跳过"));
   return value;
 }
 export async function recognizeText(path: string, image: Buffer, signal?: AbortSignal): Promise<string> {
   const value = await runHelper(path, 'ocr', image, signal) as { text: string };
-  if (!value || typeof value.text !== 'string' || value.text.length > 100000) throw new Error('本地 OCR 返回值无效');
+  if (!value || typeof value.text !== 'string' || value.text.length > 100000) throw new Error(moteText("本地 OCR 返回值无效"));
   return value.text;
 }
 
@@ -57,18 +58,18 @@ export async function readPowerState(path: string, signal?: AbortSignal): Promis
 }
 
 export async function recognizeInvitationQr(path: string, image: Buffer): Promise<string> {
-  if (image.length > 8 * 1024 * 1024) throw new Error('二维码图片不能超过 8 MiB');
+  if (image.length > 8 * 1024 * 1024) throw new Error(moteText("二维码图片不能超过 8 MiB"));
   try {
     const value = await runHelper(path, 'qr', image) as { payloads?: unknown };
     if (!Array.isArray(value?.payloads) || value.payloads.length !== 1 || typeof value.payloads[0] !== 'string' || Buffer.byteLength(value.payloads[0]) > 8192) throw new Error();
     return value.payloads[0];
-  } catch { throw new Error('未找到唯一有效二维码，请选择清晰的单个连接二维码，或导入 JSON'); }
+  } catch { throw new Error(moteText("未找到唯一有效二维码，请选择清晰的单个连接二维码，或导入 JSON")); }
 }
 
 export type ForegroundApplication = Pick<ActiveApplication, 'appId' | 'appName' | 'pid'>;
 export async function foregroundApplication(path: string, signal?: AbortSignal): Promise<ForegroundApplication> {
   const value = await runHelper(path, 'activity', undefined, signal) as ForegroundApplication;
-  if (!value || typeof value.appId !== 'string' || !value.appId || value.appId.length > 256 || typeof value.appName !== 'string' || !value.appName || value.appName.length > 200 || !Number.isInteger(value.pid) || (value.pid <= 0 && !(value.pid === 0 && value.appId === UNKNOWN_FOREGROUND))) throw new Error('无法确认前台应用身份，本次记录已跳过');
+  if (!value || typeof value.appId !== 'string' || !value.appId || value.appId.length > 256 || typeof value.appName !== 'string' || !value.appName || value.appName.length > 200 || !Number.isInteger(value.pid) || (value.pid <= 0 && !(value.pid === 0 && value.appId === UNKNOWN_FOREGROUND))) throw new Error(moteText("无法确认前台应用身份，本次记录已跳过"));
   return { appId: value.appId, appName: value.appName, pid: value.pid };
 }
 export async function readDeviceMetadata(path: string, signal?: AbortSignal): Promise<{ device?: import('@mote/shared').RecordMetadata['device']; state?: import('@mote/shared').RecordMetadata['state'] }> {

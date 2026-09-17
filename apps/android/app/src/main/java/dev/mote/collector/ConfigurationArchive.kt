@@ -55,15 +55,15 @@ object ConfigurationArchive {
         return JSONObject().put("format", "mote-android-settings").put("version", 1).put("settings", settings).toString(2)
     }
     fun decode(raw: String, current: CollectorConfig): CollectorConfig {
-        require(raw.toByteArray().size <= MAX_BYTES) { "配置文件过大" }
+        require(raw.toByteArray().size <= MAX_BYTES) { MoteI18n.text("配置文件过大") }
         StrictJson.validate(raw)
         val root = JSONObject(raw)
-        require(root.getString("format") == "mote-android-settings" && root.get("version") == 1) { "不支持的配置格式或版本" }
+        require(root.getString("format") == "mote-android-settings" && root.get("version") == 1) { MoteI18n.text("不支持的配置格式或版本") }
         val values = root.getJSONObject("settings")
-        require(values.keys().asSequence().all { it in keys }) { "配置包含未知字段" }
+        require(values.keys().asSequence().all { it in keys }) { MoteI18n.text("配置包含未知字段") }
         val n = values.optJSONObject("nsfw") ?: JSONObject()
         require(!values.has("nsfw") || values.get("nsfw") is JSONObject)
-        require(n.keys().asSequence().all { it in nsfwKeys }) { "模型配置包含未知字段" }
+        require(n.keys().asSequence().all { it in nsfwKeys }) { MoteI18n.text("模型配置包含未知字段") }
         val nextServer = string(values, "server", current.server)
         return current.copy(
             server = nextServer,
@@ -113,11 +113,11 @@ object ConfigurationArchive {
             )
         ).also { it.validate() }
     }
-    private fun string(j: JSONObject, key: String, fallback: String): String = if (!j.has(key)) fallback else j.get(key) as? String ?: error("$key 必须为文本")
-    private fun boolean(j: JSONObject, key: String, fallback: Boolean): Boolean = if (!j.has(key)) fallback else j.get(key) as? Boolean ?: error("$key 必须为布尔值")
+    private fun string(j: JSONObject, key: String, fallback: String): String = if (!j.has(key)) fallback else j.get(key) as? String ?: error(MoteI18n.text("{0} 必须为文本", key))
+    private fun boolean(j: JSONObject, key: String, fallback: Boolean): Boolean = if (!j.has(key)) fallback else j.get(key) as? Boolean ?: error(MoteI18n.text("{0} 必须为布尔值", key))
     private fun long(j: JSONObject, key: String, fallback: Long): Long {
         if (!j.has(key)) return fallback
-        val n = j.get(key); require(n is Int || n is Long) { "$key 必须为整数" }; return (n as Number).toLong()
+        val n = j.get(key); require(n is Int || n is Long) { MoteI18n.text("{0} 必须为整数", key) }; return (n as Number).toLong()
     }
     private fun int(j: JSONObject, key: String, fallback: Int): Int {
         val n = long(j, key, fallback.toLong()); require(n in Int.MIN_VALUE..Int.MAX_VALUE); return n.toInt()

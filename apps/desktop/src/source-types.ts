@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 export type SourceRetention = 'snapshot' | 'reference';
 export interface SourceDefinition {
   initialSync?: 'all' | 'new_only';
@@ -37,21 +38,21 @@ export const DEFAULT_SOURCE_OPTIONS: SourceOptions = {
   extensions: ['.md', '.txt', '.json', '.csv', '.ics'], excludedPaths: [], redactLiterals: [],
 };
 export function normalizeSourceOptions(input: unknown): SourceOptions {
-  if (!input || typeof input !== 'object') throw new Error('来源配置无效');
+  if (!input || typeof input !== 'object') throw new Error(moteText("来源配置无效"));
   const v = input as SourceOptions;
-  if(v.initialSync!==undefined&&!['all','new_only'].includes(v.initialSync))throw new Error('首次同步范围无效');
-  if (!['snapshot', 'reference'].includes(v.retention) || !Number.isInteger(v.intervalSeconds) || v.intervalSeconds < 30 || v.intervalSeconds > 3600 || typeof v.trackDeletions !== 'boolean') throw new Error('来源同步间隔为 30–3600 秒，保留方式为快照或引用');
+  if(v.initialSync!==undefined&&!['all','new_only'].includes(v.initialSync))throw new Error(moteText("首次同步范围无效"));
+  if (!['snapshot', 'reference'].includes(v.retention) || !Number.isInteger(v.intervalSeconds) || v.intervalSeconds < 30 || v.intervalSeconds > 3600 || typeof v.trackDeletions !== 'boolean') throw new Error(moteText("来源同步间隔为 30–3600 秒，保留方式为快照或引用"));
   const list = (value: unknown, max: number) => {
-    if (!Array.isArray(value) || value.length > 100 || value.some(x => typeof x !== 'string' || x.length === 0 || x.length > max || /[\x00-\x1f]/.test(x))) throw new Error('来源过滤列表无效（最多 100 项）');
+    if (!Array.isArray(value) || value.length > 100 || value.some(x => typeof x !== 'string' || x.length === 0 || x.length > max || /[\x00-\x1f]/.test(x))) throw new Error(moteText("来源过滤列表无效（最多 100 项）"));
     return [...new Set(value)] as string[];
   };
   const extensions = list(v.extensions, 20).map(s => s.toLowerCase());
-  if (!extensions.length || extensions.some(x => !/^\.[a-z0-9]+$/.test(x))) throw new Error('请填写扩展名，例如 .md,.txt');
+  if (!extensions.length || extensions.some(x => !/^\.[a-z0-9]+$/.test(x))) throw new Error(moteText("请填写扩展名，例如 .md,.txt"));
   const excludedPaths = list(v.excludedPaths, 1000).map(s => s.replace(/\\/g, '/').replace(/\/$/, ''));
-  if (excludedPaths.some(p => p.startsWith('/') || p.split('/').some(x => !x || x === '.' || x === '..'))) throw new Error('排除路径必须是所选目录内的相对路径');
+  if (excludedPaths.some(p => p.startsWith('/') || p.split('/').some(x => !x || x === '.' || x === '..'))) throw new Error(moteText("排除路径必须是所选目录内的相对路径"));
   return { initialSync:v.initialSync??'all', retention: v.retention, intervalSeconds: v.intervalSeconds, trackDeletions: v.trackDeletions, extensions, excludedPaths, redactLiterals: list(v.redactLiterals, 1000) };
 }
 export function redactSourceText(text: string, literals: string[]): string {
-  for (const literal of [...literals].sort((a, b) => b.length - a.length)) text = text.split(literal).join('[已遮盖]');
+  for (const literal of [...literals].sort((a, b) => b.length - a.length)) text = text.split(literal).join(moteText("[已遮盖]"));
   return text;
 }

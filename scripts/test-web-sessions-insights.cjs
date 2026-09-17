@@ -1,3 +1,4 @@
+require('./fixture-language.cjs');
 /** Real browser + real API + generated captures and model responses. No personal archive. */
 const {app,BrowserWindow}=require('electron');
 const {mkdtempSync,mkdirSync,writeFileSync,rmSync}=require('node:fs');

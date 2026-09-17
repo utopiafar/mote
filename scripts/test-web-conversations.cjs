@@ -1,3 +1,4 @@
+require('./fixture-language.cjs');
 /** Real renderer + durable central SQLite; all messages and model answers are generated fixtures. */
 const {app, BrowserWindow} = require('electron');
 const {mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync} = require('node:fs');

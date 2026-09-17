@@ -1,3 +1,4 @@
+import { moteText, getLocale } from '@mote/shared/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Check, CloudUpload, FileText, LoaderCircle, RefreshCw, Smile, Trash2, WifiOff } from 'lucide-react';
 import { ApiError, dateTime, errorMessage, type Api, type Capture } from './api';
@@ -52,7 +53,7 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
       }
       if (mounted.current) {
         setQueued(outbox.items());
-        if (saved) { setNotice('随手记已同步到你的中央节点。'); onSaved(); void load(); }
+        if (saved) { setNotice(moteText("随手记已同步到你的中央节点。")); onSaved(); void load(); }
       }
     } catch (e) { if (mounted.current) setError(errorMessage(e)); }
     finally { syncingRef.current = false; if (mounted.current) setSyncing(false); }
@@ -75,44 +76,44 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
   function edit(next: NoteDraft) {
     setDraft(next); setError(''); setNotice('');
     try { outbox.saveDraft(next); setDraftSaved(true); }
-    catch { setDraftSaved(false); setError('本机存储不可用或已满；草稿目前只在此窗口，请先复制保存。'); }
+    catch { setDraftSaved(false); setError(moteText("本机存储不可用或已满；草稿目前只在此窗口，请先复制保存。")); }
   }
   function save(event: FormEvent) {
     event.preventDefault(); setError('');
     try {
       let deviceId = localStorage.getItem('mote.notes.device.v1');
       if (!deviceId) { deviceId = `web:${crypto.randomUUID()}`; localStorage.setItem('mote.notes.device.v1', deviceId); }
-      const note = outbox.prepareSubmission(draft, { id: crypto.randomUUID(), deviceId, deviceName: 'Mote 随手记', platform: 'import', capturedAt: new Date().toISOString() });
+      const note = outbox.prepareSubmission(draft, { id: crypto.randomUUID(), deviceId, deviceName: moteText("Mote 随手记"), platform: 'import', capturedAt: new Date().toISOString() });
       outbox.enqueue(note);
       setQueued(outbox.items());
       outbox.completeSubmission(note.id);
       const remainingDraft = outbox.draft();
       setDraft(remainingDraft); setDraftSaved(Boolean(remainingDraft.text));
-      setNotice('已保存到本机待同步队列，联网后会继续同步。'); void sync();
+      setNotice(moteText("已保存到本机待同步队列，联网后会继续同步。")); void sync();
     } catch (e) { setError(errorMessage(e)); }
   }
   function discard(id: string) {
-    if (!window.confirm('移除这条本机待同步副本？若中央节点已收到但确认丢失，需要在下方历史记录中另行删除。')) return;
+    if (!window.confirm(moteText("移除这条本机待同步副本？若中央节点已收到但确认丢失，需要在下方历史记录中另行删除。"))) return;
     try { outbox.discard(id); setQueued(outbox.items()); } catch (e) { setError(errorMessage(e)); }
   }
   return <>
-    <div className="page-heading"><div className="eyebrow">A LITTLE ROOM FOR YOUR THOUGHTS</div><h1>想到什么，就记下来。</h1><p>心情、杂事、一个还没成形的想法，都可以成为上下文。</p></div>
+    <div className="page-heading"><div className="eyebrow">A LITTLE ROOM FOR YOUR THOUGHTS</div><h1>{moteText("想到什么，就记下来。")}</h1><p>{moteText("心情、杂事、一个还没成形的想法，都可以成为上下文。")}</p></div>
     <form className="panel note-composer" onSubmit={save}>
-      <label htmlFor="note-text">此刻想留下什么？</label>
-      <textarea id="note-text" value={draft.text} onChange={e => edit({ ...draft, text: e.target.value })} maxLength={100000} rows={6} placeholder="记下此刻的想法…" onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && draft.text.trim()) save(e); }} />
-      <div className="note-mood"><Smile size={17} /><label htmlFor="note-mood">我的心情 <span>可选，由你自己描述</span></label><input id="note-mood" value={draft.mood} onChange={e => edit({ ...draft, mood: e.target.value })} maxLength={80} placeholder="比如：松了一口气" /></div>
-      <div className="note-composer-actions"><span>{draftSaved && <><Check size={14} /> 草稿已保存在本机 · </>} {draft.text.length.toLocaleString()} 字</span><button className="button primary" disabled={!draft.text.trim()}><CloudUpload size={16} />保存并同步</button></div>
-      <p className="note-storage-hint">草稿和待同步内容保存在此应用的本机存储中，清除应用数据会移除它们。打开随手记时自动续传；按中央节点地址分别保存。</p>
+      <label htmlFor="note-text">{moteText("此刻想留下什么？")}</label>
+      <textarea id="note-text" value={draft.text} onChange={e => edit({ ...draft, text: e.target.value })} maxLength={100000} rows={6} placeholder={moteText("记下此刻的想法…")} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && draft.text.trim()) save(e); }} />
+      <div className="note-mood"><Smile size={17} /><label htmlFor="note-mood">{moteText("我的心情")}{' '}<span>{moteText("可选，由你自己描述")}</span></label><input id="note-mood" value={draft.mood} onChange={e => edit({ ...draft, mood: e.target.value })} maxLength={80} placeholder={moteText("比如：松了一口气")} /></div>
+      <div className="note-composer-actions"><span>{draftSaved && <><Check size={14} /> {' '}{moteText("草稿已保存在本机 ·")}{' '}</>} {draft.text.length.toLocaleString(getLocale())}{' '}{moteText("字")}</span><button className="button primary" disabled={!draft.text.trim()}><CloudUpload size={16} />{moteText("保存并同步")}</button></div>
+      <p className="note-storage-hint">{moteText("草稿和待同步内容保存在此应用的本机存储中，清除应用数据会移除它们。打开随手记时自动续传；按中央节点地址分别保存。")}</p>
     </form>
     {error && <div className="notice error" role="alert">{error}</div>}
     {notice && <div className="notice" role="status"><Check size={16} />{notice}</div>}
-    {queued.length > 0 && <section className="panel note-pending"><div className="section-heading"><div><span className="eyebrow">SAVED ON THIS DEVICE</span><h2>待同步 · {queued.length} 条</h2></div><button className="button subtle" disabled={syncing} onClick={() => void sync(true)}><RefreshCw size={14} className={syncing ? 'spin' : ''} />{syncing ? '正在同步' : '重试同步'}</button></div>{queued.map(item => <article className="pending-note" key={item.note.id}><div><time>{dateTime(item.note.capturedAt)}</time>{item.note.mood && <span className="badge muted">我标注的心情 · {item.note.mood}</span>}<p>{item.note.text}</p><small><WifiOff size={13} />{item.error || '本机已保存，等待中央节点确认。'}</small></div><button className="icon-button" aria-label="移除本机待同步副本" onClick={() => discard(item.note.id)} disabled={syncing}><Trash2 size={15} /></button></article>)}</section>}
-    <section className="notes-history"><div className="section-heading"><div><span className="eyebrow">YOUR OWN WORDS</span><h2>已经留下的心绪与杂事</h2></div><button className="text-button" onClick={() => void load()} disabled={loading}><RefreshCw size={14} />刷新</button></div>
-      {listError && <div className="notice error" role="alert">{listError} · 本机草稿仍可继续保存。</div>}
-      {!records.length && !loading && !listError && <div className="panel empty"><FileText size={26} /><h3>给今天留一小段文字</h3><p>保存后，原文会出现在这里，也可作为问答的证据。</p></div>}
-      <div className="notes-grid">{records.map(record => <button className="panel note-card" key={record.id} onClick={() => onOpen(record.id)}><time>{dateTime(record.capturedAt)}</time>{record.mood && <span className="note-mood-tag"><Smile size={14} />我标注的心情 · {record.mood}</span>}<p>{record.ocrText}</p><footer>{record.deviceName}<span>查看原文 →</span></footer></button>)}</div>
-      {loading && <div className="load-more"><LoaderCircle size={17} className="spin" />正在读取随手记…</div>}
-      {cursor && !loading && <div className="load-more"><button className="button subtle" onClick={() => void load(cursor)}>加载更早的随手记</button></div>}
+    {queued.length > 0 && <section className="panel note-pending"><div className="section-heading"><div><span className="eyebrow">SAVED ON THIS DEVICE</span><h2>{moteText("待同步 ·")}{' '}{queued.length}{' '}{moteText("条")}</h2></div><button className="button subtle" disabled={syncing} onClick={() => void sync(true)}><RefreshCw size={14} className={syncing ? 'spin' : ''} />{syncing ? moteText("正在同步") : moteText("重试同步")}</button></div>{queued.map(item => <article className="pending-note" key={item.note.id}><div><time>{dateTime(item.note.capturedAt)}</time>{item.note.mood && <span className="badge muted">{moteText("我标注的心情 ·")}{' '}{item.note.mood}</span>}<p>{item.note.text}</p><small><WifiOff size={13} />{item.error || moteText("本机已保存，等待中央节点确认。")}</small></div><button className="icon-button" aria-label={moteText("移除本机待同步副本")} onClick={() => discard(item.note.id)} disabled={syncing}><Trash2 size={15} /></button></article>)}</section>}
+    <section className="notes-history"><div className="section-heading"><div><span className="eyebrow">YOUR OWN WORDS</span><h2>{moteText("已经留下的心绪与杂事")}</h2></div><button className="text-button" onClick={() => void load()} disabled={loading}><RefreshCw size={14} />{moteText("刷新")}</button></div>
+      {listError && <div className="notice error" role="alert">{listError}{' '}{moteText("· 本机草稿仍可继续保存。")}</div>}
+      {!records.length && !loading && !listError && <div className="panel empty"><FileText size={26} /><h3>{moteText("给今天留一小段文字")}</h3><p>{moteText("保存后，原文会出现在这里，也可作为问答的证据。")}</p></div>}
+      <div className="notes-grid">{records.map(record => <button className="panel note-card" key={record.id} onClick={() => onOpen(record.id)}><time>{dateTime(record.capturedAt)}</time>{record.mood && <span className="note-mood-tag"><Smile size={14} />{moteText("我标注的心情 ·")}{' '}{record.mood}</span>}<p>{record.ocrText}</p><footer>{record.deviceName}<span>{moteText("查看原文 →")}</span></footer></button>)}</div>
+      {loading && <div className="load-more"><LoaderCircle size={17} className="spin" />{moteText("正在读取随手记…")}</div>}
+      {cursor && !loading && <div className="load-more"><button className="button subtle" onClick={() => void load(cursor)}>{moteText("加载更早的随手记")}</button></div>}
     </section>
   </>;
 }

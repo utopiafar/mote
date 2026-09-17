@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import type {ServerConfiguration} from '@mote/shared';
 export type DraftValues = Record<string, string>;
 export function effectiveValues(config: ServerConfiguration): DraftValues {
@@ -6,10 +7,10 @@ export function effectiveValues(config: ServerConfiguration): DraftValues {
 /** A config fragment, never a shell script. Literal newlines are rejected to prevent extra variables. */
 export function environmentFragment(changes: DraftValues): string {
   const rows = Object.entries(changes).map(([key, value]) => {
-    if (!/^MOTE_[A-Z0-9_]+$/.test(key) || /[\r\n\0]/.test(value)) throw new Error('配置值不能包含换行或控制字符。');
+    if (!/^MOTE_[A-Z0-9_]+$/.test(key) || /[\r\n\0]/.test(value)) throw new Error(moteText("配置值不能包含换行或控制字符。"));
     if (!value.includes("'")) return `${key}='${value}'`;
     if (!value.includes('"')) return `${key}="${value}"`;
-    throw new Error('配置值不能同时包含两种引号，请在部署机器中手动设置该项。');
+    throw new Error(moteText("配置值不能同时包含两种引号，请在部署机器中手动设置该项。"));
   });
   return '# Mote configuration changes — merge into the existing deployment .env file.\n# Restart that node to apply. Do not replace the entire existing file.\n' + rows.join('\n') + '\n';
 }

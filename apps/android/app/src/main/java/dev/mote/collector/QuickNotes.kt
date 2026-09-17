@@ -12,8 +12,8 @@ object QuickNotes {
     fun save(context: Context, text: String, mood: String): String = save(context, text, mood) { config -> UploadWorker.schedule(context, config) }
     internal fun save(context: Context, text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String = ConnectionGuard.sync { saveCurrent(context, text, mood, scheduleUpload) } ?: throw ConnectionFailure("busy")
     private fun saveCurrent(context: Context, text: String, mood: String, scheduleUpload: (CollectorConfig) -> Unit): String {
-        require(text.isNotBlank() && text.length <= 100_000) { "随手记须为 1..100000 字符" }
-        require(mood.length <= 80) { "心情最多 80 字符" }
+        require(text.isNotBlank() && text.length <= 100_000) { MoteI18n.text("随手记须为 1..100000 字符") }
+        require(mood.length <= 80) { MoteI18n.text("心情最多 80 字符") }
         val store = draft(context)
         store.update(text, mood)
         val settings = Settings(context); val config = settings.read(); config.validate(); settings.ensureDataOrigin(config)
@@ -21,7 +21,7 @@ object QuickNotes {
         val id = UUID.randomUUID().toString()
         val event = JSONObject().put("id", id).put("deviceId", settings.deviceId).put("deviceName", config.deviceName)
             .put("platform", "android").put("capturedAt", Instant.now().toString()).put("durationMs", 0)
-            .put("appId", "dev.mote.notes").put("appName", "随手记").put("ocrText", text).put("source", "note")
+            .put("appId", "dev.mote.notes").put("appName", MoteI18n.text("随手记")).put("ocrText", text).put("source", "note")
             .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, "manual")) }
             .put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
         if (mood.isNotBlank()) event.put("mood", mood)
@@ -32,8 +32,8 @@ object QuickNotes {
         SupportEvents.record(context, EventStage.NOTE, EventCode.OK)
         try { scheduleUpload(config) } catch (_: Exception) {
             SupportEvents.record(context, EventStage.NOTE, EventCode.SCHEDULER)
-            settings.uploadStatus("随手记已入队，同步调度未完成；草稿保持原提交 ID，可安全重试")
-            throw IllegalStateException("随手记已保存在队列；同步调度暂不可用，再次保存会重试同一条记录")
+            settings.uploadStatus(MoteI18n.text("随手记已入队，同步调度未完成；草稿保持原提交 ID，可安全重试"))
+            throw IllegalStateException(MoteI18n.text("随手记已保存在队列；同步调度暂不可用，再次保存会重试同一条记录"))
         }
         store.clear()
         return event.getString("id")

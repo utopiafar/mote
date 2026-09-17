@@ -30,21 +30,21 @@ data class LocalStateSnapshot(
     val quarantine: QueueInventory? = null,
     val sourcePending: Int? = null,
     val captureState: String = "paused",
-    val captureMessage: String = "尚未开始采集",
-    val syncMessage: String = "尚未上传",
+    val captureMessage: String = MoteI18n.text("尚未开始采集"),
+    val syncMessage: String = MoteI18n.text("尚未上传"),
     val error: String? = null,
     val checkedAt: Long = 0
 ) {
-    val captureLabel: String get() = if (captureState == "capturing") "正在采集" else captureMessage
+    val captureLabel: String get() = if (captureState == "capturing") MoteI18n.text("正在采集") else captureMessage
     val totalImages: Int? get() = active?.let { a -> quarantine?.let { a.images + it.images } }
     val pending: Int? get() = active?.let { a -> sourcePending?.let { a.pending + it } }
-    fun imageLabel(): String = if (active == null || quarantine == null) { if (error == null) "本机图片数量正在读取" else "本机图片数量暂不可读取" } else
-        "当前图片 ${totalImages} 张 · 采集区 ${active.images} 张 · 待决定区 ${quarantine.images} 张" +
-            if (error != null) "（上次结果，暂无法更新）" else ""
+    fun imageLabel(): String = if (active == null || quarantine == null) { if (error == null) MoteI18n.text("本机图片数量正在读取") else MoteI18n.text("本机图片数量暂不可读取") } else
+        MoteI18n.text("当前图片 {0} 张 · 采集区 {1} 张 · 待决定区 {2} 张", totalImages, active.images, quarantine.images) +
+            if (error != null) MoteI18n.text("（上次结果，暂无法更新）") else ""
     fun storageLabel(): String = if (active == null || quarantine == null) imageLabel() else
-        imageLabel() + "\n采集区 ${active.records} 条记录 · 待同步 ${active.pending} 条 · 等待 OCR ${active.awaitingOcr} 张" +
-            "\n采集区图片文件 ${active.imageFiles} 个 · 待决定区图片文件 ${quarantine.imageFiles} 个" +
-            "\n本机队列 ${size(active.diskBytes)} · OCR 预留 ${size(active.reservedOcrBytes)} · 待决定区 ${size(quarantine.diskBytes)}"
+        imageLabel() + MoteI18n.text("\n采集区 {0} 条记录 · 待同步 {1} 条 · 等待 OCR {2} 张", active.records, active.pending, active.awaitingOcr) +
+            MoteI18n.text("\n采集区图片文件 {0} 个 · 待决定区图片文件 {1} 个", active.imageFiles, quarantine.imageFiles) +
+            MoteI18n.text("\n本机队列 {0} · OCR 预留 {1} · 待决定区 {2}", size(active.diskBytes), size(active.reservedOcrBytes), size(quarantine.diskBytes))
     private fun size(bytes: Long) = "%.1f MiB".format(bytes / 1048576.0)
 }
 
@@ -65,7 +65,7 @@ class LocalStateRepository private constructor(context: Context) {
                 if (!request.immediate) delay(300)
                 val previous = mutable.value
                 val next = try {
-                    check(!QueueStorage.recovering) { "正在恢复本机存储" }
+                    check(!QueueStorage.recovering) { MoteI18n.text("正在恢复本机存储") }
                     // Index upgrades inspect a few records per lock acquisition; starting capture
                     // must not wait behind decrypting an entire legacy library.
                     if (previous.active == null || previous.error != null || previous.revision.storage != LocalStateChanges.revisions.value.storage) {
@@ -82,7 +82,7 @@ class LocalStateRepository private constructor(context: Context) {
                     LocalStateSnapshot(revision, active, pending, app.localSources().pendingSync().count,
                         settings.state(), settings.message(), settings.uploadStatus(), checkedAt = System.currentTimeMillis())
                 } catch (error: Exception) {
-                    previous.copy(revision = LocalStateChanges.revisions.value, error = error.message ?: "本机状态暂不可读取")
+                    previous.copy(revision = LocalStateChanges.revisions.value, error = error.message ?: MoteI18n.text("本机状态暂不可读取"))
                 }
                 mutable.value = next
                 // Notifications are a consumer even when no Activity is visible.

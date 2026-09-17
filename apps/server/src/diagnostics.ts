@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
@@ -14,15 +15,15 @@ const routes = new Set(['files','file-sync','file-processing','conversations','c
 const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part'] as const;
 const responseReasons:Record<string,string>={
-  invalid_response:'模型未返回可验证的回答，请重试或检查模型配置。',
-  invalid_json:'模型返回的回答格式不完整或无效，请重试。',
-  invalid_shape:'模型返回的回答或引用列表格式无效，请重试。',
-  response_too_large:'模型回答超过大小限制，请缩小问题范围后重试。',
-  unretrieved_citation:'模型引用了本次未检索到的资料，回答未保存，请重试。',
-  truncated_citation:'模型未使用完整的资料引用编号，回答未保存，请重试。',
-  undeclared_citation:'模型正文与引用列表不一致，回答未保存，请重试。',
-  output_limit:'模型达到输出上限，回答未能完整生成。请缩小问题范围，或在模型服务设置中提高输出预算后重试。',
-  tools_unverified:'只读检索工具未能完成初始化，请重试或检查节点运行环境。',
+  invalid_response:"模型未返回可验证的回答，请重试或检查模型配置。",
+  invalid_json:"模型返回的回答格式不完整或无效，请重试。",
+  invalid_shape:"模型返回的回答或引用列表格式无效，请重试。",
+  response_too_large:"模型回答超过大小限制，请缩小问题范围后重试。",
+  unretrieved_citation:"模型引用了本次未检索到的资料，回答未保存，请重试。",
+  truncated_citation:"模型未使用完整的资料引用编号，回答未保存，请重试。",
+  undeclared_citation:"模型正文与引用列表不一致，回答未保存，请重试。",
+  output_limit:"模型达到输出上限，回答未能完整生成。请缩小问题范围，或在模型服务设置中提高输出预算后重试。",
+  tools_unverified:"只读检索工具未能完成初始化，请重试或检查节点运行环境。",
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const bounded=(n:number|undefined,fallback:number,min:number,max:number)=>Math.min(max,Math.max(min,Math.floor(typeof n==='number'&&Number.isFinite(n)?n:fallback)));
@@ -34,20 +35,20 @@ export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;leve
 
 /** Error text, stacks, headers, provider bodies and arbitrary codes never cross this boundary. */
 export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
-  try{return describeError(error);}catch{return {status:500,category:'internal',message:'请求未完成，请使用请求编号查看诊断记录。'};}
+  try{return describeError(error);}catch{return {status:500,category:'internal',message:moteText("请求未完成，请使用请求编号查看诊断记录。")};}
 }
 function describeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
   const e=error&&typeof error==='object'?error as {name?:unknown;code?:unknown;statusCode?:unknown;reason?:unknown}:{};
-  if(e.name==='ZodError')return {status:400,category:'validation',message:'输入格式无效，请检查必填项和取值范围。'};
-  if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:'Agent 未配置，请在中央节点配置模型后重试。'};
-  if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:'Agent 请求已超时，请稍后重试或缩小查询范围。'};
-  if(e.name==='AgentProviderError')return {status:502,category:'agent_response',message:'模型服务请求未完成，请检查地址、凭据和模型配置。'};
-  if(e.name==='AgentResponseError') {const reason=typeof e.reason==='string'&&Object.hasOwn(responseReasons,e.reason)?e.reason:'invalid_response';return {status:502,category:'agent_response',reason,message:responseReasons[reason]};}
-  if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:'操作已取消或超时，请稍后重试。'};
-  if(typeof e.code==='string'&&['embedding_http','embedding_invalid','embedding_transport'].includes(e.code))return {status:502,category:e.code,message:'索引模型请求未完成，请检查模型配置或稍后重试。'};
+  if(e.name==='ZodError')return {status:400,category:'validation',message:moteText("输入格式无效，请检查必填项和取值范围。")};
+  if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:moteText("Agent 未配置，请在中央节点配置模型后重试。")};
+  if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:moteText("Agent 请求已超时，请稍后重试或缩小查询范围。")};
+  if(e.name==='AgentProviderError')return {status:502,category:'agent_response',message:moteText("模型服务请求未完成，请检查地址、凭据和模型配置。")};
+  if(e.name==='AgentResponseError') {const reason=typeof e.reason==='string'&&Object.hasOwn(responseReasons,e.reason)?e.reason:'invalid_response';return {status:502,category:'agent_response',reason,message:moteText(responseReasons[reason])};}
+  if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:moteText("操作已取消或超时，请稍后重试。")};
+  if(typeof e.code==='string'&&['embedding_http','embedding_invalid','embedding_transport'].includes(e.code))return {status:502,category:e.code,message:moteText("索引模型请求未完成，请检查模型配置或稍后重试。")};
   const status=typeof e.statusCode==='number'&&Number.isInteger(e.statusCode)&&e.statusCode>=400&&e.statusCode<=599?e.statusCode:500;
-  const fixed:Record<number,[string,string]>={400:['validation','输入格式无效，请检查必填项和取值范围。'],401:['unauthorized','访问凭据无效或已失效，请重新验证身份。'],403:['forbidden','此操作不可用。'],404:['not_found','未找到所请求的资料。'],409:['conflict','资料状态已变化或当前配置不支持此操作，请刷新后重试。'],410:['deleted','该条目已删除，排队重试不能恢复它。'],413:['too_large','内容超过大小限制，请分批处理。'],429:['rate_limited','请求过于频繁或已有任务运行，请稍后重试。'],503:['unavailable','服务暂不可用，请检查节点状态与模型配置。'],507:['storage_full','存储容量已满，请清理空间或调整容量限制。']};
-  const [category,message]=fixed[status]??['internal','请求未完成，请使用请求编号查看诊断记录。'];
+  const fixed:Record<number,[string,string]>={400:['validation',moteText("输入格式无效，请检查必填项和取值范围。")],401:['unauthorized',moteText("访问凭据无效或已失效，请重新验证身份。")],403:['forbidden',moteText("此操作不可用。")],404:['not_found',moteText("未找到所请求的资料。")],409:['conflict',moteText("资料状态已变化或当前配置不支持此操作，请刷新后重试。")],410:['deleted',moteText("该条目已删除，排队重试不能恢复它。")],413:['too_large',moteText("内容超过大小限制，请分批处理。")],429:['rate_limited',moteText("请求过于频繁或已有任务运行，请稍后重试。")],503:['unavailable',moteText("服务暂不可用，请检查节点状态与模型配置。")],507:['storage_full',moteText("存储容量已满，请清理空间或调整容量限制。")]};
+  const [category,message]=fixed[status]??['internal',moteText("请求未完成，请使用请求编号查看诊断记录。")];
   return {status,category,message};
 }
 function fields(raw:unknown):EventFields {

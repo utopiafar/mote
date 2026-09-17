@@ -1,6 +1,6 @@
-/** Convert supported macOS BGRA pixels to bounded RGB in memory. No content heuristics. */
+import { moteText } from '@mote/shared/i18n';
 export function prepareVisionImage(bgra: Uint8Array, width: number, height: number, maxSide: number): { width: number; height: number; rgbBase64: string } {
-  if (![width, height, maxSide].every(n => Number.isSafeInteger(n) && n > 0 && n <= 4096) || width * height > 7_000_000 || bgra.length !== width * height * 4) throw new Error('本地模型输入像素格式无效');
+  if (![width, height, maxSide].every(n => Number.isSafeInteger(n) && n > 0 && n <= 4096) || width * height > 7_000_000 || bgra.length !== width * height * 4) throw new Error(moteText("本地模型输入像素格式无效"));
   const ratio = Math.min(1, maxSide / Math.max(width, height));
   const targetWidth = Math.max(1, Math.round(width * ratio)), targetHeight = Math.max(1, Math.round(height * ratio));
   const output = Buffer.alloc(targetWidth * targetHeight * 3);

@@ -38,7 +38,7 @@ internal object CaptureSessions {
     }
     fun images(rows: List<JSONObject>, sessionId: String, cursor: String?, limit: Int = 20): JSONObject {
         require(limit in 1..60)
-        val members = groups(rows).find { it.first().getString("id") == sessionId } ?: error("Session 已变化或被清理，请刷新分组列表")
+        val members = groups(rows).find { it.first().getString("id") == sessionId } ?: error(MoteI18n.text("Session 已变化或被清理，请刷新分组列表"))
         val position = position(cursor)
         val page = members.asReversed().filter { position == null || Instant.parse(it.getString("capturedAt")) < Instant.parse(position.getString("at")) ||
             Instant.parse(it.getString("capturedAt")) == Instant.parse(position.getString("at")) && it.getString("id") < position.getString("id") }.take(limit + 1)

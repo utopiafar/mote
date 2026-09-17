@@ -6,6 +6,7 @@ import java.util.concurrent.Executors
 class MoteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        MoteI18n.initialize(this)
         if (getProcessName() != packageName) return
         HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
         HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }
@@ -23,14 +24,14 @@ class MoteApplication : Application() {
                     val config = settings.read()
                     if (settings.enabled && config.screenCollectionEnabled && config.mode == "projection" && !config.observesSystem()) {
                         settings.enabled = false
-                        settings.status("permission_required", "投屏会话已结束，请点击开始并重新授权；已有记录保留，同步按所选策略运行")
+                        settings.status("permission_required", MoteI18n.text("投屏会话已结束，请点击开始并重新授权；已有记录保留，同步按所选策略运行"))
                     }
                     QueueStorage.recovering = false
                     QueueStorage.maintaining = true
                     LocalStateChanges.changed(immediate = true)
                     CaptureAccessibilityService.instance?.refreshSchedule()
                     MediaCollectionService.refresh()
-                    if (settings.syncState() == "uploading") settings.syncStatus(if (config.syncMode == "manual") "manual" else "waiting", "上次同步已中断，记录保留在本机")
+                    if (settings.syncState() == "uploading") settings.syncStatus(if (config.syncMode == "manual") "manual" else "waiting", MoteI18n.text("上次同步已中断，记录保留在本机"))
                     // This scan yields the queue lock between records; it never gates Start.
                     runCatching { local.recoverOrphans() }.onFailure {
                         SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)
@@ -55,8 +56,8 @@ class MoteApplication : Application() {
                 } catch (error: Exception) {
                     SupportEvents.record(this@MoteApplication, EventStage.QUEUE, EventCode.STORAGE)
                     if (QueueStorage.recovering) {
-                        QueueStorage.recoveryFailure = error.message ?: "本机存储恢复失败"
-                        settings.status("error", "本地队列无法读取：${error.message ?: "请检查所选存储介质，保留应用数据"}")
+                        QueueStorage.recoveryFailure = error.message ?: MoteI18n.text("本机存储恢复失败")
+                        settings.status("error", MoteI18n.text("本地队列无法读取：{0}", error.message ?: MoteI18n.text("请检查所选存储介质，保留应用数据")))
                     }
                 }
                 finally { QueueStorage.recovering = false; QueueStorage.maintaining = false; LocalStateChanges.changed(records = true, immediate = true) }

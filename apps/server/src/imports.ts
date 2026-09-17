@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {randomUUID} from 'node:crypto';
 import {existsSync,lstatSync,readFileSync,readdirSync,realpathSync,rmSync,writeFileSync} from 'node:fs';
 import {basename,dirname,isAbsolute,join,relative,resolve,sep} from 'node:path';
@@ -72,7 +73,7 @@ export class ImportStore {
     if(!entries.length)throw new StoreError('No files were supplied');
     if(new Set(entries.map(e=>e.name)).size!==entries.length)throw new StoreError('File paths must be unique within an import');
     const now=new Date().toISOString(),id=randomUUID(),workspace=join(this.directory,id);privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
-    const job:InternalJob={id,name:request.name??(entries.length===1?basename(entries[0].name):`导入 ${entries.length} 个文件`),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
+    const job:InternalJob={id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
     const stage=(entry:{name:string;bytes:Buffer;mimeType?:string},expanded=false)=>{
       if(job.inputs.length>=MAX_FILES)throw new StoreError('Expanded archive exceeds 4000 files',413);
       const path=join(workspace,'inputs',archiveRelativePath(entry.name));if(job.inputs.some(i=>i.path===path))throw new StoreError('Archive contains duplicate file paths');

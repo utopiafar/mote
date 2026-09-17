@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import type { WorkProgress } from './background';
 
 export interface BackgroundJob extends WorkProgress { id: string; startedAt: number; state: 'running' | 'completed' | 'failed' }
@@ -14,7 +15,7 @@ export class BackgroundJobs {
     const prior = this.rows.get(id); if (prior?.state === 'running') this.rows.set(id, { ...prior, ...value });
   }
   run<T>(id: string, label: string, work: () => T | Promise<T>): Promise<T> {
-    if (this.running.has(id)) return Promise.reject(new Error('这项后台操作正在进行，请等待完成'));
+    if (this.running.has(id)) return Promise.reject(new Error(moteText("这项后台操作正在进行，请等待完成")));
     this.rows.set(id, { id, message: label, startedAt: Date.now(), state: 'running' });
     const result = Promise.resolve().then(work);
     this.running.set(id, result);
@@ -24,6 +25,6 @@ export class BackgroundJobs {
   private finish(id: string, state: BackgroundJob['state']): void {
     this.running.delete(id); this.finishedAt.set(id, Date.now());
     const row = this.rows.get(id)!;
-    this.rows.set(id, { ...row, state, message: state === 'completed' ? row.message + ' · 操作已结束' : row.message + ' · 未完成，请重试' });
+    this.rows.set(id, { ...row, state, message: state === 'completed' ? row.message + moteText(" · 操作已结束") : row.message + moteText(" · 未完成，请重试") });
   }
 }

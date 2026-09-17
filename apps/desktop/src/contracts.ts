@@ -107,6 +107,8 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  language(): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
+  setLanguage(preference: import('@mote/shared/i18n').LanguagePreference): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
   contentDecryptionStatus(): Promise<import('./local-content').DecryptionProgress>;
   decryptLocalContent(): Promise<import('./local-content').DecryptionProgress>;
   cancelContentDecryption(): Promise<void>;

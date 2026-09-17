@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 const { app, nativeImage } = require('electron');
 const { mkdtemp, rm } = require('node:fs/promises');
 const { mkdtempSync } = require('node:fs');

@@ -1,3 +1,4 @@
+import { moteText, getLocale } from '@mote/shared/i18n';
 import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
 import type { Rectangle } from './contracts';
@@ -24,7 +25,7 @@ export class BackgroundLane {
   private nextId = 0;
   private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; progress?: (value: WorkProgress) => void }>();
   run<T>(request: BackgroundRequest, progress?: (value: WorkProgress) => void): Promise<T> {
-    if (this.pending.size >= 32) return Promise.reject(new Error('后台任务繁忙，请稍后重试'));
+    if (this.pending.size >= 32) return Promise.reject(new Error(moteText("后台任务繁忙，请稍后重试")));
     if (!this.worker) {
       // Source tests use tsx; packaged production loads only compiled CommonJS.
       const source = __filename.endsWith('.ts');
@@ -41,7 +42,7 @@ export class BackgroundLane {
       const failed = () => {
         if (this.worker !== worker) return;
         this.worker = undefined;
-        for (const job of this.pending.values()) job.reject(new Error('后台处理进程已退出，请重试；原数据保留'));
+        for (const job of this.pending.values()) job.reject(new Error(moteText("后台处理进程已退出，请重试；原数据保留")));
         this.pending.clear();
       };
       worker.on('error', failed); worker.on('exit', failed);
@@ -50,7 +51,7 @@ export class BackgroundLane {
     this.worker.ref();
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: value => resolve(value as T), reject, progress });
-      try { this.worker!.postMessage({ id, request, contentPolicy: ['json-read', 'json-write', 'archive-export'].includes(request.kind) ? localContentPolicy() : { enabled: false } }); }
+      try { this.worker!.postMessage({ id, request, locale: getLocale(), contentPolicy: ['json-read', 'json-write', 'archive-export'].includes(request.kind) ? localContentPolicy() : { enabled: false } }); }
       catch (error) { this.pending.delete(id); if (!this.pending.size) this.worker!.unref(); reject(error); }
     });
   }

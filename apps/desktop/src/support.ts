@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { constants } from 'node:fs';
@@ -58,7 +59,7 @@ export class EventJournal {
   private readonly temporary: string;
   private cleaned = false;
   constructor(private readonly directory: string, private readonly enabled: () => boolean, private readonly limit = 500) {
-    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error('事件日志上限无效');
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new Error(moteText("事件日志上限无效"));
     this.path = join(directory, 'events.json'); this.temporary = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
   }
   private async cleanOrphanedWrites(): Promise<void> {
@@ -74,7 +75,7 @@ export class EventJournal {
   }
   private async load(strict = false): Promise<SupportEvent[]> {
     try {
-      if ((await stat(this.path)).size > 256 * 1024) { if (strict) throw new Error('日志文件超出读取上限'); return []; }
+      if ((await stat(this.path)).size > 256 * 1024) { if (strict) throw new Error(moteText("日志文件超出读取上限")); return []; }
       const raw = await readFile(this.path, 'utf8');
       if (Buffer.byteLength(raw) > 256 * 1024) return [];
       const value = JSON.parse(raw);
@@ -100,7 +101,7 @@ export class EventJournal {
     try {
       const file = await open(this.path, constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
-        if ((await file.stat()).size > 256 * 1024) throw new Error('日志文件超出读取上限');
+        if ((await file.stat()).size > 256 * 1024) throw new Error(moteText("日志文件超出读取上限"));
         const buffer = Buffer.alloc(256 * 1024);
         const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
         return buffer.subarray(0, bytesRead).toString('utf8');

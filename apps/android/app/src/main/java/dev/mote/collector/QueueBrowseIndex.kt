@@ -28,7 +28,7 @@ internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteC
     fun invalidate(id: String) {
         load(id.first())
         val target = file(id.first())
-        check(!target.exists() || target.delete()) { "无法更新浏览索引" }
+        check(!target.exists() || target.delete()) { MoteI18n.text("无法更新浏览索引") }
     }
     val isBatching: Boolean get() = deferredWrites > 0
     fun beginBatch() { deferredWrites++ }
@@ -45,7 +45,7 @@ internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteC
         val temp = File(dir, "${UUID.randomUUID()}.tmp")
         try {
             FileOutputStream(temp).use { it.write(cipher.seal(JSONArray(rows.values.toList()).toString().toByteArray())); it.fd.sync() }
-            check(temp.renameTo(target)) { "无法保存浏览索引" }
+            check(temp.renameTo(target)) { MoteI18n.text("无法保存浏览索引") }
             dirty -= key
         } finally { temp.delete() }
     }
@@ -69,7 +69,7 @@ internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteC
         persist(id.first())
     }
     private fun project(file: File, event: JSONObject): JSONObject {
-        require(event.getString("id") == file.nameWithoutExtension) { "记录 ID 与存储文件不匹配" }
+        require(event.getString("id") == file.nameWithoutExtension) { MoteI18n.text("记录 ID 与存储文件不匹配") }
         Instant.parse(event.getString("capturedAt"))
         val blocked = event.optBoolean("_archiveMissing") || event.optBoolean("_ocrConflict") || event.optBoolean("_uploadConflict")
         val awaitingOcr = event.optJSONObject("ocr")?.optString("status") == "pending" && !event.has("_ocrResult")
@@ -100,7 +100,7 @@ internal class QueueBrowseIndex(private val dir: File, private val cipher: ByteC
 
     fun entries(files: List<File>, read: (File) -> JSONObject, requireStatistics: Boolean = false): List<JSONObject> {
         val result = mutableListOf<JSONObject>()
-        files.forEach { require(UUID.fromString(it.nameWithoutExtension).toString() == it.nameWithoutExtension) { "记录文件名无效" } }
+        files.forEach { require(UUID.fromString(it.nameWithoutExtension).toString() == it.nameWithoutExtension) { MoteI18n.text("记录文件名无效") } }
         val groups = files.groupBy { it.name.first() }
         for (key in "0123456789abcdef") {
             val rows = load(key); var changed = false

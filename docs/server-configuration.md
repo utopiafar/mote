@@ -79,7 +79,7 @@
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `MOTE_MODEL_PROVIDER` | `deepseek` | 注册厂商／服务预设 ID；未列出的服务选择 `custom`，见[预设列表](model-providers.md#服务预设) |
-| `MOTE_MODEL_PROTOCOL` | 所选预设 | `deepseek` / `openai-completions` / `openai-responses` / `anthropic-messages` / `google-generative-ai` |
+| `MOTE_MODEL_PROTOCOL` | 所选预设 | `deepseek` / `openai-completions` / `openai-responses` / `anthropic-messages` / `google-generative-ai` / `codex-app-server` |
 | `MOTE_MODEL` | 空 | 支持工具调用的模型或部署 ID；未设时归档可用、AI 功能显示未配置 |
 | `MOTE_MODEL_BASE_URL` | 所选预设，默认 DeepSeek 地址 | 协议基址；远程 HTTPS、仅回环 HTTP；禁止 URL 账号密码、query 或 fragment |
 | `MOTE_MODEL_API_KEY` | 空 | 中央 Agent 的模型凭据；不下发到采集客户端 |
@@ -87,8 +87,10 @@
 | `MOTE_MODEL_EXTRA_BODY` | `{}` | 当前协议的高级参数 JSON 对象，环境变量最多 16 KiB；不能覆盖消息、工具、输出上限等运行字段 |
 | `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL` | 本机服务预设为 `1`，其他为 `0` | 显式允许无密钥的回环模型服务，正常远程服务保持 0 |
 | `MOTE_MODEL_REASONING_EFFORT` | 通用 `auto`，DeepSeek `high` | `auto` 由模型决定；`off` / `low` / `high` / `max` 需模型支持 |
-| `MOTE_MODEL_MAX_TOKENS` | `8192` | 1–128000 整数；单次模型输出预算，非总请求/账户预算，仍须符合所选模型限制 |
+| `MOTE_MODEL_MAX_TOKENS` | `65536` | 1–128000 整数；单次 HTTP 模型输出预算，非总请求/账户预算，仍须符合所选模型限制；Codex 自行管理输出预算 |
 | `MOTE_MODEL_TIMEOUT_MS` | `120000` | 5000–600000 毫秒整数；查询、洞察和记忆提取的 Agent 期限。Web 对这些操作额外等待 60000ms；普通上传和其他请求的期限不变，入口代理可能更早超时 |
+| `MOTE_CODEX_BIN` | `codex`（PATH） | 可信的本机 Codex CLI 可执行路径；网页不能设置此值 |
+| `MOTE_CODEX_HOME` | `CODEX_HOME` 或 `~/.codex` | 服务端系统用户的 Codex 文件登录目录；仅链接 `auth.json`，不加载该目录的其他设置，见[本机 Codex](model-providers.md#本机-codex) |
 | `MOTE_INSIGHT_INTERVAL_HOURS` | `0` | 0–168 小时；0 关闭定时回顾，非零会调用已配置 Agent 并产生模型用量 |
 | `MOTE_EMBEDDING_MODEL` | 空 | 可选 embedding 模型；未配置时使用本地文本索引 |
 | `MOTE_EMBEDDING_BASE_URL` | 空 | 启用 embedding 必填，模型请求可达的服务基址 |

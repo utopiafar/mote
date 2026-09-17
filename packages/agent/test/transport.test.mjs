@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { boundedModelFetch } from '../src/plugin.mjs';
+import { boundedModelFetch } from '../dist/plugin.mjs';
 import { createAgent, parseAnswer, AgentResponseError } from '../dist/index.js';
 
 const bridge='http://127.0.0.1:1';

@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {usageIdentity,usageLabel,type TokenUsage,type UsageReceipt,type ModelPrice,type UsageAttribution,type UsageTotals,type UsageSummary,type UsageFilters,type UsageGroupBy,type UsageGroup} from '@mote/shared';
@@ -47,7 +48,7 @@ export class UsageLedger {
       const identity=usageIdentity(row);
       const field=groupBy==='agent'?'agentId':groupBy==='module'?'moduleId':'skillId';
       const id=groupBy==='model'?JSON.stringify([row.provider,row.model]):identity[field];
-      const group=groups.get(id)??{label:groupBy==='model'?`${row.provider} · ${row.model||'未知模型'}`:usageLabel(groupBy,id),filter:groupBy==='model'?{provider:row.provider,model:row.model}:{[field]:id},items:[]};
+      const group=groups.get(id)??{label:groupBy==='model'?`${row.provider} · ${row.model||moteText("未知模型")}`:usageLabel(groupBy,id),filter:groupBy==='model'?{provider:row.provider,model:row.model}:{[field]:id},items:[]};
       group.items.push(row);groups.set(id,group);
     }
     const grouped:UsageGroup[]=[...groups].map(([id,g])=>({id,label:g.label,filter:g.filter,...usageTotals(g.items)}));

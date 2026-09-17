@@ -24,13 +24,13 @@ object RuntimeSettings {
     @Volatile private var progressMessage = ""
     @Volatile private var startedAt = 0L
     fun reportProgress(message: String) { progressMessage = message }
-    fun progressLabel(): String = "$progressMessage · 已用 ${(SystemClock.elapsedRealtime() - startedAt) / 1000} 秒"
+    fun progressLabel(): String = MoteI18n.text("{0} · 已用 {1} 秒", progressMessage, (SystemClock.elapsedRealtime() - startedAt) / 1000)
     data class Applied(val projectionConsentRequired: Boolean)
     fun stop(context: Context, finished: (kotlin.Result<Unit>) -> Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
         if (stopping) return
         stopGeneration.incrementAndGet(); stopping = true
-        startedAt = SystemClock.elapsedRealtime(); reportProgress("正在停止采集")
+        startedAt = SystemClock.elapsedRealtime(); reportProgress(MoteI18n.text("正在停止采集"))
         val app = context.applicationContext
         val ownsHold = ConnectionGuard.beginReconfiguration()
         CaptureAccessibilityService.instance?.stopCapture()
@@ -58,30 +58,30 @@ object RuntimeSettings {
         val app = context.applicationContext; val settings = Settings(app)
         next.validate()
         if (QueueStorage.recovering || !ConnectionGuard.beginReconfiguration()) { finished(kotlin.Result.failure(ConnectionFailure("busy"))); return }
-        startedAt = SystemClock.elapsedRealtime(); reportProgress("正在暂停当前处理")
+        startedAt = SystemClock.elapsedRealtime(); reportProgress(MoteI18n.text("正在暂停当前处理"))
         val stopVersion = stopGeneration.get()
         val wasEnabled = settings.enabled
         try {
             CaptureAccessibilityService.instance?.stopCapture()
             MediaCollectionService.suspendObservation()
             ProjectionService.instance?.pauseForConfiguration()
-            settings.status(if (wasEnabled) "capturing" else "paused", "正在保存设置…")
+            settings.status(if (wasEnabled) "capturing" else "paused", MoteI18n.text("正在保存设置…"))
         } catch (error: Exception) {
             ConnectionGuard.endReconfiguration(); finished(kotlin.Result.failure(error)); return
         }
         executor.execute {
             val result = runCatching {
-                reportProgress("正在等待后台处理结束")
+                reportProgress(MoteI18n.text("正在等待后台处理结束"))
                 val work = WorkManager.getInstance(app)
                 listOf("mote-heartbeat", "mote-heartbeat-now", "mote-sync-recovery", "mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic", "mote-capture-ocr", "mote-capture-ocr-recovery")
                     .map { work.cancelUniqueWork(it).result }.forEach { it.get(10, TimeUnit.SECONDS) }
                 SyncSchedule.invalidate()
                 val deadline = SystemClock.elapsedRealtime() + 120_000
                 while (ConnectionGuard.processing.get() > 0) {
-                    check(SystemClock.elapsedRealtime() < deadline) { "当前处理暂未结束，原设置已保留，请稍后重试" }
+                    check(SystemClock.elapsedRealtime() < deadline) { MoteI18n.text("当前处理暂未结束，原设置已保留，请稍后重试") }
                     Thread.sleep(25)
                 }
-                reportProgress("正在保存设置")
+                reportProgress(MoteI18n.text("正在保存设置"))
                 ConnectionGuard.reconfigure(app, nextServer, bindLocal, expected) {
                     if (change == null) {
                         val discardImageComparisons = settings.read().imageDedupeDiagnosticsEnabled && !next.imageDedupeDiagnosticsEnabled
@@ -93,7 +93,7 @@ object RuntimeSettings {
             }
             // Also validate the still-saved configuration after a failed apply. The selected
             // directory can wait behind recovery/migration; keep that wait off the UI thread.
-            reportProgress("正在应用设置")
+            reportProgress(MoteI18n.text("正在应用设置"))
             val current = runCatching {
                 settings.read().also { if (change != null) app.queue().depth() }
             }
@@ -116,10 +116,10 @@ object RuntimeSettings {
                         }
                         CaptureResume.STOPPED -> Unit
                     }
-                    if (result.isSuccess) settings.status(if (resume && !needsConsent) "capturing" else "paused", if (resume && !needsConsent) "设置已保存" else if (needsConsent) "设置已生效，请授权新的投屏会话" else "设置已保存")
-                    else settings.status(if (resume && !needsConsent) "capturing" else "paused", "设置未完成，继续使用当前已保存配置")
+                    if (result.isSuccess) settings.status(if (resume && !needsConsent) "capturing" else "paused", if (resume && !needsConsent) MoteI18n.text("设置已保存") else if (needsConsent) MoteI18n.text("设置已生效，请授权新的投屏会话") else MoteI18n.text("设置已保存"))
+                    else settings.status(if (resume && !needsConsent) "capturing" else "paused", MoteI18n.text("设置未完成，继续使用当前已保存配置"))
                     Applied(needsConsent)
-                }.onFailure { executor.execute { settings.enabled = false }; settings.status("error", "采集恢复失败：${it.message ?: "请检查权限和所选存储位置"}") }
+                }.onFailure { executor.execute { settings.enabled = false }; settings.status("error", MoteI18n.text("采集恢复失败：{0}", it.message ?: MoteI18n.text("请检查权限和所选存储位置"))) }
                 ConnectionGuard.endReconfiguration()
                 CaptureAccessibilityService.instance?.refreshSchedule()
                 MediaCollectionService.refresh()
@@ -133,7 +133,7 @@ object RuntimeSettings {
                             CaptureOcrWorker.schedule(app, config, replace = true)
                             SourceWork.schedule(app)
                         }
-                    }.onFailure { settings.uploadStatus("设置已保存，同步调度暂不可用：${it.message ?: "请稍后重试"}") }
+                    }.onFailure { settings.uploadStatus(MoteI18n.text("设置已保存，同步调度暂不可用：{0}", it.message ?: MoteI18n.text("请稍后重试"))) }
                 }
             }
         }

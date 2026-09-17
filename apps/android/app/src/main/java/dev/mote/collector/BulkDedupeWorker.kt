@@ -53,7 +53,7 @@ object BulkDedupeRules {
     fun features(bytes: ByteArray, mode: ScreenshotDedupeHelper.Mode): ScreenshotDedupeHelper.FrameFeatures {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= minOf(32_000_000L, Runtime.getRuntime().maxMemory() / 16)) { "图片尺寸无效或过大" }
+        require(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= minOf(32_000_000L, Runtime.getRuntime().maxMemory() / 16)) { MoteI18n.text("图片尺寸无效或过大") }
         val size = ScreenshotDedupeHelper.sampleSizeForMode(bounds.outWidth, bounds.outHeight, mode)
         // Match the capture pipeline's single filtered resize. Decoder subsampling can
         // erase localized differences before the shared thresholds inspect them.
@@ -86,20 +86,20 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
             }
         } catch (error: Exception) {
             SupportEvents.record(applicationContext, EventStage.DEDUPE, EventJournal.failure(error, EventStage.DEDUPE), android.os.SystemClock.elapsedRealtime() - started)
-            Result.failure(workDataOf("message" to (error.message ?: "操作失败，未处理记录已保留")))
+            Result.failure(workDataOf("message" to (error.message ?: MoteI18n.text("操作失败，未处理记录已保留"))))
         } finally { LocalStateChanges.changed(immediate = true) }
     }
     private fun scan(): Result {
         val mode = ScreenshotDedupeHelper.Mode.fromRaw(inputData.getString("mode"))
         store.write("report", JSONObject().put("complete", false))
         val queue = applicationContext.queue()
-        progress("读取目录", 0, 0)
+        progress(MoteI18n.text("读取目录"), 0, 0)
         val ids = queue.dedupeIds(); val rows = mutableListOf<JSONObject>(); var errors = 0
         queue.withDeferredIndexWrites {
             for ((index, id) in ids.withIndex()) {
                 if (isStopped) break
                 try { queue.dedupeRow(id)?.takeIf { it.optString("source") == "screen" && it.optBoolean("hasImage") }?.let(rows::add) } catch (_: Exception) { errors++ }
-                progress("读取目录", index + 1, ids.size, errors = errors)
+                progress(MoteI18n.text("读取目录"), index + 1, ids.size, errors = errors)
             }
         }
         if (isStopped) return Result.failure()
@@ -111,7 +111,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
             if (isStopped) return Result.failure()
             try {
                 val cached = featuresCache.getOrPut(row.getString("blob")) {
-                    val bytes = queue.image(row.getString("id")) ?: error("图片已离开本机")
+                    val bytes = queue.image(row.getString("id")) ?: error(MoteI18n.text("图片已离开本机"))
                     BulkDedupeFeatureCache.Entry(BulkDedupeRules.features(bytes, mode), bytes.size)
                 }
                 val features = cached.features
@@ -124,19 +124,19 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
                         .put("changedRows", comparison.changedRows).put("changedCols", comparison.changedCols))
                 } else { reference = row; referenceFeatures = features }
             } catch (error: Exception) { SupportEvents.record(applicationContext, EventStage.DEDUPE, EventJournal.failure(error, EventStage.DEDUPE)); errors++; reference = null; referenceFeatures = null }
-            progress("比较图片", index + 1, rows.size, pairs.length(), errors)
+            progress(MoteI18n.text("比较图片"), index + 1, rows.size, pairs.length(), errors)
         }
         if (isStopped) return Result.failure()
         store.write("report", JSONObject().put("complete", true).put("mode", mode.rawValue).put("comparison", "last_retained")
             .put("scanned", rows.size).put("errors", errors).put("pairs", pairs).put("at", Instant.now().toString()))
-        return Result.success(workDataOf("message" to "扫描完成：${rows.size} 张，${pairs.length()} 张候选，$errors 张跳过或读取失败"))
+        return Result.success(workDataOf("message" to MoteI18n.text("扫描完成：{0} 张，{1} 张候选，{2} 张跳过或读取失败", rows.size, pairs.length(), errors)))
     }
     private fun resolve(): Result {
         val action = inputData.getString("action")!!
         require(action in listOf("move", "delete", "restore", "purge"))
         val plan = store.read("plan"); require(plan.getString("job") == inputData.getString("job"))
         val items = plan.getJSONArray("items"); val pending = store.quarantine(); val queue = applicationContext.queue()
-        progress("处理记录", 0, items.length())
+        progress(MoteI18n.text("处理记录"), 0, items.length())
         val restoreLimit = Settings(applicationContext).read().maxQueueMiB * 1024L * 1024L
         var done = 0; var skipped = 0
         // Each record still commits and releases the queue lock independently. Only the
@@ -152,10 +152,10 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
                         if (source === queue) ref!!.getString("id") else null, ref?.getString("blob"), target, if (action == "restore") restoreLimit else Long.MAX_VALUE)
                     if (ok) done++ else skipped++
                 } catch (error: Exception) { SupportEvents.record(applicationContext, EventStage.DEDUPE, EventJournal.failure(error, EventStage.DEDUPE)); skipped++ }
-                progress("处理记录", index + 1, items.length(), done, skipped)
+                progress(MoteI18n.text("处理记录"), index + 1, items.length(), done, skipped)
             }
         } }
         if (isStopped) return Result.failure()
-        return Result.success(workDataOf("message" to "处理完成：成功 $done，失效或失败 $skipped；失败记录保留，可重新扫描或重试"))
+        return Result.success(workDataOf("message" to MoteI18n.text("处理完成：成功 {0}，失效或失败 {1}；失败记录保留，可重新扫描或重试", done, skipped)))
     }
 }

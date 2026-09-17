@@ -68,6 +68,18 @@ test('unconfigured models stay retryable, and retry reruns only failed batches',
   const done=await pipeline.retry(job.id);assert.equal(done.status,'completed');assert.deepEqual(calls,[0,256,512,256]);
 });
 
+test('memory batches retain the selected profile through recovery and wait if it disappears',async t=>{
+  const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item('long','文'.repeat(600)));
+  let available=true;const calls:string[]=[];
+  const options={store,memories,batchCharacters:256,model:(id?:string)=>{assert.equal(id,'selected');if(!available)throw Error('deleted profile');return 'fixture';},configured:(id?:string)=>id==='selected'&&available,query:async(input:MemoryPipelineQuery)=>{calls.push(input.modelProfileId!);available=false;return empty();}};
+  let pipeline=new MemoryPipeline(options);
+  const job=pipeline.create({evidenceIds:[record.id],modelProfileId:'selected'});
+  const paused=await pipeline.run(job.id);assert.equal(paused.status,'waiting_for_model');assert.equal(paused.completedBatches,1);assert.equal(paused.batches[1].status,'pending');
+  await pipeline.close();pipeline=new MemoryPipeline({...options,query:async(input)=>{calls.push(input.modelProfileId!);return empty();}});t.after(()=>pipeline.close());
+  assert.equal(pipeline.get(job.id).modelProfileId,'selected');assert.equal((await pipeline.retry(job.id)).status,'waiting_for_model');
+  available=true;assert.equal((await pipeline.retry(job.id)).status,'completed');assert.deepEqual(calls,['selected','selected','selected']);
+});
+
 test('privacy deletion during a model run cannot resurrect memory or create a completed checkpoint',async t=>{
   const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item());
   let enter!:()=>void,finish!:(value:ReturnType<typeof result>)=>void;const entered=new Promise<void>(resolve=>enter=resolve);

@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 object ReviewResponse {
     fun masks(response: JSONObject): List<Mask> {
-        require(response.has("allow") && response.get("allow") is Boolean) { "审查 allow 必须是布尔值" }
+        require(response.has("allow") && response.get("allow") is Boolean) { MoteI18n.text("审查 allow 必须是布尔值") }
         if (!response.getBoolean("allow")) return emptyList()
         if (response.has("rectangles")) {
             val values = response.getJSONArray("rectangles")
@@ -15,7 +15,7 @@ object ReviewResponse {
                 Mask(x, y, x + item.getDouble("width").toFloat(), y + item.getDouble("height").toFloat())
             }
         }
-        require(response.has("masks")) { "允许响应必须显式包含 rectangles 数组（无敏感区用空数组）" }
+        require(response.has("masks")) { MoteI18n.text("允许响应必须显式包含 rectangles 数组（无敏感区用空数组）") }
         val values = response.getJSONArray("masks")
         require(values.length() <= 256)
         return (0 until values.length()).map { index ->

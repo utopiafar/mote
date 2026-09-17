@@ -53,6 +53,12 @@
       "import": "./dist/capture-sessions.js",
       "require": "./dist/capture-sessions.js",
       "default": "./dist/capture-sessions.js"
+    },
+    "./i18n": {
+      "types": "./dist/i18n.d.ts",
+      "import": "./dist/i18n.js",
+      "require": "./dist/i18n.js",
+      "default": "./dist/i18n.js"
     }
   },
   "typesVersions": {
@@ -77,6 +83,9 @@
       ],
       "capture-sessions": [
         "dist/capture-sessions.d.ts"
+      ],
+      "i18n": [
+        "dist/i18n.d.ts"
       ]
     }
   },

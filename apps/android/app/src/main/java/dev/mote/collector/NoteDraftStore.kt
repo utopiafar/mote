@@ -30,16 +30,16 @@ class NoteDraftStore(private val directory: File, private val cipher: ByteCipher
         NoteDraft(text, mood, event, if (json.has("server")) json.getString("server") else null)
     }
     fun update(text: String, mood: String): NoteDraft = synchronized(lock) {
-        require(text.length <= 100000 && mood.length <= 80) { "随手记最多 100000 字符，心情最多 80 字符" }
+        require(text.length <= 100000 && mood.length <= 80) { MoteI18n.text("随手记最多 100000 字符，心情最多 80 字符") }
         val old = read()
         if (text == old.text && mood == old.mood) return@synchronized old
         NoteDraft(text, mood).also { write(it) } // Only an explicit edit starts a new potential submission.
     }
     fun prepare(server: String, create: (NoteDraft) -> JSONObject): NoteDraft = synchronized(lock) {
-        val draft = read(); require(draft.text.isNotBlank()) { "请先填写随手记" }
+        val draft = read(); require(draft.text.isNotBlank()) { MoteI18n.text("请先填写随手记") }
         if (draft.prepared != null) {
             if (draft.server.isNullOrBlank() && server.isNotBlank()) return@synchronized draft.copy(server = server).also { write(it) }
-            require(draft.server == server) { "这条随手记已准备发往原节点，请恢复原节点重试；编辑内容后才能作为新记录提交" }
+            require(draft.server == server) { MoteI18n.text("这条随手记已准备发往原节点，请恢复原节点重试；编辑内容后才能作为新记录提交") }
             return@synchronized draft
         }
         draft.copy(prepared = create(draft), server = server).also { write(it) }
@@ -50,7 +50,7 @@ class NoteDraftStore(private val directory: File, private val cipher: ByteCipher
         val temp = File(directory, "${UUID.randomUUID()}.tmp")
         try {
             FileOutputStream(temp).use { out -> out.write(cipher.seal(value.toString().toByteArray(Charsets.UTF_8))); out.fd.sync() }
-            check(temp.renameTo(file)) { "无法保存草稿" }
+            check(temp.renameTo(file)) { MoteI18n.text("无法保存草稿") }
         } finally { temp.delete() }
     }
     companion object { private val lock = Any() }

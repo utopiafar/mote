@@ -33,14 +33,14 @@ internal object SystemEventRules {
         }
     }
     fun label(record: JSONObject): String {
-        val metadata = record.optJSONObject("metadata") ?: return record.optString("textPreview").ifBlank { "系统事件" }
+        val metadata = record.optJSONObject("metadata") ?: return record.optString("textPreview").ifBlank { MoteI18n.text("系统事件") }
         val n = metadata.optJSONObject("notification")
-        if (n != null) return listOfNotNull(when (n.optString("action")) { "removed" -> "通知已移除"; "updated" -> "通知已更新"; else -> "收到通知" },
+        if (n != null) return listOfNotNull(when (n.optString("action")) { "removed" -> MoteI18n.text("通知已移除"); "updated" -> MoteI18n.text("通知已更新"); else -> MoteI18n.text("收到通知") },
             n.optString("title").takeIf(String::isNotBlank), n.optString("text").takeIf(String::isNotBlank),
-            n.optString("bigText").takeIf(String::isNotBlank), n.optString("category").takeIf(String::isNotBlank)?.let { "应用声明类别：$it" },
-            if (n.optBoolean("ongoing")) "持续通知" else null).distinct().joinToString("\n")
-        val e = metadata.optJSONObject("deviceEvent") ?: return "系统事件"
-        val action = when (e.optString("action")) { "screen_on" -> "亮屏"; "screen_off" -> "熄屏"; "user_present" -> "用户解锁 / 在场"; else -> "锁定状态观察" }
-        return "$action · ${if (e.optBoolean("keyguardLocked")) "系统报告已锁定" else "系统报告未锁定"} · ${if (e.optBoolean("screenInteractive")) "屏幕可交互" else "屏幕不可交互"}"
+            n.optString("bigText").takeIf(String::isNotBlank), n.optString("category").takeIf(String::isNotBlank)?.let { MoteI18n.text("应用声明类别：{0}", it) },
+            if (n.optBoolean("ongoing")) MoteI18n.text("持续通知") else null).distinct().joinToString("\n")
+        val e = metadata.optJSONObject("deviceEvent") ?: return MoteI18n.text("系统事件")
+        val action = when (e.optString("action")) { "screen_on" -> MoteI18n.text("亮屏"); "screen_off" -> MoteI18n.text("熄屏"); "user_present" -> MoteI18n.text("用户解锁 / 在场"); else -> MoteI18n.text("锁定状态观察") }
+        return "${action} · ${if (e.optBoolean("keyguardLocked")) MoteI18n.text("系统报告已锁定") else MoteI18n.text("系统报告未锁定")} · ${if (e.optBoolean("screenInteractive")) MoteI18n.text("屏幕可交互") else MoteI18n.text("屏幕不可交互")}"
     }
 }

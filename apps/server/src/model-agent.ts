@@ -1,11 +1,31 @@
-import { createAgent, AgentNotConfiguredError, AgentTimeoutError, AgentResponseError, type ContextReader } from '@mote/agent';
-import { DEFAULT_MODEL_MAX_TOKENS, modelProvider, type ModelSettings, type ModelTestResult } from '@mote/shared/models';
+import { createAgent, AgentNotConfiguredError, AgentTimeoutError, AgentResponseError, type ContextReader, type AgentOptions } from '@mote/agent';
+import { DEFAULT_MODEL_MAX_TOKENS, modelProvider, type ModelSettings, type ModelTestResult, type ModelProfile } from '@mote/shared/models';
 import type { Config } from './config.js';
 import type { QueryAgent } from './app.js';
 import type { PreparedModelSettings } from './model-settings.js';
 
 export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader) => Promise<QueryAgent>;
-export const createModelAgent: ModelAgentFactory = async (settings, reader) => createAgent({ ...settings, reader });
+export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex']):Promise<QueryAgent> => createAgent({ ...settings, reader, codex });
+
+/** A registry generation is immutable. ReloadableAgent leases it for the entire query. */
+export async function createModelRegistry(profiles:ModelProfile[], reader:ContextReader, factory:ModelAgentFactory, initial?:QueryAgent):Promise<QueryAgent> {
+  const agents=new Map<string,QueryAgent>();
+  try {
+    for(const profile of profiles)agents.set(profile.id,profile.id==='default'&&initial?initial:await factory(profile.settings,reader));
+  } catch(error) {await Promise.allSettled([...agents.values()].map(agent=>agent.close()));throw error;}
+  return {
+    configured:[...agents.values()].some(agent=>agent.configured),
+    configuredFor:id=>Boolean(agents.get(id)?.configured),
+    async query(input){
+      const id=input.modelProfileId??'default',agent=agents.get(id),profile=profiles.find(p=>p.id===id);
+      if(!agent||!profile||!agent.configured)throw new AgentNotConfiguredError();
+      const {modelProfileId:_,...request}=input;
+      const result=await agent.query(request);
+      return {...result,modelSelection:{profileId:id,profileName:profile.name,provider:profile.settings.provider,model:profile.settings.model}};
+    },
+    async close(){const results=await Promise.allSettled([...agents.values()].map(agent=>agent.close()));if(results.some(r=>r.status==='rejected'))throw new Error('Model registry cleanup failed');},
+  };
+}
 
 export function modelSettingsFromConfig(config: Config): ModelSettings {
   const provider = config.modelProvider ?? 'deepseek', preset = modelProvider(provider);
@@ -36,6 +56,7 @@ export class ReloadableAgent implements QueryAgent {
   private closed = false;
   constructor(private readonly onCloseError: () => void = () => {}) {}
   get configured(): boolean { return !this.closed && Boolean(this.current?.agent.configured); }
+  configuredFor(id:string):boolean { return !this.closed && Boolean(this.current?.agent.configuredFor?.(id)??this.current?.agent.configured); }
 
   async prepare(agent: QueryAgent, activateConfig: () => void): Promise<PreparedModelSettings> {
     if (this.closed) { await agent.close(); throw new Error('Agent is closed'); }

@@ -27,30 +27,30 @@ data class CollectorConfig(
     fun syncPolicy() = SyncPolicy(syncMode, syncIntervalMinutes, syncBatchSize)
     fun validateConnection() {
         PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
-        require(token.length >= 32) { "节点令牌至少需要 32 个字符" }
+        require(token.length >= 32) { MoteI18n.text("节点令牌至少需要 32 个字符") }
     }
     fun validate() {
         if (server.isNotBlank()) PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
-        require(token.isBlank() || token.length >= 32) { "节点令牌至少需要 32 个字符；留空时仅保存在本机" }
+        require(token.isBlank() || token.length >= 32) { MoteI18n.text("节点令牌至少需要 32 个字符；留空时仅保存在本机") }
         syncPolicy().validate()
         OcrPolicy.validate(ocrMode, ocrAppModes)
-        require(imageDedupeMode in setOf("off", "exact", "conservative", "balanced", "aggressive")) { "图片去重档位无效" }
-        require(deviceName.isNotBlank() && deviceName.length <= 128) { "请填写 1..128 字符的设备名称" }
-        require(intervalSeconds in 5..300) { "采集间隔为 5..300 秒" }
-        require(uploadedRetentionDays in 0..365) { "本机保留时间为 0..365 天" }
-        require(maxQueueMiB in 8..4096) { "队列上限为 8..4096 MiB" }
+        require(imageDedupeMode in setOf("off", "exact", "conservative", "balanced", "aggressive")) { MoteI18n.text("图片去重档位无效") }
+        require(deviceName.isNotBlank() && deviceName.length <= 128) { MoteI18n.text("请填写 1..128 字符的设备名称") }
+        require(intervalSeconds in 5..300) { MoteI18n.text("采集间隔为 5..300 秒") }
+        require(uploadedRetentionDays in 0..365) { MoteI18n.text("本机保留时间为 0..365 天") }
+        require(maxQueueMiB in 8..4096) { MoteI18n.text("队列上限为 8..4096 MiB") }
         Mask.parse(masks)
         AppCollectionRules.parse(appCollectionRules)
         PrivacyRules.validateLocalReview(localReviewUrl)
         require(mode in setOf("accessibility", "projection"))
         nsfw.validate()
-        require(jpegQuality in 40..95 && captureMaxSide in 640..2560 && batteryPauseBelowPct in 0..95) { "检查 JPEG 质量、图片最长边或电量配置" }
-        require(diagnosticsIntervalSeconds in 15..3600) { "诊断采样间隔为 15..3600 秒" }
+        require(jpegQuality in 40..95 && captureMaxSide in 640..2560 && batteryPauseBelowPct in 0..95) { MoteI18n.text("检查 JPEG 质量、图片最长边或电量配置") }
+        require(diagnosticsIntervalSeconds in 15..3600) { MoteI18n.text("诊断采样间隔为 15..3600 秒") }
     }
 }
 
-class SettingsWriteFailure : IllegalStateException("无法持久保存设置，请检查存储空间")
-class SettingsChangedFailure : IllegalStateException("已保存设置发生变化，页面已更新；请检查后重新保存")
+class SettingsWriteFailure : IllegalStateException(MoteI18n.text("无法持久保存设置，请检查存储空间"))
+class SettingsChangedFailure : IllegalStateException(MoteI18n.text("已保存设置发生变化，页面已更新；请检查后重新保存"))
 
 class Settings(private val context: Context) {
     private val prefs = context.getSharedPreferences("mote", Context.MODE_PRIVATE)
@@ -144,7 +144,7 @@ class Settings(private val context: Context) {
             return edit.commit()
         }
         if (!write(values)) {
-            if (!write(previous)) { enabled = false; status("error", "设置保存与恢复均未持久完成，采集已停止；请检查存储空间并重试") }
+            if (!write(previous)) { enabled = false; status("error", MoteI18n.text("设置保存与恢复均未持久完成，采集已停止；请检查存储空间并重试")) }
             throw SettingsWriteFailure()
         }
         /* Configuration is committed as one snapshot; status counters are never rolled back. */
@@ -161,7 +161,7 @@ class Settings(private val context: Context) {
         if (!saved) {
             // Restore memory as well as attempt durable rollback; caller retains the encrypted redemption journal.
             if (!prefs.edit().putString("dataOrigin", previousOrigin).putString("server", previousServer).putString("token", previousToken).putString("deviceName", previousName).putBoolean("debugHttp", previousHttp).commit()) {
-                enabled = false; status("error", "连接设置未能持久恢复，采集已停止；原连接恢复资料仍保留")
+                enabled = false; status("error", MoteI18n.text("连接设置未能持久恢复，采集已停止；原连接恢复资料仍保留"))
             }
             throw SettingsWriteFailure()
         }
@@ -179,7 +179,7 @@ class Settings(private val context: Context) {
         val current = read()
         if (current.server == next.server && current.token == next.token) return previous
         if (!hasPendingData()) return if (next.hasSyncConnection()) next.server.trimEnd('/') else ""
-        require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { "待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定" }
+        require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { MoteI18n.text("待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定") }
         return previous.ifBlank { if (next.hasSyncConnection()) next.server.trimEnd('/') else "" }
     }
     fun ensureDataOrigin(config: CollectorConfig) {
@@ -216,12 +216,12 @@ class Settings(private val context: Context) {
         if (changed) runCatching { HeartbeatWorker.stateChanged(context, read()) }
     }
     fun state(): String = prefs.getString("state", "paused")!!
-    fun message(): String = prefs.getString("message", "尚未开始采集")!!
+    fun message(): String = prefs.getString("message", MoteI18n.text("尚未开始采集"))!!
     fun statusAt(): Long = prefs.getLong("statusAt", 0)
     fun captured(at: String) { prefs.edit().putString("lastCapture", at).apply() }
     fun lastCapture(): String? = prefs.getString("lastCapture", null)
     fun uploadStatus(message: String) { prefs.edit().putString("uploadStatus", message).apply() }
-    fun uploadStatus(): String = prefs.getString("uploadStatus", "尚未上传")!!
+    fun uploadStatus(): String = prefs.getString("uploadStatus", MoteI18n.text("尚未上传"))!!
 }
 
 fun Context.queue() = QueueStorage(this).openQueue()

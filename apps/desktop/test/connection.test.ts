@@ -55,7 +55,7 @@ it('returns fixed network/409 errors without provider body or token leakage and 
 });
 it('validates connection scope, device binding and bounded responses', async () => {
   const config = { serverUrl: invitation.serverUrl, token, deviceId: 'fixture-device' };
-  const result = await testConnection(config, async (_url, init) => { expect(init?.headers).toEqual({ Authorization: 'Bearer ' + token }); expect(init?.redirect).toBe('error'); return response(identity); });
+  const result = await testConnection(config, async (_url, init) => { expect(init?.headers).toEqual({ Authorization: 'Bearer ' + token, 'Accept-Language': 'zh-CN' }); expect(init?.redirect).toBe('error'); return response(identity); });
   expect(result.credential.scope).toBe('collector'); expect(JSON.stringify(result)).not.toContain(token);
   for (const bad of [{ ...identity, credential: { ...identity.credential, deviceId: 'other' } }, { ...identity, capabilities: { ...identity.capabilities, archiveRead: true } }, { ...identity, credential: { ...identity.credential, token } }]) await expect(testConnection(config, async () => response(bad))).rejects.toThrow();
   await expect(testConnection(config, async () => new Response('x'.repeat(16385)))).rejects.toThrow();

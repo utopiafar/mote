@@ -73,6 +73,6 @@ object CollectorMetadata {
     }
     fun appName(context: Context, id: String): String = runCatching {
         val info = context.packageManager.getApplicationInfo(id, 0)
-        context.packageManager.getApplicationLabel(info).toString().trim().take(200).ifBlank { "未知应用" }
-    }.getOrDefault("未知应用")
+        context.packageManager.getApplicationLabel(info).toString().trim().take(200).ifBlank { MoteI18n.text("未知应用") }
+    }.getOrDefault(MoteI18n.text("未知应用"))
 }

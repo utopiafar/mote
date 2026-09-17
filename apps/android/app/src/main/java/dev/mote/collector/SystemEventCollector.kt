@@ -86,8 +86,8 @@ internal class SystemEventCollector(private val context: Context, private val wo
         if (!c.notificationCollectionEnabled) seen.clear()
         state("state_observed")
         Notifications.showEvents(context, listOfNotNull(
-            if (c.notificationCollectionEnabled) "通知事件已启用" else null,
-            if (c.deviceEventCollectionEnabled) "亮屏与锁定事件已启用" else null
+            if (c.notificationCollectionEnabled) MoteI18n.text("通知事件已启用") else null,
+            if (c.deviceEventCollectionEnabled) MoteI18n.text("亮屏与锁定事件已启用") else null
         ).takeIf { it.isNotEmpty() }?.joinToString(" · "))
     }
     fun reset() { seen.clear(); lastState = null; session = UUID.randomUUID().toString() }
@@ -121,6 +121,6 @@ internal class SystemEventCollector(private val context: Context, private val wo
         }
     }
     private fun reportFailure() {
-        settings.status("error", "部分系统事件未能保存，请检查本机存储；事件历史可能不完整")
+        settings.status("error", MoteI18n.text("部分系统事件未能保存，请检查本机存储；事件历史可能不完整"))
     }
 }

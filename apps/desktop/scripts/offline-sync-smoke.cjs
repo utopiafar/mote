@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 // Real Electron preload/main IPC and HTTP transports; generated notes/files only. Never start screen capture.
 const { app, dialog, safeStorage, desktopCapturer, ipcMain } = require('electron');
 const { mkdtempSync, writeFileSync, readdirSync, readFileSync } = require('node:fs');

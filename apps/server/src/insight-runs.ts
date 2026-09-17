@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
 import type {AgentProgress} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
@@ -17,7 +18,7 @@ export class InsightRuns {
     store.db.exec('CREATE TABLE IF NOT EXISTS insight_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
     for(const row of store.db.prepare("SELECT json FROM insight_runs WHERE json_extract(json,'$.status')='running'").all() as {json:string}[]){
       const run=JSON.parse(row.json) as InsightRun;
-      this.save({...run,status:'failed',updatedAt:new Date().toISOString(),error:{code:'interrupted',message:'中央节点重启中断了此次回顾，请重试。'}});
+      this.save({...run,status:'failed',updatedAt:new Date().toISOString(),error:{code:'interrupted',message:moteText("中央节点重启中断了此次回顾，请重试。")}});
     }
   }
   private save(run:InsightRun){this.store.db.prepare('UPDATE insight_runs SET json=? WHERE id=?').run(JSON.stringify(run),run.id);}

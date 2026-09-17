@@ -52,6 +52,13 @@ test('missing files and invalid diagnostic configuration fail before creating a 
   }
 });
 
+test('Codex launch paths load from the private environment file without becoming model parameters',t=>{
+  const root=mkdtempSync(join(tmpdir(),'mote-config-codex-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const file=join(root,'mote.env');writeFileSync(file,'MOTE_DATA_DIR=./vault\nMOTE_MODEL_PROVIDER=codex\nMOTE_MODEL=fixture\nMOTE_CODEX_BIN=/fixture/bin/codex\nMOTE_CODEX_HOME=./login\n');
+  const result=readConfig({MOTE_ENV_FILE:file});assert.equal(result.status,0,result.stderr);
+  const config=JSON.parse(result.stdout);assert.equal(config.modelProtocol,'codex-app-server');assert.equal(config.modelBaseUrl,'');assert.equal(config.codexBin,'/fixture/bin/codex');assert.equal(config.codexHome,join(root,'login'));assert.deepEqual(config.modelExtraBody,{});
+});
+
 test('startup reports the invalid setting without its private supplied value', t => {
   const root=mkdtempSync(join(tmpdir(),'mote-config-message-'));
   t.after(()=>rmSync(root,{recursive:true,force:true}));

@@ -42,7 +42,7 @@ internal class UiTask(
         val result = AtomicReference<Result<T>?>(null)
         poll = {
             val completed = result.get()
-            if (completed == null) progress("${state.message} · 已用 ${(SystemClock.elapsedRealtime() - state.started) / 1000} 秒")
+            if (completed == null) progress(MoteI18n.text("{0} · 已用 {1} 秒", state.message, (SystemClock.elapsedRealtime() - state.started) / 1000))
             else { poll = null; finished(completed) }
         }
         progress(label)

@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import sharp from 'sharp';
@@ -22,7 +23,7 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     const record=store.evidence([id])[0],c=credential(req);
     if(c)connections.assertActive(c);
     // Missing and foreign IDs share a response so collectors cannot probe other devices.
-    if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,'采集记录不存在或已被清理。');
+    if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,moteText("采集记录不存在或已被清理。"));
     return record;
   };
   app.post('/api/capture-browser/reconcile',{bodyLimit:16384},async req=>{
@@ -36,7 +37,7 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     const query=range.parse(req.query),c=credential(req);
     if(c){
       connections.assertActive(c);
-      if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,'只能读取本设备的采集记录。');
+      if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,moteText("只能读取本设备的采集记录。"));
       query.deviceId=c.deviceId;
     }
     return store.previews(query);
@@ -47,7 +48,7 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
   }).strict().refine(value=>Date.parse(value.after)<Date.parse(value.before),{message:'Invalid time range'});
   for(const mode of ['albums','album-images'] as const) app.get(`/api/capture-browser/${mode}`,async req=>{
     const query=galleryRange.parse(req.query),c=credential(req);
-    if(c){connections.assertActive(c);if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,'只能读取本设备的采集记录。');query.deviceId=c.deviceId;}
+    if(c){connections.assertActive(c);if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,moteText("只能读取本设备的采集记录。"));query.deviceId=c.deviceId;}
     if(mode==='album-images'&&query.appId===undefined)throw new StoreError('Album appId is required');
     return store.gallery(query,mode==='albums');
   });
@@ -56,14 +57,14 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
   }).strict().refine(value=>Date.parse(value.after)<Date.parse(value.before)&&Date.parse(value.before)-Date.parse(value.after)<=32*86400000,{message:'Select up to 32 days for session browsing'});
   app.get('/api/capture-browser/sessions',async req=>{
     const query=sessionRange.parse(req.query),c=credential(req);
-    if(c){connections.assertActive(c);if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,'只能读取本设备的采集记录。');query.deviceId=c.deviceId;}
+    if(c){connections.assertActive(c);if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,moteText("只能读取本设备的采集记录。"));query.deviceId=c.deviceId;}
     return store.sessions(query);
   });
   const ownImage=(req:FastifyRequest)=>{
     const id=z.string().uuid().parse((req.params as {id:string}).id),c=credential(req);
     if(c)connections.assertActive(c);
     const record=store.imageReference(id);
-    if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,'采集记录不存在或已被清理。');
+    if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,moteText("采集记录不存在或已被清理。"));
     return {...record,id};
   };
   app.get('/api/capture-browser/:id',async req=>ownRecord(req));

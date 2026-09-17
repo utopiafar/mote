@@ -1,0 +1,74 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {buildApp} from '../src/app.js';
+import type {Config} from '../src/config.js';
+import type {ModelSettings,ModelSettingsView} from '@mote/shared/models';
+import type {QueryInput} from '@mote/agent';
+
+const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'first-model',baseUrl:'https://fixture.invalid/v1',apiKey:'fixture-original-secret',headers:{},extraBody:{},reasoningEffort:'auto',maxTokens:8192,timeoutMs:120000,allowUnauthenticatedLocal:false};
+const headers={authorization:'Bearer synthetic-profile-owner'};
+test('profiles route each request and feature independently; credentials, restarts and deletes are scoped',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-profiles-'));
+  const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:47832,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const seen:ModelSettings[]=[],calls:{model:string;skill?:string}[]=[];
+  const factory=async (s:ModelSettings)=>{seen.push(s);return {configured:!!s.model,query:async(input:QueryInput)=>{calls.push({model:s.model,skill:input.skill});return {answer:input.skill==='memory-extraction'?'{"memories":[]}':s.model,citations:[],trace:[],runId:'fixture'};},close:async()=>{}};};
+  let node=await buildApp(cfg,{createModelAgent:factory});
+  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
+  let view=(await node.app.inject({url:'/api/model-settings',headers})).json<ModelSettingsView>();
+  const put=async(id:string,patch:unknown)=>node.app.inject({method:'PUT',url:'/api/model-settings/profiles/'+id,headers,payload:{revision:view.revision,name:'Second connection',settings:patch}});
+  let response=await put('second',{...settings,apiKey:undefined,model:'second-model'});
+  assert.equal(response.statusCode,200,response.body);view=response.json();
+  assert.equal(view.profiles?.find(p=>p.id==='second')?.settings.apiKeyConfigured,false,'new profiles must never inherit a default key');
+  assert.equal(seen.at(-1)?.apiKey,'');
+  response=await put('second',{...settings,apiKey:'fixture-second-secret',model:'second-model'});view=response.json();
+  const defaults={...view.defaults!,chat:'second',memory:'second',file:'second'};
+  response=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:view.revision,defaults}});
+  assert.equal(response.statusCode,200,response.body);view=response.json();
+  const query=async(modelProfileId?:string)=>node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated fixture question',modelProfileId}});
+  assert.equal((await query()).json().answer,'second-model');
+  const explicit=(await query('default')).json();assert.equal(explicit.answer,'first-model');assert.equal(explicit.modelSelection.profileId,'default');
+  assert.equal((await query('missing')).statusCode,400);
+  assert.equal(node.modelSettings.select('memory').id,'second');assert.equal(node.modelSettings.select('import').id,'default');
+  assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}})).statusCode,200);
+  assert.deepEqual(calls.at(-1),{model:'second-model',skill:'memory-extraction'});
+  assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{modelProfileId:'default'}})).statusCode,200);
+  assert.deepEqual(calls.at(-1),{model:'first-model',skill:'memory-extraction'});
+  const review=await node.app.inject({method:'POST',url:'/api/insights',headers,payload:{modelProfileId:'second'}});
+  assert.equal(review.statusCode,200,review.body);assert.equal(review.json().modelSelection.profileId,'second');
+  assert.deepEqual(calls.at(-1),{model:'second-model',skill:'personal-insight'});
+  node.sources.register({id:'fixture',name:'Generated fixture',kind:'custom',deviceId:'fixture',platform:'import'});
+  const record=await node.sources.upsert('fixture',{externalId:'fixture',revision:'1',observedAt:'2026-01-01T00:00:00Z',text:'Generated memory evidence',kind:'file',layer:'original'});
+  const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:[record.id],modelProfileId:'default'}});
+  assert.equal(created.statusCode,202,created.body);assert.equal(created.json().modelProfileId,'default');
+  const finished=await node.memoryPipeline.run(created.json().id);assert.equal(finished.status,'completed');
+  assert.deepEqual(calls.at(-1),{model:'first-model',skill:'memory-extraction'});
+  const removed=await node.app.inject({method:'DELETE',url:'/api/model-settings/profiles/second',headers,payload:{revision:view.revision}});
+  assert.equal(removed.statusCode,409);
+  const oldRevision=view.revision;
+  response=await node.app.inject({method:'DELETE',url:'/api/model-settings',headers,payload:{revision:view.revision}});view=response.json();
+  assert.equal(view.profiles?.length,2,'restoring default must preserve other profiles and routes');
+  assert.equal(view.defaults?.memory,'second');
+  response=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:oldRevision,defaults}});assert.equal(response.statusCode,409);
+  assert.equal(JSON.stringify(view).includes('fixture-second-secret'),false);
+  assert.equal((await readFile(join(directory,'model-settings.json'),'utf8')).includes('fixture-second-secret'),true);
+  await node.app.close();node=await buildApp(cfg,{createModelAgent:factory});
+  assert.equal((await query()).json().answer,'second-model');
+  assert.equal(node.modelSettings.select('memory').settings.apiKey,'fixture-second-secret');
+  const bad=await node.app.inject({method:'PUT',url:'/api/model-settings/defaults',headers,payload:{revision:view.revision,defaults:{...defaults,memory:'missing'}}});assert.equal(bad.statusCode,400);
+});
+
+test('Codex profiles accept a local login transport and reject arbitrary process or HTTP configuration',async t=>{
+  const {ModelSettingsStore}=await import('../src/model-settings.js');
+  const directory=await mkdtemp(join(tmpdir(),'mote-codex-settings-'));
+  const store=new ModelSettingsStore({directory,environment:settings,prepare:async()=>({activate(){},async dispose(){}}),probe:async()=>({ok:true,code:'ok',message:'',durationMs:1})});
+  t.after(async()=>{await store.close();await rm(directory,{recursive:true,force:true});});await store.initialize();
+  const local={...settings,provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'fixture-codex',apiKey:null};
+  await store.updateProfile('local',{revision:0,name:'Codex fixture',settings:local});
+  assert.equal(store.select('chat','local').settings.protocol,'codex-app-server');
+  for(const patch of [{baseUrl:'file:///bin/sh'},{extraBody:{command:'sh'}},{headers:{Authorization:'fixture'}},{codexPath:'/bin/sh'}]){
+    await assert.rejects(store.updateProfile('local',{revision:1,name:'Codex fixture',settings:{...local,...patch}}));
+  }
+});

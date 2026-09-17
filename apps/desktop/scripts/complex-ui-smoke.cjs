@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 const {app}=require('electron');
 const {mkdtempSync,writeFileSync,readFileSync,readdirSync}=require('node:fs');
 const {rm}=require('node:fs/promises');

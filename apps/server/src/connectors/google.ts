@@ -1,3 +1,4 @@
+import { moteText } from '../i18n.js';
 import {createHash,randomBytes} from 'node:crypto';
 import {OAuth2Client,type Credentials} from 'google-auth-library';
 import type {SourceItem,SourceItemRecord} from '@mote/shared';
@@ -137,7 +138,7 @@ export class GoogleCalendarConnector {
     const {calendarIds}=selectedCalendarsSchema.parse(raw);
     const available=(await this.listCalendars()).calendars,selected=calendarIds.map(id=>{const c=available.find(c=>c.id===id);if(!c)throw new ConnectorError('google_calendar_not_found',404);return {id:c.id,summary:c.summary,timeZone:c.timeZone,primary:c.primary};});
     for(const prior of this.saved.calendars)if(!calendarIds.includes(prior.id)){const sourceId=this.sourceId(prior.id);this.ctx.sources.update(sourceId,{enabled:false});}
-    for(const calendar of selected){const id=this.sourceId(calendar.id);this.ctx.sources.register({id,name:`日历 · ${calendar.summary}`.slice(0,200),kind:'google-calendar',deviceId:'google-calendar',platform:'import',retention:'snapshot',enabled:true});this.ctx.sources.update(id,{enabled:true,name:`日历 · ${calendar.summary}`.slice(0,200)});}
+    for(const calendar of selected){const id=this.sourceId(calendar.id);this.ctx.sources.register({id,name:moteText("日历 · {0}", calendar.summary).slice(0,200),kind:'google-calendar',deviceId:'google-calendar',platform:'import',retention:'snapshot',enabled:true});this.ctx.sources.update(id,{enabled:true,name:moteText("日历 · {0}", calendar.summary).slice(0,200)});}
     this.saved.calendars=selected;this.saved.checkpoints=Object.fromEntries(selected.flatMap(c=>this.saved.checkpoints[c.id]?[[c.id,this.saved.checkpoints[c.id]]]:[]));await this.file.write(this.saved);return this.status();
   }
   private sourceId(calendarId:string){return `google-${hash(calendarId).slice(0,24)}`;}

@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
 import type {AgentProgress} from '@mote/agent';
 import {Store,StoreError} from './store.js';
@@ -12,7 +13,7 @@ export class QueryRuns {
   private pending=new Set<Promise<void>>();
   constructor(private store:Store){
     store.db.exec('CREATE TABLE IF NOT EXISTS query_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
-    for(const row of store.db.prepare("SELECT json FROM query_runs WHERE json_extract(json,'$.status')='running'").all() as {json:string}[]){const run=JSON.parse(row.json);this.save({...run,status:'failed',updatedAt:new Date().toISOString(),error:{code:'interrupted',message:'中央节点重启中断了此次问答，请重新提问。'}});}
+    for(const row of store.db.prepare("SELECT json FROM query_runs WHERE json_extract(json,'$.status')='running'").all() as {json:string}[]){const run=JSON.parse(row.json);this.save({...run,status:'failed',updatedAt:new Date().toISOString(),error:{code:'interrupted',message:moteText("中央节点重启中断了此次问答，请重新提问。")}});}
   }
   private save(run:QueryRun){this.store.db.prepare('UPDATE query_runs SET json=? WHERE id=?').run(JSON.stringify(run),run.id);}
   list():QueryRun[]{return (this.store.db.prepare("SELECT json FROM query_runs ORDER BY json_extract(json,'$.createdAt') DESC LIMIT 100").all() as {json:string}[]).map(r=>JSON.parse(r.json));}

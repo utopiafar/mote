@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import {constants} from 'node:fs';
 import {lstat,open,readdir,realpath} from 'node:fs/promises';
 import {homedir} from 'node:os';
@@ -59,7 +60,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
 
 /** Bounded incremental tailer. Its cursor is committed atomically with SourceSync's durable outbox. */
 export async function scanCodingAgent(rootPath:string,provider:CodingProvider,options:SourceOptions,previous?:CodingCheckpoint,signal?:AbortSignal,limits={items:200,bytes:4*1024*1024}):Promise<SourceScan> {
-  const selected=await lstat(rootPath);if(!selected.isDirectory()||selected.isSymbolicLink())throw Error('Agent 来源必须是普通目录');
+  const selected=await lstat(rootPath);if(!selected.isDirectory()||selected.isSymbolicLink())throw Error(moteText("Agent 来源必须是普通目录"));
   const root=await realpath(rootPath),checkpoint:CodingCheckpoint=structuredClone(previous??{version:1,files:{},initialized:false});
   const result:SourceScan={items:[],seen:[],complete:true,skipped:0,checkpoint};
   const files:string[]=[];let visited=0,bytes=0;

@@ -1,9 +1,9 @@
-/** Bound decoded response bytes while streaming, before allocating text or parsing JSON. */
+import { moteText } from '@mote/shared/i18n';
 export async function readResponseText(response: Response, maximumBytes: number): Promise<string> {
-  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) throw new Error('响应大小限制无效');
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) throw new Error(moteText("响应大小限制无效"));
   if (Number(response.headers.get('content-length')) > maximumBytes) {
     await response.body?.cancel().catch(() => undefined);
-    throw new Error('响应超过大小限制');
+    throw new Error(moteText("响应超过大小限制"));
   }
   if (!response.body) return '';
   const reader = response.body.getReader();
@@ -14,7 +14,7 @@ export async function readResponseText(response: Response, maximumBytes: number)
     while (true) {
       const next = await reader.read();
       if (next.done) { completed = true; break; }
-      if (length + next.value.byteLength > maximumBytes) throw new Error('响应超过大小限制');
+      if (length + next.value.byteLength > maximumBytes) throw new Error(moteText("响应超过大小限制"));
       bytes.set(next.value, length); length += next.value.byteLength;
     }
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, length));

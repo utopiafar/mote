@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import { constants, type Stats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { basename, extname, join, relative, resolve } from 'node:path';
@@ -9,7 +10,7 @@ import { sourceHash } from './source-sync';
 export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   const selected = await lstat(selectedPath);
-  if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error('所选来源必须是普通文件或目录，不能是符号链接');
+  if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error(moteText("所选来源必须是普通文件或目录，不能是符号链接"));
   const root = await realpath(selectedPath);
   const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0 };
   let visited = 0; let totalBytes = 0;

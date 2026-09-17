@@ -114,10 +114,10 @@ fun Activity.moteDetailPage(): LinearLayout {
     }
     val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(MoteUi.background); moteInsets() }
     root.addView(TextView(this).apply {
-        text = "‹  返回"; textSize = 15f; setTextColor(MoteUi.accent)
+        text = MoteI18n.text("‹  返回"); textSize = 15f; setTextColor(MoteUi.accent)
         gravity = Gravity.CENTER_VERTICAL; minHeight = moteDp(48)
         setPadding(moteDp(22), moteDp(4), moteDp(22), moteDp(4))
-        contentDescription = "返回上一页"; isFocusable = true; setOnClickListener { finish() }
+        contentDescription = MoteI18n.text("返回上一页"); isFocusable = true; setOnClickListener { finish() }
     }, LinearLayout.LayoutParams(-1, -2))
     root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
     setContentView(root)

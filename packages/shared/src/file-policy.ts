@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {z} from 'zod';
 
 const id=z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/);
@@ -17,8 +18,8 @@ export const processingServiceSchema=z.object({
 }).strict().superRefine((s,c)=>{
   try{const u=new URL(s.endpoint),local=['127.0.0.1','localhost','[::1]'].includes(u.hostname);
     if(u.username||u.password||u.hash||u.search||!['http:','https:'].includes(u.protocol)||(s.execution==='local'?!local:u.protocol!=='https:'))throw Error();
-  }catch{c.addIssue({code:'custom',message:'本地服务必须使用回环地址，远程服务必须使用 HTTPS，地址不可包含凭据或查询参数'});}
-  if(s.kind==='model'&&!s.model.trim())c.addIssue({code:'custom',message:'语言模型服务需要填写模型名称'});
+  }catch{c.addIssue({code:'custom',message:moteText("本地服务必须使用回环地址，远程服务必须使用 HTTPS，地址不可包含凭据或查询参数")});}
+  if(s.kind==='model'&&!s.model.trim())c.addIssue({code:'custom',message:moteText("语言模型服务需要填写模型名称")});
 });
 export const processingProfileSchema=z.object({
   id,name:z.string().trim().min(1).max(100),processorId:id,serviceId:id.optional(),
@@ -30,11 +31,11 @@ export const filePolicySchema=z.object({
   version:z.literal(1),services:z.array(processingServiceSchema).max(100),profiles:z.array(processingProfileSchema).min(1).max(100),
   rules:z.array(z.object({sourceId:z.string().min(1).max(128).optional(),type:fileTypePattern,profileId:id}).strict()).min(1).max(500),
 }).strict().superRefine((p,c)=>{
-  for(const rows of [p.services,p.profiles])if(new Set(rows.map(r=>r.id)).size!==rows.length)c.addIssue({code:'custom',message:'服务和方案 ID 必须各自唯一'});
-  if(new Set(p.rules.map(r=>`${r.sourceId??''}:${r.type}`)).size!==p.rules.length)c.addIssue({code:'custom',message:'同一来源和类型只能配置一条规则'});
-  if(!p.rules.some(r=>!r.sourceId&&r.type==='*/*'))c.addIssue({code:'custom',message:'需要配置其他类型的默认规则'});
-  for(const r of p.rules)if(!p.profiles.some(v=>v.id===r.profileId))c.addIssue({code:'custom',message:'规则引用了不存在的方案'});
-  for(const v of p.profiles)for(const ref of [v.serviceId,v.modelServiceId].filter(Boolean))if(!p.services.some(s=>s.id===ref))c.addIssue({code:'custom',message:'方案引用了不存在的服务'});
+  for(const rows of [p.services,p.profiles])if(new Set(rows.map(r=>r.id)).size!==rows.length)c.addIssue({code:'custom',message:moteText("服务和方案 ID 必须各自唯一")});
+  if(new Set(p.rules.map(r=>`${r.sourceId??''}:${r.type}`)).size!==p.rules.length)c.addIssue({code:'custom',message:moteText("同一来源和类型只能配置一条规则")});
+  if(!p.rules.some(r=>!r.sourceId&&r.type==='*/*'))c.addIssue({code:'custom',message:moteText("需要配置其他类型的默认规则")});
+  for(const r of p.rules)if(!p.profiles.some(v=>v.id===r.profileId))c.addIssue({code:'custom',message:moteText("规则引用了不存在的方案")});
+  for(const v of p.profiles)for(const ref of [v.serviceId,v.modelServiceId].filter(Boolean))if(!p.services.some(s=>s.id===ref))c.addIssue({code:'custom',message:moteText("方案引用了不存在的服务")});
 });
 export type FilePolicy=z.infer<typeof filePolicySchema>;
 export type ProcessingProfile=z.infer<typeof processingProfileSchema>;

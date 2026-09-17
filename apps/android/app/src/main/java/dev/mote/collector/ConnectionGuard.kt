@@ -31,7 +31,7 @@ object ConnectionGuard {
         check(updating.get())
         if (!lock.writeLock().tryLock(120, TimeUnit.SECONDS)) throw ConnectionFailure("busy")
         try {
-            check(processing.get() == 0) { "采集处理尚未结束" }
+            check(processing.get() == 0) { MoteI18n.text("采集处理尚未结束") }
             if (expected != null && Settings(context).read() != expected) throw SettingsChangedFailure()
             validateOrigin(context, nextServer, bindLocal)
             return action()

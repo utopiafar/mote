@@ -18,11 +18,11 @@ data class LocalSource(
     val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all"
 ) {
     fun validate() {
-        require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}")) && name.isNotBlank() && name.length <= 200) { "检查来源名称" }
+        require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}")) && name.isNotBlank() && name.length <= 200) { MoteI18n.text("检查来源名称") }
         require(kind in setOf("local-calendar", "local-files") && retention in setOf("snapshot", "reference", "archive") && initialSync in setOf("all", "new_only") && (kind == "local-files" || retention != "archive"))
-        require(daysBefore in 0..365 && daysAfter in 1..365 && intervalMinutes in 15..1440) { "窗口为过去 0–365 天、未来 1–365 天，间隔 15–1440 分钟" }
+        require(daysBefore in 0..365 && daysAfter in 1..365 && intervalMinutes in 15..1440) { MoteI18n.text("窗口为过去 0–365 天、未来 1–365 天，间隔 15–1440 分钟") }
         if (kind == "local-calendar") require(calendarId != null && calendarId >= 0)
-        else require(uri != null && uri.startsWith("content://") && !uri.contains('?') && !uri.contains('#')) { "需要系统选择器提供的持久文件权限" }
+        else require(uri != null && uri.startsWith("content://") && !uri.contains('?') && !uri.contains('#')) { MoteI18n.text("需要系统选择器提供的持久文件权限") }
         SourceRules.extensions(extensions); SourceRules.patterns(excluded)
     }
     fun json() = JSONObject().put("id", id).put("name", name).put("kind", kind).put("retention", retention).put("enabled", enabled)
@@ -62,16 +62,16 @@ object SourceRules {
     fun hash(value: String) = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
     fun target(server: String, token: String) = hash(server.trim().trimEnd('/') + "\u0000" + token)
     fun extensions(value: String): Set<String> = value.split(',').map { it.trim().lowercase() }.filter { it.isNotBlank() }.toSet().also {
-        require(it.isNotEmpty() && it.size <= 20 && it.all { v -> v.matches(Regex("[a-z0-9]{1,12}")) }) { "扩展名使用逗号分隔，如 md,txt,json,csv,ics" }
+        require(it.isNotEmpty() && it.size <= 20 && it.all { v -> v.matches(Regex("[a-z0-9]{1,12}")) }) { MoteI18n.text("扩展名使用逗号分隔，如 md,txt,json,csv,ics") }
     }
     fun patterns(value: String): List<SourcePathPattern> = value.lines().filter { it.isNotBlank() }.also {
-        require(it.size <= 40 && it.all { v -> v.length <= 200 }) { "排除路径最多 40 行，每行 200 字符" }
+        require(it.size <= 40 && it.all { v -> v.length <= 200 }) { MoteI18n.text("排除路径最多 40 行，每行 200 字符") }
     }.map { SourcePathPattern(it) }
     fun include(path: String, source: LocalSource): Boolean = path.substringAfterLast('.', "").lowercase() in extensions(source.extensions) && patterns(source.excluded).none { it.matches(path) }
     fun utf8(bytes: ByteArray): String {
-        require(bytes.size <= FILE_BYTES) { "文件超过 100 KiB" }
+        require(bytes.size <= FILE_BYTES) { MoteI18n.text("文件超过 100 KiB") }
         val text = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
-        require(!text.contains('\u0000') && text.length <= 100000) { "只支持 UTF-8 文本，最多 100000 字符" }
+        require(!text.contains('\u0000') && text.length <= 100000) { MoteI18n.text("只支持 UTF-8 文本，最多 100000 字符") }
         return text.removePrefix("\uFEFF")
     }
     fun canonical(value: Any?): String = when (value) {
@@ -115,7 +115,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     }
     fun save(source: LocalSource) = synchronized(lock) {
         source.validate(); val all = sources().toMutableList(); val old = all.find { it.id == source.id }
-        require(old != null || all.size < 20) { "最多连接 20 个来源" }
+        require(old != null || all.size < 20) { MoteI18n.text("最多连接 20 个来源") }
         // Explicit selection/filter/retention edits discard old unsent material before the new scan.
         if (old != null && old.copy(enabled = source.enabled, intervalMinutes = source.intervalMinutes, name = source.name, initialSync = source.initialSync).json().toString() != source.json().toString()) file(source.id).delete()
         if (old == null || old.name != source.name || old.initialSync != source.initialSync) {
@@ -157,12 +157,12 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
                 val body = current.getJSONObject(key).getJSONObject("body")
                 if (keys.add(identity(body))) pending.put(body)
             }
-            check(pending.length() <= 4096) { "来源队列已满，请先同步后重试全量上传" }
+            check(pending.length() <= 4096) { MoteI18n.text("来源队列已满，请先同步后重试全量上传") }
             state.put("pending", pending).put("registered", false)
             if (!state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
             val bytes = cipher.seal(state.toString().toByteArray(Charsets.UTF_8))
             val other = directory.listFiles()?.filter { it != file(source.id) }?.sumOf { it.length() } ?: 0L
-            check(bytes.size + other <= maxBytes) { "来源补传缓存达到上限，请先同步待发版本后重试" }
+            check(bytes.size + other <= maxBytes) { MoteI18n.text("来源补传缓存达到上限，请先同步待发版本后重试") }
             writeBytes(file(source.id), bytes); count += pending.length()
         }; count
     }
@@ -195,7 +195,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
             val ids = (0 until baseline.length()).map { baseline.getString(it) }.toMutableSet()
             result.items.forEach { ids.add(it.getString("externalId")) }
             state.put("baseline", JSONArray(ids.toList())).put("initialized", result.complete).put("scanComplete", result.complete).put("lastScan", result.observedAt)
-            check(state.toString().toByteArray().size <= maxBytes) { "首次同步清单达到缓存上限" }
+            check(state.toString().toByteArray().size <= maxBytes) { MoteI18n.text("首次同步清单达到缓存上限") }
             write(file(source.id), state); return@synchronized
         }
         val ignored = if (source.initialSync == "new_only") (0 until baseline.length()).map { baseline.getString(it) }.toSet() else emptySet()
@@ -226,12 +226,12 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
                 accept(deleted)
             }
         }
-        check(pending.length() <= 4096) { "来源队列已满，请先同步" }
+        check(pending.length() <= 4096) { MoteI18n.text("来源队列已满，请先同步") }
         if (pending.length() > 0 && !state.has("pendingSince")) state.put("pendingSince", System.currentTimeMillis())
         state.put("current", current).put("pending", pending).put("lastScan", result.observedAt).put("status", if (result.complete) "scanned" else "partial").put("skipped", result.skipped).put("scanComplete", result.complete)
         val bytes = cipher.seal(state.toString().toByteArray(Charsets.UTF_8))
         val other = directory.listFiles()?.filter { it != file(source.id) }?.sumOf { it.length() } ?: 0L
-        check(bytes.size + other <= maxBytes) { "来源缓存达到上限，请先同步或减少选择" }
+        check(bytes.size + other <= maxBytes) { MoteI18n.text("来源缓存达到上限，请先同步或减少选择") }
         writeBytes(file(source.id), bytes)
     }
     fun next(id: String, target: String): JSONObject? = synchronized(lock) {
@@ -251,7 +251,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     private fun write(file: File, body: JSONObject) = writeBytes(file, cipher.seal(body.toString().toByteArray(Charsets.UTF_8)))
     private fun writeBytes(file: File, bytes: ByteArray) {
         val temp = File(directory, "${UUID.randomUUID()}.tmp")
-        try { FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }; check(temp.renameTo(file)) { "无法保存来源状态" }; onMutation?.invoke() } finally { temp.delete() }
+        try { FileOutputStream(temp).use { it.write(bytes); it.fd.sync() }; check(temp.renameTo(file)) { MoteI18n.text("无法保存来源状态") }; onMutation?.invoke() } finally { temp.delete() }
     }
     companion object { private val lock = Any() }
 }

@@ -1,3 +1,4 @@
+import { moteText } from '../i18n.js';
 import {join} from 'node:path';
 import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
 import {z} from 'zod';
@@ -24,8 +25,8 @@ export async function registerConnectors(app:FastifyInstance,context:ConnectorCo
   app.delete('/api/connectors/google',{preHandler:owner},action(()=>google.disconnect()));
   app.get('/oauth/google/callback',async(req,reply)=>{
     reply.header('Cache-Control','no-store').header('Referrer-Policy','no-referrer').header('Content-Security-Policy',"default-src 'none'; style-src 'none'");
-    try{const input=z.object({state:z.string().min(20).max(200),code:z.string().min(1).max(4096)}).passthrough().parse(req.query);await google.callback(input.state,input.code);return reply.type('text/plain; charset=utf-8').send('Google 日历已连接。请返回 Mote 选择需要同步的日历。');}
-    catch{return reply.code(400).type('text/plain; charset=utf-8').send('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。');}
+    try{const input=z.object({state:z.string().min(20).max(200),code:z.string().min(1).max(4096)}).passthrough().parse(req.query);await google.callback(input.state,input.code);return reply.type('text/plain; charset=utf-8').send(moteText("Google 日历已连接。请返回 Mote 选择需要同步的日历。"));}
+    catch{return reply.code(400).type('text/plain; charset=utf-8').send(moteText("授权未完成或已过期。请返回 Mote 重新连接 Google 日历。"));}
   });
   let closed=false;
   return {close:async()=>{if(closed)return;closed=true;await Promise.all([google.close(),remote.close(),mcp.close()]);}};

@@ -72,6 +72,7 @@ export function configFromEnv() {
     updateRepository:text('MOTE_UPDATE_REPOSITORY','utopiafar/mote'),updateChannel:choice('MOTE_UPDATE_CHANNEL',['stable','preview'] as const,'stable'),
     dataKey:text('MOTE_DATA_KEY')||undefined,contentEncryptionEnabled:flag('MOTE_CONTENT_ENCRYPTION',false),
     modelProvider:modelProviderId,modelProtocol,modelHeaders,modelExtraBody,
+    codexBin:text('MOTE_CODEX_BIN')||undefined,codexHome:text('MOTE_CODEX_HOME')?resolve(baseDir,text('MOTE_CODEX_HOME')):undefined,
     modelReasoningEffort,modelMaxTokens:number('MOTE_MODEL_MAX_TOKENS',DEFAULT_MODEL_MAX_TOKENS,1,128000,true),
     modelTimeoutMs:number('MOTE_MODEL_TIMEOUT_MS',120000,5000,600000,true),
     maxStorageBytes:number('MOTE_MAX_STORAGE_MB',10240,1,1_000_000)*1024*1024,
@@ -128,5 +129,5 @@ export function configFromEnv() {
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='contentEncryptionEnabled'|'fileProcessorModules'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import type { Rectangle } from './contracts';
 import { validateLocalModelUrl, validateRectangles } from './config';
 import { readResponseText } from './response-body';
@@ -12,7 +13,7 @@ export function shouldExcludeVisibleApps(visibleAppIds: string[], unknownVisible
 
 /** Electron nativeImage bitmap uses four bytes per pixel; black is channel-order independent. */
 export function maskBitmap(bitmap: Buffer, width: number, height: number, rectangles: Rectangle[]): Buffer {
-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0 || bitmap.length !== width * height * 4) throw new Error('截图像素格式不正确');
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width <= 0 || height <= 0 || bitmap.length !== width * height * 4) throw new Error(moteText("截图像素格式不正确"));
   const masks = validateRectangles(rectangles);
   const output = Buffer.from(bitmap);
   for (const rect of masks) {
@@ -30,7 +31,7 @@ export function maskBitmap(bitmap: Buffer, width: number, height: number, rectan
 
 export interface ReviewDecision { allow: boolean; rectangles: Rectangle[] }
 export function parseReviewDecision(value: unknown): ReviewDecision {
-  if (!value || typeof value !== 'object' || typeof (value as ReviewDecision).allow !== 'boolean') throw new Error('本地隐私模型返回值无效；已跳过本次采集');
+  if (!value || typeof value !== 'object' || typeof (value as ReviewDecision).allow !== 'boolean') throw new Error(moteText("本地隐私模型返回值无效；已跳过本次采集"));
   const v = value as ReviewDecision;
   return { allow: v.allow, rectangles: validateRectangles(v.rectangles) };
 }
@@ -46,6 +47,6 @@ export async function reviewLocally(url: string, image: Buffer, signal?: AbortSi
     const raw = await readResponseText(result, 64000);
     return parseReviewDecision(JSON.parse(raw));
   } catch {
-    throw new Error('本地隐私审查不可用或返回无效结果，已跳过本次采集');
+    throw new Error(moteText("本地隐私审查不可用或返回无效结果，已跳过本次采集"));
   }
 }

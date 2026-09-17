@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {Readable} from 'node:stream';
 import {createGzip} from 'node:zlib';
 import type {Transcript} from '@mote/shared';
@@ -5,7 +6,7 @@ import {FileStore} from './files.js';
 import {StoreError} from './store.js';
 
 const clock=(ms:number)=>{const value=Math.floor(ms);return `${String(Math.floor(value/3600000)).padStart(2,'0')}:${String(Math.floor(value/60000)%60).padStart(2,'0')}:${String(Math.floor(value/1000)%60).padStart(2,'0')}.${String(value%1000).padStart(3,'0')}`;};
-function markdown(transcript:Transcript,title:string){return `# ${title}\n\n${(transcript.warnings??[]).map(s=>'> '+s).join('\n')}\n\n`+transcript.segments.map(s=>`${clock(s.startMs)}–${clock(s.endMs)} ${s.speaker??'未标记说话人'}${s.uncertain?' [说话人不确定]':''}${s.overlap?' [重叠]':''}\n\n${s.text}\n`).join('\n');}
+function markdown(transcript:Transcript,title:string){return `# ${title}\n\n${(transcript.warnings??[]).map(s=>'> '+s).join('\n')}\n\n`+transcript.segments.map(s=>`${clock(s.startMs)}–${clock(s.endMs)} ${s.speaker??moteText("未标记说话人")}${s.uncertain?moteText(" [说话人不确定]"):''}${s.overlap?moteText(" [重叠]"):''}\n\n${s.text}\n`).join('\n');}
 const csvCell=(value:unknown)=>'"'+String(value??'').replace(/"/g,'""')+'"';
 function csv(transcript:Transcript){return '\ufeff'+[['start_ms','end_ms','speaker','uncertain','overlap','text'],...transcript.segments.map(s=>[s.startMs,s.endMs,s.speaker??'',!!s.uncertain,!!s.overlap,s.text])].map(row=>row.map(csvCell).join(',')).join('\r\n')+'\r\n';}
 export function fileExportEntries(files:FileStore,id:string,maxBytes=64*1024*1024){
@@ -15,8 +16,8 @@ export function fileExportEntries(files:FileStore,id:string,maxBytes=64*1024*102
   if(!raw?.data.transcript)throw new StoreError('A current transcript is required for export',409);
   const entries:{name:string;bytes:Buffer}[]=[];let total=0;
   const add=(name:string,value:string|Buffer)=>{const bytes=Buffer.isBuffer(value)?value:Buffer.from(value);total+=bytes.length;if(total>maxBytes)throw new StoreError('Processing export exceeds limit',413);entries.push({name,bytes});};
-  add('原始转写_未校正.md',markdown(raw.data.transcript,'原始转写 · 未校正'));
-  add('原始转写.json',JSON.stringify(raw.data.transcript,null,2));
+  add(moteText("原始转写_未校正.md"),markdown(raw.data.transcript,moteText("原始转写 · 未校正")));
+  add(moteText("原始转写.json"),JSON.stringify(raw.data.transcript,null,2));
   if(diarization){
     const data=diarization.data;
     add('diarization.json',JSON.stringify(data,null,2));
@@ -24,10 +25,10 @@ export function fileExportEntries(files:FileStore,id:string,maxBytes=64*1024*102
     add('diarization.csv',[['start_ms','end_ms','speaker'],...data.segments.map((s:any)=>[s.startMs,s.endMs,s.speaker])].map(row=>row.map(csvCell).join(',')).join('\r\n'));
     for(const asset of db.prepare('SELECT name FROM file_assets WHERE artifact_id=? ORDER BY name').all(diarization.id) as {name:string}[])add(asset.name,files.asset(id,diarization.id,asset.name).bytes);
   }
-  if(dialogue){add('带说话人_未校正完整记录.md',markdown(dialogue.data.transcript,'带说话人完整记录 · 未校正'));add('带说话人_未校正完整记录.csv',csv(dialogue.data.transcript));}
-  if(corrected){add('带说话人_已确认校正记录.md',markdown(corrected.data.transcript,'已确认校正记录'));add('带说话人_已确认校正记录.csv',csv(corrected.data.transcript));}
+  if(dialogue){add(moteText("带说话人_未校正完整记录.md"),markdown(dialogue.data.transcript,moteText("带说话人完整记录 · 未校正")));add(moteText("带说话人_未校正完整记录.csv"),csv(dialogue.data.transcript));}
+  if(corrected){add(moteText("带说话人_已确认校正记录.md"),markdown(corrected.data.transcript,moteText("已确认校正记录")));add(moteText("带说话人_已确认校正记录.csv"),csv(corrected.data.transcript));}
   const calendar=artifacts.find(a=>a.kind==='calendar-link')?.data,names=artifacts.find(a=>a.kind==='speaker-names')?.data;
-  if(calendar)add('已确认场次.json',JSON.stringify(calendar,null,2));if(names)add('已确认说话人.json',JSON.stringify(names,null,2));
+  if(calendar)add(moteText("已确认场次.json"),JSON.stringify(calendar,null,2));if(names)add(moteText("已确认说话人.json"),JSON.stringify(names,null,2));
   add('manifest.json',JSON.stringify({version:1,captureId:id,sourceId:file.sourceId,originalTitle:file.item.title,originalSha256:file.sha256,job:file.job,steps:file.steps,processingPolicy:(()=>{const json=db.prepare('SELECT policy_json FROM file_jobs WHERE capture_id=?').get(id)?.policy_json;return json?JSON.parse(String(json)):null;})(),uncorrectedPreserved:true,artifacts:artifacts.map(({id,kind})=>({id,kind})),calendarConfirmed:!!calendar,speakerNamesConfirmed:!!names},null,2));
   return entries;
 }

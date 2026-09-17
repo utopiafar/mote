@@ -133,7 +133,7 @@ export const rangeSchema = z.object({
   collection: z.enum(['content','activity']).optional(),
 }).refine(v => !v.after || !v.before || Date.parse(v.after)<Date.parse(v.before), {message:'after must be earlier than before'});
 export type TimeRange = z.input<typeof rangeSchema>;
-export type QueryResult = {usage?:import('./usage.js').UsageReceipt;answer:string; citations:{id:string;capturedAt:string;appName:string;excerpt:string}[]; trace:{tool:string;arguments:unknown;count:number}[];runId:string};
+export type QueryResult = {modelSelection?:import('./model-providers.js').ModelSelection;usage?:import('./usage.js').UsageReceipt;answer:string; citations:{id:string;capturedAt:string;appName:string;excerpt:string}[]; trace:{tool:string;arguments:unknown;count:number}[];runId:string};
 export type ActivityCounts = {activityEvents?:number;contentCaptures?:number};
 export type Activity = ActivityCounts & {apps:(ActivityCounts & {appId?:string;appName:string;durationMs:number;captures:number})[];devices:(ActivityCounts & {deviceId:string;deviceName:string;durationMs:number;captures:number})[];totalDurationMs:number;captures:number};
 export * from './connection.js';

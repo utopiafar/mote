@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import type { InferenceChild } from './inference-process';
@@ -25,9 +26,9 @@ export function nativeInferenceChild(executable: string): InferenceChild {
   return {
     on(event, listener) { events.on(event, listener); return this; },
     postMessage: value => {
-      if (ended) throw new Error('本地视觉进程已退出');
+      if (ended) throw new Error(moteText("本地视觉进程已退出"));
       const encoded = JSON.stringify(value);
-      if (Buffer.byteLength(encoded) > 12_500_000) throw new Error('本地视觉请求过大');
+      if (Buffer.byteLength(encoded) > 12_500_000) throw new Error(moteText("本地视觉请求过大"));
       child.stdin.write(encoded + '\n');
     },
     kill: () => child.kill('SIGKILL'),

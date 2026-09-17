@@ -1,3 +1,4 @@
+import { moteText, configureLocale, type Locale } from '@mote/shared/i18n';
 import {scanCodingAgent} from './coding-agents';
 import {compressionPreview} from './compression-preview';
 import { parentPort } from 'node:worker_threads';
@@ -27,7 +28,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
     case 'json-write': {
       const body = JSON.stringify(request.value);
       const encoded = encodeLocalContent(body);
-      if (request.maximum !== undefined && encoded.length > request.maximum) throw new Error('来源待同步队列已满，请恢复网络后重试');
+      if (request.maximum !== undefined && encoded.length > request.maximum) throw new Error(moteText("来源待同步队列已满，请恢复网络后重试"));
       await mkdir(dirname(request.path), { recursive: true, mode: 0o700 });
       const temporary = request.path + '.' + randomUUID() + '.tmp';
       try {
@@ -43,7 +44,7 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
     case 'mask': return maskBitmap(Buffer.from(request.bytes), request.width, request.height, request.rectangles);
     case 'jpeg': {
       const bytes = Buffer.from(request.bytes);
-      if (bytes.length !== request.width * request.height * 4) throw new Error('截图像素格式不正确');
+      if (bytes.length !== request.width * request.height * 4) throw new Error(moteText("截图像素格式不正确"));
       // Electron supplies BGRA; libvips raw input expects RGBA.
       for (let i = 0; i < bytes.length; i += 4) { const blue = bytes[i]; bytes[i] = bytes[i + 2]; bytes[i + 2] = blue; }
       return sharp(bytes, { raw: { width: request.width, height: request.height, channels: 4 } }).removeAlpha().jpeg({ quality: request.quality }).toBuffer();
@@ -64,14 +65,14 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
           const record = validateRecord(JSON.parse((await readLocalContent(join(request.directory, 'events', names[i]))).toString('utf8')));
           if (record.blobHash) blobs.add(record.blobHash);
           await file.writeFile((i ? ',' : '') + JSON.stringify(record));
-          progress({ message: '正在导出记录', completed: i + 1, total: names.length });
+          progress({ message: moteText("正在导出记录"), completed: i + 1, total: names.length });
         }
         await file.writeFile('],"blobs":{');
         let count = 0;
         for (const hash of blobs) {
           const bytes = await readLocalContent(join(request.directory, 'blobs', hash + '.jpg')); validateImage(bytes, hash);
           await file.writeFile((count ? ',' : '') + JSON.stringify(hash) + ':' + JSON.stringify(bytes.toString('base64')));
-          progress({ message: '正在导出图片', completed: ++count, total: blobs.size });
+          progress({ message: moteText("正在导出图片"), completed: ++count, total: blobs.size });
         }
         await file.writeFile('}}'); await file.sync();
       } catch (error) { await file.close(); await unlink(temporary).catch(() => {}); throw error; }
@@ -81,14 +82,14 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
       return;
     }
     case 'archive-prepare': {
-      progress({ message: '正在读取和解析备份' });
+      progress({ message: moteText("正在读取和解析备份") });
       const input = await open(request.path, 'r');
       let archive: QueueArchive;
       try {
-        if ((await input.stat()).size > 360 * 1024 * 1024) throw new Error('备份超过 360 MiB，请使用完整 queue 文件夹迁移');
+        if ((await input.stat()).size > 360 * 1024 * 1024) throw new Error(moteText("备份超过 360 MiB，请使用完整 queue 文件夹迁移"));
         archive = JSON.parse(await input.readFile('utf8')) as QueueArchive;
       } finally { await input.close(); }
-      if (archive?.format !== 'mote-desktop-queue' || archive.version !== 1 || !Array.isArray(archive.records) || archive.records.length > 1_000_000 || !archive.blobs || typeof archive.blobs !== 'object') throw new Error('不是 Mote 电脑端队列备份');
+      if (archive?.format !== 'mote-desktop-queue' || archive.version !== 1 || !Array.isArray(archive.records) || archive.records.length > 1_000_000 || !archive.blobs || typeof archive.blobs !== 'object') throw new Error(moteText("不是 Mote 电脑端队列备份"));
       await mkdir(join(request.staging, 'events'), { mode: 0o700 });
       await mkdir(join(request.staging, 'blobs'), { mode: 0o700 });
       const unique = new Map<string, QueueRecord>(), images = new Map<string, number>();
@@ -97,36 +98,37 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
         if (record.blobHash) {
           if (!images.has(record.blobHash)) {
             const encoded = archive.blobs[record.blobHash];
-            if (typeof encoded !== 'string' || encoded.length > 8 * 1024 * 1024 * 1.4) throw new Error('备份图片缺失或太大');
+            if (typeof encoded !== 'string' || encoded.length > 8 * 1024 * 1024 * 1.4) throw new Error(moteText("备份图片缺失或太大"));
             const bytes = Buffer.from(encoded, 'base64'); validateImage(bytes, record.blobHash);
             await writeFile(join(request.staging, 'blobs', record.blobHash + '.jpg'), bytes, { mode: 0o600 });
             images.set(record.blobHash, bytes.length);
           }
-          if (images.get(record.blobHash) !== record.blobBytes) throw new Error('备份图片长度不匹配');
+          if (images.get(record.blobHash) !== record.blobBytes) throw new Error(moteText("备份图片长度不匹配"));
         }
         const prior = unique.get(record.event.id);
-        if (prior && (prior.blobHash !== record.blobHash || JSON.stringify(prior.event) !== JSON.stringify(record.event))) throw new Error('备份包含冲突的事件 ID');
+        if (prior && (prior.blobHash !== record.blobHash || JSON.stringify(prior.event) !== JSON.stringify(record.event))) throw new Error(moteText("备份包含冲突的事件 ID"));
         if (!prior) {
           unique.set(record.event.id, record);
           await writeFile(join(request.staging, 'events', record.event.id + '.json'), JSON.stringify({ ...record, uploaded: false, attempts: 0, nextAttemptAt: 0 }), { mode: 0o600 });
         }
-        if (i % 100 === 0 || i + 1 === archive.records.length) progress({ message: '正在校验备份', completed: i + 1, total: archive.records.length });
+        if (i % 100 === 0 || i + 1 === archive.records.length) progress({ message: moteText("正在校验备份"), completed: i + 1, total: archive.records.length });
       }
       return unique.size;
     }
   }
 }
 let chain = Promise.resolve();
-parentPort!.on('message', ({ id, request, contentPolicy }: { id: number; request: BackgroundRequest; contentPolicy: ContentPolicy }) => {
+parentPort!.on('message', ({ id, request, contentPolicy, locale }: { locale?: Locale; id: number; request: BackgroundRequest; contentPolicy: ContentPolicy }) => {
   chain = chain.then(async () => {
     let lastProgress = 0;
     try {
+      configureLocale(() => locale ?? 'zh-CN');
       configureLocalContent(contentPolicy);
       const value = await execute(request, progress => {
         const now = Date.now(); if (now - lastProgress < 100 && progress.completed !== progress.total) return;
         lastProgress = now; parentPort!.postMessage({ id, progress });
       });
       parentPort!.postMessage({ id, value });
-    } catch (error) { parentPort!.postMessage({ id, error: error instanceof Error ? error.message : '后台处理失败' }); }
+    } catch (error) { parentPort!.postMessage({ id, error: error instanceof Error ? error.message : moteText("后台处理失败") }); }
   });
 });

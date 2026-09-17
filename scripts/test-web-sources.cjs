@@ -1,3 +1,4 @@
+require('./fixture-language.cjs');
 /** Generated sources and a fixture extraction response in an isolated real renderer. */
 const {app,BrowserWindow}=require('electron');
 // Keep Electron alive until asynchronous fixture cleanup sets the intended exit code.

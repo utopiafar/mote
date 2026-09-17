@@ -91,11 +91,11 @@ class MediaCollectionService : NotificationListenerService() {
     }
     override fun onNotificationPosted(sbn: android.service.notification.StatusBarNotification) {
         runCatching { events.notification(sbn, false) }
-            .onFailure { settings.status("error", "系统通知无法读取，部分事件可能缺失") }
+            .onFailure { settings.status("error", MoteI18n.text("系统通知无法读取，部分事件可能缺失")) }
     }
     override fun onNotificationRemoved(sbn: android.service.notification.StatusBarNotification, rankingMap: RankingMap, reason: Int) {
         runCatching { events.notification(sbn, true, reason) }
-            .onFailure { settings.status("error", "系统通知移除事件无法读取") }
+            .onFailure { settings.status("error", MoteI18n.text("系统通知移除事件无法读取")) }
     }
     private fun eligible(): Boolean = runCatching {
         val c = settings.read()
@@ -120,7 +120,7 @@ class MediaCollectionService : NotificationListenerService() {
             }
             if (!MediaPrivacy.powerAllowed(c, Diagnostics.battery(this))) {
                 detach(); timeline.reset(); MediaCollection.clear()
-                notifyStatus("媒体采集等待充电或电量恢复"); return
+                notifyStatus(MoteI18n.text("媒体采集等待充电或电量恢复")); return
             }
             if (!platformConnected) { publishUnavailable(if (MediaCollection.permissionAllowed(this)) "unavailable" else "permission_required"); return }
             if (!listenerAttached) {
@@ -184,12 +184,12 @@ class MediaCollectionService : NotificationListenerService() {
                 val stateKey = "${getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked}:${getSystemService(android.os.PowerManager::class.java).isInteractive}"
                 val samples = timeline.observe(elapsed, awake, wall, sessions, stateKey)
                 for (sample in samples) enqueue(c, "available", sample.sessions, sample.durationMs, wall, epoch)
-                notifyStatus("媒体采集已启用 · ${sessions.count { it.optString("playbackState") == "playing" }} 个会话正在播放 · 可随时停止")
+                notifyStatus(MoteI18n.text("媒体采集已启用 · {0} 个会话正在播放 · 可随时停止", sessions.count { it.optString("playbackState") == "playing" }))
                 UploadWorker.heartbeat(this, c)
             } catch (error: Exception) {
                 timeline.reset()
                 Operations.record(this, OperationKind.MEDIA_FAILED, if (error is QueueFull) OperationReason.QUEUE_FULL else OperationReason.STORAGE)
-                notifyStatus(if (error is QueueFull) "媒体记录等待本机存储空间" else "媒体记录暂未保存，下一周期重试")
+                notifyStatus(if (error is QueueFull) MoteI18n.text("媒体记录等待本机存储空间") else MoteI18n.text("媒体记录暂未保存，下一周期重试"))
             } finally { ConnectionGuard.processing.decrementAndGet() }
         } ?: run { timeline.reset(); MediaCollection.clear() }
     }
@@ -254,7 +254,7 @@ class MediaCollectionService : NotificationListenerService() {
                     lastStatus = status
                 }
             }
-            notifyStatus(if (status == "permission_required") "媒体采集等待系统通知使用权授权" else "媒体服务暂不可用，等待系统恢复")
+            notifyStatus(if (status == "permission_required") MoteI18n.text("媒体采集等待系统通知使用权授权") else MoteI18n.text("媒体服务暂不可用，等待系统恢复"))
         }
     }
     private fun detach() {
@@ -301,7 +301,7 @@ object MediaCollection {
         return MediaPrivacy.snapshot(value.getString("status"), (0 until sessions.length()).mapNotNull { MediaPrivacy.session(sessions.getJSONObject(it), c, activityOnly) }, value.getString("observedAt"))
     }
     fun statusLabel(context: Context): String = when (snapshot(context).optString("status")) {
-        "available" -> "媒体已连接（前台、后台与锁屏）"; "disabled" -> "媒体未启用"
-        "permission_required" -> "媒体等待通知使用权授权"; else -> "媒体暂不可用或正在等待电量条件"
+        "available" -> MoteI18n.text("媒体已连接（前台、后台与锁屏）"); "disabled" -> MoteI18n.text("媒体未启用")
+        "permission_required" -> MoteI18n.text("媒体等待通知使用权授权"); else -> MoteI18n.text("媒体暂不可用或正在等待电量条件")
     }
 }

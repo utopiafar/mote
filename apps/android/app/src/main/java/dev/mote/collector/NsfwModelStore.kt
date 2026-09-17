@@ -40,14 +40,14 @@ class NsfwModelStore(context: Context) {
     @Volatile private var connection: HttpURLConnection? = null
     private val cancelled = AtomicBoolean(false)
     fun status(message: String) { prefs.edit().putString("modelStatus", message).apply() }
-    fun status(): String = prefs.getString("modelStatus", null) ?: if (hasFile()) "模型文件已存在，加载时会重新核对 SHA-256" else "尚未下载完整双模型 · 启用本机审查时不会采集"
+    fun status(): String = prefs.getString("modelStatus", null) ?: if (hasFile()) MoteI18n.text("模型文件已存在，加载时会重新核对 SHA-256") else MoteI18n.text("尚未下载完整双模型 · 启用本机审查时不会采集")
     fun inferenceStatus(message: String) { prefs.edit().putString("inferenceStatus", message).apply() }
-    fun inferenceStatus(): String = prefs.getString("inferenceStatus", "推理尚未启动")!!
+    fun inferenceStatus(): String = prefs.getString("inferenceStatus", MoteI18n.text("推理尚未启动"))!!
     fun hasFile(): Boolean = manifest.files.all { target(it).isFile && target(it).length() == it.size }
     fun verifiedFiles(): Map<String, File> {
-        check(hasFile()) { "请先下载或导入语言模型和视觉投影模型" }
+        check(hasFile()) { MoteI18n.text("请先下载或导入语言模型和视觉投影模型") }
         return manifest.files.associate { file ->
-            check(sha256(target(file)) == file.sha256) { "模型 SHA-256 不匹配，请重新下载" }
+            check(sha256(target(file)) == file.sha256) { MoteI18n.text("模型 SHA-256 不匹配，请重新下载") }
             file.role to target(file)
         }
     }
@@ -61,14 +61,14 @@ class NsfwModelStore(context: Context) {
         for ((index, url) in urls.withIndex()) {
             try { downloadOne(url, file); last = null; break }
             catch (error: Exception) {
-                if (cancelled.get()) throw InterruptedIOException("下载已取消，断点保留")
+                if (cancelled.get()) throw InterruptedIOException(MoteI18n.text("下载已取消，断点保留"))
                 last = error
-                status(if (index + 1 < urls.size) "当前来源失败，保留断点并尝试下一来源" else "下载未完成，保留断点并等待重试")
+                status(if (index + 1 < urls.size) MoteI18n.text("当前来源失败，保留断点并尝试下一来源") else MoteI18n.text("下载未完成，保留断点并等待重试"))
             }
         }
         if (last != null) throw last
         }
-        status("双模型已通过 SHA-256 校验，可断网推理")
+        status(MoteI18n.text("双模型已通过 SHA-256 校验，可断网推理"))
     }
     private fun downloadOne(source: String, file: NsfwModelFile) {
         val target = target(file)
@@ -89,23 +89,23 @@ class NsfwModelStore(context: Context) {
                 try {
                     val code = request.responseCode
                     if (code in setOf(301, 302, 303, 307, 308)) {
-                        require(++redirects <= 5) { "模型下载重定向次数过多" }
-                        current = URL(current, request.getHeaderField("Location") ?: throw IOException("模型重定向缺少地址"))
+                        require(++redirects <= 5) { MoteI18n.text("模型下载重定向次数过多") }
+                        current = URL(current, request.getHeaderField("Location") ?: throw IOException(MoteI18n.text("模型重定向缺少地址")))
                         NsfwConfig.validateModelUrl(current.toString()); continue
                     }
-                    require(code in setOf(200, 206)) { "模型下载 HTTP $code" }
+                    require(code in setOf(200, 206)) { MoteI18n.text("模型下载 HTTP {0}", code) }
                     if (code == 206) validateRange(request.getHeaderField("Content-Range"), offset, file.size) else offset = 0
-                    check(directory.usableSpace >= file.size - offset + 32L * 1024 * 1024) { "空间不足，请预留模型大小及 32 MiB" }
+                    check(directory.usableSpace >= file.size - offset + 32L * 1024 * 1024) { MoteI18n.text("空间不足，请预留模型大小及 32 MiB") }
                     FileOutputStream(part, offset > 0).use { out ->
                         request.inputStream.use { input ->
                             val buffer = ByteArray(128 * 1024); var count = offset; var last = 0L
                             while (true) {
                                 if (cancelled.get()) throw InterruptedIOException()
                                 val length = input.read(buffer); if (length < 0) break
-                                count += length; check(count <= file.size) { "下载大小超过固定清单" }
+                                count += length; check(count <= file.size) { MoteI18n.text("下载大小超过固定清单") }
                                 out.write(buffer, 0, length)
                                 val now = System.nanoTime()
-                                if (now - last > 250_000_000L) { last = now; status("${file.fileName} 下载 %.1f / %.1f MiB · %d%%".format(count / 1048576.0, file.size / 1048576.0, count * 100 / file.size)) }
+                                if (now - last > 250_000_000L) { last = now; status(MoteI18n.text("{0} 下载 %.1f / %.1f MiB · %d%%", file.fileName).format(count / 1048576.0, file.size / 1048576.0, count * 100 / file.size)) }
                             }
                             out.fd.sync()
                         }
@@ -114,30 +114,30 @@ class NsfwModelStore(context: Context) {
                 } finally { request.disconnect(); connection = null }
             }
         }
-        check(part.length() == file.size) { "模型下载未完整，断点保留" }
-        status("正在核对模型 SHA-256…")
-        if (sha256(part) != file.sha256) { part.delete(); throw IOException("模型 SHA-256 不符，已清除损坏断点") }
+        check(part.length() == file.size) { MoteI18n.text("模型下载未完整，断点保留") }
+        status(MoteI18n.text("正在核对模型 SHA-256…"))
+        if (sha256(part) != file.sha256) { part.delete(); throw IOException(MoteI18n.text("模型 SHA-256 不符，已清除损坏断点")) }
         if (cancelled.get()) throw InterruptedIOException()
-        check(part.renameTo(target)) { "模型校验通过但保存失败" }
-        status("模型已下载并通过 SHA-256 校验，可断网运行")
+        check(part.renameTo(target)) { MoteI18n.text("模型校验通过但保存失败") }
+        status(MoteI18n.text("模型已下载并通过 SHA-256 校验，可断网运行"))
     }
     fun importModel(input: InputStream) = modelLock {
         val incoming = File(directory, "import.part")
         try {
-            status("导入并校验固定模型…")
+            status(MoteI18n.text("导入并校验固定模型…"))
             FileOutputStream(incoming).use { out ->
                 val buffer = ByteArray(128 * 1024); var total = 0L
                 while (true) {
                     val count = input.read(buffer); if (count < 0) break
-                    total += count; check(total <= manifest.files.maxOf { it.size }) { "导入文件超过固定模型大小" }; out.write(buffer, 0, count)
+                    total += count; check(total <= manifest.files.maxOf { it.size }) { MoteI18n.text("导入文件超过固定模型大小") }; out.write(buffer, 0, count)
                 }
                 out.fd.sync()
             }
             val hash = sha256(incoming)
             val file = manifest.files.singleOrNull { it.size == incoming.length() && it.sha256 == hash }
-                ?: error("导入文件不是清单指定的语言/视觉模型（大小/SHA-256 不符）")
-            check(incoming.renameTo(target(file))) { "无法保存导入模型" }
-            status("${file.fileName} 导入成功、SHA-256 通过；" + if (hasFile()) "双模型已齐备" else "请继续导入另一个模型")
+                ?: error(MoteI18n.text("导入文件不是清单指定的语言/视觉模型（大小/SHA-256 不符）"))
+            check(incoming.renameTo(target(file))) { MoteI18n.text("无法保存导入模型") }
+            status(MoteI18n.text("{0} 导入成功、SHA-256 通过；", file.fileName) + if (hasFile()) MoteI18n.text("双模型已齐备") else MoteI18n.text("请继续导入另一个模型"))
         } finally { incoming.delete() }
     }
     private fun <T> modelLock(action: () -> T): T = synchronized(downloadLock) {
@@ -154,9 +154,9 @@ class NsfwModelStore(context: Context) {
             return digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
         }
         fun validateRange(value: String?, offset: Long, total: Long) {
-            val match = Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(value ?: "") ?: throw IOException("无效 Content-Range")
+            val match = Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(value ?: "") ?: throw IOException(MoteI18n.text("无效 Content-Range"))
             val (start, end, size) = match.destructured
-            require(start.toLong() == offset && size.toLong() == total && end.toLong() in offset until total) { "断点响应与清单不匹配" }
+            require(start.toLong() == offset && size.toLong() == total && end.toLong() in offset until total) { MoteI18n.text("断点响应与清单不匹配") }
         }
     }
 }

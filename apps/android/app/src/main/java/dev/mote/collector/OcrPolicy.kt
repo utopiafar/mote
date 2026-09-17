@@ -6,7 +6,7 @@ import org.json.JSONObject
 object OcrPolicy {
     val modes = listOf("chinese", "latin", "dual")
     fun validate(mode: String, overrides: String) {
-        require(mode in modes) { "OCR 模式无效" }
+        require(mode in modes) { MoteI18n.text("OCR 模式无效") }
         require(overrides.length <= 32768)
         StrictJson.validate(overrides)
         val entries = JSONObject(overrides)

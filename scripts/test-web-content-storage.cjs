@@ -1,3 +1,4 @@
+require('./fixture-language.cjs');
 /** Real renderer + generated central storage only; no personal content or screen capture APIs. */
 const {app,BrowserWindow}=require('electron');
 const {mkdtempSync,writeFileSync,readFileSync,rmSync}=require('node:fs');

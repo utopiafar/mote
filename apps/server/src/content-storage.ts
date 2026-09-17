@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {join} from 'node:path';
 import {readdirSync} from 'node:fs';
 import {setImmediate} from 'node:timers/promises';
@@ -21,10 +22,10 @@ export class ContentStorageService {
   private work?:Promise<void>;
   constructor(private store:Store,private files:FileStore,private archived:ArchivedFileStore){}
   snapshot(){return {enabled:this.store.contentEncryption.enabled,keyConfigured:Boolean(this.store.key),job:{...this.progress}};}
-  configure(enabled:boolean){if(this.progress.state==='running')throw new StoreError('批量解密期间请等待完成或取消后再修改加密设置',409);this.store.contentEncryption.setEnabled(enabled);return this.snapshot();}
+  configure(enabled:boolean){if(this.progress.state==='running')throw new StoreError(moteText("批量解密期间请等待完成或取消后再修改加密设置"),409);this.store.contentEncryption.setEnabled(enabled);return this.snapshot();}
   start(){
     if(this.progress.state==='running')return this.snapshot();
-    if(this.store.contentEncryption.enabled)throw new StoreError('请先关闭内容加密，再批量解密已有文件',409);
+    if(this.store.contentEncryption.enabled)throw new StoreError(moteText("请先关闭内容加密，再批量解密已有文件"),409);
     this.stopped=false;this.progress={state:'running',total:0,processed:0,converted:0,skipped:0,failed:0};
     this.work=this.run().catch(()=>{this.progress.failed++;this.progress.state='completed';});
     return this.snapshot();

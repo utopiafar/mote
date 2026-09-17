@@ -53,6 +53,7 @@ jobs:
       - name: Verify desktop navigation, settings and composed input with generated data
         timeout-minutes: 5
         run: |
+          node_modules/.bin/electron apps/desktop/scripts/i18n-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/ui-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/complex-ui-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/content-storage-smoke.cjs
@@ -64,6 +65,8 @@ jobs:
       - name: Verify central navigation, settings drafts and sync status with generated data
         timeout-minutes: 5
         run: |
+          node_modules/.bin/electron scripts/test-web-i18n.cjs
+          node_modules/.bin/electron scripts/test-model-profiles-ui.cjs
           node_modules/.bin/electron scripts/test-web-login.cjs
           node_modules/.bin/electron scripts/test-web-navigation.cjs
           node_modules/.bin/electron scripts/test-web-content-storage.cjs

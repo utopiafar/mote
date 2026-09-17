@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 // Only generated invitations, QR pixels and an isolated profile; no personal screen/calendar/Keychain access.
 const { app, dialog, safeStorage } = require('electron');
 const { mkdtempSync, mkdirSync, writeFileSync, readFileSync } = require('node:fs');

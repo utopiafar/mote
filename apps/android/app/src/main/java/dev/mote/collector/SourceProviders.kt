@@ -28,12 +28,12 @@ class SourceProviders(private val resolver: ContentResolver, private val cancell
     private val calendarsUri: Uri = CalendarContract.Calendars.CONTENT_URI, private val instancesUri: Uri = CalendarContract.Instances.CONTENT_URI) {
     fun calendars(): List<CalendarChoice> = resolver.query(calendarsUri,
         arrayOf(CalendarContract.Calendars._ID, CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, CalendarContract.Calendars.VISIBLE), null, null, CalendarContract.Calendars._ID + " ASC", cancellation)?.use { cursor ->
-        buildList { while (cursor.moveToNext()) { check(size < 1000); add(CalendarChoice(cursor.getLong(0), cursor.getString(1) ?: "未命名日历", cursor.getInt(2) != 0)) } }
-    } ?: throw IllegalStateException("日历提供者不可用")
+        buildList { while (cursor.moveToNext()) { check(size < 1000); add(CalendarChoice(cursor.getLong(0), cursor.getString(1) ?: MoteI18n.text("未命名日历"), cursor.getInt(2) != 0)) } }
+    } ?: throw IllegalStateException(MoteI18n.text("日历提供者不可用"))
 
     fun scan(source: LocalSource, now: Instant = Instant.now()): SourceScan = if (source.kind == "local-calendar") calendar(source, now) else files(source, now)
     private fun calendar(source: LocalSource, now: Instant): SourceScan {
-        check(calendars().any { it.id == source.calendarId && it.visible }) { "已选择日历不可用，请重新连接；不会把权限丢失视为删除" }
+        check(calendars().any { it.id == source.calendarId && it.visible }) { MoteI18n.text("已选择日历不可用，请重新连接；不会把权限丢失视为删除") }
         val from = now.minusSeconds(source.daysBefore * 86400L).toEpochMilli(); val until = now.plusSeconds(source.daysAfter * 86400L).toEpochMilli()
         val uri = instancesUri.buildUpon().also { ContentUris.appendId(it, from); ContentUris.appendId(it, until) }.build()
         val projection = arrayOf(CalendarContract.Instances.EVENT_ID, CalendarContract.Instances.BEGIN, CalendarContract.Instances.END,
@@ -55,7 +55,7 @@ class SourceProviders(private val resolver: ContentResolver, private val cancell
                 val stableEvent = if (cursor.isNull(12)) eventId else cursor.getLong(12)
                 val externalId = "calendar:${source.calendarId}:$stableEvent" + if (recurring) ":$instance" else ""
                 val body = JSONObject().put("externalId", externalId).put("observedAt", now.toString())
-                    .put("title", title).put("text", if (source.retention == "reference") "" else description + if (location.isNotEmpty()) "\n地点：$location" else "")
+                    .put("title", title).put("text", if (source.retention == "reference") "" else description + if (location.isNotEmpty()) MoteI18n.text("\n地点：{0}", location) else "")
                     .put("kind", "calendar").put("layer", source.retention).put("uri", ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId).toString())
                     .put("calendar", JSONObject().put("start", Instant.ofEpochMilli(begin).toString()).put("end", Instant.ofEpochMilli(end).toString())
                         .put("allDay", cursor.getInt(6) != 0).put("timeZone", cursor.getString(7) ?: "UTC").put("status", status))
@@ -63,7 +63,7 @@ class SourceProviders(private val resolver: ContentResolver, private val cancell
                 if (bytes > SourceRules.SCAN_BYTES) { complete = false; skipped++; break }
                 items.add(body)
             }
-        } ?: throw IllegalStateException("日历提供者没有返回扫描结果")
+        } ?: throw IllegalStateException(MoteI18n.text("日历提供者没有返回扫描结果"))
         return SourceScan(items, complete, now.toString(), from, until, skipped)
     }
     private data class Document(val id: String, val name: String, val mime: String, val size: Long?, val modified: Long?)
@@ -84,7 +84,7 @@ class SourceProviders(private val resolver: ContentResolver, private val cancell
                         val output = ByteArrayOutputStream(); val buffer = ByteArray(8192)
                         while (true) { cancellation.throwIfCanceled(); val count = input.read(buffer); if (count < 0) break; check(output.size() + count <= SourceRules.FILE_BYTES); output.write(buffer, 0, count) }
                         text = SourceRules.utf8(output.toByteArray())
-                    } ?: throw IllegalStateException("文件不可读")
+                    } ?: throw IllegalStateException(MoteI18n.text("文件不可读"))
                 } catch (error: SecurityException) { throw error }
                 catch (error: android.os.OperationCanceledException) { throw error }
                 catch (_: Exception) { complete = false; skipped++; return }
@@ -110,12 +110,12 @@ class SourceProviders(private val resolver: ContentResolver, private val cancell
                     if (doc.mime == DocumentsContract.Document.MIME_TYPE_DIR) walk(doc.id, childPath, depth + 1)
                     else accept(doc, DocumentsContract.buildDocumentUriUsingTree(root, doc.id), childPath)
                 }
-            } ?: throw IllegalStateException("文件目录不可用")
+            } ?: throw IllegalStateException(MoteI18n.text("文件目录不可用"))
         }
         if (source.tree) walk(DocumentsContract.getTreeDocumentId(root), "", 0)
         else resolver.query(root, documentProjection, null, null, null, cancellation)?.use { cursor ->
-            check(cursor.moveToFirst()) { "所选文件暂不可用；不会把访问失败视为删除" }; accept(row(cursor), root, cursor.getString(1) ?: "")
-        } ?: throw IllegalStateException("文件提供者不可用")
+            check(cursor.moveToFirst()) { MoteI18n.text("所选文件暂不可用；不会把访问失败视为删除") }; accept(row(cursor), root, cursor.getString(1) ?: "")
+        } ?: throw IllegalStateException(MoteI18n.text("文件提供者不可用"))
         return SourceScan(items, complete, now.toString(), skipped = skipped)
     }
 }

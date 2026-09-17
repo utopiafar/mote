@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import { randomUUID } from 'node:crypto';
 
 export type InferenceProcessState = 'stopped' | 'starting' | 'ready' | 'running' | 'error';
@@ -26,20 +27,20 @@ export class InferenceProcess {
       if (this.child !== child || !this.pending) return;
       const reply = value as InferenceReply;
       if (!reply || reply.id !== this.pending.id) return;
-      if (typeof reply.ok !== 'boolean') { this.fail('本地推理进程返回无效结果；本次截图已跳过'); return; }
+      if (typeof reply.ok !== 'boolean') { this.fail(moteText("本地推理进程返回无效结果；本次截图已跳过")); return; }
       const pending = this.pending;
       this.pending = undefined; pending.cleanup();
       if (reply.ok) { this.publish('ready'); pending.resolve(reply.result); }
       else {
         // Child messages never contain input pixels, OCR, model paths or user content.
-        const message = '本地模型推理失败；已回收推理进程，下次采样重新加载';
+        const message = moteText("本地模型推理失败；已回收推理进程，下次采样重新加载");
         this.terminate(); this.publish('error', message); pending.reject(new Error(message));
       }
     });
     child.on('exit', () => {
       if (this.child !== child) return;
       this.child = undefined;
-      this.fail('本地推理进程已退出；本次截图已跳过，下次采样自动恢复');
+      this.fail(moteText("本地推理进程已退出；本次截图已跳过，下次采样自动恢复"));
     });
     return child;
   }
@@ -54,26 +55,26 @@ export class InferenceProcess {
     if (pending) { pending.cleanup(); pending.reject(Object.assign(new Error(message), { name })); }
   }
   request<T>(payload: unknown, timeoutMs: number, signal?: AbortSignal): Promise<T> {
-    if (this.closed) return Promise.reject(new Error('本地推理客户端已关闭'));
-    if (this.pending) return Promise.reject(new Error('本地推理正在处理上一张截图；本次已跳过'));
-    if (signal?.aborted) return Promise.reject(new Error('本地推理已取消'));
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000) return Promise.reject(new Error('本地推理超时参数无效'));
+    if (this.closed) return Promise.reject(new Error(moteText("本地推理客户端已关闭")));
+    if (this.pending) return Promise.reject(new Error(moteText("本地推理正在处理上一张截图；本次已跳过")));
+    if (signal?.aborted) return Promise.reject(new Error(moteText("本地推理已取消")));
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 180000) return Promise.reject(new Error(moteText("本地推理超时参数无效")));
     let child: InferenceChild;
-    try { child = this.start(); } catch { this.publish('error', '无法启动本地推理进程'); return Promise.reject(new Error('无法启动本地推理进程；本次截图已跳过')); }
+    try { child = this.start(); } catch { this.publish('error', moteText("无法启动本地推理进程")); return Promise.reject(new Error(moteText("无法启动本地推理进程；本次截图已跳过"))); }
     return new Promise<T>((resolve, reject) => {
       const id = randomUUID();
-      const timer = setTimeout(() => this.fail('本地推理超时；已终止独立进程，本次截图已跳过', 'TimeoutError'), timeoutMs);
-      const abort = () => this.fail('本地推理已取消；本次截图已跳过', 'AbortError');
+      const timer = setTimeout(() => this.fail(moteText("本地推理超时；已终止独立进程，本次截图已跳过"), 'TimeoutError'), timeoutMs);
+      const abort = () => this.fail(moteText("本地推理已取消；本次截图已跳过"), 'AbortError');
       this.pending = { id, resolve: value => resolve(value as T), reject, cleanup: () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); } };
       signal?.addEventListener('abort', abort, { once: true });
       this.publish('running');
-      try { child.postMessage({ id, payload }); } catch { this.fail('无法发送本地推理请求；本次截图已跳过'); }
+      try { child.postMessage({ id, payload }); } catch { this.fail(moteText("无法发送本地推理请求；本次截图已跳过")); }
     });
   }
   reset(): void {
     const pending = this.pending; this.pending = undefined;
     this.terminate();
-    if (pending) { pending.cleanup(); pending.reject(new Error('本地推理已重新加载；本次截图已跳过')); }
+    if (pending) { pending.cleanup(); pending.reject(new Error(moteText("本地推理已重新加载；本次截图已跳过"))); }
     this.publish('stopped');
   }
   close(): void { this.closed = true; this.reset(); }

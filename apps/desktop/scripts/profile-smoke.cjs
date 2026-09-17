@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 // Electron worker. Run through test-profiles.mjs; it creates the only permitted fixture directory.
 const { app, dialog } = require('electron');
 const { readFileSync, writeFileSync } = require('node:fs');

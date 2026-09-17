@@ -19,10 +19,10 @@ object ImageDedupeDiagnosticsDetails {
                 .put("maxChangedPixelRatio", mode.maxChangedPixelRatio).put("maxChangedBlocks", mode.maxChangedBlocks)
                 .put("maxChangedRowsCols", mode.maxChangedRowsCols))
     }
-    fun modeName(value: String) = when (value) { "exact" -> "精确"; "conservative" -> "保守"; "aggressive" -> "激进"; else -> "均衡" }
+    fun modeName(value: String) = when (value) { "exact" -> MoteI18n.text("精确"); "conservative" -> MoteI18n.text("保守"); "aggressive" -> MoteI18n.text("激进"); else -> MoteI18n.text("均衡") }
     fun reason(value: JSONObject): String = when (value.optString("reason")) {
-        "exact_match" -> if (value.optString("mode") == "exact") "处理后图像的全部像素哈希完全一致" else "缩略采样像素哈希完全一致；不表示原尺寸图片逐像素相同"
-        "perceptual_match" -> "感知哈希距离、缩略图变化像素、区块及行列变化均未超过当前档位阈值"
-        else -> "图片去重判断命中"
+        "exact_match" -> if (value.optString("mode") == "exact") MoteI18n.text("处理后图像的全部像素哈希完全一致") else MoteI18n.text("缩略采样像素哈希完全一致；不表示原尺寸图片逐像素相同")
+        "perceptual_match" -> MoteI18n.text("感知哈希距离、缩略图变化像素、区块及行列变化均未超过当前档位阈值")
+        else -> MoteI18n.text("图片去重判断命中")
     }
 }

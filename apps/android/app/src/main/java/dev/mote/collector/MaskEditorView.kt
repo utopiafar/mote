@@ -18,7 +18,7 @@ class MaskEditorView(context: Context, private val changed: (List<Mask>) -> Unit
     private var drag: Mask? = null
     var selectedIndex = -1; private set
     init {
-        contentDescription = "固定遮罩示意图。在图上拖动添加矩形，点按矩形选中。也可用下方按钮添加和调整。"
+        contentDescription = MoteI18n.text("固定遮罩示意图。在图上拖动添加矩形，点按矩形选中。也可用下方按钮添加和调整。")
         isFocusable = true; isClickable = true; background = MoteUi.shape(context)
     }
     fun value() = masks.toList()

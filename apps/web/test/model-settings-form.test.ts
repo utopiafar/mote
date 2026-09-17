@@ -31,6 +31,12 @@ test('each credential field distinguishes replacing, preserving and clearing', (
   assert.equal(cleared.settings.apiKey, null); assert.equal(cleared.settings.headers, null); assert.equal(cleared.settings.extraBody, null);
 });
 
+test('switching to Codex clears HTTP secrets and ignores hidden HTTP draft fields',()=>{
+  const draft={...createModelDraft(snapshot.settings),protocol:'codex-app-server' as const,provider:'codex',apiKeyAction:'replace' as const,apiKey:'',headersAction:'replace' as const,headers:'invalid JSON',extraBodyAction:'replace' as const,extraBody:'invalid JSON',maxTokens:''};
+  assert.equal(retainedCredentialsNeedConfirmation(draft,snapshot.settings),false);
+  const request=modelSettingsRequest(snapshot,draft);assert.equal(request.settings.baseUrl,'');assert.equal(request.settings.apiKey,null);assert.equal(request.settings.headers,null);assert.equal(request.settings.extraBody,null);assert.equal(request.settings.allowUnauthenticatedLocal,false);
+});
+
 test('changing a credential destination requires explicit reuse for every retained secret', () => {
   const draft = createModelDraft(snapshot.settings);
   for (const patch of [{provider: 'openai'}, {protocol: 'openai-responses' as const}, {baseUrl: 'https://other.fixture.example/v1'}]) {

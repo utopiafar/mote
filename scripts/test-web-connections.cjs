@@ -1,3 +1,4 @@
+require('./fixture-language.cjs');
 /** Generated credentials and content; isolated node and browser, never the daily archive. */
 const {app,BrowserWindow}=require('electron');
 // Keep Electron alive until asynchronous fixture cleanup sets the intended exit code.

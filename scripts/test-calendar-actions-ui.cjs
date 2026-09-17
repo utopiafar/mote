@@ -1,3 +1,4 @@
+require('./fixture-language.cjs');
 /** Generated archive + fake model + real renderer. Never reads or writes a personal calendar. */
 const {app,BrowserWindow}=require('electron');
 const {mkdtempSync,mkdirSync,writeFileSync,rmSync}=require('node:fs');

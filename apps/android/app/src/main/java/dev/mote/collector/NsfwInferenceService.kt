@@ -34,11 +34,11 @@ class NsfwInferenceService : Service() {
                 val system = assets.open("review-system.txt").bufferedReader().use { it.readText().trim() }
                 val grammar = assets.open("review-grammar.gbnf").bufferedReader().use { it.readText() }
                 val result = JSONObject(NativeVlm.run(handle, bytes, system, policy, maxTokens, grammar))
-                check(result.getString("status") == "eos") { "模型输出被截断" }
+                check(result.getString("status") == "eos") { MoteI18n.text("模型输出被截断") }
                 val decision = result.getString("text")
                 ReviewDecision.parse(decision)
                 result.toString()
-            } catch (_: Exception) { throw IllegalStateException("本机 Qwen 审查失败，请重新加载模型") }
+            } catch (_: Exception) { throw IllegalStateException(MoteI18n.text("本机 Qwen 审查失败，请重新加载模型")) }
             finally { image.close() }
         }
     }

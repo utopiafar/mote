@@ -1,3 +1,4 @@
+import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, type LanguagePreference } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
 import {previewWork} from './background';
@@ -11,7 +12,7 @@ import { ConnectionOnboarding, ConnectionError, testConnection, assertConnection
 import { NoteDraftStore, type NoteDraft } from './note-draft';
 import { openCentralWindow } from './central-window';
 import { join, resolve } from 'node:path';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { resolveProfile, profileDefaults } from './profile';
 import { EventJournal, buildSupportBundle, failureCode, type EventStage } from './support';
 import { pathToFileURL } from 'node:url';
@@ -40,7 +41,30 @@ if (!profile.legacy) {
   mkdirSync(sessionDirectory, { recursive: true, mode: 0o700 });
   app.setPath('userData', profile.dataDirectory); app.setPath('sessionData', sessionDirectory);
 }
-const profileLabel = profile.legacy ? 'legacy（日常原目录）' : profile.name;
+const languageFile = join(profile.dataDirectory, 'language.json');
+let preferredLanguage: LanguagePreference = 'system';
+try { preferredLanguage = languagePreference(JSON.parse(readFileSync(languageFile, 'utf8'))); } catch { /* Missing or invalid preference follows the system. */ }
+configureLocale(() => preferredLanguage === 'system' ? negotiateLocale(app.getPreferredSystemLanguages()) : preferredLanguage);
+function languageState() { return { preference: preferredLanguage, locale: getLocale() }; }
+function refreshApplicationMenu() {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { label: 'Mote', submenu: [
+        { role: 'about', label: moteText("关于 Mote") }, { type: 'separator' },
+        { label: moteText("设置…"), accelerator: 'CmdOrCtrl+,', click: () => showClientPage('settings') },
+        { type: 'separator' }, { role: 'services' }, { type: 'separator' },
+        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit', label: moteText("退出 Mote") },
+      ] },
+      { role: 'editMenu', label: moteText("编辑") },
+      { label: moteText("前往"), submenu: [
+        { label: moteText("概览"), accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
+        { label: moteText("随手记"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
+        { label: moteText("来源"), accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
+      ] },
+      { label: moteText("显示"), submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+      { role: 'windowMenu', label: moteText("窗口") },
+    ]));
+}
+const profileLabel = profile.legacy ? moteText("legacy（日常原目录）") : profile.name;
 let window: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let centralWindow: BrowserWindow | undefined;
@@ -49,7 +73,7 @@ let collector: Collector;
 let localSources: LocalSourceManager | undefined;
 let updater: DesktopUpdater | undefined;
 const onboarding = new ConnectionOnboarding();
-let connectionState: ConnectionStatus = { state: 'unchecked', message: '连接尚未检查' };
+let connectionState: ConnectionStatus = { state: 'unchecked', get message() { return moteText("连接尚未检查"); } };
 let quitting = false;
 let notesSettledForQuit = false;
 const noteWork = new Set<Promise<unknown>>();
@@ -79,16 +103,16 @@ async function showCentral(ownerToken?: string): Promise<void> {
   if (centralWindow && !centralWindow.isDestroyed()) { centralWindow.show(); centralWindow.focus(); return; }
   if (centralOpening) return centralOpening;
   const requested = settings;
-  if (!ownerToken && requested.credentialScope === 'collector') throw new Error('此连接仅有采集权限。请在设置的“连接与设备”中展开“设备身份与管理员访问”，使用单独管理员令牌打开中央仓库');
+  if (!ownerToken && requested.credentialScope === 'collector') throw new Error(moteText("此连接仅有采集权限。请在设置的“连接与设备”中展开“设备身份与管理员访问”，使用单独管理员令牌打开中央仓库"));
   centralOpening = (async () => {
     try {
       const identity = await testConnection({ ...requested, token: ownerToken || requested.token });
-      if (identity.credential.scope !== 'owner') throw new Error('完整中央仓库需要管理员权限；采集专用凭据不能用于此登录');
+      if (identity.credential.scope !== 'owner') throw new Error(moteText("完整中央仓库需要管理员权限；采集专用凭据不能用于此登录"));
     } catch (error) {
       // Legacy nodes predate scoped credentials. Only the original manually configured path is compatible.
       if (!(error instanceof ConnectionError && error.code === 'UNSUPPORTED' && !ownerToken && requested.credentialScope !== 'collector')) throw error;
     }
-    if (settings !== requested || quitting) throw new Error('连接已改变，请重新打开中央仓库');
+    if (settings !== requested || quitting) throw new Error(moteText("连接已改变，请重新打开中央仓库"));
     const opened = await openCentralWindow({ ...requested, token: ownerToken || requested.token });
     if (settings !== requested || quitting) { opened.close(); return; }
     centralWindow = opened;
@@ -111,19 +135,19 @@ function trayIcon(): Electron.NativeImage {
 function updateUi(status: Status): void {
   status = { ...includePreparedNote(status), operations: backgroundJobs.snapshot(), storage: storageStatus(), environment: { profile: profile.name, legacy: profile.legacy, dataDirectory: profile.dataDirectory } };
   if (window && !window.isDestroyed()) window.webContents.send('mote:status', status);
-  tray?.setToolTip(`Mote [${profile.name}] · ${status.running ? '采集中' : '已停止'} · 待上传 ${status.queueDepth}`);
+  tray?.setToolTip(moteText("Mote [{0}] · {1} · 待上传 {2}", profile.name, status.running ? moteText("采集中") : moteText("已停止"), status.queueDepth));
   tray?.setContextMenu(Menu.buildFromTemplate([
-    { label: `Mote [${profile.name}] · ${status.running ? '采集中' : '已停止'}`, enabled: false },
-    { label: `待上传 ${status.queueDepth} 条`, enabled: false },
+    { label: `Mote [${profile.name}] · ${status.running ? moteText("采集中") : moteText("已停止")}`, enabled: false },
+    { label: moteText("待上传 {0} 条", status.queueDepth), enabled: false },
     { type: 'separator' },
-    { label: '打开 Mote', click: () => showClientPage('overview') },
-    { label: '随手记', click: () => showClientPage('notes') },
-    { label: '设置…', click: () => showClientPage('settings') },
-    { label: '打开中央仓库', click: () => { void showCentral().catch(e => dialog.showErrorBox('中央仓库', (e as Error).message)); } },
-    { label: '开始采集', enabled: !status.running, click: () => { void serialize(() => collector.start()).catch(error => dialog.showErrorBox('无法开始采集', (error as Error).message)); } },
-    { label: '停止采集', enabled: status.running, click: () => { collector.stop(); void serialize(() => collector.settleCapture()); } },
+    { label: moteText("打开 Mote"), click: () => showClientPage('overview') },
+    { label: moteText("随手记"), click: () => showClientPage('notes') },
+    { label: moteText("设置…"), click: () => showClientPage('settings') },
+    { label: moteText("打开中央仓库"), click: () => { void showCentral().catch(e => dialog.showErrorBox(moteText("中央仓库"), (e as Error).message)); } },
+    { label: moteText("开始采集"), enabled: !status.running, click: () => { void serialize(() => collector.start()).catch(error => dialog.showErrorBox(moteText("无法开始采集"), (error as Error).message)); } },
+    { label: moteText("停止采集"), enabled: status.running, click: () => { collector.stop(); void serialize(() => collector.settleCapture()); } },
     { type: 'separator' },
-    { label: '退出 Mote（停止采集和上传）', click: () => app.quit() },
+    { label: moteText("退出 Mote（停止采集和上传）"), click: () => app.quit() },
   ]));
 }
 
@@ -192,43 +216,41 @@ else {
       width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}]`, backgroundColor: '#f7f8f5',
       webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: !app.isPackaged },
     });
-    Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { label: 'Mote', submenu: [
-        { role: 'about', label: '关于 Mote' }, { type: 'separator' },
-        { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => showClientPage('settings') },
-        { type: 'separator' }, { role: 'services' }, { type: 'separator' },
-        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit', label: '退出 Mote' },
-      ] },
-      { role: 'editMenu', label: '编辑' },
-      { label: '前往', submenu: [
-        { label: '概览', accelerator: 'CmdOrCtrl+1', click: () => showClientPage('overview') },
-        { label: '随手记', accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
-        { label: '来源', accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
-      ] },
-      { label: '显示', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
-      { role: 'windowMenu', label: '窗口' },
-    ]));
+    refreshApplicationMenu();
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     window.webContents.on('will-navigate', event => event.preventDefault());
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     window.on('close', event => { if (!quitting) { event.preventDefault(); window?.hide(); } });
     const trusted = (event: IpcMainInvokeEvent) => {
-      if (!window || event.sender !== window.webContents || event.senderFrame?.url !== pageUrl || event.senderFrame !== window.webContents.mainFrame) throw new Error('请求来源不受信任');
+      if (!window || event.sender !== window.webContents || event.senderFrame?.url !== pageUrl || event.senderFrame !== window.webContents.mainFrame) throw new Error(moteText("请求来源不受信任"));
     };
+      ipcMain.handle('mote:language', event => { trusted(event); return languageState(); });
+    ipcMain.handle('mote:set-language', async (event, raw: unknown) => {
+      trusted(event);
+      if (!['system', 'zh-CN', 'en'].includes(String(raw))) throw new Error('Invalid language');
+      await Promise.all([...noteWork]);
+      const next = languagePreference(raw);
+      writeFileSync(languageFile + '.tmp', JSON.stringify(next), { mode: 0o600 });
+      renameSync(languageFile + '.tmp', languageFile);
+      preferredLanguage = next; refreshApplicationMenu(); updateUi(clientStatus());
+      // Renderer navigation is blocked; only this trusted IPC may reload its fixed page.
+      setTimeout(() => window?.webContents.reload(), 20);
+      return languageState();
+    });
     const operationLabels: Record<string, string> = {
-      'mote:configure': '正在应用设置或迁移存储', 'mote:import-queue': '正在导入队列', 'mote:export-queue': '正在导出队列',
-      'mote:model-import': '正在导入并校验模型', 'mote:model-reload': '正在校验模型', 'mote:source-sync': '正在扫描并同步来源',
-      'mote:retry': '正在同步待发记录', 'mote:source-files': '正在连接文件来源', 'mote:source-update': '正在保存来源设置',
-      'mote:source-calendar': '正在连接日历', 'mote:calendar-authorize': '正在读取日历授权', 'mote:installed-applications': '正在读取应用列表',
-      'mote:support-export': '正在导出支持包', 'mote:diagnostics-export': '正在导出诊断', 'mote:diagnostics-sample': '正在读取诊断',
-      'mote:connection-confirm': '正在连接中央节点', 'mote:connection-test': '正在测试连接',
-      'mote:update-download': '正在下载更新', 'mote:update-install': '正在准备安装更新', 'mote:update-check': '正在检查更新',
-      'mote:start': '正在准备采集', 'mote:stop': '正在结束当前采集', 'mote:note': '正在保存随手记',
+      'mote:configure': moteText("正在应用设置或迁移存储"), 'mote:import-queue': moteText("正在导入队列"), 'mote:export-queue': moteText("正在导出队列"),
+      'mote:model-import': moteText("正在导入并校验模型"), 'mote:model-reload': moteText("正在校验模型"), 'mote:source-sync': moteText("正在扫描并同步来源"),
+      'mote:retry': moteText("正在同步待发记录"), 'mote:source-files': moteText("正在连接文件来源"), 'mote:source-update': moteText("正在保存来源设置"),
+      'mote:source-calendar': moteText("正在连接日历"), 'mote:calendar-authorize': moteText("正在读取日历授权"), 'mote:installed-applications': moteText("正在读取应用列表"),
+      'mote:support-export': moteText("正在导出支持包"), 'mote:diagnostics-export': moteText("正在导出诊断"), 'mote:diagnostics-sample': moteText("正在读取诊断"),
+      'mote:connection-confirm': moteText("正在连接中央节点"), 'mote:connection-test': moteText("正在测试连接"),
+      'mote:update-download': moteText("正在下载更新"), 'mote:update-install': moteText("正在准备安装更新"), 'mote:update-check': moteText("正在检查更新"),
+      'mote:start': moteText("正在准备采集"), 'mote:stop': moteText("正在结束当前采集"), 'mote:note': moteText("正在保存随手记"),
     };
     const handle = (channel: string, operation: (...args: unknown[]) => unknown) => {
       const stage: EventStage | undefined = ({ 'mote:source-sync': 'SOURCE', 'mote:source-files': 'SOURCE', 'mote:source-calendar': 'SOURCE', 'mote:source-update': 'SOURCE', 'mote:connection-confirm': 'CONNECTION', 'mote:connection-test': 'CONNECTION', 'mote:update-check': 'UPDATE', 'mote:update-download': 'UPDATE', 'mote:update-install': 'UPDATE', 'mote:retry': 'UPLOAD', 'mote:configure': 'CONFIG', 'mote:start': 'CAPTURE', 'mote:stop': 'CAPTURE', 'mote:note': 'NOTE', 'mote:note-draft-update': 'NOTE', 'mote:model-download': 'MODEL_DOWNLOAD', 'mote:model-import': 'MODEL_DOWNLOAD', 'mote:model-reload': 'MODEL', 'mote:support-export': 'SUPPORT', 'mote:import-queue': 'QUEUE', 'mote:export-queue': 'QUEUE' } as Record<string, EventStage>)[channel];
-      ipcMain.handle(channel, async (event, ...args) => {
+    ipcMain.handle(channel, async (event, ...args) => {
         trusted(event);
         if (recoveryRequired && !['mote:get-status', 'mote:storage-restart', 'mote:stop', 'mote:note-draft', 'mote:connection-status', 'mote:update-status', 'mote:sources'].includes(channel)) throw new Error(recoveryRequired);
         const startedAt = Date.now();
@@ -266,7 +288,7 @@ else {
         if (modelSourceChanged) await nsfw.cancelDownload();
         if (profile.legacy && updated.openAtLogin !== previous.openAtLogin) {
           app.setLoginItemSettings({ openAtLogin: updated.openAtLogin });
-          if (app.getLoginItemSettings().openAtLogin !== updated.openAtLogin) throw new Error('系统未允许修改登录启动项，请在系统设置检查');
+          if (app.getLoginItemSettings().openAtLogin !== updated.openAtLogin) throw new Error(moteText("系统未允许修改登录启动项，请在系统设置检查"));
         }
         await localSources!.changeConnection(updated);
         settings = updated; collector.updateConfig(updated); await configureDiagnostics();
@@ -277,7 +299,7 @@ else {
         // A failed directory fsync may follow a successful rename. Preserve both copies and stop all IO.
         const persisted = await store.load().catch(() => undefined);
         if (error instanceof StorageCommitUncertainError || !persisted || JSON.stringify(persisted) === JSON.stringify(updated)) {
-          requireRecovery('设置提交需要恢复；已停止采集与上传并保留数据，请重新打开 Mote。');
+          requireRecovery(moteText("设置提交需要恢复；已停止采集与上传并保留数据，请重新打开 Mote。"));
           throw new Error(recoveryRequired);
         }
         try {
@@ -286,10 +308,10 @@ else {
           settings = previous; collector.updateConfig(previous); await configureDiagnostics();
           if (profile.legacy && updated.openAtLogin !== previous.openAtLogin) {
             app.setLoginItemSettings({ openAtLogin: previous.openAtLogin });
-            if (app.getLoginItemSettings().openAtLogin !== previous.openAtLogin) throw new Error('登录项还原失败');
+            if (app.getLoginItemSettings().openAtLogin !== previous.openAtLogin) throw new Error(moteText("登录项还原失败"));
           }
         } catch {
-          requireRecovery('设置未完成；原持久配置和截图保留，运行状态无法安全还原。请重新打开 Mote 后重试'); throw new Error(recoveryRequired);
+          requireRecovery(moteText("设置未完成；原持久配置和截图保留，运行状态无法安全还原。请重新打开 Mote 后重试")); throw new Error(recoveryRequired);
         }
         throw error;
       } finally {
@@ -311,52 +333,52 @@ else {
       if (sameNodeInvitation) await queue.resetRetries();
       await applySettings(updated);
       centralWindow?.close(); centralWindow = undefined;
-      connectionState = { state: 'unchecked', message: updated.credentialScope === 'collector' ? '已安全保存采集凭据；可测试连接。完整仓库需单独管理员登录。' : '连接已保存，可测试权限与节点版本' };
+      connectionState = { state: 'unchecked', message: updated.credentialScope === 'collector' ? moteText("已安全保存采集凭据；可测试连接。完整仓库需单独管理员登录。") : moteText("连接已保存，可测试权限与节点版本") };
     };
     const readSelectedInvitation = async (path: string, maximum: number): Promise<Buffer> => {
       const file = await open(path, 'r');
-      try { const buffer = Buffer.alloc(maximum + 1); const read = await file.read(buffer, 0, buffer.length, 0); if (read.bytesRead > maximum) throw new Error('连接邀请文件超过大小限制'); return buffer.subarray(0, read.bytesRead); }
+      try { const buffer = Buffer.alloc(maximum + 1); const read = await file.read(buffer, 0, buffer.length, 0); if (read.bytesRead > maximum) throw new Error(moteText("连接邀请文件超过大小限制")); return buffer.subarray(0, read.bytesRead); }
       finally { await file.close(); }
     };
-    handle('mote:connection-status', () => connectionState);
+    handle('mote:connection-status', () => ({...connectionState, message: statusMessage(connectionState.message)}));
     handle('mote:connection-preview', input => onboarding.preview(input));
     handle('mote:connection-cancel', () => onboarding.clear());
     handle('mote:connection-import', kind => serialize(async () => {
-      if (kind !== 'json' && kind !== 'qr') throw new Error('邀请导入方式无效');
+      if (kind !== 'json' && kind !== 'qr') throw new Error(moteText("邀请导入方式无效"));
       onboarding.clear();
-      if (kind === 'qr' && process.platform !== 'darwin') throw new Error('二维码图片导入暂仅支持 macOS，请使用 JSON 或连接链接');
-      const selected = await dialog.showOpenDialog(window!, { title: kind === 'qr' ? '选择中央连接二维码图片' : '选择中央连接邀请 JSON', properties: ['openFile'], filters: [{ name: kind === 'qr' ? 'QR image' : 'Mote connection JSON', extensions: kind === 'qr' ? ['png', 'jpg', 'jpeg'] : ['json', 'txt'] }] });
+      if (kind === 'qr' && process.platform !== 'darwin') throw new Error(moteText("二维码图片导入暂仅支持 macOS，请使用 JSON 或连接链接"));
+      const selected = await dialog.showOpenDialog(window!, { title: kind === 'qr' ? moteText("选择中央连接二维码图片") : moteText("选择中央连接邀请 JSON"), properties: ['openFile'], filters: [{ name: kind === 'qr' ? 'QR image' : 'Mote connection JSON', extensions: kind === 'qr' ? ['png', 'jpg', 'jpeg'] : ['json', 'txt'] }] });
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       try {
         const bytes = await readSelectedInvitation(selected.filePaths[0], kind === 'qr' ? 8 * 1024 * 1024 : 8192);
         const input = kind === 'qr' ? await recognizeInvitationQr(helperPath, bytes) : new TextDecoder('utf-8', { fatal: true }).decode(bytes);
         return { canceled: false, preview: onboarding.preview(input) };
-      } catch { throw new Error('无法读取有效邀请，请检查 JSON/二维码格式、有效期和文件大小；原连接未变动'); }
+      } catch { throw new Error(moteText("无法读取有效邀请，请检查 JSON/二维码格式、有效期和文件大小；原连接未变动")); }
     }));
     handle('mote:connection-confirm', (id, origin) => serialize(async () => { await connectionChange(async () => {
-      if (!encryptedStorageAvailable()) throw new Error('系统加密存储不可用，不能交换并保存凭据');
+      if (!encryptedStorageAvailable()) throw new Error(moteText("系统加密存储不可用，不能交换并保存凭据"));
       const result = await onboarding.redeem(id, origin, settings, currentPlatform);
       const updated = { ...updateConfig(settings, { ...settings, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope };
       const identity = await testConnection(updated);
-      if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'collector') throw new Error('中央凭据身份确认不一致，原连接未修改；请重新生成邀请');
+      if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'collector') throw new Error(moteText("中央凭据身份确认不一致，原连接未修改；请重新生成邀请"));
       await commitConnection(updated, origin === settings.serverUrl, true);
-      connectionState = { state: 'connected', message: '采集连接成功；可上传记录与同步自身来源，完整仓库需单独管理员登录', checkedAt: new Date().toISOString(), identity };
+      connectionState = { state: 'connected', message: moteText("采集连接成功；可上传记录与同步自身来源，完整仓库需单独管理员登录"), checkedAt: new Date().toISOString(), identity };
     }, origin === settings.serverUrl, true); return clientStatus(); }));
     handle('mote:connection-test', async () => {
       if (connectionState.state === 'checking') return connectionState;
-      const requested = settings; connectionState = { state: 'checking', message: '正在验证已保存连接与权限…' };
-      try { const identity = await testConnection(requested); if (settings === requested) connectionState = { state: 'connected', message: identity.credential.scope === 'collector' ? '采集连接正常 · 仅上传与自身来源同步' : '管理员连接正常 · 可访问完整中央仓库', checkedAt: new Date().toISOString(), identity }; }
-      catch (error) { if (settings === requested) connectionState = { state: 'error', message: error instanceof ConnectionError ? error.message : '连接检查失败；已保存配置未改变', checkedAt: new Date().toISOString() }; }
+      const requested = settings; connectionState = { state: 'checking', message: moteText("正在验证已保存连接与权限…") };
+      try { const identity = await testConnection(requested); if (settings === requested) connectionState = { state: 'connected', message: identity.credential.scope === 'collector' ? moteText("采集连接正常 · 仅上传与自身来源同步") : moteText("管理员连接正常 · 可访问完整中央仓库"), checkedAt: new Date().toISOString(), identity }; }
+      catch (error) { if (settings === requested) connectionState = { state: 'error', message: error instanceof ConnectionError ? error.message : moteText("连接检查失败；已保存配置未改变"), checkedAt: new Date().toISOString() }; }
       return connectionState;
     });
     handle('mote:central-owner', token => {
-      if (typeof token !== 'string' || token.length < 32 || token.length > 4096 || /[\r\n]/.test(token)) throw new Error('管理员令牌格式不正确');
+      if (typeof token !== 'string' || token.length < 32 || token.length > 4096 || /[\r\n]/.test(token)) throw new Error(moteText("管理员令牌格式不正确"));
       return showCentral(token);
     });
     handle('mote:get-status', () => clientStatus());
     const browseWithConnection = async <T>(operation: (config: Config) => Promise<T>): Promise<T> => {
       const requested = settings; const result = await operation(requested);
-      if (settings !== requested) throw new Error('连接已改变，请刷新采集记录'); return result;
+      if (settings !== requested) throw new Error(moteText("连接已改变，请刷新采集记录")); return result;
     };
     handle('mote:compression-preview', (quality, maxSide) => previewWork.run({kind:'compression-preview', quality:quality as number,maxSide:maxSide as number}));
     handle('mote:captures-browse', input => browseWithConnection(config => browseCaptures(queue, config, input as BrowseRequest)));
@@ -374,19 +396,19 @@ else {
     handle('mote:feedback', () => shell.openExternal(githubFeedbackUrl({
       version: app.getVersion(),
       platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,
-      environment: `桌面客户端 · ${['dev', 'test', 'prod', 'legacy'].includes(profile.name) ? profile.name : '自定义环境'}`,
+      environment: moteText("桌面客户端 · {0}", ['dev', 'test', 'prod', 'legacy'].includes(profile.name) ? profile.name : moteText("自定义环境")),
     })));
     handle('mote:coding-agents', () => discoverCodingAgents());
-    handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error('不支持的 Coding Agent'); return localSources!.addCodingAgent(provider, options); }));
+    handle('mote:source-coding', (provider, options) => serialize(() => { if (provider !== 'claude' && provider !== 'codex' && provider !== 'kimi') throw new Error(moteText("不支持的 Coding Agent")); return localSources!.addCodingAgent(provider, options); }));
     handle('mote:sources', () => localSources!.status());
     handle('mote:source-sync', async () => { await localSources!.sync(true); await collector.retry(); });
     handle('mote:calendar-authorize', () => serialize(() => localSources!.authorizeCalendar()));
-    handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error('日历选择无效'); await localSources!.addCalendar(id, options); }));
-    handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error('来源选择无效'); await localSources!.update(id, options); }));
+    handle('mote:source-calendar', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("日历选择无效")); await localSources!.addCalendar(id, options); }));
+    handle('mote:source-update', (id, options) => serialize(async () => { if (typeof id !== 'string') throw new Error(moteText("来源选择无效")); await localSources!.update(id, options); }));
     handle('mote:source-files', (mode, input) => serialize(async () => {
       const options = normalizeSourceOptions(input);
-      if (mode !== 'files' && mode !== 'directory') throw new Error('文件选择方式无效');
-      const result = await dialog.showOpenDialog(window!, { title: '选择持续同步到中央仓库的本地资料', properties: mode === 'directory' ? ['openDirectory'] : ['openFile', 'multiSelections'], ...(mode === 'files' ? { filters: [{ name: 'UTF-8 文本资料', extensions: options.extensions.map(e => e.slice(1)) }] } : {}) });
+      if (mode !== 'files' && mode !== 'directory') throw new Error(moteText("文件选择方式无效"));
+      const result = await dialog.showOpenDialog(window!, { title: moteText("选择持续同步到中央仓库的本地资料"), properties: mode === 'directory' ? ['openDirectory'] : ['openFile', 'multiSelections'], ...(mode === 'files' ? { filters: [{ name: moteText("UTF-8 文本资料"), extensions: options.extensions.map(e => e.slice(1)) }] } : {}) });
       if (result.canceled) return { canceled: true };
       for (const path of result.filePaths) await localSources!.addFiles(path, options);
       return { canceled: false };
@@ -396,12 +418,12 @@ else {
     handle('mote:events-raw', async () => events.readRaw());
     handle('mote:events-read', async () => events.read(true));
     handle('mote:diagnostics-export', async () => {
-      const selected = await dialog.showSaveDialog(window!, { title: '导出本机数值诊断（不含内容与令牌）', defaultPath: 'mote-diagnostics.json', filters: [{ name: 'JSON diagnostics', extensions: ['json'] }] });
+      const selected = await dialog.showSaveDialog(window!, { title: moteText("导出本机数值诊断（不含内容与令牌）"), defaultPath: 'mote-diagnostics.json', filters: [{ name: 'JSON diagnostics', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };
       await diagnostics.sample(); await diagnostics.exportTo(selected.filePath); return { canceled: false };
     });
     handle('mote:support-export', async () => {
-      const selected = await dialog.showSaveDialog(window!, { title: '导出支持包（数值与固定事件，不含内容和令牌）', defaultPath: `mote-support-${profile.name}.json`, filters: [{ name: 'JSON support bundle', extensions: ['json'] }] });
+      const selected = await dialog.showSaveDialog(window!, { title: moteText("导出支持包（数值与固定事件，不含内容和令牌）"), defaultPath: `mote-support-${profile.name}.json`, filters: [{ name: 'JSON support bundle', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };
       await diagnostics.sample();
       await writeFile(selected.filePath, JSON.stringify(buildSupportBundle(profile, app.getVersion(), clientStatus(), await events.read()), null, 2), { mode: 0o600 });
@@ -418,10 +440,10 @@ else {
     handle('mote:content-decryption-status', () => ({ ...decryption }));
     handle('mote:content-decryption-cancel', () => { decryptionAbort?.abort(); });
     handle('mote:content-decrypt', () => {
-      if (decryptionAbort) throw new Error('本机内容解密正在进行');
+      if (decryptionAbort) throw new Error(moteText("本机内容解密正在进行"));
       decryptionAbort = new AbortController();
       const abort = decryptionAbort;
-      decryption = { ...emptyDecryptionProgress(), state: 'running', message: '正在准备解密；采集与同步会暂时暂停' };
+      decryption = { ...emptyDecryptionProgress(), state: 'running', message: moteText("正在准备解密；采集与同步会暂时暂停") };
       return serialize(() => pausedSettings(async () => {
         await applySettings({ ...settings, localContentEncryption: false });
         return queue.withContentMaintenance(() => noteDrafts.withContentMaintenance(() => decryptLocalContent([
@@ -429,27 +451,27 @@ else {
           join(dataDirectory, 'notes'), join(dataDirectory, 'local-sources'),
         ], abort.signal, value => { decryption = value; })));
       })).catch(error => {
-        decryption = { ...decryption, state: 'failed', message: error instanceof Error ? error.message : '解密未完成，原文件保留' };
+        decryption = { ...decryption, state: 'failed', message: error instanceof Error ? error.message : moteText("解密未完成，原文件保留") };
         throw error;
       }).finally(() => { decryptionAbort = undefined; updateUi(clientStatus()); });
     });
     handle('mote:storage-choose', () => serialize(async () => {
-      const selected = await dialog.showOpenDialog(window!, { title: '选择本机截图保存位置', buttonLabel: '选择位置', properties: ['openDirectory', 'createDirectory'] });
+      const selected = await dialog.showOpenDialog(window!, { title: moteText("选择本机截图保存位置"), buttonLabel: moteText("选择位置"), properties: ['openDirectory', 'createDirectory'] });
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       pendingStorageDirectory = await storage.candidate(selected.filePaths[0], queue.directory);
       return { canceled: false, directory: pendingStorageDirectory };
     }));
     handle('mote:storage-open', async () => {
-      await storage.assertOwned(queue.directory); const error = await shell.openPath(queue.directory); if (error) throw new Error('无法打开截图目录，请检查磁盘是否已连接');
+      await storage.assertOwned(queue.directory); const error = await shell.openPath(queue.directory); if (error) throw new Error(moteText("无法打开截图目录，请检查磁盘是否已连接"));
     });
     handle('mote:configure', input => serialize(async () => {
       const confirmedInitial = (input as ConfigUpdate).confirmLocalBacklog === true && unboundBacklog();
       const updated = updateConfig(settings, input as ConfigUpdate, queue.stats().depth + (noteDrafts.hasPrepared() ? 1 : 0), confirmedInitial);
-      if (!profile.legacy && updated.openAtLogin) throw new Error('命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数');
+      if (!profile.legacy && updated.openAtLogin) throw new Error(moteText("命名环境请使用带 --profile 的启动命令；系统默认登录项不能保留环境参数"));
       const relocating = updated.captureStorageDirectory !== settings.captureStorageDirectory;
       const changingConnection = updated.serverUrl !== settings.serverUrl || updated.token !== settings.token;
-      if (relocating && updated.captureStorageDirectory && updated.captureStorageDirectory !== pendingStorageDirectory) throw new Error('请通过本机文件夹选择器选择截图位置，再保存设置');
-      if (relocating && changingConnection) throw new Error('请先保存截图位置，再单独保存节点连接；每次切换均会自动应用');
+      if (relocating && updated.captureStorageDirectory && updated.captureStorageDirectory !== pendingStorageDirectory) throw new Error(moteText("请通过本机文件夹选择器选择截图位置，再保存设置"));
+      if (relocating && changingConnection) throw new Error(moteText("请先保存截图位置，再单独保存节点连接；每次切换均会自动应用"));
       if (changingConnection) await connectionChange(() => commitConnection(updated, false, confirmedInitial), false, confirmedInitial);
       else await pausedSettings(() => applySettings(updated));
       updateUi(clientStatus()); return clientStatus();
@@ -458,7 +480,7 @@ else {
     handle('mote:stop', () => { collector.stop(); return serialize(async () => { await collector.settleCapture(); return clientStatus(); }); });
     handle('mote:retry', async () => { await localSources!.sync(true); await collector.retry(); return clientStatus(); });
     const requireStopped = async () => {
-      if (clientStatus().running) throw new Error('请先停止采集，再修改本地模型');
+      if (clientStatus().running) throw new Error(moteText("请先停止采集，再修改本地模型"));
       await collector.settleCapture();
     };
     handle('mote:model-download', () => serialize(async () => { await requireStopped(); nsfw.startDownload(settings); return clientStatus(); }));
@@ -466,20 +488,20 @@ else {
     handle('mote:model-reload', () => serialize(async () => { await requireStopped(); await nsfw.reload(); return clientStatus(); }));
     handle('mote:model-import', () => serialize(async () => {
       await requireStopped();
-      const selected = await dialog.showOpenDialog(window!, { title: '导入千问语言模型和视觉投影 GGUF（校验 SHA-256）', properties: ['openFile', 'multiSelections'], filters: [{ name: 'GGUF models', extensions: ['gguf'] }] });
+      const selected = await dialog.showOpenDialog(window!, { title: moteText("导入千问语言模型和视觉投影 GGUF（校验 SHA-256）"), properties: ['openFile', 'multiSelections'], filters: [{ name: 'GGUF models', extensions: ['gguf'] }] });
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       await nsfw.importFiles(selected.filePaths); return { canceled: false };
     }));
     handle('mote:permissions', async () => { if (process.platform === 'darwin') { await runHelper(helperPath, 'screen-permission').catch(() => undefined); await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); } });
     handle('mote:data-folder', async () => { await shell.openPath(dataDirectory); });
     handle('mote:export-queue', async () => {
-      const selected = await dialog.showSaveDialog(window!, { title: '导出已脱敏待上传队列（包含个人资料）', defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
+      const selected = await dialog.showSaveDialog(window!, { title: moteText("导出已脱敏待上传队列（包含个人资料）"), defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };
       await queue.exportArchiveFile(selected.filePath, value => backgroundJobs.progress('mote:export-queue', value));
       return { canceled: false, path: selected.filePath };
     });
     handle('mote:import-queue', () => serialize(async () => {
-      const selected = await dialog.showOpenDialog(window!, { title: '导入 Mote 电脑端队列备份', properties: ['openFile'], filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
+      const selected = await dialog.showOpenDialog(window!, { title: moteText("导入 Mote 电脑端队列备份"), properties: ['openFile'], filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       const path = selected.filePaths[0];
       const imported = await queue.importArchiveFile(path, value => backgroundJobs.progress('mote:import-queue', value));
@@ -497,7 +519,7 @@ else {
     if (app.getLoginItemSettings().wasOpenedAtLogin) window.hide();
   }).catch(async error => {
     collector?.shutdown();
-    const result = await dialog.showMessageBox({ type: 'error', title: 'Mote 存储或配置需要恢复', message: '未开启采集，现有数据已保留', detail: `${error instanceof Error ? error.message : '无法读取配置或持久队列'}\n如使用外接磁盘，请连接原磁盘后重试。应用不会创建空队列替代原目录。`, buttons: ['重试', '退出'], defaultId: 0, cancelId: 1 });
+    const result = await dialog.showMessageBox({ type: 'error', title: moteText("Mote 存储或配置需要恢复"), message: moteText("未开启采集，现有数据已保留"), detail: moteText("{0}\n如使用外接磁盘，请连接原磁盘后重试。应用不会创建空队列替代原目录。", error instanceof Error ? error.message : moteText("无法读取配置或持久队列")), buttons: [moteText("重试"), moteText("退出")], defaultId: 0, cancelId: 1 });
     if (result.response === 0) app.relaunch(); app.quit();
   });
 }

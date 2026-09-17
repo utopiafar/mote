@@ -1,8 +1,9 @@
 import {DEFAULT_MODEL_MAX_TOKENS,type ModelProtocol} from '@mote/shared/models';
 import {AgentConfigurationError, type AgentOptions} from './types.js';
 
-const protocols: ModelProtocol[] = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai'];
+const protocols: ModelProtocol[] = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'codex-app-server'];
 const defaults: Record<ModelProtocol, string> = {
+  'codex-app-server': '',
   deepseek: 'https://api.deepseek.com',
   'openai-completions': 'https://api.openai.com/v1',
   'openai-responses': 'https://api.openai.com/v1',
@@ -26,6 +27,7 @@ type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 
 
 /** Keep errors value-free: advanced fields can contain credentials. */
 export function validateModelOptions(options: ConnectionOptions): void {
+  if(options.protocol==='codex-app-server'&&(options.baseUrl||Object.keys(options.headers??{}).length||Object.keys(options.extraBody??{}).length))throw new AgentConfigurationError('Codex uses its local login and does not accept HTTP endpoints or advanced request parameters.');
   if (options.protocol !== undefined && !protocols.includes(options.protocol)) throw new AgentConfigurationError('Unsupported model protocol.');
   if (options.reasoningEffort !== undefined && !['auto', 'off', 'low', 'high', 'max'].includes(options.reasoningEffort)) throw new AgentConfigurationError('Unsupported reasoning effort.');
   if (options.maxTokens !== undefined && (!Number.isInteger(options.maxTokens) || options.maxTokens < 1 || options.maxTokens > 128_000)) throw new AgentConfigurationError('Model output limit must be between 1 and 128000 tokens.');
@@ -72,6 +74,7 @@ export function modelConnection(options: ConnectionOptions) {
 
 /** Route selection is explicit protocol configuration, never semantic dispatch. */
 export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
+  if(options.protocol==='codex-app-server')throw new AgentConfigurationError('Codex requires the App Server runtime.');
   const {protocol, baseUrl, effort, route} = modelConnection(options);
   const maxTokens = options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS;
   const model = {id: options.model!, name: options.model!, contextWindow: 128_000, maxTokens};

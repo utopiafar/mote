@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  language: () => ipcRenderer.invoke('mote:language'),
+  setLanguage: preference => ipcRenderer.invoke('mote:set-language', preference),
   contentDecryptionStatus: () => ipcRenderer.invoke('mote:content-decryption-status'),
   decryptLocalContent: () => ipcRenderer.invoke('mote:content-decrypt'),
   cancelContentDecryption: () => ipcRenderer.invoke('mote:content-decryption-cancel'),

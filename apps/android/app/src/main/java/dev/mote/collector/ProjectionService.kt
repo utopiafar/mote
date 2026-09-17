@@ -37,7 +37,7 @@ class ProjectionService : Service() {
     private val callback = object : MediaProjection.Callback() {
         override fun onStop() {
             RuntimeSettings.cancelProjectionConsentRequest()
-            projectionEnded("投屏授权已结束（锁屏、系统或用户停止），请打开应用重新授权")
+            projectionEnded(MoteI18n.text("投屏授权已结束（锁屏、系统或用户停止），请打开应用重新授权"))
             stopSelf()
         }
         override fun onCapturedContentResize(width: Int, height: Int) {
@@ -51,19 +51,19 @@ class ProjectionService : Service() {
             if (!settings.enabled) { stopSelf(); return }
             UploadWorker.heartbeat(this@ProjectionService, c)
             if (!CapturePipeline.unlocked(this@ProjectionService)) {
-                projectionEnded("已锁屏，投屏采集结束；解锁后请重新授权")
+                projectionEnded(MoteI18n.text("已锁屏，投屏采集结束；解锁后请重新授权"))
                 stopSelf(); return
             }
             if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
-                settings.enabled = false; settings.status("permission_required", "通知权限关闭，采集已停止"); stopSelf(); return
+                settings.enabled = false; settings.status("permission_required", MoteI18n.text("通知权限关闭，采集已停止")); stopSelf(); return
             }
             try {
                 val windows = ForegroundApps.snapshot(this@ProjectionService)
                 if (pending != null && (pending!!.windows != windows || CapturePipeline.policy(c, windows) != AppCollectionMode.CONTENT)) {
-                    clearPending(); pipeline?.pause("窗口已变化，丢弃未读取屏幕帧")
+                    clearPending(); pipeline?.pause(MoteI18n.text("窗口已变化，丢弃未读取屏幕帧"))
                 }
                 if (pending != null && SystemClock.elapsedRealtime() - pending!!.requestedAt > 5000) {
-                    clearPending(); pipeline?.pause("未收到屏幕帧；下一采样周期重试")
+                    clearPending(); pipeline?.pause(MoteI18n.text("未收到屏幕帧；下一采样周期重试"))
                 }
                 if (pending == null && !copying && SystemClock.elapsedRealtime() - lastTick >= c.intervalSeconds * 1000L) {
                     when (CapturePipeline.policy(c, windows)) {
@@ -77,7 +77,7 @@ class ProjectionService : Service() {
                     }
                 }
                 Notifications.show(this@ProjectionService, LocalStateRepository.get(this@ProjectionService).state.value.captureLabel)
-            } catch (_: Exception) { pipeline?.pause("投屏帧暂不可用，下一周期重试") }
+            } catch (_: Exception) { pipeline?.pause(MoteI18n.text("投屏帧暂不可用，下一周期重试")) }
             handler.postDelayed(this, 1000)
         }
     }
@@ -92,17 +92,17 @@ class ProjectionService : Service() {
             require(data != null && intent?.getIntExtra("result", Activity.RESULT_CANCELED) == Activity.RESULT_OK)
             require(settings.enabled && intent.getStringExtra("configurationStamp") == ConnectionGuard.configurationStamp(this))
             config = settings.read().also { it.validate() }
-            startForeground(Notifications.ID, Notifications.notification(this, "投屏采集已启动，可随时停止"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            startForeground(Notifications.ID, Notifications.notification(this, MoteI18n.text("投屏采集已启动，可随时停止")), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
             projection = getSystemService(MediaProjectionManager::class.java).getMediaProjection(Activity.RESULT_OK, data)
             projection!!.registerCallback(callback, handler)
             pipeline = CapturePipeline(this)
             val bounds = if (Build.VERSION.SDK_INT >= 30) getSystemService(WindowManager::class.java).maximumWindowMetrics.bounds else android.graphics.Rect(0, 0, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
             createDisplay(bounds.width(), bounds.height())
             running = true; instance = this
-            settings.status("capturing", "投屏采集已启动；每次会话都需系统授权")
+            settings.status("capturing", MoteI18n.text("投屏采集已启动；每次会话都需系统授权"))
             handler.post(tick)
         } catch (_: Exception) {
-            projectionEnded("无法启动投屏，请重新点击开始并授予屏幕共享权限")
+            projectionEnded(MoteI18n.text("无法启动投屏，请重新点击开始并授予屏幕共享权限"))
             stopSelf()
         }
         return START_NOT_STICKY
@@ -144,7 +144,7 @@ class ProjectionService : Service() {
                             CapturePipeline.unlocked(this@ProjectionService) && ForegroundApps.snapshot(this@ProjectionService) == ticket.windows)
                             capturePipeline?.submit(cropped, current, c, ticket.at, ticket.requestedAt) ?: cropped.recycle()
                         else cropped.recycle()
-                    } else pipeline?.pause("投屏帧读取失败，未保存内容")
+                    } else pipeline?.pause(MoteI18n.text("投屏帧读取失败，未保存内容"))
                 }
             } } catch (_: java.util.concurrent.RejectedExecutionException) { copying = false; image.close(); available.close() }
         }, handler)
@@ -192,7 +192,7 @@ class ProjectionService : Service() {
         val c = settings.read()
         preserveEnabledOnStop = settings.enabled && c.observesSystem()
         if (!preserveEnabledOnStop) settings.enabled = false
-        settings.status(if (preserveEnabledOnStop) "capturing" else "permission_required", message + if (preserveEnabledOnStop) "；媒体采集继续运行" else "")
+        settings.status(if (preserveEnabledOnStop) "capturing" else "permission_required", message + if (preserveEnabledOnStop) MoteI18n.text("；媒体采集继续运行") else "")
         MediaCollectionService.refresh()
     }
     override fun onDestroy() {

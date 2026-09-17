@@ -1,6 +1,7 @@
 import type {TokenUsage} from '@mote/shared';
 import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
+import {createCodexImportAgent} from './codex-import.js';
 import {DeepSeekHarness,RequestTimeoutError,type HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
 import {mkdtemp,writeFile,rm} from 'node:fs/promises';
 import {readFileSync} from 'node:fs';
@@ -19,6 +20,7 @@ export type ImportAgentLaunch=(input:{workspace:string;runtimeRoot:string})=>Pro
 /** Dedicated import runtime. Native shell/file capabilities never enter query sessions. */
 export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLaunch?:ImportAgentLaunch){
   validateModelOptions(options);
+  if(options.protocol==='codex-app-server')return createCodexImportAgent(options);
   options={...options,headers:options.headers&&{...options.headers},extraBody:options.extraBody&&structuredClone(options.extraBody)};
   const connection=modelConnection(options),active=new Set<DeepSeekHarness>(),pending=new Set<Promise<ImportAgentResult>>();
   let closed=false;
@@ -31,6 +33,7 @@ export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLau
     try{
       const transportPath=join(root,'transport.mjs');
       await writeFile(transportPath,readFileSync(new URL('./plugin.mjs',import.meta.url),'utf8')
+        .replace('from "./context-tools.js"',`from ${JSON.stringify(new URL('./context-tools.js',import.meta.url).href)}`)
         .replace('from "@deepseek-ai/dsh-tools"',`from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tools'))}`)
         .replace('from "@deepseek-ai/dsh-tool-skill"',`from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tool-skill'))}`),{mode:0o600});
       const plugin=join(root,'import-plugin.mjs');

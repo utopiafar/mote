@@ -1,41 +1,42 @@
+import { moteText } from '@mote/shared/i18n';
 import type {RecordMetadata, SourceMetadata} from '@mote/shared';
 import {bytes, dateTime} from './api';
 
-export const sourceLabels: Record<string,string> = {screen:'屏幕采样',activity:'仅应用活动',media:'媒体播放',notification:'通知事件',device_event:'设备事件',note:'随手记',file:'文件',calendar:'日历',event:'事件',message:'消息',metric:'指标',memory:'记忆'};
-export const activityExplanation = '仅记录前台应用与采样时长；没有采集截图、窗口标题或正文。时长存在采样空隙，不代表完整使用历史。';
+export const sourceLabels: Record<string,string> = {screen:moteText("屏幕采样"),activity:moteText("仅应用活动"),media:moteText("媒体播放"),notification:moteText("通知事件"),device_event:moteText("设备事件"),note:moteText("随手记"),file:moteText("文件"),calendar:moteText("日历"),event:moteText("事件"),message:moteText("消息"),metric:moteText("指标"),memory:moteText("记忆")};
+export const activityExplanation = moteText("仅记录前台应用与采样时长；没有采集截图、窗口标题或正文。时长存在采样空隙，不代表完整使用历史。");
 type Row = [string, string | number | boolean | undefined];
-const bool = (value: boolean | undefined) => value === undefined ? undefined : value ? '是' : '否';
+const bool = (value: boolean | undefined) => value === undefined ? undefined : value ? moteText("是") : moteText("否");
 const time = (value: string | undefined) => value === undefined ? undefined : dateTime(value);
 
 export function Metadata({metadata,source,modifiedAt}: {metadata?:RecordMetadata;source?:SourceMetadata;modifiedAt?:string}) {
-  if (!metadata && !source && !modifiedAt) return <p className="field-note">此记录未上报额外元数据（早期客户端或系统未提供）。</p>;
+  if (!metadata && !source && !modifiedAt) return <p className="field-note">{moteText("此记录未上报额外元数据（早期客户端或系统未提供）。")}</p>;
   const d=metadata?.device,s=metadata?.state,c=metadata?.capture,f=source?.file;
-  const network:Record<string,string>={none:'无网络',wifi:'Wi-Fi',cellular:'移动网络',ethernet:'以太网',other:'其他',unknown:'未知'};
-  const thermal:Record<string,string>={unknown:'未知',nominal:'正常',fair:'略热',serious:'严重',critical:'临界'};
-  const methods:Record<string,string>={accessibility:'无障碍采集',media_projection:'系统录屏',screen_capture:'系统屏幕采集',media_session:'系统媒体会话',notification_listener:'系统通知服务',manual:'主动记录',file:'文件同步',calendar:'日历同步',mcp:'MCP',import:'导入'};
+  const network:Record<string,string>={none:moteText("无网络"),wifi:'Wi-Fi',cellular:moteText("移动网络"),ethernet:moteText("以太网"),other:moteText("其他"),unknown:moteText("未知")};
+  const thermal:Record<string,string>={unknown:moteText("未知"),nominal:moteText("正常"),fair:moteText("略热"),serious:moteText("严重"),critical:moteText("临界")};
+  const methods:Record<string,string>={accessibility:moteText("无障碍采集"),media_projection:moteText("系统录屏"),screen_capture:moteText("系统屏幕采集"),media_session:moteText("系统媒体会话"),notification_listener:moteText("系统通知服务"),manual:moteText("主动记录"),file:moteText("文件同步"),calendar:moteText("日历同步"),mcp:'MCP',import:moteText("导入")};
   const n=metadata?.notification,e=metadata?.deviceEvent;
-  const actions:Record<string,string>={posted:'发布（首次观察）',updated:'更新',removed:'移除',screen_on:'亮屏',screen_off:'熄屏',user_present:'用户已解锁 / 在场',state_observed:'锁定状态观察'};
+  const actions:Record<string,string>={posted:moteText("发布（首次观察）"),updated:moteText("更新"),removed:moteText("移除"),screen_on:moteText("亮屏"),screen_off:moteText("熄屏"),user_present:moteText("用户已解锁 / 在场"),state_observed:moteText("锁定状态观察")};
   const rows:Row[]=[
-    ['系统事件',n?actions[n.action]:e?actions[e.action]:undefined],['通知标题',n?.title],['通知正文',n?.text],['展开正文',n?.bigText],['补充文字',n?.subText],['通知多行正文',n?.textLines?.join('\n')],
-    ['通知发布时间',time(n?.postedAt)],['持续通知',bool(n?.ongoing)],['分组摘要',bool(n?.groupSummary)],['应用声明的通知类别',n?.category],['通知通道',n?.channelId],['系统移除原因代码',n?.removalReason],['通知关联键（哈希）',n?.notificationKey],
-    ['系统报告锁定',bool(e?.keyguardLocked)],['系统报告屏幕可交互',bool(e?.screenInteractive)],['观察会话',metadata?.observation?.sessionId],['开机后观察毫秒数',metadata?.observation?.elapsedRealtimeMs],
-    ['状态观察时间',time(metadata?.observedAt)],['客户端版本',metadata?.collector?.version],['采集方式',metadata?.collector?.method ? methods[metadata.collector.method] : undefined],
-    ['设备型号',d?.model],['制造商',d?.manufacturer],['系统版本',d?.osVersion],['系统构建',d?.osBuild],['处理器架构',d?.architecture],['地区',d?.locale],['设备时区',d?.timeZone],
-    ['电池电量',s?.batteryPercent === undefined ? undefined : `${s.batteryPercent}%`],['正在充电',bool(s?.charging)],['使用电池',bool(s?.onBattery)],['省电模式',bool(s?.powerSave)],
-    ['温度状态',s?.thermalState ? thermal[s.thermalState] : undefined],['网络类型',s?.networkType ? network[s.networkType] : undefined],['计量网络',bool(s?.networkMetered)],
-    ['屏幕可交互',bool(s?.screenInteractive)],['屏幕锁定',bool(s?.screenLocked)],['已空闲',s?.idleSeconds === undefined ? undefined : `${s.idleSeconds} 秒`],
-    ['设备可用存储',s?.availableStorageBytes === undefined ? undefined : bytes(s.availableStorageBytes)],
-    ['图片去重命中',bool(c?.deduplication?.duplicate)],['图片去重档位',c?.deduplication ? ({exact:'精确',conservative:'保守',balanced:'均衡',aggressive:'激进'}[c.deduplication.mode]) : undefined],
-    ['采样间隔',c?.intervalMs === undefined ? undefined : `${c.intervalMs / 1000} 秒`],['画面宽度',c?.width],['画面高度',c?.height],['显示缩放',c?.displayScale],['启用 OCR',bool(c?.ocrEnabled)],['应用遮罩数',c?.maskCount],
-    ['源文件大小',f?.sizeBytes === undefined ? undefined : bytes(f.sizeBytes)],['文件创建时间',time(f?.createdAt)],['源内容修改时间',time(modifiedAt)],
-    ['文件访问时间（文件系统）',time(f?.accessedAt)],['文件属性变更时间',time(f?.metadataChangedAt)],['扫描发现来源消失的时间',time(f?.deletionObservedAt)],
-    ['提供方创建时间',time(source?.provider?.createdAt)],['提供方更新时间',time(source?.provider?.updatedAt)],
+    [moteText("系统事件"),n?actions[n.action]:e?actions[e.action]:undefined],[moteText("通知标题"),n?.title],[moteText("通知正文"),n?.text],[moteText("展开正文"),n?.bigText],[moteText("补充文字"),n?.subText],[moteText("通知多行正文"),n?.textLines?.join('\n')],
+    [moteText("通知发布时间"),time(n?.postedAt)],[moteText("持续通知"),bool(n?.ongoing)],[moteText("分组摘要"),bool(n?.groupSummary)],[moteText("应用声明的通知类别"),n?.category],[moteText("通知通道"),n?.channelId],[moteText("系统移除原因代码"),n?.removalReason],[moteText("通知关联键（哈希）"),n?.notificationKey],
+    [moteText("系统报告锁定"),bool(e?.keyguardLocked)],[moteText("系统报告屏幕可交互"),bool(e?.screenInteractive)],[moteText("观察会话"),metadata?.observation?.sessionId],[moteText("开机后观察毫秒数"),metadata?.observation?.elapsedRealtimeMs],
+    [moteText("状态观察时间"),time(metadata?.observedAt)],[moteText("客户端版本"),metadata?.collector?.version],[moteText("采集方式"),metadata?.collector?.method ? methods[metadata.collector.method] : undefined],
+    [moteText("设备型号"),d?.model],[moteText("制造商"),d?.manufacturer],[moteText("系统版本"),d?.osVersion],[moteText("系统构建"),d?.osBuild],[moteText("处理器架构"),d?.architecture],[moteText("地区"),d?.locale],[moteText("设备时区"),d?.timeZone],
+    [moteText("电池电量"),s?.batteryPercent === undefined ? undefined : `${s.batteryPercent}%`],[moteText("正在充电"),bool(s?.charging)],[moteText("使用电池"),bool(s?.onBattery)],[moteText("省电模式"),bool(s?.powerSave)],
+    [moteText("温度状态"),s?.thermalState ? thermal[s.thermalState] : undefined],[moteText("网络类型"),s?.networkType ? network[s.networkType] : undefined],[moteText("计量网络"),bool(s?.networkMetered)],
+    [moteText("屏幕可交互"),bool(s?.screenInteractive)],[moteText("屏幕锁定"),bool(s?.screenLocked)],[moteText("已空闲"),s?.idleSeconds === undefined ? undefined : moteText("{0} 秒", s.idleSeconds)],
+    [moteText("设备可用存储"),s?.availableStorageBytes === undefined ? undefined : bytes(s.availableStorageBytes)],
+    [moteText("图片去重命中"),bool(c?.deduplication?.duplicate)],[moteText("图片去重档位"),c?.deduplication ? ({exact:moteText("精确"),conservative:moteText("保守"),balanced:moteText("均衡"),aggressive:moteText("激进")}[c.deduplication.mode]) : undefined],
+    [moteText("采样间隔"),c?.intervalMs === undefined ? undefined : moteText("{0} 秒", c.intervalMs / 1000)],[moteText("画面宽度"),c?.width],[moteText("画面高度"),c?.height],[moteText("显示缩放"),c?.displayScale],[moteText("启用 OCR"),bool(c?.ocrEnabled)],[moteText("应用遮罩数"),c?.maskCount],
+    [moteText("源文件大小"),f?.sizeBytes === undefined ? undefined : bytes(f.sizeBytes)],[moteText("文件创建时间"),time(f?.createdAt)],[moteText("源内容修改时间"),time(modifiedAt)],
+    [moteText("文件访问时间（文件系统）"),time(f?.accessedAt)],[moteText("文件属性变更时间"),time(f?.metadataChangedAt)],[moteText("扫描发现来源消失的时间"),time(f?.deletionObservedAt)],
+    [moteText("提供方创建时间"),time(source?.provider?.createdAt)],[moteText("提供方更新时间"),time(source?.provider?.updatedAt)],
   ];
-  return <details className="metadata-details"><summary>采集与来源元数据</summary>
+  return <details className="metadata-details"><summary>{moteText("采集与来源元数据")}</summary>
     <dl>{rows.filter(([,value])=>value!==undefined).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{String(value)}</dd></div>)}</dl>
-    <p className="field-note">仅显示上报时可获取的字段。状态是当时的观察值；缺失不代表否或零。</p>
-    {(n||e)&&<p className="field-note">原始系统事件，不表示你已阅读通知或正在执行某项任务。熄屏不等于锁定；服务中断期间不补造事件。系统可能隐藏敏感通知。</p>}
-    {f?.accessedAt && <p className="field-note">文件访问时间也可能由同步程序或其他进程读取更新，不能据此断定你查看过文件。</p>}
-    {f?.deletionObservedAt && <p className="field-note">这是完整扫描发现来源消失的时间，无法确认实际删除时刻或原因，也可能是移动或重命名。</p>}
+    <p className="field-note">{moteText("仅显示上报时可获取的字段。状态是当时的观察值；缺失不代表否或零。")}</p>
+    {(n||e)&&<p className="field-note">{moteText("原始系统事件，不表示你已阅读通知或正在执行某项任务。熄屏不等于锁定；服务中断期间不补造事件。系统可能隐藏敏感通知。")}</p>}
+    {f?.accessedAt && <p className="field-note">{moteText("文件访问时间也可能由同步程序或其他进程读取更新，不能据此断定你查看过文件。")}</p>}
+    {f?.deletionObservedAt && <p className="field-note">{moteText("这是完整扫描发现来源消失的时间，无法确认实际删除时刻或原因，也可能是移动或重命名。")}</p>}
   </details>;
 }

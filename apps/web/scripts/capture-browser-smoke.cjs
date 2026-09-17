@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 /** Isolated central node + real renderer. Every image and text record is generated here. */
 const {app, BrowserWindow} = require('electron');
 const {mkdtempSync, mkdirSync, writeFileSync, rmSync} = require('node:fs');

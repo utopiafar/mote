@@ -26,7 +26,7 @@ class CaptureAccessibilityService : AccessibilityService() {
     private val tick = object : Runnable {
         override fun run() {
             try { collectIfEnabled() }
-            catch (_: Exception) { inFlight = false; settings.status("paused", "无障碍采集暂不可用，下一周期重试") }
+            catch (_: Exception) { inFlight = false; settings.status("paused", MoteI18n.text("无障碍采集暂不可用，下一周期重试")) }
             if (shouldSchedule()) handler.postDelayed(this, (nextCapture - android.os.SystemClock.elapsedRealtime()).coerceIn(1000L, 300_000L))
         }
     }
@@ -49,13 +49,13 @@ class CaptureAccessibilityService : AccessibilityService() {
             if (shouldSchedule()) handler.post(tick)
             else if (::settings.isInitialized) {
                 if (!settings.enabled) stopCapture()
-                else { configurationGeneration++; inFlight = false; nextCapture = 0; pipeline?.pause("锁屏或熄屏，暂停采集", OperationReason.LOCKED) }
+                else { configurationGeneration++; inFlight = false; nextCapture = 0; pipeline?.pause(MoteI18n.text("锁屏或熄屏，暂停采集"), OperationReason.LOCKED) }
             }
         }
     }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) { ProjectionService.instance?.onWindowChanged() /* Never read event/node text. */ }
     override fun onInterrupt() {
-        if (::settings.isInitialized) settings.status("permission_required", "无障碍服务中断，请检查系统设置")
+        if (::settings.isInitialized) settings.status("permission_required", MoteI18n.text("无障碍服务中断，请检查系统设置"))
     }
     fun windowSnapshot(): WindowSnapshot {
         return try {
@@ -80,7 +80,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         UploadWorker.heartbeat(this, config)
         if (!getSystemService(NotificationManager::class.java).areNotificationsEnabled()) {
             settings.enabled = false
-            settings.status("permission_required", "通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始")
+            settings.status("permission_required", MoteI18n.text("通知权限已关闭，为保持采集可见已停止，请授权通知后重新开始"))
             stopCapture(); return
         }
         if (pipeline == null) pipeline = CapturePipeline(this)
@@ -96,7 +96,7 @@ class CaptureAccessibilityService : AccessibilityService() {
             }; return
         }
         if (!pipeline!!.canCapture(config, snapshot)) return
-        if (Build.VERSION.SDK_INT < 30) { settings.status("permission_required", "此系统需投屏模式采集内容；仅应用活动无需截图API"); return }
+        if (Build.VERSION.SDK_INT < 30) { settings.status("permission_required", MoteI18n.text("此系统需投屏模式采集内容；仅应用活动无需截图API")); return }
         val capturePipeline = pipeline!!
         val generation = configurationGeneration
         inFlight = true
@@ -134,7 +134,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                 if (generation != configurationGeneration) return
                 inFlight = false
                 Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.SYSTEM)
-                pipeline?.pause("系统未提供截图（代码 $errorCode），可能是安全窗口或权限变化；未保存内容")
+                pipeline?.pause(MoteI18n.text("系统未提供截图（代码 {0}），可能是安全窗口或权限变化；未保存内容", errorCode))
             }
         })
     }
@@ -152,7 +152,7 @@ class CaptureAccessibilityService : AccessibilityService() {
         if (::settings.isInitialized && settings.enabled) {
             val c = settings.read()
             val media = c.observesSystem() && MediaCollectionService.connected && MediaCollection.permissionAllowed(this)
-            settings.status(if (media) "capturing" else "permission_required", "无障碍服务未连接，等待系统恢复或打开设置重新启用" + if (media) "；媒体采集继续运行" else "")
+            settings.status(if (media) "capturing" else "permission_required", MoteI18n.text("无障碍服务未连接，等待系统恢复或打开设置重新启用") + if (media) MoteI18n.text("；媒体采集继续运行") else "")
             MediaCollectionService.refresh()
         }
         if (::settings.isInitialized) runCatching { UploadWorker.schedule(this, settings.read()) }

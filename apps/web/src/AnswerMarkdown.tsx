@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import ReactMarkdown from 'react-markdown';
 import type { Answer } from './api';
 
@@ -28,7 +29,7 @@ export function citationLinks(citations:Answer['citations']) {
         for (const match of node.value.matchAll(/\[([^\]\n]{1,300})\]/g)) {
           const index=indexes.get(match[1]);if(index===undefined)continue;
           if (match.index>start) result.push({type:'text',value:node.value.slice(start,match.index)});
-          result.push({type:'link',url:citationHref(match[1]),children:[{type:'text',value:`来源 ${index}`}]});
+          result.push({type:'link',url:citationHref(match[1]),children:[{type:'text',value:moteText("来源 {0}", index)}]});
           start=match.index+match[0].length;
         }
         if (!start) return [node];
@@ -46,7 +47,7 @@ export function AnswerMarkdown({answer,onOpen}:{answer:Answer;onOpen:(id:string)
     img:()=>null,
     a:({href,children})=>{
       const id=href?verified.get(href):undefined;
-      return id ? <button type="button" className="inline-citation" onClick={()=>onOpen(id)} aria-label={`查看证据：${children}`}>{children}</button>
+      return id ? <button type="button" className="inline-citation" onClick={()=>onOpen(id)} aria-label={moteText("查看证据：{0}", children)}>{children}</button>
         : <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
     },
   }}>{answer.answer}</ReactMarkdown>;

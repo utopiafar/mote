@@ -37,7 +37,7 @@ class FileSources(private val context: Context, private val cancel: Cancellation
     private fun scanSlice(source: LocalSource): Boolean {
         val queue = context.fileArchives(); val state = queue.configure(source); val generation = state.getString("generation"); val root = Uri.parse(source.uri)
         if (!source.tree) {
-            val item = metadata(root, source) ?: throw IllegalStateException("所选文件不可用")
+            val item = metadata(root, source) ?: throw IllegalStateException(MoteI18n.text("所选文件不可用"))
             if (SourceRules.include(item.getString("title"), source)) queue.observe(source, item, generation)
             queue.finish(source, generation) { false }; return true
         }
@@ -57,17 +57,17 @@ class FileSources(private val context: Context, private val cancel: Cancellation
                     if (SourceRules.patterns(source.excluded).any { it.matches(path) }) continue
                     val documentId = c.getString(0)
                     if (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        check(path.count { it == '/' } < 32) { "目录层级超过上限" }
+                        check(path.count { it == '/' } < 32) { MoteI18n.text("目录层级超过上限") }
                         nested.add(JSONObject().put("id", documentId).put("offset", 0).put("path", path))
                     } else if (SourceRules.include(path, source)) {
                         val uri = DocumentsContract.buildDocumentUriUsingTree(root, documentId)
-                        val item = metadata(uri, source) ?: throw IllegalStateException("文件枚举期间不可用")
+                        val item = metadata(uri, source) ?: throw IllegalStateException(MoteI18n.text("文件枚举期间不可用"))
                         queue.observe(source, item.put("_relativePath", path), generation)
                     }
                 }
-            } ?: throw IllegalStateException("目录不可用，保留已有档案")
+            } ?: throw IllegalStateException(MoteI18n.text("目录不可用，保留已有档案"))
             if (finished) stack.remove(stack.length() - 1)
-            nested.forEach { stack.put(it) }; check(stack.length() <= 10000) { "待扫描目录超过上限" }
+            nested.forEach { stack.put(it) }; check(stack.length() <= 10000) { MoteI18n.text("待扫描目录超过上限") }
             state.put("stack", stack).put("scanComplete", false); queue.saveState(source.id, state)
         }
         if (stack.length() == 0) {
@@ -79,7 +79,7 @@ class FileSources(private val context: Context, private val cancel: Cancellation
         return false
     }
     fun prepare(source: LocalSource, anchor: ((String) -> String?)? = null) = measured(EventStage.FILE_PREPARE) { context.fileArchives().prepare(source, anchor = anchor,
-        open = { resolver.openInputStream(Uri.parse(it.getString("uri"))) ?: throw IllegalStateException("文件无法打开") },
+        open = { resolver.openInputStream(Uri.parse(it.getString("uri"))) ?: throw IllegalStateException(MoteI18n.text("文件无法打开")) },
         unchanged = { old -> metadata(Uri.parse(old.getString("uri")), source)?.let { context.fileArchives().signature(it) == context.fileArchives().signature(JSONObject(old.toString()).apply { remove("_relativePath") }) } ?: false }) }
 }
 
@@ -92,7 +92,7 @@ object FileUpload {
         while (true) {
             val count = input.read(buffer, 0, minOf(buffer.size, limit - output.size() + 1))
             if (count < 0) break
-            check(output.size() + count <= limit) { "中央响应超过 1 MiB" }
+            check(output.size() + count <= limit) { MoteI18n.text("中央响应超过 1 MiB") }
             output.write(buffer, 0, count)
         }
         return output.toByteArray()
@@ -105,10 +105,11 @@ object FileUpload {
         var status: Int? = null
         try {
             connection.instanceFollowRedirects = false; connection.requestMethod = method; connection.connectTimeout = 15000; connection.readTimeout = 30000
+            connection.setRequestProperty("Accept-Language", MoteI18n.language())
             connection.setRequestProperty("Authorization", "Bearer ${config.token}")
             if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { it.write(body) } }
             status = connection.responseCode
-            check(status in 200..299) { if (connection.responseCode == 404) "中央未支持文件同步，请先升级" else "中央未确认文件（HTTP ${connection.responseCode}）" }
+            check(status in 200..299) { if (connection.responseCode == 404) MoteI18n.text("中央未支持文件同步，请先升级") else MoteI18n.text("中央未确认文件（HTTP {0}）", connection.responseCode) }
             val bytes = connection.inputStream.use { readResponse(it) }
             return JSONObject(String(bytes, Charsets.UTF_8)).also { SupportEvents.record(context, stage, EventCode.OK, android.os.SystemClock.elapsedRealtime() - started, status) }
         } catch (error: Exception) { SupportEvents.record(context, stage, status?.takeIf { it !in 200..299 }?.let { EventJournal.httpFailure(it) } ?: EventJournal.failure(error, stage), android.os.SystemClock.elapsedRealtime() - started, status); throw error } finally { connection.disconnect() }
@@ -119,7 +120,7 @@ object FileUpload {
             check(stillSelected())
             val q = "sourceId=" + java.net.URLEncoder.encode(source.id, "UTF-8") + "&externalId=" + java.net.URLEncoder.encode(external, "UTF-8")
             val head = request(context, EventStage.FILE_UPLOAD, config, "/api/file-sync/v1/head?$q", "GET")
-            check(!head.optBoolean("forgotten")) { "中央已忘记此文件，需要在中央重新允许同步" }
+            check(!head.optBoolean("forgotten")) { MoteI18n.text("中央已忘记此文件，需要在中央重新允许同步") }
             head.optString("revision").takeIf { head.has("revision") && !head.isNull("revision") && it.isNotEmpty() }
         } ?: return queue.pendingCount(source.id) == 0
         fun checkSelection() { check(stillSelected()); check(SyncSchedule.waitingReason(context, config) == null) }
@@ -138,7 +139,7 @@ object FileUpload {
             checkSelection(); val bytes = queue.part(source.id, part)
             val ack = request(context, EventStage.FILE_PART, config, "/api/file-sync/v1/uploads/$uploadId/parts/$part", "PUT", bytes, true)
             val hash = MessageDigestCompat.hash(bytes)
-            check(ack.getInt("part") == part && ack.getInt("bytes") == bytes.size && ack.getString("hash") == hash) { "文件块确认不匹配" }
+            check(ack.getInt("part") == part && ack.getInt("bytes") == bytes.size && ack.getString("hash") == hash) { MoteI18n.text("文件块确认不匹配") }
         }
         checkSelection(); val ack = request(context, EventStage.FILE_COMMIT, config, "/api/file-sync/v1/uploads/$uploadId/commit", "POST", "{}".toByteArray()); checkSelection(); queue.acknowledge(source.id, row, ack)
         return queue.pendingCount(source.id) == 0

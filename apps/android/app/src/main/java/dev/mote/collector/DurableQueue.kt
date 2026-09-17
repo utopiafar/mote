@@ -7,7 +7,7 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
 
-class QueueFull : IllegalStateException("本机空间已满，暂停新增记录；同步释放空间或调大本机存储上限后恢复")
+class QueueFull : IllegalStateException(MoteI18n.text("本机空间已满，暂停新增记录；同步释放空间或调大本机存储上限后恢复"))
 
 data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes: Long, val pendingSync: PendingSync) {
     val bytes: Long get() = diskBytes + reservedOcrBytes
@@ -38,8 +38,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     internal var onMutation: ((Boolean) -> Unit)? = null
     internal var assertCurrent: (() -> Unit)? = null
     private inline fun <T> guarded(action: () -> T): T = synchronized(lock) { assertCurrent?.invoke(); action() }
-    init { check(dir.isDirectory || createMissing && dir.mkdirs()) { "本机存储目录不可用" } }
-    private fun browseFiles() = dir.listFiles()?.filter { it.extension == "event" } ?: error("无法读取本机存储目录")
+    init { check(dir.isDirectory || createMissing && dir.mkdirs()) { MoteI18n.text("本机存储目录不可用") } }
+    private fun browseFiles() = dir.listFiles()?.filter { it.extension == "event" } ?: error(MoteI18n.text("无法读取本机存储目录"))
     private fun browseIndex() = browseIndexes.getOrPut(dir.absolutePath) { QueueBrowseIndex(dir, cipher) }
     private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
     private fun metadata(files: List<File> = browseFiles()) = browseIndex().entries(files, ::read, requireStatistics = true)
@@ -57,10 +57,10 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         prepareIndex()
         return guarded {
             val values = metadata()
-            val files = dir.listFiles() ?: error("无法读取本机存储目录")
+            val files = dir.listFiles() ?: error(MoteI18n.text("无法读取本机存储目录"))
             val hashes = values.map { it.optString("blob") }.filter(String::isNotBlank).toSet()
             val blobs = files.filter { it.extension == "blob" }.mapTo(mutableSetOf()) { it.nameWithoutExtension }
-            check(blobs.containsAll(hashes)) { "部分图片文件缺失，保留上次统计" }
+            check(blobs.containsAll(hashes)) { MoteI18n.text("部分图片文件缺失，保留上次统计") }
             QueueInventory(values.size, values.count { it.optBoolean("hasImage") }, hashes.size,
                 values.count { it.optBoolean("pending") }, values.count { it.optBoolean("awaitingOcr") && !it.optBoolean("blocked") }, values.count { it.optBoolean("blocked") },
                 files.filter { it.isFile }.sumOf { it.length() }, values.sumOf { it.optLong("reservedBytes") })
@@ -85,7 +85,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                 JSONObject().put("id", file.nameWithoutExtension).put("source", event.optString("source", "screen"))
                     .put("capturedAt", event.getString("capturedAt"))
                     .put("retryable", !event.optBoolean("_archiveMissing"))
-                    .put("reason", if (event.optBoolean("_archiveMissing")) "中央不可用 / 已删除" else if (event.optBoolean("_ocrConflict")) "OCR 内容冲突" else "记录内容冲突")
+                    .put("reason", if (event.optBoolean("_archiveMissing")) MoteI18n.text("中央不可用 / 已删除") else if (event.optBoolean("_ocrConflict")) MoteI18n.text("OCR 内容冲突") else MoteI18n.text("记录内容冲突"))
             }.toList()
         }
     }
@@ -97,10 +97,10 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val rows = metadata().filter { it.optBoolean("pending") || it.optBoolean("blocked") || it.optBoolean("awaitingOcr") }
                 .sortedWith(compareBy<JSONObject> { it.getLong("modified") }.thenBy { it.getString("id") })
             val items = rows.drop(offset).take(limit).map { row -> JSONObject(row.toString()).put("status", when {
-                row.optBoolean("blocked") -> "需处理"
-                row.optBoolean("uploaded") && row.optBoolean("hasOcrResult") -> "OCR 待上传"
-                row.optBoolean("uploaded") -> "等待 OCR"
-                else -> "等待上传"
+                row.optBoolean("blocked") -> MoteI18n.text("需处理")
+                row.optBoolean("uploaded") && row.optBoolean("hasOcrResult") -> MoteI18n.text("OCR 待上传")
+                row.optBoolean("uploaded") -> MoteI18n.text("等待 OCR")
+                else -> MoteI18n.text("等待上传")
             }) }
             JSONObject().put("total", rows.size).put("items", org.json.JSONArray(items))
         }
@@ -148,7 +148,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         try {
             if (file.extension == "event") browseIndex().invalidate(file.nameWithoutExtension)
             FileOutputStream(temp).use { it.write(cipher.seal(bytes)); it.fd.sync() }
-            check(temp.renameTo(file)) { "无法原子写入队列" }
+            check(temp.renameTo(file)) { MoteI18n.text("无法原子写入队列") }
             if (modifiedAt != null) file.setLastModified(modifiedAt)
             if (file.extension == "blob") validatedBlobs.remove(file.absolutePath)
             onMutation?.invoke(file.extension == "event")
@@ -172,7 +172,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         guarded {
         require(!event.getJSONObject("privacy").optBoolean("excluded")) { "Excluded captures must never be queued" }
         fun requireAppName(value: JSONObject) {
-            if (value.optString("appId").isNotEmpty()) require(value.opt("appName") is String && value.getString("appName").isNotBlank() && value.getString("appName").length <= 200) { "应用标识必须同时包含应用名称" }
+            if (value.optString("appId").isNotEmpty()) require(value.opt("appName") is String && value.getString("appName").isNotBlank() && value.getString("appName").length <= 200) { MoteI18n.text("应用标识必须同时包含应用名称") }
         }
         requireAppName(event)
         event.optJSONObject("metadata")?.optJSONObject("media")?.optJSONArray("sessions")?.let { sessions ->
@@ -194,7 +194,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         }
         val hash = image?.let { MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { byte -> "%02x".format(byte) } }
         val stored = JSONObject(event.toString()).put("_blob", hash)
-        if (file.exists()) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { "相同记录 ID 的内容发生变化" }; return@guarded }
+        if (file.exists()) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { MoteI18n.text("相同记录 ID 的内容发生变化") }; return@guarded }
         val blob = hash?.let { File(dir, "$it.blob") }
         val body = stored.toString().toByteArray()
         val added = body.size + 2048L + if (blob == null || blob.exists()) 0 else image!!.size + 64L
@@ -269,7 +269,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val hash = record.optString("_blob", "")
         val lastReference = hash.isNotEmpty() && browseIndex().references(hash, ::browseFiles, ::read) == 1
         browseIndex().invalidate(file.nameWithoutExtension)
-        check(file.delete()) { "无法删除已确认记录" }
+        check(file.delete()) { MoteI18n.text("无法删除已确认记录") }
         onMutation?.invoke(true)
         browseIndex().changed(file, null)
         if (lastReference) {
@@ -347,12 +347,12 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private fun verifiedBlob(hash: String, readBytes: Boolean = false): ByteArray? {
         require(hash.matches(Regex("[a-f0-9]{64}")))
         val file = File(dir, "$hash.blob")
-        if (!file.isFile) throw java.io.FileNotFoundException("图片文件缺失，原记录已保留")
+        if (!file.isFile) throw java.io.FileNotFoundException(MoteI18n.text("图片文件缺失，原记录已保留"))
         val stamp = BlobStamp(file.length(), file.lastModified())
         if (!readBytes && validatedBlobs[file.absolutePath] == stamp) return null
         val bytes = cipher.open(file.readBytes())
         val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-        check(actual == hash) { "图片校验失败，原记录已保留" }
+        check(actual == hash) { MoteI18n.text("图片校验失败，原记录已保留") }
         validatedBlobs[file.absolutePath] = stamp
         return bytes
     }
@@ -381,7 +381,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val blob = File(destination.dir, "$hash.blob")
             // Validate the source and any already-committed destination before removing anything.
             verifiedBlob(hash)
-            if (target.exists()) check(destination.read(target).toString() == event.toString()) { "目标已有不同记录，保留两份以供检查" }
+            if (target.exists()) check(destination.read(target).toString() == event.toString()) { MoteI18n.text("目标已有不同记录，保留两份以供检查") }
             else {
                 val additional = event.toString().toByteArray().size + 2048L + ocrReserve(event) +
                     if (blob.exists()) 0L else File(dir, "$hash.blob").length() + 64L
@@ -532,15 +532,15 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val checked = mutableSetOf<String>()
         for (file in records()) {
             val event = read(file)
-            check(file.nameWithoutExtension == UUID.fromString(event.getString("id")).toString()) { "记录 ID 与存储文件不匹配" }
+            check(file.nameWithoutExtension == UUID.fromString(event.getString("id")).toString()) { MoteI18n.text("记录 ID 与存储文件不匹配") }
             val hash = event.optString("_blob", "")
             if (hash.isEmpty()) { check(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event")); continue }
-            check(hash.matches(Regex("[a-f0-9]{64}"))) { "图片引用无效" }
+            check(hash.matches(Regex("[a-f0-9]{64}"))) { MoteI18n.text("图片引用无效") }
             if (checked.add(hash)) {
                 val blob = File(dir, "$hash.blob")
-                check(blob.isFile && !java.nio.file.Files.isSymbolicLink(blob.toPath())) { "本机图片缺失，原副本已保留" }
+                check(blob.isFile && !java.nio.file.Files.isSymbolicLink(blob.toPath())) { MoteI18n.text("本机图片缺失，原副本已保留") }
                 val actual = MessageDigest.getInstance("SHA-256").digest(cipher.open(blob.readBytes())).joinToString("") { "%02x".format(it) }
-                check(hash == actual) { "本机图片校验失败，原副本已保留" }
+                check(hash == actual) { MoteI18n.text("本机图片校验失败，原副本已保留") }
             }
         }
     }
@@ -551,7 +551,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val codec = cipher as? LocalContentCipher ?: return 0
         var migrated = 0
         codec.withPlaintextWrites { withDeferredIndexWrites {
-            val files = guarded { dir.listFiles()?.filter { it.extension in setOf("event", "blob", "thumb") || it.name.startsWith(".browse-v1-") } ?: error("无法读取本机存储目录") }
+            val files = guarded { dir.listFiles()?.filter { it.extension in setOf("event", "blob", "thumb") || it.name.startsWith(".browse-v1-") } ?: error(MoteI18n.text("无法读取本机存储目录")) }
             for ((position, file) in files.withIndex()) {
                 if (shouldStop()) break
                 guarded {
@@ -565,7 +565,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                                     check(event.getString("id") == file.nameWithoutExtension)
                                     java.time.Instant.parse(event.getString("capturedAt"))
                                 }
-                                "blob" -> check(MessageDigest.getInstance("SHA-256").digest(decoded).joinToString("") { "%02x".format(it) } == file.nameWithoutExtension) { "图片校验失败，原文件已保留" }
+                                "blob" -> check(MessageDigest.getInstance("SHA-256").digest(decoded).joinToString("") { "%02x".format(it) } == file.nameWithoutExtension) { MoteI18n.text("图片校验失败，原文件已保留") }
                             }
                             atomic(file, decoded, file.lastModified())
                             migrated++

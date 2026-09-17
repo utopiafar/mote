@@ -48,7 +48,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
         var failed = false; var more = false; var submitted = 0; var delayedFiles = false
         val manualOnly = settings.read().syncMode == "manual" && inputData.getBoolean("manual", false)
         fun failure(): Result {
-            settings.syncStatus("error", "部分来源尚未同步，记录保留在本机；${if (manualOnly) "请再次点击立即同步" else "稍后自动重试"}")
+            settings.syncStatus("error", MoteI18n.text("部分来源尚未同步，记录保留在本机；{0}", if (manualOnly) MoteI18n.text("请再次点击立即同步") else MoteI18n.text("稍后自动重试")))
             return if (manualOnly) Result.failure() else Result.retry()
         }
         return try {
@@ -57,7 +57,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
             if (inputData.getString("syncStamp") != SyncSchedule.stamp(config)) return Result.success()
             config.validate(); config.validateConnection(); val target = SourceRules.target(config.server, config.token)
             SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
-            settings.syncStatus("uploading", "正在同步来源记录")
+            settings.syncStatus("uploading", MoteI18n.text("正在同步来源记录"))
             for (source in store.sources().filter { it.enabled }) {
                 if (isStopped) return Result.retry()
                 SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
@@ -80,7 +80,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         val finished = FileUpload.sync(applicationContext, source, config, ::stillSelected)
                         if (!finished) { more = true; if (applicationContext.fileArchives().next(source.id) == null) delayedFiles = true }
                         store.status(source.id, if (finished) "synced" else "scanned")
-                        if (finished) settings.syncStatus("uploading", "文件原件已归档；手机原文件保留", uploaded = true)
+                        if (finished) settings.syncStatus("uploading", MoteI18n.text("文件原件已归档；手机原文件保留"), uploaded = true)
                         continue
                     }
                     while (submitted < 20) {
@@ -93,7 +93,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                             store.status(source.id, "ack"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(code), httpStatus = code); SupportEvents.record(applicationContext, EventStage.SOURCE, EventJournal.httpFailure(code), httpStatus = code); failed = true; break
                         }
                         store.acknowledge(source.id, target, body.getString("externalId"), body.getString("revision")); submitted++
-                        settings.syncStatus("uploading", "正在同步来源记录", uploaded = true)
+                        settings.syncStatus("uploading", MoteI18n.text("正在同步来源记录"), uploaded = true)
                         Operations.record(applicationContext, OperationKind.SOURCE_ACK, httpStatus = code)
                         SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.OK, httpStatus = code)
                     }

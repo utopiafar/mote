@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {z} from 'zod';
 export const actionZone=z.string().max(100).refine(v=>{try{new Intl.DateTimeFormat('en',{timeZone:v});return true;}catch{return false;}},'Invalid time zone');
 const date=z.string().max(64).refine(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)?Number.isFinite(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v:z.string().datetime({offset:true}).safeParse(v).success,'Invalid date');
@@ -16,7 +17,7 @@ export interface ActionProposal {id:string;kind:'calendar.create';version:number
 export interface ActionSettings {enabled:boolean;timeZone:string;reviewDeviceIds:string[]}
 export interface ActionTarget {deviceId:string;deviceName:string;calendars:CalendarChoice[];updatedAt:string}
 export const moteActionMarker=(id:string)=>`[Mote:${z.string().uuid().parse(id)}]`;
-export function calendarDescription(action:Pick<ActionProposal,'id'|'event'>):string{return `${action.event.description}\n\n#Mote · 由 Mote 创建\n${moteActionMarker(action.id)}`.trim();}
+export function calendarDescription(action:Pick<ActionProposal,'id'|'event'>):string{return moteText("{0}\n\n#Mote · 由 Mote 创建\n{1}", action.event.description, moteActionMarker(action.id)).trim();}
 
 /** Lossless structural projection for model evidence; no semantic routing or classification. */
 export function actionEvidenceText(record:{ocrText?:string;metadata?:{notification?:{title?:string;text?:string;bigText?:string;subText?:string;textLines?:string[]}}}):string {

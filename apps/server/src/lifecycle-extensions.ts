@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryLifecycle} from './memory-lifecycle.js';
@@ -56,7 +57,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     if(store.db.prepare('SELECT id FROM insights WHERE id=?').get(window.id))return;
     const current=window.ids.filter(id=>memories.isCurrentEvidence(id)||Boolean(store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(id)));
     if(!current.length)return;
-    const result=insightResult(await query({skill:'personal-insight',responseMode:'personal-insight',incrementalEvidenceIds:current,question:'请先用 changes 工具分页检查这轮增量，再用全文检索和记忆工具寻找必要的历史上下文，生成有原始证据引用的洞察报告。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。未设置时间过滤，允许跨月检索。'},'insights'));
+    const result=insightResult(await query({skill:'personal-insight',responseMode:'personal-insight',incrementalEvidenceIds:current,question:moteText("请先用 changes 工具分页检查这轮增量，再用全文检索和记忆工具寻找必要的历史上下文，生成有原始证据引用的洞察报告。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。未设置时间过滤，允许跨月检索。")},'insights'));
     store.saveInsight(result,window.id);
   }});
 }

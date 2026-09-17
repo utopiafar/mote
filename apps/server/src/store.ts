@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
 import {fileSchema} from './file-schema.js';
 import {systemEventText,sourceContentTime} from '@mote/shared';
@@ -272,7 +273,7 @@ export class Store {
       capturedAt:record.capturedAt,source:record.source,appId:record.appId,appName:record.appName,windowTitle:record.windowTitle.slice(0,300),
       durationMs:record.durationMs,hasImage:Boolean(record.blobHash),ocr:captureOcrState(record),
       ...(record.metadata?.media?{media:record.metadata.media}:{}),
-      textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:'未观察到媒体会话',disabled:'媒体采集已关闭',permission_required:'媒体权限未授予',unavailable:'媒体信息暂不可用'}[record.metadata?.media?.status??'unavailable'])):record.source==='notification'||record.source==='device_event'?systemEventText(record.metadata):record.ocrText).slice(0,160)}));
+      textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:moteText("未观察到媒体会话"),disabled:moteText("媒体采集已关闭"),permission_required:moteText("媒体权限未授予"),unavailable:moteText("媒体信息暂不可用")}[record.metadata?.media?.status??'unavailable'])):record.source==='notification'||record.source==='device_event'?systemEventText(record.metadata):record.ocrText).slice(0,160)}));
     return {...page,items};
   }
   gallery(range:{after:string;before:string;deviceId?:string;appId?:string;cursor?:string;limit:number}, albums:boolean) {
@@ -432,7 +433,7 @@ export class Store {
       const activity=c.source==='activity';
       if(range.source&&c.source!==range.source||range.appId!==undefined&&c.appId!==range.appId||range.collection==='activity'&&!activity||range.collection==='content'&&(activity||c.privacy.collection==='activity'))continue;
       const appKey=JSON.stringify(c.appId?['id',c.appId]:['name',c.appName]);
-      const app=apps.get(appKey)??{appId:c.appId,appName:c.appName||'未识别应用',durationMs:0,captures:0,activityEvents:0,contentCaptures:0};
+      const app=apps.get(appKey)??{appId:c.appId,appName:c.appName||moteText("未识别应用"),durationMs:0,captures:0,activityEvents:0,contentCaptures:0};
       const d=devices.get(c.deviceId)??{deviceId:c.deviceId,deviceName:c.deviceName,durationMs:0,captures:0,activityEvents:0,contentCaptures:0};
       for(const bucket of [app,d]){bucket.durationMs+=durationMs;bucket.captures++;if(activity)bucket.activityEvents++;else bucket.contentCaptures++;}
       apps.set(appKey,app);devices.set(c.deviceId,d);totalDurationMs+=durationMs;captures++;if(activity)activityEvents++;else contentCaptures++;
@@ -471,7 +472,7 @@ export class Store {
     return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,fileBytes,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:this.contentEncryption.enabled};
   }
   exportArchive(maxBytes:number) {
-    if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError('文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。',409);
+    if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError(moteText("文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。"),409);
     const stats=this.stats() as {logicalBytes:number;captures:number};
     const archivedFiles=new ArchivedFileStore(this);
     // Portable v1 embeds a blob for EACH observation. Account for expanded repetitions before allocation.
@@ -517,7 +518,7 @@ export class Store {
     for(const row of rows) {
       const value=JSON.parse(row.json) as {turns:{result:{answer:string;citations:unknown[];trace:unknown[];runId:string};evidenceDeleted?:boolean}[]};
       if(value.turns.every(turn=>turn.evidenceDeleted))continue;
-      for(const turn of value.turns){turn.evidenceDeleted=true;turn.result={answer:'原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。',citations:[],trace:[],runId:turn.result.runId};}
+      for(const turn of value.turns){turn.evidenceDeleted=true;turn.result={answer:moteText("原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。"),citations:[],trace:[],runId:turn.result.runId};}
       this.db.prepare('UPDATE conversations SET json=? WHERE id=?').run(JSON.stringify(value),row.id);
     }
   }

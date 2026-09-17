@@ -20,11 +20,11 @@ object SyncSchedule {
                 if (ran == null && request.intent.explicit) reportBusy(app)
             }.onFailure {
                 SupportEvents.record(app, EventStage.UPLOAD, EventCode.SCHEDULER)
-                Settings(app).syncStatus("error", "同步调度暂不可用，记录保留在本机，请稍后重试")
+                Settings(app).syncStatus("error", MoteI18n.text("同步调度暂不可用，记录保留在本机，请稍后重试"))
             }
         })
     internal fun reportBusy(context: Context) {
-        Settings(context).syncStatus("waiting", "正在应用设置，请完成后重试本次扫描或立即同步")
+        Settings(context).syncStatus("waiting", MoteI18n.text("正在应用设置，请完成后重试本次扫描或立即同步"))
     }
     fun pending(context: Context): PendingSync {
         val captures = context.queue().pendingSync(); val sources = context.localSources().pendingSync(); val files = context.fileArchives().pendingSync()
@@ -74,7 +74,7 @@ object SyncSchedule {
                 listOf("mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload").forEach(manager::cancelUniqueWork)
                 registeredStamp = stamp(config)
             }
-            settings.syncStatus("unconfigured", "仅保存在本机 · 连接节点后可同步")
+            settings.syncStatus("unconfigured", MoteI18n.text("仅保存在本机 · 连接节点后可同步"))
             return
         }
         HeartbeatWorker.configure(context, config)
@@ -83,7 +83,7 @@ object SyncSchedule {
                 manager.cancelUniqueWork("mote-upload-timer"); manager.cancelUniqueWork("mote-upload-recovery")
                 registeredStamp = stamp(config)
             }
-            if (!explicit) { if (settings.syncState() !in setOf("uploading", "error", "waiting")) settings.syncStatus("manual", "手动同步 · 记录持续保存在本机"); return }
+            if (!explicit) { if (settings.syncState() !in setOf("uploading", "error", "waiting")) settings.syncStatus("manual", MoteI18n.text("手动同步 · 记录持续保存在本机")); return }
         } else if (registeredStamp != stamp(config)) {
             val periodic = PeriodicWorkRequestBuilder<UploadWorker>(15, TimeUnit.MINUTES).setConstraints(constraints(config))
                 .setInputData(workDataOf("syncStamp" to stamp(config)))
@@ -99,7 +99,7 @@ object SyncSchedule {
             manager.cancelUniqueWork("mote-upload-timer")
             manager.enqueueUniqueWork("mote-upload", if (explicit) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
         } else {
-            if (settings.syncState() != "uploading") settings.syncStatus("waiting", "等待约定同步时间 · 系统省电可能推迟后台运行")
+            if (settings.syncState() != "uploading") settings.syncStatus("waiting", MoteI18n.text("等待约定同步时间 · 系统省电可能推迟后台运行"))
             manager.enqueueUniqueWork("mote-upload-timer", ExistingWorkPolicy.KEEP, request)
         }
     }

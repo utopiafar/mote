@@ -1,6 +1,6 @@
 {
   "name": "@mote/desktop",
-  "version": "0.0.31",
+  "version": "0.0.32",
   "private": true,
   "description": "Mote privacy-first personal context collector",
   "main": "dist/main.js",
@@ -18,8 +18,8 @@
     "test:central": "npm run build && electron scripts/central-smoke.cjs"
   },
   "dependencies": {
-    "@mote/local-inference": "0.1.0",
     "@mote/diagnostics": "0.1.0",
+    "@mote/local-inference": "0.1.0",
     "@mote/shared": "0.1.0",
     "sharp": "^0.35.4"
   },
@@ -27,6 +27,7 @@
     "@types/node": "^24.0.0",
     "electron": "41.10.7",
     "electron-builder": "^26.0.12",
+    "esbuild": "^0.25.12",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"
   },
@@ -57,6 +58,14 @@
           "mote-qwen",
           "mote-updater"
         ]
+      },
+      {
+        "from": "resources/en.lproj",
+        "to": "en.lproj"
+      },
+      {
+        "from": "resources/zh_CN.lproj",
+        "to": "zh_CN.lproj"
       }
     ],
     "mac": {
@@ -69,8 +78,13 @@
       "hardenedRuntime": true,
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Mote records screenshots only while you enable capture, applies your privacy filters locally, then uploads them to your own central node.",
-        "NSCalendarsUsageDescription": "连接你选择的本地日历用于个人上下文；你逐条确认后可将建议添加到已有日历。",
-        "NSCalendarsFullAccessUsageDescription": "连接后读取所选日历；仅在你逐条确认日程建议后写入已有日历，并用 Mote 来源标记追溯。"
+        "NSCalendarsUsageDescription": "Connect selected calendars for personal context; add suggestions to existing calendars only after your individual confirmation.",
+        "NSCalendarsFullAccessUsageDescription": "Read selected calendars after connection; write to existing calendars only after you confirm each suggestion, with a Mote source marker.",
+        "CFBundleLocalizations": [
+          "en",
+          "zh_CN"
+        ],
+        "CFBundleDevelopmentRegion": "en"
       },
       "minimumSystemVersion": "13.3"
     }

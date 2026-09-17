@@ -1,3 +1,4 @@
+import { moteText, statusMessage } from '@mote/shared/i18n';
 import type { DiagnosticsRecorder } from '@mote/diagnostics';
 import { randomUUID } from 'node:crypto';
 import { desktopCapturer, nativeImage, powerMonitor, screen, systemPreferences } from 'electron';
@@ -38,15 +39,15 @@ export class Collector {
   private stopIntent = 0;
   private lastSample?: { at: number; appId: string; collection: 'content' | 'activity' };
   private state: Status['state'] = 'stopped';
-  private message = '尚未开始采集。请确认隐私设置后手动开始。';
+  private message = moteText("尚未开始采集。请确认隐私设置后手动开始。");
   private lastCaptureAt?: string;
   private lastUploadAt?: string;
   private lastUploadError?: string;
   constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly nsfw?: NsfwGate, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal, private readonly sources?: LocalSourceManager) {
     this.config = config; this.lastUploadAt = this.queue.stats().lastUploadAt;
-    powerMonitor.on('lock-screen', () => { this.locked = true; this.pause('屏幕已锁定，暂停采集'); });
+    powerMonitor.on('lock-screen', () => { this.locked = true; this.pause(moteText("屏幕已锁定，暂停采集")); });
     powerMonitor.on('unlock-screen', () => { this.locked = false; this.lastSample = undefined; });
-    powerMonitor.on('suspend', () => { this.sleeping = true; this.pause('电脑休眠，暂停采集'); });
+    powerMonitor.on('suspend', () => { this.sleeping = true; this.pause(moteText("电脑休眠，暂停采集")); });
     powerMonitor.on('resume', () => { this.sleeping = false; this.lastSample = undefined; });
     powerMonitor.on('on-ac', () => { void this.processPendingOcr(); });
     powerMonitor.on('on-battery', () => { if (this.config.ocrOnlyWhileCharging) { this.ocrAbort?.abort(); this.captureOcrAbort?.abort(); } });
@@ -61,7 +62,7 @@ export class Collector {
   status(): Status {
     const queue = this.queue.stats();
     return {
-      running: this.running, state: this.state, message: this.message, sync: this.syncStatus(),
+      running: this.running, state: this.state, message: statusMessage(this.message), sync: this.syncStatus(),
       queueDepth: queue.depth, queueBytes: queue.bytes, nextRetryAt: queue.nextRetryAt,
       lastCaptureAt: this.lastCaptureAt, lastUploadAt: this.lastUploadAt, lastUploadError: this.lastUploadError,
       screenPermission: currentPlatform === 'macos' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
@@ -71,15 +72,15 @@ export class Collector {
   private pendingSync() {
     const queue = this.queue.stats(), sources = this.sources?.pendingStats();
     const oldestPendingAt = [queue.oldestPendingAt, (sources?.eligibleRecords === undefined ? sources?.oldestPendingAt : sources.oldestEligibleAt), sources?.oldestUpdateAt].filter((date): date is string => Boolean(date)).sort()[0];
-    return { pendingRecords: queue.depth + (sources?.pendingRecords ?? 0), eligibleRecords: queue.eligibleDepth + (sources?.eligibleRecords ?? sources?.pendingRecords ?? 0), heldRecords: queue.depth - queue.eligibleDepth + (sources?.heldRecords ?? 0), heldUpdates: sources?.heldUpdates ?? 0, heldReason: queue.blocked ? '部分记录需要处理：中央记录已删除或节点需升级；请在采集记录中查看，处理后手动重试' : queue.waitingOcr ? '图片已同步；本机保留图片，等待 OCR 完成后同步文字' : sources?.heldReason, pendingUpdates: sources?.eligibleUpdates ?? sources?.pendingUpdates ?? 0, oldestPendingAt, lastUploadAt: this.lastUploadAt ?? queue.lastUploadAt, nextRetryAt: queue.nextRetryAt };
+    return { pendingRecords: queue.depth + (sources?.pendingRecords ?? 0), eligibleRecords: queue.eligibleDepth + (sources?.eligibleRecords ?? sources?.pendingRecords ?? 0), heldRecords: queue.depth - queue.eligibleDepth + (sources?.heldRecords ?? 0), heldUpdates: sources?.heldUpdates ?? 0, heldReason: queue.blocked ? moteText("部分记录需要处理：中央记录已删除或节点需升级；请在采集记录中查看，处理后手动重试") : queue.waitingOcr ? moteText("图片已同步；本机保留图片，等待 OCR 完成后同步文字") : sources?.heldReason, pendingUpdates: sources?.eligibleUpdates ?? sources?.pendingUpdates ?? 0, oldestPendingAt, lastUploadAt: this.lastUploadAt ?? queue.lastUploadAt, nextRetryAt: queue.nextRetryAt };
   }
   private syncStatus(): Status['sync'] {
     const pending = this.pendingSync();
     const { ready: _, ...policy } = decideSync(this.config, { ...pending, pendingRecords: pending.eligibleRecords });
     const decision = { ...policy, pendingRecords: pending.pendingRecords };
     const localBacklogUnbound = decision.pendingRecords > 0 && this.queue.binding.unbound() && (!this.sources || this.sources.nodeBinding.unbound());
-    if (decision.state !== 'unconfigured' && !pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) return { ...decision, state: 'waiting', message: pending.heldReason ?? '来源待传版本等待恢复', localBacklogUnbound };
-    if (this.uploading) return { ...decision, state: 'uploading', message: '正在同步本地记录', localBacklogUnbound };
+    if (decision.state !== 'unconfigured' && !pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) return { ...decision, state: 'waiting', message: pending.heldReason ?? moteText("来源待传版本等待恢复"), localBacklogUnbound };
+    if (this.uploading) return { ...decision, state: 'uploading', message: moteText("正在同步本地记录"), localBacklogUnbound };
     if (decision.state !== 'unconfigured' && this.lastUploadError) return { ...decision, state: 'error', message: this.lastUploadError, localBacklogUnbound };
     return { ...decision, localBacklogUnbound };
   }
@@ -91,7 +92,7 @@ export class Collector {
   }
   connectionActivity(): { inFlight: boolean } { return { inFlight: this.capturing || this.uploading || this.heartbeatInFlight || this.ocrBusy }; }
   async holdConnection(): Promise<() => void> {
-    if (this.running || this.connectionHeld) throw new Error('请先停止采集，再更换连接');
+    if (this.running || this.connectionHeld) throw new Error(moteText("请先停止采集，再更换连接"));
     this.connectionHeld = true;
     this.captureAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
     // Heartbeats already have a bounded timeout. Wait until no old-credential request can race a save.
@@ -100,12 +101,12 @@ export class Collector {
   }
   /** Freeze every producer/consumer before applying settings; preserve the user's running intent. */
   async suspendForSettings(): Promise<() => Promise<void>> {
-    if (this.connectionHeld || this.closed) throw new Error('设置正在应用或应用正在退出，请稍后重试');
+    if (this.connectionHeld || this.closed) throw new Error(moteText("设置正在应用或应用正在退出，请稍后重试"));
     const resume = this.running, intent = this.stopIntent;
     this.connectionHeld = true; this.running = false; this.lastSample = undefined;
     if (this.timer) clearTimeout(this.timer);
     this.captureAbort?.abort(); this.captureOcrAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
-    this.state = 'paused'; this.message = '正在安全应用设置，已有记录保留'; this.publish();
+    this.state = 'paused'; this.message = moteText("正在安全应用设置，已有记录保留"); this.publish();
     while (this.connectionActivity().inFlight) await new Promise(resolve => setTimeout(resolve, 25));
     let released = false;
     return async () => {
@@ -113,14 +114,14 @@ export class Collector {
       if (this.closed) return;
       if (resume && intent === this.stopIntent) {
         try { await this.start(); }
-        catch (error) { this.state = 'error'; this.message = `设置已应用，采集暂未恢复：${error instanceof Error ? error.message : '请检查采集条件'}`; this.publish(); }
-      } else { this.state = 'stopped'; this.message = '设置已应用；采集保持停止'; this.publish(); }
+        catch (error) { this.state = 'error'; this.message = moteText("设置已应用，采集暂未恢复：{0}", error instanceof Error ? error.message : moteText("请检查采集条件")); this.publish(); }
+      } else { this.state = 'stopped'; this.message = moteText("设置已应用；采集保持停止"); this.publish(); }
       void this.upload(); void this.processPendingOcr();
     };
   }
   updateConfig(config: Config): void {
     // Config edits cannot change a privacy policy in the middle of capture.
-    if (this.running || this.capturing) throw new Error('请先停止采集，再修改配置');
+    if (this.running || this.capturing) throw new Error(moteText("请先停止采集，再修改配置"));
     this.uploadAbort?.abort();
     this.ocrAbort?.abort();
     this.nsfw?.reset();
@@ -129,13 +130,13 @@ export class Collector {
     this.publish();
   }
   async start(): Promise<void> {
-    if (this.closed || this.connectionHeld) throw new Error('正在应用设置或退出，请稍后重试');
+    if (this.closed || this.connectionHeld) throw new Error(moteText("正在应用设置或退出，请稍后重试"));
     if (this.running) return;
-    if (this.capturing) throw new Error('正在结束上一轮采集，请稍后再试');
-    if (currentPlatform !== 'macos') throw new Error('此 MVP 只支持 macOS 采集；Windows/Linux 需要接入可靠前台应用识别后才可启用');
+    if (this.capturing) throw new Error(moteText("正在结束上一轮采集，请稍后再试"));
+    if (currentPlatform !== 'macos') throw new Error(moteText("此 MVP 只支持 macOS 采集；Windows/Linux 需要接入可靠前台应用识别后才可启用"));
     if (this.queue.atCapacity()) throw new QueueFullError();
     void this.events?.record('CAPTURE', 'STARTED');
-    this.running = true; this.state = 'capturing'; this.message = '已开启；按应用级别记录，完整内容先经过本地隐私过滤';
+    this.running = true; this.state = 'capturing'; this.message = moteText("已开启；按应用级别记录，完整内容先经过本地隐私过滤");
     this.lastSample = undefined;
     this.publish(); void this.capture(); void this.sendHeartbeat();
   }
@@ -144,7 +145,7 @@ export class Collector {
     void this.events?.record('CAPTURE', 'STOPPED');
     this.running = false; this.lastSample = undefined; this.captureAbort?.abort(); this.nsfw?.reset();
     if (this.timer) clearTimeout(this.timer);
-    this.state = 'stopped'; this.message = '采集已停止；本地记录保留，同步按设置独立运行'; this.publish(); void this.sendHeartbeat();
+    this.state = 'stopped'; this.message = moteText("采集已停止；本地记录保留，同步按设置独立运行"); this.publish(); void this.sendHeartbeat();
   }
   async settleCapture(): Promise<void> {
     while (this.capturing) await new Promise(resolve => setTimeout(resolve, 25));
@@ -198,25 +199,25 @@ export class Collector {
     const abort = this.captureAbort = new AbortController();
     const valid = () => this.running && !abort.signal.aborted && !this.locked && !this.sleeping;
     try {
-      if (this.locked || this.sleeping || powerMonitor.getSystemIdleState(60) === 'locked') { this.pause('锁屏或休眠中，暂停采集'); return; }
-      if (cfg.idlePauseSeconds > 0 && powerMonitor.getSystemIdleTime() >= cfg.idlePauseSeconds) { this.pause('已达到空闲阈值，暂停采集；操作电脑后恢复'); return; }
+      if (this.locked || this.sleeping || powerMonitor.getSystemIdleState(60) === 'locked') { this.pause(moteText("锁屏或休眠中，暂停采集")); return; }
+      if (cfg.idlePauseSeconds > 0 && powerMonitor.getSystemIdleTime() >= cfg.idlePauseSeconds) { this.pause(moteText("已达到空闲阈值，暂停采集；操作电脑后恢复")); return; }
       if (this.queue.atCapacity()) throw new QueueFullError();
       if (cfg.pauseOnBattery || cfg.batteryPauseBelowPct > 0) {
         const power = await readPowerState(this.helperPath, abort.signal);
-        if (power.onBattery === undefined || (cfg.batteryPauseBelowPct > 0 && power.batteryPercent === undefined)) { this.pause('无法确认电量，按你启用的电量策略暂停'); return; }
-        if (power.onBattery && (cfg.pauseOnBattery || (power.batteryPercent ?? 100) <= cfg.batteryPauseBelowPct)) { this.pause('已达到你设置的电量暂停条件'); return; }
+        if (power.onBattery === undefined || (cfg.batteryPauseBelowPct > 0 && power.batteryPercent === undefined)) { this.pause(moteText("无法确认电量，按你启用的电量策略暂停")); return; }
+        if (power.onBattery && (cfg.pauseOnBattery || (power.batteryPercent ?? 100) <= cfg.batteryPauseBelowPct)) { this.pause(moteText("已达到你设置的电量暂停条件")); return; }
       }
       const foreground = await foregroundApplication(this.helperPath, abort.signal);
       if (!valid()) return;
       const collection = collectionForApp(foreground.appId, cfg);
-      if (collection === 'off') { this.pause('当前应用设置为不记录，已跳过本次采样'); return; }
+      if (collection === 'off') { this.pause(moteText("当前应用设置为不记录，已跳过本次采样")); return; }
       if (collection === 'activity') {
         // This branch never requests screen permission, window enumeration, pixels, OCR or a model.
         const metadata = cfg.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined, abort.signal) : undefined;
         const after = await foregroundApplication(this.helperPath, abort.signal);
         if (!valid()) return;
-        if (after.appId !== foreground.appId || after.pid !== foreground.pid) { this.pause('活动采样期间前台应用变化，已跳过'); return; }
-        if (metadata?.state?.screenLocked) { this.pause('屏幕已锁定，暂停记录'); return; }
+        if (after.appId !== foreground.appId || after.pid !== foreground.pid) { this.pause(moteText("活动采样期间前台应用变化，已跳过")); return; }
+        if (metadata?.state?.screenLocked) { this.pause(moteText("屏幕已锁定，暂停记录")); return; }
         const durationMs = this.lastSample?.appId === foreground.appId && this.lastSample.collection === 'activity' ? Math.max(0, Math.min(cfg.intervalMs, startedAt - this.lastSample.at)) : 0;
         const event: CaptureEvent = {
           id: randomUUID(), deviceId: cfg.deviceId, deviceName: cfg.deviceName, platform: currentPlatform,
@@ -227,54 +228,54 @@ export class Collector {
         stage = 'QUEUE'; await this.queue.enqueue(event);
         this.lastSample = { at: startedAt, appId: foreground.appId, collection }; this.lastCaptureAt = event.capturedAt;
         void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
-        this.state = 'capturing'; this.message = '仅记录应用活动；未采集屏幕、窗口标题或正文'; this.publish(); void this.upload(); return;
+        this.state = 'capturing'; this.message = moteText("仅记录应用活动；未采集屏幕、窗口标题或正文"); this.publish(); void this.upload(); return;
       }
       if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
-        this.lastSample = undefined; this.state = 'permission_required'; this.message = '完整内容需要屏幕录制授权；仅活动应用仍可采样。请打开系统权限设置';
+        this.lastSample = undefined; this.state = 'permission_required'; this.message = moteText("完整内容需要屏幕录制授权；仅活动应用仍可采样。请打开系统权限设置");
         void this.events?.record('CAPTURE', 'PERMISSION'); this.publish(); return;
       }
-      if (cfg.nsfwEnabled) { if (!this.nsfw) throw new Error('本地千问视觉审查不可用，完整内容已跳过'); await this.nsfw.ensureReady(); }
+      if (cfg.nsfwEnabled) { if (!this.nsfw) throw new Error(moteText("本地千问视觉审查不可用，完整内容已跳过")); await this.nsfw.ensureReady(); }
       if (!valid()) return;
       const readyForeground = await foregroundApplication(this.helperPath, abort.signal);
-      if (readyForeground.appId !== foreground.appId || readyForeground.pid !== foreground.pid || collectionForApp(readyForeground.appId, cfg) !== 'content') { this.pause('准备期间前台应用变化，已跳过本次内容采样'); return; }
+      if (readyForeground.appId !== foreground.appId || readyForeground.pid !== foreground.pid || collectionForApp(readyForeground.appId, cfg) !== 'content') { this.pause(moteText("准备期间前台应用变化，已跳过本次内容采样")); return; }
       const before = await activeApplication(this.helperPath, abort.signal);
-      if (before.appId !== foreground.appId || before.pid !== foreground.pid || collectionForApp(before.appId, cfg) !== 'content' || !permitsVisibleContent(before.visibleAppIds, before.unknownVisibleWindows, cfg)) { this.pause('屏幕含仅活动、不记录或身份未知的窗口，整张截图已跳过'); return; }
+      if (before.appId !== foreground.appId || before.pid !== foreground.pid || collectionForApp(before.appId, cfg) !== 'content' || !permitsVisibleContent(before.visibleAppIds, before.unknownVisibleWindows, cfg)) { this.pause(moteText("屏幕含仅活动、不记录或身份未知的窗口，整张截图已跳过")); return; }
       const display = screen.getPrimaryDisplay();
       const scale = Math.min(1, cfg.captureMaxSide / Math.max(display.size.width, display.size.height));
-      this.message = '正在读取屏幕画面…'; this.publish();
+      this.message = moteText("正在读取屏幕画面…"); this.publish();
       const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(display.size.width * scale), height: Math.round(display.size.height * scale) }, fetchWindowIcons: false });
       const source = sources.find(s => s.display_id === String(display.id));
-      if (!source || source.thumbnail.isEmpty()) throw new Error('无法获取主屏截图，本次采集已跳过');
+      if (!source || source.thumbnail.isEmpty()) throw new Error(moteText("无法获取主屏截图，本次采集已跳过"));
       const after = await activeApplication(this.helperPath, abort.signal);
       if (!valid()) return;
-      if (before.appId !== after.appId || before.pid !== after.pid || collectionForApp(after.appId, cfg) !== 'content' || !permitsVisibleContent(after.visibleAppIds, after.unknownVisibleWindows, cfg) || before.visibleAppIds.join('\n') !== after.visibleAppIds.join('\n') || before.unknownVisibleWindows !== after.unknownVisibleWindows) { this.pause('采样期间屏幕应用发生变化或存在排除窗口，已跳过本次采集'); return; }
+      if (before.appId !== after.appId || before.pid !== after.pid || collectionForApp(after.appId, cfg) !== 'content' || !permitsVisibleContent(after.visibleAppIds, after.unknownVisibleWindows, cfg) || before.visibleAppIds.join('\n') !== after.visibleAppIds.join('\n') || before.unknownVisibleWindows !== after.unknownVisibleWindows) { this.pause(moteText("采样期间屏幕应用发生变化或存在排除窗口，已跳过本次采集")); return; }
       // All unredacted pixels remain only in process memory. Never write a raw image.
       let sanitized = await this.finalImage(source.thumbnail, cfg.masks);
       let appliedMasks = cfg.masks.length;
       if (cfg.nsfwEnabled) {
         stage = 'MODEL'; void this.events?.record(stage, 'STARTED');
-        this.message = '正在加载模型并进行本机隐私检查…'; this.publish();
-        if (!this.nsfw) throw new Error('本地千问视觉模型不可用，本次截图已跳过');
+        this.message = moteText("正在加载模型并进行本机隐私检查…"); this.publish();
+        if (!this.nsfw) throw new Error(moteText("本地千问视觉模型不可用，本次截图已跳过"));
         const { width, height } = sanitized.getSize();
         const inferenceStarted = Date.now();
         const decision = await this.nsfw.classify({ bitmap: sanitized.toBitmap(), width, height }, cfg, abort.signal);
         if (!valid()) return;
         inferenceMs = Date.now() - inferenceStarted;
-        if (decision.blocked) { void this.events?.record('MODEL', 'FILTERED', { elapsedMs: inferenceMs }); this.diagnostics?.recordCapture({ outcome: 'blocked', inferenceMs, durationMs: Date.now() - startedAt }); this.pause('本地千问视觉策略拒绝，整张截图已跳过'); return; }
+        if (decision.blocked) { void this.events?.record('MODEL', 'FILTERED', { elapsedMs: inferenceMs }); this.diagnostics?.recordCapture({ outcome: 'blocked', inferenceMs, durationMs: Date.now() - startedAt }); this.pause(moteText("本地千问视觉策略拒绝，整张截图已跳过")); return; }
       }
       if (cfg.nsfwEnabled) void this.events?.record('MODEL', 'OK', { elapsedMs: inferenceMs });
       if (cfg.privacyModelUrl) {
         stage = 'PRIVACY'; void this.events?.record(stage, 'STARTED');
-        this.message = '正在进行本机附加隐私检查…'; this.publish();
+        this.message = moteText("正在进行本机附加隐私检查…"); this.publish();
         const decision = await reviewLocally(cfg.privacyModelUrl, await this.encodeImage(sanitized, cfg.jpegQuality), abort.signal);
         if (!valid()) return;
-        if (!decision.allow) { void this.events?.record('PRIVACY', 'FILTERED'); this.pause('本地隐私模型拒绝本次采集'); return; }
+        if (!decision.allow) { void this.events?.record('PRIVACY', 'FILTERED'); this.pause(moteText("本地隐私模型拒绝本次采集")); return; }
         sanitized = await this.finalImage(sanitized, decision.rectangles);
         appliedMasks += decision.rectangles.length;
         void this.events?.record('PRIVACY', 'OK');
       }
       const jpeg = await this.encodeImage(sanitized, cfg.jpegQuality);
-      if (jpeg.length > MAX_IMAGE_BYTES) throw new Error('截图超出单张大小限制，本次采集已跳过');
+      if (jpeg.length > MAX_IMAGE_BYTES) throw new Error(moteText("截图超出单张大小限制，本次采集已跳过"));
       // OCR must run after BOTH user masks and optional model masks.
       stage = 'OCR';
       const ocrStarted = Date.now();
@@ -284,7 +285,7 @@ export class Collector {
       if (deferredForPower) void this.events?.record('OCR', 'SCHEDULER');
       if (cfg.ocrEnabled && !deferredForPower) {
         void this.events?.record('OCR', 'STARTED');
-        this.message = '正在识别文字…'; this.publish();
+        this.message = moteText("正在识别文字…"); this.publish();
         const ocrAbort = this.captureOcrAbort = new AbortController();
         try { ocrText = await recognizeText(this.helperPath, jpeg, AbortSignal.any([abort.signal, ocrAbort.signal])); if (!ocrAbort.signal.aborted) ocr = { status: 'completed' }; else ocrText = undefined; }
         catch (error) { void this.events?.record('OCR', failureCode(error, 'OCR')); /* Retry from the durable queue. */ }
@@ -303,19 +304,19 @@ export class Collector {
         privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', collection: 'content', reason: `${cfg.nsfwEnabled ? 'offline Qwen visual policy passed; ' : ''}${appliedMasks > 0 ? 'configured or local-model masks applied before OCR and persistence' : cfg.privacyModelUrl ? 'local privacy model approved; no masks returned' : 'user-configured app filters checked; no masks configured'}` },
       };
       stage = 'QUEUE'; void this.events?.record(stage, 'STARTED');
-      this.message = '正在保存采集记录…'; this.publish();
+      this.message = moteText("正在保存采集记录…"); this.publish();
       await this.queue.enqueue(event, jpeg);
       void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
       this.diagnostics?.recordCapture({ outcome: 'saved', imageBytes: jpeg.length, inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' }; this.lastCaptureAt = event.capturedAt;
-      this.state = 'capturing'; this.message = ocr.status === 'pending' ? `截图已安全保存；${deferredForPower ? '接通电源后自动补做 OCR' : 'OCR 等待重试'}` : '正在采集主屏；本地过滤与脱敏已完成'; this.publish(); void this.upload();
+      this.state = 'capturing'; this.message = ocr.status === 'pending' ? moteText("截图已安全保存；{0}", deferredForPower ? moteText("接通电源后自动补做 OCR") : moteText("OCR 等待重试")) : moteText("正在采集主屏；本地过滤与脱敏已完成"); this.publish(); void this.upload();
     } catch (error) {
       void this.events?.record(stage, failureCode(error, stage), { elapsedMs: Date.now() - startedAt });
       this.lastSample = undefined;
       this.diagnostics?.recordCapture({ outcome: 'failed', inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       if (!this.running || abort.signal.aborted) return;
       if (error instanceof QueueFullError) { this.stop(); this.state = 'error'; this.message = error.message; }
-      else { this.state = 'paused'; this.message = error instanceof Error ? error.message : '采集失败，已跳过本次记录'; }
+      else { this.state = 'paused'; this.message = error instanceof Error ? error.message : moteText("采集失败，已跳过本次记录"); }
       this.publish();
     } finally {
       this.capturing = false;
@@ -328,7 +329,7 @@ export class Collector {
     const policy = decideSync(this.config, { ...pending, pendingRecords: pending.eligibleRecords }, Date.now(), explicit);
     if (!pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) { this.publish(); return; }
     if (!policy.ready) { this.publish(); return; }
-    if (!this.queue.binding.matches(this.config)) { this.lastUploadError = '本地队列仍绑定原节点，请恢复已确认的连接'; this.publish(); return; }
+    if (!this.queue.binding.matches(this.config)) { this.lastUploadError = moteText("本地队列仍绑定原节点，请恢复已确认的连接"); this.publish(); return; }
     this.uploading = true; this.lastUploadError = undefined;
     const abort = this.uploadAbort = new AbortController();
     this.publish();
@@ -357,11 +358,11 @@ export class Collector {
           const stage: EventStage = error instanceof TransportFailure ? 'UPLOAD' : 'QUEUE';
           void this.events?.record(stage, failureCode(error, stage), error instanceof TransportFailure ? { httpStatus: error.httpStatus } : {});
           if (error instanceof DeletedCaptureFailure || (error instanceof TransportFailure && (error.httpStatus === 410 || (entry.record.uploaded && error.httpStatus === 409)))) {
-            await this.queue.blockSync(entry.record.event.id, error.httpStatus === 409 ? '中央 OCR 文字与本机结果冲突，已停止补写并保留中央原文字；本机副本保留待处理。' : '中央已删除此记录，不会重新创建；本机副本保留待处理。');
+            await this.queue.blockSync(entry.record.event.id, error.httpStatus === 409 ? moteText("中央 OCR 文字与本机结果冲突，已停止补写并保留中央原文字；本机副本保留待处理。") : moteText("中央已删除此记录，不会重新创建；本机副本保留待处理。"));
             this.lastUploadError = error.message;
             continue; // A permanent conflict on one item must not hold up unrelated records.
           } else await this.queue.failed(entry.record.event.id);
-          this.lastUploadError = error instanceof Error ? error.message : '上传失败，队列已保留';
+          this.lastUploadError = error instanceof Error ? error.message : moteText("上传失败，队列已保留");
           break;
         }
       }
@@ -371,7 +372,7 @@ export class Collector {
         await this.queue.syncCheckpoint(this.lastUploadAt);
       }
     } catch (error) {
-      if (!abort.signal.aborted) { this.lastUploadError = error instanceof Error ? error.message : '同步失败，本地记录已保留'; await this.queue.syncCheckpoint(this.lastUploadAt, new Date(Date.now() + 30000).toISOString()).catch(() => undefined); }
+      if (!abort.signal.aborted) { this.lastUploadError = error instanceof Error ? error.message : moteText("同步失败，本地记录已保留"); await this.queue.syncCheckpoint(this.lastUploadAt, new Date(Date.now() + 30000).toISOString()).catch(() => undefined); }
       void this.events?.record('QUEUE', 'STORAGE'); }
     finally { this.uploading = false; this.publish(); }
   }

@@ -1,3 +1,4 @@
+import { moteText } from '@mote/shared/i18n';
 import { mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -77,8 +78,8 @@ export class DiagnosticsRecorder {
     }
   }
   async configure(options: DiagnosticsOptions, sampler: () => Promise<DeviceSnapshot>): Promise<void> {
-    if (this.closed) throw new Error('诊断器已关闭');
-    if (typeof options.enabled !== 'boolean' || !Number.isInteger(options.intervalMs) || options.intervalMs < 15000 || options.intervalMs > 3600000 || (options.maxSamples !== undefined && (!Number.isInteger(options.maxSamples) || options.maxSamples < 1 || options.maxSamples > 1440))) throw new Error('诊断配置无效');
+    if (this.closed) throw new Error(moteText("诊断器已关闭"));
+    if (typeof options.enabled !== 'boolean' || !Number.isInteger(options.intervalMs) || options.intervalMs < 15000 || options.intervalMs > 3600000 || (options.maxSamples !== undefined && (!Number.isInteger(options.maxSamples) || options.maxSamples < 1 || options.maxSamples > 1440))) throw new Error(moteText("诊断配置无效"));
     if (this.timer) clearInterval(this.timer);
     this.generation++; await this.pending;
     if (this.closed) return;
@@ -94,7 +95,7 @@ export class DiagnosticsRecorder {
         if (v.version !== 1 || !Array.isArray(v.samples)) throw new Error('invalid diagnostics');
         this.samples = v.samples.map(cleanSample).filter((s: unknown): s is DiagnosticSample => Boolean(s)).slice(-this.options.maxSamples);
         this.counters = cleanCounters(v.counters); this.fileBytes = Buffer.byteLength(raw);
-      } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') this.error = '旧诊断文件不可读，已重新开始数值记录'; }
+      } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') this.error = moteText("旧诊断文件不可读，已重新开始数值记录"); }
     }
     this.samples = this.samples.slice(-this.options.maxSamples);
     if (this.options.enabled && !this.closed) {
@@ -104,13 +105,13 @@ export class DiagnosticsRecorder {
   }
   recordCapture(m: CaptureMeasurement): void {
     if (!this.options.enabled || this.closed) return;
-    if (!['saved','blocked','failed'].includes(m.outcome)) throw new Error('采集测量类别无效');
-    for (const key of ['imageBytes','inferenceMs','ocrMs','durationMs'] as const) if (m[key] !== undefined && !nonnegative(m[key])) throw new Error('采集测量数值无效');
+    if (!['saved','blocked','failed'].includes(m.outcome)) throw new Error(moteText("采集测量类别无效"));
+    for (const key of ['imageBytes','inferenceMs','ocrMs','durationMs'] as const) if (m[key] !== undefined && !nonnegative(m[key])) throw new Error(moteText("采集测量数值无效"));
     this.counters[m.outcome]++;
     this.counters.imageBytes += m.imageBytes ?? 0; this.counters.inferenceMs += m.inferenceMs ?? 0;
     this.counters.ocrMs += m.ocrMs ?? 0; this.counters.captureMs += m.durationMs ?? 0;
   }
-  recordUpload(bytes: number): void { if (this.options.enabled && !this.closed) { if (!nonnegative(bytes)) throw new Error('上传字节无效'); this.counters.uploadedBytes += bytes; } }
+  recordUpload(bytes: number): void { if (this.options.enabled && !this.closed) { if (!nonnegative(bytes)) throw new Error(moteText("上传字节无效")); this.counters.uploadedBytes += bytes; } }
   status(): DiagnosticsStatus {
     return { enabled:this.options.enabled, sampleCount:this.samples.length, fileBytes:this.fileBytes, counters:{...this.counters}, ...(this.samples.length ? {latest:structuredClone(this.samples.at(-1)!)}:{}), ...(this.error ? {error:this.error}:{}) };
   }
@@ -142,7 +143,7 @@ export class DiagnosticsRecorder {
         try { await unlink(this.temporaryPath); }
         catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
       }
-    } catch { this.error = '诊断采样或写入失败；采集本身继续按隐私策略执行'; }
+    } catch { this.error = moteText("诊断采样或写入失败；采集本身继续按隐私策略执行"); }
   }
   private serialize(): string {
     return JSON.stringify({ version:1, scope:'local-numeric-diagnostics', batteryScope:'whole-device change, not application energy attribution', cpuScope:'collector main process cumulative CPU; inference runtime latency recorded separately', counters:cleanCounters(this.counters), samples:this.samples.map(cleanSample).filter(Boolean) },null,2);

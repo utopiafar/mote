@@ -27,7 +27,7 @@ class NsfwClient(context: Context) : AutoCloseable {
     fun check(bitmap: Bitmap, config: NsfwConfig): ReviewDecision {
         config.validate()
         check(!closed)
-        if (!store.hasFile()) throw NsfwUnavailable("Qwen 本机审查 模型未就绪；请先下载/导入，当前帧不采集")
+        if (!store.hasFile()) throw NsfwUnavailable(MoteI18n.text("Qwen 本机审查 模型未就绪；请先下载/导入，当前帧不采集"))
         val started = System.nanoTime()
         val result = executor.submit<String> {
             val active = connect()
@@ -46,14 +46,14 @@ class NsfwClient(context: Context) : AutoCloseable {
         return try {
             val native = JSONObject(result.get(config.timeoutMs, TimeUnit.MILLISECONDS))
             val decision = ReviewDecision.parse(native.getString("text"))
-            store.inferenceStatus("Qwen CPU 已审查 · %.0f ms · %s\n加载 %d / 图像预填 %d / 解码 %d ms · %d token".format((System.nanoTime() - started) / 1_000_000.0, if (decision.allow) "当前帧通过" else "当前帧已过滤", native.optLong("loadMs"), native.optLong("visionPrefillMs"), native.optLong("decodeMs"), native.optInt("tokens")))
+            store.inferenceStatus(MoteI18n.text("Qwen CPU 已审查 · %.0f ms · %s\n加载 %d / 图像预填 %d / 解码 %d ms · %d token").format((System.nanoTime() - started) / 1_000_000.0, if (decision.allow) MoteI18n.text("当前帧通过") else MoteI18n.text("当前帧已过滤"), native.optLong("loadMs"), native.optLong("visionPrefillMs"), native.optLong("decodeMs"), native.optInt("tokens")))
             decision
         } catch (error: Exception) {
             SupportEvents.record(context, EventStage.MODEL, EventJournal.failure(error, EventStage.MODEL), (System.nanoTime() - started) / 1_000_000L)
             result.cancel(true)
             reset()
-            store.inferenceStatus("Qwen 本机审查 超时、进程退出或模型错误：已中止当前帧，下次重建推理进程")
-            throw NsfwUnavailable("本机 Qwen 审查不可用，当前帧未进入 OCR/保存/上传；下一周期重试")
+            store.inferenceStatus(MoteI18n.text("Qwen 本机审查 超时、进程退出或模型错误：已中止当前帧，下次重建推理进程"))
+            throw NsfwUnavailable(MoteI18n.text("本机 Qwen 审查不可用，当前帧未进入 OCR/保存/上传；下一周期重试"))
         }
     }
     private fun connect(): Connection {
@@ -64,10 +64,10 @@ class NsfwClient(context: Context) : AutoCloseable {
         }
         if (create) {
             active.bound = context.bindService(Intent(context, NsfwInferenceService::class.java), active, Context.BIND_AUTO_CREATE)
-            if (!active.bound) { disconnect(active); throw NsfwUnavailable("无法绑定 Qwen 本机审查 推理进程") }
+            if (!active.bound) { disconnect(active); throw NsfwUnavailable(MoteI18n.text("无法绑定 Qwen 本机审查 推理进程")) }
         }
         if (!active.ready.await(10, TimeUnit.SECONDS) || active.dead || active.service == null || closed) {
-            disconnect(active); throw NsfwUnavailable("Qwen 本机审查 进程连接中断或超时")
+            disconnect(active); throw NsfwUnavailable(MoteI18n.text("Qwen 本机审查 进程连接中断或超时"))
         }
         active.pid = active.service!!.processId()
         return active

@@ -1,3 +1,4 @@
+require('./fixture-language.cjs');
 // Real central and Chromium UI, using generated records only; no personal screen capture.
 const {app,BrowserWindow}=require('electron');
 // Keep Electron alive until asynchronous fixture cleanup sets the intended exit code.

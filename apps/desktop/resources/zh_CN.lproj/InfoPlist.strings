@@ -1,0 +1,3 @@
+"NSScreenCaptureUsageDescription" = "Mote 仅在你开启采集时记录截图，在本机执行隐私过滤后上传到你自己的中央节点。";
+"NSCalendarsUsageDescription" = "连接你选择的本地日历用于个人上下文；你逐条确认后可将建议添加到已有日历。";
+"NSCalendarsFullAccessUsageDescription" = "连接后读取所选日历；仅在你逐条确认日程建议后写入已有日历，并用 Mote 来源标记追溯。";

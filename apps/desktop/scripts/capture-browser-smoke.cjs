@@ -1,3 +1,4 @@
+require('../../../scripts/fixture-language.cjs');
 // Real central server, Electron image decoding and generated pixels only. No screen capture APIs.
 const { app, nativeImage } = require('electron');
 const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');

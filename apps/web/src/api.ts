@@ -1,3 +1,4 @@
+import { moteText, getLocale } from '@mote/shared/i18n';
 import type {RecordMetadata, SourceMetadata, OcrResult, CaptureRecord} from '@mote/shared';
 export interface Connection {
   token: string;
@@ -97,6 +98,7 @@ export interface Status {
   serverTime: string;
 }
 export interface Answer {
+  modelSelection?: import("@mote/shared/models").ModelSelection;
   usage?:import('@mote/shared').UsageReceipt;
   answer: string;
   runId: string;
@@ -145,7 +147,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
     const signal = deadline ? (init.signal ? AbortSignal.any([init.signal, deadline]) : deadline) : init.signal ?? AbortSignal.timeout(180000);
     // Management requests always address the service serving this page.
     if (!path.startsWith('/api/') || path.includes('\\') || /[\r\n\t]/.test(path)) {
-      throw new Error('管理请求必须使用当前服务的 API 路径。');
+      throw new Error(moteText("管理请求必须使用当前服务的 API 路径。"));
     }
     const response = await fetch(path, {
       ...init,
@@ -153,6 +155,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
       credentials: path.startsWith("/api/files/") ? "same-origin" : "omit",
       signal,
       headers: {
+        "Accept-Language": getLocale(),
         ...(init.body ? { "Content-Type": "application/json" } : {}),
         ...init.headers,
         Authorization: `Bearer ${connection.token}`,
@@ -161,12 +164,12 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
     if (!response.ok) {
       if (response.status === 401 && !init.signal?.aborted && isCurrentConnection()) onUnauthorized?.();
       let message = response.status === 524
-        ? "入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。"
+        ? moteText("入口等待服务响应超时（524）。请检查节点运行诊断；较慢的模型请求可能超过代理等待上限。")
         : response.status === 413
-          ? "上传超过中央节点或公网入口的大小限制（413）。可以分批上传，或将文件放到中央服务器后从目录导入。"
+          ? moteText("上传超过中央节点或公网入口的大小限制（413）。可以分批上传，或将文件放到中央服务器后从目录导入。")
           : response.status === 502
-            ? "入口暂时无法连接中央服务（502）。请检查中央进程和隧道的 origin 地址。"
-            : `请求未完成（${response.status}）`;
+            ? moteText("入口暂时无法连接中央服务（502）。请检查中央进程和隧道的 origin 地址。")
+            : moteText("请求未完成（{0}）", response.status);
       let requestId = response.headers.get("X-Request-Id") ?? undefined;
       try {
         const value = await response.json();
@@ -194,11 +197,11 @@ export function queryString(
   return params.size ? `?${params}` : "";
 }
 export function duration(ms: number) {
-  if (ms < 60_000) return `${Math.max(0, Math.round(ms / 1000))} 秒`;
+  if (ms < 60_000) return moteText("{0} 秒", Math.max(0, Math.round(ms / 1000)));
   const minutes = Math.floor(ms / 60_000);
   return minutes < 60
-    ? `${minutes} 分钟`
-    : `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分钟`;
+    ? moteText("{0} 分钟", minutes)
+    : moteText("{0} 小时 {1} 分钟", Math.floor(minutes / 60), minutes % 60);
 }
 export function bytes(size: number) {
   if (size < 1024) return `${size} B`;
@@ -208,7 +211,7 @@ export function bytes(size: number) {
 }
 export function dateTime(value: string, options?: Intl.DateTimeFormatOptions) {
   return new Date(value).toLocaleString(
-    "zh-CN",
+    getLocale(),
     options ?? {
       month: "short",
       day: "numeric",
@@ -219,29 +222,29 @@ export function dateTime(value: string, options?: Intl.DateTimeFormatOptions) {
   );
 }
 export function ago(value?: string) {
-  if (!value) return "尚无记录";
+  if (!value) return moteText("尚无记录");
   const seconds = Math.max(0, (Date.now() - Date.parse(value)) / 1000);
   return seconds < 60
-    ? "刚刚"
+    ? moteText("刚刚")
     : seconds < 3600
-      ? `${Math.floor(seconds / 60)} 分钟前`
+      ? moteText("{0} 分钟前", Math.floor(seconds / 60))
       : seconds < 86400
-        ? `${Math.floor(seconds / 3600)} 小时前`
-        : `${Math.floor(seconds / 86400)} 天前`;
+        ? moteText("{0} 小时前", Math.floor(seconds / 3600))
+        : moteText("{0} 天前", Math.floor(seconds / 86400));
 }
 export function deviceState(device: Device) {
   if (!Number.isFinite(Date.parse(device.lastSeenAt)) || Date.now() - Date.parse(device.lastSeenAt) > 90_000) return "stale";
   return device.status;
 }
 export const deviceLabels: Record<string, string> = {
-  capturing: "正在采集",
-  paused: "已暂停",
-  permission_required: "等待权限",
-  error: "需要处理",
-  offline: "已离线",
-  stale: "状态待更新",
+  capturing: moteText("正在采集"),
+  paused: moteText("已暂停"),
+  permission_required: moteText("等待权限"),
+  error: moteText("需要处理"),
+  offline: moteText("已离线"),
+  stale: moteText("状态待更新"),
 };
 export function errorMessage(error: unknown) {
-  if (error instanceof ApiError && error.requestId) return `${error.message} 请求编号：${error.requestId}`;
-  return error instanceof Error ? error.message : "请求未完成，请稍后重试。";
+  if (error instanceof ApiError && error.requestId) return moteText("{0} 请求编号：{1}", error.message, error.requestId);
+  return error instanceof Error ? error.message : moteText("请求未完成，请稍后重试。");
 }

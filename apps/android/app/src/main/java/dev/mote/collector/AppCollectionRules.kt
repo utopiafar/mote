@@ -3,7 +3,7 @@ package dev.mote.collector
 import org.json.JSONObject
 
 enum class AppCollectionMode(val wire: String) { CONTENT("content"), ACTIVITY("activity"), OFF("off");
-    companion object { fun from(value: String) = entries.singleOrNull { it.wire == value } ?: error("应用采集级别必须为 content / activity / off") }
+    companion object { fun from(value: String) = entries.singleOrNull { it.wire == value } ?: error(MoteI18n.text("应用采集级别必须为 content / activity / off")) }
 }
 
 /** Explicit app identity rules only; unknown surfaces use the default unless a privacy rule needs identity. */
@@ -25,13 +25,13 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
         const val LEGACY_DEFAULT = "{\"default\":\"content\",\"apps\":{}}"
         private val packagePattern = Regex("[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z][A-Za-z0-9_]*)*")
         fun parse(value: String): AppCollectionRules {
-            require(value.toByteArray(Charsets.UTF_8).size <= 32768) { "应用规则超过大小上限" }
+            require(value.toByteArray(Charsets.UTF_8).size <= 32768) { MoteI18n.text("应用规则超过大小上限") }
             StrictJson.validate(value)
             val root = JSONObject(value)
-            require(root.keys().asSequence().toSet() == setOf("default", "apps")) { "应用规则结构无效" }
-            val entries = root.getJSONObject("apps"); require(entries.length() <= 200) { "最多200项应用规则" }
+            require(root.keys().asSequence().toSet() == setOf("default", "apps")) { MoteI18n.text("应用规则结构无效") }
+            val entries = root.getJSONObject("apps"); require(entries.length() <= 200) { MoteI18n.text("最多200项应用规则") }
             val apps = entries.keys().asSequence().associateWith { id ->
-                require(id.length <= 255 && packagePattern.matches(id)) { "请输入完整应用包名" }
+                require(id.length <= 255 && packagePattern.matches(id)) { MoteI18n.text("请输入完整应用包名") }
                 AppCollectionMode.from(entries.getString(id))
             }
             return AppCollectionRules(AppCollectionMode.from(root.getString("default")), apps)
@@ -39,8 +39,8 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
         fun fromLines(defaultMode: AppCollectionMode, value: String): AppCollectionRules {
             val apps = linkedMapOf<String, AppCollectionMode>()
             value.lineSequence().map(String::trim).filter(String::isNotEmpty).forEach { line ->
-                val parts = line.split('='); require(parts.size == 2) { "每行使用 包名=content/activity/off" }
-                val id = parts[0].trim(); require(!apps.containsKey(id)) { "同一应用不能配置两次" }
+                val parts = line.split('='); require(parts.size == 2) { MoteI18n.text("每行使用 包名=content/activity/off") }
+                val id = parts[0].trim(); require(!apps.containsKey(id)) { MoteI18n.text("同一应用不能配置两次") }
                 apps[id] = AppCollectionMode.from(parts[1].trim())
             }
             return parse(AppCollectionRules(defaultMode, apps).json())

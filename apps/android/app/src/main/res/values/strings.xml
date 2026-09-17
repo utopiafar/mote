@@ -1,7 +1,7 @@
 <resources>
-    <string name="app_name">Mote 上下文采集</string>
-    <string name="accessibility_name">Mote 屏幕采集</string>
-    <string name="accessibility_description">仅在你点击开始后，定期截取屏幕、读取当前窗口所属应用用于你配置的排除规则。不点击、不滚动、不读取控件文字。截图经本机遮罩和本机 OCR 后保存在应用私有队列，并上传到你配置的中央节点；可随时在应用或通知中停止。请先配置隐私规则。</string>
+    <string name="app_name">Mote Context Collector</string>
+    <string name="accessibility_name">Mote Screen Capture</string>
+    <string name="accessibility_description">Captures screens periodically only after you tap Start, and reads the foreground app identity for your exclusion rules. It does not tap, scroll, or read UI controls. Local masking and OCR run before screenshots are queued privately and uploaded to your configured central node. Stop anytime in the app or notification. Configure privacy rules first.</string>
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item><item name="android:colorAccent">#1C6754</item>
         <item name="android:windowBackground">#F6F7F2</item><item name="android:statusBarColor">#F6F7F2</item>

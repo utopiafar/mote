@@ -1,0 +1,3 @@
+"NSScreenCaptureUsageDescription" = "Mote records screenshots only while you enable capture, applies your privacy filters locally, then uploads them to your own central node.";
+"NSCalendarsUsageDescription" = "Connect selected calendars for personal context; add suggestions to existing calendars only after your individual confirmation.";
+"NSCalendarsFullAccessUsageDescription" = "Read selected calendars after connection; write to existing calendars only after you confirm each suggestion, with a Mote source marker.";

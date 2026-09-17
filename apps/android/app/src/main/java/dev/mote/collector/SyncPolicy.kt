@@ -3,9 +3,9 @@ package dev.mote.collector
 /** Timing and explicit user preferences only; never interprets captured content. */
 data class SyncPolicy(val mode: String = "realtime", val intervalMinutes: Int = 15, val batchSize: Int = 20) {
     fun validate() {
-        require(mode in setOf("realtime", "interval", "batch", "manual")) { "请选择有效同步方式" }
-        require(intervalMinutes in 15..1440) { "同步间隔为 15..1440 分钟" }
-        require(batchSize in 1..500) { "批量同步数量为 1..500 条" }
+        require(mode in setOf("realtime", "interval", "batch", "manual")) { MoteI18n.text("请选择有效同步方式") }
+        require(intervalMinutes in 15..1440) { MoteI18n.text("同步间隔为 15..1440 分钟") }
+        require(batchSize in 1..500) { MoteI18n.text("批量同步数量为 1..500 条") }
     }
     fun delayMillis(now: Long, pending: Int, oldestAt: Long?, lastDispatch: Long, explicit: Boolean = false, pendingUpdates: Int = 0): Long? {
         validate()

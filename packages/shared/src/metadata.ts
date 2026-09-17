@@ -1,3 +1,4 @@
+import { moteText } from './i18n.js';
 import { z } from 'zod';
 
 const timestamp = z.string().max(64).datetime({ offset: true });
@@ -107,7 +108,7 @@ export type SourceMetadata = z.infer<typeof sourceMetadataSchema>;
 /** Display raw event fields; this does not infer activity or intent. */
 export function systemEventText(metadata?: RecordMetadata): string {
   const n=metadata?.notification,e=metadata?.deviceEvent;
-  if(n) return [({posted:'收到通知（首次观察）',updated:'通知更新',removed:'通知移除'})[n.action],n.title,n.text,n.bigText,n.subText,...(n.textLines??[])].filter(Boolean).join('\n');
-  if(e) return `${({screen_on:'亮屏',screen_off:'熄屏',user_present:'用户解锁 / 在场',state_observed:'锁定状态观察'})[e.action]} · ${e.keyguardLocked?'系统报告已锁定':'系统报告未锁定'} · ${e.screenInteractive?'屏幕可交互':'屏幕不可交互'}`;
+  if(n) return [({posted:moteText("收到通知（首次观察）"),updated:moteText("通知更新"),removed:moteText("通知移除")})[n.action],n.title,n.text,n.bigText,n.subText,...(n.textLines??[])].filter(Boolean).join('\n');
+  if(e) return `${({screen_on:moteText("亮屏"),screen_off:moteText("熄屏"),user_present:moteText("用户解锁 / 在场"),state_observed:moteText("锁定状态观察")})[e.action]} · ${e.keyguardLocked?moteText("系统报告已锁定"):moteText("系统报告未锁定")} · ${e.screenInteractive?moteText("屏幕可交互"):moteText("屏幕不可交互")}`;
   return '';
 }
