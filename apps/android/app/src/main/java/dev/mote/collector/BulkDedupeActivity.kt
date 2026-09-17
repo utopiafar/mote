@@ -193,7 +193,7 @@ class BulkDedupeActivity : MoteActivity() {
     private fun preview(pair: JSONObject) {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         label(content, MoteI18n.text("正在后台读取图片…"))
-        val dialog = AlertDialog.Builder(this).setTitle(MoteI18n.text("双指缩放 · 拖动查看 · 双击复位")).setView(ScrollView(this).apply { addView(content) }).setPositiveButton(MoteI18n.text("关闭"), null).create()
+        val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("双指缩放 · 拖动查看 · 双击复位")).setView(ScrollView(this).apply { addView(content) }).setPositiveButton(MoteI18n.text("关闭"), null).create()
         val bitmaps = mutableListOf<android.graphics.Bitmap>()
         dialog.setOnDismissListener { content.removeAllViews(); bitmaps.forEach { it.recycle() }; bitmaps.clear() }
         dialogs += dialog
@@ -239,7 +239,7 @@ class BulkDedupeActivity : MoteActivity() {
         val items = rows.filter { id(it) in selected }
         if (items.isEmpty()) { Toast.makeText(this, MoteI18n.text("请先选择图片"), Toast.LENGTH_SHORT).show(); return }
         val verb = when (action) { "move" -> MoteI18n.text("移入待决定区"); "restore" -> MoteI18n.text("恢复到本机采集队列"); else -> MoteI18n.text("永久删除本机记录及图片") }
-        AlertDialog.Builder(this).setTitle(MoteI18n.text("确认{0}？", verb)).setMessage(MoteI18n.text("所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。", items.size, if (action in listOf("delete", "purge")) MoteI18n.text("无法撤销。") else ""))
+        MoteDialogBuilder(this).setTitle(MoteI18n.text("确认{0}？", verb)).setMessage(MoteI18n.text("所选 {0} 条。{1}保留图不会删除。已同步的中央副本不受影响。恢复后会继续原有同步与 OCR 流程。", items.size, if (action in listOf("delete", "purge")) MoteI18n.text("无法撤销。") else ""))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("确认")) { _, _ ->
                 val job = UUID.randomUUID().toString()
                 submit(workDataOf("action" to action, "job" to job), JSONObject().put("job", job).put("items", JSONArray(items)))

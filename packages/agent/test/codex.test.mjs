@@ -38,6 +38,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)))process.exit(2);
   send({id:m.id,result:{thread:{id:'thread-fixture'},approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
+  if(mode==='max'&&m.params.effort!=='max')process.exit(4);
   send({id:m.id,result:{turn:{id:'turn-fixture'}}});
   if(mode==='import'){send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
   if(mode==='timeout')return;
@@ -57,6 +58,10 @@ test('Codex App Server exchanges scoped tools, validates citations and leaves no
   assert.equal(answer.citations[0].id,record.id);assert.equal(answer.trace[0].tool,'timeline');
   assert.equal((await readFile(join(root,'auth.json'),'utf8')).includes('synthetic-unused-key'),true);
   await assert.rejects(access(await readFile(join(root,'runtime-home'),'utf8')),{code:'ENOENT'});
+});
+test('Codex preserves the requested Max effort without silently downgrading it',async t=>{
+  await fake(t,'max');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'max',timeoutMs:5000});t.after(()=>agent.close());
+  assert.equal((await agent.query({question:'Generated fixture'})).citations[0].id,record.id);
 });
 test('Codex errors and approval requests are rejected without exposing raw provider output',async t=>{
   for(const mode of ['error','approval']){await fake(t,mode);const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});try{await assert.rejects(agent.query({question:'Fixture'}),e=>e instanceof AgentProviderError&&!e.message.includes('synthetic-private'));}finally{await agent.close();}}

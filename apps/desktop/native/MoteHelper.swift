@@ -115,6 +115,31 @@ do {
         // Detect permission revocation during the query; never report an empty successful scan.
         if !fullAccess() { try output(["permission": "required", "calendars": []]); break }
         try output(["permission": "granted", "events": events, "complete": complete])
+    case "notifications":
+        guard AXIsProcessTrusted() else { try output(["available": false, "items": []]); return }
+        guard let center = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first else { try output(["available": true, "items": []]); return }
+        let root = AXUIElementCreateApplication(center.processIdentifier)
+        var nodes = 0
+        func strings(_ element: AXUIElement, _ depth: Int) -> [String] {
+            nodes += 1
+            if depth > 12 || nodes > 1000 { return [] }
+            var values: [String] = []
+            for key in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute] {
+                var value: CFTypeRef?
+                if AXUIElementCopyAttributeValue(element, key as CFString, &value) == .success, let text = value as? String, !text.isEmpty { values.append(String(text.prefix(2000))) }
+            }
+            var children: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &children) == .success, let items = children as? [AXUIElement] {
+                for child in items.prefix(100) { values += strings(child, depth + 1) }
+            }
+            return values
+        }
+        var windows: CFTypeRef?
+        var items: [[String: String]] = []
+        if AXUIElementCopyAttributeValue(root, kAXWindowsAttribute as CFString, &windows) == .success, let views = windows as? [AXUIElement] {
+            for view in views.prefix(20) { let text = strings(view, 0).joined(separator: "\n"); if !text.isEmpty { items.append(["text": String(text.prefix(4000))]) } }
+        }
+        try output(["available": true, "items": items])
     case "screen-permission":
         // Only the explicit permissions button invokes this. No image or window list is requested.
         try output(["granted": CGRequestScreenCaptureAccess()])

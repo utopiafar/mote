@@ -31,6 +31,7 @@ async function run() {
       embeddingModel: '', embeddingBaseUrl: '', embeddingApiKey: '', diagnosticsEnabled: false})};
     const {app} = await buildApp(config, {agent: {configured:true, close:async()=>{}, query:async input=>{
       appendFileSync(${JSON.stringify(queries)}, JSON.stringify(input)+'\\n');
+      if(input.question==='fixture-cancel') await new Promise(resolve=>{if(input.signal?.aborted)resolve();else input.signal?.addEventListener('abort',resolve,{once:true});});
       if(input.question==='fixture-failure') throw Error('Generated model failure');
       if(input.question==='fixture-delayed-navigation') while(!existsSync(${JSON.stringify(released)})) await new Promise(resolve=>setTimeout(resolve,50));
       await new Promise(resolve=>setTimeout(resolve, 100));
@@ -88,6 +89,20 @@ async function run() {
   await until(async () => (await (await request('/api/conversations')).json()).items.some(item => item.title === 'fixture-delayed-navigation'), 'answer persists after leaving');
   await click('问一问'); await until(() => js(`Array.from(document.querySelectorAll('.conversation-item')).some(b=>b.textContent.includes('fixture-delayed-navigation'))`), 'recover completed background answer');
   await js(`Array.from(document.querySelectorAll('.conversation-item')).find(b=>b.textContent.includes('fixture-delayed-navigation')).click()`); await readyTurns(1);
+  await click('新对话');await input('fixture-cancel');await click('发送问题');
+  await until(()=>js(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes('停止生成'))`),'stop button');
+  await click('停止生成');await until(async()=> (await (await request('/api/query-runs')).json()).items.some(r=>r.status==='cancelled'),'cancel acknowledged');
+  await until(()=>js(`!document.querySelector('textarea[aria-label="向 Mote 提问"]').disabled`),'cancel unlocks composer');
+  assert(!(await (await request('/api/conversations')).json()).items.some(c=>c.title==='fixture-cancel'));
+  await click('随手记');await until(()=>js('Boolean(document.querySelector("#note-text"))'),'note composer');
+  assert.equal(await js('Boolean(document.querySelector("#note-mood"))'),false);
+  await js(`(()=>{const input=document.querySelector('input[type=file][accept="image/*,audio/*"]');const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array([82,73,70,70,0,0,0,0,87,65,86,69])],'fixture.wav',{type:'audio/wav',lastModified:1700000000000}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await until(()=>js('document.body.innerText.includes("已添加 1 个附件")'),'audio archived');
+  await js(`(()=>{const input=document.querySelector('#note-text');const setter=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;setter.call(input,'Generated attached note');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+  await click('保存并同步');
+  await until(async()=> (await (await request('/api/notes')).json()).items.some(n=>n.ocrText==='Generated attached note'),'note attached');
+  const note=(await (await request('/api/notes')).json()).items.find(n=>n.ocrText==='Generated attached note');assert.equal(note.metadata.attachments.length,1);
+  const file=await request('/api/files/'+note.metadata.attachments[0]);assert.equal(file.status,200);assert.equal((await file.json()).sizeBytes,12);
   assert.deepEqual(errors, []);
   writeFileSync(join(output, 'result.json'), JSON.stringify({passed: true, generatedOnly: true, checks: ['durable multi-turn history', 'independent new conversations', 'navigation and browser reload', 'central restart', 'leaving during pending answer', 'stored follow-up model context', 'failed turn preserves history and question', 'delete history', 'desktop/mobile layout']}, null, 2));
   console.log('PASS: generated conversation history, continuation, restart, failure, deletion and responsive UI. No live model or personal content.');

@@ -62,6 +62,21 @@ open class MoteActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.decorView.layoutDirection = android.view.View.LAYOUT_DIRECTION_LTR
     }
+    override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+        if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+            val field = currentFocus as? android.widget.EditText
+            if (field != null) {
+                val bounds = android.graphics.Rect()
+                field.getGlobalVisibleRect(bounds)
+                if (!bounds.contains(event.rawX.toInt(), event.rawY.toInt())) {
+                    field.clearFocus()
+                    getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                        .hideSoftInputFromWindow(field.windowToken, 0)
+                }
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
     override fun onResume() {
         super.onResume()
         if (displayedLanguage != MoteI18n.language()) recreate()

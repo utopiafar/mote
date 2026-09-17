@@ -41,7 +41,7 @@ export interface UsageAttribution {
   /** null means no primary skill; absent attribution means historical/unknown. */
   skillId: string | null;
 }
-export type UsageGroupBy = 'agent' | 'module' | 'skill' | 'model';
+export type UsageGroupBy = 'agent' | 'module' | 'skill' | 'model' | 'provider';
 export interface UsageFilters {
   agentId?: string;
   moduleId?: string;
@@ -87,6 +87,8 @@ export interface UsageSummary {
   facets: Record<'agentId'|'moduleId'|'skillId', {id:string;label:string}[]>;
   items: UsageReceipt[];
   itemsTotal: number;
+  page?: number;
+  pageSize?: number;
   prices: ModelPrice[];
 }
 export const USAGE_UNKNOWN = '__unknown__';

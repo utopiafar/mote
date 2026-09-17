@@ -134,7 +134,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                         val buffer = ByteArray(PART_BYTES); var length = 0
                         while (length < buffer.size) { val n = input.read(buffer, length, buffer.size - length); if (n < 0) break; if (n == 0) continue; length += n }
                         if (length == 0) break
-                        size += length; check(size <= MAX_BYTES) { MoteI18n.text("文件超过 512 MiB") }
+                        size += length; check(size <= minOf(MAX_BYTES, source.maxFileMiB * 1024L * 1024)) { MoteI18n.text("文件超过此来源的大小上限") }
                         val used = directory.walkTopDown().filter { it.isFile }.sumOf { it.length() }
                         check(used + length + 64 < 1024L * 1024 * 1024) { MoteI18n.text("文件暂存达到 1 GiB 上限") }
                         val bytes = buffer.copyOf(length); digest.update(bytes)

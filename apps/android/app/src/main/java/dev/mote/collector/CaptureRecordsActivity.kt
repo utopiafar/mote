@@ -60,9 +60,8 @@ class CaptureRecordsActivity : MoteActivity() {
         album = savedInstanceState?.getString("album")?.let(::JSONObject)
         recordSource = savedInstanceState?.getString("recordSource")?.takeIf { it in recordSources } ?: "screen"
         sessionGrouping = savedInstanceState?.getBoolean("sessionGrouping", true) ?: true
-        grid = true
-        body = moteDetailPage()
-        body.getChildAt(0).setOnClickListener { navigateBack() }
+        grid = savedInstanceState?.getBoolean("grid", true) ?: true
+        body = moteDetailPage { navigateBack() }
         text(body, MoteI18n.text("采集记录"), 27f)
         text(body, MoteI18n.text("截图支持按连续 Session 或 App 分组，点开查看图片。"), 14f)
         val source = Spinner(this).apply {
@@ -96,6 +95,7 @@ class CaptureRecordsActivity : MoteActivity() {
                 if (sessionGrouping != (position == 0)) { sessionGrouping = position == 0; reload() }
             }
         }
+        val layout = Switch(this).apply { text = MoteI18n.text("缩略图视图"); isChecked = grid; setOnCheckedChangeListener { _, checked -> grid = checked; load() } }; body.addView(layout)
         backToAlbums = button(body, MoteI18n.text("‹ 返回分组")) { closeAlbum() }.apply { visibility = View.GONE }
         val days = row(body)
         button(days, MoteI18n.text("前一天")) { date = date.minusDays(1); reload() }
@@ -339,10 +339,10 @@ class CaptureRecordsActivity : MoteActivity() {
         row.addView(preview, LinearLayout.LayoutParams(if (grid) -1 else moteDp(88), moteDp(if (grid) 160 else 88)))
         val labels = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(12), 0, 0, 0) }
         row.addView(labels, if (grid) LinearLayout.LayoutParams(-1, -2) else LinearLayout.LayoutParams(0, -2, 1f))
-        if (grid) { text(labels, time(item.getString("capturedAt")), 13f); return image }
         text(labels, "${time(item.getString("capturedAt"))} · ${item.optString("appName").ifBlank { item.optString("appId").ifBlank { if (item.optString("source") == "media") MoteI18n.text("媒体会话状态") else if (item.optString("source") == "device_event") MoteI18n.text("设备状态") else MoteI18n.text("桌面 / 系统画面") } }}", 15f)
         text(labels, if (item.optString("source") in SystemEventRules.sources) SystemEventRules.label(item) else if (item.optString("source") == "media") CapturePreview.mediaLabel(item) else CapturePreview.ocrLabel(item), 12f)
         if (!remote) text(labels, when (item.optString("syncError")) { "archive_missing" -> MoteI18n.text("中央记录不可更新 · 本机图片已保留"); "ocr_conflict" -> MoteI18n.text("OCR 更新冲突 · 本机图片和文字已保留"); "upload_conflict" -> MoteI18n.text("记录内容冲突 · 本机副本已保留"); else -> if (item.optBoolean("uploaded")) if (item.optLong("retainedUntil") > 0) MoteI18n.text("已同步 · 本机保留至 {0}", java.time.Instant.ofEpochMilli(item.getLong("retainedUntil")).atZone(java.time.ZoneId.systemDefault()).toLocalDate()) else MoteI18n.text("图片已同步 · 本机保留待更新 OCR") else MoteI18n.text("保存在本机 · 待同步") }, 12f)
+        if (item.has("sizeBytes")) text(labels, "${String.format(java.util.Locale.ROOT, "%.1f", item.optLong("sizeBytes") / 1024.0)} KiB", 12f)
         item.optString("textPreview").takeIf(String::isNotBlank)?.let { text(labels, it.take(if (grid) 48 else 100), 12f) }
         return image
     }
@@ -350,7 +350,7 @@ class CaptureRecordsActivity : MoteActivity() {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(18), moteDp(10), moteDp(18), moteDp(16)) }
         val message = text(content, MoteI18n.text("正在读取详情…"), 14f)
         val loading = ProgressBar(this); content.addView(loading)
-        val dialog = AlertDialog.Builder(this).setTitle(MoteI18n.text("采集记录")).setView(ScrollView(this).apply { addView(content) }).setPositiveButton(MoteI18n.text("关闭"), null).create()
+        val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("采集记录")).setView(ScrollView(this).apply { addView(content) }).setPositiveButton(MoteI18n.text("关闭"), null).create()
         var detailBitmap: Bitmap? = null
         dialog.setOnDismissListener { content.removeAllViews(); detailBitmap?.recycle(); detailBitmap = null }
         dialog.show(); dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -400,6 +400,6 @@ class CaptureRecordsActivity : MoteActivity() {
     private fun text(parent: LinearLayout, value: String, size: Float) = TextView(this).apply { text = value; textSize = size; setTextColor(MoteUi.ink); setLineSpacing(moteDp(3).toFloat(), 1f); setPadding(0, moteDp(5), 0, moteDp(5)) }.also(parent::addView)
     private fun button(parent: LinearLayout, label: String, action: () -> Unit) = MoteUi.button(Button(this).apply { text = label; setOnClickListener { action() } }).also { parent.addView(it, if (parent.orientation == LinearLayout.HORIZONTAL) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2)) }
     private fun clearList() { list.removeAllViews() }
-    override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("sessionGrouping", sessionGrouping); outState.putString("date", date.toString()); outState.putString("album", album?.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
+    override fun onSaveInstanceState(outState: Bundle) { outState.putBoolean("grid", grid); outState.putBoolean("sessionGrouping", sessionGrouping); outState.putString("date", date.toString()); outState.putString("album", album?.toString()); outState.putBoolean("central", central); outState.putString("recordSource", recordSource); super.onSaveInstanceState(outState) }
     override fun onDestroy() { generation++; loadGeneration++; executor.shutdownNow(); imageExecutor.shutdownNow(); thumbnailWriter.shutdown(); detailExecutor.shutdownNow(); clearList(); thumbnails.evictAll(); super.onDestroy() }
 }

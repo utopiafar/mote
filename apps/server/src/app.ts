@@ -1,8 +1,9 @@
 import { requestLocale } from './i18n.js';
 import { negotiateLocale } from '@mote/shared/i18n';
 import { moteText } from './i18n.js';
-import {codexModels,ModelCatalogError} from './model-catalog.js';
+import {codexModels,providerModels,ModelCatalogError} from './model-catalog.js';
 import {UsageLedger} from './usage.js';
+import {registerArchiveExport} from './archive-export.js';
 import {QueryRuns} from './query-runs.js';
 import {Actions,registerActions} from './actions.js';
 import {InsightRuns} from './insight-runs.js';
@@ -48,7 +49,7 @@ type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:strin
 export interface QueryAgent {configured:boolean;configuredFor?(id:string):boolean;query(args:QueryInput):Promise<QueryResult>;close():Promise<void>}
 const scopeFields={after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),deviceId:z.string().min(1).max(200).optional(),timeZone:z.string().min(1).max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},{message:'Unknown time zone'}).optional()};
 const validRange=(v:QueryScope)=>!v.after||!v.before||Date.parse(v.after)<Date.parse(v.before);
-const querySchema=z.object({modelProfileId:modelProfileIdSchema.optional(),question:z.string().trim().min(1).max(8000),conversationId:z.string().uuid().optional(),after:scopeFields.after.nullable(),before:scopeFields.before.nullable(),deviceId:scopeFields.deviceId.nullable(),timeZone:scopeFields.timeZone.nullable()}).strict();
+const querySchema=z.object({modelProfileId:modelProfileIdSchema.optional(),modelOverride:z.string().trim().min(1).max(512).refine(v=>!/[\u0000-\u001f\u007f]/.test(v)).optional(),question:z.string().trim().min(1).max(8000),conversationId:z.string().uuid().optional(),after:scopeFields.after.nullable(),before:scopeFields.before.nullable(),deviceId:scopeFields.deviceId.nullable(),timeZone:scopeFields.timeZone.nullable()}).strict();
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
 const insightRequestSchema=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional()}).strict().refine(validRange,{message:'Invalid time range'});
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
@@ -173,7 +174,8 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.get('/api/status',async()=>({profile:config.profile??'legacy',agent:{configured:agent.configured,provider:modelProvider(config.modelProvider??'deepseek')?.name??config.modelProvider,runtime:config.modelProtocol==='codex-app-server'?'Codex App Server':'DeepSeek Harness',protocol:config.modelProtocol,model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??DEFAULT_MODEL_MAX_TOKENS,timeoutMs:Math.max(...modelSettings.profiles().map(p=>p.settings.timeoutMs))},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:lifecycle.settings().insights.enabled?lifecycle.settings().insights.intervalHours:0,serverTime:new Date().toISOString()}));
   app.get('/api/configuration',async()=>{const view=serverConfiguration(config,{modelSource:modelSettings.view().source}),policy=lifecycle.settings().insights,field=view.groups.flatMap(g=>g.fields).find(f=>f.key==='insightIntervalHours');if(field){field.value=policy.enabled?policy.intervalHours:0;field.source='derived';field.description=moteText("已保存的洞察策略：周期到达并且至少 {0} 次增量变化时运行。在记忆设置中直接修改。", policy.minChanges);delete field.envVar;}return view;});
   let codexCatalogPending:ReturnType<typeof codexModels>|undefined;
-  app.get('/api/model-settings/codex-models',{config:connectionRate},async()=>codexCatalogPending??=codexModels().finally(()=>{codexCatalogPending=undefined;}));
+  app.get('/api/model-settings/codex-models',{config:connectionRate},async()=>codexCatalogPending??=codexModels(undefined,codex).finally(()=>{codexCatalogPending=undefined;}));
+  app.get('/api/model-settings/profiles/:id/models',async req=>{const profile=modelSettings.select('chat',z.object({id:modelProfileIdSchema}).parse(req.params).id);return profile.settings.protocol==='codex-app-server'?codexModels(undefined,codex):providerModels(profile.settings);});
   app.post('/api/model-settings/models',{bodyLimit:65536,config:connectionRate},async req=>modelSettings.models(req.body));
   app.get('/api/model-settings',async()=>modelSettings.view());
   app.put('/api/model-settings',{bodyLimit:65536,config:connectionRate},async req=>modelSettings.update(req.body));
@@ -231,7 +233,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.delete('/api/captures/:id',async req=>{const id=(req.params as {id:string}).id;const file=store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(id,id) as {capture_id:string}|undefined;return file?files.forget(file.capture_id):store.delete(id);});
   // Notes share capture IDs, indexing, archive export and deletion tombstones.
   // The convenience route does not rewrite the author's text or infer their mood.
-  app.post('/api/notes',async(req,reply)=>{const input=noteCapture(noteSchema.parse(req.body)),c=credential(req);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','note',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
+  app.post('/api/notes',async(req,reply)=>{const input=noteCapture(noteSchema.parse(req.body)),c=credential(req);if(c)connections.assertCapture(c,input);for(const id of input.metadata?.attachments??[]){const attachment=files.detail(id);if(c&&sources.getSource(attachment.sourceId).deviceId!==c.deviceId)throw new StoreError('Attachment belongs to another device',403);}const result=await diagnostics.measure('ingest','note',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
   app.get('/api/notes',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
     return diagnostics.measure('source','timeline',()=>store.list({...args,source:'note',cursor:raw.cursor}),page=>({count:page.items.length}));
@@ -262,7 +264,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
     input={...input,modelProfileId:profile.id};
     const revision=store.deletionRevision();
-    const meter=usageLedger.start(profile.settings.provider,profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null});
+    const meter=usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null});
     const observed={...input,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
       if(store.deletionRevision()!==revision)throw new StoreError('Evidence was deleted during this run; retry against the updated archive',409);
@@ -344,9 +346,10 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.get('/api/conversations/:id',async req=>conversations.get(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.delete('/api/conversations/:id',async req=>conversations.delete(z.object({id:z.string().uuid()}).parse(req.params).id));
   const runningConversations=new Set<string>();
-  async function runQuery(body:unknown,onProgress?:QueryInput['onProgress']) {
+  async function runQuery(body:unknown,onProgress?:QueryInput['onProgress'],signal?:AbortSignal) {
+    signal?.throwIfAborted();
     if(!agent.configured)throw new AgentNotConfiguredError();
-    const {conversationId,question,modelProfileId,...selected}=querySchema.parse(body);
+    const {conversationId,question,modelProfileId,modelOverride,...selected}=querySchema.parse(body);
     modelSettings.select('chat',modelProfileId);
     if(conversationId&&runningConversations.has(conversationId))throw new StoreError('An answer is already running in this conversation',409);
     const previous=conversationId?conversations.get(conversationId):undefined;
@@ -359,22 +362,24 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     insightSchema.parse(scope);
     if(conversationId)runningConversations.add(conversationId);
     try {
-      const result=await queryAgent({question,...scope,modelProfileId,onProgress,...(previous?{conversation:working.context(previous,lifecycle.settings())}:{})});
+      const result=await queryAgent({question,...scope,modelProfileId,modelOverride,onProgress,signal,...(previous?{conversation:working.context(previous,lifecycle.settings())}:{})});
+      signal?.throwIfAborted();
       return {...result,...conversations.append(previous,{question,...scope},result)};
     }finally{if(conversationId)runningConversations.delete(conversationId);}
   }
   app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>runQuery(req.body));
+  app.post('/api/query-runs/:id/cancel',async req=>queryRuns.cancel(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.get('/api/query-runs',async()=>({items:queryRuns.list()}));
   app.get('/api/query-runs/:id',async req=>queryRuns.get(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.post('/api/query-runs',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
     const {id,input}=z.object({id:z.string().uuid(),input:querySchema}).strict().parse(req.body);
     if(!agent.configured)throw new AgentNotConfiguredError();
-    return reply.code(202).send(queryRuns.start(id,input,observe=>runQuery(input,observe)));
+    return reply.code(202).send(queryRuns.start(id,input,(observe,signal)=>runQuery(input,observe,signal)));
   });
   app.get('/api/usage',async req=>{
     const day=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>Number.isFinite(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s);
-    const {from,to,timeZone,groupBy,...filters}=z.object({from:day,to:day,timeZone:scopeFields.timeZone.default('UTC'),groupBy:z.enum(['agent','module','skill','model']).default('agent'),agentId:z.string().min(1).max(128).optional(),moduleId:z.string().min(1).max(128).optional(),skillId:z.string().min(1).max(128).optional(),provider:z.string().min(1).max(128).optional(),model:z.string().max(512).optional(),status:z.enum(['running','completed','failed']).optional()}).strict().refine(v=>v.from<=v.to&&Date.parse(v.to)-Date.parse(v.from)<=366*86400000).parse(req.query);
-    return usageLedger.summary(from,to,timeZone,filters,groupBy);
+    const {from,to,timeZone,groupBy,page,pageSize,...filters}=z.object({from:day,to:day,timeZone:scopeFields.timeZone.default('UTC'),page:z.coerce.number().int().min(1).max(1000000).default(1),pageSize:z.coerce.number().int().min(1).max(100).default(20),groupBy:z.enum(['agent','module','skill','model','provider']).default('agent'),agentId:z.string().min(1).max(128).optional(),moduleId:z.string().min(1).max(128).optional(),skillId:z.string().min(1).max(128).optional(),provider:z.string().min(1).max(128).optional(),model:z.string().max(512).optional(),status:z.enum(['running','completed','failed']).optional()}).strict().refine(v=>v.from<=v.to&&Date.parse(v.to)-Date.parse(v.from)<=366*86400000).parse(req.query);
+    return usageLedger.summary(from,to,timeZone,filters,groupBy,page,pageSize);
   });
   app.put('/api/usage/prices',async req=>usageLedger.setPrice(req.body));
   async function insight(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress']) {
@@ -397,6 +402,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{return insight(insightRequestSchema.parse(req.body??{}));});
   app.get('/api/insights',async()=>({items:store.insights()}));
   app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=store.retryIndex();diagnostics.record('queue.snapshot',{pending:result.queued});return result;});
+  registerArchiveExport(app,store,files,archivedFiles,config.maxExportBytes);
   app.get('/api/export',async(_req,reply)=>reply.header('Content-Disposition',`attachment; filename="mote-${new Date().toISOString().slice(0,10)}.json"`).send(store.exportArchive(config.maxExportBytes)));
   app.post('/api/import',{bodyLimit:config.maxExportBytes},async req=>diagnostics.measure('ingest','import',()=>store.importArchive(req.body),r=>({count:r.imported})));
   function diagnosticSnapshot() {

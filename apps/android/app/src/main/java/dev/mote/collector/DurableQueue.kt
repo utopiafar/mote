@@ -419,6 +419,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         display(read(file))
     }
     private fun display(event: JSONObject): JSONObject {
+        val hash = event.optString("_blob")
+        event.put("sizeBytes", event.optString("ocrText").toByteArray().size.toLong() + if (hash.matches(Regex("[a-f0-9]{64}"))) File(dir, "$hash.blob").length() else 0L)
         event.put("ocrSynced", event.optBoolean("_ocrUploaded")).put("retainedUntil", event.optLong("_retainedUntil"))
         event.put("hasImage", event.optString("_blob").isNotBlank()).put("uploaded", event.optBoolean("_uploaded"))
         event.optJSONObject("_ocrResult")?.let { result ->
@@ -488,6 +490,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                 java.time.Instant.parse(it.getString("capturedAt")) == at && it.getString("id") < id!! }.take(limit + 1)
             val items = page.take(limit).map { row -> JSONObject().apply {
                 for (key in listOf("id", "capturedAt", "source", "appId", "appName", "hasImage")) put(key, row.get(key))
+                val hash = row.optString("blob")
+                if (hash.matches(Regex("[a-f0-9]{64}"))) put("sizeBytes", File(dir, "$hash.blob").length())
             } }
             JSONObject().put("items", org.json.JSONArray(items)).put("totalCount", rows.size)
                 .put("nextCursor", if (page.size > limit) Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject()

@@ -28,13 +28,14 @@ import { acknowledgeInstalledUpdate } from './update-install';
 import { QueueStorage, StorageCommitUncertainError } from './queue-storage';
 import { DurableQueue } from './queue';
 import { BackgroundJobs } from './background-jobs';
-import { LocalContentKeyStore, decryptLocalContent, emptyDecryptionProgress } from './local-content';
+import { LocalContentKeyStore } from './local-content';
 import { browseCaptures, captureDetail, captureImage, type BrowseRequest, type CaptureLocation } from './capture-browser';
 import { NsfwController } from './nsfw';
 import type { Config, ConfigUpdate, Status } from './contracts';
 
 const legacyDataDirectory = app.getPath('userData');
-const profile = resolveProfile(process.argv, process.env, legacyDataDirectory);
+const developmentBuild=Boolean((require('../package.json') as {moteDevelopment?:boolean}).moteDevelopment);
+const profile = resolveProfile(process.argv, developmentBuild?{...process.env,MOTE_PROFILE:process.env.MOTE_PROFILE??'dev'}:process.env, legacyDataDirectory);
 if (!profile.legacy) {
   mkdirSync(profile.dataDirectory, { recursive: true, mode: 0o700 });
   const sessionDirectory = join(profile.dataDirectory, 'session');
@@ -60,7 +61,7 @@ function refreshApplicationMenu() {
         { label: moteText("随手记"), accelerator: 'CmdOrCtrl+2', click: () => showClientPage('notes') },
         { label: moteText("来源"), accelerator: 'CmdOrCtrl+3', click: () => showClientPage('sources') },
       ] },
-      { label: moteText("显示"), submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }] },
+      { label: moteText("显示"), submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' }, ...(!app.isPackaged || developmentBuild ? [{role:'toggleDevTools' as const}] : [])] },
       { role: 'windowMenu', label: moteText("窗口") },
     ]));
 }
@@ -173,7 +174,7 @@ else {
     const store = new ConfigStore(dataDirectory, secrets, () => profileDefaults(profile, {}), () => profileDefaults(profile, process.env));
     settings = await store.load();
     const contentKeys = new LocalContentKeyStore(dataDirectory, secrets);
-    await contentKeys.initialize(settings.localContentEncryption);
+    await contentKeys.initialize(false);
     await store.save(settings); // Persist stable device identity before the first observation.
     void events.record('APP', 'STARTED');
     const noteDrafts = new NoteDraftStore(join(dataDirectory, 'notes')); await noteDrafts.initialize();
@@ -184,9 +185,7 @@ else {
     await storage.recover(queue.directory);
     storageStatus = () => ({ directory: queue.directory, defaultDirectory: storage.defaultDirectory, custom: queue.directory !== storage.defaultDirectory, cleanupPending: storage.cleanupPending, recoveryRequired });
     let pendingStorageDirectory: string | undefined;
-    let decryption = emptyDecryptionProgress();
-    let decryptionAbort: AbortController | undefined;
-    app.on('before-quit', () => decryptionAbort?.abort());
+
     pendingNoteStatus = () => ({ count: noteDrafts.hasPrepared() && !queue.contains(noteDrafts.get().id) ? 1 : 0, unbound: queue.binding.unbound() && (!localSources || localSources.nodeBinding.unbound()) && (!noteDrafts.hasPrepared() || noteDrafts.hasUnboundPrepared()), baseRecords: queue.stats().depth + (localSources?.pendingStats().pendingRecords ?? 0) });
     const helperPath = app.isPackaged ? join(process.resourcesPath, 'native', 'mote-helper') : join(__dirname, '..', 'native', 'bin', 'mote-helper');
     const bundlePath = app.isPackaged ? await realpath(resolve(process.resourcesPath, '../..')) : undefined;
@@ -214,7 +213,7 @@ else {
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
     window = new BrowserWindow({
       width: 1140, height: 840, minWidth: 820, minHeight: 620, title: `Mote [${profileLabel}]`, backgroundColor: '#f7f8f5',
-      webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: !app.isPackaged },
+      webPreferences: { preload: join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: !app.isPackaged || developmentBuild },
     });
     refreshApplicationMenu();
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -429,7 +428,7 @@ else {
       await writeFile(selected.filePath, JSON.stringify(buildSupportBundle(profile, app.getVersion(), clientStatus(), await events.read()), null, 2), { mode: 0o600 });
       return { canceled: false };
     });
-    handle('mote:central', () => showCentral());
+    handle('mote:central', async page => { await showCentral();if(['ask','notes','vault'].includes(String(page))&&centralWindow)await centralWindow.loadURL(settings.serverUrl+'/#'+page); });
     handle('mote:note-draft', () => noteDrafts.get());
     handle('mote:note-draft-update', input => trackNote(noteDrafts.update(input as NoteDraft)));
     handle('mote:note', input => trackNote(serialize(async () => {
@@ -437,24 +436,6 @@ else {
       updateUi(clientStatus()); if (!quitting) void collector.upload(); return result;
     })));
     handle('mote:storage-restart', () => { app.relaunch(); app.quit(); });
-    handle('mote:content-decryption-status', () => ({ ...decryption }));
-    handle('mote:content-decryption-cancel', () => { decryptionAbort?.abort(); });
-    handle('mote:content-decrypt', () => {
-      if (decryptionAbort) throw new Error(moteText("本机内容解密正在进行"));
-      decryptionAbort = new AbortController();
-      const abort = decryptionAbort;
-      decryption = { ...emptyDecryptionProgress(), state: 'running', message: moteText("正在准备解密；采集与同步会暂时暂停") };
-      return serialize(() => pausedSettings(async () => {
-        await applySettings({ ...settings, localContentEncryption: false });
-        return queue.withContentMaintenance(() => noteDrafts.withContentMaintenance(() => decryptLocalContent([
-          join(queue.directory, 'events'), join(queue.directory, 'blobs'), join(queue.directory, 'sync-checkpoint.json'),
-          join(dataDirectory, 'notes'), join(dataDirectory, 'local-sources'),
-        ], abort.signal, value => { decryption = value; })));
-      })).catch(error => {
-        decryption = { ...decryption, state: 'failed', message: error instanceof Error ? error.message : moteText("解密未完成，原文件保留") };
-        throw error;
-      }).finally(() => { decryptionAbort = undefined; updateUi(clientStatus()); });
-    });
     handle('mote:storage-choose', () => serialize(async () => {
       const selected = await dialog.showOpenDialog(window!, { title: moteText("选择本机截图保存位置"), buttonLabel: moteText("选择位置"), properties: ['openDirectory', 'createDirectory'] });
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
@@ -494,6 +475,10 @@ else {
     }));
     handle('mote:permissions', async () => { if (process.platform === 'darwin') { await runHelper(helperPath, 'screen-permission').catch(() => undefined); await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); } });
     handle('mote:data-folder', async () => { await shell.openPath(dataDirectory); });
+    handle('mote:export-metadata', async () => {
+      const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});
+      if(!selected.canceled&&selected.filePath)await writeFile(selected.filePath,JSON.stringify(queue.exportMetadata()),{mode:0o600});
+    });
     handle('mote:export-queue', async () => {
       const selected = await dialog.showSaveDialog(window!, { title: moteText("导出已脱敏待上传队列（包含个人资料）"), defaultPath: `mote-queue-${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'Mote queue archive', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };

@@ -58,9 +58,9 @@ export const captureSchema = z.object({
   if (v.metadata?.notification && v.source !== 'notification' || v.metadata?.deviceEvent && v.source !== 'device_event')
     ctx.addIssue({code:'custom',message:'System event payload must match its source'});
   if (v.source === 'notification' || v.source === 'device_event') {
-    if (v.durationMs !== 0 || v.platform !== 'android' || v.imageBase64 !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.metadata?.media || v.metadata?.capture)
+    if (v.durationMs !== 0 || !['android','macos'].includes(v.platform) || v.imageBase64 !== undefined || v.ocrText || v.windowTitle || v.mood !== undefined || v.provenance || v.metadata?.media || v.metadata?.capture)
       ctx.addIssue({code:'custom',message:'System observations require zero duration and no unrelated content'});
-    if (!v.metadata?.observation || v.metadata.collector?.method !== 'notification_listener')
+    if (!v.metadata?.observation || !(v.metadata.collector?.method === 'notification_listener' || v.platform === 'macos' && v.metadata.collector?.method === 'accessibility'))
       ctx.addIssue({code:'custom',message:'System observations require observer provenance'});
     if (v.source === 'notification') {
       const n=v.metadata?.notification;
@@ -101,7 +101,7 @@ export type CaptureRecord = Omit<CaptureInput,'imageBase64'|'imageMime'> & {
   indexingStatus: 'text_ready'|'pending'|'indexed'|'failed'; summary?: string;
 };
 export type CapturePreview = Pick<CaptureRecord,'id'|'deviceId'|'deviceName'|'platform'|'capturedAt'|'source'|'appId'|'appName'|'windowTitle'|'durationMs'> & {
-  hasImage: boolean; ocr: OcrState; textPreview: string;
+  hasImage: boolean; ocr: OcrState; textPreview: string; sizeBytes?: number;
   media?: MediaMetadata;
 };
 export const heartbeatSchema = z.object({

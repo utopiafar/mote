@@ -34,6 +34,14 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Generated bitmaps only. Never requests screen capture, personal files, or a vision model. */
 @RunWith(AndroidJUnit4::class)
 class CaptureRecordsInstrumentedTest {
+    private var previousLanguage = "system"
+    @org.junit.Before fun fixtureLanguage() {
+        previousLanguage = MoteI18n.preference()
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, "zh-CN")
+    }
+    @org.junit.After fun restoreLanguage() {
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, previousLanguage)
+    }
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private fun shell(command: String) = instrumentation.uiAutomation.executeShellCommand(command).use {
         android.os.ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().use { reader -> reader.readText() }

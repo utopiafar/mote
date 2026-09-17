@@ -21,6 +21,14 @@ import java.io.File
 /** Navigation-only fixtures. These tests never enable capture or call a model. */
 @RunWith(AndroidJUnit4::class)
 class NavigationInstrumentedTest {
+    private var previousLanguage = "system"
+    @org.junit.Before fun fixtureLanguage() {
+        previousLanguage = MoteI18n.preference()
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, "zh-CN")
+    }
+    @org.junit.After fun restoreLanguage() {
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, previousLanguage)
+    }
     private fun views(root: View): List<View> = buildList {
         add(root)
         if (root is ViewGroup) for (index in 0 until root.childCount) addAll(views(root.getChildAt(index)))
@@ -31,6 +39,20 @@ class NavigationInstrumentedTest {
         .filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == label }.performClick()
     private fun menu(activity: MainActivity, label: String) = views(activity.window.decorView)
         .single { it.isShown && it.tag == "menu:$label" }.performClick()
+
+    @Test fun tappingOutsideTheNoteDismissesEditorFocus() {
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            scenario.onActivity { activity ->
+                tab(activity, "随手记")
+                val field = editor(activity, "记下此刻的想法…")
+                field.requestFocus(); assertTrue(field.hasFocus())
+                val down = SystemClock.uptimeMillis()
+                val event = MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, 1f, 1f, 0)
+                try { activity.dispatchTouchEvent(event) } finally { event.recycle() }
+                assertFalse(field.hasFocus())
+            }
+        }
+    }
 
     @Test fun everyBottomTabSwitchesOnItsFirstTouch() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()

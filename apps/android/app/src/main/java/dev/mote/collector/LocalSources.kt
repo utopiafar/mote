@@ -15,7 +15,7 @@ data class LocalSource(
     val retention: String = "snapshot", val enabled: Boolean = true,
     val calendarId: Long? = null, val uri: String? = null, val tree: Boolean = false,
     val extensions: String = "md,txt,json,csv,ics", val excluded: String = "",
-    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all"
+    val daysBefore: Int = 30, val daysAfter: Int = 90, val intervalMinutes: Int = 60, val initialSync: String = "all", val maxFileMiB: Int = 512
 ) {
     fun validate() {
         require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}")) && name.isNotBlank() && name.length <= 200) { MoteI18n.text("检查来源名称") }
@@ -23,18 +23,19 @@ data class LocalSource(
         require(daysBefore in 0..365 && daysAfter in 1..365 && intervalMinutes in 15..1440) { MoteI18n.text("窗口为过去 0–365 天、未来 1–365 天，间隔 15–1440 分钟") }
         if (kind == "local-calendar") require(calendarId != null && calendarId >= 0)
         else require(uri != null && uri.startsWith("content://") && !uri.contains('?') && !uri.contains('#')) { MoteI18n.text("需要系统选择器提供的持久文件权限") }
+        require(maxFileMiB in 1..512)
         SourceRules.extensions(extensions); SourceRules.patterns(excluded)
     }
     fun json() = JSONObject().put("id", id).put("name", name).put("kind", kind).put("retention", retention).put("enabled", enabled)
         .put("calendarId", calendarId).put("uri", uri).put("tree", tree).put("extensions", extensions).put("excluded", excluded)
-        .put("initialSync", initialSync).put("daysBefore", daysBefore).put("daysAfter", daysAfter).put("intervalMinutes", intervalMinutes)
+        .put("maxFileMiB", maxFileMiB).put("initialSync", initialSync).put("daysBefore", daysBefore).put("daysAfter", daysAfter).put("intervalMinutes", intervalMinutes)
     fun registration(deviceId: String) = JSONObject().put("id", id).put("name", name).put("kind", kind).put("deviceId", deviceId)
         .put("platform", "android").put("initialSync", initialSync).put("retention", retention).put("enabled", true)
     companion object {
         fun from(v: JSONObject) = LocalSource(v.getString("id"), v.getString("name"), v.getString("kind"), v.getString("retention"), v.getBoolean("enabled"),
             if (v.has("calendarId")) v.getLong("calendarId") else null, if (v.has("uri")) v.getString("uri") else null,
             v.optBoolean("tree"), v.optString("extensions", "md,txt,json,csv,ics"), v.optString("excluded", ""),
-            v.optInt("daysBefore", 30), v.optInt("daysAfter", 90), v.optInt("intervalMinutes", 60), v.optString("initialSync", "all")).also { it.validate() }
+            v.optInt("daysBefore", 30), v.optInt("daysAfter", 90), v.optInt("intervalMinutes", 60), v.optString("initialSync", "all"), v.optInt("maxFileMiB", 512)).also { it.validate() }
     }
 }
 

@@ -4,12 +4,14 @@ import type {AgentProgress} from '@mote/agent';
 import {Store,StoreError} from './store.js';
 import {safeError} from './diagnostics.js';
 export interface QueryRun {
-  id:string;status:'running'|'completed'|'failed';createdAt:string;updatedAt:string;
+  id:string;status:'running'|'completed'|'failed'|'cancelled';createdAt:string;updatedAt:string;
   evidenceRevision?:number;conversationId?:string;turnId?:string;events:(AgentProgress&{at:string})[];
   error?:{code:string;message:string};
 }
 /** Only identifiers and projected execution metadata; answers resolve from the conversation vault. */
 export class QueryRuns {
+  private controllers=new Map<string,AbortController>();
+  cancel(id:string){const run=this.get(id);if(run.status!=='running')return run;this.controllers.get(id)?.abort();return this.get(id);}
   private pending=new Set<Promise<void>>();
   constructor(private store:Store){
     store.db.exec('CREATE TABLE IF NOT EXISTS query_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
@@ -18,7 +20,7 @@ export class QueryRuns {
   private save(run:QueryRun){this.store.db.prepare('UPDATE query_runs SET json=? WHERE id=?').run(JSON.stringify(run),run.id);}
   list():QueryRun[]{return (this.store.db.prepare("SELECT json FROM query_runs ORDER BY json_extract(json,'$.createdAt') DESC LIMIT 100").all() as {json:string}[]).map(r=>JSON.parse(r.json));}
   get(id:string):QueryRun{const row=this.store.db.prepare('SELECT json FROM query_runs WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Query run not found',404);return JSON.parse(row.json);}
-  start(id:string,input:unknown,work:(observe:(event:AgentProgress)=>void)=>Promise<{conversationId:string;turnId:string}>){
+  start(id:string,input:unknown,work:(observe:(event:AgentProgress)=>void,signal:AbortSignal)=>Promise<{conversationId:string;turnId:string}>){
     const hash=createHash('sha256').update(JSON.stringify(input)).digest('hex');
     const existing=this.store.db.prepare('SELECT request_hash FROM query_runs WHERE id=?').get(id);
     if(existing){if(existing.request_hash!==hash)throw new StoreError('Run ID belongs to a different request',409);return this.get(id);}
@@ -26,6 +28,8 @@ export class QueryRuns {
     const at=new Date().toISOString();const run:QueryRun={evidenceRevision:this.store.deletionRevision(),id,status:'running',createdAt:at,updatedAt:at,events:[],...((input as {conversationId?:string}).conversationId?{conversationId:(input as {conversationId:string}).conversationId}:{})};
     this.store.reserveMetadata(32768);
     this.store.db.prepare('INSERT INTO query_runs VALUES(?,?,?)').run(id,hash,JSON.stringify(run));
+    const controller=new AbortController();this.controllers.set(id,controller);
+    controller.signal.addEventListener('abort',()=>{run.status='cancelled';run.updatedAt=new Date().toISOString();this.save(run);},{once:true});
     const initial=structuredClone(run);
     const observe=(e:AgentProgress)=>{
       if(run.evidenceRevision!==this.store.deletionRevision())return;
@@ -33,7 +37,7 @@ export class QueryRuns {
       const next:AgentProgress&{at:string}={stage:e.stage,at:new Date().toISOString(),...(typeof e.message==='string'?{message:e.message.slice(0,600)}:{}),...(e.tool?{tool:e.tool.slice(0,80)}:{}),...(e.phase?{phase:e.phase}:{}),...(Number.isSafeInteger(e.step)?{step:e.step}:{}),...(Number.isSafeInteger(e.count)?{count:e.count}:{})};
       run.events.push(next);if(run.events.length>120)run.events.shift();run.updatedAt=next.at;this.save(run);
     };
-    const task=Promise.resolve().then(()=>work(observe)).then(result=>{Object.assign(run,{conversationId:result.conversationId,turnId:result.turnId,status:'completed'});}).catch(e=>{const safe=safeError(e);run.status='failed';run.error={code:safe.category,message:safe.message};}).finally(()=>{if(run.evidenceRevision!==this.store.deletionRevision())run.events=run.events.map(({message:_,...e})=>e);run.updatedAt=new Date().toISOString();this.save(run);});
+    const task=Promise.resolve().then(()=>work(observe,controller.signal)).then(result=>{if(controller.signal.aborted)return;Object.assign(run,{conversationId:result.conversationId,turnId:result.turnId,status:'completed'});}).catch(e=>{if(controller.signal.aborted)return;const safe=safeError(e);run.status='failed';run.error={code:safe.category,message:safe.message};}).finally(()=>{this.controllers.delete(id);if(run.evidenceRevision!==this.store.deletionRevision())run.events=run.events.map(({message:_,...e})=>e);run.updatedAt=new Date().toISOString();this.save(run);});
     this.pending.add(task);void task.finally(()=>this.pending.delete(task)).catch(()=>{});return initial;
   }
   async close(){await Promise.allSettled([...this.pending]);}

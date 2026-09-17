@@ -102,11 +102,6 @@ class MainActivity : MoteActivity() {
     private lateinit var ocrChargingOnly: CheckBox
     private lateinit var diagnosticEnabled: CheckBox
     private lateinit var imageDedupeDiagnosticsEnabled: CheckBox
-    private lateinit var contentEncryptionEnabled: CheckBox
-    private lateinit var decryptStatus: TextView
-    private lateinit var decryptProgress: ProgressBar
-    private lateinit var decryptAction: Button
-    private lateinit var decryptCancel: Button
     private lateinit var diagnosticInterval: EditText
     private lateinit var nsfwEnabled: CheckBox
     private lateinit var nsfwPolicy: EditText
@@ -135,9 +130,6 @@ class MainActivity : MoteActivity() {
         val totals: String, val technical: String, val connection: String, val model: String, val media: String, val config: CollectorConfig?)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 2000) }
-    }
-    private val decryptPoll = object : Runnable {
-        override fun run() { refreshContentDecryption(); handler.postDelayed(this, 500) }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -210,6 +202,8 @@ class MainActivity : MoteActivity() {
 
     private fun buildOverview() {
         page(Page.OVERVIEW, MoteI18n.text("让经历留有线索"))
+        menu(MoteI18n.text("问一问"), MoteI18n.text("对话在中央继续，可随时返回查看或停止"), "note") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "ask")) }
+        menu(MoteI18n.text("中央导出"), MoteI18n.text("导出中央元数据与资料"), "folder") { startActivity(Intent(this, BackupActivity::class.java)) }
         card(MoteUi.tint) {
             text(MoteI18n.text("此刻的 Mote"), 12, MoteUi.accent)
             captureTitle = text(MoteI18n.text("采集已暂停"), 26)
@@ -236,7 +230,7 @@ class MainActivity : MoteActivity() {
         menu(if (MoteI18n.language() == "en") "Language" else "界面语言", "中文 / English", "settings") {
             val choices = arrayOf(if (MoteI18n.language() == "en") "System default" else "跟随系统", "中文", "English")
             val values = listOf("system", "zh-CN", "en")
-            AlertDialog.Builder(this).setTitle(if (MoteI18n.language() == "en") "Language" else "界面语言")
+            MoteDialogBuilder(this).setTitle(if (MoteI18n.language() == "en") "Language" else "界面语言")
                 .setSingleChoiceItems(choices, values.indexOf(MoteI18n.preference())) { dialog, index ->
                     MoteI18n.select(this, values[index]); dialog.dismiss(); recreate()
                 }.setNegativeButton(android.R.string.cancel, null).show()
@@ -400,12 +394,13 @@ class MainActivity : MoteActivity() {
 
     private fun buildNotes() {
         page(Page.NOTES, MoteI18n.text("为此刻，留下一句话"))
+        menu(MoteI18n.text("图片与语音附件"), MoteI18n.text("在中央随手记中添加附件"), "note") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "notes")) }
         val app = applicationContext
         val io = QuickNotes.io
         val task = UiTask(this, io, ownsExecutor = false)
         val note = field(MoteI18n.text("正在想什么"), "", MoteI18n.text("记下此刻的想法…"), multiline = true)
         note.minLines = 7; note.gravity = Gravity.TOP
-        val mood = field(MoteI18n.text("此刻心情 · 可选"), "", "")
+        val mood = EditText(this) // Read compatibility for old drafts; no mood field in the UI.
         note.filters = arrayOf(android.text.InputFilter.LengthFilter(100000)); mood.filters = arrayOf(android.text.InputFilter.LengthFilter(80))
         val progress = text(MoteI18n.text("正在读取草稿…"), 13, MoteUi.muted)
         var changingDraft = false
@@ -459,7 +454,7 @@ class MainActivity : MoteActivity() {
             }
         }
         button(MoteI18n.text("新建一条 · 清除草稿")) {
-            if (!task.busy) AlertDialog.Builder(this).setTitle(MoteI18n.text("清除当前草稿？")).setMessage(MoteI18n.text("此操作仅清除正在编辑的本机草稿。已保存的随手记不受影响。"))
+            if (!task.busy) MoteDialogBuilder(this).setTitle(MoteI18n.text("清除当前草稿？")).setMessage(MoteI18n.text("此操作仅清除正在编辑的本机草稿。已保存的随手记不受影响。"))
                 .setNegativeButton(MoteI18n.text("继续编辑"), null).setPositiveButton(MoteI18n.text("清除并新建")) { _, _ ->
                     if (!task.busy) {
                         editable(false)
@@ -564,22 +559,6 @@ class MainActivity : MoteActivity() {
     private fun buildDeveloper(config: CollectorConfig) {
         page(Page.DEVELOPER, MoteI18n.text("用于排查问题和调整本机高级行为"))
         menu(MoteI18n.text("诊断与支持"), MoteI18n.text("运行状态、数值采样与安全支持包"), "chart") { showPage(Page.DIAGNOSTICS) }
-        section(MoteI18n.text("本地内容存储"))
-        contentEncryptionEnabled = check(MoteI18n.text("加密保存本地内容（默认关闭）"), config.contentEncryptionEnabled)
-        text(MoteI18n.text("保存后应用于新写入的图片、记录、索引、草稿和来源资料。已有加密文件仍可读取；关闭开关后不会自动改写全部旧文件。连接令牌始终使用系统安全存储。"), 13, MoteUi.muted)
-        decryptStatus = text(MoteI18n.text("关闭内容加密并保存后，可一次性解密已有本地数据。"), 13, MoteUi.muted)
-        decryptProgress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { visibility = View.GONE }
-        content.addView(decryptProgress)
-        decryptAction = button(MoteI18n.text("批量解密已有本地数据")) {
-            if (contentEncryptionEnabled.isChecked || loadedConfig.contentEncryptionEnabled) toast(MoteI18n.text("请先关闭本地内容加密并保存设置"))
-            else {
-                LocalContentDecryptor.start(applicationContext)
-                refreshContentDecryption()
-            }
-        }
-        decryptCancel = button(MoteI18n.text("取消批量解密")) { LocalContentDecryptor.cancel(); refreshContentDecryption() }
-        text(MoteI18n.text("在后台逐个转换图片、记录、索引和来源文件，可继续浏览与采集。取消会保留已完成结果，未完成文件仍可正常读取；再次运行可继续处理。"), 13, MoteUi.muted)
-        refreshContentDecryption()
         menu(MoteI18n.text("图片压缩预览"), MoteI18n.text("质量、文件大小、缩放比例与放大对比"), "chart") {
             @Suppress("DEPRECATION") startActivityForResult(Intent(this, CompressionPreviewActivity::class.java), 105)
         }
@@ -608,24 +587,12 @@ class MainActivity : MoteActivity() {
         text("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT} · ${Build.MANUFACTURER} ${Build.MODEL}", 12, MoteUi.muted)
     }
 
-    private fun refreshContentDecryption() {
-        if (!::decryptStatus.isInitialized) return
-        val snapshot = LocalContentDecryptor.snapshot
-        decryptStatus.text = snapshot.message
-        decryptProgress.visibility = if (snapshot.running) View.VISIBLE else View.GONE
-        decryptProgress.isIndeterminate = snapshot.total == 0
-        decryptProgress.max = maxOf(1, snapshot.total); decryptProgress.progress = snapshot.checked
-        decryptAction.isEnabled = !snapshot.running && !loadedConfig.contentEncryptionEnabled && !ConnectionGuard.reconfiguring()
-        decryptCancel.visibility = if (snapshot.running) View.VISIBLE else View.GONE
-        contentEncryptionEnabled.isEnabled = !snapshot.running
-    }
-
     private fun buildPermissions() {
         page(Page.PERMISSIONS, MoteI18n.text("按需授权，让记录稳定运行"))
         section(MoteI18n.text("当前状态"))
         permissionsSummary = text(MoteI18n.text("正在检查系统权限…"), 14, MoteUi.muted)
         accessibilityButton = button(MoteI18n.text("启用无障碍截图服务")) {
-            AlertDialog.Builder(this).setTitle(MoteI18n.text("屏幕采集权限说明"))
+            MoteDialogBuilder(this).setTitle(MoteI18n.text("屏幕采集权限说明"))
                 .setMessage(getString(R.string.accessibility_description) + MoteI18n.text("\n\n继续后请在系统设置中选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。"))
                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("打开系统设置")) { _, _ -> safeOpen(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
         }
@@ -698,7 +665,7 @@ class MainActivity : MoteActivity() {
             localReviewUrl = checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } })
         Page.DIAGNOSTICS -> current.copy(diagnosticsEnabled = diagnosticEnabled.isChecked, diagnosticsIntervalSeconds = number(diagnosticInterval, 15..3600))
         Page.DEVELOPER -> current.copy(debugHttp = http.isChecked, imageDedupeDiagnosticsEnabled = imageDedupeDiagnosticsEnabled.isChecked,
-            contentEncryptionEnabled = contentEncryptionEnabled.isChecked)
+            contentEncryptionEnabled = false)
         else -> current
     }
     private fun nsfwDraft(): NsfwConfig {
@@ -761,7 +728,7 @@ class MainActivity : MoteActivity() {
                 }
                 updateSaveBar()
                 result.onSuccess { needsBinding ->
-                    if (needsBinding) AlertDialog.Builder(this).setTitle(MoteI18n.text("将本机资料绑定到此节点？"))
+                    if (needsBinding) MoteDialogBuilder(this).setTitle(MoteI18n.text("将本机资料绑定到此节点？"))
                         .setMessage(MoteI18n.text("{0}\n\n本机已有尚未绑定的截图、笔记或来源资料。确认后会绑定到这个档案地址，并按你的同步策略发送。请核对这是你自己的节点。", c.server))
                         .setNegativeButton(MoteI18n.text("继续保存在本机"), null).setPositiveButton(MoteI18n.text("确认绑定并保存")) { _, _ -> applySettings(c, true, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after) }.show()
                     else applySettings(c, bindLocal, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after)
@@ -982,7 +949,7 @@ class MainActivity : MoteActivity() {
         return StatusSnapshot(title, action, state, syncText, totalsText, technicalText, connectionText, "${model.status()}\n${model.inferenceStatus()}", MediaCollection.statusLabel(this), c)
     }
     private fun mediaPermission() {
-        AlertDialog.Builder(this).setTitle(MoteI18n.text("媒体播放状态授权"))
+        MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))
             .setMessage(MoteI18n.text("Android 通过通知使用权开放通知与媒体会话。开启通知采集后，Mote 会保存应用公开的标题、正文、持续状态以及更新和移除事件，并按同步策略上传。设备事件单独记录亮屏、熄屏和锁定状态。各来源需单独开启并点击开始；应用的“不记录”和“仅活动”规则仍适用。系统可能隐藏敏感通知；Mote 不回复通知、不控制播放。"))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("打开系统设置")) { _, _ ->
                 safeOpen(Intent(SystemSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -1013,9 +980,7 @@ class MainActivity : MoteActivity() {
         }
         localStateJob = observeLocalState { refreshStatus() }
         handler.post(refresh)
-        handler.post(decryptPoll)
     }
-    override fun onPause() { localStateJob?.cancel(); localStateJob = null; resumed = false; notePoll?.let(handler::removeCallbacks); RuntimeSettings.observeProjectionConsent(null); RuntimeSettings.observeConfiguration(null); handler.removeCallbacks(refresh); handler.removeCallbacks(decryptPoll); super.onPause() }
     override fun onStop() { if (!isChangingConfigurations) discardPageDraft(); super.onStop() }
     override fun onDestroy() { statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
@@ -1023,7 +988,7 @@ class MainActivity : MoteActivity() {
     private fun help(title: String, message: String) {
         text(title + "  ›", 13, MoteUi.accent).apply {
             minHeight = dp(44); gravity = Gravity.CENTER_VERTICAL; isFocusable = true
-            setOnClickListener { AlertDialog.Builder(this@MainActivity).setTitle(title).setMessage(message).setPositiveButton(MoteI18n.text("知道了"), null).show() }
+            setOnClickListener { MoteDialogBuilder(this@MainActivity).setTitle(title).setMessage(message).setPositiveButton(MoteI18n.text("知道了"), null).show() }
         }
     }
     private fun page(page: Page, subtitle: String) {
@@ -1245,7 +1210,7 @@ class MainActivity : MoteActivity() {
     private fun chooseAppMode(id: String, label: String, onChanged: () -> Unit = {}) {
         val current = runCatching { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()) }.getOrElse { toast(MoteI18n.text("请先修正高级规则")); return }
         val selectedIndex = if (id in PrivacyRules.exclusions(excludes.text.toString())) 2 else current.apps[id]?.ordinal ?: 3
-        AlertDialog.Builder(this).setTitle(label).setSingleChoiceItems(arrayOf(MoteI18n.text("截图与内容 · 保存过滤后的截图"), MoteI18n.text("仅应用和时长 · 不保存截图"), MoteI18n.text("不记录 · 跳过此应用"), MoteI18n.text("使用默认方式 · {0}", appModeLabel(current.defaultMode))), selectedIndex) { dialog, index ->
+        MoteDialogBuilder(this).setTitle(label).setSingleChoiceItems(arrayOf(MoteI18n.text("截图与内容 · 保存过滤后的截图"), MoteI18n.text("仅应用和时长 · 不保存截图"), MoteI18n.text("不记录 · 跳过此应用"), MoteI18n.text("使用默认方式 · {0}", appModeLabel(current.defaultMode))), selectedIndex) { dialog, index ->
             runCatching {
                 val rules = AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString())
                 val selected = rules.apps.toMutableMap()
@@ -1290,7 +1255,7 @@ class MainActivity : MoteActivity() {
             override fun onNothingSelected(parent: AdapterView<*>?) = Unit
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) { filter() }
         }
-        val dialog = AlertDialog.Builder(this).setTitle(MoteI18n.text("应用记录方式")).setView(body).setNegativeButton(MoteI18n.text("完成"), null).create()
+        val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("应用记录方式")).setView(body).setNegativeButton(MoteI18n.text("完成"), null).create()
         list.setOnItemClickListener { _, _, position, _ -> val app = shown[position]; chooseAppMode(app.first, app.second) { filter() } }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -1317,7 +1282,7 @@ class MainActivity : MoteActivity() {
                 })
             }
         }
-        val dialog = AlertDialog.Builder(this).setTitle(MoteI18n.text("调整遮罩区域")).setView(form).setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("应用"), null).create()
+        val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("调整遮罩区域")).setView(form).setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("应用"), null).create()
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             runCatching { maskEditor.updateSelected(Mask(sliders[0].progress / 100f, sliders[1].progress / 100f, sliders[2].progress / 100f, sliders[3].progress / 100f)); dialog.dismiss() }
                 .onFailure { toast(MoteI18n.text("右边界应大于左边界，下边界应大于上边界")) }
@@ -1333,12 +1298,12 @@ class MainActivity : MoteActivity() {
             val current = result.text.toString().toIntOrNull()
             val choices = (presets + listOfNotNull(current)).distinct().sorted()
             val labels = choices.map { it.toString() } + MoteI18n.text("自定义…")
-            AlertDialog.Builder(this).setTitle(label).setSingleChoiceItems(labels.toTypedArray(), choices.indexOf(current)) { dialog, index ->
+            MoteDialogBuilder(this).setTitle(label).setSingleChoiceItems(labels.toTypedArray(), choices.indexOf(current)) { dialog, index ->
                 dialog.dismiss()
                 if (index < choices.size) { result.setText(choices[index].toString()); result.error = null }
                 else {
                     val custom = MoteUi.field(EditText(this)).apply { inputType = InputType.TYPE_CLASS_NUMBER; setText(result.text); selectAll() }
-                    val customDialog = AlertDialog.Builder(this).setTitle(MoteI18n.text("自定义数值")).setMessage(MoteI18n.text("范围 {0}–{1}", range.first, range.last))
+                    val customDialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("自定义数值")).setMessage(MoteI18n.text("范围 {0}–{1}", range.first, range.last))
                         .setView(custom).setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("确定"), null).create()
                     customDialog.setOnShowListener { customDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         val number = custom.text.toString().toIntOrNull()

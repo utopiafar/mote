@@ -134,7 +134,7 @@ export class CodexSession {
     // Attach a rejection handler before awaiting the start acknowledgement.
     void completed.catch(()=>{});
     const effort=this.options.reasoningEffort;
-    try{await this.request('turn/start',{threadId:this.threadId,input:[{type:'text',text:prompt,text_elements:[]}],...(outputSchema?{outputSchema}:{}),...(effort&&effort!=='auto'?{effort:effort==='off'?'none':effort==='max'?'xhigh':effort}:{})});return await completed;}
+    try{await this.request('turn/start',{threadId:this.threadId,input:[{type:'text',text:prompt,text_elements:[]}],...(outputSchema?{outputSchema}:{}),...(effort&&effort!=='auto'?{effort:effort==='off'?'none':effort}:{})});return await completed;}
     catch(error){this.turn=undefined;throw error;}
   }
   close():Promise<void>{return this.closed??=this.cleanup();}

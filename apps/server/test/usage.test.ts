@@ -42,7 +42,7 @@ test('attribution dimensions preserve totals, intersect filters, distinguish leg
     store.db.prepare('UPDATE model_usage SET created_at=?,json=? WHERE id=?').run(r.createdAt,JSON.stringify(r),r.id);
   }
   const all=ledger.summary('2026-09-16','2026-09-16','Asia/Shanghai');
-  assert.equal(all.itemsTotal,105);assert.equal(all.items.length,100);assert.equal(all.total.running,1);assert.equal(all.total.failed,21);assert.equal(all.total.completed,83);
+  assert.equal(all.itemsTotal,105);assert.equal(all.items.length,20);assert.equal(all.total.running,1);assert.equal(all.total.failed,21);assert.equal(all.total.completed,83);
   assert.equal(all.total.successRate,83/104);assert.equal(all.total.requests,208);assert.equal(all.total.unknownUsage,1);assert.equal(all.total.unpriced,1);
   assert.equal(all.total.averageDurationMs,5350);assert.equal(all.total.p95DurationMs,10000);assert.equal(all.total.costs.CNY,3);
   assert.ok(all.facets.skillId.some(s=>s.id==='__none__'));assert.ok(all.facets.skillId.some(s=>s.id==='__unknown__'));
@@ -59,4 +59,17 @@ test('attribution dimensions preserve totals, intersect filters, distinguish leg
   assert.equal(ledger.summary('2026-09-16','2026-09-16','UTC').total.runs,0);
   assert.equal(ledger.summary('2026-09-16','2026-09-16','Asia/Shanghai',{moduleId:'does-not-exist'}).total.successRate,null);
   assert.equal(ledger.summary('2026-09-16','2026-09-16','Asia/Shanghai',{skillId:'__unknown__'}).total.runs,21);
+});
+
+test('detail pages cover all receipts without changing aggregates; providers drill down to models',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-usage-pages-')),store=new Store(directory),ledger=new UsageLedger(store);
+  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  for(let i=0;i<45;i++)ledger.start(i%2?'provider-a':'provider-b','model-'+i%3,'query').finish('completed');
+  const day=new Date().toISOString().slice(0,10);
+  const pages=[1,2,3].map(page=>ledger.summary(day,day,'UTC',{},'provider',page,20));
+  assert.deepEqual(pages.map(p=>p.items.length),[20,20,5]);
+  assert.equal(new Set(pages.flatMap(p=>p.items.map(i=>i.id))).size,45);
+  for(const page of pages){assert.equal(page.total.runs,45);assert.equal(page.groups.length,2);}
+  const drill=ledger.summary(day,day,'UTC',pages[0].groups[0].filter,'model');
+  assert.equal(drill.total.runs,pages[0].groups[0].runs);assert.equal(drill.groups.length,3);
 });

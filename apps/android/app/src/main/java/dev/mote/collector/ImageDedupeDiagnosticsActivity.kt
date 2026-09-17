@@ -74,7 +74,7 @@ class ImageDedupeDiagnosticsActivity : MoteActivity() {
         val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(moteDp(16), moteDp(8), moteDp(16), moteDp(12)) }
         text(content, MoteI18n.text("正在读取图片对…"), 14f)
         val bitmaps = mutableListOf<Bitmap>()
-        val dialog = AlertDialog.Builder(this).setTitle(MoteI18n.text("去重图片对"))
+        val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("去重图片对"))
             .setView(ScrollView(this).apply { addView(content) })
             .setNegativeButton(MoteI18n.text("关闭"), null).setPositiveButton(MoteI18n.text("删除这组图片")) { _, _ -> mutate { imageDedupeDiagnostics().delete(id) } }.create()
         currentDialog = dialog

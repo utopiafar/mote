@@ -62,6 +62,7 @@ export function captureOcrState(record: {source: string; ocr?: OcrResult; ocrTex
 
 /** Explicit, bounded fields only: never an arbitrary bag of device identifiers or content. */
 export const recordMetadataSchema = z.object({
+  attachments: z.array(z.string().uuid()).max(10).optional(),
   version: z.literal(1),
   observedAt: timestamp,
   collector: z.object({

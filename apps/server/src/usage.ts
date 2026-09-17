@@ -29,7 +29,7 @@ export class UsageLedger {
       finish:(status:'completed'|'failed')=>{receipt.status=status;receipt.durationMs=Date.now()-started;this.save(receipt);return structuredClone(receipt);},
     };
   }
-  summary(from:string,to:string,timeZone:string,filters:UsageFilters={},groupBy:UsageGroupBy='agent'):UsageSummary {
+  summary(from:string,to:string,timeZone:string,filters:UsageFilters={},groupBy:UsageGroupBy='agent',page=1,pageSize=20):UsageSummary {
     const day=new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'});
     const scoped=(this.store.db.prepare('SELECT json FROM model_usage WHERE created_at>=? AND created_at<? ORDER BY created_at DESC,id DESC').all(new Date(Date.parse(from)-86400000).toISOString(),new Date(Date.parse(to)+172800000).toISOString()) as {json:string}[])
       .map(r=>JSON.parse(r.json) as UsageReceipt).filter(r=>{const d=day.format(new Date(r.createdAt));return d>=from&&d<=to;});
@@ -47,13 +47,13 @@ export class UsageLedger {
       const bucket=days.get(date)??[];bucket.push(row);days.set(date,bucket);
       const identity=usageIdentity(row);
       const field=groupBy==='agent'?'agentId':groupBy==='module'?'moduleId':'skillId';
-      const id=groupBy==='model'?JSON.stringify([row.provider,row.model]):identity[field];
-      const group=groups.get(id)??{label:groupBy==='model'?`${row.provider} · ${row.model||moteText("未知模型")}`:usageLabel(groupBy,id),filter:groupBy==='model'?{provider:row.provider,model:row.model}:{[field]:id},items:[]};
+      const id=groupBy==='provider'?row.provider:groupBy==='model'?JSON.stringify([row.provider,row.model]):identity[field];
+      const group=groups.get(id)??{label:groupBy==='provider'?row.provider:groupBy==='model'?`${row.provider} · ${row.model||moteText("未知模型")}`:usageLabel(groupBy,id),filter:groupBy==='provider'?{provider:row.provider}:groupBy==='model'?{provider:row.provider,model:row.model}:{[field]:id},items:[]};
       group.items.push(row);groups.set(id,group);
     }
     const grouped:UsageGroup[]=[...groups].map(([id,g])=>({id,label:g.label,filter:g.filter,...usageTotals(g.items)}));
     grouped.sort((a,b)=>b.totalTokens-a.totalTokens||b.runs-a.runs||a.id.localeCompare(b.id));
-    return {from,to,timeZone,groupBy,filters,total:usageTotals(rows),days:[...days].sort(([a],[b])=>b.localeCompare(a)).map(([date,items])=>({date,...usageTotals(items)})),groups:grouped,facets,items:rows.slice(0,100),itemsTotal:rows.length,prices:this.prices()};
+    return {from,to,timeZone,groupBy,filters,total:usageTotals(rows),days:[...days].sort(([a],[b])=>b.localeCompare(a)).map(([date,items])=>({date,...usageTotals(items)})),groups:grouped,facets,items:rows.slice((page-1)*pageSize,page*pageSize),itemsTotal:rows.length,page,pageSize,prices:this.prices()};
   }
 }
 

@@ -19,9 +19,13 @@ export async function createModelRegistry(profiles:ModelProfile[], reader:Contex
     async query(input){
       const id=input.modelProfileId??'default',agent=agents.get(id),profile=profiles.find(p=>p.id===id);
       if(!agent||!profile||!agent.configured)throw new AgentNotConfiguredError();
-      const {modelProfileId:_,...request}=input;
-      const result=await agent.query(request);
-      return {...result,modelSelection:{profileId:id,profileName:profile.name,provider:profile.settings.provider,model:profile.settings.model}};
+      const {modelProfileId:_,modelOverride,...request}=input;
+      const model=modelOverride??profile.settings.model;
+      const temporary=model!==profile.settings.model?await factory({...profile.settings,model},reader):undefined;
+      try {
+        const result=await (temporary??agent).query(request);
+        return {...result,modelSelection:{profileId:id,profileName:profile.name,provider:profile.settings.provider,model}};
+      } finally {await temporary?.close();}
     },
     async close(){const results=await Promise.allSettled([...agents.values()].map(agent=>agent.close()));if(results.some(r=>r.status==='rejected'))throw new Error('Model registry cleanup failed');},
   };

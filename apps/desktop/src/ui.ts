@@ -164,6 +164,7 @@ async function loadRecords(): Promise<void> {
       const title = document.createElement('strong'); title.textContent = item.appName || moteText("截图");
       const time = document.createElement('time'); time.dateTime = item.capturedAt; time.textContent = new Date(item.capturedAt).toLocaleTimeString(getLocale());
       const state = document.createElement('small'); state.textContent = item.syncError ? moteText("同步需处理 · {0}", ocrLabel(item)) : `${location === 'local' ? item.uploaded ? moteText("图片已同步 · ") : moteText("本机待同步 · ") : ''}${ocrLabel(item)}`;
+      if(item.sizeBytes!==undefined)state.textContent+=` · ${(item.sizeBytes/1024).toFixed(1)} KiB`;
       caption.append(title, time, state); card.append(image, caption); card.addEventListener('click', () => void openRecord(item, location, revision));
       byId('records-grid').append(card); if(item.hasImage) images.push({ element: image, item }); else image.alt=moteText("无图片 · 点击查看采样记录");
     }
@@ -185,6 +186,7 @@ byId('records-back').addEventListener('click', resetRecords);
 byId('records-grouping').addEventListener('change', resetRecords);
 byId('records-day').addEventListener('change', resetRecords);
 byId('records-location').addEventListener('change', resetRecords);
+byId('records-layout').addEventListener('change',()=>byId('records-grid').classList.toggle('record-list',readInput('records-layout')==='list'));
 byId('records-refresh').addEventListener('click', resetRecords);
 byId('records-previous').addEventListener('click', () => { if (recordsPage > 0) { recordsPage--; void loadRecords(); } });
 byId('records-next').addEventListener('click', () => { if (recordsNext) { recordsCursors[++recordsPage] = recordsNext; void loadRecords(); } });
@@ -192,6 +194,7 @@ byId('record-detail-close').addEventListener('click', () => { byId('record-detai
 function readInput(id: string): string { return byId<HTMLInputElement>(id).value; }
 function numberInput(id: string): number { return Number(readInput(id)); }
 function fillConfig(config: import('./contracts').PublicConfig): void {
+  byId<HTMLInputElement>('notification-collection').checked=Boolean(config.notificationCollectionEnabled);
   captureStorageDirectory = config.captureStorageDirectory || '';
   renderStorage();
   const values: Record<string, string | number> = {
@@ -206,7 +209,6 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   };
   for (const [id, value] of Object.entries(values)) byId<HTMLInputElement>(id).value = String(value);
   byId<HTMLInputElement>('metadata-enabled').checked = config.metadataEnabled;
-  byId<HTMLInputElement>('local-content-encryption').checked = config.localContentEncryption;
   byId('app-collection-rules').replaceChildren();
   for (const [id, mode] of Object.entries(config.appCollectionRules)) addAppRule(id, mode);
   byId<HTMLInputElement>('diagnostics-enabled').checked = config.diagnosticsEnabled;
@@ -352,7 +354,7 @@ byId('settings').addEventListener('submit', event => {
     let updated: import('./contracts').Status;
     try { updated = await desktopApi.configure({
       captureStorageDirectory,
-      localContentEncryption: byId<HTMLInputElement>('local-content-encryption').checked,
+      localContentEncryption: false, notificationCollectionEnabled: byId<HTMLInputElement>('notification-collection').checked,
       metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
       defaultCollection: readInput('default-collection') as import('./contracts').CollectionMode, appCollectionRules,
       diagnosticsEnabled: byId<HTMLInputElement>('diagnostics-enabled').checked, diagnosticIntervalSeconds: numberInput('diagnostic-interval'),
@@ -381,30 +383,8 @@ byId('stop').addEventListener('click', () => { wasRunningBeforeSave = false; voi
 byId('retry').addEventListener('click', () => void perform(async () => { render(await desktopApi.retry()); feedback(currentStatus.sync.message, currentStatus.sync.state !== 'error' && currentStatus.sync.state !== 'unconfigured'); }));
 byId('permissions').addEventListener('click', () => void perform(() => desktopApi.openPermissions()));
 byId('data-folder').addEventListener('click', () => void perform(() => desktopApi.openDataFolder()));
-function renderContentDecryption(value: import('./local-content').DecryptionProgress): void {
-  byId('content-decryption-status').textContent = value.message + (value.total ? ` · ${value.processed}/${value.total}` : '');
-  const progress = byId<HTMLProgressElement>('content-decryption-progress');
-  progress.max = Math.max(1, value.total); progress.value = value.processed;
-  byId<HTMLButtonElement>('content-decrypt').disabled = value.state === 'running';
-  byId<HTMLButtonElement>('content-decrypt-cancel').disabled = value.state !== 'running';
-}
-byId('content-decrypt').addEventListener('click', () => {
-  if (settingsDirty) { feedback(moteText("请先保存或还原设置修改，再执行批量解密")); return; }
-  byId<HTMLButtonElement>('content-decrypt').disabled = true;
-  byId<HTMLButtonElement>('content-decrypt-cancel').disabled = false;
-  byId('content-decryption-status').textContent = moteText("正在开始后台解密…");
-  void desktopApi.decryptLocalContent().then(async value => {
-    renderContentDecryption(value);
-    const latest = await desktopApi.status(); render(latest); if (!settingsDirty) fillConfig(latest.config);
-  }).catch(error => { byId('content-decryption-status').textContent = error instanceof Error ? error.message : moteText("解密未完成，原文件保留"); });
-});
-byId('content-decrypt-cancel').addEventListener('click', () => {
-  byId<HTMLButtonElement>('content-decrypt-cancel').disabled = true;
-  void desktopApi.cancelContentDecryption().catch(() => {});
-});
-setInterval(() => {
-  if (currentPage === 'developer') void desktopApi.contentDecryptionStatus().then(renderContentDecryption).catch(() => {});
-}, 500);
+byId('export-metadata').addEventListener('click',()=>void perform(()=>desktopApi.exportMetadata()));
+byId('export-central').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('vault')));
 byId('export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportQueue(); if (!result.canceled) feedback(moteText("队列备份已保存至 {0}", result.path), true); }));
 byId('import').addEventListener('click', () => void perform(async () => { const result = await desktopApi.importQueue(); if (!result.canceled) feedback(moteText("已导入 {0} 条待上传记录，重复记录自动跳过。", result.imported), true); }));
 byId('model-download').addEventListener('click', () => void perform(async () => { render(await desktopApi.downloadModel()); feedback(moteText("模型下载已开始，支持断点续传；截图不会发送给下载源。"), true); }));
@@ -414,6 +394,8 @@ byId('model-reload').addEventListener('click', () => void perform(async () => { 
 desktopApi.onStatus(render);
 void desktopApi.status().then(render).catch(() => feedback(moteText("无法连接采集器进程，请重新打开 Mote。")));
 
+byId('note-attachments').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('notes')));
+byId('ask-central').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('ask')));
 byId('central').addEventListener('click', () => {
   if (!currentStatus?.config.tokenConfigured) { showPage('connection'); feedback(moteText("先连接你的中央节点，即可打开中央仓库。")); return; }
   if (currentStatus.config.credentialScope === 'collector') {
@@ -424,27 +406,27 @@ byId('central').addEventListener('click', () => {
 let draft: import('./note-draft').NoteDraft | undefined;
 let noteSaving = false;
 let noteComposing = false;
-const noteFields = ['note-text', 'note-mood', 'save-note'];
+const noteFields = ['note-text', 'save-note'];
 function lockNote(locked: boolean): void { for (const id of noteFields) (byId(id) as HTMLInputElement).disabled = locked; }
 lockNote(true);
 function renderDraft(value: import('./note-draft').NoteDraft): void {
-  draft = value; byId<HTMLTextAreaElement>('note-text').value = value.text; byId<HTMLInputElement>('note-mood').value = value.mood;
-  byId<HTMLTextAreaElement>('note-text').readOnly = Boolean(value.prepared); byId<HTMLInputElement>('note-mood').readOnly = Boolean(value.prepared);
+  draft = value; byId<HTMLTextAreaElement>('note-text').value = value.text;
+  byId<HTMLTextAreaElement>('note-text').readOnly = Boolean(value.prepared);
 }
 void desktopApi.noteDraft().then(value => { renderDraft(value); lockNote(false); if (value.prepared) byId('note-feedback').textContent = moteText("发现上次未完成的保存，点击保存可用原 ID 重试。"); }).catch(() => feedback(moteText("无法恢复随手记草稿，请重启应用。")));
-for (const id of ['note-text', 'note-mood']) {
+for (const id of ['note-text']) {
   byId(id).addEventListener('compositionstart', () => { noteComposing = true; });
   byId(id).addEventListener('compositionend', () => { noteComposing = false; });
 }
-for (const id of ['note-text', 'note-mood']) byId(id).addEventListener('input', () => {
+for (const id of ['note-text']) byId(id).addEventListener('input', () => {
   if (!draft || noteSaving) return;
-  draft = { ...draft, text: readInput('note-text'), mood: readInput('note-mood'), revision: draft.revision + 1 };
+  draft = { ...draft, text: readInput('note-text'), mood: draft?.mood??'', revision: draft.revision + 1 };
   const changed = draft;
   void desktopApi.updateNoteDraft(changed).then(() => { if (draft?.id === changed.id && draft.revision === changed.revision) byId('note-feedback').textContent = moteText("草稿已保存到本机。"); }).catch(() => { byId('note-feedback').textContent = moteText("草稿暂未保存，请保留正文并重试；如上次保存未完成，请重新打开窗口恢复原稿。"); });
 });
 byId('note-form').addEventListener('submit', event => {
   event.preventDefault(); if (!draft || noteSaving || noteComposing || busy) return;
-  const input = { ...draft, text: readInput('note-text'), mood: readInput('note-mood'), revision: draft.revision + 1 };
+  const input = { ...draft, text: readInput('note-text'), mood: draft?.mood??'', revision: draft.revision + 1 };
   noteSaving = true; lockNote(true);
   void perform(async () => {
     try {
@@ -607,7 +589,7 @@ byId('update-install').addEventListener('click', () => {
   void perform(async () => {
     lockNote(true); byId('local-sources').inert = true;
     try {
-      if (draft && !draft.prepared) { draft = await desktopApi.updateNoteDraft({ ...draft, text: readInput('note-text'), mood: readInput('note-mood'), revision: draft.revision + 1 }); }
+      if (draft && !draft.prepared) { draft = await desktopApi.updateNoteDraft({ ...draft, text: readInput('note-text'), mood: draft?.mood??'', revision: draft.revision + 1 }); }
       await desktopApi.installUpdate();
     } finally { lockNote(false); byId('local-sources').inert = false; }
   });

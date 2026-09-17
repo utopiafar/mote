@@ -8,8 +8,8 @@ export class ModelCatalogError extends StoreError {constructor(){super(moteText(
 const failure=()=>new ModelCatalogError();
 
 /** Read-only JSON-RPC: initializes the local server and calls model/list, never starts a thread. */
-export async function codexModels(launch:typeof spawn=spawn):Promise<{items:CatalogModel[]}> {
-  const child=launch('codex',['app-server'],{cwd:tmpdir(),stdio:['pipe','pipe','pipe']});
+export async function codexModels(launch:typeof spawn=spawn,options:{executable?:string;home?:string}={}):Promise<{items:CatalogModel[]}> {
+  const child=launch(options.executable??process.env.MOTE_CODEX_BIN??'codex',['app-server'],{cwd:tmpdir(),...(options.home?{env:{...process.env,CODEX_HOME:options.home}}:{}),stdio:['pipe','pipe','pipe']});
   const items:CatalogModel[]=[];
   let buffer='',bytes=0,nextId=1;
   return new Promise((resolve,reject)=>{

@@ -3769,3 +3769,6 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .lark-authorization a { max-width:100%; }
 .lark-step code { font-size:12px; overflow-wrap:anywhere; }
 @media(max-width:600px) { .lark-step { padding:18px; } .lark-range { grid-template-columns:1fr 1fr; } .lark-range label:last-child { grid-column:1 / -1; } }
+.usage-trend{height:180px;display:flex;gap:8px;align-items:stretch;overflow-x:auto;margin:24px 0 36px}.usage-trend button{position:relative;flex:1;min-width:32px;border:0;background:transparent;display:flex;align-items:flex-end;padding:0 0 24px;cursor:pointer}.usage-trend i{display:block;background:var(--accent,#38745d);width:100%;border-radius:5px 5px 0 0}.usage-trend small{position:absolute;bottom:0;white-space:nowrap;font-size:10px}
+
+.capture-list{grid-template-columns:1fr}.capture-list .capture-card{display:grid;grid-template-columns:140px 1fr;align-items:center}.capture-list .capture-image{max-height:110px}.capture-list img{height:110px;object-fit:contain}.capture-list .capture-card p{max-height:4em}

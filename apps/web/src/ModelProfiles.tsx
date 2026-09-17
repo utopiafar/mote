@@ -15,7 +15,7 @@ export function ModelProfiles({api,revision,onApplied}:{api:Api;revision:number;
   }
   const profiles=view?.profiles??(view?[{id:'default',name:moteText("默认配置"),settings:view.settings}]:[]);
   return <>
-    <section className="panel model-profiles" aria-label={moteText("模型配置管理")}><div className="section-heading"><div><h2>{moteText("模型配置与分工")}</h2><p>{moteText("可以保存多个服务商，也可以为同一服务商保存不同模型。每次请求的选择优先于功能默认值。")}</p></div></div>
+    <section className="panel model-profiles" aria-label={moteText("模型配置管理")}><div className="section-heading"><div><h2>{moteText("Provider 与默认模型")}</h2><p>{moteText("保存 Provider 的地址、协议与凭据，并设置默认模型。对话中可临时选择该 Provider 下的其他模型，无需重复保存凭据。")}</p></div></div>
       {error&&<p className="notice error" role="alert">{error}</p>}
       <div className="model-profile-toolbar"><label className="preference-field">{moteText("编辑模型配置")}<select aria-label={moteText("编辑模型配置")} value={selected} disabled={busy} onChange={e=>{setSelected(e.target.value);setConfirmDelete(false);}}>{profiles.map(p=><option key={p.id} value={p.id}>{p.name}{p.settings.model?' · '+p.settings.model:''}</option>)}</select></label>
         <button className="button subtle" disabled={busy||!view||profiles.length>=31} onClick={()=>{if(!view)return;const id=crypto.randomUUID();void mutate('/api/model-settings/profiles/'+id,'PUT',{revision:view.revision,name:moteText("新模型配置"),settings:{provider:'custom',protocol:'openai-completions',baseUrl:'',model:'',reasoningEffort:'auto',maxTokens:DEFAULT_MODEL_MAX_TOKENS,timeoutMs:120000,allowUnauthenticatedLocal:false,apiKey:null,headers:null,extraBody:null}},id);}}>{moteText("新增配置")}</button>

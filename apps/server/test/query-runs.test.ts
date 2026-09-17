@@ -78,3 +78,32 @@ test('execution entrypoints attribute insight, memory and isolated file analysis
     {agentId:'context-query',moduleId:'insights',skillId:'personal-insight'}, {agentId:'context-query',moduleId:'memories',skillId:'memory-extraction'},
   ]);
 });
+
+test('explicit cancellation reaches the executing agent and cannot archive a late answer',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-cancel-'));let observed:AbortSignal|undefined,release!:()=>void;
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{
+    observed=input.signal;await new Promise<void>(r=>{release=r;});return {answer:'Late generated answer',citations:[],trace:[],runId:randomUUID()};
+  }};
+  const {app}=await buildApp(config(dir),{agent});t.after(async()=>{release?.();await app.close();rmSync(dir,{recursive:true,force:true});});
+  const id=randomUUID();await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'fixture'}}});
+  await new Promise(r=>setImmediate(r));assert.ok(observed);
+  assert.equal((await app.inject({method:'POST',url:`/api/query-runs/${id}/cancel`})).statusCode,401);
+  const cancelled=await app.inject({method:'POST',url:`/api/query-runs/${id}/cancel`,headers});assert.equal(cancelled.json().status,'cancelled');assert.equal(observed.aborted,true);
+  release();await new Promise(r=>setTimeout(r,30));
+  assert.equal((await app.inject({url:`/api/query-runs/${id}`,headers})).json().status,'cancelled');
+  assert.equal((await app.inject({url:'/api/conversations',headers})).json().items.length,0);
+});
+
+test('export bundles require owner access, include originals and never include model credentials',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-export-bundle-'));const {app,store}=await buildApp(config(dir));
+  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+  const id=randomUUID();await app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'fixture',deviceName:'fixture',platform:'import',capturedAt:new Date().toISOString(),text:'Generated note export'}});
+  assert.equal((await app.inject({url:'/api/export-bundle?mode=data'})).statusCode,401);
+  const response=await app.inject({url:'/api/export-bundle?mode=metadata',headers});assert.equal(response.statusCode,200,response.body);
+  const {gunzipSync}=await import('node:zlib');const tar=gunzipSync(response.rawPayload).toString();assert.ok(tar.includes('Generated note export'));assert.ok(!tar.includes('synthetic-key'));assert.ok(!tar.includes(token));
+  const {ArchivedFileStore}=await import('../src/archived-files.js');const originals=new ArchivedFileStore(store);
+  originals.put({name:'generated.txt',bytes:Buffer.from('Synthetic original bytes')});
+  const data=await app.inject({url:'/api/export-bundle?mode=data',headers});assert.equal(data.statusCode,200);
+  assert.ok(gunzipSync(data.rawPayload).toString().includes('Synthetic original bytes'));
+  const meta=await app.inject({url:'/api/export-bundle?mode=metadata',headers});assert.ok(!gunzipSync(meta.rawPayload).toString().includes('Synthetic original bytes'));
+});

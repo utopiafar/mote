@@ -12,7 +12,7 @@ export interface BrowseRequest { location: CaptureLocation; day: string; cursor?
 export interface BrowserCapture {
   id: string; capturedAt: string; appName: string; appId: string;
   ocr: { status: 'pending' | 'completed' | 'disabled' | 'failed' | 'unknown'; reason?: 'charging' };
-  textPreview: string; uploaded?: boolean; hasImage: boolean; syncError?: string;
+  textPreview: string; sizeBytes?: number; uploaded?: boolean; hasImage: boolean; syncError?: string;
 }
 export interface BrowserPage { items: BrowserCapture[]; totalCount: number; nextCursor?: string; sessions?: CaptureSession[]; sessionCount?: number }
 export interface BrowserDetail extends BrowserCapture { ocrText: string; deviceName?: string }
@@ -29,14 +29,14 @@ export function captureDayRange(day: string): { after: string; before: string } 
 }
 function location(value: unknown): asserts value is CaptureLocation { if (value !== 'local' && value !== 'central') throw new Error(moteText("记录来源无效")); }
 function validId(id: unknown): asserts id is string { if (typeof id !== 'string' || !UUID.test(id)) throw new Error(moteText("记录标识无效")); }
-function preview(event: Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string }, record?: QueueRecord): BrowserCapture {
+function preview(event: Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string; sizeBytes?: number }, record?: QueueRecord): BrowserCapture {
   validId(event.id);
   if (typeof event.capturedAt !== 'string' || !Number.isFinite(Date.parse(event.capturedAt))) throw new Error(moteText("中央记录时间无效"));
   const status = record?.ocrResult !== undefined ? 'completed' : record?.ocrRetryAt ? 'failed' : captureOcrState({ ...event, source: 'screen' }).status;
   const normalizedStatus = status === 'pending' || status === 'completed' || status === 'disabled' || status === 'failed' ? status : 'unknown';
   const ocr: BrowserCapture['ocr'] = { status: normalizedStatus, ...(event.ocr?.reason === 'charging' ? { reason: 'charging' as const } : {}) };
   const text = record?.ocrResult ?? event.ocrText ?? event.textPreview ?? '';
-  return { id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { uploaded: Boolean(record.uploaded), syncError: record.syncError } : {}) };
+  return { id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), sizeBytes:record?record.blobBytes+Buffer.byteLength(text):event.sizeBytes, hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { uploaded: Boolean(record.uploaded), syncError: record.syncError } : {}) };
 }
 async function request(config: Config, path: string): Promise<Response> {
   if (!config.token || !config.serverUrl) throw new Error(moteText("请先连接中央节点；本机记录仍可查看"));
@@ -97,7 +97,7 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
     return { items: page.records.map(r => preview(r.event, r)), totalCount: page.total, ...(offset + PAGE_SIZE < page.total ? { nextCursor: String(offset + PAGE_SIZE) } : {}) };
   }
   const params = new URLSearchParams({ ...range, deviceId: config.deviceId, source: 'screen', limit: String(PAGE_SIZE), ...(input.cursor ? { cursor: input.cursor } : {}) });
-  const response = JSON.parse(await readResponseText(await request(config, `/api/capture-browser?${params}`), 512 * 1024)) as { items?: (Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string })[]; totalCount?: number; nextCursor?: string | null };
+  const response = JSON.parse(await readResponseText(await request(config, `/api/capture-browser?${params}`), 512 * 1024)) as { items?: (Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string; sizeBytes?: number })[]; totalCount?: number; nextCursor?: string | null };
   if (!Array.isArray(response.items) || response.items.length > PAGE_SIZE || !Number.isSafeInteger(response.totalCount) || response.totalCount! < 0 || (response.nextCursor != null && (typeof response.nextCursor !== 'string' || response.nextCursor.length > 2048))) throw new Error(moteText("中央分页数据无效"));
   if (response.items.some(v => v.deviceId !== config.deviceId || v.source !== 'screen')) throw new Error(moteText("中央返回了其他设备的记录"));
   return { items: response.items.map(v => preview(v)), totalCount: response.totalCount!, nextCursor: response.nextCursor ?? undefined };

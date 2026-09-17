@@ -74,6 +74,8 @@ export interface AgentOptions {
 export interface QueryInput {
   /** Host-selected saved connection; never interpreted as prompt content. */
   modelProfileId?: string;
+  modelOverride?: string;
+  signal?: AbortSignal;
   /** Host-only observation, never serialized into model prompts or tool arguments. */
   onProgress?: (event: AgentProgress) => void;
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;

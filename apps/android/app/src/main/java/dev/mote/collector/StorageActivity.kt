@@ -70,7 +70,7 @@ class StorageActivity : MoteActivity() {
     }
     private fun confirm(choice: QueueStorageChoice) {
         if (working || ConnectionGuard.reconfiguring()) return
-        AlertDialog.Builder(this).setTitle(MoteI18n.text("迁移本机保存位置"))
+        MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移本机保存位置"))
             .setMessage(MoteI18n.text("迁移到{0}：\n{1}\n\n已有图片、待 OCR 结果和队列记录会一起迁移。验证成功后切换位置并清理旧副本。中央归档位置保持不变。", choice.title, choice.base.absolutePath))
             .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("迁移并应用")) { _, _ -> migrate(choice) }.show()
     }
@@ -84,7 +84,7 @@ class StorageActivity : MoteActivity() {
             result.onSuccess {
                 android.widget.Toast.makeText(this, MoteI18n.text("保存位置已生效"), android.widget.Toast.LENGTH_LONG).show()
                 if (it.projectionConsentRequired) startActivity(Intent(this, MainActivity::class.java))
-            }.onFailure { AlertDialog.Builder(this).setTitle(MoteI18n.text("迁移未完成")).setMessage(it.message ?: MoteI18n.text("请检查存储位置后重试，保留应用数据。")) .setPositiveButton(MoteI18n.text("关闭"), null).show() }
+            }.onFailure { MoteDialogBuilder(this).setTitle(MoteI18n.text("迁移未完成")).setMessage(it.message ?: MoteI18n.text("请检查存储位置后重试，保留应用数据。")) .setPositiveButton(MoteI18n.text("关闭"), null).show() }
             refresh()
         }
     }

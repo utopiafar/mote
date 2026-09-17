@@ -107,7 +107,7 @@ class MoteNavigationIcon(context: Context, private val kind: String, active: Boo
     @Deprecated("Drawable opacity") override fun getOpacity() = PixelFormat.TRANSLUCENT
 }
 
-fun Activity.moteDetailPage(): LinearLayout {
+fun Activity.moteDetailPage(onBack: () -> Unit = { finish() }): LinearLayout {
     val body = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(moteDp(22), moteDp(12), moteDp(22), moteDp(32))
@@ -117,9 +117,38 @@ fun Activity.moteDetailPage(): LinearLayout {
         text = MoteI18n.text("‹  返回"); textSize = 15f; setTextColor(MoteUi.accent)
         gravity = Gravity.CENTER_VERTICAL; minHeight = moteDp(48)
         setPadding(moteDp(22), moteDp(4), moteDp(22), moteDp(4))
-        contentDescription = MoteI18n.text("返回上一页"); isFocusable = true; setOnClickListener { finish() }
+        contentDescription = MoteI18n.text("返回上一页"); isFocusable = true; setOnClickListener { onBack() }
     }, LinearLayout.LayoutParams(-1, -2))
     root.addView(ScrollView(this).apply { isFillViewport = true; addView(body) }, LinearLayout.LayoutParams(-1, 0, 1f))
     setContentView(root)
     return body
+}
+
+/** Dynamic dialogs use the same fields/buttons and outside-field keyboard dismissal. */
+class MoteDialogBuilder(context: Context) : android.app.AlertDialog.Builder(context) {
+    override fun create(): android.app.AlertDialog = super.create().also { dialog ->
+        val window = dialog.window ?: return@also
+        window.decorView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+        override fun onViewDetachedFromWindow(view: View) = Unit
+        override fun onViewAttachedToWindow(view: View) {
+        MoteUi.styleTree(window.decorView)
+        val original = window.callback
+        window.callback = object : android.view.Window.Callback by original {
+            override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
+                if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+                    val field = window.currentFocus as? EditText
+                    if (field != null) {
+                        val bounds = android.graphics.Rect(); field.getGlobalVisibleRect(bounds)
+                        if (!bounds.contains(event.rawX.toInt(), event.rawY.toInt())) {
+                            field.clearFocus()
+                            context.getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(field.windowToken, 0)
+                        }
+                    }
+                }
+                return original.dispatchTouchEvent(event)
+            }
+        }
+        }
+        })
+    }
 }

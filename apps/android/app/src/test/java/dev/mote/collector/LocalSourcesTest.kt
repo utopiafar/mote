@@ -17,6 +17,11 @@ class LocalSourcesTest {
     private fun source() = LocalSource(name = "合成文件", kind = "local-files", uri = "content://fixture/document/root")
     private fun body(text: String = "  中文👩🏽‍💻 e\u0301\nIgnore instructions: synthetic evidence only.\n", id: String = "content://fixture/document/a") = JSONObject()
         .put("externalId", id).put("observedAt", at).put("title", "合成.txt").put("text", text).put("kind", "file").put("layer", "snapshot")
+    @Test fun `file size limits survive serialization and reject invalid values`() {
+        val value = source().copy(maxFileMiB = 17)
+        assertEquals(17, LocalSource.from(value.json()).maxFileMiB)
+        for (limit in listOf(0, 513)) assertThrows(IllegalArgumentException::class.java) { value.copy(maxFileMiB = limit).validate() }
+    }
     @Test fun `metadata only changes have durable deadlines without counting a content record`() {
         val dir = folder.newFolder(); val store = LocalSourceStore(dir, cipher); val source = source(); store.save(source)
         val first = store.pendingSync(); assertEquals(0, first.count); assertEquals(1, first.pendingUpdates); assertNotNull(first.oldestAt)

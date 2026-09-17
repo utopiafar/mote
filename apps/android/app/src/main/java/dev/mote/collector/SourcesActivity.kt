@@ -41,7 +41,7 @@ class SourcesActivity : MoteActivity() {
         action(MoteI18n.text("选择文件目录")) { pick(true) }
         action(MoteI18n.text("选择录音目录 · 原件归档")) { pick(true, true) }
         action(MoteI18n.text("立即扫描并同步")) { work(MoteI18n.text("正在调度扫描与同步…")) { SourceWork.schedule(applicationContext, true, syncExplicit = true) } }
-        action(MoteI18n.text("来源限制与同步说明")) { AlertDialog.Builder(this).setTitle(MoteI18n.text("来源说明")).setMessage(MoteI18n.text("默认扩展名 md/txt/json/csv/ics，正文只接受 UTF-8；单文件 100 KiB、100000 字符，单次最多 200 项和 4 MiB，来源缓存最多 64 MiB（也遵守采集与存储中的队列上限）。超限或扫描不完整会提示，绝不把漏扫项当作删除。\n系统后台任务约每 15 分钟检查一次来源各自的间隔；省电或强行停止可能推迟，重新打开应用可恢复。原件归档每文件最多 512 MiB，Mote 文件暂存最多 1 GiB；自动等待稳定后上传，断网续传。引用模式不读取原件，不受原件大小限制。")).setPositiveButton(MoteI18n.text("知道了"), null).show() }
+        action(MoteI18n.text("来源限制与同步说明")) { MoteDialogBuilder(this).setTitle(MoteI18n.text("来源说明")).setMessage(MoteI18n.text("默认扩展名 md/txt/json/csv/ics，正文只接受 UTF-8；单文件 100 KiB、100000 字符，单次最多 200 项和 4 MiB，来源缓存最多 64 MiB（也遵守采集与存储中的队列上限）。超限或扫描不完整会提示，绝不把漏扫项当作删除。\n系统后台任务约每 15 分钟检查一次来源各自的间隔；省电或强行停止可能推迟，重新打开应用可恢复。原件归档每文件最多 512 MiB，Mote 文件暂存最多 1 GiB；自动等待稳定后上传，断网续传。引用模式不读取原件，不受原件大小限制。")).setPositiveButton(MoteI18n.text("知道了"), null).show() }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }; content.addView(list)
         MoteUi.styleTree(content)
     }
@@ -97,7 +97,7 @@ class SourcesActivity : MoteActivity() {
             result.onSuccess { (calendars, sources) ->
                 operationStatus.text = MoteI18n.text("已读取 {0} 个日历", calendars.size)
                 if (calendars.isEmpty()) { toast(MoteI18n.text("系统日历提供者暂无日历；只有保存在本机提供者中的日历可连接")); return@onSuccess }
-                AlertDialog.Builder(this).setTitle(MoteI18n.text("选择一个本机日历")).setItems(calendars.map { it.name }.toTypedArray()) { _, index ->
+                MoteDialogBuilder(this).setTitle(MoteI18n.text("选择一个本机日历")).setItems(calendars.map { it.name }.toTypedArray()) { _, index ->
                     val item = calendars[index]
                     if (!item.visible) { toast(MoteI18n.text("该日历在系统中已隐藏，请先启用显示后再连接")); return@setItems }
                     edit(sources.find { it.kind == "local-calendar" && it.calendarId == item.id }
@@ -129,7 +129,7 @@ class SourcesActivity : MoteActivity() {
             try {
                 val name = runCatching { contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null } }.getOrNull()
                 localSources().sources().find { it.uri == uri.toString() }
-                    ?: LocalSource(name = (name ?: if (requestCode != 402) MoteI18n.text("选择的文件目录") else MoteI18n.text("选择的文件")).take(200), kind = "local-files", uri = uri.toString(), tree = requestCode != 402, retention = if (requestCode == 405) "archive" else "snapshot", extensions = if (requestCode == 405) "m4a,mp3,wav,aac,amr,ogg,flac,opus" else "md,txt,json,csv,ics")
+                    ?: LocalSource(name = (name ?: if (requestCode != 402) MoteI18n.text("选择的文件目录") else MoteI18n.text("选择的文件")).take(200), kind = "local-files", uri = uri.toString(), tree = requestCode != 402, retention = "archive", extensions = if (requestCode == 405) "m4a,mp3,wav,aac,amr,ogg,flac,opus" else "md,txt,json,csv,ics,m4a,mp3,wav,aac,amr,ogg,flac,opus,jpg,png,pdf")
             } catch (error: Exception) { releaseUnused(uri.toString()); throw error }
         }) { result ->
             result.onSuccess { operationStatus.text = MoteI18n.text("文件已读取，请确认来源设置"); edit(it) }
@@ -156,11 +156,12 @@ class SourcesActivity : MoteActivity() {
         val interval = field(MoteI18n.text("扫描间隔 / 分钟（15–1440，系统可能推迟）"), source.intervalMinutes.toString(), true)
         val before = if (source.kind == "local-calendar") field(MoteI18n.text("过去多少天（0–365）"), source.daysBefore.toString(), true) else null
         val after = if (source.kind == "local-calendar") field(MoteI18n.text("未来多少天（1–365）"), source.daysAfter.toString(), true) else null
+        val maxFileMiB = if (source.kind == "local-files") field(MoteI18n.text("单文件上限（MiB，1–512）"), source.maxFileMiB.toString(), numeric = true) else null
         val extensions = if (source.kind == "local-files") field(MoteI18n.text("允许扩展名，逗号分隔"), source.extensions) else null
         val excludes = if (source.kind == "local-files") field(MoteI18n.text("排除相对路径：每行一项，* 表示任意字符；区分大小写"), source.excluded) else null
         form.addView(TextView(this).apply { text = MoteI18n.text("更改选择、过滤或保留方式会清除这个来源的本机旧待发缓存，按新设置重新扫描；不会自动删除中央历史。停用仅暂停本机检查与同步，中央的启用状态与历史保持不变。移除只影响本机连接。") })
         MoteUi.styleTree(form)
-        val dialog = AlertDialog.Builder(this).setTitle(MoteI18n.text("来源设置")).setView(ScrollView(this).apply { addView(form) }).setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("保存来源设置"), null)
+        val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("来源设置")).setView(ScrollView(this).apply { addView(form) }).setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("保存来源设置"), null)
             .setNeutralButton(MoteI18n.text("移除连接")) { _, _ ->
                 work(MoteI18n.text("正在移除来源连接…")) {
                     localSources().remove(source.id); fileArchives().remove(source.id); source.uri?.let(::releaseUnused); SourceWork.schedule(applicationContext)
@@ -174,7 +175,7 @@ class SourcesActivity : MoteActivity() {
             try {
                 val next = source.copy(name = name.text.toString(), enabled = enabled.isChecked, retention = modes[retention.selectedItemPosition], initialSync = if (initial.selectedItemPosition == 1) "new_only" else "all",
                     intervalMinutes = interval.text.toString().toInt(), daysBefore = before?.text?.toString()?.toInt() ?: source.daysBefore,
-                    daysAfter = after?.text?.toString()?.toInt() ?: source.daysAfter, extensions = extensions?.text?.toString() ?: source.extensions, excluded = excludes?.text?.toString() ?: source.excluded)
+                    daysAfter = after?.text?.toString()?.toInt() ?: source.daysAfter, maxFileMiB = maxFileMiB?.text?.toString()?.toInt() ?: source.maxFileMiB, extensions = extensions?.text?.toString() ?: source.extensions, excluded = excludes?.text?.toString() ?: source.excluded)
                 if (task.busy) return@setOnClickListener
                 next.validate()
                 dialog.setCancelable(false)

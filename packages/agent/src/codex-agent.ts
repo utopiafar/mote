@@ -15,11 +15,14 @@ const answerSchema={type:'object',properties:{answer:{type:'string'},citationIds
 export function createCodexAgent(options:AgentOptions){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<AgentAnswer>>();
   async function execute(input:QueryInput):Promise<AgentAnswer>{
+    input.signal?.throwIfAborted();
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();
     if(!input.question?.trim()||input.question.length>20000)throw new AgentProviderError();
     displayTime(new Date().toISOString(),input.timeZone);reportProgress(input,{stage:'starting'});
     const bridge=await startBridge(options.reader,input,options.maxToolCalls??24);
     let session:CodexSession|undefined,skillCalls=0;
+    const abort=()=>{void session?.close();};
+    input.signal?.addEventListener('abort',abort,{once:true});
     try{
       const call=async(name:string,args:unknown)=>{
         if(name==='skill'){
@@ -33,6 +36,7 @@ export function createCodexAgent(options:AgentOptions){
       };
       if(closed)throw new AgentProviderError();
       session=new CodexSession(options,call);sessions.add(session);
+      input.signal?.throwIfAborted();
       await session.start(SYSTEM_PROMPT,codexContextTools);
       reportProgress(input,{stage:'model'});
       const prompt=JSON.stringify({request:input.question,progressUpdates:Boolean(input.onProgress),responseMode:input.responseMode??(input.skill==='personal-insight'?'personal-insight':input.skill==='calendar-extraction'?'calendar-extraction':input.skill==='memory-extraction'||input.skill==='coding-memory'?'memory-extraction':'answer'),...(input.skill?{requiredSkill:input.skill,procedure:skillContent(input.skill)}:{}),
@@ -49,7 +53,7 @@ export function createCodexAgent(options:AgentOptions){
       }
       return {...answer,trace:bridge.trace,runId:randomUUID()};
     }catch(error){if(error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentResponseError)throw error;throw new AgentProviderError();}
-    finally{try{await session?.close();}finally{if(session)sessions.delete(session);await bridge.close();}}
+    finally{input.signal?.removeEventListener('abort',abort);try{await session?.close();}finally{if(session)sessions.delete(session);await bridge.close();}}
   }
   return {configured:Boolean(options.model?.trim()),query(input:QueryInput){const task=execute(input);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};
 }

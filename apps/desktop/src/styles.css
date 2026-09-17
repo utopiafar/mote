@@ -337,3 +337,5 @@ progress::-webkit-progress-value { border-radius: 5px; background: #759664; }
 .compression-compare{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0}.compression-compare>div{min-width:0}.compression-viewport{height:430px;overflow:auto;border:1px solid #ddd;border-radius:10px;background:#eee}.compression-viewport img{display:block;height:auto}@media(max-width:650px){.compression-compare{grid-template-columns:1fr}.compression-viewport{height:300px}}
 
 .compression-controls{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}#compression-stats{font-size:13px;line-height:1.6}.compression-compare h3{font-size:15px}.compression-viewport{height:300px}@media(max-width:650px){.compression-controls{grid-template-columns:1fr}}
+
+#records-grid.record-list{grid-template-columns:1fr} .record-list .record-card{display:flex;align-items:center;text-align:left}.record-list .record-card img{width:128px;height:92px;object-fit:contain}.record-list .record-card-caption{flex:1}

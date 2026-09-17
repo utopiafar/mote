@@ -45,3 +45,5 @@ __pycache__/
 !/scripts/release/
 /scripts/release/*
 !/scripts/release/*.mjs
+
+/apps/desktop/release-dev/

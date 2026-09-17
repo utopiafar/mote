@@ -96,7 +96,7 @@ class Settings(private val context: Context) {
         notificationCollectionEnabled = prefs.getBoolean("notificationCollectionEnabled", false), deviceEventCollectionEnabled = prefs.getBoolean("deviceEventCollectionEnabled", false),
         syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!,
         imageDedupeDiagnosticsEnabled = prefs.getBoolean("imageDedupeDiagnosticsEnabled", false),
-        contentEncryptionEnabled = prefs.getBoolean("contentEncryptionEnabled", false),
+        contentEncryptionEnabled = false,
         uploadedRetentionDays = prefs.getInt("uploadedRetentionDays", 7),
         ocrMode = prefs.getString("ocrMode", "chinese")!!, ocrAppModes = prefs.getString("ocrAppModes", "{}")!!
     )

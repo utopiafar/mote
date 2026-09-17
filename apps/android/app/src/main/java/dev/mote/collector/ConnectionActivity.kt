@@ -78,7 +78,7 @@ class ConnectionActivity : MoteActivity() {
         preview = text(MoteI18n.text("还没有解析邀请。外部链接只填入此页，不会自动连接。"))
         button(MoteI18n.text("确认连接此节点")) {
             val invite = parseInput()
-            AlertDialog.Builder(this).setTitle(MoteI18n.text("确认连接节点")).setMessage(MoteI18n.text("{0}\n\n将使用已有设备 ID 和当前采集设置。只获取这台设备的采集凭据；设置、队列和模型不会清空。同节点重新配对将使用新凭据继续同步本机待上传截图、笔记和来源。首次连接将把尚未绑定的本机截图、笔记与来源记录绑定到上方节点，并按已选择的同步方式发送。请确认这是你自己的档案地址。已经绑定其他节点的待同步记录不能改投此处。", invite.serverUrl))
+            MoteDialogBuilder(this).setTitle(MoteI18n.text("确认连接节点")).setMessage(MoteI18n.text("{0}\n\n将使用已有设备 ID 和当前采集设置。只获取这台设备的采集凭据；设置、队列和模型不会清空。同节点重新配对将使用新凭据继续同步本机待上传截图、笔记和来源。首次连接将把尚未绑定的本机截图、笔记与来源记录绑定到上方节点，并按已选择的同步方式发送。请确认这是你自己的档案地址。已经绑定其他节点的待同步记录不能改投此处。", invite.serverUrl))
                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("连接")) { _, _ ->
                     val chosenName = name.text.toString().trim(); val debugHttp = allowHttp.isChecked
                     changeConnection(invite.serverUrl, MoteI18n.text("正在兑换邀请并校验设备身份…"), connected = {
@@ -96,7 +96,7 @@ class ConnectionActivity : MoteActivity() {
             }) { result ->
                 working = false
                 result.onSuccess { server ->
-                    AlertDialog.Builder(this).setTitle(MoteI18n.text("恢复已兑换连接")).setMessage(MoteI18n.text("{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。", server))
+                    MoteDialogBuilder(this).setTitle(MoteI18n.text("恢复已兑换连接")).setMessage(MoteI18n.text("{0}\n\n将重新联网校验已兑换并加密保存的凭据。确认后，尚未绑定的本机记录会绑定到上方节点并按同步设置发送。", server))
                         .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("恢复")) { _, _ ->
                             val chosenName = name.text.toString().trim(); val debug = allowHttp.isChecked
                             changeConnection(server, MoteI18n.text("正在重新校验设备连接…")) { ConnectionClient(applicationContext).resume(chosenName, debug, bindLocal = true); MoteI18n.text("中断的连接已恢复。") }

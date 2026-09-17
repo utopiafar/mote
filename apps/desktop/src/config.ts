@@ -12,7 +12,7 @@ export function defaultConfig(): Config {
   return {
     serverUrl: 'http://127.0.0.1:47832', deviceId: randomUUID(), deviceName: hostname(),
     syncMode: 'realtime', syncIntervalMinutes: 15, syncBatchSize: 20,
-    intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '', localContentEncryption: false,
+    intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '', localContentEncryption: false, notificationCollectionEnabled: false,
     excludedAppIds: [], defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300, ocrEnabled: true, ocrOnlyWhileCharging: false,
     privacyModelUrl: '', openAtLogin: false,
     metadataEnabled: true, diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
@@ -64,6 +64,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (typeof input.deviceName !== 'string' || !input.deviceName.trim() || input.deviceName.length > 128) throw new Error(moteText("设备名需为 1–128 字符"));
   if (!Array.isArray(input.excludedAppIds) || input.excludedAppIds.length > 500 || input.excludedAppIds.some(id => typeof id !== 'string' || id.length > 256 || !id.trim())) throw new Error(moteText("排除列表必须填写有效应用 ID"));
   if (input.metadataEnabled !== undefined && typeof input.metadataEnabled !== 'boolean') throw new Error(moteText("设备元数据开关值无效"));
+  if (input.notificationCollectionEnabled !== undefined && typeof input.notificationCollectionEnabled !== 'boolean') throw new Error('Invalid notification setting');
   if (input.localContentEncryption !== undefined && typeof input.localContentEncryption !== 'boolean') throw new Error(moteText("本地内容加密开关值无效"));
   if (input.ocrOnlyWhileCharging !== undefined && typeof input.ocrOnlyWhileCharging !== 'boolean') throw new Error(moteText("OCR 电源策略开关值无效"));
   const captureStorageDirectory = input.captureStorageDirectory ?? current.captureStorageDirectory ?? '';
@@ -90,7 +91,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, moteText("本地队列容量")),
     maxQueueEvents: integer(input.maxQueueEvents, 1, 1000000, moteText("本地队列事件数")),
     captureStorageDirectory,
-    localContentEncryption: input.localContentEncryption ?? current.localContentEncryption ?? false,
+    localContentEncryption: false, notificationCollectionEnabled: input.notificationCollectionEnabled ?? current.notificationCollectionEnabled ?? false,
     idlePauseSeconds: integer(input.idlePauseSeconds, 0, 86400, moteText("空闲暂停秒数")),
     defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection ?? 'content'),
     appCollectionRules: normalizeAppCollectionRules(input.appCollectionRules ?? current.appCollectionRules ?? {}),

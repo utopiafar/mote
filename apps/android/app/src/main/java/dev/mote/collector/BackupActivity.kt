@@ -8,11 +8,13 @@ import android.view.WindowManager
 import android.widget.*
 import java.io.File
 import java.util.UUID
+import org.json.JSONObject
 
 class BackupActivity : MoteActivity() {
     private val task by lazy { UiTask(this) }
     private lateinit var status: TextView
     private lateinit var secrets: CheckBox
+    private lateinit var ownerToken: EditText
     private var includeToken = false
     private var restoring = false
     @Volatile private var closed = false
@@ -33,6 +35,11 @@ class BackupActivity : MoteActivity() {
         text(MoteI18n.text("备份本机仍保留的截图、应用活动、通知、媒体和随手记。ZIP 为明文，不含中央归档、来源文件原件、未提交草稿或模型文件。"))
         button(MoteI18n.text("导出本机记录 ZIP")) { create(12, "application/zip", "mote-records.zip") }
         button(MoteI18n.text("导入本机记录 ZIP")) { open(13, "application/zip") }
+        button(MoteI18n.text("导出本机元数据 JSON")) { create(14, "application/json", "mote-local-metadata.json") }
+        text(MoteI18n.text("中央资料导出"), 20f)
+        ownerToken = EditText(this).apply { hint = MoteI18n.text("中央所有者令牌（仅本页使用）"); inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD; isSaveEnabled = false }.also(body::addView)
+        button(MoteI18n.text("导出中央元数据")) { create(15, "application/gzip", "mote-central-metadata.tar.gz") }
+        button(MoteI18n.text("导出中央资料与附件")) { create(16, "application/gzip", "mote-central-data.tar.gz") }
         status = text(MoteI18n.text("导入前可预览；同 ID 记录不会重复添加。"))
         MoteUi.styleTree(body)
     }
@@ -43,7 +50,25 @@ class BackupActivity : MoteActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
+        val centralToken = if (::ownerToken.isInitialized) ownerToken.text.toString().trim() else ""
         when (requestCode) {
+            14 -> task.start(MoteI18n.text("正在导出本机记录…"), { status.text = it }, {
+                val q = queue(); val records = org.json.JSONArray()
+                q.dedupeIds().forEach { id -> q.capture(id)?.let(records::put) }
+                requireNotNull(contentResolver.openOutputStream(uri, "wt")).bufferedWriter().use { it.write(JSONObject().put("format", "mote-local-metadata").put("version", 1).put("records", records).toString()) }
+            }) { status.text = if (it.isSuccess) MoteI18n.text("配置已导出") else MoteI18n.text("导出未完成，请重试") }
+            15, 16 -> task.start(MoteI18n.text("正在导出中央资料…"), { status.text = it }, {
+                require(centralToken.isNotBlank()) { MoteI18n.text("请填写中央所有者令牌") }
+                val config = Settings(this).read(); config.validateConnection()
+                val mode = if (requestCode == 15) "metadata" else "data"
+                val connection = java.net.URL(config.server.trimEnd('/') + "/api/export-bundle?mode=" + mode).openConnection() as java.net.HttpURLConnection
+                try {
+                    connection.instanceFollowRedirects = false; connection.connectTimeout = 15000; connection.readTimeout = 120000
+                    connection.setRequestProperty("Authorization", "Bearer $centralToken")
+                    check(connection.responseCode == 200) { "HTTP ${connection.responseCode}" }
+                    connection.inputStream.use { input -> requireNotNull(contentResolver.openOutputStream(uri, "wt")).use { output -> input.copyTo(output) } }
+                } finally { connection.disconnect() }
+            }) { status.text = if (it.isSuccess) MoteI18n.text("资料已导出") else MoteI18n.text("导出未完成，请删除不完整文件后重试") }
             10 -> task.start(MoteI18n.text("正在导出配置…"), { status.text = it }, {
                 val json = ConfigurationArchive.encode(Settings(this).read(), includeToken)
                 requireNotNull(contentResolver.openOutputStream(uri, "wt")).bufferedWriter().use { it.write(json) }
@@ -58,7 +83,7 @@ class BackupActivity : MoteActivity() {
                 require(bytes.size <= ConfigurationArchive.MAX_BYTES)
                 current to ConfigurationArchive.decode(AppReleaseVerifier.utf8(bytes), current)
             }) { result -> result.onSuccess { (current, next) ->
-                AlertDialog.Builder(this).setTitle(MoteI18n.text("导入客户端配置？"))
+                MoteDialogBuilder(this).setTitle(MoteI18n.text("导入客户端配置？"))
                     .setMessage(MoteI18n.text("采集间隔 {0} 秒 · 保留 {1} 天\n应用规则 {2} 项\n{3}\n\n将替换当前偏好设置。已有记录和设备身份保留，系统权限不会自动开启。", next.intervalSeconds, next.uploadedRetentionDays, next.collectionRules.apps.size, if (current.server == next.server) MoteI18n.text("中央节点不变") else MoteI18n.text("中央节点将改变；未携带令牌时需重新连接")))
                     .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("导入")) { _, _ ->
                         RuntimeSettings.apply(this, next, expected = current) { applied -> status.text = if (applied.isSuccess) MoteI18n.text("配置已导入") else applied.exceptionOrNull()?.message ?: MoteI18n.text("配置导入失败，原设置保留") }
@@ -77,7 +102,7 @@ class BackupActivity : MoteActivity() {
                 if (closed) { staged.close(); error(MoteI18n.text("页面已关闭")) }
                 prepared = staged; staged
             }) { result -> result.onSuccess { staged ->
-                AlertDialog.Builder(this).setTitle(MoteI18n.text("导入 {0} 条本机记录？", staged.count))
+                MoteDialogBuilder(this).setTitle(MoteI18n.text("导入 {0} 条本机记录？", staged.count))
                     .setMessage(MoteI18n.text("已有记录保留，同 ID 自动去重。同步将切换为手动，检查导入结果后可立即同步。"))
                     .setNegativeButton(MoteI18n.text("取消")) { _, _ -> staged.close(); prepared = null }
                     .setOnCancelListener { staged.close(); prepared = null }

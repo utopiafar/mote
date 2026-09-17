@@ -30,7 +30,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
   range: Range;
   renderAnswer: (answer: Answer) => ReactNode;
 }) {
-  const [modelProfileId,setModelProfileId]=useState('');
+  const [modelProfileId,setModelProfileId]=useState(''),[modelOverride,setModelOverride]=useState('');
   const [items, setItems] = useState<ConversationSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [question, setQuestion] = useState(''), [selectedDevice, setSelectedDevice] = useState('');
@@ -119,7 +119,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     setRun(null);setBusy(true); setError(''); setConfirmDelete(false); setPendingQuestion(text);
     try {
       const id=crypto.randomUUID();
-      const body=JSON.stringify({id,input:{question:text,modelProfileId:modelProfileId||undefined,...(conversation?{conversationId:conversation.id}:{}),after:range.after??null,before:range.before??null,deviceId:selectedDevice||null,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
+      const body=JSON.stringify({id,input:{question:text,modelProfileId:modelProfileId||undefined,modelOverride:modelOverride||undefined,...(conversation?{conversationId:conversation.id}:{}),after:range.after??null,before:range.before??null,deviceId:selectedDevice||null,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
       let accepted:QueryRun;
       try{accepted=await api.request<QueryRun>('/api/query-runs',{method:'POST',signal:controller.signal,body});}
       catch(e){
@@ -167,9 +167,10 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
       </article>)}
       {pendingQuestion && <div className="asked-question"><MessageSquare size={16}/><span>{pendingQuestion}</span></div>}
       {run&&<QueryProgress run={run} error={pollError}/>}
+      {run?.status==='running'&&<button className="button subtle" onClick={()=>void api.request<QueryRun>(`/api/query-runs/${run.id}/cancel`,{method:'POST'}).then(setRun).catch(e=>setError(errorMessage(e)))}>{moteText("停止生成")}</button>}
       <div ref={end}/>
       {error && <p className="notice error" role="alert">{error}</p>}
-      <div className="filter-bar"><ModelSelector api={api} feature="chat" value={modelProfileId} onChange={setModelProfileId} disabled={busy||opening}/><label><Monitor size={15}/><span>{moteText("筛选设备")}</span><select aria-label={moteText("问答设备")} value={selectedDevice} disabled={busy || opening} onChange={event => setSelectedDevice(event.target.value)}>
+      <div className="filter-bar"><ModelSelector api={api} feature="chat" value={modelProfileId} onChange={setModelProfileId} model={modelOverride} onModelChange={setModelOverride} disabled={busy||opening}/><label><Monitor size={15}/><span>{moteText("筛选设备")}</span><select aria-label={moteText("问答设备")} value={selectedDevice} disabled={busy || opening} onChange={event => setSelectedDevice(event.target.value)}>
         <option value="">{moteText("全部设备")}</option>{selectedDevice && !devices.some(device => device.deviceId === selectedDevice) && <option value={selectedDevice}>{moteText("历史设备（")}{selectedDevice}）</option>}{devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.deviceName}</option>)}
       </select></label></div>
       <form className="ask-form" onSubmit={event => void submit(event)}>

@@ -31,6 +31,11 @@ test('profiles route each request and feature independently; credentials, restar
   assert.equal((await query()).json().answer,'second-model');
   const explicit=(await query('default')).json();assert.equal(explicit.answer,'first-model');assert.equal(explicit.modelSelection.profileId,'default');
   assert.equal((await query('missing')).statusCode,400);
+  const switched=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated temporary model',modelProfileId:'second',modelOverride:'temporary-model'}});
+  assert.equal(switched.statusCode,200,switched.body);assert.equal(switched.json().answer,'temporary-model');
+  assert.equal(switched.json().modelSelection.model,'temporary-model');assert.equal(seen.at(-1)?.apiKey,'fixture-second-secret');
+  assert.equal(node.modelSettings.select('chat','second').settings.model,'second-model');
+  assert.equal((await query('second')).json().answer,'second-model');
   assert.equal(node.modelSettings.select('memory').id,'second');assert.equal(node.modelSettings.select('import').id,'default');
   assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}})).statusCode,200);
   assert.deepEqual(calls.at(-1),{model:'second-model',skill:'memory-extraction'});

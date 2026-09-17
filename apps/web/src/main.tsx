@@ -321,6 +321,7 @@ function CaptureCard({
             <DeviceIcon platform={capture.platform} size={12} />
             {capture.deviceName}
           </span>
+          {'sizeBytes' in capture && capture.sizeBytes !== undefined && <span>{(capture.sizeBytes/1024).toFixed(1)} KiB</span>}
           {'privacy' in capture && capture.privacy.redacted && (
             <span title={moteText("客户端报告已脱敏")}>
               <ShieldCheck size={12} /> {' '}{moteText("已脱敏")}</span>
@@ -531,6 +532,7 @@ function EvidenceDialog({
                     </dd>
                   </div>
                 </dl>
+                {capture.metadata?.attachments?.map(id=><button className="button subtle" key={id} onClick={()=>onOpen(id)}>{moteText("查看附件")} · {id.slice(0,8)}</button>)}
                 <Metadata metadata={capture.metadata} source={capture.provenance?.metadata} modifiedAt={capture.provenance?.modifiedAt}/>
                 <SourceDocumentDetails api={api} document={capture.provenance?.document}/>
                 {capture.privacy.reason && (
@@ -700,6 +702,7 @@ function RecordTimeline({
   onOpen: (id: string) => void;
   revision: number;
 }) {
+  const [layout,setLayout]=useState<'grid'|'list'>(()=>localStorage.getItem('mote.record-layout')==='list'?'list':'grid');
   const [after, setAfter] = useState("");
   const [before, setBefore] = useState("");
   const [device, setDevice] = useState("");
@@ -812,7 +815,7 @@ function RecordTimeline({
         <button className="button subtle" aria-label={moteText("查看后一天")} disabled={!after || after !== before} onClick={() => {const date=new Date(`${after}T00:00:00`);date.setDate(date.getDate()+1);const day=localDateInput(date);setAfter(day);setBefore(day);}}><ArrowRight size={15}/></button>
         <button className="button subtle capture-refresh" disabled={loading} onClick={() => setRefreshVersion(value => value + 1)}><RefreshCw size={15} className={loading ? 'spin' : ''}/>{moteText("刷新记录")}</button>
       </div>
-      <div className="filter-bar capture-filters">
+      <div className="filter-bar capture-filters"><label>{moteText("展示方式")}<select aria-label={moteText("记录展示方式")} value={layout} onChange={e=>{const v=e.target.value as 'grid'|'list';setLayout(v);localStorage.setItem('mote.record-layout',v);}}><option value="grid">{moteText("缩略图")}</option><option value="list">{moteText("列表")}</option></select></label>
         <label>
           <span>{moteText("从")}</span>
           <input
@@ -880,7 +883,7 @@ function RecordTimeline({
             {day}
             <small>{moteText("已加载")}{' '}{records.length}{' '}{moteText("条")}</small>
           </h2>
-          <div className="capture-grid">
+          <div className={layout==='list'?'capture-grid capture-list':'capture-grid'}>
             {records.map((capture) => (
               <CaptureCard
                 key={capture.id}
@@ -952,13 +955,13 @@ function Vault({
       setBusy("");
     }
   }
-  async function exportArchive() {
-    const response = await api.raw("/api/export");
+  async function exportArchive(mode?: 'metadata'|'data') {
+    const response = await api.raw(mode?`/api/export-bundle?mode=${mode}`:"/api/export");
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `mote-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = mode?`mote-${mode}.tar.gz`:`mote-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     return moteText("资料已导出，包含记录、影像与校验信息。");
@@ -1083,14 +1086,14 @@ function Vault({
             <button
               className="button subtle"
               disabled={!!busy}
-              onClick={() => void action("export", exportArchive)}
+              onClick={() => void action("export", ()=>exportArchive())}
             >
               {busy === "export" ? (
                 <LoaderCircle className="spin" size={16} />
               ) : (
                 moteText("导出")
               )}
-            </button>
+            </button><button className="button subtle" disabled={Boolean(busy)} onClick={()=>void action('export',()=>exportArchive('metadata'))}>{moteText("导出元数据")}</button><button className="button subtle" disabled={Boolean(busy)} onClick={()=>void action('export',()=>exportArchive('data'))}>{moteText("导出资料与附件")}</button>
           </div>
           <div className="transfer-action">
             <div className="transfer-icon">
@@ -1226,7 +1229,8 @@ function App() {
   const connectionGeneration = useRef(0);
   const [verified, setVerified] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>(()=>['ask','notes','vault'].includes(location.hash.slice(1))?location.hash.slice(1) as Page:'overview');
+  useEffect(()=>{const navigate=()=>{const target=location.hash.slice(1);if(['ask','notes','vault'].includes(target))setPage(target as Page);};window.addEventListener('hashchange',navigate);return()=>window.removeEventListener('hashchange',navigate);},[]);
   const [period, setPeriod] = useState("week");
   const [menuOpen, setMenuOpen] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);

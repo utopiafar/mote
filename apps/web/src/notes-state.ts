@@ -8,7 +8,7 @@ export interface NoteStorage {
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
 }
-export interface NoteDraft { text: string; mood: string }
+export interface NoteDraft { text: string; mood: string; attachments?: string[] }
 interface StoredDraft extends NoteDraft { prepared?: NoteInput }
 type SubmissionIdentity = Omit<NoteInput, 'text' | 'mood'>;
 export interface QueuedNote { note: NoteInput; error?: string; blocked?: boolean }
@@ -28,26 +28,28 @@ export class NoteOutbox {
     try {
       const value = JSON.parse(raw);
       if (typeof value?.text !== 'string' || typeof value?.mood !== 'string') throw new Error('Invalid draft');
+      if(value.attachments!==undefined&&(!Array.isArray(value.attachments)||value.attachments.length>10||value.attachments.some((id:unknown)=>typeof id!=='string')))throw new Error('Invalid attachments');
       const prepared = value.prepared === undefined ? undefined : noteSchema.parse(value.prepared);
-      if (prepared && (prepared.text !== value.text || (prepared.mood ?? '') !== (value.mood.trim() ? value.mood : ''))) throw new Error('Draft submission content mismatch');
-      return { text: value.text, mood: value.mood, ...(prepared ? { prepared } : {}) };
+      if (prepared && (prepared.text !== (value.text.trim()?value.text:'附件记录') || (prepared.mood ?? '') !== (value.mood.trim() ? value.mood : '') || JSON.stringify(prepared.metadata?.attachments??[]) !== JSON.stringify(value.attachments??[]))) throw new Error('Draft submission content mismatch');
+      return { text: value.text, mood: value.mood, attachments: value.attachments, ...(prepared ? { prepared } : {}) };
     } catch { throw new Error(moteText("本机草稿无法读取；原数据已保留。")); }
   }
   draft(): NoteDraft {
-    const { text, mood } = this.storedDraft();
-    return { text, mood };
+    const { text, mood, attachments } = this.storedDraft();
+    return { text, mood, ...(attachments?.length?{attachments}:{}) };
   }
   saveDraft(draft: NoteDraft): void {
     const previous = this.storedDraft();
-    const prepared = previous.text === draft.text && previous.mood === draft.mood ? previous.prepared : undefined;
+    const prepared = previous.text === draft.text && previous.mood === draft.mood && JSON.stringify(previous.attachments) === JSON.stringify(draft.attachments) ? previous.prepared : undefined;
     this.storage.setItem(this.draftKey, JSON.stringify({ ...draft, ...(prepared ? { prepared } : {}) }));
   }
   /** Persist the exact event before queueing it, so a crash cannot create a second ID. */
   prepareSubmission(draft: NoteDraft, identity: SubmissionIdentity): NoteInput {
+    if(!draft.text.trim()&&!draft.attachments?.length)throw new Error(moteText("此刻想留下什么？"));
     const previous = this.storedDraft();
-    const prepared = previous.text === draft.text && previous.mood === draft.mood ? previous.prepared : undefined;
+    const prepared = previous.text === draft.text && previous.mood === draft.mood && JSON.stringify(previous.attachments) === JSON.stringify(draft.attachments) ? previous.prepared : undefined;
     const { id, deviceId, deviceName, platform, capturedAt } = identity;
-    const note = prepared ?? noteSchema.parse({ id, deviceId, deviceName, platform, capturedAt, text: draft.text, ...(draft.mood.trim() ? { mood: draft.mood } : {}) });
+    const note = prepared ?? noteSchema.parse({ id, deviceId, deviceName, platform, capturedAt, text: draft.text.trim()?draft.text:'附件记录', ...(draft.attachments?.length?{metadata:{version:1,observedAt:capturedAt,attachments:draft.attachments}}:{}), ...(draft.mood.trim() ? { mood: draft.mood } : {}) });
     this.storage.setItem(this.draftKey, JSON.stringify({ ...draft, prepared: note }));
     return note;
   }

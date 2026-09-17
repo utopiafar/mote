@@ -61,7 +61,7 @@ function recordBytes(record: QueueRecord): number {
 function validateEvent(value: unknown): CaptureEvent {
   if (!value || typeof value !== 'object') throw new Error(moteText("队列事件无效"));
   const v = value as CaptureEvent;
-  if (!UUID.test(v.id) || !UUID.test(v.deviceId) || !['macos', 'windows', 'linux'].includes(v.platform) || !Number.isFinite(Date.parse(v.capturedAt)) || !Number.isInteger(v.durationMs) || v.durationMs < 0 || v.durationMs > 300000 || !['screen', 'note', 'activity'].includes(v.source)) throw new Error(moteText("队列事件元数据无效"));
+  if (!UUID.test(v.id) || !UUID.test(v.deviceId) || !['macos', 'windows', 'linux'].includes(v.platform) || !Number.isFinite(Date.parse(v.capturedAt)) || !Number.isInteger(v.durationMs) || v.durationMs < 0 || v.durationMs > 300000 || !['screen', 'note', 'activity', 'notification'].includes(v.source)) throw new Error(moteText("队列事件元数据无效"));
   for (const [key, max] of [['deviceName', 128], ['appId', 256], ['appName', 200]] as const) {
     if (typeof v[key] !== 'string' || !v[key].trim() || v[key].length > max) throw new Error(moteText("队列事件应用或设备信息无效"));
   }
@@ -70,6 +70,10 @@ function validateEvent(value: unknown): CaptureEvent {
   const metadata = v.metadata === undefined ? undefined : recordMetadataSchema.parse(v.metadata);
   const base = { id: v.id, deviceId: v.deviceId, deviceName: v.deviceName, platform: v.platform,
     capturedAt: new Date(v.capturedAt).toISOString(), durationMs: v.durationMs, appId: v.appId, appName: v.appName, ...(metadata ? { metadata } : {}) };
+  if (v.source === 'notification') {
+    if(v.platform!=='macos'||v.durationMs!==0||v.imageMime||v.ocrText||v.mood!==undefined||v.privacy.redacted||!metadata?.notification||!metadata.observation||metadata.collector?.method!=='accessibility'||metadata.media||metadata.capture||v.privacy.collection!=='content'||v.privacy.mode!=='none')throw new Error('Invalid notification observation');
+    return {...base,source:'notification',ocrText:'',privacy:v.privacy};
+  }
   if (v.source === 'activity') {
     const raw = v as unknown as Record<string, unknown>;
     if (v.privacy.collection !== 'activity' || v.privacy.mode !== 'none' || v.privacy.redacted || ['ocrText', 'imageMime', 'imageBase64', 'mood', 'title', 'windowTitle', 'provenance'].some(key => Object.hasOwn(raw, key)) || (metadata?.capture && Object.keys(metadata.capture).some(key => key !== 'intervalMs'))) throw new Error(moteText("仅活动记录不得包含屏幕或正文内容"));
@@ -345,6 +349,7 @@ export class DurableQueue {
       }
     });
   }
+  exportMetadata() { return {format:'mote-local-metadata',version:1,exportedAt:new Date().toISOString(),records:[...this.records.values()].map(r=>({...r.event,blobHash:r.blobHash,sizeBytes:r.blobBytes}))}; }
   async exportArchiveFile(path: string, progress?: (value: WorkProgress) => void): Promise<void> {
     return this.exclusive(async () => {
       this.assertReady();

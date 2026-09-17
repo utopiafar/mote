@@ -272,6 +272,7 @@ export class Store {
     const items:CapturePreview[]=page.items.map(record=>({id:record.id,deviceId:record.deviceId,deviceName:record.deviceName,platform:record.platform,
       capturedAt:record.capturedAt,source:record.source,appId:record.appId,appName:record.appName,windowTitle:record.windowTitle.slice(0,300),
       durationMs:record.durationMs,hasImage:Boolean(record.blobHash),ocr:captureOcrState(record),
+      sizeBytes:Buffer.byteLength(record.ocrText)+(record.blobHash?Number(this.db.prepare('SELECT bytes FROM blobs WHERE hash=?').get(record.blobHash)?.bytes??0):Number(record.provenance?.metadata?.file?.sizeBytes??0)),
       ...(record.metadata?.media?{media:record.metadata.media}:{}),
       textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:moteText("未观察到媒体会话"),disabled:moteText("媒体采集已关闭"),permission_required:moteText("媒体权限未授予"),unavailable:moteText("媒体信息暂不可用")}[record.metadata?.media?.status??'unavailable'])):record.source==='notification'||record.source==='device_event'?systemEventText(record.metadata):record.ocrText).slice(0,160)}));
     return {...page,items};

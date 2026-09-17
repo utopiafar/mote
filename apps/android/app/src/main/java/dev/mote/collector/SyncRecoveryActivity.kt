@@ -37,7 +37,7 @@ class SyncRecoveryActivity : MoteActivity() {
         button(MoteI18n.text("检查两端记录状态")) { runAction { SyncRecoveryWorker.start(this, false) } }
         text(MoteI18n.text("只检查手机仍保留的采集记录在中央端是否可见；不会把“中央存在”直接当作上传确认，也不会删除或恢复记录。"))
         button(MoteI18n.text("全量补传 · 本机保留的记录")) {
-            AlertDialog.Builder(this).setTitle(MoteI18n.text("重新上传本机保留的数据？"))
+            MoteDialogBuilder(this).setTitle(MoteI18n.text("重新上传本机保留的数据？"))
                 .setMessage(MoteI18n.text("会重发本机仍保留的截图、OCR 原始事件、通知、设备事件、笔记及已启用来源的保留版本。中央端核验相同 ID 去重，继续补齐缺失数据。\n\n已从手机清理的数据无法补传。中央已删除或内容冲突的记录不会覆盖或恢复，暂停的来源不会启用。此操作可能产生较多流量，仍遵守网络设置。"))
                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("开始补传")) { _, _ -> runAction { SyncRecoveryWorker.start(this, true) } }.show()
         }

@@ -63,7 +63,7 @@ class CalendarActionsActivity : MoteActivity() {
             val labels = mapOf("proposed" to MoteI18n.text("待确认"), "approved" to MoteI18n.text("等待客户端写入"), "executing" to MoteI18n.text("等待保存回执"), "uncertain" to MoteI18n.text("保存结果待核实"), "succeeded" to MoteI18n.text("已添加 · #Mote"), "dismissed" to MoteI18n.text("已忽略"), "stale" to MoteI18n.text("原文已更新或删除"))
             text(card, "${labels[state] ?: state}\n${e.optString("start")} → ${e.optString("end")}\n${e.optString("timeZone")} · ${e.optString("location")}")
             if (a.optString("uncertainty").isNotBlank()) text(card, a.getString("uncertainty"))
-            button(card, MoteI18n.text("查看原文依据")) { val evidence = a.getJSONArray("evidence"); val content = (0 until evidence.length()).joinToString("\n\n") { val r = evidence.getJSONObject(it); "${r.getString("source")} · ${r.getString("capturedAt")}\n${r.getString("quote")}" }; AlertDialog.Builder(this).setTitle(MoteI18n.text("原文依据")).setMessage(content).setPositiveButton(MoteI18n.text("关闭"), null).show() }
+            button(card, MoteI18n.text("查看原文依据")) { val evidence = a.getJSONArray("evidence"); val content = (0 until evidence.length()).joinToString("\n\n") { val r = evidence.getJSONObject(it); "${r.getString("source")} · ${r.getString("capturedAt")}\n${r.getString("quote")}" }; MoteDialogBuilder(this).setTitle(MoteI18n.text("原文依据")).setMessage(content).setPositiveButton(MoteI18n.text("关闭"), null).show() }
             if (state == "proposed") {
                 button(card, MoteI18n.text("核对并添加到日历")) { edit(a, data) }
                 button(card, MoteI18n.text("忽略这条建议")) { work(MoteI18n.text("正在保存选择…")) { client.dismiss(a); client.list(cursor) } }
@@ -100,7 +100,7 @@ class CalendarActionsActivity : MoteActivity() {
         val calendars = choices
         val picker = Spinner(this).apply { adapter = ArrayAdapter(this@CalendarActionsActivity, android.R.layout.simple_spinner_dropdown_item, (0 until calendars.length()).map { calendars.getJSONObject(it).getString("title") }) }; form.addView(picker)
         val validation = TextView(this); form.addView(validation)
-        val dialog = AlertDialog.Builder(this).setTitle(MoteI18n.text("确认日程")).setView(ScrollView(this).apply { addView(form) }).setNegativeButton(MoteI18n.text("返回"), null).setPositiveButton(MoteI18n.text("确认添加"), null).create()
+        val dialog = MoteDialogBuilder(this).setTitle(MoteI18n.text("确认日程")).setView(ScrollView(this).apply { addView(form) }).setNegativeButton(MoteI18n.text("返回"), null).setPositiveButton(MoteI18n.text("确认添加"), null).create()
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val edited = JSONObject().put("allDay", allDay.isChecked); for ((key, value) in fields) edited.put(key, value.text.toString())
             try { CalendarActionRules.times(edited) } catch (_: Exception) { validation.text = MoteI18n.text("请核对完整日期、时间、时区和标题"); return@setOnClickListener }

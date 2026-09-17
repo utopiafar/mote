@@ -43,7 +43,9 @@ jobs:
           MOTE_APPLE_API_KEY_P8: ${{ secrets.MOTE_APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.MOTE_APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.MOTE_APPLE_API_ISSUER }}
-        run: node scripts/release/mac-package.mjs
+        run: |
+          node scripts/release/mac-package.mjs
+          MOTE_MAC_DEVELOPMENT=1 node scripts/release/mac-package.mjs
       - name: Verify native replacement and startup rollback with generated apps
         run: node apps/desktop/scripts/update-fixture.cjs
       # mac-package builds desktop dist and the native helpers after models:setup.

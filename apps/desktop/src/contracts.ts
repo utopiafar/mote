@@ -15,6 +15,7 @@ export interface Config {
   maxQueueEvents: number;
   captureStorageDirectory: string;
   localContentEncryption: boolean;
+  notificationCollectionEnabled?: boolean;
   excludedAppIds: string[];
   defaultCollection: CollectionMode;
   appCollectionRules: Record<string, CollectionMode>;
@@ -56,7 +57,7 @@ export interface CaptureEvent {
   imageMime?: 'image/jpeg';
   ocrText?: string;
   ocr?: { status: 'pending' | 'completed' | 'disabled' | 'failed'; reason?: 'charging'; updatedAt?: string };
-  source: 'screen' | 'note' | 'activity';
+  source: 'screen' | 'note' | 'activity' | 'notification';
   metadata?: import('@mote/shared').RecordMetadata;
   mood?: string;
   privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; collection?: 'content' | 'activity'; reason?: string };
@@ -109,9 +110,6 @@ export interface NsfwGate {
 export interface DesktopApi {
   language(): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
   setLanguage(preference: import('@mote/shared/i18n').LanguagePreference): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
-  contentDecryptionStatus(): Promise<import('./local-content').DecryptionProgress>;
-  decryptLocalContent(): Promise<import('./local-content').DecryptionProgress>;
-  cancelContentDecryption(): Promise<void>;
   restartForStorageRecovery(): Promise<void>;
   chooseCaptureDirectory(): Promise<{ canceled: boolean; directory?: string }>;
   openCaptureDirectory(): Promise<void>;
@@ -150,7 +148,7 @@ export interface DesktopApi {
   noteDraft(): Promise<import('./note-draft').NoteDraft>;
   updateNoteDraft(input: import('./note-draft').NoteDraft): Promise<import('./note-draft').NoteDraft>;
   saveNote(input: import('./note-draft').NoteDraft): Promise<{ id: string; draft: import('./note-draft').NoteDraft }>;
-  openCentral(): Promise<void>;
+  openCentral(page?: string): Promise<void>;
   exportSupport(): Promise<{ canceled: boolean }>;
   exportDiagnostics(): Promise<{ canceled: boolean }>;
   readRawEvents(): Promise<string>;
@@ -162,6 +160,7 @@ export interface DesktopApi {
   retry(): Promise<Status>;
   openPermissions(): Promise<void>;
   openDataFolder(): Promise<void>;
+  exportMetadata(): Promise<void>;
   exportQueue(): Promise<{ canceled: boolean; path?: string }>;
   importQueue(): Promise<{ canceled: boolean; imported?: number }>;
   downloadModel(): Promise<Status>;

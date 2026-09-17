@@ -98,7 +98,7 @@ class CompressionPreviewActivity : MoteActivity() {
     private fun enlarge(index: Int) {
         if (images.size < 2) return
         val image = BulkDedupeImageView(this).apply { setImageBitmap(images[index]); contentDescription = MoteI18n.text("双指缩放、拖动，双击复位") }
-        dialog = AlertDialog.Builder(this).setTitle(if (index == 0) MoteI18n.text("原始示例 · 双指放大") else MoteI18n.text("压缩结果 · 双指放大"))
+        dialog = MoteDialogBuilder(this).setTitle(if (index == 0) MoteI18n.text("原始示例 · 双指放大") else MoteI18n.text("压缩结果 · 双指放大"))
             .setView(image).setPositiveButton(MoteI18n.text("关闭"), null).setNeutralButton(if (index == 0) MoteI18n.text("看压缩结果") else MoteI18n.text("看原图")) { _, _ -> enlarge(1 - index) }.create()
         dialog!!.show(); dialog!!.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         image.layoutParams = image.layoutParams.apply { height = (resources.displayMetrics.heightPixels * .65).toInt() }

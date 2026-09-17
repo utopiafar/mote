@@ -161,3 +161,14 @@ it('keeps activity metadata durable but rejects all content fields and content-o
   await expect(queue.enqueue({ ...activity, metadata: { ...activity.metadata, state: { serialNumber: 'not allowed' } } } as never)).rejects.toThrow();
   await expect(queue.enqueue(activity, image)).rejects.toThrow('不得包含');
 });
+
+it('retains generated Mac notification observations across queue reload and metadata export', async () => {
+  const base=event(),at=base.capturedAt;
+  const notification={...base,source:'notification' as const,imageMime:undefined,ocr:undefined,ocrText:'',durationMs:0,
+    privacy:{excluded:false as const,redacted:false,mode:'none' as const,collection:'content' as const},
+    metadata:{version:1 as const,observedAt:at,collector:{method:'accessibility' as const},observation:{sessionId:base.id,elapsedRealtimeMs:1},notification:{action:'posted' as const,notificationKey:'ab'.repeat(32),postedAt:at,ongoing:false,groupSummary:false,text:'Generated notification'}}};
+  await queue.enqueue(notification);
+  const restored=new DurableQueue(directory,limits);await restored.initialize();
+  expect((await restored.next())?.record.event.metadata?.notification?.text).toBe('Generated notification');
+  expect(restored.exportMetadata().records[0].source).toBe('notification');
+});

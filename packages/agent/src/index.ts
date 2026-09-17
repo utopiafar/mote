@@ -183,6 +183,7 @@ export function createAgent(options: AgentOptions) {
   const configured =
     !!options.model?.trim() && (!!options.apiKey?.trim() || localWithoutKey);
   async function execute(input: QueryInput): Promise<AgentAnswer> {
+    input.signal?.throwIfAborted();
     if (closed) throw new AgentClosedError();
     if (!configured) throw new AgentNotConfiguredError();
     if (!input.question?.trim() || input.question.length > 20_000)
@@ -206,6 +207,7 @@ export function createAgent(options: AgentOptions) {
     let harness: DeepSeekHarness | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let primaryFailure = false;
+    let abortListener: (() => void) | undefined;
     try {
       await mkdir(join(root, "workspace"));
       const patch = join(root, "mote.patch.json");
@@ -307,7 +309,12 @@ export function createAgent(options: AgentOptions) {
           return completeAnswer(result);
         }
       };
+      input.signal?.throwIfAborted();
       const answer = await Promise.race([
+        new Promise<never>((_,reject)=>{
+          abortListener=()=>reject(new DOMException('Query cancelled','AbortError'));
+          input.signal?.addEventListener('abort',abortListener,{once:true});
+        }),
         readAnswer(),
         new Promise<never>((_resolve, reject) => {
           timeout = setTimeout(
@@ -332,6 +339,7 @@ export function createAgent(options: AgentOptions) {
       if (error instanceof AgentTimeoutError || error instanceof AgentResponseError || error instanceof AgentClosedError) throw error;
       throw new AgentProviderError();
     } finally {
+      if (abortListener) input.signal?.removeEventListener('abort',abortListener);
       if (timeout) clearTimeout(timeout);
       const cleanup = await Promise.allSettled([
         Promise.resolve().then(() => harness?.close()),

@@ -45,7 +45,7 @@ class ActivityStatsActivity : MoteActivity() {
         button(MoteI18n.text("查看采集记录")) { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         button(MoteI18n.text("导出无正文统计 JSON")) { startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-activity-stats.json"), 1) }
         button(MoteI18n.text("重置统计起点（保留队列和数据）")) {
-            AlertDialog.Builder(this).setTitle(MoteI18n.text("重置本机统计")).setMessage(MoteI18n.text("只清空累计数字和最近事件，并记录新起算时间。不会删除队列、模型、配置或中央资料。"))
+            MoteDialogBuilder(this).setTitle(MoteI18n.text("重置本机统计")).setMessage(MoteI18n.text("只清空累计数字和最近事件，并记录新起算时间。不会删除队列、模型、配置或中央资料。"))
                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("重置")) { _, _ ->
                     task.start(MoteI18n.text("正在重置统计…"), { operationStatus.text = it }, {
                         Operations.ledger(applicationContext).reset(); getSharedPreferences("operation-health", 0).edit().remove("incomplete").commit()
@@ -132,7 +132,7 @@ class ActivityStatsActivity : MoteActivity() {
             val item = pending.getJSONObject(i)
             history.addView(Button(this).apply {
                 text = "${if (item.optBoolean("archiveMissing")) MoteI18n.text("中央不可更新") else if (item.optBoolean("uploaded")) MoteI18n.text("已同步保留") else MoteI18n.text("待确认")} · ${when (item.getString("kind")) { "screen" -> MoteI18n.text("截图"); "activity" -> MoteI18n.text("应用活动"); "media" -> MoteI18n.text("媒体状态"); "notification" -> MoteI18n.text("通知事件"); "device_event" -> MoteI18n.text("设备事件"); else -> MoteI18n.text("随手记") }} · ${item.getString("id").take(8)}\n${item.getString("createdAt")}"
-                setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle(MoteI18n.text("本机记录")).setMessage(MoteI18n.text("记录 ID：{0}\n创建：{1}\n条目字节：{2}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。", item.getString("id"), item.getString("createdAt"), item.getLong("bytes"))).setPositiveButton(MoteI18n.text("关闭"), null).show() }
+                setOnClickListener { MoteDialogBuilder(this@ActivityStatsActivity).setTitle(MoteI18n.text("本机记录")).setMessage(MoteI18n.text("记录 ID：{0}\n创建：{1}\n条目字节：{2}\n本机仍保留此记录；下方历史同一 ID 可关联上传失败和确认。图片与文字可从采集记录查看。", item.getString("id"), item.getString("createdAt"), item.getLong("bytes"))).setPositiveButton(MoteI18n.text("关闭"), null).show() }
             })
         }
         pager(pendingPage, pending.length()) { pendingPage = it; renderHistory() }
@@ -142,7 +142,7 @@ class ActivityStatsActivity : MoteActivity() {
             val event = events.getJSONObject(i)
             history.addView(Button(this).apply {
                 text = "${Instant.ofEpochMilli(event.getLong("atMs"))}\n${kind(OperationKind.valueOf(event.getString("kind")))} · ${reason(OperationReason.valueOf(event.getString("reason")))} · ${event.optString("recordId").take(8)}"
-                setOnClickListener { AlertDialog.Builder(this@ActivityStatsActivity).setTitle(MoteI18n.text("本机结果详情")).setMessage(detail(event)).setPositiveButton(MoteI18n.text("关闭"), null).show() }
+                setOnClickListener { MoteDialogBuilder(this@ActivityStatsActivity).setTitle(MoteI18n.text("本机结果详情")).setMessage(detail(event)).setPositiveButton(MoteI18n.text("关闭"), null).show() }
             })
         }
         pager(historyPage, events.length()) { historyPage = it; renderHistory() }

@@ -51,7 +51,10 @@ const { randomUUID } = require('node:crypto');
     assert(execFileSync('/usr/bin/nm', [helper], { encoding: 'utf8' }).includes('visibleWindowIdentities'), 'Production Swift window policy must be linked into packaged helper');
     const QRCode = require('qrcode'); const payload = 'mote-generated-qr-fixture-no-invitation'; const png = await QRCode.toBuffer(payload, { type: 'png', width: 256 });
     const decoded = JSON.parse(execFileSync(helper, ['qr'], { input: png, encoding: 'utf8', timeout: 15000 })); assert.deepEqual(decoded.payloads, [payload]);
-    const { inspectBundle } = require(join(asar, 'dist/update-install.js')); await inspectBundle(join(resources, 'native/mote-updater'), resolve(resources, '../..'), version, process.arch);
+    const { inspectBundle } = require(join(asar, 'dist/update-install.js'));
+    const development=Boolean(packagedRequire('./package.json').moteDevelopment);
+    const inspect=()=>inspectBundle(join(resources,'native/mote-updater'),resolve(resources,'../..'),version,process.arch);
+    if(development)await assert.rejects(inspect,{message:'UPDATE_BUNDLE_INVALID'});else await inspect();
     const result = { ok: true, version, packagedExecutableNodeMode: true, metadataSubpathResolvedInsideAsar: true, strictSchemaAndActivityQueue: true, nativeWindowPolicyLinked: true, packagedNativeQrFixture: true, nativeUpdaterIdentity: true, legacyVersion: legacyAsar ? '0.6.1 actual public package modules' : 'generated legacy field shape', configDeviceTokenPrivacyPreserved: true, migrationDefaults: { defaultCollection: migrated.defaultCollection, metadataEnabled: migrated.metadataEnabled }, oldQueueBytesAndPreparedDraftPreserved: true, preparedRetryNoDuplicateOrNewMetadata: true, syntheticModelUnchanged: true, realKeychainUsed: false, normalAppStarted: false, personalScreensOrCalendarRead: false, qwenExecuted: false };
     if (process.argv[4]) await writeFile(process.argv[4], JSON.stringify(result, null, 2), { mode: 0o600 }); process.stdout.write(JSON.stringify(result) + '\n');
   } finally { await rm(directory, { recursive: true, force: true }); }

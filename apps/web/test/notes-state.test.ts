@@ -95,3 +95,13 @@ test('failed draft clearing retains its submission ID without losing queued cont
   assert.equal(outbox.items().length, 1);
   assert.equal(outbox.prepareSubmission(outbox.draft(), note()).id, prepared.id);
 });
+
+test('attachment-only drafts preserve references across reopen and retry',()=>{
+  const storage=new MemoryStorage(),box=new NoteOutbox(storage,'attachments'),draft={text:'',mood:'',attachments:[randomUUID()]};
+  box.saveDraft(draft);const first=box.prepareSubmission(draft,note());
+  assert.deepEqual(first.metadata?.attachments,draft.attachments);
+  const reopened=new NoteOutbox(storage,'attachments');assert.deepEqual(reopened.draft(),draft);
+  assert.equal(reopened.prepareSubmission(draft,note()).id,first.id);
+  const changed={...draft,attachments:[randomUUID()]};reopened.saveDraft(changed);
+  assert.notEqual(reopened.prepareSubmission(changed,note()).id,first.id);
+});

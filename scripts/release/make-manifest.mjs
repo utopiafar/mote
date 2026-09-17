@@ -15,5 +15,7 @@ if(!key)throw Error('Release signing secret is required');
 const envelope={schemaVersion:1,keyId:policy.keyId,payload:payload.toString('base64'),signature:sign('RSA-SHA256',payload,key).toString('base64')};
 const raw=JSON.stringify(envelope,null,2)+'\n';verifyReleaseEnvelope(raw,{repository:policy.repository,channel:manifest.channel,version});
 writeFileSync(join(directory,'mote-release.json'),raw);
-writeFileSync(join(directory,'SHA256SUMS'),assets.map(a=>`${a.sha256}  ${a.name}`).join('\n')+'\n'+createHash('sha256').update(raw).digest('hex')+'  mote-release.json\n');
+const developmentArchives=names.filter(n=>/^mote-desktop-macos-dev-(arm64|x64)-/.test(n)&&n.endsWith('.zip'));
+if(!developmentArchives.length)throw Error('Missing Mac development package');
+writeFileSync(join(directory,'SHA256SUMS'),developmentArchives.map(name=>createHash('sha256').update(readFileSync(join(directory,name))).digest('hex')+'  '+name).join('\n')+'\n'+assets.map(a=>`${a.sha256}  ${a.name}`).join('\n')+'\n'+createHash('sha256').update(raw).digest('hex')+'  mote-release.json\n');
 console.log(JSON.stringify({version,assets:assets.length,signed:true,image:image.image}));

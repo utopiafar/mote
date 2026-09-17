@@ -30,12 +30,10 @@ app.on('browser-window-created',(_event,window)=>window.webContents.once('did-fi
   await until(()=>js('document.querySelector("#note-feedback").textContent.includes("正文最多")'));
   assert.equal(await js('document.querySelector("#note-text").value.length'),20001);assert.equal(records().length,1);
   await until(()=>js('!document.querySelector("#save-note").disabled'));
-  await js(`document.querySelector('#note-text').value='修正后的合成正文';document.querySelector('#note-text').dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#note-mood').value=${JSON.stringify('🙂'.repeat(40)+'字')};document.querySelector('#note-mood').dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#note-form').requestSubmit();`);
-  await until(()=>js('document.querySelector("#note-feedback").textContent.includes("心情最多")'));assert.equal(records().length,1);
-  await until(()=>js('!document.querySelector("#save-note").disabled'));
-  await js(`document.querySelector('#note-mood').value=${JSON.stringify('🙂'.repeat(40))};document.querySelector('#note-mood').dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#note-form').requestSubmit();`);
+  assert.equal(await js('Boolean(document.querySelector("#note-mood"))'),false);
+  await js(`document.querySelector('#note-text').value='修正后的合成正文';document.querySelector('#note-text').dispatchEvent(new InputEvent('input',{bubbles:true}));document.querySelector('#note-form').requestSubmit();`);
   await until(async()=> (await js('window.mote.status()')).queueDepth===2);
-  assert(records().some(r=>r.event.ocrText==='修正后的合成正文'&&r.event.mood==='🙂'.repeat(40)));
+  assert(records().some(r=>r.event.ocrText==='修正后的合成正文'));
   process.stdout.write(JSON.stringify({ok:true,fixtureOnly:true,compositionSubmitSuppressed:true,unicodeAndMarkupPreserved:true,oversizeErrorsVisible:true,failedInputPreserved:true,correctionSaved:true,captureStayedStopped:true})+'\n');
   clearTimeout(timeout);app.quit();
  })().catch(e=>{process.stderr.write('Complex UI failed: '+e.message+'\n');app.exit(1);});

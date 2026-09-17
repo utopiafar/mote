@@ -1,6 +1,6 @@
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import type { DiagnosticsRecorder } from '@mote/diagnostics';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { desktopCapturer, nativeImage, powerMonitor, screen, systemPreferences } from 'electron';
 import type { NativeImage } from 'electron';
 import type { Config, Status, Platform, CaptureEvent, NsfwGate } from './contracts';
@@ -8,7 +8,7 @@ import { decideSync } from './sync-policy';
 import type { LocalSourceManager } from './source-manager';
 import { MAX_IMAGE_BYTES, publicConfig } from './config';
 import { DurableQueue, QueueFullError } from './queue';
-import { activeApplication, foregroundApplication, recognizeText, readPowerState } from './native';
+import { readVisibleNotifications, activeApplication, foregroundApplication, recognizeText, readPowerState } from './native';
 import { imageWork } from './background';
 import { reviewLocally } from './privacy';
 import { collectionForApp, permitsVisibleContent } from './app-collection';
@@ -18,6 +18,8 @@ import { EventJournal, failureCode, TransportFailure, type EventStage } from './
 
 export const currentPlatform: Platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
 export class Collector {
+  private notificationSeen=new Set<string>();
+  private notificationSession=randomUUID();
   private running = false;
   private locked = false;
   private sleeping = false;
@@ -206,6 +208,18 @@ export class Collector {
         const power = await readPowerState(this.helperPath, abort.signal);
         if (power.onBattery === undefined || (cfg.batteryPauseBelowPct > 0 && power.batteryPercent === undefined)) { this.pause(moteText("无法确认电量，按你启用的电量策略暂停")); return; }
         if (power.onBattery && (cfg.pauseOnBattery || (power.batteryPercent ?? 100) <= cfg.batteryPauseBelowPct)) { this.pause(moteText("已达到你设置的电量暂停条件")); return; }
+      }
+      if(cfg.notificationCollectionEnabled && cfg.defaultCollection==='content' && !cfg.excludedAppIds.length && Object.values(cfg.appCollectionRules).every(v=>v==='content')) {
+        const visible=await readVisibleNotifications(this.helperPath,abort.signal);
+        const observedAt=new Date().toISOString();
+        for(const text of visible){
+          const key=createHash('sha256').update(text).digest('hex');if(this.notificationSeen.has(key))continue;
+          if(!valid())return;
+          await this.queue.enqueue({id:randomUUID(),deviceId:cfg.deviceId,deviceName:cfg.deviceName,platform:currentPlatform,capturedAt:observedAt,durationMs:0,source:'notification',appId:'com.apple.notificationcenterui',appName:'Notification Center',ocrText:'',privacy:{excluded:false,redacted:false,mode:'none',collection:'content'},metadata:{version:1,observedAt,collector:{method:'accessibility'},observation:{sessionId:this.notificationSession,elapsedRealtimeMs:Math.floor(process.uptime()*1000)},notification:{action:'posted',notificationKey:key,postedAt:observedAt,ongoing:false,groupSummary:false,text}}});
+          this.notificationSeen.add(key);
+        }
+        if(this.notificationSeen.size>1000)this.notificationSeen=new Set([...this.notificationSeen].slice(-500));
+        if(visible.length)void this.upload();
       }
       const foreground = await foregroundApplication(this.helperPath, abort.signal);
       if (!valid()) return;
