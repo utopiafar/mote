@@ -56,7 +56,7 @@ export class LocalSourceManager {
     this.timer = setInterval(() => { void this.sync(false); }, 5000); this.timer.unref();
     void this.sync(false);
   }
-  status(): SourceStatus[] { return this.sources.map(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.message)})); }
+  status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.message)})); }
   connectionActivity(): { pending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), inFlight: Boolean(this.task || this.permissionTask) }; }
   async holdConnection(): Promise<() => void> {
     if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，请稍后重试连接"));
