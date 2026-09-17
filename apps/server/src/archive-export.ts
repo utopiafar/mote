@@ -9,7 +9,8 @@ import {exportTar} from './file-export.js';
 export function registerArchiveExport(app:FastifyInstance,store:Store,files:FileStore,archivedFiles:ArchivedFileStore,maxBytes:number){
   app.get('/api/export-bundle',async(req,reply)=>{
     const {mode}=z.object({mode:z.enum(['metadata','data']).default('metadata')}).strict().parse(req.query);
-    const estimate=Number(store.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM captures').get()!.n);
+    const jsonTables=['captures','devices','memories','insights','conversations','archived_files','source_connections'] as const;
+    const estimate=jsonTables.reduce((total,table)=>total+Number(store.db.prepare(`SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM ${table}`).get()!.n),0);
     if(estimate>maxBytes)throw new StoreError('Metadata exceeds HTTP export limit; use offline backup',413);
     const entries:{name:string;bytes:Buffer}[]=[];let total=0;
     function add(name:string,bytes:Buffer){total+=bytes.length;if(total>maxBytes)throw new StoreError('Export exceeds HTTP limit; use the offline backup command',413);entries.push({name,bytes});}
@@ -18,7 +19,8 @@ export function registerArchiveExport(app:FastifyInstance,store:Store,files:File
     const sources=(store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));
     const imported=(store.db.prepare('SELECT json FROM archived_files ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));
     const attachments=store.db.prepare('SELECT capture_id,file_id FROM capture_files ORDER BY capture_id,file_id').all();
-    add('metadata.json',Buffer.from(JSON.stringify({format:'mote-data-export',version:1,mode,exportedAt:new Date().toISOString(),captures,sources,importedFiles:imported,attachments,files:versions.map(r=>({captureId:r.capture_id,...JSON.parse(r.manifest)}))})));
+    const derived=Object.fromEntries(['devices','memories','insights','conversations'].map(table=>[table,(store.db.prepare(`SELECT json FROM ${table} ORDER BY id`).all() as {json:string}[]).map(r=>JSON.parse(r.json))]));
+    add('metadata.json',Buffer.from(JSON.stringify({format:'mote-data-export',version:1,mode,exportedAt:new Date().toISOString(),captures,sources,...derived,importedFiles:imported,attachments,files:versions.map(r=>({captureId:r.capture_id,...JSON.parse(r.manifest)}))})));
     if(mode==='data'){
       const seen=new Set<string>();
       for(const c of captures)if(c.blobHash&&!seen.has(c.blobHash)){seen.add(c.blobHash);add(`images/${c.blobHash}.blob`,store.image(c.id).bytes);}
