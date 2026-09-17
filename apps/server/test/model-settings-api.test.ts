@@ -56,7 +56,7 @@ test('owner model saves apply to new queries while an existing query retains its
   assert.equal(fields.find((field: any) => field.key === 'model').source, 'derived');
   assert.equal(cfg.model, 'original-fixture', 'Hot settings must not mutate the caller configuration snapshot');
   finish(); assert.equal((await pending).json().answer, 'original-fixture');
-  await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(closed, ['original-fixture']);
+  await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(closed, ['original-fixture','original-fixture']);
   for (const route of ['/api/model-settings', '/api/configuration', '/api/status', '/api/support-bundle', '/api/export']) {
     const response = await app.inject({ url: route, headers }); assert.equal(response.statusCode, 200);
     for (const secret of ['synthetic-new-key', 'synthetic-header-key', 'synthetic-body-key']) assert.equal(response.body.includes(secret), false, route);

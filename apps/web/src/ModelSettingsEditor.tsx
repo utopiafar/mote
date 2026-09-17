@@ -26,7 +26,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [conflict, setConflict] = useState(false);
   const [probe, setProbe] = useState<ModelTestResult>(), [restoreReview, setRestoreReview] = useState(false), [reload, setReload] = useState(0);
   const [customBudget,setCustomBudget]=useState(false);
-  const [catalog,setCatalog]=useState<{id:string;name:string}[]>([]),[catalogError,setCatalogError]=useState(''),[catalogLoading,setCatalogLoading]=useState(false),[catalogSource,setCatalogSource]=useState('provider'),[catalogReload,setCatalogReload]=useState(0);
+  const [catalog,setCatalog]=useState<{id:string;name:string}[]>([]),[catalogError,setCatalogError]=useState(''),[catalogLoading,setCatalogLoading]=useState(false),[catalogReload,setCatalogReload]=useState(0);
   const requestRef = useRef<AbortController | undefined>(undefined), loadRef = useRef<AbortController | undefined>(undefined), epoch = useRef(0);
   const active = state?.api === api ? state : undefined;
   const busy = loading || !!operation;
@@ -36,16 +36,16 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
     if(!active)return;
     const timer=setTimeout(()=>{
       let body:unknown;
-      try{if(catalogSource==='provider')body=modelSettingsRequest(active.snapshot,active.draft);}
+      try{body=modelSettingsRequest(active.snapshot,active.draft);}
       catch(e){setCatalogError(errorMessage(e));return;}
       setCatalogLoading(true);
-      void api.request<{items:{id:string;name:string}[]}>(catalogSource==='provider'?'/api/model-settings/models':'/api/model-settings/codex-models',{method:catalogSource==='provider'?'POST':'GET',...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal})
+      void api.request<{items:{id:string;name:string}[]}>(endpoint+'/models',{method:'POST',...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal})
         .then(result=>{if(!controller.signal.aborted)setCatalog(result.items);})
         .catch(e=>{if(!controller.signal.aborted)setCatalogError(errorMessage(e));})
         .finally(()=>{if(!controller.signal.aborted)setCatalogLoading(false);});
     },500);
     return()=>{clearTimeout(timer);controller.abort();};
-  },[api,catalogKey,catalogSource,catalogReload]);
+  },[api,catalogKey,catalogReload,endpoint]);
 
   useEffect(() => {
     setState(undefined);
@@ -119,7 +119,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   const credentialChoice = (field: 'apiKeyAction' | 'headersAction' | 'extraBodyAction', label: string, configured: boolean) => <label className="preference-field">{label}<select aria-label={label} value={draft![field]} onChange={e => change({[field]: e.target.value as CredentialAction, ...(field === 'apiKeyAction' ? {apiKey: ''} : field === 'headersAction' ? {headers: ''} : {extraBody: ''})})}><option value="keep">{moteText("不改动（")}{configured ? moteText("已配置") : moteText("未配置")}）</option><option value="replace">{moteText("填写新值，替换已有配置")}</option><option value="clear">{moteText("清除已有配置")}</option></select></label>;
   return <>
     <section className="panel config-builder model-settings-editor" aria-label={moteText("模型服务设置")} aria-busy={busy}>
-      <div className="section-heading"><div><h2><SlidersHorizontal size={18}/>{moteText("模型服务")}</h2><p>{moteText("每套配置独立保存服务、模型和凭据；在功能入口或默认分配中选择。")}</p></div><span className="badge green">{moteText("保存后生效")}</span></div>
+      <div className="section-heading"><div><h2><SlidersHorizontal size={18}/>{moteText("模型服务")}</h2><p>{moteText("设置连接与默认模型，其他模块可复用此连接并选择不同模型。")}</p></div><span className="badge green">{moteText("保存后生效")}</span></div>
       {!active && loading && <p role="status">{moteText("正在读取模型设置…")}</p>}
       {error && <p className="notice error" role="alert">{error}</p>}
       {conflict && <button className="button subtle" disabled={busy} onClick={reread}><RotateCcw size={15}/>{moteText("重新读取并还原草稿")}</button>}
@@ -127,12 +127,12 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
       {active && draft && <form onSubmit={e => {e.preventDefault(); void run('save');}}>
         <fieldset className="model-settings-fields" disabled={busy}>
           <div className="preference-grid">
-            {profileId!=='default'&&<label className="preference-field">{moteText("配置名称")}<input aria-label={moteText("配置名称")} maxLength={100} required value={active.name} onChange={e=>setState({...active,name:e.target.value})}/></label>}
-            <label className="preference-field">{moteText("服务预设")}<select aria-label={moteText("服务预设")} value={draft.provider} onChange={e => {
+            {profileId!=='default'&&<label className="preference-field">{moteText("预设名称")}<input aria-label={moteText("预设名称")} maxLength={100} required value={active.name} onChange={e=>setState({...active,name:e.target.value})}/></label>}
+            <label className="preference-field">{moteText("服务商类型")}<select aria-label={moteText("服务商类型")} value={draft.provider} onChange={e => {
               const next = MODEL_PROVIDER_PRESETS.find(p => p.id === e.target.value);
               if (next) change({provider: next.id, ...(next.id !== 'custom' ? {baseUrl: next.baseUrl, protocol: next.protocol, reasoningEffort: next.reasoningEffort ?? 'auto', allowUnauthenticatedLocal: next.allowUnauthenticatedLocal ?? false,...(next.protocol==='codex-app-server'?{apiKeyAction:'clear' as const,apiKey:'',headersAction:'clear' as const,headers:'',extraBodyAction:'clear' as const,extraBody:''}:{})} : {})});
             }}>{!preset && <option value={draft.provider}>{moteText("当前自定义服务 ·")}{' '}{draft.provider}</option>}{Object.entries(groupNames).map(([group, name]) => <optgroup key={group} label={name}>{MODEL_PROVIDER_PRESETS.filter(p => p.group === group).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>)}</select><small>{preset?.description || moteText("选择预设后仍可自定义地址、协议与模型名称。")}</small></label>
-            <div className="preference-field"><label>{moteText("模型目录来源")}<select aria-label={moteText("模型目录来源")} value={catalogSource} onChange={e=>setCatalogSource(e.target.value)}><option value="provider">{moteText("当前服务 API")}</option><option value="codex">{moteText("本机 Codex App Server")}</option></select></label><label>{moteText("可用模型")}<select aria-label={moteText("可用模型")} value={catalog.some(m=>m.id===draft.model)?draft.model:''} onChange={e=>{if(e.target.value)change({model:e.target.value});}} disabled={catalogLoading}><option value="">{catalogLoading?moteText("正在读取模型列表…"):moteText("选择模型，或在下方手动填写")}</option>{catalog.map(m=><option key={m.id} value={m.id}>{m.name===m.id?m.id:`${m.name} · ${m.id}`}</option>)}</select></label><label>{moteText("模型名称")}<input aria-label={moteText("模型名称")} autoComplete="off" spellCheck={false} value={draft.model} onChange={e => change({model: e.target.value})} placeholder={moteText("模型 ID 或私有部署名称")}/></label><button type="button" className="text-button" disabled={catalogLoading} onClick={()=>setCatalogReload(n=>n+1)}>{moteText("刷新模型列表")}</button>{catalogError&&<small role="status">{catalogError}</small>}{!catalogError&&!catalogLoading&&!catalog.length&&<small>{moteText("目录暂无可用模型，可手动填写。")}</small>}<small>{catalogSource==='codex'?moteText("目录使用中央节点本机 Codex 的登录账户。选择只填写模型 ID；实际请求仍使用本页配置的 API 协议与凭据。"):moteText("根据当前地址和凭据自动加载；目录可见不代表支持工具调用，可使用下方测试连接验证。")}{' '}{moteText("留空会关闭问答与模型回顾。")}</small></div>
+            <div className="preference-field"><label>{moteText("可用模型")}<select aria-label={moteText("可用模型")} value={catalog.some(m=>m.id===draft.model)?draft.model:''} onChange={e=>{if(e.target.value)change({model:e.target.value});}} disabled={catalogLoading}><option value="">{catalogLoading?moteText("正在读取模型列表…"):moteText("选择模型，或在下方手动填写")}</option>{catalog.map(m=><option key={m.id} value={m.id}>{m.name===m.id?m.id:`${m.name} · ${m.id}`}</option>)}</select></label><label>{moteText("模型名称")}<input aria-label={moteText("模型名称")} autoComplete="off" spellCheck={false} value={draft.model} onChange={e => change({model: e.target.value})} placeholder={moteText("模型 ID 或私有部署名称")}/></label><button type="button" className="text-button" disabled={catalogLoading} onClick={()=>setCatalogReload(n=>n+1)}>{moteText("刷新模型列表")}</button>{catalogError&&<small role="status">{catalogError}</small>}{!catalogError&&!catalogLoading&&!catalog.length&&<small>{moteText("目录暂无可用模型，可手动填写。")}</small>}<small>{draft.protocol==='codex-app-server'?moteText("使用本机 Codex 的登录账户加载目录，并通过 Codex App Server 调用所选模型。"):moteText("根据当前地址和凭据自动加载；目录可见不代表支持工具调用，可使用下方测试连接验证。")}{' '}{moteText("留空表示此预设尚未就绪。")}</small></div>
             <label className="preference-field">{moteText("接口协议")}<select aria-label={moteText("接口协议")} value={draft.protocol} onChange={e => change({protocol: e.target.value as ModelSettingsDraft['protocol']})}>{Object.entries(protocolNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><small>{moteText("兼容地址应使用服务支持的协议；自定义参数按此协议传递。")}</small></label>
             {draft.protocol!=='codex-app-server'&&<label className="preference-field">{moteText("模型服务地址")}<input aria-label={moteText("模型服务地址")} type="url" autoComplete="off" spellCheck={false} value={draft.baseUrl} onChange={e => change({baseUrl: e.target.value})}/><small>{moteText("填写 API 基础地址；不包含 API key 或查询参数。")}</small></label>}
           </div>

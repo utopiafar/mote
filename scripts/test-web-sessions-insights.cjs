@@ -34,7 +34,8 @@ async function run(){
  await request('/api/fixture/release',{});await until(()=>js(`!!document.querySelector('.insight-report iframe')`),'completed HTML report');assert.equal((await request('/api/fixture/calls')).calls,1);await screenshot('insight-complete');
  await click('新建洞察');await request('/api/fixture/fail',{});await click('生成个人回顾');await until(()=>js(`document.querySelector('.insight-progress')?.textContent.includes('回顾未完成')`),'failed run visible');await screenshot('insight-failed');
  await click('调整范围后重试');await click('生成个人回顾');await until(async()=> (await request('/api/fixture/calls')).calls===3,'retry launches new request');await request('/api/fixture/release',{});await until(()=>js(`!!document.querySelector('.insight-report iframe')`),'retry completes');
- await click('设置');await until(()=>js(`!!Array.from(document.querySelectorAll('.preference-menu-row')).find(b=>b.querySelector('strong')?.textContent==='问答与回顾')`),'model settings entry');await js(`Array.from(document.querySelectorAll('.preference-menu-row')).find(b=>b.querySelector('strong')?.textContent==='问答与回顾').click()`);
+ await click('设置');await until(()=>js(`!!Array.from(document.querySelectorAll('.preference-menu-row')).find(b=>b.querySelector('strong')?.textContent==='模型 Provider')`),'model settings entry');await js(`Array.from(document.querySelectorAll('.preference-menu-row')).find(b=>b.querySelector('strong')?.textContent==='模型 Provider').click()`);
+ await click('复制预设');await click('创建副本');
  await until(()=>js(`!!document.querySelector('[aria-label="输出预算档位"]')`),'output budget controls');
  await js(`document.querySelector('.model-settings-editor details').open=true;document.querySelector('.model-settings-editor details').scrollIntoView({behavior:'instant',block:'start'})`);
  assert.equal(await js(`document.querySelector('[aria-label="输出 token 上限"]').value`),'65536');
@@ -42,8 +43,8 @@ async function run(){
  assert.equal(await js(`document.querySelector('[aria-label="输出 token 上限"]').value`),'128000');
  await js(`(()=>{const preset=document.querySelector('[aria-label="输出预算档位"]');preset.value='custom';preset.dispatchEvent(new Event('change',{bubbles:true}));})()`);
  await js(`(()=>{const input=document.querySelector('[aria-label="输出 token 上限"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'96000');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
- await screenshot('model-output-budget');await click('保存并应用');await until(async()=> (await request('/api/model-settings')).settings.maxTokens===96000,'saved custom budget');
- assert.equal((await request('/api/model-settings')).settings.apiKeyConfigured,true,'Budget update retains the credential');
+ await screenshot('model-output-budget');await click('保存并应用');await until(async()=> (await request('/api/model-settings')).profiles.find(p=>!p.readOnly).settings.maxTokens===96000,'saved custom budget');
+ assert.equal((await request('/api/model-settings')).profiles.find(p=>!p.readOnly).settings.apiKeyConfigured,true,'Budget update retains the credential');
  assert.deepEqual(crashes,[]);console.log(JSON.stringify({ok:true,checks:['session grouping','thumbnail pagination','mobile layout','immediate review state','navigation recovery','reload recovery','disconnect recovery','report','failure and retry','output budget presets and custom save'],output:out}));
 }
 run().then(()=>finish(0),async e=>{console.error(e.stack);if(window){console.error(await window.webContents.executeJavaScript('document.body.innerText'));writeFileSync(join(out,'failure.png'),(await window.webContents.capturePage()).toPNG());}finish(1);});

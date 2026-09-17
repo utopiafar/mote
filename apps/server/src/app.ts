@@ -90,7 +90,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   const factory:ModelAgentFactory=dependencies?.createModelAgent??((settings,reader)=>createModelAgent(settings,reader,codex));
   let initialAgent=dependencies?.agent;
   const modelSettings=new ModelSettingsStore({
-    directory:config.dataDir,environment:modelSettingsFromConfig(config),
+    directory:config.dataDir,environment:modelSettingsFromConfig(config),codex,
     prepare:async (settings,profiles)=>{
       const candidate=await createModelRegistry([{id:'default',name:moteText("默认配置"),settings},...profiles],reader,factory,initialAgent);initialAgent=undefined;
       return agent.prepare(candidate,()=>applyModelSettings(config,settings));
@@ -190,6 +190,8 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.put('/api/model-settings/profiles/:id',{bodyLimit:65536,config:connectionRate},async req=>modelSettings.updateProfile(profileId(req.params),req.body));
   app.delete('/api/model-settings/profiles/:id',{bodyLimit:8192,config:connectionRate},async req=>modelSettings.deleteProfile(profileId(req.params),req.body));
   app.post('/api/model-settings/profiles/:id/test',{bodyLimit:65536,config:{rateLimit:{max:3,timeWindow:'1 minute'}}},async req=>modelSettings.test(req.body,profileId(req.params)));
+  app.post('/api/model-settings/profiles/:id/models',{bodyLimit:65536,config:connectionRate},async req=>modelSettings.models(req.body,profileId(req.params)));
+  app.post('/api/model-settings/profiles/:id/copy',{bodyLimit:8192,config:connectionRate},async req=>modelSettings.copyProfile(profileId(req.params),req.body));
   app.put('/api/model-settings/defaults',{bodyLimit:8192,config:connectionRate},async req=>modelSettings.updateDefaults(req.body));
   app.get('/api/sources',async req=>{const c=credential(req);if(c)connections.assertActive(c);return {items:sources.listSources().filter(s=>!c||s.deviceId===c.deviceId)};});
   app.post('/api/sources',async req=>{const c=credential(req);if(c){connections.assertOwnDevice(c,req.body);const id=(req.body as {id?:unknown}).id;if(typeof id==='string'&&sources.listSources().some(s=>s.id===id))connections.assertOwnSource(c,id);}return sources.register(req.body);});
@@ -267,7 +269,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     if(closing)throw new StoreError('Central node is shutting down',503);
     if(activeQueries.size>=2)throw new StoreError('Two Agent queries are already running; retry shortly',429);
     const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
-    input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id};
+    input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
     const revision=store.deletionRevision();
     const meter=usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null});
     const observed={...input,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
@@ -343,10 +345,10 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
       if(expanded.size>20000)throw new StoreError('Choose a smaller range for memory extraction',413);
     }
     ids=[...expanded];if(!ids.length)throw new StoreError('No processed evidence in this range',409);
-    const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone,modelProfileId:profile.id});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send(job);
+    const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send(job);
   });
   app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
-  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId),model=profile.settings.model;return memories.extract(await queryAgent({...scope,modelProfileId:profile.id,skill:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT},'query','memories'),model);});
+  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId),model=profile.settings.model;return memories.extract(await queryAgent({...scope,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT},'query','memories'),model);});
   app.get('/api/conversations',async req=>conversations.list(z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1000).optional()}).strict().parse(req.query)));
   app.get('/api/conversations/:id',async req=>conversations.get(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.delete('/api/conversations/:id',async req=>conversations.delete(z.object({id:z.string().uuid()}).parse(req.params).id));

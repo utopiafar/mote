@@ -7,9 +7,11 @@ import {ConfigurationBuilder, type ConfigCategory} from './ConfigurationBuilder'
 import {Feedback} from './Feedback';
 import {MemorySettings} from './MemorySettings';
 import {ModelProfiles} from './ModelProfiles';
+import {ModelAssignments} from './ModelAssignments';
 export type SettingsDestination = 'imports'|'usage'|'lark'|'vault'|'developer'|'about'|'connections';
-const categories: {id:ConfigCategory;title:string;description:string;icon:typeof Bot}[] = [
-  {id:'model',title:moteText("问答与回顾"),description:moteText("模型服务、推理强度与自动回顾"),icon:Bot},
+const categories: {id:ConfigCategory|'providers';title:string;description:string;icon:typeof Bot}[] = [
+  {id:'providers',title:moteText("模型 Provider"),description:moteText("连接预设、模型目录、凭据与测试"),icon:Bot},
+  {id:'model',title:moteText("模块与模型"),description:moteText("为各模块分配预设和模型，设置记忆与回顾"),icon:Settings2},
   {id:'storage',title:moteText("保留与容量"),description:moteText("历史保留周期与资料库容量"),icon:Database},
   {id:'embedding',title:moteText("检索索引"),description:moteText("全文检索与可选向量模型"),icon:Search},
   {id:'connectors',title:moteText("来源与外部应用"),description:moteText("同步频率、Google 日历与 MCP"),icon:Link2},
@@ -20,7 +22,7 @@ function EffectiveField({field}:{field:ConfigurationField}) {
  return <div className="effective-field" data-config-key={field.key}><div><strong>{field.label}</strong><small>{field.description}</small></div><div>{field.visibility==='secret-status'?<span className={`badge ${value?'green':'muted'}`}>{value?moteText("已配置"):moteText("未配置")}</span>:<span>{value===null||value===''?moteText("未设置"):field.unit==='bytes'&&typeof value==='number'?bytes(value):Array.isArray(value)?value.join('、')||moteText("未设置"):typeof value==='boolean'?value?moteText("已开启"):moteText("已关闭"):String(value)}{typeof value==='number'&&field.unit&&field.unit!=='bytes'?` ${{days:moteText("天"),hours:moteText("小时"),seconds:moteText("秒"),ms:moteText("毫秒"),tokens:'tokens',files:moteText("个"),entries:moteText("条")}[field.unit]||field.unit}`:''}</span>}<small>{origins[field.source]}</small></div></div>;
 }
 export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNavigate:(page:SettingsDestination)=>void;onModelApplied:()=>void}) {
- const [config,setConfig]=useState<ServerConfiguration>(),[category,setCategory]=useState<ConfigCategory|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[revision,setRevision]=useState(0);
+ const [config,setConfig]=useState<ServerConfiguration>(),[category,setCategory]=useState<ConfigCategory|'providers'|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[revision,setRevision]=useState(0);
  useEffect(()=>{const controller=new AbortController();setBusy(true);setError('');void api.request<ServerConfiguration>('/api/configuration',{signal:controller.signal}).then(setConfig).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));}).finally(()=>{if(!controller.signal.aborted)setBusy(false);});return()=>controller.abort();},[api,revision]);
  const [sources,setSources]=useState<SourceConnection[]>([]),[sourcesError,setSourcesError]=useState('');
  useEffect(()=>{if(category!=='connectors')return;const controller=new AbortController();setSourcesError('');void api.request<{items:SourceConnection[]}>('/api/sources',{signal:controller.signal}).then(v=>setSources(v.items)).catch(e=>{if(!controller.signal.aborted)setSourcesError(errorMessage(e));});return()=>controller.abort();},[api,category,revision]);
@@ -37,7 +39,7 @@ export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNaviga
    ] as const).map(([id,title,description,Icon])=><button key={id} className="preference-menu-row" onClick={()=>onNavigate(id)}><span className="preference-menu-icon neutral"><Icon size={21}/></span><span><strong>{title}</strong><small>{description}</small></span><ArrowRight size={17}/></button>)}<Feedback profile={config?.profile} runtime={config?.runtime}/></div>
    <p className="settings-footnote"><ShieldCheck size={16}/>{moteText("模型、记忆与飞书设置可直接保存并生效；其他偏好通过部署草稿修改并重启。离开设置页面或返回上级菜单时，未保存的输入会丢弃。")}</p>
   </>}
-  {config&&categories.filter(item=>category===item.id).map(item=><div key={item.id}>{item.id==='model'&&<ModelProfiles api={api} revision={revision} onApplied={()=>{setRevision(n=>n+1);onModelApplied();}}/>}{item.id==='model'&&<MemorySettings api={api}/>} {item.id!=='model'&&<><ConfigurationBuilder config={config} category={item.id} sources={sources} sourcesError={sourcesError}/><section className="panel effective-settings"><div className="section-heading"><div><h2>{moteText("当前生效值")}</h2><p>{moteText("来自运行中的中央节点；与上方尚未应用的草稿分开显示。")}</p></div><span className="badge muted">{moteText("只读")}</span></div>{config.groups.find(g=>g.id===item.id)?.fields.map(field=><EffectiveField key={field.key} field={field}/>)}</section></>}</div>)}
+  {config&&categories.filter(item=>category===item.id).map(item=><div key={item.id}>{item.id==='providers'&&<ModelProfiles api={api} revision={revision} onApplied={()=>{setRevision(n=>n+1);onModelApplied();}}/>}{item.id==='model'&&<><ModelAssignments api={api} revision={revision} onApplied={()=>{setRevision(n=>n+1);onModelApplied();}} onManage={()=>setCategory('providers')}/><MemorySettings api={api}/></>} {item.id!=='model'&&item.id!=='providers'&&<><ConfigurationBuilder config={config} category={item.id} sources={sources} sourcesError={sourcesError}/><section className="panel effective-settings"><div className="section-heading"><div><h2>{moteText("当前生效值")}</h2><p>{moteText("来自运行中的中央节点；与上方尚未应用的草稿分开显示。")}</p></div><span className="badge muted">{moteText("只读")}</span></div>{config.groups.find(g=>g.id===item.id)?.fields.map(field=><EffectiveField key={field.key} field={field}/>)}</section></>}</div>)}
  </div>;
 }
 export function AdvancedConfiguration({api}:{api:Api}) {

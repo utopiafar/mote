@@ -36,7 +36,7 @@ test('profiles route each request and feature independently; credentials, restar
   assert.equal(switched.json().modelSelection.model,'temporary-model');assert.equal(seen.at(-1)?.apiKey,'fixture-second-secret');
   assert.equal(node.modelSettings.select('chat','second').settings.model,'second-model');
   assert.equal((await query('second')).json().answer,'second-model');
-  assert.equal(node.modelSettings.select('memory').id,'second');assert.equal(node.modelSettings.select('import').id,'default');
+  assert.equal(node.modelSettings.select('memory').id,'second');assert.equal(node.modelSettings.select('import').id,'env:deployment');
   assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}})).statusCode,200);
   assert.deepEqual(calls.at(-1),{model:'second-model',skill:'memory-extraction'});
   assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{modelProfileId:'default'}})).statusCode,200);
@@ -76,4 +76,70 @@ test('Codex profiles accept a local login transport and reject arbitrary process
   for(const patch of [{baseUrl:'file:///bin/sh'},{extraBody:{command:'sh'}},{headers:{Authorization:'fixture'}},{codexPath:'/bin/sh'}]){
     await assert.rejects(store.updateProfile('local',{revision:1,name:'Codex fixture',settings:{...local,...patch}}));
   }
+});
+
+test('deployment is read-only; copies retain secrets server-side, stay independent and preserve module models',async t=>{
+  const {ModelSettingsStore}=await import('../src/model-settings.js');
+  const directory=await mkdtemp(join(tmpdir(),'mote-provider-copy-'));
+  const options={directory,environment:settings,prepare:async()=>({activate(){},async dispose(){}}),probe:async()=>({ok:true as const,code:'ok' as const,message:'',durationMs:1})};
+  const store=new ModelSettingsStore(options);
+  t.after(async()=>{await store.close();await rm(directory,{recursive:true,force:true});});
+  let view=await store.initialize();
+  assert.equal(view.profiles?.length,1);assert.equal(view.profiles?.[0].id,'env:deployment');assert.equal(view.profiles?.[0].readOnly,true);
+  assert.equal(view.defaults?.chat,'env:deployment');
+  await assert.rejects(store.updateProfile('env:deployment',{revision:0,name:'Overwrite',settings}),{code:'model_profile_read_only'});
+  await assert.rejects(store.deleteProfile('env:deployment',{revision:0}),{code:'model_profile_read_only'});
+  view=await store.copyProfile('env:deployment',{revision:view.revision,id:'copy',name:'Copied connection',includeCredentials:true});
+  assert.equal(store.select('chat','copy').settings.apiKey,settings.apiKey);
+  assert.equal(JSON.stringify(view).includes(settings.apiKey),false);
+  await assert.rejects(store.copyProfile('env:deployment',{revision:0,id:'stale-copy',name:'Stale'}),{code:'model_settings_conflict'});
+  await assert.rejects(store.copyProfile('env:deployment',{revision:view.revision,id:'copy',name:'Collision'}),{code:'model_settings_conflict'});
+  view=await store.copyProfile('copy',{revision:view.revision,id:'no-secrets',name:'No secrets',includeCredentials:false});
+  assert.equal(store.select('chat','no-secrets').settings.apiKey,'');
+  view=await store.updateDefaults({revision:view.revision,defaults:{...view.defaults,chat:'copy',memory:'copy',file:'copy',import:'copy'},defaultModels:{chat:'chat-specific',memory:'memory-specific',file:'file-specific',import:'import-specific'}});
+  assert.equal(store.select('chat').settings.model,'chat-specific');assert.equal(store.select('memory').settings.model,'memory-specific');
+  assert.equal(store.select('file').settings.model,'file-specific');assert.equal(store.select('import').settings.model,'import-specific');
+  assert.equal(store.select('chat','copy').settings.model,settings.model,'explicit preset follows its own default');
+  view=await store.updateProfile('copy',{revision:view.revision,name:'Edited copy',settings:{...settings,model:'edited-default',apiKey:'fixture-copy-only'}});
+  assert.equal(store.select('chat','env:deployment').settings.model,settings.model);
+  assert.equal(store.select('chat','env:deployment').settings.apiKey,settings.apiKey);
+  assert.equal(view.defaultModels?.chat,'chat-specific','editing a preset preserves module models');
+  await assert.rejects(store.deleteProfile('copy',{revision:view.revision}),{code:'model_profile_in_use'});
+  await store.close();
+  const restarted=new ModelSettingsStore({...options,environment:{...settings,model:'changed-env'}});await restarted.initialize();
+  assert.equal(restarted.select('chat').settings.model,'chat-specific');assert.equal(restarted.select('chat','copy').settings.model,'edited-default');
+  assert.equal(restarted.select('chat','env:deployment').settings.model,'changed-env');
+  view=restarted.view();
+  await assert.rejects(restarted.updateDefaults({revision:view.revision,defaults:view.defaults,defaultModels:{chat:'invalid\nmodel'}}),{code:'model_settings_invalid'});
+  await restarted.updateDefaults({revision:view.revision,defaults:{...view.defaults,chat:'env:deployment'}});
+  assert.equal(restarted.view().defaultModels?.chat,undefined,'old clients switching connections clear unrelated model IDs');
+  await restarted.close();
+});
+
+test('module model overrides reach chat, insights, immediate memory and persisted memory batches',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-module-models-'));
+  const cfg:Config={dataDir:directory,token:'synthetic-profile-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:settings.model,modelProvider:settings.provider,modelProtocol:settings.protocol,modelBaseUrl:settings.baseUrl,apiKey:settings.apiKey,allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const called:string[]=[];
+  const node=await buildApp(cfg,{createModelAgent:async s=>({configured:true,query:async input=>{called.push(s.model);return {answer:input.skill==='memory-extraction'?'{"memories":[]}':s.model,citations:[],trace:[],runId:'generated'};},close:async()=>{}})});
+  t.after(async()=>{await node.app.close();await rm(directory,{recursive:true,force:true});});
+  let view=node.modelSettings.view();
+  view=await node.modelSettings.copyProfile('env:deployment',{revision:view.revision,id:'shared-provider',name:'Shared Provider'});
+  view=await node.modelSettings.updateDefaults({revision:view.revision,defaults:{...view.defaults,chat:'shared-provider',memory:'shared-provider',insight:'shared-provider'},defaultModels:{chat:'chat-model',memory:'memory-model',insight:'insight-model'}});
+  const query=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated'}});
+  assert.equal(query.statusCode,200,query.body);assert.equal(query.json().modelSelection.model,'chat-model');
+  const explicit=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated',modelProfileId:'shared-provider'}});
+  assert.equal(explicit.json().modelSelection.model,settings.model);
+  const temporary=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated',modelOverride:'one-turn'}});
+  assert.equal(temporary.json().modelSelection.model,'one-turn');
+  const insight=await node.app.inject({method:'POST',url:'/api/insights',headers,payload:{}});
+  assert.equal(insight.statusCode,200,insight.body);assert.equal(insight.json().modelSelection.model,'insight-model');
+  const memory=await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}});
+  assert.equal(memory.statusCode,200,memory.body);assert.equal(called.at(-1),'memory-model');
+  node.sources.register({id:'module-fixture',name:'Generated',kind:'custom',deviceId:'fixture',platform:'import'});
+  const record=await node.sources.upsert('module-fixture',{externalId:'fixture',revision:'1',observedAt:'2026-01-01T00:00:00Z',text:'Generated memory fixture',kind:'file',layer:'original'});
+  const created=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:[record.id]}});
+  assert.equal(created.statusCode,202,created.body);assert.equal(created.json().modelOverride,'memory-model');
+  const completed=await node.memoryPipeline.run(created.json().id);
+  assert.equal(completed.status,'completed');assert.equal(called.at(-1),'memory-model');
+  assert.equal(node.modelSettings.select('chat','shared-provider').settings.model,settings.model);
 });

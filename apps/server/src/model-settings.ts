@@ -1,5 +1,5 @@
 import { moteText } from './i18n.js';
-import {providerModels} from './model-catalog.js';
+import {providerModels,codexModels} from './model-catalog.js';
 import { constants } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { validateModelOptions } from '@mote/agent';
 import {
-  MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, MODEL_FEATURES, modelProvider,
+  MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, MODEL_FEATURES, modelProvider, DEPLOYMENT_MODEL_PROFILE_ID,
   type ModelProfile, type ModelFeature, type ModelFeatureDefaults,
   type ModelSettings, type ModelSettingsInput, type ModelSettingsView, type ModelTestResult,
 } from '@mote/shared/models';
@@ -36,13 +36,14 @@ const updateSchema = z.object({
   revision: revisionSchema, settings: inputSchema, allowCredentialReuse: z.boolean().optional(),
 }).strict();
 const resetSchema = z.object({ revision: revisionSchema }).strict();
-export const modelProfileIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/);
-const profileSchema = z.object({id:modelProfileIdSchema.refine(id=>id!=='default'),name:line(100,1),settings:settingsSchema}).strict();
+export const modelProfileIdSchema = z.union([z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/),z.literal(DEPLOYMENT_MODEL_PROFILE_ID)]);
+const profileSchema = z.object({id:modelProfileIdSchema.refine(id=>!['default',DEPLOYMENT_MODEL_PROFILE_ID].includes(id)),name:line(100,1),settings:settingsSchema}).strict();
 const defaultsSchema = z.object(Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,modelProfileIdSchema])) as Record<ModelFeature, typeof modelProfileIdSchema>).strict();
+const defaultModelsSchema = z.object(Object.fromEntries(MODEL_FEATURES.map(feature=>[feature,line(512,1)])) as Record<ModelFeature, ReturnType<typeof line>>).partial().strict();
 const savedSchema = z.object({ version: z.literal(1), revision: revisionSchema, settings: settingsSchema.nullable(),
-  profiles:z.array(profileSchema).max(30).optional(), defaults:defaultsSchema.optional(),
+  profiles:z.array(profileSchema).max(30).optional(), defaults:defaultsSchema.optional(), defaultModels:defaultModelsSchema.optional(),
 }).strict().superRefine((state,ctx)=>{
-  const ids=['default',...(state.profiles??[]).map(p=>p.id)];
+  const ids=['default',DEPLOYMENT_MODEL_PROFILE_ID,...(state.profiles??[]).map(p=>p.id)];
   if(new Set(ids).size!==ids.length||Object.values(state.defaults??{}).some(id=>!ids.includes(id)))ctx.addIssue({code:'custom',message:'Invalid model references'});
 });
 const defaultAssignments=():ModelFeatureDefaults=>({chat:'default',memory:'default',insight:'default',import:'default',file:'default'});
@@ -52,6 +53,7 @@ const MAX_FILE_BYTES = 512 * 1024;
 
 const errors = {
   model_profile_missing: [400, "所选模型配置不存在，请重新选择。"],
+  model_profile_read_only: [409, "部署配置为只读，请复制为新预设后编辑。"],
   model_profile_in_use: [409, "该配置仍是某项功能的默认模型，请先修改功能默认值。"],
   model_settings_invalid: [400, "模型配置无效，请检查填写的参数。"],
   model_settings_conflict: [409, "模型设置已发生变化，请刷新后重试。"],
@@ -79,6 +81,7 @@ export interface ModelSettingsStoreOptions {
   environment: ModelSettings;
   prepare(settings: ModelSettings, profiles: ModelProfile[]): Promise<PreparedModelSettings>;
   probe(settings: ModelSettings): Promise<ModelTestResult>;
+  codex?: {executable?:string;home?:string};
   /** Filesystem operations can be fault-injected without model or network access. */
   fileSystem?: Partial<FileSystem>;
 }
@@ -170,9 +173,12 @@ export class ModelSettingsStore {
 
   view(): ModelSettingsView {
     const state = this.requireState(), settings = state.settings ?? this.environment;
+    const defaults = {...defaultAssignments(),...state.defaults};
+    if (!state.settings) for (const feature of MODEL_FEATURES) if (defaults[feature] === 'default') defaults[feature] = DEPLOYMENT_MODEL_PROFILE_ID;
     return {
       version: 1, revision: state.revision, source: state.settings ? 'saved' : 'environment',
-      profiles:this.profiles().map(p=>({...p,settings:publicSettings(p.settings)})), defaults:{...defaultAssignments(),...state.defaults},
+      profiles:this.profiles().filter(p=>p.id!=='default'||state.settings).map(p=>({...p,settings:publicSettings(p.settings),readOnly:p.id===DEPLOYMENT_MODEL_PROFILE_ID,source:p.id===DEPLOYMENT_MODEL_PROFILE_ID?'environment':'saved'})), defaults,
+      defaultModels:{...state.defaultModels},
       settings: publicSettings(settings),
     };
   }
@@ -181,13 +187,15 @@ export class ModelSettingsStore {
   current(): ModelSettings { return structuredClone(this.requireState().settings ?? this.environment); }
 
   profiles(): ModelProfile[] {
-    return [{id:'default',name:moteText("默认配置"),settings:this.current()},...structuredClone(this.requireState().profiles??[])];
+    return [{id:'default',name:moteText("旧版默认预设"),settings:this.current()},
+      {id:DEPLOYMENT_MODEL_PROFILE_ID,name:moteText("部署配置"),settings:structuredClone(this.environment)},...structuredClone(this.requireState().profiles??[])];
   }
   select(feature:ModelFeature, override?:string):ModelProfile {
     const id=override??this.requireState().defaults?.[feature]??'default';
     const profile=this.profiles().find(p=>p.id===id);
     if(!profile)throw new ModelSettingsError('model_profile_missing');
-    return profile;
+    const model = override === undefined ? this.requireState().defaultModels?.[feature] : undefined;
+    return model ? {...profile, settings:{...profile.settings,model}} : profile;
   }
 
   private expectedRevision(revision: number): void {
@@ -220,7 +228,7 @@ export class ModelSettingsStore {
   }
 
   private async prepare(settings: ModelSettings, profiles: ModelProfile[]): Promise<PreparedModelSettings> {
-    try { return await this.options.prepare(structuredClone(settings), structuredClone(profiles)); }
+    try { return await this.options.prepare(structuredClone(settings), [{id:DEPLOYMENT_MODEL_PROFILE_ID,name:moteText("部署配置"),settings:structuredClone(this.environment)},...structuredClone(profiles)]); }
     catch { throw new ModelSettingsError('model_settings_prepare_failed'); }
   }
 
@@ -270,11 +278,11 @@ export class ModelSettingsStore {
     }
   }
 
-  private async commit(settings: ModelSettings | null, registry: Pick<SavedState,'profiles'|'defaults'> = this.requireState()): Promise<ModelSettingsView> {
+  private async commit(settings: ModelSettings | null, registry: Pick<SavedState,'profiles'|'defaults'|'defaultModels'> = this.requireState()): Promise<ModelSettingsView> {
     const state = this.requireState();
     if (state.revision === Number.MAX_SAFE_INTEGER) throw new ModelSettingsError('model_settings_unavailable');
     const next: SavedState = { version: 1, revision: state.revision + 1, settings,
-      ...(registry.profiles?.length?{profiles:registry.profiles}:{}), ...(registry.defaults?{defaults:registry.defaults}:{}) };
+      ...(registry.profiles?.length?{profiles:registry.profiles}:{}), ...(registry.defaults?{defaults:registry.defaults}:{}), ...(registry.defaultModels?{defaultModels:registry.defaultModels}:{}) };
     if(!savedSchema.safeParse(next).success)throw new ModelSettingsError('model_settings_invalid');
     const candidate = await this.prepare(settings ?? this.environment, next.profiles??[]);
     let activated = false;
@@ -304,12 +312,13 @@ export class ModelSettingsStore {
     });
   }
 
-  models(body: unknown) {
-    return this.serialize(async () => this.draft(body)).then(settings => providerModels(settings));
+  models(body: unknown, profileId = 'default') {
+    return this.serialize(async () => this.draft(body,profileId)).then(settings => settings.protocol==='codex-app-server'?codexModels(undefined,this.options.codex):providerModels(settings));
   }
 
   updateProfile(id:string, body:unknown):Promise<ModelSettingsView> {
     return this.serialize(()=>{
+      if(id===DEPLOYMENT_MODEL_PROFILE_ID)throw new ModelSettingsError('model_profile_read_only');
       const parsed=z.object({revision:revisionSchema,name:line(100,1),settings:inputSchema,allowCredentialReuse:z.boolean().optional()}).strict().safeParse(body);
       if(!parsed.success||!modelProfileIdSchema.safeParse(id).success||id==='default')throw new ModelSettingsError('model_settings_invalid');
       const {name,...update}=parsed.data;
@@ -317,28 +326,43 @@ export class ModelSettingsStore {
       const state=this.requireState(),profiles=structuredClone(state.profiles??[]),index=profiles.findIndex(p=>p.id===id);
       const profile={id,name,settings};
       if(index<0)profiles.push(profile);else profiles[index]=profile;
-      return this.commit(state.settings,{profiles,defaults:state.defaults});
+      return this.commit(state.settings,{...state,profiles});
+    });
+  }
+  copyProfile(id:string,body:unknown):Promise<ModelSettingsView> {
+    return this.serialize(()=>{
+      const parsed=z.object({revision:revisionSchema,id:modelProfileIdSchema,name:line(100,1),includeCredentials:z.boolean().default(true)}).strict().safeParse(body);
+      if(!parsed.success||['default',DEPLOYMENT_MODEL_PROFILE_ID].includes(parsed.data.id))throw new ModelSettingsError('model_settings_invalid');
+      this.expectedRevision(parsed.data.revision);
+      if(this.profiles().some(p=>p.id===parsed.data.id))throw new ModelSettingsError('model_settings_conflict');
+      const source=this.select('chat',id),state=this.requireState();
+      const settings=structuredClone(source.settings);
+      if(!parsed.data.includeCredentials){settings.apiKey='';settings.headers={};settings.extraBody={};}
+      return this.commit(state.settings,{...state,profiles:[...(state.profiles??[]),{id:parsed.data.id,name:parsed.data.name,settings}]});
     });
   }
   deleteProfile(id:string,body:unknown):Promise<ModelSettingsView> {
     return this.serialize(()=>{
+      if(id===DEPLOYMENT_MODEL_PROFILE_ID)throw new ModelSettingsError('model_profile_read_only');
       const parsed=resetSchema.safeParse(body);
       if(!parsed.success||id==='default')throw new ModelSettingsError('model_settings_invalid');
       this.expectedRevision(parsed.data.revision);
       const state=this.requireState();
       this.select('chat',id);
       if(Object.values(state.defaults??{}).includes(id))throw new ModelSettingsError('model_profile_in_use');
-      return this.commit(state.settings,{profiles:state.profiles?.filter(p=>p.id!==id),defaults:state.defaults});
+      return this.commit(state.settings,{...state,profiles:state.profiles?.filter(p=>p.id!==id)});
     });
   }
   updateDefaults(body:unknown):Promise<ModelSettingsView> {
     return this.serialize(()=>{
-      const parsed=z.object({revision:revisionSchema,defaults:defaultsSchema}).strict().safeParse(body);
+      const parsed=z.object({revision:revisionSchema,defaults:defaultsSchema,defaultModels:defaultModelsSchema.optional()}).strict().safeParse(body);
       if(!parsed.success)throw new ModelSettingsError('model_settings_invalid');
       this.expectedRevision(parsed.data.revision);
       for(const feature of MODEL_FEATURES)this.select(feature,parsed.data.defaults[feature]);
       const state=this.requireState();
-      return this.commit(state.settings,{profiles:state.profiles,defaults:parsed.data.defaults});
+      // Old clients changing a provider must not accidentally retain another provider's model ID.
+      const defaultModels=parsed.data.defaultModels??Object.fromEntries(Object.entries(state.defaultModels??{}).filter(([feature])=>parsed.data.defaults[feature as ModelFeature]===(state.defaults?.[feature as ModelFeature]??'default')));
+      return this.commit(state.settings,{profiles:state.profiles,defaults:parsed.data.defaults,defaultModels});
     });
   }
 

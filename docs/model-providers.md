@@ -1,10 +1,18 @@
 # 中央模型服务
 
-在中央网页打开 **设置 → 问答与回顾 → 模型配置与分工**，点击 **新增配置**，填写配置名称、服务预设、模型 ID 和凭据，点击 **保存并应用**。可以同时保存多个服务商，或为同一服务商保存多个模型与预算。每套配置独立保存密钥；新增配置不继承其他配置的凭据。最多保存默认项加 30 个自定义项。
+在中央网页打开 **设置 → 模型 Provider**，点击 **新增预设**，选择服务商类型，填写连接地址、凭据并从目录选择默认模型（也可手动填写 ID），点击 **保存并应用**。一套连接预设保存一组协议、地址、凭据和默认模型；多个模块可以共享它，同时选择不同模型，无需重复保存密钥。
 
-在同一页面分别设置 Chat、Memory、个人回顾、资料导入和文件分析的默认模型。问答、记忆、洞察入口还有 **本次模型** 选择器，同一段对话的每一轮都可以切换。选择顺序为：本次明确选择 → 对应功能默认 → 原有默认配置。没有按内容、关键词或模型失败自动切换供应商的逻辑。
+**设置 → 模块与模型** 分别配置 Chat、Memory、个人回顾、资料导入和文件分析。每个模块选择 Provider 预设后，可以 **跟随预设默认** 或 **指定此 Provider 下的模型**。目录来自所选连接；不支持目录的服务仍可手动填 ID。换预设会清除该模块之前的模型覆盖，避免把另一个服务的模型 ID 带过去。
 
-已有环境变量或旧版页面配置自动作为 `default` 项使用。新请求使用已保存的新配置，执行中的单次模型请求继续使用原运行时，不需要重启中央节点。问答结果保存 `modelSelection`，历史回答可查看实际使用的配置和模型。记忆任务保存所选配置 ID；配置被删除时任务等待重新配置，不会静默改用另一供应商。每个批次使用当时该配置的快照，编辑配置影响后续批次。文件处理模块中明确配置的模型、本地处理约束继续优先于文件分析默认值。
+问答、记忆、洞察入口继续保留 **本次模型**。优先级为：本次明确指定模型 → 本次明确选择预设的默认模型 → 模块指定模型 → 模块所选预设默认模型。没有按内容、关键词或模型失败自动切换供应商的逻辑。
+
+**部署配置** 是单独的只读预设（ID `env:deployment`），始终对应本次启动读取的配置文件或环境变量；不能在页面改写或删除。可以直接分配给模块，或通过 **复制预设** 创建可编辑副本。修改部署文件需要重启；副本不会跟随原件变动。旧版页面保存的 `default` 保留为 **旧版默认预设**，已有分配与凭据继续有效。保留旧版顶层写入 API 兼容旧客户端，但它仅编辑旧版预设，不会修改只读部署预设。
+
+预设可以命名、编辑、复制、删除。复制默认包含凭据，也可以取消勾选；整个复制发生在服务器内部，不把密钥回传浏览器。副本独立持久化，更换地址后仍需确认凭据复用。最多 30 个自定义项，另有部署配置及可能存在的旧版默认项。仍被模块引用的预设不可删除。
+
+新请求使用已保存的新配置，执行中的单次请求继续使用原运行时，不需要重启。问答结果保存 `modelSelection`，历史回答可查看实际使用的预设和模型。手动记忆任务保存选定预设及模块的显式模型覆盖；预设被删除时任务等待重新配置，不会静默换供应商。每个批次使用当时该预设的连接快照。文件处理器显式设置的模型与本地处理限制继续优先。
+
+设计参考了 [Open WebUI 的连接管理](https://docs.openwebui.com/getting-started/quick-start/connect-a-provider/)与[模型预设复制](https://docs.openwebui.com/features/workspace/models/)。Mote 采用“可复用连接 + 模块模型绑定”，不在连接预设里加入提示词、资料权限或 Agent 工具权限。
 
 模型名称留给用户填写，因为可用模型、地域、账户授权和工具调用能力会变化。没有配置模型时，采集、同步、笔记和资料归档仍可使用。这里配置的是中央模型服务；客户端截图审查和 embedding 索引仍使用独立设置。
 
@@ -16,7 +24,7 @@ API key、自定义请求头和高级请求参数只显示“已配置／未配�
 
 **测试连接**由中央节点向所填模型发送少量固定合成内容，并使用独立的合成记录验证工具调用和引用。测试不连接个人资料库，不上传个人截图、OCR 或笔记，也不会保存草稿；请求可能产生模型费用。测试最多采用 30 秒 Agent 期限，若设置更短则使用较短期限。测试成功表明本次连接和工具往返通过，不代表全部问题的回答质量或长期可用性。
 
-**恢复部署配置**只恢复 `default` 项，保留新增模型与各功能默认分配。该项立即使用本次中央启动时读取的环境配置。它不会编辑 `mote.env`；如果刚修改过该文件，需要重启中央才能读到新文件内容。并发修改发生版本冲突时，先重新读取当前配置，再决定是否重做修改。
+**恢复部署配置**是旧版默认预设的兼容操作：清除 `default` 覆盖并回到启动配置，保留自定义预设与模块分配。该项立即使用本次中央启动时读取的环境配置。它不会编辑 `mote.env`；如果刚修改过该文件，需要重启中央才能读到新文件内容。并发修改发生版本冲突时，先重新读取当前配置，再决定是否重做修改。
 
 ## 服务预设
 
@@ -96,13 +104,13 @@ codex -c 'cli_auth_credentials_store="file"' login
 
 默认从服务器进程的 `CODEX_HOME` 或该用户的 `~/.codex` 获取登录文件。可用服务器环境变量 `MOTE_CODEX_BIN` 指定可信 Codex 可执行文件，`MOTE_CODEX_HOME` 指定已有登录目录。这两个宿主配置不接受网页输入、模型参数或模型工具修改。Docker 部署需要容器内有 CLI 与受保护的可访问登录文件；宿主桌面程序的存在本身不够。
 
-每次请求启动独立进程和临时 home，只链接登录文件，不继承个人 MCP、插件、hooks、历史会话或用户指令。查询使用只读沙箱、关闭环境访问与原生执行工具，动态工具仅调用 Mote 已有证据桥。当前验证过的 Codex 0.142.5 还会提供仅修改临时运行计划的 `update_plan`，不访问或修改用户资料。导入有单独的可写临时工作区，不接入归档查询工具；仍须经过原有预览、确认和宿主校验。
+每次请求启动独立进程和临时 home，只链接登录文件，不继承个人 MCP、插件、hooks、历史会话或用户指令。查询使用只读沙箱、关闭环境访问与原生执行工具，动态工具仅调用 Mote 已有证据桥。当前验证过的 Codex 0.154.0 还会提供仅修改临时运行计划的 `update_plan`，不访问或修改用户资料。导入有单独的可写临时工作区，不接入归档查询工具；仍须经过原有预览、确认和宿主校验。
 
 App Server 的动态工具接口为实验接口，兼容性取决于安装的 CLI。配置警告、额外审批请求、未知执行工具和错误返回会终止请求；不会降级为另一个服务商。最长等待时间与响应字节预算由 Mote 限制，输出 token 上限由 Codex 管理，页面的 HTTP 输出预算不传给 Codex。`auto` 不指定推理强度，`off/low/high/max` 分别传递 `none/low/high/xhigh`，具体模型可能不支持全部档位。
 
 ## 环境配置与保存位置
 
-也可以在所选私有 `mote.env` 中设置默认值。修改环境文件后重启中央；页面保存的默认项覆盖环境中的模型字段；其他配置与功能分配独立持久化。
+也可以在所选私有 `mote.env` 中设置默认值。修改环境文件后重启中央；部署配置保持只读；页面自定义预设与模块分配独立持久化。旧版默认预设的覆盖仅用于兼容旧版入口。
 
 ```dotenv
 MOTE_MODEL_PROVIDER=qwen
@@ -120,7 +128,7 @@ MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
 
 `MOTE_MODEL_PROVIDER` 使用上表 ID，未设时为 `deepseek`；`MOTE_MODEL_PROTOCOL` 未设时采用该预设协议。`MOTE_MODEL_HEADERS` 和 `MOTE_MODEL_EXTRA_BODY` 必须是 JSON 对象，每个环境变量最多 16 KiB。不要用 shell 的 `source` 执行配置文件；不要将真实密钥放进命令参数或提交到仓库。完整默认值见[服务端配置参考](server-configuration.md)。
 
-页面保存的值位于 `<MOTE_DATA_DIR>/model-settings.json`，文件权限为 `0600`。该文件沿用 version 1，新增可选 `profiles` 与 `defaults`，旧文件无需迁移。保存多个配置后不要直接降级到不认识这些字段的旧服务端。文件包含每套配置的真实 API key、请求头和高级参数；权限限制不等于文件内容加密。若自行复制或备份此文件，副本也包含密钥，需作为私有凭据管理。HTTP 资料导出、安全支持包和标准 CLI 归档备份不包含该文件；迁移模型设置需单独保护并转移该文件，或在新节点重新填写。
+页面保存的值位于 `<MOTE_DATA_DIR>/model-settings.json`，文件权限为 `0600`。该文件沿用 version 1，包含可选 `profiles`、`defaults` 和 `defaultModels`，旧文件无需迁移。`defaults` 保存模块的预设 ID，`defaultModels` 保存模块显式指定的模型 ID；缺省跟随预设默认。只读部署预设不把环境凭据额外写入此文件；仅在主动复制时持久化副本。保存多个配置后不要直接降级到不认识这些字段的旧服务端。文件包含每套配置的真实 API key、请求头和高级参数；权限限制不等于文件内容加密。若自行复制或备份此文件，副本也包含密钥，需作为私有凭据管理。HTTP 资料导出、安全支持包和标准 CLI 归档备份不包含该文件；迁移模型设置需单独保护并转移该文件，或在新节点重新填写。
 
 保存先验证配置并准备新运行时，再原子替换文件、同步目录，最后切换后续请求。恢复部署配置仍保存递增 revision 的空覆盖标记，防止旧页面覆盖新状态。文件损坏或不可读时不会静默恢复成另一套模型凭据；若写入结果无法确认，页面提示重新读取或检查服务状态。
 
@@ -130,14 +138,17 @@ MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
 
 | 方法与路径 | 行为 |
 |---|---|
-| `GET /api/model-settings` | 返回 `version:1`、`revision`、`source:environment\|saved` 和默认项的公开设置、新增 `profiles`、`defaults`；所有配置的敏感字段只有 `apiKeyConfigured`、`headersConfigured`、`extraBodyConfigured` |
+| `GET /api/model-settings` | 返回 `version:1`、`revision`、`source:environment\|saved` 和默认项的公开设置、新增 `profiles`（含 `readOnly/source`）、`defaults`、`defaultModels`；所有配置的敏感字段只有 `apiKeyConfigured`、`headersConfigured`、`extraBodyConfigured` |
 | `PUT /api/model-settings` | 接受 `{revision, settings, allowCredentialReuse?}`；基础模型参数完整提交，敏感字段可省略或设为 `null` |
 | `POST /api/model-settings/test` | 与 PUT 相同的草稿和确认规则；返回固定 `ok/code/message/durationMs`，不修改持久配置 |
 | `DELETE /api/model-settings` | 接受 `{revision}`；恢复本次启动的环境模型配置并递增 revision |
 | `PUT /api/model-settings/profiles/:id` | 接受 `{revision,name,settings,allowCredentialReuse?}`；创建或更新一套独立配置 |
 | `DELETE /api/model-settings/profiles/:id` | 接受 `{revision}`；正在被功能默认值引用的项不能删除 |
 | `POST /api/model-settings/profiles/:id/test` | 接受 `{revision,settings,allowCredentialReuse?}`；仅使用该项的凭据和合成记录 |
-| `PUT /api/model-settings/defaults` | 接受 `{revision,defaults:{chat,memory,insight,import,file}}`，值为配置 ID；整组原子保存 |
+| `POST /api/model-settings/profiles/:id/copy` | 接受 `{revision,id,name,includeCredentials?}`；目标必须为新 ID，在服务器内部复制，默认包含凭据 |
+| `POST /api/model-settings/profiles/:id/models` | 接受与测试相同的草稿，以该预设的凭据加载目录；Codex 自动调用本机 `model/list` |
+| `GET /api/model-settings/profiles/:id/models` | 使用已保存连接加载目录；模块选择器与本次模型入口共用 |
+| `PUT /api/model-settings/defaults` | 接受 `{revision,defaults:{chat,memory,insight,import,file},defaultModels?:{chat?,memory?,insight?,import?,file?}}`；预设与模型覆盖整组原子保存 |
 
 配置 ID 为 1–80 个字母、数字、下划线或连字符，以字母或数字开头；`default` 保留给原始默认项。所有修改共用一个 revision，防止并发页面互相覆盖。`POST /api/query`、`/api/insights`、`/api/insight-runs`、`/api/memories/extract`、`/api/memory-jobs` 支持可选 `modelProfileId`；不存在的 ID 会返回错误，省略时采用相应功能默认值。每次问答的显式选择只影响这一轮，不修改功能默认值。
 
@@ -165,3 +176,13 @@ MOTE_TEST_CODEX_BIN=/可信路径/codex node --test packages/agent/test/codex.te
 ```
 
 这些测试不使用真实截图、个人资料或真实模型登录凭据。未执行线上模型质量验证或物理设备验证。
+
+## 本次重构验证
+
+2026-09-17，本机 Codex CLI **0.154.0**，从 `model/list` 读取 5 个可用模型，选择 **gpt-6-astra**。使用临时独立资料库和合成笔记执行：
+
+- 真实连接测试通过（约 20 秒）：模型、证据工具与引用格式校验。
+- 创建 Codex 预设 → 复制 → 将副本默认模型设为未使用的测试 ID → 为 Chat 显式指定目录模型 → `POST /api/query`。实际结果记录 `profileId=codex-copy`、`model=gpt-6-astra`，调用 `search_context`、`evidence`，返回正确时间及 1 条有效引用（约 21 秒）。
+- 未连接个人资料库、未采集个人截图；真实推理由 Codex 上游完成。未进行物理移动设备验证。
+
+可重复执行的真实测试：`node --import tsx scripts/test-codex-provider-live.ts`（需要服务器用户的 Codex 文件登录；可通过 `MOTE_TEST_CODEX_MODEL` 指定目录内模型）。这是显式运行的网络测试，不纳入普通 fixture 测试。

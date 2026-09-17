@@ -36,3 +36,24 @@ test('Codex discovery only initializes and pages model/list, then closes the chi
   }) as typeof spawn;
   const catalog=await codexModels(launch);assert.equal(catalog.items.length,2);assert.deepEqual(methods,['initialize','initialized','model/list','model/list']);assert.equal(killed,true);
 });
+
+test('draft catalogs use the selected preset credentials, not the legacy default',async t=>{
+  const {createServer}=await import('node:http');
+  const {mkdtemp,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+  const {ModelSettingsStore}=await import('../src/model-settings.js');
+  const received:string[]=[];
+  const server=createServer((req,res)=>{received.push(req.headers.authorization??'');res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[{id:'generated-model'}]}));});
+  await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const directory=await mkdtemp(join(tmpdir(),'mote-catalog-credentials-'));
+  const baseUrl=`http://127.0.0.1:${(server.address() as {port:number}).port}/v1`;
+  const store=new ModelSettingsStore({directory,environment:{...settings,baseUrl,headers:{}},prepare:async()=>({activate(){},async dispose(){}}),probe:async()=>({ok:true,code:'ok',message:'',durationMs:0})});
+  t.after(async()=>{await store.close();await new Promise<void>(resolve=>server.close(()=>resolve()));await rm(directory,{recursive:true,force:true});});
+  await store.initialize();
+  const view=await store.updateProfile('second',{revision:0,name:'Second account',settings:{...settings,baseUrl,apiKey:'second-generated-key',headers:{}}});
+  const {apiKey:_key,headers:_headers,extraBody:_body,...parameters}=settings;
+  await store.models({revision:view.revision,settings:{...parameters,baseUrl}},'second');
+  assert.deepEqual(received,['Bearer second-generated-key']);
+  await assert.rejects(store.models({revision:view.revision,settings:{...parameters,baseUrl:'https://different.invalid/v1'}},'second'),{code:'model_settings_credential_reuse'});
+  assert.equal(received.length,1,'blocked destinations must not receive saved credentials');
+});

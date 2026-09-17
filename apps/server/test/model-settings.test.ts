@@ -74,7 +74,10 @@ test('saved configuration is private, survives restart and takes precedence over
   assert.equal(saved.version, 1); assert.equal(saved.revision, 1); assert.equal(saved.settings.apiKey, environment.apiKey);
   const restart = new ModelSettingsStore({ ...f.options, environment: { ...environment, model: 'changed-environment', apiKey: 'changed-environment-key' } });
   t.after(() => restart.close());
-  assert.deepEqual(await restart.initialize(), view);
+  const restartedView=await restart.initialize();
+  assert.deepEqual(restartedView.settings,view.settings);
+  assert.deepEqual(restartedView.profiles?.find(p=>p.id==='default'),view.profiles?.find(p=>p.id==='default'));
+  assert.equal(restartedView.profiles?.find(p=>p.readOnly)?.settings.model,'changed-environment');
   assert.equal(restart.current().apiKey, environment.apiKey);
   await f.store.close(); assert.equal(f.disposed.length, 0, 'Store close does not cancel active requests');
 });
