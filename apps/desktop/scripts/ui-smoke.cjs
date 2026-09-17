@@ -57,6 +57,8 @@ app.on('browser-window-created', (_event, window) => {
       // Exercise the picker with generated identities; do not enumerate personal applications.
       ipcMain.removeHandler('mote:installed-applications');
       ipcMain.handle('mote:installed-applications', () => [{ appId: 'dev.mote.synthetic.private', appName: '合成私密应用' }]);
+      ipcMain.removeHandler('mote:permission-status');
+      ipcMain.handle('mote:permission-status', () => ({screen: 'granted', accessibility: 'denied', calendar: 'not-determined'}));
       let startRequested = false;
       ipcMain.removeHandler('mote:start');
       ipcMain.handle('mote:start', () => { startRequested = true; return status; });
@@ -64,6 +66,16 @@ app.on('browser-window-created', (_event, window) => {
       await js(`document.querySelector('#start').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(startRequested, 'No node URL or token needed to request local capture (IPC stub, no screen read)');
 
+      // Permission prompts are fixtures: no actual system permissions or screenshots are requested.
+      await js(`window.alert = message => { window.fixturePermissionAlert = message; }; undefined`);
+      ipcMain.removeHandler('mote:permission-status');
+      ipcMain.handle('mote:permission-status', () => ({screen: 'denied', accessibility: 'denied', calendar: 'denied'}));
+      startRequested = false;
+      await js(`document.querySelector('#start').click(); new Promise(resolve => setTimeout(resolve, 100))`);
+      assert(!startRequested, 'Missing screen permission blocks the start action');
+      assert(await js(`!document.querySelector('[data-page="permissions"]').hidden && window.fixturePermissionAlert.includes('屏幕录制')`));
+      assert.equal(await js(`document.querySelector('#permission-screen').textContent`), '未授权');
+      await navigate('overview');
       assert(await js(`Array.from(document.querySelectorAll('[data-page]')).filter(el => !el.hidden).every(el => el.dataset.page === 'overview')`));
       assert(await js(`document.querySelector('#server-url').getClientRects().length === 0 && document.querySelector('#diagnostics-enabled').getClientRects().length === 0`), 'Overview has no settings fields');
       const settingsMenu = Menu.getApplicationMenu().items[0].submenu.items.find(item => item.accelerator === 'CmdOrCtrl+,');
@@ -123,7 +135,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.equal(await js(`document.querySelector('[aria-label="原始日志"]').value`), rawFixture);
       await js(`document.querySelector('#jpeg-quality').value = '10'; document.querySelector('#jpeg-quality').dispatchEvent(new Event('input', {bubbles: true}));`);
       await js(`document.querySelector('#settings').requestSubmit()`);
-      assert(await js(`!document.querySelector('[data-page="developer"]').hidden && document.activeElement.id === 'jpeg-quality'`), 'Invalid field is revealed and focused');
+      assert(await js(`!document.querySelector('[data-page="capture"]').hidden && document.activeElement.id === 'jpeg-quality'`), 'Invalid field is revealed and focused');
       await js(`document.querySelector('#settings-reset').click()`);
       assert.equal(await js(`document.querySelector('#jpeg-quality').value`), String(status.config.jpegQuality));
       assert(await js(`document.querySelector('#settings-pending').hidden`));
@@ -250,7 +262,7 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`document.documentElement.scrollWidth <= window.innerWidth`), 'No horizontal overflow at minimum window width');
       writeFileSync(join(require('node:path').dirname(output), 'compact-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       assert.equal((await js('window.mote.status()')).running, false);
-      await navigate('developer');await navigate('compression');
+      await navigate('capture');await navigate('compression');
       for(let i=0;i<200&&await js(`document.querySelector('#compression-apply').disabled`);i++)await new Promise(resolve=>setTimeout(resolve,30));
       assert(await js(`document.querySelector('#compression-stats').textContent.includes('文件大小为原图的')`));
       await js(`document.querySelector('#compression-zoom').value='2';document.querySelector('#compression-zoom').dispatchEvent(new Event('change'))`);

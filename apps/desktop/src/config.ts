@@ -15,7 +15,7 @@ export function defaultConfig(): Config {
     intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '', localContentEncryption: false, notificationCollectionEnabled: false,
     excludedAppIds: [], defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300, ocrEnabled: true, ocrOnlyWhileCharging: false,
     privacyModelUrl: '', openAtLogin: false,
-    metadataEnabled: true, diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
+    metadataEnabled: true, diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, imageDedupeMode: 'off', jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
     nsfwEnabled: true, reviewPolicy: DEFAULT_REVIEW_POLICY, reviewMaxTokens: 256, reviewMaxSide: 512, nsfwThreads: 2, nsfwTimeoutMs: 60000, nsfwSource: 'auto', nsfwCustomUrl: '',
   };
 }
@@ -67,6 +67,8 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (input.notificationCollectionEnabled !== undefined && typeof input.notificationCollectionEnabled !== 'boolean') throw new Error('Invalid notification setting');
   if (input.localContentEncryption !== undefined && typeof input.localContentEncryption !== 'boolean') throw new Error(moteText("本地内容加密开关值无效"));
   if (input.ocrOnlyWhileCharging !== undefined && typeof input.ocrOnlyWhileCharging !== 'boolean') throw new Error(moteText("OCR 电源策略开关值无效"));
+  const imageDedupeMode = input.imageDedupeMode ?? current.imageDedupeMode ?? 'off';
+  if (!['off', 'exact'].includes(imageDedupeMode)) throw new Error('Invalid image deduplication mode');
   const captureStorageDirectory = input.captureStorageDirectory ?? current.captureStorageDirectory ?? '';
   if (typeof captureStorageDirectory !== 'string' || captureStorageDirectory.length > 2048 || /[\x00-\x1f]/.test(captureStorageDirectory) || (captureStorageDirectory && (!isAbsolute(captureStorageDirectory) || resolve(captureStorageDirectory) !== captureStorageDirectory))) throw new Error(moteText("请通过文件夹选择器选择截图保存位置"));
   if (typeof input.ocrEnabled !== 'boolean' || typeof input.openAtLogin !== 'boolean') throw new Error(moteText("开关值不正确"));
@@ -90,7 +92,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     intervalMs: integer(input.intervalMs, 5000, 300000, moteText("采样间隔（毫秒）")),
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, moteText("本地队列容量")),
     maxQueueEvents: integer(input.maxQueueEvents, 1, 1000000, moteText("本地队列事件数")),
-    captureStorageDirectory,
+    captureStorageDirectory, imageDedupeMode,
     localContentEncryption: false, notificationCollectionEnabled: input.notificationCollectionEnabled ?? current.notificationCollectionEnabled ?? false,
     idlePauseSeconds: integer(input.idlePauseSeconds, 0, 86400, moteText("空闲暂停秒数")),
     defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection ?? 'content'),

@@ -105,3 +105,16 @@ test('attachment-only drafts preserve references across reopen and retry',()=>{
   const changed={...draft,attachments:[randomUUID()]};reopened.saveDraft(changed);
   assert.notEqual(reopened.prepareSubmission(changed,note()).id,first.id);
 });
+
+test('new web notes retain their client identity while prepared legacy retries remain unchanged', () => {
+  const storage = new MemoryStorage(), outbox = new NoteOutbox(storage, 'fixture');
+  const draft = { text: 'generated note', mood: '' };
+  const legacy = outbox.prepareSubmission(draft, note());
+  assert.equal(legacy.client, undefined);
+  assert.deepEqual(outbox.prepareSubmission(draft, { ...note(), client: 'web' }), legacy);
+  outbox.completeSubmission(legacy.id);
+  const fresh = outbox.prepareSubmission(draft, { ...note(), client: 'web' });
+  assert.equal(fresh.client, 'web');
+  outbox.enqueue(fresh);
+  assert.equal(new NoteOutbox(storage, 'fixture').items()[0].note.client, 'web');
+});

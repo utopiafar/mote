@@ -35,6 +35,7 @@ export interface Config {
   metadataEnabled: boolean;
   diagnosticsEnabled: boolean;
   diagnosticIntervalSeconds: number;
+  imageDedupeMode?: 'off' | 'exact';
   jpegQuality: number;
   captureMaxSide: number;
   pauseOnBattery: boolean;
@@ -109,6 +110,8 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  permissionStatus(): Promise<{screen: string; accessibility: string; calendar: string}>;
+  permissionSettings(kind: 'screen' | 'accessibility' | 'calendar' | 'files'): Promise<void>;
   storageStatistics(): Promise<import('@mote/shared/storage-statistics').StorageStatistics>;
   language(): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
   setLanguage(preference: import('@mote/shared/i18n').LanguagePreference): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
@@ -124,10 +127,9 @@ export interface DesktopApi {
   previewConnection(input: string): Promise<import('./connection').ConnectionPreview>;
   importConnection(kind: 'json' | 'qr'): Promise<{ canceled: boolean; preview?: import('./connection').ConnectionPreview }>;
   cancelConnection(): Promise<void>;
-  confirmConnection(id: string, origin: string): Promise<Status>;
+  confirmConnection(id: string, origin: string, deviceName: string): Promise<Status>;
   testConnection(): Promise<import('./connection').ConnectionStatus>;
   connectionStatus(): Promise<import('./connection').ConnectionStatus>;
-  openCentralOwner(token: string): Promise<void>;
   updateStatus(): Promise<import('./updater').UpdateStatus>;
   updateChannel(channel: 'stable' | 'preview'): Promise<import('./updater').UpdateStatus>;
   checkUpdate(): Promise<import('./updater').UpdateStatus>;

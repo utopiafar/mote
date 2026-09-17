@@ -39,6 +39,7 @@ export class Collector {
   private captureOcrAbort?: AbortController;
   private closed = false;
   private stopIntent = 0;
+  private lastImageKey?: string;
   private lastSample?: { at: number; appId: string; collection: 'content' | 'activity' };
   private state: Status['state'] = 'stopped';
   private message = moteText("尚未开始采集。请确认隐私设置后手动开始。");
@@ -290,6 +291,11 @@ export class Collector {
       }
       const jpeg = await this.encodeImage(sanitized, cfg.jpegQuality);
       if (jpeg.length > MAX_IMAGE_BYTES) throw new Error(moteText("截图超出单张大小限制，本次采集已跳过"));
+      const imageKey = createHash('sha256').update(before.appId).update(jpeg).digest('hex');
+      if (cfg.imageDedupeMode === 'exact' && this.lastImageKey === imageKey && this.lastSample?.appId === before.appId && startedAt - this.lastSample.at <= cfg.intervalMs * 2) {
+        this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' };
+        this.state = 'capturing'; this.message = moteText("重复截图已跳过"); this.publish(); return;
+      }
       // OCR must run after BOTH user masks and optional model masks.
       stage = 'OCR';
       const ocrStarted = Date.now();
@@ -320,6 +326,7 @@ export class Collector {
       stage = 'QUEUE'; void this.events?.record(stage, 'STARTED');
       this.message = moteText("正在保存采集记录…"); this.publish();
       await this.queue.enqueue(event, jpeg);
+      this.lastImageKey = imageKey;
       void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
       this.diagnostics?.recordCapture({ outcome: 'saved', imageBytes: jpeg.length, inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' }; this.lastCaptureAt = event.capturedAt;

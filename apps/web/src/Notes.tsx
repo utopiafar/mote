@@ -1,6 +1,6 @@
 import { moteText, getLocale } from '@mote/shared/i18n';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { Check, CloudUpload, FileText, LoaderCircle, RefreshCw, Smile, Trash2, WifiOff } from 'lucide-react';
+import { Check, CloudUpload, FileText, LoaderCircle, RefreshCw, Trash2, WifiOff } from 'lucide-react';
 import { ApiError, dateTime, errorMessage, type Api, type Capture } from './api';
 import {uploadNoteAttachment} from './note-attachments';
 import { NoteOutbox, type NoteDraft, type QueuedNote } from './notes-state';
@@ -85,7 +85,7 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
     try {
       let deviceId = localStorage.getItem('mote.notes.device.v1');
       if (!deviceId) { deviceId = `web:${crypto.randomUUID()}`; localStorage.setItem('mote.notes.device.v1', deviceId); }
-      const note = outbox.prepareSubmission(draft, { id: crypto.randomUUID(), deviceId, deviceName: moteText("Mote 随手记"), platform: 'import', capturedAt: new Date().toISOString() });
+      const note = outbox.prepareSubmission(draft, { id: crypto.randomUUID(), deviceId, deviceName: moteText("Mote 随手记"), platform: 'import', client: 'web', capturedAt: new Date().toISOString() });
       outbox.enqueue(note);
       setQueued(outbox.items());
       outbox.completeSubmission(note.id);
@@ -117,11 +117,11 @@ export function Notes({ api, namespace, revision, onOpen, onSaved }: {
     </form>
     {error && <div className="notice error" role="alert">{error}</div>}
     {notice && <div className="notice" role="status"><Check size={16} />{notice}</div>}
-    {queued.length > 0 && <section className="panel note-pending"><div className="section-heading"><div><span className="eyebrow">SAVED ON THIS DEVICE</span><h2>{moteText("待同步 ·")}{' '}{queued.length}{' '}{moteText("条")}</h2></div><button className="button subtle" disabled={syncing} onClick={() => void sync(true)}><RefreshCw size={14} className={syncing ? 'spin' : ''} />{syncing ? moteText("正在同步") : moteText("重试同步")}</button></div>{queued.map(item => <article className="pending-note" key={item.note.id}><div><time>{dateTime(item.note.capturedAt)}</time>{item.note.mood && <span className="badge muted">{moteText("我标注的心情 ·")}{' '}{item.note.mood}</span>}<p>{item.note.text}</p><small><WifiOff size={13} />{item.error || moteText("本机已保存，等待中央节点确认。")}</small></div><button className="icon-button" aria-label={moteText("移除本机待同步副本")} onClick={() => discard(item.note.id)} disabled={syncing}><Trash2 size={15} /></button></article>)}</section>}
+    {queued.length > 0 && <section className="panel note-pending"><div className="section-heading"><div><span className="eyebrow">SAVED ON THIS DEVICE</span><h2>{moteText("待同步 ·")}{' '}{queued.length}{' '}{moteText("条")}</h2></div><button className="button subtle" disabled={syncing} onClick={() => void sync(true)}><RefreshCw size={14} className={syncing ? 'spin' : ''} />{syncing ? moteText("正在同步") : moteText("重试同步")}</button></div>{queued.map(item => <article className="pending-note" key={item.note.id}><div><time>{dateTime(item.note.capturedAt)}</time><p>{item.note.text}</p><small><WifiOff size={13} />{item.error || moteText("本机已保存，等待中央节点确认。")}</small></div><button className="icon-button" aria-label={moteText("移除本机待同步副本")} onClick={() => discard(item.note.id)} disabled={syncing}><Trash2 size={15} /></button></article>)}</section>}
     <section className="notes-history"><div className="section-heading"><div><span className="eyebrow">YOUR OWN WORDS</span><h2>{moteText("已经留下的心绪与杂事")}</h2></div><button className="text-button" onClick={() => void load()} disabled={loading}><RefreshCw size={14} />{moteText("刷新")}</button></div>
       {listError && <div className="notice error" role="alert">{listError}{' '}{moteText("· 本机草稿仍可继续保存。")}</div>}
       {!records.length && !loading && !listError && <div className="panel empty"><FileText size={26} /><h3>{moteText("给今天留一小段文字")}</h3><p>{moteText("保存后，原文会出现在这里，也可作为问答的证据。")}</p></div>}
-      <div className="notes-grid">{records.map(record => <button className="panel note-card" key={record.id} onClick={() => onOpen(record.id)}><time>{dateTime(record.capturedAt)}</time>{record.mood && <span className="note-mood-tag"><Smile size={14} />{moteText("我标注的心情 ·")}{' '}{record.mood}</span>}<p>{record.ocrText}</p>{record.metadata?.attachments?.length&&<small>{moteText("附件")}: {record.metadata.attachments.length}</small>}<footer>{record.deviceName}<span>{moteText("查看原文 →")}</span></footer></button>)}</div>
+      <div className="notes-grid">{records.map(record => <button className="panel note-card" key={record.id} onClick={() => onOpen(record.id)}><time>{dateTime(record.capturedAt)}</time><p>{record.ocrText}</p>{record.metadata?.attachments?.length&&<small>{moteText("附件")}: {record.metadata.attachments.length}</small>}<footer>{record.deviceName}<span>{moteText("查看原文 →")}</span></footer></button>)}</div>
       {loading && <div className="load-more"><LoaderCircle size={17} className="spin" />{moteText("正在读取随手记…")}</div>}
       {cursor && !loading && <div className="load-more"><button className="button subtle" onClick={() => void load(cursor)}>{moteText("加载更早的随手记")}</button></div>}
     </section>

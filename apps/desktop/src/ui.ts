@@ -6,7 +6,8 @@ let initialized = false;
 let busy = false;
 const fields = byId<HTMLFieldSetElement>('settings-fields');
 const settingsForm = byId<HTMLFormElement>('settings');
-const pageNames = ['statistics', 'overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression'] as const;
+byId('device-name').addEventListener('input', () => markSettingsDirty());
+const pageNames = ['statistics', 'overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression', 'permissions'] as const;
 type Page = typeof pageNames[number];
 let currentPage: Page = 'overview';
 let settingsDirty = false;
@@ -27,13 +28,12 @@ function showPage(page: Page, focus = true): void {
     if (currentPage === 'connection') {
       clearConnectionPreview();
       byId<HTMLTextAreaElement>('connection-input').value = '';
-      byId<HTMLInputElement>('connection-owner-token').value = '';
       // Confirmed pairing still commits if the user navigates away while it is running.
       if (!settingsApplying) void desktopApi.cancelConnection().catch(() => {});
     }
   }
   currentPage = page;
-  const selected = settingsPages.has(page) || page === 'about' || page === 'compression' ? 'settings' : page === 'activity' ? 'overview' : page;
+  const selected = settingsPages.has(page) || page === 'about' || page === 'compression' || page === 'permissions' ? 'settings' : page === 'activity' ? 'overview' : page;
   for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-page]'))) element.hidden = element.dataset.page !== page;
   for (const button of Array.from(document.querySelectorAll<HTMLElement>('aside [data-nav]'))) {
     const active = button.dataset.nav === selected;
@@ -44,6 +44,7 @@ function showPage(page: Page, focus = true): void {
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
   if (page === 'compression') { byId<HTMLInputElement>('compression-quality').value=String(currentStatus.config.jpegQuality); const side=byId<HTMLSelectElement>('compression-side');if(!Array.from(side.options).some(o=>o.value===String(currentStatus.config.captureMaxSide)))side.add(new Option(String(currentStatus.config.captureMaxSide),String(currentStatus.config.captureMaxSide)));side.value=String(currentStatus.config.captureMaxSide); void refreshCompression(); }
+  if (page === 'permissions') void refreshPermissions();
   if (page === 'statistics') void loadStorageStatistics();
   if (page === 'records') void loadRecords();
   if (page === 'overview' && initialized) void desktopApi.status().then(render).catch(() => feedback(moteText("状态读取失败，请重试。")));
@@ -199,7 +200,7 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   captureStorageDirectory = config.captureStorageDirectory || '';
   renderStorage();
   const values: Record<string, string | number> = {
-    'diagnostic-interval': config.diagnosticIntervalSeconds, 'jpeg-quality': config.jpegQuality, 'capture-max-side': config.captureMaxSide, 'battery-pause-below': config.batteryPauseBelowPct,
+    'diagnostic-interval': config.diagnosticIntervalSeconds, 'image-dedupe': config.imageDedupeMode ?? 'off', 'jpeg-quality': config.jpegQuality, 'capture-max-side': config.captureMaxSide, 'battery-pause-below': config.batteryPauseBelowPct,
     'server-url': config.serverUrl, 'device-name': config.deviceName, interval: config.intervalMs / 1000,
     'queue-mb': config.maxQueueBytes / 1024 / 1024, 'queue-events': config.maxQueueEvents,
     'default-collection': config.defaultCollection, 'sync-interval': config.syncIntervalMinutes, 'sync-batch': config.syncBatchSize,
@@ -270,7 +271,8 @@ function render(status: import('./contracts').Status): void {
   byId<HTMLButtonElement>('retry').disabled = busy || status.sync.state === 'uploading' || status.sync.state === 'unconfigured';
   byId('retry').textContent = status.sync.state === 'error' ? moteText("重试上传") : moteText("立即上传");
   fields.disabled = busy;
-  for (const id of ['connection-preview', 'connection-json', 'connection-qr', 'connection-test', 'connection-owner-open']) byId<HTMLButtonElement>(id).disabled = busy;
+  byId<HTMLInputElement>('device-name').disabled = busy;
+  for (const id of ['connection-preview', 'connection-json', 'connection-qr', 'connection-test']) byId<HTMLButtonElement>(id).disabled = busy;
   byId<HTMLButtonElement>('connection-cancel').disabled = busy;
   byId<HTMLTextAreaElement>('connection-input').disabled = busy;
   byId<HTMLInputElement>('connection-confirm-origin').disabled = busy;
@@ -359,7 +361,7 @@ byId('settings').addEventListener('submit', event => {
       metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
       defaultCollection: readInput('default-collection') as import('./contracts').CollectionMode, appCollectionRules,
       diagnosticsEnabled: byId<HTMLInputElement>('diagnostics-enabled').checked, diagnosticIntervalSeconds: numberInput('diagnostic-interval'),
-      jpegQuality: numberInput('jpeg-quality'), captureMaxSide: numberInput('capture-max-side'), pauseOnBattery: byId<HTMLInputElement>('pause-on-battery').checked, batteryPauseBelowPct: numberInput('battery-pause-below'),
+      imageDedupeMode: readInput('image-dedupe') as 'off' | 'exact', jpegQuality: numberInput('jpeg-quality'), captureMaxSide: numberInput('capture-max-side'), pauseOnBattery: byId<HTMLInputElement>('pause-on-battery').checked, batteryPauseBelowPct: numberInput('battery-pause-below'),
       syncMode: selectedSyncMode(), syncIntervalMinutes: numberInput('sync-interval'), syncBatchSize: numberInput('sync-batch'),
       ...(byId<HTMLInputElement>('confirm-local-backlog').checked ? { confirmLocalBacklog: true } : {}),
       serverUrl: readInput('server-url'), deviceName: readInput('device-name'), intervalMs: numberInput('interval') * 1000,
@@ -378,11 +380,15 @@ byId('settings').addEventListener('submit', event => {
 });
 byId('start').addEventListener('click', () => {
   if (settingsDirty) { showPage('settings'); feedback(moteText("请先保存或还原修改，再开始采集。")); return; }
-  void perform(async () => render(await desktopApi.start()));
+  void perform(async () => {
+    const permissions = await desktopApi.permissionStatus();
+    if ((currentStatus.config.defaultCollection === 'content' || Object.values(currentStatus.config.appCollectionRules).includes('content')) && permissions.screen !== 'granted') { window.alert(moteText("屏幕录制尚未授权，请在权限管理中开启。")); showPage('permissions'); return; }
+    render(await desktopApi.start());
+  });
 });
 byId('stop').addEventListener('click', () => { wasRunningBeforeSave = false; void desktopApi.stop().then(render).catch(error => feedback((error as Error).message)); });
 byId('retry').addEventListener('click', () => void perform(async () => { render(await desktopApi.retry()); feedback(currentStatus.sync.message, currentStatus.sync.state !== 'error' && currentStatus.sync.state !== 'unconfigured'); }));
-byId('permissions').addEventListener('click', () => void perform(() => desktopApi.openPermissions()));
+byId('permissions').addEventListener('click', () => showPage('permissions'));
 byId('data-folder').addEventListener('click', () => void perform(() => desktopApi.openDataFolder()));
 byId('export-metadata').addEventListener('click',()=>void perform(()=>desktopApi.exportMetadata()));
 byId('export-central').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('vault')));
@@ -398,10 +404,8 @@ void desktopApi.status().then(render).catch(() => feedback(moteText("无法连�
 byId('note-attachments').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('notes')));
 byId('ask-central').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('ask')));
 byId('central').addEventListener('click', () => {
-  if (!currentStatus?.config.tokenConfigured) { showPage('connection'); feedback(moteText("先连接你的中央节点，即可打开中央仓库。")); return; }
-  if (currentStatus.config.credentialScope === 'collector') {
-    revealField(byId('connection-owner-token')); feedback(moteText("此设备使用采集专用连接。填写管理员令牌后即可打开中央仓库。")); return;
-  }
+  if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央节点，即可打开中央仓库。")); return; }
+
   void perform(() => desktopApi.openCentral());
 });
 let draft: import('./note-draft').NoteDraft | undefined;
@@ -538,6 +542,8 @@ async function sourceAction(action: () => Promise<void>): Promise<void> {
 }
 for (const mode of ['files', 'directory'] as const) byId('source-' + mode).addEventListener('click', () => void sourceAction(async () => { await desktopApi.chooseSourceFiles(mode, sourceOptions()); }));
 byId('source-calendar-connect').addEventListener('click', () => void sourceAction(async () => {
+  const permissions = await desktopApi.permissionStatus();
+  if (permissions.calendar === 'denied') { window.alert(moteText("日历访问尚未授权，请在权限管理中开启。")); showPage('permissions'); return; }
   const calendars = await desktopApi.authorizeCalendar(); const select = byId<HTMLSelectElement>('source-calendar-choice'); select.replaceChildren();
   for (const calendar of calendars) { const option = document.createElement('option'); option.value = calendar.id; option.textContent = calendar.title; select.append(option); }
   byId('source-calendars').hidden = !calendars.length;
@@ -636,7 +642,7 @@ byId('connection-connect').addEventListener('click', () => void perform(async ()
   feedback(moteText("正在连接并验证新凭据，此过程无法取消；原配置在确认成功前保持不变。"));
   settingsApplying = true; wasRunningBeforeSave = currentStatus.running; render(currentStatus);
   let status: import('./contracts').Status;
-  try { status = await desktopApi.confirmConnection(connectionPreview.id, connectionPreview.serverUrl); }
+  try { status = await desktopApi.confirmConnection(connectionPreview.id, connectionPreview.serverUrl, readInput('device-name')); }
   finally { settingsApplying = false; wasRunningBeforeSave = false; }
   clearConnectionPreview();
   // Invitation confirmation replaces the connection page draft with the committed config.
@@ -644,7 +650,6 @@ byId('connection-connect').addEventListener('click', () => void perform(async ()
   renderConnection(await desktopApi.connectionStatus()); feedback(moteText("连接已安全保存；原设备 ID、隐私设置和本地模型保留。"), true);
 }));
 byId('connection-test').addEventListener('click', () => void perform(async () => renderConnection(await desktopApi.testConnection())));
-byId('connection-owner-open').addEventListener('click', () => { const token = readInput('connection-owner-token').trim(); byId<HTMLInputElement>('connection-owner-token').value = ''; void perform(() => desktopApi.openCentralOwner(token)); });
 void desktopApi.connectionStatus().then(renderConnection).catch(() => {});
 
 function addAppRule(id = '', mode: import('./contracts').CollectionMode = 'activity'): void {
@@ -867,7 +872,7 @@ let compressionTimer:ReturnType<typeof setTimeout>|undefined;
 for(const id of ['compression-quality','compression-side'])byId(id).addEventListener('input',()=>{clearTimeout(compressionTimer);compressionRevision++;byId<HTMLButtonElement>('compression-apply').disabled=true;compressionTimer=setTimeout(()=>void refreshCompression(),180);});
 byId('compression-zoom').addEventListener('change',compressionZoom);
 for(const [source,target] of [['compression-before-pane','compression-after-pane'],['compression-after-pane','compression-before-pane']])byId(source).addEventListener('scroll',()=>{const a=byId(source),b=byId(target);if(b.scrollLeft!==a.scrollLeft)b.scrollLeft=a.scrollLeft;if(b.scrollTop!==a.scrollTop)b.scrollTop=a.scrollTop;});
-byId('compression-apply').addEventListener('click',()=>{const quality=readInput('compression-quality'),side=readInput('compression-side');showPage('developer');byId<HTMLInputElement>('jpeg-quality').value=quality;byId<HTMLInputElement>('capture-max-side').value=side;markSettingsDirty();feedback(moteText("压缩参数已带回设置，请点击保存后应用。"),true);});
+byId('compression-apply').addEventListener('click',()=>{const quality=readInput('compression-quality'),side=readInput('compression-side');showPage('capture');byId<HTMLInputElement>('jpeg-quality').value=quality;byId<HTMLInputElement>('capture-max-side').value=side;markSettingsDirty();feedback(moteText("压缩参数已带回设置，请点击保存后应用。"),true);});
 
 async function loadStorageStatistics(): Promise<void> {
  const target=byId('storage-statistics');target.textContent=moteText("正在读取…");
@@ -879,3 +884,19 @@ async function loadStorageStatistics(): Promise<void> {
  }catch{target.textContent=moteText("统计读取失败，请重试。");}
 }
 byId('storage-refresh').addEventListener('click',()=>void loadStorageStatistics());
+
+async function refreshPermissions(): Promise<void> {
+  try {
+    const status = await desktopApi.permissionStatus();
+    for (const kind of ['screen', 'accessibility', 'calendar'] as const) byId('permission-' + kind).textContent = ({granted: moteText("已授权"), denied: moteText("未授权"), 'not-determined': moteText("尚未授权"), unsupported: moteText("当前平台不支持"), unknown: moteText("无法确认，请检查系统设置")} as Record<string,string>)[status[kind]] ?? status[kind];
+  } catch { feedback(moteText("权限状态读取失败，请重试。")); }
+}
+byId('permissions-refresh').addEventListener('click', () => void refreshPermissions());
+window.addEventListener('focus', () => { if (currentPage === 'permissions') void refreshPermissions(); });
+for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-permission]'))) button.addEventListener('click', () => void perform(() => desktopApi.permissionSettings(button.dataset.permission as 'screen' | 'accessibility' | 'calendar' | 'files')));
+byId('notification-collection').addEventListener('change', () => {
+  if (!byId<HTMLInputElement>('notification-collection').checked) return;
+  void desktopApi.permissionStatus().then(status => {
+    if (status.accessibility !== 'granted') { byId<HTMLInputElement>('notification-collection').checked = false; window.alert(moteText("读取通知需要辅助功能权限，请先授权后再启用。")); showPage('permissions'); }
+  }).catch(() => feedback(moteText("权限检查失败，请重试。")));
+});

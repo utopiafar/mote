@@ -1,0 +1,9 @@
+# Issue #4: client settings and central archive
+
+- New browser notes identify their application as `dev.mote.web.notes`. Android and desktop notes retain `dev.mote.notes`. Already prepared legacy submissions keep their original identity so offline retries remain idempotent. The web note list and detail view no longer show mood fields; existing stored metadata is preserved.
+- Mac invitation confirmation reads and validates the visible device name before redeeming JSON or QR invitations. The name field appears before invitation controls and can be saved independently using the settings save bar. Android shows the name before scanning/importing and provides a separate save button. Renaming preserves the device ID; subsequent records and synchronization use the new name.
+- Mac Settings includes Permissions with screen recording, Accessibility, calendar and file access guidance. Status checks do not request screenshots or grant access. Explicit buttons open System Settings; missing permissions guide capture, notification and calendar actions to this page. File access is described per path because macOS exposes no reliable global Full Disk Access status.
+- Image quality and dimensions are directly available in Capture and Storage alongside generated-image compression previews. Exact screenshot deduplication is optional and defaults off. It compares privacy-filtered JPEGs only for consecutive samples of the same app. It does not add skipped samples to measured usage time.
+- Central archive links open Chrome on macOS, falling back to the default browser if Chrome cannot launch. URLs never include collector or administrator credentials; the browser maintains its own login session.
+
+Validation uses generated images, mocked native capture and isolated profiles. Physical-device permission grants, real personal capture and live model inference are not exercised by these checks.

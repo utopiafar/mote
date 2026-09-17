@@ -4,14 +4,16 @@ import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
 import {previewWork} from './background';
 import { collectRecordMetadata } from './record-metadata';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, safeStorage, session, shell, systemPreferences, Tray } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import { DiagnosticsRecorder } from '@mote/diagnostics';
 import { githubFeedbackUrl } from '@mote/shared/feedback';
 import { readPowerState, recognizeInvitationQr, runHelper, readInstalledApplications } from './native';
 import { ConnectionOnboarding, ConnectionError, testConnection, assertConnectionChangeSafe, type ConnectionStatus } from './connection';
 import { NoteDraftStore, type NoteDraft } from './note-draft';
-import { openCentralWindow } from './central-window';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { openCentralBrowser } from './central-browser';
 import { join, resolve } from 'node:path';
 import { mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { resolveProfile, profileDefaults } from './profile';
@@ -69,8 +71,6 @@ function refreshApplicationMenu() {
 const profileLabel = profile.legacy ? moteText("legacy（日常原目录）") : profile.name;
 let window: BrowserWindow | undefined;
 let tray: Tray | undefined;
-let centralWindow: BrowserWindow | undefined;
-let centralOpening: Promise<void> | undefined;
 let collector: Collector;
 let localSources: LocalSourceManager | undefined;
 let updater: DesktopUpdater | undefined;
@@ -101,25 +101,9 @@ function serialize<T>(operation: () => Promise<T>): Promise<T> {
 function encryptedStorageAvailable(): boolean {
   return safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
 }
-async function showCentral(ownerToken?: string): Promise<void> {
-  if (centralWindow && !centralWindow.isDestroyed()) { centralWindow.show(); centralWindow.focus(); return; }
-  if (centralOpening) return centralOpening;
-  const requested = settings;
-  if (!ownerToken && requested.credentialScope === 'collector') throw new Error(moteText("此连接仅有采集权限。请在设置的“连接与设备”中展开“设备身份与管理员访问”，使用单独管理员令牌打开中央仓库"));
-  centralOpening = (async () => {
-    try {
-      const identity = await testConnection({ ...requested, token: ownerToken || requested.token });
-      if (identity.credential.scope !== 'owner') throw new Error(moteText("完整中央仓库需要管理员权限；采集专用凭据不能用于此登录"));
-    } catch (error) {
-      // Legacy nodes predate scoped credentials. Only the original manually configured path is compatible.
-      if (!(error instanceof ConnectionError && error.code === 'UNSUPPORTED' && !ownerToken && requested.credentialScope !== 'collector')) throw error;
-    }
-    if (settings !== requested || quitting) throw new Error(moteText("连接已改变，请重新打开中央仓库"));
-    const opened = await openCentralWindow({ ...requested, token: ownerToken || requested.token });
-    if (settings !== requested || quitting) { opened.close(); return; }
-    centralWindow = opened;
-  })().finally(() => { centralOpening = undefined; });
-  return centralOpening;
+async function showCentral(page?: string): Promise<void> {
+  await openCentralBrowser(settings.serverUrl, page, process.platform,
+    url => promisify(execFile)('/usr/bin/open', ['-a', 'Google Chrome', url]), url => shell.openExternal(url));
 }
 function showWindow(): void { window?.show(); window?.focus(); }
 function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings'): void {
@@ -332,7 +316,6 @@ else {
       if (initial) await noteDrafts.bindPreparedOrigin(updated.serverUrl);
       if (sameNodeInvitation) await queue.resetRetries();
       await applySettings(updated);
-      centralWindow?.close(); centralWindow = undefined;
       connectionState = { state: 'unchecked', message: updated.credentialScope === 'collector' ? moteText("已安全保存采集凭据；可测试连接。完整仓库需单独管理员登录。") : moteText("连接已保存，可测试权限与节点版本") };
     };
     const readSelectedInvitation = async (path: string, maximum: number): Promise<Buffer> => {
@@ -355,10 +338,12 @@ else {
         return { canceled: false, preview: onboarding.preview(input) };
       } catch { throw new Error(moteText("无法读取有效邀请，请检查 JSON/二维码格式、有效期和文件大小；原连接未变动")); }
     }));
-    handle('mote:connection-confirm', (id, origin) => serialize(async () => { await connectionChange(async () => {
+    handle('mote:connection-confirm', (id, origin, deviceName) => serialize(async () => { await connectionChange(async () => {
       if (!encryptedStorageAvailable()) throw new Error(moteText("系统加密存储不可用，不能交换并保存凭据"));
-      const result = await onboarding.redeem(id, origin, settings, currentPlatform);
-      const updated = { ...updateConfig(settings, { ...settings, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope };
+      if (typeof deviceName !== 'string') throw new Error('Invalid device name');
+      const named = updateConfig(settings, { ...settings, deviceName });
+      const result = await onboarding.redeem(id, origin, named, currentPlatform);
+      const updated = { ...updateConfig(settings, { ...named, serverUrl: result.serverUrl, token: result.token }), credentialScope: result.scope };
       const identity = await testConnection(updated);
       if (identity.credential.id !== result.credentialId || identity.credential.scope !== 'collector') throw new Error(moteText("中央凭据身份确认不一致，原连接未修改；请重新生成邀请"));
       await commitConnection(updated, origin === settings.serverUrl, true);
@@ -370,10 +355,6 @@ else {
       try { const identity = await testConnection(requested); if (settings === requested) connectionState = { state: 'connected', message: identity.credential.scope === 'collector' ? moteText("采集连接正常 · 仅上传与自身来源同步") : moteText("管理员连接正常 · 可访问完整中央仓库"), checkedAt: new Date().toISOString(), identity }; }
       catch (error) { if (settings === requested) connectionState = { state: 'error', message: error instanceof ConnectionError ? error.message : moteText("连接检查失败；已保存配置未改变"), checkedAt: new Date().toISOString() }; }
       return connectionState;
-    });
-    handle('mote:central-owner', token => {
-      if (typeof token !== 'string' || token.length < 32 || token.length > 4096 || /[\r\n]/.test(token)) throw new Error(moteText("管理员令牌格式不正确"));
-      return showCentral(token);
     });
     handle('mote:get-status', () => clientStatus());
     const browseWithConnection = async <T>(operation: (config: Config) => Promise<T>): Promise<T> => {
@@ -432,7 +413,7 @@ else {
       await writeFile(selected.filePath, JSON.stringify({...buildSupportBundle(profile, app.getVersion(), clientStatus(), logs.events),...logs}, null, 2), { mode: 0o600 });
       return { canceled: false };
     });
-    handle('mote:central', async page => { await showCentral();if(['ask','notes','vault'].includes(String(page))&&centralWindow)await centralWindow.loadURL(settings.serverUrl+'/#'+page); });
+    handle('mote:central', async page => { await showCentral(typeof page === 'string' ? page : undefined); });
     handle('mote:note-draft', () => noteDrafts.get());
     handle('mote:note-draft-update', input => trackNote(noteDrafts.update(input as NoteDraft)));
     handle('mote:note', input => trackNote(serialize(async () => {
@@ -477,6 +458,20 @@ else {
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       await nsfw.importFiles(selected.filePaths); return { canceled: false };
     }));
+    handle('mote:permission-status', async () => ({
+      screen: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
+      accessibility: process.platform === 'darwin' ? (systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'denied') : 'unsupported',
+      calendar: process.platform === 'darwin' ? await runHelper(helperPath, 'calendar-status').then(value => (value as {status: string}).status).catch(() => 'unknown') : 'unsupported',
+    }));
+    handle('mote:permission-settings', async kind => {
+      const panes: Record<string, string> = { screen: 'Privacy_ScreenCapture', accessibility: 'Privacy_Accessibility', calendar: 'Privacy_Calendars', files: 'Privacy_AllFiles' };
+      if (typeof kind !== 'string' || !panes[kind]) throw new Error('Unknown permission');
+      if (process.platform === 'darwin') {
+        if (kind === 'screen') await runHelper(helperPath, 'screen-permission').catch(() => undefined);
+        if (kind === 'accessibility') systemPreferences.isTrustedAccessibilityClient(true);
+        await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?' + panes[kind]);
+      }
+    });
     handle('mote:permissions', async () => { if (process.platform === 'darwin') { await runHelper(helperPath, 'screen-permission').catch(() => undefined); await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); } });
     handle('mote:data-folder', async () => { await shell.openPath(dataDirectory); });
     handle('mote:export-metadata', async () => {

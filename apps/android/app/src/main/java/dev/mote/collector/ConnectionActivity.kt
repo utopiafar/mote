@@ -68,11 +68,25 @@ class ConnectionActivity : MoteActivity() {
         text(MoteI18n.text("先在中央网页生成一次性邀请。扫码、选择 JSON 文件或粘贴邀请后，核对节点再确认连接；不会自动开始截图。邀请有效期 10 分钟，请勿分享。"))
         currentNode = text(""); refreshCurrentNode()
         button(MoteI18n.text("复制本设备 ID")) { getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Mote device ID", deviceId)); Toast.makeText(this, MoteI18n.text("已复制设备 ID，不含凭据"), Toast.LENGTH_SHORT).show() }
+        text(MoteI18n.text("设备名称"))
+        name = EditText(this).apply { hint = MoteI18n.text("设备名称"); setSingleLine(); setText(config.deviceName); filters = arrayOf(android.text.InputFilter.LengthFilter(128)) }; root.addView(name)
+        button(MoteI18n.text("保存设备名称")) {
+            val chosen = name.text.toString().trim()
+            require(chosen.isNotBlank() && chosen.length <= 128)
+            val expected = currentConfig
+            working = true; applying = true
+            RuntimeSettings.apply(this, expected.copy(deviceName = chosen), expected = expected) { result ->
+                connectionFinished = {
+                    working = false; applying = false
+                    RuntimeSettings.currentConfiguration?.let { currentConfig = it }; refreshCurrentNode()
+                    result.onSuccess { status.text = MoteI18n.text("设备名称已保存") }.onFailure(::showFailure)
+                }
+            }
+        }
         button(MoteI18n.text("扫描连接二维码")) { startActivityForResult(Intent(this, ConnectionScanActivity::class.java), 1) }
         button(MoteI18n.text("选择连接 JSON 文件")) { startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/json", "text/plain")), 2) }
         input = EditText(this).apply { hint = MoteI18n.text("粘贴 JSON 或 mote://connect…"); minLines = 3; maxLines = 7; isSaveEnabled = false; importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
             filters = arrayOf(android.text.InputFilter.LengthFilter(ConnectionInvitation.MAX_BYTES * 2)) }; root.addView(input)
-        name = EditText(this).apply { hint = MoteI18n.text("设备名称"); setSingleLine(); setText(config.deviceName); filters = arrayOf(android.text.InputFilter.LengthFilter(128)) }; root.addView(name)
         allowHttp = CheckBox(this).apply { text = MoteI18n.text("开发调试：允许本机 loopback HTTP 邀请"); isChecked = config.debugHttp; isEnabled = BuildConfig.DEBUG }; root.addView(allowHttp)
         button(MoteI18n.text("解析并核对节点")) { parseInput() }
         preview = text(MoteI18n.text("还没有解析邀请。外部链接只填入此页，不会自动连接。"))

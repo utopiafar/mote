@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { UNKNOWN_FOREGROUND } from './app-collection';
 
 export interface ActiveApplication { appId: string; appName: string; pid: number; visibleAppIds: string[]; unknownVisibleWindows: boolean }
-export function runHelper(path: string, command: 'notifications' | 'screen-permission' | 'active' | 'activity' | 'device' | 'ocr' | 'power' | 'qr' | 'installed-apps', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
+export function runHelper(path: string, command: 'calendar-status' | 'notifications' | 'screen-permission' | 'active' | 'activity' | 'device' | 'ocr' | 'power' | 'qr' | 'installed-apps', input?: Buffer, signal?: AbortSignal): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const child = spawn(path, [command], { stdio: ['pipe', 'pipe', 'pipe'], signal });
     const chunks: Buffer[] = [];

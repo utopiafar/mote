@@ -81,3 +81,11 @@ test('malformed note metadata and blank text reject before storage', async t => 
   }
   assert.equal(store.stats().captures, 0);
 });
+
+test('web notes use a distinct app identity from Android notes', () => {
+  const web = noteCapture(noteSchema.parse(note({ platform: 'import', client: 'web' })));
+  const android = noteCapture(noteSchema.parse(note({ platform: 'android' })));
+  assert.equal(web.appId, 'dev.mote.web.notes');
+  assert.equal(android.appId, 'dev.mote.notes');
+  assert.equal(noteCapture(noteSchema.parse(note({ platform: 'import' }))).appId, 'dev.mote.notes', 'legacy queued notes retain their original identity for idempotent retry');
+});

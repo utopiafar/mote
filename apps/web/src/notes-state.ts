@@ -48,8 +48,8 @@ export class NoteOutbox {
     if(!draft.text.trim()&&!draft.attachments?.length)throw new Error(moteText("此刻想留下什么？"));
     const previous = this.storedDraft();
     const prepared = previous.text === draft.text && previous.mood === draft.mood && JSON.stringify(previous.attachments) === JSON.stringify(draft.attachments) ? previous.prepared : undefined;
-    const { id, deviceId, deviceName, platform, capturedAt } = identity;
-    const note = prepared ?? noteSchema.parse({ id, deviceId, deviceName, platform, capturedAt, text: draft.text.trim()?draft.text:'附件记录', ...(draft.attachments?.length?{metadata:{version:1,observedAt:capturedAt,attachments:draft.attachments}}:{}), ...(draft.mood.trim() ? { mood: draft.mood } : {}) });
+    const { id, deviceId, deviceName, platform, capturedAt, client } = identity;
+    const note = prepared ?? noteSchema.parse({ id, deviceId, deviceName, platform, capturedAt, ...(client ? { client } : {}), text: draft.text.trim()?draft.text:'附件记录', ...(draft.attachments?.length?{metadata:{version:1,observedAt:capturedAt,attachments:draft.attachments}}:{}), ...(draft.mood.trim() ? { mood: draft.mood } : {}) });
     this.storage.setItem(this.draftKey, JSON.stringify({ ...draft, prepared: note }));
     return note;
   }

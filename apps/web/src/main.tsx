@@ -493,7 +493,6 @@ function EvidenceDialog({
               <div className="evidence-text">
                 <span className="eyebrow">{presentation?.textLabel}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || moteText("原始上下文")}</h3>
-                {capture.mood && <p className="note-mood-tag">{moteText("我标注的心情 ·")}{' '}{capture.mood}</p>}
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
                 <pre aria-label={capture.source === 'screen' ? moteText("OCR 全文") : moteText("记录全文")}>
                   {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || capture.ocrText || (capture.provenance?.deleted ? moteText("来源已报告删除；本次只保留来源元数据。") : capture.provenance?.layer === 'reference' ? moteText("此来源仅保留引用与元数据，未导入正文。") : presentation?.nativeFile&&capture.provenance?.layer==='original'?moteText("原件单独保存；转写与摘要见上方。"):capture.blobHash ? moteText("暂无文字。") : moteText("此记录没有正文。"))}

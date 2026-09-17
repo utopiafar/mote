@@ -402,3 +402,16 @@ describe.skipIf(process.platform !== 'darwin')('immediate settings with generate
     expect(collector.status().running).toBe(false); expect(mocks.capture).not.toHaveBeenCalled();
   });
 });
+
+describe.skipIf(process.platform !== 'darwin')('exact deduplication with generated images', () => {
+  it.each(['off', 'exact'])('honors %s mode and never merges different applications', async mode => {
+    const { collector, queue } = await makeCollector({ syncMode: 'manual', imageDedupeMode: mode });
+    await collector.start(); await collector.settleCapture();
+    clearTimeout((collector as any).timer); await (collector as any).capture();
+    expect(queue.stats().depth).toBe(mode === 'exact' ? 1 : 2);
+    mocks.active.mockResolvedValue({ ...application, appId: 'dev.mote.other' });
+    mocks.foreground.mockResolvedValue({ ...application, appId: 'dev.mote.other' });
+    clearTimeout((collector as any).timer); await (collector as any).capture();
+    expect(queue.stats().depth).toBe(mode === 'exact' ? 2 : 3);
+  });
+});

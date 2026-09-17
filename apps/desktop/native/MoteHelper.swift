@@ -140,6 +140,13 @@ do {
             for view in views.prefix(20) { let text = strings(view, 0).joined(separator: "\n"); if !text.isEmpty { items.append(["text": String(text.prefix(4000))]) } }
         }
         try output(["available": true, "items": items])
+    case "calendar-status":
+        let status = EKEventStore.authorizationStatus(for: .event)
+        var label = "denied"
+        if status == .notDetermined { label = "not-determined" }
+        else if status == .authorized { label = "granted" }
+        if #available(macOS 14.0, *), status == .fullAccess { label = "granted" }
+        try output(["status": label])
     case "screen-permission":
         // Only the explicit permissions button invokes this. No image or window list is requested.
         try output(["granted": CGRequestScreenCaptureAccess()])

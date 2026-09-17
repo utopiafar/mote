@@ -50,3 +50,11 @@ describe('configuration security', () => {
   });
 
 });
+
+it('persists image deduplication and renamed identity without replacing the device ID', async () => {
+  const config = defaultConfig();
+  const next = updateConfig(config, { ...config, imageDedupeMode: 'exact', deviceName: ' Renamed Mac ' });
+  expect(next.deviceName).toBe('Renamed Mac'); expect(next.deviceId).toBe(config.deviceId);
+  expect(next.imageDedupeMode).toBe('exact');
+  expect(() => updateConfig(config, { ...config, imageDedupeMode: 'invalid' as any })).toThrow();
+});
