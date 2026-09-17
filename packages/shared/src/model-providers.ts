@@ -5,6 +5,10 @@ export const MODEL_REASONING_EFFORTS = ['auto', 'off', 'low', 'high', 'max'] as 
 export type ModelReasoningEffort = typeof MODEL_REASONING_EFFORTS[number];
 export const DEFAULT_MODEL_MAX_TOKENS = 65_536;
 export const MODEL_OUTPUT_BUDGETS = [8192, 16384, 32768, DEFAULT_MODEL_MAX_TOKENS, 128000] as const;
+export const DEFAULT_MODEL_REQUEST_TIMEOUT_MS = 300_000;
+export const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
+export const MAX_MODEL_REQUEST_TIMEOUT_MS = 600_000;
+export const MAX_AGENT_TIMEOUT_MS = 3_600_000;
 
 export interface ModelProviderPreset {
   id: string;
@@ -25,7 +29,10 @@ export interface ModelSettingsParameters {
   model: string;
   reasoningEffort: ModelReasoningEffort;
   maxTokens: number;
-  timeoutMs: number;
+  /** One provider/model request. Null means not applicable to Codex App Server. */
+  modelRequestTimeoutMs: number | null;
+  /** Complete Agent run, including all model/tool turns. Null disables Mote's total deadline. */
+  agentTimeoutMs: number | null;
   allowUnauthenticatedLocal: boolean;
 }
 export interface ModelSettings extends ModelSettingsParameters {

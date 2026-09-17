@@ -1,5 +1,5 @@
 import { moteText } from '@mote/shared/i18n';
-import type {ModelSettingsPublic, ModelSettingsView, ModelSettingsUpdate} from '@mote/shared/models';
+import {MAX_AGENT_TIMEOUT_MS, MAX_MODEL_REQUEST_TIMEOUT_MS, type ModelSettingsPublic, type ModelSettingsView, type ModelSettingsUpdate} from '@mote/shared/models';
 /** Only a status is returned for existing credentials; new values stay in page memory. */
 export type CredentialAction = 'keep' | 'replace' | 'clear';
 export interface ModelSettingsDraft {
@@ -9,7 +9,8 @@ export interface ModelSettingsDraft {
   model: string;
   reasoningEffort: ModelSettingsPublic['reasoningEffort'];
   maxTokens: string;
-  timeoutSeconds: string;
+  modelRequestTimeoutSeconds: string;
+  agentTimeoutSeconds: string;
   allowUnauthenticatedLocal: boolean;
   apiKeyAction: CredentialAction;
   apiKey: string;
@@ -27,7 +28,8 @@ export function createModelDraft(settings: ModelSettingsPublic): ModelSettingsDr
     model: settings.model,
     reasoningEffort: settings.reasoningEffort,
     maxTokens: String(settings.maxTokens),
-    timeoutSeconds: String(settings.timeoutMs / 1000),
+    modelRequestTimeoutSeconds: settings.modelRequestTimeoutMs === null ? '' : String(settings.modelRequestTimeoutMs / 1000),
+    agentTimeoutSeconds: settings.agentTimeoutMs === null ? '' : String(settings.agentTimeoutMs / 1000),
     allowUnauthenticatedLocal: settings.allowUnauthenticatedLocal,
     apiKeyAction: 'keep', apiKey: '', headersAction: 'keep', headers: '',
     extraBodyAction: 'keep', extraBody: '',
@@ -60,9 +62,14 @@ export function modelSettingsRequest(snapshot: ModelSettingsView, draft: ModelSe
   if (address.protocol === 'http:' && !local) throw new Error(moteText("远程模型服务须使用 HTTPS；本机回环地址可使用 HTTP。"));
   if (draft.allowUnauthenticatedLocal && !local) throw new Error(moteText("免密访问仅适用于本机回环地址。"));
   }
-  const maxTokens = draft.protocol==='codex-app-server'?snapshot.settings.maxTokens:Number(draft.maxTokens), timeoutMs = Number(draft.timeoutSeconds) * 1000;
+  const maxTokens = draft.protocol==='codex-app-server'?snapshot.settings.maxTokens:Number(draft.maxTokens);
+  const modelRequestTimeoutMs = draft.protocol==='codex-app-server' ? null : Number(draft.modelRequestTimeoutSeconds) * 1000;
+  const agentTimeoutMs = draft.agentTimeoutSeconds.trim() ? Number(draft.agentTimeoutSeconds) * 1000 : null;
+  const modelRequestTimeoutValid = typeof modelRequestTimeoutMs === 'number' && Number.isSafeInteger(modelRequestTimeoutMs) && modelRequestTimeoutMs >= 5000 && modelRequestTimeoutMs <= MAX_MODEL_REQUEST_TIMEOUT_MS;
   if (!Number.isSafeInteger(maxTokens) || maxTokens < 1 || maxTokens > 128000) throw new Error(moteText("输出 token 上限须为 1–128000 之间的整数。"));
-  if (!draft.timeoutSeconds || !Number.isSafeInteger(timeoutMs) || timeoutMs < 5000 || timeoutMs > 600000) throw new Error(moteText("最长等待时间须为 5–600 秒。"));
+  if (draft.protocol !== 'codex-app-server' && (!draft.modelRequestTimeoutSeconds || !modelRequestTimeoutValid)) throw new Error(moteText("单次模型请求超时须为 5–600 秒。"));
+  if (draft.protocol !== 'codex-app-server' && (agentTimeoutMs === null || !Number.isSafeInteger(agentTimeoutMs) || agentTimeoutMs < 5000 || agentTimeoutMs > MAX_AGENT_TIMEOUT_MS)) throw new Error(moteText("Agent 总运行超时须为 5–3600 秒。"));
+  if (draft.protocol === 'codex-app-server' && agentTimeoutMs !== null && (!Number.isSafeInteger(agentTimeoutMs) || agentTimeoutMs < 5000 || agentTimeoutMs > MAX_AGENT_TIMEOUT_MS)) throw new Error(moteText("Agent 总运行超时须为空，或为 5–3600 秒。"));
   if (retainedCredentialsNeedConfirmation(draft, snapshot.settings) && !draft.allowCredentialReuse) throw new Error(moteText("服务或地址已改变。请填写新凭据、清除旧凭据，或明确允许在新地址复用。"));
   const settings: ModelSettingsUpdate['settings'] = {
     provider: draft.provider,
@@ -70,7 +77,7 @@ export function modelSettingsRequest(snapshot: ModelSettingsView, draft: ModelSe
     baseUrl: draft.baseUrl.trim(),
     model: draft.model.trim(),
     reasoningEffort: draft.reasoningEffort,
-    maxTokens, timeoutMs,
+    maxTokens, modelRequestTimeoutMs, agentTimeoutMs,
     allowUnauthenticatedLocal: draft.allowUnauthenticatedLocal,
   };
   if(draft.protocol==='codex-app-server')return {revision:snapshot.revision,settings:{...settings,baseUrl:'',apiKey:null,headers:null,extraBody:null,allowUnauthenticatedLocal:false}};

@@ -22,7 +22,7 @@ try{
   assert.ok(items.some(m=>m.id===model),'test model must be available in the local Codex catalog');
   console.log(JSON.stringify({stage:'catalog',model,availableModels:items.length}));
   let view=(await node.app.inject({url:'/api/model-settings',headers})).json<ModelSettingsView>();
-  const settings={provider:'codex',protocol:'codex-app-server',baseUrl:'',model,reasoningEffort:items.find(m=>m.id===model)?.reasoningEfforts?.includes('low')?'low':'auto',maxTokens:8192,timeoutMs:120000,allowUnauthenticatedLocal:false,apiKey:null,headers:null,extraBody:null};
+  const settings={provider:'codex',protocol:'codex-app-server',baseUrl:'',model,reasoningEffort:items.find(m=>m.id===model)?.reasoningEfforts?.includes('low')?'low':'auto',maxTokens:8192,modelRequestTimeoutMs:null,agentTimeoutMs:null,allowUnauthenticatedLocal:false,apiKey:null,headers:null,extraBody:null};
   const saved=await node.app.inject({method:'PUT',url:'/api/model-settings/profiles/local-codex',headers,payload:{revision:view.revision,name:'Generated live Codex preset',settings}});
   assert.equal(saved.statusCode,200,saved.body);view=saved.json();
   const probe=await node.app.inject({method:'POST',url:'/api/model-settings/profiles/local-codex/test',headers,payload:{revision:view.revision,settings}});

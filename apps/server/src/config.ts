@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadEnvironment } from '@mote/shared/environment';
 import type { ConfigurationSource, ServerConfiguration } from '@mote/shared';
-import { DEFAULT_MODEL_MAX_TOKENS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, modelProvider } from '@mote/shared/models';
+import { DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUEST_TIMEOUT_MS, MAX_AGENT_TIMEOUT_MS, MAX_MODEL_REQUEST_TIMEOUT_MS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, modelProvider } from '@mote/shared/models';
 import { validateModelOptions } from '@mote/agent';
 
 export interface ConfigurationContext {
@@ -35,6 +35,10 @@ export function configFromEnv() {
     if(!Number.isFinite(n)||n<min||n>max||(integer&&!Number.isInteger(n)))throw new ConfigError(name,`${name} must be ${integer?'an integer ':''}between ${min} and ${max}`);
     return n;
   };
+  const optionalNumber=(name:string,min:number,max:number,integer=false):number|null=>{
+    const value=env[name];if(value===undefined||value.trim()==='')return null;
+    const n=Number(value);if(!Number.isFinite(n)||n<min||n>max||(integer&&!Number.isInteger(n)))throw new ConfigError(name,`${name} must be ${integer?'an integer ':''}between ${min} and ${max}`);return n;
+  };
   const flag=(name:string,fallback:boolean)=>{const value=env[name];if(value===undefined)return fallback;if(value!=='0'&&value!=='1')throw new ConfigError(name,`${name} must be 0 or 1`);return value==='1';};
   const text=(name:string,fallback='')=>{const value=env[name]??fallback;if(value.length>4096||/[\r\n\0]/.test(value))throw new ConfigError(name,`${name} must be a bounded single-line value`);return value;};
   const endpoint=(name:string,fallback='',publicAddress=false)=>{
@@ -57,6 +61,10 @@ export function configFromEnv() {
   if(!preset)throw new ConfigError('MOTE_MODEL_PROVIDER','Choose a supported provider or custom');
   const modelProtocol=choice('MOTE_MODEL_PROTOCOL',MODEL_PROTOCOLS,preset.protocol);
   const modelReasoningEffort=choice('MOTE_MODEL_REASONING_EFFORT',MODEL_REASONING_EFFORTS,modelProtocol==='deepseek'?'high':'auto');
+  const legacyTimeout=env.MOTE_MODEL_TIMEOUT_MS===undefined?undefined:number('MOTE_MODEL_TIMEOUT_MS',120000,5000,MAX_MODEL_REQUEST_TIMEOUT_MS,true);
+  const modelRequestTimeoutMs=modelProtocol==='codex-app-server'?null:number('MOTE_MODEL_REQUEST_TIMEOUT_MS',legacyTimeout??DEFAULT_MODEL_REQUEST_TIMEOUT_MS,5000,MAX_MODEL_REQUEST_TIMEOUT_MS,true);
+  const configuredAgentTimeout=env.MOTE_AGENT_TIMEOUT_MS===undefined?legacyTimeout:optionalNumber('MOTE_AGENT_TIMEOUT_MS',5000,MAX_AGENT_TIMEOUT_MS,true);
+  const agentTimeoutMs=configuredAgentTimeout??(modelProtocol==='codex-app-server'?null:DEFAULT_AGENT_TIMEOUT_MS);
   const jsonObject=(name:string):Record<string,unknown>=>{
     const value=env[name];if(!value)return {};
     try{if(Buffer.byteLength(value)>16384)throw new Error();const parsed:unknown=JSON.parse(value);if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw new Error();return parsed as Record<string,unknown>;}
@@ -74,7 +82,7 @@ export function configFromEnv() {
     modelProvider:modelProviderId,modelProtocol,modelHeaders,modelExtraBody,
     codexBin:text('MOTE_CODEX_BIN')||undefined,codexHome:text('MOTE_CODEX_HOME')?resolve(baseDir,text('MOTE_CODEX_HOME')):undefined,
     modelReasoningEffort,modelMaxTokens:number('MOTE_MODEL_MAX_TOKENS',DEFAULT_MODEL_MAX_TOKENS,1,128000,true),
-    modelTimeoutMs:number('MOTE_MODEL_TIMEOUT_MS',120000,5000,600000,true),
+    modelRequestTimeoutMs,agentTimeoutMs,modelTimeoutMs:agentTimeoutMs??undefined,
     maxStorageBytes:number('MOTE_MAX_STORAGE_MB',10240,1,1_000_000)*1024*1024,
     maxExportBytes:number('MOTE_MAX_EXPORT_MB',64,1,256)*1024*1024,
     retentionDays:number('MOTE_RETENTION_DAYS',0,0,36500),
@@ -129,5 +137,5 @@ export function configFromEnv() {
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelRequestTimeoutMs'|'agentTimeoutMs'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

@@ -31,7 +31,8 @@ export function createCodexAgent(options:AgentOptions){
           if(!skill)throw new Error('Unknown skill');return {name:skill.name,content:skill.content};
         }
         if(!(TOOL_NAMES as readonly string[]).includes(name))throw new Error('Unknown tool');
-        const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(options.timeoutMs??120000)});
+        const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs;
+        const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(requestTimeoutMs??120000)});
         if(!response.ok)throw new Error('Context tool rejected');return response.json();
       };
       if(closed)throw new AgentProviderError();

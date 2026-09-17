@@ -1,7 +1,7 @@
 import { moteText } from './i18n.js';
 import { join, resolve } from 'node:path';
 import type { ConfigurationField, ConfigurationValue, ServerConfiguration } from '@mote/shared';
-import { DEFAULT_MODEL_MAX_TOKENS, modelProvider } from '@mote/shared/models';
+import { DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUEST_TIMEOUT_MS, modelProvider } from '@mote/shared/models';
 import { repositoryRoot, type Config } from './config.js';
 
 /** Strip credential-bearing URL components even for programmatic Config callers that bypass env validation. */
@@ -81,7 +81,8 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
         field('modelExtraBodyConfigured', moteText("高级请求参数已配置"), Boolean(Object.keys(config.modelExtraBody ?? {}).length), moteText("请求参数可能含凭据，仅显示配置状态。"), 'MOTE_MODEL_EXTRA_BODY', secret),
         field('modelReasoningEffort', moteText("模型推理强度"), config.modelReasoningEffort ?? 'high', moteText("auto 使用服务商默认行为；也可选择 off、low、high、max。实际可用的推理参数取决于模型。"), 'MOTE_MODEL_REASONING_EFFORT'),
         field('modelMaxTokens', moteText("单轮模型输出上限"), config.modelMaxTokens ?? DEFAULT_MODEL_MAX_TOKENS, moteText("模型生成输出的 token 上限，不是资料库容量或检索条数。"), 'MOTE_MODEL_MAX_TOKENS', { unit: 'tokens' }),
-        field('modelTimeoutMs', moteText("Agent 运行期限"), config.modelTimeoutMs ?? 120000, moteText("查询、洞察与记忆提取共用，5000–600000 毫秒整数。超时返回 504；入口代理可能有更短的等待限制。普通上传期限保持不变。"), 'MOTE_MODEL_TIMEOUT_MS', { unit: 'ms' }),
+        field('modelRequestTimeoutMs', moteText("单次模型请求超时"), config.modelRequestTimeoutMs ?? (config.modelProtocol === 'codex-app-server' ? null : DEFAULT_MODEL_REQUEST_TIMEOUT_MS), moteText("HTTP Provider：单次模型 API 请求的期限，包含一次生成和流式响应，不包含后续工具循环。Codex Server 不暴露内部单次模型请求，此项不适用。"), 'MOTE_MODEL_REQUEST_TIMEOUT_MS', { unit: 'ms' }),
+        field('agentTimeoutMs', moteText("Agent 总运行超时"), config.agentTimeoutMs ?? (config.modelProtocol === 'codex-app-server' ? null : config.modelTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS), moteText("从一次 Agent 运行开始到完成，包含多次模型请求、工具调用和结果校验。Codex Server 可留空，留空表示不设置 Mote 的总运行期限。"), 'MOTE_AGENT_TIMEOUT_MS', { unit: 'ms' }),
         field('allowUnauthenticatedLocal', moteText("允许本机免密模型"), config.allowUnauthenticatedLocal, moteText("只对 localhost、127.0.0.1 或 ::1 的模型地址生效；容器 loopback 指容器本身。"), 'MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL'),
         field('insightIntervalHours', moteText("后台洞察间隔"), config.insightIntervalHours, moteText("0 关闭定时洞察；正数按小时请求已配置的 Agent，模型服务可能产生费用。"), 'MOTE_INSIGHT_INTERVAL_HOURS', { unit: 'hours' }),
       ] },

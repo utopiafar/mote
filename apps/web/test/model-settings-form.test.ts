@@ -7,7 +7,7 @@ const snapshot: ModelSettingsView = {
   version: 1, revision: 3, source: 'saved',
   settings: {
     provider: 'custom', protocol: 'openai-completions', baseUrl: 'https://fixture.example/v1', model: 'generated-model',
-    reasoningEffort: 'auto', maxTokens: 4096, timeoutMs: 120000, allowUnauthenticatedLocal: false,
+    reasoningEffort: 'auto', maxTokens: 4096, modelRequestTimeoutMs: 120000, agentTimeoutMs: 120000, allowUnauthenticatedLocal: false,
     apiKeyConfigured: true, headersConfigured: true, extraBodyConfigured: true,
   },
 };
@@ -34,7 +34,7 @@ test('each credential field distinguishes replacing, preserving and clearing', (
 test('switching to Codex clears HTTP secrets and ignores hidden HTTP draft fields',()=>{
   const draft={...createModelDraft(snapshot.settings),protocol:'codex-app-server' as const,provider:'codex',apiKeyAction:'replace' as const,apiKey:'',headersAction:'replace' as const,headers:'invalid JSON',extraBodyAction:'replace' as const,extraBody:'invalid JSON',maxTokens:''};
   assert.equal(retainedCredentialsNeedConfirmation(draft,snapshot.settings),false);
-  const request=modelSettingsRequest(snapshot,draft);assert.equal(request.settings.baseUrl,'');assert.equal(request.settings.apiKey,null);assert.equal(request.settings.headers,null);assert.equal(request.settings.extraBody,null);assert.equal(request.settings.allowUnauthenticatedLocal,false);
+  const request=modelSettingsRequest(snapshot,draft);assert.equal(request.settings.baseUrl,'');assert.equal(request.settings.modelRequestTimeoutMs,null);assert.equal(request.settings.agentTimeoutMs,120000);assert.equal(request.settings.apiKey,null);assert.equal(request.settings.headers,null);assert.equal(request.settings.extraBody,null);assert.equal(request.settings.allowUnauthenticatedLocal,false);
 });
 
 test('changing a credential destination requires explicit reuse for every retained secret', () => {
@@ -70,7 +70,8 @@ test('endpoint safety and numeric bounds are checked before any request', () => 
   assert.throws(() => modelSettingsRequest(snapshot, {...draft, allowUnauthenticatedLocal: true}), /回环地址/);
   for (const maxTokens of ['', '0', '128001', 'NaN']) assert.throws(() => modelSettingsRequest(snapshot, {...draft, maxTokens}), /token 上限/);
   for (const maxTokens of ['65536','96000','128000']) {const request=modelSettingsRequest(snapshot,{...draft,maxTokens});assert.equal(request.settings.maxTokens,Number(maxTokens));assert.equal(Object.hasOwn(request.settings,'apiKey'),false);}
-  for (const timeoutSeconds of ['', '4', '601', 'NaN']) assert.throws(() => modelSettingsRequest(snapshot, {...draft, timeoutSeconds}), /等待时间/);
+  for (const timeoutSeconds of ['', '4', '601', 'NaN']) assert.throws(() => modelSettingsRequest(snapshot, {...draft, modelRequestTimeoutSeconds: timeoutSeconds}), /模型请求/);
+  for (const timeoutSeconds of ['', '4', '3601', 'NaN']) assert.throws(() => modelSettingsRequest(snapshot, {...draft, agentTimeoutSeconds: timeoutSeconds}), /Agent 总运行/);
   const local = modelSettingsRequest(snapshot, {...draft, baseUrl: 'http://127.0.0.1:11434/v1', allowUnauthenticatedLocal: true, apiKeyAction: 'clear', headersAction: 'clear', extraBodyAction: 'clear'});
-  assert.equal(local.settings.timeoutMs, 120000);
+  assert.equal(local.settings.modelRequestTimeoutMs, 120000); assert.equal(local.settings.agentTimeoutMs, 120000);
 });

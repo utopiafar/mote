@@ -11,7 +11,7 @@ const token=randomUUID();let node;
 try {
   node=await buildApp({dataDir:root,token,tokenPath:join(root,'token'),host:'127.0.0.1',port:0,
     maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
-    codexBin:process.env.MOTE_CODEX_BIN??'/Applications/ChatGPT.app/Contents/Resources/codex',modelProvider:'codex',modelProtocol:'codex-app-server',model:'gpt-5.6-luna',modelReasoningEffort:'max',modelTimeoutMs:300000,
+    codexBin:process.env.MOTE_CODEX_BIN??'/Applications/ChatGPT.app/Contents/Resources/codex',modelProvider:'codex',modelProtocol:'codex-app-server',model:'gpt-5.6-luna',modelReasoningEffort:'max',modelRequestTimeoutMs:null,agentTimeoutMs:300000,
     modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'});
   const headers={authorization:'Bearer '+token},id=randomUUID();
   const note=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-live-fixture',deviceName:'Generated fixture',platform:'import',capturedAt:new Date().toISOString(),text:'完全虚构的验收资料：纸风车项目的发布检查码是 LUNA-5729，演示地点是蓝色观测室。'}});

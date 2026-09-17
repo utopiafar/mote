@@ -28,7 +28,7 @@ test('connection probe uses the real Harness for generated search, evidence and 
       provider:'custom',protocol:'openai-completions',model:'synthetic-probe-model',
       baseUrl:`http://127.0.0.1:${(provider.address() as AddressInfo).port}/v1`,
       apiKey:'synthetic-probe-key',headers:{},extraBody:{},reasoningEffort:'auto',
-      maxTokens:8192,timeoutMs:30000,allowUnauthenticatedLocal:false,
+      maxTokens:8192,modelRequestTimeoutMs:30000,agentTimeoutMs:30000,allowUnauthenticatedLocal:false,
     });
     assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.code,'ok');
     assert.ok(Number.isFinite(result.durationMs)&&result.durationMs>=0);assert.equal(requests.length,3);

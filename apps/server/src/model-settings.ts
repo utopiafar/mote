@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { validateModelOptions } from '@mote/agent';
 import {
-  MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, MODEL_FEATURES, modelProvider, DEPLOYMENT_MODEL_PROFILE_ID,
+  MAX_AGENT_TIMEOUT_MS, MAX_MODEL_REQUEST_TIMEOUT_MS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, MODEL_FEATURES, modelProvider, DEPLOYMENT_MODEL_PROFILE_ID,
   type ModelProfile, type ModelFeature, type ModelFeatureDefaults,
   type ModelSettings, type ModelSettingsInput, type ModelSettingsView, type ModelTestResult,
 } from '@mote/shared/models';
@@ -20,17 +20,23 @@ const parameters = {
   model: line(512),
   reasoningEffort: z.enum(MODEL_REASONING_EFFORTS),
   maxTokens: z.number().int().min(1).max(128_000),
-  timeoutMs: z.number().int().min(5000).max(600_000),
+  modelRequestTimeoutMs: z.number().int().min(5000).max(MAX_MODEL_REQUEST_TIMEOUT_MS).nullable(),
+  agentTimeoutMs: z.number().int().min(5000).max(MAX_AGENT_TIMEOUT_MS).nullable(),
   allowUnauthenticatedLocal: z.boolean(),
 };
 const apiKey = line(8192);
 const headers = z.record(z.string().max(8192));
 const extraBody = z.record(z.unknown());
-const settingsSchema = z.object({ ...parameters, apiKey, headers, extraBody }).strict();
+const validateTimeouts = (value: {protocol: string; modelRequestTimeoutMs: number | null; agentTimeoutMs: number | null}, ctx: z.RefinementCtx) => {
+  if (value.protocol === 'codex-app-server' && value.modelRequestTimeoutMs !== null) ctx.addIssue({ code: 'custom', path: ['modelRequestTimeoutMs'], message: 'Model request timeout is not applicable to Codex App Server' });
+  if (value.protocol !== 'codex-app-server' && value.modelRequestTimeoutMs === null) ctx.addIssue({ code: 'custom', path: ['modelRequestTimeoutMs'], message: 'Model request timeout is required for HTTP providers' });
+  if (value.protocol !== 'codex-app-server' && value.agentTimeoutMs === null) ctx.addIssue({ code: 'custom', path: ['agentTimeoutMs'], message: 'Agent timeout is required for HTTP providers' });
+};
+const settingsSchema = z.object({ ...parameters, apiKey, headers, extraBody }).strict().superRefine(validateTimeouts);
 const inputSchema = z.object({
   ...parameters, apiKey: apiKey.nullable().optional(),
   headers: headers.nullable().optional(), extraBody: extraBody.nullable().optional(),
-}).strict();
+}).strict().superRefine(validateTimeouts);
 const revisionSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const updateSchema = z.object({
   revision: revisionSchema, settings: inputSchema, allowCredentialReuse: z.boolean().optional(),
@@ -50,6 +56,31 @@ const defaultAssignments=():ModelFeatureDefaults=>({chat:'default',memory:'defau
 type SavedState = z.infer<typeof savedSchema>;
 type FileSystem = Pick<typeof fs, 'open' | 'mkdir' | 'rename' | 'unlink'>;
 const MAX_FILE_BYTES = 512 * 1024;
+
+function normalizeSettings(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const input = value as Record<string, unknown>;
+  if (!Object.hasOwn(input, 'timeoutMs')) return value;
+  const normalized = { ...input };
+  if (!Object.hasOwn(normalized, 'modelRequestTimeoutMs')) normalized.modelRequestTimeoutMs = normalized.protocol === 'codex-app-server' ? null : normalized.timeoutMs;
+  if (!Object.hasOwn(normalized, 'agentTimeoutMs')) normalized.agentTimeoutMs = normalized.timeoutMs;
+  delete normalized.timeoutMs;
+  return normalized;
+}
+function normalizeSavedState(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const state = value as Record<string, unknown>;
+  return {
+    ...state,
+    ...(Object.hasOwn(state, 'settings') ? { settings: normalizeSettings(state.settings) } : {}),
+    ...(Array.isArray(state.profiles) ? { profiles: state.profiles.map(profile => profile && typeof profile === 'object' && !Array.isArray(profile) ? { ...profile, settings: normalizeSettings((profile as Record<string, unknown>).settings) } : profile) } : {}),
+  };
+}
+function normalizeSettingsEnvelope(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const body = value as Record<string, unknown>;
+  return Object.hasOwn(body, 'settings') ? { ...body, settings: normalizeSettings(body.settings) } : value;
+}
 
 const errors = {
   model_profile_missing: [400, "所选模型配置不存在，请重新选择。"],
@@ -147,9 +178,9 @@ export class ModelSettingsStore {
     try {
       const stat = await handle.stat();
       if (!stat.isFile() || stat.size > MAX_FILE_BYTES) throw new Error('Invalid settings file');
-      const value: unknown = JSON.parse(await handle.readFile('utf8'));
+      const value: unknown = normalizeSavedState(JSON.parse(await handle.readFile('utf8')));
       const state = savedSchema.parse(value);
-      if (state.settings) state.settings = validSettings((value as SavedState).settings);
+      if (state.settings) state.settings = validSettings(state.settings);
       for(const profile of state.profiles??[])profile.settings=validSettings(profile.settings);
       return state;
     } finally { await handle.close(); }
@@ -205,8 +236,9 @@ export class ModelSettingsStore {
   private draft(body: unknown, profileId = 'default'): ModelSettings {
     let update: z.infer<typeof updateSchema>;
     try {
-      update = updateSchema.parse(body);
-      const original = (body as {settings: ModelSettingsInput}).settings;
+      const normalized = normalizeSettingsEnvelope(body);
+      update = updateSchema.parse(normalized);
+      const original = (normalized as {settings: ModelSettingsInput}).settings;
       validateModelOptions({ ...update.settings, headers: original.headers ?? undefined, extraBody: original.extraBody ?? undefined });
       if (update.settings.protocol !== 'codex-app-server' && !update.settings.baseUrl.trim() && update.settings.model.trim()) throw new Error('Configured models need an endpoint');
     } catch { throw new ModelSettingsError('model_settings_invalid'); }
@@ -319,10 +351,11 @@ export class ModelSettingsStore {
   updateProfile(id:string, body:unknown):Promise<ModelSettingsView> {
     return this.serialize(()=>{
       if(id===DEPLOYMENT_MODEL_PROFILE_ID)throw new ModelSettingsError('model_profile_read_only');
-      const parsed=z.object({revision:revisionSchema,name:line(100,1),settings:inputSchema,allowCredentialReuse:z.boolean().optional()}).strict().safeParse(body);
+      const normalized = normalizeSettingsEnvelope(body);
+      const parsed=z.object({revision:revisionSchema,name:line(100,1),settings:inputSchema,allowCredentialReuse:z.boolean().optional()}).strict().safeParse(normalized);
       if(!parsed.success||!modelProfileIdSchema.safeParse(id).success||id==='default')throw new ModelSettingsError('model_settings_invalid');
       const {name,...update}=parsed.data;
-      const settings=this.draft({...update,settings:(body as {settings:unknown}).settings},id);
+      const settings=this.draft({...update,settings:(normalized as {settings:unknown}).settings},id);
       const state=this.requireState(),profiles=structuredClone(state.profiles??[]),index=profiles.findIndex(p=>p.id===id);
       const profile={id,name,settings};
       if(index<0)profiles.push(profile);else profiles[index]=profile;

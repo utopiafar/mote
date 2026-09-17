@@ -79,7 +79,7 @@ export interface MediaActivity {
 }
 export interface Status {
   profile?: string;
-  agent: { configured: boolean; model: string | null; provider: string; timeoutMs?: number };
+  agent: { configured: boolean; model: string | null; provider: string; modelRequestTimeoutMs?: number | null; agentTimeoutMs?: number | null };
   storage: {
     captures: number;
     blobs: number;
@@ -133,10 +133,10 @@ export class ApiError extends Error {
   }
 }
 export function createApi(connection: Connection, onUnauthorized?: () => void, isCurrentConnection: () => boolean = () => true) {
-  let agentTimeoutMs = 120000;
+  let agentTimeoutMs: number | null = 120000;
   // Keep request budgets isolated between authenticated sessions.
-  function setAgentTimeout(value: number | undefined) {
-    agentTimeoutMs = Number.isSafeInteger(value) && value! >= 5000 && value! <= 600000 ? value! : 120000;
+  function setAgentTimeout(value: number | null | undefined) {
+    agentTimeoutMs = value === null ? null : Number.isSafeInteger(value) && value! >= 5000 && value! <= 3600000 ? value! : 120000;
   }
   async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await raw(path, init);
@@ -144,8 +144,8 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
   }
   async function raw(path: string, init: RequestInit = {}) {
     const modelOperation = init.method?.toUpperCase() === 'POST' && ['/api/query', '/api/insights', '/api/memories/extract'].includes(path);
-    const deadline = modelOperation ? AbortSignal.timeout(agentTimeoutMs + 60000) : undefined;
-    const signal = deadline ? (init.signal ? AbortSignal.any([init.signal, deadline]) : deadline) : init.signal ?? AbortSignal.timeout(180000);
+    const deadline = modelOperation && agentTimeoutMs !== null ? AbortSignal.timeout(agentTimeoutMs + 60000) : undefined;
+    const signal = deadline ? (init.signal ? AbortSignal.any([init.signal, deadline]) : deadline) : modelOperation ? init.signal : init.signal ?? AbortSignal.timeout(180000);
     // Management requests always address the service serving this page.
     if (!path.startsWith('/api/') || path.includes('\\') || /[\r\n\t]/.test(path)) {
       throw new Error(moteText("管理请求必须使用当前服务的 API 路径。"));

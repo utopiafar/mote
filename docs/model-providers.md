@@ -106,7 +106,7 @@ codex -c 'cli_auth_credentials_store="file"' login
 
 每次请求启动独立进程和临时 home，只链接登录文件，不继承个人 MCP、插件、hooks、历史会话或用户指令。查询使用只读沙箱、关闭环境访问与原生执行工具，动态工具仅调用 Mote 已有证据桥。当前验证过的 Codex 0.154.0 还会提供仅修改临时运行计划的 `update_plan`，不访问或修改用户资料。导入有单独的可写临时工作区，不接入归档查询工具；仍须经过原有预览、确认和宿主校验。
 
-App Server 的动态工具接口为实验接口，兼容性取决于安装的 CLI。配置警告、额外审批请求、未知执行工具和错误返回会终止请求；不会降级为另一个服务商。最长等待时间与响应字节预算由 Mote 限制，输出 token 上限由 Codex 管理，页面的 HTTP 输出预算不传给 Codex。`auto` 不指定推理强度，`off/low/high/max` 分别传递 `none/low/high/xhigh`，具体模型可能不支持全部档位。
+App Server 的动态工具接口为实验接口，兼容性取决于安装的 CLI。配置警告、额外审批请求、未知执行工具和错误返回会终止请求；不会降级为另一个服务商。设置中的“单次模型请求超时”对 Codex Server 不适用：App Server 不把内部模型生成作为 Mote 可见的单次 Provider 请求；Mote 只可选择是否设置“Agent 总运行超时”，它覆盖整个 `turn` 及其中的工具循环，留空则不设置 Mote 总期限。响应字节预算仍由 Mote 限制，输出 token 上限由 Codex 管理，页面的 HTTP 输出预算不传给 Codex。`auto` 不指定推理强度，`off/low/high/max` 分别传递 `none/low/high/xhigh`，具体模型可能不支持全部档位。
 
 ## 环境配置与保存位置
 
@@ -120,7 +120,8 @@ MOTE_MODEL=填写控制台提供的模型ID
 MOTE_MODEL_API_KEY=填写该地域的API密钥
 MOTE_MODEL_REASONING_EFFORT=auto
 MOTE_MODEL_MAX_TOKENS=65536
-MOTE_MODEL_TIMEOUT_MS=120000
+MOTE_MODEL_REQUEST_TIMEOUT_MS=300000
+MOTE_AGENT_TIMEOUT_MS=600000
 MOTE_MODEL_HEADERS={}
 MOTE_MODEL_EXTRA_BODY={}
 MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
@@ -152,7 +153,7 @@ MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=0
 
 配置 ID 为 1–80 个字母、数字、下划线或连字符，以字母或数字开头；`default` 保留给原始默认项。所有修改共用一个 revision，防止并发页面互相覆盖。`POST /api/query`、`/api/insights`、`/api/insight-runs`、`/api/memories/extract`、`/api/memory-jobs` 支持可选 `modelProfileId`；不存在的 ID 会返回错误，省略时采用相应功能默认值。每次问答的显式选择只影响这一轮，不修改功能默认值。
 
-`settings` 的基础字段为 `provider`、`protocol`、`baseUrl`、`model`、`reasoningEffort`、`maxTokens`、`timeoutMs`、`allowUnauthenticatedLocal`。`provider` 必须是注册预设 ID，未列出的服务使用 `custom`。模型名称可留空关闭 AI；HTTP 协议只允许在模型也为空时省略实际地址内容；Codex 的地址必须为空，不能设置 HTTP 密钥、请求头或高级参数。`maxTokens` 为 1–128000 的整数，`timeoutMs` 为 5000–600000 毫秒整数；厂商模型限制可能更低。
+`settings` 的基础字段为 `provider`、`protocol`、`baseUrl`、`model`、`reasoningEffort`、`maxTokens`、`modelRequestTimeoutMs`、`agentTimeoutMs`、`allowUnauthenticatedLocal`。`provider` 必须是注册预设 ID，未列出的服务使用 `custom`。模型名称可留空关闭 AI；HTTP 协议只允许在模型也为空时省略实际地址内容；Codex 的地址必须为空，不能设置 HTTP 密钥、请求头或高级参数。非 Codex 的 `modelRequestTimeoutMs` 为 5000–600000 毫秒整数，`agentTimeoutMs` 为 5000–3600000 毫秒整数；Codex 的 `modelRequestTimeoutMs` 为 `null`，`agentTimeoutMs` 可为 `null`。
 
 在「设置 → 问答与回顾 → 模型服务 → 高级设置」调整输出预算。默认值为 **65,536 tokens**，提供 8,192、16,384、32,768、65,536、128,000 档位和自定义输入；保存后立即生效，重启后保留。已显式保存或在环境文件设置的旧值不会因软件升级被覆盖。单次响应预算包含正文、HTML 和服务商计入的推理 token，不是整个 Agent 任务的累计用量，也不等于字数、图片尺寸或文件大小。达到输出上限时会尝试一次更简短的完整回答；仍失败会显示明确的输出超限提示。
 

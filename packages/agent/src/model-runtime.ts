@@ -23,7 +23,7 @@ const forbiddenBody = new Set([
   'apikey', 'baseurl', 'url', 'headers', 'httpoptions', 'fetch',
 ]);
 const normalizedKey = (key: string) => key.toLowerCase().replace(/[_-]/g, '');
-type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'maxTokens' | 'headers' | 'extraBody' | 'timeoutMs'>;
+type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 'baseUrl' | 'reasoningEffort' | 'maxTokens' | 'headers' | 'extraBody' | 'requestTimeoutMs' | 'timeoutMs'>;
 
 /** Keep errors value-free: advanced fields can contain credentials. */
 export function validateModelOptions(options: ConnectionOptions): void {
@@ -31,6 +31,8 @@ export function validateModelOptions(options: ConnectionOptions): void {
   if (options.protocol !== undefined && !protocols.includes(options.protocol)) throw new AgentConfigurationError('Unsupported model protocol.');
   if (options.reasoningEffort !== undefined && !['auto', 'off', 'low', 'high', 'max'].includes(options.reasoningEffort)) throw new AgentConfigurationError('Unsupported reasoning effort.');
   if (options.maxTokens !== undefined && (!Number.isInteger(options.maxTokens) || options.maxTokens < 1 || options.maxTokens > 128_000)) throw new AgentConfigurationError('Model output limit must be between 1 and 128000 tokens.');
+  const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs === undefined ? undefined : Math.max(options.timeoutMs, 5_000);
+  if (requestTimeoutMs !== undefined && requestTimeoutMs !== null && (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 5_000 || requestTimeoutMs > 600_000)) throw new AgentConfigurationError('Model request timeout must be between 5000 and 600000 milliseconds.');
   if (options.baseUrl) {
     let url: URL;
     try { url = new URL(options.baseUrl); } catch { throw new AgentConfigurationError('Model endpoint must be an absolute HTTP or HTTPS URL.'); }
@@ -77,10 +79,11 @@ export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
   if(options.protocol==='codex-app-server')throw new AgentConfigurationError('Codex requires the App Server runtime.');
   const {protocol, baseUrl, effort, route} = modelConnection(options);
   const maxTokens = options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS;
+  const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs === undefined ? undefined : Math.max(options.timeoutMs, 5_000);
   const model = {id: options.model!, name: options.model!, contextWindow: 128_000, maxTokens};
   if (protocol === 'deepseek') return [{id: 'llm-deepseek', config: {
     ...(effort === 'auto' ? {thinking: 'disabled'} : {thinking: effort === 'off' ? 'disabled' : 'enabled', reasoningEffort: effort}),
-    maxTokens, streamIdleTimeoutMs: Math.max(30_000, options.timeoutMs ?? 30_000), baseURL: baseUrl, models: [model],
+    maxTokens, streamIdleTimeoutMs: Math.max(30_000, requestTimeoutMs ?? 30_000), baseURL: baseUrl, models: [model],
   }}];
   return [
     {id: 'llm-deepseek', disabled: true},
@@ -91,7 +94,7 @@ export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
         models: [{...model, input: ['text'], reasoningEfforts: effort === 'auto' ? false : {off: null, low: 'low', high: 'high', max: 'max'}}],
         ...(effort === 'auto' ? {} : {reasoning: effort}),
         ...(protocol === 'openai-completions' ? {compat: {supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: effort !== 'auto', maxTokensField: completionTokenProviders.has(options.provider ?? '') ? 'max_completion_tokens' : 'max_tokens'}} : {}),
-        transport: 'sse', streamIdleTimeoutMs: Math.max(30_000, options.timeoutMs ?? 30_000),
+        transport: 'sse', streamIdleTimeoutMs: Math.max(30_000, requestTimeoutMs ?? 30_000),
       },
     }}}]},
   ];

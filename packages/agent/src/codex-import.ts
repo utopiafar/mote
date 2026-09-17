@@ -8,7 +8,8 @@ export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<ImportAgentResult>>();
   async function execute(input:ImportAgentInput):Promise<ImportAgentResult>{
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();
-    const session=new CodexSession({...options,timeoutMs:Math.max(options.timeoutMs??120000,300000)},async()=>{throw new AgentProviderError();});sessions.add(session);
+    const agentTimeoutMs = options.agentTimeoutMs !== undefined ? options.agentTimeoutMs : options.timeoutMs ?? 120000;
+    const session=new CodexSession({...options,agentTimeoutMs},async()=>{throw new AgentProviderError();});sessions.add(session);
     try{
       await session.start(skillContent('document-import'),[],input.workspace);
       const text=await session.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries and warnings; preserve original quotes and schema keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),{

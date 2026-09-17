@@ -5,7 +5,7 @@ import {PassThrough,Writable} from 'node:stream';
 import type {spawn} from 'node:child_process';
 import {providerModels,codexModels} from '../src/model-catalog.js';
 import type {ModelSettings} from '@mote/shared/models';
-const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'',baseUrl:'https://fixture.invalid/v1',apiKey:'generated-secret',headers:{'X-Fixture':'yes'},extraBody:{},reasoningEffort:'auto',maxTokens:8192,timeoutMs:10000,allowUnauthenticatedLocal:false};
+const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'',baseUrl:'https://fixture.invalid/v1',apiKey:'generated-secret',headers:{'X-Fixture':'yes'},extraBody:{},reasoningEffort:'auto',maxTokens:8192,modelRequestTimeoutMs:10000,agentTimeoutMs:10000,allowUnauthenticatedLocal:false};
 test('provider catalog supports account headers, pagination, Google names and generation filtering',async()=>{
   let calls=0;
   const result=await providerModels({...settings,protocol:'anthropic-messages',baseUrl:'https://fixture.invalid'},(async(url,init)=>{

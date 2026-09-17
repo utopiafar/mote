@@ -8,7 +8,7 @@ import { ModelSettingsError, ModelSettingsStore, type ModelSettingsStoreOptions 
 
 const environment: ModelSettings = {
   provider: 'custom', protocol: 'openai-completions', baseUrl: 'https://fixture.example.invalid/v1',
-  model: 'synthetic-tool-model', reasoningEffort: 'auto', maxTokens: 8192, timeoutMs: 120_000,
+  model: 'synthetic-tool-model', reasoningEffort: 'auto', maxTokens: 8192, modelRequestTimeoutMs: 120_000, agentTimeoutMs: 120_000,
   allowUnauthenticatedLocal: false, apiKey: 'synthetic-private-api-key',
   headers: { 'X-Synthetic-Authorization': 'synthetic-private-header' },
   extraBody: { vendor_options: { credential: 'synthetic-private-parameter' } },
@@ -171,7 +171,7 @@ test('strict schemas and runtime validation reject unsafe advanced parameters be
     { extraBody: { tools: [] } }, { extraBody: { options: { tool_choice: 'required' } } },
     { extraBody: JSON.parse('{"__proto__":{"synthetic":"private"}}') },
     { extraBody: { nested: undefined } }, { extraBody: { temperature: NaN } }, { extraBody: [] },
-    { timeoutMs: 4999 }, { timeoutMs: 600001 }, { maxTokens: 128001 }, { maxTokens: 0 },
+    { modelRequestTimeoutMs: 4999 }, { modelRequestTimeoutMs: 600001 }, { agentTimeoutMs: 4999 }, { agentTimeoutMs: 3600001 }, { maxTokens: 128001 }, { maxTokens: 0 },
     { model: null }, { allowUnauthenticatedLocal: 'true' },
   ];
   for (const change of invalidSettings) {
@@ -184,6 +184,26 @@ test('strict schemas and runtime validation reject unsafe advanced parameters be
   }
   await assert.rejects(f.store.reset({ revision: 0, unknown: true }), errorCode('model_settings_invalid'));
   assert.equal(f.prepared.length, 1); assert.equal(f.probes.length, 0); assert.equal(f.store.view().revision, 0);
+});
+
+test('Codex settings make the model request timeout inapplicable and allow an unset Agent deadline', async t => {
+  const codex: ModelSettings = { ...environment, provider: 'codex', protocol: 'codex-app-server', baseUrl: '', model: 'fixture-codex', apiKey: '', headers: {}, extraBody: {}, modelRequestTimeoutMs: null, agentTimeoutMs: null };
+  const f = await fixture(t, { environment: codex });
+  const view = await f.store.initialize();
+  assert.equal(view.settings.modelRequestTimeoutMs, null); assert.equal(view.settings.agentTimeoutMs, null);
+  await assert.rejects(f.store.update({ revision: 0, settings: { ...input(f.store.current()), modelRequestTimeoutMs: 600000 } }), errorCode('model_settings_invalid'));
+  const saved = await f.store.update({ revision: 0, settings: { ...input(f.store.current()), agentTimeoutMs: 3600000 } });
+  assert.equal(saved.settings.modelRequestTimeoutMs, null); assert.equal(saved.settings.agentTimeoutMs, 3600000);
+});
+
+test('legacy saved timeout settings migrate to separate request and Agent deadlines', async t => {
+  const f = await fixture(t);
+  const { modelRequestTimeoutMs: _request, agentTimeoutMs: _agent, ...legacy } = environment;
+  await fs.writeFile(f.path, JSON.stringify({ version: 1, revision: 7, settings: { ...legacy, timeoutMs: 240000 } }));
+  const view = await f.store.initialize();
+  assert.equal(view.revision, 7); assert.equal(view.settings.modelRequestTimeoutMs, 240000); assert.equal(view.settings.agentTimeoutMs, 240000);
+  const saved = await f.store.update({ revision: 7, settings: { ...input(f.store.current()), model: 'migrated-model' } });
+  assert.equal(saved.settings.model, 'migrated-model');
 });
 
 test('invalid saved files fail startup instead of falling back to environment or revealing file values', async t => {

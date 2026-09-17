@@ -42,7 +42,7 @@ test('owner model saves apply to new queries while an existing query retains its
   const pending = app.inject({ method: 'POST', url: '/api/query', headers, payload: { question: 'hold fixture' } });
   await began;
   const saved = await app.inject({ method: 'PUT', url: '/api/model-settings', headers, payload: {
-    revision: view.revision, settings: { ...input(view), model: 'next-fixture', maxTokens: 65536, timeoutMs: 300000,
+    revision: view.revision, settings: { ...input(view), model: 'next-fixture', maxTokens: 65536, modelRequestTimeoutMs: 300000, agentTimeoutMs: 600000,
       apiKey: 'synthetic-new-key', headers: { 'x-fixture-secret': 'synthetic-header-key' }, extraBody: { vendor_options: { token: 'synthetic-body-key' } } },
   } });
   assert.equal(saved.statusCode, 200, saved.body); assert.deepEqual(closed, []);
@@ -112,10 +112,10 @@ test('draft probe uses only generated records and neither persists nor exposes p
 });
 
 test('connection probe redacts thrown provider text and requires an actual evidence tool result', async () => {
-  const settings = { provider: 'custom', protocol: 'openai-completions' as const, baseUrl: 'https://example.invalid/v1', model: 'synthetic', reasoningEffort: 'auto' as const, maxTokens: 8192, timeoutMs: 120000, allowUnauthenticatedLocal: false, apiKey: 'synthetic', headers: {}, extraBody: {} };
+  const settings = { provider: 'custom', protocol: 'openai-completions' as const, baseUrl: 'https://example.invalid/v1', model: 'synthetic', reasoningEffort: 'auto' as const, maxTokens: 8192, modelRequestTimeoutMs: 120000, agentTimeoutMs: 120000, allowUnauthenticatedLocal: false, apiKey: 'synthetic', headers: {}, extraBody: {} };
   let closed = 0;
   const failed = await testModelConnection(settings, async received => {
-    assert.equal(received.timeoutMs, 30000);
+    assert.equal(received.modelRequestTimeoutMs, 30000); assert.equal(received.agentTimeoutMs, 30000);
     return { configured: true, query: async () => { throw new Error('synthetic-sensitive-provider-response'); }, close: async () => { closed++; } };
   });
   assert.equal(failed.code, 'provider_error'); assert.equal(JSON.stringify(failed).includes('sensitive'), false); assert.equal(closed, 1);

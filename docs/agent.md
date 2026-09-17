@@ -18,7 +18,8 @@ MOTE_MODEL_REASONING_EFFORT=auto
 MOTE_MODEL_HEADERS={}
 MOTE_MODEL_EXTRA_BODY={}
 MOTE_MODEL_MAX_TOKENS=65536
-MOTE_MODEL_TIMEOUT_MS=120000
+MOTE_MODEL_REQUEST_TIMEOUT_MS=300000
+MOTE_AGENT_TIMEOUT_MS=600000
 ```
 
 使用 `MOTE_ENV_FILE` 选择独立配置文件，或通过 [环境 CLI](deployment.md) 启动。没有模型或凭据时 `/api/status` 返回 `agent.configured=false`，问答返回 503；采集、笔记、存档与时间线仍可使用。
@@ -73,7 +74,7 @@ MOTE_MODEL_TIMEOUT_MS=120000
 
 捕获内容带 `untrusted_personal_context` 来源标记，通过工具结果提供，始终作为证据。该安排不能保证模型绝不受提示注入误导，但其工具权限不能因此扩大。
 
-查询每轮默认最多 24 次工具调用、120 秒运行期限，并限制工具返回数量和字符数。`MOTE_MODEL_TIMEOUT_MS` 可设置为 5000–600000 毫秒整数，查询、洞察与记忆提取共用；页面保存后立即生效，直接改环境文件则需重启并确认没有页面覆盖值。Web 从 `/api/status.agent.timeoutMs` 读取生效值，为这些模型操作预留额外 60 秒用于传输和清理，普通请求保持原期限。反向代理仍可能在更短时间断开，延长 Agent 期限不等于延长公网入口限制。超时关闭子进程；结束后清理 bridge、会话目录与子进程。客户端超时、模型容量、输出预算和源记录完整性需要一起考虑，不能仅凭 HTTP 200 判断答案语义完整。
+查询每轮默认最多 24 次工具调用。模型设置将单次模型请求期限与 Agent 总运行期限分开：`MOTE_MODEL_REQUEST_TIMEOUT_MS` 限制一次 Provider API 请求（5000–600000 毫秒），`MOTE_AGENT_TIMEOUT_MS` 限制从 Agent 开始到完成的整个周期（5000–3600000 毫秒），后者包含工具循环、重试和校验。Codex Server 不暴露内部单次模型生成请求，因此模型请求期限显示为不适用；`MOTE_AGENT_TIMEOUT_MS` 可以留空。页面保存后立即生效，直接改环境文件则需重启并确认没有页面覆盖值。Web 从 `/api/status.agent.agentTimeoutMs` 读取生效值，为有总期限的模型操作预留额外 60 秒用于传输和清理；没有总期限的 Codex 操作仍受入口代理和工具自身限制。反向代理仍可能在更短时间断开，延长 Agent 期限不等于延长公网入口限制。超时关闭子进程；结束后清理 bridge、会话目录与子进程。客户端超时、模型容量、输出预算和源记录完整性需要一起考虑，不能仅凭 HTTP 200 判断答案语义完整。
 
 ## 导入运行时与 Skill
 
@@ -85,7 +86,7 @@ MOTE_MODEL_TIMEOUT_MS=120000
 
 ## 扩展与验证
 
-`@mote/agent` 暴露 `createAgent({reader, provider, protocol, model, baseUrl, apiKey, headers, extraBody, reasoningEffort, maxTokens, timeoutMs})`。`ContextReader` 提供检索、时间线、证据、活动、设备及来源/记忆等只读入口，实现见 [类型定义](../packages/agent/src/types.ts)。存储或检索引擎可替换，工具权限与证据 ID 保持稳定；关闭时调用 `agent.close()`。
+`@mote/agent` 暴露 `createAgent({reader, provider, protocol, model, baseUrl, apiKey, headers, extraBody, reasoningEffort, maxTokens, requestTimeoutMs, agentTimeoutMs})`。`requestTimeoutMs` 是单次 Provider 请求期限；`agentTimeoutMs` 是整个 Agent 运行期限，传入 `null` 可关闭宿主总期限。`ContextReader` 提供检索、时间线、证据、活动、设备及来源/记忆等只读入口，实现见 [类型定义](../packages/agent/src/types.ts)。存储或检索引擎可替换，工具权限与证据 ID 保持稳定；关闭时调用 `agent.close()`。
 
 `@deepseek-ai/dsh`、SDK 和工具包固定为 `0.1.5-rc.2`，Cordis 固定为 `4.0.2`，通用协议使用同版本 `@deepseek-ai/dsh-llm-pi-ai`，传递依赖由 lockfile 锁定。升级框架时需重新验证工具清单、只读限制、会话清理和引用校验。官方契约见 [SDK](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/packages/sdk/client/README.md) 和 [工具插件](https://github.com/deepseek-ai/deepseek-harness/blob/c291e7961a515f6d7af9304e7fd1d257929aef26/docs/cookbook/adding-a-tool.md)。
 

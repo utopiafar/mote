@@ -66,6 +66,11 @@ export interface AgentOptions {
   extraBody?: Record<string, unknown>;
   /** Explicit opt-in for a local endpoint that does not need a credential. */
   allowUnauthenticatedLocal?: boolean;
+  /** Maximum time for one provider/model request. Null means no provider request deadline. */
+  requestTimeoutMs?: number | null;
+  /** Maximum time for the complete Agent run. Null disables the host deadline. */
+  agentTimeoutMs?: number | null;
+  /** @deprecated Use requestTimeoutMs and agentTimeoutMs. Kept for third-party callers during migration. */
   timeoutMs?: number;
   maxToolCalls?: number;
   maxTokens?: number;

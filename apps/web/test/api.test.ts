@@ -63,7 +63,8 @@ test('only model operations use the node deadline plus transport allowance; ordi
   await api.request('/api/query',{method:'POST',signal:controller.signal});
   assert.equal(durations.at(-1),660000);assert.equal(signals.at(-1)!.aborted,false);
   controller.abort();assert.equal(signals.at(-1)!.aborted,true,'User navigation still cancels a long model request');
-  for(const value of [undefined,0,Infinity,600001,5000.5]){api.setAgentTimeout(value);await api.request('/api/query',{method:'POST'});assert.equal(durations.at(-1),180000);}
+  const beforeUnbounded=durations.length;api.setAgentTimeout(null);await api.request('/api/query',{method:'POST'});assert.equal(durations.length,beforeUnbounded,'An unset Agent deadline must not add a browser deadline');assert.equal(signals.at(-1),undefined);
+  for(const value of [undefined,0,Infinity,3600001,5000.5]){api.setAgentTimeout(value);await api.request('/api/query',{method:'POST'});assert.equal(durations.at(-1),180000);}
   const next=createApi({token:'synthetic-next'});
   api.setAgentTimeout(600000);await next.request('/api/query',{method:'POST'});assert.equal(durations.at(-1),180000,'New connections do not inherit former server budgets');
 });

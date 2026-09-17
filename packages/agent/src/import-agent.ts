@@ -54,8 +54,10 @@ export function apply(ctx){
       ]),{mode:0o600});
       const launch=await prepareLaunch?.({workspace:input.workspace,runtimeRoot:root});
       if(closed)throw new AgentProviderError();
-      const timeoutMs=Math.max(options.timeoutMs??120000,300000);
-      harness=new DeepSeekHarness({...launch?{dshBin:launch.dshBin}:{},profile:'sdk-minimal',patches:[patch],dshHome:join(root,'home'),cwd:input.workspace,processCwd:input.workspace,provider:connection.route,model:options.model,maxTokens:options.maxTokens??DEFAULT_MODEL_MAX_TOKENS,initializeTimeoutMs:30000,requestTimeoutMs:timeoutMs,
+      const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs ?? 120000;
+      const configuredAgentTimeoutMs = options.agentTimeoutMs !== undefined ? options.agentTimeoutMs : options.timeoutMs;
+      const agentTimeoutMs = configuredAgentTimeoutMs === null ? null : Math.max(configuredAgentTimeoutMs ?? 300000, 300000);
+      harness=new DeepSeekHarness({...launch?{dshBin:launch.dshBin}:{},profile:'sdk-minimal',patches:[patch],dshHome:join(root,'home'),cwd:input.workspace,processCwd:input.workspace,provider:connection.route,model:options.model,maxTokens:options.maxTokens??DEFAULT_MODEL_MAX_TOKENS,initializeTimeoutMs:30000,requestTimeoutMs:Math.max(requestTimeoutMs??120000,300000),
         env:{PATH:process.env.PATH,TMPDIR:tmpdir(),HOME:join(root,'home'),DEEPSEEK_API_KEY:options.apiKey||'mote-local-no-auth',DEEPSEEK_BASE_URL:connection.baseUrl,MOTE_MODEL_API_KEY:options.apiKey||'mote-local-no-auth',
           MOTE_MODEL_TRANSPORT:JSON.stringify({baseUrl:connection.baseUrl,protocol:connection.protocol,reasoningEffort:connection.effort,provider:options.provider,headers:options.headers,extraBody:options.extraBody}),
           MOTE_SKILLS:JSON.stringify(bundledSkills.filter(s=>s.id==='document-import'))}});
@@ -85,7 +87,8 @@ export function apply(ctx){
           checkResult(result);return parseResult(result.finalResponse);
         }
       };
-      return await Promise.race([readAnswer(),new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new AgentTimeoutError()),timeoutMs);})]);
+      const deadline = agentTimeoutMs === null ? [] : [new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new AgentTimeoutError()),agentTimeoutMs);})];
+      return await Promise.race([readAnswer(),...deadline]);
     }catch(error){primaryFailure=true;if(error instanceof RequestTimeoutError)throw new AgentTimeoutError();if(error instanceof AgentNotConfiguredError||error instanceof AgentResponseError||error instanceof AgentTimeoutError)throw error;throw new AgentProviderError();}
     finally{
       if(timeout)clearTimeout(timeout);

@@ -56,7 +56,8 @@ test('Codex launch paths load from the private environment file without becoming
   const root=mkdtempSync(join(tmpdir(),'mote-config-codex-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const file=join(root,'mote.env');writeFileSync(file,'MOTE_DATA_DIR=./vault\nMOTE_MODEL_PROVIDER=codex\nMOTE_MODEL=fixture\nMOTE_CODEX_BIN=/fixture/bin/codex\nMOTE_CODEX_HOME=./login\n');
   const result=readConfig({MOTE_ENV_FILE:file});assert.equal(result.status,0,result.stderr);
-  const config=JSON.parse(result.stdout);assert.equal(config.modelProtocol,'codex-app-server');assert.equal(config.modelBaseUrl,'');assert.equal(config.codexBin,'/fixture/bin/codex');assert.equal(config.codexHome,join(root,'login'));assert.deepEqual(config.modelExtraBody,{});
+  const config=JSON.parse(result.stdout);assert.equal(config.modelProtocol,'codex-app-server');assert.equal(config.modelBaseUrl,'');assert.equal(config.modelRequestTimeoutMs,null);assert.equal(config.agentTimeoutMs,null);assert.equal(config.codexBin,'/fixture/bin/codex');assert.equal(config.codexHome,join(root,'login'));assert.deepEqual(config.modelExtraBody,{});
+  const blankAgent=JSON.parse(readConfig({MOTE_ENV_FILE:file,MOTE_AGENT_TIMEOUT_MS:''}).stdout);assert.equal(blankAgent.agentTimeoutMs,null);
 });
 
 test('startup reports the invalid setting without its private supplied value', t => {
@@ -107,21 +108,23 @@ test('configuration sources track process overrides, selected file and defaults 
   assert.ok(!JSON.stringify(context).includes('synthetic-private-model-key'));assert.ok(!JSON.stringify(context).includes(config.token));
 });
 
-test('Agent deadline defaults to 120 seconds and validates bounded integer overrides before creating storage', t => {
+test('model request and Agent deadlines have independent defaults and bounded overrides before creating storage', t => {
   const root=mkdtempSync(join(tmpdir(),'mote-config-timeout-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const file=join(root,'mote.env'),vault=join(root,'vault');
   writeFileSync(file,`MOTE_DATA_DIR=${vault}\n`);
-  assert.equal(JSON.parse(readConfig({MOTE_ENV_FILE:file}).stdout).modelTimeoutMs,120000);
+  const defaults=JSON.parse(readConfig({MOTE_ENV_FILE:file}).stdout);assert.equal(defaults.modelRequestTimeoutMs,300000);assert.equal(defaults.agentTimeoutMs,600000);
   for(const value of ['5000','300000','600000']){
-    const result=readConfig({MOTE_ENV_FILE:file,MOTE_MODEL_TIMEOUT_MS:value});assert.equal(result.status,0,result.stderr);
-    assert.equal(JSON.parse(result.stdout).modelTimeoutMs,Number(value));
+    const result=readConfig({MOTE_ENV_FILE:file,MOTE_MODEL_REQUEST_TIMEOUT_MS:value,MOTE_AGENT_TIMEOUT_MS:value});assert.equal(result.status,0,result.stderr);
+    const parsed=JSON.parse(result.stdout);assert.equal(parsed.modelRequestTimeoutMs,Number(value));assert.equal(parsed.agentTimeoutMs,Number(value));
   }
   const invalidVault=join(root,'invalid-vault');
-  for(const value of ['4999','600001','5000.5','','Infinity','synthetic-secret-invalid-timeout']){
-    const result=readConfig({MOTE_ENV_FILE:file,MOTE_DATA_DIR:invalidVault,MOTE_MODEL_TIMEOUT_MS:value});assert.notEqual(result.status,0);
-    assert.match(result.stderr,/MOTE_MODEL_TIMEOUT_MS/);assert.equal(result.stderr.includes('synthetic-secret-invalid-timeout'),false);
+  for(const value of ['4999','3600001','5000.5','Infinity','synthetic-secret-invalid-timeout']){
+    const result=readConfig({MOTE_ENV_FILE:file,MOTE_DATA_DIR:invalidVault,MOTE_AGENT_TIMEOUT_MS:value});assert.notEqual(result.status,0);
+    assert.match(result.stderr,/MOTE_AGENT_TIMEOUT_MS/);assert.equal(result.stderr.includes('synthetic-secret-invalid-timeout'),false);
     assert.equal(existsSync(invalidVault),false);
   }
+  const requestTooLarge=readConfig({MOTE_ENV_FILE:file,MOTE_MODEL_REQUEST_TIMEOUT_MS:'600001'});assert.notEqual(requestTooLarge.status,0);assert.match(requestTooLarge.stderr,/MOTE_MODEL_REQUEST_TIMEOUT_MS/);
+  const maxAgent=readConfig({MOTE_ENV_FILE:file,MOTE_AGENT_TIMEOUT_MS:'3600000'});assert.equal(maxAgent.status,0,maxAgent.stderr);assert.equal(JSON.parse(maxAgent.stdout).agentTimeoutMs,3600000);
 });
 
 test('model provider presets supply explicit protocols, endpoints and compatible reasoning defaults', t => {

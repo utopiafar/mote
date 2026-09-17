@@ -61,7 +61,7 @@ export function createRuntimePatch(
   baseUrl?: string,
   reasoningEffort?: AgentOptions["reasoningEffort"],
   maxTokens = DEFAULT_MODEL_MAX_TOKENS,
-  connection: Pick<AgentOptions, 'protocol' | 'provider' | 'timeoutMs'> = {},
+  connection: Pick<AgentOptions, 'protocol' | 'provider' | 'requestTimeoutMs' | 'timeoutMs'> = {},
 ): string {
   // JSON is valid YAML. No executable YAML expressions or untrusted path interpolation.
   return JSON.stringify(
@@ -238,7 +238,7 @@ export function createAgent(options: AgentOptions) {
         model: options.model!,
         maxTokens: options.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
         initializeTimeoutMs: 30_000,
-        requestTimeoutMs: options.timeoutMs ?? 120_000,
+        requestTimeoutMs: options.requestTimeoutMs !== undefined ? options.requestTimeoutMs ?? 120_000 : Math.max(options.timeoutMs ?? 120_000, 5_000),
         env: {
           PATH: process.env.PATH,
           TMPDIR: tmpdir(),
@@ -310,21 +310,20 @@ export function createAgent(options: AgentOptions) {
         }
       };
       input.signal?.throwIfAborted();
+      const agentTimeoutMs = options.agentTimeoutMs !== undefined ? options.agentTimeoutMs : options.timeoutMs ?? 120_000;
+      const deadline = agentTimeoutMs === null ? [] : [new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new AgentTimeoutError()),
+          agentTimeoutMs,
+        );
+      })];
       const answer = await Promise.race([
         new Promise<never>((_,reject)=>{
           abortListener=()=>reject(new DOMException('Query cancelled','AbortError'));
           input.signal?.addEventListener('abort',abortListener,{once:true});
         }),
         readAnswer(),
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(
-            () =>
-              reject(
-                new AgentTimeoutError(),
-              ),
-            options.timeoutMs ?? 120_000,
-          );
-        }),
+        ...deadline,
       ]);
       return {
         ...answer,

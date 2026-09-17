@@ -5,7 +5,7 @@ import {type Api,errorMessage} from './api';
 
 export function ModelSelector({api,feature,value,onChange,disabled,model,onModelChange}:{api:Api;feature:ModelFeature;value:string;onChange:(id:string)=>void;disabled?:boolean;model?:string;onModelChange?:(value:string)=>void}){
   const [view,setView]=useState<ModelSettingsView>(),[error,setError]=useState('');
-  useEffect(()=>{const controller=new AbortController();void api.request<ModelSettingsView>('/api/model-settings',{signal:controller.signal}).then(next=>{if(!controller.signal.aborted){setView(next);api.setAgentTimeout(Math.max(next.settings.timeoutMs,...(next.profiles??[]).map(p=>p.settings.timeoutMs)));}}).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));});return()=>controller.abort();},[api]);
+  useEffect(()=>{const controller=new AbortController();void api.request<ModelSettingsView>('/api/model-settings',{signal:controller.signal}).then(next=>{if(!controller.signal.aborted){setView(next);const values=[next.settings.agentTimeoutMs,...(next.profiles??[]).map(p=>p.settings.agentTimeoutMs)],timeouts=values.filter((value):value is number=>value!==null);api.setAgentTimeout(values.some(value=>value===null)?null:timeouts.length?Math.max(...timeouts):null);}}).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));});return()=>controller.abort();},[api]);
   const [models,setModels]=useState<{id:string;name:string}[]>([]);
   const profiles=view?.profiles??[],defaultId=view?.defaults?.[feature]??'default',selected=profiles.find(p=>p.id===defaultId);
   const providerId=value||defaultId;

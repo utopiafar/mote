@@ -17,7 +17,7 @@ function fixture(directory: string): Config {
     dataKey: randomBytes(32).toString('hex'), maxStorageBytes: 23 * 1024 * 1024, maxExportBytes: 4 * 1024 * 1024,
     retentionDays: 17, insightIntervalHours: 0, allowedOrigins: ['https://app.example.invalid'],
     model: 'synthetic-model-name', modelBaseUrl: 'https://model.example.invalid/v1', apiKey: 'synthetic-agent-private-key',
-    modelReasoningEffort: 'high', modelMaxTokens: 4096, modelTimeoutMs: 300000, allowUnauthenticatedLocal: false,
+    modelReasoningEffort: 'high', modelMaxTokens: 4096, modelRequestTimeoutMs: 300000, agentTimeoutMs: 300000, allowUnauthenticatedLocal: false,
     embeddingModel: 'synthetic-embedding-name', embeddingBaseUrl: 'https://embedding.example.invalid/v1', embeddingApiKey: 'synthetic-embedding-private-key',
     diagnosticsEnabled: true, diagnosticsDebug: true, logDirectory: join(directory, 'private-logs'), logLevel: 'info', logMaxBytes: 1024 * 1024, logMaxFiles: 2, logMaxEntries: 100,
     configuration: {
@@ -39,7 +39,8 @@ test('configuration projection is serializable, preserves effective values and s
   assert.equal(view.storage.sqlitePath, join(config.dataDir, 'mote.sqlite')); assert.equal(view.storage.blobsDir, join(config.dataDir, 'blobs'));
   assert.equal(view.storage.kind, 'docker-volume'); assert.equal(view.storage.source, 'synthetic-private-volume-name'); assert.equal(view.storage.mountPath, '/data');
   assert.equal(all.get('maxStorageBytes')!.value, 23 * 1024 * 1024); assert.equal(all.get('maxStorageBytes')!.unit, 'bytes'); assert.match(all.get('maxStorageBytes')!.description, /逻辑字节/);
-  assert.equal(all.get('modelTimeoutMs')!.value,300000); assert.equal(all.get('modelTimeoutMs')!.envVar,'MOTE_MODEL_TIMEOUT_MS');
+  assert.equal(all.get('modelRequestTimeoutMs')!.value,300000); assert.equal(all.get('modelRequestTimeoutMs')!.envVar,'MOTE_MODEL_REQUEST_TIMEOUT_MS');
+  assert.equal(all.get('agentTimeoutMs')!.value,300000); assert.equal(all.get('agentTimeoutMs')!.envVar,'MOTE_AGENT_TIMEOUT_MS');
   assert.equal(all.get('retentionDays')!.value, 17); assert.equal(all.get('modelMaxTokens')!.value, 4096);
   assert.equal(all.get('model')!.source, 'env-file'); assert.equal(all.get('listenPort')!.source, 'environment'); assert.equal(all.get('logMaxFiles')!.source, 'default');
   for (const key of ['accessTokenConfigured', 'modelApiKeyConfigured', 'embeddingApiKeyConfigured', 'dataKeyConfigured']) { assert.equal(all.get(key)!.value, true); assert.equal(all.get(key)!.visibility, 'secret-status'); }
@@ -74,7 +75,7 @@ test('owner configuration is authenticated and read-only; changes on disk await 
   const response = await app.inject({ url: '/api/configuration', headers });
   assert.equal(response.statusCode, 200); assert.equal(response.headers['cache-control'], 'no-store');
   assert.equal(fields(response.json()).get('model')!.value, config.model);
-  assert.equal((await app.inject({url:'/api/status',headers})).json().agent.timeoutMs,300000);
+  assert.equal((await app.inject({url:'/api/status',headers})).json().agent.agentTimeoutMs,300000);
   assert.equal(app.initialConfig.requestTimeout,180000,'Model budgets do not extend HTTP request upload limits');
   assert.equal(fields(response.json()).get('logLevel')!.value, 'info');
   assert.equal(fields(response.json()).get('effectiveLogLevel')!.value, diagnostics.snapshot().level);

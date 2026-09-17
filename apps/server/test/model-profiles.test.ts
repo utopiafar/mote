@@ -8,7 +8,7 @@ import type {Config} from '../src/config.js';
 import type {ModelSettings,ModelSettingsView} from '@mote/shared/models';
 import type {QueryInput} from '@mote/agent';
 
-const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'first-model',baseUrl:'https://fixture.invalid/v1',apiKey:'fixture-original-secret',headers:{},extraBody:{},reasoningEffort:'auto',maxTokens:8192,timeoutMs:120000,allowUnauthenticatedLocal:false};
+const settings:ModelSettings={provider:'custom',protocol:'openai-completions',model:'first-model',baseUrl:'https://fixture.invalid/v1',apiKey:'fixture-original-secret',headers:{},extraBody:{},reasoningEffort:'auto',maxTokens:8192,modelRequestTimeoutMs:120000,agentTimeoutMs:120000,allowUnauthenticatedLocal:false};
 const headers={authorization:'Bearer synthetic-profile-owner'};
 test('profiles route each request and feature independently; credentials, restarts and deletes are scoped',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-profiles-'));
@@ -70,7 +70,7 @@ test('Codex profiles accept a local login transport and reject arbitrary process
   const directory=await mkdtemp(join(tmpdir(),'mote-codex-settings-'));
   const store=new ModelSettingsStore({directory,environment:settings,prepare:async()=>({activate(){},async dispose(){}}),probe:async()=>({ok:true,code:'ok',message:'',durationMs:1})});
   t.after(async()=>{await store.close();await rm(directory,{recursive:true,force:true});});await store.initialize();
-  const local={...settings,provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'fixture-codex',apiKey:null};
+  const local={...settings,provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'fixture-codex',apiKey:null,modelRequestTimeoutMs:null,agentTimeoutMs:null};
   await store.updateProfile('local',{revision:0,name:'Codex fixture',settings:local});
   assert.equal(store.select('chat','local').settings.protocol,'codex-app-server');
   for(const patch of [{baseUrl:'file:///bin/sh'},{extraBody:{command:'sh'}},{headers:{Authorization:'fixture'}},{codexPath:'/bin/sh'}]){

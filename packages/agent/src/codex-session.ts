@@ -29,7 +29,7 @@ export class CodexSession {
   private bytes=0;
   private toolQueue=Promise.resolve();
   private timer?:ReturnType<typeof setTimeout>;
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'timeoutMs'|'codex'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>){ }
+  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'agentTimeoutMs'|'timeoutMs'|'codex'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>){ }
 
   async start(instructions:string,tools:CodexTool[],workspace?:string):Promise<void>{
     if(this.initializing)throw new AgentProviderError();
@@ -69,7 +69,8 @@ export class CodexSession {
       this.child.stderr.on('data',(chunk:Buffer)=>{this.bytes+=chunk.length;if(this.bytes>32*1024*1024)this.fail(new AgentProviderError());});
       this.child.stdout.setEncoding('utf8');
       this.child.stdout.on('data',(chunk:string)=>this.receive(chunk));
-      this.timer=setTimeout(()=>this.fail(new AgentTimeoutError()),this.options.timeoutMs??120000);
+      const agentTimeoutMs = this.options.agentTimeoutMs !== undefined ? this.options.agentTimeoutMs : this.options.timeoutMs ?? 120000;
+      if(agentTimeoutMs!==null)this.timer=setTimeout(()=>this.fail(new AgentTimeoutError()),agentTimeoutMs);
       await this.request('initialize',{clientInfo:{name:'mote',title:'Mote',version:'0.1.0'},capabilities:{experimentalApi:true}});
       this.send({method:'initialized',params:{}});
       const login=await this.request('account/read',{});

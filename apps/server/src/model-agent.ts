@@ -1,11 +1,11 @@
 import { createAgent, AgentNotConfiguredError, AgentTimeoutError, AgentResponseError, type ContextReader, type AgentOptions } from '@mote/agent';
-import { DEFAULT_MODEL_MAX_TOKENS, modelProvider, type ModelSettings, type ModelTestResult, type ModelProfile } from '@mote/shared/models';
+import { DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUEST_TIMEOUT_MS, modelProvider, type ModelSettings, type ModelTestResult, type ModelProfile } from '@mote/shared/models';
 import type { Config } from './config.js';
 import type { QueryAgent } from './app.js';
 import type { PreparedModelSettings } from './model-settings.js';
 
 export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader) => Promise<QueryAgent>;
-export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex']):Promise<QueryAgent> => createAgent({ ...settings, reader, codex });
+export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex']):Promise<QueryAgent> => createAgent({ ...settings, reader, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
 
 /** A registry generation is immutable. ReloadableAgent leases it for the entire query. */
 export async function createModelRegistry(profiles:ModelProfile[], reader:ContextReader, factory:ModelAgentFactory, initial?:QueryAgent):Promise<QueryAgent> {
@@ -38,7 +38,9 @@ export function modelSettingsFromConfig(config: Config): ModelSettings {
     provider, protocol, baseUrl: config.modelBaseUrl || preset?.baseUrl || '', model: config.model,
     apiKey: config.apiKey, headers: structuredClone(config.modelHeaders ?? {}), extraBody: structuredClone(config.modelExtraBody ?? {}),
     reasoningEffort: config.modelReasoningEffort ?? (protocol === 'deepseek' ? 'high' : 'auto'),
-    maxTokens: config.modelMaxTokens ?? DEFAULT_MODEL_MAX_TOKENS, timeoutMs: config.modelTimeoutMs ?? 120000,
+    maxTokens: config.modelMaxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
+    modelRequestTimeoutMs: config.modelRequestTimeoutMs ?? (protocol === 'codex-app-server' ? null : DEFAULT_MODEL_REQUEST_TIMEOUT_MS),
+    agentTimeoutMs: config.agentTimeoutMs ?? (protocol === 'codex-app-server' ? null : config.modelTimeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS),
     allowUnauthenticatedLocal: config.allowUnauthenticatedLocal,
   };
 }
@@ -48,7 +50,8 @@ export function applyModelSettings(config: Config, settings: ModelSettings): voi
   config.modelBaseUrl = settings.baseUrl; config.model = settings.model; config.apiKey = settings.apiKey;
   config.modelHeaders = structuredClone(settings.headers); config.modelExtraBody = structuredClone(settings.extraBody);
   config.modelReasoningEffort = settings.reasoningEffort; config.modelMaxTokens = settings.maxTokens;
-  config.modelTimeoutMs = settings.timeoutMs; config.allowUnauthenticatedLocal = settings.allowUnauthenticatedLocal;
+  config.modelRequestTimeoutMs = settings.modelRequestTimeoutMs; config.agentTimeoutMs = settings.agentTimeoutMs;
+  config.modelTimeoutMs = settings.agentTimeoutMs ?? undefined; config.allowUnauthenticatedLocal = settings.allowUnauthenticatedLocal;
 }
 
 type Generation = { agent: QueryAgent; active: number; retired: boolean; closing?: Promise<void> };
@@ -111,7 +114,10 @@ export async function testModelConnection(settings: ModelSettings, factory: Mode
   let candidate: QueryAgent | undefined;
   let code: ModelTestResult['code'];
   try {
-    candidate = await factory({ ...settings, timeoutMs: Math.min(settings.timeoutMs, 30_000) }, reader);
+    candidate = await factory({ ...settings,
+      modelRequestTimeoutMs: settings.modelRequestTimeoutMs === null ? null : Math.min(settings.modelRequestTimeoutMs, 30_000),
+      agentTimeoutMs: 30_000,
+    }, reader);
     if (!candidate.configured) code = 'not_configured';
     else {
       const result = await candidate.query({ question: 'Run a connection test using only the generated fixture in the connected reader. Call search to find the test record, then evidence to read it. Briefly state what the record confirms and cite its complete ID. Follow the required final answer JSON format.' });
