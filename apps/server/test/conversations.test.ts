@@ -58,7 +58,7 @@ test('only the owner can read, continue or delete saved conversations',async t=>
   assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'continue',conversationId:first.conversationId}})).statusCode,404);
 });
 
-test('failed answers are not saved and concurrent or deleted conversations cannot be overwritten',async t=>{
+test('failed answers remain visible and concurrent or deleted conversations cannot be overwritten',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-conversation-race-'));
   let complete!:(result:ReturnType<typeof answer>)=>void,started!:()=>void;
   let hold=false,fail=false;
@@ -70,7 +70,8 @@ test('failed answers are not saved and concurrent or deleted conversations canno
   })});
   t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
   fail=true;assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated failing question'}})).statusCode,500);
-  assert.equal((await app.inject({url:'/api/conversations',headers})).json().items.length,0);
+  const failedList=(await app.inject({url:'/api/conversations',headers})).json();assert.equal(failedList.items.length,1);assert.equal(failedList.items[0].status,'failed');
+  const failed=(await app.inject({url:`/api/conversations/${failedList.items[0].id}`,headers})).json();assert.equal(failed.turns[0].status,'failed');assert.equal(failed.turns[0].question,'Generated failing question');assert.equal(failed.turns[0].error.code,'internal');
   fail=false;const first=(await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated success'}})).json();
   hold=true;
   const pending=app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId:first.conversationId,question:'Held followup'}}).then(value=>value);
@@ -79,7 +80,7 @@ test('failed answers are not saved and concurrent or deleted conversations canno
   await app.inject({method:'DELETE',url:`/api/conversations/${first.conversationId}`,headers});
   complete(answer('Must not resurrect deleted conversation'));
   assert.equal((await pending).statusCode,409);
-  assert.equal((await app.inject({url:'/api/conversations',headers})).json().items.length,0);
+  assert.equal((await app.inject({url:'/api/conversations',headers})).json().items.length,1);
 });
 
 test('capture deletion removes derived history content and prevents in-flight answers restoring it',async t=>{

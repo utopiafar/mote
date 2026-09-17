@@ -25,6 +25,7 @@ export class WorkingMemory {
     if(end<=start)return;
     let count=start,characters=0;const prefix=[];
     for(const turn of conversation.turns.slice(start,end)){
+      if(turn.status==='failed'||!turn.result){count++;continue;}
       const entry={question:turn.question,answer:turn.result.answer.slice(0,20000),scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted,answerTruncated:turn.result.answer.length>20000};
       const text=JSON.stringify(entry);if(characters+text.length>60000){if(!prefix.length)throw new StoreError('Conversation turn exceeds summary input budget',413);break;}
       prefix.push(entry);characters+=text.length;count++;

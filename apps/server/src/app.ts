@@ -355,9 +355,10 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   const runningConversations=new Set<string>();
   async function runQuery(body:unknown,onProgress?:QueryInput['onProgress'],signal?:AbortSignal) {
     signal?.throwIfAborted();
+    // Preserve the established configuration gate before strict body validation.
+    // Once a configured query starts, provider/runtime failures are journaled below.
     if(!agent.configured)throw new AgentNotConfiguredError();
     const {conversationId,question,modelProfileId,modelOverride,...selected}=querySchema.parse(body);
-    modelSettings.select('chat',modelProfileId);
     if(conversationId&&runningConversations.has(conversationId))throw new StoreError('An answer is already running in this conversation',409);
     const previous=conversationId?conversations.get(conversationId):undefined;
     if(previous&&previous.turnCount>=200)throw new StoreError('Conversation has reached its turn limit; start a new conversation',409);
@@ -369,9 +370,22 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     insightSchema.parse(scope);
     if(conversationId)runningConversations.add(conversationId);
     try {
+      modelSettings.select('chat',modelProfileId);
       const result=await queryAgent({question,...scope,modelProfileId,modelOverride,onProgress,signal,...(previous?{conversation:working.context(previous,lifecycle.settings())}:{})});
       signal?.throwIfAborted();
       return {...result,...conversations.append(previous,{question,...scope},result)};
+    } catch(error) {
+      // Keep the user's question visible even when no assistant answer was produced.
+      // Persist only the fixed public error projection; provider details never enter the vault.
+      if(!signal?.aborted) {
+        try {
+          const failure=safeError(error),saved=conversations.appendFailure(previous,{question,...scope},{code:failure.category,message:failure.message});
+          if(error&&typeof error==='object')Object.assign(error,{conversation:saved});
+        } catch {
+          // Preserve the original query failure if the failure journal itself cannot be written.
+        }
+      }
+      throw error;
     }finally{if(conversationId)runningConversations.delete(conversationId);}
   }
   app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>runQuery(req.body));

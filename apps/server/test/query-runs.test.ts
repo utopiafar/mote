@@ -43,6 +43,18 @@ test('background admission survives client departure, deduplicates and persists 
   assert.equal((store.db.prepare('SELECT COUNT(*) AS n FROM model_usage').get() as any).n,1);
 });
 
+test('failed background queries retain a retryable conversation history entry',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-query-run-failure-'));
+  const {app}=await buildApp(config(dir),{agent:{configured:true,close:async()=>{},query:async()=>{throw Object.assign(new Error('Generated provider secret'),{name:'AgentProviderError'});}}});
+  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+  const id=randomUUID();await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id,input:{question:'Generated failed question'}}});
+  let run:any;
+  for(let attempt=0;attempt<30;attempt++){await new Promise(resolve=>setImmediate(resolve));run=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();if(run.status==='failed')break;}
+  assert.equal(run.status,'failed');assert.ok(run.conversationId);assert.ok(!JSON.stringify(run).includes('Generated provider secret'));
+  const conversation=(await app.inject({url:`/api/conversations/${run.conversationId}`,headers})).json();
+  assert.equal(conversation.status,'failed');assert.equal(conversation.turns[0].status,'failed');assert.equal(conversation.turns[0].question,'Generated failed question');assert.equal(conversation.turns[0].error.message,'模型服务请求未完成，请检查地址、凭据和模型配置。');
+});
+
 test('interrupted runs recover as failures, and deleted evidence clears public status messages',async t=>{
   const {Store}=await import('../src/store.js');const {QueryRuns}=await import('../src/query-runs.js');
   const dir=mkdtempSync(join(tmpdir(),'mote-query-progress-')),store=new Store(dir),runs=new QueryRuns(store);
