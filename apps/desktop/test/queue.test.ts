@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableQueue, imageHash, QueueFullError, retryDelay } from '../src/queue';
+import {extendState} from '@mote/shared/state-series';
 import { event, image } from './fixtures';
 
 let directory: string;
@@ -155,7 +156,7 @@ it('keeps activity metadata durable but rejects all content fields and content-o
   const { imageMime, ocrText, ...base } = event();
   const activity = { ...base, source: 'activity' as const, privacy: { excluded: false as const, redacted: false, mode: 'none' as const, collection: 'activity' as const }, metadata: { version: 1 as const, observedAt: base.capturedAt, capture: { intervalMs: 15000 }, device: { osVersion: 'synthetic' } } };
   await queue.enqueue(activity); await queue.failed(activity.id, 1000, () => .5);
-  const reopened = new DurableQueue(directory, limits); await reopened.initialize(); expect((await reopened.next(3000))?.record.event).toEqual(activity); expect(await readdir(join(directory, 'blobs'))).toEqual([]);
+  const reopened = new DurableQueue(directory, limits); await reopened.initialize(); expect((await reopened.next(3000))?.record.event).toEqual(extendState(undefined,activity)); expect(await readdir(join(directory, 'blobs'))).toEqual([]);
   for (const key of ['ocrText', 'imageMime', 'imageBase64', 'mood', 'title', 'windowTitle', 'provenance']) await expect(queue.enqueue({ ...activity, [key]: 'forbidden fixture' } as never)).rejects.toThrow();
   for (const key of ['width', 'height', 'displayScale', 'maskCount', 'ocrEnabled']) await expect(queue.enqueue({ ...activity, metadata: { ...activity.metadata, capture: { [key]: key === 'ocrEnabled' ? true : 1 } } } as never)).rejects.toThrow();
   await expect(queue.enqueue({ ...activity, metadata: { ...activity.metadata, state: { serialNumber: 'not allowed' } } } as never)).rejects.toThrow();
@@ -171,4 +172,14 @@ it('retains generated Mac notification observations across queue reload and meta
   const restored=new DurableQueue(directory,limits);await restored.initialize();
   expect((await restored.next())?.record.event.metadata?.notification?.text).toBe('Generated notification');
   expect(restored.exportMetadata().records[0].source).toBe('notification');
+});
+
+it('persists compacted observations across restart and ignores an acknowledgement for an older prefix',async()=>{
+  const base=event(), first={...base,source:'activity' as const,privacy:{excluded:false as const,redacted:false,mode:'none' as const,collection:'activity' as const}};
+  delete first.imageMime;delete first.ocrText;delete first.ocr;
+  first.capturedAt='2026-09-17T00:00:00.000Z';first.durationMs=0;
+  await queue.enqueue(first);await queue.enqueue({...first,id:crypto.randomUUID(),capturedAt:'2026-09-17T00:00:05.000Z',durationMs:5000});
+  const restarted=new DurableQueue(directory,limits);await restarted.initialize();
+  expect((await restarted.next())?.record.event.stateSeries?.samples).toHaveLength(2);
+  await restarted.acknowledge(first.id,false,1);expect(restarted.stats().depth).toBe(1);
 });

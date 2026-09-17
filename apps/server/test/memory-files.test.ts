@@ -125,3 +125,16 @@ test('Memory API expands all preferred file chunks, validates chunk scope, and d
   const removed=await node.app.inject({method:'DELETE',url:'/api/captures/'+ids[0],headers});assert.equal(removed.statusCode,200,removed.body);
   assert.equal(node.files.evidence(ids).length,0);assert.throws(()=>node.files.version(parent.id),{statusCode:404});assert.throws(()=>node.memories.get(memory.id),{statusCode:404});
 });
+
+test('full local indexes enter memory batches without archived originals; lightweight indexes wait for evidence',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-local-index-api-'));
+ const {configFromEnv}=await import('../src/config.js');const config=configFromEnv({MOTE_DATA_DIR:directory,MOTE_TOKEN:'generated-index-memory-token',MOTE_RETENTION_DAYS:'0'});
+ const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()})})});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ node.sources.register({id:'indexes',deviceId:'generated-device',name:'Generated indexes',kind:'local-files',platform:'macos',retention:'snapshot'});
+ const text='Generated complete original evidence',descriptor={version:1,fileId:'generated-file',contentVersion:'a'.repeat(64),mode:'index',coverage:'full',parser:'utf8',status:'ready',totalCharacters:text.length,offset:0,length:text.length,allowRead:true};
+ const full=await node.files.revision({sourceId:'indexes',item:{externalId:'full',revision:'v1',observedAt:new Date().toISOString(),title:'full.txt',kind:'file',layer:'snapshot',text,document:{fileIndex:descriptor}},sizeBytes:100},()=>{});
+ const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token,'accept-language':'en'},payload:{evidenceIds:[full.id]}});assert.equal(response.statusCode,202,response.body);assert.deepEqual(response.json().evidenceIds,[full.id]);assert.equal(response.json().language,'en');assert.equal(response.json().totalBatches,1);await node.memoryPipeline.run(response.json().id);
+ const light=await node.files.revision({sourceId:'indexes',item:{externalId:'light',revision:'v1',observedAt:new Date().toISOString(),title:'light.txt',kind:'file',layer:'snapshot',text,document:{fileIndex:{...descriptor,coverage:'lightweight',totalCharacters:500}}},sizeBytes:500},()=>{});
+ assert.equal(node.memoryPipeline.create({evidenceIds:[light.id]}).totalBatches,0);assert.throws(()=>node.memories.extract(result(light.id,text),'fixture'),/Lightweight/);
+ const saved=node.memories.extract(result(full.id,text),'fixture').items[0];assert.equal(saved.evidence![0].fileIndex?.contentVersion,descriptor.contentVersion);assert.equal(saved.evidence![0].quote,text);
+});

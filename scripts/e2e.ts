@@ -12,7 +12,8 @@ import type { Config } from '../apps/server/src/config.js';
 const dir=await mkdtemp(join(tmpdir(),'mote-e2e-'));const id=randomUUID();const noteId=randomUUID();let rounds=0;
 const fixtureModel=createServer(async(req,res)=>{
   let raw='';for await(const c of req)raw+=c;
-  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.function.name).sort(),['activity','changes','devices','evidence','file_chunks','media_activity','memories','progress_update','search_context','skill','source_history','source_items','sources','timeline']);
+  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.function.name).sort(),['activity','changes','devices','evidence','file_chunks','media_activity','memories','progress_update','read_file_evidence','search_context','skill','source_history','source_items','sources','timeline']);
+  assert.ok(body.messages.some((m:any)=>typeof m.content==='string'&&m.content.includes('\"language\":\"en\"')), 'The selected language must be explicit in every model request');
   const stage=(body.messages??[]).filter((message:any)=>message.role==='tool').length;rounds++;
   const tool=stage===0?{name:'search_context',arguments:JSON.stringify({query:'orbital observatory'})}:stage===1?{name:'evidence',arguments:JSON.stringify({ids:[id,noteId]})}:null;
   const delta=tool?{role:'assistant',tool_calls:[{index:0,id:`tool-${stage}`,type:'function',function:tool}]}:{role:'assistant',content:JSON.stringify({answer:`这是合成测试：阅读了 orbital observatory 的资料。[${id}] 也主动记录了复盘笔记。[${noteId}]`,citationIds:[id,noteId]})};
@@ -23,7 +24,7 @@ const fixtureModel=createServer(async(req,res)=>{
 await new Promise<void>(r=>fixtureModel.listen(0,'127.0.0.1',r));
 const config:Config={dataDir:dir,token:'synthetic-e2e-not-a-real-secret',tokenPath:'unused',host:'127.0.0.1',port:0,contentEncryptionEnabled:true,dataKey:'3c'.repeat(32),maxStorageBytes:10000000,maxExportBytes:10000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'synthetic-fixture',modelBaseUrl:`http://127.0.0.1:${(fixtureModel.address() as AddressInfo).port}/v1`,apiKey:'synthetic-fixture',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
 const {app}=await buildApp(config);await app.listen({port:process.argv.includes('--serve')?47835:0,host:'127.0.0.1'});const base=`http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
-const headers={Authorization:`Bearer ${config.token}`,'Content-Type':'application/json'};
+const headers={Authorization:`Bearer ${config.token}`,'Content-Type':'application/json','Accept-Language':'en'};
 async function call(path:string,body?:unknown,method=body?'POST':'GET') {const res=await fetch(base+path,{method,headers,...(body?{body:JSON.stringify(body)}:{})});assert.ok(res.ok,`${path} returned ${res.status}: ${res.ok?'':await res.text()}`);return res.json();}
 try {
   const image=await sharp({create:{width:128,height:80,channels:3,background:'#365c4e'}}).webp().toBuffer();

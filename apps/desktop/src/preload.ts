@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  storageStatistics: () => ipcRenderer.invoke('mote:storage-statistics'),
   language: () => ipcRenderer.invoke('mote:language'),
   setLanguage: preference => ipcRenderer.invoke('mote:set-language', preference),
   compressionPreview: (quality, maxSide) => ipcRenderer.invoke('mote:compression-preview', quality, maxSide),
@@ -39,7 +40,7 @@ const api: DesktopApi = {
   updateSource: (id, options) => ipcRenderer.invoke('mote:source-update', id, options),
   syncSources: () => ipcRenderer.invoke('mote:source-sync'),
   openCalendarPermissions: () => ipcRenderer.invoke('mote:calendar-permissions'),
-  exportSupport: () => ipcRenderer.invoke('mote:support-export'),
+  exportSupport: hours => ipcRenderer.invoke('mote:support-export', hours),
   sampleDiagnostics: () => ipcRenderer.invoke('mote:diagnostics-sample'),
   exportDiagnostics: () => ipcRenderer.invoke('mote:diagnostics-export'),
   readRawEvents: () => ipcRenderer.invoke('mote:events-raw'),

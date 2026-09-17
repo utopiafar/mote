@@ -71,10 +71,10 @@ class IssueOneRegressionTest {
         log.event(EventStage.UPLOAD, EventCode.WAIT_NETWORK)
         log.event(EventStage.UPLOAD, EventCode.AUTH, httpStatus = 401)
         val raw = log.readRaw(); assertEquals(file.readText(), raw)
-        val lines = raw.trim().lines(); assertEquals(3, lines.size)
-        assertTrue(lines[0].contains("INFO ")); assertTrue(lines[0].contains("elapsedMs=12 httpStatus=200"))
-        assertTrue(lines[1].contains("WARN ")); assertTrue(lines[2].contains("ERROR"))
-        assertTrue(lines.all { it.matches(Regex("\\S+ (INFO |WARN |ERROR) \\[thread-\\d+] UPLOAD - .+")) })
+        val lines = log.exportRange(0, System.currentTimeMillis() + 1000).getString("text").trim().lines(); assertEquals(4, lines.size)
+        assertTrue(lines[0].contains("DEBUG ")); assertTrue(lines[1].contains("elapsedMs=12 httpStatus=200"))
+        assertTrue(lines[2].contains("WARN ")); assertTrue(lines[3].contains("ERROR"))
+        assertTrue(lines.drop(1).all { it.matches(Regex("\\S+ (INFO |WARN |ERROR) \\[thread-\\d+] UPLOAD - .+")) })
     }
     @Test fun updateActionsTrackActualProgressAndRecoverableFailures() {
         assertEquals("check", UpdatePresentation.action("idle", false))

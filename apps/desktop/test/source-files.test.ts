@@ -23,9 +23,9 @@ describe('explicit local text sources', () => {
     expect(result.items.map(i => i.text)).toEqual(['allowed']); expect(result.skipped).toBe(5);
     await expect(scanSourceFiles(join(root, 'link.md'), DEFAULT_SOURCE_OPTIONS)).rejects.toThrow('符号链接');
   });
-  it('rejects oversized and non UTF-8 text, retains seen IDs and marks unreadable scans incomplete', async () => {
+  it('marks truncated indexes as lightweight and undecodable content as unsupported', async () => {
     await writeFile(join(root, 'large.md'), 'x'.repeat(100001)); await writeFile(join(root, 'invalid.md'), Buffer.from([0xff, 0xfe])); await writeFile(join(root, 'limit.md'), 'a'.repeat(100000));
-    const result = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS); expect(result.items).toHaveLength(1); expect(result.items[0].text.length).toBe(100000); expect(result.seen).toHaveLength(3); expect(result.complete).toBe(false);
+    const result = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS); expect(result.items).toHaveLength(3);expect(result.items.find(i=>i.title==='large.md')?.document?.fileIndex?.coverage).toBe('lightweight');expect(result.items.find(i=>i.title==='invalid.md')?.document?.fileIndex?.status).toBe('unsupported');expect(result.items.find(i=>i.title==='limit.md')?.text.length).toBe(100000);expect(result.seen).toHaveLength(3);expect(result.complete).toBe(true);
   });
   it('reference mode emits only metadata and does not decode file bodies', async () => {
     await writeFile(join(root, 'synthetic.md'), Buffer.from([0xff, 0xfe]));

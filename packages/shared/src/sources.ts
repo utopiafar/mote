@@ -1,3 +1,4 @@
+import {fileIndexSchema} from './file-index.js';
 import {z} from 'zod';
 import {sourceMetadataSchema} from './metadata.js';
 
@@ -26,6 +27,7 @@ export const codingEvidenceSchema=z.object({
 }).strict();
 export type CodingEvidence=z.infer<typeof codingEvidenceSchema>;
 export const documentSchema=z.object({
+  fileIndex:fileIndexSchema.optional(),
   coding:codingEvidenceSchema.optional(),
   fileId:z.string().min(1).max(200).optional(),path:z.string().max(4000).optional(),
   recordedAt:timestamp.describe('Explicit original authored/recording date; never the import or observation time. Omit when unknown.').optional(),occurredAt:timestamp.describe('Explicit time of the described event; omit when unknown.').optional(),
@@ -59,6 +61,7 @@ export const sourceItemSchema=z.object({
   metadata:sourceMetadataSchema.optional(),
   document:documentSchema.optional(),
 }).strict().superRefine((v,ctx)=>{
+  if(v.document?.fileIndex){const i=v.document.fileIndex;if(v.kind!=='file'||i.offset+i.length>i.totalCharacters||(!v.deleted&&i.mode==='index'&&i.length!==v.text.length)||i.coverage==='full'&&(i.offset!==0||i.length!==i.totalCharacters)||i.mode==='catalog'&&(i.allowRead||v.text))ctx.addIssue({code:'custom',message:'Invalid file index coverage'});}
   if(v.kind==='calendar'&&!v.calendar&&!v.deleted)ctx.addIssue({code:'custom',message:'Calendar items require event times'});
   if(v.kind!=='calendar'&&v.calendar)ctx.addIssue({code:'custom',message:'Calendar metadata belongs to calendar items'});
   if(v.kind!=='file'&&v.metadata?.file)ctx.addIssue({code:'custom',message:'File metadata belongs to file items'});

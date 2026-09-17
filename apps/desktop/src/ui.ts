@@ -6,7 +6,7 @@ let initialized = false;
 let busy = false;
 const fields = byId<HTMLFieldSetElement>('settings-fields');
 const settingsForm = byId<HTMLFormElement>('settings');
-const pageNames = ['overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression'] as const;
+const pageNames = ['statistics', 'overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression'] as const;
 type Page = typeof pageNames[number];
 let currentPage: Page = 'overview';
 let settingsDirty = false;
@@ -44,6 +44,7 @@ function showPage(page: Page, focus = true): void {
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
   if (page === 'compression') { byId<HTMLInputElement>('compression-quality').value=String(currentStatus.config.jpegQuality); const side=byId<HTMLSelectElement>('compression-side');if(!Array.from(side.options).some(o=>o.value===String(currentStatus.config.captureMaxSide)))side.add(new Option(String(currentStatus.config.captureMaxSide),String(currentStatus.config.captureMaxSide)));side.value=String(currentStatus.config.captureMaxSide); void refreshCompression(); }
+  if (page === 'statistics') void loadStorageStatistics();
   if (page === 'records') void loadRecords();
   if (page === 'overview' && initialized) void desktopApi.status().then(render).catch(() => feedback(moteText("状态读取失败，请重试。")));
 }
@@ -485,13 +486,13 @@ async function loadLogs(): Promise<void> {
 }
 byId('events-open').addEventListener('click', () => void loadLogs());
 
-byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(); if (!result.canceled) feedback(moteText("支持包已导出；只含数值、配置开关和固定阶段事件。"), true); }));
+byId('support-export').addEventListener('click', () => void perform(async () => { const result = await desktopApi.exportSupport(Number(byId<HTMLSelectElement>('log-export-hours').value)); if (!result.canceled) feedback(moteText("支持包已导出；只含数值、配置开关和固定阶段事件。"), true); }));
 
 let localSourceRows: import('./source-types').SourceStatus[] = [];
 let sourceEditingId: string | undefined;
 let sourceBusy = false;
 function sourceOptions(): import('./source-types').SourceOptions {
-  return { initialSync: readInput('source-initial-sync') as 'all' | 'new_only', retention: readInput('source-retention') as 'snapshot' | 'reference', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
+  return { initialSync: readInput('source-initial-sync') as 'all' | 'new_only', indexMode:readInput('source-index-mode') as 'full'|'lightweight',allowRead:byId<HTMLInputElement>('source-allow-read').checked,retention: readInput('source-retention') as 'snapshot' | 'reference' | 'archive', intervalSeconds: numberInput('source-interval'), trackDeletions: byId<HTMLInputElement>('source-deletions').checked, extensions: readInput('source-extensions').split(',').map(s => s.trim()).filter(Boolean), excludedPaths: readInput('source-excludes').split('\n').map(s => s.trim()).filter(Boolean), redactLiterals: readInput('source-redacts').split('\n').filter(Boolean) };
 }
 function editSource(id?: string): void {
   sourceEditingId = id;
@@ -503,7 +504,7 @@ function editSource(id?: string): void {
   if (editor) editor.open = true;
   byId('source-editor-title').scrollIntoView({ block: 'start', behavior: 'instant' });
   byId('source-retention').focus({ preventScroll: true });
-  byId<HTMLSelectElement>('source-initial-sync').value=source.initialSync??'all'; byId<HTMLSelectElement>('source-retention').value = source.retention; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
+  byId<HTMLSelectElement>('source-initial-sync').value=source.initialSync??'all'; byId<HTMLSelectElement>('source-retention').value = source.retention;byId<HTMLSelectElement>('source-index-mode').value=source.indexMode??'full';byId<HTMLInputElement>('source-allow-read').checked=source.allowRead??false; byId<HTMLInputElement>('source-interval').value = String(source.intervalSeconds);
   byId<HTMLInputElement>('source-deletions').checked = source.trackDeletions; byId<HTMLInputElement>('source-extensions').value = source.extensions.join(',');
   byId<HTMLTextAreaElement>('source-excludes').value = source.excludedPaths.join('\n'); byId<HTMLTextAreaElement>('source-redacts').value = source.redactLiterals.join('\n'); refreshPresets();
 }
@@ -517,7 +518,7 @@ async function refreshSources(): Promise<void> {
   if (!rows.length) { const p = document.createElement('p'); p.className = 'helper'; p.textContent = moteText("尚未连接本地来源。选择只包含你希望归档资料的目录。"); list.append(p); }
   for (const row of rows) {
     const card = document.createElement('article'); card.className = 'source-card';
-    const title = document.createElement('strong'); title.textContent = `${row.source.kind === 'local-calendar' ? moteText("日历") : row.source.kind === 'coding-agent' ? moteText("编码对话") : moteText("文件")} · ${row.source.name} · ${row.source.retention === 'reference' ? moteText("引用") : moteText("快照")}`;
+    const title = document.createElement('strong'); title.textContent = `${row.source.kind === 'local-calendar' ? moteText("日历") : row.source.kind === 'coding-agent' ? moteText("编码对话") : moteText("文件")} · ${row.source.name} · ${row.source.retention === 'reference' ? moteText("仅文件目录") : row.source.retention === 'archive' ? moteText("原件归档") : moteText("内容索引，原件留本机")}`;
     const detail = document.createElement('p'); detail.className = 'helper profile-path'; detail.textContent = row.source.path || moteText("所选系统日历");
     const status = document.createElement('p'); status.className = 'helper'; status.textContent = moteText("{0} · {1} 项 · 待传 {2} · 跳过 {3}{4}", row.source.enabled ? row.message : moteText("本机已暂停"), row.items, row.pending, row.skipped, row.lastSyncAt ? moteText(" · 最近同步 ") + new Date(row.lastSyncAt).toLocaleString(getLocale()) : '');
     const actions = document.createElement('div'); actions.className = 'actions';
@@ -867,3 +868,14 @@ for(const id of ['compression-quality','compression-side'])byId(id).addEventList
 byId('compression-zoom').addEventListener('change',compressionZoom);
 for(const [source,target] of [['compression-before-pane','compression-after-pane'],['compression-after-pane','compression-before-pane']])byId(source).addEventListener('scroll',()=>{const a=byId(source),b=byId(target);if(b.scrollLeft!==a.scrollLeft)b.scrollLeft=a.scrollLeft;if(b.scrollTop!==a.scrollTop)b.scrollTop=a.scrollTop;});
 byId('compression-apply').addEventListener('click',()=>{const quality=readInput('compression-quality'),side=readInput('compression-side');showPage('developer');byId<HTMLInputElement>('jpeg-quality').value=quality;byId<HTMLInputElement>('capture-max-side').value=side;markSettingsDirty();feedback(moteText("压缩参数已带回设置，请点击保存后应用。"),true);});
+
+async function loadStorageStatistics(): Promise<void> {
+ const target=byId('storage-statistics');target.textContent=moteText("正在读取…");
+ try {const report=await desktopApi.storageStatistics();target.replaceChildren();
+ const total=document.createElement('h2');total.textContent=moteText("存储空间")+': '+(report.bytes/1048576).toFixed(2)+' MiB · '+report.files+' '+moteText("文件");target.append(total);
+ if(report.skipped){const warning=document.createElement('p');warning.textContent=moteText("部分文件无法读取，统计可能不完整。");target.append(warning);}
+ for(const [title,rows] of [[moteText("按文件类型"),report.types],[moteText("按日期"),report.days]] as const){const section=document.createElement('section');section.className='panel';const heading=document.createElement('h2');heading.textContent=title;section.append(heading);const max=Math.max(1,...rows.map(r=>r.bytes));
+ for(const row of rows){const line=document.createElement('div');line.className='storage-bar';const label=document.createElement('span');label.textContent=row.key;const bar=document.createElement('meter');bar.min=0;bar.max=max;bar.value=row.bytes;const value=document.createElement('span');value.textContent=(row.bytes/1048576).toFixed(2)+' MiB';line.append(label,bar,value);section.append(line);}target.append(section);}
+ }catch{target.textContent=moteText("统计读取失败，请重试。");}
+}
+byId('storage-refresh').addEventListener('click',()=>void loadStorageStatistics());

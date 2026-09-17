@@ -8,8 +8,8 @@ type Row = [string, string | number | boolean | undefined];
 const bool = (value: boolean | undefined) => value === undefined ? undefined : value ? moteText("是") : moteText("否");
 const time = (value: string | undefined) => value === undefined ? undefined : dateTime(value);
 
-export function Metadata({metadata,source,modifiedAt}: {metadata?:RecordMetadata;source?:SourceMetadata;modifiedAt?:string}) {
-  if (!metadata && !source && !modifiedAt) return <p className="field-note">{moteText("此记录未上报额外元数据（早期客户端或系统未提供）。")}</p>;
+export function Metadata({metadata,source,modifiedAt,stateSeries}: {stateSeries?:import('@mote/shared').StateSeries;metadata?:RecordMetadata;source?:SourceMetadata;modifiedAt?:string}) {
+  if (!metadata && !source && !modifiedAt && !stateSeries) return <p className="field-note">{moteText("此记录未上报额外元数据（早期客户端或系统未提供）。")}</p>;
   const d=metadata?.device,s=metadata?.state,c=metadata?.capture,f=source?.file;
   const network:Record<string,string>={none:moteText("无网络"),wifi:'Wi-Fi',cellular:moteText("移动网络"),ethernet:moteText("以太网"),other:moteText("其他"),unknown:moteText("未知")};
   const thermal:Record<string,string>={unknown:moteText("未知"),nominal:moteText("正常"),fair:moteText("略热"),serious:moteText("严重"),critical:moteText("临界")};
@@ -33,6 +33,7 @@ export function Metadata({metadata,source,modifiedAt}: {metadata?:RecordMetadata
     [moteText("提供方创建时间"),time(source?.provider?.createdAt)],[moteText("提供方更新时间"),time(source?.provider?.updatedAt)],
   ];
   return <details className="metadata-details"><summary>{moteText("采集与来源元数据")}</summary>
+    <>{stateSeries&&<p className="field-note">{moteText("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。",stateSeries.samples.length,dateTime(stateSeries.samples.at(-1)!.at))}</p>}</>
     <dl>{rows.filter(([,value])=>value!==undefined).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{String(value)}</dd></div>)}</dl>
     <p className="field-note">{moteText("仅显示上报时可获取的字段。状态是当时的观察值；缺失不代表否或零。")}</p>
     {(n||e)&&<p className="field-note">{moteText("原始系统事件，不表示你已阅读通知或正在执行某项任务。熄屏不等于锁定；服务中断期间不补造事件。系统可能隐藏敏感通知。")}</p>}

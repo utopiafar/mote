@@ -46,6 +46,7 @@ export interface Config {
 export type PublicConfig = Omit<Config, 'token'> & { tokenConfigured: boolean };
 export type ConfigUpdate = Omit<Config, 'token' | 'deviceId'> & { token?: string; confirmLocalBacklog?: boolean };
 export interface CaptureEvent {
+  stateSeries?: import('@mote/shared/state-series').StateSeries;
   id: string;
   deviceId: string;
   deviceName: string;
@@ -108,6 +109,7 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
+  storageStatistics(): Promise<import('@mote/shared/storage-statistics').StorageStatistics>;
   language(): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
   setLanguage(preference: import('@mote/shared/i18n').LanguagePreference): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;
   restartForStorageRecovery(): Promise<void>;
@@ -149,7 +151,7 @@ export interface DesktopApi {
   updateNoteDraft(input: import('./note-draft').NoteDraft): Promise<import('./note-draft').NoteDraft>;
   saveNote(input: import('./note-draft').NoteDraft): Promise<{ id: string; draft: import('./note-draft').NoteDraft }>;
   openCentral(page?: string): Promise<void>;
-  exportSupport(): Promise<{ canceled: boolean }>;
+  exportSupport(hours?:number): Promise<{ canceled: boolean }>;
   exportDiagnostics(): Promise<{ canceled: boolean }>;
   readRawEvents(): Promise<string>;
   readEvents(): Promise<import('./support').SupportEvent[]>;

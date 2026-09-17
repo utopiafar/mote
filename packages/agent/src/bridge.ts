@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { displayTime } from './time.js';
-import {fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime} from '@mote/shared';
+import {stateSeriesSchema,fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime} from '@mote/shared';
 import type {
   ContextReader,
   ContextRecord,
@@ -26,6 +26,7 @@ export const TOOL_NAMES = [
   "source_items",
   "source_history",
   "memories",
+  "read_file_evidence",
   "file_chunks",
   "changes",
 ] as const;
@@ -94,6 +95,7 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
   const contentAt = sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
   return {
     ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
+    ...(stateSeriesSchema.safeParse(record.stateSeries).success?{stateSeries:stateSeriesSchema.parse(record.stateSeries)}:{}),
     id: record.id,
     capturedAt: record.capturedAt,
     displayCapturedAt: displayTime(record.capturedAt, timeZone),
@@ -259,7 +261,7 @@ export async function startBridge(
         let data=seedEvidence.filter(record=>(args.ids as string[]).includes(record.id));
         if(args.offset!==undefined||args.length!==undefined){
           const offset=args.offset??0,length=args.length??2000;
-          if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw Error('Invalid extraction evidence range');
+          if(!Number.isSafeInteger(offset)||Number(offset)<0||Number(offset)>10000000||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw Error('Invalid extraction evidence range');
           data=(args.ids as string[]).map(id=>{
             const record=permitted.get(id)!;
             if(!ranges.some(r=>r.id===id&&Number(offset)>=r.offset&&Number(offset)+Number(length)<=r.offset+r.length)||splitsPair(record.ocrText,Number(offset))||splitsPair(record.ocrText,Number(offset)+Number(length)))throw Error('Evidence range is outside this extraction batch');
@@ -279,6 +281,13 @@ export async function startBridge(
         value = await reader.devices();
         if (bounds.deviceId && Array.isArray(value)) value = value.filter(device => device.deviceId === bounds.deviceId);
         if (Array.isArray(value)) value = value.map(device => projectDevice(device, bounds.timeZone));
+      }
+      else if(tool==='read_file_evidence'){
+        if(typeof args.id!=='string'||!records.has(args.id))throw Error('Discover the file before requesting evidence');
+        const offset=args.offset??0,length=args.length??8000;if(!Number.isSafeInteger(offset)||Number(offset)<0||Number(offset)>10000000||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>16000)throw Error('Invalid text range');
+        const result=await reader.readFileEvidence?.({...range({},bounds),id:args.id,offset:Number(offset),length:Number(length)})??{status:'unavailable'};
+        const record=result.record?project(result.record,0,Number(length),bounds.timeZone):undefined;
+        value={...result,record};if(record)memoryEvidence.push(record);
       }
       else if(tool==='file_chunks'){
         if(typeof args.id!=='string'||!records.has(args.id))throw Error('Discover the file before reading its chunks');

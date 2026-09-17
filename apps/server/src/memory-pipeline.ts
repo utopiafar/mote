@@ -1,3 +1,4 @@
+import {requestLocale} from './i18n.js';
 import {memoryProfile} from './memory-profiles.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -9,9 +10,9 @@ import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_
 type Chunk=EvidenceRange&{profile?:'personal'|'coding';profileVersion?:string;group?:string;fingerprint:string;key:string};
 export type MemoryBatch={id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];errorCode?:string};
 type StoredBatch=MemoryBatch&{chunks:Chunk[]};
-export type MemoryJob={id:string;modelProfileId?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];errorCode?:string};
+export type MemoryJob={language?:'zh-CN'|'en';id:string;modelProfileId?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];errorCode?:string};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
-export type MemoryPipelineQuery={modelProfileId?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string};
+export type MemoryPipelineQuery={language?:'zh-CN'|'en';modelProfileId?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string};
 export type MemoryPipelineOptions={store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
 
 /** Durable work references original evidence; jobs never persist extra copies of private text. */
@@ -53,7 +54,7 @@ export class MemoryPipeline {
     for(const id of evidenceIds){
       const record=this.options.memories.readEvidence([id])[0];
       if(!record||!this.options.memories.isCurrentEvidence(id))throw new StoreError('Memory input evidence is missing or superseded',409);
-      if(!record.ocrText.length||record.provenance?.layer==='reference'){skippedChunks++;continue;}
+      if(!record.ocrText.length||record.provenance?.layer==='reference'||record.provenance?.document?.fileIndex?.coverage==='lightweight'){skippedChunks++;continue;}
       const fingerprint=memoryEvidenceFingerprint(record),profile=memoryProfile(record);
       for(let offset=0;offset<record.ocrText.length;){
         let end=Math.min(offset+budget,record.ocrText.length);
@@ -67,7 +68,7 @@ export class MemoryPipeline {
     const groups:Chunk[][]=[];let group:Chunk[]=[],characters=0;
     for(const chunk of all){if(group.length&&(group[0].group!==chunk.group||characters+chunk.length>budget||group.length>=20)){groups.push(group);group=[];characters=0;}group.push(chunk);characters+=chunk.length;}
     if(group.length)groups.push(group);
-    const now=new Date().toISOString(),job:MemoryJob={id:randomUUID(),modelProfileId:input.modelProfileId,importJobId:input.importJobId,originKey:input.originKey,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
+    const now=new Date().toISOString(),job:MemoryJob={language:requestLocale.getStore()??'zh-CN',id:randomUUID(),modelProfileId:input.modelProfileId,importJobId:input.importJobId,originKey:input.originKey,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
     const batches:StoredBatch[]=groups.map((chunks,index)=>({id:randomUUID(),index,status:'pending',chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),attempts:0,memoryIds:[]}));
     this.store.db.exec('BEGIN IMMEDIATE');
     try{
@@ -125,7 +126,7 @@ export class MemoryPipeline {
           batch.attempts++;this.saveBatch(batch);
           const profile=memoryProfile(this.options.memories.readEvidence([chunks[0].id])[0]);
           const question=profile.prompt+(feedback?'\n\nHost validation rejected the previous output. '+feedback.repairInstruction+' Generate a fresh response from the same supplied evidence. No invalid memories have been saved.':'');
-          const result=await this.options.query({modelProfileId:job.modelProfileId,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(chunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone});
+          const result=await this.options.query({language:job.language,modelProfileId:job.modelProfileId,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(chunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone});
           if(this.closed){batch.status='pending';batch.errorCode='interrupted';this.saveBatch(batch);break;}
           try{
             this.options.memories.extract(result,model,{profile:profile.id,skillVersion:profile.id==='coding'?profile.version:job.skillVersion,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),onSaved:items=>{

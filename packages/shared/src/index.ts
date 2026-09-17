@@ -1,8 +1,11 @@
 export * from './usage.js';
 import { z } from 'zod';
 import {provenanceSchema} from './sources.js';
+import {stateOnly,stateSeriesSchema} from './state-series.js';
+export * from './state-series.js';
 import {recordMetadataSchema,ocrSchema,type OcrState,type MediaMetadata} from './metadata.js';
 export * from './sources.js';
+export * from './file-index.js';
 export * from './metadata.js';
 export * from './imports.js';
 export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource } from './configuration.js';
@@ -19,6 +22,7 @@ export const privacySchema = z.object({
 export const captureSchema = z.object({
   id: z.string().uuid(), deviceId: z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/),
   deviceName: z.string().min(1).max(200), platform: platformSchema,
+  stateSeries: stateSeriesSchema.optional(),
   capturedAt: z.string().max(64).datetime({offset:true}), durationMs: z.number().int().min(0).max(300000),
   appId: z.string().max(300).default(''), appName: z.string().max(200).default(''),
   windowTitle: z.string().max(2000).default(''),
@@ -31,6 +35,7 @@ export const captureSchema = z.object({
   privacy: privacySchema.default({excluded:false,redacted:false,mode:'local'}),
 }).strict().superRefine((v,ctx) => {
   if (v.appId && !v.appName.trim()) ctx.addIssue({code:'custom',path:['appName'],message:'An application identifier requires a nonblank application name'});
+  if(v.stateSeries){const series=v.stateSeries.samples;const first=series[0];if(!first){ctx.addIssue({code:'custom',message:'Empty state series'});return;}if(!stateOnly(v)||first.at!==v.capturedAt||first.durationMs!==v.durationMs||series.some((s,i)=>i>0&&(Date.parse(s.at)<=Date.parse(series[i-1].at)||Date.parse(s.at)-Date.parse(series[i-1].at)>300000))||Date.parse(series.at(-1)!.at)-Date.parse(first.at)>21600000)ctx.addIssue({code:'custom',message:'Invalid state observation series'});}
   if (v.metadata?.capture?.deduplication && (v.source !== 'screen' || v.imageBase64 || v.imageMime || v.ocrText || v.ocr?.status !== 'disabled')) ctx.addIssue({code:'custom',message:'Duplicate screenshots require metadata only and disabled OCR'});
   if (v.ocr && v.source !== 'screen') ctx.addIssue({code:'custom',message:'OCR processing state belongs only to screenshots'});
   if (v.ocr?.status === 'pending' && (!v.imageBase64 || v.ocrText)) ctx.addIssue({code:'custom',message:'Pending OCR requires a screenshot without recognized text'});
@@ -101,7 +106,7 @@ export type CaptureRecord = Omit<CaptureInput,'imageBase64'|'imageMime'> & {
   indexingStatus: 'text_ready'|'pending'|'indexed'|'failed'; summary?: string;
 };
 export type CapturePreview = Pick<CaptureRecord,'id'|'deviceId'|'deviceName'|'platform'|'capturedAt'|'source'|'appId'|'appName'|'windowTitle'|'durationMs'> & {
-  hasImage: boolean; ocr: OcrState; textPreview: string; sizeBytes?: number;
+  stateSummary?: {count:number;lastAt:string}; hasImage: boolean; ocr: OcrState; textPreview: string; sizeBytes?: number;
   media?: MediaMetadata;
 };
 export const heartbeatSchema = z.object({

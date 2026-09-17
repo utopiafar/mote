@@ -149,7 +149,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     when (code) {
                         200, 201 -> {
                             val bytes = event.toString().toByteArray(Charsets.UTF_8).size.toLong()
-                            queue.acknowledge(id, bytes, config.uploadedRetentionDays)
+                            queue.acknowledge(id, bytes, config.uploadedRetentionDays, observations = event.optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 0)
                             Diagnostics(applicationContext).add("uploadBytes", bytes)
                             SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                             settings.syncStatus("uploading", MoteI18n.text("已收到上传确认"), uploaded = true)

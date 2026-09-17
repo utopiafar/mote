@@ -168,7 +168,7 @@ describe.skipIf(process.platform !== 'darwin')('per-application collection bound
       collector.stop(); await collector.settleCapture();
       const changed = { ...defaultConfig(), token: 'synthetic-token', nsfwEnabled: false, defaultCollection: 'content' as const }; collector.updateConfig(changed); now += 15000; await collector.start(); await collector.settleCapture();
       const events = (await queue.exportArchive()).records.map(r => r.event);
-      expect(events.map(e => e.durationMs)).toEqual([0, 15000, 0, 0]); expect(events.map(e => e.source)).toEqual(['activity','activity','activity','screen']);
+      expect(events.flatMap(e=>e.stateSeries?.samples.map(s=>s.durationMs)??[e.durationMs])).toEqual([0,15000,0,0]);expect(events.map(e=>e.source)).toEqual(['activity','screen']);
     } finally { clock.mockRestore(); }
   });
   it('does not send metadata when disabled, and preserves the opted-in stored record after settings change', async () => {

@@ -9,10 +9,11 @@ beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-cli-'))); items = []; fail = false;
   server = createServer(async (req, res) => {
     const buffers: Buffer[] = []; for await (const chunk of req) buffers.push(chunk);
-    const body = JSON.parse(Buffer.concat(buffers).toString()); res.setHeader('Content-Type', 'application/json');
+    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({revision:null}));return;}
+    const manifest = JSON.parse(Buffer.concat(buffers).toString()); const body = manifest.item ?? manifest; res.setHeader('Content-Type', 'application/json');
     if (req.method === 'POST') res.end(JSON.stringify(body));
     else if (req.method === 'PATCH') res.end(JSON.stringify({ ...body, id: req.url!.split('/').at(-1) }));
-    else { items.push(body); if (fail) { res.destroy(); return; } res.end(JSON.stringify({ id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: req.url!.split('/')[3], externalId: body.externalId, revision: body.revision, duplicate: false })); }
+    else { items.push(body); if (fail) { res.destroy(); return; } res.end(JSON.stringify({ id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: manifest.sourceId??req.url!.split('/')[3], externalId: body.externalId, revision: body.revision, duplicate: false })); }
   });
   await new Promise<void>((done, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', done); });
   url = 'http://127.0.0.1:' + (server.address() as { port: number }).port;

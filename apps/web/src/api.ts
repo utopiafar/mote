@@ -30,6 +30,7 @@ export interface Capture {
   blobHash: string | null;
   source: CaptureRecord['source'];
   privacy: { redacted: boolean; mode: string; reason?: string; collection?: 'content' | 'activity' };
+  stateSeries?: CaptureRecord['stateSeries'];
   metadata?: RecordMetadata;
   provenance?: CaptureRecord['provenance'];
   indexingStatus: string;

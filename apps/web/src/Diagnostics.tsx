@@ -21,6 +21,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
   const [revision,setRevision]=useState(0);
   const [busy,setBusy]=useState(false);
   const [exporting,setExporting]=useState(false);
+  const [hours,setHours]=useState(24);
   const [error,setError]=useState('');
   useEffect(()=>{
     const controller=new AbortController();let active=true;
@@ -36,7 +37,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
   async function download() {
     setExporting(true);setError('');
     try{
-      const response=await api.raw('/api/support-bundle');
+      const response=await api.raw('/api/support-bundle?after='+encodeURIComponent(new Date(Date.now()-hours*3600000).toISOString())+'&before='+encodeURIComponent(new Date().toISOString()));
       const url=URL.createObjectURL(await response.blob());
       const anchor=document.createElement('a');anchor.href=url;anchor.download=`mote-support-${new Date().toISOString().slice(0,10)}.json`;anchor.click();
       setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -50,10 +51,10 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
     <div className="section-heading"><div><h2 id="diagnostics-title">{moteText("运行诊断")}</h2><p>{moteText("环境 ·")}{' '}{profile||'legacy'}{' '}{moteText("· 中央节点")}</p></div>
       <div className="diagnostics-actions">
         <button className="button subtle" onClick={()=>setRevision(n=>n+1)} disabled={busy}><RefreshCw size={15} className={busy?'spin':''}/>{moteText("刷新诊断")}</button>
-        <button className="button subtle" onClick={()=>void download()} disabled={exporting}><ArrowDownToLine size={15}/>{exporting?moteText("正在导出…"):moteText("导出诊断包")}</button>
+        <select aria-label={moteText("导出时间范围")} value={hours} onChange={e=>setHours(Number(e.target.value))}><option value={1}>{moteText("最近 1 小时")}</option><option value={24}>{moteText("最近 24 小时")}</option><option value={168}>{moteText("最近 7 天")}</option></select><button className="button subtle" onClick={()=>void download()} disabled={exporting}><ArrowDownToLine size={15}/>{exporting?moteText("正在导出…"):moteText("导出诊断包")}</button>
       </div>
     </div>
-    <p className="fine-print">{moteText("诊断包包含运行状态、数量、耗时和最近事件，不包含笔记、截图、模型对话或访问令牌。客户端的采集、电量和本地队列诊断从各自 App 导出。")}</p>
+    <p className="fine-print">{moteText("导出所选时段内全部已保留日志；日志轮转前已清理的部分无法恢复，导出包会注明覆盖范围。")}</p><p className="fine-print">{moteText("诊断包包含运行状态、数量、耗时和最近事件，不包含笔记、截图、模型对话或访问令牌。客户端的采集、电量和本地队列诊断从各自 App 导出。")}</p>
     {error&&<div className="notice error" role="alert">{error}</div>}
     {snapshot&&<>
       <div className="diagnostics-metrics">

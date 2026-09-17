@@ -1,3 +1,4 @@
+import {isStateExtension,samples as stateSamples} from '@mote/shared/state-series';
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
 import {fileSchema} from './file-schema.js';
@@ -57,6 +58,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS capture_ocr_receipts (id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE, original_fingerprint TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS source_connections (id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS source_versions (source_id TEXT NOT NULL,external_id TEXT NOT NULL,revision TEXT NOT NULL,capture_id TEXT NOT NULL UNIQUE,hash TEXT NOT NULL,PRIMARY KEY(source_id,external_id,revision));
+      CREATE TABLE IF NOT EXISTS file_evidence_links(parent_id TEXT NOT NULL,capture_id TEXT NOT NULL,PRIMARY KEY(parent_id,capture_id));
       CREATE TABLE IF NOT EXISTS source_heads (source_id TEXT NOT NULL,external_id TEXT NOT NULL,capture_id TEXT NOT NULL,observed_at TEXT NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(source_id,external_id));
       CREATE INDEX IF NOT EXISTS source_head_capture ON source_heads(capture_id);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL);
@@ -90,6 +92,7 @@ export class Store {
         INSERT INTO settings(key,value) VALUES('gallery-v1','1'); COMMIT;`);
     }
     this.db.function('mote_ocr_status',{deterministic:true},json=>captureOcrState(JSON.parse(String(json))).status);
+    this.db.function('mote_context_end',{deterministic:true},json=>{const c=JSON.parse(String(json));return new Date(c.stateSeries?.samples?.at(-1)?.at??sourceContentTime(c)).toISOString();});
     this.db.function('mote_context_time',{deterministic:true},json=>new Date(sourceContentTime(JSON.parse(String(json)))).toISOString());
     // Add precise dependency rows for archives written before this table existed.
     this.db.exec("INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) SELECT memories.id,entry.value FROM memories,json_each(memories.json,'$.evidenceIds') entry");
@@ -118,7 +121,7 @@ export class Store {
   }
   private clauses(range:Range={}) {
     const clauses:string[]=["(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
-    if(range.after) {clauses.push('mote_context_time(json) >= ?');values.push(new Date(range.after).toISOString());}
+    if(range.after) {clauses.push('mote_context_end(json) >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push('mote_context_time(json) < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
     if(range.appId!==undefined) {
@@ -139,7 +142,8 @@ export class Store {
   }
   async prepare(raw:unknown):Promise<Prepared> {
     const input=captureSchema.parse(raw); input.capturedAt=new Date(input.capturedAt).toISOString();
-    if(Date.parse(input.capturedAt)>Date.now()+86_400_000)throw new StoreError('Capture timestamp is more than one day in the future');
+    if(input.stateSeries)for(const sample of input.stateSeries.samples)sample.at=new Date(sample.at).toISOString();
+    if(Date.parse(input.stateSeries?.samples.at(-1)?.at??input.capturedAt)>Date.now()+86_400_000)throw new StoreError('Capture timestamp is more than one day in the future');
     let bytes:Buffer|undefined; let hash:string|null=null;
     if(input.imageBase64) {
       if(!/^[A-Za-z0-9+/]*={0,2}$/.test(input.imageBase64)||input.imageBase64.length%4!==0)throw new StoreError('Invalid base64 image');
@@ -169,6 +173,14 @@ export class Store {
   private insert(p:Prepared) {
     const prior=this.db.prepare('SELECT fingerprint,blob_hash,index_status,json,mime FROM captures WHERE id=?').get(p.input.id) as {fingerprint:string;blob_hash:string|null;index_status:string;json:string;mime:string|null}|undefined;
     if(prior) {
+      if(p.input.stateSeries){const previous=JSON.parse(prior.json) as CaptureInput;
+        if(isStateExtension(previous,p.input)){
+          const json=JSON.stringify(p.input);this.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(prior.json)));
+          this.db.prepare('UPDATE captures SET json=?,fingerprint=? WHERE id=?').run(json,p.fingerprint,p.input.id);
+          return {id:p.input.id,duplicate:true,blobHash:null,indexingStatus:prior.index_status};
+        }
+        if(isStateExtension(p.input,previous))return {id:p.input.id,duplicate:true,blobHash:null,indexingStatus:prior.index_status};
+      }
       const original=this.db.prepare('SELECT original_fingerprint FROM capture_ocr_receipts WHERE id=?').get(p.input.id) as {original_fingerprint:string}|undefined;
       if(prior.fingerprint!==p.fingerprint && original?.original_fingerprint!==p.fingerprint){
         const previous=captureSchema.innerType().parse({...JSON.parse(prior.json),imageMime:prior.mime??undefined});
@@ -260,6 +272,10 @@ export class Store {
   }
   /** Called inside the evidence mutation transaction so in-flight extraction cannot revive old claims. */
   invalidateMemoryEvidence(id:string,deleted=false) {
+    const excerpts=this.db.prepare('SELECT capture_id FROM file_evidence_links WHERE parent_id=?').all(id) as {capture_id:string}[];
+    this.db.prepare('DELETE FROM file_evidence_links WHERE parent_id=?').run(id);
+    for(const excerpt of excerpts){this.invalidateMemoryEvidence(excerpt.capture_id,deleted);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(excerpt.capture_id);if(deleted){this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(excerpt.capture_id);this.db.prepare('DELETE FROM captures WHERE id=?').run(excerpt.capture_id);}}
+
     this.db.exec('DELETE FROM insights');
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='working_memories'").get())this.db.exec('DELETE FROM working_memories');
     if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
@@ -271,7 +287,7 @@ export class Store {
     const page=this.list(range);
     const items:CapturePreview[]=page.items.map(record=>({id:record.id,deviceId:record.deviceId,deviceName:record.deviceName,platform:record.platform,
       capturedAt:record.capturedAt,source:record.source,appId:record.appId,appName:record.appName,windowTitle:record.windowTitle.slice(0,300),
-      durationMs:record.durationMs,hasImage:Boolean(record.blobHash),ocr:captureOcrState(record),
+      ...(record.stateSeries?{stateSummary:{count:record.stateSeries.samples.length,lastAt:record.stateSeries.samples.at(-1)!.at}}:{}),durationMs:record.durationMs,hasImage:Boolean(record.blobHash),ocr:captureOcrState(record),
       sizeBytes:Buffer.byteLength(record.ocrText)+(record.blobHash?Number(this.db.prepare('SELECT bytes FROM blobs WHERE hash=?').get(record.blobHash)?.bytes??0):Number(record.provenance?.metadata?.file?.sizeBytes??0)),
       ...(record.metadata?.media?{media:record.metadata.media}:{}),
       textPreview:(record.source==='media'?(record.metadata?.media?.sessions.map(s=>[s.title,s.artist,s.appName].filter(Boolean).join(' · ')).join(' / ')||({available:moteText("未观察到媒体会话"),disabled:moteText("媒体采集已关闭"),permission_required:moteText("媒体权限未授予"),unavailable:moteText("媒体信息暂不可用")}[record.metadata?.media?.status??'unavailable'])):record.source==='notification'||record.source==='device_event'?systemEventText(record.metadata):record.ocrText).slice(0,160)}));
@@ -419,15 +435,16 @@ export class Store {
   activity(range:Range={}):Activity {
     // Assign overlapping sample intervals once per device before applying content/app filters.
     // A filtered query must not reassign another app's already measured interval to its own samples.
-    const extended:Range={deviceId:range.deviceId,after:range.after,before:range.before?new Date(Date.parse(range.before)+300000).toISOString():undefined};
+    const extended:Range={deviceId:range.deviceId,after:range.after?new Date(Date.parse(range.after)-21600000).toISOString():undefined,before:range.before?new Date(Date.parse(range.before)+300000).toISOString():undefined};
     const {where,values}=this.clauses(extended);
     const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY captured_at ASC,id ASC`).all(...values) as unknown as Row[];
     type Counts={durationMs:number;captures:number;activityEvents:number;contentCaptures:number};
     const apps=new Map<string,Counts&{appId:string;appName:string}>(),devices=new Map<string,Counts&{deviceId:string;deviceName:string}>(),ends=new Map<string,number>();
     const lower=range.after?Date.parse(range.after):-Infinity,upper=range.before?Date.parse(range.before):Infinity;
     let totalDurationMs=0,captures=0,activityEvents=0,contentCaptures=0;
-    for(const row of rows) {
-      const c=this.record(row);if(c.source!=='screen'&&c.source!=='activity')continue;
+    const observations=rows.flatMap(row=>{const c=this.record(row);return stateSamples(c).map(s=>({...c,capturedAt:s.at,durationMs:s.durationMs}));}).sort((a,b)=>a.capturedAt.localeCompare(b.capturedAt)||a.id.localeCompare(b.id));
+    for(const c of observations) {
+      if(c.source!=='screen'&&c.source!=='activity')continue;
       const t=Date.parse(c.capturedAt),end=Math.min(t,upper),start=Math.max(t-c.durationMs,lower,ends.get(c.deviceId)??-Infinity),durationMs=Math.max(0,end-start);
       if((t<lower||t>=upper)&&!durationMs)continue;
       if(durationMs>0)ends.set(c.deviceId,Math.max(ends.get(c.deviceId)??-Infinity,end));
@@ -498,10 +515,10 @@ export class Store {
   prune(before:string) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const removed=this.db.prepare('SELECT id FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions)').all(before) as {id:string}[];
-      this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
-      this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
-      const result=this.db.prepare('DELETE FROM captures WHERE captured_at < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
+      const removed=this.db.prepare('SELECT id FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)').all(before) as {id:string}[];
+      this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
+      this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
+      const result=this.db.prepare('DELETE FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
       if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();return Number(result.changes);
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }

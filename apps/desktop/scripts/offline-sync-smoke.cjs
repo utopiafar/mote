@@ -32,7 +32,7 @@ const server = createServer(async (req, res) => {
     assert.equal(req.headers.authorization, 'Bearer ' + token);
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/captures') captureBodies.push(body);
-    if (req.method === 'PUT' && req.url.endsWith('/items')) sourceBodies.push(body);
+    if (req.method === 'PUT' && (req.url.endsWith('/items') || req.url === '/api/file-sync/v1/revisions')) sourceBodies.push(body.item ?? body);
     // Forward to the real Mote server API/SQLite fixture, retaining transport payloads for equality checks.
     const response = await fetch(actualOrigin + req.url, { method: req.method, headers: { authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error' });
     const text = await response.text(); res.writeHead(response.status); res.end(text);

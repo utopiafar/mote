@@ -2,6 +2,7 @@ import { moteText, getLocale } from '@mote/shared/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { type Api, errorMessage } from './api';
+declare const __MOTE_WEB_VERSION__: string;
 type Status = { currentVersion: string; latestVersion: string | null; repository: string; channel: string; state: string; error?: string; checkedAt: string | null; available: boolean; verified: boolean; releaseUrl: string | null; commands: {check: string;update: string;rollback: string} | null };
 export function SoftwareUpdate({api}: {api: Api}) {
   const [status,setStatus] = useState<Status>(), [busy,setBusy] = useState(false), [error,setError] = useState('');
@@ -11,7 +12,7 @@ export function SoftwareUpdate({api}: {api: Api}) {
   return <section className="panel software-update" aria-labelledby="software-update-title">
     <div className="section-heading"><div><h2 id="software-update-title">{moteText("软件版本与更新")}</h2><p>{moteText("更新替换程序，保留原环境设置、模型、队列和资料库。")}</p></div><button className="button subtle" disabled={busy} onClick={()=>void check()}><RefreshCw size={15} className={busy?'spin':''}/>{busy?moteText("正在检查…"):moteText("检查新版本")}</button></div>
     {error&&<p className="notice error" role="alert">{error}</p>}
-    {status&&<><p>{moteText("当前版本")}{' '}<strong>{status.currentVersion}</strong> · {status.repository} · {status.channel==='stable'?moteText("正式渠道"):moteText("预览渠道")}</p>
+    {status&&<><p>{moteText("网页版本")} <strong>{__MOTE_WEB_VERSION__}</strong></p>{status.currentVersion!==__MOTE_WEB_VERSION__&&<p className="notice error" role="alert">{moteText("网页与服务版本不一致，请重新构建网页并刷新页面。")}</p>}<p>{moteText("当前版本")}{' '}<strong>{status.currentVersion}</strong> · {status.repository} · {status.channel==='stable'?moteText("正式渠道"):moteText("预览渠道")}</p>
       {status.state==='idle'&&<p>{moteText("点击检查后连接 GitHub，不上传个人资料或中央令牌。")}</p>}
       {status.state==='error'&&<p role="alert">{status.error==='release_not_found'?moteText("此渠道暂时没有可用的签名发布版本。"):moteText("更新检查未通过，现有程序和设置保持原样；稍后可重试。")}</p>}
       {status.verified&&<p>{status.available?moteText("发现 {0}，发布签名已验证。", status.latestVersion):moteText("已是最新版本，发布签名已验证。")} {status.releaseUrl&&<a href={status.releaseUrl} target="_blank" rel="noreferrer">{moteText("查看版本说明与安装包")}</a>}</p>}

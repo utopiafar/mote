@@ -80,7 +80,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         val finished = FileUpload.sync(applicationContext, source, config, ::stillSelected)
                         if (!finished) { more = true; if (applicationContext.fileArchives().next(source.id) == null) delayedFiles = true }
                         store.status(source.id, if (finished) "synced" else "scanned")
-                        if (finished) settings.syncStatus("uploading", MoteI18n.text("文件原件已归档；手机原文件保留"), uploaded = true)
+                        if (finished) settings.syncStatus("uploading", if (source.retention == "archive") MoteI18n.text("文件原件已归档；手机原文件保留") else MoteI18n.text("文件索引或目录已同步；原件留本机"), uploaded = true)
                         continue
                     }
                     while (submitted < 20) {

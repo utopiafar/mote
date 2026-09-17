@@ -17,6 +17,9 @@ data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes:
 class DurableQueue(private val dir: File, private val cipher: ByteCipher, createMissing: Boolean = true, private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
     companion object {
         private val lock = Any()
+        private val stateHeads = object : LinkedHashMap<String, JSONObject>(4, .75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?) = size > 4
+        }
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
         // 100,000 UTF-16 code units can require six JSON bytes each, plus result fields.
         internal const val OCR_RESERVE_BYTES = 600_256L
@@ -164,12 +167,14 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             !event.has("imageMime") && !event.has("imageBase64")
     }
     private fun capacityUpperBound(): Long = diskBytes() + browseIndex().pendingDiskBytes() + browseIndex().reservationUpperBound(browseFiles())
-    fun enqueue(event: JSONObject, image: ByteArray?, maxBytes: Long) {
+    fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long) {
         // Sufficient upper-bound headroom permits capture before a legacy index has finished
         // rebuilding. Otherwise discover the exact reservation without monopolizing the lock.
+        val event = rawEvent
         val maximumAddition = event.toString().toByteArray().size + 4096L + (image?.size ?: 0) + ocrReserve(event)
         if (guarded { capacityUpperBound() > maxBytes - maximumAddition }) prepareIndex()
         guarded {
+        val event = StateSeries.extend(stateHeads[dir.absolutePath], rawEvent)
         require(!event.getJSONObject("privacy").optBoolean("excluded")) { "Excluded captures must never be queued" }
         fun requireAppName(value: JSONObject) {
             if (value.optString("appId").isNotEmpty()) require(value.opt("appName") is String && value.getString("appName").isNotBlank() && value.getString("appName").length <= 200) { MoteI18n.text("应用标识必须同时包含应用名称") }
@@ -194,7 +199,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         }
         val hash = image?.let { MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { byte -> "%02x".format(byte) } }
         val stored = JSONObject(event.toString()).put("_blob", hash)
-        if (file.exists()) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { MoteI18n.text("相同记录 ID 的内容发生变化") }; return@guarded }
+        if (file.exists() && SourceRules.canonical(read(file).apply { localFields.forEach(::remove) }) == SourceRules.canonical(stored)) return@guarded
+        if (file.exists() && !event.has("stateSeries")) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { MoteI18n.text("相同记录 ID 的内容发生变化") }; return@guarded }
         val blob = hash?.let { File(dir, "$it.blob") }
         val body = stored.toString().toByteArray()
         val added = body.size + 2048L + if (blob == null || blob.exists()) 0 else image!!.size + 64L
@@ -203,6 +209,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (upperBound > maxBytes - required && bytes() + browseIndex().pendingDiskBytes() > maxBytes - required) throw QueueFull()
         if (blob != null && !blob.exists()) atomic(blob, image!!)
         atomic(file, body)
+        stateHeads[dir.absolutePath] = JSONObject(event.toString())
         onChange?.invoke(when (source) { "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
         }
     }
@@ -234,10 +241,11 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         result
         }
     }
-    fun acknowledge(id: String, uploadedBytes: Long = 0, retentionDays: Int = 0, now: Long = System.currentTimeMillis()): Unit = guarded {
+    fun acknowledge(id: String, uploadedBytes: Long = 0, retentionDays: Int = 0, now: Long = System.currentTimeMillis(), observations: Int? = null): Unit = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return
         val record = read(file)
+        if (observations != null && (record.optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 0) > observations) return
         if (record.optBoolean("_uploaded")) return
         if (record.optJSONObject("ocr")?.optString("status") == "pending") atomic(file, record.put("_uploaded", true).toString().toByteArray())
         else retainOrRemove(file, record, retentionDays, now)
@@ -435,7 +443,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
     fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen"): JSONObject {
-        prepareIndex(requireStatistics = false)
+        prepareIndex(requireStatistics = true)
         return guarded {
             require(limit in 1..60)
             require(source in setOf("screen", "media", "notification", "device_event", "note", "activity"))
@@ -445,7 +453,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val matching = browseIndex().entries(browseFiles(), ::read).asSequence()
                 .filter { it.optString("source") == source }
                 .map { it to java.time.Instant.parse(it.getString("capturedAt")) }
-                .filter { (_, date) -> date >= start && date < end }
+                .filter { (row, date) -> java.time.Instant.parse(row.optString("lastCapturedAt", row.getString("capturedAt"))) >= start && date < end }
                 .sortedWith(compareByDescending<Pair<JSONObject, java.time.Instant>> { it.second }.thenByDescending { it.first.getString("id") }).toList()
             val page = matching.filter { (row, date) -> at == null || date < at || (date == at && row.getString("id") < id!!) }.take(limit + 1)
             val items = page.take(limit).map { read(File(dir, "${it.first.getString("id")}.event")) }
@@ -479,7 +487,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         }
     }
     fun albumImages(after: String, before: String, appId: String, cursor: String? = null, limit: Int = 20): JSONObject {
-        prepareIndex(requireStatistics = false)
+        prepareIndex(requireStatistics = true)
         return guarded {
             require(limit in 1..60)
             val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }

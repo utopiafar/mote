@@ -3772,3 +3772,6 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .usage-trend{height:180px;display:flex;gap:8px;align-items:stretch;overflow-x:auto;margin:24px 0 36px}.usage-trend button{position:relative;flex:1;min-width:32px;border:0;background:transparent;display:flex;align-items:flex-end;padding:0 0 24px;cursor:pointer}.usage-trend i{display:block;background:var(--accent,#38745d);width:100%;border-radius:5px 5px 0 0}.usage-trend small{position:absolute;bottom:0;white-space:nowrap;font-size:10px}
 
 .capture-list{grid-template-columns:1fr}.capture-list .capture-card{display:grid;grid-template-columns:140px 1fr;align-items:center}.capture-list .capture-image{max-height:110px}.capture-list img{height:110px;object-fit:contain}.capture-list .capture-card p{max-height:4em}
+.storage-chart{display:grid;gap:12px;margin-top:20px}.storage-bar{display:grid;grid-template-columns:minmax(90px,1fr) minmax(60px,3fr) 100px 50px;gap:12px;align-items:center;font-size:13px}.storage-bar meter{width:100%;height:20px}.storage-bar small{text-align:right}@media(max-width:600px){.storage-bar{grid-template-columns:80px 1fr 75px}.storage-bar small{display:none}}
+
+.storage-panel{padding:24px;margin-block:24px}.storage-bar>span{overflow-wrap:anywhere}.storage-bar small{white-space:nowrap}.storage-bar meter::-webkit-meter-optimum-value{background:var(--forest,#345d4a)}

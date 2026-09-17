@@ -35,7 +35,7 @@ function reference(record:MemoryRecord,span?:{offset:number;length:number;quote?
   return {id:record.id,deviceId:record.deviceId,sourceId:p?.sourceId,externalId:p?.externalId,revision:p?.revision,capturedAt:record.capturedAt,receivedAt:record.receivedAt,
     recordedAt:d?.recordedAt,occurredAt:d?.occurredAt,fileId:d?.fileId,path:d?.path,uri:p?.uri,timeBasis:d?.timeBasis,contentRole:d?.contentRole,
     ...(record.fileEvidence?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
-    ...span,contentHash:memoryEvidenceFingerprint(record)};
+    ...(d?.fileIndex?{fileIndex:d.fileIndex}:{}),...span,contentHash:memoryEvidenceFingerprint(record)};
 }
 export type MemoryExtractOptions={profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
 export class MemoryStore {
@@ -117,6 +117,7 @@ export class MemoryStore {
           if(options.evidenceRanges&&!options.evidenceRanges.some(range=>range.id===id))throw new MemoryOutputValidationError('scope','Memory evidence is outside this batch');
           const record=this.readEvidence([id])[0];
           if(!record||!this.isCurrentEvidence(id))throw new StoreError('Memory evidence is missing or superseded',409);
+          if(record.provenance?.document?.fileIndex?.coverage==='lightweight')throw new MemoryOutputValidationError('scope','Lightweight indexes require verified original excerpts before memory extraction');
           records.set(id,record);
         }
         try{validateInlineCitations(m.statement+'\n'+m.uncertainty,ids,allowed);}catch{throw new MemoryOutputValidationError('citations','Memory inline citations do not match the declared retrieved evidence');}

@@ -207,6 +207,18 @@ export class ServerDiagnostics {
       this.readFailures++;throw error;
     }
   }
+  async exportRange(after:string,before:string) {
+    await this.flush();
+    const records:DiagnosticEvent[]=[];const seen=new Set<string>();let invalidLines=0;
+    for(let index=this.maxFiles-1;index>=0;index--)for(const line of (await this.readRaw(index)).split('\n')) {
+      if(!line.trim())continue;
+      let record:DiagnosticEvent|undefined;try {record=cleanEvent(JSON.parse(line));}catch {}
+      if(!record){invalidLines++;continue;}
+      const key=record.instanceId+':'+record.seq;if(seen.has(key))continue;seen.add(key);records.push(record);
+    }
+    records.sort((a,b)=>a.at.localeCompare(b.at)||a.seq-b.seq);
+    return {after,before,oldestRetainedAt:records[0]?.at??null,retentionLimited:!records.length||records[0].at>after,invalidLines,events:records.filter(e=>e.at>=after&&e.at<before)};
+  }
   async flush() {while(this.pending)await this.pending;}
   close():Promise<void> {if(this.closingPromise)return this.closingPromise;this.closed=true;this.closingPromise=this.finishClose();return this.closingPromise;}
   private async finishClose() {

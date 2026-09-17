@@ -4,7 +4,7 @@ import { apply as applySkillTool } from "@deepseek-ai/dsh-tool-skill";
 
 export const name = "mote-context";
 export const inject = ["tools", "skills", "agents"];
-const names = ["progress_update", "search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories", "file_chunks", "changes"];
+const names = ["progress_update", "search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories", "read_file_evidence", "file_chunks", "changes"];
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
  * The limit covers retries and repair turns in this isolated agent process. */

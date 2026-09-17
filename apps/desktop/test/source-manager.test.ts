@@ -14,7 +14,8 @@ async function endpoint(dropFirstAck = false) {
   const items: SourceItem[] = []; const registered: unknown[] = []; let id = ''; let dropNext = dropFirstAck;
   const server = createServer(async (req, res) => {
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
-    const body = JSON.parse(Buffer.concat(chunks).toString());
+    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({revision:null}));return;}
+    const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
     res.setHeader('Content-Type', 'application/json');
     if (req.method === 'POST') { id = body.id; registered.push(body); res.end(JSON.stringify(body)); }
     else if (req.method === 'PATCH') res.end(JSON.stringify({ ...body, id }));

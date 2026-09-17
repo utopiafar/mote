@@ -11,7 +11,7 @@ export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
     const session=new CodexSession({...options,timeoutMs:Math.max(options.timeoutMs??120000,300000)},async()=>{throw new AgentProviderError();});sessions.add(session);
     try{
       await session.start(skillContent('document-import'),[],input.workspace);
-      const text=await session.run(JSON.stringify({...input,requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),{
+      const text=await session.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries and warnings; preserve original quotes and schema keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),{
         type:'object',properties:{summary:{type:'string'},recordsPath:{type:['string','null']},warnings:{type:'array',items:{type:'string'}}},required:['summary','recordsPath','warnings'],additionalProperties:false,
       });
       if(text.length>64000)throw new AgentResponseError('Import response exceeds its limit');

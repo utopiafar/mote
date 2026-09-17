@@ -1,5 +1,5 @@
 import { moteText } from '@mote/shared/i18n';
-import { mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
+import { appendFile, mkdir, open, readFile, readdir, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { constants } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -88,6 +88,13 @@ export class EventJournal {
     if (!event) return Promise.resolve();
     const task = this.chain.then(async () => {
       await this.cleanOrphanedWrites();
+      await mkdir(this.directory, { recursive: true, mode: 0o700 });
+      const archive=join(this.directory,'events.0.ndjson');
+      if((await stat(archive).catch(()=>({size:0}))).size>=2*1024*1024){
+        await unlink(join(this.directory,'events.6.ndjson')).catch(e=>{if(e.code!=='ENOENT')throw e;});
+        for(let i=5;i>=0;i--)await rename(join(this.directory,`events.${i}.ndjson`),join(this.directory,`events.${i+1}.ndjson`)).catch(e=>{if(e.code!=='ENOENT')throw e;});
+      }
+      await appendFile(archive,JSON.stringify(event)+'\n',{mode:0o600});
       const rows = [...await this.load(), event].slice(-this.limit);
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
       const file = await open(this.temporary, 'w', 0o600);
@@ -95,6 +102,17 @@ export class EventJournal {
       try { await rename(this.temporary, this.path); } finally { await unlink(this.temporary).catch(() => undefined); }
     }).catch(() => undefined);
     this.chain = task; return task;
+  }
+  async exportRange(after:number,before=Date.now()):Promise<{events:SupportEvent[];after:string;before:string;oldestRetainedAt:string|null;retentionLimited:boolean}> {
+    await this.chain;const rows:SupportEvent[]=[];
+    for(let i=6;i>=0;i--){const path=join(this.directory,`events.${i}.ndjson`);let file;
+      try{file=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);if((await file.stat()).size>2*1024*1024+4096)throw Error('Log exceeds read limit');
+        for(const line of (await file.readFile('utf8')).split('\n')){if(!line.trim())continue;const event=cleanEvent(JSON.parse(line));if(event)rows.push(event);}
+      }catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')throw e;}finally{await file?.close();}
+    }
+    if(!rows.length)rows.push(...await this.load(true));
+    rows.sort((a,b)=>a.atMs-b.atMs);
+    return {events:rows.filter(e=>e.atMs>=after&&e.atMs<before),after:new Date(after).toISOString(),before:new Date(before).toISOString(),oldestRetainedAt:rows[0]?new Date(rows[0].atMs).toISOString():null,retentionLimited:!rows.length||rows[0].atMs>after};
   }
   async readRaw(): Promise<string> {
     await this.chain;
@@ -130,6 +148,6 @@ export function buildSupportBundle(profile: DesktopProfile, version: string, sta
   return { version: 1, scope: 'local-support-without-content', exportedAt: new Date().toISOString(),
     app: { platform: process.platform, version: /^\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.-]+)?$/.test(version) ? version : 'unknown', profile: profile.name, legacy: profile.legacy },
     state: { running: Boolean(status.running), state: ['stopped','capturing','paused','permission_required','error'].includes(status.state) ? status.state : 'unknown', queueDepth: number(status.queueDepth) ? status.queueDepth : 0, queueBytes: number(status.queueBytes) ? status.queueBytes : 0, encryptedTokenStorage: Boolean(status.encryptedTokenStorage) },
-    config, model: modelMetrics, diagnostics: metrics(status.diagnostics), events: events.map(cleanEvent).filter(Boolean).slice(-500),
+    config, model: modelMetrics, diagnostics: metrics(status.diagnostics), events: events.map(cleanEvent).filter(Boolean),
     batteryScope: 'whole-device change, not application energy attribution' };
 }

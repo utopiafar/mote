@@ -1,3 +1,4 @@
+import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, type LanguagePreference } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
 import {nativeCalendarActions} from './calendar-actions';
@@ -414,6 +415,7 @@ else {
     }));
     handle('mote:calendar-permissions', async () => { if (process.platform === 'darwin') await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars'); });
     handle('mote:diagnostics-sample', async () => { await diagnostics.sample(); updateUi(clientStatus()); return clientStatus(); });
+    handle('mote:storage-statistics',async()=>storageStatistics([dataDirectory,queue.directory]));
     handle('mote:events-raw', async () => events.readRaw());
     handle('mote:events-read', async () => events.read(true));
     handle('mote:diagnostics-export', async () => {
@@ -421,11 +423,13 @@ else {
       if (selected.canceled || !selected.filePath) return { canceled: true };
       await diagnostics.sample(); await diagnostics.exportTo(selected.filePath); return { canceled: false };
     });
-    handle('mote:support-export', async () => {
+    handle('mote:support-export', async rawHours => {
+      const hours=rawHours===undefined?24:Number(rawHours);if(![1,24,168].includes(hours))throw new Error('Invalid log range');
       const selected = await dialog.showSaveDialog(window!, { title: moteText("导出支持包（数值与固定事件，不含内容和令牌）"), defaultPath: `mote-support-${profile.name}.json`, filters: [{ name: 'JSON support bundle', extensions: ['json'] }] });
       if (selected.canceled || !selected.filePath) return { canceled: true };
       await diagnostics.sample();
-      await writeFile(selected.filePath, JSON.stringify(buildSupportBundle(profile, app.getVersion(), clientStatus(), await events.read()), null, 2), { mode: 0o600 });
+      const logs=await events.exportRange(Date.now()-hours*3600000);
+      await writeFile(selected.filePath, JSON.stringify({...buildSupportBundle(profile, app.getVersion(), clientStatus(), logs.events),...logs}, null, 2), { mode: 0o600 });
       return { canceled: false };
     });
     handle('mote:central', async page => { await showCentral();if(['ask','notes','vault'].includes(String(page))&&centralWindow)await centralWindow.loadURL(settings.serverUrl+'/#'+page); });

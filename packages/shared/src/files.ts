@@ -12,7 +12,7 @@ export const fileRevisionSchema=z.object({
   sha256:z.string().regex(/^[a-f0-9]{64}$/).optional(),
   relativePath:z.string().max(4000).default(''),
 }).strict().superRefine((v,c)=>{
-  if(v.item.kind!=='file'||v.item.text||!['original','reference'].includes(v.item.layer))c.addIssue({code:'custom',message:'Files require empty text and original/reference layer'});
+  if(v.item.kind!=='file'||(!['snapshot'].includes(v.item.layer)&&v.item.text)||!['original','reference','snapshot'].includes(v.item.layer)||v.item.layer==='snapshot'&&!v.item.document?.fileIndex)c.addIssue({code:'custom',message:'Files require empty text and original/reference layer'});
   if(v.item.layer==='reference'&&v.sha256)c.addIssue({code:'custom',message:'References cannot include a content digest'});
   if(!v.item.deleted&&v.item.layer==='original'&&(!v.sha256||v.sizeBytes>FILE_MAX_BYTES))c.addIssue({code:'custom',message:'Original file requires a digest and must fit file limit'});
 });

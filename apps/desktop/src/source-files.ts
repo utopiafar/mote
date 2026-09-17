@@ -1,3 +1,4 @@
+import {extractFileText,fileDigest,fileMime} from './file-index';
 import { moteText } from '@mote/shared/i18n';
 import { constants, type Stats } from 'node:fs';
 import { lstat, open, readdir, realpath } from 'node:fs/promises';
@@ -7,7 +8,7 @@ import type { SourceOptions, SourceScan } from './source-types';
 import { redactSourceText } from './source-types';
 import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
-export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string): Promise<SourceScan> {
+export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, locations?: Map<string,string>): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   const selected = await lstat(selectedPath);
   if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error(moteText("所选来源必须是普通文件或目录，不能是符号链接"));
@@ -26,26 +27,27 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       catch { result.complete = false; result.skipped++; } return;
     }
     if (!metadata.isFile() || !options.extensions.includes(extname(path).toLowerCase())) { result.skipped++; return; }
-    const externalId = 'file:' + sourceHash(resolve(path)); result.seen.push(externalId);
-    if (metadata.size > 100000 || result.items.length >= 2000 || totalBytes + metadata.size > 16 * 1024 * 1024) { result.skipped++; if (result.items.length >= 2000 || totalBytes + metadata.size > 16 * 1024 * 1024) result.complete = false; return; }
-    let text = ''; let handle;
+    const externalId = 'file:' + sourceHash([metadata.dev,metadata.ino,metadata.birthtimeMs].join(':')); result.seen.push(externalId);locations?.set(externalId,path);
+    if (options.retention!=='reference' && metadata.size > 16*1024*1024 || result.items.length >= 2000 || options.retention!=='reference' && totalBytes + metadata.size > 16 * 1024 * 1024) { result.skipped++; if (result.items.length >= 2000 || options.retention!=='reference' && totalBytes + metadata.size > 16 * 1024 * 1024) result.complete = false; return; }
+    let text = ''; let handle;let original:Buffer|undefined;let parsed={text:'',parser:'none',status:'ready' as 'ready'|'pending'|'unsupported'};
     try {
       // Verify every traversed directory still resolves inside the chosen tree before opening without following a leaf symlink.
       if (await realpath(path) !== path) throw new Error('changed path');
       handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
       const before = await handle.stat();
-      if (!before.isFile() || before.size > 100000 || before.ino !== metadata.ino || before.dev !== metadata.dev) throw new Error('changed file');
-      if (options.retention === 'snapshot') {
-        const buffer = Buffer.alloc(100001); const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-        if (bytesRead > 100000 || bytesRead !== before.size) throw new Error('changed file');
-        text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
+      if (!before.isFile() || options.retention!=='reference' && before.size > 16*1024*1024 || before.ino !== metadata.ino || before.dev !== metadata.dev) throw new Error('changed file');
+      if (options.retention !== 'reference') {
+        const buffer=Buffer.alloc(before.size+1),read=await handle.read(buffer,0,buffer.length,0);if(read.bytesRead!==before.size)throw Error('Changed file');original=buffer.subarray(0,read.bytesRead);
+        if(options.retention==='snapshot')parsed=await extractFileText(original,fileMime(path),signal);
+        const maximum=options.indexMode==='lightweight'?8000:100000;
+        parsed.text=redactSourceText(parsed.text,options.redactLiterals);text=parsed.text.slice(0,maximum);
       }
       const after = await handle.stat();
       if (before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || before.size !== after.size || await realpath(path) !== path) throw new Error('changed file');
       totalBytes += before.size;
       const accessedAtMs = accessMarkers.record(externalId, before, after);
       const fileMetadata = observedFileMetadata(before, accessedAtMs);
-      result.items.push({ externalId, title: redactSourceText(basename(path), options.redactLiterals), text: redactSourceText(text, options.redactLiterals), uri: options.redactLiterals.length ? undefined : pathToFileURL(path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention, metadata: { version: 1, file: fileMetadata }, mimeType: 'text/plain', deleted: false });
+      result.items.push({ externalId, title: redactSourceText(basename(path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention==='archive'?'original':options.retention, document:{fileIndex:{version:1,fileId:externalId,contentVersion:original?fileDigest(original):sourceHash([before.dev,before.ino,before.mtimeMs,before.size].join(':')),mode:options.retention==='archive'?'archive':options.retention==='reference'?'catalog':'index',coverage:!text?'none':text.length===parsed.text.length?'full':'lightweight',parser:parsed.parser,status:options.retention==='archive'?'pending':parsed.status,totalCharacters:parsed.text.length,offset:0,length:text.length,allowRead:options.retention==='snapshot'&&Boolean(options.allowRead)}}, ...(options.retention==='archive'&&original?{localOriginalBase64:original.toString('base64')} : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(path), deleted: false });
     } catch { result.skipped++; result.complete = false; }
     finally { await handle?.close(); }
   }

@@ -74,7 +74,7 @@ class AppPolicyAndActivityTest {
                 .put("metadata", JSONObject().put("version", 1).put("capture", JSONObject().put("intervalMs", 30000)))
             queue.enqueue(event, null, 100000); queue.enqueue(event, null, 100000)
             val restored = DurableQueue(directory, cipher)
-            assertEquals(event.toString(), restored.peek()!!.toString()); assertEquals(1, queue.summary().getInt("activities"))
+            assertEquals(StateSeries.extend(null, event).toString(), restored.peek()!!.toString()); assertEquals(1, queue.summary().getInt("activities"))
             assertEquals(0, directory.listFiles()!!.count { it.extension == "blob" })
             for (key in listOf("ocrText", "windowTitle", "title", "mood", "provenance")) {
                 val invalid = JSONObject(event.toString()).put("id", UUID.randomUUID().toString()).put(key, "untrusted content")

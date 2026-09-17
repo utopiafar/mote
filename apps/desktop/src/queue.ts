@@ -1,3 +1,4 @@
+import {extendState,stateSeriesSchema,stateOnly} from '@mote/shared/state-series';
 import { moteText } from '@mote/shared/i18n';
 import { recordMetadataSchema } from '@mote/shared/metadata';
 import { createHash, randomUUID } from 'node:crypto';
@@ -68,7 +69,10 @@ function validateEvent(value: unknown): CaptureEvent {
   if (v.ocrText !== undefined && (typeof v.ocrText !== 'string' || v.ocrText.length > 100000)) throw new Error(moteText("OCR 文本超出限制"));
   if (v.privacy?.excluded !== false || typeof v.privacy?.redacted !== 'boolean') throw new Error(moteText("队列隐私标记无效"));
   const metadata = v.metadata === undefined ? undefined : recordMetadataSchema.parse(v.metadata);
-  const base = { id: v.id, deviceId: v.deviceId, deviceName: v.deviceName, platform: v.platform,
+  const stateSeries=v.stateSeries?stateSeriesSchema.parse(v.stateSeries):undefined;
+  if(stateSeries&&(!stateOnly(v)||Date.parse(stateSeries.samples[0].at)!==Date.parse(v.capturedAt)||stateSeries.samples[0].durationMs!==v.durationMs||stateSeries.samples.some((sample,i)=>i>0&&(Date.parse(sample.at)<=Date.parse(stateSeries.samples[i-1].at)||Date.parse(sample.at)-Date.parse(stateSeries.samples[i-1].at)>300000))||Date.parse(stateSeries.samples.at(-1)!.at)-Date.parse(v.capturedAt)>21600000))throw Error('Invalid state series');
+  if(stateSeries)for(const sample of stateSeries.samples)sample.at=new Date(sample.at).toISOString();
+  const base = { ...(stateSeries?{stateSeries}:{}),id: v.id, deviceId: v.deviceId, deviceName: v.deviceName, platform: v.platform,
     capturedAt: new Date(v.capturedAt).toISOString(), durationMs: v.durationMs, appId: v.appId, appName: v.appName, ...(metadata ? { metadata } : {}) };
   if (v.source === 'notification') {
     if(v.platform!=='macos'||v.durationMs!==0||v.imageMime||v.ocrText||v.mood!==undefined||v.privacy.redacted||!metadata?.notification||!metadata.observation||metadata.collector?.method!=='accessibility'||metadata.media||metadata.capture||v.privacy.collection!=='content'||v.privacy.mode!=='none')throw new Error('Invalid notification observation');
@@ -279,12 +283,23 @@ export class DurableQueue {
     await this.exclusive(async () => { await atomicWrite(join(this.directory, 'sync-checkpoint.json'), JSON.stringify({ lastUploadAt, nextRetryAt })); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; });
   }
   atCapacity(): boolean { const stats = this.stats(); return stats.depth >= this.limits.maxQueueEvents || stats.bytes >= this.limits.maxQueueBytes; }
+  private lastState?: CaptureEvent;
   async enqueue(event: CaptureEvent, image?: Buffer): Promise<boolean> {
     return this.exclusive(async () => {
       this.assertReady();
       event = validateEvent(event);
       if (event.source === 'screen') { if (!image) throw new Error(moteText("截图缺少图像")); validateImage(image); }
       else if (image) throw new Error(moteText("随手记或仅活动记录不得包含图片"));
+      const originalId=event.id;
+      event=extendState(this.lastState,event);
+      if(event.id!==originalId){
+        const prior=this.records.get(event.id);
+        const updated:QueueRecord={event,blobBytes:0,attempts:0,nextAttemptAt:0};
+        if(this.stats().bytes+recordBytes(updated)-(prior?recordBytes(prior):0)>this.limits.maxQueueBytes)throw new QueueFullError();
+        if(prior){await atomicWrite(this.eventsPath(event.id),JSON.stringify(updated));this.records.set(event.id,updated);this.cachedStats=undefined;}
+        else await this.insertRecord(updated);
+        this.lastState=event;return false;
+      }
       const hash = image ? await imageWork.run<string>({ kind: 'hash', bytes: image }) : undefined;
       const existing = this.records.get(event.id);
       if (existing) {
@@ -292,7 +307,7 @@ export class DurableQueue {
         return false;
       }
       const record: QueueRecord = { event, blobHash: hash, blobBytes: image?.length ?? 0, attempts: 0, nextAttemptAt: 0 };
-      await this.insertRecord(record, image);
+      await this.insertRecord(record, image);this.lastState=event;
       return true;
     });
   }
@@ -314,11 +329,12 @@ export class DurableQueue {
       return { record: structuredClone(record), image };
     });
   }
-  async acknowledge(id: string, ocrComplete = false): Promise<void> {
+  async acknowledge(id: string, ocrComplete = false, observations?: number): Promise<void> {
     return this.exclusive(async () => {
       this.assertReady();
       const record = this.records.get(id);
       if (!record) return;
+      if(observations!==undefined&&(record.event.stateSeries?.samples.length??0)>observations)return;
       if (record.event.ocr?.status === 'pending' && !ocrComplete) {
         const retained = { ...record, uploaded: true, attempts: 0, nextAttemptAt: 0 };
         await atomicWrite(this.eventsPath(id), JSON.stringify(retained)); this.cachedStats = undefined; this.records.set(id, retained); return;

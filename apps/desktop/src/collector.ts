@@ -360,7 +360,7 @@ export class Collector {
             await this.queue.acknowledge(entry.record.event.id, true);
           } else {
             await uploadCapture(this.config, entry.record.event, entry.image, abort.signal);
-            await this.queue.acknowledge(entry.record.event.id);
+            await this.queue.acknowledge(entry.record.event.id, false, entry.record.event.stateSeries?.samples.length??0);
           }
           void this.events?.record('UPLOAD', 'OK', { elapsedMs: Date.now() - uploadStarted });
           this.diagnostics?.recordUpload(entry.record.uploaded

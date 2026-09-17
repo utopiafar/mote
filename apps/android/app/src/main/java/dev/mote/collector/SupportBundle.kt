@@ -15,7 +15,8 @@ object SupportEvents {
     }
     fun runtime(context: Context) = RuntimeLog(File(context.noBackupFilesDir, "mote.log"))
     fun journal(context: Context) = EventJournal(File(context.noBackupFilesDir, "support-events.json"))
-    fun export(context: Context): String {
+    fun export(context: Context, hours: Int = 24): String {
+        require(hours in setOf(1, 24, 168))
         val settings = Settings(context); val config = runCatching { settings.read() }.getOrNull()
         val metadata = JSONObject().put("platform", "android").put("version", BuildConfig.VERSION_NAME)
             .put("profile", BuildConfig.MOTE_PROFILE).put("applicationId", context.packageName).put("androidApi", Build.VERSION.SDK_INT)
@@ -39,7 +40,7 @@ object SupportEvents {
         }
         val samples = runCatching { NumericSupport.sanitize(JSONObject(Diagnostics(context).export()).getJSONArray("samples")) }.getOrElse { JSONArray() }
         return JSONObject().put("version", 1).put("app", metadata).put("state", state).put("configuration", safeConfig)
-            .put("events", journal(context).read()).put("samples", samples).put("batteryAttribution", "device-wide, not attributable to Mote").toString(2)
+            .put("logs", runtime(context).exportRange(System.currentTimeMillis() - hours * 3600000L)).put("events", journal(context).read()).put("samples", samples).put("batteryAttribution", "device-wide, not attributable to Mote").toString(2)
     }
 }
 

@@ -62,6 +62,7 @@ class MainActivity : MoteActivity() {
     ;
         val title get() = MoteI18n.text(titleKey)
     }
+    private var logExportHours = 24
     private data class RetainedDraft(val fields: Map<String, String>, val config: CollectorConfig)
     private lateinit var server: EditText
     private lateinit var token: EditText
@@ -222,6 +223,7 @@ class MainActivity : MoteActivity() {
         totalsStatus = text(MoteI18n.text("正在读取统计…"), 15)
         menu(MoteI18n.text("日程建议"), MoteI18n.text("逐条确认，添加到手机已有日历"), "folder") { startActivity(Intent(this, CalendarActionsActivity::class.java)) }
         menu(MoteI18n.text("采集记录"), MoteI18n.text("按天查看本机与中央归档的图片、OCR 状态和文字"), "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
+        menu(MoteI18n.text("统计中心"), MoteI18n.text("按日期和文件类型查看空间占用"), "chart") { startActivity(Intent(this, StorageStatisticsActivity::class.java)) }
         menu(MoteI18n.text("采集与存储详情"), MoteI18n.text("查看累计结果、队列与使用空间"), "chart") { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
         menu(MoteI18n.text("权限与后台运行"), MoteI18n.text("管理采集权限和省电设置"), "settings") { showPage(Page.PERMISSIONS) }
     }
@@ -386,6 +388,7 @@ class MainActivity : MoteActivity() {
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-diagnostics.json"), 103)
         }
         button(MoteI18n.text("打开本地日志查看器")) { startActivity(Intent(this, LogViewerActivity::class.java)) }
+        button(MoteI18n.text("导出时间范围")) { MoteDialogBuilder(this).setTitle(MoteI18n.text("导出时间范围")).setSingleChoiceItems(arrayOf(MoteI18n.text("最近 1 小时"), MoteI18n.text("最近 24 小时"), MoteI18n.text("最近 7 天")), listOf(1,24,168).indexOf(logExportHours)) { dialog, which -> logExportHours = listOf(1,24,168)[which]; dialog.dismiss() }.show() }
         help(MoteI18n.text("支持包包含什么"), MoteI18n.text("事件日志最多 500 条，只记录固定阶段、错误类别与数值。支持包不包含节点地址、设备名、截图、笔记、OCR、令牌、提示词或审查理由；关闭诊断后停止新增，已有记录保留。"))
         button(MoteI18n.text("导出安全支持包 JSON")) {
             @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("application/json").putExtra(Intent.EXTRA_TITLE, "mote-${BuildConfig.MOTE_PROFILE}-support.json"), 104)
@@ -828,7 +831,7 @@ class MainActivity : MoteActivity() {
         if (requestCode in setOf(103, 104) && resultCode == RESULT_OK && data?.data != null) {
             val uri = data.data!!; val app = applicationContext
             uiTask.start(MoteI18n.text("正在导出诊断包…"), { technicalStatus.text = it }, {
-                val body = if (requestCode == 104) SupportEvents.export(app) else Diagnostics(app).export()
+                val body = if (requestCode == 104) SupportEvents.export(app, logExportHours) else Diagnostics(app).export()
                 app.contentResolver.openOutputStream(uri)!!.use { it.write(body.toByteArray()) }
             }) { result -> toast(if (result.isSuccess) MoteI18n.text("诊断包已导出") else MoteI18n.text("诊断导出失败")) }
             return

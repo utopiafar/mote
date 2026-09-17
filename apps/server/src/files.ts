@@ -25,7 +25,7 @@ export class FileStore {
     const root=join(store.directory,'files');privateDirectory(root);
     this.objects=join(root,'objects');this.uploads=join(root,'uploads');privateDirectory(this.objects);privateDirectory(this.uploads);
   }
-  capabilities(){return {version:1,modes:['archive','reference'],partBytes:FILE_PART_BYTES,maxFileBytes:FILE_MAX_BYTES,initialSync:['all','new_only'],deletionPolicy:'retain_central'};}
+  capabilities(){return {version:1,modes:['archive','reference','index'],partBytes:FILE_PART_BYTES,maxFileBytes:FILE_MAX_BYTES,initialSync:['all','new_only'],deletionPolicy:'retain_central'};}
   async serialize<T>(key:string,action:()=>Promise<T>):Promise<T>{const prior=this.pending.get(key)??Promise.resolve();const next=prior.catch(()=>{}).then(action);this.pending.set(key,next);try{return await next;}finally{if(this.pending.get(key)===next)this.pending.delete(key);}}
   private allowed(input:FileRevision){
     const source=this.sources.getSource(input.sourceId);

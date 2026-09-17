@@ -6,7 +6,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     },
     "./actions": {
       "types": "./dist/actions.d.ts",
@@ -59,6 +60,16 @@
       "import": "./dist/i18n.js",
       "require": "./dist/i18n.js",
       "default": "./dist/i18n.js"
+    },
+    "./storage-statistics": {
+      "types": "./dist/storage-statistics.d.ts",
+      "import": "./dist/storage-statistics.js",
+      "require": "./dist/storage-statistics.js"
+    },
+    "./state-series": {
+      "types": "./dist/state-series.d.ts",
+      "import": "./dist/state-series.js",
+      "require": "./dist/state-series.js"
     }
   },
   "typesVersions": {
@@ -86,6 +97,12 @@
       ],
       "i18n": [
         "dist/i18n.d.ts"
+      ],
+      "storage-statistics": [
+        "dist/storage-statistics.d.ts"
+      ],
+      "state-series": [
+        "dist/state-series.d.ts"
       ]
     }
   },

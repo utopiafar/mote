@@ -34,8 +34,9 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     }
     fun state(id: String): JSONObject = synchronized(lock) { read(stateFile(id)) }
     fun saveState(id: String, state: JSONObject) = synchronized(lock) { write(stateFile(id), state) }
+    fun candidate(id: String, external: String): JSONObject? = synchronized(lock) { read(itemFile(id, external)).optJSONObject("candidate") }
     fun rows(id: String): List<JSONObject> = synchronized(lock) { root(id).listFiles()?.filter { it.name.startsWith("item-") && it.name.endsWith(".enc") }?.map { read(it) } ?: emptyList() }
-    private fun dirty(row: JSONObject) = row.has("pending") || (!row.optBoolean("baseline") && row.optString("signature") != signature(row.getJSONObject("candidate")))
+    private fun dirty(row: JSONObject) = row.has("pending") || row.optBoolean("indexPending") || (!row.optBoolean("baseline") && row.optString("signature") != signature(row.getJSONObject("candidate")))
     private fun markers(id: String) = root(id).listFiles()?.filter { it.name.matches(Regex("todo-[a-f0-9]{64}")) } ?: emptyList()
     private fun mark(id: String, row: JSONObject) {
         val marker = File(root(id), "todo-" + SourceRules.hash(row.getJSONObject("candidate").getString("externalId")))
@@ -60,9 +61,9 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     fun configure(source: LocalSource): JSONObject = synchronized(lock) {
         indexed(source.id)
         val state = state(source.id)
-        val policy = SourceRules.hash(listOf(source.uri, source.extensions, source.excluded, source.retention).joinToString("\u0000"))
+        val policy = SourceRules.hash(listOf(source.uri, source.extensions, source.excluded, source.retention, source.lightweightIndex, source.allowRead).joinToString("\u0000"))
         if (state.optString("policy") != policy) {
-            rows(source.id).forEach { row -> row.remove("pending"); row.remove("signature"); saveRow(source.id, row) }
+            rows(source.id).forEach { row -> row.remove("pending"); row.remove("signature"); row.remove("revision"); row.remove("indexPending"); saveRow(source.id, row) }
             File(root(source.id), "spool").deleteRecursively()
             state.put("policy", policy).remove("stack"); state.put("generation", UUID.randomUUID().toString())
         }
@@ -144,6 +145,11 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 check(unchanged(candidate)) { MoteI18n.text("复制期间文件已变化，保留原文件并稍后重试") }
                 hash = digest.digest().joinToString("") { "%02x".format(it) }
             }
+            if (source.retention == "snapshot" && !item.optBoolean("deleted")) {
+                check(unchanged(candidate)); val bytes = open(candidate).use { LocalFileIndex.bytes(it) }; check(unchanged(candidate)); LocalFileIndex.index(item, bytes, source)
+                if (row.optBoolean("indexPending") && item.getJSONObject("document").getJSONObject("fileIndex").optString("status") == "pending" && row.optString("signature") == signature(candidate)) return@synchronized null
+            }
+            if (item.optBoolean("deleted") && item.optString("layer") == "snapshot") item.put("layer", "reference")
             val manifest = JSONObject().put("sourceId", source.id).put("previousRevision", row.optString("revision").takeIf { it.isNotBlank() } ?: JSONObject.NULL)
                 .put("item", item).put("relativePath", candidate.optString("_relativePath", item.optString("title"))).put("sizeBytes", size)
             hash?.let { manifest.put("sha256", it) }
@@ -159,6 +165,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         if (manifest.has("sha256")) check(ack.optString("sha256") == manifest.getString("sha256") && ack.optLong("sizeBytes", -1) == manifest.getLong("sizeBytes")) { MoteI18n.text("中央原件校验确认不匹配") }
         val current = read(itemFile(id, item.getString("externalId")))
         check(current.optJSONObject("pending")?.getJSONObject("manifest")?.getJSONObject("item")?.getString("revision") == item.getString("revision"))
+        current.put("indexPending", item.optJSONObject("document")?.optJSONObject("fileIndex")?.optString("status") == "pending")
         current.put("signature", pending.getString("signature")).put("revision", item.getString("revision")).remove("pending")
         saveRow(id, current); File(root(id), "spool").deleteRecursively()
     }

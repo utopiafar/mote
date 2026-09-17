@@ -58,3 +58,7 @@ The table lists principal direct libraries, not a complete software bill of mate
 | AndroidX WorkManager | [AndroidX source](https://android.googlesource.com/platform/frameworks/support/+/androidx-main/work/), Apache-2.0 |
 | Google ML Kit text recognition | [ML Kit terms and privacy](https://developers.google.com/ml-kit/terms), Google SDK distribution terms; not described as an Apache-licensed model |
 | Apple Vision / AppKit / ScreenCaptureKit APIs | Provided by macOS and the Apple SDK; no Apple model weights or operating-system framework binaries are copied into this repository |
+
+| PDF.js (pdfjs-dist) 5.4.149 | [mozilla/pdf.js](https://github.com/mozilla/pdf.js), Apache-2.0; local PDF text extraction |
+| Mammoth | [mwilliamson/mammoth.js](https://github.com/mwilliamson/mammoth.js), BSD-2-Clause; local DOCX text extraction |
+| PdfBox-Android 2.0.27.0 | [TomRoush/PdfBox-Android](https://github.com/TomRoush/PdfBox-Android), Apache-2.0; local Android PDF text extraction |

@@ -11,6 +11,8 @@ class MoteApplication : Application() {
         HttpJson.onRequest = { Diagnostics(this).add("httpRequests") }
         HttpJson.onComplete = { Diagnostics(this).timing("httpMs", it) }
         Notifications.create(this)
+        com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(this)
+        FileEvidencePoller.start(this)
         QueueStorage.recovering = true
         LocalStateRepository.get(this)
         Executors.newSingleThreadExecutor().apply {

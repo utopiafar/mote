@@ -27,7 +27,7 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('已登录 ·')`),'login');
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.innerText==='设置').click()`);
   await until(()=>wc.executeJavaScript(`!!document.querySelector('.preference-menu')`),'settings');
-  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.preference-menu button')).find(b=>b.querySelector('strong')?.textContent==='开发者选项').click()`);
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.preference-menu button')).find(b=>b.querySelector('strong')?.textContent==='数据与备份').click()`);
   const checkbox=`document.querySelector('[aria-labelledby="content-storage-title"] input')`;
   await until(()=>wc.executeJavaScript(`!!${checkbox}&&!${checkbox}.disabled`),'storage controls');
   assert.equal(await wc.executeJavaScript(`${checkbox}.checked`),false);

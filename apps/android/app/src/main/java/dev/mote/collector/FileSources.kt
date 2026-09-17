@@ -12,17 +12,18 @@ import java.net.URL
 import java.time.Instant
 
 fun Context.fileArchives() = FileArchiveQueue(File(noBackupFilesDir, "file-archives"), localContentCipher())
-fun LocalSource.binaryFiles() = kind == "local-files" && retention in setOf("archive", "reference")
+fun LocalSource.binaryFiles() = kind == "local-files"
 
 /** Persistent traversal checkpoints; every directory is eventually reached within bounded slices. */
 class FileSources(private val context: Context, private val cancel: CancellationSignal = CancellationSignal()) {
+    init { com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(context.applicationContext) }
     private val resolver = context.contentResolver
     private val projection = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE, DocumentsContract.Document.COLUMN_LAST_MODIFIED)
     fun metadata(uri: Uri, source: LocalSource): JSONObject? = resolver.query(uri, projection, null, null, null, cancel)?.use { c ->
         if (!c.moveToFirst()) return@use null
         val name = c.getString(1) ?: "file"; val mime = c.getString(2) ?: "application/octet-stream"
         if (mime == DocumentsContract.Document.MIME_TYPE_DIR) return@use null
-        val item = JSONObject().put("externalId", uri.toString()).put("uri", uri.toString()).put("title", name.take(2000)).put("kind", "file").put("layer", if (source.retention == "archive") "original" else "reference").put("text", "").put("mimeType", mime.take(200)).put("observedAt", Instant.now().toString())
+        val item = JSONObject().put("externalId", uri.toString()).put("uri", uri.toString()).put("title", name.take(2000)).put("kind", "file").put("layer", if (source.retention == "archive") "original" else if (source.retention == "snapshot") "snapshot" else "reference").put("text", "").put("mimeType", mime.take(200)).put("observedAt", Instant.now().toString())
         if (!c.isNull(3) && c.getLong(3) >= 0) item.put("metadata", JSONObject().put("version", 1).put("file", JSONObject().put("sizeBytes", c.getLong(3))))
         if (!c.isNull(4) && c.getLong(4) > 0) item.put("modifiedAt", Instant.ofEpochMilli(c.getLong(4)).toString())
         item

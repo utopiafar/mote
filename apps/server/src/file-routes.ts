@@ -25,7 +25,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.get('/api/file-sync/v1/uploads/:id',async req=>files.upload(id(req),check(req)));
   app.put('/api/file-sync/v1/uploads/:id/parts/:part',{bodyLimit:FILE_PART_BYTES},async req=>{if(!Buffer.isBuffer(req.body))throw new StoreError('Binary part required');return measure('file_part',()=>files.part(id(req),Number((req.params as {part:string}).part),req.body as Buffer,check(req)));});
   app.post('/api/file-sync/v1/uploads/:id/commit',async req=>measure('file_commit',()=>files.commit(id(req),check(req))));
-  app.put('/api/file-sync/v1/revisions',{bodyLimit:32768,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>files.revision(req.body,check(req))));
+  app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>files.revision(req.body,check(req))));
   app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
   app.get('/api/files/:id',async req=>({...file(req),processingPolicy:processing.explain(id(req))}));
   app.get('/api/files/:id/chunks',async req=>{file(req);const q=z.object({offset:z.coerce.number().int().min(0).default(0)}).strict().parse(req.query);const items=files.chunks(id(req),q.offset);return {items,nextOffset:items.length===100?q.offset+100:null};});

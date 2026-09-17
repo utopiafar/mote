@@ -7,6 +7,7 @@ import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
 import { readLocalContent } from './local-content';
 import { codingRoot, codingProviders, type CodingProvider } from './coding-agents';
 import { sourceWork } from './background';
+import {readSourceEvidence} from './file-evidence';
 import { scanSourceFiles } from './source-files';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices, decodeCalendarScan } from './source-calendar';
 import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
@@ -19,8 +20,9 @@ export function sourceDefinition(source: LocalSource): SourceDefinition {
   const { id, name, kind, deviceId, platform, retention, enabled, initialSync } = source;
   return { id, name: redactSourceText(name, source.redactLiterals).slice(0, 200) || moteText("本地来源"), kind, deviceId, platform, retention, enabled, initialSync };
 }
-export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
+export function sourcePolicy(options: SourceOptions): string { return sourceHash(JSON.stringify({ indexMode:options.indexMode,allowRead:options.allowRead,retention: options.retention, trackDeletions: options.trackDeletions, extensions: options.extensions, excludedPaths: options.excludedPaths, redactLiterals: options.redactLiterals })); }
 export class LocalSourceManager {
+  private fileLocations=new Map<string,Map<string,string>>();
   private sources: LocalSource[] = [];
   private metadataDirty = new Set<string>();
   private metadataDirtyAt?: string;
@@ -107,6 +109,7 @@ export class LocalSourceManager {
   }
   private async add(fields: Pick<LocalSource, 'name' | 'kind'> & Partial<LocalSource>, input: unknown): Promise<void> {
     const options = normalizeSourceOptions(input);
+    if(fields.kind!=='local-files'&&options.retention==='archive')options.retention='snapshot';
     if (this.sources.length >= 40) throw new Error(moteText("本机最多连接 40 个本地来源"));
     if (this.sources.some(s => s.kind === fields.kind && (fields.path ? s.path === fields.path : s.calendarId === fields.calendarId))) throw new Error(moteText("此来源已连接，请在列表中修改"));
     await this.interrupt();
@@ -116,7 +119,7 @@ export class LocalSourceManager {
   async update(id: string, input: unknown): Promise<void> {
     const source = this.sources.find(s => s.id === id); if (!source) throw new Error(moteText("来源不存在"));
     const value = input as SourceOptions & { enabled: boolean };
-    const options = normalizeSourceOptions(value); if (typeof value.enabled !== 'boolean') throw new Error(moteText("启停选项无效"));
+    const options = normalizeSourceOptions(value);if(source.kind!=='local-files'&&options.retention==='archive')options.retention='snapshot'; if (typeof value.enabled !== 'boolean') throw new Error(moteText("启停选项无效"));
     await this.interrupt();
     Object.assign(source, options, { enabled: value.enabled }); this.markMetadataDirty(id); this.states.delete(id);
     await this.persist(); void this.sync(true);
@@ -145,6 +148,11 @@ export class LocalSourceManager {
     return this.task;
   }
   private async run(force: boolean, signal: AbortSignal): Promise<void> {
+    if(this.connection.serverUrl&&this.connection.token&&this.nodeBinding.matches(this.connection))for(const source of this.sources.filter(s=>s.enabled&&s.kind==='local-files'&&s.allowRead&&s.retention==='snapshot')){
+      try{const request=this.request(signal),pending=await request('/api/sources/'+source.id+'/read-requests',undefined,'GET',signal) as {items:import('@mote/shared').FileReadRequest[]};
+        for(const read of pending.items){const result=await readSourceEvidence(source,read,this.fileLocations.get(source.id)??new Map(),signal);await request('/api/sources/'+source.id+'/read-requests/'+read.id,result,'PUT',signal);}
+      }catch{signal.throwIfAborted();}
+    }
     for (const source of this.sources) {
       if (!source.enabled || signal.aborted) continue;
       const last = this.states.get(source.id);
@@ -160,7 +168,8 @@ export class LocalSourceManager {
         await engine.ensurePolicy(sourcePolicy(source));
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
-        const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint()}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json')) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        if(source.kind==='local-files')this.fileLocations.set(source.id,new Map());
+        const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint()}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json'), this.fileLocations.get(source.id)) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
         signal.throwIfAborted(); status.skipped = scan.skipped;
         if (source.kind === 'coding-agent' && scan.skipped) status.message = moteText("部分会话无法读取或格式不支持；保留游标，下次重试");
         this.readable.add(source.id);
@@ -188,7 +197,7 @@ export class LocalSourceManager {
   private request(signal: AbortSignal): SourceRequest {
     return async (path, body, method, requestSignal) => {
       if (!this.connection.serverUrl || !this.connection.token || !this.nodeBinding.matches(this.connection)) throw new Error(moteText("本地来源没有匹配的中央连接"));
-      const response = await fetch(this.connection.serverUrl + path, { method, headers: { Authorization: 'Bearer ' + this.connection.token, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
+      const response = await fetch(this.connection.serverUrl + path, { method, headers: { Authorization: 'Bearer ' + this.connection.token, 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:body instanceof Uint8Array?new Uint8Array(body):JSON.stringify(body), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
       if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败，请检查令牌") : response.status === 409 ? moteText("中央来源已暂停，请在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
       return JSON.parse(await readResponseText(response, 1024 * 1024));
     };

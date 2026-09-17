@@ -19,7 +19,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     if(!job){
       const ids=new Set<string>();
       for(const id of window.ids){
-        if(store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(id)){
+        if(store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(id)&&store.evidence([id])[0]?.provenance?.document?.fileIndex?.mode!=='index'){
           for(let offset=0;;offset+=200){const chunks=files.chunks(id,offset,200);for(const chunk of chunks)if(memories.isCurrentEvidence(chunk.id))ids.add(chunk.id);if(ids.size>20000)throw new StoreError('Scheduled file batch exceeds evidence budget',413);if(chunks.length<200)break;}
         }else if(memories.isCurrentEvidence(id))ids.add(id);
       }

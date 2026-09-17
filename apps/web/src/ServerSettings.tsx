@@ -7,7 +7,7 @@ import {ConfigurationBuilder, type ConfigCategory} from './ConfigurationBuilder'
 import {Feedback} from './Feedback';
 import {MemorySettings} from './MemorySettings';
 import {ModelProfiles} from './ModelProfiles';
-export type SettingsDestination = 'lark'|'vault'|'developer'|'about'|'connections';
+export type SettingsDestination = 'imports'|'usage'|'lark'|'vault'|'developer'|'about'|'connections';
 const categories: {id:ConfigCategory;title:string;description:string;icon:typeof Bot}[] = [
   {id:'model',title:moteText("问答与回顾"),description:moteText("模型服务、推理强度与自动回顾"),icon:Bot},
   {id:'storage',title:moteText("保留与容量"),description:moteText("历史保留周期与资料库容量"),icon:Database},
@@ -33,7 +33,7 @@ export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNaviga
   {!category&&<>
    <div className="settings-category-label">{moteText("偏好设置")}</div><div className="preference-menu">{categories.map(item=><button key={item.id} className="preference-menu-row" onClick={()=>setCategory(item.id)}><span className="preference-menu-icon"><item.icon size={21}/></span><span><strong>{item.title}</strong><small>{item.description}</small></span><ArrowRight size={17}/></button>)}</div>
    <div className="settings-category-label">{moteText("管理与维护")}</div><div className="preference-menu">{([
-    ['lark',moteText("飞书"),moteText("安装、登录与文档 / 日历只读同步"),Link2],['vault',moteText("数据与备份"),moteText("空间详情、归档导入与导出"),Database],['connections',moteText("连接授权"),moteText("设备邀请与外部 Chatbot 凭据"),Fingerprint],['about',moteText("关于 Mote"),moteText("软件版本、更新与部署信息"),FileText],['developer',moteText("开发者选项"),moteText("诊断、日志与高级生效配置"),Terminal],
+    ['imports',moteText("导入"),moteText("将已有文件加入资料库"),FileText],['usage',moteText("用量与费用"),moteText("查看模型调用与费用"),Database],['lark',moteText("飞书"),moteText("安装、登录与文档 / 日历只读同步"),Link2],['vault',moteText("数据与备份"),moteText("空间详情、归档导入与导出"),Database],['connections',moteText("连接授权"),moteText("设备邀请与外部 Chatbot 凭据"),Fingerprint],['about',moteText("关于 Mote"),moteText("软件版本、更新与部署信息"),FileText],['developer',moteText("开发者选项"),moteText("诊断、日志与高级生效配置"),Terminal],
    ] as const).map(([id,title,description,Icon])=><button key={id} className="preference-menu-row" onClick={()=>onNavigate(id)}><span className="preference-menu-icon neutral"><Icon size={21}/></span><span><strong>{title}</strong><small>{description}</small></span><ArrowRight size={17}/></button>)}<Feedback profile={config?.profile} runtime={config?.runtime}/></div>
    <p className="settings-footnote"><ShieldCheck size={16}/>{moteText("模型、记忆与飞书设置可直接保存并生效；其他偏好通过部署草稿修改并重启。离开设置页面或返回上级菜单时，未保存的输入会丢弃。")}</p>
   </>}

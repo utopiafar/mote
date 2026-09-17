@@ -44,6 +44,7 @@ export interface ContextReader {
   activity(args: ContextRange): Promise<unknown>;
   mediaActivity?(args: MediaContextRange): Promise<unknown>;
   devices(): Promise<unknown>;
+  readFileEvidence?(args:ContextRange & {id:string;offset:number;length:number}):Promise<{status:string;record?:ContextRecord;reason?:string}>;
   fileChunks?(args:ContextRange & {id:string;offset?:number}):Promise<ContextRecord[]>;
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
@@ -72,6 +73,7 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  language?: "zh-CN" | "en";
   /** Host-selected saved connection; never interpreted as prompt content. */
   modelProfileId?: string;
   modelOverride?: string;

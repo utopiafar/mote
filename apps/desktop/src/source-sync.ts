@@ -8,7 +8,7 @@ export async function atomicSourceJson(path: string, value: unknown): Promise<vo
   await sourceWork.run({ kind: 'json-write', path, value });
 }
 interface Known { contentHash: string; revision: string; item: ScannedItem }
-interface State { collectedItems?:number; checkpoint?: import('./coding-agents').CodingCheckpoint; initialized?:boolean; baseline?:string[]; policy?: string; version: 1; known: Record<string, Known>; pending: SourceItem[]; lastSyncAt?: string }
+interface State { predecessors?:Record<string,string|null>; delivered?:Record<string,string>; collectedItems?:number; checkpoint?: import('./coding-agents').CodingCheckpoint; initialized?:boolean; baseline?:string[]; policy?: string; version: 1; known: Record<string, Known>; pending: SourceItem[]; lastSyncAt?: string }
 // All transitions are persisted before network I/O. Callers serialize one source at a time.
 export class SourceSync {
   private data: State = { version: 1, known: {}, pending: [] };
@@ -36,7 +36,7 @@ export class SourceSync {
   }
   private async discardPendingForPolicyChange(policy: string): Promise<void> {
     // A changed privacy policy must never upload a previously staged body.
-    const next = { ...this.data, checkpoint: undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '' }])), pending: [] };
+    const next = { ...this.data, checkpoint: undefined, delivered:undefined,predecessors:undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '' }])), pending: [] };
     await this.commit(next);
   }
   async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all'|'new_only'='all'): Promise<number> {
@@ -55,7 +55,7 @@ export class SourceSync {
       const revision = sourceHash(contentHash + ':' + (previous?.revision ?? ''));
       next.pending.push({ ...item, revision, observedAt });
       // Persist only metadata for deletion detection; original text lives solely in the bounded pending queue.
-      if (!scan.checkpoint) next.known[key] = { contentHash, revision, item: { ...item, text: '' } }; changes++;
+      if (!scan.checkpoint) next.known[key] = { contentHash, revision, item: { ...item, text: '',localOriginalBase64:undefined } }; changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
     if (trackDeletions && scan.complete) {
@@ -65,7 +65,7 @@ export class SourceSync {
         // A policy-invalidated record is only a revision anchor, not evidence for deletion.
         if (!previous.contentHash || item.deleted || seen.has(item.externalId)) continue;
         if (scan.scope && (!item.calendar || item.calendar.start >= scan.scope.end || item.calendar.end < scan.scope.start)) continue;
-        stage({ ...item, text: '', deleted: true, ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
+        stage({ ...item, localOriginalBase64:undefined, text: '', deleted: true, ...(item.kind === 'file' ? { metadata: { ...item.metadata, version: 1, file: { ...item.metadata?.file, deletionObservedAt: observedAt } } } : {}) });
       }
     }
     if (next.pending.length > this.limits.maxEvents) throw new Error(moteText("来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试"));
@@ -95,9 +95,21 @@ export class SourceSync {
     while (this.data.pending.length) {
       signal?.throwIfAborted();
       const item = this.data.pending[0]!;
-      const ack = await request(`/api/sources/${encodeURIComponent(source.id)}/items`, item, 'PUT', signal) as Record<string, unknown>;
+      let ack:Record<string,unknown>;
+      if(item.kind==='file'&&item.document?.fileIndex){
+        const {localOriginalBase64,...wire}=item;const key=sourceHash(item.externalId);
+        let previousRevision=Object.hasOwn(this.data.predecessors??{},item.revision)?this.data.predecessors![item.revision]??'':this.data.delivered?.[key];
+        if(previousRevision===undefined){const head=await request('/api/file-sync/v1/head?sourceId='+encodeURIComponent(source.id)+'&externalId='+encodeURIComponent(item.externalId),undefined,'GET',signal) as {revision:string|null};previousRevision=head.revision??'';}
+        if(!Object.hasOwn(this.data.predecessors??{},item.revision))await this.commit({...this.data,predecessors:{...this.data.predecessors,[item.revision]:previousRevision||null}});
+        const original=localOriginalBase64?Buffer.from(localOriginalBase64,'base64'):undefined;
+        const manifest={sourceId:source.id,previousRevision:previousRevision||null,item:wire,sizeBytes:item.metadata?.file?.sizeBytes??0,...(original?{sha256:sourceHash(original)}:{})};
+        if(original){const upload=await request('/api/file-sync/v1/uploads',manifest,'POST',signal) as {uploadId:string;ack?:Record<string,unknown>;partBytes:number;parts:{part:number}[]};
+          if(upload.ack)ack=upload.ack;else{if(upload.partBytes!==4194304)throw Error('Unsupported file part size');for(let offset=0;offset<original.length;offset+=upload.partBytes){const part=offset/upload.partBytes;if(!upload.parts.some(p=>p.part===part))await request('/api/file-sync/v1/uploads/'+upload.uploadId+'/parts/'+part,original.subarray(offset,offset+upload.partBytes),'PUT',signal);}ack=await request('/api/file-sync/v1/uploads/'+upload.uploadId+'/commit',{},'POST',signal) as Record<string,unknown>;}
+        }else ack=await request('/api/file-sync/v1/revisions',manifest,'PUT',signal) as Record<string,unknown>;
+      }else ack = await request(`/api/sources/${encodeURIComponent(source.id)}/items`, item, 'PUT', signal) as Record<string, unknown>;
       if (!ack || ack.sourceId !== source.id || ack.externalId !== item.externalId || ack.revision !== item.revision || typeof ack.duplicate !== 'boolean' || typeof ack.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ack.id)) throw new Error(moteText("中央来源条目确认不匹配，已保留待重试版本"));
-      await this.commit({ ...this.data, pending: this.data.pending.slice(1) });
+      const predecessors={...this.data.predecessors};delete predecessors[item.revision];
+      await this.commit({ ...this.data, predecessors,delivered:{...this.data.delivered,[sourceHash(item.externalId)]:item.revision}, pending: this.data.pending.slice(1) });
     }
     await this.commit({ ...this.data, lastSyncAt: new Date().toISOString() }); return 'ready';
   }

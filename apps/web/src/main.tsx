@@ -1,3 +1,4 @@
+import {StorageStatistics} from './StorageStatistics';
 import {LarkSettings} from './LarkSettings';
 import { LanguageSelector } from './LanguageSelector';
 import { getLocale } from '@mote/shared/i18n';
@@ -97,22 +98,21 @@ import {SourceDocumentDetails} from './SourceDocumentDetails';
 declare global {
   interface Window { moteCentralSession?: {close: () => void} }
 }
-type Page = "lark" | "actions" | "usage" | "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
+type Page = "statistics" | "lark" | "actions" | "usage" | "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
+  {id:"overview" as const,label:moteText("总览"),icon:LayoutDashboard,group:moteText("日常")},
+  {id:"ask" as const,label:moteText("问一问"),icon:MessageSquare,group:moteText("日常")},
+  {id:"notes" as const,label:moteText("随手记"),icon:FileText,group:moteText("日常")},
   {id:"actions" as const,label:moteText("行动"),icon:Clock3,group:moteText("日常")},
-  { id: "usage" as const, label: moteText("用量与费用"), icon: Clock3, group: moteText("管理") },
-  { id: "overview" as const, label: moteText("总览"), icon: LayoutDashboard, group: moteText("日常") },
-  { id: "timeline" as const, label: moteText("采集记录"), icon: Clock3, group: moteText("日常") },
-  { id: "notes" as const, label: moteText("随手记"), icon: FileText, group: moteText("日常") },
-  { id: "ask" as const, label: moteText("问一问"), icon: MessageSquare, group: moteText("日常") },
-  { id: "archive" as const, label: moteText("资料库"), icon: Database, group: moteText("日常") },
-  { id: "imports" as const, label: moteText("导入"), icon: ArrowUpFromLine, group: moteText("资料") },
-  { id: "memories" as const, label: moteText("记忆"), icon: Layers3, group: moteText("资料") },
-  { id: "insights" as const, label: moteText("洞察"), icon: Sparkles, group: moteText("资料") },
-  { id: "devices" as const, label: moteText("设备"), icon: Monitor, group: moteText("管理") },
-  { id: "sources" as const, label: moteText("来源"), icon: Link2, group: moteText("管理") },
+  {id:"timeline" as const,label:moteText("采集记录"),icon:Clock3,group:moteText("资料")},
+  {id:"archive" as const,label:moteText("资料库"),icon:Database,group:moteText("资料")},
+  {id:"memories" as const,label:moteText("记忆"),icon:Layers3,group:moteText("资料")},
+  {id:"insights" as const,label:moteText("洞察"),icon:Sparkles,group:moteText("资料")},
+  {id:"sources" as const,label:moteText("来源"),icon:Link2,group:moteText("管理")},
+  {id:"devices" as const,label:moteText("设备"),icon:Monitor,group:moteText("管理")},
+  {id:"statistics" as const,label:moteText("统计中心"),icon:HardDrive,group:moteText("管理")},
 ];
-const pageLabels: Record<Page,string> = {lark:moteText("飞书"),actions:moteText("行动"),usage:moteText("用量与费用"),imports:moteText("导入"),insights:moteText("洞察"),overview:moteText("总览"),timeline:moteText("采集记录"),notes:moteText("随手记"),ask:moteText("问一问"),archive:moteText("资料库"),memories:moteText("记忆"),devices:moteText("设备"),sources:moteText("来源"),settings:moteText("设置"),connections:moteText("连接授权"),developer:moteText("开发者选项"),about:moteText("关于 Mote"),vault:moteText("数据与备份")};
+const pageLabels: Record<Page,string> = {statistics:moteText("统计中心"),lark:moteText("飞书"),actions:moteText("行动"),usage:moteText("用量与费用"),imports:moteText("导入"),insights:moteText("洞察"),overview:moteText("总览"),timeline:moteText("采集记录"),notes:moteText("随手记"),ask:moteText("问一问"),archive:moteText("资料库"),memories:moteText("记忆"),devices:moteText("设备"),sources:moteText("来源"),settings:moteText("设置"),connections:moteText("连接授权"),developer:moteText("开发者选项"),about:moteText("关于 Mote"),vault:moteText("数据与备份")};
 const periodNames: Record<string, string> = {
   today: moteText("今天"),
   week: moteText("过去 7 天"),
@@ -308,7 +308,7 @@ function CaptureCard({
           </time>
         </div>
         <p>
-          {capture.source==='media'?moteText("媒体播放 · {0}", capture.durationMs>0?moteText("播放采样 {0}", duration(capture.durationMs)):moteText("状态观察 · 不累计时长")):capture.source === 'activity' ? moteText("仅应用活动 · 本次采样 {0}", duration(capture.durationMs)) : ('summary' in capture && capture.summary) ||
+          {('stateSummary' in capture&&capture.stateSummary)?moteText("合并 {0} 次状态观察",capture.stateSummary.count):capture.source==='media'?moteText("媒体播放 · {0}", capture.durationMs>0?moteText("播放采样 {0}", duration(capture.durationMs)):moteText("状态观察 · 不累计时长")):capture.source === 'activity' ? moteText("仅应用活动 · 本次采样 {0}", duration(capture.durationMs)) : ('summary' in capture && capture.summary) ||
             capture.windowTitle ||
             text ||
             (capture.source === 'screen' ? ocr.description : moteText("此记录没有正文"))}
@@ -533,7 +533,7 @@ function EvidenceDialog({
                   </div>
                 </dl>
                 {capture.metadata?.attachments?.map(id=><button className="button subtle" key={id} onClick={()=>onOpen(id)}>{moteText("查看附件")} · {id.slice(0,8)}</button>)}
-                <Metadata metadata={capture.metadata} source={capture.provenance?.metadata} modifiedAt={capture.provenance?.modifiedAt}/>
+                <Metadata stateSeries={capture.stateSeries} metadata={capture.metadata} source={capture.provenance?.metadata} modifiedAt={capture.provenance?.modifiedAt}/>
                 <SourceDocumentDetails api={api} document={capture.provenance?.document}/>
                 {capture.privacy.reason && (
                   <p className="field-note">{capture.privacy.reason}</p>
@@ -1588,7 +1588,7 @@ function App() {
                         <DeviceOverview devices={devices} onConnect={()=>onPage("connections")} />
                       )}
                       {page === "vault" && status && (
-                        <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><Vault
+                        <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><ContentStorage api={api} onChange={refresh}/><Vault
                           api={api}
                           status={status}
                           refresh={refresh}
@@ -1597,6 +1597,7 @@ function App() {
                       )}
                       {page === "sources" && <Sources api={api} onOpen={setEvidenceId} onImport={()=>onPage("imports")} />}
                       {page === "imports" && <Imports api={api} refreshVersion={timelineRevision} onOpen={setEvidenceId} onMemories={()=>onPage("memories")} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
+                      {page === "statistics" && <StorageStatistics api={api} onUsage={()=>onPage("usage")}/>}
                       {page === "usage" && <Usage api={api}/>}
                       {page === "insights" && <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured??false} onOpen={setEvidenceId} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
                       {page === "actions" && <Actions api={api} onOpen={setEvidenceId}/> }
@@ -1605,7 +1606,7 @@ function App() {
                       {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title={moteText("设备")} onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
-                      {page === "developer" && status && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("开发与维护")}</div><h1>{moteText("开发者选项")}</h1><p>{moteText("查看运行诊断，按需调整日志与高级部署配置。")}</p></div><ContentStorage api={api} onChange={refresh}/><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
+                      {page === "developer" && status && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("开发与维护")}</div><h1>{moteText("开发者选项")}</h1><p>{moteText("查看运行诊断，按需调整日志与高级部署配置。")}</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
                       {page === "about" && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("你的资料，由你保管")}</div><h1>{moteText("关于 Mote")}</h1><p>{moteText("AI 原生个人上下文采集与中央归档。")}</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>{moteText("当前服务（中央节点）")}</h2><p>{window.location.origin}</p><p className="fine-print">{moteText("访问令牌只保留在当前标签页会话。")}</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>{moteText("退出登录")}</button></section></>}
                     </>
                   )}

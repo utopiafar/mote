@@ -22,8 +22,8 @@ const { decodeCalendarScan } = require('../dist/source-calendar');
   const proxy = createServer(async (req, res) => {
     try {
       const chunks = []; for await (const chunk of req) chunks.push(chunk);
-      const body = JSON.parse(Buffer.concat(chunks).toString()); const response = await request(req.url, body, req.method);
-      if (req.method === 'PUT') { sent.push(body); if (!lost) { lost = true; res.destroy(); return; } }
+      const body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString()) : undefined; const response = await request(req.url, body, req.method);
+      if (req.method === 'PUT') { sent.push(body.item ?? body); if (!lost) { lost = true; res.destroy(); return; } }
       res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(response));
     } catch { res.writeHead(502); res.end('{}'); }
   });
