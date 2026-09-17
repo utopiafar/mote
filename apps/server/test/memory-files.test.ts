@@ -128,8 +128,9 @@ test('Memory API expands all preferred file chunks, validates chunk scope, and d
 
 test('full local indexes enter memory batches without archived originals; lightweight indexes wait for evidence',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-local-index-api-'));
- const {configFromEnv}=await import('../src/config.js');const config=configFromEnv({MOTE_DATA_DIR:directory,MOTE_TOKEN:'generated-index-memory-token',MOTE_RETENTION_DAYS:'0'});
+ const config:Config={dataDir:directory,token:'generated-index-memory-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()})})});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ assert.equal(node.store.directory,directory);
  node.sources.register({id:'indexes',deviceId:'generated-device',name:'Generated indexes',kind:'local-files',platform:'macos',retention:'snapshot'});
  const text='Generated complete original evidence',descriptor={version:1,fileId:'generated-file',contentVersion:'a'.repeat(64),mode:'index',coverage:'full',parser:'utf8',status:'ready',totalCharacters:text.length,offset:0,length:text.length,allowRead:true};
  const full=await node.files.revision({sourceId:'indexes',item:{externalId:'full',revision:'v1',observedAt:new Date().toISOString(),title:'full.txt',kind:'file',layer:'snapshot',text,document:{fileIndex:descriptor}},sizeBytes:100},()=>{});

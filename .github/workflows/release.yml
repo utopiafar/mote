@@ -78,6 +78,7 @@ jobs:
       - name: Verify client onboarding, central UI and update networking with generated data
         run: |
           node apps/desktop/scripts/connection-server-smoke.cjs
+          node apps/desktop/scripts/file-evidence-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/connection-smoke.cjs
           node_modules/.bin/electron scripts/test-web-connections.cjs
           node_modules/.bin/electron scripts/test-web-metadata.cjs
