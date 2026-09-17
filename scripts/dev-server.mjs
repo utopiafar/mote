@@ -11,10 +11,10 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { repository, profilePaths, loadProfile, isolatedEnvironment, stopNative, withProfileLock, atomicJson, readJson } from './profile-lib.mjs';
 
 const help = `Mote foreground debug server (macOS/Linux, Node 24+)
-  node scripts/dev-server.mjs [--pull] [--install] [--profile NAME] [--home PATH]
+  node scripts/dev-server.mjs [--install] [--profile NAME] [--home PATH]
 
-Stops this profile's managed server, optionally git pull --ff-only, installs changed
-dependencies, builds the current checkout's libraries/server/web and stays attached.
+Stops this profile's managed server, installs changed dependencies, builds the
+current checkout's libraries/server/web and stays attached.
 Ctrl+C stops the server and its children. --install forces npm ci.
 Uses existing native development profiles; prod and port 47832 are excluded.
 Existing tunnel connections keep using the same port. Deployment selection is unchanged.`;
@@ -67,7 +67,7 @@ export function startCommand(command, args, { cwd, env, signal, graceMs = 5000 }
 
 function buildEnvironment() {
   // Installation/build hooks must not inherit a profile's token, model keys or NODE_OPTIONS.
-  const allowed = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'SSH_AUTH_SOCK'];
+  const allowed = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL'];
   return { ...Object.fromEntries(allowed.filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])), NODE_ENV: 'development' };
 }
 
@@ -93,7 +93,6 @@ async function prepareCheckout(root, options, signal) {
     signal.throwIfAborted();
     if (result.code !== 0) throw Error(`${command} ${args.join(' ')} failed; no server was started`);
   };
-  if (options.pull) { console.info('[dev] Pulling current branch (--ff-only)…'); await run('git', ['pull', '--ff-only']); }
   const fingerprint = await dependencyFingerprint(root), stampFile = join(root, 'node_modules', '.mote-dev-dependencies.json');
   const stamp = await readJson(stampFile, null);
   const installedLock = async () => {
@@ -180,7 +179,7 @@ export async function runDevServer(options = {}, root = repository) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const { values } = parseArgs({ options: { profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, pull: { type: 'boolean' }, install: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } });
+    const { values } = parseArgs({ options: { profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, install: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } });
     if (values.help) console.info(help);
     else await runDevServer(values);
   } catch (error) { console.error(`[dev] ${error.message}`); process.exitCode = 1; }
