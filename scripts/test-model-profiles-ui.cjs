@@ -34,7 +34,7 @@ async function run(){
  await input('本次模型',id);await input('向 Mote 提问','合成追问');await send();await until(()=>js(`document.querySelectorAll('.conversation-turn').length===2&&document.querySelectorAll('.conversation-turn')[1].innerText.includes('fixture-second')`),'same conversation switched model');await screenshot('chat-model-selection');
  await input('临时模型 ID','fixture-temporary');await input('向 Mote 提问','临时型号合成验证');await send();await until(()=>js(`document.querySelectorAll('.conversation-turn').length===3&&document.querySelectorAll('.conversation-turn')[2].innerText.includes('fixture-temporary')`),'temporary model in same provider');
  assert.equal((await view()).profiles.find(p=>p.id===id).settings.model,'fixture-second');
- await click('用量与费用');await until(()=>js(`document.querySelectorAll('.usage-run').length===20`),'first usage page');
+ await click('统计中心');await click('用量与费用');await until(()=>js(`document.querySelectorAll('.usage-run').length===20`),'first usage page');
  const total=await js(`document.querySelector('.usage-metrics').innerText`);
  await click('下一页');await until(()=>js(`document.querySelectorAll('.usage-run').length===6`),'second usage page');
  assert.equal(await js(`document.querySelector('.usage-metrics').innerText`),total,'pagination preserves totals');
