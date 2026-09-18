@@ -25,7 +25,7 @@ test('central UI APIs complete original import → exact Memory → cited static
     if(input.skill==='memory-extraction'){
       if(failMemory){failMemory=false;throw Error('Synthetic transient failure');}
       evidenceId=input.evidenceIds![0];assert.deepEqual(input.evidenceRanges,[{id:evidenceId,offset:0,length:original.length}]);
-      return {answer:JSON.stringify({memories:[{title:'计划验证观测方案',statement:`作者计划下周验证观测方案。[${evidenceId}]`,uncertainty:'是否完成未知。',evidenceIds:[evidenceId],evidence:[{id:evidenceId,offset:0,quote:original}]}]}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};
+      return {answer:JSON.stringify({memories:[{admission:{layer:'memory',reason:'Explicit future observation plan',scope:'This observation project',attribution:'user'},title:'计划验证观测方案',statement:`作者计划下周验证观测方案。[${evidenceId}]`,uncertainty:'是否完成未知。',evidenceIds:[evidenceId],evidence:[{id:evidenceId,offset:0,quote:original}]}]}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};
     }
     assert.equal(input.skill,'personal-insight');assert.equal(input.question,'回顾我的观测计划');
     return {answer:JSON.stringify({title:'观测计划回顾',markdown:`有一条计划记录，完成情况未知。[${evidenceId}]`,html:`<!doctype html><html><head><style>body{color:#234;font-family:system-ui}.card{padding:24px}</style></head><body><section class="card"><h1>观测计划</h1><p>完成情况未知。[${evidenceId}]</p></section><script>top.fixtureUnsafe=true</script><img src="https://untrusted.invalid/tracker"><a href="https://untrusted.invalid">bad link</a><meta http-equiv="refresh" content="0;url=https://untrusted.invalid"></body></html>`}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};
@@ -56,7 +56,7 @@ test('central UI APIs complete original import → exact Memory → cited static
   const report=generated.json();assert.equal(report.artifact.skillId,'personal-insight');assert.equal(report.artifact.title,'观测计划回顾');assert.match(report.answer,/完成情况未知/);
   assert.doesNotMatch(report.artifact.html,/<script|<img|http-equiv="refresh"|href="https:/i);assert.match(report.artifact.html,/Content-Security-Policy/);
   assert.equal((await request('GET','/api/insights')).json().items[0].artifact.id,report.runId);
-  assert.equal(queries.filter(q=>q.skill==='memory-extraction').length,2);
+  assert.equal(queries.filter(q=>q.skill==='memory-extraction').length,3);
 });
 
 test('static reports retain layout and only approved evidence links',()=>{

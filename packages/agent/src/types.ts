@@ -50,7 +50,7 @@ export interface ContextReader {
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
-  memories?(args:ContextRange & {id?:string;query?:string;tier?:'episode'|'consolidated';kind?:'episodic'|'semantic'|'procedural'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[]}>;
+  memories?(args:ContextRange & {id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[]}>;
 }
 
 export interface AgentOptions {
@@ -89,7 +89,7 @@ export interface QueryInput {
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
-  taskContext?: {previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
+  taskContext?: {untrustedMemoryDraft?:unknown;previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;

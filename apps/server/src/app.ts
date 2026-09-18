@@ -1,3 +1,4 @@
+import {reviewMemory} from './memory-review.js';
 import {Perception} from './perception.js';
 import { requestLocale } from './i18n.js';
 import { negotiateLocale } from '@mote/shared/i18n';
@@ -207,7 +208,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.get('/api/sources/:id/item',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {item:sources.getItem(id,externalId)??null};});
   app.get('/api/sources/:id/history',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {items:sources.history(id,externalId)};});
   app.get('/api/layers',async()=>({...sources.summary(),memories:Number((store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)}));
-  app.get('/api/memories',async req=>{const q=z.object({level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),cursor:z.string().max(1000).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return memories.page({...q,includeStale:q.includeStale==='true'});});
+  app.get('/api/memories',async req=>{const q=z.object({level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),layer:z.enum(['observation','memory','legacy']).optional(),cursor:z.string().max(1000).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return memories.page({...q,includeStale:q.includeStale==='true'});});
   app.get('/api/memories/:id',async req=>memories.get((req.params as {id:string}).id));
   app.get('/api/memories/:id/text',async(req,reply)=>reply.type('text/markdown; charset=utf-8').header('Content-Disposition','attachment; filename=memory.md').send(memories.text(z.string().uuid().parse((req.params as {id:string}).id))));
   app.get('/api/memories/:id/evidence',async req=>{const m=memories.get((req.params as {id:string}).id);return {items:allEvidence(m.evidenceIds),status:m.status};});
@@ -285,9 +286,9 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     }).catch(error=>{meter.finish('failed');throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
-  const memoryPipeline=new MemoryPipeline({store,memories,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({store,memories,requireAdmission:true,review:(input,result)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories')),query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours),working=new WorkingMemory(store,conversations);
-  registerMemoryExtensions({lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>config.model});
+  registerMemoryExtensions({lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
   app.get('/api/memory-settings',async()=>lifecycle.view());
   app.put('/api/memory-settings',{bodyLimit:8192},async req=>lifecycle.configure(req.body));
@@ -354,7 +355,14 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send(job);
   });
   app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
-  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId),model=profile.settings.model;return memories.extract(await queryAgent({...scope,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT},'query','memories'),model);});
+  app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{
+    const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
+    const input:QueryInput={...scope,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
+    const draft=await queryAgent(input,'query','memories');
+    memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true});
+    const result=await reviewMemory(input,draft,next=>queryAgent(next,'query','memories'));
+    return memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:result.runId});
+  });
   app.get('/api/conversations',async req=>conversations.list(z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1000).optional()}).strict().parse(req.query)));
   app.get('/api/conversations/:id',async req=>conversations.get(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.delete('/api/conversations/:id',async req=>conversations.delete(z.object({id:z.string().uuid()}).parse(req.params).id));

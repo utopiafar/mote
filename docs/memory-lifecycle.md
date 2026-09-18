@@ -1,3 +1,5 @@
+> 0.0.44 更新：新产物须经过 admission 分层与独立审核；自动提取采用有上限的连续窗口轮次。旧版候选不自动进入整合。当前规则与迁移行为见 [记忆准入设计](memory-admission.md)。
+
 # Memory lifecycle
 
 The central node stores readable text, provenance, status and version metadata in SQLite. Memory statements and conversation summaries are text, not vectors. Each memory has a Markdown download; FTS5 is a disposable index over the text. This implementation does not create a second independent directory of editable Markdown files.

@@ -339,7 +339,8 @@ export async function startBridge(
         if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw Error('Invalid memory query');
         if(args.tier!==undefined&&!['episode','consolidated'].includes(String(args.tier)))throw Error('Invalid memory tier');
         if(args.kind!==undefined&&!['episodic','semantic','procedural'].includes(String(args.kind)))throw Error('Invalid memory kind');
-        const search={query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
+        if(args.layer!==undefined&&!['observation','memory','legacy'].includes(String(args.layer)))throw Error('Invalid memory layer');
+        const search={layer:args.id?undefined:(args.layer??'memory') as 'observation'|'memory'|'legacy',query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
         effective={...scope,id:args.id,...search};
         const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
         const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,characters:r.ocrText.length}));

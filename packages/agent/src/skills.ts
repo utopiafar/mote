@@ -11,7 +11,7 @@ const catalog = [
   {id:'document-import',name:'document-import',description:'Inspect user-selected files and write a generic records manifest for a reviewable import.'},
 ] as const;
 export type MoteSkillId = typeof catalog[number]['id'];
-export const bundledSkills = catalog.map(skill=>({...skill,version:skill.id==='memory-consolidation'||skill.id==='working-memory'?'1.0.0':skill.id==='memory-extraction'?'1.1.0':SKILL_VERSION,
+export const bundledSkills = catalog.map(skill=>({...skill,version:skill.id==='working-memory'?'1.0.0':skill.id==='memory-extraction'||skill.id==='memory-consolidation'?'2.0.0':skill.id==='coding-memory'?'4.0.0':SKILL_VERSION,
   content:readFileSync(new URL(`../skills/${skill.id}/SKILL.md`,import.meta.url),'utf8'),
 }));
 export function skillCatalog(){return bundledSkills.map(({content,...skill})=>skill);}
