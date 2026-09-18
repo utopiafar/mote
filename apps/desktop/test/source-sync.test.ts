@@ -24,8 +24,9 @@ describe('source revisions and durable acknowledgments', () => {
     const engine = await create();
     await engine.stage(scan([item]), false, '2026-09-14T01:00:00Z');
     const disk = JSON.parse(await readFile(join(directory, 'state.json'), 'utf8'));
-    expect(disk.pending).toHaveLength(1);
-    expect(disk.pending[0]).toMatchObject({ externalId: item.externalId, text: item.text });
+    const pending = [...(disk.pendingRealtime ?? []), ...(disk.pendingHistory ?? [])];
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({ externalId: item.externalId, text: item.text });
     expect(Object.values(disk.known)).toEqual([expect.objectContaining({ item: expect.objectContaining({ externalId: item.externalId, title: item.title }) })]);
     const reopened = await create();
     const sent: SourceItem[] = [];

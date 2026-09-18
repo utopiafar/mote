@@ -2,7 +2,7 @@ import { meteredBody } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
 import { randomUUID } from 'node:crypto';
-import { join, basename } from 'node:path';
+import { join, basename, isAbsolute } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
 import { readLocalContent } from './local-content';
@@ -11,11 +11,12 @@ import { sourceWork } from './background';
 import {readSourceEvidence} from './file-evidence';
 import { scanSourceFiles } from './source-files';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices, decodeCalendarScan } from './source-calendar';
-import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
+import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest, type LocalFileCheckpoint } from './source-types';
 import type { Config } from './contracts';
 import { readResponseText } from './response-body';
 import { ConnectionBindingStore } from './connection-binding';
 import { decideSync } from './sync-policy';
+import { FileWatcher, type FileWatchEvent } from './file-watcher';
 type SourceConnection = Pick<Config, 'serverUrl' | 'token' | 'deviceId'> & Partial<Pick<Config, 'syncMode' | 'syncIntervalMinutes' | 'syncBatchSize'>>;
 export function sourceDefinition(source: LocalSource): SourceDefinition {
   const { id, name, kind, deviceId, platform, retention, enabled, initialSync } = source;
@@ -32,6 +33,11 @@ export class LocalSourceManager {
   private task?: Promise<void>;
   private controller?: AbortController;
   private timer?: ReturnType<typeof setInterval>;
+  private readonly watcher: FileWatcher;
+  private readonly dirtySources = new Set<string>();
+  private readonly dirtyPathVersions = new Map<string, Map<string, number>>();
+  private readonly sourceWakeVersions = new Map<string, number>();
+  private rerunRequested = false;
   private stopped = false;
   private connectionHeld = false;
   private choices: CalendarChoice[] = [];
@@ -40,7 +46,7 @@ export class LocalSourceManager {
   private binding: string;
   readonly nodeBinding: ConnectionBindingStore;
   private readable = new Set<string>();
-  constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false, private events?: EventJournal) { this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); }
+  constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false, private events?: EventJournal) { this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); this.watcher = new FileWatcher(event => this.onFileWatchEvent(event)); }
   private connectionBinding(): string { return sourceHash(this.connection.serverUrl + ':' + (this.connection.token ?? '')); }
   async initialize(): Promise<void> {
     try {
@@ -56,7 +62,8 @@ export class LocalSourceManager {
     await this.nodeBinding.initialize(this.connection, this.sources.length > 0);
     // Include paused sources when guarding a node change: they can still own durable pending bodies.
     for (const source of this.sources) { const engine = new SourceSync(join(this.directory, 'nodes', this.binding, source.id + '.json')); await engine.initialize(); this.engines.set(source.id, engine); }
-    this.timer = setInterval(() => { void this.sync(false); }, 5000); this.timer.unref();
+    await this.refreshWatchers();
+    this.timer = setInterval(() => { void this.refreshWatchers(); void this.sync(false); }, 5000); this.timer.unref();
     void this.sync(false);
   }
   status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.message)})); }
@@ -115,7 +122,7 @@ export class LocalSourceManager {
     if (this.sources.some(s => s.kind === fields.kind && (fields.path ? s.path === fields.path : s.calendarId === fields.calendarId))) throw new Error(moteText("此来源已连接，请在列表中修改"));
     await this.interrupt();
     const source: LocalSource = { ...fields, ...options, id: 'local-' + randomUUID(), deviceId: this.connection.deviceId, platform: 'macos', enabled: true } as LocalSource;
-    this.sources.push(source); this.markMetadataDirty(source.id); await this.persist(); void this.sync(true);
+    this.sources.push(source); this.markMetadataDirty(source.id); await this.persist(); await this.refreshWatchers(); void this.sync(true);
   }
   async update(id: string, input: unknown): Promise<void> {
     const source = this.sources.find(s => s.id === id); if (!source) throw new Error(moteText("来源不存在"));
@@ -123,7 +130,7 @@ export class LocalSourceManager {
     const options = normalizeSourceOptions(value);if(source.kind!=='local-files'&&options.retention==='archive')options.retention='snapshot'; if (typeof value.enabled !== 'boolean') throw new Error(moteText("启停选项无效"));
     await this.interrupt();
     Object.assign(source, options, { enabled: value.enabled }); this.markMetadataDirty(id); this.states.delete(id);
-    await this.persist(); void this.sync(true);
+    await this.persist(); await this.refreshWatchers(); void this.sync(true);
   }
   async changeConnection(connection: SourceConnection): Promise<void> {
     await this.interrupt();
@@ -145,7 +152,7 @@ export class LocalSourceManager {
     if (this.stopped || this.connectionHeld) return;
     if (this.task) return this.task;
     const controller = new AbortController(); this.controller = controller;
-    this.task = this.run(force, controller.signal).finally(() => { this.task = undefined; if (this.controller === controller) this.controller = undefined; });
+    this.task = this.run(force, controller.signal).finally(() => { this.task = undefined; if (this.controller === controller) this.controller = undefined; if (this.rerunRequested && !this.stopped) { this.rerunRequested = false; void this.sync(false); } });
     return this.task;
   }
   private async run(force: boolean, signal: AbortSignal): Promise<void> {
@@ -157,11 +164,12 @@ export class LocalSourceManager {
     for (const source of this.sources) {
       if (!source.enabled || signal.aborted) continue;
       const last = this.states.get(source.id);
-      if (!force && last?.lastSyncAt && Date.now() - Date.parse(last.lastSyncAt) < source.intervalSeconds * 1000) continue;
+      if (!force && !this.dirtySources.has(source.id) && last?.lastSyncAt && Date.now() - Date.parse(last.lastSyncAt) < source.intervalSeconds * 1000) continue;
       // Failed attempts use a bounded retry interval as well; a timer never floods an unavailable node.
-      if (!force && last && (last as SourceStatus & { attemptAt?: number }).attemptAt && Date.now() - (last as SourceStatus & { attemptAt: number }).attemptAt < Math.max(30000, source.intervalSeconds * 1000)) continue;
+      if (!force && !this.dirtySources.has(source.id) && last?.state === 'error' && (last as SourceStatus & { attemptAt?: number }).attemptAt && Date.now() - (last as SourceStatus & { attemptAt: number }).attemptAt < Math.max(30000, source.intervalSeconds * 1000)) continue;
       const status: SourceStatus & { attemptAt: number } = { source, state: 'syncing', message: moteText("读取所选来源并同步"), pending: 0, items: 0, skipped: 0, ...last, attemptAt: Date.now() }; status.state = 'syncing'; this.states.set(source.id, status);
       const started = Date.now(); void this.events?.record('SOURCE', 'STARTED');
+      const wakeVersion = this.sourceWakeVersions.get(source.id) ?? 0;
       this.readable.delete(source.id);
       try {
         let engine = this.engines.get(source.id);
@@ -170,7 +178,9 @@ export class LocalSourceManager {
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
         if(source.kind==='local-files')this.fileLocations.set(source.id,new Map());
-        const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint()}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json'), this.fileLocations.get(source.id)) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        const priorityVersions = new Map(this.dirtyPathVersions.get(source.id) ?? []);
+        const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint() as import('./coding-agents').CodingCheckpoint | undefined}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json'), this.fileLocations.get(source.id), engine.checkpoint() as LocalFileCheckpoint | undefined, [...priorityVersions.keys()]) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        if (!scan.queue) scan.queue = source.initialSync === 'all' && !engine.initialized() ? 'history' : 'realtime';
         signal.throwIfAborted(); status.skipped = scan.skipped;
         if (source.kind === 'coding-agent' && scan.skipped) status.message = moteText("部分会话无法读取或格式不支持；保留游标，下次重试");
         this.readable.add(source.id);
@@ -188,6 +198,11 @@ export class LocalSourceManager {
           }
         }
         if (source.kind === 'coding-agent' && !scan.complete) status.message = scan.skipped ? moteText("部分会话无法读取或单条事件超过限制；已保留进度，下次重试") : moteText("已保存当前批次；其余会话或未写完的尾行将在后续扫描继续");
+        // Do not clear a notification that arrived while the reconciliation
+        // scan was running; it must trigger another scan after this one.
+        if ((this.sourceWakeVersions.get(source.id) ?? 0) === wakeVersion) this.dirtySources.delete(source.id);
+        const paths = this.dirtyPathVersions.get(source.id);
+        if (paths) { for (const [path, version] of priorityVersions) if (paths.get(path) === version) paths.delete(path); if (!paths.size) this.dirtyPathVersions.delete(source.id); }
         void this.events?.record('SOURCE', scan.complete ? 'OK' : 'SCHEDULER', { elapsedMs: Date.now() - started });
       } catch (e) {
         void this.events?.record('SOURCE', signal.aborted ? 'CANCELLED' : e instanceof CalendarPermissionError ? 'PERMISSION' : failureCode(e, 'SOURCE'), { elapsedMs: Date.now() - started });
@@ -210,6 +225,18 @@ export class LocalSourceManager {
     const patched = await request('/api/sources/' + source.id, { retention: source.retention, initialSync: source.initialSync, name: sourceDefinition(source).name }, 'PATCH', signal) as { id?: string };
     if (patched?.id !== source.id) throw new Error(moteText("中央来源配置确认无效"));
     this.metadataDirty.delete(source.id); if (!this.metadataDirty.size) this.metadataDirtyAt = undefined; await this.persist();
+  }
+  private onFileWatchEvent(event: FileWatchEvent): void {
+    if (!this.sources.some(source => source.id === event.sourceId && source.enabled)) return;
+    this.dirtySources.add(event.sourceId);
+    this.sourceWakeVersions.set(event.sourceId, (this.sourceWakeVersions.get(event.sourceId) ?? 0) + 1);
+    if (event.path) { const path = isAbsolute(event.path) ? event.path : join(event.root, event.path); const paths = this.dirtyPathVersions.get(event.sourceId) ?? new Map<string, number>(); paths.set(path, (paths.get(path) ?? 0) + 1); this.dirtyPathVersions.set(event.sourceId, paths); }
+    if (this.task) this.rerunRequested = true;
+    void this.events?.record('SOURCE', 'SCHEDULER');
+    void this.sync(false);
+  }
+  private async refreshWatchers(): Promise<void> {
+    await this.watcher.setTargets(this.sources.filter(source => source.enabled && (source.kind === 'local-files' || source.kind === 'coding-agent') && source.path).map(source => ({ sourceId: source.id, path: source.path! })));
   }
   /** Managed by the collector's one sync decision across screenshots, notes and source versions. */
   async flushPending(signal: AbortSignal): Promise<void> {
@@ -237,5 +264,5 @@ export class LocalSourceManager {
   private markMetadataDirty(id: string): void { if (!this.metadataDirty.size) this.metadataDirtyAt = new Date().toISOString(); this.metadataDirty.add(id); }
   private async persist(): Promise<void> { await atomicSourceJson(join(this.directory, 'sources.json'), { version: 1, sources: this.sources, metadataDirty: [...this.metadataDirty], metadataDirtyAt: this.metadataDirtyAt }); }
   private async interrupt(): Promise<void> { this.controller?.abort(); await this.task; }
-  async close(): Promise<void> { this.stopped = true; if (this.timer) clearInterval(this.timer); this.permissionController?.abort(); await Promise.allSettled([this.interrupt(), this.permissionTask]); }
+  async close(): Promise<void> { this.stopped = true; if (this.timer) clearInterval(this.timer); this.watcher.close(); this.permissionController?.abort(); await Promise.allSettled([this.interrupt(), this.permissionTask]); }
 }

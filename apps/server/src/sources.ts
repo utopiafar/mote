@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {z} from 'zod';
 import {sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 
@@ -42,6 +43,14 @@ export class SourceStore {
     const prior=this.pending.get(key)??Promise.resolve();
     const task=prior.catch(()=>{}).then(()=>this.commit(sourceId,item,authorize,transaction));this.pending.set(key,task);
     try{return await task;}finally{if(this.pending.get(key)===task)this.pending.delete(key);}
+  }
+  async upsertBatch(sourceId:string,raw:unknown,authorize?:()=>void) {
+    const items=z.array(sourceItemSchema).min(1).max(500).parse(raw);
+    const identities=new Set<string>();
+    for(const item of items){const key=JSON.stringify([item.externalId,item.revision]);if(identities.has(key))throw new StoreError('Batch contains duplicate source revisions',409);identities.add(key);}
+    const receipts=[];
+    for(const item of items)receipts.push(await this.upsert(sourceId,item,authorize));
+    return {receipts};
   }
   private async commit(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
     authorize?.();

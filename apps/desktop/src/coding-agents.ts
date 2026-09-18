@@ -17,8 +17,9 @@ export async function discoverCodingAgents(home=homedir()) {
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>({provider,name:codingProviders[provider],path:codingRoot(provider,home),available:await lstat(codingRoot(provider,home)).then(s=>s.isDirectory()&&!s.isSymbolicLink(),()=>false)})));
 }
 type Context={sessionId:string;cwd?:string;parentSessionId?:string;callId?:string};
-type Cursor={offset:number;anchor:string;ino:number;generation:number;context:Context};
-export type CodingCheckpoint={version:1;files:Record<string,Cursor>;initialized:boolean};
+type Cursor={offset:number;anchor:string;ino:number;size?:number;mtimeMs?:number;ctimeMs?:number;quickHash?:string;generation:number;context:Context};
+export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
+export type CodingCheckpoint={version:1;files:Record<string,Cursor>;initialized:boolean;catalog?:Record<string,CodingCatalogEntry>;scanNumber?:number;scanStartedAt?:string;nextFile?:string};
 type Event={role:'user'|'assistant'|'tool_call'|'tool_result'|'assistant_delta'|'tool_call_delta';text:string;callId?:string;at?:string};
 const time=(v:unknown)=>{const ms=typeof v==='number'?v*1000:typeof v==='string'?Date.parse(v):NaN;return Number.isFinite(ms)?new Date(ms).toISOString():undefined;};
 const textParts=(content:any):string=>typeof content==='string'?content:Array.isArray(content)?content.flatMap(p=>p?.type==='text'||p?.type==='input_text'||p?.type==='output_text'?[String(p.text??'')]:p?.type==='image'||p?.type==='input_image'||p?.type==='image_url'?['[image attachment omitted]']:[]).join('\n'):'';
@@ -61,22 +62,32 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
 /** Bounded incremental tailer. Its cursor is committed atomically with SourceSync's durable outbox. */
 export async function scanCodingAgent(rootPath:string,provider:CodingProvider,options:SourceOptions,previous?:CodingCheckpoint,signal?:AbortSignal,limits={items:200,bytes:4*1024*1024}):Promise<SourceScan> {
   const selected=await lstat(rootPath);if(!selected.isDirectory()||selected.isSymbolicLink())throw Error(moteText("Agent 来源必须是普通目录"));
-  const root=await realpath(rootPath),checkpoint:CodingCheckpoint=structuredClone(previous??{version:1,files:{},initialized:false});
-  const result:SourceScan={items:[],seen:[],complete:true,skipped:0,checkpoint};
-  const files:string[]=[];let visited=0,bytes=0;
+  const root=await realpath(rootPath),priorScanStartedAt=previous?.scanStartedAt,checkpoint:CodingCheckpoint=structuredClone(previous??{version:1,files:{},initialized:false});
+  checkpoint.catalog??={};checkpoint.scanNumber=(checkpoint.scanNumber??0)+1;checkpoint.scanStartedAt=new Date().toISOString();
+  const result:SourceScan={items:[],seen:[],complete:true,skipped:0,checkpoint,queue:previous?.initialized?'realtime':options.initialSync==='new_only'?'realtime':'history'};
+  const files:{path:string;relativePath:string;size:number;mtimeMs:number;ctimeMs:number;ino:number;fileId:string;quickHash:string}[]=[];let visited=0,bytes=0;
   async function visit(path:string,depth:number):Promise<void>{
     signal?.throwIfAborted();if(++visited>20000||depth>12){result.complete=false;result.skipped++;return;}
     const rel=relative(root,path).split('\\').join('/');
     if(options.excludedPaths.some(p=>rel===p||rel.startsWith(p+'/')))return;
     const info=await lstat(path);if(info.isSymbolicLink())return;
     if(info.isDirectory()){for(const entry of (await readdir(path)).sort())await visit(join(path,entry),depth+1);}
-    else if(info.isFile()&&(provider==='kimi'?['wire.jsonl','context.jsonl'].includes(basename(path)):path.endsWith('.jsonl')))files.push(path);
+    else if(info.isFile()&&(provider==='kimi'?['wire.jsonl','context.jsonl'].includes(basename(path)):path.endsWith('.jsonl'))){
+      const relativePath=rel.split('\\').join('/'),fileId=`${info.dev}:${info.ino}`,quickHash=hash(`${fileId}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`);
+      files.push({path,relativePath,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,ino:info.ino,fileId,quickHash});
+    }
   }
   await visit(root,0);
   // A wire journal survives context compaction. Never ingest both representations.
-  const selectedFiles=files.filter(p=>provider!=='kimi'||basename(p)==='wire.jsonl'||!files.includes(join(dirname(p),'wire.jsonl')));
-  for(const path of selectedFiles){
-    signal?.throwIfAborted();const rel=relative(root,path),key=hash(rel),old=checkpoint.files[key];
+  const selectedFiles=files.filter(entry=>provider!=='kimi'||basename(entry.path)==='wire.jsonl'||!files.some(other=>other.path===join(dirname(entry.path),'wire.jsonl')));
+  const cursorIndex=checkpoint.nextFile?selectedFiles.findIndex(entry=>entry.relativePath===checkpoint.nextFile):-1;
+  const rotated=cursorIndex<0?selectedFiles:[...selectedFiles.slice(cursorIndex+1),...selectedFiles.slice(0,cursorIndex+1)];
+  // New or growing journals jump ahead of the historical round-robin cursor.
+  const urgent=rotated.filter(entry=>{const old=checkpoint.files[hash(entry.relativePath)],catalog=checkpoint.catalog?.[entry.relativePath];return !catalog||(priorScanStartedAt!==undefined&&entry.mtimeMs>=Date.parse(priorScanStartedAt))||(old!==undefined&&entry.size>old.offset);});
+  const routine=rotated.filter(entry=>!urgent.includes(entry));
+  const orderedFiles=[...urgent,...routine];
+  for(const entry of orderedFiles){
+    const path=entry.path;signal?.throwIfAborted();const rel=entry.relativePath,key=hash(rel),old=checkpoint.files[key];
     if(result.items.length>=limits.items||bytes>=limits.bytes){result.complete=false;break;}
     let handle;const itemStart=result.items.length,seenStart=result.seen.length;
     try{
@@ -85,6 +96,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
       const read=async(start:number,length:number)=>{const buffer=Buffer.alloc(length);const {bytesRead}=await handle!.read(buffer,0,length,start);return buffer.subarray(0,bytesRead);};
       let cursor:Cursor=old?structuredClone(old):{offset:0,anchor:hash(''),ino:info.ino,generation:0,context:{sessionId:provider==='kimi'?basename(dirname(path)):basename(path,'.jsonl')}};
       if(old&&(info.ino!==old.ino||info.size<old.offset||hash(await read(Math.max(0,old.offset-256),Math.min(old.offset,256)))!==old.anchor))cursor={offset:0,anchor:hash(''),ino:info.ino,generation:old.generation+1,context:{sessionId:old.context.sessionId}};
+      const itemQueue: 'realtime'|'history' = old && info.size>old.offset ? 'realtime' : checkpoint.catalog?.[rel] && priorScanStartedAt && info.mtimeMs>=Date.parse(priorScanStartedAt) ? 'realtime' : checkpoint.initialized ? 'realtime' : 'history';
       if(!checkpoint.initialized&&!old&&options.initialSync==='new_only'){
         // Baseline only complete lines so a currently partial message is picked up later.
         const header=await read(0,Math.min(info.size,65536));for(const line of header.toString('utf8').split('\n').slice(0,-1)){try{decodeCodingEvent(provider,JSON.parse(line),cursor.context,basename(path)==='wire.jsonl');}catch{break;}}
@@ -104,7 +116,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
             const eventId=hash(`${key}:${cursor.generation}:${cursor.offset}:${eventIndex}`),body=redactSourceText(event.text,options.redactLiterals);
             const pieces:string[]=[];for(let offset=0;offset<body.length;){let end=Math.min(offset+8000,body.length);if(end<body.length&&/[\uD800-\uDBFF]/.test(body[end-1]))end--;pieces.push(body.slice(offset,end));offset=end;}
             const cwd=context.cwd?redactSourceText(context.cwd,options.redactLiterals):undefined;
-            for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,eventId,role:event.role,callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
+            for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,eventId,role:event.role,callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
           }
           if(result.items.length+items.length>Math.max(limits.items,500)||bytes+raw.length>Math.max(limits.bytes,4*1024*1024)){result.complete=false;break;}
           result.items.push(...items);result.seen.push(...items.map(i=>i.externalId));bytes+=raw.length;
@@ -114,7 +126,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
       }
       cursor.anchor=hash(await read(Math.max(0,cursor.offset-256),Math.min(cursor.offset,256)));
       if(await realpath(path)!==path)throw Error('Source path changed');
-      checkpoint.files[key]=cursor;
+      cursor.size=info.size;cursor.mtimeMs=info.mtimeMs;cursor.ctimeMs=info.ctimeMs;cursor.quickHash=entry.quickHash;checkpoint.files[key]=cursor;checkpoint.nextFile=rel;checkpoint.catalog![rel]={relativePath:rel,fileId:entry.fileId,size:info.size,mtimeMs:info.mtimeMs,ctimeMs:info.ctimeMs,quickHash:entry.quickHash,lastSeenScan:checkpoint.scanNumber!,syncState:result.complete?'synced':'pending'};
     }catch(error){if(signal?.aborted)throw error;result.items.splice(itemStart);result.seen.splice(seenStart);result.complete=false;result.skipped++;}
     finally{await handle?.close();}
   }
