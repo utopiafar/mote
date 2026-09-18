@@ -32,6 +32,7 @@ class MainActivity : MoteActivity() {
     private lateinit var status: TextView
     private lateinit var captureTitle: TextView
     private lateinit var captureProgress: ProgressBar
+    private lateinit var packedUpload: CheckBox
     private lateinit var syncStatus: TextView
     private lateinit var totalsStatus: TextView
     private lateinit var technicalStatus: TextView
@@ -116,6 +117,7 @@ class MainActivity : MoteActivity() {
     private lateinit var nsfwCustom: EditText
     private lateinit var nsfwStatus: TextView
     private lateinit var permissionsSummary: TextView
+    private val permissionBadges = linkedMapOf<String, TextView>()
     private lateinit var accessibilityButton: Button
     private lateinit var notificationButton: Button
     private lateinit var usageButton: Button
@@ -206,7 +208,7 @@ class MainActivity : MoteActivity() {
 
     private fun buildOverview() {
         page(Page.OVERVIEW, MoteI18n.text("让经历留有线索"))
-        menu(MoteI18n.text("问一问"), MoteI18n.text("对话在中央继续，可随时返回查看或停止"), "note") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "ask")) }
+        menu(MoteI18n.text("问一问"), MoteI18n.text("对话在中央继续，可随时返回查看或停止"), "note") { startActivity(Intent(this, AskActivity::class.java)) }
         menu(MoteI18n.text("中央导出"), MoteI18n.text("导出中央元数据与资料"), "folder") { startActivity(Intent(this, BackupActivity::class.java)) }
         card(MoteUi.tint) {
             text(MoteI18n.text("此刻的 Mote"), 12, MoteUi.accent)
@@ -296,6 +298,7 @@ class MainActivity : MoteActivity() {
         }; content.addView(syncMode, LinearLayout.LayoutParams(-1, dp(56))); track(syncMode, "syncMode")
         syncInterval = presetNumber(MoteI18n.text("同步间隔 / 分钟（批量模式下也是最长等待时间）"), config.syncIntervalMinutes, "15", 15..1440, listOf(15, 30, 60, 180, 360, 720, 1440))
         syncBatch = presetNumber(MoteI18n.text("批量达到多少条时同步"), config.syncBatchSize, "20", 1..500, listOf(5, 10, 20, 50, 100, 200, 500))
+        packedUpload = check(MoteI18n.text("打包上传（合并多条记录，逐条确认）"), config.packedUpload)
         updateSyncFields()
         help(MoteI18n.text("同步方式说明"), MoteI18n.text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。"))
         section(MoteI18n.text("同步条件"))
@@ -604,6 +607,9 @@ class MainActivity : MoteActivity() {
         page(Page.PERMISSIONS, MoteI18n.text("按需授权，让记录稳定运行"))
         section(MoteI18n.text("当前状态"))
         permissionsSummary = text(MoteI18n.text("正在检查系统权限…"), 14, MoteUi.muted)
+        for (name in listOf("无障碍截图", "通知使用权", "投屏会话", "通知", "使用情况", "电池优化", "自启动")) {
+            permissionBadges[name] = text(MoteI18n.text(name), 17).apply { setPadding(dp(12), dp(12), dp(12), dp(12)); setTypeface(null, android.graphics.Typeface.BOLD) }
+        }
         accessibilityButton = button(MoteI18n.text("启用无障碍截图服务")) {
             MoteDialogBuilder(this).setTitle(MoteI18n.text("屏幕采集权限说明"))
                 .setMessage(getString(R.string.accessibility_description) + MoteI18n.text("\n\n继续后请在系统设置中选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。"))
@@ -625,6 +631,18 @@ class MainActivity : MoteActivity() {
         val notifications = getSystemService(NotificationManager::class.java).areNotificationsEnabled()
         val usage = ForegroundApps.usageAllowed(this)
         val power = runCatching { getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) }.getOrDefault(false)
+        val checks = mapOf("无障碍截图" to accessibility, "通知使用权" to MediaCollection.permissionAllowed(this), "投屏会话" to ProjectionService.running, "通知" to notifications, "使用情况" to usage, "电池优化" to power)
+        for ((name, badge) in permissionBadges) {
+            val allowed = checks[name]
+            badge.text = (if (allowed == true) "✓ " else if (allowed == false) "! " else "? ") + MoteI18n.text(name) + " · " + when {
+                allowed == null -> MoteI18n.text("需在系统确认")
+                name == "投屏会话" -> if (allowed) MoteI18n.text("本次会话正在运行") else MoteI18n.text("未运行 · 开始时需系统授权")
+                name == "电池优化" -> if (allowed) MoteI18n.text("已豁免") else MoteI18n.text("未豁免")
+                else -> if (allowed) MoteI18n.text("已授权") else MoteI18n.text("未授权")
+            }
+            badge.setTextColor(android.graphics.Color.parseColor(if (allowed == true) "#15613A" else if (allowed == false) "#9C341D" else "#665419"))
+            badge.setBackgroundColor(android.graphics.Color.parseColor(if (allowed == true) "#E7F7EC" else if (allowed == false) "#FFF0E9" else "#FFF8D9"))
+        }
         accessibilityButton.text = if (accessibility) MoteI18n.text("无障碍截图已授权 · 管理") else MoteI18n.text("无障碍截图未授权 · 去授权")
         notificationButton.text = if (notifications) MoteI18n.text("通知已允许 · 管理") else MoteI18n.text("通知未允许 · 去授权")
         usageButton.text = if (usage) MoteI18n.text("使用情况已授权 · 管理") else MoteI18n.text("使用情况未授权 · 去授权")
@@ -659,7 +677,7 @@ class MainActivity : MoteActivity() {
             token = checked(token) { token.text.toString().trim().also { require(it.isBlank() || it.length >= 32) { MoteI18n.text("令牌至少需要 32 个字符；未连接时可留空") } } },
             deviceName = checked(name) { name.text.toString().trim().also { require(it.isNotBlank() && it.length <= 128) { MoteI18n.text("请填写 1..128 字符的设备名称") } } },
             wifiOnly = wifi.isChecked, syncMode = syncModes[syncMode.selectedItemPosition], syncIntervalMinutes = number(syncInterval, 15..1440),
-            syncBatchSize = number(syncBatch, 1..500), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
+            packedUpload = packedUpload.isChecked, syncBatchSize = number(syncBatch, 1..500), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
         Page.CAPTURE -> current.copy(
             intervalSeconds = number(interval, 5..300), mode = if (projectionMode.isChecked) "projection" else "accessibility",
             chargingOnly = chargingOnly.isChecked, batteryPauseBelowPct = number(batteryBelow, 0..95),
@@ -911,7 +929,7 @@ class MainActivity : MoteActivity() {
                     snapshot.config?.let { if (!applyingSettings && it != loadedConfig) reloadSettings(it) }
                     captureTitle.text = snapshot.title; captureAction.text = snapshot.action
                     captureProgress.visibility = if (settings.enabled) View.VISIBLE else View.GONE
-                    status.text = snapshot.status; syncStatus.text = snapshot.sync
+                    status.text = snapshot.status; syncStatus.text = snapshot.sync + "\n" + MoteI18n.text("上传速率") + " · " + UploadMeter.label()
                     totalsStatus.text = snapshot.totals; technicalStatus.text = snapshot.technical
                     centralConnectionTitle.text = snapshot.connectionTitle; centralConnectionStatus.text = snapshot.connection
                     connectionSummary.text = snapshot.connection; nsfwStatus.text = snapshot.model

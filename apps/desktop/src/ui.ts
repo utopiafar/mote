@@ -7,7 +7,7 @@ let busy = false;
 const fields = byId<HTMLFieldSetElement>('settings-fields');
 const settingsForm = byId<HTMLFormElement>('settings');
 byId('device-name').addEventListener('input', () => markSettingsDirty());
-const pageNames = ['statistics', 'overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression', 'permissions'] as const;
+const pageNames = ['ask', 'statistics', 'overview', 'notes', 'records', 'sources', 'settings', 'connection', 'sync', 'capture', 'privacy', 'developer', 'about', 'activity', 'compression', 'permissions'] as const;
 type Page = typeof pageNames[number];
 let currentPage: Page = 'overview';
 let settingsDirty = false;
@@ -44,6 +44,7 @@ function showPage(page: Page, focus = true): void {
   if (focus) document.querySelector<HTMLElement>(`[data-page="${page}"] [data-page-title]`)?.focus({ preventScroll: true });
   window.scrollTo({ top: pageScroll.get(page) || 0, behavior: 'instant' });
   if (page === 'compression') { byId<HTMLInputElement>('compression-quality').value=String(currentStatus.config.jpegQuality); const side=byId<HTMLSelectElement>('compression-side');if(!Array.from(side.options).some(o=>o.value===String(currentStatus.config.captureMaxSide)))side.add(new Option(String(currentStatus.config.captureMaxSide),String(currentStatus.config.captureMaxSide)));side.value=String(currentStatus.config.captureMaxSide); void refreshCompression(); }
+  if (page === 'ask') void refreshAsk();
   if (page === 'permissions') void refreshPermissions();
   if (page === 'statistics') void loadStorageStatistics();
   if (page === 'records') void loadRecords();
@@ -196,6 +197,7 @@ byId('record-detail-close').addEventListener('click', () => { byId('record-detai
 function readInput(id: string): string { return byId<HTMLInputElement>(id).value; }
 function numberInput(id: string): number { return Number(readInput(id)); }
 function fillConfig(config: import('./contracts').PublicConfig): void {
+  byId<HTMLInputElement>('packed-upload').checked = config.packedUpload ?? false;
   byId<HTMLInputElement>('notification-collection').checked=Boolean(config.notificationCollectionEnabled);
   captureStorageDirectory = config.captureStorageDirectory || '';
   renderStorage();
@@ -304,6 +306,8 @@ function render(status: import('./contracts').Status): void {
   const syncStateLabel = status.sync.state === 'idle' && status.sync.pendingRecords > 0 ? moteText("记录已保存 · 准备上传") : syncNames[status.sync.state];
   setText('sync-state', syncStateLabel);
   setText('sync-policy-label', syncModeLabels[status.sync.mode]);
+  setText('upload-speed', status.sync.state === 'uploading' ? `${((status.sync.uploadBytesPerSecond ?? 0) / 1024).toFixed(1)} KiB/s` : '0 KiB/s');
+  setText('sync-upload-speed', byId('upload-speed').textContent ?? '0 KiB/s');
   setText('sync-message', moteText("{0} · 共 {1} 条待传（含本地来源）", status.sync.message, status.sync.pendingRecords.toLocaleString(getLocale())));
   setText('settings-sync-summary', `${syncModeLabels[status.sync.mode]} · ${status.sync.state === 'unconfigured' ? moteText("未连接时只在本机保存") : syncStateLabel}`);
   updateLocalBacklog();
@@ -383,7 +387,7 @@ byId('settings').addEventListener('submit', event => {
       metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
       defaultCollection: readInput('default-collection') as import('./contracts').CollectionMode, appCollectionRules,
       diagnosticsEnabled: byId<HTMLInputElement>('diagnostics-enabled').checked, diagnosticIntervalSeconds: numberInput('diagnostic-interval'),
-      imageDedupeMode: readInput('image-dedupe') as 'off' | 'exact', jpegQuality: numberInput('jpeg-quality'), captureMaxSide: numberInput('capture-max-side'), pauseOnBattery: byId<HTMLInputElement>('pause-on-battery').checked, batteryPauseBelowPct: numberInput('battery-pause-below'),
+      packedUpload: byId<HTMLInputElement>('packed-upload').checked, imageDedupeMode: readInput('image-dedupe') as import('./image-dedupe').ImageDedupeMode, jpegQuality: numberInput('jpeg-quality'), captureMaxSide: numberInput('capture-max-side'), pauseOnBattery: byId<HTMLInputElement>('pause-on-battery').checked, batteryPauseBelowPct: numberInput('battery-pause-below'),
       syncMode: selectedSyncMode(), syncIntervalMinutes: numberInput('sync-interval'), syncBatchSize: numberInput('sync-batch'),
       ...(byId<HTMLInputElement>('confirm-local-backlog').checked ? { confirmLocalBacklog: true } : {}),
       serverUrl: readInput('server-url'), deviceName: readInput('device-name'), intervalMs: numberInput('interval') * 1000,
@@ -424,7 +428,7 @@ desktopApi.onStatus(render);
 void desktopApi.status().then(render).catch(() => feedback(moteText("无法连接采集器进程，请重新打开 Mote。")));
 
 byId('note-attachments').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('notes')));
-byId('ask-central').addEventListener('click',()=>void perform(()=>desktopApi.openCentral('ask')));
+byId('ask-central').addEventListener('click', () => showPage('ask'));
 byId('central').addEventListener('click', () => {
   if (!currentStatus?.config.serverUrl) { showPage('connection'); feedback(moteText("先连接你的中央节点，即可打开中央仓库。")); return; }
 
@@ -910,7 +914,14 @@ byId('storage-refresh').addEventListener('click',()=>void loadStorageStatistics(
 async function refreshPermissions(): Promise<void> {
   try {
     const status = await desktopApi.permissionStatus();
-    for (const kind of ['screen', 'accessibility', 'calendar'] as const) byId('permission-' + kind).textContent = ({granted: moteText("已授权"), denied: moteText("未授权"), 'not-determined': moteText("尚未授权"), unsupported: moteText("当前平台不支持"), unknown: moteText("无法确认，请检查系统设置")} as Record<string,string>)[status[kind]] ?? status[kind];
+    for (const kind of ['screen', 'accessibility', 'calendar'] as const) {
+      const element = byId('permission-' + kind), granted = status[kind] === 'granted';
+      const unknown = ['unknown', 'unsupported'].includes(status[kind]);
+      element.className = 'permission-badge ' + (granted ? 'granted' : unknown ? 'unknown' : 'denied');
+      element.textContent = (granted ? '✓ ' : unknown ? '? ' : '! ') + (({granted: moteText("已授权"), denied: moteText("未授权"), 'not-determined': moteText("尚未授权"), unsupported: moteText("当前平台不支持"), unknown: moteText("无法确认，请检查系统设置")} as Record<string,string>)[status[kind]] ?? status[kind]);
+    }
+    setText('permission-identity', `${status.bundleId ?? 'unknown'}\n${status.appPath ?? ''}`);
+
   } catch { feedback(moteText("权限状态读取失败，请重试。")); }
 }
 byId('permissions-refresh').addEventListener('click', () => void refreshPermissions());
@@ -922,3 +933,93 @@ byId('notification-collection').addEventListener('change', () => {
     if (status.accessibility !== 'granted') { byId<HTMLInputElement>('notification-collection').checked = false; window.alert(moteText("读取通知需要辅助功能权限，请先授权后再启用。")); showPage('permissions'); }
   }).catch(() => feedback(moteText("权限检查失败，请重试。")));
 });
+
+let askRun: import('./ask').AskRun | undefined;
+let askConversation: import('./ask').AskConversation | undefined;
+let askBusy = false, askGeneration = 0, askCursor: string | undefined;
+let askPendingInput: {id: string; question: string; conversationId?: string} | undefined;
+let askTimer: ReturnType<typeof setTimeout> | undefined;
+const askCall = <T>(command: import('./ask').AskCommand, input?: Parameters<typeof desktopApi.ask>[1]) => desktopApi.ask(command, input) as Promise<T>;
+function askControls(): void {
+  const running = askRun?.status === 'running';
+  byId<HTMLButtonElement>('ask-send').disabled = askBusy || running;
+  byId<HTMLButtonElement>('ask-new').disabled = askBusy || running;
+  byId('ask-stop').hidden = !running;
+  for (const button of Array.from(byId('ask-history').querySelectorAll('button'))) button.disabled = askBusy || running;
+}
+function renderAsk(): void {
+  const messages = byId('ask-messages'); messages.replaceChildren();
+  for (const turn of askConversation?.turns ?? []) {
+    const article = document.createElement('article'), question = document.createElement('h3'), answer = document.createElement('p');
+    question.textContent = turn.question; answer.textContent = turn.result?.answer ?? turn.error?.message ?? moteText('回答未完成');
+    article.append(question, answer);
+    for (const citation of turn.result?.citations ?? []) {
+      const evidence = document.createElement('details'), title = document.createElement('summary'), quote = document.createElement('p');
+      title.textContent = `${citation.appName} · ${citation.capturedAt} · ${citation.id}`; quote.textContent = citation.excerpt;
+      evidence.append(title, quote); article.append(evidence);
+    }
+    messages.append(article);
+  }
+  const last = askRun?.events?.at(-1);
+  setText('ask-progress', !askRun ? '' : askRun.status === 'running' ? last?.message ?? (last?.tool ? `${moteText('正在读取资料')} · ${last.tool}` : moteText('中央节点正在回答…')) : askRun.status === 'cancelled' ? moteText('已停止回答') : askRun.status === 'failed' ? askRun.error?.message ?? moteText('回答未完成') : moteText('回答已完成'));
+  askControls();
+}
+async function askHistory(append = false): Promise<void> {
+  const generation = askGeneration;
+  const page = await askCall<{items: {id: string; title: string}[]; nextCursor?: string}>('history', append && askCursor ? {cursor: askCursor} : undefined);
+  if (generation !== askGeneration) return;
+  const history = byId('ask-history'); if (!append) history.replaceChildren();
+  for (const item of page.items) {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary'; button.textContent = item.title;
+    button.addEventListener('click', () => { if (!askBusy && askRun?.status !== 'running') void askAction(async () => { askConversation = undefined; askRun = undefined; renderAsk(); askConversation = await askCall('conversation', {id: item.id}); renderAsk(); }); });
+    history.append(button);
+  }
+  askCursor = page.nextCursor; byId('ask-more').hidden = !askCursor; askControls();
+}
+async function askAction(action: () => Promise<void>): Promise<void> {
+  if (askBusy) return; askBusy = true; askControls(); setText('ask-error', '');
+  try { await action(); } catch (error) { setText('ask-error', error instanceof Error ? error.message : moteText('请求失败，请重试')); }
+  finally { askBusy = false; askControls(); }
+}
+async function refreshAsk(): Promise<void> {
+  await askAction(async () => {
+    await askHistory();
+    const page = await askCall<{items: import('./ask').AskRun[]}>('runs');
+    askRun = page.items.find(item => item.status === 'running') ?? askRun;
+    if (askRun?.conversationId) askConversation = await askCall('conversation', {id: askRun.conversationId});
+    renderAsk(); if (askRun?.status === 'running') scheduleAskPoll();
+  });
+}
+function scheduleAskPoll(): void {
+  clearTimeout(askTimer); const generation = askGeneration;
+  askTimer = setTimeout(async () => {
+    if (currentPage !== 'ask' || !askRun || generation !== askGeneration) return;
+    try {
+      const run = await askCall<import('./ask').AskRun>('run', {id: askRun.id});
+      if (generation !== askGeneration) return; askRun = run;
+      if (run.status !== 'running' && run.conversationId) {
+        const conversation = await askCall<import('./ask').AskConversation>('conversation', {id: run.conversationId});
+        if (generation !== askGeneration) return; askConversation = conversation; await askHistory();
+      }
+      setText('ask-error', ''); renderAsk();
+      if (run.status === 'running') scheduleAskPoll();
+    } catch (error) { if (generation !== askGeneration) return; setText('ask-error', `${error instanceof Error ? error.message : ''} · ${moteText('请刷新检查结果，避免重复发送。')}`); if (askRun?.status === 'running') scheduleAskPoll(); }
+  }, 1000);
+}
+byId('ask-form').addEventListener('submit', event => {
+  event.preventDefault(); if (askBusy || askRun?.status === 'running') return;
+  const question = readInput('ask-question').trim(); if (!question) return;
+  void askAction(async () => {
+    const input = askPendingInput?.question === question && askPendingInput.conversationId === askConversation?.id ? askPendingInput : {id: crypto.randomUUID(), question, ...(askConversation ? {conversationId: askConversation.id} : {})};
+    askPendingInput = input;
+    try { askRun = await askCall('start', input); }
+    catch { askRun = await askCall('start', input); } // Same admission ID after an ambiguous network response.
+    askPendingInput = undefined; byId<HTMLTextAreaElement>('ask-question').value = ''; renderAsk(); scheduleAskPoll();
+  });
+});
+byId('ask-refresh').addEventListener('click', () => void refreshAsk());
+byId('ask-more').addEventListener('click', () => void askAction(() => askHistory(true)));
+byId('ask-stop').addEventListener('click', () => void askAction(async () => { if (askRun) { askRun = await askCall('cancel', {id: askRun.id}); renderAsk(); scheduleAskPoll(); } }));
+byId('ask-new').addEventListener('click', () => { if (askBusy || askRun?.status === 'running') return; askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; renderAsk(); });
+byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { await askCall('login', {token}); askGeneration++; askRun = undefined; askConversation = undefined; renderAsk(); await askHistory(); }); });
+byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout'); askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; byId('ask-history').replaceChildren(); renderAsk(); }));

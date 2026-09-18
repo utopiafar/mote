@@ -1,3 +1,4 @@
+import { meteredBody } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
 import { randomUUID } from 'node:crypto';
@@ -197,7 +198,7 @@ export class LocalSourceManager {
   private request(signal: AbortSignal): SourceRequest {
     return async (path, body, method, requestSignal) => {
       if (!this.connection.serverUrl || !this.connection.token || !this.nodeBinding.matches(this.connection)) throw new Error(moteText("本地来源没有匹配的中央连接"));
-      const response = await fetch(this.connection.serverUrl + path, { method, headers: { Authorization: 'Bearer ' + this.connection.token, 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:body instanceof Uint8Array?new Uint8Array(body):JSON.stringify(body), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
+      const response = await fetch(this.connection.serverUrl + path, { method, headers: { Authorization: 'Bearer ' + this.connection.token, 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:meteredBody(body instanceof Uint8Array?body:JSON.stringify(body)), ...({duplex:'half'} as object), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
       if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败，请检查令牌") : response.status === 409 ? moteText("中央来源已暂停，请在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
       return JSON.parse(await readResponseText(response, 1024 * 1024));
     };

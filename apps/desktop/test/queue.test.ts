@@ -183,3 +183,14 @@ it('persists compacted observations across restart and ignores an acknowledgemen
   expect((await restarted.next())?.record.event.stateSeries?.samples).toHaveLength(2);
   await restarted.acknowledge(first.id,false,1);expect(restarted.stats().depth).toBe(1);
 });
+
+it('packs stable snapshots without acknowledging other records when a receipt is partial', async () => {
+  const a = event(), b = event('00000000-0000-4000-8000-000000000077');
+  await queue.enqueue(a, image); await queue.enqueue(b, image);
+  const batch = await queue.nextBatch(25, Date.now(), true);
+  expect(batch.map(item => item.record.event.id).sort()).toEqual([a.id, b.id].sort());
+  await queue.acknowledge(a.id);
+  expect((await queue.nextBatch()).map(item => item.record.event.id)).toEqual([b.id]);
+  const reopened = new DurableQueue(directory, limits); await reopened.initialize();
+  expect((await reopened.next())?.record.event.id).toBe(b.id);
+});

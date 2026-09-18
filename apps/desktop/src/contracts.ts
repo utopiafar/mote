@@ -1,5 +1,5 @@
 export type SyncMode = 'realtime' | 'interval' | 'batch' | 'manual';
-export interface SyncStatus { state: 'unconfigured' | 'idle' | 'waiting' | 'uploading' | 'error' | 'manual'; mode: SyncMode; message: string; nextUploadAt?: string; lastUploadAt?: string; pendingRecords: number; localBacklogUnbound?: boolean }
+export interface SyncStatus { uploadBytesPerSecond?: number; state: 'unconfigured' | 'idle' | 'waiting' | 'uploading' | 'error' | 'manual'; mode: SyncMode; message: string; nextUploadAt?: string; lastUploadAt?: string; pendingRecords: number; localBacklogUnbound?: boolean }
 export type CollectionMode = 'content' | 'activity' | 'off';
 export type Platform = 'macos' | 'windows' | 'linux';
 export type Rectangle = { x: number; y: number; width: number; height: number };
@@ -35,7 +35,8 @@ export interface Config {
   metadataEnabled: boolean;
   diagnosticsEnabled: boolean;
   diagnosticIntervalSeconds: number;
-  imageDedupeMode?: 'off' | 'exact';
+  imageDedupeMode?: import('./image-dedupe').ImageDedupeMode;
+  packedUpload?: boolean;
   jpegQuality: number;
   captureMaxSide: number;
   pauseOnBattery: boolean;
@@ -110,7 +111,8 @@ export interface NsfwGate {
   close(): void;
 }
 export interface DesktopApi {
-  permissionStatus(): Promise<{screen: string; accessibility: string; calendar: string}>;
+  ask(command: import('./ask').AskCommand, input?: {id?: string; question?: string; conversationId?: string; token?: string; cursor?: string}): Promise<unknown>;
+  permissionStatus(): Promise<{screen: string; accessibility: string; calendar: string; appPath?: string; bundleId?: string}>;
   permissionSettings(kind: 'screen' | 'accessibility' | 'calendar' | 'files'): Promise<void>;
   storageStatistics(): Promise<import('@mote/shared/storage-statistics').StorageStatistics>;
   language(): Promise<{preference: import('@mote/shared/i18n').LanguagePreference; locale: import('@mote/shared/i18n').Locale}>;

@@ -74,7 +74,7 @@ app.on('browser-window-created', (_event, window) => {
       await js(`document.querySelector('#start').click(); new Promise(resolve => setTimeout(resolve, 100))`);
       assert(!startRequested, 'Missing screen permission blocks the start action');
       assert(await js(`!document.querySelector('[data-page="permissions"]').hidden && window.fixturePermissionAlert.includes('屏幕录制')`));
-      assert.equal(await js(`document.querySelector('#permission-screen').textContent`), '未授权');
+      assert.equal(await js(`document.querySelector('#permission-screen').textContent`), '! 未授权');
       await navigate('overview');
       assert(await js(`Array.from(document.querySelectorAll('[data-page]')).filter(el => !el.hidden).every(el => el.dataset.page === 'overview')`));
       assert(await js(`document.querySelector('#server-url').getClientRects().length === 0 && document.querySelector('#diagnostics-enabled').getClientRects().length === 0`), 'Overview has no settings fields');

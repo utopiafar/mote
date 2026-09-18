@@ -17,6 +17,7 @@ class AppUpdatesActivity : MoteActivity() {
     private lateinit var status: TextView
     private lateinit var primary: Button
     private lateinit var cancel: Button
+    private lateinit var deletePackage: Button
     private lateinit var progress: ProgressBar
     private lateinit var repository: EditText
     private lateinit var channel: Spinner
@@ -59,6 +60,10 @@ class AppUpdatesActivity : MoteActivity() {
                 else AppUpdateWork.cancel(applicationContext)
             }
         }
+        deletePackage = button(MoteI18n.text("删除已下载包")) {
+            background(MoteI18n.text("正在删除更新包…")) { store.deleteDownloadedPackages() }
+        }
+        text(MoteI18n.text("删除下载的 APK 和未完成下载，保留应用设置和记录；需要时可以重新下载。"), 13f)
         val advanced = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
         button(MoteI18n.text("更新设置")) { advanced.visibility = if (advanced.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE }
         body.addView(advanced)
@@ -95,6 +100,7 @@ class AppUpdatesActivity : MoteActivity() {
         val action = UpdatePresentation.action(state, store.prefs.getLong("availableCode", 0) > BuildConfig.VERSION_CODE)
         primary.text = when (action) { "download" -> MoteI18n.text("下载更新"); "install" -> MoteI18n.text("安装更新"); "busy" -> MoteI18n.text("处理中…"); else -> MoteI18n.text("检查更新") }
         primary.isEnabled = action != "busy"
+        deletePackage.isEnabled = state !in UpdatePresentation.installStates && !store.prefs.getBoolean("installRequestActive", false)
         cancel.visibility = if (state in UpdatePresentation.transferStates || state in UpdatePresentation.installStates) android.view.View.VISIBLE else android.view.View.GONE
         progress.visibility = if (state in UpdatePresentation.transferStates || state in UpdatePresentation.installStates) android.view.View.VISIBLE else android.view.View.GONE
         progress.isIndeterminate = state != "downloading" || size <= 0

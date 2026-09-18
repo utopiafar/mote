@@ -13,7 +13,7 @@ data class CollectorConfig(
     val jpegQuality: Int = 75, val captureMaxSide: Int = 1280, val chargingOnly: Boolean = false, val batteryPauseBelowPct: Int = 0,
     val diagnosticsEnabled: Boolean = false, val diagnosticsIntervalSeconds: Int = 60,
     val appCollectionRules: String = AppCollectionRules.DEFAULT, val metadataEnabled: Boolean = true,
-    val syncMode: String = "realtime", val syncIntervalMinutes: Int = 15, val syncBatchSize: Int = 20,
+    val packedUpload: Boolean = true, val syncMode: String = "realtime", val syncIntervalMinutes: Int = 15, val syncBatchSize: Int = 20,
     val ocrChargingOnly: Boolean = false, val mediaCollectionEnabled: Boolean = false, val screenCollectionEnabled: Boolean = true,
     val notificationCollectionEnabled: Boolean = false, val deviceEventCollectionEnabled: Boolean = false,
     val syncChargingOnly: Boolean = false, val syncBatteryNotLow: Boolean = false, val imageDedupeMode: String = "off",
@@ -91,7 +91,7 @@ class Settings(private val context: Context) {
         appCollectionRules = prefs.getString("appCollectionRules", if (prefs.contains("interval") || prefs.contains("enabled")) AppCollectionRules.LEGACY_DEFAULT else AppCollectionRules.DEFAULT)!!,
         metadataEnabled = prefs.getBoolean("metadataEnabled", true),
         syncMode = prefs.getString("syncMode", "realtime")!!,
-        syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20),
+        packedUpload = prefs.getBoolean("packedUpload", true), syncIntervalMinutes = prefs.getInt("syncIntervalMinutes", 15), syncBatchSize = prefs.getInt("syncBatchSize", 20),
         ocrChargingOnly = prefs.getBoolean("ocrChargingOnly", false), mediaCollectionEnabled = prefs.getBoolean("mediaCollectionEnabled", false), screenCollectionEnabled = prefs.getBoolean("screenCollectionEnabled", true),
         notificationCollectionEnabled = prefs.getBoolean("notificationCollectionEnabled", false), deviceEventCollectionEnabled = prefs.getBoolean("deviceEventCollectionEnabled", false),
         syncChargingOnly = prefs.getBoolean("syncChargingOnly", false), syncBatteryNotLow = prefs.getBoolean("syncBatteryNotLow", false), imageDedupeMode = prefs.getString("imageDedupeMode", "off")!!,
@@ -120,7 +120,7 @@ class Settings(private val context: Context) {
             "ocrMode" to c.ocrMode, "ocrAppModes" to c.ocrAppModes, "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
             "dataOrigin" to origin, "syncMode" to c.syncMode, "syncIntervalMinutes" to c.syncIntervalMinutes,
             "syncChargingOnly" to c.syncChargingOnly, "syncBatteryNotLow" to c.syncBatteryNotLow,
-            "syncBatchSize" to c.syncBatchSize, "server" to c.server.trim().trimEnd('/'),
+            "packedUpload" to c.packedUpload, "syncBatchSize" to c.syncBatchSize, "server" to c.server.trim().trimEnd('/'),
             "token" to (prefs.getString("token", null)?.takeIf { credentials(it) == c.token }
                 ?: Base64.encodeToString(secret.seal(c.token.toByteArray()), Base64.NO_WRAP)),
             "deviceName" to c.deviceName, "interval" to c.intervalSeconds, "maxQueue" to c.maxQueueMiB,
@@ -204,7 +204,7 @@ class Settings(private val context: Context) {
         private var cachedConfig: CollectorConfig? = null
         private var cachedCiphertext: String? = null
         private var cachedToken = ""
-        private val configurationKeys = setOf("uploadedRetentionDays", "contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
+        private val configurationKeys = setOf("packedUpload", "uploadedRetentionDays", "contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
     }
     fun saveNsfw(value: NsfwConfig) {
         save(read().copy(nsfw = value))

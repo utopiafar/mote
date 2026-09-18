@@ -108,7 +108,7 @@ object FileUpload {
             connection.instanceFollowRedirects = false; connection.requestMethod = method; connection.connectTimeout = 15000; connection.readTimeout = 30000
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
             connection.setRequestProperty("Authorization", "Bearer ${config.token}")
-            if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { it.write(body) } }
+            if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { out -> var offset = 0; while (offset < body.size) { val count = minOf(64 * 1024, body.size - offset); out.write(body, offset, count); offset += count; UploadMeter.add(count.toLong()) } } }
             status = connection.responseCode
             check(status in 200..299) { if (connection.responseCode == 404) MoteI18n.text("中央未支持文件同步，请先升级") else MoteI18n.text("中央未确认文件（HTTP {0}）", connection.responseCode) }
             val bytes = connection.inputStream.use { readResponse(it) }

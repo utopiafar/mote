@@ -1,9 +1,11 @@
+import { uploadMeter } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import type { DiagnosticsRecorder } from '@mote/diagnostics';
 import { randomUUID, createHash } from 'node:crypto';
 import { desktopCapturer, nativeImage, powerMonitor, screen, systemPreferences } from 'electron';
 import type { NativeImage } from 'electron';
 import type { Config, Status, Platform, CaptureEvent, NsfwGate } from './contracts';
+import { imageFeatures, duplicateImage, type FrameFeatures } from './image-dedupe';
 import { decideSync } from './sync-policy';
 import type { LocalSourceManager } from './source-manager';
 import { MAX_IMAGE_BYTES, publicConfig } from './config';
@@ -13,7 +15,7 @@ import { imageWork } from './background';
 import { reviewLocally } from './privacy';
 import { collectionForApp, permitsVisibleContent } from './app-collection';
 import { collectRecordMetadata } from './record-metadata';
-import { heartbeat, uploadCapture, uploadDeferredOcr, DeletedCaptureFailure } from './transport';
+import { heartbeat, uploadCaptureBatch, uploadCapture, uploadDeferredOcr, DeletedCaptureFailure } from './transport';
 import { EventJournal, failureCode, TransportFailure, type EventStage } from './support';
 
 export const currentPlatform: Platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
@@ -39,7 +41,7 @@ export class Collector {
   private captureOcrAbort?: AbortController;
   private closed = false;
   private stopIntent = 0;
-  private lastImageKey?: string;
+  private lastImageFeatures?: FrameFeatures;
   private lastSample?: { at: number; appId: string; collection: 'content' | 'activity' };
   private state: Status['state'] = 'stopped';
   private message = moteText("尚未开始采集。请确认隐私设置后手动开始。");
@@ -56,7 +58,7 @@ export class Collector {
     powerMonitor.on('on-battery', () => { if (this.config.ocrOnlyWhileCharging) { this.ocrAbort?.abort(); this.captureOcrAbort?.abort(); } });
   }
   initialize(): void {
-    this.uploadTimer = setInterval(() => void this.upload(), 2000);
+    this.uploadTimer = setInterval(() => { if (this.uploading) this.publish(); else void this.upload(); }, 1000);
     this.heartbeatTimer = setInterval(() => void this.sendHeartbeat(), 30000);
     this.ocrTimer = setInterval(() => void this.processPendingOcr(), 10000);
     void this.processPendingOcr();
@@ -83,7 +85,7 @@ export class Collector {
     const decision = { ...policy, pendingRecords: pending.pendingRecords };
     const localBacklogUnbound = decision.pendingRecords > 0 && this.queue.binding.unbound() && (!this.sources || this.sources.nodeBinding.unbound());
     if (decision.state !== 'unconfigured' && !pending.eligibleRecords && !pending.pendingUpdates && (pending.heldRecords || pending.heldUpdates)) return { ...decision, state: 'waiting', message: pending.heldReason ?? moteText("来源待传版本等待恢复"), localBacklogUnbound };
-    if (this.uploading) return { ...decision, state: 'uploading', message: moteText("正在同步本地记录"), localBacklogUnbound };
+    if (this.uploading) return { ...decision, state: 'uploading', uploadBytesPerSecond: uploadMeter.rate(), message: moteText("正在同步本地记录"), localBacklogUnbound };
     if (decision.state !== 'unconfigured' && this.lastUploadError) return { ...decision, state: 'error', message: this.lastUploadError, localBacklogUnbound };
     return { ...decision, localBacklogUnbound };
   }
@@ -291,8 +293,12 @@ export class Collector {
       }
       const jpeg = await this.encodeImage(sanitized, cfg.jpegQuality);
       if (jpeg.length > MAX_IMAGE_BYTES) throw new Error(moteText("截图超出单张大小限制，本次采集已跳过"));
-      const imageKey = createHash('sha256').update(before.appId).update(jpeg).digest('hex');
-      if (cfg.imageDedupeMode === 'exact' && this.lastImageKey === imageKey && this.lastSample?.appId === before.appId && startedAt - this.lastSample.at <= cfg.intervalMs * 2) {
+      const mode = cfg.imageDedupeMode ?? 'off';
+      const size = sanitized.getSize();
+      const dedupeScale = mode !== 'off' && mode !== 'exact' && Math.max(size.width, size.height) > 96 ? 96 / Math.max(size.width, size.height) : 1;
+      const sample = dedupeScale < 1 ? sanitized.resize({ width: Math.max(1, Math.floor(size.width * dedupeScale)), height: Math.max(1, Math.floor(size.height * dedupeScale)) }) : sanitized;
+      const features = mode === 'off' ? undefined : imageFeatures(sample.toBitmap(), sample.getSize().width, sample.getSize().height);
+      if (features && duplicateImage(this.lastImageFeatures, features, mode) && this.lastSample?.appId === before.appId && startedAt - this.lastSample.at <= cfg.intervalMs * 2) {
         this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' };
         this.state = 'capturing'; this.message = moteText("重复截图已跳过"); this.publish(); return;
       }
@@ -326,7 +332,7 @@ export class Collector {
       stage = 'QUEUE'; void this.events?.record(stage, 'STARTED');
       this.message = moteText("正在保存采集记录…"); this.publish();
       await this.queue.enqueue(event, jpeg);
-      this.lastImageKey = imageKey;
+      this.lastImageFeatures = features;
       void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
       this.diagnostics?.recordCapture({ outcome: 'saved', imageBytes: jpeg.length, inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' }; this.lastCaptureAt = event.capturedAt;
@@ -365,12 +371,29 @@ export class Collector {
           if (entry.record.uploaded) {
             await uploadDeferredOcr(this.config, entry.record.event.id, entry.record.ocrResult!, abort.signal);
             await this.queue.acknowledge(entry.record.event.id, true);
+          } else if (this.config.packedUpload) {
+            const batch = await this.queue.nextBatch(25, Date.now(), true);
+            if (!batch.length) continue;
+            const receipts = await uploadCaptureBatch(this.config, batch.map(item => ({ event: item.record.event, image: item.image })), abort.signal);
+            let incomplete = false;
+            for (const item of batch) {
+              const code = receipts.get(item.record.event.id);
+              if (code === 200 || code === 201) {
+                await this.queue.acknowledge(item.record.event.id, false, item.record.event.stateSeries?.samples.length ?? 0);
+                this.diagnostics?.recordUpload(Buffer.byteLength(JSON.stringify({ ...item.record.event, ...(item.image ? {imageBase64: item.image.toString('base64')} : {}) })));
+                this.lastUploadAt = new Date().toISOString();
+              }
+              else if (code === 409 || code === 410) await this.queue.blockSync(item.record.event.id, moteText("中央记录冲突或已删除，本机副本保留待处理。"));
+              else { await this.queue.failed(item.record.event.id); incomplete = true; }
+            }
+            if (incomplete) { this.lastUploadError = moteText("部分记录未确认，已保留等待重试"); break; }
+            count += batch.length - 1;
           } else {
             await uploadCapture(this.config, entry.record.event, entry.image, abort.signal);
             await this.queue.acknowledge(entry.record.event.id, false, entry.record.event.stateSeries?.samples.length??0);
           }
           void this.events?.record('UPLOAD', 'OK', { elapsedMs: Date.now() - uploadStarted });
-          this.diagnostics?.recordUpload(entry.record.uploaded
+          if (entry.record.uploaded || !this.config.packedUpload) this.diagnostics?.recordUpload(entry.record.uploaded
             ? Buffer.byteLength(JSON.stringify({ ocrText: entry.record.ocrResult, status: 'completed' }))
             : Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
           this.lastUploadAt = new Date().toISOString(); this.lastUploadError = undefined;

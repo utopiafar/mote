@@ -362,3 +362,18 @@ progress::-webkit-progress-value { border-radius: 5px; background: #759664; }
 .central-status.unconfigured .central-status-icon { color:#8a9587; background:#ecefe8; }
 @keyframes pulse-connection { 50% { opacity:.45; transform:scale(.82); } }
 @media(max-width:650px) { .central-status { align-items:flex-start; flex-wrap:wrap; gap:12px; padding:16px; } .central-status-copy { flex-basis:calc(100% - 52px); } .central-status-actions { width:100%; margin-left:52px; } .central-status-actions .button { width:100%; } }
+
+.permission-badge { display: inline-block; padding: 10px 16px; border-radius: 10px; font-size: 16px; font-weight: 700; border: 2px solid currentColor; }
+.permission-badge.granted { color: #15613a; background: #e7f7ec; }
+.permission-badge.denied { color: #9c341d; background: #fff0e9; }
+.permission-badge.unknown { color: #665419; background: #fff8d9; }
+#permission-identity { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.ask-layout { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 20px; }
+#ask-history button { display: block; width: 100%; text-align: left; margin: 8px 0; }
+#ask-messages { max-height: 55vh; overflow-y: auto; }
+#ask-messages article { border-bottom: 1px solid var(--border, #ddd); padding: 14px 0; }
+#ask-messages p { white-space: pre-wrap; overflow-wrap: anywhere; }
+#ask-question { width: 100%; box-sizing: border-box; }
+#ask-error { color: #ad3426; }
+@media(max-width:800px) { .ask-layout { grid-template-columns: 1fr; } }

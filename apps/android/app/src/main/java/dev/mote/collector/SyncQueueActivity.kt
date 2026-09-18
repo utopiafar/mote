@@ -18,11 +18,17 @@ class SyncQueueActivity : MoteActivity() {
     private lateinit var categories: Spinner
     private var sources = emptyList<LocalSource>()
     private var offset = 0
+    private lateinit var speed: TextView
+    private val speedHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val speedTick = object : Runnable { override fun run() { if (::speed.isInitialized) speed.text = MoteI18n.text("上传速率") + " · " + UploadMeter.label(); speedHandler.postDelayed(this, 1000) } }
+    override fun onResume() { super.onResume(); speedHandler.post(speedTick) }
+    override fun onPause() { speedHandler.removeCallbacks(speedTick); super.onPause() }
     override fun onCreate(state: Bundle?) {
         super.onCreate(state); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         val body = moteDetailPage()
         body.addView(TextView(this).apply { text = MoteI18n.text("待上传队列"); textSize = 28f })
         summary = TextView(this).also(body::addView)
+        speed = TextView(this).apply { textSize = 20f; setTypeface(null, android.graphics.Typeface.BOLD) }.also(body::addView)
         categories = Spinner(this).also(body::addView)
         body.addView(Button(this).apply { text = MoteI18n.text("刷新"); setOnClickListener { load() } })
         rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }.also(body::addView)
