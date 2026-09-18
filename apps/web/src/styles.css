@@ -3854,3 +3854,15 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .module-assignment-footer {display:flex;gap:16px;align-items:center;margin-top:8px;font-size:13px;color:#527245;}
 @media(max-width:1100px) {.provider-workspace {grid-template-columns:230px minmax(0,1fr);gap:16px;}.provider-detail .preference-grid {grid-template-columns:1fr;}.module-assignment-row {gap:16px;grid-template-columns:140px minmax(140px,1fr) minmax(190px,1.3fr);}}
 @media(max-width:760px) {.provider-workspace {grid-template-columns:1fr;}.provider-sidebar {position:static;}.provider-list {grid-template-columns:repeat(auto-fit,minmax(180px,1fr));}.provider-facts {grid-template-columns:1fr;}.module-assignment-row {grid-template-columns:1fr;gap:14px;}.module-assignments,.deployment-provider {padding:20px;}.module-assignments .section-heading {flex-wrap:wrap;gap:12px;}}
+
+/* The central node is a first-class connection, not a setting users have to hunt for. */
+.connection-pill { display:inline-flex; align-items:center; gap:8px; min-height:34px; padding:7px 10px; border:1px solid #dbe5da; border-radius:999px; background:#f3f7f1; color:#41654d; font-size:11px; font-weight:600; white-space:nowrap; }
+.connection-pill:hover { border-color:#9db49a; background:#ebf3e9; }
+.connection-pill:focus-visible { outline:3px solid #adc2a4; outline-offset:3px; }
+.connection-pill-dot { width:7px; height:7px; border-radius:50%; background:#7d9875; box-shadow:0 0 0 3px #dce9d8; }
+.connection-pill.checking { background:#f7f5ec; border-color:#e6dfc6; color:#816f42; }
+.connection-pill.checking .connection-pill-dot { background:#c39a48; box-shadow:0 0 0 3px #f1e8cf; animation:pulse-connection 1.5s ease-in-out infinite; }
+.connection-pill.signed-out { background:#fffefa; border-color:#e3e5da; color:#66756c; }
+.connection-pill.signed-out .connection-pill-dot { background:#a9b0a4; box-shadow:0 0 0 3px #eef0ea; }
+@keyframes pulse-connection { 50% { opacity:.45; transform:scale(.82); } }
+@media (max-width:760px) { .connection-pill { min-height:32px; padding-inline:9px; font-size:10px; } .connection-pill svg { display:none; } }

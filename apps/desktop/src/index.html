@@ -45,6 +45,11 @@
     <section data-page="overview" class="page overview-page">
       <header class="page-header"><div><div class="eyebrow"><span data-i18n>你的个人上下文</span></div><h1 tabindex="-1" data-page-title><span data-i18n>概览</span></h1><p><span data-i18n>让日常记录安静发生，需要时有迹可循。</span></p></div><span class="tag"><span class="local-dot" aria-hidden="true"></span><span data-i18n>保存在你的设备与节点</span></span></header>
       <div id="setup-prompt" class="setup-prompt" hidden><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span><div><strong><span data-i18n>先在本机记录，准备好再连接</span></strong><p><span data-i18n>无需服务端也能采集和保存随手记。连接后按你选择的策略上传。</span></p></div><button class="primary" data-nav="connection" type="button"><span data-i18n>连接节点</span><span aria-hidden="true">→</span></button></div>
+      <section id="central-status" class="central-status" aria-live="polite" aria-label="中央节点连接状态" data-i18n-aria-label="">
+        <span id="central-status-icon" class="central-status-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span>
+        <div class="central-status-copy"><div class="eyebrow"><span data-i18n>中央节点连接</span></div><h2 id="central-status-title"><span data-i18n>正在读取</span></h2><p id="central-status-message" class="helper"></p><small id="central-status-origin" class="profile-path"></small></div>
+        <div class="central-status-actions"><button id="central-status-action" class="primary" data-nav="connection" type="button"><span data-i18n>查看连接</span></button></div>
+      </section>
       <section class="status-card" aria-live="polite" aria-label="采集状态" data-i18n-aria-label="">
         <div class="status-heading"><span id="status-dot" class="dot"></span><h2 id="state"><span data-i18n>正在初始化</span></h2><span class="permission" id="permission"><span data-i18n>权限检查中</span></span></div>
         <button id="storage-restart" class="secondary" type="button" hidden><span data-i18n>重新打开 Mote 以恢复存储</span></button><p id="message"><span data-i18n>正在读取本地配置与队列…</span></p>

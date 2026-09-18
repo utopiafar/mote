@@ -341,3 +341,24 @@ progress::-webkit-progress-value { border-radius: 5px; background: #759664; }
 #records-grid.record-list{grid-template-columns:1fr} .record-list .record-card{display:flex;align-items:center;text-align:left}.record-list .record-card img{width:128px;height:92px;object-fit:contain}.record-list .record-card-caption{flex:1}
 
 .storage-bar{display:grid;grid-template-columns:100px 1fr 100px;gap:12px;margin:12px 0;align-items:center}.storage-bar meter{width:100%;height:20px}
+
+/* Keep node reachability visible beside the local capture state. */
+.central-status { display:flex; align-items:center; gap:16px; margin:0 0 20px; padding:18px 20px; border:1px solid #dce8d9; border-radius:12px; background:#f1f6ee; }
+.central-status-icon { display:grid; place-items:center; width:38px; height:38px; flex:0 0 auto; border-radius:11px; color:#5d825b; background:#e2eedf; }
+.central-status-icon .icon { width:19px; height:19px; }
+.central-status-copy { min-width:0; flex:1; }
+.central-status-copy .eyebrow { margin-bottom:3px; }
+.central-status-copy h2 { margin:0; color:#3f5e45; font-size:16px; font-weight:600; }
+.central-status-copy .helper { margin:3px 0 0; color:#61715f; line-height:1.65; }
+.central-status-copy small { display:block; margin-top:4px; color:#829080; font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.central-status-actions { flex:0 0 auto; }
+.central-status.syncing { background:#f3f6ee; border-color:#dfe7d5; }
+.central-status.syncing .central-status-icon { color:#9b7b3e; background:#f3ecd9; }
+.central-status.syncing .central-status-icon .icon { animation:pulse-connection 1.5s ease-in-out infinite; }
+.central-status.error { background:#fff3ed; border-color:#ecd9ce; }
+.central-status.error .central-status-icon { color:#aa6a56; background:#f8e5dc; }
+.central-status.error .central-status-copy h2 { color:#8f5e4e; }
+.central-status.unconfigured { background:#f7f8f3; border-color:#e1e5da; }
+.central-status.unconfigured .central-status-icon { color:#8a9587; background:#ecefe8; }
+@keyframes pulse-connection { 50% { opacity:.45; transform:scale(.82); } }
+@media(max-width:650px) { .central-status { align-items:flex-start; flex-wrap:wrap; gap:12px; padding:16px; } .central-status-copy { flex-basis:calc(100% - 52px); } .central-status-actions { width:100%; margin-left:52px; } .central-status-actions .button { width:100%; } }

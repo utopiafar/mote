@@ -36,6 +36,8 @@ class MainActivity : MoteActivity() {
     private lateinit var totalsStatus: TextView
     private lateinit var technicalStatus: TextView
     private lateinit var captureAction: Button
+    private lateinit var centralConnectionTitle: TextView
+    private lateinit var centralConnectionStatus: TextView
     private lateinit var connectionSummary: TextView
     private lateinit var saveBar: LinearLayout
     private var applyingSettings = false
@@ -128,7 +130,8 @@ class MainActivity : MoteActivity() {
     private var resumed = false
     private var localStateJob: kotlinx.coroutines.Job? = null
     private data class StatusSnapshot(val title: String, val action: String, val status: String, val sync: String,
-        val totals: String, val technical: String, val connection: String, val model: String, val media: String, val config: CollectorConfig?)
+        val totals: String, val technical: String, val connectionTitle: String, val connection: String,
+        val model: String, val media: String, val config: CollectorConfig?)
     private val refresh = object : Runnable {
         override fun run() { refreshStatus(); handler.postDelayed(this, 2000) }
     }
@@ -213,6 +216,13 @@ class MainActivity : MoteActivity() {
             content.addView(captureProgress)
             captureAction = button(MoteI18n.text("开始采集"), true) { if (settings.enabled) stopCapture() else startCapture() }
             text(MoteI18n.text("未连接节点也能采集；随时可以暂停。"), 12, MoteUi.muted)
+        }
+        section(MoteI18n.text("中央节点"))
+        card {
+            text(MoteI18n.text("中央节点连接"), 12, MoteUi.accent)
+            centralConnectionTitle = text(MoteI18n.text("正在检查…"), 19)
+            centralConnectionStatus = text(MoteI18n.text("正在读取保存的连接与同步状态…"), 13, MoteUi.muted)
+            button(MoteI18n.text("连接设置")) { showPage(Page.CONNECTION) }
         }
         section(MoteI18n.text("同步状态"))
         card {
@@ -903,6 +913,7 @@ class MainActivity : MoteActivity() {
                     captureProgress.visibility = if (settings.enabled) View.VISIBLE else View.GONE
                     status.text = snapshot.status; syncStatus.text = snapshot.sync
                     totalsStatus.text = snapshot.totals; technicalStatus.text = snapshot.technical
+                    centralConnectionTitle.text = snapshot.connectionTitle; centralConnectionStatus.text = snapshot.connection
                     connectionSummary.text = snapshot.connection; nsfwStatus.text = snapshot.model
                     mediaStatus.text = snapshot.media
                     updateSaveBar()
@@ -947,9 +958,23 @@ class MainActivity : MoteActivity() {
         val syncText = "${pending?.let { MoteI18n.text("待同步 {0} 条", it) } ?: MoteI18n.text("队列暂不可读取")}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}\n${syncMessage}"
         val totalsText = local.imageLabel() + (if (QueueStorage.maintaining) MoteI18n.text(" · 后台整理中，可正常采集") else "") + "\n" + if (stats == null) MoteI18n.text("累计统计暂不可读取") else MoteI18n.text("本周期累计截图记录 {0}    活动 {1}    媒体 {2}    随手记 {3}\n本周期已同步 {4} 条", stats.optLong("SCREEN_QUEUED"), stats.optLong("ACTIVITY_QUEUED"), stats.optLong("MEDIA_QUEUED"), stats.optLong("NOTE_QUEUED"), stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK"))
         val technicalText = MoteI18n.text("{0}\n{1}\n{2}\n{3}\n无障碍 {4} · 使用情况 {5}\n最近采集 {6}", state, totals, syncText, settings.uploadStatus(), if (CaptureAccessibilityService.connected) MoteI18n.text("已连接") else MoteI18n.text("未连接"), if (ForegroundApps.usageAllowed(this)) MoteI18n.text("已授权") else MoteI18n.text("未授权"), settings.lastCapture() ?: MoteI18n.text("无"))
-        val connectionText = if (c?.server.isNullOrBlank()) MoteI18n.text("尚未连接中央节点，请导入邀请或填写下方设置。") else MoteI18n.text("已保存节点：{0}", c?.server)
+        val connectionState = c?.takeIf { it.hasSyncConnection() }?.let { ConnectionClient(this).status() } ?: "unchecked"
+        val connectionTitle = when {
+            c == null || !c.hasSyncConnection() -> MoteI18n.text("未连接中央节点")
+            settings.syncState() == "uploading" -> MoteI18n.text("正在同步中央节点")
+            settings.syncState() == "error" || connectionState !in setOf("connected", "unchecked") -> MoteI18n.text("连接需要处理")
+            connectionState == "unchecked" -> MoteI18n.text("已保存节点 · 待验证")
+            else -> MoteI18n.text("已连接中央节点")
+        }
+        val connectionText = when {
+            c == null || !c.hasSyncConnection() -> MoteI18n.text("记录只保存在本机；连接后按你的策略上传。")
+            settings.syncState() == "error" -> settings.uploadStatus()
+            pending != null && pending > 0 -> MoteI18n.text("{0} 条记录等待中央确认 · 节点：{1}", pending, c.server)
+            connectionState == "unchecked" -> MoteI18n.text("节点已保存，但尚未完成最近一次连接验证：{0}", c.server)
+            else -> MoteI18n.text("节点：{0} · 最近一次验证成功", c.server)
+        }
         val model = NsfwModelStore(this)
-        return StatusSnapshot(title, action, state, syncText, totalsText, technicalText, connectionText, "${model.status()}\n${model.inferenceStatus()}", MediaCollection.statusLabel(this), c)
+        return StatusSnapshot(title, action, state, syncText, totalsText, technicalText, connectionTitle, connectionText, "${model.status()}\n${model.inferenceStatus()}", MediaCollection.statusLabel(this), c)
     }
     private fun mediaPermission() {
         MoteDialogBuilder(this).setTitle(MoteI18n.text("媒体播放状态授权"))

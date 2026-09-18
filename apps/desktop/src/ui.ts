@@ -250,7 +250,29 @@ function render(status: import('./contracts').Status): void {
   const names = { stopped: moteText("采集已停止"), capturing: moteText("正在采集"), paused: moteText("采集已暂停"), permission_required: moteText("需要屏幕录制权限"), error: moteText("采集已停止 · 需要处理") };
   setText('state', names[status.state]);
   setText('sidebar-state', names[status.state]);
-  byId('setup-prompt').hidden = Boolean(status.config.serverUrl && status.config.tokenConfigured);
+  const hasCentralConnection = Boolean(status.config.serverUrl && status.config.tokenConfigured);
+  const centralState = !hasCentralConnection ? 'unconfigured' : status.sync.state === 'uploading' ? 'syncing' : status.sync.state === 'error' ? 'error' : 'connected';
+  const centralTitle = !hasCentralConnection
+    ? moteText("未连接中央节点")
+    : centralState === 'syncing'
+      ? moteText("正在同步中央节点")
+      : centralState === 'error'
+        ? moteText("连接需要处理")
+        : moteText("已连接中央节点");
+  const centralMessage = !hasCentralConnection
+    ? moteText("记录只保存在本机；连接后按你的策略上传。")
+    : centralState === 'error'
+      ? status.sync.message
+      : status.sync.pendingRecords > 0
+        ? moteText("{0} 条记录等待中央确认", status.sync.pendingRecords.toLocaleString(getLocale()))
+        : status.sync.message;
+  byId('setup-prompt').hidden = hasCentralConnection;
+  byId('central-status').className = `central-status ${centralState}`;
+  byId('central-status-icon').className = `central-status-icon ${centralState}`;
+  setText('central-status-title', centralTitle);
+  setText('central-status-message', centralMessage);
+  setText('central-status-origin', hasCentralConnection ? `${status.config.deviceName} · ${status.config.serverUrl}` : moteText("连接后，采集记录会按同步设置发送"));
+  setText('central-status-action', hasCentralConnection ? moteText("连接详情") : moteText("连接节点"));
   byId('settings-connection-summary').textContent = status.config.tokenConfigured ? moteText("{0} · 已保存连接", status.config.deviceName) : moteText("连接你的中央节点，让记录开始同步");
   byId<HTMLInputElement>('login').disabled = status.environment?.legacy === false;
   byId('login-hint').textContent = status.environment?.legacy === false ? moteText("命名环境使用带 --profile 的启动命令；不会注册可能丢失环境参数的系统登录项。") : moteText("应用启动后保持停止状态，需手动开始采集；已有记录按上传策略处理。");

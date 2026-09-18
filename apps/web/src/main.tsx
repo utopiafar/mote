@@ -192,6 +192,35 @@ function StateBadge({ device }: { device: Device }) {
   );
 }
 
+function CentralStatusPill({
+  connection,
+  verified,
+  onClick,
+}: {
+  connection: Connection | null;
+  verified: boolean;
+  onClick: () => void;
+}) {
+  const state = !connection ? "signed-out" : verified ? "online" : "checking";
+  const label = !connection
+    ? moteText("连接中央节点")
+    : verified
+      ? moteText("中央节点 · 已连接")
+      : moteText("中央节点 · 正在验证");
+  return (
+    <button
+      className={`connection-pill ${state}`}
+      type="button"
+      onClick={onClick}
+      aria-label={verified ? moteText("已连接中央节点，打开连接详情") : label}
+    >
+      <span className="connection-pill-dot" aria-hidden="true" />
+      <span>{label}</span>
+      {connection ? <ChevronDown size={14} aria-hidden="true" /> : <ArrowRight size={14} aria-hidden="true" />}
+    </button>
+  );
+}
+
 function AuthImage({
   api,
   capture,
@@ -1423,6 +1452,11 @@ function App() {
             </span>
           </div>
           <div className="topbar-actions">
+            <CentralStatusPill
+              connection={connection}
+              verified={verified}
+              onClick={() => connection && verified ? onPage("about") : setShowConnect(true)}
+            />
             {connection && (
               <>
                 <span className="private-label">
