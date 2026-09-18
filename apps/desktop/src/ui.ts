@@ -940,8 +940,8 @@ byId('notification-collection').addEventListener('change', () => {
 
 byId('review-refresh').addEventListener('click', async()=>{
  const items=await window.mote.reviewPending(),root=byId('review-pending');root.replaceChildren();
- for(const item of items){const row=document.createElement('div'),label=document.createElement('span'),button=document.createElement('button');const previewButton=document.createElement('button');previewButton.type='button';previewButton.textContent='查看原图';previewButton.onclick=async()=>{const img=document.createElement('img');img.alt='本机待复核截图';img.style.maxWidth='100%';img.src=await desktopApi.captureImage('local',item.id,false);row.append(img);previewButton.disabled=true;};label.textContent=`${item.capturedAt} · ${item.appName} · ${item.id}`;button.type='button';button.textContent='复核后允许上传此记录';button.onclick=async()=>{await window.mote.approveReview(item.id);row.remove();};row.append(label,previewButton,button);root.append(row);}
- if(!items.length)root.textContent='没有待复核记录';
+ for(const item of items){const row=document.createElement('div'),label=document.createElement('span'),button=document.createElement('button');const previewButton=document.createElement('button');previewButton.type='button';previewButton.textContent=moteText("查看原图");previewButton.onclick=async()=>{const img=document.createElement('img');img.alt=moteText("本机待复核截图");img.style.maxWidth='100%';img.src=await desktopApi.captureImage('local',item.id,false);row.append(img);previewButton.disabled=true;};label.textContent=`${item.capturedAt} · ${item.appName} · ${item.id}`;button.type='button';button.textContent=moteText("复核后允许上传此记录");button.onclick=async()=>{await window.mote.approveReview(item.id);row.remove();};const discard=document.createElement('button');discard.type='button';discard.textContent=moteText("丢弃，不上传");discard.onclick=async()=>{await desktopApi.rejectReview(item.id);row.remove();};row.append(label,previewButton,button,discard);root.append(row);}
+ if(!items.length)root.textContent=moteText("没有待复核记录");
 });
 let askRun: import('./ask').AskRun | undefined;
 let askConversation: import('./ask').AskConversation | undefined;

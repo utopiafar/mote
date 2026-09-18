@@ -71,7 +71,7 @@ class SyncRecoveryActivity : MoteActivity() {
                     setOnClickListener { startActivity(Intent(this@SyncRecoveryActivity, CaptureRecordsActivity::class.java).putExtra("recordId", item.getString("id"))) }
                 }), LinearLayout.LayoutParams(-1,-2))
                     if (item.getBoolean("retryable")) issues.addView(MoteUi.button(Button(this).apply {
-                        text = if (item.optBoolean("reviewHeld")) "复核后允许上传此记录" else MoteI18n.text("重新核验此冲突 · 不覆盖中央数据")
+                        text = if (item.optBoolean("reviewHeld")) MoteI18n.text("复核后允许上传此记录") else MoteI18n.text("重新核验此冲突 · 不覆盖中央数据")
                         setOnClickListener {
                             isEnabled = false
                             executor.execute {

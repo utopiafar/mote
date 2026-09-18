@@ -143,7 +143,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     output.recycle(); output = resized
                 }
                 val gate = UploadGate.review(config.uploadGate) { ocrInstance.value.recognize(requireNotNull(output), config, windows.foreground) }
-                if (gate == "drop") { pause("上传审查未通过，本次截图不保存、不上传"); return@execute }
+                if (gate == "drop") { pause(MoteI18n.text("上传审查未通过，本次截图不保存、不上传")); return@execute }
                 val runOcr = false
                 val text = "" // Gate OCR stays in memory and never leaves the device.
                 val reviewed = config.uploadGate.enabled
@@ -219,7 +219,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 lastPause = null
                 previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
-                settings.status("capturing", MoteI18n.text("采集中 · {0}", if (duplicate) MoteI18n.text("图片去重命中，仅元数据已保存") else if (runOcr) MoteI18n.text("本地遮罩/OCR 已完成") else if (gate == "hold") "审查未完成，已隔离暂存待复核" else "图片已保存，上传后由中央识别"))
+                settings.status("capturing", MoteI18n.text("采集中 · {0}", if (duplicate) MoteI18n.text("图片去重命中，仅元数据已保存") else if (runOcr) MoteI18n.text("本地遮罩/OCR 已完成") else if (gate == "hold") MoteI18n.text("审查未完成，已隔离暂存待复核") else MoteI18n.text("图片已保存，上传后由中央识别")))
                 scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: MoteI18n.text("本机 NSFW 不可用，当前帧已跳过")) }
             catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: MoteI18n.text("队列已满")) }

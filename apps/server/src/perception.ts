@@ -29,7 +29,9 @@ export class Perception {
   private async run(){
     const settings=this.settings();if(!settings.enabled)return;
     const revision=sha256(JSON.stringify(settings)),signal=this.abort.signal,now=Date.now();
-    const jobs=this.store.db.prepare("SELECT * FROM perception_jobs WHERE state IN ('waiting','failed','blocked') AND attempts<4 AND available_at<=? AND ((kind='ocr' AND ?!='') OR (kind='semantic' AND ?!='' AND (requested=1 OR ?='realtime' OR (?='batch' AND created_at<=?)))) ORDER BY created_at LIMIT ?").all(now,settings.ocrEndpoint,settings.semanticEndpoint,settings.semanticMode,settings.semanticMode,now-settings.batchMinutes*60000,settings.batchSize);
+    const eligible=(url:string)=>Boolean(url)&&(settings.allowExternalProcessing||['localhost','127.0.0.1','[::1]'].includes(new URL(url).hostname));
+    for(const kind of ['ocr','semantic']){const url=kind==='ocr'?settings.ocrEndpoint:settings.semanticEndpoint;if(!eligible(url))this.store.db.prepare("UPDATE perception_jobs SET state='blocked',error=? WHERE kind=? AND state IN ('waiting','failed','blocked')").run(url?'external_processing_disabled':'provider_not_configured',kind);}
+    const jobs=this.store.db.prepare("SELECT * FROM perception_jobs WHERE state IN ('waiting','failed','blocked') AND attempts<4 AND available_at<=? AND ((kind='ocr' AND ?!='') OR (kind='semantic' AND ?!='' AND (requested=1 OR ?='realtime' OR (?='batch' AND created_at<=?)))) ORDER BY created_at LIMIT ?").all(now,eligible(settings.ocrEndpoint)?settings.ocrEndpoint:'',eligible(settings.semanticEndpoint)?settings.semanticEndpoint:'',settings.semanticMode,settings.semanticMode,now-settings.batchMinutes*60000,settings.batchSize);
     for(const kind of ['ocr','semantic'])if(!(kind==='ocr'?settings.ocrEndpoint:settings.semanticEndpoint))this.store.db.prepare("UPDATE perception_jobs SET state='blocked',error='provider_not_configured' WHERE kind=? AND state='waiting'").run(kind);
     let processed=0;
     for(const job of jobs){

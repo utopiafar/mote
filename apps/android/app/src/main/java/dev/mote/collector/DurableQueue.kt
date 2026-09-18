@@ -89,7 +89,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                     .put("capturedAt", event.getString("capturedAt"))
                     .put("reviewHeld", event.optBoolean("_reviewHeld"))
                     .put("retryable", !event.optBoolean("_archiveMissing"))
-                    .put("reason", if (event.optBoolean("_reviewHeld")) "上传审查待复核" else if (event.optBoolean("_archiveMissing")) MoteI18n.text("中央不可用 / 已删除") else if (event.optBoolean("_ocrConflict")) MoteI18n.text("OCR 内容冲突") else MoteI18n.text("记录内容冲突"))
+                    .put("reason", if (event.optBoolean("_reviewHeld")) MoteI18n.text("上传审查待复核") else if (event.optBoolean("_archiveMissing")) MoteI18n.text("中央不可用 / 已删除") else if (event.optBoolean("_ocrConflict")) MoteI18n.text("OCR 内容冲突") else MoteI18n.text("记录内容冲突"))
             }.toList()
         }
     }

@@ -167,9 +167,9 @@ export class Collector {
   }
   requireRecovery(message: string): void { this.shutdown(); this.state = 'error'; this.message = message; this.publish(); }
   async retry(): Promise<void> { if (this.closed || this.connectionHeld) return; await this.queue.resetRetries(); await this.upload(true); await this.sendHeartbeat(true); }
-  /** Only reads already sanitized queued JPEGs; independent of whether new capture is running. */
+  /** Migration only: new captures never enqueue OCR. Only reads already sanitized queued JPEGs; independent of whether new capture is running. */
   async processPendingOcr(): Promise<void> {
-    if (this.closed || this.ocrBusy || this.connectionHeld || this.sleeping || !this.config.ocrEnabled) return;
+    if (this.closed || this.ocrBusy || this.connectionHeld || this.sleeping) return;
     this.ocrBusy = true;
     const cfg = this.config, abort = this.ocrAbort = new AbortController();
     let id: string | undefined;

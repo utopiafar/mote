@@ -57,6 +57,7 @@ const api: DesktopApi = {
   start: () => ipcRenderer.invoke('mote:start'),
   stop: () => ipcRenderer.invoke('mote:stop'),
   reviewPending: () => ipcRenderer.invoke('mote:review-pending'),
+  rejectReview: id => ipcRenderer.invoke('mote:review-reject',id),
   approveReview: id => ipcRenderer.invoke('mote:review-approve',id),
   retry: () => ipcRenderer.invoke('mote:retry'),
   permissionStatus: () => ipcRenderer.invoke('mote:permission-status'),

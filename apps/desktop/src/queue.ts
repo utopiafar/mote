@@ -337,10 +337,11 @@ export class DurableQueue {
       return result;
     });
   }
-  async acknowledge(id: string, ocrComplete = false, observations?: number): Promise<void> {
+  async acknowledge(id: string, ocrComplete = false, observations?: number, reviewOnly = false): Promise<void> {
     return this.exclusive(async () => {
       this.assertReady();
       const record = this.records.get(id);
+      if (reviewOnly && (!record || record.syncError !== 'upload_review_pending')) throw Error('Review item is unavailable');
       if (!record) return;
       if(observations!==undefined&&(record.event.stateSeries?.samples.length??0)>observations)return;
       if (record.event.ocr?.status === 'pending' && !ocrComplete) {
@@ -364,6 +365,7 @@ export class DurableQueue {
     });
   }
   reviewPending() { return [...this.records.values()].filter(r=>r.syncError==='upload_review_pending').map(r=>({id:r.event.id,capturedAt:r.event.capturedAt,appName:r.event.appName})); }
+  async rejectReview(id:string) {await this.acknowledge(id,true,undefined,true);}
   async approveReview(id:string) { return this.exclusive(async()=>{const prior=this.records.get(id);if(!prior||prior.syncError!=='upload_review_pending')throw Error('Review item is unavailable');const record={...prior,syncBlocked:false,syncError:undefined};await atomicWrite(this.eventsPath(id),JSON.stringify(record));this.records.set(id,record);this.cachedStats=undefined;}); }
   async resetRetries(): Promise<void> {
     await this.syncCheckpoint();

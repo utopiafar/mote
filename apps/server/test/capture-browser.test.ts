@@ -208,3 +208,13 @@ test('session members sharing a timestamp stay separate and pages do not include
   assert.equal((await app.inject({url,headers:auth()})).json().sessionCount,3);
   for(const id of ids){const page=(await app.inject({url:url+'&sessionId='+id,headers:auth()})).json();assert.deepEqual(page.items.map((r:any)=>r.id),[id]);}
 });
+
+ test('derived update cursor is device scoped and collectors cannot alter perception policy',async t=>{
+ const {app,capture,paired}=await fixture(t),phone=await paired(),own=capture(),other=capture('other');
+ for(const payload of [own,other])assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload})).statusCode,201);
+ const response=await app.inject({url:'/api/capture-browser/updates?deviceId=phone&limit=20',headers:auth(phone.token)});
+ assert.equal(response.statusCode,200);const page=response.json();assert.deepEqual(page.items.map((i:any)=>i.id),[own.id]);assert(page.nextCursor>0);assert.equal(JSON.stringify(page).includes('imageBase64'),false);
+ assert.equal((await app.inject({url:'/api/capture-browser/updates?deviceId=other',headers:auth(phone.token)})).statusCode,403);
+ for(const method of ['GET','PUT'] as const)assert.equal((await app.inject({method,url:'/api/perception',headers:auth(phone.token),...(method==='PUT'?{payload:{}}:{})})).statusCode,403);
+ assert.equal((await app.inject({url:'/api/perception',headers:auth()})).json().settings.allowQueryImages,false);
+ });

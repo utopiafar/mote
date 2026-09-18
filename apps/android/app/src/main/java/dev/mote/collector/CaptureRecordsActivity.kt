@@ -392,7 +392,7 @@ class CaptureRecordsActivity : MoteActivity() {
                     if (bitmap != null) content.addView(ImageView(this).apply { setImageBitmap(bitmap); adjustViewBounds = true; scaleType = ImageView.ScaleType.FIT_CENTER; contentDescription = MoteI18n.text("采集图片") }, LinearLayout.LayoutParams(-1, -2))
                     else text(content, MoteI18n.text("图片暂不可用。"), 14f)
                     text(content, MoteI18n.text("识别文字"), 17f)
-                    if (record.optBoolean("centralPreview")) text(content, "中央识别预览；完整内容请切换中央记录查看。", 13f)
+                    if (record.optBoolean("centralPreview")) text(content, MoteI18n.text("中央识别预览；完整内容请切换中央记录查看。"), 13f)
                     text(content, record.optString("ocrText").ifBlank { if (record.optJSONObject("ocr")?.optString("status") == "completed") MoteI18n.text("此图片未识别到文字。") else MoteI18n.text("暂无识别文字。") }, 14f).setTextIsSelectable(true)
                 }
             } catch (error: Exception) { runOnUiThread { if (!isDestroyed && dialog.isShowing) { loading.visibility = View.GONE; message.text = errorMessage(error, remote) } } }

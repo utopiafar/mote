@@ -390,8 +390,8 @@ class MainActivity : MoteActivity() {
         content.addView(ocrMode); track(ocrMode, "ocrMode")
         ocrAppModes = field(MoteI18n.text("按应用指定 OCR（JSON）"), config.ocrAppModes, "{}")
         text(MoteI18n.text("可填写包名到 chinese、latin 或 dual 的映射；未指定的应用使用上方模式。"), 13, MoteUi.muted)
-        ocrChargingOnly = check("中央负责 OCR；旧版本地补识别策略已停用", false).apply { isEnabled = false }
-        text(MoteI18n.text("使用电池时保存图片，充电后识别文字；图片和识别结果按同步设置上传。待识别图片与文字预留空间计入存储上限。"), 13, MoteUi.muted)
+        ocrChargingOnly = check(MoteI18n.text("中央负责 OCR；旧版本地补识别策略已停用"), false).apply { isEnabled = false }
+        text(MoteI18n.text("新截图由中央识别。充电限制仅用于升级前已经排队的本机 OCR。"), 13, MoteUi.muted)
     }
 
     private fun buildDiagnostics(config: CollectorConfig) {
@@ -533,15 +533,15 @@ class MainActivity : MoteActivity() {
         rowButtons(MoteI18n.text("遮住顶部 8%"), { maskEditor.add(Mask(0f, 0f, 1f, .08f)) }, MoteI18n.text("遮住底部 12%"), { maskEditor.add(Mask(0f, .88f, 1f, 1f)) })
         rowButtons(MoteI18n.text("调整所选区域"), { editSelectedMask() }, MoteI18n.text("移除所选区域"), { maskEditor.removeSelected() })
         button(MoteI18n.text("高级：编辑精确坐标")) { maskFields.visibility = if (maskFields.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
-        section("上传审查与过滤")
-        gateEnabled = check("启用文字规则审查", config.uploadGate.enabled)
-        gateText = field("禁止上传的文字（每行一个，精确包含匹配）", config.uploadGate.blockedText, "", multiline = true)
+        section(MoteI18n.text("上传审查与过滤"))
+        gateEnabled = check(MoteI18n.text("启用文字规则审查"), config.uploadGate.enabled)
+        gateText = field(MoteI18n.text("禁止上传的文字（每行一个，精确包含匹配）"), config.uploadGate.blockedText, "", multiline = true)
         gateFailure = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("暂存待复核（默认）", "不保存、不上传", "允许上传"))
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("暂存待复核（默认）"), MoteI18n.text("不保存、不上传"), MoteI18n.text("允许上传")))
             setSelection(listOf("hold", "drop", "allow").indexOf(config.uploadGate.failureAction).coerceAtLeast(0))
         }
         content.addView(gateFailure); track(gateFailure, "gateFailure")
-        text("审查 OCR 仅在规则需要时运行，文字不会保存或上传。应用范围与固定遮罩仍然生效。VLM 接口保留，本版本暂停；中央负责完整 OCR 和理解。待复核记录请在同步恢复中逐条处理。", 13)
+        text(MoteI18n.text("审查 OCR 仅在规则需要时运行，文字不会保存或上传。应用范围与固定遮罩仍然生效。VLM 接口保留，本版本暂停；中央负责完整 OCR 和理解。待复核记录请在同步恢复中逐条处理。"), 13)
         nsfwEnabled = CheckBox(this).apply { isChecked = false }
         nsfwStatus = TextView(this)
 

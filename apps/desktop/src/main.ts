@@ -446,6 +446,7 @@ else {
     handle('mote:start', () => serialize(async () => { await collector.start(); return clientStatus(); }));
     handle('mote:stop', () => { collector.stop(); return serialize(async () => { await collector.settleCapture(); return clientStatus(); }); });
     handle('mote:review-pending', () => queue!.reviewPending());
+    handle('mote:review-reject', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.rejectReview(id); });
     handle('mote:review-approve', async (id:unknown) => { if(typeof id!=='string')throw Error('Invalid review ID');await queue!.approveReview(id); });
     handle('mote:retry', async () => { await localSources!.sync(true); await collector.retry(); return clientStatus(); });
     const requireStopped = async () => {

@@ -166,6 +166,7 @@ export interface DesktopApi {
   stop(): Promise<Status>;
   reviewPending(): Promise<{id:string;capturedAt:string;appName:string}[]>;
   approveReview(id:string): Promise<void>;
+  rejectReview(id:string): Promise<void>;
   retry(): Promise<Status>;
   openPermissions(): Promise<void>;
   openDataFolder(): Promise<void>;
