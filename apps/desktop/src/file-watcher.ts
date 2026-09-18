@@ -7,6 +7,10 @@ export type FileWatchEvent = { sourceId: string; root: string; path?: string; ba
 export type FileWatchListener = (event: FileWatchEvent) => void;
 export interface WatchTarget { sourceId: string; path: string }
 type ActiveWatcher = { targetPath: string; close: () => void | Promise<void> };
+type FseventsModule = {
+  constants: { ItemRemoved: number; ItemRenamed: number };
+  watch: (path: string, listener: (path: string, flags: number) => void) => () => void;
+};
 
 export function fileWatchBackend(platform = process.platform): FileWatchBackend {
   if (platform === 'darwin') return 'fsevents';
@@ -62,8 +66,11 @@ export class FileWatcher {
       if (this.backend === 'fsevents') {
         // fsevents is an optional, macOS-only native dependency. Keeping it
         // dynamic means Linux and Windows never load the incompatible addon.
-        const fsevents = await import('fsevents');
-        const stop = fsevents.watch(selected, (path, flags) => {
+        // Keep the specifier indirect so Linux CI can typecheck without
+        // installing the optional macOS-only package.
+        const optionalModule = 'fsevents';
+        const fsevents = await import(optionalModule) as unknown as FseventsModule;
+        const stop = fsevents.watch(selected, (path: string, flags: number) => {
           const kind = flags & (fsevents.constants.ItemRemoved | fsevents.constants.ItemRenamed) ? 'rename' : 'change';
           this.listener({ sourceId: target.sourceId, root: selected, path, backend: this.backend, kind });
         });
