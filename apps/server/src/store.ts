@@ -57,6 +57,9 @@ export class Store {
       CREATE INDEX IF NOT EXISTS captures_app ON captures(json_extract(json,'$.appId'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_source ON captures(json_extract(json,'$.source'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_collection ON captures(COALESCE(json_extract(json,'$.privacy.collection'),'content'),captured_at DESC);
+      CREATE INDEX IF NOT EXISTS captures_coding_project ON captures(json_extract(json,'$.provenance.document.coding.projectKey'),captured_at DESC);
+      CREATE INDEX IF NOT EXISTS captures_coding_session ON captures(json_extract(json,'$.provenance.document.coding.sessionId'),captured_at DESC);
+      CREATE INDEX IF NOT EXISTS captures_coding_provider ON captures(json_extract(json,'$.provenance.document.coding.provider'),captured_at DESC);
       CREATE TABLE IF NOT EXISTS blobs (hash TEXT PRIMARY KEY, bytes INTEGER NOT NULL, mime TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS insights (id TEXT PRIMARY KEY, created_at TEXT NOT NULL, json TEXT NOT NULL);
@@ -285,9 +288,12 @@ export class Store {
     }catch(e){this.db.exec('ROLLBACK');this.sweep();archivedFiles.sweepOrphans();throw e;}
   }
   list(range:Range={}) {
-    const {where,values}=this.clauses(range);const limit=Math.min(200,Math.max(1,range.limit??50));
-    const rows=this.db.prepare(`SELECT * FROM captures${where} ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`).all(...values,limit+1) as unknown as Row[];
-    const {cursor:_cursor,...scope}=range;const totalScope=this.clauses(scope);
+    const {cursor:_cursor,...scope}=range;const {where,values}=this.clauses(scope);const limit=Math.min(200,Math.max(1,range.limit??50));
+    let position:{t:string;id:string}|undefined;
+    if(range.cursor){try{position=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid capture cursor');}}
+    const seek=position?`${where?' AND ':' WHERE '}(mote_context_time(json)<? OR (mote_context_time(json)=? AND id<?))`:'';
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${seek} ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`).all(...values,...(position?[position.t,position.t,position.id]:[]),limit+1) as unknown as Row[];
+    const totalScope=this.clauses(scope);
     const totalCount=Number((this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}`).get(...totalScope.values) as {count:number}).count);
     const more=rows.length>limit;const items=rows.slice(0,limit).map(r=>this.record(r));const last=items.at(-1);
     return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:new Date(sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null,totalCount};
@@ -430,14 +436,23 @@ export class Store {
       this.db.exec('COMMIT');return {id,ocr,duplicate:false};
     } catch(error){this.db.exec('ROLLBACK');throw error;}
   }
-  search(range:Range&{query?:string}) {
-    if(!range.query?.trim())return this.list(range).items;
-    const {where,values}=this.clauses(range); const conjunction=where?' AND ':' WHERE ';
+  searchPage(range:Range&{query?:string}) {
+    if(!range.query?.trim()){const page=this.list(range);return {...page,retrieval:{mode:'lexical' as const,degraded:false}};}
+    const {cursor:_cursor,...scope}=range;
+    const {where,values}=this.clauses(scope); const conjunction=where?' AND ':' WHERE ';
     const lexical=textSearch(range.query,{id:'captures.id',text:"(mote_search_text(captures.json) || coalesce((SELECT group_concat(json_extract(json,'$.text'),' ') FROM perception_results WHERE capture_id=captures.id AND current=1),''))",words:'captures_fts',trigrams:'captures_trigram'});
-    // Apply the complete lexical/time/device scope before limiting results.
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}${lexical.sql} ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`)
-      .all(...values,...lexical.values,Math.min(range.limit??50,200)) as unknown as Row[];
-    return rows.map(r=>this.record(r));
+    let position:{t:string;id:string}|undefined;
+    if(range.cursor){try{position=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid search cursor');}}
+    const seek=position?` AND (mote_context_time(json)<? OR (mote_context_time(json)=? AND captures.id<?))`:'';
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}${lexical.sql}${seek} ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`)
+      .all(...values,...lexical.values,...(position?[position.t,position.t,position.id]:[]),Math.min((range.limit??50)+1,201)) as unknown as Row[];
+    const limit=Math.min(range.limit??50,200),items=rows.slice(0,limit).map(r=>this.record(r)),last=items.at(-1);
+    const totalScope=this.clauses(scope);
+    const totalCount=Number(this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}${totalScope.where?' AND ':' WHERE '}${lexical.sql}`).get(...totalScope.values,...lexical.values)!.count);
+    return {items,totalCount,nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({t:new Date(sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null,retrieval:{mode:'lexical' as const,degraded:false}};
+  }
+  search(range:Range&{query?:string}) {
+    return this.searchPage(range).items;
   }
   vectorSearch(vector:number[], model:string, range:Range={}) {
     const {where,values}=this.clauses(range);

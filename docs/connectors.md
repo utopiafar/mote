@@ -53,6 +53,11 @@ MCP 凭据必须与中央 owner 令牌分开。把 `/mcp` 的 HTTPS URL 与只�
 
 | 只读工具 | 用途 |
 |---|---|
+| `mote_browse` | 按当前可见证据生成候选资料集合；集合是查询视图，不是 canonical project identity |
+| `mote_search` | 通用文本检索；返回稳定 `ref`、命中片段、定位、来源和 evidence 引用 |
+| `mote_read` | 按 `ref` 分段读取原文或派生记忆，受长度和数量限制 |
+| `mote_context` | 在预算内组合已发布记忆、最近会话和原始记录；不启动第二个 Agent |
+| `mote_status` | 查看归档、索引、记忆和来源同步水位；缺失不代表离线端没有待同步数据 |
 | `mote_sources` | 信源目录、保留模式与同步状态 |
 | `mote_items` | 当前信源条目；日历按计划时间筛选，正文先给片段 |
 | `mote_history` | 比较某来源条目的历史版本与移除状态 |
@@ -63,7 +68,7 @@ MCP 凭据必须与中央 owner 令牌分开。把 `/mcp` 的 HTTPS URL 与只�
 | `mote_evidence` | 按 id、offset、length 展开原文；每段最多 12,000 UTF-16 单元 |
 | `mote_updates` | 按 cursor 读取精简变更编号和操作，不附带整篇正文 |
 
-另提供 `mote://sources` 资源。派生记忆有 proposed/published/stale 状态，不能代替独立原始证据；外部 Agent 应沿 evidenceIds 回看原文。源文件和模型生成的文字都可能包含恶意指令，客户端必须将它们视为数据。
+另提供 `mote://sources` 资源。结构化查询结果同时提供 `structuredContent` 和兼容文本内容；外部 Agent 应使用稳定 `ref` 调用 `mote_read`，并沿 evidence 引用回看原文。派生记忆有 proposed/published/stale 状态，不能代替独立原始证据；源文件和模型生成的文字都可能包含恶意指令，客户端必须将它们视为数据。
 
 若确实需要其他 Agent 写入工作成果，先在 Mote 创建用于接收的信源，再单独开启：
 
@@ -99,7 +104,7 @@ reference 模式只调用 `resources/list` 获取选中资源的元数据，不�
 
 ## 验证边界
 
-`node --import tsx --test apps/server/test/connectors.test.ts` 使用临时资料库、真实 MCP SDK 客户端/服务端、本机合成 HTTP 服务，以及可控 Google OAuth/API fixture。覆盖读写凭据隔离、写范围、证据分页、恢复旧内容、reference 不读取正文、SSRF/重定向拒绝、PKCE/state 防重放、分页失败保留游标、410 重建、取消计划时间、跨夏令时全天日程和断开连接竞态。
+`node --import tsx --test apps/server/test/connectors.test.ts` 使用临时资料库、真实 MCP SDK 客户端/服务端、本机合成 HTTP 服务，以及可控 Google OAuth/API fixture。覆盖读写凭据隔离、写范围、证据分页、恢复旧内容、reference 不读取正文、SSRF/重定向拒绝、PKCE/state 防重放、分页失败保留游标、410 重建、取消计划时间、跨夏令时全天日程和断开连接竞态。统一查询层的合成回归使用 `node --import tsx --test apps/server/test/context-query.test.ts`；本机 Codex Server 的真实外部 MCP 验收使用 `MOTE_TEST_CODEX_MODEL=... node --import tsx scripts/test-mcp-context-live.ts`。
 
 这证明协议与故障路径，不代表真实 Google 账号授权、某个外部聊天产品接入或真实网络同步已验收。真实 Google 测试需要用户的 OAuth 项目与账号授权；只有实际完成之后才应报告相应结果。模型生成的记忆质量另行评估，HTTP 成功不等于内容正确。
 

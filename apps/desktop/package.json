@@ -1,6 +1,6 @@
 {
   "name": "@mote/desktop",
-  "version": "0.0.44",
+  "version": "0.0.45",
   "private": true,
   "description": "Mote privacy-first personal context collector",
   "main": "dist/main.js",
