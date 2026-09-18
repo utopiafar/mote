@@ -68,7 +68,7 @@ async function makeCollector(extra: object = {}, gate?: NsfwGate) {
 
 describe.skipIf(process.platform !== 'darwin')('collector pipeline with generated pixels and mocked native APIs', () => {
   it('applies masks before OCR, disk queue and network payload, without ever persisting source pixels', async () => {
-    const { collector, queue } = await makeCollector({ masks: [{ x: 0, y: 0, width: 1, height: 0.5 }] });
+    const { collector, queue } = await makeCollector({ uploadGate:{enabled:true,blockedText:['never-matches'],failureAction:'hold'},masks: [{ x: 0, y: 0, width: 1, height: 0.5 }] });
     await collector.start(); await collector.settleCapture();
     const archive = await queue.exportArchive();
     expect(archive.records).toHaveLength(1);
@@ -95,13 +95,13 @@ describe.skipIf(process.platform !== 'darwin')('collector pipeline with generate
     await collector.start(); await collector.settleCapture();
     expect(mocks.capture).toHaveBeenCalledTimes(1); expect(mocks.ocr).not.toHaveBeenCalled(); expect(queue.stats().depth).toBe(0);
   });
-  it('fails closed on malformed local-model approval before OCR and upload', async () => {
+  it('does not invoke legacy local visual review endpoints', async () => {
     const fakeFetch = vi.fn(async (url: string) => new Response(JSON.stringify(url.includes('/review') ? { allow: true } : {}), { status: 200 }));
     vi.stubGlobal('fetch', fakeFetch);
     const { collector, queue } = await makeCollector({ privacyModelUrl: 'http://127.0.0.1:8787/review' });
     await collector.start(); await collector.settleCapture();
-    expect(queue.stats().depth).toBe(0); expect(mocks.ocr).not.toHaveBeenCalled();
-    expect(fakeFetch.mock.calls.some(args => args[0].endsWith('/api/captures'))).toBe(false);
+    expect(mocks.ocr).not.toHaveBeenCalled();
+    expect(fakeFetch.mock.calls.some(args => args[0].includes('/review'))).toBe(false);
   });
   it('pauses before capture while idle or locked and stops clearly if permissions are revoked', async () => {
     mocks.idle.mockReturnValue(301);
@@ -114,13 +114,11 @@ describe.skipIf(process.platform !== 'darwin')('collector pipeline with generate
     collector.stop();
     expect(collector.status().running).toBe(false);
   });
-  it.each(['deny', 'failure'])('does not OCR or persist images rejected by Qwen (%s)', async outcome => {
+  it.each(['deny', 'failure'])('holds legacy Qwen execution even when its stored setting is enabled (%s)', async outcome => {
     const gate = { ensureReady: async () => {}, status: () => undefined, reset: () => {}, close: () => {}, classify: vi.fn(async () => { if (outcome === 'failure') throw new Error('synthetic inference timeout'); return { allow: false, blocked: true }; }) } as unknown as NsfwGate;
     const { collector, queue } = await makeCollector({ nsfwEnabled: true, masks: [{ x: 0, y: 0, width: 1, height: 1 }] }, gate);
     await collector.start(); await collector.settleCapture();
-    expect(queue.stats().depth).toBe(0); expect(mocks.ocr).not.toHaveBeenCalled();
-    const supplied = vi.mocked(gate.classify).mock.calls[0][0].bitmap;
-    expect([...supplied.subarray(0, 4)]).toEqual([0,0,0,255]);
+    expect(queue.stats().depth).toBe(1); expect(mocks.ocr).not.toHaveBeenCalled();expect(gate.classify).not.toHaveBeenCalled();
   });
 
   it('only pauses on battery when the user explicitly enables that optimization', async () => {
@@ -188,21 +186,21 @@ describe.skipIf(process.platform !== 'darwin')('per-application collection bound
 });
 
 describe.skipIf(process.platform !== 'darwin')('deferred OCR from sanitized durable images', () => {
-  it('saves battery screenshots without OCR or telemetry, then completes locally after capture stops', async () => {
-    const { collector, queue } = await makeCollector({ ocrOnlyWhileCharging: true, metadataEnabled: false, syncMode: 'manual' });
+  it('leaves new screenshots for central OCR even when legacy local options are set', async () => {
+    const { collector, queue } = await makeCollector({ ocrEnabled:true, ocrOnlyWhileCharging: true, metadataEnabled: false, syncMode: 'manual' });
     await collector.start(); await collector.settleCapture(); collector.stop();
     const original = (await queue.exportArchive()).records[0].event;
-    expect(original.ocr).toEqual({ status: 'pending', reason: 'charging' });
-    expect(original.metadata).toBeUndefined(); expect(original.ocrText).toBeUndefined(); expect(mocks.ocr).not.toHaveBeenCalled();
+    expect(original.ocr).toEqual({ status: 'disabled' });
+    expect(original.metadata).toBeUndefined(); expect(original.ocrText).toBe(''); expect(mocks.ocr).not.toHaveBeenCalled();
     mocks.power.mockResolvedValue({ onBattery: false, charging: false });
     await collector.processPendingOcr();
     const result = (await queue.exportArchive()).records[0];
-    expect(result.event).toEqual(original); expect(result.ocrResult).toBe('GENERATED SANITIZED TEXT');
+    expect(result.event).toEqual(original); expect(result.ocrResult).toBeUndefined();
     expect(collector.status().running).toBe(false); expect(mocks.capture).toHaveBeenCalledTimes(1);
   });
   it('ACKs the immutable screenshot before OCR patching and keeps the image until the patch ACK', async () => {
     const { event, image } = await import('./fixtures');
-    const { collector, queue } = await makeCollector({ ocrOnlyWhileCharging: true, syncMode: 'manual' });
+    const { collector, queue } = await makeCollector({ ocrEnabled:true, ocrOnlyWhileCharging: true, syncMode: 'manual' });
     const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const, reason: 'charging' as const } };
     await queue.enqueue(original, image);
     const calls: { url: string; body: any }[] = [];
@@ -220,7 +218,7 @@ describe.skipIf(process.platform !== 'darwin')('deferred OCR from sanitized dura
     expect(patch.body).toEqual({ status: 'completed', ocrText: 'GENERATED SANITIZED TEXT' });
   });
   it('aborts backfill when unplugged without losing the saved screenshot or original ID', async () => {
-    const { event, image } = await import('./fixtures'); const { collector, queue } = await makeCollector({ ocrOnlyWhileCharging: true, syncMode: 'manual' });
+    const { event, image } = await import('./fixtures'); const { collector, queue } = await makeCollector({ ocrEnabled:true, ocrOnlyWhileCharging: true, syncMode: 'manual' });
     const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const, reason: 'charging' as const } }; await queue.enqueue(original, image);
     mocks.power.mockResolvedValue({ onBattery: false });
     mocks.ocr.mockImplementationOnce((_path: string, _image: Buffer, signal: AbortSignal) => new Promise((_resolve, reject) => { signal.addEventListener('abort', () => reject(new Error('fixture unplugged')), { once: true }); }));
@@ -234,7 +232,7 @@ describe.skipIf(process.platform !== 'darwin')('deferred OCR from sanitized dura
     const second = { ...first, id: 'f50650f0-fb31-4215-90cd-c96dc62d5e93' };
     const { queue } = await makeCollector({ syncMode: 'manual' }); await queue.enqueue(first, image); await queue.enqueue(second, image); await queue.acknowledge(first.id); await queue.acknowledge(second.id);
     collector!.shutdown();
-    const cfg = { ...defaultConfig(), token: 'synthetic-token', syncMode: 'manual' as const };
+    const cfg = { ...defaultConfig(), ocrEnabled:true,token: 'synthetic-token', syncMode: 'manual' as const };
     const restored = new DurableQueue(directory, cfg); await restored.initialize();
     collector = new Collector(cfg, restored, '/fixture/no-real-helper', () => true, () => undefined);
     mocks.ocr.mockRejectedValueOnce(new Error('synthetic OCR failure')).mockResolvedValue('SECOND FIXTURE');
@@ -392,7 +390,7 @@ describe.skipIf(process.platform !== 'darwin')('immediate settings with generate
     if (mode === 'shutdown during save') { await expect(collector.start()).rejects.toThrow(); await collector.upload(true); await collector.retry(); expect(vi.mocked(fetch).mock.calls.filter(args => String(args[0]).includes('/api/captures'))).toHaveLength(0); }
   });
   it('holds OCR/upload across settings and permits pending OCR to continue after release even while capture stays stopped', async () => {
-    const { collector, queue } = await makeCollector({ syncMode: 'manual', ocrOnlyWhileCharging: true });
+    const { collector, queue } = await makeCollector({ ocrEnabled:true,syncMode: 'manual', ocrOnlyWhileCharging: true });
     const { event, image } = await import('./fixtures');
     await queue.enqueue({ ...event(), ocrText: undefined, ocr: { status: 'pending', reason: 'charging' } }, image);
     mocks.power.mockResolvedValue({ onBattery: false });

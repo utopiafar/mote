@@ -1,3 +1,4 @@
+import { reviewUpload, uploadGateConfig } from './upload-gate';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import type { DiagnosticsRecorder } from '@mote/diagnostics';
 import { randomUUID, createHash } from 'node:crypto';
@@ -10,7 +11,7 @@ import { MAX_IMAGE_BYTES, publicConfig } from './config';
 import { DurableQueue, QueueFullError } from './queue';
 import { readVisibleNotifications, activeApplication, foregroundApplication, recognizeText, readPowerState } from './native';
 import { imageWork } from './background';
-import { reviewLocally } from './privacy';
+
 import { collectionForApp, permitsVisibleContent } from './app-collection';
 import { collectRecordMetadata } from './record-metadata';
 import { heartbeat, uploadCapture, uploadDeferredOcr, DeletedCaptureFailure } from './transport';
@@ -249,7 +250,6 @@ export class Collector {
         this.lastSample = undefined; this.state = 'permission_required'; this.message = moteText("完整内容需要屏幕录制授权；仅活动应用仍可采样。请打开系统权限设置");
         void this.events?.record('CAPTURE', 'PERMISSION'); this.publish(); return;
       }
-      if (cfg.nsfwEnabled) { if (!this.nsfw) throw new Error(moteText("本地千问视觉审查不可用，完整内容已跳过")); await this.nsfw.ensureReady(); }
       if (!valid()) return;
       const readyForeground = await foregroundApplication(this.helperPath, abort.signal);
       if (readyForeground.appId !== foreground.appId || readyForeground.pid !== foreground.pid || collectionForApp(readyForeground.appId, cfg) !== 'content') { this.pause(moteText("准备期间前台应用变化，已跳过本次内容采样")); return; }
@@ -267,28 +267,6 @@ export class Collector {
       // All unredacted pixels remain only in process memory. Never write a raw image.
       let sanitized = await this.finalImage(source.thumbnail, cfg.masks);
       let appliedMasks = cfg.masks.length;
-      if (cfg.nsfwEnabled) {
-        stage = 'MODEL'; void this.events?.record(stage, 'STARTED');
-        this.message = moteText("正在加载模型并进行本机隐私检查…"); this.publish();
-        if (!this.nsfw) throw new Error(moteText("本地千问视觉模型不可用，本次截图已跳过"));
-        const { width, height } = sanitized.getSize();
-        const inferenceStarted = Date.now();
-        const decision = await this.nsfw.classify({ bitmap: sanitized.toBitmap(), width, height }, cfg, abort.signal);
-        if (!valid()) return;
-        inferenceMs = Date.now() - inferenceStarted;
-        if (decision.blocked) { void this.events?.record('MODEL', 'FILTERED', { elapsedMs: inferenceMs }); this.diagnostics?.recordCapture({ outcome: 'blocked', inferenceMs, durationMs: Date.now() - startedAt }); this.pause(moteText("本地千问视觉策略拒绝，整张截图已跳过")); return; }
-      }
-      if (cfg.nsfwEnabled) void this.events?.record('MODEL', 'OK', { elapsedMs: inferenceMs });
-      if (cfg.privacyModelUrl) {
-        stage = 'PRIVACY'; void this.events?.record(stage, 'STARTED');
-        this.message = moteText("正在进行本机附加隐私检查…"); this.publish();
-        const decision = await reviewLocally(cfg.privacyModelUrl, await this.encodeImage(sanitized, cfg.jpegQuality), abort.signal);
-        if (!valid()) return;
-        if (!decision.allow) { void this.events?.record('PRIVACY', 'FILTERED'); this.pause(moteText("本地隐私模型拒绝本次采集")); return; }
-        sanitized = await this.finalImage(sanitized, decision.rectangles);
-        appliedMasks += decision.rectangles.length;
-        void this.events?.record('PRIVACY', 'OK');
-      }
       const jpeg = await this.encodeImage(sanitized, cfg.jpegQuality);
       if (jpeg.length > MAX_IMAGE_BYTES) throw new Error(moteText("截图超出单张大小限制，本次采集已跳过"));
       const imageKey = createHash('sha256').update(before.appId).update(jpeg).digest('hex');
@@ -296,23 +274,11 @@ export class Collector {
         this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' };
         this.state = 'capturing'; this.message = moteText("重复截图已跳过"); this.publish(); return;
       }
-      // OCR must run after BOTH user masks and optional model masks.
-      stage = 'OCR';
-      const ocrStarted = Date.now();
-      const deferredForPower = cfg.ocrEnabled && cfg.ocrOnlyWhileCharging && (await readPowerState(this.helperPath, abort.signal).catch(() => ({} as import('./native').PowerState))).onBattery !== false;
-      let ocrText: string | undefined;
-      let ocr: NonNullable<CaptureEvent['ocr']> = { status: cfg.ocrEnabled ? 'pending' : 'disabled', ...(deferredForPower ? { reason: 'charging' as const } : {}) };
-      if (deferredForPower) void this.events?.record('OCR', 'SCHEDULER');
-      if (cfg.ocrEnabled && !deferredForPower) {
-        void this.events?.record('OCR', 'STARTED');
-        this.message = moteText("正在识别文字…"); this.publish();
-        const ocrAbort = this.captureOcrAbort = new AbortController();
-        try { ocrText = await recognizeText(this.helperPath, jpeg, AbortSignal.any([abort.signal, ocrAbort.signal])); if (!ocrAbort.signal.aborted) ocr = { status: 'completed' }; else ocrText = undefined; }
-        catch (error) { void this.events?.record('OCR', failureCode(error, 'OCR')); /* Retry from the durable queue. */ }
-        ocrMs = Date.now() - ocrStarted;
-        if (ocr.status === 'completed') void this.events?.record('OCR', 'OK', { elapsedMs: ocrMs });
-      }
+      const gate = await reviewUpload(uploadGateConfig(cfg.uploadGate), () => recognizeText(this.helperPath, jpeg, abort.signal));
       if (!valid()) return;
+      if (gate === 'drop') { this.pause('上传审查未通过，本次截图不保存、不上传'); return; }
+      const ocrText = '';
+      const ocr = { status: 'disabled' as const }; // Local review text is never persisted or transmitted.
       const metadata = cfg.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, 'screen_capture', abort.signal) : undefined;
       if (!valid()) return;
       const durationMs = this.lastSample?.appId === before.appId && this.lastSample.collection === 'content' ? Math.max(0, Math.min(cfg.intervalMs, startedAt - this.lastSample.at)) : 0;
@@ -321,16 +287,16 @@ export class Collector {
         capturedAt: new Date(startedAt).toISOString(), durationMs, appId: before.appId, appName: before.appName,
         imageMime: 'image/jpeg', ocrText, ocr, source: 'screen',
         ...(metadata ? { metadata: { ...metadata, capture: { intervalMs: cfg.intervalMs, ...sanitized.getSize(), displayScale: display.scaleFactor, ocrEnabled: cfg.ocrEnabled, maskCount: appliedMasks } } } : {}),
-        privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', collection: 'content', reason: `${cfg.nsfwEnabled ? 'offline Qwen visual policy passed; ' : ''}${appliedMasks > 0 ? 'configured or local-model masks applied before OCR and persistence' : cfg.privacyModelUrl ? 'local privacy model approved; no masks returned' : 'user-configured app filters checked; no masks configured'}` },
+        privacy: { excluded: false, redacted: appliedMasks > 0, mode: 'local', collection: 'content', reason: gate === 'hold' ? 'upload review pending' : 'explicit app and mask rules; optional text upload review' },
       };
       stage = 'QUEUE'; void this.events?.record(stage, 'STARTED');
       this.message = moteText("正在保存采集记录…"); this.publish();
-      await this.queue.enqueue(event, jpeg);
+      await this.queue.enqueue(event, jpeg, gate === 'hold');
       this.lastImageKey = imageKey;
       void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
       this.diagnostics?.recordCapture({ outcome: 'saved', imageBytes: jpeg.length, inferenceMs, ocrMs, durationMs: Date.now() - startedAt });
       this.lastSample = { at: startedAt, appId: before.appId, collection: 'content' }; this.lastCaptureAt = event.capturedAt;
-      this.state = 'capturing'; this.message = ocr.status === 'pending' ? moteText("截图已安全保存；{0}", deferredForPower ? moteText("接通电源后自动补做 OCR") : moteText("OCR 等待重试")) : moteText("正在采集主屏；本地过滤与脱敏已完成"); this.publish(); void this.upload();
+      this.state = 'capturing'; this.message = gate === 'hold' ? '审查未完成，已隔离暂存，等待复核' : '已保存截图，上传后由中央识别'; this.publish(); void this.upload();
     } catch (error) {
       void this.events?.record(stage, failureCode(error, stage), { elapsedMs: Date.now() - startedAt });
       this.lastSample = undefined;

@@ -4,6 +4,7 @@ export type CollectionMode = 'content' | 'activity' | 'off';
 export type Platform = 'macos' | 'windows' | 'linux';
 export type Rectangle = { x: number; y: number; width: number; height: number };
 export interface Config {
+  uploadGate?: import('./upload-gate').UploadGateConfig;
   serverUrl: string;
   syncMode: SyncMode;
   syncIntervalMinutes: number;
@@ -161,6 +162,8 @@ export interface DesktopApi {
   configure(update: ConfigUpdate): Promise<Status>;
   start(): Promise<Status>;
   stop(): Promise<Status>;
+  reviewPending(): Promise<{id:string;capturedAt:string;appName:string}[]>;
+  approveReview(id:string): Promise<void>;
   retry(): Promise<Status>;
   openPermissions(): Promise<void>;
   openDataFolder(): Promise<void>;

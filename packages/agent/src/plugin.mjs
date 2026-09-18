@@ -3,8 +3,8 @@ import { defineTool } from "@deepseek-ai/dsh-tools";
 import { apply as applySkillTool } from "@deepseek-ai/dsh-tool-skill";
 
 export const name = "mote-context";
-export const inject = ["tools", "skills", "agents"];
-const names = ["progress_update", "search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories", "read_file_evidence", "file_chunks", "changes"];
+export const inject = ["tools", "skills", "agents", "attachments"];
+const names = ["read_image","progress_update", "search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories", "read_file_evidence", "file_chunks", "changes"];
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
  * The limit covers retries and repair turns in this isolated agent process. */
@@ -118,12 +118,16 @@ export async function apply(ctx) {
         parameters,
         output: {
           schema: { type: "json" },
-          render: (_args, value) => [
-            { type: "text", text: JSON.stringify(value) },
-          ],
+          render: (_args, value) => value?.imageAttachment ? [{type:'text',text:JSON.stringify({id:value.id,source:'untrusted_personal_context'})},{type:'image',attachment:value.imageAttachment}] : [{type:'text',text:JSON.stringify(value)}],
         },
         async execute(args, exec) {
-          return call(tool, args, exec.signal);
+          const value=await call(tool,args,exec.signal);
+          if(tool==='read_image'){
+            const attachments=ctx.get('attachments');if(!attachments)throw Error('This model runtime does not support image attachments');
+            const imageAttachment=await attachments.saveImage({data:Buffer.from(value.image.data,'base64'),mediaType:value.image.mimeType,name:'capture'});
+            return {id:value.id,imageAttachment};
+          }
+          return value;
         },
       }),
     );

@@ -1,3 +1,4 @@
+import { uploadGateConfig } from './upload-gate';
 import { moteText } from '@mote/shared/i18n';
 import { DEFAULT_REVIEW_POLICY } from '@mote/local-inference';
 import { randomUUID } from 'node:crypto';
@@ -10,13 +11,14 @@ import type { Config, ConfigUpdate, PublicConfig, Rectangle } from './contracts'
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export function defaultConfig(): Config {
   return {
+    uploadGate: uploadGateConfig(undefined),
     serverUrl: 'http://127.0.0.1:47832', deviceId: randomUUID(), deviceName: hostname(),
     syncMode: 'realtime', syncIntervalMinutes: 15, syncBatchSize: 20,
     intervalMs: 15000, maxQueueBytes: 512 * 1024 * 1024, maxQueueEvents: 10000, captureStorageDirectory: '', localContentEncryption: false, notificationCollectionEnabled: false,
-    excludedAppIds: [], defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300, ocrEnabled: true, ocrOnlyWhileCharging: false,
+    excludedAppIds: [], defaultCollection: 'content', appCollectionRules: {}, masks: [], idlePauseSeconds: 300, ocrEnabled: false, ocrOnlyWhileCharging: false,
     privacyModelUrl: '', openAtLogin: false,
     metadataEnabled: true, diagnosticsEnabled: false, diagnosticIntervalSeconds: 60, imageDedupeMode: 'off', jpegQuality: 75, captureMaxSide: 1600, pauseOnBattery: false, batteryPauseBelowPct: 0,
-    nsfwEnabled: true, reviewPolicy: DEFAULT_REVIEW_POLICY, reviewMaxTokens: 256, reviewMaxSide: 512, nsfwThreads: 2, nsfwTimeoutMs: 60000, nsfwSource: 'auto', nsfwCustomUrl: '',
+    nsfwEnabled: false, reviewPolicy: DEFAULT_REVIEW_POLICY, reviewMaxTokens: 256, reviewMaxSide: 512, nsfwThreads: 2, nsfwTimeoutMs: 60000, nsfwSource: 'auto', nsfwCustomUrl: '',
   };
 }
 
@@ -87,6 +89,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   const syncMode = input.syncMode ?? current.syncMode ?? 'realtime';
   if (!['realtime', 'interval', 'batch', 'manual'].includes(syncMode)) throw new Error(moteText("同步方式无效"));
   const config: Config = {
+    uploadGate: uploadGateConfig(input.uploadGate ?? current.uploadGate),
     serverUrl: input.serverUrl === '' ? '' : validateServerUrl(input.serverUrl),
     syncMode, syncIntervalMinutes: integer(input.syncIntervalMinutes ?? current.syncIntervalMinutes ?? 15, 15, 1440, moteText("同步间隔（分钟）")), syncBatchSize: integer(input.syncBatchSize ?? current.syncBatchSize ?? 20, 1, 500, moteText("批量同步条数")), deviceId: current.deviceId, deviceName: input.deviceName.trim(),
     intervalMs: integer(input.intervalMs, 5000, 300000, moteText("采样间隔（毫秒）")),
@@ -98,11 +101,11 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection ?? 'content'),
     appCollectionRules: normalizeAppCollectionRules(input.appCollectionRules ?? current.appCollectionRules ?? {}),
     excludedAppIds: [...new Set(input.excludedAppIds.map(id => id.trim()))], masks: validateRectangles(input.masks),
-    ocrEnabled: input.ocrEnabled, ocrOnlyWhileCharging: input.ocrOnlyWhileCharging ?? current.ocrOnlyWhileCharging ?? false, privacyModelUrl: validateLocalModelUrl(input.privacyModelUrl), openAtLogin: input.openAtLogin,
+    ocrEnabled: false, ocrOnlyWhileCharging: input.ocrOnlyWhileCharging ?? current.ocrOnlyWhileCharging ?? false, privacyModelUrl: validateLocalModelUrl(input.privacyModelUrl), openAtLogin: input.openAtLogin,
     metadataEnabled: input.metadataEnabled ?? current.metadataEnabled ?? true, diagnosticsEnabled: input.diagnosticsEnabled, diagnosticIntervalSeconds: integer(input.diagnosticIntervalSeconds, 15, 3600, moteText("诊断采样秒数")),
     jpegQuality: integer(input.jpegQuality, 40, 95, moteText("JPEG 质量")), captureMaxSide: integer(input.captureMaxSide, 640, 2560, moteText("截图最大边长")),
     pauseOnBattery: input.pauseOnBattery, batteryPauseBelowPct: integer(input.batteryPauseBelowPct, 0, 95, moteText("低电量暂停百分比")),
-    nsfwEnabled: input.nsfwEnabled, reviewPolicy: input.reviewPolicy.trim(),
+    nsfwEnabled: false, reviewPolicy: input.reviewPolicy.trim(),
     reviewMaxTokens: integer(input.reviewMaxTokens, 32, 1024, moteText("最大生成 token 数")), reviewMaxSide: integer(input.reviewMaxSide, 256, 1024, moteText("审查图片最大边长")),
     nsfwThreads: integer(input.nsfwThreads, 1, 8, moteText("本地推理线程数")), nsfwTimeoutMs: integer(input.nsfwTimeoutMs, 5000, 180000, moteText("本地推理超时（毫秒）")),
     nsfwSource: input.nsfwSource, nsfwCustomUrl: input.nsfwCustomUrl.trim(),

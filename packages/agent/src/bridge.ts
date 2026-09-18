@@ -15,6 +15,7 @@ import type {
 } from "./types.js";
 
 export const TOOL_NAMES = [
+  "read_image",
   "progress_update",
   "search_context",
   "timeline",
@@ -106,6 +107,10 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
       displayStart: displayTime(intervalStart, timeZone), displayEnd: displayTime(record.capturedAt, timeZone),
     } } : {}),
     appName: record.appName,
+    ...(record.contentLayer?{contentLayer:record.contentLayer}:{}),
+    ...(record.perception?{perception:record.perception}:{}),
+    ...(record.perceptionJobs?{perceptionJobs:record.perceptionJobs}:{}),
+    availableLayers: ['text',...(record.blobHash?['image_on_request']:[])],
     ...(typeof record.appId === 'string' ? {appId: record.appId.slice(0, 300)} : {}),
     ...(metadata.success ? {metadata: {...metadata.data, displayObservedAt: displayTime(metadata.data.observedAt, timeZone)}} : {}),
     ...(record.privacy && typeof record.privacy === 'object' && ['content', 'activity'].includes(String((record.privacy as Record<string,unknown>).collection))
@@ -197,6 +202,8 @@ export async function startBridge(
   const seedEvidence=ranges.flatMap(r=>{const record=permitted.get(r.id);return record?[project(record,r.offset,r.length,bounds.timeZone)]:[];});
   if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw Error('Extraction evidence exceeds the byte budget');
   for(const record of seedEvidence)records.set(record.id,record);
+  const expanded=new Set<string>();
+  let imageCalls=0;
   let calls = 0;
   let progressMessages=0;
   let ready = false;
@@ -272,6 +279,17 @@ export async function startBridge(
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:data.length});
         res.end(JSON.stringify({source:'untrusted_personal_context',data}));return;
       }
+      if(tool==='read_image'){
+        if(typeof args.id!=='string'||!expanded.has(args.id)||!reader.readImage)throw Error('Expand derived evidence before reading an authorized image');
+        if(++imageCalls>4)throw Error('Image disclosure budget exceeded');
+        const record=(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
+        if(!record||(scope.deviceId&&record.deviceId!==scope.deviceId)||(scope.after&&Date.parse(record.capturedAt)<Date.parse(scope.after))||(scope.before&&Date.parse(record.capturedAt)>=Date.parse(scope.before)))throw Error('Image is outside scope or deleted');
+        const image=await reader.readImage({id:args.id});
+        if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||image.data.length>12*1024*1024)throw Error('Invalid image output');
+        trace.push({tool,arguments:{id:args.id},count:1});
+        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});
+        res.end(JSON.stringify({source:'untrusted_personal_context',id:args.id,image}));return;
+      }
       let value: unknown;
       let effective: Record<string, unknown> = args;
       let textOffset = 0, textLength = 2000;
@@ -329,13 +347,14 @@ export async function startBridge(
           throw new Error(
             "Discover records with search_context or timeline before expanding evidence",
           );
-        value = await reader.evidence({ ids });
+        if(args.layer!==undefined&&!['ocr','semantic'].includes(String(args.layer)))throw Error('Invalid derived layer');
+        value = (await reader.evidence({ ids })).map(r=>args.layer==='semantic'?{...r,ocrText:String(r.summary??''),contentLayer:'L2_model_interpretation'}:{...r,...(r.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})});
         for (const [key, fallback, min, max] of [["offset", 0, 0, 100000], ["length", 12000, 1, 12000]] as const) {
           const n = args[key] ?? fallback;
           if (typeof n !== "number" || !Number.isSafeInteger(n) || n < min || n > max) throw new Error(`${key} must be an integer from ${min} to ${max}`);
           if (key === "offset") textOffset = n; else textLength = n;
         }
-        effective = { ids, ...(args.offset === undefined ? {} : { offset:textOffset }), ...(args.length === undefined ? {} : { length:textLength }) };
+        effective = { ids, ...(args.layer?{layer:args.layer}:{}), ...(args.offset === undefined ? {} : { offset:textOffset }), ...(args.length === undefined ? {} : { length:textLength }) };
       } else {
         const filters = range(args, bounds);
         effective = { ...filters };
@@ -407,6 +426,7 @@ export async function startBridge(
       if (tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes') {
         for (const record of safeValue as ContextRecord[])
           records.set(record.id, record);
+        if(tool==='evidence')for(const record of safeValue as ContextRecord[])expanded.add(record.id);
       }
       for(const record of memoryEvidence)records.set(record.id,record);
       trace.push({

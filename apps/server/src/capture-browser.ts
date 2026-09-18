@@ -33,6 +33,14 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     // Missing, deleted and foreign IDs are indistinguishable. Presence alone is never an upload ACK.
     return {checkedAt:new Date().toISOString(),items:input.ids.map(id=>({id,state:records.has(id)?'present':'unavailable'}))};
   });
+  // Reuse the central change cursor, projecting only this collector's own records.
+  app.get('/api/capture-browser/updates',async req=>{
+    const q=z.object({cursor:z.coerce.number().int().min(0).default(0),deviceId:z.string().min(1).max(128),limit:z.coerce.number().int().min(1).max(100).default(100)}).strict().parse(req.query);
+    const c=credential(req);if(c)connections.assertOwnDevice(c,q);
+    const changes=store.db.prepare('SELECT seq,id,operation FROM changes WHERE seq>? ORDER BY seq LIMIT ?').all(q.cursor,q.limit);
+    const items=changes.flatMap(change=>{if(change.operation!=='upsert')return [];const r=store.evidence([String(change.id)])[0];if(!r||r.deviceId!==q.deviceId||r.source!=='screen')return [];return [{id:r.id,ocr:r.ocr,textPreview:r.ocrText.slice(0,1000),textLength:r.ocrText.length,summary:r.summary?.slice(0,1000),perception:(r as unknown as Record<string,unknown>).perception,perceptionJobs:(r as unknown as Record<string,unknown>).perceptionJobs}];});
+    return {items,nextCursor:changes.at(-1)?.seq??q.cursor};
+  });
   app.get('/api/capture-browser',async req=>{
     const query=range.parse(req.query),c=credential(req);
     if(c){

@@ -56,7 +56,6 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         val battery = Diagnostics.battery(context)
         if (config.chargingOnly && !battery.second) { pause(MoteI18n.text("用户设置仅充电时采集"), OperationReason.CHARGING); return false }
         if (config.batteryPauseBelowPct > 0 && (battery.first < 0 || battery.first < config.batteryPauseBelowPct)) { pause(MoteI18n.text("达到用户设置的低电量暂停条件"), OperationReason.BATTERY); return false }
-        if (expected == AppCollectionMode.CONTENT && config.nsfw.enabled && !NsfwModelStore(context).hasFile()) { pause(MoteI18n.text("NSFW 模型未就绪，请下载或导入；尚未截图"), OperationReason.MODEL_MISSING); return false }
         val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
         if (reason != null) { pause(reason, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
         return true
@@ -135,19 +134,6 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     scheduleUpload(config)
                     return@execute
                 }
-                val inferenceStart = SystemClock.elapsedRealtime()
-                stage = EventStage.MODEL
-                if (config.nsfw.enabled) settings.status("capturing", MoteI18n.text("已收到画面，正在加载模型并进行本机隐私检查…"))
-                if (config.nsfw.enabled) SupportEvents.record(context, stage, EventCode.STARTED)
-                val decision = if (config.nsfw.enabled) { diagnostics.add("modelCalls"); nsfw.check(bitmap, config.nsfw) } else null
-                if (decision != null) diagnostics.timing("inferenceMs", SystemClock.elapsedRealtime() - inferenceStart)
-                if (decision?.allow == false) {
-                    SupportEvents.record(context, stage, EventCode.FILTERED, SystemClock.elapsedRealtime() - inferenceStart)
-                    Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.MODEL_DENIED, elapsedMs = SystemClock.elapsedRealtime() - inferenceStart)
-                    diagnostics.add("blockedCount")
-                    pause(MoteI18n.text("本机 NSFW 模型已过滤当前帧，未进入 OCR/保存/上传")); return@execute
-                }
-                if (decision != null) SupportEvents.record(context, stage, EventCode.OK, SystemClock.elapsedRealtime() - inferenceStart)
                 output = bitmap.copy(Bitmap.Config.ARGB_8888, true)
                 val masks = Mask.parse(config.masks)
                 ImagePrivacy.applyMasks(output, masks)
@@ -156,53 +142,33 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     val resized = Bitmap.createScaledBitmap(output, (output.width * scale).roundToInt(), (output.height * scale).roundToInt(), true)
                     output.recycle(); output = resized
                 }
-                stage = EventStage.OCR
-                val runOcr = !config.ocrChargingOnly || Diagnostics.battery(context).second
-                if (runOcr) settings.status("capturing", MoteI18n.text("隐私检查已完成，正在识别文字…"))
-                val ocrStart = SystemClock.elapsedRealtime()
-                SupportEvents.record(context, stage, if (runOcr) EventCode.STARTED else EventCode.SCHEDULER)
-                var text = if (runOcr) ocrInstance.value.recognize(output, config, windows.foreground) else ""
-                if (runOcr) SupportEvents.record(context, stage, EventCode.OK, SystemClock.elapsedRealtime() - ocrStart)
-                var reviewed = false
-                var modelMaskApplied = false
-                var appliedMaskCount = masks.size
-                if (config.localReviewUrl.isNotBlank()) {
-                    stage = EventStage.PRIVACY
-                    SupportEvents.record(context, stage, EventCode.STARTED)
-                    settings.status("capturing", MoteI18n.text("正在进行本机附加隐私检查…"))
-                    PrivacyRules.validateLocalReview(config.localReviewUrl)
-                    val request = JSONObject().put("version", 1).put("imageBase64", Base64.encodeToString(jpeg(output, config.jpegQuality), Base64.NO_WRAP))
-                        .put("imageMime", "image/jpeg").put("ocrText", text).put("appId", windows.foreground)
-                        .put("appName", windows.foreground?.let { CollectorMetadata.appName(context, it) })
-                    val (code, response) = HttpJson.post(config.localReviewUrl, request)
-                    require(code == 200 && response != null && response.has("allow") && response.get("allow") is Boolean) { MoteI18n.text("隐私模型响应无效") }
-                    if (!response.getBoolean("allow")) { SupportEvents.record(context, stage, EventCode.FILTERED); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.LOCAL_DENIED); pause(MoteI18n.text("本机隐私模型阻止此帧"), OperationReason.LOCAL_DENIED); return@execute }
-                    val extraMasks = ReviewResponse.masks(response)
-                    if (extraMasks.isNotEmpty()) { ImagePrivacy.applyMasks(output, extraMasks); text = if (runOcr) ocrInstance.value.recognize(output, config, windows.foreground) else ""; modelMaskApplied = true; appliedMaskCount += extraMasks.size }
-                    reviewed = true
-                    SupportEvents.record(context, stage, EventCode.OK)
-                }
+                val gate = UploadGate.review(config.uploadGate) { ocrInstance.value.recognize(requireNotNull(output), config, windows.foreground) }
+                if (gate == "drop") { pause("上传审查未通过，本次截图不保存、不上传"); return@execute }
+                val runOcr = false
+                val text = "" // Gate OCR stays in memory and never leaves the device.
+                val reviewed = config.uploadGate.enabled
+                val modelMaskApplied = false
+                val appliedMaskCount = masks.size
                 if (!settings.enabled || closed || ConnectionGuard.changing() || settings.read() != config || !unlocked(context)) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 if (dedupeConfig != config || dedupeApp != windows.foreground || dedupeSize != (output.width to output.height)) { dedupeSignature = null; dedupeReference = null }
                 val dedupeMode = ScreenshotDedupeHelper.Mode.fromRaw(config.imageDedupeMode)
                 val features = if (config.imageDedupeMode != "off") features(output, dedupeMode) else null
                 val previousSignature = dedupeSignature
                 val comparison = features?.let { ScreenshotDedupeHelper.shouldSkip(previousSignature, it, dedupeMode) }
-                val duplicate = comparison?.duplicate == true
+                val duplicate = gate != "hold" && comparison?.duplicate == true
                 val now = observedAtMs
                 val duration = duration(now, windows.foreground, AppCollectionMode.CONTENT, config.intervalSeconds)
                 val event = JSONObject().put("id", UUID.randomUUID().toString()).put("deviceId", settings.deviceId)
                     .put("deviceName", config.deviceName).put("platform", "android").put("capturedAt", capturedAt)
                     .put("durationMs", duration).put("appId", windows.foreground).put("appName", windows.foreground?.let { CollectorMetadata.appName(context, it) })
                     .put("imageMime", "image/jpeg").put("ocrText", text).put("source", "screen")
-                    .put("ocr", JSONObject().put("status", if (runOcr) "completed" else "pending").apply { if (!runOcr) put("reason", "charging") })
+                    .put("ocr", JSONObject().put("status", "disabled"))
                     .apply { if (config.metadataEnabled) put("metadata", CollectorMetadata.snapshot(context, if (config.effectiveMode() == "projection") "media_projection" else "accessibility", config.intervalSeconds * 1000L).apply {
                         getJSONObject("capture").put("width", output.width).put("height", output.height).put("ocrEnabled", runOcr)
                         if (appliedMaskCount <= 200) getJSONObject("capture").put("maskCount", appliedMaskCount)
                     }) }
                     .put("privacy", JSONObject().put("excluded", false).put("redacted", masks.isNotEmpty() || modelMaskApplied).put("mode", "local").put("collection", "content")
-                        .put("reason", (if (config.nsfw.enabled) "local NSFW model passed; " else "") +
-                            if (reviewed) "configured masks and local model review" else if (masks.isNotEmpty()) "configured masks applied" else "user configured capture without masks"))
+                        .put("reason", if (gate == "hold") "upload review pending" else "explicit app and mask rules; optional text review"))
                 if (duplicate) {
                     event.remove("imageMime")
                     event.put("ocrText", "").put("ocr", JSONObject().put("status", "disabled"))
@@ -220,7 +186,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 val encoded = if (!duplicate) jpeg(output, config.jpegQuality) else null
                 if (!duplicate) diagnostics.timing("encodeMs", SystemClock.elapsedRealtime() - encodeStart)
                 val queueStart = SystemClock.elapsedRealtime()
-                context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L)
+                context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L, gate == "hold")
                 diagnostics.timing("queueMs", SystemClock.elapsedRealtime() - queueStart)
                 if (!duplicate) runCatching {
                     val ratio = minOf(1f, 320f / maxOf(output.width, output.height))
@@ -253,8 +219,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 lastPause = null
                 previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
-                settings.status("capturing", MoteI18n.text("采集中 · {0}", if (duplicate) MoteI18n.text("图片去重命中，仅元数据已保存") else if (runOcr) MoteI18n.text("本地遮罩/OCR 已完成") else MoteI18n.text("图片已保存，充电后补做 OCR")))
-                if (!runOcr && !duplicate) CaptureOcrWorker.schedule(context, config)
+                settings.status("capturing", MoteI18n.text("采集中 · {0}", if (duplicate) MoteI18n.text("图片去重命中，仅元数据已保存") else if (runOcr) MoteI18n.text("本地遮罩/OCR 已完成") else if (gate == "hold") "审查未完成，已隔离暂存待复核" else "图片已保存，上传后由中央识别"))
                 scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: MoteI18n.text("本机 NSFW 不可用，当前帧已跳过")) }
             catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: MoteI18n.text("队列已满")) }

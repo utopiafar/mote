@@ -106,6 +106,9 @@ class MainActivity : MoteActivity() {
     private lateinit var diagnosticEnabled: CheckBox
     private lateinit var imageDedupeDiagnosticsEnabled: CheckBox
     private lateinit var diagnosticInterval: EditText
+    private lateinit var gateEnabled: CheckBox
+    private lateinit var gateText: EditText
+    private lateinit var gateFailure: Spinner
     private lateinit var nsfwEnabled: CheckBox
     private lateinit var nsfwPolicy: EditText
     private lateinit var nsfwMaxTokens: EditText
@@ -384,7 +387,7 @@ class MainActivity : MoteActivity() {
         content.addView(ocrMode); track(ocrMode, "ocrMode")
         ocrAppModes = field(MoteI18n.text("按应用指定 OCR（JSON）"), config.ocrAppModes, "{}")
         text(MoteI18n.text("可填写包名到 chinese、latin 或 dual 的映射；未指定的应用使用上方模式。"), 13, MoteUi.muted)
-        ocrChargingOnly = check(MoteI18n.text("仅充电时 OCR"), config.ocrChargingOnly)
+        ocrChargingOnly = check("中央负责 OCR；旧版本地补识别策略已停用", false).apply { isEnabled = false }
         text(MoteI18n.text("使用电池时保存图片，充电后识别文字；图片和识别结果按同步设置上传。待识别图片与文字预留空间计入存储上限。"), 13, MoteUi.muted)
     }
 
@@ -527,21 +530,18 @@ class MainActivity : MoteActivity() {
         rowButtons(MoteI18n.text("遮住顶部 8%"), { maskEditor.add(Mask(0f, 0f, 1f, .08f)) }, MoteI18n.text("遮住底部 12%"), { maskEditor.add(Mask(0f, .88f, 1f, 1f)) })
         rowButtons(MoteI18n.text("调整所选区域"), { editSelectedMask() }, MoteI18n.text("移除所选区域"), { maskEditor.removeSelected() })
         button(MoteI18n.text("高级：编辑精确坐标")) { maskFields.visibility = if (maskFields.visibility == View.VISIBLE) View.GONE else View.VISIBLE }
-        text(MoteI18n.text("内置本机 NSFW 过滤"), 19)
-        nsfwEnabled = check(MoteI18n.text("启用 NSFW 过滤（默认启用，故障不放行）"), config.nsfw.enabled)
-        text(MoteI18n.text("内置 Qwen3.5-0.8B 小视觉语言模型，CPU 离线审查，可编辑指令用于其它图片过滤。截图只在内存中送入独立进程。模型拒绝、缺失、输出无效、超时或进程退出时，该帧不会进入 OCR、存储或上传。模型可能误判。"), 13)
-        nsfwStatus = text(MoteI18n.text("正在读取模型状态…"), 13, MoteUi.muted)
-        rowButtons(MoteI18n.text("下载 / 继续"), {
-            saveNsfw { NsfwDownloadWorker.start(this, wifi.isChecked) }
-        }, MoteI18n.text("取消下载"), { NsfwDownloadWorker.cancel(this) })
-        button(MoteI18n.text("导入本地模型")) {
-            saveNsfw {
-                NsfwDownloadWorker.cancel(this)
-                @Suppress("DEPRECATION") startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"), 102)
-            }
+        section("上传审查与过滤")
+        gateEnabled = check("启用文字规则审查", config.uploadGate.enabled)
+        gateText = field("禁止上传的文字（每行一个，精确包含匹配）", config.uploadGate.blockedText, "", multiline = true)
+        gateFailure = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf("暂存待复核（默认）", "不保存、不上传", "允许上传"))
+            setSelection(listOf("hold", "drop", "allow").indexOf(config.uploadGate.failureAction).coerceAtLeast(0))
         }
-        text(MoteI18n.text("模型约 703 MiB，支持断点下载；每次加载前校验完整 SHA-256。下载来源、审查指令和性能参数可在开发者选项中调整。"), 13, MoteUi.muted)
-        menu(MoteI18n.text("模型高级设置"), MoteI18n.text("下载来源、审查指令与推理参数"), "settings") { showPage(Page.MODEL) }
+        content.addView(gateFailure); track(gateFailure, "gateFailure")
+        text("审查 OCR 仅在规则需要时运行，文字不会保存或上传。应用范围与固定遮罩仍然生效。VLM 接口保留，本版本暂停；中央负责完整 OCR 和理解。待复核记录请在同步恢复中逐条处理。", 13)
+        nsfwEnabled = CheckBox(this).apply { isChecked = false }
+        nsfwStatus = TextView(this)
+
     }
 
     private fun buildModel(config: CollectorConfig) {
@@ -673,7 +673,7 @@ class MainActivity : MoteActivity() {
         Page.PRIVACY -> current.copy(
             excludedPackages = excludes.text.toString(), masks = checked(masks) { masks.text.toString().also { Mask.parse(it) } },
             appCollectionRules = checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() },
-            metadataEnabled = metadataEnabled.isChecked, nsfw = current.nsfw.copy(enabled = nsfwEnabled.isChecked))
+            metadataEnabled = metadataEnabled.isChecked, uploadGate = UploadGateConfig(gateEnabled.isChecked, gateText.text.toString(), listOf("hold", "drop", "allow")[gateFailure.selectedItemPosition]), nsfw = current.nsfw.copy(enabled = false))
         Page.MODEL -> current.copy(nsfw = nsfwDraft().copy(enabled = current.nsfw.enabled),
             localReviewUrl = checked(review) { review.text.toString().trim().also { PrivacyRules.validateLocalReview(it) } })
         Page.DIAGNOSTICS -> current.copy(diagnosticsEnabled = diagnosticEnabled.isChecked, diagnosticsIntervalSeconds = number(diagnosticInterval, 15..3600))

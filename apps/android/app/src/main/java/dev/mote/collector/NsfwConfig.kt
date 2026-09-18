@@ -3,7 +3,7 @@ package dev.mote.collector
 import java.net.URI
 import org.json.JSONObject
 
-data class NsfwConfig(val enabled: Boolean = true, val threads: Int = 2,
+data class NsfwConfig(val enabled: Boolean = false, val threads: Int = 2,
     val timeoutMs: Long = 60000, val source: String = "auto", val customUrl: String = "",
     val policy: String = "Reject sexually explicit or pornographic visual content. Allow ordinary non-explicit content.",
     val maxTokens: Int = 256, val reviewMaxSide: Int = 512) {

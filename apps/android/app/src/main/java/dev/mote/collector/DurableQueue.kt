@@ -23,7 +23,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
         // 100,000 UTF-16 code units can require six JSON bytes each, plus result fields.
         internal const val OCR_RESERVE_BYTES = 600_256L
-        private val localFields = listOf("_uploaded", "_retainedUntil", "_ocrUploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts", "_uploadConflict")
+        private val localFields = listOf("_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_ocrUploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts", "_uploadConflict")
         // Only fixed statistics and date/source index fields are cached, never capture content. A bounded process cache
         // is shared by the short-lived queue handles; the record files remain authoritative.
         private const val MAX_CACHED_DIRECTORIES = 4
@@ -87,8 +87,9 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                 val event = read(file)
                 JSONObject().put("id", file.nameWithoutExtension).put("source", event.optString("source", "screen"))
                     .put("capturedAt", event.getString("capturedAt"))
+                    .put("reviewHeld", event.optBoolean("_reviewHeld"))
                     .put("retryable", !event.optBoolean("_archiveMissing"))
-                    .put("reason", if (event.optBoolean("_archiveMissing")) MoteI18n.text("中央不可用 / 已删除") else if (event.optBoolean("_ocrConflict")) MoteI18n.text("OCR 内容冲突") else MoteI18n.text("记录内容冲突"))
+                    .put("reason", if (event.optBoolean("_reviewHeld")) "上传审查待复核" else if (event.optBoolean("_archiveMissing")) MoteI18n.text("中央不可用 / 已删除") else if (event.optBoolean("_ocrConflict")) MoteI18n.text("OCR 内容冲突") else MoteI18n.text("记录内容冲突"))
             }.toList()
         }
     }
@@ -130,13 +131,24 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (event.optBoolean("_archiveMissing")) return@guarded false
         if (!event.optBoolean("_uploadConflict") && !event.optBoolean("_ocrConflict")) return@guarded false
         val previousReserve = ocrReserve(event)
-        event.remove("_uploadConflict"); event.remove("_ocrConflict")
+        event.remove("_uploadConflict"); event.remove("_ocrConflict"); event.remove("_reviewHeld")
         if (bytes() + ocrReserve(event) - previousReserve > maxBytes) throw QueueFull()
         atomic(file, event.toString().toByteArray()); true
     }
     fun uploadConflict(id: String) = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (file.exists()) atomic(file, read(file).put("_uploadConflict", true).toString().toByteArray())
+    }
+    fun cacheCentralDerived(item: JSONObject, maxBytes: Long) = guarded {
+        val file = File(dir, "${UUID.fromString(item.getString("id"))}.event")
+        if (!file.exists()) return@guarded
+        val event = read(file)
+        if (!event.optBoolean("_uploaded") || event.optBoolean("_reviewHeld")) return@guarded
+        val old = file.length()
+        event.put("_centralDerived", item)
+        val body = event.toString().toByteArray()
+        if (bytes() + body.size - old > maxBytes) return@guarded
+        atomic(file, body)
     }
     fun pendingSync(): PendingSync = stats().pendingSync
     fun depth(): Int = guarded { dir.listFiles()?.count { it.extension == "event" } ?: 0 }
@@ -167,7 +179,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             !event.has("imageMime") && !event.has("imageBase64")
     }
     private fun capacityUpperBound(): Long = diskBytes() + browseIndex().pendingDiskBytes() + browseIndex().reservationUpperBound(browseFiles())
-    fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long) {
+    fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long, reviewHeld: Boolean = false) {
         // Sufficient upper-bound headroom permits capture before a legacy index has finished
         // rebuilding. Otherwise discover the exact reservation without monopolizing the lock.
         val event = rawEvent
@@ -202,6 +214,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (file.exists() && SourceRules.canonical(read(file).apply { localFields.forEach(::remove) }) == SourceRules.canonical(stored)) return@guarded
         if (file.exists() && !event.has("stateSeries")) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { MoteI18n.text("相同记录 ID 的内容发生变化") }; return@guarded }
         val blob = hash?.let { File(dir, "$it.blob") }
+        if (reviewHeld) stored.put("_uploadConflict", true).put("_reviewHeld", true)
         val body = stored.toString().toByteArray()
         val added = body.size + 2048L + if (blob == null || blob.exists()) 0 else image!!.size + 64L
         val required = added + ocrReserve(stored)
@@ -438,6 +451,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (event.optBoolean("_uploadConflict")) event.put("syncError", "upload_conflict")
         if (event.optBoolean("_archiveMissing")) event.put("syncError", "archive_missing").put("ocr", JSONObject().put("status", "failed"))
         if (event.optBoolean("_ocrConflict")) event.put("syncError", "ocr_conflict").put("ocr", JSONObject().put("status", "failed"))
+        event.optJSONObject("_centralDerived")?.let { result ->
+            event.put("centralProcessing", result.optJSONArray("perceptionJobs"))
+            if (result.optJSONObject("ocr")?.optString("status") == "completed") {
+                event.put("ocrText", result.optString("textPreview")); event.put("ocr", result.getJSONObject("ocr"))
+                event.put("centralTextLength", result.optInt("textLength")); event.put("centralPreview", true)
+            }
+        }
         event.remove("_blob"); localFields.forEach(event::remove)
         return event
     }

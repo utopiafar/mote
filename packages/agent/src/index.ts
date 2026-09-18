@@ -87,7 +87,7 @@ export function createRuntimePatch(
         id: "sdk-jsonrpc-server",
         inject: ["sdkAppStartup", "loader", "moteReady"],
       },
-      { insert: [{id:'mote-skills',name:import.meta.resolve('@deepseek-ai/dsh-skill')}, { id: "mote-context", name: pluginPath }] },
+      { insert: [{id:'mote-attachments',name:import.meta.resolve('@deepseek-ai/dsh-attachment-local'),config:{maxImageBytes:8388608,maxMessageImageBytes:33554432}}, {id:'mote-skills',name:import.meta.resolve('@deepseek-ai/dsh-skill')}, { id: "mote-context", name: pluginPath }] },
     ],
     null,
     2,
