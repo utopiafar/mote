@@ -17,6 +17,10 @@ object AppUpdateInstaller {
     private const val NOTIFICATION = 4108
     private val installLock = Any()
     @Volatile private var liveTicket: String? = null
+    internal fun <T> withoutActiveInstall(context: Context, action: () -> T): T = synchronized(installLock) {
+        if (AppUpdateStore(context).prefs.getBoolean("installRequestActive", false)) throw UpdateFailure("install_pending")
+        action()
+    }
     fun request(context: Context): String = synchronized(installLock) {
         val store = AppUpdateStore(context)
         if (store.prefs.getBoolean("installRequestActive", false)) throw UpdateFailure("install_pending")

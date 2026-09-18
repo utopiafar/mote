@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopApi, Status } from './contracts';
 
 const api: DesktopApi = {
+  ask: (command, input) => ipcRenderer.invoke('mote:ask', command, input),
   storageStatistics: () => ipcRenderer.invoke('mote:storage-statistics'),
   language: () => ipcRenderer.invoke('mote:language'),
   setLanguage: preference => ipcRenderer.invoke('mote:set-language', preference),

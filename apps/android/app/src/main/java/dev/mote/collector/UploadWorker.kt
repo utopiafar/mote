@@ -14,7 +14,7 @@ object HttpJson {
     @Volatile var onComplete: ((Long) -> Unit)? = null
     fun post(url: String, body: JSONObject, token: String? = null): Pair<Int, JSONObject?> = request("POST", url, body, token)
     fun get(url: String, token: String? = null): Pair<Int, JSONObject?> = request("GET", url, null, token)
-    fun request(method: String, url: String, body: JSONObject?, token: String? = null): Pair<Int, JSONObject?> {
+    fun request(method: String, url: String, body: JSONObject?, token: String? = null, maxResponseBytes: Int = 256 * 1024): Pair<Int, JSONObject?> {
         val started = android.os.SystemClock.elapsedRealtime()
         runCatching { onRequest?.invoke() }
         val connection = URL(url).openConnection() as HttpURLConnection
@@ -30,7 +30,14 @@ object HttpJson {
             if (body != null) {
                 val bytes = body.toString().toByteArray(Charsets.UTF_8)
                 connection.setFixedLengthStreamingMode(bytes.size)
-                connection.outputStream.use { it.write(bytes) }
+                connection.outputStream.use { out ->
+                    var offset = 0
+                    while (offset < bytes.size) {
+                        val count = minOf(64 * 1024, bytes.size - offset)
+                        out.write(bytes, offset, count); offset += count
+                        if (url.substringAfter("/api/", "").substringBefore('/') in setOf("captures", "capture-browser", "file-sync", "sources")) UploadMeter.add(count.toLong())
+                    }
+                }
             }
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
@@ -40,7 +47,7 @@ object HttpJson {
                 while (true) {
                     val count = input.read(buffer)
                     if (count < 0) break
-                    require(output.size() + count <= 256 * 1024) { MoteI18n.text("响应超过 256 KiB") }
+                    require(output.size() + count <= maxResponseBytes) { MoteI18n.text("响应超过大小限制") }
                     output.write(buffer, 0, count)
                 }
                 output.toString("UTF-8")
@@ -121,7 +128,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 }
                 stage = EventStage.UPLOAD
                 val capability = applicationContext.getSharedPreferences("batch-capability", Context.MODE_PRIVATE)
-                val legacy = capability.getString("server", null) == config.server &&
+                val legacy = !config.packedUpload || capability.getString("server", null) == config.server &&
                     System.currentTimeMillis() - capability.getLong("at", 0) in 0 until 86_400_000L
                 var sent = if (legacy) events.take(1) else events
                 pendingRecordId = sent.first().getString("id")
