@@ -109,6 +109,18 @@ class AppUpdateStore(val context: Context) {
         val file = File(directory, "manifest.json"); if (!file.exists()) return null
         val release = AppReleaseVerifier.verify(file.readBytes(), key(), config()); return release.asset(context.packageName)?.let { release to it }
     }
+    fun deleteDownloadedPackages() {
+        // Invalidate queued work before waiting for the active writer; never race installation.
+        if (prefs.getBoolean("installRequestActive", false)) throw UpdateFailure("install_pending")
+        AppUpdateWork.cancel(context)
+        locked { AppUpdateInstaller.withoutActiveInstall(context) {
+            val files = directory.listFiles() ?: throw UpdateFailure("storage")
+            for (file in files.filter { it.name.matches(Regex("[a-f0-9]{64}\\.(apk|part)")) }) {
+                if (!file.delete() && file.exists()) throw UpdateFailure("storage")
+            }
+            state(if (prefs.getLong("availableCode", 0) > BuildConfig.VERSION_CODE) "available" else "idle", bytes = 0)
+        } }
+    }
     fun apk(asset: AppReleaseAsset) = File(directory, "${asset.sha256}.apk")
     fun active(id: String) = prefs.getString("operation", "") == id
     fun beginOperation(id: String, action: String) = synchronized(stateLock) { check(prefs.edit().putString("operation", id).putString("action", action).commit()) }

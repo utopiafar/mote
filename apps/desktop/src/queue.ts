@@ -320,13 +320,21 @@ export class DurableQueue {
     this.cachedStats = undefined; this.records.set(record.event.id, record);
   }
   async next(now = Date.now()): Promise<{ record: QueueRecord; image?: Buffer } | undefined> {
+    return (await this.nextBatch(1, now))[0];
+  }
+  async nextBatch(limit = 25, now = Date.now(), capturesOnly = false): Promise<{ record: QueueRecord; image?: Buffer }[]> {
     return this.exclusive(async () => {
       this.assertReady();
-      const record = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now && (!r.uploaded || r.ocrResult !== undefined)).sort((a, b) => a.event.capturedAt.localeCompare(b.event.capturedAt))[0];
-      if (!record) return undefined;
-      const image = record.blobHash ? await readFile(this.blobPath(record.blobHash)) : undefined;
-      if (image) { validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error(moteText("队列图片校验和不正确")); }
-      return { record: structuredClone(record), image };
+      const records = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now && (!r.uploaded || (!capturesOnly && r.ocrResult !== undefined))).sort((a, b) => a.event.capturedAt.localeCompare(b.event.capturedAt));
+      const result: { record: QueueRecord; image?: Buffer }[] = []; let bytes = 0;
+      for (const record of records.slice(0, Math.min(25, limit))) {
+        const image = record.blobHash ? await readFile(this.blobPath(record.blobHash)) : undefined;
+        const size = Buffer.byteLength(JSON.stringify(record.event)) + (image ? Math.ceil(image.length / 3) * 4 : 0) + 64;
+        if (result.length && bytes + size > 8 * 1024 * 1024) break;
+        if (image) { validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error(moteText("队列图片校验和不正确")); }
+        result.push({ record: structuredClone(record), image }); bytes += size;
+      }
+      return result;
     });
   }
   async acknowledge(id: string, ocrComplete = false, observations?: number): Promise<void> {

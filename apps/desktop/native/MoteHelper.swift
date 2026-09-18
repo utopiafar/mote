@@ -147,9 +147,6 @@ do {
         else if status == .authorized { label = "granted" }
         if #available(macOS 14.0, *), status == .fullAccess { label = "granted" }
         try output(["status": label])
-    case "screen-permission":
-        // Only the explicit permissions button invokes this. No image or window list is requested.
-        try output(["granted": CGRequestScreenCaptureAccess()])
     case "activity":
         // NSWorkspace application identity only: never enumerate windows, titles, or pixels.
         let application = NSWorkspace.shared.frontmostApplication

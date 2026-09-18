@@ -1,3 +1,4 @@
+import { AskClient } from './ask';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import { moteText, statusMessage, configureLocale, getLocale, negotiateLocale, languagePreference, type LanguagePreference } from '@mote/shared/i18n';
 import {discoverCodingAgents} from './coding-agents';
@@ -460,7 +461,11 @@ else {
       if (selected.canceled || !selected.filePaths[0]) return { canceled: true };
       await nsfw.importFiles(selected.filePaths); return { canceled: false };
     }));
+    const askClient = new AskClient();
+    handle('mote:ask', (command, input) => askClient.request(settings, command as import('./ask').AskCommand, input as Parameters<AskClient['request']>[2]));
     handle('mote:permission-status', async () => ({
+      appPath: bundlePath ?? app.getPath('exe'),
+      bundleId: bundlePath ? await promisify(execFile)('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', join(bundlePath, 'Contents', 'Info.plist')]).then(result => result.stdout.trim()).catch(() => 'unknown') : 'unpackaged',
       screen: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
       accessibility: process.platform === 'darwin' ? (systemPreferences.isTrustedAccessibilityClient(false) ? 'granted' : 'denied') : 'unsupported',
       calendar: process.platform === 'darwin' ? await runHelper(helperPath, 'calendar-status').then(value => (value as {status: string}).status).catch(() => 'unknown') : 'unsupported',
@@ -469,12 +474,11 @@ else {
       const panes: Record<string, string> = { screen: 'Privacy_ScreenCapture', accessibility: 'Privacy_Accessibility', calendar: 'Privacy_Calendars', files: 'Privacy_AllFiles' };
       if (typeof kind !== 'string' || !panes[kind]) throw new Error('Unknown permission');
       if (process.platform === 'darwin') {
-        if (kind === 'screen') await runHelper(helperPath, 'screen-permission').catch(() => undefined);
         if (kind === 'accessibility') systemPreferences.isTrustedAccessibilityClient(true);
         await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?' + panes[kind]);
       }
     });
-    handle('mote:permissions', async () => { if (process.platform === 'darwin') { await runHelper(helperPath, 'screen-permission').catch(() => undefined); await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); } });
+    handle('mote:permissions', async () => { if (process.platform === 'darwin') { await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'); } });
     handle('mote:data-folder', async () => { await shell.openPath(dataDirectory); });
     handle('mote:export-metadata', async () => {
       const selected=await dialog.showSaveDialog(window!,{defaultPath:'mote-local-metadata.json'});

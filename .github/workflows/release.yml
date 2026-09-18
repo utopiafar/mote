@@ -57,6 +57,7 @@ jobs:
         run: |
           node_modules/.bin/electron apps/desktop/scripts/i18n-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/ui-smoke.cjs
+          node_modules/.bin/electron apps/desktop/scripts/client-improvements-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/complex-ui-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/content-storage-smoke.cjs
       - name: Verify offline first binding and explicit sync against a generated central node

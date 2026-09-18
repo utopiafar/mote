@@ -70,7 +70,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (input.localContentEncryption !== undefined && typeof input.localContentEncryption !== 'boolean') throw new Error(moteText("本地内容加密开关值无效"));
   if (input.ocrOnlyWhileCharging !== undefined && typeof input.ocrOnlyWhileCharging !== 'boolean') throw new Error(moteText("OCR 电源策略开关值无效"));
   const imageDedupeMode = input.imageDedupeMode ?? current.imageDedupeMode ?? 'off';
-  if (!['off', 'exact'].includes(imageDedupeMode)) throw new Error('Invalid image deduplication mode');
+  if (!['off', 'exact', 'conservative', 'balanced', 'aggressive'].includes(imageDedupeMode)) throw new Error('Invalid image deduplication mode');
   const captureStorageDirectory = input.captureStorageDirectory ?? current.captureStorageDirectory ?? '';
   if (typeof captureStorageDirectory !== 'string' || captureStorageDirectory.length > 2048 || /[\x00-\x1f]/.test(captureStorageDirectory) || (captureStorageDirectory && (!isAbsolute(captureStorageDirectory) || resolve(captureStorageDirectory) !== captureStorageDirectory))) throw new Error(moteText("请通过文件夹选择器选择截图保存位置"));
   if (typeof input.ocrEnabled !== 'boolean' || typeof input.openAtLogin !== 'boolean') throw new Error(moteText("开关值不正确"));
@@ -95,7 +95,7 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     intervalMs: integer(input.intervalMs, 5000, 300000, moteText("采样间隔（毫秒）")),
     maxQueueBytes: integer(input.maxQueueBytes, 1024 * 1024, 20 * 1024 * 1024 * 1024, moteText("本地队列容量")),
     maxQueueEvents: integer(input.maxQueueEvents, 1, 1000000, moteText("本地队列事件数")),
-    captureStorageDirectory, imageDedupeMode,
+    captureStorageDirectory, imageDedupeMode, packedUpload: input.packedUpload === undefined ? (current.packedUpload ?? false) : input.packedUpload === true,
     localContentEncryption: false, notificationCollectionEnabled: input.notificationCollectionEnabled ?? current.notificationCollectionEnabled ?? false,
     idlePauseSeconds: integer(input.idlePauseSeconds, 0, 86400, moteText("空闲暂停秒数")),
     defaultCollection: normalizeCollectionMode(input.defaultCollection ?? current.defaultCollection ?? 'content'),

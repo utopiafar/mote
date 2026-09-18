@@ -17,6 +17,26 @@ import java.util.concurrent.atomic.AtomicReference
 
 @RunWith(AndroidJUnit4::class)
 class AppUpdateInstrumentedTest {
+    @Test fun deletingDownloadsPreservesSettingsAndManifestAndRejectsActiveInstallation() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val store = AppUpdateStore(context)
+        val apk = File(store.directory, "a".repeat(64) + ".apk")
+        val part = File(store.directory, "b".repeat(64) + ".part")
+        val unrelated = File(store.directory, "fixture-retained.txt")
+        val before = Settings(context).read()
+        apk.writeText("generated apk"); part.writeText("generated partial"); unrelated.writeText("keep")
+        try {
+            store.prefs.edit().putBoolean("installRequestActive", true).commit()
+            assertEquals("install_pending", assertThrows(UpdateFailure::class.java) { store.deleteDownloadedPackages() }.code)
+            assertTrue(apk.exists()); assertTrue(part.exists())
+            store.prefs.edit().putBoolean("installRequestActive", false).commit()
+            store.deleteDownloadedPackages()
+            assertFalse(apk.exists()); assertFalse(part.exists()); assertTrue(unrelated.exists())
+            assertEquals(0, store.prefs.getLong("bytes", -1))
+            assertEquals(before, Settings(context).read())
+        } finally { store.prefs.edit().putBoolean("installRequestActive", false).commit(); apk.delete(); part.delete(); unrelated.delete() }
+    }
+
     @Test fun actualSignedApkRejectsWrongCertificatePackageDowngradeAndCorruption() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
         val directory = File(context.cacheDir, "update-verification-${System.nanoTime()}").apply { mkdirs() }
