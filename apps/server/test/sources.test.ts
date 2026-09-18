@@ -21,6 +21,12 @@ test('immutable revisions, late delivery, pause, deletion and restoration preser
  sources.update('fixture',{enabled:false});assert.equal(sources.register({id:'fixture',name:'again',kind:'custom',deviceId:'synthetic',platform:'import'}).enabled,false);await assert.rejects(sources.upsert('fixture',item('blocked')),{statusCode:409});
  assert.equal(store.evidence([first.id])[0].ocrText,item().text);assert.equal(store.activity().totalDurationMs,0);
 });
+test('batch source ingestion validates every receipt and remains idempotent',async t=>{
+ const {sources,store}=fixture(t);const first=item('batch-1'),second={...item('batch-2'),externalId:'second-🌱'};
+ const result=await sources.upsertBatch('fixture',[first,second]);assert.equal(result.receipts.length,2);assert.equal(store.list().items.length,2);
+ const replay=await sources.upsertBatch('fixture',[first,second]);assert.deepEqual(replay.receipts.map(r=>r.duplicate),[true,true]);assert.equal(store.list().items.length,2);
+ await assert.rejects(sources.upsertBatch('fixture',[first,first]),{statusCode:409});
+});
 test('calendar event time overlaps independent observation time, with all-day DST and device bounds',async t=>{
  const {store,sources}=fixture(t);const calendar={start:'2026-11-01T00:00:00-04:00',end:'2026-11-02T00:00:00-05:00',allDay:true,timeZone:'America/New_York',status:'confirmed'};
  await sources.upsert('fixture',{...item(),kind:'calendar',calendar});

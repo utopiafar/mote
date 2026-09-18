@@ -32,6 +32,33 @@ describe('explicit local text sources', () => {
     const result = await scanSourceFiles(root, { ...DEFAULT_SOURCE_OPTIONS, retention: 'reference' });
     expect(result.items[0].text).toBe(''); expect(result.items[0].layer).toBe('reference'); expect(result.complete).toBe(true);
   });
+  it('persists a directory catalog, skips unchanged content, and notices a new file on the next reconciliation', async () => {
+    await writeFile(join(root, 'a.md'), 'a'); await writeFile(join(root, 'b.md'), 'b');
+    const first = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS);
+    const second = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, first.checkpoint as any);
+    expect(second.complete).toBe(true); expect(second.items).toEqual([]); expect(second.seen).toHaveLength(2);
+    await writeFile(join(root, 'c.md'), 'c');
+    const third = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, second.checkpoint as any);
+    expect(third.items.map(item => item.title)).toEqual(['c.md']);
+  });
+  it('pauses a large reconciliation and resumes from its durable directory cursor', async () => {
+    await Promise.all(Array.from({ length: 2005 }, (_, index) => writeFile(join(root, `part-${String(index).padStart(4, '0')}.md`), 'fixture')));
+    const first = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS);
+    expect(first.complete).toBe(false); expect(first.items).toHaveLength(2000);
+    const second = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, first.checkpoint as any);
+    expect(second.complete).toBe(true); expect(second.items).toHaveLength(5); expect(second.seen).toHaveLength(2005);
+  });
+  it('new-only baselines existing files without uploading them, then captures a later modification', async () => {
+    await writeFile(join(root, 'old.md'), 'old');
+    const options = { ...DEFAULT_SOURCE_OPTIONS, initialSync: 'new_only' as const };
+    const first = await scanSourceFiles(root, options);
+    expect(first.items).toEqual([]); expect(first.complete).toBe(true);
+    const second = await scanSourceFiles(root, options, undefined, undefined, undefined, first.checkpoint as any);
+    expect(second.items).toEqual([]);
+    await writeFile(join(root, 'old.md'), 'new');
+    const third = await scanSourceFiles(root, options, undefined, undefined, undefined, second.checkpoint as any);
+    expect(third.items[0]?.text).toBe('new');
+  });
   it('validates explicit rule boundaries instead of silently weakening them', () => {
     for (const change of [{ excludedPaths: ['../outside'] }, { extensions: ['md'] }, { redactLiterals: [''] }, { intervalSeconds: 1 }, { retention: 'other' }]) expect(() => normalizeSourceOptions({ ...DEFAULT_SOURCE_OPTIONS, ...change })).toThrow();
   });

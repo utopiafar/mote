@@ -1,59 +1,119 @@
-import {extractFileText,fileDigest,fileMime} from './file-index';
+import {fileDigest,fileMime} from './file-index';
+import { contentAdapter } from './content-adapter';
+import { DirectoryCatalog, type DirectoryCandidate } from './directory-catalog';
 import { moteText } from '@mote/shared/i18n';
 import { constants, type Stats } from 'node:fs';
-import { lstat, open, readdir, realpath } from 'node:fs/promises';
-import { basename, extname, join, relative, resolve } from 'node:path';
+import { lstat, open, realpath } from 'node:fs/promises';
+import { basename, extname, isAbsolute, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { SourceOptions, SourceScan } from './source-types';
+import { setTimeout as delay } from 'node:timers/promises';
+import type { FileCatalogEntry, LocalFileCheckpoint, SourceOptions, SourceScan } from './source-types';
 import { redactSourceText } from './source-types';
 import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
-export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, locations?: Map<string,string>): Promise<SourceScan> {
+export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, locations?: Map<string,string>, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = []): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   const selected = await lstat(selectedPath);
   if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error(moteText("所选来源必须是普通文件或目录，不能是符号链接"));
   const root = await realpath(selectedPath);
-  const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0 };
-  let visited = 0; let totalBytes = 0;
-  async function visit(path: string, relativeName: string): Promise<void> {
-    signal?.throwIfAborted();
-    if (++visited > 5000) { result.complete = false; result.skipped++; return; }
-    if (relativeName.split('/').some(p => p.startsWith('.')) || options.excludedPaths.some(p => relativeName === p || relativeName.startsWith(p + '/'))) { result.skipped++; return; }
-    let metadata;
-    try { metadata = await lstat(path); } catch { result.complete = false; result.skipped++; return; }
-    if (metadata.isSymbolicLink()) { result.skipped++; return; }
-    if (metadata.isDirectory()) {
-      try { for (const entry of (await readdir(path)).sort()) { if (visited > 5000) break; await visit(join(path, entry), relativeName ? relativeName + '/' + entry : entry); } }
-      catch { result.complete = false; result.skipped++; } return;
-    }
-    if (!metadata.isFile() || !options.extensions.includes(extname(path).toLowerCase())) { result.skipped++; return; }
-    const externalId = 'file:' + sourceHash([metadata.dev,metadata.ino,metadata.birthtimeMs].join(':')); result.seen.push(externalId);locations?.set(externalId,path);
-    if (options.retention!=='reference' && metadata.size > 16*1024*1024 || result.items.length >= 2000 || options.retention!=='reference' && totalBytes + metadata.size > 16 * 1024 * 1024) { result.skipped++; if (result.items.length >= 2000 || options.retention!=='reference' && totalBytes + metadata.size > 16 * 1024 * 1024) result.complete = false; return; }
-    let text = ''; let handle;let original:Buffer|undefined;let parsed={text:'',parser:'none',status:'ready' as 'ready'|'pending'|'unsupported'};
+  const catalog = selected.isDirectory() ? new DirectoryCatalog(root, previous) : undefined;
+  catalog?.begin();
+  const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0, ...(catalog ? { checkpoint: catalog.checkpoint() } : {}) };
+  let totalBytes = 0;
+  const candidateForPath = async (path: string): Promise<DirectoryCandidate | undefined> => {
+    if (!catalog) return undefined;
+    const absolute = isAbsolute(path) ? path : path;
+    const rel = relative(root, absolute).split('\\').join('/');
+    if (!rel || rel === '..' || rel.startsWith('../') || rel.split('/').some(part => part.startsWith('.')) || options.excludedPaths.some(value => rel === value || rel.startsWith(value + '/'))) return undefined;
     try {
-      // Verify every traversed directory still resolves inside the chosen tree before opening without following a leaf symlink.
-      if (await realpath(path) !== path) throw new Error('changed path');
-      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const info = await lstat(absolute); if (!info.isFile() || info.isSymbolicLink() || await realpath(absolute) !== absolute) return undefined;
+      const fileId = `${info.dev}:${info.ino}`, quickHash = sourceHash(`${fileId}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`);
+      const candidate: DirectoryCandidate = { path: absolute, relativePath: rel, fileId, birthtimeMs: info.birthtimeMs, size: info.size, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, quickHash };
+      catalog.observe(candidate); return candidate;
+    } catch { return undefined; }
+  };
+  const processFile = async (candidate: DirectoryCandidate, prior: FileCatalogEntry | undefined): Promise<'ok'|'stop'> => {
+    signal?.throwIfAborted();
+    const extension = extname(candidate.path).toLowerCase();
+    if (!options.extensions.includes(extension)) { result.skipped++; return 'ok'; }
+    const externalId = 'file:' + sourceHash([candidate.fileId, candidate.birthtimeMs].join(':'));
+    result.seen.push(externalId); locations?.set(externalId, candidate.path);
+    if (options.retention !== 'reference' && candidate.size > 16 * 1024 * 1024) { result.skipped++; return 'ok'; }
+    if (result.items.length >= 2000 || options.retention !== 'reference' && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
+    const unchanged = prior && prior.fileId === candidate.fileId && prior.size === candidate.size && prior.mtimeMs === candidate.mtimeMs && prior.ctimeMs === candidate.ctimeMs && prior.quickHash === candidate.quickHash && prior.contentHash;
+    if (unchanged) { catalog?.markContent(candidate.relativePath, prior.contentHash, 'synced'); return 'ok'; }
+    if (options.initialSync === 'new_only' && !previous?.initialized) { catalog?.markContent(candidate.relativePath, candidate.quickHash, 'synced'); return 'ok'; }
+    let handle;
+    try {
+      // Reconciliation validates the path before and after reading. It never follows a replaced symlink.
+      if (await realpath(candidate.path) !== candidate.path) throw new Error('changed path');
+      handle = await open(candidate.path, constants.O_RDONLY | constants.O_NOFOLLOW);
       const before = await handle.stat();
-      if (!before.isFile() || options.retention!=='reference' && before.size > 16*1024*1024 || before.ino !== metadata.ino || before.dev !== metadata.dev) throw new Error('changed file');
+      if (!before.isFile() || options.retention !== 'reference' && before.size > 16 * 1024 * 1024 || before.ino !== Number(candidate.fileId.split(':').at(-1)) || before.dev !== Number(candidate.fileId.split(':')[0])) throw new Error('changed file');
+      // A watcher event can arrive between two writes. Give very recent files
+      // a short quiet window, then verify metadata again before reading bytes.
+      if (Date.now() - before.mtimeMs < 500) {
+        await delay(50, undefined, { signal });
+        const stable = await handle.stat();
+        if (stable.mtimeMs !== before.mtimeMs || stable.ctimeMs !== before.ctimeMs || stable.size !== before.size) throw new Error('file is still changing');
+      }
+      let text = ''; let original: Buffer | undefined; let parsed = { text: '', parser: 'none', status: 'ready' as 'ready'|'pending'|'unsupported' };
       if (options.retention !== 'reference') {
-        const buffer=Buffer.alloc(before.size+1),read=await handle.read(buffer,0,buffer.length,0);if(read.bytesRead!==before.size)throw Error('Changed file');original=buffer.subarray(0,read.bytesRead);
-        if(options.retention==='snapshot')parsed=await extractFileText(original,fileMime(path),signal);
-        const maximum=options.indexMode==='lightweight'?8000:100000;
-        parsed.text=redactSourceText(parsed.text,options.redactLiterals);text=parsed.text.slice(0,maximum);
+        const buffer = Buffer.alloc(before.size + 1), read = await handle.read(buffer, 0, buffer.length, 0);
+        if (read.bytesRead !== before.size) throw new Error('changed file');
+        original = buffer.subarray(0, read.bytesRead);
+        if (options.retention === 'snapshot') parsed = await contentAdapter(fileMime(candidate.path)).read(original, fileMime(candidate.path), signal);
+        const maximum = options.indexMode === 'lightweight' ? 8000 : 100000;
+        parsed.text = redactSourceText(parsed.text, options.redactLiterals); text = parsed.text.slice(0, maximum);
       }
       const after = await handle.stat();
-      if (before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || before.size !== after.size || await realpath(path) !== path) throw new Error('changed file');
+      if (before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || before.size !== after.size || await realpath(candidate.path) !== candidate.path) throw new Error('changed file');
       totalBytes += before.size;
-      const accessedAtMs = accessMarkers.record(externalId, before, after);
-      const fileMetadata = observedFileMetadata(before, accessedAtMs);
-      result.items.push({ externalId, title: redactSourceText(basename(path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention==='archive'?'original':options.retention, document:{fileIndex:{version:1,fileId:externalId,contentVersion:original?fileDigest(original):sourceHash([before.dev,before.ino,before.mtimeMs,before.size].join(':')),mode:options.retention==='archive'?'archive':options.retention==='reference'?'catalog':'index',coverage:!text?'none':text.length===parsed.text.length?'full':'lightweight',parser:parsed.parser,status:options.retention==='archive'?'pending':parsed.status,totalCharacters:parsed.text.length,offset:0,length:text.length,allowRead:options.retention==='snapshot'&&Boolean(options.allowRead)}}, ...(options.retention==='archive'&&original?{localOriginalBase64:original.toString('base64')} : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(path), deleted: false });
-    } catch { result.skipped++; result.complete = false; }
+      const accessedAtMs = accessMarkers.record(externalId, before, after), fileMetadata = observedFileMetadata(before, accessedAtMs);
+      const contentHash = original ? fileDigest(original) : candidate.quickHash;
+      result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: !text ? 'none' : text.length === parsed.text.length ? 'full' : 'lightweight', parser: parsed.parser, status: options.retention === 'archive' ? 'pending' : parsed.status, totalCharacters: parsed.text.length, offset: 0, length: text.length, allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(options.retention === 'archive' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
+      catalog?.markContent(candidate.relativePath, contentHash, 'synced');
+      return 'ok';
+    } catch { result.skipped++; result.complete = false; catalog?.markContent(candidate.relativePath, undefined, 'error'); return 'ok'; }
     finally { await handle?.close(); }
+  };
+  if (selected.isDirectory() && catalog) {
+    let examined = 0;
+    const priority = [...new Set(priorityPaths)].map(path => isAbsolute(path) ? path : `${root}/${path}`);
+    for (const path of priority) {
+      if (examined >= 2000) break;
+      const before = catalog.checkpoint(), candidate = await candidateForPath(path); if (!candidate) continue;
+      const outcome = await processFile(candidate, before.catalog[candidate.relativePath]); examined++;
+      if (outcome === 'stop') { catalog.restore(before); result.complete = false; break; }
+    }
+    while (examined < 2000 && result.complete) {
+      const before = catalog.checkpoint(), batch = await catalog.next(Math.min(256, 2000 - examined, 2000 - result.items.length), options.excludedPaths), priorCatalog = before.catalog;
+      if (!batch.candidates.length) { result.complete = batch.complete; result.skipped += batch.skipped; break; }
+      examined += batch.candidates.length;
+      const itemsBeforeBatch = result.items.length, seenBeforeBatch = result.seen.length;
+      let stopped = false;
+      for (const candidate of batch.candidates) {
+        const outcome = await processFile(candidate, priorCatalog[candidate.relativePath]);
+        if (outcome === 'stop') { stopped = true; break; }
+      }
+      if (stopped) { catalog.restore(before); result.items.splice(itemsBeforeBatch); result.seen.splice(seenBeforeBatch); result.complete = false; break; }
+      result.skipped += batch.skipped;
+      if (batch.faulted) result.complete = false;
+      if (result.items.length >= 2000 || totalBytes >= 16 * 1024 * 1024) { result.complete = false; break; }
+      if (!catalog.checkpoint().inProgress) break;
+      if (examined >= 2000) { result.complete = false; break; }
+    }
+    if (result.complete && !catalog.checkpoint().inProgress) {
+      catalog.finishReconciliation();
+      // A complete shard must reconcile against every file in the catalog,
+      // not only the final batch returned by this invocation.
+      result.seen = Object.values(catalog.catalog).filter(entry => options.extensions.includes(extname(entry.relativePath).toLowerCase())).map(entry => 'file:' + sourceHash([entry.fileId, entry.birthtimeMs].join(':')));
+    }
+    result.checkpoint = catalog.checkpoint();
+  } else {
+    const fileId = `${selected.dev}:${selected.ino}`, candidate: DirectoryCandidate = { path: root, relativePath: basename(root), fileId, birthtimeMs: selected.birthtimeMs, size: selected.size, mtimeMs: selected.mtimeMs, ctimeMs: selected.ctimeMs, quickHash: sourceHash(`${fileId}:${selected.size}:${selected.mtimeMs}:${selected.ctimeMs}`) };
+    await processFile(candidate, undefined);
   }
-  if (selected.isDirectory()) {
-    for (const entry of (await readdir(root)).sort()) { if (visited > 5000) break; await visit(join(root, entry), entry); }
-  } else await visit(root, basename(root));
   await accessMarkers.persist(result.complete);
   return result;
 }

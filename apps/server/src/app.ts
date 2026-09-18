@@ -205,6 +205,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.get('/api/source-items',async req=>sources.listItems(scopedSourceRange(req)));
   app.get('/api/sources/:id/items',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.listItems({...scopedSourceRange(req),sourceId:id});});
   app.put('/api/sources/:id/items',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.upsert(id,req.body,credential(req)?()=>sourceOwner(req,id):undefined);});
+  app.post('/api/sources/:id/items/batch',{bodyLimit:32*1024*1024},async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const body=z.object({items:z.array(z.unknown()).min(1).max(500)}).strict().parse(req.body);return sources.upsertBatch(id,body.items,credential(req)?()=>sourceOwner(req,id):undefined);});
   app.get('/api/sources/:id/item',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {item:sources.getItem(id,externalId)??null};});
   app.get('/api/sources/:id/history',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {items:sources.history(id,externalId)};});
   app.get('/api/layers',async()=>({...sources.summary(),memories:Number((store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)}));

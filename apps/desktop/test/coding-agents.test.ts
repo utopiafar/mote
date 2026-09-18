@@ -13,7 +13,13 @@ const codex=(text:string)=>({type:'response_item',timestamp:'2026-09-10T01:00:00
 it('Codex uses canonical response items, preserves tools, and excludes duplicate event echoes and reasoning',async()=>{
  const p=join(root,'session.jsonl');await writeFile(p,line({type:'session_meta',payload:{id:'session-a',cwd:'/generated/project'}})+line(codex('Use transactions'))+line({type:'event_msg',payload:{type:'user_message',message:'Use transactions'}})+line({type:'response_item',payload:{type:'reasoning',summary:[{text:'hidden'}]}})+line({type:'response_item',payload:{type:'function_call',name:'test',arguments:'{}',call_id:'call-1'}})+line({type:'response_item',payload:{type:'function_call_output',output:'Passed',call_id:'call-1'}}));
  const scan=await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS);expect(scan.items).toHaveLength(3);expect(scan.items.map(i=>i.document?.coding?.role)).toEqual(['user','tool_call','tool_result']);expect(scan.items[0].document?.coding?.sessionId).toBe('session-a');expect(scan.items[0].document?.recordedAt).toBe('2026-09-10T01:00:00.000Z');
+ expect(scan.checkpoint?.catalog?.['session.jsonl']).toMatchObject({relativePath:'session.jsonl',size:expect.any(Number),mtimeMs:expect.any(Number),quickHash:expect.any(String),syncState:'synced'});
  expect((await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS,scan.checkpoint)).items).toEqual([]);
+});
+it('round-robins the persistent coding catalog instead of restarting at the oldest file',async()=>{
+ await mkdir(join(root,'a'));await mkdir(join(root,'b'));await writeFile(join(root,'a','one.jsonl'),line(codex('one')));await writeFile(join(root,'b','two.jsonl'),line(codex('two')));
+ const first=await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS,undefined,undefined,{items:1,bytes:100000});expect(first.items.map(i=>i.text)).toEqual(['one']);
+ const second=await scanCodingAgent(root,'codex',DEFAULT_SOURCE_OPTIONS,first.checkpoint,undefined,{items:1,bytes:100000});expect(second.items.map(i=>i.text)).toEqual(['two']);
 });
 it('partial lines, append, restart and lost acknowledgements cannot advance beyond durable events',async()=>{
  const p=join(root,'s.jsonl');await writeFile(p,line(codex('first'))+JSON.stringify(codex('second')).slice(0,25));

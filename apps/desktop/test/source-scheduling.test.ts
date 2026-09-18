@@ -38,6 +38,14 @@ it('a configured manual source can be added and edited without registration, upl
   expect(app.pendingStats()).toMatchObject({ pendingRecords: 2, eligibleRecords: 2, heldRecords: 0 });
   expect(fetch).not.toHaveBeenCalled();
 });
+it('wakes a long-interval source when its native watcher reports a file change', async () => {
+  const config = { ...defaultConfig(), serverUrl: '', token: undefined, syncMode: 'manual' as const };
+  const file = join(directory, 'watcher-fixture.txt'); await writeFile(file, 'first synthetic version');
+  const app = await create(config); await app.addFiles(file, { ...DEFAULT_SOURCE_OPTIONS, intervalSeconds: 3600 }); await app.sync(true);
+  expect(app.pendingStats().pendingRecords).toBe(1);
+  await writeFile(file, 'second synthetic version');
+  await vi.waitFor(() => expect(app.pendingStats().pendingRecords).toBe(2), { timeout: 5000, interval: 25 });
+});
 it('persists the first unsynchronized source-metadata timestamp across restarts and later edits', async () => {
   const config = { ...defaultConfig(), token: 'synthetic-metadata-token', syncMode: 'interval' as const };
   const file = join(directory, 'empty.txt'); await writeFile(file, '');
