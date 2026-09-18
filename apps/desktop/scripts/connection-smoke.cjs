@@ -106,12 +106,13 @@ app.on('browser-window-created', (_event, window) => {
       await js(`document.querySelector('[data-nav="connection"]').click()`);
       assert.equal(await js(`document.querySelector('#server-url').value`), origin, 'Reopening uses the paired URL after another settings save');
       assert.equal((await js('window.mote.testConnection()')).identity.credential.scope, 'collector');
-      await assert.rejects(js('window.mote.openCentral()'), /采集权限/);
-      console.log('Connection fixture: opening isolated owner view');
-      await js('document.querySelector("#connection-owner-token").value=' + JSON.stringify(owner) + '; document.querySelector("#connection-owner-open").click()');
-      await until(() => ownerApiHeaders.length > 0); assert.deepEqual(ownerApiHeaders, ['Bearer ' + owner]); assert.equal(await js('document.querySelector("#connection-owner-token").value'), '');
+      // The central UI owns its browser session now; the collector token is never
+      // passed to Chrome or the default browser. Keep this fixture in Electron so
+      // it cannot launch a real browser during CI, and verify the renderer contract.
+      assert(await js('document.body.innerText.includes("中央仓库将在 Chrome 打开")'));
+      assert.equal(await js('document.querySelector("#connection-owner-token")'), null);
       assert(!readFileSync(join(profile, 'config.json'), 'utf8').includes(owner)); assert.equal(await readFile(join(profile, 'models', 'preserved-fixture'), 'utf8'), 'synthetic-model-marker');
-      console.log('Connection fixture: owner credential isolated; recording generated UI');
+      console.log('Connection fixture: browser-owned central login contract; recording generated UI');
       await js('document.querySelector("#connection-onboarding").scrollIntoView({behavior:"instant",block:"start"}); new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
       mkdirSync(resolve(__dirname, '../release'), { recursive: true }); writeFileSync(resolve(__dirname, '../release/connection-ui-fixture.png'), (await window.webContents.capturePage()).toPNG());
       console.log('Connection fixture: testing offline note reauthorization');
@@ -132,7 +133,7 @@ app.on('browser-window-created', (_event, window) => {
       await until(() => js('!document.querySelector("#connection-preview").disabled'));
       await js('window.mote.retry()'); await until(async () => (await js('window.mote.status()')).queueDepth === 0);
       assert.equal(requests, 3); assert.deepEqual(uploadBodies.at(-1), previousUpload);
-      console.log(JSON.stringify({ ok: true, fixtureOnly: true, jsonAndUriPreview: true, nativeVisionQrImport: true, explicitOriginRequired: true, connectingCannotPretendCancel: true, failedPairRetainsConfig: true, abandonedPreviewDiscarded: true, pairingSurvivesNavigation: true, newConnectionSurvivesLaterSettingsSaveAndReload: true, secureStoreAdapterUsed: true, existingDevicePrivacyAndModelPreserved: true, collectorCannotOpenAdmin: true, ephemeralOwnerOnlyInMain: true, pendingNoteBlocksOtherOrigin: true, sameOriginExplicitReauthorizationResumesNote: true, screenshotCaptureStayedStopped: true, realKeychainUntouched: true }));
+      console.log(JSON.stringify({ ok: true, fixtureOnly: true, jsonAndUriPreview: true, nativeVisionQrImport: true, explicitOriginRequired: true, connectingCannotPretendCancel: true, failedPairRetainsConfig: true, abandonedPreviewDiscarded: true, pairingSurvivesNavigation: true, newConnectionSurvivesLaterSettingsSaveAndReload: true, secureStoreAdapterUsed: true, existingDevicePrivacyAndModelPreserved: true, centralLoginOwnedByBrowser: true, collectorTokenNotExposedToBrowser: true, pendingNoteBlocksOtherOrigin: true, sameOriginExplicitReauthorizationResumesNote: true, screenshotCaptureStayedStopped: true, realKeychainUntouched: true }));
       finished = true; clearTimeout(timeout); app.quit();
     })().catch(error => { process.stderr.write('Connection fixture failed: ' + error.stack + '\n'); app.exit(1); });
   });
