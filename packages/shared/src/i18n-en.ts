@@ -1746,6 +1746,8 @@ export const english: Readonly<Record<string, string>> = {
   " · 操作已结束": " · Operation finished",
   " · 未完成，请重试": " · Incomplete; retry",
   "来源待同步队列已满，请恢复网络后重试": "Source queue is full. Restore connectivity and retry.",
+  "来源同步状态超过本地队列上限，请恢复网络后重试": "Source sync state exceeds the local queue limit. Restore connectivity and retry.",
+  "中央批量来源确认不完整，已保留待重试版本": "Central batch source acknowledgement was incomplete. Versions were retained for retry.",
   "截图像素格式不正确": "Incorrect screenshot pixel format",
   "正在导出记录": "Exporting records",
   "正在导出图片": "Exporting images",
