@@ -173,6 +173,12 @@ app.on('browser-window-created', (_event, window) => {
       await js(`const width = document.querySelector('[aria-label="区域 1 宽度"]'); width.value = '25'; width.dispatchEvent(new Event('input', { bubbles: true }));`);
       await js(`document.querySelector('#default-collection').value = 'activity'; document.querySelector('#settings').requestSubmit()`);
       await settingsIdle('save privacy settings');
+      await js(`document.querySelector('#gate-text').value = 'synthetic.secret'; document.querySelector('#gate-failure').value = 'hold'; document.querySelector('#settings').requestSubmit()`);
+      await settingsIdle('save upload review');
+      assert.deepEqual((await js('window.mote.status()')).config.uploadGate, {enabled:true,blockedText:['synthetic.secret'],failureAction:'hold'});
+      await js(`document.querySelector('#review-refresh').click()`);
+      await js(`new Promise(resolve=>setTimeout(resolve,100))`); assert(await js(`document.querySelector('#review-pending').textContent.includes('没有待复核记录')`));
+
       await navigate('capture');
       await js(`document.querySelector('#ocr-charging').checked = true; document.querySelector('#ocr-charging').dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('#interval-preset').value = '60'; document.querySelector('#interval-preset').dispatchEvent(new Event('change', { bubbles: true }));`);
       await js(`document.querySelector('#settings').requestSubmit()`);

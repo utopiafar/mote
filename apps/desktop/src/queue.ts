@@ -284,7 +284,7 @@ export class DurableQueue {
   }
   atCapacity(): boolean { const stats = this.stats(); return stats.depth >= this.limits.maxQueueEvents || stats.bytes >= this.limits.maxQueueBytes; }
   private lastState?: CaptureEvent;
-  async enqueue(event: CaptureEvent, image?: Buffer): Promise<boolean> {
+  async enqueue(event: CaptureEvent, image?: Buffer, reviewHeld = false): Promise<boolean> {
     return this.exclusive(async () => {
       this.assertReady();
       event = validateEvent(event);
@@ -306,7 +306,7 @@ export class DurableQueue {
         if (existing.blobHash !== hash || JSON.stringify(existing.event) !== JSON.stringify(event)) throw new Error(moteText("相同事件 ID 的内容发生变化"));
         return false;
       }
-      const record: QueueRecord = { event, blobHash: hash, blobBytes: image?.length ?? 0, attempts: 0, nextAttemptAt: 0 };
+      const record: QueueRecord = { ...(reviewHeld ? {syncBlocked:true, syncError:'upload_review_pending'} : {}), event, blobHash: hash, blobBytes: image?.length ?? 0, attempts: 0, nextAttemptAt: 0 };
       await this.insertRecord(record, image);this.lastState=event;
       return true;
     });
@@ -337,10 +337,11 @@ export class DurableQueue {
       return result;
     });
   }
-  async acknowledge(id: string, ocrComplete = false, observations?: number): Promise<void> {
+  async acknowledge(id: string, ocrComplete = false, observations?: number, reviewOnly = false): Promise<void> {
     return this.exclusive(async () => {
       this.assertReady();
       const record = this.records.get(id);
+      if (reviewOnly && (!record || record.syncError !== 'upload_review_pending')) throw Error('Review item is unavailable');
       if (!record) return;
       if(observations!==undefined&&(record.event.stateSeries?.samples.length??0)>observations)return;
       if (record.event.ocr?.status === 'pending' && !ocrComplete) {
@@ -363,10 +364,14 @@ export class DurableQueue {
       this.cachedStats = undefined; this.records.set(id, record);
     });
   }
+  reviewPending() { return [...this.records.values()].filter(r=>r.syncError==='upload_review_pending').map(r=>({id:r.event.id,capturedAt:r.event.capturedAt,appName:r.event.appName})); }
+  async rejectReview(id:string) {await this.acknowledge(id,true,undefined,true);}
+  async approveReview(id:string) { return this.exclusive(async()=>{const prior=this.records.get(id);if(!prior||prior.syncError!=='upload_review_pending')throw Error('Review item is unavailable');const record={...prior,syncBlocked:false,syncError:undefined};await atomicWrite(this.eventsPath(id),JSON.stringify(record));this.records.set(id,record);this.cachedStats=undefined;}); }
   async resetRetries(): Promise<void> {
     await this.syncCheckpoint();
     return this.exclusive(async () => {
       for (const prior of this.records.values()) {
+        if (prior.syncError === 'upload_review_pending') continue;
         const record = { ...prior, nextAttemptAt: 0, syncBlocked: false, syncError: undefined };
         await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
         this.cachedStats = undefined; this.records.set(record.event.id, record);

@@ -91,7 +91,7 @@ export function modelRuntimeEntries(options: ConnectionOptions): unknown[] {
       [route]: {
         ...(protocol === 'google-generative-ai' ? {} : {api: protocol}),
         apiKeyEnv: 'MOTE_MODEL_API_KEY', baseURL: baseUrl,
-        models: [{...model, input: ['text'], reasoningEfforts: effort === 'auto' ? false : {off: null, low: 'low', high: 'high', max: 'max'}}],
+        models: [{...model, input: ['text','image'], reasoningEfforts: effort === 'auto' ? false : {off: null, low: 'low', high: 'high', max: 'max'}}],
         ...(effort === 'auto' ? {} : {reasoning: effort}),
         ...(protocol === 'openai-completions' ? {compat: {supportsStore: false, supportsDeveloperRole: false, supportsReasoningEffort: effort !== 'auto', maxTokensField: completionTokenProviders.has(options.provider ?? '') ? 'max_completion_tokens' : 'max_tokens'}} : {}),
         transport: 'sse', streamIdleTimeoutMs: Math.max(30_000, requestTimeoutMs ?? 30_000),

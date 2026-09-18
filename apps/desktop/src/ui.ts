@@ -220,7 +220,10 @@ function fillConfig(config: import('./contracts').PublicConfig): void {
   byId<HTMLInputElement>('ocr').checked = config.ocrEnabled;
   byId<HTMLInputElement>('ocr-charging').checked = config.ocrOnlyWhileCharging;
   byId<HTMLInputElement>('login').checked = currentStatus.environment?.legacy === false ? false : config.openAtLogin;
-  byId<HTMLInputElement>('nsfw-enabled').checked = config.nsfwEnabled;
+  byId<HTMLInputElement>('nsfw-enabled').checked = false;
+  byId<HTMLInputElement>('gate-enabled').checked = config.uploadGate?.enabled ?? true;
+  byId<HTMLTextAreaElement>('gate-text').value = (config.uploadGate?.blockedText ?? []).join('\n');
+  byId<HTMLSelectElement>('gate-failure').value = config.uploadGate?.failureAction ?? 'hold';
   byId<HTMLInputElement>('token').value = '';
   byId<HTMLInputElement>('token').placeholder = config.tokenConfigured ? moteText("已安全保存；留空保留已有令牌") : moteText("输入中央节点访问令牌");
   for (const input of Array.from(document.querySelectorAll<HTMLInputElement>('[name=sync-mode]'))) input.checked = input.value === config.syncMode;
@@ -394,6 +397,7 @@ byId('settings').addEventListener('submit', event => {
       maxQueueBytes: numberInput('queue-mb') * 1024 * 1024, maxQueueEvents: numberInput('queue-events'),
       excludedAppIds: readInput('excluded-apps').split('\n').map(v => v.trim()).filter(Boolean), masks,
       idlePauseSeconds: numberInput('idle'), ocrEnabled: byId<HTMLInputElement>('ocr').checked, ocrOnlyWhileCharging: byId<HTMLInputElement>('ocr-charging').checked,
+      uploadGate: {enabled:byId<HTMLInputElement>('gate-enabled').checked,blockedText:readInput('gate-text').split('\n').map(s=>s.trim()).filter(Boolean),failureAction:readInput('gate-failure') as 'drop'|'hold'|'allow'},
       privacyModelUrl: readInput('privacy-model-url').trim(), openAtLogin: byId<HTMLInputElement>('login').checked,
       nsfwEnabled: byId<HTMLInputElement>('nsfw-enabled').checked, reviewPolicy: readInput('review-policy'), reviewMaxTokens: numberInput('review-max-tokens'), reviewMaxSide: numberInput('review-max-side'),
       nsfwThreads: numberInput('nsfw-threads'), nsfwTimeoutMs: numberInput('nsfw-timeout') * 1000,
@@ -934,6 +938,11 @@ byId('notification-collection').addEventListener('change', () => {
   }).catch(() => feedback(moteText("权限检查失败，请重试。")));
 });
 
+byId('review-refresh').addEventListener('click', async()=>{
+ const items=await window.mote.reviewPending(),root=byId('review-pending');root.replaceChildren();
+ for(const item of items){const row=document.createElement('div'),label=document.createElement('span'),button=document.createElement('button');const previewButton=document.createElement('button');previewButton.type='button';previewButton.textContent=moteText("查看原图");previewButton.onclick=async()=>{const img=document.createElement('img');img.alt=moteText("本机待复核截图");img.style.maxWidth='100%';img.src=await desktopApi.captureImage('local',item.id,false);row.append(img);previewButton.disabled=true;};label.textContent=`${item.capturedAt} · ${item.appName} · ${item.id}`;button.type='button';button.textContent=moteText("复核后允许上传此记录");button.onclick=async()=>{await window.mote.approveReview(item.id);row.remove();};const discard=document.createElement('button');discard.type='button';discard.textContent=moteText("丢弃，不上传");discard.onclick=async()=>{await desktopApi.rejectReview(item.id);row.remove();};row.append(label,previewButton,button,discard);root.append(row);}
+ if(!items.length)root.textContent=moteText("没有待复核记录");
+});
 let askRun: import('./ask').AskRun | undefined;
 let askConversation: import('./ask').AskConversation | undefined;
 let askBusy = false, askGeneration = 0, askCursor: string | undefined;

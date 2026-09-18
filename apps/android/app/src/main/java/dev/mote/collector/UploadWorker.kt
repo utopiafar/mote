@@ -87,6 +87,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             }
             stage = EventStage.QUEUE
             val queue = applicationContext.queue()
+            runCatching { PerceptionSync.pull(applicationContext, settings, config, queue) }
             settings.syncStatus("uploading", MoteI18n.text("正在同步本机记录"))
             if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
             Diagnostics(applicationContext).add("uploadSessions")

@@ -2,8 +2,8 @@ package dev.mote.collector
 import org.junit.Assert.*
 import org.junit.Test
 class NsfwConfigTest {
-    @Test fun `filter defaults enabled without bypass on missing model`() {
-        val config = NsfwConfig(); assertTrue(config.enabled); assertEquals(256, config.maxTokens)
+    @Test fun `visual review is deferred by default`() {
+        val config = NsfwConfig(); assertFalse(config.enabled); assertEquals(256, config.maxTokens)
         assertEquals(2, config.threads); assertEquals(60000, config.timeoutMs); config.validate()
     }
     @Test fun `invalid configuration is rejected`() {
