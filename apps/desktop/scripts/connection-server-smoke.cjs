@@ -64,7 +64,13 @@ const freePort = () => new Promise(resolve => { const server = createServer(); s
     const pending = await queue.next(); await uploadCapture(nextConfig, pending.record.event); await queue.acknowledge(pending.record.event.id); assert.equal(queue.stats().depth, 0);
     await sources.sync(); assert.equal(sources.connectionActivity().pending, 0); assert.equal(sources.status()[0].state, 'idle');
     const history = await request('/api/sources/' + sourceId + '/items'); assert.equal(history.status, 200);
-    const historyBody = JSON.stringify(await history.json()); assert(historyBody.includes(JSON.parse(oldSourceBytes.toString()).pending[0].revision));
+    const historyBody = JSON.stringify(await history.json());
+    const oldSourceState = JSON.parse(oldSourceBytes.toString());
+    // SourceSync v2 keeps latency-sensitive and backfill queues separately;
+    // the fixture only needs to assert that the durable revision survived.
+    const pendingSourceItems = [...(oldSourceState.pendingRealtime ?? []), ...(oldSourceState.pendingHistory ?? []), ...(oldSourceState.pending ?? [])];
+    assert(pendingSourceItems[0]?.revision);
+    assert(historyBody.includes(pendingSourceItems[0].revision));
     assert.equal((await store.load()).deviceId, original.deviceId); assert.deepEqual((await store.load()).masks, original.masks);
     console.log(JSON.stringify({ ok: true, realIsolatedCentral: true, invitationRedeemAndSelf: true, preservedDeviceAndPrivacy: true, encryptedConfigAdapter: true, noteQueueUploadAck: true, scopedFileSourceSync: true, adminAccessDenied: true, existingDeviceUnboundInviteDenied: true, revokedCredentialKeepsQueue: true, sameOriginBoundInvitationResumesExactNoteAndSource: true, differentOriginWithPendingBlocked: true, personalDataRead: false }));
   } finally { await sources?.close(); if (central && central.exitCode === null) { central.kill('SIGTERM'); await new Promise(resolve => central.once('exit', resolve)); } await rm(root, { recursive: true, force: true }); }
