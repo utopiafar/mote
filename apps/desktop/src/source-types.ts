@@ -14,12 +14,22 @@ export interface SourceItem {
   layer: 'snapshot'|'reference'|'original'; mimeType?: string; deleted?: boolean;
   calendar?: { start: string; end: string; allDay: boolean; timeZone?: string; status: 'confirmed' | 'tentative' | 'cancelled' };
 }
+export interface FileCatalogEntry {
+  relativePath: string; fileId: string; birthtimeMs: number; size: number; mtimeMs: number; ctimeMs: number;
+  quickHash: string; contentHash?: string; lastSeenScan: number; syncState: 'pending'|'synced'|'error';
+}
+export interface LocalFileCheckpoint {
+  version: 1; root: string; scanNumber: number; scanStartedAt: string; initialized: boolean;
+  inProgress: boolean; pendingDirectories: string[]; activeDirectory?: { path: string; after?: string };
+  nextFile?: string; catalog: Record<string, FileCatalogEntry>;
+}
+export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint;
 export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'> & {
   /** Client-only routing hint; SourceSync strips it before persistence and upload. */
   syncQueue?: 'realtime' | 'history';
 };
 export interface SourceScan {
-  checkpoint?: import('./coding-agents').CodingCheckpoint;
+  checkpoint?: SourceCheckpoint;
   items: ScannedItem[]; seen: string[]; complete: boolean; skipped: number;
   /** Historical backfills never get to starve newly observed source changes. */
   queue?: 'realtime' | 'history';

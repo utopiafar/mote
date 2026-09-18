@@ -2,7 +2,8 @@ import { moteText } from '@mote/shared/i18n';
 import { createHash } from 'node:crypto';
 import { sourceWork } from './background';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
-import type { SourceDefinition, SourceItem, SourceRequest, SourceScan, ScannedItem } from './source-types';
+import type { SourceCheckpoint, SourceDefinition, SourceItem, SourceRequest, SourceScan, ScannedItem } from './source-types';
+import { PriorityScheduler } from './priority-scheduler';
 
 export const sourceHash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
@@ -14,7 +15,7 @@ interface State {
   predecessors?: Record<string, string | null>;
   delivered?: Record<string, string>;
   collectedItems?: number;
-  checkpoint?: import('./coding-agents').CodingCheckpoint;
+  checkpoint?: SourceCheckpoint;
   initialized?: boolean;
   baseline?: string[];
   policy?: string;
@@ -51,7 +52,7 @@ export class SourceSync {
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
   }
 
-  checkpoint() { return structuredClone(this.data.checkpoint); }
+  checkpoint(): SourceCheckpoint | undefined { return structuredClone(this.data.checkpoint); }
   initialized() { return Boolean(this.data.initialized); }
   private pendingItems(): SourceItem[] { return [...this.data.pendingRealtime, ...this.data.pendingHistory]; }
   status(): { pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; oldestPendingAt?: string } {
@@ -81,7 +82,11 @@ export class SourceSync {
       if (previous?.contentHash === contentHash) return;
       const revision = sourceHash(contentHash + ':' + (previous?.revision ?? '')), queued: SourceItem = { ...item, revision, observedAt };
       if ((syncQueue ?? defaultQueue) === 'history') next.pendingHistory.push(queued); else next.pendingRealtime.push(queued);
-      if (!scan.checkpoint) next.known[key] = { contentHash, revision, item: { ...item, text: '', localOriginalBase64: undefined } };
+      // Coding checkpoints own their append cursor and do not need a second
+      // content index. A local directory catalog only skips discovery work;
+      // SourceSync still needs its durable known map for revision deduplication.
+      const localCatalog = scan.checkpoint && 'root' in scan.checkpoint && 'catalog' in scan.checkpoint;
+      if (!scan.checkpoint || localCatalog) next.known[key] = { contentHash, revision, item: { ...item, text: '', localOriginalBase64: undefined } };
       changes++;
     };
     for (const [index, item] of scan.items.entries()) { if (index % 16 === 0) await yieldTurn(); if (!baseline.has(item.externalId)) stage(item); }
@@ -115,16 +120,16 @@ export class SourceSync {
     const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown };
     if (!registered || registered.id !== source.id || typeof registered.enabled !== 'boolean') throw new Error(moteText("中央来源注册确认无效"));
     if (!registered.enabled) return 'paused';
-    let realtimeBatches = 0;
+    const scheduler = new PriorityScheduler(4);
     while (this.status().pending) {
       signal?.throwIfAborted();
-      const queue: QueueName = !this.data.pendingRealtime.length || (this.data.pendingHistory.length > 0 && realtimeBatches >= 4) ? 'history' : 'realtime';
+      const queue = scheduler.next(this.data.pendingRealtime.length, this.data.pendingHistory.length) as QueueName;
       const batches = this.takeBatches(queue);
       const outcomes = await Promise.all(batches.map(async batch => { try { return { batch, acks: await this.sendBatch(source, batch, request, signal) }; } catch (error) { return { batch, error }; } }));
       let failure: unknown;
       for (const outcome of outcomes) { if ('error' in outcome) { failure ??= outcome.error; continue; } await this.acknowledge(source, outcome.batch, outcome.acks); }
       if (failure) throw failure;
-      if (queue === 'realtime') realtimeBatches += batches.length; else realtimeBatches = 0;
+      scheduler.committed(queue, batches.length);
     }
     await this.commit({ ...this.data, lastSyncAt: new Date().toISOString() }); return 'ready';
   }

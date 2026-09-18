@@ -2,7 +2,7 @@ import { meteredBody } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
 import { randomUUID } from 'node:crypto';
-import { join, basename } from 'node:path';
+import { join, basename, isAbsolute } from 'node:path';
 import { stat } from 'node:fs/promises';
 import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
 import { readLocalContent } from './local-content';
@@ -11,7 +11,7 @@ import { sourceWork } from './background';
 import {readSourceEvidence} from './file-evidence';
 import { scanSourceFiles } from './source-files';
 import { calendarHelper, CalendarPermissionError, decodeCalendarChoices, decodeCalendarScan } from './source-calendar';
-import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
+import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest, type LocalFileCheckpoint } from './source-types';
 import type { Config } from './contracts';
 import { readResponseText } from './response-body';
 import { ConnectionBindingStore } from './connection-binding';
@@ -35,6 +35,7 @@ export class LocalSourceManager {
   private timer?: ReturnType<typeof setInterval>;
   private readonly watcher: FileWatcher;
   private readonly dirtySources = new Set<string>();
+  private readonly dirtyPathVersions = new Map<string, Map<string, number>>();
   private readonly sourceWakeVersions = new Map<string, number>();
   private rerunRequested = false;
   private stopped = false;
@@ -177,7 +178,8 @@ export class LocalSourceManager {
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
         if(source.kind==='local-files')this.fileLocations.set(source.id,new Map());
-        const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint()}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json'), this.fileLocations.get(source.id)) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        const priorityVersions = new Map(this.dirtyPathVersions.get(source.id) ?? []);
+        const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint() as import('./coding-agents').CodingCheckpoint | undefined}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json'), this.fileLocations.get(source.id), engine.checkpoint() as LocalFileCheckpoint | undefined, [...priorityVersions.keys()]) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
         if (!scan.queue) scan.queue = source.initialSync === 'all' && !engine.initialized() ? 'history' : 'realtime';
         signal.throwIfAborted(); status.skipped = scan.skipped;
         if (source.kind === 'coding-agent' && scan.skipped) status.message = moteText("部分会话无法读取或格式不支持；保留游标，下次重试");
@@ -199,6 +201,8 @@ export class LocalSourceManager {
         // Do not clear a notification that arrived while the reconciliation
         // scan was running; it must trigger another scan after this one.
         if ((this.sourceWakeVersions.get(source.id) ?? 0) === wakeVersion) this.dirtySources.delete(source.id);
+        const paths = this.dirtyPathVersions.get(source.id);
+        if (paths) { for (const [path, version] of priorityVersions) if (paths.get(path) === version) paths.delete(path); if (!paths.size) this.dirtyPathVersions.delete(source.id); }
         void this.events?.record('SOURCE', scan.complete ? 'OK' : 'SCHEDULER', { elapsedMs: Date.now() - started });
       } catch (e) {
         void this.events?.record('SOURCE', signal.aborted ? 'CANCELLED' : e instanceof CalendarPermissionError ? 'PERMISSION' : failureCode(e, 'SOURCE'), { elapsedMs: Date.now() - started });
@@ -226,6 +230,7 @@ export class LocalSourceManager {
     if (!this.sources.some(source => source.id === event.sourceId && source.enabled)) return;
     this.dirtySources.add(event.sourceId);
     this.sourceWakeVersions.set(event.sourceId, (this.sourceWakeVersions.get(event.sourceId) ?? 0) + 1);
+    if (event.path) { const path = isAbsolute(event.path) ? event.path : join(event.root, event.path); const paths = this.dirtyPathVersions.get(event.sourceId) ?? new Map<string, number>(); paths.set(path, (paths.get(path) ?? 0) + 1); this.dirtyPathVersions.set(event.sourceId, paths); }
     if (this.task) this.rerunRequested = true;
     void this.events?.record('SOURCE', 'SCHEDULER');
     void this.sync(false);
