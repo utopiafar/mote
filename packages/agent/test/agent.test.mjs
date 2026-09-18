@@ -296,8 +296,8 @@ test('long evidence can be read completely across preview and UTF-16 page bounda
     assert.equal((await call('evidence',{ids:[long.id],offset:12000})).status,400);
     const preview=(await call('search_context',{})).body.data[0];
     assert.equal(preview.textRange.total,text.length);
-    assert.equal(preview.textRange.nextOffset,1999);
-    assert.equal(preview.ocrText,text.slice(0,1999));
+    assert.equal(preview.textRange.nextOffset,600);
+    assert.equal(preview.ocrText,text.slice(0,600));
     let offset=0,complete='';
     do {
       const page=(await call('evidence',{ids:[long.id],offset,length:2000})).body.data[0];

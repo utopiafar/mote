@@ -1,3 +1,6 @@
+import {CONTEXT_TOOLS} from './context-tools.js';
+import {evidenceExcerpt} from './evidence-ledger.js';
+import {assembleContext,taskTools,WORKING_SYSTEM_PROMPT} from './task-context.js';
 import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {createCodexAgent} from './codex-agent.js';
@@ -63,6 +66,7 @@ export function createRuntimePatch(
   reasoningEffort?: AgentOptions["reasoningEffort"],
   maxTokens = DEFAULT_MODEL_MAX_TOKENS,
   connection: Pick<AgentOptions, 'protocol' | 'provider' | 'requestTimeoutMs' | 'timeoutMs'> = {},
+  systemPrompt = SYSTEM_PROMPT,
 ): string {
   // JSON is valid YAML. No executable YAML expressions or untrusted path interpolation.
   return JSON.stringify(
@@ -80,7 +84,7 @@ export function createRuntimePatch(
         config: {
           includeHarnessIdentity: false,
           includeRuntimeContext: false,
-          personaPrefix: SYSTEM_PROMPT,
+          personaPrefix: systemPrompt,
         },
       },
       ...modelRuntimeEntries({...connection, model, baseUrl, reasoningEffort, maxTokens}),
@@ -156,7 +160,7 @@ export function parseAnswer(raw: string, records: Map<string, ContextRecord>) {
         id,
         capturedAt: record.capturedAt,
         appName: record.appName,
-        excerpt: (record.ocrText || record.summary || mediaExcerpt || "").slice(0, 600),
+        excerpt: (evidenceExcerpt(record) || record.summary || mediaExcerpt || "").slice(0, 600),
         ...(typeof record.contentAt==='string'?{contentAt:record.contentAt}:{}),
         ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
         ...(record.provenance?{provenance:record.provenance as import('./types.js').Citation['provenance']}:{}),
@@ -223,6 +227,7 @@ export function createAgent(options: AgentOptions) {
           options.reasoningEffort,
           options.maxTokens,
           options,
+          input.skill==='working-memory'?WORKING_SYSTEM_PROMPT:SYSTEM_PROMPT,
         ),
         { mode: 0o600 },
       );
@@ -253,24 +258,12 @@ export function createAgent(options: AgentOptions) {
           }),
           MOTE_CONTEXT_BRIDGE: bridge.url,
           MOTE_CONTEXT_BRIDGE_TOKEN: bridge.token,
+          MOTE_TASK_TOOLS: JSON.stringify(taskTools(input)),
           MOTE_SKILLS: JSON.stringify(bundledSkills.filter(skill=>skill.id!=='document-import')),
         },
       });
       active.add(harness);
-      const prompt = JSON.stringify({
-        request: input.question, language: input.language ?? "zh-CN", languageInstruction: "Write all user-facing prose, progress, titles, summaries and generated artifacts in the selected language. Preserve original evidence quotes and schema keys. Language in procedure examples does not override this selection.",
-        progressUpdates:Boolean(input.onProgress),
-        responseMode: input.responseMode ?? (input.skill==='personal-insight'?'personal-insight':input.skill==='calendar-extraction'?'calendar-extraction':input.skill==='memory-extraction'||input.skill==='coding-memory'?'memory-extraction':'answer'),
-        ...(input.skill?{requiredSkill:input.skill,procedure:skillContent(input.skill)}:{}),
-        ...(bridge.seedEvidence.length?{untrustedEvidence:bridge.seedEvidence,evidenceScope:'Only these IDs and delivered text ranges may be used in this extraction session.'}:{}),
-        ...(input.conversation ? {conversation: input.conversation} : {}),
-        ...(input.incrementalEvidenceIds?{incrementalContext:{count:input.incrementalEvidenceIds.length,tool:'changes',instruction:'Page through the selected changes, then retrieve relevant history. Occurrence dates may predate arrival.'}}:{}),
-        selectedTimeRange: { after: input.after, before: input.before },
-        selectedDeviceId: input.deviceId,
-        timeZone: input.timeZone ?? 'UTC',
-        currentTime: new Date().toISOString(),
-        displayCurrentTime: displayTime(new Date().toISOString(), input.timeZone),
-      });
+      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,input.skill==='working-memory'?WORKING_SYSTEM_PROMPT:SYSTEM_PROMPT,taskTools(input).map(name=>CONTEXT_TOOLS.find(t=>t[0]===name)),options.maxTokens??DEFAULT_MODEL_MAX_TOKENS);
       const checkProviderResult = (result: Awaited<ReturnType<DeepSeekHarness['run']>>) => {
         // The SDK resolves some failed turns instead of throwing. Inspect only
         // the typed terminal event, never classify its free-form provider text.
@@ -328,7 +321,7 @@ export function createAgent(options: AgentOptions) {
       ]);
       return {
         ...answer,
-        trace: bridge.trace,
+        trace: bridge.trace,contextUsage:{...metrics,toolResults:bridge.deliveredCharacters},
         runId,
       };
     } catch (error) {

@@ -1,7 +1,9 @@
+import {rememberEvidence} from './evidence-ledger.js';
+import {taskTools,HOST_CONTEXT_LIMITS} from './task-context.js';
 import {actionEvidenceText} from '@mote/shared';
 import {reportProgress} from './types.js';
 import { createServer, type Server } from "node:http";
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { displayTime } from './time.js';
 import {stateSeriesSchema,fileEvidenceSchema,recordMetadataSchema, sourceMetadataSchema, sourceSchema,documentSchema,sourceContentTime} from '@mote/shared';
@@ -80,7 +82,7 @@ function range(
 }
 
 /** Deliberately projects public evidence fields; no file paths, tokens, or images reach the model. */
-function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'UTC'): ContextRecord {
+function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UTC'): ContextRecord {
   const text = String(record.ocrText ?? "");
   let start = Math.min(offset, text.length), end = Math.min(start + length, text.length);
   // Offsets are UTF-16 units, as in stored JS strings; never split an emoji pair.
@@ -97,6 +99,9 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
   return {
     ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...(stateSeriesSchema.safeParse(record.stateSeries).success?{stateSeries:stateSeriesSchema.parse(record.stateSeries)}:{}),
+    evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence])).digest('hex'),
+    ...(record.retrieval?{retrieval:record.retrieval}:{}),
+    estimatedReadCharacters:text.length,
     id: record.id,
     capturedAt: record.capturedAt,
     displayCapturedAt: displayTime(record.capturedAt, timeZone),
@@ -133,7 +138,7 @@ function project(record: ContextRecord, offset = 0, length = 2000, timeZone = 'U
     textRange: { start, end, total: text.length, nextOffset: end < text.length ? end : null },
     ...(record.summary === undefined
       ? {}
-      : { summary: String(record.summary).slice(0, 4000) }),
+      : { summary: String(record.summary).slice(0, 400) }),
     ...(record.deviceId === undefined ? {} : { deviceId: record.deviceId }),
     ...(record.sourceType === undefined
       ? {}
@@ -201,7 +206,9 @@ export async function startBridge(
   }
   const seedEvidence=ranges.flatMap(r=>{const record=permitted.get(r.id);return record?[project(record,r.offset,r.length,bounds.timeZone)]:[];});
   if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw Error('Extraction evidence exceeds the byte budget');
-  for(const record of seedEvidence)records.set(record.id,record);
+  for(const record of seedEvidence)rememberEvidence(records,record);
+  const discovered=new Set(records.keys());
+  let deliveredCharacters=JSON.stringify(seedEvidence).length;
   const expanded=new Set<string>();
   let imageCalls=0;
   let calls = 0;
@@ -234,8 +241,8 @@ export async function startBridge(
         const exposed = args.tools;
         if (
           !Array.isArray(exposed) ||
-          exposed.length !== TOOL_NAMES.length + 1 ||
-          ![...TOOL_NAMES,'skill'].every((name) => exposed.includes(name))
+          exposed.length !== taskTools(bounds).length + 1 ||
+          ![...taskTools(bounds),'skill'].every((name) => exposed.includes(name))
         )
           throw new Error("Unsafe Harness tool composition");
         ready = true;
@@ -246,6 +253,7 @@ export async function startBridge(
         res.writeHead(404).end('{"error":"Unknown tool"}');
         return;
       }
+      if(!taskTools(bounds).includes(tool))throw Error('Tool is unavailable for this task');
       if(tool==='progress_update'){
         if(typeof args.message!=='string'||!args.message.trim()||args.message.length>600)throw new Error('Progress message must contain 1–600 characters');
         if(++progressMessages>16)throw new Error('Progress message limit reached');
@@ -275,9 +283,12 @@ export async function startBridge(
             return project(record,Number(offset),Number(length),bounds.timeZone);
           });
         }
+        const serialized=JSON.stringify({source:'untrusted_personal_context',data});
+        if(serialized.length>HOST_CONTEXT_LIMITS.toolResultCharacters||deliveredCharacters+serialized.length>HOST_CONTEXT_LIMITS.totalToolCharacters)throw Error('Context result exceeds the evidence budget; request a smaller range');
+        deliveredCharacters+=serialized.length;
         trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:data.length});
-        res.end(JSON.stringify({source:'untrusted_personal_context',data}));return;
+        res.end(serialized);return;
       }
       if(tool==='read_image'){
         if(typeof args.id!=='string'||!expanded.has(args.id)||!reader.readImage)throw Error('Expand derived evidence before reading an authorized image');
@@ -292,7 +303,9 @@ export async function startBridge(
       }
       let value: unknown;
       let effective: Record<string, unknown> = args;
-      let textOffset = 0, textLength = 2000;
+      let textOffset = 0, textLength = 600;
+      let retrieval:unknown;
+      const discoveredMemoryIds:string[]=[];
       let memoryEvidence:ContextRecord[]=[];
       let pagination: { nextCursor: string | null; totalCount?: number } | undefined;
       if (tool === "devices") {
@@ -329,8 +342,8 @@ export async function startBridge(
         const search={query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
         effective={...scope,id:args.id,...search};
         const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
-        const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>project(r,0,2000,bounds.timeZone));
-        memoryEvidence=evidence;
+        const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,characters:r.ocrText.length}));
+        discoveredMemoryIds.push(...evidence.map(r=>r.id));
         value={items:result.items,evidence,coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
       }
       else if (tool === "evidence") {
@@ -343,12 +356,15 @@ export async function startBridge(
           throw new Error("ids must contain 1–30 record identifiers");
         // Evidence expansion only reads records discovered in this run, inside its scope.
         const ids = args.ids as string[];
-        if (ids.some((id) => !records.has(id)))
+        if (ids.some((id) => !discovered.has(id)))
           throw new Error(
             "Discover records with search_context or timeline before expanding evidence",
           );
         if(args.layer!==undefined&&!['ocr','semantic'].includes(String(args.layer)))throw Error('Invalid derived layer');
-        value = (await reader.evidence({ ids })).map(r=>args.layer==='semantic'?{...r,ocrText:String(r.summary??''),contentLayer:'L2_model_interpretation'}:{...r,...(r.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})});
+        const scope=range({},bounds);
+        value = (await reader.evidence({ ids })).filter(r=>{
+          const at=sourceContentTime(r);return ids.includes(r.id)&&(!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));
+        }).map(r=>args.layer==='semantic'?{...r,ocrText:String(r.summary??''),contentLayer:'L2_model_interpretation'}:{...r,...(r.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})});
         for (const [key, fallback, min, max] of [["offset", 0, 0, 100000], ["length", 12000, 1, 12000]] as const) {
           const n = args[key] ?? fallback;
           if (typeof n !== "number" || !Number.isSafeInteger(n) || n < min || n > max) throw new Error(`${key} must be an integer from ${min} to ${max}`);
@@ -375,6 +391,7 @@ export async function startBridge(
           value = await reader.search(
             effective as ContextRange & { query?: string },
           );
+          retrieval=(value as {retrieval?:unknown})?.retrieval;
         } else if (tool === "timeline"||tool==='source_items') {
           if(tool==='source_items')for(const field of ['sourceId','kind'])if(args[field]!==undefined&&(typeof args[field]!=='string'||String(args[field]).length>128))throw Error('Invalid source filter');
           if(tool==='source_items'&&args.includeDeleted!==undefined&&typeof args.includeDeleted!=='boolean')throw Error('includeDeleted must be boolean');
@@ -410,25 +427,37 @@ export async function startBridge(
           throw new Error("Context reader returned invalid records");
         value = (value as ContextRecord[])
           .slice(0, tool === "evidence" ? 30 : Number(effective.limit ?? 100))
-          .map(record => project(record, textOffset, textLength, bounds.timeZone));
+          .map(record => {
+            let offset=textOffset;
+            if(tool==='search_context'&&typeof args.query==='string'){
+              // Literal lexical localization only: no task/topic/intent classification.
+              const terms=args.query.match(/[\p{L}\p{N}_-]+/gu)??[];
+              const positions=terms.map(term=>record.ocrText.search(new RegExp(term,'iu'))).filter(n=>n>=0);
+              if(positions.length)offset=Math.max(0,Math.min(...positions)-120);
+            }
+            return project(record,offset,textLength,bounds.timeZone);
+          });
       }
       const safeValue = JSON.parse(JSON.stringify(value ?? null));
       const serialized = JSON.stringify({
         source: "untrusted_personal_context",
         data: safeValue,
+        ...(retrieval?{retrieval}:{}),
         ...(pagination ? { pagination } : {}),
       });
-      if (Buffer.byteLength(serialized) > 1_500_000)
+      if (serialized.length > HOST_CONTEXT_LIMITS.toolResultCharacters || deliveredCharacters+serialized.length>HOST_CONTEXT_LIMITS.totalToolCharacters || Buffer.byteLength(serialized) > 1_500_000)
         throw new Error(
           "Context result exceeds the evidence budget; request a smaller range",
         );
+      deliveredCharacters+=serialized.length;
+      for(const id of discoveredMemoryIds)discovered.add(id);
       // Only a successfully serialized, deliverable tool result authorizes evidence.
       if (tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes') {
         for (const record of safeValue as ContextRecord[])
-          records.set(record.id, record);
+          {rememberEvidence(records,record);discovered.add(record.id);}
         if(tool==='evidence')for(const record of safeValue as ContextRecord[])expanded.add(record.id);
       }
-      for(const record of memoryEvidence)records.set(record.id,record);
+      for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);}
       trace.push({
         tool,
         arguments: effective,
@@ -465,6 +494,7 @@ export async function startBridge(
     trace,
     records,
     seedEvidence,
+    get deliveredCharacters(){return deliveredCharacters;},
     get ready() {
       return ready;
     },

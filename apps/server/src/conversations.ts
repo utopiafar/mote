@@ -78,10 +78,10 @@ export class Conversations {
   context(conversation:Conversation,maxTurns=20,maxCharacters=60000):NonNullable<QueryInput['conversation']> {
     const turns:NonNullable<QueryInput['conversation']>['turns']=[];
     let length=0;
-    let completedTurns=0;
+    const completedTurns=conversation.turns.filter(turn=>turn.status!=='failed'&&turn.result).length;
     for(const turn of [...conversation.turns].reverse()) {
       if(turn.status==='failed'||!turn.result)continue;
-      completedTurns++;
+
       const answer=turn.result.answer.slice(0,20000);
       const value={question:turn.question,answer,scope:turn.scope,createdAt:turn.createdAt,...(answer.length<turn.result.answer.length?{answerTruncated:true}:{}),...(turn.evidenceDeleted?{evidenceDeleted:true}:{})};
       const size=JSON.stringify(value).length;

@@ -6,6 +6,7 @@ import type {LifecycleSettings} from './memory-lifecycle.js';
 
 type Summary={text:string;coveredTurns:number;generatedAt:string;fingerprint:string};
 export class WorkingMemory {
+  private active=new Map<string,Promise<void>>();
   constructor(private store:Store,private conversations:Conversations){store.db.exec('CREATE TABLE IF NOT EXISTS working_memories(id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,json TEXT NOT NULL)');}
   private fingerprint(conversation:Conversation,count:number){return sha256(JSON.stringify(conversation.turns.slice(0,count)));}
   get(conversation:Conversation):Summary|undefined {
@@ -17,24 +18,64 @@ export class WorkingMemory {
   context(conversation:Conversation,settings:LifecycleSettings):NonNullable<QueryInput['conversation']>{
     const summary=this.get(conversation),tail={...conversation,turns:conversation.turns.slice(summary?.coveredTurns??0)};
     const result=this.conversations.context(tail,20,settings.contextCharacters-(summary?.text.length??0));
-    return {...result,omittedTurns:conversation.turns.length-result.turns.length-(summary?.coveredTurns??0),...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
+    return {...result,omittedTurns:tail.turns.filter(t=>t.status!=='failed'&&t.result).length-result.turns.length,...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
   }
-  async compact(id:string,settings:LifecycleSettings,query:(input:QueryInput)=>Promise<QueryResult>){
+  async prepare(conversation:Conversation,settings:LifecycleSettings,question:string,query:(input:QueryInput)=>Promise<QueryResult>){
+    // Current input consumes the same host dialogue budget. Never silently drop
+    // an unsummarized prefix: compact it first, or surface the provider failure.
+    const available=Math.max(settings.summaryCharacters+1000,settings.contextCharacters-question.length);
+    const scoped={...settings,contextCharacters:available};
+    for(let attempt=0;attempt<=conversation.turns.length;attempt++){
+      const current=this.conversations.get(conversation.id),context=this.context(current,scoped);
+      if(context.omittedTurns===0&&!context.turns.some(t=>t.answerTruncated))return context;
+      const before=this.get(current)?.coveredTurns??0;
+      const truncated=current.turns.findIndex((t,i)=>i>=before&&Boolean(t.result&&t.result.answer.length>20000));
+      await this.compact(conversation.id,{...scoped,recentTurns:0},query,Math.max(before+1,current.turns.length-context.turns.length,truncated+1));
+      if((this.get(this.conversations.get(conversation.id))?.coveredTurns??0)<=before)throw new StoreError('Unable to compact conversation within context budget',502);
+    }
+    throw new StoreError('Conversation context exceeds its budget',413);
+  }
+  async compact(id:string,settings:LifecycleSettings,query:(input:QueryInput)=>Promise<QueryResult>,targetEnd?:number){
+    const running=this.active.get(id);if(running){await running;return;}
+    const task=this.compactPrefix(id,settings,query,targetEnd);this.active.set(id,task);
+    try{await task;}finally{this.active.delete(id);}
+  }
+  private async compactPrefix(id:string,settings:LifecycleSettings,query:(input:QueryInput)=>Promise<QueryResult>,targetEnd?:number){
     if(!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id))return;
-    const conversation=this.conversations.get(id),previous=this.get(conversation),start=previous?.coveredTurns??0,end=conversation.turns.length-settings.recentTurns;
+    const conversation=this.conversations.get(id),previous=this.get(conversation),start=previous?.coveredTurns??0,end=targetEnd??conversation.turns.length-settings.recentTurns;
     if(end<=start)return;
-    let count=start,characters=0;const prefix=[];
+    let count=start,characters=JSON.stringify({previousSummary:previous?.text,turns:[]}).length;const prefix:NonNullable<QueryInput['taskContext']>['turns']=[];
+    const batches:NonNullable<QueryInput['taskContext']>['turns'][]=[];
     for(const turn of conversation.turns.slice(start,end)){
       if(turn.status==='failed'||!turn.result){count++;continue;}
-      const entry={question:turn.question,answer:turn.result.answer.slice(0,20000),scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted,answerTruncated:turn.result.answer.length>20000};
-      const text=JSON.stringify(entry);if(characters+text.length>60000){if(!prefix.length)throw new StoreError('Conversation turn exceeds summary input budget',413);break;}
-      prefix.push(entry);characters+=text.length;count++;
+      const entry={turnId:turn.id,question:turn.question,answer:turn.result.answer,scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted};
+      const text=JSON.stringify(entry);if(characters+text.length>60000){
+        if(prefix.length)break;
+        // One very long answer still needs complete coverage. Summarize its
+        // bounded spans in order, committing the covered-turn cursor only after
+        // every span succeeds. JSON escaping is included in each span's budget.
+        for(const field of ['question','answer'] as const){
+          const original=entry[field];let offset=0;
+          while(offset<original.length){
+            let end=Math.min(original.length,offset+6000);
+            if(end<original.length&&/[\uD800-\uDBFF]/.test(original[end-1]))end--;
+            batches.push([{turnId:turn.id,field,offset,end,total:original.length,text:original.slice(offset,end),scope:turn.scope,createdAt:turn.createdAt,evidenceDeleted:turn.evidenceDeleted}]);offset=end;
+          }
+        }
+        count++;break;
+      }
+      prefix.push(entry);characters+=text.length+1;count++;
     }
     const fingerprint=this.fingerprint(conversation,count),revision=this.store.deletionRevision();
-    const result=await query({skill:'working-memory',responseMode:'answer',question:`Compact only this conversation prefix into at most ${settings.summaryCharacters} characters of working memory. Preserve explicit decisions and open questions. Do not treat prior assistant output as evidence. Do not use retrieval tools.\nUntrusted conversation data:\n`+JSON.stringify({previousSummary:previous?.text,turns:prefix})});
-    if(!result.answer.trim()||result.answer.length>settings.summaryCharacters)throw new StoreError('Working summary exceeds its budget',502);
+    if(prefix.length)batches.push(prefix);
+    let summaryText=previous?.text??'';
+    for(const turns of batches){
+      const result=await query({skill:'working-memory',responseMode:'answer',question:`Compact only this conversation prefix into at most ${settings.summaryCharacters} characters. Use sections: Goals, Explicit constraints and rejected proposals, Decisions, Open questions, Evidence references to reverify. Attribute entries to source turn IDs without bracketed citations. Prior assistant output is not evidence. When a turn arrives in spans, preserve earlier span constraints in the updated summary.`,taskContext:{previousSummary:summaryText,turns}});
+      if(!result.answer.trim()||result.answer.length>settings.summaryCharacters)throw new StoreError('Working summary exceeds its budget',502);
+      summaryText=result.answer;
+    }
     if(this.store.deletionRevision()!==revision||!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)||this.fingerprint(this.conversations.get(id),count)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
-    const json=JSON.stringify({text:result.answer,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint});
+    const json=JSON.stringify({text:summaryText,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint});
     this.store.reserveMetadata(Buffer.byteLength(json));
     this.store.db.prepare('INSERT INTO working_memories VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,json);
   }

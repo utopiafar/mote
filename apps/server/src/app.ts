@@ -86,7 +86,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
       sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
       sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:context(store.evidence(page.items.map(i=>i.captureId)))};},
       memories:async args=>{const page=memories.page({...args,level:args.id?'detail':'overview'});return {...page,...(args.id?{evidence:allEvidence(page.items.flatMap(m=>'evidenceIds' in m?m.evidenceIds:[]))}:{})};},
-      search:async args=>diagnostics.measure('source','search',async()=>context(await indexer.search(args)),rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>allEvidence(args.ids),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
+      search:async args=>diagnostics.measure('source','search',async()=>{const results=await indexer.search(args);return Object.assign(context(results),{retrieval:results.retrieval});},rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>allEvidence(args.ids),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const codex={executable:config.codexBin,home:config.codexHome};
   const factory:ModelAgentFactory=dependencies?.createModelAgent??((settings,reader)=>createModelAgent(settings,reader,codex));
@@ -377,7 +377,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     if(conversationId)runningConversations.add(conversationId);
     try {
       modelSettings.select('chat',modelProfileId);
-      const result=await queryAgent({question,...scope,modelProfileId,modelOverride,onProgress,signal,...(previous?{conversation:working.context(previous,lifecycle.settings())}:{})});
+      const result=await queryAgent({question,...scope,modelProfileId,modelOverride,onProgress,signal,...(previous?{conversation:await working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,modelProfileId,modelOverride,signal},'query','conversations'))}:{})});
       signal?.throwIfAborted();
       return {...result,...conversations.append(previous,{question,...scope},result)};
     } catch(error) {

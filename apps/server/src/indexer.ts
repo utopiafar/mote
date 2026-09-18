@@ -60,11 +60,23 @@ export class Indexer {
   }
   async close() {this.closing=true;this.abort.abort();await this.current;}
   async search(args:Range&{query?:string}) {
-    if(!this.configured||!args.query||args.source==='activity'||args.source==='media'||args.collection==='activity')return [...(this.files?.search(args)??[]),...this.store.search(args)].slice(0,args.limit??50);
-    const vector=await this.embed(args.query);
-    const semantic=[...(this.files?.vectorSearch(vector,this.config.embeddingModel,args)??[]),...this.store.vectorSearch(vector,this.config.embeddingModel,args)];const lexical=[...(this.files?.search(args)??[]),...this.store.search(args)];
-    // Interleave two retrieval primitives; semantic interpretation remains entirely with the Agent.
-    const results=new Map();for(let i=0;i<Math.max(semantic.length,lexical.length);i++){if(semantic[i])results.set(semantic[i].id,semantic[i]);if(lexical[i])results.set(lexical[i].id,lexical[i]);}
-    return [...results.values()].slice(0,args.limit??50);
+    const lexical=[this.store.search(args),this.files?.search(args)??[]];
+    let channels=lexical,degraded=false;
+    if(this.configured&&args.query&&args.source!=='activity'&&args.source!=='media'&&args.collection!=='activity'){
+      try{
+        const vector=await this.embed(args.query);
+        channels=[...lexical,this.store.vectorSearch(vector,this.config.embeddingModel,args),this.files?.vectorSearch(vector,this.config.embeddingModel,args)??[]];
+      }catch(error){if(this.closing)throw error;degraded=true;}
+    }
+    // Reciprocal rank fusion across independent channels; no file-table priority.
+    const ranked=new Map<string,{record:(typeof lexical)[number][number];score:number}>();
+    for(const channel of channels){const seen=new Set<string>();channel.forEach((record,index)=>{
+      if(seen.has(record.id))return;seen.add(record.id);
+      const previous=ranked.get(record.id);
+      ranked.set(record.id,{record:previous?.record??record,score:(previous?.score??0)+1/(60+index+1)});
+    });}
+    const result=[...ranked.values()].sort((a,b)=>b.score-a.score||a.record.id.localeCompare(b.record.id)).slice(0,args.limit??50).map(({record})=>({...record,retrieval:{mode:channels===lexical?'lexical':'hybrid',degraded,...(degraded?{reason:'embedding_unavailable'}:{})}}));
+    // Preserve degradation even for an empty result, without changing the public array API.
+    return Object.assign(result,{retrieval:{mode:channels===lexical?'lexical':'hybrid',degraded,...(degraded?{reason:'embedding_unavailable'}:{})}});
   }
 }

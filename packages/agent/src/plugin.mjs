@@ -110,7 +110,9 @@ export async function apply(ctx) {
       throw new Error(result.error || "Mote context tool failed");
     return result;
   }
+  const allowed = JSON.parse(process.env.MOTE_TASK_TOOLS || JSON.stringify(names));
   for (const [tool, description, parameters] of CONTEXT_TOOLS) {
+    if (!allowed.includes(tool)) continue;
     ctx.tools.register(
       defineTool({
         name: tool,
@@ -134,11 +136,11 @@ export async function apply(ctx) {
   }
   // Monotonic deny: an accidental dependency must not grant the agent another capability.
   ctx.tools.guard((exec) =>
-    (names.includes(exec.name) || exec.name === 'skill')
+    (allowed.includes(exec.name) || exec.name === 'skill')
       ? undefined
       : "Mote exposes only read-only context tools",
   );
   const exposed = ctx.tools.schemas().map((tool) => tool.name);
   await call("_ready", { tools: exposed });
-  ctx.provide("moteReady", { tools: [...names,'skill'] });
+  ctx.provide("moteReady", { tools: [...allowed,'skill'] });
 }

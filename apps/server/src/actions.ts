@@ -27,17 +27,6 @@ export class Actions {
       UPDATE action_jobs SET status='pending' WHERE status='running';`);
     if(!this.meta('chunksInitialized',false)){store.db.exec('INSERT INTO action_chunk_changes(id) SELECT id FROM file_chunks');this.setMeta('chunksInitialized',true);}
     // Erase deleted original quotations even while discovery is disabled or the UI is closed.
-    for(const table of ['captures','file_chunks'])store.db.exec(`CREATE TABLE IF NOT EXISTS action_meta(key TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS action_proposals(id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS action_targets(device_id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS action_jobs(key TEXT PRIMARY KEY,id TEXT NOT NULL,offset INTEGER NOT NULL,length INTEGER NOT NULL,fingerprint TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',attempts INTEGER NOT NULL DEFAULT 0);
-      CREATE TABLE IF NOT EXISTS action_chunk_changes(seq INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL);
-      CREATE TRIGGER IF NOT EXISTS action_chunk_added AFTER INSERT ON file_chunks BEGIN INSERT INTO action_chunk_changes(id) VALUES(NEW.id); END;
-      CREATE TRIGGER IF NOT EXISTS action_artifact_changed AFTER UPDATE OF current ON file_artifacts BEGIN INSERT INTO action_chunk_changes(id) SELECT id FROM file_chunks WHERE artifact_id=NEW.id; END;
-      CREATE INDEX IF NOT EXISTS action_jobs_status ON action_jobs(status);
-      UPDATE action_jobs SET status='pending' WHERE status='running';`);
-    if(!this.meta('chunksInitialized',false)){store.db.exec('INSERT INTO action_chunk_changes(id) SELECT id FROM file_chunks');this.setMeta('chunksInitialized',true);}
-    // Erase deleted original quotations even while discovery is disabled or the UI is closed.
     for(const table of ['captures','file_chunks'])store.db.exec(`CREATE TRIGGER IF NOT EXISTS actions_${table}_deleted AFTER DELETE ON ${table} BEGIN
       UPDATE action_proposals SET json=json_set(json,'$.evidence',json('[]'),'$.version',json_extract(json,'$.version')+1,
         '$.event',CASE WHEN json_extract(json,'$.status') IN ('proposed','approved','dismissed','stale') THEN json('{"title":"来源已删除的日程建议","start":null,"end":null,"timeZone":null,"allDay":false,"location":"","description":""}') ELSE json_extract(json,'$.event') END,

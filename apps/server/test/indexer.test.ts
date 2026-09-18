@@ -110,7 +110,7 @@ test('hybrid search embeds the query and invokes both vector and lexical retriev
   t.mock.method(store, 'search', (...args: Parameters<Store['search']>) => { lexicalCalls.push(args); return originalSearch(...args); });
   const scope = { query: 'needle', after: '2026-09-12T00:00:00Z', before: '2026-09-13T00:00:00Z', deviceId: semantic.deviceId, limit: 2 };
   const matches = await indexer.search(scope);
-  assert.deepEqual(matches.map(record => record.id), [semantic.id, lexical.id]);
+  assert.deepEqual(matches.map(record => record.id), [lexical.id, semantic.id]);
   assert.deepEqual(vectorCalls, [[[1, 0], config.embeddingModel, scope]]);
   assert.deepEqual(lexicalCalls, [[scope]]);
   assert.equal(calls.at(-1)?.body.input, 'needle');
@@ -189,4 +189,21 @@ test('an unconfigured indexer keeps lexical queries available without contacting
   assert.equal(indexer.configured, false); await indexer.tick();
   const found = await indexer.search({ query: 'offline' });
   assert.deepEqual(found.map(record => record.id), [event.id]); assert.equal(calls.length, 0);
+});
+
+test('embedding outage returns scoped lexical evidence and explicit degradation',async t=>{
+ const {store,indexer}=await fixture(t,()=>({status:503,body:{error:'generated outage'}}));
+ const item=capture('Offline fallback needle');await store.ingest(item);
+ const found=await indexer.search({query:'needle',deviceId:item.deviceId});
+ assert.equal(found[0].id,item.id);assert.equal(found.retrieval.degraded,true);assert.equal(found.retrieval.reason,'embedding_unavailable');
+ const empty=await indexer.search({query:'absent-generated-term'});assert.equal(empty.length,0);assert.equal(empty.retrieval.degraded,true);
+});
+
+test('rank fusion admits ordinary records alongside abundant file matches',async t=>{
+ const {store,config}=await fixture(t,()=>({body:{data:[{embedding:[1,0]}]}}));
+ const note=capture('fusion needle',{id:'11111111-1111-4111-8111-111111111111'});await store.ingest(note);
+ const fileRecords=Array.from({length:20},(_,i)=>({...store.evidence([note.id])[0],id:`file-${i}`}));
+ const indexer=new Indexer(store,{...config,embeddingModel:''},undefined,{search:()=>fileRecords} as any);t.after(()=>indexer.close());
+ const result=await indexer.search({query:'needle',limit:3});
+ assert.ok(result.some(r=>r.id===note.id));assert.ok(result.some(r=>r.id.startsWith('file-')));assert.equal(new Set(result.map(r=>r.id)).size,3);
 });

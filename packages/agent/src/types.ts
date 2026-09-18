@@ -88,6 +88,8 @@ export interface QueryInput {
   onProgress?: (event: AgentProgress) => void;
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
+  /** Bounded host-owned input for background tasks, separate from the user question. */
+  taskContext?: {previousSummary?:string;turns: {turnId:string;[key:string]:unknown}[]};
   responseMode?: 'answer'|'personal-insight'|'memory-extraction'|'calendar-extraction';
   /** Host-selected procedure, never selected from captured text. */
   skill?: Exclude<MoteSkillId,'document-import'>;
@@ -134,6 +136,7 @@ export interface ToolTrace {
   count: number;
 }
 export interface AgentAnswer {
+  contextUsage?:{unit:'utf16_characters';system:number;tools:number;question:number;conversation:number;task:number;evidence:number;prompt:number;outputTokenReserve:number;toolResults:number};
   answer: string;
   citations: Citation[];
   trace: ToolTrace[];

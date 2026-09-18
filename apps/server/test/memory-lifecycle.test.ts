@@ -67,3 +67,33 @@ test('lexical scope is applied before the former 500-candidate global limit',asy
   const late=await sources.upsert('scope-fixture',{externalId:'late',revision:'1',observedAt:'2026-08-02T00:00:00Z',text:'shared lexical fixture',kind:'file',layer:'original',document:{recordedAt:'2026-03-01T00:00:00Z',timeBasis:'recorded',contentRole:'authored'}});
   assert.deepEqual(store.search({query:'shared',after:'2026-03-01T00:00:00Z',before:'2026-04-01T00:00:00Z'}).map(r=>r.id),[late.id]);
 });
+
+test('pressure compacts unsummarized dialogue immediately using separate task context',async t=>{
+  const store=fixture(t),conversations=new Conversations(store),working=new WorkingMemory(store,conversations),lifecycle=new MemoryLifecycle(store,()=>true);t.after(()=>lifecycle.close());
+  let id:string|undefined;
+  for(let i=0;i<10;i++)id=conversations.append(id?conversations.get(id):undefined,{question:i===0?'Explicitly reject cloud upload':'Continue '+i},{...empty(),answer:'Generated lengthy reply. '.repeat(200)}).conversationId;
+  let calls=0;
+  const context=await working.prepare(conversations.get(id!),lifecycle.settings(),'Continue',async input=>{
+    calls++;assert.ok(input.question.length<20000);assert.ok(JSON.stringify(input.taskContext).length>20000);assert.equal(input.taskContext?.turns[0].question,'Explicitly reject cloud upload');return {...empty(),answer:'User explicitly rejected cloud upload (first turn); this remains a constraint.'};
+  });
+  assert.equal(calls,1);assert.equal(context.omittedTurns,0);assert.match(context.workingMemory!.text,/rejected cloud/);assert.ok(context.turns.length>0);
+});
+
+test('failed compaction cannot silently discard dialogue and oversized latest turn is summarized',async t=>{
+  const store=fixture(t),conversations=new Conversations(store),working=new WorkingMemory(store,conversations),lifecycle=new MemoryLifecycle(store,()=>true);t.after(()=>lifecycle.close());
+  const {conversationId}=conversations.append(undefined,{question:'x'.repeat(19000)},{...empty(),answer:'y'.repeat(19000)});
+  await assert.rejects(working.prepare(conversations.get(conversationId),lifecycle.settings(),'continue',async()=>{throw Error('provider unavailable');}),/provider unavailable/);
+  const context=await working.prepare(conversations.get(conversationId),lifecycle.settings(),'continue',async()=>({...empty(),answer:'Explicit generated constraint preserved'}));
+  assert.equal(context.omittedTurns,0);assert.equal(context.workingMemory?.coveredTurns,1);
+});
+
+test('a single huge turn is summarized in bounded spans and partial failure never advances the cursor',async t=>{
+ const store=fixture(t),conversations=new Conversations(store),working=new WorkingMemory(store,conversations),lifecycle=new MemoryLifecycle(store,()=>true);t.after(()=>lifecycle.close());
+ const text='generated🌱'.repeat(10000),{conversationId}=conversations.append(undefined,{question:'Preserve all spans'},{...empty(),answer:text});
+ let calls=0;
+ await assert.rejects(working.prepare(conversations.get(conversationId),lifecycle.settings(),'continue',async()=>{if(++calls===3)throw Error('synthetic failure');return {...empty(),answer:'partial'};}));
+ assert.equal(working.get(conversations.get(conversationId)),undefined);
+ const pieces:string[]=[];
+ await working.prepare(conversations.get(conversationId),lifecycle.settings(),'continue',async input=>{assert.ok(JSON.stringify(input.taskContext).length<80000);for(const span of input.taskContext!.turns)if(span.field==='answer')pieces.push(String(span.text));return {...empty(),answer:'complete generated summary'};});
+ assert.equal(pieces.join(''),text);assert.equal(working.get(conversations.get(conversationId))?.coveredTurns,1);
+});

@@ -51,7 +51,7 @@ test('extraction seed enforces exact ranges, authored dates, original boundaries
 
 test('native skill tool loads its body inside real Harness while memory batches cannot retrieve outside text', {timeout:90000}, async()=>{
   const fixture=await provider((request,stage)=>{
-    assert.deepEqual(request.tools.map(t=>t.function.name).sort(),[...TOOL_NAMES,'skill'].sort());
+    assert.deepEqual(request.tools.map(t=>t.function.name).sort(),['evidence','skill'].sort());
     assert.ok(!JSON.stringify(request.messages).includes(prefix));assert.ok(!JSON.stringify(request.messages).includes(suffix));
     if(stage===0)return {tool:{name:'skill',args:{name:'memory-extraction'}}};
     if(stage===1)return {tool:{name:'evidence',args:{ids:[id],offset:0,length:5}}};
