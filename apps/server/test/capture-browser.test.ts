@@ -93,7 +93,7 @@ test('browser pagination, status fallbacks and empty completed OCR remain honest
     const page=(await app.inject({url:'/api/capture-browser?limit=1'+(cursor?'&cursor='+encodeURIComponent(cursor):''),headers:auth()})).json();
     assert.equal(page.totalCount,3);assert.equal(page.items.length,1);assert(!seen.has(page.items[0].id));seen.add(page.items[0].id);cursor=page.nextCursor;
   }while(cursor);
-  for(const [status,id] of [['unknown',legacy.id],['disabled',disabled.id],['completed',empty.id]]){
+  for(const [status,id] of [['unknown',legacy.id],['pending',disabled.id],['completed',empty.id]]){
     const result=(await app.inject({url:'/api/capture-browser?ocrStatus='+status,headers:auth()})).json();assert.equal(result.totalCount,1);assert.equal(result.items[0].id,id);
   }
   assert.equal((await app.inject({url:'/api/capture-browser?before=2026-09-13T12:00:00Z',headers:auth()})).json().totalCount,0);

@@ -142,7 +142,7 @@ export class Store {
     }
     if(range.source) {clauses.push("json_extract(json,'$.source') = ?");values.push(range.source);}
     if(range.ocrStatus) {
-      clauses.push('mote_ocr_status(json) = ?');
+      clauses.push("(CASE WHEN EXISTS (SELECT 1 FROM perception_results pr WHERE pr.capture_id=captures.id AND pr.kind='ocr' AND pr.current=1) THEN 'completed' WHEN json_extract(json,'$.ocr.status')='disabled' AND json_extract(json,'$.ocrText')='' AND EXISTS (SELECT 1 FROM perception_jobs pj WHERE pj.capture_id=captures.id AND pj.kind='ocr') THEN CASE WHEN EXISTS (SELECT 1 FROM perception_jobs pj WHERE pj.capture_id=captures.id AND pj.kind='ocr' AND pj.state='failed') THEN 'failed' ELSE 'pending' END ELSE mote_ocr_status(json) END) = ?");
       values.push(range.ocrStatus);
     }
     if(range.collection==='activity')clauses.push("json_extract(json,'$.privacy.collection') = 'activity'");
