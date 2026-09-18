@@ -42,7 +42,16 @@ const other = createServer((_req, res) => { otherRequests++; res.writeHead(500);
 const until = async fn => { for (let i = 0; i < 200; i++) { if (await fn()) return; await new Promise(resolve => setTimeout(resolve, 25)); } throw new Error('Offline sync fixture phase timeout'); };
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const queueBodies = () => readdirSync(join(profile, 'queue/events')).filter(name => name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(profile, 'queue/events', name), 'utf8')).event).sort((a, b) => a.id.localeCompare(b.id));
-const sourcePending = (url, credential, id) => JSON.parse(readFileSync(join(profile, 'local-sources/nodes', createHash('sha256').update(url + ':' + credential).digest('hex'), id + '.json'), 'utf8')).pending;
+const sourcePending = (url, credential, id) => {
+  const state = JSON.parse(readFileSync(join(profile, 'local-sources/nodes', createHash('sha256').update(url + ':' + credential).digest('hex'), id + '.json'), 'utf8'));
+  // SourceSync v2 separates realtime and history queues; keep this fixture
+  // compatible with the legacy state shape so it validates both migrations.
+  return [
+    ...(Array.isArray(state.pendingRealtime) ? state.pendingRealtime : []),
+    ...(Array.isArray(state.pendingHistory) ? state.pendingHistory : []),
+    ...(Array.isArray(state.pending) ? state.pending : []),
+  ];
+};
 const timeout = setTimeout(() => { process.stderr.write('Offline sync fixture timeout\n'); app.exit(1); }, 35000);
 app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', () => {
