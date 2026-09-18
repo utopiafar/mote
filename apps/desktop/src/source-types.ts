@@ -14,10 +14,15 @@ export interface SourceItem {
   layer: 'snapshot'|'reference'|'original'; mimeType?: string; deleted?: boolean;
   calendar?: { start: string; end: string; allDay: boolean; timeZone?: string; status: 'confirmed' | 'tentative' | 'cancelled' };
 }
-export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'>;
+export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'> & {
+  /** Client-only routing hint; SourceSync strips it before persistence and upload. */
+  syncQueue?: 'realtime' | 'history';
+};
 export interface SourceScan {
   checkpoint?: import('./coding-agents').CodingCheckpoint;
   items: ScannedItem[]; seen: string[]; complete: boolean; skipped: number;
+  /** Historical backfills never get to starve newly observed source changes. */
+  queue?: 'realtime' | 'history';
   scope?: { start: string; end: string };
 }
 export interface SourceOptions {
