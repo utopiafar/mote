@@ -5,6 +5,8 @@ import { validateServerUrl } from './config';
 import { TransportFailure, failureCode, httpFailure, type EventJournal } from './support';
 import { readResponseText } from './response-body';
 
+// Authentication is the explicit Bearer header. Omit ambient HTTP credentials so
+// fetch does not attempt to replay a streaming upload after a 401 response.
 export class DeletedCaptureFailure extends TransportFailure {}
 
 export async function uploadDeferredOcr(config: Config, id: string, ocrText: string, signal?: AbortSignal): Promise<void> {
@@ -13,7 +15,7 @@ export async function uploadDeferredOcr(config: Config, id: string, ocrText: str
   try {
     response = await fetch(`${validateServerUrl(config.serverUrl)}/api/capture-browser/${id}/ocr`, {
       method: 'POST', headers: { 'Accept-Language': getLocale(), Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
-      redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
+      credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
       body: meteredBody(JSON.stringify({ ocrText, status: 'completed' })), ...({duplex:'half'} as object),
     });
   } catch { throw new TransportFailure(moteText("OCR 结果上传失败，已保留等待重试"), 'NETWORK'); }
@@ -38,7 +40,7 @@ export async function uploadCapture(config: Config, event: CaptureEvent, image?:
   try {
     response = await fetch(`${origin}/api/captures`, {
       method: 'POST', headers: { 'Accept-Language': getLocale(), 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
-      redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
+      credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
       body: meteredBody(JSON.stringify({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })),
       ...({ duplex: 'half' } as object),
     });
@@ -60,7 +62,7 @@ export async function heartbeat(config: Config, body: object, events?: EventJour
   try {
     const response = await fetch(`${validateServerUrl(config.serverUrl)}/api/devices/heartbeat`, {
       method: 'POST', headers: { 'Accept-Language': getLocale(), 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
-      redirect: 'error', signal: AbortSignal.timeout(5000), body: JSON.stringify(body),
+      credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(5000), body: JSON.stringify(body),
     });
     await response.body?.cancel().catch(() => undefined);
     if (!response.ok) void events?.record('HEARTBEAT', httpFailure(response.status), { httpStatus: response.status });
@@ -70,7 +72,7 @@ export async function heartbeat(config: Config, body: object, events?: EventJour
 export async function uploadCaptureBatch(config: Config, entries: { event: CaptureEvent; image?: Buffer }[], signal?: AbortSignal): Promise<Map<string, number>> {
   if (!config.token) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
   const response = await fetch(`${validateServerUrl(config.serverUrl)}/api/captures/batch`, {
-    method: 'POST', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
+    method: 'POST', credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
     headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', 'Accept-Language': getLocale() },
     body: meteredBody(JSON.stringify({ captures: entries.map(({event, image}) => ({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })) })),
     ...({ duplex: 'half' } as object),

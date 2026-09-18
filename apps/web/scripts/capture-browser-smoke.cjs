@@ -58,7 +58,7 @@ async function finish(code) {
   await clickNav('采集记录');
   await until(()=>js(`document.querySelectorAll('.timeline-group .capture-card').length===24`),'first page after one click');
   assert(await js(`document.querySelector('.filter-count').innerText.includes('/ 30')`));
-  for(const label of ['OCR 待充电','OCR 已完成','OCR 未识别到文字','OCR 失败','OCR 已关闭','OCR 状态未知'])assert(await js(`document.querySelector('.content').innerText.includes(${JSON.stringify(label)})`),label);
+  for(const label of ['OCR 待充电','OCR 已完成','OCR 未识别到文字','OCR 失败','OCR 待处理','OCR 状态未知'])assert(await js(`document.querySelector('.content').innerText.includes(${JSON.stringify(label)})`),label);
   await until(()=>js(`document.querySelectorAll('.timeline-group .capture-image img').length>0`),'thumbnail images');
   assert(requests.some(item=>item.includes('/api/capture-browser?')&&item.includes('limit=24')));
   assert(requests.some(item=>item.includes('/image?thumbnail=1')));

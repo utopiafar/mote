@@ -13,6 +13,7 @@ describe('acknowledgment-gated uploads', () => {
     expect(fakeFetch.mock.calls[0][0]).toBe('http://127.0.0.1:47832/api/captures');
     const options = fakeFetch.mock.calls[0][1];
     expect(options.redirect).toBe('error');
+    expect(options.credentials).toBe('omit');
     expect(JSON.parse(await new Response(options.body).text())).toEqual({ ...event(), imageBase64: image.toString('base64') });
   });
   it.each([200, 201, 202, 401, 409, 500])('keeps queue ownership when HTTP %s does not acknowledge the exact record', async status => {
