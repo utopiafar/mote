@@ -4982,5 +4982,12 @@ export const english: Readonly<Record<string, string>> = {
   "初次提取": "Initial extraction",
   "每轮积压处理窗口上限": "Maximum backlog windows per round",
   "记忆以文本保存，按“概览 → 内容与边界 → 原始证据”逐层展开，全文索引可从文本重建。自动生成的长期记忆需要你确认。提取轮次启动后，按窗口持续处理已圈定的积压，每轮窗口上限控制成本。": "Memories are stored as text with progressive disclosure from overview to statement and limits to original evidence. The full-text index is rebuildable. Automatically consolidated memories need your confirmation. Once extraction starts, bounded windows drain the fixed backlog; the window limit controls cost.",
-  "精选记忆与事件资料分开展示。旧记录保留在“旧版未审核”，原始资料始终可检索。": "Selected memories are separate from events and source summaries. Older entries remain under Legacy, not reviewed. Original sources stay searchable."
+  "精选记忆与事件资料分开展示。旧记录保留在“旧版未审核”，原始资料始终可检索。": "Selected memories are separate from events and source summaries. Older entries remain under Legacy, not reviewed. Original sources stay searchable.",
+  "登录会话有效期": "Sign-in session lifetime",
+  "当前窗口（Session）": "Current window (Session)",
+  "7 天": "7 days",
+  "令牌会保存在此浏览器中，并在所选期限后自动清除；退出登录会立即清除。": "The token is kept in this browser and cleared after the selected period; signing out clears it immediately.",
+  "仅保留在当前浏览器标签页；关闭后需要重新登录。": "Kept only in this browser tab; closing it requires signing in again.",
+  "管理令牌仍由中央节点控制；浏览器中的登录会话会在期限后自动清除。": "The central node still controls the management token; the browser sign-in session is cleared after the selected period.",
+  "这是网页端登录会话的本地保存期限，不会修改中央节点的管理令牌或采集端凭据。": "This is the local retention period for the web sign-in session. It does not change the central management token or collector credentials."
 };

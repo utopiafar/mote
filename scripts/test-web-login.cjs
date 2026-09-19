@@ -25,6 +25,7 @@ async function run(){
  const wc=window.webContents,js=code=>wc.executeJavaScript(code);
  const click=async text=>until(()=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)return false;b.click();return true;})()`),'button '+text);
  const input=async value=>js(`(()=>{const e=document.querySelector('[aria-label="管理访问令牌"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+ const selectLifetime=async value=>js(`(()=>{const e=document.querySelector('[aria-label="登录会话有效期"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
  async function shot(name){await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');writeFileSync(join(output,name+'.png'),(await wc.capturePage()).toPNG());assert.ok(await js('document.documentElement.scrollWidth<=innerWidth'),'no horizontal overflow: '+name+' '+JSON.stringify(await js(`Array.from(document.querySelectorAll('body *')).filter(e=>e.getBoundingClientRect().right>innerWidth+1).map(e=>({tag:e.tagName,cls:e.className,width:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right})).slice(0,12)`)));}
  await window.loadURL(base);
  await until(()=>js(`document.querySelector('.welcome')`),'anonymous welcome');
@@ -33,6 +34,7 @@ async function run(){
  await click('设备');await until(()=>js(`document.querySelector('#connect-title')?.textContent==='登录 Mote'`),'device login guard');
  assert.ok(await js(`document.querySelector('.connect-modal').innerText.includes('进入「设备」')`));
  assert.equal(await js(`!!document.querySelector('.login-advanced,[aria-label="登录节点地址"]')`),false,'management login has no remote node selector');
+ assert.equal(await js(`document.querySelector('[aria-label="登录会话有效期"]')?.value`),'session','new login defaults to a tab-scoped session');
  assert.deepEqual(await js('window.fixtureRequests'),[],'anonymous navigation does not request private data');
  await shot('login-desktop');window.setSize(430,900);await delay(150);await shot('login-mobile');window.setSize(1360,1000);
  await input('generated-invalid');await click('登录并继续');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('令牌无效')`),'invalid token error');
@@ -45,6 +47,10 @@ async function run(){
  await input(owner);await click('登录并继续');
  await until(()=>js(`!!document.querySelector('.archive-page .filter-bar')`),'archive opens despite failed status and insights');
  assert.equal(await js(`document.querySelector('.connect-modal')`),null);
+ await js(`document.querySelector('[aria-label="登录会话"]').click()`);await until(()=>js(`!!document.querySelector('.session-settings [aria-label="登录会话有效期"]')`),'session settings');
+ await selectLifetime('1d');await until(()=>js(`!!localStorage.getItem('mote.connection')&&JSON.parse(localStorage.getItem('mote.connection')).expiresAt> Date.now()`),'persistent browser session');
+ assert.equal(await js(`sessionStorage.getItem('mote.connection')`),null);
+ await selectLifetime('session');await until(()=>js(`!!sessionStorage.getItem('mote.connection')&&!localStorage.getItem('mote.connection')`),'tab-scoped browser session');
  await click('设备');await until(()=>js(`document.querySelector('.device-overview')?.innerText.includes('合成测试手机')`),'devices load independently');
  await click('扫码连接设备');await until(()=>js(`!!document.querySelector('#connections-title')`),'pairing accessible without overview status');
  await click('生成设备二维码');await until(()=>js(`!!document.querySelector('.connection-qr img')`),'QR accessible after login');

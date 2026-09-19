@@ -3492,6 +3492,14 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .device-empty p {font-size:14px;line-height:1.9;max-width:550px;margin:0 auto 25px;color:#6b805e;}
 .manage-authorizations {margin-top:24px;}
 .session-settings p {font-size:14px;margin:13px 0;overflow-wrap:anywhere;}
+.session-lifetime-control {display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:18px 0;border-block:1px solid #e5ecdd;margin:20px 0;}
+.session-lifetime-control>span {display:flex;flex-direction:column;gap:7px;font-size:14px;color:#45693f;}
+.session-lifetime-control small {font-size:12px;line-height:1.75;color:#66756c;}
+.session-lifetime-control select {min-width:180px;min-height:42px;padding:9px 12px;border:1px solid #d9e2d8;border-radius:9px;background:#fff;color:#345039;font:inherit;}
+.connect-modal .session-lifetime-control {display:grid;gap:8px;margin:17px 0;padding:0;border:0;}
+.connect-modal .session-lifetime-control>span {font-size:13px;}
+.connect-modal .session-lifetime-control select {width:100%;}
+@media(max-width:760px) {.session-lifetime-control {flex-direction:column;gap:12px;} .session-lifetime-control select {width:100%;min-width:0;}}
 .add-source-panel {padding:23px;margin-bottom:25px;}
 .add-source-panel>.segmented-nav {margin-bottom:23px;}
 .source-heading-actions {display:flex;gap:10px;}

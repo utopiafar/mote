@@ -2,6 +2,8 @@ import { moteText, getLocale } from '@mote/shared/i18n';
 import type {RecordMetadata, SourceMetadata, OcrResult, CaptureRecord} from '@mote/shared';
 export interface Connection {
   token: string;
+  /** Browser-only expiry for a persisted management session; the server token is unchanged. */
+  expiresAt?: number;
 }
 export interface FileEvidence {
   captureId: string;
