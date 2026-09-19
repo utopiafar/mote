@@ -79,6 +79,7 @@ class MainActivity : MoteActivity() {
     private lateinit var syncMode: Spinner
     private lateinit var syncInterval: EditText
     private lateinit var syncBatch: EditText
+    private lateinit var jsonlWindow: EditText
     private val syncModes = listOf("realtime", "interval", "batch", "manual")
     private lateinit var appRuleRows: LinearLayout
     private lateinit var maskEditor: MaskEditorView
@@ -301,9 +302,10 @@ class MainActivity : MoteActivity() {
         }; content.addView(syncMode, LinearLayout.LayoutParams(-1, dp(56))); track(syncMode, "syncMode")
         syncInterval = presetNumber(MoteI18n.text("同步间隔 / 分钟（批量模式下也是最长等待时间）"), config.syncIntervalMinutes, "15", 15..1440, listOf(15, 30, 60, 180, 360, 720, 1440))
         syncBatch = presetNumber(MoteI18n.text("批量达到多少条时同步"), config.syncBatchSize, "20", 1..500, listOf(5, 10, 20, 50, 100, 200, 500))
-        packedUpload = check(MoteI18n.text("打包上传（合并多条记录，逐条确认）"), config.packedUpload)
+        packedUpload = check(MoteI18n.text("压缩包上传（gzip JSONL，服务端解包后逐条确认）"), config.packedUpload)
+        jsonlWindow = presetNumber(MoteI18n.text("无图片状态 JSONL 合并窗口 / 分钟"), config.jsonlWindowMinutes, "10", 1..1440, listOf(1, 5, 10, 15, 30, 60))
         updateSyncFields()
-        help(MoteI18n.text("同步方式说明"), MoteI18n.text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。"))
+        help(MoteI18n.text("同步方式说明"), MoteI18n.text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。压缩包内是 gzip JSONL，服务端解包后逐条校验并确认。无图片的短状态记录会按时间窗口合并，默认 10 分钟。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。"))
         section(MoteI18n.text("同步条件"))
         wifi = check(MoteI18n.text("仅非计费 Wi-Fi 同步"), config.wifiOnly)
         syncChargingOnly = check(MoteI18n.text("仅充电时同步"), config.syncChargingOnly)
@@ -677,7 +679,7 @@ class MainActivity : MoteActivity() {
             token = checked(token) { token.text.toString().trim().also { require(it.isBlank() || it.length >= 32) { MoteI18n.text("令牌至少需要 32 个字符；未连接时可留空") } } },
             deviceName = checked(name) { name.text.toString().trim().also { require(it.isNotBlank() && it.length <= 128) { MoteI18n.text("请填写 1..128 字符的设备名称") } } },
             wifiOnly = wifi.isChecked, syncMode = syncModes[syncMode.selectedItemPosition], syncIntervalMinutes = number(syncInterval, 15..1440),
-            packedUpload = packedUpload.isChecked, syncBatchSize = number(syncBatch, 1..500), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
+            packedUpload = packedUpload.isChecked, syncBatchSize = number(syncBatch, 1..500), jsonlWindowMinutes = number(jsonlWindow, 1..1440), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
         Page.CAPTURE -> current.copy(
             intervalSeconds = number(interval, 5..300), mode = if (projectionMode.isChecked) "projection" else "accessibility",
             chargingOnly = chargingOnly.isChecked, batteryPauseBelowPct = number(batteryBelow, 0..95),

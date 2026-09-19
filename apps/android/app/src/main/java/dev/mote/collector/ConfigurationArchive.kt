@@ -28,6 +28,7 @@ object ConfigurationArchive {
             .put("syncMode", c.syncMode)
             .put("syncIntervalMinutes", c.syncIntervalMinutes)
             .put("syncBatchSize", c.syncBatchSize)
+            .put("jsonlWindowMinutes", c.jsonlWindowMinutes)
             .put("ocrChargingOnly", c.ocrChargingOnly)
             .put("mediaCollectionEnabled", c.mediaCollectionEnabled)
             .put("screenCollectionEnabled", c.screenCollectionEnabled)
@@ -87,6 +88,7 @@ object ConfigurationArchive {
             syncMode = string(values, "syncMode", current.syncMode),
             syncIntervalMinutes = int(values, "syncIntervalMinutes", current.syncIntervalMinutes),
             syncBatchSize = int(values, "syncBatchSize", current.syncBatchSize),
+            jsonlWindowMinutes = int(values, "jsonlWindowMinutes", current.jsonlWindowMinutes),
             ocrChargingOnly = boolean(values, "ocrChargingOnly", current.ocrChargingOnly),
             mediaCollectionEnabled = boolean(values, "mediaCollectionEnabled", current.mediaCollectionEnabled),
             screenCollectionEnabled = boolean(values, "screenCollectionEnabled", current.screenCollectionEnabled),
@@ -122,6 +124,6 @@ object ConfigurationArchive {
     private fun int(j: JSONObject, key: String, fallback: Int): Int {
         val n = long(j, key, fallback.toLong()); require(n in Int.MIN_VALUE..Int.MAX_VALUE); return n.toInt()
     }
-    private val keys = setOf("server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "localReviewUrl", "debugHttp", "mode", "nsfw", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "ocrChargingOnly", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "contentEncryptionEnabled", "uploadedRetentionDays")
+    private val keys = setOf("server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "localReviewUrl", "debugHttp", "mode", "nsfw", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "ocrChargingOnly", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "contentEncryptionEnabled", "uploadedRetentionDays")
     private val nsfwKeys = setOf("enabled", "threads", "timeoutMs", "source", "customUrl", "policy", "maxTokens", "reviewMaxSide")
 }

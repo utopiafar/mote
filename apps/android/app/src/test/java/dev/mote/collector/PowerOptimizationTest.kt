@@ -4,6 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.util.zip.GZIPInputStream
 
 class PowerOptimizationTest {
     @Test fun ocrDefaultsToOneEngineAndOnlyExplicitOverridesRunTwo() {
@@ -24,5 +26,10 @@ class PowerOptimizationTest {
     @Test fun newInstallUsesActivityWhileLegacyDefaultRemainsContent() {
         assertEquals(AppCollectionMode.ACTIVITY, AppCollectionRules.parse(AppCollectionRules.DEFAULT).defaultMode)
         assertEquals(AppCollectionMode.CONTENT, AppCollectionRules.parse(AppCollectionRules.LEGACY_DEFAULT).defaultMode)
+    }
+    @Test fun captureBundleIsOneGzipJsonlStream() {
+        val events = listOf(JSONObject().put("id", "a"), JSONObject().put("id", "b"))
+        val raw = GZIPInputStream(ByteArrayInputStream(CaptureBundle.encode(events))).bufferedReader().readText()
+        assertEquals("{\"id\":\"a\"}\n{\"id\":\"b\"}\n", raw)
     }
 }
