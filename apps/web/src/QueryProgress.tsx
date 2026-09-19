@@ -1,7 +1,7 @@
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {useEffect,useState} from 'react';
 import {LoaderCircle,CheckCircle2,AlertCircle} from 'lucide-react';
-export interface QueryRun {id:string;status:'running'|'completed'|'failed'|'cancelled';createdAt:string;updatedAt:string;conversationId?:string;turnId?:string;events:{stage:'starting'|'model'|'tool'|'validating';at:string;tool?:string;message?:string;count?:number;phase?:'started'|'completed';step?:number}[];error?:{message:string}}
+export interface QueryRun {id:string;status:'running'|'completed'|'failed'|'cancelled';createdAt:string;updatedAt:string;conversationId?:string;turnId?:string;events:{stage:'starting'|'model'|'tool'|'validating';at:string;tool?:string;message?:string;count?:number;phase?:'started'|'completed';step?:number}[];error?:{message:string};execution?:import('@mote/shared').ExecutionEnvelope}
 const tools:Record<string,string>={search_context:moteText("检索上下文"),timeline:moteText("浏览时间线"),evidence:moteText("展开原始证据"),activity:moteText("核对采样时长"),media_activity:moteText("核对媒体活动"),devices:moteText("查看设备"),sources:moteText("查看资料来源"),source_items:moteText("读取来源记录"),source_history:moteText("查阅历史版本"),memories:moteText("检索记忆"),file_chunks:moteText("读取文件片段")};
 export function progressLabel(e:QueryRun['events'][number]):string {
   if(e.message)return e.message;

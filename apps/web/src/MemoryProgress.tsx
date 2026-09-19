@@ -18,6 +18,7 @@ export interface MemoryJob {
   errorCode?: string;
   skillVersion: string;
   batches?: {id:string;index:number;status:string;attempts:number;memoryIds:string[];errorCode?:string}[];
+  execution?: import('@mote/shared').ExecutionEnvelope;
 }
 export const memoryJobLabels: Record<MemoryJob['status'], string> = {
   queued:moteText("等待提取记忆"), running:moteText("正在分批提取记忆"), completed:moteText("记忆提取完成"),

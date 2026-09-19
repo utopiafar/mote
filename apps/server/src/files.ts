@@ -3,7 +3,7 @@ import {randomUUID,createHash} from 'node:crypto';
 import {existsSync,renameSync,rmSync,readdirSync,openSync,closeSync,fsyncSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
-import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,type FileRevision,type CaptureRecord,fileEvidenceSchema} from '@mote/shared';
+import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,type FileRevision,type CaptureRecord,fileEvidenceSchema} from '@mote/shared';
 import type {ContextRecord,ContextRange} from '@mote/agent';
 import {Store,StoreError,sha256} from './store.js';
 import {SourceStore} from './sources.js';
@@ -115,7 +115,11 @@ export class FileStore {
     const artifacts=includeArtifacts?(db.prepare('SELECT id,kind,created_at,json FROM file_artifacts WHERE capture_id=? AND current=1 ORDER BY created_at').all(id) as {id:string;kind:string;created_at:string;json:string}[]).map(a=>{
       const {transcript,segments,...data}=JSON.parse(a.json);return {id:a.id,kind:a.kind,createdAt:a.created_at,...data,...(transcript?{durationMs:transcript.durationMs,segments:transcript.segments.length,warnings:transcript.warnings}:segments?{segments:Array.isArray(segments)?segments.length:segments}:{})};
     }):[];
-    return {captureId:id,...JSON.parse(v.manifest),hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job:db.prepare('SELECT state,stage,attempts,error,summary_state,local_only FROM file_jobs WHERE capture_id=?').get(id)??null,artifacts,steps:includeArtifacts?db.prepare('SELECT step,processor,version,state,attempts,error FROM file_steps WHERE capture_id=? ORDER BY rowid').all(id):[]};
+    const rawJob=db.prepare('SELECT state,stage,attempts,error,summary_state,local_only,available_at AS availableAt,config_revision AS inputVersion FROM file_jobs WHERE capture_id=?').get(id) as ({state:string;stage:string;attempts:number;error:string|null;summary_state:string;local_only:number;availableAt:number;inputVersion:string|null}|undefined);
+    const rawSteps=includeArtifacts?db.prepare('SELECT step,processor,version,state,attempts,error,updated_at AS updatedAt FROM file_steps WHERE capture_id=? ORDER BY rowid').all(id) as {step:string;processor:string;version:string;state:string;attempts:number;error:string|null;updatedAt:string}[]:[];
+    const job=rawJob?{...rawJob,execution:executionEnvelope({state:rawJob.state,attempts:rawJob.attempts,errorCode:rawJob.error??undefined,availableAt:rawJob.availableAt,inputVersion:rawJob.inputVersion??undefined})}:null;
+    const steps=rawSteps.map(step=>({...step,execution:executionEnvelope({state:step.state,attempts:step.attempts,errorCode:step.error??undefined,definitionVersion:step.version,updatedAt:step.updatedAt})}));
+    return {captureId:id,...JSON.parse(v.manifest),hasOriginal:!!v.object_hash,originMissing:!!head?.origin_missing,job,artifacts,steps};
   }
   saveAsset(artifactId:string,name:string,mime:string,bytes:Buffer){
     if(!/^speaker_samples\/SPEAKER_[0-9]{1,2}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');

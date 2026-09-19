@@ -70,6 +70,12 @@
       "types": "./dist/state-series.d.ts",
       "import": "./dist/state-series.js",
       "require": "./dist/state-series.js"
+    },
+    "./execution": {
+      "types": "./dist/execution.d.ts",
+      "import": "./dist/execution.js",
+      "require": "./dist/execution.js",
+      "default": "./dist/execution.js"
     }
   },
   "typesVersions": {
@@ -103,6 +109,9 @@
       ],
       "state-series": [
         "dist/state-series.d.ts"
+      ],
+      "execution": [
+        "dist/execution.d.ts"
       ]
     }
   },
