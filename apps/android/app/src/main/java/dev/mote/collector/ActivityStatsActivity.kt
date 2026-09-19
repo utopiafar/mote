@@ -194,6 +194,7 @@ class ActivityStatsActivity : MoteActivity() {
         }
         private fun size(value: Long) = when { value < 0 -> MoteI18n.text("文件过多，未完成统计"); value >= 1073741824 -> "%.2f GiB".format(value / 1073741824.0); value >= 1048576 -> "%.1f MiB".format(value / 1048576.0); value >= 1024 -> "%.1f KiB".format(value / 1024.0); else -> "$value B" }
         fun kind(value: OperationKind): String = when (value) {
+            OperationKind.PAGE_QUEUED -> MoteI18n.text("页面内容已保存"); OperationKind.PAGE_ACK -> MoteI18n.text("页面记录已确认上传")
             OperationKind.CAPTURE_REQUESTED -> MoteI18n.text("请求截图"); OperationKind.FRAME_RECEIVED -> MoteI18n.text("收到内存画面"); OperationKind.SCREEN_QUEUED -> MoteI18n.text("截图已保存")
             OperationKind.NOTE_QUEUED -> MoteI18n.text("随手记已保存"); OperationKind.SCREEN_ACK -> MoteI18n.text("截图已确认上传"); OperationKind.NOTE_ACK -> MoteI18n.text("随手记已确认上传")
             OperationKind.FRAME_BLOCKED -> MoteI18n.text("画面已丢弃，未入队"); OperationKind.CAPTURE_FAILED -> MoteI18n.text("截图或处理失败"); OperationKind.CAPTURE_PAUSED -> MoteI18n.text("采集暂停原因变化")

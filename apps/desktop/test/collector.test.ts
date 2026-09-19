@@ -8,7 +8,7 @@ import { DurableQueue } from '../src/queue';
 import type { NsfwGate } from '../src/contracts';
 import { defaultConfig } from '../src/config';
 
-const mocks = vi.hoisted(() => ({ capture: vi.fn(), foreground: vi.fn(), metadata: vi.fn(), idleState: vi.fn(), active: vi.fn(), ocr: vi.fn(), idle: vi.fn(), permission: vi.fn(), power: vi.fn() }));
+const mocks = vi.hoisted(() => ({ page: vi.fn(), capture: vi.fn(), foreground: vi.fn(), metadata: vi.fn(), idleState: vi.fn(), active: vi.fn(), ocr: vi.fn(), idle: vi.fn(), permission: vi.fn(), power: vi.fn() }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
   class GeneratedImage {
@@ -26,7 +26,7 @@ vi.mock('electron', async () => {
     systemPreferences: { getMediaAccessStatus: mocks.permission },
   };
 });
-vi.mock('../src/native', () => ({ activeApplication: mocks.active, foregroundApplication: mocks.foreground, recognizeText: mocks.ocr, readPowerState: mocks.power }));
+vi.mock('../src/native', () => ({ runHelper:mocks.page, activeApplication: mocks.active, foregroundApplication: mocks.foreground, recognizeText: mocks.ocr, readPowerState: mocks.power }));
 
 vi.mock('../src/record-metadata', () => ({ collectRecordMetadata: mocks.metadata }));
 
@@ -412,4 +412,31 @@ describe.skipIf(process.platform !== 'darwin')('exact deduplication with generat
     clearTimeout((collector as any).timer); await (collector as any).capture();
     expect(queue.stats().depth).toBe(mode === 'exact' ? 2 : 3);
   });
+});
+
+const pageRule={id:'generated-page',version:'1',platform:'macos',appId:application.appId,select:{role:'AXStaticText'},required:[],complete:true};
+const pageSnapshot={appId:application.appId,appVersion:'fixture',activity:'',truncated:false,nodes:[{id:'1',role:'AXStaticText',resourceId:'fixture-body',text:'GENERATED PAGE BODY',bounds:{x:0,y:0,width:100,height:20}}]};
+describe.skipIf(process.platform!=='darwin')('UI page collection privacy and screenshot decisions',()=>{
+ it('stores a complete page with no screenshot permission, image or OCR; survives restart',async()=>{
+  mocks.page.mockResolvedValue({snapshot:pageSnapshot});mocks.permission.mockReturnValue('denied');
+  const {collector,queue}=await makeCollector({syncMode:'manual',uiPageMode:'ui_preferred',uiPageRules:[pageRule]});await collector.start();await collector.settleCapture();
+  const archive=await queue.exportArchive();expect(archive.records).toHaveLength(1);expect(archive.blobs).toEqual({});expect(archive.records[0].event.source).toBe('ui_page');expect(archive.records[0].event.ocrText).toBe('GENERATED PAGE BODY');
+  expect(mocks.capture).not.toHaveBeenCalled();expect(mocks.ocr).not.toHaveBeenCalled();
+  const reopened=new DurableQueue(directory,defaultConfig());await reopened.initialize();expect((await reopened.next())?.record.event.metadata?.uiPage?.adapterId).toBe(pageRule.id);
+ });
+ it.each(['off','activity'])('does not read nodes for %s privacy',async collection=>{
+  const {collector}=await makeCollector({uiPageMode:'hybrid',uiPageRules:[pageRule],appCollectionRules:{[application.appId]:collection}});await collector.start();await collector.settleCapture();expect(mocks.page).not.toHaveBeenCalled();
+ });
+ it('never falls back to pixels after a page privacy rejection',async()=>{
+  mocks.page.mockResolvedValue({snapshot:pageSnapshot});const {collector,queue}=await makeCollector({uiPageMode:'hybrid',uiPageRules:[pageRule],uploadGate:{enabled:true,blockedText:['GENERATED'],failureAction:'hold'}});await collector.start();await collector.settleCapture();expect(mocks.capture).not.toHaveBeenCalled();expect(queue.stats().depth).toBe(0);
+ });
+ it('rejects a foreground switch after node reading',async()=>{
+  mocks.page.mockImplementation(async()=>{mocks.foreground.mockResolvedValue({...application,appId:'other'});return {snapshot:pageSnapshot};});const {collector,queue}=await makeCollector({uiPageMode:'hybrid',uiPageRules:[pageRule]});await collector.start();await collector.settleCapture();expect(queue.stats().depth).toBe(0);expect(mocks.capture).not.toHaveBeenCalled();
+ });
+ it.each(['ui_preferred','hybrid'])('keeps screenshots for partial pages in %s',async mode=>{
+  mocks.page.mockResolvedValue({snapshot:pageSnapshot});const {collector,queue}=await makeCollector({uiPageMode:mode,uiPageRules:[{...pageRule,complete:false}]});await collector.start();await collector.settleCapture();expect(mocks.capture).toHaveBeenCalledTimes(1);expect((await queue.exportArchive()).records.map(r=>r.event.source).sort()).toEqual(['screen','ui_page']);
+ });
+ it('page_only does not capture pixels for unsupported pages',async()=>{
+  mocks.page.mockResolvedValue({status:'unsupported'});const {collector,queue}=await makeCollector({uiPageMode:'page_only',uiPageRules:[pageRule]});await collector.start();await collector.settleCapture();expect(mocks.capture).not.toHaveBeenCalled();expect(queue.stats().depth).toBe(0);
+ });
 });

@@ -1,5 +1,7 @@
 # Mote
 
+> 0.0.53 新增可配置的页面内容采集，支持 Android / macOS 独立文字上报。默认关闭，内置规则为实验适配。见 [使用与贡献](docs/ui-page-capture.md) 和 [项目实践调研](docs/ui-page-research.md)。
+
 > 0.0.42：端侧上传审查、中央 OCR／语义处理与按需原图披露，请先阅读 [配置与升级说明](docs/central-perception.md)。下文涉及旧版本机 OCR／VLM 的说明以此文为准。
 
 **自己的上下文，自己的资料库。**

@@ -10,19 +10,22 @@ import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import java.time.Instant
 
-/** Passive screenshot/window package source. No node text, gestures, UI actions or hidden grants. */
+/** Passive collection. Page text requires explicit rules; no gestures, actions or hidden grants. */
 class CaptureAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var settings: Settings
     private var pipeline: CapturePipeline? = null
     private val pixels = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue<Runnable>(1))
-    private var destroyed = false
+    @Volatile private var destroyed = false
+    @Volatile private var pageActivity = ""
+    @Volatile private var pagePackage = ""
+    private val pageWorker = java.util.concurrent.ThreadPoolExecutor(1, 1, 0L, java.util.concurrent.TimeUnit.MILLISECONDS, java.util.concurrent.ArrayBlockingQueue<Runnable>(1))
     private val screenReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context, intent: android.content.Intent) { refreshSchedule() }
     }
     private var inFlight = false
     private var nextCapture = 0L
-    private var configurationGeneration = 0L
+    @Volatile private var configurationGeneration = 0L
     private val tick = object : Runnable {
         override fun run() {
             try { collectIfEnabled() }
@@ -53,7 +56,12 @@ class CaptureAccessibilityService : AccessibilityService() {
             }
         }
     }
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) { ProjectionService.instance?.onWindowChanged() /* Never read event/node text. */ }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        ProjectionService.instance?.onWindowChanged()
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && event.className?.toString()?.contains(".") == true) {
+            pageActivity=event.className.toString(); pagePackage=event.packageName?.toString().orEmpty()
+        }
+    }
     override fun onInterrupt() {
         if (::settings.isInitialized) settings.status("permission_required", MoteI18n.text("无障碍服务中断，请检查系统设置"))
     }
@@ -96,6 +104,14 @@ class CaptureAccessibilityService : AccessibilityService() {
             }; return
         }
         if (!pipeline!!.canCapture(config, snapshot)) return
+        if (config.uiPageMode != "screen_only" && config.pageRules.any { it.getString("platform") == "android" && it.getString("appId") == snapshot.foreground }) {
+            collectPage(snapshot,config); return
+        }
+        if (config.uiPageMode == "page_only") return
+        captureScreen(snapshot,config)
+    }
+    private fun captureScreen(snapshot: WindowSnapshot, config: CollectorConfig) {
+        if (destroyed || settings.read()!=config || !settings.enabled || windowSnapshot()!=snapshot || !CapturePipeline.unlocked(this)) return
         if (Build.VERSION.SDK_INT < 30) { settings.status("permission_required", MoteI18n.text("此系统需投屏模式采集内容；仅应用活动无需截图API")); return }
         val capturePipeline = pipeline!!
         val generation = configurationGeneration
@@ -138,6 +154,60 @@ class CaptureAccessibilityService : AccessibilityService() {
             }
         })
     }
+    private fun collectPage(snapshot: WindowSnapshot, config: CollectorConfig) {
+        inFlight=true
+        val generation=configurationGeneration
+        val activity=if(pagePackage==snapshot.foreground) pageActivity else ""
+        ConnectionGuard.processing.incrementAndGet()
+        try { pageWorker.execute {
+            var suppressScreen=false
+            try {
+                val appId=snapshot.foreground ?: return@execute
+                fun valid() = !destroyed && generation==configurationGeneration && !ConnectionGuard.changing() && settings.enabled && settings.read()==config && CapturePipeline.unlocked(this) && windowSnapshot()==snapshot && (pagePackage!=appId || pageActivity==activity)
+                if(!valid())return@execute
+                val version=runCatching { packageManager.getPackageInfo(appId,0).versionName.orEmpty() }.getOrDefault("")
+                val rules=config.pageRules.filter { it.getString("platform")=="android" && it.getString("appId")==appId && (!it.has("activity")||it.getString("activity")==activity) && (!it.has("appVersion")||it.getString("appVersion")==version) }
+                if(rules.isEmpty())return@execute
+                val root=rootInActiveWindow ?: return@execute
+                val windowId=root.windowId
+                val pageSnapshot=try {
+                    if(root.packageName?.toString()!=appId)return@execute
+                    val viewport=android.graphics.Rect(); root.getBoundsInScreen(viewport)
+                    val all=windows; val target=all.firstOrNull { it.id==windowId } ?: return@execute
+                    val occlusions=all.filter { it.layer>target.layer }.map { android.graphics.Rect().also(it::getBoundsInScreen) }
+                    val size=android.util.DisplayMetrics()
+                    @Suppress("DEPRECATION")
+                    (getSystemService(WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay.getRealMetrics(size)
+                    if(!viewport.intersect(0,0,size.widthPixels,size.heightPixels))return@execute
+                    val masks=Mask.parse(config.masks).map { android.graphics.Rect((it.left*size.widthPixels).toInt(),(it.top*size.heightPixels).toInt(),kotlin.math.ceil(it.right*size.widthPixels.toDouble()).toInt(),kotlin.math.ceil(it.bottom*size.heightPixels.toDouble()).toInt()) }
+                    UiPageReader.read(root,appId,version,activity,viewport,masks,occlusions)
+                } finally { @Suppress("DEPRECATION") root.recycle() }
+                if(!valid())return@execute
+                val current=rootInActiveWindow
+                val sameWindow=current?.windowId==windowId
+                @Suppress("DEPRECATION") current?.recycle()
+                if(!sameWindow)return@execute
+                val page=UiPageRules.extract(pageSnapshot,rules) ?: return@execute
+                val allText=UiPageRules.text(pageSnapshot)
+                if(UploadGate.review(config.uploadGate){allText}!="allow"){suppressScreen=true;settings.status("paused",MoteI18n.text("页面隐私审查未通过，已跳过"));return@execute}
+                val at=Instant.now().toString()
+                val event=org.json.JSONObject().put("id",java.util.UUID.randomUUID().toString()).put("deviceId",settings.deviceId)
+                    .put("deviceName",config.deviceName).put("platform","android").put("capturedAt",at).put("durationMs",0)
+                    .put("appId",appId).put("appName",CollectorMetadata.appName(this,appId)).put("source","ui_page").put("ocrText",UiPageRules.text(page))
+                    .put("privacy",org.json.JSONObject().put("excluded",false).put("redacted",true).put("mode","local").put("collection","content"))
+                    .put("metadata",org.json.JSONObject().put("version",1).put("observedAt",at).put("collector",org.json.JSONObject().put("method","accessibility")).put("uiPage",page))
+                if(!valid())return@execute
+                settings.ensureDataOrigin(config)
+                queue().enqueue(event,null,config.maxQueueMiB*1024L*1024L)
+                settings.captured(at);settings.status("capturing",MoteI18n.text("页面内容已保存"));UploadWorker.schedule(this,config)
+                suppressScreen=config.uiPageMode=="ui_preferred" && page.getString("status")=="ok"
+            } catch (_: Exception) { settings.status("paused",MoteI18n.text("页面读取失败，等待下一次采样")) }
+            finally {
+                ConnectionGuard.processing.decrementAndGet()
+                handler.post { if(generation==configurationGeneration){inFlight=false;if(!suppressScreen && config.uiPageMode!="page_only") captureScreen(snapshot,config)} }
+            }
+        } } catch (_: java.util.concurrent.RejectedExecutionException) { inFlight=false; ConnectionGuard.processing.decrementAndGet() }
+    }
     fun stopCapture() {
         handler.removeCallbacks(tick)
         configurationGeneration++; nextCapture = 0; inFlight = false
@@ -146,7 +216,7 @@ class CaptureAccessibilityService : AccessibilityService() {
     }
     override fun onDestroy() {
         destroyed = true; connected = false; instance = null
-        runCatching { unregisterReceiver(screenReceiver) }; pixels.shutdown()
+        runCatching { unregisterReceiver(screenReceiver) }; pixels.shutdown(); pageWorker.shutdown()
         handler.removeCallbacks(tick)
         stopCapture()
         if (::settings.isInitialized && settings.enabled) {

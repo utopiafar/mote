@@ -8,9 +8,9 @@ import { readResponseText } from './response-body';
 import { captureOcrState } from '@mote/shared/metadata';
 
 export type CaptureLocation = 'local' | 'central';
-export interface BrowseRequest { location: CaptureLocation; day: string; cursor?: string; grouping?: 'sessions' | 'records'; sessionId?: string }
+export interface BrowseRequest { source?: 'screen'|'ui_page'; location: CaptureLocation; day: string; cursor?: string; grouping?: 'sessions' | 'records'; sessionId?: string }
 export interface BrowserCapture {
-  id: string; capturedAt: string; appName: string; appId: string;
+  source?: 'screen'|'ui_page'; id: string; capturedAt: string; appName: string; appId: string;
   ocr: { status: 'pending' | 'completed' | 'disabled' | 'failed' | 'unknown'; reason?: 'charging' };
   textPreview: string; sizeBytes?: number; uploaded?: boolean; hasImage: boolean; syncError?: string;
 }
@@ -36,7 +36,7 @@ function preview(event: Partial<CaptureEvent> & { hasImage?: boolean; textPrevie
   const normalizedStatus = status === 'pending' || status === 'completed' || status === 'disabled' || status === 'failed' ? status : 'unknown';
   const ocr: BrowserCapture['ocr'] = { status: normalizedStatus, ...(event.ocr?.reason === 'charging' ? { reason: 'charging' as const } : {}) };
   const text = record?.ocrResult ?? event.ocrText ?? event.textPreview ?? '';
-  return { id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), sizeBytes:record?record.blobBytes+Buffer.byteLength(text):event.sizeBytes, hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { uploaded: Boolean(record.uploaded), syncError: record.syncError } : {}) };
+  return { source:event.source==='ui_page'?'ui_page':'screen', id: event.id, capturedAt: event.capturedAt, appName: String(event.appName ?? '').slice(0, 200), appId: String(event.appId ?? '').slice(0, 256), ocr, textPreview: String(text).slice(0, 160), sizeBytes:record?record.blobBytes+Buffer.byteLength(text):event.sizeBytes, hasImage: record ? Boolean(record.blobHash) : Boolean(event.hasImage), ...(record ? { uploaded: Boolean(record.uploaded), syncError: record.syncError } : {}) };
 }
 async function request(config: Config, path: string): Promise<Response> {
   if (!config.token || !config.serverUrl) throw new Error(moteText("请先连接中央节点；本机记录仍可查看"));
@@ -51,7 +51,7 @@ async function request(config: Config, path: string): Promise<Response> {
 }
 async function remoteDetail(config: Config, id: string): Promise<Partial<CaptureEvent>> {
   const value = JSON.parse(await readResponseText(await request(config, `/api/capture-browser/${id}`), 1024 * 1024)) as Partial<CaptureEvent>;
-  if (value.id !== id || value.deviceId !== config.deviceId || value.source !== 'screen') throw new Error(moteText("记录不属于当前设备的截图"));
+  if (value.id !== id || value.deviceId !== config.deviceId || !['screen','ui_page'].includes(value.source??'')) throw new Error(moteText("记录不属于当前设备的截图"));
   return value;
 }
 async function imageBytes(response: Response, maximum: number): Promise<Buffer> {
@@ -64,11 +64,13 @@ async function imageBytes(response: Response, maximum: number): Promise<Buffer> 
   } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
 }
 export async function browseCaptures(queue: DurableQueue, config: Config, input: BrowseRequest): Promise<BrowserPage> {
+  if(input.source!==undefined&&!['screen','ui_page'].includes(input.source))throw Error('Invalid capture source');
+  const source=input.source??'screen';
   location(input?.location); const range = captureDayRange(input.day);
   if (input.cursor !== undefined && (typeof input.cursor !== 'string' || input.cursor.length > 2048)) throw new Error(moteText("分页参数无效"));
   if (input.grouping !== undefined && !['sessions','records'].includes(input.grouping)) throw new Error(moteText("分组方式无效"));
   if (input.sessionId) validId(input.sessionId);
-  if (input.grouping === 'sessions') {
+  if (input.grouping === 'sessions' && source === 'screen') {
     if (input.location === 'central') {
       const params = new URLSearchParams({...range,deviceId:config.deviceId,limit:String(PAGE_SIZE),...(input.cursor?{cursor:input.cursor}:{}),...(input.sessionId?{sessionId:input.sessionId}:{})});
       const value = JSON.parse(await readResponseText(await request(config, `/api/capture-browser/sessions?${params}`),512*1024));
@@ -93,13 +95,13 @@ export async function browseCaptures(queue: DurableQueue, config: Config, input:
   if (input.location === 'local') {
     const offset = input.cursor ? Number(input.cursor) : 0;
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error(moteText("分页参数无效"));
-    const page = await queue.pageForBrowser(range.after, range.before, offset, PAGE_SIZE);
+    const page = await queue.pageForBrowser(range.after, range.before, offset, PAGE_SIZE,source);
     return { items: page.records.map(r => preview(r.event, r)), totalCount: page.total, ...(offset + PAGE_SIZE < page.total ? { nextCursor: String(offset + PAGE_SIZE) } : {}) };
   }
-  const params = new URLSearchParams({ ...range, deviceId: config.deviceId, source: 'screen', limit: String(PAGE_SIZE), ...(input.cursor ? { cursor: input.cursor } : {}) });
+  const params = new URLSearchParams({ ...range, deviceId: config.deviceId, source, limit: String(PAGE_SIZE), ...(input.cursor ? { cursor: input.cursor } : {}) });
   const response = JSON.parse(await readResponseText(await request(config, `/api/capture-browser?${params}`), 512 * 1024)) as { items?: (Partial<CaptureEvent> & { hasImage?: boolean; textPreview?: string; sizeBytes?: number })[]; totalCount?: number; nextCursor?: string | null };
   if (!Array.isArray(response.items) || response.items.length > PAGE_SIZE || !Number.isSafeInteger(response.totalCount) || response.totalCount! < 0 || (response.nextCursor != null && (typeof response.nextCursor !== 'string' || response.nextCursor.length > 2048))) throw new Error(moteText("中央分页数据无效"));
-  if (response.items.some(v => v.deviceId !== config.deviceId || v.source !== 'screen')) throw new Error(moteText("中央返回了其他设备的记录"));
+  if (response.items.some(v => v.deviceId !== config.deviceId || v.source !== source)) throw new Error(moteText("中央返回了其他设备的记录"));
   return { items: response.items.map(v => preview(v)), totalCount: response.totalCount!, nextCursor: response.nextCursor ?? undefined };
 }
 export async function captureDetail(queue: DurableQueue, config: Config, source: CaptureLocation, id: string): Promise<BrowserDetail> {

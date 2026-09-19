@@ -1,3 +1,4 @@
+import {uiRulesSchema,uiModeSchema} from '@mote/shared';
 import { uploadGateConfig } from './upload-gate';
 import { moteText } from '@mote/shared/i18n';
 import { DEFAULT_REVIEW_POLICY } from '@mote/local-inference';
@@ -11,6 +12,7 @@ import type { Config, ConfigUpdate, PublicConfig, Rectangle } from './contracts'
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export function defaultConfig(): Config {
   return {
+    uiPageMode:'screen_only', uiPageRules:[],
     uploadGate: uploadGateConfig(undefined),
     serverUrl: 'http://127.0.0.1:47832', deviceId: randomUUID(), deviceName: hostname(),
     syncMode: 'realtime', syncIntervalMinutes: 15, syncBatchSize: 20,
@@ -89,6 +91,8 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   const syncMode = input.syncMode ?? current.syncMode ?? 'realtime';
   if (!['realtime', 'interval', 'batch', 'manual'].includes(syncMode)) throw new Error(moteText("同步方式无效"));
   const config: Config = {
+    uiPageMode:uiModeSchema.parse(input.uiPageMode??current.uiPageMode??'screen_only'),
+    uiPageRules:uiRulesSchema.parse(input.uiPageRules??current.uiPageRules??[]),
     uploadGate: uploadGateConfig(input.uploadGate ?? current.uploadGate),
     serverUrl: input.serverUrl === '' ? '' : validateServerUrl(input.serverUrl),
     syncMode, syncIntervalMinutes: integer(input.syncIntervalMinutes ?? current.syncIntervalMinutes ?? 15, 15, 1440, moteText("同步间隔（分钟）")), syncBatchSize: integer(input.syncBatchSize ?? current.syncBatchSize ?? 20, 1, 500, moteText("批量同步条数")), deviceId: current.deviceId, deviceName: input.deviceName.trim(),

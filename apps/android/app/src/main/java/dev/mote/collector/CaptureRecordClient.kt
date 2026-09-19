@@ -12,7 +12,7 @@ import java.util.UUID
 internal class CaptureRecordClient(private val config: CollectorConfig, private val deviceId: String) {
     init { config.validateConnection() }
     fun page(after: String, before: String, cursor: String?, source: String = "screen"): JSONObject {
-        require(source in setOf("screen", "media", "notification", "device_event", "note", "activity"))
+        require(source in setOf("screen", "media", "notification", "device_event", "note", "activity", "ui_page"))
         val uri = Uri.parse("${config.server}/api/capture-browser").buildUpon()
             .appendQueryParameter("after", after).appendQueryParameter("before", before)
             .appendQueryParameter("source", source).appendQueryParameter("deviceId", deviceId).appendQueryParameter("limit", "20")

@@ -1,3 +1,4 @@
+import {uiPageSchema} from './ui-page.js';
 import { moteText } from './i18n.js';
 import { z } from 'zod';
 
@@ -62,6 +63,7 @@ export function captureOcrState(record: {source: string; ocr?: OcrResult; ocrTex
 
 /** Explicit, bounded fields only: never an arbitrary bag of device identifiers or content. */
 export const recordMetadataSchema = z.object({
+  uiPage: uiPageSchema.optional(),
   attachments: z.array(z.string().uuid()).max(10).optional(),
   version: z.literal(1),
   observedAt: timestamp,

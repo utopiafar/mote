@@ -1,5 +1,7 @@
 import { moteText, getLocale } from '@mote/shared/i18n';
+import {builtinUiRules} from '@mote/shared';
 const desktopApi = window.mote;
+document.getElementById('ui-page-builtins')!.addEventListener('click',()=>{byId<HTMLTextAreaElement>('ui-page-rules').value=JSON.stringify(builtinUiRules,null,2);markSettingsDirty();});
 const byId = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
 let currentStatus: import('./contracts').Status;
 let initialized = false;
@@ -99,6 +101,7 @@ const recordsDate = new Date();
 byId<HTMLInputElement>('records-day').value = `${recordsDate.getFullYear()}-${String(recordsDate.getMonth() + 1).padStart(2, '0')}-${String(recordsDate.getDate()).padStart(2, '0')}`;
 const ocrNames = { get pending() { return moteText("等待 OCR"); }, get completed() { return moteText("OCR 已完成"); }, get disabled() { return moteText("OCR 已关闭"); }, get failed() { return moteText("OCR 待重试"); }, get unknown() { return moteText("OCR 状态未知"); } };
 function ocrLabel(value: import('./capture-browser').BrowserCapture): string {
+  if(value.source==='ui_page')return moteText("页面内容采集");
   return value.ocr.status === 'pending' && value.ocr.reason === 'charging' ? moteText("待接通电源后 OCR") : ocrNames[value.ocr.status];
 }
 function resetRecords(): void { selectedSession = undefined; recordsPage = 0; recordsCursors = [undefined]; void loadRecords(); }
@@ -139,14 +142,15 @@ async function loadRecords(): Promise<void> {
   byId('records-status').setAttribute('aria-busy', 'true');
   byId<HTMLButtonElement>('records-previous').disabled = true; byId<HTMLButtonElement>('records-next').disabled = true;
   try {
-    const page = await desktopApi.browseCaptures({ location, day: readInput('records-day'), cursor: recordsCursors[recordsPage], grouping: readInput('records-grouping') as 'sessions' | 'records', sessionId: selectedSession?.id });
+    const page = await desktopApi.browseCaptures({ source:readInput('records-source') as 'screen'|'ui_page', location, day: readInput('records-day'), cursor: recordsCursors[recordsPage], grouping: readInput('records-grouping') as 'sessions' | 'records', sessionId: selectedSession?.id });
     if (revision !== recordsRevision) return;
     recordsNext = page.nextCursor;
     byId('records-status').textContent = page.items.length ? moteText("{0} · 当天共 {1} 张截图", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.totalCount) : location === 'local' ? moteText("当天没有本机待处理截图。已同步的截图可切换到“中央已归档”查看。") : moteText("当天没有已归档截图。");
     byId('records-page').textContent = page.items.length ? moteText("第 {0} 页 · 每页最多 30 张", recordsPage + 1) : '';
     byId<HTMLButtonElement>('records-previous').disabled = recordsPage === 0;
     byId<HTMLButtonElement>('records-next').disabled = !recordsNext;
-    if (page.items.length) byId('records-status').textContent = moteText("{0} · 列表已读取 {1} 条，正在加载缩略图…", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.items.length);
+    if(readInput('records-source')==='ui_page')byId('records-status').textContent=moteText('页面记录：{0} 条',page.totalCount);
+    if (page.items.length && readInput('records-source')!=='ui_page') byId('records-status').textContent = moteText("{0} · 列表已读取 {1} 条，正在加载缩略图…", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.items.length);
     if (page.sessions) {
       byId('records-status').textContent = moteText("{0} · {1} 条记录 · {2} 个 Session", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.totalCount, page.sessionCount);
       byId('records-page').textContent = moteText("第 {0} 页", recordsPage + 1);
@@ -181,11 +185,15 @@ async function loadRecords(): Promise<void> {
         if (revision === recordsRevision) byId('records-status').textContent = moteText("正在加载缩略图 {0}/{1} · 失败 {2}", completed, images.length, failed);
       }
     }));
-    if (revision === recordsRevision && page.items.length) byId('records-status').textContent = moteText("{0} · 当天共 {1} 张截图 · 缩略图成功 {2}/{3}{4}", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.totalCount, completed - failed, images.length, failed ? moteText(" · {0} 张失败，可刷新重试", failed) : '');
+    if (revision === recordsRevision && page.items.length && readInput('records-source')!=='ui_page') byId('records-status').textContent = moteText("{0} · 当天共 {1} 张截图 · 缩略图成功 {2}/{3}{4}", location === 'local' ? moteText("本机保留") : moteText("中央已归档"), page.totalCount, completed - failed, images.length, failed ? moteText(" · {0} 张失败，可刷新重试", failed) : '');
   } catch (error) { if (revision === recordsRevision) { byId('records-status').textContent = error instanceof Error ? error.message : moteText("读取采集记录失败，请重试"); byId('records-page').textContent = ''; } }
-  finally { if (revision === recordsRevision) byId('records-status').setAttribute('aria-busy', 'false'); }
+  finally { if (revision === recordsRevision) {
+    byId('records-status').setAttribute('aria-busy', 'false');
+    byId('records-grid').classList.toggle('record-list',readInput('records-source')==='ui_page'||readInput('records-layout')==='list');
+  } }
 }
 byId('records-back').addEventListener('click', resetRecords);
+byId('records-source').addEventListener('change', resetRecords);
 byId('records-grouping').addEventListener('change', resetRecords);
 byId('records-day').addEventListener('change', resetRecords);
 byId('records-location').addEventListener('change', resetRecords);
@@ -198,6 +206,8 @@ function readInput(id: string): string { return byId<HTMLInputElement>(id).value
 function numberInput(id: string): number { return Number(readInput(id)); }
 function fillConfig(config: import('./contracts').PublicConfig): void {
   byId<HTMLInputElement>('packed-upload').checked = config.packedUpload ?? false;
+  byId<HTMLSelectElement>('ui-page-mode').value=config.uiPageMode??'screen_only';
+  byId<HTMLTextAreaElement>('ui-page-rules').value=JSON.stringify(config.uiPageRules??[],null,2);
   byId<HTMLInputElement>('notification-collection').checked=Boolean(config.notificationCollectionEnabled);
   captureStorageDirectory = config.captureStorageDirectory || '';
   renderStorage();
@@ -386,6 +396,7 @@ byId('settings').addEventListener('submit', event => {
     let updated: import('./contracts').Status;
     try { updated = await desktopApi.configure({
       captureStorageDirectory,
+      uiPageMode:readInput('ui-page-mode') as import('@mote/shared').UiMode, uiPageRules:JSON.parse(readInput('ui-page-rules')||'[]'),
       localContentEncryption: false, notificationCollectionEnabled: byId<HTMLInputElement>('notification-collection').checked,
       metadataEnabled: byId<HTMLInputElement>('metadata-enabled').checked,
       defaultCollection: readInput('default-collection') as import('./contracts').CollectionMode, appCollectionRules,

@@ -1,3 +1,5 @@
+import {extractUiPage,uiSnapshotSchema,uiPageText} from '@mote/shared';
+import {runHelper} from './native';
 import { reviewUpload, uploadGateConfig } from './upload-gate';
 import { uploadMeter } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
@@ -248,6 +250,28 @@ export class Collector {
         void this.events?.record('QUEUE', 'OK', { elapsedMs: Date.now() - startedAt });
         this.state = 'capturing'; this.message = moteText("仅记录应用活动；未采集屏幕、窗口标题或正文"); this.publish(); void this.upload(); return;
       }
+      if ((cfg.uiPageMode??'screen_only')!=='screen_only' && cfg.uiPageRules?.some(r=>r.platform==='macos'&&r.appId===foreground.appId)) {
+        const candidates=cfg.uiPageRules.filter(r=>r.platform==='macos'&&r.appId===foreground.appId&&!r.activity);
+        const versions=candidates.some(r=>!r.appVersion)?[]:candidates.map(r=>r.appVersion);
+        const raw=candidates.length ? await runHelper(this.helperPath,'ui-page',Buffer.from(JSON.stringify({appId:foreground.appId,pid:foreground.pid,masks:cfg.masks,versions})),abort.signal).catch(()=>({status:'failed'})) as {snapshot?:unknown;status?:string} : {status:'unsupported'};
+        if(!valid()||raw.status==='blocked')return;
+        if(raw.snapshot){
+          const snapshot=uiSnapshotSchema.parse(raw.snapshot);
+          const after=await foregroundApplication(this.helperPath,abort.signal);
+          if(!valid()||after.appId!==foreground.appId||after.pid!==foreground.pid||snapshot.appId!==foreground.appId)return;
+          const page=extractUiPage(snapshot,cfg.uiPageRules,'macos');
+          if(page){
+            // Review ALL sanitized text before selector projection; rules cannot hide a privacy match.
+            const gate=await reviewUpload(uploadGateConfig(cfg.uploadGate),async()=>snapshot.nodes.map(n=>n.text).join('\n'));
+            if(!valid()||gate!=='allow'){this.pause(moteText("页面隐私审查未通过，已跳过"));return;}
+            const at=new Date(startedAt).toISOString();
+            await this.queue.enqueue({id:randomUUID(),deviceId:cfg.deviceId,deviceName:cfg.deviceName,platform:currentPlatform,capturedAt:at,durationMs:0,appId:foreground.appId,appName:foreground.appName,source:'ui_page',ocrText:uiPageText(page),privacy:{excluded:false,redacted:true,mode:'local',collection:'content'},metadata:{version:1,observedAt:at,collector:{method:'accessibility'},uiPage:page}});
+            this.lastCaptureAt=at;this.state='capturing';this.message=moteText("页面内容已保存");this.publish();void this.upload();
+            if(cfg.uiPageMode==='page_only'||cfg.uiPageMode==='ui_preferred'&&page.status==='ok'){this.lastSample=undefined;return;}
+          }
+        }
+      }
+      if(cfg.uiPageMode==='page_only'){this.lastSample=undefined;return;}
       if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
         this.lastSample = undefined; this.state = 'permission_required'; this.message = moteText("完整内容需要屏幕录制授权；仅活动应用仍可采样。请打开系统权限设置");
         void this.events?.record('CAPTURE', 'PERMISSION'); this.publish(); return;

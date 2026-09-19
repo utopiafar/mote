@@ -6,6 +6,7 @@ import android.util.Base64
 import java.util.UUID
 
 data class CollectorConfig(
+    val uiPageMode: String = "screen_only", val uiPageRules: String = "[]",
     val uploadGate: UploadGateConfig = UploadGateConfig(),
     val server: String = "", val token: String = "", val deviceName: String = Build.MODEL,
     val intervalSeconds: Int = 30, val maxQueueMiB: Int = 256, val wifiOnly: Boolean = true,
@@ -22,6 +23,7 @@ data class CollectorConfig(
     val imageDedupeDiagnosticsEnabled: Boolean = false, val contentEncryptionEnabled: Boolean = false, val uploadedRetentionDays: Int = 7
 ) {
     fun observesSystem() = (mediaCollectionEnabled && metadataEnabled) || notificationCollectionEnabled || deviceEventCollectionEnabled
+    val pageRules by lazy { UiPageRules.parse(uiPageRules) }
     val collectionRules by lazy { AppCollectionRules.parse(appCollectionRules) }
     fun effectiveMode() = if (collectionRules.mayCollectContent()) mode else "accessibility"
     fun hasSyncConnection() = server.isNotBlank() && token.length >= 32
@@ -31,6 +33,8 @@ data class CollectorConfig(
         require(token.length >= 32) { MoteI18n.text("节点令牌至少需要 32 个字符") }
     }
     fun validate() {
+        require(uiPageMode in UiPageRules.modes); UiPageRules.parse(uiPageRules)
+        require(uiPageMode == "screen_only" || mode == "accessibility") { "UI pages require accessibility capture mode" }
         uploadGate.validate()
         if (server.isNotBlank()) PrivacyRules.validateEndpoint(server, debugHttp, BuildConfig.DEBUG)
         require(token.isBlank() || token.length >= 32) { MoteI18n.text("节点令牌至少需要 32 个字符；留空时仅保存在本机") }
@@ -77,6 +81,7 @@ class Settings(private val context: Context) {
         val values = prefs.all.filterKeys { it in configurationKeys }
         if (cachedPrefs === prefs && cachedValues == values) return@synchronized requireNotNull(cachedConfig)
         val config = CollectorConfig(
+        uiPageMode = prefs.getString("uiPageMode", "screen_only")!!, uiPageRules = prefs.getString("uiPageRules", "[]")!!,
         uploadGate = UploadGateConfig(prefs.getBoolean("uploadGateEnabled", true), prefs.getString("uploadGateText", "")!!, prefs.getString("uploadGateFailure", "hold")!!),
         server = prefs.getString("server", BuildConfig.DEFAULT_SERVER)!!,
         token = credentials(prefs.getString("token", null)),
@@ -120,6 +125,7 @@ class Settings(private val context: Context) {
         c.validate()
         val origin = originAfterChange(c)
         val values = mapOf<String, Any>(
+            "uiPageMode" to c.uiPageMode, "uiPageRules" to c.uiPageRules,
             "uploadGateEnabled" to c.uploadGate.enabled, "uploadGateText" to c.uploadGate.blockedText, "uploadGateFailure" to c.uploadGate.failureAction,
             "contentEncryptionEnabled" to c.contentEncryptionEnabled, "uploadedRetentionDays" to c.uploadedRetentionDays,
             "ocrMode" to c.ocrMode, "ocrAppModes" to c.ocrAppModes, "imageDedupeMode" to c.imageDedupeMode, "imageDedupeDiagnosticsEnabled" to c.imageDedupeDiagnosticsEnabled,
@@ -209,7 +215,7 @@ class Settings(private val context: Context) {
         private var cachedConfig: CollectorConfig? = null
         private var cachedCiphertext: String? = null
         private var cachedToken = ""
-        private val configurationKeys = setOf("packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
+        private val configurationKeys = setOf("uiPageMode", "uiPageRules", "packedUpload", "uploadGateEnabled", "uploadGateText", "uploadGateFailure", "uploadedRetentionDays", "contentEncryptionEnabled", "appCollectionRules", "batteryPauseBelowPct", "captureMaxSide", "chargingOnly", "debugHttp", "deviceEventCollectionEnabled", "deviceName", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "enabled", "excluded", "imageDedupeDiagnosticsEnabled", "imageDedupeMode", "interval", "jpegQuality", "jsonlWindowMinutes", "localReview", "masks", "maxQueue", "mediaCollectionEnabled", "metadataEnabled", "mode", "notificationCollectionEnabled", "nsfwEnabled", "nsfwSource", "nsfwThreads", "ocrAppModes", "ocrChargingOnly", "ocrMode", "qwenCustomUrl", "qwenMaxSide", "qwenMaxTokens", "qwenPolicy", "qwenTimeout", "screenCollectionEnabled", "server", "syncBatchSize", "syncBatteryNotLow", "syncChargingOnly", "syncIntervalMinutes", "syncMode", "token", "wifiOnly")
 
     }
     fun saveNsfw(value: NsfwConfig) {

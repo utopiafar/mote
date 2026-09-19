@@ -1,3 +1,4 @@
+import {captureSchema} from '@mote/shared';
 import {extendState,stateSeriesSchema,stateOnly} from '@mote/shared/state-series';
 import { moteText } from '@mote/shared/i18n';
 import { recordMetadataSchema } from '@mote/shared/metadata';
@@ -62,7 +63,7 @@ function recordBytes(record: QueueRecord): number {
 function validateEvent(value: unknown): CaptureEvent {
   if (!value || typeof value !== 'object') throw new Error(moteText("队列事件无效"));
   const v = value as CaptureEvent;
-  if (!UUID.test(v.id) || !UUID.test(v.deviceId) || !['macos', 'windows', 'linux'].includes(v.platform) || !Number.isFinite(Date.parse(v.capturedAt)) || !Number.isInteger(v.durationMs) || v.durationMs < 0 || v.durationMs > 300000 || !['screen', 'note', 'activity', 'notification'].includes(v.source)) throw new Error(moteText("队列事件元数据无效"));
+  if (!UUID.test(v.id) || !UUID.test(v.deviceId) || !['macos', 'windows', 'linux'].includes(v.platform) || !Number.isFinite(Date.parse(v.capturedAt)) || !Number.isInteger(v.durationMs) || v.durationMs < 0 || v.durationMs > 300000 || !['screen', 'note', 'activity', 'notification', 'ui_page'].includes(v.source)) throw new Error(moteText("队列事件元数据无效"));
   for (const [key, max] of [['deviceName', 128], ['appId', 256], ['appName', 200]] as const) {
     if (typeof v[key] !== 'string' || !v[key].trim() || v[key].length > max) throw new Error(moteText("队列事件应用或设备信息无效"));
   }
@@ -74,6 +75,7 @@ function validateEvent(value: unknown): CaptureEvent {
   if(stateSeries)for(const sample of stateSeries.samples)sample.at=new Date(sample.at).toISOString();
   const base = { ...(stateSeries?{stateSeries}:{}),id: v.id, deviceId: v.deviceId, deviceName: v.deviceName, platform: v.platform,
     capturedAt: new Date(v.capturedAt).toISOString(), durationMs: v.durationMs, appId: v.appId, appName: v.appName, ...(metadata ? { metadata } : {}) };
+  if(v.source==='ui_page'){captureSchema.parse({...v,ocrText:v.ocrText??''});return {...base,source:'ui_page',ocrText:v.ocrText,privacy:v.privacy};}
   if (v.source === 'notification') {
     if(v.platform!=='macos'||v.durationMs!==0||v.imageMime||v.ocrText||v.mood!==undefined||v.privacy.redacted||!metadata?.notification||!metadata.observation||metadata.collector?.method!=='accessibility'||metadata.media||metadata.capture||v.privacy.collection!=='content'||v.privacy.mode!=='none')throw new Error('Invalid notification observation');
     return {...base,source:'notification',ocrText:'',privacy:v.privacy};
@@ -195,13 +197,13 @@ export class DurableQueue {
   }
   contains(id: string): boolean { return this.records.has(id); }
   recordsForBrowser(): QueueRecord[] { return structuredClone([...this.records.values()].filter(r => r.event.source === 'screen')); }
-  async pageForBrowser(after: string, before: string, offset: number, limit: number): Promise<{ records: QueueRecord[]; total: number }> {
+  async pageForBrowser(after: string, before: string, offset: number, limit: number, source: 'screen'|'ui_page' = 'screen'): Promise<{ records: QueueRecord[]; total: number }> {
     // Snapshot immutable references while uploads may continue, then send only IDs/times to the worker.
     const snapshot = new Map(this.records), records: { id: string; at: string }[] = [];
     let index = 0;
     for (const record of snapshot.values()) {
       if (++index % 256 === 0) await yieldTurn();
-      if (record.event.source === 'screen') records.push({ id: record.event.id, at: record.event.capturedAt });
+      if (record.event.source === source) records.push({ id: record.event.id, at: record.event.capturedAt });
     }
     const page = await previewWork.run<{ ids: string[]; total: number }>({ kind: 'browse', records, after, before, offset, limit });
     return { records: page.ids.map(id => structuredClone(snapshot.get(id)!)), total: page.total };
@@ -216,7 +218,7 @@ export class DurableQueue {
     }
     return samples;
   }
-  recordForBrowser(id: string): QueueRecord | undefined { const record = this.records.get(id); return record?.event.source === 'screen' ? structuredClone(record) : undefined; }
+  recordForBrowser(id: string): QueueRecord | undefined { const record = this.records.get(id); return record && ['screen','ui_page'].includes(record.event.source) ? structuredClone(record) : undefined; }
   private sizeOf(record: QueueRecord): number {
     let bytes = this.recordSizes.get(record);
     if (bytes === undefined) { bytes = recordBytes(record); this.recordSizes.set(record, bytes); }

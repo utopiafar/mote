@@ -115,6 +115,71 @@ do {
         // Detect permission revocation during the query; never report an empty successful scan.
         if !fullAccess() { try output(["permission": "required", "calendars": []]); break }
         try output(["permission": "granted", "events": events, "complete": complete])
+    case "ui-page":
+        // Explicit host opt-in only; never requests permission or mutates the target app.
+        let input = FileHandle.standardInput.readDataToEndOfFile()
+        guard input.count <= 32768, let q = try JSONSerialization.jsonObject(with: input) as? [String: Any],
+              let appId = q["appId"] as? String, let pid = q["pid"] as? Int32,
+              let masks = q["masks"] as? [[String: Double]], AXIsProcessTrusted(),
+              let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier == pid, app.bundleIdentifier == appId,
+              (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool != true else { try output(["status":"blocked"]); break }
+        let version=app.bundleURL.flatMap{Bundle(url:$0)?.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String} ?? ""
+        guard let versions=q["versions"] as? [String], versions.isEmpty || versions.contains(version) else {try output(["status":"unsupported"]);break}
+        let root = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(root, 0.05)
+        func attr(_ e: AXUIElement, _ key: String) -> CFTypeRef? { var v: CFTypeRef?; guard AXUIElementCopyAttributeValue(e, key as CFString, &v) == .success else { return nil }; return v }
+        guard let windowValue = attr(root, kAXFocusedWindowAttribute), CFGetTypeID(windowValue) == AXUIElementGetTypeID() else { try output(["status":"unsupported"]); break }
+        let window = unsafeBitCast(windowValue, to: AXUIElement.self)
+        func rect(_ e: AXUIElement) -> CGRect? {
+            guard let p = attr(e, kAXPositionAttribute), let s = attr(e, kAXSizeAttribute), CFGetTypeID(p) == AXValueGetTypeID(), CFGetTypeID(s) == AXValueGetTypeID() else { return nil }
+            var point = CGPoint.zero; var size = CGSize.zero
+            guard AXValueGetValue(unsafeBitCast(p, to: AXValue.self), .cgPoint, &point), AXValueGetValue(unsafeBitCast(s, to: AXValue.self), .cgSize, &size), size.width > 0, size.height > 0 else { return nil }
+            return CGRect(origin: point, size: size)
+        }
+        let screenBounds = CGDisplayBounds(CGMainDisplayID())
+        guard let windowBounds = rect(window), screenBounds.contains(windowBounds),
+              let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly,.excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { try output(["status":"unsupported"]); break }
+        var occlusions: [CGRect] = []
+        for w in windows {
+            if (w[kCGWindowOwnerPID as String] as? Int32) == pid { break }
+            if let dict = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: dict) { occlusions.append(r) }
+        }
+        let masked = masks.compactMap { m -> CGRect? in
+            guard let x=m["x"], let y=m["y"], let w=m["width"], let h=m["height"] else { return nil }
+            return CGRect(x:screenBounds.minX+x*screenBounds.width,y:screenBounds.minY+y*screenBounds.height,width:w*screenBounds.width,height:h*screenBounds.height)
+        }
+        var nodes: [[String: Any]] = []; var count=0; var chars=0; var truncated=false
+        let deadline=Date().addingTimeInterval(1)
+        func visit(_ e: AXUIElement, _ parent: String?, _ depth: Int) {
+            if count>=256 || depth>24 || Date()>deadline { truncated=true; return }; count += 1
+            let role=attr(e,kAXRoleAttribute) as? String ?? ""
+            let subrole=attr(e,kAXSubroleAttribute) as? String ?? ""
+            var editable=DarwinBoolean(false)
+            _ = AXUIElementIsAttributeSettable(e,kAXValueAttribute as CFString,&editable)
+            if subrole=="AXSecureTextField" || role=="AXTextField" || role=="AXTextArea" || editable.boolValue { return }
+            guard let bounds=rect(e), windowBounds.intersects(bounds) else { return }
+            let id=String(count)
+            var text=""
+            if windowBounds.contains(bounds) && !masked.contains(where:{$0.intersects(bounds)}) && !occlusions.contains(where:{$0.intersects(bounds)}) && role=="AXStaticText" {
+                text=attr(e,kAXValueAttribute) as? String ?? attr(e,kAXTitleAttribute) as? String ?? ""
+                if text.utf16.count>2000 || chars+text.utf16.count>32000 { truncated=true; text="" }
+                chars += text.utf16.count
+            }
+            var node: [String:Any] = ["id":id,"role":String(role.prefix(300)),"resourceId":String((attr(e,kAXIdentifierAttribute) as? String ?? "").prefix(300)),"text":text,"bounds":["x":bounds.minX,"y":bounds.minY,"width":bounds.width,"height":bounds.height]]
+            if let parent=parent { node["parentId"]=parent }; nodes.append(node)
+            var childCount: CFIndex=0
+            if AXUIElementGetAttributeValueCount(e,kAXChildrenAttribute as CFString,&childCount) == .success && childCount>0 {
+                var children: CFArray?
+                let limit=min(childCount,256-count)
+                if limit<childCount {truncated=true}
+                if limit>0 && AXUIElementCopyAttributeValues(e,kAXChildrenAttribute as CFString,0,limit,&children) == .success, let children=children as? [AXUIElement] { for child in children {visit(child,id,depth+1)} }
+            }
+        }
+        visit(window,nil,0)
+        guard let currentWindow=attr(root,kAXFocusedWindowAttribute), CFEqual(window,currentWindow), rect(window)==windowBounds,
+              NSWorkspace.shared.frontmostApplication?.processIdentifier==pid, AXIsProcessTrusted(),
+              (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool != true else { try output(["status":"blocked"]); break }
+        try output(["snapshot":["appId":appId,"appVersion":String(version.prefix(300)),"activity":"","nodes":nodes,"truncated":truncated]])
     case "notifications":
         guard AXIsProcessTrusted() else { try output(["available": false, "items": []]); return }
         guard let center = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").first else { try output(["available": true, "items": []]); return }

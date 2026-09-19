@@ -6,7 +6,7 @@ import org.json.JSONObject
 object ConfigurationArchive {
     const val MAX_BYTES = 256 * 1024
     fun encode(c: CollectorConfig, includeToken: Boolean = false): String {
-        val settings = JSONObject()
+        val settings = JSONObject().put("uiPageMode", c.uiPageMode).put("uiPageRules", c.uiPageRules)
             .put("server", c.server)
             .put("deviceName", c.deviceName)
             .put("intervalSeconds", c.intervalSeconds)
@@ -67,6 +67,7 @@ object ConfigurationArchive {
         require(n.keys().asSequence().all { it in nsfwKeys }) { MoteI18n.text("模型配置包含未知字段") }
         val nextServer = string(values, "server", current.server)
         return current.copy(
+            uiPageMode=string(values,"uiPageMode",current.uiPageMode), uiPageRules=string(values,"uiPageRules",current.uiPageRules),
             server = nextServer,
             deviceName = string(values, "deviceName", current.deviceName),
             intervalSeconds = int(values, "intervalSeconds", current.intervalSeconds),
@@ -124,6 +125,6 @@ object ConfigurationArchive {
     private fun int(j: JSONObject, key: String, fallback: Int): Int {
         val n = long(j, key, fallback.toLong()); require(n in Int.MIN_VALUE..Int.MAX_VALUE); return n.toInt()
     }
-    private val keys = setOf("server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "localReviewUrl", "debugHttp", "mode", "nsfw", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "ocrChargingOnly", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "contentEncryptionEnabled", "uploadedRetentionDays")
+    private val keys = setOf("uiPageMode", "uiPageRules", "server", "token", "deviceName", "intervalSeconds", "maxQueueMiB", "wifiOnly", "excludedPackages", "masks", "localReviewUrl", "debugHttp", "mode", "nsfw", "jpegQuality", "captureMaxSide", "chargingOnly", "batteryPauseBelowPct", "diagnosticsEnabled", "diagnosticsIntervalSeconds", "appCollectionRules", "metadataEnabled", "syncMode", "syncIntervalMinutes", "syncBatchSize", "jsonlWindowMinutes", "ocrChargingOnly", "mediaCollectionEnabled", "screenCollectionEnabled", "notificationCollectionEnabled", "deviceEventCollectionEnabled", "syncChargingOnly", "syncBatteryNotLow", "imageDedupeMode", "ocrMode", "ocrAppModes", "imageDedupeDiagnosticsEnabled", "contentEncryptionEnabled", "uploadedRetentionDays")
     private val nsfwKeys = setOf("enabled", "threads", "timeoutMs", "source", "customUrl", "policy", "maxTokens", "reviewMaxSide")
 }

@@ -16,6 +16,8 @@ export interface Config {
   maxQueueEvents: number;
   captureStorageDirectory: string;
   localContentEncryption: boolean;
+  uiPageMode?: import('@mote/shared').UiMode;
+  uiPageRules?: import('@mote/shared').UiRule[];
   notificationCollectionEnabled?: boolean;
   excludedAppIds: string[];
   defaultCollection: CollectionMode;
@@ -61,7 +63,7 @@ export interface CaptureEvent {
   imageMime?: 'image/jpeg';
   ocrText?: string;
   ocr?: { status: 'pending' | 'completed' | 'disabled' | 'failed'; reason?: 'charging'; updatedAt?: string };
-  source: 'screen' | 'note' | 'activity' | 'notification';
+  source: 'screen' | 'note' | 'activity' | 'notification' | 'ui_page';
   metadata?: import('@mote/shared').RecordMetadata;
   mood?: string;
   privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; collection?: 'content' | 'activity'; reason?: string };

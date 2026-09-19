@@ -74,6 +74,8 @@ class MainActivity : MoteActivity() {
     private lateinit var uploadedRetention: EditText
     private lateinit var maxQueue: EditText
     private lateinit var excludes: EditText
+    private lateinit var uiPageMode: Spinner
+    private lateinit var uiPageRules: EditText
     private lateinit var masks: EditText
     private lateinit var review: EditText
     private lateinit var syncMode: Spinner
@@ -519,6 +521,15 @@ class MainActivity : MoteActivity() {
         metadataEnabled = check(MoteI18n.text("上传设备与采集状态元数据"), config.metadataEnabled)
         text(MoteI18n.text("开启后附带实际系统/机型、采集器版本、语言/时区、电量/充电、网络类型、锁屏与可用空间；不取设备序列号、IMEI、MAC、SSID或定位。关闭只影响新记录和心跳，已入队内容不追溯修改。授权文件来源自身的大小/修改时间不受此开关影响。"), 13)
         text(MoteI18n.text("没有内置应用黑名单。配置排除后，无法识别应用、多个应用窗口或系统遮挡时暂停。投屏模式需要同时启用无障碍服务才能可靠执行排除；仅使用情况权限不足以保证所有可见窗口。"), 13)
+        section(MoteI18n.text("页面内容采集"))
+        text(MoteI18n.text("仅在明确配置的应用和页面读取可见文字。需要辅助功能权限；输入框、密码与遮挡区域会被过滤。默认关闭。"),13,MoteUi.muted)
+        uiPageMode=Spinner(this).apply {
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf(MoteI18n.text("仅截图（默认）"),MoteI18n.text("页面与截图"),MoteI18n.text("页面优先，完整时不截图"),MoteI18n.text("仅页面，不回退截图")))
+            setSelection(UiPageRules.modes.indexOf(config.uiPageMode).coerceAtLeast(0))
+        }; content.addView(uiPageMode)
+        uiPageRules=field(MoteI18n.text("页面规则 JSON"),config.uiPageRules,"[]",multiline=true)
+        button(MoteI18n.text("载入实验规则")){uiPageRules.setText(assets.open("ui-page-rules.json").bufferedReader().use { it.readText() })}
+        text(MoteI18n.text("实验规则仅通过合成样本测试，可能包含导航文字。可编辑规则以限定页面和节点；保存后生效。"),13,MoteUi.muted)
         section(MoteI18n.text("固定遮罩"))
         text(MoteI18n.text("拖动示意图添加矩形；绿色区域会在 OCR 和保存前被遮住。这里不会读取你的屏幕。"), 13, MoteUi.muted)
         val maskFields = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
@@ -691,6 +702,7 @@ class MainActivity : MoteActivity() {
             ocrMode = OcrPolicy.modes[ocrMode.selectedItemPosition], ocrAppModes = ocrAppModes.text.toString(),
             ocrChargingOnly = ocrChargingOnly.isChecked, imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])
         Page.PRIVACY -> current.copy(
+            uiPageMode=UiPageRules.modes[uiPageMode.selectedItemPosition], uiPageRules=checked(uiPageRules){uiPageRules.text.toString().also{UiPageRules.parse(it)}},
             excludedPackages = excludes.text.toString(), masks = checked(masks) { masks.text.toString().also { Mask.parse(it) } },
             appCollectionRules = checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() },
             metadataEnabled = metadataEnabled.isChecked, uploadGate = UploadGateConfig(gateEnabled.isChecked, gateText.text.toString(), listOf("hold", "drop", "allow")[gateFailure.selectedItemPosition]), nsfw = current.nsfw.copy(enabled = false))
