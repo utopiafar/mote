@@ -1,4 +1,6 @@
 export * from './usage.js';
+export * from './ui-page.js';
+import {uiPageText} from './ui-page.js';
 import { z } from 'zod';
 import {provenanceSchema} from './sources.js';
 import {stateOnly,stateSeriesSchema} from './state-series.js';
@@ -11,7 +13,7 @@ export * from './imports.js';
 export type { ServerConfiguration, ConfigurationGroup, ConfigurationField, ConfigurationValue, ConfigurationSource } from './configuration.js';
 
 export const platformSchema = z.enum(['macos', 'windows', 'linux', 'android', 'import']);
-export const sourceSchema = z.enum(['screen', 'activity', 'media', 'notification', 'device_event', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
+export const sourceSchema = z.enum(['screen', 'ui_page', 'activity', 'media', 'notification', 'device_event', 'file', 'note', 'calendar', 'event', 'message', 'metric', 'memory']);
 // A mood is the author's own label, never inferred from note text or app identity.
 export const moodSchema = z.string().max(80).refine(value => value.trim().length > 0, 'Mood cannot be blank');
 export const privacySchema = z.object({
@@ -34,6 +36,11 @@ export const captureSchema = z.object({
   metadata: recordMetadataSchema.optional(),
   privacy: privacySchema.default({excluded:false,redacted:false,mode:'local'}),
 }).strict().superRefine((v,ctx) => {
+  if (v.metadata?.uiPage && v.source !== 'ui_page') ctx.addIssue({code:'custom',message:'Page evidence belongs to ui_page'});
+  if (v.source === 'ui_page') {
+    const p=v.metadata?.uiPage;
+    if (!p || !['android','macos'].includes(v.platform) || !v.appId || v.durationMs!==0 || v.imageBase64 || v.imageMime || v.windowTitle || v.provenance || v.mood || v.privacy.collection!=='content' || v.metadata?.collector?.method!=='accessibility' || v.metadata?.capture || v.metadata?.media || v.metadata?.notification || v.metadata?.deviceEvent || p && v.ocrText!==uiPageText(p)) ctx.addIssue({code:'custom',message:'Invalid UI page observation'});
+  }
   if (v.appId && !v.appName.trim()) ctx.addIssue({code:'custom',path:['appName'],message:'An application identifier requires a nonblank application name'});
   if(v.stateSeries){const series=v.stateSeries.samples;const first=series[0];if(!first){ctx.addIssue({code:'custom',message:'Empty state series'});return;}if(!stateOnly(v)||first.at!==v.capturedAt||first.durationMs!==v.durationMs||series.some((s,i)=>i>0&&(Date.parse(s.at)<=Date.parse(series[i-1].at)||Date.parse(s.at)-Date.parse(series[i-1].at)>300000))||Date.parse(series.at(-1)!.at)-Date.parse(first.at)>21600000)ctx.addIssue({code:'custom',message:'Invalid state observation series'});}
   if (v.metadata?.capture?.deduplication && (v.source !== 'screen' || v.imageBase64 || v.imageMime || v.ocrText || v.ocr?.status !== 'disabled')) ctx.addIssue({code:'custom',message:'Duplicate screenshots require metadata only and disabled OCR'});
@@ -152,3 +159,5 @@ export * from './capture-sessions.js';
 export * from './actions.js';
 export * from './execution.js';
 export type {LarkSelection,LarkJob,LarkStatus,LarkCalendar} from './lark.js';
+
+export * from './ui-builtins.js';

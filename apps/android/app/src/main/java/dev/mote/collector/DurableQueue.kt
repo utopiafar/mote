@@ -198,12 +198,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val id = UUID.fromString(event.getString("id")).toString()
         val file = File(dir, "$id.event")
         val source = event.optString("source", "screen")
-        if (image == null) require((source in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event)) && !event.has("imageMime") && !event.has("imageBase64")) { "Only notes, activity or media can omit images" }
+        if (image == null) require((source in setOf("note", "activity", "media", "notification", "device_event", "ui_page") || isDuplicate(event)) && !event.has("imageMime") && !event.has("imageBase64")) { "Only notes, activity or media can omit images" }
         if (source == "activity") {
             require(image == null && event.getJSONObject("privacy").optString("collection") == "activity" && event.optString("appId").isNotBlank())
             require(listOf("ocrText", "title", "windowTitle", "mood", "provenance", "imageMime", "imageBase64").none(event::has)) { "Activity must not contain content" }
             event.optJSONObject("metadata")?.optJSONObject("capture")?.let { require(it.keys().asSequence().all { key -> key == "intervalMs" }) }
         }
+        if (source == "ui_page") { require(image == null); UiPageRules.validateEvent(event) }
         if (source in SystemEventRules.sources) { require(image == null); SystemEventRules.validate(event) }
         if (source == "media") { require(image == null); MediaPrivacy.validateEvent(event) }
         if (source == "activity") event.optJSONObject("metadata")?.optJSONObject("media")?.optJSONArray("sessions")?.let { sessions ->
@@ -223,24 +224,30 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (blob != null && !blob.exists()) atomic(blob, image!!)
         atomic(file, body)
         stateHeads[dir.absolutePath] = JSONObject(event.toString())
-        onChange?.invoke(when (source) { "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
+        onChange?.invoke(when (source) { "ui_page" -> OperationKind.PAGE_QUEUED; "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
         }
     }
     fun peek(): JSONObject? = peekBatch(1).firstOrNull()
     /** Bound both count and UTF-8 transport size; never acknowledges while selecting. */
-    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024): List<JSONObject> {
+    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024, metadataWindowMinutes: Int = 10): List<JSONObject> {
         prepareIndex()
         return guarded {
-            require(maxCount in 1..25 && maxBytes > 0)
+            require(maxCount in 1..500 && maxBytes > 0 && metadataWindowMinutes in 1..1440)
             val result = mutableListOf<JSONObject>()
             var bytes = 32L
+            var metadataWindow: Long? = null
             for (row in metadata().sortedWith(compareBy<JSONObject> { it.getLong("modified") }.thenBy { it.getString("id") })) {
                 if (row.optBoolean("uploaded") || row.optBoolean("blocked")) continue
                 val event = read(File(dir, "${row.getString("id")}.event"))
                 localFields.forEach(event::remove)
                 val hash = event.optString("_blob", "")
                 event.remove("_blob")
-                if (hash.isEmpty()) require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event))
+                val metadataOnly = hash.isEmpty()
+                if (metadataWindow != null && (!metadataOnly || metadataWindow(event.getString("capturedAt"), metadataWindowMinutes) != metadataWindow)) continue
+                if (metadataOnly) {
+                    require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event", "ui_page") || isDuplicate(event))
+                    if (metadataWindow == null) metadataWindow = metadataWindow(event.getString("capturedAt"), metadataWindowMinutes)
+                }
                 else {
                     require(hash.matches(Regex("[a-f0-9]{64}")))
                     event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
@@ -254,6 +261,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         result
         }
     }
+    private fun metadataWindow(capturedAt: String, minutes: Int): Long =
+        java.time.Instant.parse(capturedAt).toEpochMilli() / (minutes * 60_000L)
     fun acknowledge(id: String, uploadedBytes: Long = 0, retentionDays: Int = 0, now: Long = System.currentTimeMillis(), observations: Int? = null): Unit = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return
@@ -262,7 +271,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (record.optBoolean("_uploaded")) return
         if (record.optJSONObject("ocr")?.optString("status") == "pending") atomic(file, record.put("_uploaded", true).toString().toByteArray())
         else retainOrRemove(file, record, retentionDays, now)
-        onChange?.invoke(when (record.optString("source")) { "notification", "device_event" -> OperationKind.SYSTEM_EVENT_ACK; "media" -> OperationKind.MEDIA_ACK; "activity" -> OperationKind.ACTIVITY_ACK; "note" -> OperationKind.NOTE_ACK; else -> OperationKind.SCREEN_ACK }, uploadedBytes, id)
+        onChange?.invoke(when (record.optString("source")) { "ui_page" -> OperationKind.PAGE_ACK; "notification", "device_event" -> OperationKind.SYSTEM_EVENT_ACK; "media" -> OperationKind.MEDIA_ACK; "activity" -> OperationKind.ACTIVITY_ACK; "note" -> OperationKind.NOTE_ACK; else -> OperationKind.SCREEN_ACK }, uploadedBytes, id)
     }
     private fun retainOrRemove(file: File, record: JSONObject, days: Int, now: Long) {
         require(days in 0..365)
@@ -466,7 +475,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         prepareIndex(requireStatistics = true)
         return guarded {
             require(limit in 1..60)
-            require(source in setOf("screen", "media", "notification", "device_event", "note", "activity"))
+            require(source in setOf("screen", "media", "notification", "device_event", "note", "activity", "ui_page"))
             val start = java.time.Instant.parse(after); val end = java.time.Instant.parse(before)
             val position = cursor?.let { JSONObject(String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8)) }
             val at = position?.getString("at")?.let(java.time.Instant::parse); val id = position?.getString("id")
@@ -547,16 +556,16 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     fun summary(): JSONObject {
         prepareIndex()
         return guarded {
-            val files = records(); var screens = 0; var notes = 0; var activities = 0; var media = 0; var systemEvents = 0; var unreadable = 0
+            val files = records(); var pages = 0; var screens = 0; var notes = 0; var activities = 0; var media = 0; var systemEvents = 0; var unreadable = 0
             val pending = org.json.JSONArray()
             files.take(100).forEach { file -> try {
                 val body = read(file); val source = body.optString("source", "screen"); val id = UUID.fromString(body.getString("id")).toString()
                 val at = java.time.Instant.parse(body.getString("capturedAt")).toString()
-                when (source) { "screen" -> screens++; "note" -> notes++; "activity" -> activities++; "media" -> media++; "notification", "device_event" -> systemEvents++; else -> error("unknown") }
+                when (source) { "ui_page" -> pages++; "screen" -> screens++; "note" -> notes++; "activity" -> activities++; "media" -> media++; "notification", "device_event" -> systemEvents++; else -> error("unknown") }
                 pending.put(JSONObject().put("id", id).put("kind", source).put("createdAt", at).put("bytes", file.length())
                     .put("uploaded", body.optBoolean("_uploaded")).put("archiveMissing", body.optBoolean("_archiveMissing")))
             } catch (_: Exception) { unreadable++ } }
-            JSONObject().put("total", files.size).put("screens", screens).put("notes", notes).put("activities", activities).put("media", media).put("systemEvents", systemEvents).put("unreadable", unreadable)
+            JSONObject().put("total", files.size).put("pages", pages).put("screens", screens).put("notes", notes).put("activities", activities).put("media", media).put("systemEvents", systemEvents).put("unreadable", unreadable)
                 .put("uninspected", (files.size - 100).coerceAtLeast(0)).put("bytes", diskBytes()).put("reservedOcrBytes", reservedOcrBytes()).put("pending", pending)
         }
     }
@@ -566,7 +575,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             val event = read(file)
             check(file.nameWithoutExtension == UUID.fromString(event.getString("id")).toString()) { MoteI18n.text("记录 ID 与存储文件不匹配") }
             val hash = event.optString("_blob", "")
-            if (hash.isEmpty()) { check(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event")); continue }
+            if (hash.isEmpty()) { check(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event", "ui_page")); continue }
             check(hash.matches(Regex("[a-f0-9]{64}"))) { MoteI18n.text("图片引用无效") }
             if (checked.add(hash)) {
                 val blob = File(dir, "$hash.blob")

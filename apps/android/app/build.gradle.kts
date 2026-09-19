@@ -13,8 +13,8 @@ android {
         applicationId = "dev.mote.collector"
         minSdk = 29
         targetSdk = 36
-        versionCode = 60
-        versionName = "0.0.49"
+        versionCode = 64
+        versionName = "0.0.53"
         buildConfigField("String", "MOTE_PROFILE", "\"legacy\"")
         buildConfigField("String", "DEFAULT_SERVER", "\"\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -58,6 +58,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { buildConfig = true; aidl = true }
+    sourceSets.getByName("test").resources.srcDir(rootProject.file("../../adapters/ui/fixtures"))
     sourceSets.getByName("test").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("androidTest").java.srcDir("src/sharedTest/java")
     sourceSets.getByName("development").apply {
@@ -93,6 +94,7 @@ tasks.matching { it.name == "packageRelease" }.configureEach {
     doFirst { check(releaseSigningReady) { "Release signing requires all four MOTE_ANDROID_KEYSTORE_PATH/PASSWORD and MOTE_ANDROID_KEY_ALIAS/PASSWORD environment settings. No unsigned release is produced." } }
 }
 val copyModelManifest by tasks.registering(Sync::class) {
+    from(rootProject.file("../../adapters/ui/builtin.json")) { rename { "ui-page-rules.json" } }
     from(rootProject.file("../../models/qwen-manifest.json"))
     from(rootProject.file("../../models/review-policy.txt"))
     from(rootProject.file("../../models/review-system.txt"))

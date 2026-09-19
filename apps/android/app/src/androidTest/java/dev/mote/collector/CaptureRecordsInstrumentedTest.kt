@@ -16,11 +16,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.WorkManager
 import androidx.work.WorkInfo
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
+import java.io.ByteArrayInputStream
+import java.util.zip.GZIPInputStream
 import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -292,18 +295,21 @@ class CaptureRecordsInstrumentedTest {
                 val input = client.getInputStream()
                 fun line(): String { val value = StringBuilder(); while (true) { val next = input.read(); if (next < 0 || next == 10) break; if (next != 13) value.append(next.toChar()) }; return value.toString() }
                 val first = line().split(' '); val method = first[0]; val route = first[1].substringBefore('?')
-                var length = 0; var authorized = false
-                while (true) { val header = line(); if (header.isBlank()) break; if (header.startsWith("Content-Length:", true)) length = header.substringAfter(':').trim().toInt(); if (header == "Authorization: Bearer generated-capture-browser-token-1234567890") authorized = true }
-                check(authorized); require(length in 0..1_000_000)
+                var length = 0; var authorized = false; var requestContentType = ""
+                while (true) { val header = line(); if (header.isBlank()) break; if (header.startsWith("Content-Length:", true)) length = header.substringAfter(':').trim().toInt(); if (header.startsWith("Content-Type:", true)) requestContentType = header.substringAfter(':').trim(); if (header == "Authorization: Bearer generated-capture-browser-token-1234567890") authorized = true }
+                check(authorized); require(length in 0..(12 * 1024 * 1024))
                 val body = ByteArray(length); var read = 0; while (read < length) { val count = input.read(body, read, length - read); check(count > 0); read += count }
-                val json = if (length > 0) JSONObject(String(body, Charsets.UTF_8)) else JSONObject()
+                val json = if (requestContentType.startsWith(CaptureBundle.CONTENT_TYPE)) {
+                    val lines = GZIPInputStream(ByteArrayInputStream(body)).bufferedReader().readLines()
+                    JSONObject().put("captures", JSONArray(lines.map(::JSONObject)))
+                } else if (length > 0) JSONObject(String(body, Charsets.UTF_8)) else JSONObject()
                 val response: ByteArray
                 var contentType = "application/json"
                 if (route.endsWith("/image")) { response = image; contentType = "image/jpeg" }
                 else {
                     val value = when {
                         route == "/api/devices/heartbeat" -> JSONObject().put("ok", true)
-                        method == "POST" && route == "/api/captures/batch" -> {
+                        method == "POST" && route in setOf("/api/captures/bundle", "/api/captures/batch") -> {
                             val items = json.getJSONArray("captures"); check(items.length() == 1)
                             val capture = items.getJSONObject(0)
                             check(capture.keys().asSequence().none { it.startsWith("_") })

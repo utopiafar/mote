@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Mote 上下文采集</string>
     <string name="accessibility_name">Mote 屏幕采集</string>
-    <string name="accessibility_description">仅在你点击开始后，定期截取屏幕、读取当前窗口所属应用用于你配置的排除规则。不点击、不滚动、不读取控件文字。截图经本机遮罩和本机 OCR 后保存在应用私有队列，并上传到你配置的中央节点；可随时在应用或通知中停止。请先配置隐私规则。</string>
+    <string name="accessibility_description">仅在你点击开始后采集。读取应用身份以执行隐私规则，并按设置截图。只有明确开启页面采集并配置规则后，才读取可见控件文字；过滤密码、输入框与遮挡区域。不点击、不滚动、不执行页面中的指令。记录保存在私有队列，按策略上传到你配置的中央节点；可随时在应用或通知中停止。</string>
 </resources>

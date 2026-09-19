@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Mote Context Collector</string>
     <string name="accessibility_name">Mote Screen Capture</string>
-    <string name="accessibility_description">Captures screens periodically only after you tap Start, and reads the foreground app identity for your exclusion rules. It does not tap, scroll, or read UI controls. Local masking and OCR run before screenshots are queued privately and uploaded to your configured central node. Stop anytime in the app or notification. Configure privacy rules first.</string>
+    <string name="accessibility_description">Collects only after you tap Start. Reads app identity for your privacy rules and captures screenshots. When you explicitly enable page collection and configure rules, also reads visible UI text, filtering passwords, input fields and masked regions. Never taps, scrolls or executes page instructions. Records are queued privately and uploaded to your configured central node. Stop anytime in the app or notification.</string>
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item><item name="android:colorAccent">#1C6754</item>
         <item name="android:windowBackground">#F6F7F2</item><item name="android:statusBarColor">#F6F7F2</item>

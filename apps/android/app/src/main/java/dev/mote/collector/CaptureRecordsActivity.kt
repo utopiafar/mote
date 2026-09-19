@@ -47,7 +47,7 @@ class CaptureRecordsActivity : MoteActivity() {
     private var metadataLoading = false
     private var refreshAfterLoad = false
     private var renderedPage: String? = null
-    private val recordSources = listOf("screen", "media", "notification", "device_event", "note", "activity")
+    private val recordSources = listOf("screen", "media", "notification", "device_event", "note", "activity", "ui_page")
     private var recordSource = "screen"
     private var sessionGrouping = true
     @Volatile private var generation = 0
@@ -75,7 +75,7 @@ class CaptureRecordsActivity : MoteActivity() {
             }
         }
         val kinds = Spinner(this).apply {
-            adapter = ArrayAdapter(this@CaptureRecordsActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("截图"), MoteI18n.text("媒体播放状态"), MoteI18n.text("通知事件"), MoteI18n.text("设备事件"), MoteI18n.text("随手记"), MoteI18n.text("应用活动")))
+            adapter = ArrayAdapter(this@CaptureRecordsActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("截图"), MoteI18n.text("媒体播放状态"), MoteI18n.text("通知事件"), MoteI18n.text("设备事件"), MoteI18n.text("随手记"), MoteI18n.text("应用活动"), MoteI18n.text("页面内容采集")))
             setSelection(recordSources.indexOf(recordSource))
         }; body.addView(kinds)
         kinds.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -383,7 +383,8 @@ class CaptureRecordsActivity : MoteActivity() {
                         return@runOnUiThread
                     }
                     if (media != null) text(content, CapturePreview.mediaLabel(record), 13f)
-                    if (record.optString("source") in setOf("note", "activity")) {
+                    if (record.optString("source") in setOf("note", "activity", "ui_page")) {
+                        record.optJSONObject("metadata")?.optJSONObject("uiPage")?.let { text(content, "${it.optString("adapterId")} @ ${it.optString("adapterVersion")} · ${it.optString("status")}", 13f) }
                         text(content, record.optString("ocrText").ifBlank { MoteI18n.text("应用活动 · {0} 毫秒", record.optLong("durationMs")) }, 14f).setTextIsSelectable(true)
                         record.optString("syncError").takeIf(String::isNotBlank)?.let { text(content, MoteI18n.text("同步需要处理：{0}", it), 14f) }
                         return@runOnUiThread

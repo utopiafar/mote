@@ -74,11 +74,14 @@ class MainActivity : MoteActivity() {
     private lateinit var uploadedRetention: EditText
     private lateinit var maxQueue: EditText
     private lateinit var excludes: EditText
+    private lateinit var uiPageMode: Spinner
+    private lateinit var uiPageRules: EditText
     private lateinit var masks: EditText
     private lateinit var review: EditText
     private lateinit var syncMode: Spinner
     private lateinit var syncInterval: EditText
     private lateinit var syncBatch: EditText
+    private lateinit var jsonlWindow: EditText
     private val syncModes = listOf("realtime", "interval", "batch", "manual")
     private lateinit var appRuleRows: LinearLayout
     private lateinit var maskEditor: MaskEditorView
@@ -301,9 +304,10 @@ class MainActivity : MoteActivity() {
         }; content.addView(syncMode, LinearLayout.LayoutParams(-1, dp(56))); track(syncMode, "syncMode")
         syncInterval = presetNumber(MoteI18n.text("同步间隔 / 分钟（批量模式下也是最长等待时间）"), config.syncIntervalMinutes, "15", 15..1440, listOf(15, 30, 60, 180, 360, 720, 1440))
         syncBatch = presetNumber(MoteI18n.text("批量达到多少条时同步"), config.syncBatchSize, "20", 1..500, listOf(5, 10, 20, 50, 100, 200, 500))
-        packedUpload = check(MoteI18n.text("打包上传（合并多条记录，逐条确认）"), config.packedUpload)
+        packedUpload = check(MoteI18n.text("压缩包上传（gzip JSONL，服务端解包后逐条确认）"), config.packedUpload)
+        jsonlWindow = presetNumber(MoteI18n.text("无图片状态 JSONL 合并窗口 / 分钟"), config.jsonlWindowMinutes, "10", 1..1440, listOf(1, 5, 10, 15, 30, 60))
         updateSyncFields()
-        help(MoteI18n.text("同步方式说明"), MoteI18n.text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。"))
+        help(MoteI18n.text("同步方式说明"), MoteI18n.text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。压缩包内是 gzip JSONL，服务端解包后逐条校验并确认。无图片的短状态记录会按时间窗口合并，默认 10 分钟。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。"))
         section(MoteI18n.text("同步条件"))
         wifi = check(MoteI18n.text("仅非计费 Wi-Fi 同步"), config.wifiOnly)
         syncChargingOnly = check(MoteI18n.text("仅充电时同步"), config.syncChargingOnly)
@@ -517,6 +521,15 @@ class MainActivity : MoteActivity() {
         metadataEnabled = check(MoteI18n.text("上传设备与采集状态元数据"), config.metadataEnabled)
         text(MoteI18n.text("开启后附带实际系统/机型、采集器版本、语言/时区、电量/充电、网络类型、锁屏与可用空间；不取设备序列号、IMEI、MAC、SSID或定位。关闭只影响新记录和心跳，已入队内容不追溯修改。授权文件来源自身的大小/修改时间不受此开关影响。"), 13)
         text(MoteI18n.text("没有内置应用黑名单。配置排除后，无法识别应用、多个应用窗口或系统遮挡时暂停。投屏模式需要同时启用无障碍服务才能可靠执行排除；仅使用情况权限不足以保证所有可见窗口。"), 13)
+        section(MoteI18n.text("页面内容采集"))
+        text(MoteI18n.text("仅在明确配置的应用和页面读取可见文字。需要辅助功能权限；输入框、密码与遮挡区域会被过滤。默认关闭。"),13,MoteUi.muted)
+        uiPageMode=Spinner(this).apply {
+            adapter=ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,listOf(MoteI18n.text("仅截图（默认）"),MoteI18n.text("页面与截图"),MoteI18n.text("页面优先，完整时不截图"),MoteI18n.text("仅页面，不回退截图")))
+            setSelection(UiPageRules.modes.indexOf(config.uiPageMode).coerceAtLeast(0))
+        }; content.addView(uiPageMode)
+        uiPageRules=field(MoteI18n.text("页面规则 JSON"),config.uiPageRules,"[]",multiline=true)
+        button(MoteI18n.text("载入实验规则")){uiPageRules.setText(assets.open("ui-page-rules.json").bufferedReader().use { it.readText() })}
+        text(MoteI18n.text("实验规则仅通过合成样本测试，可能包含导航文字。可编辑规则以限定页面和节点；保存后生效。"),13,MoteUi.muted)
         section(MoteI18n.text("固定遮罩"))
         text(MoteI18n.text("拖动示意图添加矩形；绿色区域会在 OCR 和保存前被遮住。这里不会读取你的屏幕。"), 13, MoteUi.muted)
         val maskFields = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
@@ -677,7 +690,7 @@ class MainActivity : MoteActivity() {
             token = checked(token) { token.text.toString().trim().also { require(it.isBlank() || it.length >= 32) { MoteI18n.text("令牌至少需要 32 个字符；未连接时可留空") } } },
             deviceName = checked(name) { name.text.toString().trim().also { require(it.isNotBlank() && it.length <= 128) { MoteI18n.text("请填写 1..128 字符的设备名称") } } },
             wifiOnly = wifi.isChecked, syncMode = syncModes[syncMode.selectedItemPosition], syncIntervalMinutes = number(syncInterval, 15..1440),
-            packedUpload = packedUpload.isChecked, syncBatchSize = number(syncBatch, 1..500), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
+            packedUpload = packedUpload.isChecked, syncBatchSize = number(syncBatch, 1..500), jsonlWindowMinutes = number(jsonlWindow, 1..1440), syncChargingOnly = syncChargingOnly.isChecked, syncBatteryNotLow = syncBatteryNotLow.isChecked)
         Page.CAPTURE -> current.copy(
             intervalSeconds = number(interval, 5..300), mode = if (projectionMode.isChecked) "projection" else "accessibility",
             chargingOnly = chargingOnly.isChecked, batteryPauseBelowPct = number(batteryBelow, 0..95),
@@ -689,6 +702,7 @@ class MainActivity : MoteActivity() {
             ocrMode = OcrPolicy.modes[ocrMode.selectedItemPosition], ocrAppModes = ocrAppModes.text.toString(),
             ocrChargingOnly = ocrChargingOnly.isChecked, imageDedupeMode = imageDedupeModes[imageDedupeMode.selectedItemPosition])
         Page.PRIVACY -> current.copy(
+            uiPageMode=UiPageRules.modes[uiPageMode.selectedItemPosition], uiPageRules=checked(uiPageRules){uiPageRules.text.toString().also{UiPageRules.parse(it)}},
             excludedPackages = excludes.text.toString(), masks = checked(masks) { masks.text.toString().also { Mask.parse(it) } },
             appCollectionRules = checked(appPolicies) { AppCollectionRules.fromLines(AppCollectionMode.entries[appDefault.selectedItemPosition], appPolicies.text.toString()).json() },
             metadataEnabled = metadataEnabled.isChecked, uploadGate = UploadGateConfig(gateEnabled.isChecked, gateText.text.toString(), listOf("hold", "drop", "allow")[gateFailure.selectedItemPosition]), nsfw = current.nsfw.copy(enabled = false))

@@ -1,7 +1,7 @@
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
     android:accessibilityFeedbackType="feedbackGeneric" android:notificationTimeout="100"
-    android:accessibilityFlags="flagRetrieveInteractiveWindows"
+    android:accessibilityFlags="flagRetrieveInteractiveWindows|flagReportViewIds"
     android:canRetrieveWindowContent="true" android:canTakeScreenshot="true"
     android:isAccessibilityTool="false" android:settingsActivity="dev.mote.collector.MainActivity"
     android:description="@string/accessibility_description" />

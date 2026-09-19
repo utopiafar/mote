@@ -2,7 +2,7 @@ import { moteText } from '@mote/shared/i18n';
 import type {RecordMetadata, SourceMetadata} from '@mote/shared';
 import {bytes, dateTime} from './api';
 
-export const sourceLabels: Record<string,string> = {screen:moteText("屏幕采样"),activity:moteText("仅应用活动"),media:moteText("媒体播放"),notification:moteText("通知事件"),device_event:moteText("设备事件"),note:moteText("随手记"),file:moteText("文件"),calendar:moteText("日历"),event:moteText("事件"),message:moteText("消息"),metric:moteText("指标"),memory:moteText("记忆")};
+export const sourceLabels: Record<string,string> = {ui_page:moteText("页面内容采集"),screen:moteText("屏幕采样"),activity:moteText("仅应用活动"),media:moteText("媒体播放"),notification:moteText("通知事件"),device_event:moteText("设备事件"),note:moteText("随手记"),file:moteText("文件"),calendar:moteText("日历"),event:moteText("事件"),message:moteText("消息"),metric:moteText("指标"),memory:moteText("记忆")};
 export const activityExplanation = moteText("仅记录前台应用与采样时长；没有采集截图、窗口标题或正文。时长存在采样空隙，不代表完整使用历史。");
 type Row = [string, string | number | boolean | undefined];
 const bool = (value: boolean | undefined) => value === undefined ? undefined : value ? moteText("是") : moteText("否");
@@ -16,7 +16,10 @@ export function Metadata({metadata,source,modifiedAt,stateSeries}: {stateSeries?
   const methods:Record<string,string>={accessibility:moteText("无障碍采集"),media_projection:moteText("系统录屏"),screen_capture:moteText("系统屏幕采集"),media_session:moteText("系统媒体会话"),notification_listener:moteText("系统通知服务"),manual:moteText("主动记录"),file:moteText("文件同步"),calendar:moteText("日历同步"),mcp:'MCP',import:moteText("导入")};
   const n=metadata?.notification,e=metadata?.deviceEvent;
   const actions:Record<string,string>={posted:moteText("发布（首次观察）"),updated:moteText("更新"),removed:moteText("移除"),screen_on:moteText("亮屏"),screen_off:moteText("熄屏"),user_present:moteText("用户已解锁 / 在场"),state_observed:moteText("锁定状态观察")};
+  const page=metadata?.uiPage;
   const rows:Row[]=[
+    [moteText("页面解析规则"),page?`${page.adapterId}@${page.adapterVersion}`:undefined],
+    [moteText("页面读取状态"),page?.status],[moteText("应用版本"),page?.appVersion],[moteText("页面标识"),page?.activity],
     [moteText("系统事件"),n?actions[n.action]:e?actions[e.action]:undefined],[moteText("通知标题"),n?.title],[moteText("通知正文"),n?.text],[moteText("展开正文"),n?.bigText],[moteText("补充文字"),n?.subText],[moteText("通知多行正文"),n?.textLines?.join('\n')],
     [moteText("通知发布时间"),time(n?.postedAt)],[moteText("持续通知"),bool(n?.ongoing)],[moteText("分组摘要"),bool(n?.groupSummary)],[moteText("应用声明的通知类别"),n?.category],[moteText("通知通道"),n?.channelId],[moteText("系统移除原因代码"),n?.removalReason],[moteText("通知关联键（哈希）"),n?.notificationKey],
     [moteText("系统报告锁定"),bool(e?.keyguardLocked)],[moteText("系统报告屏幕可交互"),bool(e?.screenInteractive)],[moteText("观察会话"),metadata?.observation?.sessionId],[moteText("开机后观察毫秒数"),metadata?.observation?.elapsedRealtimeMs],
@@ -34,6 +37,7 @@ export function Metadata({metadata,source,modifiedAt,stateSeries}: {stateSeries?
   ];
   return <details className="metadata-details"><summary>{moteText("采集与来源元数据")}</summary>
     <>{stateSeries&&<p className="field-note">{moteText("相同状态合并为 {0} 次观察，最近一次：{1}。统计逐次使用实测时长，观察间隙不计为连续使用。",stateSeries.samples.length,dateTime(stateSeries.samples.at(-1)!.at))}</p>}</>
+    {page&&<details><summary>{moteText("页面节点证据")}</summary><p>{moteText("仅表示当时窗口内观察到的文字，不代表阅读过全文。")}</p><pre>{JSON.stringify(page,null,2)}</pre></details>}
     <dl>{rows.filter(([,value])=>value!==undefined).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{String(value)}</dd></div>)}</dl>
     <p className="field-note">{moteText("仅显示上报时可获取的字段。状态是当时的观察值；缺失不代表否或零。")}</p>
     {(n||e)&&<p className="field-note">{moteText("原始系统事件，不表示你已阅读通知或正在执行某项任务。熄屏不等于锁定；服务中断期间不补造事件。系统可能隐藏敏感通知。")}</p>}

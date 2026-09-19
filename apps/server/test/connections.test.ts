@@ -4,6 +4,7 @@ import {mkdtemp,readFile,rm,lstat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {gzipSync} from 'node:zlib';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {parseConnectionInvitation} from '@mote/shared';
@@ -252,4 +253,17 @@ test('batch quota failures preserve accepted receipts and permit idempotent repl
   const statuses=first.json().results.map((r:{status:number})=>r.status);
   assert.ok(statuses.includes(201));assert.ok(statuses.includes(507));
   assert.deepEqual((await send()).json().results.map((r:{status:number})=>r.status),statuses.map((s:number)=>s===201?200:s));
+});
+
+test('gzip JSONL capture bundles are unpacked, scoped and acknowledged per record',async t=>{
+  const {app}=await fixture(t),client=await paired(app);
+  const capture=()=>({id:randomUUID(),deviceId:'synthetic-phone',deviceName:'Synthetic phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:0,source:'activity',appId:'fixture.reader',appName:'Generated reader',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
+  const first=capture(),second=capture();
+  const payload=Buffer.from([first,second].map(value=>JSON.stringify(value)).join('\n')+'\n');
+  const send=(body:Buffer)=>app.inject({method:'POST',url:'/api/captures/bundle',headers:{...headers(client.token),'content-type':'application/x-ndjson+gzip'},payload:body});
+  const response=await send(gzipSync(payload));
+  assert.equal(response.statusCode,200);assert.deepEqual(response.json().results.map((item:{status:number})=>item.status),[201,201]);
+  assert.deepEqual((await send(gzipSync(payload))).json().results.map((item:{status:number})=>item.status),[200,200]);
+  assert.equal((await send(gzipSync(Buffer.from(JSON.stringify({...capture(),deviceId:'someone-else'})+'\n')))).statusCode,403);
+  assert.equal((await send(gzipSync(Buffer.from(JSON.stringify({...first,id:randomUUID(),deviceId:'someone-else'})+'\n')))).statusCode,403);
 });

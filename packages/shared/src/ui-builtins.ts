@@ -1,0 +1,9 @@
+// Generated from adapters/ui/builtin.json by scripts/ui-adapters.mjs.
+import {uiRulesSchema} from './ui-page.js';
+export const builtinUiRules=uiRulesSchema.parse([
+  {"id":"wechat-web-android","version":"1","platform":"android","appId":"com.tencent.mm","activity":"com.tencent.mm.plugin.webview.ui.tools.MMWebViewUI","required":[{"role":"android.webkit.WebView"}],"select":{"role":"android.view.View"},"ancestor":{"role":"android.webkit.WebView"},"complete":false},
+  {"id":"zhihu-content-android","version":"1","platform":"android","appId":"com.zhihu.android","activity":"com.zhihu.android.mixshortcontainer.MixShortContainerActivity","required":[{"resourceId":"com.zhihu.android:id/view_content"}],"select":{"role":"android.view.View"},"ancestor":{"resourceId":"com.zhihu.android:id/view_content"},"complete":false},
+  {"id":"xhs-note-android","version":"1","platform":"android","appId":"com.xingin.xhs","activity":"com.xingin.matrix.notedetail.NoteDetailActivity","required":[{"role":"android.widget.TextView"}],"select":{"role":"android.widget.TextView"},"complete":false},
+  {"id":"wechat-macos-visible","version":"1","platform":"macos","appId":"com.tencent.xinWeChat","required":[{"role":"AXStaticText"}],"select":{"role":"AXStaticText"},"complete":false},
+  {"id":"feishu-macos-visible","version":"1","platform":"macos","appId":"com.electron.lark","required":[{"role":"AXStaticText"}],"select":{"role":"AXStaticText"},"complete":false}
+]);
