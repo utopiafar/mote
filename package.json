@@ -26,6 +26,7 @@
     "backup": "node --import tsx scripts/backup.ts",
     "privacy": "node --import tsx scripts/privacy-gateway.ts",
     "test:privacy": "node --import tsx scripts/test-privacy.ts",
+    "test:execution-compat": "node scripts/test-execution-compat.mjs",
     "models:download": "npm run build -w @mote/local-inference && node scripts/download-model.cjs",
     "models:setup": "sh scripts/setup-vision.sh",
     "mote": "node scripts/mote.mjs",

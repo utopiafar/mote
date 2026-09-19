@@ -4,12 +4,16 @@ import type {AgentProgress} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {safeError} from './diagnostics.js';
+import {executionEnvelope} from '@mote/shared/execution';
+import {normalizeRun} from './execution.js';
+import type {ExecutionEnvelope} from '@mote/shared/execution';
 
 type Scope={after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface InsightRun {
   id:string;status:'running'|'completed'|'failed';createdAt:string;updatedAt:string;
   scope:Scope;events:(AgentProgress&{at:string})[];resultRunId?:string;
   error?:{code:string;message:string};
+  execution?:ExecutionEnvelope;
 }
 /** Durable progress contains fixed stages and tool counts, never prompts or model reasoning. */
 export class InsightRuns {
@@ -22,10 +26,10 @@ export class InsightRuns {
     }
   }
   private save(run:InsightRun){this.store.db.prepare('UPDATE insight_runs SET json=? WHERE id=?').run(JSON.stringify(run),run.id);}
-  list():InsightRun[]{return (this.store.db.prepare("SELECT json FROM insight_runs ORDER BY json_extract(json,'$.createdAt') DESC,id LIMIT 20").all() as {json:string}[]).map(row=>JSON.parse(row.json));}
+  list():InsightRun[]{return (this.store.db.prepare("SELECT json FROM insight_runs ORDER BY json_extract(json,'$.createdAt') DESC,id LIMIT 20").all() as {json:string}[]).map(row=>normalizeRun(JSON.parse(row.json)));}
   get(id:string):InsightRun{
     const row=this.store.db.prepare('SELECT json FROM insight_runs WHERE id=?').get(id) as {json:string}|undefined;
-    if(!row)throw new StoreError('Insight run not found',404);return JSON.parse(row.json);
+    if(!row)throw new StoreError('Insight run not found',404);return normalizeRun(JSON.parse(row.json));
   }
   detail(id:string){
     const run=this.get(id);
@@ -40,7 +44,7 @@ export class InsightRuns {
     if(existing){if(existing.request_hash!==hash)throw new StoreError('Run ID already belongs to another request',409);return this.get(id);}
     if(this.pending.size)throw new StoreError('A personal review is already running',429);
     const {prompt:_,...scope}=input,at=new Date().toISOString();
-    const run:InsightRun={id,status:'running',createdAt:at,updatedAt:at,scope,events:[{stage:'starting',at}]};
+    const run:InsightRun={id,status:'running',createdAt:at,updatedAt:at,scope,events:[{stage:'starting',at}],execution:{status:'running',attempts:1,allowedActions:['cancel']}};
     this.store.db.prepare("DELETE FROM insight_runs WHERE id IN (SELECT id FROM insight_runs WHERE json_extract(json,'$.status')!='running' ORDER BY json_extract(json,'$.createdAt') DESC LIMIT -1 OFFSET 99)").run();
     this.store.reserveMetadata(16384);
     this.store.db.prepare('INSERT INTO insight_runs VALUES(?,?,?)').run(id,hash,JSON.stringify(run));
@@ -53,8 +57,8 @@ export class InsightRuns {
       run.events.push(next);run.updatedAt=next.at;this.save(run);
     };
     const task=Promise.resolve().then(()=>work(observe)).then(result=>{
-      run.status='completed';run.resultRunId=result.runId;run.updatedAt=new Date().toISOString();this.save(run);
-    }).catch(error=>{const safe=safeError(error);run.status='failed';run.error={code:safe.category,message:safe.message};run.updatedAt=new Date().toISOString();this.save(run);});
+      run.status='completed';run.execution={status:'succeeded',attempts:1,allowedActions:[]};run.resultRunId=result.runId;run.updatedAt=new Date().toISOString();this.save(run);
+    }).catch(error=>{const safe=safeError(error);run.status='failed';run.error={code:safe.category,message:safe.message};run.execution=executionEnvelope({status:'failed',attempts:1,errorCode:safe.category});run.updatedAt=new Date().toISOString();this.save(run);});
     this.pending.add(task);void task.finally(()=>this.pending.delete(task)).catch(()=>{});
     return initial;
   }

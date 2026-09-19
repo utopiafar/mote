@@ -1,7 +1,7 @@
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {CheckCircle2,Clock3,LoaderCircle,AlertCircle} from 'lucide-react';
 import {dateTime,type Answer} from './api';
-export interface InsightRun {id:string;status:'running'|'completed'|'failed';createdAt:string;updatedAt:string;scope:{after?:string;before?:string;deviceId?:string};events:{stage:'starting'|'model'|'tool'|'validating';at:string;tool?:string;count?:number;phase?:'started'|'completed'}[];error?:{code:string;message:string};result?:Answer}
+export interface InsightRun {id:string;status:'running'|'completed'|'failed';createdAt:string;updatedAt:string;scope:{after?:string;before?:string;deviceId?:string};events:{stage:'starting'|'model'|'tool'|'validating';at:string;tool?:string;count?:number;phase?:'started'|'completed'}[];error?:{code:string;message:string};result?:Answer;execution?:import('@mote/shared').ExecutionEnvelope}
 const tools:Record<string,string>={search_context:moteText("检索上下文"),timeline:moteText("读取时间线"),evidence:moteText("展开原始证据"),activity:moteText("核对采样时长"),media_activity:moteText("读取媒体采样"),devices:moteText("读取设备信息"),sources:moteText("查看资料来源"),source_items:moteText("读取来源记录"),source_history:moteText("查看历史版本"),memories:moteText("检索记忆"),file_chunks:moteText("读取文件片段")};
 const stages={starting:moteText("正在准备回顾"),model:moteText("模型正在分析资料并生成报告"),tool:moteText("模型继续分析已读取的资料"),validating:moteText("正在校验报告与来源引用")};
 export function InsightProgress({run,pollError,elapsed,onRetry,onResume}:{run:InsightRun;pollError:string;elapsed:number;onRetry:()=>void;onResume:()=>void}){
