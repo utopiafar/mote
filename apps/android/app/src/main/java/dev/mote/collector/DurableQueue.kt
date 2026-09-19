@@ -228,19 +228,25 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     fun peek(): JSONObject? = peekBatch(1).firstOrNull()
     /** Bound both count and UTF-8 transport size; never acknowledges while selecting. */
-    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024): List<JSONObject> {
+    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024, metadataWindowMinutes: Int = 10): List<JSONObject> {
         prepareIndex()
         return guarded {
-            require(maxCount in 1..25 && maxBytes > 0)
+            require(maxCount in 1..500 && maxBytes > 0 && metadataWindowMinutes in 1..1440)
             val result = mutableListOf<JSONObject>()
             var bytes = 32L
+            var metadataWindow: Long? = null
             for (row in metadata().sortedWith(compareBy<JSONObject> { it.getLong("modified") }.thenBy { it.getString("id") })) {
                 if (row.optBoolean("uploaded") || row.optBoolean("blocked")) continue
                 val event = read(File(dir, "${row.getString("id")}.event"))
                 localFields.forEach(event::remove)
                 val hash = event.optString("_blob", "")
                 event.remove("_blob")
-                if (hash.isEmpty()) require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event))
+                val metadataOnly = hash.isEmpty()
+                if (metadataWindow != null && (!metadataOnly || metadataWindow(event.getString("capturedAt"), metadataWindowMinutes) != metadataWindow)) continue
+                if (metadataOnly) {
+                    require(event.getString("source") in setOf("note", "activity", "media", "notification", "device_event") || isDuplicate(event))
+                    if (metadataWindow == null) metadataWindow = metadataWindow(event.getString("capturedAt"), metadataWindowMinutes)
+                }
                 else {
                     require(hash.matches(Regex("[a-f0-9]{64}")))
                     event.put("imageBase64", Base64.getEncoder().encodeToString(cipher.open(File(dir, "$hash.blob").readBytes())))
@@ -254,6 +260,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         result
         }
     }
+    private fun metadataWindow(capturedAt: String, minutes: Int): Long =
+        java.time.Instant.parse(capturedAt).toEpochMilli() / (minutes * 60_000L)
     fun acknowledge(id: String, uploadedBytes: Long = 0, retentionDays: Int = 0, now: Long = System.currentTimeMillis(), observations: Int? = null): Unit = guarded {
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return

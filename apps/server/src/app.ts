@@ -15,10 +15,11 @@ import rateLimit from '@fastify/rate-limit';
 import {storageStatistics} from '@mote/shared/storage-statistics';
 import staticFiles from '@fastify/static';
 import { timingSafeEqual,randomUUID } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { existsSync,readFileSync } from 'node:fs';
 import { join,dirname } from 'node:path';
 import { z } from 'zod';
-import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,sourceContentTime,type QueryResult,type CaptureRecord } from '@mote/shared';
+import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,sourceContentTime,type QueryResult,type CaptureRecord,type CaptureInput } from '@mote/shared';
 import { AgentNotConfiguredError,createImportAgent,skillCatalog,type ContextReader,type QueryInput } from '@mote/agent';
 import { DEFAULT_MODEL_MAX_TOKENS, modelProvider } from '@mote/shared/models';
 import { ModelSettingsStore,ModelSettingsError,modelProfileIdSchema } from './model-settings.js';
@@ -56,6 +57,19 @@ const validRange=(v:QueryScope)=>!v.after||!v.before||Date.parse(v.after)<Date.p
 const querySchema=z.object({modelProfileId:modelProfileIdSchema.optional(),modelOverride:z.string().trim().min(1).max(512).refine(v=>!/[\u0000-\u001f\u007f]/.test(v)).optional(),question:z.string().trim().min(1).max(8000),conversationId:z.string().uuid().optional(),after:scopeFields.after.nullable(),before:scopeFields.before.nullable(),deviceId:scopeFields.deviceId.nullable(),timeZone:scopeFields.timeZone.nullable()}).strict();
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
 const insightRequestSchema=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional()}).strict().refine(validRange,{message:'Invalid time range'});
+const CAPTURE_BUNDLE_MAX_INFLATED_BYTES=32*1024*1024;
+const CAPTURE_BUNDLE_MAX_RECORDS=500;
+function parseCaptureBundle(body:unknown):CaptureInput[] {
+  if(!Buffer.isBuffer(body))throw new StoreError('Capture bundle body must be gzip bytes');
+  let inflated:Buffer;
+  try{inflated=gunzipSync(body,{maxOutputLength:CAPTURE_BUNDLE_MAX_INFLATED_BYTES});}
+  catch{throw new StoreError('Invalid capture bundle compression');}
+  const text=inflated.toString('utf8');
+  const lines=text.endsWith('\n')?text.slice(0,-1).split('\n'):text.split('\n');
+  if(lines.length<1||lines.length>CAPTURE_BUNDLE_MAX_RECORDS||lines.some(line=>line.length===0))throw new StoreError('Capture bundle JSONL is empty or too large');
+  try{return lines.map(line=>captureSchema.parse(JSON.parse(line)));}
+  catch(error){if(error instanceof z.ZodError)throw error;throw new StoreError('Invalid capture bundle JSONL');}
+}
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
 export async function buildApp(config:Config,dependencies?:{memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   config={...config};
@@ -123,6 +137,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
 
   const perception=new Perception(store,processing.runtime);
   const app=Fastify({logger:false,genReqId:()=>randomUUID(),requestIdHeader:false,bodyLimit:12*1024*1024,requestTimeout:180000,frameworkErrors:(_error,_req,reply)=>{const requestId=randomUUID();diagnostics.record('request.failed',{requestId,route:'unknown',category:'validation',statusCode:400},'warn');(reply as FastifyReply).header('X-Request-Id',requestId).code(400).send({error:'validation',message:moteText("请求格式无效。"),requestId});}});
+  app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
     const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories','memory-jobs':'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query','query-runs':'query',usage:'configuration',conversations:'conversations',files:'files','archived-files':'files','file-sync':'file-sync','file-processing':'file-processing',insights:'insights','insight-runs':'insights',index:'index',export:'export',import:'import',imports:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
@@ -216,6 +231,24 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.post('/api/memories/:id/publish',async req=>memories.publish((req.params as {id:string}).id));
   app.delete('/api/memories/:id',async req=>memories.delete((req.params as {id:string}).id));
   app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));store.captureReceived(input.deviceId);return reply.code(result.duplicate?200:201).send(result);});
+  app.post('/api/captures/bundle',{bodyLimit:12*1024*1024},async req=>{
+    const captures=parseCaptureBundle(req.body);
+    if(new Set(captures.map(c=>c.id)).size!==captures.length)throw new StoreError('Duplicate IDs in bundle');
+    const c=credential(req);
+    if(c)for(const input of captures)connections.assertCapture(c,input);
+    const results=[];
+    for(const input of captures){
+      try {
+        const result=await diagnostics.measure('ingest','capture',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));
+        store.captureReceived(input.deviceId);
+        results.push({...result,status:result.duplicate?200:201});
+      } catch(error) {
+        const failure=safeError(error);
+        results.push({id:input.id,status:failure.status,error:failure.category});
+      }
+    }
+    return {results};
+  });
   // Bounded transport batch with independent durable acknowledgements. Validate the
   // entire envelope and credential scope before writing any member of the batch.
   app.post('/api/captures/batch',{bodyLimit:12*1024*1024},async req=>{

@@ -6,11 +6,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.WorkManager
 import androidx.work.WorkInfo
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.Closeable
+import java.io.ByteArrayInputStream
+import java.util.zip.GZIPInputStream
 import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -234,15 +237,18 @@ class OfflineSyncInstrumentedTest {
                 client.soTimeout = 5_000
                 val input = client.getInputStream()
                 fun line(): String { val value = StringBuilder(); while (true) { val byte = input.read(); if (byte < 0 || byte == 10) break; if (byte != 13) value.append(byte.toChar()) }; return value.toString() }
-                val route = line().split(' ').getOrNull(1); var length = 0
-                while (true) { val header = line(); if (header.isEmpty()) break; if (header.startsWith("Content-Length:", true)) length = header.substringAfter(':').trim().toInt() }
-                require(length in 0..1_000_000); val data = ByteArray(length); var read = 0
+                val route = line().split(' ').getOrNull(1); var length = 0; var contentType = ""
+                while (true) { val header = line(); if (header.isEmpty()) break; if (header.startsWith("Content-Length:", true)) length = header.substringAfter(':').trim().toInt(); if (header.startsWith("Content-Type:", true)) contentType = header.substringAfter(':').trim() }
+                require(length in 0..(12 * 1024 * 1024)); val data = ByteArray(length); var read = 0
                 while (read < length) { val count = input.read(data, read, length - read); require(count > 0); read += count }
-                val body = JSONObject(String(data, Charsets.UTF_8)); requests.incrementAndGet()
+                val body = if (contentType.startsWith(CaptureBundle.CONTENT_TYPE)) {
+                    val lines = GZIPInputStream(ByteArrayInputStream(data)).bufferedReader().readLines()
+                    JSONObject().put("captures", JSONArray(lines.map(::JSONObject)))
+                } else JSONObject(String(data, Charsets.UTF_8)); requests.incrementAndGet()
                 var responseStatus = 200
                 val result = when (route) {
                     "/api/devices/heartbeat" -> { heartbeats.incrementAndGet(); require(body.has("sync")); lastSync = body.getJSONObject("sync"); JSONObject().put("ok", true) }
-                    "/api/captures/batch" -> {
+                    "/api/captures/bundle", "/api/captures/batch" -> {
                         batches.incrementAndGet()
                         if (fault == "legacy") { responseStatus = 403; JSONObject().put("error", "forbidden") }
                         else {

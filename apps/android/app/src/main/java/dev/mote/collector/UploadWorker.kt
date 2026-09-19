@@ -13,8 +13,12 @@ object HttpJson {
     @Volatile var onRequest: (() -> Unit)? = null
     @Volatile var onComplete: ((Long) -> Unit)? = null
     fun post(url: String, body: JSONObject, token: String? = null): Pair<Int, JSONObject?> = request("POST", url, body, token)
+    fun postBytes(url: String, body: ByteArray, token: String? = null, contentType: String): Pair<Int, JSONObject?> =
+        requestBytes("POST", url, body, token, contentType)
     fun get(url: String, token: String? = null): Pair<Int, JSONObject?> = request("GET", url, null, token)
-    fun request(method: String, url: String, body: JSONObject?, token: String? = null, maxResponseBytes: Int = 256 * 1024): Pair<Int, JSONObject?> {
+    fun request(method: String, url: String, body: JSONObject?, token: String? = null, maxResponseBytes: Int = 256 * 1024): Pair<Int, JSONObject?> =
+        requestBytes(method, url, body?.toString()?.toByteArray(Charsets.UTF_8), token, "application/json", maxResponseBytes)
+    fun requestBytes(method: String, url: String, body: ByteArray?, token: String? = null, contentType: String = "application/json", maxResponseBytes: Int = 256 * 1024): Pair<Int, JSONObject?> {
         val started = android.os.SystemClock.elapsedRealtime()
         runCatching { onRequest?.invoke() }
         val connection = URL(url).openConnection() as HttpURLConnection
@@ -24,17 +28,16 @@ object HttpJson {
             connection.readTimeout = 30_000
             connection.instanceFollowRedirects = false // Never leak owner tokens through redirects.
             connection.doOutput = body != null
-            connection.setRequestProperty("Content-Type", "application/json")
+            if (body != null) connection.setRequestProperty("Content-Type", contentType)
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
-                val bytes = body.toString().toByteArray(Charsets.UTF_8)
-                connection.setFixedLengthStreamingMode(bytes.size)
+                connection.setFixedLengthStreamingMode(body.size)
                 connection.outputStream.use { out ->
                     var offset = 0
-                    while (offset < bytes.size) {
-                        val count = minOf(64 * 1024, bytes.size - offset)
-                        out.write(bytes, offset, count); offset += count
+                    while (offset < body.size) {
+                        val count = minOf(64 * 1024, body.size - offset)
+                        out.write(body, offset, count); offset += count
                         if (url.substringAfter("/api/", "").substringBefore('/') in setOf("captures", "capture-browser", "file-sync", "sources")) UploadMeter.add(count.toLong())
                     }
                 }
@@ -91,9 +94,11 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             settings.syncStatus("uploading", MoteI18n.text("正在同步本机记录"))
             if (!inputData.getBoolean("continuation", false)) SourceWork.enqueueUpload(applicationContext, config, explicit)
             Diagnostics(applicationContext).add("uploadSessions")
-            var remaining = 25
+            // The configured batch size is the number of records in one worker
+            // operation. The new compressed JSONL transport supports up to 500;
+            // older JSON batch endpoints are still capped to 25 on fallback.
+            var remaining = config.syncBatchSize.coerceIn(1, 500)
             while (remaining > 0) {
-                remaining--
                 if (isStopped || ConnectionGuard.reconfiguring()) return Result.retry()
                 SyncSchedule.waitingReason(applicationContext, config)?.let {
                     settings.syncStatus("waiting", it); return Result.retry()
@@ -121,27 +126,57 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     settings.syncStatus("uploading", MoteI18n.text("文字识别已更新至中央归档"), uploaded = true)
                     continue
                 }
-                val events = queue.peekBatch(remaining + 1)
+                val events = queue.peekBatch(maxCount = remaining, metadataWindowMinutes = config.jsonlWindowMinutes)
                 if (events.isEmpty()) {
                     finishStatus()
                     runCatching { SyncHeartbeat.send(applicationContext, settings, config, queue) }
                     return Result.success()
                 }
                 stage = EventStage.UPLOAD
-                val capability = applicationContext.getSharedPreferences("batch-capability", Context.MODE_PRIVATE)
-                val legacy = !config.packedUpload || capability.getString("server", null) == config.server &&
+                val capability = applicationContext.getSharedPreferences("bundle-capability", Context.MODE_PRIVATE)
+                val bundleUnsupported = capability.getString("server", null) == config.server &&
                     System.currentTimeMillis() - capability.getLong("at", 0) in 0 until 86_400_000L
-                var sent = if (legacy) events.take(1) else events
+                val useBundle = config.packedUpload && !bundleUnsupported
+                var sent = when {
+                    useBundle -> events
+                    config.packedUpload -> events.take(25)
+                    else -> events.take(1)
+                }
                 pendingRecordId = sent.first().getString("id")
-                val body = JSONObject().put("captures", org.json.JSONArray(sent))
-                var response = if (legacy) HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
-                    else HttpJson.post("${config.server}/api/captures/batch", body, config.token)
-                var individual = legacy
-                if (!legacy && response.first in setOf(403, 404, 405, 413)) {
-                    if (response.first != 413) capability.edit().putString("server", config.server).putLong("at", System.currentTimeMillis()).apply()
-                    sent = events.take(1); individual = true
+                var wireBytes = 0L
+                var response: Pair<Int, JSONObject?>
+                var individual = !config.packedUpload
+                if (useBundle) {
+                    val bundle = CaptureBundle.encode(sent)
+                    wireBytes = bundle.size.toLong()
+                    response = HttpJson.postBytes("${config.server}/api/captures/bundle", bundle, config.token, CaptureBundle.CONTENT_TYPE)
+                    if (response.first in setOf(403, 404, 405, 413)) {
+                        capability.edit().putString("server", config.server).putLong("at", System.currentTimeMillis()).apply()
+                        sent = events.take(25)
+                        val fallback = JSONObject().put("captures", org.json.JSONArray(sent))
+                        wireBytes = fallback.toString().toByteArray(Charsets.UTF_8).size.toLong()
+                        response = HttpJson.post("${config.server}/api/captures/batch", fallback, config.token)
+                        individual = false
+                        if (response.first in setOf(403, 404, 405, 413)) {
+                            sent = events.take(1); individual = true
+                            wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
+                            response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
+                        }
+                    }
+                } else if (config.packedUpload) {
+                    val body = JSONObject().put("captures", org.json.JSONArray(sent))
+                    wireBytes = body.toString().toByteArray(Charsets.UTF_8).size.toLong()
+                    response = HttpJson.post("${config.server}/api/captures/batch", body, config.token)
+                    if (response.first in setOf(403, 404, 405, 413)) {
+                        sent = events.take(1); individual = true
+                        wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
+                        response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
+                    }
+                } else {
+                    wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
                     response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
                 }
+                Diagnostics(applicationContext).add("uploadBytes", wireBytes)
                 val receipts = if (individual) {
                     if (response.first in setOf(200, 201) && response.second?.optString("id") != pendingRecordId) return failed(MoteI18n.text("上传确认 ID 不匹配"))
                     mapOf(pendingRecordId!! to response.first)
@@ -151,6 +186,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 }
                 var retry = false
                 var permanent = false
+                var acknowledged = 0
                 for (event in sent) {
                     val id = event.getString("id")
                     val code = receipts[id]
@@ -158,8 +194,8 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                         200, 201 -> {
                             val bytes = event.toString().toByteArray(Charsets.UTF_8).size.toLong()
                             queue.acknowledge(id, bytes, config.uploadedRetentionDays, observations = event.optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 0)
-                            Diagnostics(applicationContext).add("uploadBytes", bytes)
-                            SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
+                            acknowledged++
+                            if (individual) SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = code)
                             settings.syncStatus("uploading", MoteI18n.text("已收到上传确认"), uploaded = true)
                         }
                         409 -> queue.uploadConflict(id)
@@ -167,8 +203,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                         else -> { retry = true; if (code in setOf(400, 401, 403, 413)) permanent = true }
                     }
                 }
+                if (!individual && acknowledged > 0) SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = response.first)
                 pendingRecordId = null
-                remaining -= sent.size - 1
+                remaining -= sent.size
                 if (retry) return failed(MoteI18n.text("部分记录未确认"), !permanent)
 
             }
