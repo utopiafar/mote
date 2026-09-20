@@ -107,7 +107,7 @@
 | `MOTE_DEBUG` | `0` | 0/1；增加固定阶段事件，将非 silent 的日志级别提升为 debug；不记录原文或模型提示词 |
 | `MOTE_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` / `silent` |
 | `MOTE_LOG_DIR` | 空 | 为空使用数据目录下 `logs/`；CLI 原生新环境为 `./logs`；Docker 强制 `/data/logs` |
-| `MOTE_LOG_MAX_MB` | `2` | 0.1–8 MiB，每个结构化日志文件上限 |
+| `MOTE_LOG_MAX_MB` | `2` | 0.1–8 MiB，每个结构化日志文件上限；跨 UTC 日期或达到上限时轮转 |
 | `MOTE_LOG_MAX_FILES` | `3` | 1–10 整数，轮转文件总数 |
 | `MOTE_LOG_MAX_ENTRIES` | `2000` | 100–5000 整数，内存最近事件上限 |
 

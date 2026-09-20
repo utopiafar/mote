@@ -27,11 +27,13 @@ const responseReasons:Record<string,string>={
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const bounded=(n:number|undefined,fallback:number,min:number,max:number)=>Math.min(max,Math.max(min,Math.floor(typeof n==='number'&&Number.isFinite(n)?n:fallback)));
+const logDay=(at:string)=>at.slice(0,10);
 const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
+type QueuedLine = {line:string;day:string};
 export type EventFields = Metrics & { requestId?:string;jobId?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string;reason?:string };
 export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'> }
-export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxFiles?:number;maxEntries?:number }
+export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxFiles?:number;maxEntries?:number;now?:()=>Date }
 
 /** Error text, stacks, headers, provider bodies and arbitrary codes never cross this boundary. */
 export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
@@ -80,10 +82,12 @@ export class ServerDiagnostics {
   private readonly maxBytes:number;
   private readonly maxFiles:number;
   private readonly maxEntries:number;
+  private readonly now:()=>Date;
   private entries:DiagnosticEvent[]=[];
-  private queue:string[]=[];
+  private queue:QueuedLine[]=[];
   private seq=0;
   private currentBytes=0;
+  private currentDay?:string;
   private pending?:Promise<void>;
   private initialization?:Promise<void>;
   private closingPromise?:Promise<void>;
@@ -100,6 +104,7 @@ export class ServerDiagnostics {
     this.maxBytes=bounded(options.maxBytes,2*1024*1024,1024,8*1024*1024);
     this.maxFiles=bounded(options.maxFiles,3,1,10);
     this.maxEntries=bounded(options.maxEntries,2000,1,5000);
+    this.now=options.now??(()=>new Date());
   }
   private path(index:number) {return join(this.options.directory,`central.${index}.ndjson`);}
   private async acquireLock() {
@@ -129,6 +134,7 @@ export class ServerDiagnostics {
         const match=/^central\.([0-9]+)\.ndjson$/.exec(entry.name);
         if(entry.isFile()&&match&&Number(match[1])>=this.maxFiles)await unlink(join(this.options.directory,entry.name));
       }
+      let currentDay:string|undefined;
       for(let index=this.maxFiles-1;index>=0;index--) {
         try {
           const file=await open(this.path(index),constants.O_RDWR|constants.O_NOFOLLOW);
@@ -143,22 +149,24 @@ export class ServerDiagnostics {
           finally {await file.close();}
           for(const line of raw.split('\n')) {
             if(!line||line.length>2048)continue;
-            try {const event=cleanEvent(JSON.parse(line));if(event){this.entries.push(event);this.seq=Math.max(this.seq,event.seq);if(this.entries.length>this.maxEntries)this.entries.shift();}}catch{this.readFailures++;}
+            try {const event=cleanEvent(JSON.parse(line));if(event){this.entries.push(event);this.seq=Math.max(this.seq,event.seq);if(index===0)currentDay=logDay(event.at);if(this.entries.length>this.maxEntries)this.entries.shift();}}catch{this.readFailures++;}
           }
         }catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')this.readFailures++;}
       }
       try{this.currentBytes=(await stat(this.path(0))).size;}catch{}
+      this.currentDay=currentDay;
     }catch{this.writeFailures++;this.nextAttempt=Date.now()+30000;}
   }
   run<T>(requestId:string,task:()=>T):T {return this.context.run(uuid.test(requestId)?requestId:randomUUID(),task);}
   record(event:string,value:EventFields={},level:DiagnosticEvent['level']='info') {
     if(this.closed||!this.enabled||this.level==='silent'||!events.has(event)||!['debug','info','warn','error'].includes(level)||levels.indexOf(level)<levels.indexOf(this.level))return;
-    const entry:DiagnosticEvent={seq:++this.seq,at:new Date().toISOString(),instanceId:this.instanceId,event,level,...fields({requestId:this.context.getStore(),...value})};
+    const at=this.now().toISOString();
+    const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event,level,...fields({requestId:this.context.getStore(),...value})};
     const line=JSON.stringify(entry)+'\n';
     if(Buffer.byteLength(line)>Math.min(2048,this.maxBytes)){this.dropped++;return;}
     this.entries.push(entry);if(this.entries.length>this.maxEntries)this.entries.shift();
     if(!this.writable||this.queue.length>=Math.min(this.maxEntries,1024)||Date.now()<this.nextAttempt){this.dropped++;return;}
-    this.queue.push(line);this.startWrite();
+    this.queue.push({line,day:logDay(at)});this.startWrite();
   }
   async measure<T>(stage:Stage,operation:Operation,task:()=>Promise<T>|T,metrics?:(result:T)=>Metrics):Promise<T> {
     const start=performance.now();this.record(`${stage}.started`,{operation},'debug');
@@ -177,12 +185,20 @@ export class ServerDiagnostics {
     try {
       await mkdir(this.options.directory,{recursive:true,mode:0o700});
       while(this.queue.length) {
-        const lines:string[]=[];let bytes=0;
-        if(this.currentBytes+Buffer.byteLength(this.queue[0])>this.maxBytes)await this.rotate();
-        while(this.queue.length&&lines.length<64&&this.currentBytes+bytes+Buffer.byteLength(this.queue[0])<=this.maxBytes){const line=this.queue.shift()!;lines.push(line);bytes+=Buffer.byteLength(line);}
+        const first=this.queue[0];
+        if(!this.currentDay||this.currentBytes===0)this.currentDay=first.day;
+        if(this.currentBytes>0&&first.day!==this.currentDay){await this.rotate();this.currentDay=first.day;}
+        if(this.currentBytes+Buffer.byteLength(first.line)>this.maxBytes){await this.rotate();this.currentDay=first.day;}
+        const lines:QueuedLine[]=[];let bytes=0;
+        while(this.queue.length&&lines.length<64){
+          const next=this.queue[0],size=Buffer.byteLength(next.line);
+          if(next.day!==this.currentDay||this.currentBytes+bytes+size>this.maxBytes)break;
+          lines.push(this.queue.shift()!);bytes+=size;
+        }
+        if(!lines.length){this.dropped++;this.queue.shift();continue;}
         this.writingCount=lines.length;
         const file=await open(this.path(0),constants.O_CREAT|constants.O_APPEND|constants.O_WRONLY|constants.O_NOFOLLOW,0o600);
-        try{await file.chmod(0o600);await file.writeFile(lines.join(''));}finally{await file.close();}
+        try{await file.chmod(0o600);await file.writeFile(lines.map(item=>item.line).join(''));}finally{await file.close();}
         this.currentBytes+=bytes;this.writingCount=0;
       }
     }catch{this.writeFailures++;this.dropped+=this.queue.length+this.writingCount;this.writingCount=0;this.queue=[];this.nextAttempt=Date.now()+30000;}

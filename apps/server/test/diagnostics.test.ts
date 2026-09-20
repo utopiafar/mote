@@ -45,6 +45,16 @@ test('log rotation, memory, pending queue and forward cursor remain bounded unde
   assert.deepEqual(received,all.map(r=>r.seq));assert.deepEqual(d.recent(3).map(r=>r.seq),all.slice(-3).map(r=>r.seq));
 });
 
+test('daily boundaries rotate without changing indexed file compatibility',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-daily-'));let now=new Date('2026-09-20T23:59:59.000Z');
+  const options=()=>({directory,debug:true,maxBytes:1024,maxFiles:3,now:()=>now});const d=new ServerDiagnostics(options());t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
+  d.record('server.started');await d.flush();await d.close();
+  now=new Date('2026-09-21T00:00:00.000Z');const restarted=new ServerDiagnostics(options());await restarted.init();restarted.record('server.started');await restarted.flush();
+  const current=JSON.parse((await readFile(join(directory,'central.0.ndjson'),'utf8')).trim());const history=JSON.parse((await readFile(join(directory,'central.1.ndjson'),'utf8')).trim());
+  assert.equal(current.at.slice(0,10),'2026-09-21');assert.equal(history.at.slice(0,10),'2026-09-20');assert.equal((await restarted.readRaw(0)).trim(),JSON.stringify(current));assert.equal((await restarted.readRaw(1)).trim(),JSON.stringify(history));
+  await restarted.close();
+});
+
 test('restart filters foreign fields, discards partial writes, bounds old logs and preserves sequence',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-restart-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   const event={seq:8,at:new Date().toISOString(),instanceId:randomUUID(),event:'source.completed',level:'info',operation:'evidence',count:1,message:marker,requestId:marker};
