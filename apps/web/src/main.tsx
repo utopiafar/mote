@@ -745,7 +745,8 @@ function RecordTimeline({
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const marker = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(0);
+  const [pageCursors, setPageCursors] = useState<(string | undefined)[]>([undefined]);
   const requestVersion = useRef(0);
   const inFlight = useRef(false);
   const request = useRef<AbortController | null>(null);
@@ -760,7 +761,7 @@ function RecordTimeline({
     [after, before, device, collection, source, ocrStatus],
   );
   const load = useCallback(
-    async (next?: string, version = requestVersion.current) => {
+    async (next?: string, version = requestVersion.current, targetPage = 0) => {
       if (inFlight.current && next) return;
       request.current?.abort();
       const controller = new AbortController();
@@ -775,18 +776,9 @@ function RecordTimeline({
           totalCount: number;
         }>(`/api/capture-browser${queryString(range, { limit: 24, cursor: next })}`, {signal: controller.signal});
         if (requestVersion.current !== version || controller.signal.aborted) return;
-        setItems((previous) =>
-          next
-            ? [
-                ...previous,
-                ...result.items.filter(
-                  (item) => !previous.some(
-                    (old) => old.id === item.id,
-                  ),
-                ),
-              ]
-            : result.items,
-        );
+        setItems(result.items);
+        setPage(targetPage);
+        setPageCursors(previous => [...previous.slice(0, targetPage), next]);
         setCursor(result.nextCursor);
         setTotalCount(result.totalCount);
       } catch (e) {
@@ -803,23 +795,14 @@ function RecordTimeline({
   useEffect(() => {
     const version = ++requestVersion.current;
     setItems([]);
+    setPage(0);
+    setPageCursors([undefined]);
     setCursor(null);
     setTotalCount(undefined);
     inFlight.current = false;
     void load(undefined, version);
     return () => {request.current?.abort();requestVersion.current++;};
   }, [load, revision, refreshVersion]);
-  useEffect(() => {
-    if (!cursor || loading || error || !marker.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) void load(cursor);
-      },
-      { rootMargin: "160px" },
-    );
-    observer.observe(marker.current);
-    return () => observer.disconnect();
-  }, [cursor, loading, error, load]);
   const groups = useMemo(() => {
     const result = new Map<string, CapturePreview[]>();
     for (const item of items) {
@@ -899,13 +882,13 @@ function RecordTimeline({
           >
             {moteText("清除筛选")}</button>
         )}
-        <span className="filter-count">{moteText("已读取")}{' '}{items.length}{totalCount === undefined ? '' : ` / ${totalCount}`}{' '}{moteText("条")}</span>
+        <span className="filter-count">{totalCount === undefined ? moteText("已读取") + " " + items.length : moteText("共 {0} 条 · 本页 {1} 条", totalCount, items.length)}</span>
       </div>
       <p className="capture-browse-note">{moteText("日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；待充电的 OCR 由采集端补做，结果同步后可刷新查看。")}</p>
       {error && (
         <ErrorNotice
           text={error}
-          retry={() => void load(cursor || undefined)}
+          retry={() => void load(pageCursors[page], requestVersion.current, page)}
         />
       )}
       {groups.map(([day, records]) => (
@@ -939,16 +922,11 @@ function RecordTimeline({
           </Empty>
         </div>
       )}
-      <div ref={marker} className="load-more">
-        {cursor && !loading && (
-          <button className="button subtle" onClick={() => void load(cursor)}>
-            {moteText("加载更早的记录")}{' '}<ChevronDown size={14} />
-          </button>
-        )}
-        {!cursor && items.length > 0 && !loading && (
-          <span>{moteText("已经走到这些片刻的起点了。")}</span>
-        )}
-      </div>
+      <nav className="load-more" aria-label={moteText("采集记录分页")}>
+        <button className="button subtle" disabled={loading || page === 0} onClick={() => void load(pageCursors[page - 1], requestVersion.current, page - 1)}>{moteText("上一页")}</button>
+        <span>{moteText("第 {0} 页", page + 1)}</span>
+        <button className="button subtle" disabled={loading || !cursor} onClick={() => cursor && void load(cursor, requestVersion.current, page + 1)}>{moteText("下一页")}</button>
+      </nav>
     </>
   );
 }
