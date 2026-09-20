@@ -5007,5 +5007,12 @@ export const english: Readonly<Record<string, string>> = {
   "记录来源": "Record source",
   "页面记录：{0} 条": "Page records: {0}",
   "应用版本": "App version",
-  "页面记录已确认上传": "Page upload acknowledged"
+  "页面记录已确认上传": "Page upload acknowledged",
+  "登录会话有效期": "Sign-in session lifetime",
+  "当前窗口（Session）": "Current window (Session)",
+  "7 天": "7 days",
+  "令牌会保存在此浏览器中，并在所选期限后自动清除；退出登录会立即清除。": "The token is kept in this browser and cleared after the selected period; signing out clears it immediately.",
+  "仅保留在当前浏览器标签页；关闭后需要重新登录。": "Kept only in this browser tab; closing it requires signing in again.",
+  "管理令牌仍由中央节点控制；浏览器中的登录会话会在期限后自动清除。": "The central node still controls the management token; the browser sign-in session is cleared after the selected period.",
+  "这是网页端登录会话的本地保存期限，不会修改中央节点的管理令牌或采集端凭据。": "This is the local retention period for the web sign-in session. It does not change the central management token or collector credentials."
 };

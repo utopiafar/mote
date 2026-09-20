@@ -7,7 +7,7 @@ import {Usage,TurnUsage} from './Usage';
 import {Actions} from './Actions';
 import {CaptureSessions} from './CaptureSessions';
 import {ContentStorage} from './ContentStorage';
-import { restoreSession } from "./session";
+import { clearSession, persistSession, readSessionLifetime, readStoredSession, saveSessionLifetime, type SessionLifetime } from "./session";
 import {systemEventText} from '@mote/shared';
 import React, {
   useCallback,
@@ -121,7 +121,7 @@ const periodNames: Record<string, string> = {
 };
 const readConnection = () => {
   try {
-    return restoreSession(sessionStorage.getItem("mote.connection"), window.location.origin);
+    return readStoredSession(window.location.origin);
   } catch {
     return null;
   }
@@ -363,10 +363,11 @@ function CaptureCard({
 
 function LoginDialog({ destination, onConnected, onClose }: {
   destination: string;
-  onConnected: (value: Connection) => void;
+  onConnected: (value: Connection, lifetime: SessionLifetime) => void;
   onClose: () => void;
 }) {
   const [token, setToken] = useState("");
+  const [lifetime, setLifetime] = useState<SessionLifetime>(readSessionLifetime);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const active = useRef<AbortController | null>(null);
@@ -381,7 +382,7 @@ function LoginDialog({ destination, onConnected, onClose }: {
       const connection = {token: token.trim()};
       // A collector credential must never unlock owner-only management pages.
       await createApi(connection).request("/api/configuration", {signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])});
-      if (!controller.signal.aborted) onConnected(connection);
+      if (!controller.signal.aborted) onConnected(connection, lifetime);
     } catch (e) {
       if (!controller.signal.aborted) setError(e instanceof ApiError && e.status === 401
         ? moteText("令牌无效或已失效，请检查后重新登录。")
@@ -400,7 +401,8 @@ function LoginDialog({ destination, onConnected, onClose }: {
       <form onSubmit={connect}>
         <p className="login-endpoint">{moteText("当前服务")}{' '}<strong>{window.location.origin}</strong></p>
         <label>{moteText("管理访问令牌")}<input aria-label={moteText("管理访问令牌")} autoFocus type="password" autoComplete="off" placeholder={moteText("输入此节点的管理令牌")} value={token} onChange={e=>setToken(e.target.value)} required disabled={busy}/></label>
-        <div className="field-note"><ShieldCheck size={15}/>{moteText("令牌只保留在当前标签页会话，退出登录后清除。")}</div>
+        <label className="session-lifetime-control"><span>{moteText("登录会话有效期")}</span><select aria-label={moteText("登录会话有效期")} value={lifetime} onChange={e=>setLifetime(e.target.value as SessionLifetime)} disabled={busy}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label>
+        <div className="field-note"><ShieldCheck size={15}/>{lifetime==='session'?moteText("令牌只保留在当前标签页会话，退出登录后清除。"):moteText("令牌会保存在此浏览器中，并在所选期限后自动清除；退出登录会立即清除。")}</div>
         {error && <ErrorNotice text={error}/>}
         <button className="button primary full" disabled={busy}>{busy ? <Spinner label={moteText("正在验证令牌…")}/> : <>{moteText("登录并继续")}<ArrowRight size={16}/></>}</button>
       </form>
@@ -1254,6 +1256,7 @@ function App() {
   const [connection, setConnection] = useState<Connection | null>(
     readConnection,
   );
+  const [sessionLifetime, setSessionLifetime] = useState<SessionLifetime>(readSessionLifetime);
   const connectionGeneration = useRef(0);
   const [verified, setVerified] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
@@ -1280,7 +1283,7 @@ function App() {
   const [timelineRevision, setTimelineRevision] = useState(0);
   const disconnect = useCallback(() => {
     connectionGeneration.current++;
-    sessionStorage.removeItem("mote.connection");
+    clearSession();
     setConnection(null);
     setVerified(false);
     setShowConnect(false);
@@ -1299,6 +1302,20 @@ function App() {
     setNotice(moteText("登录已失效，请重新输入管理令牌。"));
     setShowConnect(true);
   }, [disconnect]);
+  useEffect(() => {
+    if (!connection?.expiresAt) return;
+    let timer: number | undefined;
+    const check = () => {
+      const remaining = connection.expiresAt! - Date.now();
+      if (remaining <= 0) {
+        unauthorized();
+        return;
+      }
+      timer = window.setTimeout(check, Math.min(remaining, 2_147_483_647));
+    };
+    check();
+    return () => { if (timer !== undefined) window.clearTimeout(timer); };
+  }, [connection, unauthorized]);
   const api = useMemo(
     () => {
       const generation = connectionGeneration.current;
@@ -1367,16 +1384,22 @@ function App() {
     setMenuOpen(false);
     window.scrollTo({ top: 0 });
   }
-  function connected(value: Connection) {
+  function connected(value: Connection, lifetime: SessionLifetime = sessionLifetime) {
     connectionGeneration.current++;
-    sessionStorage.setItem("mote.connection", JSON.stringify(value));
-    setConnection(value);
+    saveSessionLifetime(lifetime);
+    setSessionLifetime(lifetime);
+    setConnection(persistSession(value, lifetime));
     setVerified(false);
     setStatus(null);
     setDevices([]); setRecent([]); setInsights([]); setEvidenceId(null);
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
     setShowConnect(false);
     setNotice("");
+  }
+  function changeSessionLifetime(lifetime: SessionLifetime) {
+    saveSessionLifetime(lifetime);
+    setSessionLifetime(lifetime);
+    if (connection) setConnection(persistSession(connection, lifetime));
   }
   return (
     <div className="app-shell">
@@ -1640,7 +1663,7 @@ function App() {
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><PageBack title={moteText("设备")} onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
                       {page === "developer" && status && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("开发与维护")}</div><h1>{moteText("开发者选项")}</h1><p>{moteText("查看运行诊断，按需调整日志与高级部署配置。")}</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
-                      {page === "about" && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("你的资料，由你保管")}</div><h1>{moteText("关于 Mote")}</h1><p>{moteText("AI 原生个人上下文采集与中央归档。")}</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>{moteText("当前服务（中央节点）")}</h2><p>{window.location.origin}</p><p className="fine-print">{moteText("访问令牌只保留在当前标签页会话。")}</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>{moteText("退出登录")}</button></section></>}
+                      {page === "about" && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("你的资料，由你保管")}</div><h1>{moteText("关于 Mote")}</h1><p>{moteText("AI 原生个人上下文采集与中央归档。")}</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>{moteText("当前服务（中央节点）")}</h2><p>{window.location.origin}</p><label className="session-lifetime-control"><span><strong>{moteText("登录会话有效期")}</strong><small>{sessionLifetime==='session'?moteText("仅保留在当前浏览器标签页；关闭后需要重新登录。"):moteText("管理令牌仍由中央节点控制；浏览器中的登录会话会在期限后自动清除。")}</small></span><select aria-label={moteText("登录会话有效期")} value={sessionLifetime} onChange={e=>changeSessionLifetime(e.target.value as SessionLifetime)}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label><p className="fine-print">{moteText("这是网页端登录会话的本地保存期限，不会修改中央节点的管理令牌或采集端凭据。")}</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>{moteText("退出登录")}</button></section></>}
                     </>
                   )}
             </>
