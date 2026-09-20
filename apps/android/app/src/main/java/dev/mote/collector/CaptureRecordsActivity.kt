@@ -165,7 +165,7 @@ class CaptureRecordsActivity : MoteActivity() {
                 val settings = Settings(this); val config = settings.read()
                 if (remote && !config.hasSyncConnection()) error(MoteI18n.text("请先在连接与同步中配置中央节点"))
                 val client = if (remote) CaptureRecordClient(config, settings.deviceId) else null
-                val page = if (source == "screen" && sessions) {
+        val page = if (source == "screen" && sessions) {
                     client?.sessions(after, before, cursor, selected?.getString("id")) ?: queue().sessionPage(after, before, cursor, selected?.getString("id"))
                 } else if (source == "screen" && selected == null) {
                     client?.albums(after, before, cursor) ?: queue().albumPage(after, before, cursor)

@@ -50,7 +50,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     fun canCollect(config: CollectorConfig, windows: WindowSnapshot, expected: AppCollectionMode): Boolean {
         if (closed || !config.screenCollectionEnabled || ConnectionGuard.changing() || !settings.enabled || busy.get()) return false
         val selected = policy(config, windows)
-        if (selected == AppCollectionMode.OFF) { pause(if (!windows.trustworthy) MoteI18n.text("当前应用规则要求完整窗口信息，暂停本次采样") else MoteI18n.text("当前可见窗口的应用规则不允许本次采样"), if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
+        if (selected == AppCollectionMode.OFF) { pause(if (protectedWindow(windows)) "Mote 页面受系统防截屏保护，已跳过；离开后自动恢复" else if (!windows.trustworthy) MoteI18n.text("当前应用规则要求完整窗口信息，暂停本次采样") else MoteI18n.text("当前可见窗口的应用规则不允许本次采样"), if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
         if (selected != expected) return false
         if (!unlocked(context)) { pause(MoteI18n.text("锁屏或熄屏，暂停采集"), OperationReason.LOCKED); return false }
         val battery = Diagnostics.battery(context)
@@ -109,6 +109,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 if (!settings.enabled || !unlocked(context) || closed || settings.read() != config || policy(config, windows) != AppCollectionMode.CONTENT) { Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return@execute }
                 val reason = PrivacyRules.excludedReason(PrivacyRules.exclusions(config.excludedPackages), windows.packages, windows.trustworthy)
                 if (reason != null) { Operations.record(context, OperationKind.FRAME_BLOCKED, if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); pause(reason); return@execute }
+                if (CapturedFrame.isBlank(bitmap)) { pause("系统返回空白屏幕帧，已跳过；下一周期重试", OperationReason.SYSTEM); return@execute }
                 stage = EventStage.QUEUE
                 checkStorage(config)
                 // Approximate matches only discard this frame. They never inherit an approval,
@@ -177,6 +178,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     capture.put("ocrEnabled", false).put("deduplication", JSONObject().put("mode", config.imageDedupeMode).put("duplicate", true))
                     event.put("metadata", metadata.put("capture", capture))
                 }
+                if (protectedWindow(windows)) { pause("窗口状态已变化，此帧未保存"); return@execute }
                 stage = EventStage.QUEUE
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.STARTED)
                 settings.ensureDataOrigin(config)
@@ -242,7 +244,13 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     }
     @Synchronized fun close() { if (closed) return; closed = true; dedupeReference = null; if (nsfwInstance.isInitialized()) nsfw.close(); executor.execute { if (ocrInstance.isInitialized()) ocrInstance.value.close() }; executor.shutdown() }
     companion object {
-        fun policy(config: CollectorConfig, windows: WindowSnapshot) = config.collectionRules.decide(windows, PrivacyRules.exclusions(config.excludedPackages))
+        fun protectedWindow(windows: WindowSnapshot) = MoteApplication.visibleActivities > 0 || BuildConfig.APPLICATION_ID in windows.packages || windows.foreground == BuildConfig.APPLICATION_ID
+        fun policy(config: CollectorConfig, windows: WindowSnapshot): AppCollectionMode {
+            val selected = config.collectionRules.decide(windows, PrivacyRules.exclusions(config.excludedPackages))
+            // FLAG_SECURE pages yield black/partial frames. Also detect our visible activity
+            // without accessibility permission; retain explicit activity-only accounting.
+            return if (selected == AppCollectionMode.CONTENT && protectedWindow(windows)) AppCollectionMode.OFF else selected
+        }
         fun unlocked(context: Context): Boolean = context.getSystemService(PowerManager::class.java).isInteractive &&
             !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
     }

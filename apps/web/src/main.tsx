@@ -780,7 +780,9 @@ function RecordTimeline({
             ? [
                 ...previous,
                 ...result.items.filter(
-                  (item) => !previous.some((old) => old.id === item.id),
+                  (item) => !previous.some(
+                    (old) => old.id === item.id,
+                  ),
                 ),
               ]
             : result.items,

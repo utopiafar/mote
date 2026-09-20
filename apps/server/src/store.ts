@@ -54,6 +54,7 @@ export class Store {
       END;
       CREATE INDEX IF NOT EXISTS captures_time ON captures(captured_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS captures_device ON captures(device_id,captured_at DESC);
+      CREATE INDEX IF NOT EXISTS captures_device_source_time ON captures(device_id,json_extract(json,'$.source'),captured_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS captures_app ON captures(json_extract(json,'$.appId'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_source ON captures(json_extract(json,'$.source'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_collection ON captures(COALESCE(json_extract(json,'$.privacy.collection'),'content'),captured_at DESC);

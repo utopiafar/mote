@@ -490,7 +490,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                 Base64.getUrlEncoder().withoutPadding().encodeToString(JSONObject().put("at", it.getString("capturedAt")).put("id", it.getString("id")).toString().toByteArray())
         }
         JSONObject().put("items", org.json.JSONArray(items.map { display(it).apply { put("textPreview", optString("ocrText").take(160)); remove("ocrText") } }))
-            .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
+        .put("totalCount", matching.size).put("nextCursor", next ?: JSONObject.NULL)
         }
     }
     /** Album/grid paths never deserialize full capture records or OCR text. */

@@ -11,6 +11,7 @@ const assert = require('node:assert/strict');
 const { DurableQueue } = require('../dist/queue');
 const { defaultConfig } = require('../dist/config');
 const { browseCaptures, captureDetail, captureImage, captureDayRange } = require('../dist/capture-browser');
+const { prepareScreenshot, maskScreenshot } = require('../dist/capture-frame');
 const { uploadCapture, uploadDeferredOcr } = require('../dist/transport');
 const root = mkdtempSync(join(tmpdir(), 'mote-capture-browser-fixture-'));
 app.setPath('userData', join(root, 'electron'));
@@ -20,6 +21,22 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const freePort = () => new Promise((resolve, reject) => { const listener = net.createServer(); listener.once('error', reject); listener.listen(0, '127.0.0.1', () => { const port = listener.address().port; listener.close(() => resolve(port)); }); });
 (async () => {
   await app.whenReady();
+  // Generated four-corner fixture proves no crop, including a high-DPI native representation.
+  const width = 120, height = 80, pixels = Buffer.alloc(width * height * 4, 255);
+  for (const [x, y, color] of [[0,0,[0,0,255]],[119,0,[0,255,0]],[0,79,[255,0,0]],[119,79,[0,255,255]]]) {
+    const i = (y * width + x) * 4; pixels.set(color, i);
+  }
+  for (const scaleFactor of [1, 2]) {
+    const source = nativeImage.createFromBitmap(pixels, { width, height, scaleFactor });
+    const frame = prepareScreenshot(source, { width: 120, height: 80 }, 1280);
+    assert.deepEqual(frame.getSize(), { width: 120, height: 80 });
+    assert.deepEqual(frame.toBitmap(), pixels);
+    const masked = maskScreenshot(frame, [{x:0,y:0,width:0.5,height:0.5}]).toBitmap();
+    assert.deepEqual([...masked.subarray(0,4)], [0,0,0,255]);
+    assert.deepEqual(masked.subarray(masked.length-4), pixels.subarray(pixels.length-4));
+  }
+  assert.throws(() => prepareScreenshot(nativeImage.createFromBitmap(Buffer.alloc(120*80*4), {width:120,height:80}), {width:120,height:80}, 1280), /空白/);
+  assert.throws(() => prepareScreenshot(nativeImage.createFromBitmap(pixels, {width:120,height:80}), {width:80,height:120}, 1280), /尺寸/);
   const port = await freePort(), origin = `http://127.0.0.1:${port}`, token = randomBytes(32).toString('hex');
   const envFile = join(root, 'fixture.env');
   writeFileSync(envFile, `MOTE_PROFILE=test\nMOTE_HOST=127.0.0.1\nMOTE_PORT=${port}\nMOTE_TOKEN=${token}\nMOTE_DATA_DIR=${join(root, 'data')}\n`, { mode: 0o600 });
@@ -53,6 +70,7 @@ const freePort = () => new Promise((resolve, reject) => { const listener = net.c
   const detail = await captureDetail(queue, config, 'central', id); assert.equal(detail.ocr.status, 'completed'); assert.equal(detail.ocrText, '合成 OCR <script>文本证据</script>');
   const original = queue.recordsForBrowser().find(r => r.event.id === id).event; await uploadCapture(config, original, jpeg); // Original pending payload still ACKs after OCR patch.
   assert.equal((await captureDetail(queue, config, 'central', id)).ocr.status, 'completed');
+  await assert.rejects(captureImage(queue, { ...config, deviceId: randomUUID() }, 'central', id, true), /不存在/);
   await assert.rejects(captureDetail(queue, { ...config, deviceId: randomUUID() }, 'central', id), /不属于/);
   console.info(JSON.stringify({ ok: true, fixtureOnly: true, generatedPixels: true, localAndCentralPaging: true, terminalNullCursor: true, authenticatedThumbnailsAndOriginal: true, deferredOcrIdempotent: true, originalPostRetryAfterOcr: true, currentDeviceScope: true }));
 })().then(() => finish(0), error => { console.error(error); void finish(1); });

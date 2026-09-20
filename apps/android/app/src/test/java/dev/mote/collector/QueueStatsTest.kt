@@ -29,7 +29,11 @@ class QueueStatsTest {
         repeat(65) { queue.enqueue(screen(), byteArrayOf(1), 2_000_000) }
         queue.stats()
         val before = cipher.opens
-        val first = queue.capturePage("2026-09-14T00:00:00Z", "2026-09-15T00:00:00Z")
+        var counted = false
+        val first = queue.capturePage("2026-09-14T00:00:00Z", "2026-09-15T00:00:00Z", onCount = { total ->
+            assertEquals(65, total); assertEquals(before, cipher.opens); counted = true
+        })
+        assertTrue(counted)
         assertEquals(65, first.getInt("totalCount")); assertEquals(before + 20, cipher.opens)
         val second = DurableQueue(directory, cipher).capturePage("2026-09-14T00:00:00Z", "2026-09-15T00:00:00Z", first.getString("nextCursor"))
         assertEquals(20, second.getJSONArray("items").length()); assertEquals(before + 40, cipher.opens)

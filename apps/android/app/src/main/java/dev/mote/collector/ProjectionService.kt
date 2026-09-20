@@ -2,8 +2,8 @@ package dev.mote.collector
 
 import android.app.*
 import android.content.Intent
+import android.content.res.Configuration
 import android.content.pm.ServiceInfo
-import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -108,6 +108,15 @@ class ProjectionService : Service() {
         return START_NOT_STICKY
     }
     /** No Surface is attached until the live app policy grants this individual sample. */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // API 29–33 have no onCapturedContentResize callback. Rebuild the Surface on rotation.
+        if (Build.VERSION.SDK_INT < 34 && display != null) {
+            val bounds = if (Build.VERSION.SDK_INT >= 30) getSystemService(WindowManager::class.java).maximumWindowMetrics.bounds
+                else android.graphics.Rect(0, 0, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+            resize(bounds.width(), bounds.height())
+        }
+    }
     private fun requestFrame(windows: WindowSnapshot) {
         val c = config ?: return
         if (CapturePipeline.policy(c, windows) != AppCollectionMode.CONTENT || pending != null) return
@@ -128,15 +137,8 @@ class ProjectionService : Service() {
             reader = null; available.setOnImageAvailableListener(null, null); copying = true
             val capturePipeline = pipeline
             try { pixels.execute {
-                var padded: Bitmap? = null
-                val cropped = try {
-                    val plane = image.planes[0]
-                    val paddedWidth = image.width + (plane.rowStride - plane.pixelStride * image.width) / plane.pixelStride
-                    padded = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
-                    padded.copyPixelsFromBuffer(plane.buffer)
-                    Bitmap.createBitmap(padded, 0, 0, image.width, image.height).also { if (it === padded) padded = null }
-                } catch (_: Exception) { null }
-                finally { padded?.recycle(); image.close(); available.close() }
+                val cropped = runCatching { CapturedFrame.copy(image) }.getOrNull()
+                image.close(); available.close()
                 handler.post {
                     copying = false
                     if (cropped != null) {
@@ -173,10 +175,11 @@ class ProjectionService : Service() {
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, null, null, handler)
     }
     private fun resize(width: Int, height: Int) {
+        val sourceChanged = sourceWidth != width || sourceHeight != height
         sourceWidth = width; sourceHeight = height
         val beforeWidth = displayWidth; val beforeHeight = displayHeight
         size(width, height)
-        if (beforeWidth == displayWidth && beforeHeight == displayHeight) return
+        if (!sourceChanged && beforeWidth == displayWidth && beforeHeight == displayHeight) return
         clearPending()
         display?.resize(displayWidth, displayHeight, resources.displayMetrics.densityDpi)
     }
