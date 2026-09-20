@@ -38,6 +38,7 @@ export interface MediaContextRange extends ContextRange {
 }
 
 export interface ContextReader {
+  segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
   readImage?(args:{id:string}):Promise<{mimeType:string;data:string}>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
   timeline(args: ContextRange): Promise<ContextRecord[] | ContextPage>;

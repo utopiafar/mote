@@ -749,7 +749,7 @@ const presetFields: Record<string, [number, string][]> = {
   'battery-pause-below': [[0, moteText("不按电量暂停")], [10, moteText("低于 10%")], [20, moteText("低于 20%")], [30, moteText("低于 30%")]],
   'queue-mb': [[256, moteText("256 MiB · 轻量")], [512, moteText("512 MiB · 默认")], [1024, moteText("1 GiB · 日常")], [5120, moteText("5 GiB · 更多离线记录")], [20480, moteText("20 GiB · 长期离线")]],
   'queue-events': [[1000, moteText("1,000 条")], [10000, moteText("10,000 条")], [50000, moteText("50,000 条")], [100000, moteText("100,000 条")]],
-  'sync-interval': [[15, moteText("15 分钟")], [30, moteText("30 分钟")], [60, moteText("1 小时")], [360, moteText("6 小时")], [1440, moteText("1 天")]],
+  'sync-interval': [[1, '1 min'], [15, moteText("15 分钟")], [30, moteText("30 分钟")], [60, moteText("1 小时")], [360, moteText("6 小时")], [1440, moteText("1 天")]],
   'sync-batch': [[10, moteText("10 条")], [20, moteText("20 条")], [50, moteText("50 条")], [100, moteText("100 条")], [500, moteText("500 条")]],
   'source-interval': [[60, moteText("每分钟")], [300, moteText("每 5 分钟")], [900, moteText("每 15 分钟")], [3600, moteText("每小时")]],
   'jpeg-quality': [[65, moteText("65 · 节省空间")], [75, moteText("75 · 默认")], [80, moteText("80 · 均衡")], [90, moteText("90 · 清晰")]],

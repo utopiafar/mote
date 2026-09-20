@@ -182,12 +182,13 @@ export class FileStore {
     if(args.source&&args.source!=='file'||args.collection==='activity')return [];
     const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id','c.embedding_model=?','c.embedding IS NOT NULL'],values:(string|number)[]=[model];
     for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.captured_at'],['before','r.captured_at']] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(args[key]!);}
-    const rows=this.store.db.prepare(`SELECT c.* FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')}`).iterate(...values);
+    const rows=this.store.db.prepare(`SELECT c.* FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')} ORDER BY c.rowid DESC LIMIT 4097`).iterate(...values);
     const norm=Math.hypot(...vector),best:{row:Chunk;score:number}[]=[],limit=Math.min(args.limit??30,100);
-    for(const raw of rows){const row=raw as Chunk&{embedding:string},v=JSON.parse(row.embedding) as number[],vn=Math.hypot(...v);if(v.length!==vector.length||!vn||!norm)continue;
+    let scanned=0,bounded=false;
+    for(const raw of rows){if(scanned++>=4096){bounded=true;break;}const row=raw as Chunk&{embedding:string},v=JSON.parse(row.embedding) as number[],vn=Math.hypot(...v);if(v.length!==vector.length||!vn||!norm)continue;
       const score=v.reduce((sum,n,i)=>sum+n*vector[i],0)/(vn*norm);best.push({row,score});best.sort((a,b)=>b.score-a.score);if(best.length>limit)best.pop();
     }
-    return best.map(r=>this.chunkRecord(r.row));
+    return Object.assign(best.map(r=>this.chunkRecord(r.row)),{coverage:{candidateLimit:4096,scanned:Math.min(scanned,4096),bounded,selection:'recent_within_scope'}});
   }
   forget(id:string){const v=this.version(id);this.store.db.prepare('INSERT OR IGNORE INTO file_forgotten VALUES(?,?)').run(v.source_id,v.external_id);const ids=this.store.db.prepare('SELECT capture_id FROM file_versions WHERE source_id=? AND external_id=?').all(v.source_id,v.external_id) as {capture_id:string}[];for(const r of ids)this.store.delete(r.capture_id);this.sweep();return {deleted:ids.length};}
   sweep(){

@@ -17,6 +17,13 @@ const clone = (value: LocalFileCheckpoint): LocalFileCheckpoint => structuredClo
  */
 export class DirectoryCatalog {
   private state: LocalFileCheckpoint;
+  private rollback?:{state:Omit<LocalFileCheckpoint,'catalog'>;entries:Map<string,FileCatalogEntry|undefined>};
+  private listing?:{path:string;entries:string[]};
+  get inProgress(){return this.state.inProgress;}
+  savepoint(){const {catalog,...state}=this.state;this.rollback={state:structuredClone(state),entries:new Map()};}
+  previous(path:string){return this.rollback?.entries.has(path)?this.rollback.entries.get(path):this.state.catalog[path];}
+  rollbackSavepoint(){if(!this.rollback)return;for(const [path,entry] of this.rollback.entries){if(entry)this.state.catalog[path]=entry;else delete this.state.catalog[path];}this.state={...this.rollback.state,catalog:this.state.catalog};this.rollback=undefined;this.listing=undefined;}
+  private remember(path:string){if(this.rollback&&!this.rollback.entries.has(path))this.rollback.entries.set(path,this.state.catalog[path]);}
   constructor(private readonly root: string, previous?: LocalFileCheckpoint) {
     this.state = previous && previous.version === 1 && previous.root === root ? clone(previous) : {
       version: 1, root, scanNumber: 0, scanStartedAt: new Date(0).toISOString(), initialized: false,
@@ -25,11 +32,12 @@ export class DirectoryCatalog {
   }
 
   checkpoint(): LocalFileCheckpoint { return clone(this.state); }
-  restore(checkpoint: LocalFileCheckpoint): void { this.state = clone(checkpoint); }
+  restore(checkpoint: LocalFileCheckpoint): void { this.state = clone(checkpoint); this.listing=undefined; }
   get catalog(): Readonly<Record<string, FileCatalogEntry>> { return this.state.catalog; }
 
   observe(candidate: DirectoryCandidate): void {
     this.begin();
+    this.remember(candidate.relativePath);
     this.state.catalog[candidate.relativePath] = {
       ...(this.state.catalog[candidate.relativePath] ?? {}), relativePath: candidate.relativePath, fileId: candidate.fileId,
       birthtimeMs: candidate.birthtimeMs, size: candidate.size, mtimeMs: candidate.mtimeMs, ctimeMs: candidate.ctimeMs,
@@ -40,6 +48,7 @@ export class DirectoryCatalog {
 
   begin(): void {
     if (this.state.inProgress) return;
+    this.listing=undefined;
     this.state = {
       ...this.state,
       scanNumber: this.state.scanNumber + 1,
@@ -62,7 +71,7 @@ export class DirectoryCatalog {
       if (!this.state.activeDirectory) this.state.activeDirectory = { path: this.state.pendingDirectories.shift()! };
       const active = this.state.activeDirectory;
       let entries: string[];
-      try { entries = (await readdir(active.path)).sort(); }
+      try { if(this.listing?.path!==active.path)this.listing={path:active.path,entries:(await readdir(active.path)).sort()};entries=this.listing.entries; }
       catch { complete = false; faulted = true; this.state.activeDirectory = undefined; continue; }
       const remaining = entries.filter(entry => !active.after || entry > active.after);
       if (!remaining.length) { this.state.activeDirectory = undefined; continue; }
@@ -79,6 +88,7 @@ export class DirectoryCatalog {
         if (!info.isFile()) { skipped++; continue; }
         const fileId = `${info.dev}:${info.ino}`;
         candidates.push({ path, relativePath, fileId, birthtimeMs: info.birthtimeMs, size: info.size, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, quickHash: quickHash(fileId, info.size, info.mtimeMs, info.ctimeMs) });
+        this.remember(relativePath);
         this.state.catalog[relativePath] = {
           ...(this.state.catalog[relativePath] ?? {}), relativePath, fileId, size: info.size,
           birthtimeMs: info.birthtimeMs, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, quickHash: quickHash(fileId, info.size, info.mtimeMs, info.ctimeMs),
@@ -94,6 +104,7 @@ export class DirectoryCatalog {
   markContent(relativePath: string, contentHash: string | undefined, syncState: FileCatalogEntry['syncState'] = 'synced'): void {
     const entry = this.state.catalog[relativePath];
     if (!entry) return;
+    this.remember(relativePath);
     this.state.catalog[relativePath] = { ...entry, ...(contentHash ? { contentHash } : {}), syncState };
   }
 

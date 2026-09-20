@@ -82,28 +82,28 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     const priority = [...new Set(priorityPaths)].map(path => isAbsolute(path) ? path : `${root}/${path}`);
     for (const path of priority) {
       if (examined >= 2000) break;
-      const before = catalog.checkpoint(), candidate = await candidateForPath(path); if (!candidate) continue;
-      const outcome = await processFile(candidate, before.catalog[candidate.relativePath]); examined++;
-      if (outcome === 'stop') { catalog.restore(before); result.complete = false; break; }
+      catalog.savepoint(); const candidate = await candidateForPath(path); if (!candidate) continue;
+      const outcome = await processFile(candidate, catalog.previous(candidate.relativePath)); examined++;
+      if (outcome === 'stop') { catalog.rollbackSavepoint(); result.complete = false; break; }
     }
     while (examined < 2000 && result.complete) {
-      const before = catalog.checkpoint(), batch = await catalog.next(Math.min(256, 2000 - examined, 2000 - result.items.length), options.excludedPaths), priorCatalog = before.catalog;
+      catalog.savepoint(); const batch = await catalog.next(Math.min(256, 2000 - examined, 2000 - result.items.length), options.excludedPaths);
       if (!batch.candidates.length) { result.complete = batch.complete; result.skipped += batch.skipped; break; }
       examined += batch.candidates.length;
       const itemsBeforeBatch = result.items.length, seenBeforeBatch = result.seen.length;
       let stopped = false;
       for (const candidate of batch.candidates) {
-        const outcome = await processFile(candidate, priorCatalog[candidate.relativePath]);
+        const outcome = await processFile(candidate, catalog.previous(candidate.relativePath));
         if (outcome === 'stop') { stopped = true; break; }
       }
-      if (stopped) { catalog.restore(before); result.items.splice(itemsBeforeBatch); result.seen.splice(seenBeforeBatch); result.complete = false; break; }
+      if (stopped) { catalog.rollbackSavepoint(); result.items.splice(itemsBeforeBatch); result.seen.splice(seenBeforeBatch); result.complete = false; break; }
       result.skipped += batch.skipped;
       if (batch.faulted) result.complete = false;
       if (result.items.length >= 2000 || totalBytes >= 16 * 1024 * 1024) { result.complete = false; break; }
-      if (!catalog.checkpoint().inProgress) break;
+      if (!catalog.inProgress) break;
       if (examined >= 2000) { result.complete = false; break; }
     }
-    if (result.complete && !catalog.checkpoint().inProgress) {
+    if (result.complete && !catalog.inProgress) {
       catalog.finishReconciliation();
       // A complete shard must reconcile against every file in the catalog,
       // not only the final batch returned by this invocation.

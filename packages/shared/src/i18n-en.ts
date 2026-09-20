@@ -4234,7 +4234,7 @@ export const english: Readonly<Record<string, string>> = {
   "仅保存在本机 · 连接节点后可同步": "Stored on this device · Connect a node to sync",
   "等待约定同步时间 · 系统省电可能推迟后台运行": "Waiting for the scheduled sync time · Power saving may delay background work",
   "请选择有效同步方式": "Select a valid sync mode",
-  "同步间隔为 15..1440 分钟": "Sync interval must be 15..1440 minutes",
+  "同步间隔为 1..1440 分钟": "Sync interval must be 1..1440 minutes",
   "批量同步数量为 1..500 条": "Sync batch size must be 1..500 records",
   "JSONL 合并窗口为 1..1440 分钟": "JSONL merge window must be 1..1440 minutes",
   "Mote · 你的个人上下文": "Mote · Your personal context",

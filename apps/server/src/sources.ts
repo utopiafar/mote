@@ -38,45 +38,49 @@ export class SourceStore {
     const rows=this.store.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? ORDER BY rowid DESC LIMIT 100').all(sourceId,externalId) as {capture_id:string}[];
     return this.store.evidence(rows.map(r=>r.capture_id)).map(c=>this.item(c,c.id===head?.captureId));
   }
+  private async serialized<T>(sourceId:string,run:()=>Promise<T>):Promise<T> {
+    const prior=this.pending.get(sourceId)??Promise.resolve();
+    const task=prior.catch(()=>{}).then(run);this.pending.set(sourceId,task);
+    try{return await task;}finally{if(this.pending.get(sourceId)===task)this.pending.delete(sourceId);}
+  }
   async upsert(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
-    const item=sourceItemSchema.parse(raw),key=JSON.stringify([sourceId,item.externalId]);
-    const prior=this.pending.get(key)??Promise.resolve();
-    const task=prior.catch(()=>{}).then(()=>this.commit(sourceId,item,authorize,transaction));this.pending.set(key,task);
-    try{return await task;}finally{if(this.pending.get(key)===task)this.pending.delete(key);}
+    return (await this.serialized(sourceId,()=>this.commitBatch(sourceId,[sourceItemSchema.parse(raw)],authorize,transaction))).receipts[0];
   }
   async upsertBatch(sourceId:string,raw:unknown,authorize?:()=>void) {
     const items=z.array(sourceItemSchema).min(1).max(500).parse(raw);
     const identities=new Set<string>();
     for(const item of items){const key=JSON.stringify([item.externalId,item.revision]);if(identities.has(key))throw new StoreError('Batch contains duplicate source revisions',409);identities.add(key);}
-    const receipts=[];
-    for(const item of items)receipts.push(await this.upsert(sourceId,item,authorize));
-    return {receipts};
+    return this.serialized(sourceId,()=>this.commitBatch(sourceId,items,authorize));
   }
-  private async commit(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
-    authorize?.();
-    const source=this.getSource(sourceId);if(!source.enabled)throw new StoreError('Source is paused',409);
-    const item=sourceItemSchema.parse(raw);
-    if(Date.parse(item.observedAt)>Date.now()+86400000)throw new StoreError('Observation cannot be in the future');
-    if(source.retention==='reference'&&item.layer!=='reference')throw new StoreError('This source accepts references only',409);
-    const {observedAt,...semantic}=item,hash=sha256(JSON.stringify(semantic));
-    const prior=this.store.db.prepare('SELECT capture_id,hash FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(sourceId,item.externalId,item.revision) as Version|undefined;
-    const response=(id:string,duplicate:boolean)=>({id,sourceId,externalId:item.externalId,revision:item.revision,duplicate});
-    if(prior){if(prior.hash!==hash)throw new StoreError('Revision already has different content',409);if(!this.store.evidence([prior.capture_id]).length)throw new StoreError('This revision was removed from the archive',410);if(transaction){this.store.db.exec('BEGIN IMMEDIATE');try{authorize?.();transaction({id:prior.capture_id,duplicate:true});this.store.db.exec('COMMIT');}catch(error){this.store.db.exec('ROLLBACK');throw error;}}return response(prior.capture_id,true);}
-    const id=uuid(JSON.stringify([sourceId,item.externalId,item.revision]));
-    const provenance={sourceId,externalId:item.externalId,revision:item.revision,layer:item.layer,mimeType:item.mimeType,uri:item.uri,modifiedAt:item.modifiedAt,calendar:item.calendar,deleted:item.deleted,metadata:item.metadata,document:item.document};
-    const text=item.deleted||item.layer==='reference'?'':item.text;
-    const result=await this.store.ingest({id,deviceId:source.deviceId,deviceName:source.name,platform:source.platform,capturedAt:observedAt,durationMs:0,appId:`mote.source.${source.kind}`,appName:source.name,windowTitle:item.title,ocrText:text,source:item.kind,provenance,privacy:{excluded:false,redacted:false,mode:'none'}},ack=>{
-      authorize?.();
-      const head=this.store.db.prepare('SELECT * FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,item.externalId) as Head|undefined;
-      this.store.db.prepare('INSERT INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(sourceId,item.externalId,item.revision,id,hash);
-      // Older observations remain history; late retries never roll the current pointer backwards.
-      if(!head||Date.parse(observedAt)>=Date.parse(head.observed_at)){
-        this.store.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted').run(sourceId,item.externalId,id,new Date(observedAt).toISOString(),Number(item.deleted));
-        if(head){this.store.invalidateMemoryEvidence(head.capture_id);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
+  private async commitBatch(sourceId:string,items:SourceItem[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
+    const source=this.getSource(sourceId);
+    const validate=()=>{authorize?.();const current=this.getSource(sourceId);if(!current.enabled)throw new StoreError('Source is paused',409);for(const item of items){
+      if(Date.parse(item.observedAt)>Date.now()+86400000)throw new StoreError('Observation cannot be in the future');
+      if(current.retention==='reference'&&item.layer!=='reference')throw new StoreError('This source accepts references only',409);
+    }};validate();
+    const plans=items.map(item=>{
+      const {observedAt,...semantic}=item,hash=sha256(JSON.stringify(semantic));
+      const prior=this.store.db.prepare('SELECT capture_id,hash FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(sourceId,item.externalId,item.revision) as Version|undefined;
+      if(prior&&prior.hash!==hash)throw new StoreError('Revision already has different content',409);
+      const id=prior?.capture_id??uuid(JSON.stringify([sourceId,item.externalId,item.revision]));
+      const existing=prior?this.store.db.prepare('SELECT json FROM captures WHERE id=?').get(id):undefined;
+      if(prior&&!existing)throw new StoreError('This revision was removed from the archive',410);
+      const provenance={sourceId,externalId:item.externalId,revision:item.revision,layer:item.layer,mimeType:item.mimeType,uri:item.uri,modifiedAt:item.modifiedAt,calendar:item.calendar,deleted:item.deleted,metadata:item.metadata,document:item.document};
+      return {item,hash,id,prior,capture:existing?JSON.parse(String(existing.json)):{id,deviceId:source.deviceId,deviceName:source.name,platform:source.platform,capturedAt:observedAt,durationMs:0,appId:`mote.source.${source.kind}`,appName:source.name,windowTitle:item.title,ocrText:item.deleted||item.layer==='reference'?'':item.text,source:item.kind,provenance,privacy:{excluded:false,redacted:false,mode:'none'}}};
+    });
+    const receipts=await this.store.ingestBatch(plans.map(p=>p.capture),(ack,index)=>{
+      const {id,item,hash,prior}=plans[index];
+      if(!prior){
+        const head=this.store.db.prepare('SELECT * FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,item.externalId) as Head|undefined;
+        this.store.db.prepare('INSERT INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(sourceId,item.externalId,item.revision,id,hash);
+        if(!head||Date.parse(item.observedAt)>=Date.parse(head.observed_at)){
+          this.store.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted').run(sourceId,item.externalId,id,new Date(item.observedAt).toISOString(),Number(item.deleted));
+          if(head){this.store.invalidateMemoryEvidence(head.capture_id);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
+        }
       }
       transaction?.(ack);
-    });
-    return response(result.id,result.duplicate);
+    },validate);
+    return {receipts:receipts.map((ack,index)=>({id:ack.id,sourceId,externalId:items[index].externalId,revision:items[index].revision,duplicate:ack.duplicate}))};
   }
   listItems(args:{sourceId?:string;deviceId?:string;kind?:string;after?:string;before?:string;limit?:number;cursor?:string;includeDeleted?:boolean}={}) {
     const clauses=['c.id=h.capture_id'],values:(string|number)[]=[];

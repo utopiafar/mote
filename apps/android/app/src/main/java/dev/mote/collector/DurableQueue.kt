@@ -471,7 +471,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         return event
     }
     fun screenPage(after: String, before: String, cursor: String? = null, limit: Int = 20) = capturePage(after, before, cursor, limit, "screen")
-    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen"): JSONObject {
+    fun capturePage(after: String, before: String, cursor: String? = null, limit: Int = 20, source: String = "screen", onCount: ((Int) -> Unit)? = null): JSONObject {
         prepareIndex(requireStatistics = true)
         return guarded {
             require(limit in 1..60)
@@ -484,6 +484,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
                 .map { it to java.time.Instant.parse(it.getString("capturedAt")) }
                 .filter { (row, date) -> java.time.Instant.parse(row.optString("lastCapturedAt", row.getString("capturedAt"))) >= start && date < end }
                 .sortedWith(compareByDescending<Pair<JSONObject, java.time.Instant>> { it.second }.thenByDescending { it.first.getString("id") }).toList()
+            onCount?.invoke(matching.size)
             val page = matching.filter { (row, date) -> at == null || date < at || (date == at && row.getString("id") < id!!) }.take(limit + 1)
             val items = page.take(limit).map { read(File(dir, "${it.first.getString("id")}.event")) }
             val next = if (page.size <= limit) null else items.last().let {

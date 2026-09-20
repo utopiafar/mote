@@ -23,10 +23,10 @@ export type SummarizeFiles=(records:ContextRecord[])=>Promise<{answer:string;cit
 export class FileProcessing {
   private saved:Saved;private path:string;private current?:Promise<void>;private abort=new AbortController();private stopping=false;
   readonly runtime:FileProcessorRuntime;
-  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{plugins?:Plugin[];modules?:string[];analyze?:FileAnalysis;diagnostics?:ServerDiagnostics}={}){
+  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;plugins?:Plugin[];modules?:string[];analyze?:FileAnalysis;diagnostics?:ServerDiagnostics}={}){
     this.path=join(files.store.directory,'file-processing.json');
     this.saved=existsSync(this.path)?z.object({revision:z.string(),settings:fileProcessingSchema,policy:filePolicySchema.optional()}).parse(JSON.parse(readFileSync(this.path,'utf8'))):{revision:'initial',settings:fileProcessingSchema.parse({})};
-    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules);
+    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors);
     files.store.db.exec("UPDATE file_jobs SET state='waiting' WHERE state='running'; UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running'; UPDATE file_steps SET state='waiting' WHERE state='running'");
   }
   private log(event:string,id?:string,fields:EventFields={},level:'debug'|'info'|'warn'|'error'='info') {
