@@ -119,6 +119,8 @@
   "这一天还没有截图记录。": "No screenshots for this day yet.",
   "条": "records",
   "张图片": "images",
+  "采集记录分页": "Capture record pagination",
+  "共 {0} 条 · 本页 {1} 条": "{0} records · {1} on this page",
   "上一页": "Previous",
   "下一页": "Next",
   "{0} 截图": "{0} screenshot",

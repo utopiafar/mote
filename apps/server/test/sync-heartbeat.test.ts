@@ -20,7 +20,7 @@ const snapshot = { mode: 'interval', state: 'waiting', intervalMinutes: 15, batc
 test('authenticated heartbeat sync state persists independently from capture state and survives server restart', async t => {
   const client = await fixture(t);
   for (const [mode, state] of [['realtime', 'uploading'], ['interval', 'waiting'], ['batch', 'waiting'], ['manual', 'manual']]) {
-    const sync = { ...snapshot, mode, state };
+    const sync = { ...snapshot, mode, state, ...(mode === 'batch' ? { intervalMinutes: 1, batchSize: 100 } : {}) };
     const posted = await client.app.inject({ method: 'POST', url: '/api/devices/heartbeat', headers: client.headers, payload: { ...beat, sync } });
     assert.equal(posted.statusCode, 200); assert.deepEqual(posted.json(), { ok: true });
     const listed = await client.app.inject({ url: '/api/devices', headers: client.headers });
@@ -43,7 +43,7 @@ test('invalid or unauthenticated sync snapshots are rejected before overwriting 
   const client = await fixture(t), payload = { ...beat, sync: snapshot };
   assert.equal((await client.app.inject({ method: 'POST', url: '/api/devices/heartbeat', payload })).statusCode, 401);
   assert.equal((await client.app.inject({ method: 'POST', url: '/api/devices/heartbeat', headers: client.headers, payload })).statusCode, 200);
-  for (const invalid of [{ mode: 'immediate' }, { state: 'syncing' }, { intervalMinutes: 14 }, { intervalMinutes: 1441 }, { batchSize: 0 }, { batchSize: 501 }, { batchSize: 1.5 }, { pendingRecords: -1 }, { pendingRecords: 1_000_001 }, { pendingRecords: 0.5 }, { nextUploadAt: 'tomorrow' }, { text: 'synthetic text must not enter a synchronization heartbeat' }]) {
+  for (const invalid of [{ mode: 'immediate' }, { state: 'syncing' }, { intervalMinutes: 0 }, { intervalMinutes: 1441 }, { batchSize: 0 }, { batchSize: 501 }, { batchSize: 1.5 }, { pendingRecords: -1 }, { pendingRecords: 1_000_001 }, { pendingRecords: 0.5 }, { nextUploadAt: 'tomorrow' }, { text: 'synthetic text must not enter a synchronization heartbeat' }]) {
     const response = await client.app.inject({ method: 'POST', url: '/api/devices/heartbeat', headers: client.headers, payload: { ...beat, sync: { ...snapshot, ...invalid } } });
     assert.equal(response.statusCode, 400, JSON.stringify(invalid));
   }

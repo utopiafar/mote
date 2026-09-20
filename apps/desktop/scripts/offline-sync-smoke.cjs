@@ -32,6 +32,7 @@ const server = createServer(async (req, res) => {
     assert.equal(req.headers.authorization, 'Bearer ' + token);
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/captures') captureBodies.push(body);
+    if (req.url === '/api/captures/batch') captureBodies.push(...body.captures);
     if (req.method === 'PUT' && (req.url.endsWith('/items') || req.url === '/api/file-sync/v1/revisions')) sourceBodies.push(body.item ?? body);
     // Forward to the real Mote server API/SQLite fixture, retaining transport payloads for equality checks.
     const response = await fetch(actualOrigin + req.url, { method: req.method, headers: { authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error' });
@@ -80,6 +81,7 @@ app.on('browser-window-created', (_event, window) => {
       assert.deepEqual(sourcePending(origin, token, source.id), [originalSource]);
       await invoke('retry');
       const synced = await invoke('status'); assert.equal(synced.queueDepth, 0); assert.equal(synced.sync.pendingRecords, 0); assert.equal((await invoke('sources'))[0].pending, 0);
+      assert.ok(requests.some(request => request.path === '/api/captures/batch'), 'Default packed uploads use the batch endpoint');
       assert.deepEqual(captureBodies, [originalNote]); assert.deepEqual(sourceBodies, [originalSource]);
       assert.equal(requests.filter(request => request.path.includes('heartbeat')).length, 1, 'Manual sync sends one final explicit heartbeat');
       const device = (await fetch(actualOrigin + '/api/devices', { headers: { authorization: 'Bearer ' + token } }).then(response => response.json())).items.find(item => item.deviceId === config.deviceId);

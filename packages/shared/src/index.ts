@@ -126,7 +126,7 @@ export const heartbeatSchema = z.object({
   sync: z.object({
     mode: z.enum(['realtime','interval','batch','manual']),
     state: z.enum(['unconfigured','idle','waiting','uploading','error','manual']),
-    intervalMinutes: z.number().int().min(15).max(1440),
+    intervalMinutes: z.number().int().min(1).max(1440),
     batchSize: z.number().int().min(1).max(500),
     pendingRecords: z.number().int().min(0).max(1000000),
     blockedRecords: z.number().int().min(0).max(1000000).optional(),

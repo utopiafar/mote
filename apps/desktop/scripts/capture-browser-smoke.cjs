@@ -70,7 +70,7 @@ const freePort = () => new Promise((resolve, reject) => { const listener = net.c
   const detail = await captureDetail(queue, config, 'central', id); assert.equal(detail.ocr.status, 'completed'); assert.equal(detail.ocrText, '合成 OCR <script>文本证据</script>');
   const original = queue.recordsForBrowser().find(r => r.event.id === id).event; await uploadCapture(config, original, jpeg); // Original pending payload still ACKs after OCR patch.
   assert.equal((await captureDetail(queue, config, 'central', id)).ocr.status, 'completed');
-  await assert.rejects(captureImage(queue, { ...config, deviceId: randomUUID() }, 'central', id, true), /不存在/);
+  await assert.rejects(captureImage(queue, { ...config, deviceId: randomUUID() }, 'central', id, true), /不属于/);
   await assert.rejects(captureDetail(queue, { ...config, deviceId: randomUUID() }, 'central', id), /不属于/);
   console.info(JSON.stringify({ ok: true, fixtureOnly: true, generatedPixels: true, localAndCentralPaging: true, terminalNullCursor: true, authenticatedThumbnailsAndOriginal: true, deferredOcrIdempotent: true, originalPostRetryAfterOcr: true, currentDeviceScope: true }));
 })().then(() => finish(0), error => { console.error(error); void finish(1); });
