@@ -117,6 +117,11 @@ async function assertFreePort(p) {
   });
 }
 
+export function serverEnvironment(p) {
+  // DV runs should expose every structured diagnostic event, including debug-stage events.
+  return isolatedEnvironment(p, p.profile === 'dev' ? { MOTE_DEBUG: '1', MOTE_LOG_LEVEL: 'debug' } : {});
+}
+
 export async function runDevServer(options = {}, root = repository) {
   if (process.platform === 'win32' || Number(process.versions.node.split('.')[0]) < 24) throw Error('Use macOS/Linux with Node.js 24 or newer');
   const p = await loadProfile(profilePaths(options.profile ?? 'dev', options.home));
@@ -137,7 +142,7 @@ export async function runDevServer(options = {}, root = repository) {
       const version = JSON.parse(await readFile(join(root, 'apps/server/package.json'), 'utf8')).version;
       marker = randomUUID();
       server = startCommand(process.execPath, [join(root, 'apps/server/dist/index.js'), `--mote-instance=${marker}`], {
-        cwd: root, env: isolatedEnvironment(p), signal, graceMs: 20000,
+        cwd: root, env: serverEnvironment(p), signal, graceMs: 20000,
       });
       // Register before health checks: stop/status work on this source run too.
       await atomicJson(p.processFile, { pid: server.child.pid, marker, envFile: p.envFile, release: root, startedAt: new Date().toISOString() });
