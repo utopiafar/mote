@@ -169,10 +169,14 @@ test('raw log endpoint returns file text verbatim with owner authentication and 
   assert.equal(await diagnostics.readRaw(),raw);
   await writeFile(join(dataDir,'logs','central.1.ndjson'),raw);
   assert.equal(await diagnostics.readRaw(1),raw);
+  const latestPage=await diagnostics.readPage(0,1,1);assert.deepEqual(latestPage,{items:['malformed <script>中文 fixture</script>'],page:1,pageSize:1,totalLines:2,totalPages:2,hasPrevious:true,hasNext:false});
+  const olderPage=await diagnostics.readPage(0,2,1);assert.deepEqual(olderPage.items,['  {"level":"info"}']);
   await assert.rejects(diagnostics.readRaw(9));
   const result=await app.inject({method:'GET',url:'/api/diagnostics/logs',headers:{authorization:`Bearer ${config(dataDir).token}`}});
   assert.equal(result.statusCode,200);assert.match(result.headers['content-type']!,/^text\/plain/);
   assert.equal(result.headers['cache-control'],'no-store');assert.ok(result.body.startsWith(raw));
+  const pageResult=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file=0&page=1&pageSize=1',headers:{authorization:`Bearer ${config(dataDir).token}`}});
+  assert.equal(pageResult.statusCode,200);assert.equal(pageResult.headers['cache-control'],'no-store');const pageBody=pageResult.json();assert.equal(pageBody.page,1);assert.equal(pageBody.pageSize,1);assert.equal(pageBody.totalLines,pageBody.totalPages);assert.ok(pageBody.items.length===1);assert.ok(pageBody.totalLines>=latestPage.totalLines);
 });
 
 test('stage failures use warning for rejected input and error for failed execution', async t=>{

@@ -207,6 +207,15 @@ export class ServerDiagnostics {
       this.readFailures++;throw error;
     }
   }
+  async readPage(index=0,page=1,pageSize=100) {
+    if(!Number.isInteger(index)||index<0||index>=this.maxFiles)throw Object.assign(new Error('Invalid log file'),{statusCode:400});
+    if(!Number.isInteger(page)||page<1)throw Object.assign(new Error('Invalid log page'),{statusCode:400});
+    if(!Number.isInteger(pageSize)||pageSize<1||pageSize>500)throw Object.assign(new Error('Invalid log page size'),{statusCode:400});
+    const lines=(await this.readRaw(index)).split('\n').filter(line=>line.length>0);
+    const totalLines=lines.length,totalPages=Math.max(1,Math.ceil(totalLines/pageSize)),currentPage=Math.min(page,totalPages);
+    const end=totalLines-(currentPage-1)*pageSize,start=Math.max(0,end-pageSize);
+    return {items:lines.slice(start,end),page:currentPage,pageSize,totalLines,totalPages,hasPrevious:currentPage<totalPages,hasNext:currentPage>1};
+  }
   async exportRange(after:string,before:string) {
     await this.flush();
     const records:DiagnosticEvent[]=[];const seen=new Set<string>();let invalidLines=0;

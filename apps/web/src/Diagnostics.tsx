@@ -11,11 +11,19 @@ interface Snapshot {
   services:{agentConfigured:boolean;embeddingConfigured:boolean;activeQueries:number};
   queue:{index:{pending:number;failed:number;indexed:number;textReady:number};devices:number;reportedPending:number};
 }
+interface LogPage {
+  items:string[];page:number;pageSize:number;totalLines:number;totalPages:number;
+  hasPrevious:boolean;hasNext:boolean;
+}
 export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
   const [snapshot,setSnapshot]=useState<Snapshot>();
+  const [logPageData,setLogPageData]=useState<LogPage>();
   const [rawLog,setRawLog]=useState('');
   const [wrap,setWrap]=useState(true);
   const [logFile,setLogFile]=useState(0);
+  const [logPage,setLogPage]=useState(1);
+  const [pageSize,setPageSize]=useState(100);
+  const [autoRefresh,setAutoRefresh]=useState(false);
   const [copyStatus,setCopyStatus]=useState('');
   const logRef=useRef<HTMLTextAreaElement>(null);
   const [revision,setRevision]=useState(0);
@@ -28,12 +36,16 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
     setBusy(true);setError('');
     void (async()=>{
       const value=await api.request<Snapshot>('/api/diagnostics',{signal:controller.signal});
-      const response=await api.raw(`/api/diagnostics/logs?file=${logFile}`,{signal:controller.signal});
-      const raw=await response.text();
-      if(active){setSnapshot(value);setRawLog(raw);setCopyStatus('');}
+      const page=await api.request<LogPage>(`/api/diagnostics/log-pages?file=${logFile}&page=${logPage}&pageSize=${pageSize}`,{signal:controller.signal});
+      if(active){setSnapshot(value);setLogPageData(page);setLogPage(page.page);setRawLog(page.items.length?page.items.join('\n')+'\n':'');setCopyStatus('');}
     })().catch(e=>{if(active)setError(errorMessage(e));}).finally(()=>{if(active)setBusy(false);});
     return()=>{active=false;controller.abort();};
-  },[api,revision,logFile]);
+  },[api,revision,logFile,logPage,pageSize]);
+  useEffect(()=>{
+    if(!autoRefresh)return;
+    const timer=window.setInterval(()=>setRevision(n=>n+1),5000);
+    return()=>window.clearInterval(timer);
+  },[autoRefresh]);
   async function download() {
     setExporting(true);setError('');
     try{
@@ -44,7 +56,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
     }catch(e){setError(errorMessage(e));}finally{setExporting(false);}
   }
   async function copyLogs() {
-    try {await navigator.clipboard.writeText(rawLog);setCopyStatus(moteText("已复制全部原始日志。"));}
+    try {await navigator.clipboard.writeText(rawLog);setCopyStatus(moteText("已复制当前页日志。"));}
     catch {logRef.current?.focus();logRef.current?.select();setCopyStatus(moteText("剪贴板不可用，已全选，请按 ⌘/Ctrl+C 复制。"));}
   }
   return <section className="panel diagnostics-panel" aria-labelledby="diagnostics-title">
@@ -72,12 +84,24 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
             <select aria-label={moteText("日志文件")} value={logFile} disabled={busy} onChange={e=>{setRawLog('');setLogFile(Number(e.target.value));}}>
               {Array.from({length:snapshot.limits.maxFiles},(_,index)=><option key={index} value={index}>central.{index}.ndjson{index===0?moteText(" · 当前"):moteText(" · 历史 ")+index}</option>)}
             </select>
-            <button className="button subtle" disabled={!rawLog} onClick={()=>void copyLogs()}>{moteText("复制全部")}</button>
+            <button className="button subtle" disabled={!rawLog} onClick={()=>void copyLogs()}>{moteText("复制当前页")}</button>
             <button className="button subtle" disabled={!rawLog} onClick={()=>{logRef.current?.focus();logRef.current?.select();}}>{moteText("全选")}</button>
             <button className="button subtle" aria-pressed={wrap} onClick={()=>setWrap(v=>!v)}>{moteText("自动换行")}</button>
           </div>
         </div>
-        <p className="fine-print">{moteText("直接显示所选日志文件，不拆字段或重排。可拖动选中，使用 ⌘/Ctrl+A、C 复制；历史编号越大，文件越早。")}</p>
+        <p className="fine-print">{moteText("默认从当前日志的最新一页开始；翻页查看更早内容，刷新时不会离开当前页。日志按原始顺序显示，不拆字段或重排。")}</p>
+        <div className="log-pagination" aria-label={moteText("日志分页")}>
+          <div className="log-pagination-controls">
+            <button className="button subtle" disabled={busy||logPage===1} onClick={()=>setLogPage(1)}>{moteText("最新")}</button>
+            <button className="button subtle" disabled={busy||!logPageData?.hasNext} onClick={()=>setLogPage(page=>Math.max(1,page-1))}>{moteText("较新")}</button>
+            <span className="log-page-summary" role="status">{moteText("第 {0} / {1} 页",logPage,logPageData?.totalPages??1)} · {moteText("共 {0} 条",logPageData?.totalLines??0)}</span>
+            <button className="button subtle" disabled={busy||!logPageData?.hasPrevious} onClick={()=>setLogPage(page=>page+1)}>{moteText("较旧")}</button>
+          </div>
+          <div className="log-pagination-options">
+            <label>{moteText("每页")}{' '}<select aria-label={moteText("每页条数")} value={pageSize} disabled={busy} onChange={e=>{setLogPage(1);setPageSize(Number(e.target.value));}}><option value={50}>50</option><option value={100}>100</option><option value={200}>200</option><option value={500}>500</option></select></label>
+            <label className="log-auto-refresh"><input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)}/>{moteText("自动刷新（5 秒）")}</label>
+          </div>
+        </div>
         <textarea ref={logRef} className="raw-log-output" aria-label={moteText("原始日志")} readOnly spellCheck={false} wrap={wrap?'soft':'off'} value={rawLog} placeholder={snapshot.enabled?moteText("暂无日志。"):moteText("运行日志已关闭，历史仍可查看。")}/>
         <p className="fine-print" role="status">{copyStatus}</p>
       </section>
