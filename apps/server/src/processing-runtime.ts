@@ -1,3 +1,4 @@
+import type {ProcessingJobView} from '@mote/shared';
 import {createHash,randomUUID} from 'node:crypto';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import {z} from 'zod';
@@ -68,7 +69,14 @@ export class ProcessingRuntime {
   }
   settings(){const saved=this.store.db.prepare("SELECT value FROM settings WHERE key='processing-policy'").get();return saved?policies.parse(JSON.parse(String(saved.value))):policies.parse(Object.fromEntries(lanes.map(lane=>[lane,{concurrency:this.limits[lane]?.concurrency??(lane==='aggregate'?2:1),dailyCalls:this.limits[lane]?.dailyCalls??(lane==='semantic'||lane==='memory'?100:10000),dailyInputCharacters:this.limits[lane]?.dailyInputCharacters??(lane==='semantic'||lane==='memory'?1200000:120000000)}])));}
   configure(input:unknown){const policy=policies.parse(input);this.store.db.prepare("INSERT INTO settings VALUES('processing-policy',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(policy));return this.settings();}
-  view(){return {settings:this.settings(),processors:this.registry.list(),queues:this.store.db.prepare('SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state').all(),usage:this.store.db.prepare('SELECT * FROM processing_usage ORDER BY day DESC LIMIT 28').all(),delivery:'at_least_once; output commit is fenced; provider retries may incur additional cost'};}
+  view(){
+    const jobs = this.store.db.prepare('SELECT id,lane,state,attempts,available_at,error,json FROM processing_jobs ORDER BY rowid DESC LIMIT 100').all().map((row):ProcessingJobView => {
+      const job=JSON.parse(String(row.json)) as Job;
+      const state=String(row.state);
+      return {id:String(row.id),engine:'context-dag' as const,title:job.processor,state,attempts:Number(row.attempts),lane:String(row.lane),reason:row.error?String(row.error):undefined,availableAt:Number(row.available_at),dependencies:job.dependencies,outputs:job.outputs,
+        allowedActions:[...(['failed','blocked','cancelled'].includes(state)?['retry-step' as const]:[]),...(!['succeeded','cancelled'].includes(state)?['cancel' as const]:[])]};
+    });
+    return {jobs,limit:100,settings:this.settings(),processors:this.registry.list(),queues:this.store.db.prepare('SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state').all(),usage:this.store.db.prepare('SELECT * FROM processing_usage ORDER BY day DESC LIMIT 28').all(),delivery:'at_least_once; output commit is fenced; provider retries may incur additional cost'};}
   retry(id:string){this.store.db.prepare("UPDATE processing_jobs SET state='waiting',attempts=0,available_at=0,error=NULL WHERE id=? AND state IN ('failed','blocked','cancelled')").run(id);}
   cancel(id:string){this.active.get(id)?.abort();this.store.db.prepare("UPDATE processing_jobs SET state='cancelled',fence=NULL,error='cancelled' WHERE id=? AND state!='succeeded'").run(id);}
   tick(){if(this.stopping)return Promise.resolve();return this.ready.then(()=>this.run());}

@@ -32,5 +32,5 @@ try{
   execFileSync(join(app,'Contents/MacOS',field('CFBundleExecutable')),[resolve('apps/desktop/scripts/packaged-metadata-smoke.cjs'),join(app,'Contents/Resources')],{stdio:'inherit',env:{...process.env,ELECTRON_RUN_AS_NODE:'1'}});
   const zip=resolve(`artifacts/release/mote-desktop-macos-${development?'dev-':''}${process.arch}-${pkg.version}.zip`);mkdirSync(resolve('artifacts/release'),{recursive:true});if(existsSync(zip))rmSync(zip);
   execFileSync('ditto',['-c','-k','--sequesterRsrc','--keepParent',app,zip]);
-  if(!development)execFileSync(process.execPath,['scripts/release/asset-metadata.mjs','desktop',zip,process.arch],{stdio:'inherit',env:process.env});
+  execFileSync(process.execPath,['scripts/release/asset-metadata.mjs','desktop',zip,process.arch],{stdio:'inherit',env:process.env});
 }finally{rmSync(temp,{recursive:true,force:true});}

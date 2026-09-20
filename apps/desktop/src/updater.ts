@@ -11,6 +11,7 @@ import { inspectUpdateArchive } from './update-archive';
 import { installationEligibility, inspectBundle, prepareInstall, startInstall, cancelPreparedInstall, recoverInterruptedUpdate } from './update-install';
 const execute = promisify(execFile);
 export interface UpdateStatus {
+  manualDownload?: boolean;
   currentVersion: string; channel: ReleaseChannel;
   state: 'idle' | 'checking' | 'available' | 'up_to_date' | 'downloading' | 'verifying' | 'ready' | 'installing' | 'error';
   message: string; received: number; total: number; canInstall: boolean; installReason: string;

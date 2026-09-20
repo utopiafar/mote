@@ -1,3 +1,7 @@
+import {sections, routes, readPage, sectionFor, type Page} from './navigation';
+import {confirmNavigation} from './unsaved';
+import {Processing} from './Processing';
+import {Feedback} from './Feedback';
 import {StorageStatistics} from './StorageStatistics';
 import {LarkSettings} from './LarkSettings';
 import { LanguageSelector } from './LanguageSelector';
@@ -98,21 +102,14 @@ import {SourceDocumentDetails} from './SourceDocumentDetails';
 declare global {
   interface Window { moteCentralSession?: {close: () => void} }
 }
-type Page = "statistics" | "lark" | "actions" | "usage" | "imports" | "insights" | "sources" | "memories" | "overview" | "timeline" | "notes" | "ask" | "devices" | "vault" | "archive" | "connections" | "developer" | "about" | "settings";
 const nav = [
-  {id:"overview" as const,label:moteText("总览"),icon:LayoutDashboard,group:moteText("日常")},
-  {id:"ask" as const,label:moteText("问一问"),icon:MessageSquare,group:moteText("日常")},
-  {id:"notes" as const,label:moteText("随手记"),icon:FileText,group:moteText("日常")},
-  {id:"actions" as const,label:moteText("行动"),icon:Clock3,group:moteText("日常")},
-  {id:"timeline" as const,label:moteText("采集记录"),icon:Clock3,group:moteText("资料")},
-  {id:"archive" as const,label:moteText("资料库"),icon:Database,group:moteText("资料")},
-  {id:"memories" as const,label:moteText("记忆"),icon:Layers3,group:moteText("资料")},
-  {id:"insights" as const,label:moteText("洞察"),icon:Sparkles,group:moteText("资料")},
-  {id:"sources" as const,label:moteText("来源"),icon:Link2,group:moteText("管理")},
-  {id:"devices" as const,label:moteText("设备"),icon:Monitor,group:moteText("管理")},
-  {id:"statistics" as const,label:moteText("统计中心"),icon:HardDrive,group:moteText("管理")},
+  {id:'overview' as const,label:moteText('今天'),icon:LayoutDashboard,section:'overview'},
+  {id:'archive' as const,label:moteText('资料库'),icon:Database,section:'library'},
+  {id:'ask' as const,label:moteText('问一问'),icon:MessageSquare,section:'ask'},
+  {id:'actions' as const,label:moteText('行动'),icon:Clock3,section:'actions'},
+  {id:'sources' as const,label:moteText('连接'),icon:Link2,section:'connections'},
 ];
-const pageLabels: Record<Page,string> = {statistics:moteText("统计中心"),lark:moteText("飞书"),actions:moteText("行动"),usage:moteText("用量与费用"),imports:moteText("导入"),insights:moteText("洞察"),overview:moteText("总览"),timeline:moteText("采集记录"),notes:moteText("随手记"),ask:moteText("问一问"),archive:moteText("资料库"),memories:moteText("记忆"),devices:moteText("设备"),sources:moteText("来源"),settings:moteText("设置"),connections:moteText("连接授权"),developer:moteText("开发者选项"),about:moteText("关于 Mote"),vault:moteText("数据与备份")};
+const pageLabels: Record<Page,string> = {overview:moteText('今天'),archive:moteText('全部资料'),timeline:moteText('片段'),files:moteText('文件与录音'),notes:moteText('随手记'),memories:moteText('记忆'),insights:moteText('洞察'),imports:moteText('导入'),ask:moteText('问一问'),actions:moteText('行动'),sources:moteText('来源'),devices:moteText('设备'),connections:moteText('对外授权'),lark:moteText('飞书'),statistics:moteText('运行状态'),processing:moteText('处理任务'),extensions:moteText('扩展能力'),settings:moteText('模型与服务'),usage:moteText('用量与费用'),vault:moteText('存储与索引'),developer:moteText('诊断与更新'),about:moteText('设置'),help:moteText('帮助与反馈')};
 const periodNames: Record<string, string> = {
   today: moteText("今天"),
   week: moteText("过去 7 天"),
@@ -411,6 +408,11 @@ function LoginDialog({ destination, onConnected, onClose }: {
   </div>;
 }
 
+function OriginalImage({api,capture}:{api:Api;capture:Capture}) {
+  const [open,setOpen]=useState(false);
+  return <div className="original-image"><button className="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?moteText('收起原图'):moteText('查看原图')}</button>{open&&<AuthImage api={api} capture={capture} full/>}</div>;
+}
+
 function EvidenceDialog({
   id,
   api,
@@ -465,6 +467,20 @@ function EvidenceDialog({
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
   }, [onClose]);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const panel = document.querySelector<HTMLElement>('.evidence-modal');
+    const items = () => Array.from(panel?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input,select,textarea,summary,[tabindex="0"]') ?? []).filter(el => el.getClientRects().length);
+    items()[0]?.focus();
+    const trap = (event:KeyboardEvent) => {
+      if(event.key !== 'Tab') return;
+      const nodes=items(), first=nodes[0],last=nodes.at(-1);
+      if(event.shiftKey && document.activeElement===first){event.preventDefault();last?.focus();}
+      else if(!event.shiftKey && document.activeElement===last){event.preventDefault();first?.focus();}
+    };
+    document.addEventListener('keydown',trap);
+    return () => {document.removeEventListener('keydown',trap);previous?.focus({preventScroll:true});};
+  }, []);
   async function remove() {
     setBusy(true);
     try {
@@ -520,7 +536,7 @@ function EvidenceDialog({
         {capture && (
           <>
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
-              {capture.blobHash && <AuthImage api={api} capture={capture} full />}
+              {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
               <div className="evidence-text">
                 <span className="eyebrow">{presentation?.textLabel}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || moteText("原始上下文")}</h3>
@@ -699,10 +715,9 @@ function SetupSteps({ onPage }: { onPage: (page: Page) => void }) {
 
 function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,range,onMedia}: {api:Api;status:Status;devices:Device[];activity:Activity;recent:Capture[];insights:Answer[];onPage:(page:Page)=>void;onOpen:(id:string)=>void;range:Range;onMedia:()=>void}) {
  return <div className="home-page">
-  <div className="greeting"><div><div className="eyebrow">{moteText("你的个人上下文")}</div><h1>{moteText("给生活留一点线索。")}</h1><p>{moteText("记下的片刻，在需要时重新找到。")}</p></div><div className="greeting-mark" aria-hidden="true"><div/><div/><div/><span>m.</span></div></div>
+  <div className="greeting"><div><div className="eyebrow">{moteText("你的个人上下文")}</div><h1>{moteText("今天，留下了什么？")}</h1><p>{moteText("记下的片刻，在需要时重新找到。")}</p></div><div className="greeting-mark" aria-hidden="true"><div/><div/><div/><span>m.</span></div></div>
   <div className="home-actions"><button className="home-action primary-action" onClick={()=>onPage('notes')}><FileText size={23}/><span><strong>{moteText("写一条随手记")}</strong><small>{moteText("留住此刻的想法")}</small></span><ArrowRight size={18}/></button><button className="home-action" onClick={()=>onPage('ask')}><MessageSquare size={23}/><span><strong>{moteText("从记录里找答案")}</strong><small>{moteText("带着来源，回看自己的经历")}</small></span><ArrowRight size={18}/></button></div>
   <div className="stats-grid compact-stats"><div className="stat"><span><Layers3 size={16}/>{moteText("前台应用与屏幕采样")}</span><strong>{activity.captures.toLocaleString(getLocale())}<em>{' '}{moteText("条")}</em></strong><small>{moteText("按所选时间统计，与媒体记录分别查看")}</small></div><div className="stat"><span><Clock3 size={16}/>{moteText("前台应用采样时长")}</span><strong>{duration(activity.totalDurationMs)}</strong><small>{moteText("采样区间累计，不等同专注时间")}</small></div><button className="stat stat-link" onClick={()=>onPage('devices')}><span><Monitor size={16}/>{moteText("已知设备")}</span><strong>{devices.length}<em>{moteText("台")}</em></strong><small>{moteText("查看最近联系与上报的同步状态 →")}</small></button></div>
-  <MediaActivitySummary api={api} range={range} onOpen={onOpen} compact onExpand={onMedia}/>
   {!status.storage.captures&&<section className="panel first-record"><span className="preference-menu-icon"><Link2 size={23}/></span><div><h2>{moteText("准备好接住第一份记录")}</h2><p>{moteText("连接一台设备，或导入你选择的文件。采集范围与同步方式由你决定。")}</p></div><button className="button" onClick={()=>onPage('devices')}>{moteText("连接设备")}<ArrowRight size={15}/></button></section>}
   <section className="recent-section"><div className="section-heading"><div><h2>{moteText("最近留下的片刻")}</h2><p>{moteText("来自你选择的设备与来源")}</p></div><button className="text-button" onClick={()=>onPage('timeline')}>{moteText("全部记录")}<ArrowRight size={15}/></button></div>{recent.length?<div className="capture-grid">{recent.slice(0,4).map(capture=><CaptureCard key={capture.id} capture={capture} api={api} onOpen={onOpen}/>)}</div>:<div className="home-empty"><Layers3 size={23}/><p>{moteText("记录会在同步完成后出现在这里。也可以先写一条随手记。")}</p></div>}</section>
   {insights[0]&&<button className="home-insight" onClick={()=>onPage('insights')}><Sparkles size={21}/><div><strong>{moteText("你最近的洞察")}</strong><p>{answerPreview(insights[0],125)}</p><small>{insights[0].citations.length}{' '}{moteText("条证据来源")}</small></div><ArrowRight size={18}/></button>}
@@ -711,15 +726,15 @@ function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,ran
 
 function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>{moteText("应用活动概况")}</h2><p>{moteText("前台应用采样时长 ·")}{' '}{duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">{moteText("多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。")}</p></>:<Empty icon={Clock3} title={moteText("这段时间还没有活动采样")}><p>{moteText("设备完成同步后，可以在这里查看应用时间分布。")}</p></Empty>}</section>;}
 
-type ArchiveTab = 'records'|'files'|'activity'|'media'|'memories';
+type ArchiveTab = 'records'|'files'|'activity'|'media'|'memories'|'sources';
 function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
- return <div className="archive-page"><div className="page-heading"><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("浏览原始记录、活动与播放分布，以及有证据支撑的记忆。")}</p></div><nav className="segmented-nav" aria-label={moteText("资料库分类")}>{([['records',moteText("全部记录")],['files',moteText("文件")],['activity',moteText("应用活动")],['media',moteText("媒体播放")],['memories',moteText("记忆")]] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='files'&&<Files api={api} onOpen={onOpen}/>} {tab==='records'&&<Timeline embedded api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories embedded api={api} range={range} onOpen={onOpen} refreshVersion={revision}/>}</div>;
+ return <div className="archive-page"><div className="page-heading"><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("浏览原始记录、活动与播放分布，以及有证据支撑的记忆。")}</p></div><nav className="segmented-nav" aria-label={moteText("资料库分类")}>{([['records',moteText("全部记录")],['sources',moteText("来源资料")],['activity',moteText("应用活动")],['media',moteText("媒体播放")],['memories',moteText("记忆")]] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='sources'&&<Sources mode="library" api={api} onOpen={onOpen} onImport={()=>{location.hash='/library/import';}}/>}{tab==='files'&&<Files api={api} onOpen={onOpen}/>} {tab==='records'&&<Timeline embedded api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories embedded api={api} range={range} onOpen={onOpen} refreshVersion={revision}/>}</div>;
 }
 
 function Timeline(props:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number;embedded?:boolean}) {
   const Heading=props.embedded?'h2':'h1';
-  const [view,setView]=useState('sessions');
-  return <><div className="filter-bar" role="group" aria-label={moteText("记录视图")}><button className={'button '+(view==='sessions'?'primary':'')} onClick={()=>setView('sessions')}>{moteText("Session / App 分组")}</button><button className={'button '+(view==='records'?'primary':'')} onClick={()=>setView('records')}>{moteText("全部记录")}</button></div>{view==='sessions'?<><div className="page-heading timeline-heading"><div className="eyebrow">{moteText("沿着连续的记录回看")}</div><Heading>{moteText("采集记录")}</Heading><p>{moteText("先看一段，再展开其中的截图与上下文。")}</p></div><CaptureSessions {...props}/></>:<RecordTimeline {...props}/>}</>;
+  const [view,setView]=useState(props.embedded?'records':'sessions');
+  return <><div className="filter-bar" role="group" aria-label={moteText("记录视图")}><button className={'button '+(view==='sessions'?'primary':'')} onClick={()=>setView('sessions')}>{moteText("片段 / 应用分组")}</button><button className={'button '+(view==='records'?'primary':'')} onClick={()=>setView('records')}>{moteText("全部记录")}</button></div>{view==='sessions'?<><div className="page-heading timeline-heading"><div className="eyebrow">{moteText("沿着连续的记录回看")}</div><Heading>{moteText("片段")}</Heading><p>{moteText("先看一段，再展开其中的截图与上下文。")}</p></div><CaptureSessions {...props}/></>:<RecordTimeline {...props}/>}</>;
 }
 function RecordTimeline({
   api,
@@ -732,7 +747,7 @@ function RecordTimeline({
   onOpen: (id: string) => void;
   revision: number;
 }) {
-  const [layout,setLayout]=useState<'grid'|'list'>(()=>localStorage.getItem('mote.record-layout')==='list'?'list':'grid');
+  const [layout,setLayout]=useState<'grid'|'list'>(()=>localStorage.getItem('mote.record-layout')==='grid'?'grid':'list');
   const [after, setAfter] = useState("");
   const [before, setBefore] = useState("");
   const [device, setDevice] = useState("");
@@ -1240,8 +1255,20 @@ function App() {
   const connectionGeneration = useRef(0);
   const [verified, setVerified] = useState(false);
   const [showConnect, setShowConnect] = useState(false);
-  const [page, setPage] = useState<Page>(()=>['ask','notes','vault'].includes(location.hash.slice(1))?location.hash.slice(1) as Page:'overview');
-  useEffect(()=>{const navigate=()=>{const target=location.hash.slice(1);if(['ask','notes','vault'].includes(target))setPage(target as Page);};window.addEventListener('hashchange',navigate);return()=>window.removeEventListener('hashchange',navigate);},[]);
+  const [page, setPage] = useState<Page>(() => readPage(location.hash));
+  const pageRef = useRef(page); pageRef.current = page;
+  useEffect(() => {
+    const navigate = () => {
+      const next = readPage(location.hash);
+      if (next !== pageRef.current && !confirmNavigation()) {
+        history.replaceState(null, '', '#/' + routes[pageRef.current]); return;
+      }
+      setPage(next); setMenuOpen(false);
+      updateEvidenceId(new URLSearchParams(location.hash.split('?')[1] || '').get('evidence'));
+    };
+    window.addEventListener('hashchange', navigate);
+    return () => window.removeEventListener('hashchange', navigate);
+  }, []);
   const [period, setPeriod] = useState("week");
   const [menuOpen, setMenuOpen] = useState(false);
   const [status, setStatus] = useState<Status | null>(null);
@@ -1258,7 +1285,13 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
-  const [evidenceId, setEvidenceId] = useState<string | null>(null);
+  const [evidenceId, updateEvidenceId] = useState<string | null>(()=>new URLSearchParams(location.hash.split('?')[1] || '').get('evidence'));
+  const setEvidenceId = useCallback((id:string|null) => {
+    const base = '#/' + routes[pageRef.current];
+    if (id) history.pushState({evidence:true}, '', base+'?evidence='+encodeURIComponent(id));
+    else history.replaceState(null, '', base);
+    updateEvidenceId(id);
+  }, []);
   const [notice, setNotice] = useState("");
   const [timelineRevision, setTimelineRevision] = useState(0);
   const disconnect = useCallback(() => {
@@ -1355,10 +1388,16 @@ function App() {
   }, [api, refresh]);
   useEffect(() => {
     if (showConnect) return;
+    const tabs=document.querySelector<HTMLElement>('.content>.section-tabs');
+    const active=tabs?.querySelector<HTMLElement>('[aria-current=page]');
+    if(tabs&&active) tabs.scrollTo({left:active.offsetLeft-tabs.offsetLeft-16});
     const heading = Array.from(document.querySelectorAll<HTMLElement>(".content h1")).find(element => element.getClientRects().length);
     if (heading) { heading.tabIndex = -1; heading.focus({preventScroll: true}); }
   }, [page, showConnect]);
   function onPage(next: Page) {
+    if (next !== page && !confirmNavigation()) return;
+    history.pushState(null, '', '#/' + routes[next]);
+    updateEvidenceId(null);
     setPage(next);
     if (!connection) setShowConnect(true);
     setMenuOpen(false);
@@ -1394,23 +1433,14 @@ function App() {
             Mote<span className="brand-dot">.</span>
           </span>
         </button>
-        <div className="workspace-label">{moteText("中央管理界面")}</div>
+        <div className="workspace-label">{moteText("中央工作台")}</div>
         <nav>
-          {[moteText("日常"), moteText("资料"), moteText("管理")].map(group => <React.Fragment key={group}><div className="nav-group-label">{group}</div>{nav.filter(item=>item.group===group).map((item) => (
-            <button
-              key={item.id}
-              className={page === item.id ? "active" : ""}
-              aria-current={page === item.id ? "page" : undefined}
-              onClick={() => onPage(item.id)}
-            >
-              <item.icon size={18} strokeWidth={1.7} />
-              {item.label}
-              {item.id === "ask" && <span className="nav-spark">✦</span>}
-            </button>
-          ))}</React.Fragment>)}
+          {nav.map(item => <button key={item.id} className={sectionFor(page) === item.section ? 'active' : ''} aria-current={sectionFor(page) === item.section ? 'page' : undefined} onClick={() => onPage(item.id)}><item.icon size={18} strokeWidth={1.7}/>{item.label}</button>)}
         </nav>
         <div className="sidebar-bottom"><LanguageSelector/>
-          <button aria-current={["lark","settings","vault","developer","about","connections"].includes(page)?"page":undefined} className={"settings-nav "+(["lark","settings","vault","developer","about","connections"].includes(page)?"active":"")} onClick={()=>onPage("settings")}><Settings2 size={18}/>{moteText("设置")}</button>
+          <button aria-current={sectionFor(page)==='system'?'page':undefined} className={'settings-nav '+(sectionFor(page)==='system'?'active':'')} onClick={()=>onPage('statistics')}><HardDrive size={18}/>{moteText('系统管理')}</button>
+          <button aria-current={page==='about'?'page':undefined} className={'settings-nav '+(page==='about'?'active':'')} onClick={()=>onPage('about')}><Settings2 size={18}/>{moteText('设置')}</button>
+          <button aria-current={page==='help'?'page':undefined} className={'settings-nav '+(page==='help'?'active':'')} onClick={()=>onPage('help')}><Info size={18}/>{moteText('帮助与反馈')}</button>
           <div className="local-note">
             <span className="orbit-mark">✳</span>
             <p>
@@ -1454,7 +1484,7 @@ function App() {
               <strong>{pageLabels[page]}</strong>
             </span>
           </div>
-          <div className="topbar-actions">
+          <div className="topbar-actions"><button className="button primary quick-note" onClick={()=>onPage("notes")}><FileText size={16}/>{moteText("记录")}</button>
             <CentralStatusPill
               connection={connection}
               verified={verified}
@@ -1498,6 +1528,7 @@ function App() {
           </div>
         </header>
         <div className="content">
+          {(['library','connections','system'] as const).filter(group=>sectionFor(page)===group).map(group=><nav className="section-tabs" aria-label={group} key={group}>{sections[group].map(target=><button key={target} aria-current={page===target?'page':undefined} onClick={()=>onPage(target)}>{pageLabels[target]}</button>)}</nav>)}
           {notice && (
             <div className="notice" role="status">
               <Info size={17} />
@@ -1631,8 +1662,12 @@ function App() {
                           disconnect={disconnect}
                         /></>
                       )}
-                      {page === "sources" && <Sources api={api} onOpen={setEvidenceId} onImport={()=>onPage("imports")} />}
+                      {page === "sources" && <Sources onBrowse={()=>{setArchiveTab("sources");onPage("archive");}} api={api} onOpen={setEvidenceId} onImport={()=>onPage("imports")} />}
                       {page === "imports" && <Imports api={api} refreshVersion={timelineRevision} onOpen={setEvidenceId} onMemories={()=>onPage("memories")} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
+                      {page === "files" && <Files api={api} onOpen={setEvidenceId}/>}
+                      {page === "processing" && <Processing api={api} onNavigate={onPage}/>}
+                      {page === "extensions" && <Processing api={api} extensions onNavigate={onPage}/>}
+                      {page === "help" && <><div className="page-heading"><h1>{moteText('帮助与反馈')}</h1><p>{moteText('检查连接、权限与处理状态，或提交问题反馈。')}</p></div><Feedback profile={status?.profile}/><button className="button" onClick={()=>onPage('developer')}>{moteText('诊断与更新')}</button></>}
                       {page === "statistics" && <StorageStatistics api={api} onUsage={()=>onPage("usage")}/>}
                       {page === "usage" && <Usage api={api}/>}
                       {page === "insights" && <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured??false} onOpen={setEvidenceId} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
@@ -1641,9 +1676,9 @@ function App() {
                       {page === "lark" && <LarkSettings api={api} onBack={()=>onPage("settings")} onSources={()=>onPage("sources")}/>}
                       {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
                       {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
-                      {page === "connections" && <><PageBack title={moteText("设备")} onBack={()=>onPage("devices")}/><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
-                      {page === "developer" && status && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("开发与维护")}</div><h1>{moteText("开发者选项")}</h1><p>{moteText("查看运行诊断，按需调整日志与高级部署配置。")}</p></div><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
-                      {page === "about" && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("你的资料，由你保管")}</div><h1>{moteText("关于 Mote")}</h1><p>{moteText("AI 原生个人上下文采集与中央归档。")}</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>{moteText("当前服务（中央节点）")}</h2><p>{window.location.origin}</p><label className="session-lifetime-control"><span><strong>{moteText("登录会话有效期")}</strong><small>{sessionLifetime==='session'?moteText("仅保留在当前浏览器标签页；关闭后需要重新登录。"):moteText("管理令牌仍由中央节点控制；浏览器中的登录会话会在期限后自动清除。")}</small></span><select aria-label={moteText("登录会话有效期")} value={sessionLifetime} onChange={e=>changeSessionLifetime(e.target.value as SessionLifetime)}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label><p className="fine-print">{moteText("这是网页端登录会话的本地保存期限，不会修改中央节点的管理令牌或采集端凭据。")}</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>{moteText("退出登录")}</button></section></>}
+                      {page === "connections" && <><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
+                      {page === "developer" && status && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("开发与维护")}</div><h1>{moteText("诊断与更新")}</h1><p>{moteText("查看运行诊断，按需调整日志与高级部署配置。")}</p></div><SoftwareUpdate api={api}/><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
+                      {page === "about" && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("你的资料，由你保管")}</div><h1>{moteText("设置")}</h1><p>{moteText("AI 原生个人上下文采集与中央归档。")}</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>{moteText("当前服务（中央节点）")}</h2><p>{window.location.origin}</p><label className="session-lifetime-control"><span><strong>{moteText("登录会话有效期")}</strong><small>{sessionLifetime==='session'?moteText("仅保留在当前浏览器标签页；关闭后需要重新登录。"):moteText("管理令牌仍由中央节点控制；浏览器中的登录会话会在期限后自动清除。")}</small></span><select aria-label={moteText("登录会话有效期")} value={sessionLifetime} onChange={e=>changeSessionLifetime(e.target.value as SessionLifetime)}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label><p className="fine-print">{moteText("这是网页端登录会话的本地保存期限，不会修改中央节点的管理令牌或采集端凭据。")}</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>{moteText("退出登录")}</button></section></>}
                     </>
                   )}
             </>

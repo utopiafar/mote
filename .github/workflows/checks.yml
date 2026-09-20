@@ -20,6 +20,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build:libs
       - run: node scripts/check-i18n.mjs
+      - run: node --test scripts/release/dev-assets.test.mjs
       - run: npm run typecheck
       - run: npm run build -w @mote/server -w @mote/web
       - run: node --import tsx scripts/test-live-metadata.ts --prepare-only --out .mote/ci-metadata-fixture

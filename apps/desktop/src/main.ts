@@ -367,14 +367,15 @@ else {
     handle('mote:captures-detail', (location, id) => browseWithConnection(config => captureDetail(queue, config, location as CaptureLocation, id as string)));
     handle('mote:captures-image', (location, id, thumbnail) => browseWithConnection(config => captureImage(queue, config, location as CaptureLocation, id as string, thumbnail as boolean)));
     handle('mote:installed-applications', () => process.platform === 'darwin' ? readInstalledApplications(helperPath).catch(() => []) : []);
-    handle('mote:update-status', () => updater!.status());
+    const devUpdateStatus = () => ({...updater!.status(), manualDownload:true, state:'idle' as const, canInstall:false, availableVersion:undefined, notesUrl:'https://github.com/utopiafar/mote/releases', message:moteText('开发阶段仅提供 DEV 安装包，请到 GitHub 下载并手动安装。'), installReason:''});
+    handle('mote:update-status', () => developmentBuild ? devUpdateStatus() : updater!.status());
     handle('mote:update-channel', channel => updater!.setChannel(channel));
-    handle('mote:update-check', () => updater!.check());
+    handle('mote:update-check', () => developmentBuild ? devUpdateStatus() : updater!.check());
     handle('mote:update-download', () => updater!.download());
     handle('mote:update-cancel', () => updater!.cancel());
     handle('mote:update-install', () => serialize(() => updater!.install(async () => { collector.stop(); await collector.settleCapture(); await settleNoteWork(); }, () => app.quit())));
     handle('mote:update-reveal', () => { const archive = updater!.archivePath(); if (archive) shell.showItemInFolder(archive); });
-    handle('mote:update-notes', async () => { const url = updater!.status().notesUrl; if (url) await shell.openExternal(url); });
+    handle('mote:update-notes', async () => { const url = developmentBuild ? 'https://github.com/utopiafar/mote/releases' : updater!.status().notesUrl; if (url) await shell.openExternal(url); });
     handle('mote:feedback', () => shell.openExternal(githubFeedbackUrl({
       version: app.getVersion(),
       platform: `${process.platform === 'darwin' ? 'macOS' : currentPlatform} ${process.getSystemVersion()} · ${process.arch}`,

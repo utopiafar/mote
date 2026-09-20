@@ -22,6 +22,7 @@ app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', () => {
     void (async () => {
       const js = code => window.webContents.executeJavaScript(code);
+      await js("window.confirm=()=>true;true;");
       const wait = async (label, predicate) => {
         const end = Date.now() + 15000;
         while (!await predicate()) { assert(Date.now() < end, label); await new Promise(resolve => setTimeout(resolve, 30)); }

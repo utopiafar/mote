@@ -11,6 +11,7 @@ app.on('browser-window-created',(_,w)=>{
  w.webContents.setBackgroundThrottling(false);
  w.webContents.once('did-finish-load',()=>void(async()=>{
   const js=code=>w.webContents.executeJavaScript(code);
+      await js("window.confirm=()=>true;true;");
   for(let i=0;i<100;i++){if(await js('!!window.mote'))break;await new Promise(r=>setTimeout(r,50));}
   await js("document.querySelector('[data-nav=privacy]').click()");
   assert.equal(await js("document.querySelector('#ui-page-mode').value"),'screen_only');

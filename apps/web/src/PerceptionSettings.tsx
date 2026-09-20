@@ -1,3 +1,4 @@
+import {useUnsavedChanges} from './unsaved';
 import {moteText} from '@mote/shared/i18n';
 import {useEffect,useState} from 'react';
 import {type Api,errorMessage} from './api';
@@ -5,6 +6,7 @@ type Settings={providerRevision:string;enabled:boolean;ocrEndpoint:string;semant
 type View={recent:{id:string;kind:string;state:string;error?:string}[];settings:Settings;jobs:{kind:string;state:string;count:number}[]};
 export function PerceptionSettings({api}:{api:Api}){
  const [view,setView]=useState<View>(),[settings,setSettings]=useState<Settings>(),[error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false);
+ useUnsavedChanges(!!view && JSON.stringify(settings) !== JSON.stringify(view.settings));
  useEffect(()=>{const c=new AbortController();api.request<View>('/api/perception',{signal:c.signal}).then(v=>{setView(v);setSettings(v.settings);}).catch(e=>{if(!c.signal.aborted)setError(errorMessage(e));});return()=>c.abort();},[api]);
  const change=<K extends keyof Settings>(key:K,value:Settings[K])=>{setSettings(s=>s?{...s,[key]:value}:s);setSaved(false);};
  return <section className="panel perception-settings"><h2>{moteText("中央感知")}</h2><p>{moteText("截图先可靠归档，再独立生成 L1 OCR 与 L2 语义结果。识别失败不影响原图归档，语义失败不阻塞已完成的文字检索。")}</p>{error&&<p role="alert">{error}</p>}{settings&&<form onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{const v=await api.request<View>('/api/perception',{method:'PUT',body:JSON.stringify(settings)});setView(v);setSettings(v.settings);setSaved(true);}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}}>

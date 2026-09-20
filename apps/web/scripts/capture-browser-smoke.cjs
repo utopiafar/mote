@@ -51,7 +51,12 @@ async function finish(code) {
   wc.on('console-message',(_event,level,message)=>{if(level>=3)errors.push(message);});
   const js=code=>wc.executeJavaScript(code);
   const recordsView=()=>until(()=>js(`(()=>{const button=Array.from(document.querySelectorAll('[aria-label="记录视图"] button')).find(button=>button.innerText==='全部记录');if(!button)return false;button.click();return true;})()`),'select individual record view');
-  const clickNav=async label=>{await js(`Array.from(document.querySelectorAll('.sidebar button')).find(button=>button.innerText===${JSON.stringify(label)}).click()`);if(label==='采集记录')await recordsView();};
+  const clickNav=async label=>{
+    const parent=label==='采集记录'?'资料库':label==='设备'?'连接':label;
+    await js(`Array.from(document.querySelectorAll('.sidebar button')).find(button=>button.innerText===${JSON.stringify(parent)}).click()`);
+    if(label==='采集记录'||label==='设备')await until(()=>js(`(()=>{const b=Array.from(document.querySelectorAll('.section-tabs button')).find(b=>b.innerText===${JSON.stringify(label==='采集记录'?'片段':'设备')});if(!b)return false;b.click();return true;})()`),'secondary navigation');
+    if(label==='采集记录')await recordsView();
+  };
   await window.loadURL(url);
   await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'authenticated app');
@@ -66,6 +71,9 @@ async function finish(code) {
   writeFileSync(join(output,'records-desktop.png'),(await wc.capturePage()).toPNG());
   await js(`document.querySelectorAll('.timeline-group .capture-card')[1].click()`);
   await until(()=>js(`document.querySelector('[aria-label="OCR 全文"]')?.textContent.includes('全文末尾_SENTINEL')`),'full OCR in detail after one click');
+  assert(!requests.some(item=>item.endsWith(`/api/capture-browser/${ids[1]}/image`)),'opening evidence must not load the original');
+  await js(`Array.from(document.querySelectorAll('.original-image button')).find(b=>b.innerText==='查看原图').click()`);
+  await until(()=>js(`!!document.querySelector('.original-image img')`),'explicit original image');
   assert(requests.some(item=>item.endsWith(`/api/capture-browser/${ids[1]}/image`)));
   window.setSize(390,844);await sleep(200);
   assert(await js('document.documentElement.scrollWidth<=window.innerWidth'),'mobile detail fits');

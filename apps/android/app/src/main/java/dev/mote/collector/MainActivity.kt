@@ -56,7 +56,7 @@ class MainActivity : MoteActivity() {
     private var currentPage = Page.OVERVIEW
     private var draftGeneration = 0
     private enum class Page(private val titleKey: String, val parent: String? = null) {
-        OVERVIEW("概览"), NOTES("随手记"), SOURCES("来源"), SETTINGS("设置"),
+        OVERVIEW("今天"), LIBRARY("资料"), ASK("问一问"), NOTES("随手记", "SETTINGS"), SOURCES("本机来源", "SETTINGS"), SETTINGS("本机"),
         CONNECTION("连接与同步", "SETTINGS"), CAPTURE("采集与存储", "SETTINGS"),
         PROCESSING("图像与文字识别", "CAPTURE"), STORAGE("本机存储", "CAPTURE"),
         PRIVACY("隐私与应用规则", "SETTINGS"), PERMISSIONS("权限与后台运行", "SETTINGS"),
@@ -161,6 +161,11 @@ class MainActivity : MoteActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; setBackgroundColor(MoteUi.background); moteInsets()
         }
+        val quickNote = MoteUi.button(Button(this).apply {
+            text = MoteI18n.text("记录"); contentDescription = MoteI18n.text("写一条随手记")
+            setOnClickListener { showPage(Page.NOTES) }
+        })
+        root.addView(quickNote, LinearLayout.LayoutParams(-2, dp(48)).apply { gravity = Gravity.END; marginEnd = dp(16) })
         pagesHost = FrameLayout(this)
         root.addView(pagesHost, LinearLayout.LayoutParams(-1, 0, 1f))
         saveBar = LinearLayout(this).apply {
@@ -177,9 +182,9 @@ class MainActivity : MoteActivity() {
             orientation = LinearLayout.HORIZONTAL; setPadding(dp(12), dp(8), dp(12), dp(8)); setBackgroundColor(Color.WHITE)
             elevation = dp(2).toFloat()
         }
-        listOf(Page.OVERVIEW, Page.NOTES, Page.SOURCES, Page.SETTINGS).forEach { page ->
+        listOf(Page.OVERVIEW, Page.LIBRARY, Page.ASK, Page.SETTINGS).forEach { page ->
             val item = TextView(this).apply {
-                text = page.title; textSize = 11f; gravity = Gravity.CENTER; minHeight = dp(60)
+                text = page.title; textSize = 14f; gravity = Gravity.CENTER; minHeight = dp(60)
                 compoundDrawablePadding = dp(4); isFocusable = true
                 contentDescription = page.title; setOnClickListener { showPage(page) }
             }
@@ -188,10 +193,13 @@ class MainActivity : MoteActivity() {
         }
         root.addView(nav)
         setContentView(root)
+        buildToday()
+        buildLibrary()
+        buildAsk()
         buildOverview()
+        buildSettings()
         buildNotes()
         buildSources()
-        buildSettings()
         buildConnection(config)
         buildCapture(config)
         buildProcessing(config)
@@ -212,8 +220,30 @@ class MainActivity : MoteActivity() {
         refreshStatus()
     }
 
+    private fun buildToday() {
+        page(Page.OVERVIEW, MoteI18n.text("回看最近记录，确认下一步行动"))
+        menu(MoteI18n.text("最近记录"), MoteI18n.text("本机保存的内容，离线也能查看"), "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
+        menu(MoteI18n.text("随手记"), MoteI18n.text("留住此刻的想法"), "note") { showPage(Page.NOTES) }
+        menu(MoteI18n.text("日程建议"), MoteI18n.text("逐条确认，添加到手机已有日历"), "folder") { startActivity(Intent(this, CalendarActionsActivity::class.java)) }
+        menu(MoteI18n.text("中央工作台"), MoteI18n.text("需要独立登录中央；设备配对不授予资料读取权限"), "sync") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "overview")) }
+        menu(MoteI18n.text("本机采集"), MoteI18n.text("查看正在收集什么，随时暂停"), "capture") { showPage(Page.SETTINGS) }
+    }
+
+    private fun buildLibrary() {
+        page(Page.LIBRARY, MoteI18n.text("本机记录与中央归档，分别查看"))
+        menu(MoteI18n.text("本机记录"), MoteI18n.text("无需中央登录；查看本机保存和待同步内容"), "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
+        menu(MoteI18n.text("中央资料库"), MoteI18n.text("需要独立登录中央；设备配对不授予资料读取权限"), "folder") { startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "archive")) }
+        menu(MoteI18n.text("本机来源"), MoteI18n.text("文件、日历、媒体与通知"), "folder") { showPage(Page.SOURCES) }
+    }
+
+    private fun buildAsk() {
+        page(Page.ASK, MoteI18n.text("基于已授权资料回答，并保留证据来源"))
+        text(MoteI18n.text("问答需要中央所有者授权，设备配对凭据不能用于问答。"), 16, MoteUi.muted)
+        button(MoteI18n.text("打开对话"), true) { startActivity(Intent(this, AskActivity::class.java)) }
+    }
+
     private fun buildOverview() {
-        page(Page.OVERVIEW, MoteI18n.text("让经历留有线索"))
+        page(Page.SETTINGS, MoteI18n.text("本机采集、隐私与同步，各自可控"))
         menu(MoteI18n.text("问一问"), MoteI18n.text("对话在中央继续，可随时返回查看或停止"), "note") { startActivity(Intent(this, AskActivity::class.java)) }
         menu(MoteI18n.text("中央导出"), MoteI18n.text("导出中央元数据与资料"), "folder") { startActivity(Intent(this, BackupActivity::class.java)) }
         card(MoteUi.tint) {
@@ -256,7 +286,8 @@ class MainActivity : MoteActivity() {
                 }.setNegativeButton(android.R.string.cancel, null).show()
         }
 
-        page(Page.SETTINGS, MoteI18n.text("按你的习惯，照顾好每一份记录"))
+        menu(MoteI18n.text("本机来源"), MoteI18n.text("文件、日历、媒体与通知"), "folder") { showPage(Page.SOURCES) }
+        menu(MoteI18n.text("诊断与支持"), MoteI18n.text("日志与问题排查"), "settings") { showPage(Page.DIAGNOSTICS) }
         section(MoteI18n.text("记录与数据"))
         menu(MoteI18n.text("连接与同步"), MoteI18n.text("中央节点、设备名称与上传网络"), "sync") { showPage(Page.CONNECTION) }
         menu(MoteI18n.text("采集与存储"), MoteI18n.text("采样频率、图像质量与电量策略"), "capture") { showPage(Page.CAPTURE) }
@@ -1041,7 +1072,7 @@ class MainActivity : MoteActivity() {
         localStateJob = observeLocalState { refreshStatus() }
         handler.post(refresh)
     }
-    override fun onStop() { if (!isChangingConfigurations) discardPageDraft(); super.onStop() }
+    override fun onStop() { super.onStop() }
     override fun onDestroy() { statusExecutor.shutdownNow(); handler.removeCallbacksAndMessages(null); super.onDestroy() }
     private fun dp(value: Int) = moteDp(value)
 
@@ -1069,7 +1100,14 @@ class MainActivity : MoteActivity() {
         text(subtitle, 14, MoteUi.muted)
     }
 
-    private fun showPage(page: Page) {
+    private fun showPage(page: Page, discardConfirmed: Boolean = false) {
+        if (!initializing && page != currentPage && !discardConfirmed && pageControlValues().any { (key, value) -> baseline[key] != value }) {
+            MoteDialogBuilder(this).setTitle(MoteI18n.text("有未保存的更改"))
+                .setMessage(MoteI18n.text("离开并丢弃修改？"))
+                .setNegativeButton(MoteI18n.text("继续编辑"), null)
+                .setPositiveButton(MoteI18n.text("丢弃修改")) { _, _ -> showPage(page, true) }.show()
+            return
+        }
         if (page == Page.PERMISSIONS) updatePermissionSummary()
         if (currentPage != page) {
             if (pageControlValues().isNotEmpty()) discardPageDraft()

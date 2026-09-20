@@ -111,3 +111,12 @@ test('plugin withdrawal blocks queued work and a changed version gets a new cach
 test('upgrading memory extraction resets a legacy evidence cursor exactly once',async t=>{
  const {MemoryLifecycle}=await import('../src/memory-lifecycle.js');const store=fixture(t),old=new MemoryLifecycle(store,()=>false);old.register({id:'extraction',version:'1',stream:'evidence',async run(){}});store.db.prepare("UPDATE memory_lifecycle_state SET json=? WHERE id='extraction'").run(JSON.stringify({cursor:900000,lastSuccess:0,failures:2,active:{version:'1'}}));const upgraded=new MemoryLifecycle(store,()=>false);upgraded.register({id:'extraction',version:'2',stream:'artifact',async run(){}});assert.equal(upgraded.view().extensions[0].cursor,0);store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json,'$.cursor',9) WHERE id='extraction'").run();const reopened=new MemoryLifecycle(store,()=>false);reopened.register({id:'extraction',version:'2',stream:'artifact',async run(){}});assert.equal(reopened.view().extensions[0].cursor,9);
 });
+
+test('processing presentation exposes bounded steps and valid actions without raw configuration or content',async t=>{
+ const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation('Generated private content');await store.ingest(a);
+ runtime.registry.register({id:'fixture.presentation',version:'1',lane:'extract',async process(){throw new ProcessingFailure('permanent');}});
+ const queued=runtime.enqueue([{name:'test',processor:'fixture.presentation',inputs:[a.id],config:{credential:'generated-only-secret'}}]);
+ let view=runtime.view();assert.equal(view.jobs.length,1);assert.deepEqual(view.jobs[0].allowedActions,['cancel']);assert.equal(JSON.stringify(view).includes('generated-only-secret'),false);assert.equal(JSON.stringify(view).includes(a.ocrText),false);
+ await runtime.tick();view=runtime.view();assert.equal(view.jobs[0].state,'failed');assert.deepEqual(view.jobs[0].allowedActions,['retry-step','cancel']);
+ runtime.cancel(view.jobs[0].id);assert.deepEqual(runtime.view().jobs[0].allowedActions,['retry-step']);
+});

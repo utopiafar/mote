@@ -25,7 +25,7 @@ else if(component==='android'){
   if(!['arm64','x64'].includes(variant))throw Error('Unsupported Mac architecture');
   const mode=process.env.MOTE_MAC_SIGNING_MODE||'adhoc';
   if(!['adhoc','developer-id'].includes(mode))throw Error('Invalid Mac signing mode');
-  asset={component,platform:'darwin',arch:variant,format:'zip',name:`mote-desktop-macos-${variant}-${version}.zip`,bundleId:policy.macBundleId,signing:mode,...(mode==='developer-id'?{teamId:process.env.MOTE_APPLE_TEAM_ID}:{})};
+  asset={component,platform:'darwin',arch:variant,format:'zip',name:`mote-desktop-macos-${process.env.MOTE_MAC_DEVELOPMENT==='1'?'dev-':''}${variant}-${version}.zip`,bundleId:process.env.MOTE_MAC_DEVELOPMENT==='1'?'dev.mote.collector.dev':policy.macBundleId,signing:mode,...(mode==='developer-id'?{teamId:process.env.MOTE_APPLE_TEAM_ID}:{})};
 }else throw Error('Choose a supported release component');
 const path=join(out,asset.name);if(resolve(input)!==path)copyFileSync(input,path);
 Object.assign(asset,{size:statSync(path).size,sha256:createHash('sha256').update(readFileSync(path)).digest('hex'),url:`https://github.com/${policy.repository}/releases/download/v${version}/${asset.name}`});

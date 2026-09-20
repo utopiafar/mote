@@ -1,3 +1,4 @@
+import {useUnsavedChanges} from './unsaved';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {useEffect, useRef, useState} from 'react';
 import {Check, ExternalLink, KeyRound, LoaderCircle, RotateCcw, Save, SlidersHorizontal, TestTube2} from 'lucide-react';
@@ -117,6 +118,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   const draft = active?.draft, saved = active?.latest.settings;
   const preset = MODEL_PROVIDER_PRESETS.find(p => p.id === draft?.provider);
   const dirty = active ? modelDraftChanged(active.draft, active.snapshot.settings)||active.name!==profileName(active.snapshot) : false;
+  useUnsavedChanges(dirty);
   const credentialChoice = (field: 'apiKeyAction' | 'headersAction' | 'extraBodyAction', label: string, configured: boolean) => <label className="preference-field">{label}<select aria-label={label} value={draft![field]} onChange={e => change({[field]: e.target.value as CredentialAction, ...(field === 'apiKeyAction' ? {apiKey: ''} : field === 'headersAction' ? {headers: ''} : {extraBody: ''})})}><option value="keep">{moteText("不改动（")}{configured ? moteText("已配置") : moteText("未配置")}）</option><option value="replace">{moteText("填写新值，替换已有配置")}</option><option value="clear">{moteText("清除已有配置")}</option></select></label>;
   return <>
     <section className="panel config-builder model-settings-editor" aria-label={moteText("模型服务设置")} aria-busy={busy}>

@@ -31,6 +31,7 @@ app.on('browser-window-created', (_event, window) => {
   window.webContents.once('did-finish-load', () => {
     void (async () => {
       const js = code => window.webContents.executeJavaScript(code);
+      await js("window.confirm=()=>true;true;");
       const settingsIdle = async phase => {
         currentPhase = phase;
         for (let i = 0; i < 200; i++) {

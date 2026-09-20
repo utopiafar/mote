@@ -1,5 +1,8 @@
 # 发布版本与签名
 
+> **当前开发阶段（0.0.57 起）**：GitHub 每条发布是 DEV prerelease，仅附 Mac DEV ZIP 和 Android DEV APK。不发布正式客户端、服务端包或哈希/签名附件。DEV 客户端手动下载并安装；中央从源码部署并在升级前备份。CI 仍验证包身份、平台签名及内容完整性。当前 0.0.56 的附件已同样收敛为两个 DEV 包。下面涉及签名清单与自动更新的内容保留为历史机制说明，当前 DEV 发布不使用该通道。见 [当前策略](ui-slate.md)。
+
+
 Mote 的客户端、中央节点和中央前端使用同一个产品版本。发布使用 `vX.Y.Z` Git 标签；撤下的试验 Release 仍可保留历史标签用于追溯。发布入口是 [Release workflow](../.github/workflows/release.yml)，安装与更新入口见 [更新说明](updating.md)。
 
 ## 开发早期版本编号

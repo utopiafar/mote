@@ -1,3 +1,4 @@
+import {useUnsavedChanges} from './unsaved';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect,useState} from 'react';
 import {type Api,errorMessage,dateTime} from './api';
@@ -8,7 +9,8 @@ const names={extraction:moteText("资料记忆提取"),consolidation:moteText("�
 const statuses:Record<string,string>={disabled:moteText("已关闭"),pending:moteText("处理中或等待重试"),waiting_for_model:moteText("等待配置模型"),waiting_for_interval:moteText("等待周期"),waiting_for_increment:moteText("等待新增变化"),ready:moteText("等待下一次检查")};
 export function MemorySettings({api}:{api:Api}){
   const [view,setView]=useState<View>(),[draft,setDraft]=useState<Settings>(),[error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false);
-  useEffect(()=>{const controller=new AbortController();void api.request<View>('/api/memory-settings',{signal:controller.signal}).then(v=>{setView(v);setDraft(v.settings);}).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));});return()=>controller.abort();},[api]);
+  useUnsavedChanges(!!view && JSON.stringify(draft) !== JSON.stringify(view.settings));
+ useEffect(()=>{const controller=new AbortController();void api.request<View>('/api/memory-settings',{signal:controller.signal}).then(v=>{setView(v);setDraft(v.settings);}).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));});return()=>controller.abort();},[api]);
   async function save(){setBusy(true);setSaved(false);setError('');try{const v=await api.request<View>('/api/memory-settings',{method:'PUT',body:JSON.stringify(draft)});setView(v);setDraft(v.settings);setSaved(true);}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   return <section className="panel memory-settings"><div className="section-heading"><div><h2>{moteText("记忆与洞察的节奏")}</h2><p>{moteText("周期已到，并且新增变化达到门槛时才运行。每分钟检查一次；保存后直接生效，进行中的窗口沿用启动时的设置。")}</p></div></div>
     {error&&<p className="notice error" role="alert">{error}</p>}{saved&&<p role="status">{moteText("设置已保存。")}</p>}

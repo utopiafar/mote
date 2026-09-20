@@ -19,6 +19,7 @@ app.on('browser-window-created', (_event, window) => {
   window.webContents.setBackgroundThrottling(false);
   window.webContents.once('did-finish-load', () => void (async () => {
     const js = code => window.webContents.executeJavaScript(code);
+      await js("window.confirm=()=>true;true;");
     const until = async code => { for(let i=0;i<150;i++){if(await js(code))return;await new Promise(r=>setTimeout(r,50));} throw Error('Fixture condition failed: '+code); };
     await until("Boolean(document.querySelector('#status-dot')) && document.querySelector('#settings-fields').disabled === false");
     ipcMain.removeHandler('mote:ask');

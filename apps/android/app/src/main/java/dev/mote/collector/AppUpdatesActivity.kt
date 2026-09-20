@@ -28,6 +28,16 @@ class AppUpdatesActivity : MoteActivity() {
     private val refresh = object : Runnable { override fun run() { render(); handler.postDelayed(this, 1000) } }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (BuildConfig.APPLICATION_ID.endsWith(".dev")) {
+            val body = moteDetailPage()
+            body.addView(TextView(this).apply { text = "Mote DEV · ${BuildConfig.VERSION_NAME}"; textSize = 24f })
+            body.addView(TextView(this).apply { text = MoteI18n.text("开发阶段仅提供 DEV 安装包，请到 GitHub 下载并手动安装。"); textSize = 16f })
+            body.addView(MoteUi.button(Button(this).apply {
+                text = MoteI18n.text("下载 DEV 安装包")
+                setOnClickListener { runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/utopiafar/mote/releases"))) }.onFailure { Toast.makeText(this@AppUpdatesActivity, MoteI18n.text("无法打开 GitHub，请安装或启用浏览器后重试"), Toast.LENGTH_LONG).show() } }
+            }, true))
+            return
+        }
         val loading = moteDetailPage(); val label = TextView(this); loading.addView(label)
         task.start(MoteI18n.text("正在读取更新设置…"), { label.text = it }, {
             val value = AppUpdateStore(applicationContext); value to value.config()

@@ -31,7 +31,7 @@ async function run(){
  await until(()=>js(`document.querySelector('.welcome')`),'anonymous welcome');
  assert.equal(await js(`!!document.querySelector('.archive-page,.device-overview,.server-settings')`),false);
  await js(`window.fixtureRequests=[];window.fixtureFailures=new Set();window.fixtureExpire=false;const original=fetch.bind(window);window.fetch=async(input,init)=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;window.fixtureRequests.push(path);if(window.fixtureExpire&&path==='/api/status')return new Response(JSON.stringify({message:'Generated expired session'}),{status:401});if(window.fixtureFailures.has(path))return new Response(JSON.stringify({message:'Generated independent endpoint failure'}),{status:503});return original(input,init);};true;`);
- await click('设备');await until(()=>js(`document.querySelector('#connect-title')?.textContent==='登录 Mote'`),'device login guard');
+ await click('连接');await click('设备');await until(()=>js(`document.querySelector('#connect-title')?.textContent==='登录 Mote'`),'device login guard');
  assert.ok(await js(`document.querySelector('.connect-modal').innerText.includes('进入「设备」')`));
  assert.equal(await js(`!!document.querySelector('.login-advanced,[aria-label="登录节点地址"]')`),false,'management login has no remote node selector');
  assert.equal(await js(`document.querySelector('[aria-label="登录会话有效期"]')?.value`),'session','new login defaults to a tab-scoped session');
@@ -42,7 +42,7 @@ async function run(){
  await input(collector.token);await click('登录并继续');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('没有管理权限')`),'collector cannot unlock owner UI');
  assert.equal(await js(`!!document.querySelector('.device-overview')`),false);
  await js(`document.querySelector('[aria-label="关闭登录"]').click()`);
- await click('资料库');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('进入「资料库」')`),'preserve selected protected page');
+ await click('资料库');await until(()=>js(`document.querySelector('.connect-modal').innerText.includes('进入「全部资料」')`),'preserve selected protected page');
  await js(`window.fixtureFailures.add('/api/insights');window.fixtureFailures.add('/api/status');true;`);
  await input(owner);await click('登录并继续');
  await until(()=>js(`!!document.querySelector('.archive-page .filter-bar')`),'archive opens despite failed status and insights');
@@ -51,12 +51,12 @@ async function run(){
  await selectLifetime('1d');await until(()=>js(`!!localStorage.getItem('mote.connection')&&JSON.parse(localStorage.getItem('mote.connection')).expiresAt> Date.now()`),'persistent browser session');
  assert.equal(await js(`sessionStorage.getItem('mote.connection')`),null);
  await selectLifetime('session');await until(()=>js(`!!sessionStorage.getItem('mote.connection')&&!localStorage.getItem('mote.connection')`),'tab-scoped browser session');
- await click('设备');await until(()=>js(`document.querySelector('.device-overview')?.innerText.includes('合成测试手机')`),'devices load independently');
+ await click('连接');await click('设备');await until(()=>js(`document.querySelector('.device-overview')?.innerText.includes('合成测试手机')`),'devices load independently');
  await click('扫码连接设备');await until(()=>js(`!!document.querySelector('#connections-title')`),'pairing accessible without overview status');
  await click('生成设备二维码');await until(()=>js(`!!document.querySelector('.connection-qr img')`),'QR accessible after login');
  assert.equal(await js(`document.querySelector('[aria-label="连接邀请 JSON"]').value.includes(${JSON.stringify(owner)})`),false);
  await click('取消邀请');await until(()=>js(`!document.querySelector('.connection-invitation')`),'cancel synthetic invite');
- await js(`window.fixtureFailures.clear();true;`);await click('总览');await js(`document.querySelector('[aria-label="刷新资料"]').click()`);
+ await js(`window.fixtureFailures.clear();true;`);await click('今天');await js(`document.querySelector('[aria-label="刷新资料"]').click()`);
  await until(()=>js(`document.querySelector('.capture-card')`),'overview recovers after retry');
  await shot('authenticated-desktop');
  await js(`window.fixtureExpire=true;document.querySelector('[aria-label="刷新资料"]').click()`);

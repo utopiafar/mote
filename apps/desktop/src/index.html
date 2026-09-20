@@ -23,17 +23,19 @@
   </defs></svg>
   <aside class="sidebar" aria-label="主导航" data-i18n-aria-label="">
     <div class="brand"><span class="brand-icon" aria-hidden="true">m</span><strong>mote<span><span data-i18n>你的个人上下文</span></span></strong></div>
-    <nav class="main-nav" aria-label="工作空间" data-i18n-aria-label="">
-      <div class="sidebar-label"><span data-i18n>工作空间</span></div>
-      <button class="nav-item selected" data-nav="overview" type="button" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#icon-home"/></svg><span><span data-i18n>概览</span></span></button>
-      <button class="nav-item" data-nav="notes" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-note"/></svg><span><span data-i18n>随手记</span></span></button>
-      <button class="nav-item" data-nav="records" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg><span><span data-i18n>采集记录</span></span></button>
-      <button class="nav-item" data-nav="statistics" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-activity"/></svg><span data-i18n>统计中心</span></button>
-      <button class="nav-item" data-nav="sources" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-source"/></svg><span><span data-i18n>本地来源</span></span></button>
+    <nav class="main-nav" aria-label="主导航" data-i18n-aria-label="">
+      <div class="sidebar-label"><span data-i18n>本机</span></div>
+      <button class="nav-item selected" data-nav="overview" type="button" aria-current="page"><svg class="icon"><use href="#icon-home"/></svg><span data-i18n>本机采集</span></button>
+      <button class="nav-item" data-nav="records" type="button"><svg class="icon"><use href="#icon-screen"/></svg><span data-i18n>本机记录</span></button>
+      <button class="nav-item" data-nav="sources" type="button"><svg class="icon"><use href="#icon-source"/></svg><span data-i18n>本机来源</span></button>
+      <div class="sidebar-label"><span data-i18n>控制与保护</span></div>
+      <button class="nav-item" data-nav="privacy" type="button"><svg class="icon"><use href="#icon-shield"/></svg><span data-i18n>隐私与权限</span></button>
+      <button class="nav-item" data-nav="connection" type="button"><svg class="icon"><use href="#icon-link"/></svg><span data-i18n>连接与同步</span></button>
+      <button class="nav-item" data-nav="notes" type="button"><svg class="icon"><use href="#icon-note"/></svg><span data-i18n>记录</span></button>
     </nav>
-    <div class="sidebar-bottom">
+    <div class="sidebar-bottom"><button class="nav-item" data-nav="statistics" type="button"><span data-i18n>本机状态详情</span></button>
       <button id="ask-central" class="central-link" type="button"><span data-i18n>问一问</span></button>
-      <button id="central" class="central-link" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg><span><span data-i18n>打开中央仓库</span></span><span class="external-mark" aria-hidden="true">↗</span></button>
+      <button id="central" class="central-link" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg><span><span data-i18n>打开中央工作台</span></span><span class="external-mark" aria-hidden="true">↗</span></button>
       <button class="nav-item" data-nav="settings" type="button"><svg class="icon" aria-hidden="true"><use href="#icon-settings"/></svg><span><span data-i18n>设置</span></span><span id="settings-pending" class="pending-dot" aria-label="有未保存的设置" data-i18n-aria-label="" hidden></span></button>
       <div class="local-caption"><span class="local-dot" aria-hidden="true"></span><span id="sidebar-state"><span data-i18n>本地优先 · macOS</span></span></div>
     </div>
@@ -43,7 +45,7 @@
     <div id="feedback" role="alert" hidden></div>
 
     <section data-page="overview" class="page overview-page">
-      <header class="page-header"><div><div class="eyebrow"><span data-i18n>你的个人上下文</span></div><h1 tabindex="-1" data-page-title><span data-i18n>概览</span></h1><p><span data-i18n>让日常记录安静发生，需要时有迹可循。</span></p></div><span class="tag"><span class="local-dot" aria-hidden="true"></span><span data-i18n>保存在你的设备与节点</span></span></header>
+      <header class="page-header"><div><div class="eyebrow"><span data-i18n>你的个人上下文</span></div><h1 tabindex="-1" data-page-title><span data-i18n>本机采集</span></h1><p><span data-i18n>让日常记录安静发生，需要时有迹可循。</span></p></div><span class="tag"><span class="local-dot" aria-hidden="true"></span><span data-i18n>保存在你的设备与节点</span></span></header>
       <div id="setup-prompt" class="setup-prompt" hidden><span class="setting-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span><div><strong><span data-i18n>先在本机记录，准备好再连接</span></strong><p><span data-i18n>无需服务端也能采集和保存随手记。连接后按你选择的策略上传。</span></p></div><button class="primary" data-nav="connection" type="button"><span data-i18n>连接节点</span><span aria-hidden="true">→</span></button></div>
       <section id="central-status" class="central-status" aria-live="polite" aria-label="中央节点连接状态" data-i18n-aria-label="">
         <span id="central-status-icon" class="central-status-icon"><svg class="icon" aria-hidden="true"><use href="#icon-link"/></svg></span>

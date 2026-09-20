@@ -68,7 +68,7 @@ async function run() {
   await click('新对话'); assert.equal(await js(`document.querySelectorAll('.conversation-turn').length`), 0);
   await input('另一段独立的合成对话'); await click('发送问题'); await readyTurns(1);
   let rows = readFileSync(queries, 'utf8').trim().split('\n').map(JSON.parse); assert.equal(rows[2].conversation, undefined, 'new conversation has no prior context');
-  await click('总览'); await click('问一问'); await until(() => js(`document.querySelectorAll('.conversation-item').length===2`), 'history after navigation');
+  await click('今天'); await click('问一问'); await until(() => js(`document.querySelectorAll('.conversation-item').length===2`), 'history after navigation');
   await js(`Array.from(document.querySelectorAll('.conversation-item')).find(b=>b.textContent.includes('合成计划')).click()`); await readyTurns(2);
   await input('fixture-failure'); await click('发送问题'); await until(() => js(`document.querySelector('.conversation-content [role=alert]')`), 'model failure');
   const failedConversation = await (await request('/api/conversations/' + id)).json();
@@ -88,7 +88,7 @@ async function run() {
   await click('刷新对话历史'); await until(() => js(`document.querySelectorAll('.conversation-item').length===1`), 'deleted history removed');
   await input('fixture-delayed-navigation'); await click('发送问题');
   await until(() => existsSync(queries) && readFileSync(queries, 'utf8').includes('fixture-delayed-navigation'), 'model request started');
-  await click('总览'); writeFileSync(released, 'generated-fixture-release');
+  await click('今天'); writeFileSync(released, 'generated-fixture-release');
   await until(async () => (await (await request('/api/conversations')).json()).items.some(item => item.title === 'fixture-delayed-navigation'), 'answer persists after leaving');
   await click('问一问'); await until(() => js(`Array.from(document.querySelectorAll('.conversation-item')).some(b=>b.textContent.includes('fixture-delayed-navigation'))`), 'recover completed background answer');
   await js(`Array.from(document.querySelectorAll('.conversation-item')).find(b=>b.textContent.includes('fixture-delayed-navigation')).click()`); await readyTurns(1);
@@ -97,7 +97,7 @@ async function run() {
   await click('停止生成');await until(async()=> (await (await request('/api/query-runs')).json()).items.some(r=>r.status==='cancelled'),'cancel acknowledged');
   await until(()=>js(`!document.querySelector('textarea[aria-label="向 Mote 提问"]').disabled`),'cancel unlocks composer');
   assert(!(await (await request('/api/conversations')).json()).items.some(c=>c.title==='fixture-cancel'));
-  await click('随手记');await until(()=>js('Boolean(document.querySelector("#note-text"))'),'note composer');
+  await click('记录');await until(()=>js('Boolean(document.querySelector("#note-text"))'),'note composer');
   assert.equal(await js('Boolean(document.querySelector("#note-mood"))'),false);
   await js(`(()=>{const input=document.querySelector('input[type=file][accept="image/*,audio/*"]');const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array([82,73,70,70,0,0,0,0,87,65,86,69])],'fixture.wav',{type:'audio/wav',lastModified:1700000000000}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
   await until(()=>js('document.body.innerText.includes("已添加 1 个附件")'),'audio archived');

@@ -21,6 +21,7 @@ const pageScroll = new Map<Page, number>();
 const settingsPages = new Set<Page>(['connection', 'sync', 'capture', 'privacy', 'developer']);
 
 function showPage(page: Page, focus = true): void {
+  if (page !== currentPage && settingsDirty && settingsPages.has(currentPage) && !window.confirm(moteText("有未保存的修改。离开并丢弃修改？"))) return;
   if (settingsPages.has(currentPage)) pageScroll.delete(currentPage);
   else pageScroll.set(currentPage, window.scrollY);
   if (page !== currentPage) {
@@ -35,7 +36,7 @@ function showPage(page: Page, focus = true): void {
     }
   }
   currentPage = page;
-  const selected = settingsPages.has(page) || page === 'about' || page === 'compression' || page === 'permissions' ? 'settings' : page === 'activity' ? 'overview' : page;
+  const selected = page === 'privacy' || page === 'connection' ? page : settingsPages.has(page) || page === 'about' || page === 'compression' || page === 'permissions' ? 'settings' : page === 'activity' ? 'overview' : page;
   for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-page]'))) element.hidden = element.dataset.page !== page;
   for (const button of Array.from(document.querySelectorAll<HTMLElement>('aside [data-nav]'))) {
     const active = button.dataset.nav === selected;
@@ -59,7 +60,7 @@ for (const button of Array.from(document.querySelectorAll<HTMLElement>('[data-na
 function updateSettingsHint(): void {
   byId('settings-save-bar').hidden = !settingsPages.has(currentPage);
   byId('settings-pending').hidden = !settingsDirty;
-  byId('save-hint').textContent = settingsDirty ? moteText("有未保存的修改，离开此页会丢弃。保存后立即生效。") : currentStatus?.running ? moteText("保存后立即应用；必要时会短暂暂停并自动恢复采集。") : moteText("设置保存后立即生效；采集保持当前开停状态。");
+  byId('save-hint').textContent = settingsDirty ? moteText("有未保存的修改，离开前会提醒。保存后立即生效。") : currentStatus?.running ? moteText("保存后立即应用；必要时会短暂暂停并自动恢复采集。") : moteText("设置保存后立即生效；采集保持当前开停状态。");
   byId<HTMLButtonElement>('settings-reset').disabled = !settingsDirty || busy;
 }
 function markSettingsDirty(): void { settingsDirty = true; updateSettingsHint(); }
@@ -611,6 +612,8 @@ setInterval(() => { void refreshSources().catch(() => {}); }, 3000);
 let updateState: import('./updater').UpdateStatus | undefined;
 function renderUpdate(value: import('./updater').UpdateStatus): void {
   updateState = value;
+  for (const id of ['update-channel','update-check','update-download','update-cancel','update-install','update-reveal','update-progress']) byId(id).hidden=!!value.manualDownload;
+  byId('update-notes').textContent=value.manualDownload?moteText('下载 DEV 安装包'):moteText('查看版本说明与安装包');
   byId('update-version').textContent = moteText("当前 {0}{1}", value.currentVersion, value.availableVersion ? moteText(" · 发布 ") + value.availableVersion : '');
   byId<HTMLSelectElement>('update-channel').value = value.channel;
   byId('update-message').textContent = value.message; byId('update-install-reason').textContent = value.installReason;

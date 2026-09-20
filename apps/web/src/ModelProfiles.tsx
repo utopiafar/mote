@@ -1,3 +1,4 @@
+import {confirmNavigation} from './unsaved';
 import {moteText} from '@mote/shared/i18n';
 import {useEffect,useState} from 'react';
 import {Copy,Plus,LockKeyhole,Server,Trash2} from 'lucide-react';
@@ -18,7 +19,7 @@ export function ModelProfiles({api,revision,onApplied}:{api:Api;revision:number;
   }
   const profiles=view?.profiles??[],profile=profiles.find(p=>p.id===selected),atCapacity=profiles.filter(p=>!p.readOnly&&p.id!=='default').length>=30;
   const uses=Object.entries(view?.defaults??{}).filter(([,id])=>id===selected).map(([feature])=>MODEL_FEATURE_LABELS[feature as ModelFeature]);
-  function choose(id:string){setSelected(id);setConfirmDelete(false);setCopyName(null);setProbe(undefined);}
+  function choose(id:string){if(!confirmNavigation())return;setSelected(id);setConfirmDelete(false);setCopyName(null);setProbe(undefined);}
   async function testDeployment(){
     if(!view||!profile)return;setBusy(true);setError('');setProbe(undefined);
     try{setProbe(await api.request<ModelTestResult>(`/api/model-settings/profiles/${encodeURIComponent(selected)}/test`,{method:'POST',body:JSON.stringify(modelSettingsRequest({...view,settings:profile.settings},createModelDraft(profile.settings)))}));}

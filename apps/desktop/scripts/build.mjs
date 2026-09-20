@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 
 await mkdir('dist', { recursive: true });
 await build({entryPoints:['src/ui-bootstrap.ts'],outfile:'dist/ui-bundle.js',bundle:true,platform:'browser',target:'chrome130',format:'iife'});
-for (const file of ['index.html', 'styles.css']) await copyFile(`src/${file}`, `dist/${file}`);
+for (const file of ['index.html', 'styles.css', 'design-tokens.css']) await copyFile(`src/${file}`, `dist/${file}`);
 await mkdir('native/bin', { recursive: true });
 if (process.platform === 'darwin') {
   const nativeBuild = spawnSync(process.execPath, ['scripts/build-qwen.mjs'], { stdio: 'inherit' });

@@ -39,7 +39,7 @@ class CentralActivity : MoteActivity() {
                     }
                 }
                 body.addView(web, LinearLayout.LayoutParams(-1, resources.displayMetrics.heightPixels - moteDp(150)))
-                val page = intent.getStringExtra("page").takeIf { it in listOf("ask", "notes", "vault") } ?: "ask"
+                val page = intent.getStringExtra("page").takeIf { it in listOf("ask", "notes", "vault", "overview", "archive", "actions") } ?: "ask"
                 web.loadUrl(config.server.trimEnd('/') + "/#" + page)
             }
         }

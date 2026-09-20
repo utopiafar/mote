@@ -34,7 +34,7 @@ async function run(){
   await window.loadURL(url);
   await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token:owner}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'owner UI');
-  assert.ok(await click('设备'));await click('扫码连接设备');await click('连接 Chatbot');await until(()=>js(`document.querySelector('#connections-title')&&Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='生成 MCP JSON'&&!b.disabled)`),'connections panel');
+  assert.ok(await click('连接'));await until(()=>js(`!!document.querySelector('.section-tabs')`),'section navigation');assert.ok(await click('设备'));await click('扫码连接设备');await click('连接 Chatbot');await until(()=>js(`document.querySelector('#connections-title')&&Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='生成 MCP JSON'&&!b.disabled)`),'connections panel');
   assert.ok(await js(`document.querySelector('.connection-warning').textContent.includes('手机自己')`));
   assert.equal(await js(`document.querySelector('.connections').innerText.includes(${JSON.stringify(owner)})`),false);
   await click('连接设备');await input('连接名称','合成手机 · QR / JSON');assert.ok(await click('生成设备二维码'));

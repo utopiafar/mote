@@ -1,3 +1,4 @@
+@import "./design-tokens.css";
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
   color: #293b37;
@@ -377,3 +378,18 @@ progress::-webkit-progress-value { border-radius: 5px; background: #759664; }
 #ask-question { width: 100%; box-sizing: border-box; }
 #ask-error { color: #ad3426; }
 @media(max-width:800px) { .ask-layout { grid-template-columns: 1fr; } }
+
+/* Shared Slate language; native collector remains a local control surface. */
+:root { color:var(--mote-ink); background:var(--mote-background); --green:var(--mote-accent); --green-hover:var(--mote-accent-hover); --green-soft:var(--mote-tint); --muted:var(--mote-muted); --line:var(--mote-border); --panel:var(--mote-surface); }
+.sidebar { background:var(--mote-sidebar); border-color:var(--line); }
+.brand-icon { background:var(--mote-ink); border-color:var(--mote-ink); }
+.nav-item.selected,.nav-item[aria-current=page] { background:var(--mote-tint); color:var(--mote-accent); }
+.nav-item:hover { background:var(--mote-tint); color:var(--mote-accent); }
+h1 { font-family:var(--mote-font); font-weight:650; }
+.central-status { background:var(--panel); padding:16px; }
+.overview-page { display:flex; flex-direction:column; }
+.overview-page>.status-card { order:-2; margin-top:20px; }
+.overview-page>.page-header { order:-3; }
+.overview-page>#setup-prompt { order:-1; }
+button:focus-visible,summary:focus-visible { outline-color:var(--mote-accent); }
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }

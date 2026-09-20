@@ -1,3 +1,4 @@
+import {useUnsavedChanges} from './unsaved';
 import { moteText } from '@mote/shared/i18n';
 import {useMemo, useState} from 'react';
 import {Check, Download, FileCheck2, RotateCcw, SlidersHorizontal} from 'lucide-react';
@@ -8,6 +9,7 @@ const names: Record<ConfigCategory,string> = {model:moteText("自动回顾计划
 export function ConfigurationBuilder({config,category,sources=[],sourcesError=''}:{config:ServerConfiguration;category:ConfigCategory;sources?:SourceConnection[];sourcesError?:string}) {
   const current = useMemo(()=>effectiveValues(config),[config]);
   const [changes,setChanges] = useState<DraftValues>({});
+  useUnsavedChanges(Object.keys(changes).length > 0);
   const [review,setReview] = useState(false),[error,setError] = useState('');
   const value=(key:string)=>changes[key]??current[key]??'';
   const set=(key:string,v:string)=>{setChanges(previous=>{const next={...previous};if(v===(current[key]??''))delete next[key];else next[key]=v;return next;});setReview(false);setError('');};

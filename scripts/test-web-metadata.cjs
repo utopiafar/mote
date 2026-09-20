@@ -39,7 +39,7 @@ async function run(){
   const click=label=>js(`(()=>{const b=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()===${JSON.stringify(label)});if(!b||b.disabled)return false;b.click();return true;})()`);
   await window.loadURL(url);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'connected UI');
-  assert.ok(await click('采集记录'));
+  assert.ok(await click('资料库'));await until(()=>js(`!!document.querySelector('.section-tabs')`),'library');assert.ok(await click('片段'));
   await until(()=>js(`!!document.querySelector('[aria-label="记录视图"]')`),'record view selector');
   await js(`Array.from(document.querySelectorAll('[aria-label="记录视图"] button')).find(button=>button.innerText==='全部记录').click()`);
   await until(()=>js(`document.querySelectorAll('.capture-card').length===2`),'two records');
@@ -55,7 +55,7 @@ async function run(){
   writeFileSync(join(output,'web-metadata-desktop.png'),(await wc.capturePage()).toPNG());
   window.setSize(430,1000);await delay(150);assert.ok(await js(`document.documentElement.scrollWidth<=window.innerWidth`));
   writeFileSync(join(output,'web-metadata-mobile.png'),(await wc.capturePage()).toPNG());
-  await js(`document.querySelector('[aria-label="关闭证据详情"]').click()`);assert.ok(await click('设备'));
+  await js(`document.querySelector('[aria-label="关闭证据详情"]').click()`);assert.ok(await click('连接'));await until(()=>js(`!!document.querySelector('.sources-page')`),'connections');assert.ok(await click('设备'));
   await until(()=>js(`!!document.querySelector('.device-card .metadata-details')`),'device metadata');
   await js(`document.querySelector('.device-card .device-details').open=true;document.querySelector('.device-card .metadata-details').open=true`);
   assert.ok(await js(`document.querySelector('.device-card').innerText.includes('合成设备')`));

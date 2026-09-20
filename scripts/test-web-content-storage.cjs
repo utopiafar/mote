@@ -25,9 +25,9 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   const wc=window.webContents;await window.loadURL(url);
   await wc.executeJavaScript(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token}))});location.reload()`);
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('已登录 ·')`),'login');
-  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.innerText==='设置').click()`);
-  await until(()=>wc.executeJavaScript(`!!document.querySelector('.preference-menu')`),'settings');
-  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.preference-menu button')).find(b=>b.querySelector('strong')?.textContent==='数据与备份').click()`);
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.sidebar button')).find(b=>b.innerText==='系统管理').click()`);
+  await until(()=>wc.executeJavaScript(`!!document.querySelector('.section-tabs')`),'settings');
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('.section-tabs button')).find(b=>b.innerText==='存储与索引').click()`);
   const checkbox=`document.querySelector('[aria-labelledby="content-storage-title"] input')`;
   await until(()=>wc.executeJavaScript(`!!${checkbox}&&!${checkbox}.disabled`),'storage controls');
   assert.equal(await wc.executeJavaScript(`${checkbox}.checked`),false);
