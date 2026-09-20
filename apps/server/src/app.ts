@@ -22,14 +22,14 @@ import { existsSync,readFileSync } from 'node:fs';
 import { join,dirname } from 'node:path';
 import { z } from 'zod';
 import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,sourceContentTime,type QueryResult,type CaptureRecord,type CaptureInput } from '@mote/shared';
-import { AgentNotConfiguredError,createImportAgent,skillCatalog,type ContextReader,type QueryInput } from '@mote/agent';
+import { AgentNotConfiguredError,createImportAgent,skillCatalog,type ContextReader,type QueryInput,type AgentTraceEvent } from '@mote/agent';
 import { DEFAULT_MODEL_MAX_TOKENS, modelProvider } from '@mote/shared/models';
 import { ModelSettingsStore,ModelSettingsError,modelProfileIdSchema } from './model-settings.js';
 import { ReloadableAgent,createModelRegistry,modelSettingsFromConfig,applyModelSettings,createModelAgent,testModelConnection,type ModelAgentFactory } from './model-agent.js';
 import { Store,StoreError } from './store.js';
 import { Indexer } from './indexer.js';
 import { repositoryRoot,type Config } from './config.js';
-import { ServerDiagnostics,safeError,diagnosticStageFilters } from './diagnostics.js';
+import { ServerDiagnostics,safeError,diagnosticStageFilters,type AgentTraceContext } from './diagnostics.js';
 import { serverConfiguration } from './configuration.js';
 import {FileEvidenceRequests} from './file-evidence.js';
 import { SourceStore } from './sources.js';
@@ -76,7 +76,7 @@ const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.me
 export async function buildApp(config:Config,dependencies?:{memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   config={...config};
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
-  const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
+  const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,traceEnabled:config.agentTraceEnabled,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
   const sources=new SourceStore(store),files=new FileStore(store,sources);const fileEvidence=new FileEvidenceRequests(sources);
   const indexer=new Indexer(store,config,diagnostics,files);
@@ -315,13 +315,17 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     if(activeQueries.size>=2)throw new StoreError('Two Agent queries are already running; retry shortly',429);
     const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
     input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
+    const traceContext:AgentTraceContext={...input.traceContext,traceId:randomUUID(),requestId:diagnostics.requestId(),operation,moduleId,profileId:profile.id,provider:profile.settings.provider,protocol:profile.settings.protocol,model:input.modelOverride??profile.settings.model};
+    const trace=(event:AgentTraceEvent)=>{if(config.agentTraceEnabled)diagnostics.agentTrace(event,traceContext);};
+    trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
     const meter=usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null});
-    const observed={...input,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
+    const observed={...input,traceContext,onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:config.agentTraceEnabled?trace:undefined,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
       if(store.deletionRevision()!==revision)throw new StoreError('Evidence was deleted during this run; retry against the updated archive',409);
+      trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       return {...result,usage:meter.finish('completed')};
-    }).catch(error=>{meter.finish('failed');throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
+    }).catch(error=>{meter.finish('failed');trace({type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
   }
   const memoryPipeline=new MemoryPipeline({store,memories,requireAdmission:true,review:(input,result)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories')),query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});

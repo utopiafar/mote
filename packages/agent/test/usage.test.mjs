@@ -9,7 +9,7 @@ test('provider usage preserves unknown cache buckets and never adds reasoning tw
   assert.equal(usageSample({inputTokens:10,outputTokens:5,cacheReadTokens:1,cacheWriteTokens:0,totalTokens:15}),undefined);
 });
 test('Harness accounting replaces samples, adds retries and repair turns, and ignores other sessions',()=>{
-  const values=[],progress=[];const observe=observeHarness({question:'fixture',onUsage:u=>values.push(u),onProgress:e=>progress.push(e)},'fixture');
+  const values=[],progress=[],traces=[];const observe=observeHarness({question:'fixture',onUsage:u=>values.push(u),onProgress:e=>progress.push(e),onTrace:e=>traces.push(e)},'fixture');
   const emit=(type,data,sessionId='fixture')=>observe({method:'session.event',params:{sessionId,event:{type,data}}});
   const usage={inputTokens:10,outputTokens:5,cacheReadTokens:20,cacheWriteTokens:0,totalTokens:35};
   emit('step/start',{turn:0,step:0});emit('assistant/attempt',{turn:0,step:0,stream:[{type:'chunk',chunk:{type:'usage',usage}}]});
@@ -20,4 +20,5 @@ test('Harness accounting replaces samples, adds retries and repair turns, and ig
   assert.equal(values.at(-1).totalTokens,105);assert.equal(values.at(-1).requests,3);assert.equal(values.at(-1).reportedRequests,3);
   emit('step/start',{turn:1,step:1});assert.equal(values.at(-1).requests,4);assert.equal(values.at(-1).reportedRequests,3);
   assert.equal(progress.length,4);assert.ok(!JSON.stringify(values).includes('fixture'));
+  assert.ok(traces.some(event=>event.type==='provider.event'&&event.payload.type==='step/start'));
 });

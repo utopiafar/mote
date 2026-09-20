@@ -11,9 +11,17 @@ export type DiagnosticStage = Stage|'request'|'system'|'unknown';
 export const diagnosticStageFilters=['all','system','request','ingest','index','agent','source','maintenance','file','unknown'] as const;
 export type DiagnosticStageFilter=typeof diagnosticStageFilters[number];
 export type Operation = 'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention'|'extract'|'diarize'|'align'|'turns'|'summary'|'file_upload'|'file_part'|'file_commit'|'file_revision'|'file_process'|'file_settings'|'file_retry';
+export interface AgentTraceContext {
+  traceId?: string; requestId?: string; jobId?: string; batchId?: string; batchIndex?: number; attempt?: number;
+  phase?: string; operation?: string; moduleId?: string; profileId?: string; provider?: string; protocol?: string; model?: string;
+}
+export interface AgentTraceInput {
+  type: string; at?: string; runId?: string; stage?: string; phase?: string; step?: number; tool?: string;
+  durationMs?: number; status?: string; payload?: unknown;
+}
 const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
-const events = new Set(['server.started','server.stopping','request.started','request.completed','request.failed','queue.snapshot','support.exported','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
+const events = new Set(['server.started','server.stopping','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
 const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
 const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part'] as const;
@@ -47,8 +55,8 @@ const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
 type QueuedLine = {line:string;day:string};
 export type EventFields = Metrics & { requestId?:string;jobId?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string;reason?:string };
-export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'>;stage?:DiagnosticStage;truncated?:boolean }
-export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxFiles?:number;maxEntries?:number;now?:()=>Date }
+export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'>;stage?:DiagnosticStage;truncated?:boolean;trace?:Record<string,unknown> }
+export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxFiles?:number;maxEntries?:number;now?:()=>Date;traceEnabled?:boolean }
 
 export function serializeDiagnosticEvent(entry:DiagnosticEvent,maxBytes=maxEventBytes):string {
   const original=JSON.stringify(entry)+'\n';
@@ -64,7 +72,7 @@ export function serializeDiagnosticEvent(entry:DiagnosticEvent,maxBytes=maxEvent
   return JSON.stringify(candidate)+'\n';
 }
 
-/** Error text, stacks, headers, provider bodies and arbitrary codes never cross this boundary. */
+/** Normal diagnostic events never carry error text, stacks, headers, provider bodies or arbitrary codes. */
 export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
   try{return describeError(error);}catch{return {status:500,category:'internal',message:moteText("请求未完成，请使用请求编号查看诊断记录。")};}
 }
@@ -99,10 +107,32 @@ function cleanEvent(value:unknown):DiagnosticEvent|undefined {
   if(!value||typeof value!=='object')return;
   const v=value as Record<string,unknown>;
   if(typeof v.event!=='string'||!events.has(v.event)||!levels.slice(0,4).includes(v.level as 'info')||typeof v.seq!=='number'||!Number.isSafeInteger(v.seq)||v.seq<1||typeof v.at!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.at)||!Number.isFinite(Date.parse(v.at))||typeof v.instanceId!=='string'||!uuid.test(v.instanceId))return;
-  return {seq:v.seq,at:v.at,instanceId:v.instanceId,event:v.event,level:v.level as DiagnosticEvent['level'],stage:validStage(v.stage)?v.stage:eventStage(v.event),...fields(v),...(v.truncated===true?{truncated:true}: {})};
+  const trace=v.event==='agent.trace'&&v.trace&&typeof v.trace==='object'&&!Array.isArray(v.trace)?v.trace as Record<string,unknown>:undefined;
+  if(v.event==='agent.trace'&&typeof trace?.type!=='string')return;
+  return {seq:v.seq,at:v.at,instanceId:v.instanceId,event:v.event,level:v.level as DiagnosticEvent['level'],stage:validStage(v.stage)?v.stage:eventStage(v.event),...fields(v),...(v.truncated===true?{truncated:true}: {}),...(trace?{trace}: {})};
 }
 
-/** Bounded numeric events only, with no API for arbitrary strings or Error objects. */
+const traceStringLimit=1_000_000,traceArrayLimit=500,traceObjectLimit=250,traceDepthLimit=8;
+function compactTraceValue(value:unknown,depth=0):{value:unknown;truncated:boolean} {
+  if(value===undefined)return {value:undefined,truncated:false};
+  if(typeof value==='string')return value.length>traceStringLimit?{value:value.slice(0,traceStringLimit),truncated:true}:{value,truncated:false};
+  if(value===null||typeof value==='number'||typeof value==='boolean')return {value,truncated:false};
+  if(depth>=traceDepthLimit)return {value:'[trace depth limit]',truncated:true};
+  if(Array.isArray(value)){
+    let truncated=value.length>traceArrayLimit;const output=[];
+    for(const item of value.slice(0,traceArrayLimit)){const result=compactTraceValue(item,depth+1);output.push(result.value);truncated ||= result.truncated;}
+    return {value:output,truncated};
+  }
+  if(typeof value==='object'){
+    const output:Record<string,unknown>={};let truncated=false;
+    for(const [key,item] of Object.entries(value as Record<string,unknown>).slice(0,traceObjectLimit)){const result=compactTraceValue(item,depth+1);output[key]=result.value;truncated ||= result.truncated;}
+    if(Object.keys(value as object).length>traceObjectLimit)truncated=true;
+    return {value:output,truncated};
+  }
+  return {value:String(value),truncated:true};
+}
+
+/** Normal events are bounded numeric events; detailed Agent payloads use the explicit trace opt-in. */
 export class ServerDiagnostics {
   readonly instanceId=randomUUID();
   private readonly context=new AsyncLocalStorage<string>();
@@ -112,6 +142,7 @@ export class ServerDiagnostics {
   private readonly maxFiles:number;
   private readonly maxEntries:number;
   private readonly now:()=>Date;
+  private readonly traceEnabled:boolean;
   private entries:DiagnosticEvent[]=[];
   private queue:QueuedLine[]=[];
   private seq=0;
@@ -128,12 +159,14 @@ export class ServerDiagnostics {
   private writeFailures=0;
   private readFailures=0;
   private nextAttempt=0;
+  private traceEvents=0;
   constructor(private readonly options:ServerDiagnosticsOptions) {
     this.enabled=options.enabled??true;this.level=options.level==='silent'?'silent':options.debug?'debug':levels.includes(options.level as LogLevel)?options.level!:'info';
     this.maxBytes=bounded(options.maxBytes,2*1024*1024,1024,8*1024*1024);
     this.maxFiles=bounded(options.maxFiles,3,1,10);
     this.maxEntries=bounded(options.maxEntries,2000,1,5000);
     this.now=options.now??(()=>new Date());
+    this.traceEnabled=Boolean(options.traceEnabled)&&this.enabled&&this.level!=='silent';
   }
   private path(index:number) {return join(this.options.directory,`central.${index}.ndjson`);}
   private async acquireLock() {
@@ -178,7 +211,8 @@ export class ServerDiagnostics {
           finally {await file.close();}
           for(const line of raw.split('\n')) {
             if(!line)continue;
-            try {const event=cleanEvent(JSON.parse(line));if(event){this.entries.push(event);this.seq=Math.max(this.seq,event.seq);if(index===0)currentDay=logDay(event.at);if(this.entries.length>this.maxEntries)this.entries.shift();}}catch{this.readFailures++;}
+            let parsed:unknown;try{parsed=JSON.parse(line);}catch{this.readFailures++;continue;}
+            try {const event=cleanEvent(parsed);if(event){this.entries.push(event);if(event.event==='agent.trace')this.traceEvents++;this.seq=Math.max(this.seq,event.seq);if(index===0)currentDay=logDay(event.at);if(this.entries.length>this.maxEntries){const removed=this.entries.shift();if(removed?.event==='agent.trace')this.traceEvents--;}}}catch{this.readFailures++;}
           }
         }catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')this.readFailures++;}
       }
@@ -187,12 +221,49 @@ export class ServerDiagnostics {
     }catch{this.writeFailures++;this.nextAttempt=Date.now()+30000;}
   }
   run<T>(requestId:string,task:()=>T):T {return this.context.run(uuid.test(requestId)?requestId:randomUUID(),task);}
+  requestId():string|undefined {return this.context.getStore();}
   record(event:string,value:EventFields={},level:DiagnosticEvent['level']='info') {
-    if(this.closed||!this.enabled||this.level==='silent'||!events.has(event)||!['debug','info','warn','error'].includes(level)||levels.indexOf(level)<levels.indexOf(this.level))return;
+    if(event==='agent.trace'||this.closed||!this.enabled||this.level==='silent'||!events.has(event)||!['debug','info','warn','error'].includes(level)||levels.indexOf(level)<levels.indexOf(this.level))return;
     const at=this.now().toISOString();
     const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event,level,stage:eventStage(event),...fields({requestId:this.context.getStore(),...value})};
     const line=serializeDiagnosticEvent(entry,Math.min(maxEventBytes,this.maxBytes));
     this.entries.push(entry);if(this.entries.length>this.maxEntries)this.entries.shift();
+    if(!this.writable||this.queue.length>=Math.min(this.maxEntries,1024)||Date.now()<this.nextAttempt){this.dropped++;return;}
+    this.queue.push({line,day:logDay(at)});this.startWrite();
+  }
+  /** Opt-in detailed Agent events share the ordinary central log for one-place troubleshooting. */
+  agentTrace(event:AgentTraceInput,context:AgentTraceContext={}) {
+    if(this.closed||!this.traceEnabled||!event||typeof event.type!=='string'||!event.type.trim())return;
+    const payload=compactTraceValue(event.payload);
+    const traceId=typeof context.traceId==='string'&&uuid.test(context.traceId)?context.traceId:randomUUID();
+    const trace:Record<string,unknown>={
+      type:event.type.slice(0,120),traceId,
+      ...(typeof event.runId==='string'?{runId:event.runId.slice(0,200)}:{}),
+      ...(typeof event.stage==='string'?{stage:event.stage.slice(0,80)}:{}),
+      ...(typeof event.phase==='string'?{phase:event.phase.slice(0,80)}:{}),
+      ...(typeof event.step==='number'&&Number.isSafeInteger(event.step)&&event.step>=0?{step:event.step}:{}),
+      ...(typeof event.tool==='string'?{tool:event.tool.slice(0,120)}:{}),
+      ...(typeof event.durationMs==='number'&&Number.isFinite(event.durationMs)&&event.durationMs>=0?{durationMs:Math.round(event.durationMs*1000)/1000}:{}),
+      ...(typeof event.status==='string'?{status:event.status.slice(0,80)}:{}),
+      ...(typeof event.at==='string'&&Number.isFinite(Date.parse(event.at))?{eventAt:event.at}:{}),
+      ...(typeof context.batchId==='string'&&uuid.test(context.batchId)?{batchId:context.batchId}:{}),
+      ...(typeof context.batchIndex==='number'&&Number.isSafeInteger(context.batchIndex)&&context.batchIndex>=0?{batchIndex:context.batchIndex}:{}),
+      ...(typeof context.attempt==='number'&&Number.isSafeInteger(context.attempt)&&context.attempt>=0?{attempt:context.attempt}:{}),
+      ...(typeof context.phase==='string'?{tracePhase:context.phase.slice(0,80)}:{}),
+      ...(typeof context.operation==='string'?{operation:context.operation.slice(0,80)}:{}),
+      ...(typeof context.moduleId==='string'?{moduleId:context.moduleId.slice(0,120)}:{}),
+      ...(typeof context.profileId==='string'?{profileId:context.profileId.slice(0,120)}:{}),
+      ...(typeof context.provider==='string'?{provider:context.provider.slice(0,120)}:{}),
+      ...(typeof context.protocol==='string'?{protocol:context.protocol.slice(0,120)}:{}),
+      ...(typeof context.model==='string'?{model:context.model.slice(0,300)}:{}),
+      ...(payload.value!==undefined?{payload:payload.value}:{}),...(payload.truncated?{truncated:true}:{}),
+    };
+    const at=this.now().toISOString();
+    const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event:'agent.trace',level:'debug',stage:'agent',...fields({requestId:context.requestId??this.context.getStore(),jobId:context.jobId}),trace};
+    let line=JSON.stringify(entry)+'\n';
+    if(Buffer.byteLength(line)>this.maxBytes){entry.trace={type:trace.type,traceId,runId:trace.runId,truncated:true,payload:'trace payload exceeded the configured log file limit'};line=JSON.stringify(entry)+'\n';}
+    if(Buffer.byteLength(line)>this.maxBytes){this.dropped++;return;}
+    this.traceEvents++;this.entries.push(entry);if(this.entries.length>this.maxEntries){const removed=this.entries.shift();if(removed?.event==='agent.trace')this.traceEvents--;}
     if(!this.writable||this.queue.length>=Math.min(this.maxEntries,1024)||Date.now()<this.nextAttempt){this.dropped++;return;}
     this.queue.push({line,day:logDay(at)});this.startWrite();
   }
@@ -231,7 +302,7 @@ export class ServerDiagnostics {
       }
     }catch{this.writeFailures++;this.dropped+=this.queue.length+this.writingCount;this.writingCount=0;this.queue=[];this.nextAttempt=Date.now()+30000;}
   }
-  snapshot() {return {enabled:!this.closed&&this.enabled&&this.level!=='silent',level:this.level,instanceId:this.instanceId,retainedEvents:this.entries.length,lastSeq:this.seq,pendingWrites:this.queue.length+this.writingCount,droppedEvents:this.dropped,writeFailures:this.writeFailures,readFailures:this.readFailures,limits:{maxFileBytes:this.maxBytes,maxFiles:this.maxFiles,maxEvents:this.maxEntries},runtime:{uptimeMs:Math.round(process.uptime()*1000),rssBytes:process.memoryUsage().rss,cpuUserMicros:process.cpuUsage().user,cpuSystemMicros:process.cpuUsage().system}};}
+  snapshot() {return {enabled:!this.closed&&this.enabled&&this.level!=='silent',level:this.level,instanceId:this.instanceId,retainedEvents:this.entries.length,lastSeq:this.seq,pendingWrites:this.queue.length+this.writingCount,droppedEvents:this.dropped,writeFailures:this.writeFailures,readFailures:this.readFailures,agentTrace:{enabled:!this.closed&&this.traceEnabled,retainedEvents:this.traceEvents},limits:{maxFileBytes:this.maxBytes,maxFiles:this.maxFiles,maxEvents:this.maxEntries},runtime:{uptimeMs:Math.round(process.uptime()*1000),rssBytes:process.memoryUsage().rss,cpuUserMicros:process.cpuUsage().user,cpuSystemMicros:process.cpuUsage().system}};}
   events(afterSeq=0,limit=500) {const items=this.entries.filter(e=>e.seq>afterSeq).slice(0,Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));return {items,nextSeq:items.at(-1)?.seq??afterSeq,oldestSeq:this.entries[0]?.seq??null};}
   recent(limit=500) {return this.entries.slice(-Math.min(500,Math.max(1,limit))).map(e=>structuredClone(e));}
   /** Return the current file verbatim, including incomplete/malformed text for troubleshooting. */
@@ -274,7 +345,7 @@ export class ServerDiagnostics {
       const key=record.instanceId+':'+record.seq;if(seen.has(key))continue;seen.add(key);records.push(record);
     }
     records.sort((a,b)=>a.at.localeCompare(b.at)||a.seq-b.seq);
-    return {after,before,oldestRetainedAt:records[0]?.at??null,retentionLimited:!records.length||records[0].at>after,invalidLines,events:records.filter(e=>e.at>=after&&e.at<before)};
+    return {after,before,oldestRetainedAt:records[0]?.at??null,retentionLimited:!records.length||records[0].at>after,invalidLines,events:records.filter(e=>e.event!=='agent.trace'&&e.at>=after&&e.at<before)};
   }
   async flush() {while(this.pending)await this.pending;}
   close():Promise<void> {if(this.closingPromise)return this.closingPromise;this.closed=true;this.closingPromise=this.finishClose();return this.closingPromise;}

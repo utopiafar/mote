@@ -20,13 +20,14 @@
 |---|---|---|
 | `MOTE_DIAGNOSTICS_ENABLED` | `1` | `0` 时不读取、积累或写入诊断事件；即时数值状态仍可查看 |
 | `MOTE_DEBUG` | `0` | `1` 时将非 silent 级别提升为 debug，额外记录阶段开始事件，便于发现尚未完成的阶段 |
+| `MOTE_AGENT_TRACE_ENABLED` | dev 为 `1`，其它环境为 `0` | 0/1；把详细 Agent 请求上下文、prompt、模型输出、工具调用、校验和状态写入普通 central 日志，可能包含个人内容 |
 | `MOTE_LOG_LEVEL` | `info` | `debug`、`info`、`warn`、`error`、`silent`；`silent` 优先于 debug 开关 |
 | `MOTE_LOG_DIR` | 数据目录下的 `logs` | 每个节点使用独立目录；不会出现在支持包内 |
 | `MOTE_LOG_MAX_MB` | `2` | 单个日志文件上限，允许 `0.1`–`8` MiB；跨 UTC 日期或达到上限时轮转 |
 | `MOTE_LOG_MAX_FILES` | `3` | 保留文件数，允许 `1`–`10` |
 | `MOTE_LOG_MAX_ENTRIES` | `2000` | 内存事件上限，允许 `100`–`5000` |
 
-debug 开关只增加固定事件，不记录请求正文、模型输入输出、令牌、原图、来源文本、文件路径、设备名称或原始 URL/query。模型与 SDK 异常按类型或 HTTP 状态映射为固定类别；不会通过匹配异常正文的关键词推断原因，也不会返回异常原文或堆栈。
+debug 开关只增加固定事件，不记录请求正文、模型输入输出、令牌、原图、来源文本、文件路径、设备名称或原始 URL/query。另行开启 `MOTE_AGENT_TRACE_ENABLED=1` 后，开发诊断会在普通 central 日志中记录这些详细内容；模型与 SDK 异常按类型或 HTTP 状态映射为固定类别，不会返回异常原文或堆栈。
 
 文件名仍为 `central.0.ndjson`、`central.1.ndjson` 等，`0` 是当前文件；服务端在 UTC 日期变化时切换文件，达到 `MOTE_LOG_MAX_MB` 时也会继续按大小轮转。默认日志内容的磁盘上限为 6 MiB，另有一个很小的进程锁文件。日志文件权限为 `600`，新建目录权限为 `700`。只有取得该日志目录写锁的节点才会读取和轮转它；第二个活跃写入者会报告写入失败，不会覆盖另一个节点的日志。崩溃留下的失效锁和未写完的尾行会在重启时处理。旧的 `central.N.ndjson` 文件仍按原编号读取，网页分页、原始日志接口和支持包导出不需要迁移。
 
@@ -42,11 +43,12 @@ debug 开关只增加固定事件，不记录请求正文、模型输入输出�
 | `GET /api/configuration` | 所有者专用：生效配置、私有目录、存储来源、变量名和密钥配置状态；此响应不属于可公开分享的诊断包 |
 | `GET /api/diagnostics` | 数值快照：进程 CPU/RSS/运行时间、索引队列、设备报告的排队总量、存储统计、日志容量及丢弃/失败计数 |
 | `GET /api/diagnostics/events?afterSeq=0&limit=200` | 从指定序号之后向前读取事件，单页最多 500 条 |
+| `GET /api/diagnostics/logs?file=0` | 读取普通 central 日志原文；详细 Agent trace（若开启）也在这里 |
 | `GET /api/support-bundle` | 下载 `mote-support.json`：快照和最近最多 500 条事件 |
 
 事件分页返回 `{items,nextSeq,oldestSeq}`。下一次请求使用 `nextSeq`；`afterSeq=0` 从最早保留的事件开始。若只想显示最近 200 条，先读取快照，再以 `max(0,lastSeq-200)` 为游标。若游标早于 `oldestSeq`，更早事件已超过保留范围；若换成另一资料库或日志已被清空，应重置游标。
 
-支持包中的 `scope` 为 `central-safe-support`。它只包含固定事件和数值，不包含 `.env`、访问令牌、模型凭据、数据库、截图、问题、答案、笔记、Agent 工具参数或任意异常文本。旧日志被读取时也按同一字段白名单过滤。支持包用于排错，不能用于恢复资料库。
+支持包中的 `scope` 为 `central-safe-support`。它只包含固定事件和数值；即使开发环境开启详细 Agent trace，也会排除 trace 正文，不包含 `.env`、访问令牌、模型凭据、数据库、截图、问题、答案、笔记、Agent 工具参数或任意异常文本。旧日志被读取时也按同一字段白名单过滤。支持包用于排错，不能用于恢复资料库。
 
 ## 如何判断卡在哪个阶段
 

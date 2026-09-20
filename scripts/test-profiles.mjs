@@ -16,7 +16,7 @@ try {
   let dev = await initializeFixture(home, 'dev'), test = await initializeFixture(home, 'test'); profiles.push(dev, test);
   assert.notEqual(dev.env.MOTE_TOKEN, test.env.MOTE_TOKEN); assert.notEqual(dev.dataDir, test.dataDir); assert.notEqual(dev.project, test.project);
   assert.equal((await stat(dev.envFile)).mode & 0o777, 0o600);
-  assert.equal(dev.env.MOTE_LOG_DIR, './logs'); assert.equal(dev.env.MOTE_LOG_MAX_ENTRIES, '2000');
+  assert.equal(dev.env.MOTE_LOG_DIR, './logs'); assert.equal(dev.env.MOTE_LOG_MAX_ENTRIES, '2000'); assert.equal(dev.env.MOTE_AGENT_TRACE_ENABLED, '1'); assert.equal(test.env.MOTE_AGENT_TRACE_ENABLED, '0');
   const hostile = { MOTE_PROFILE: 'prod', MOTE_ENV_FILE: '/missing/formal.env', MOTE_DATA_DIR: '/missing/formal-data', MOTE_TOKEN: 'synthetic-hostile-ambient-token', MOTE_MODEL: 'ambient-model-must-not-load', MOTE_MODEL_API_KEY: 'synthetic-ambient-key', MOTE_DEBUG: '1' };
   const isolated = await cli(home, undefined, 'exec', ['--', process.execPath, '-e', "console.log(JSON.stringify({profile:process.env.MOTE_PROFILE,file:process.env.MOTE_ENV_FILE,model:process.env.MOTE_MODEL,key:process.env.MOTE_MODEL_API_KEY,debug:process.env.MOTE_DEBUG,url:process.env.MOTE_URL}))"], { env: hostile });
   assert.deepEqual(JSON.parse(isolated.stdout), { profile: 'dev', file: dev.envFile, model: '', key: '', debug: '0', url: dev.url });

@@ -27,6 +27,7 @@ test('explicit server profiles isolate paths and generated credentials and keep 
     assert.equal(config.dataDir, join(directory, 'archive'));
     assert.equal(config.logDirectory, join(directory, 'events'));
     assert.equal(config.diagnosticsDebug, true);
+    assert.equal(config.agentTraceEnabled, name === 'dev');
     assert.equal(config.model, '');
     assert.equal(config.apiKey, '');
     assert.equal(config.token, readFileSync(join(directory, 'archive/access-token'), 'utf8').trim());
@@ -44,7 +45,7 @@ test('missing files and invalid diagnostic configuration fail before creating a 
   const absent = readConfig({ MOTE_ENV_FILE: join(root, 'missing'), MOTE_DATA_DIR: vault });
   assert.notEqual(absent.status, 0);
   assert.match(absent.stderr, /missing, unreadable or invalid/);
-  for (const setting of ['MOTE_LOG_LEVEL=verbose', 'MOTE_LOG_MAX_FILES=1.5', 'MOTE_DEBUG=yes', 'MOTE_PROFILE=../prod']) {
+  for (const setting of ['MOTE_LOG_LEVEL=verbose', 'MOTE_LOG_MAX_FILES=1.5', 'MOTE_DEBUG=yes', 'MOTE_AGENT_TRACE_ENABLED=yes', 'MOTE_PROFILE=../prod']) {
     const file = join(root, 'invalid.env'); writeFileSync(file, `MOTE_DATA_DIR=${vault}\n${setting}\n`);
     const result = readConfig({ MOTE_ENV_FILE: file });
     assert.notEqual(result.status, 0, setting);

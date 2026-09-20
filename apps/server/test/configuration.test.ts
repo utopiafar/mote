@@ -41,6 +41,7 @@ test('configuration projection is serializable, preserves effective values and s
   assert.equal(all.get('maxStorageBytes')!.value, 23 * 1024 * 1024); assert.equal(all.get('maxStorageBytes')!.unit, 'bytes'); assert.match(all.get('maxStorageBytes')!.description, /逻辑字节/);
   assert.equal(all.get('modelRequestTimeoutMs')!.value,300000); assert.equal(all.get('modelRequestTimeoutMs')!.envVar,'MOTE_MODEL_REQUEST_TIMEOUT_MS');
   assert.equal(all.get('agentTimeoutMs')!.value,300000); assert.equal(all.get('agentTimeoutMs')!.envVar,'MOTE_AGENT_TIMEOUT_MS');
+  assert.equal(all.get('agentTraceEnabled')!.value, false); assert.equal(all.get('agentTraceEnabled')!.envVar,'MOTE_AGENT_TRACE_ENABLED');
   assert.equal(all.get('retentionDays')!.value, 17); assert.equal(all.get('modelMaxTokens')!.value, 4096);
   assert.equal(all.get('model')!.source, 'env-file'); assert.equal(all.get('listenPort')!.source, 'environment'); assert.equal(all.get('logMaxFiles')!.source, 'default');
   for (const key of ['accessTokenConfigured', 'modelApiKeyConfigured', 'embeddingApiKeyConfigured', 'dataKeyConfigured']) { assert.equal(all.get(key)!.value, true); assert.equal(all.get(key)!.visibility, 'secret-status'); }

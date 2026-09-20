@@ -1,6 +1,6 @@
 import type {TokenUsage} from '@mote/shared';
 import type {HarnessNotification} from '@deepseek-ai/dsh-sdk-client';
-import {reportProgress,type QueryInput} from './types.js';
+import {reportProgress,reportTrace,type QueryInput} from './types.js';
 
 type Sample = Omit<TokenUsage,'requests'|'reportedRequests'>;
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -38,6 +38,7 @@ export function observeHarness(input:QueryInput,sessionId:string,omittedCacheIsZ
     const event=notification.params.event as {type:string;data:Record<string,any>};
     if(!event?.data)return;
     const d=event.data;
+    reportTrace(input,{type:'provider.event',runId:sessionId,payload:{type:event.type,data:d}});
     if(event.type==='step/start'){
       retry=0;slot=`${d.turn}:${d.step}:${retry}`;attempts.set(slot,undefined);publish();
       reportProgress(input,{stage:'model',step:d.step,phase:'started'});

@@ -43,6 +43,16 @@ test('diagnostic log lines truncate instead of dropping oversized events',async 
   const d=new ServerDiagnostics({directory,maxBytes:64*1024,maxFiles:1});await d.init();assert.equal(d.events().items.length,2);assert.deepEqual(d.events().items.map(event=>event.seq),[1,3]);await d.close();
 });
 
+test('opt-in Agent trace is written to the ordinary central log and survives reload while safe exports exclude it',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-agent-trace-')),traceId=randomUUID(),requestId=randomUUID(),jobId=randomUUID(),batchId=randomUUID();
+  const d=new ServerDiagnostics({directory,traceEnabled:true,debug:false});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
+  d.agentTrace({type:'context.assembled',runId:randomUUID(),stage:'starting',payload:{prompt:marker,context:{source:'synthetic fixture'}}},{traceId,requestId,jobId,batchId,batchIndex:3,attempt:2,phase:'extract',operation:'query',moduleId:'memories',profileId:'codex',provider:'codex',protocol:'codex-app-server',model:'synthetic-model'});
+  await d.flush();const raw=await readFile(join(directory,'central.0.ndjson'),'utf8');assert.ok(raw.includes('agent.trace'));assert.ok(raw.includes(marker));
+  const event=d.events().items.find(row=>row.event==='agent.trace');assert.ok(event);assert.equal(event?.requestId,requestId);assert.equal(event?.jobId,jobId);assert.equal((event?.trace as Record<string,unknown>).traceId,traceId);assert.equal((event?.trace as Record<string,unknown>).payload&&((event?.trace as Record<string,unknown>).payload as Record<string,unknown>).prompt,marker);
+  const exported=await d.exportRange(new Date(Date.now()-1000).toISOString(),new Date(Date.now()+1000).toISOString());assert.deepEqual(exported.events,[]);
+  await d.close();const reloaded=new ServerDiagnostics({directory,traceEnabled:true});await reloaded.init();assert.equal(reloaded.events().items.filter(row=>row.event==='agent.trace').length,1);assert.equal(reloaded.snapshot().agentTrace.enabled,true);await reloaded.close();
+});
+
 test('log rotation, memory, pending queue and forward cursor remain bounded under bursts',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-bounds-'));const d=new ServerDiagnostics({directory,maxBytes:1024,maxFiles:3,maxEntries:17});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   for(let round=0;round<20;round++) {for(let i=0;i<100;i++)d.record('request.completed',{count:i});assert.ok(d.snapshot().pendingWrites<=81);await d.flush();}
@@ -120,6 +130,16 @@ test('concurrent requests keep independent request IDs, and SDK failures cannot 
   const failed=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(failed.statusCode,502);assert.ok(!failed.body.includes(marker));assert.equal(failed.json().requestId,failed.headers['x-request-id']);
   for(const url of [`/api/${marker}?token=${marker}`,`/api/%zz?token=${marker}`]){const result=await app.inject({url,headers});assert.ok(result.statusCode>=400);assert.ok(!result.body.includes(marker));}
   const bundle=await app.inject({url:'/api/support-bundle',headers});assert.ok(!bundle.body.includes(marker));assert.ok(bundle.json().events.some((e:any)=>e.requestId===failed.headers['x-request-id']&&e.event==='agent.failed'));
+});
+
+test('enabled Agent trace is correlated with the request and is visible in ordinary diagnostics but not safe support export',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-agent-trace-api-')),cfg={...config(directory),agentTraceEnabled:true};
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async args=>{args.onTrace?.({type:'fixture.model.completed',stage:'model',status:'succeeded',payload:{prompt:marker,context:'synthetic fixture'}});return {answer:'fixture',citations:[],trace:[],runId:randomUUID()};}};
+  const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});const headers={authorization:`Bearer ${cfg.token}`};
+  const response=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'synthetic trace request'}});assert.equal(response.statusCode,200);await diagnostics.flush();
+  const requestId=response.headers['x-request-id'],trace=diagnostics.events().items.find(event=>event.event==='agent.trace'&&event.requestId===requestId&&((event.trace as Record<string,unknown>)?.type==='fixture.model.completed'));
+  assert.ok(trace);assert.equal(((trace!.trace as Record<string,unknown>).payload as Record<string,unknown>).prompt,marker);assert.equal(diagnostics.snapshot().agentTrace.enabled,true);
+  const bundle=await app.inject({url:'/api/support-bundle',headers});assert.equal(bundle.statusCode,200);assert.ok(!bundle.body.includes(marker));
 });
 
 test('disabled central diagnostics keeps the authenticated numeric status available without recording',async t=>{

@@ -87,6 +87,10 @@ export interface QueryInput {
   signal?: AbortSignal;
   /** Host-only observation, never serialized into model prompts or tool arguments. */
   onProgress?: (event: AgentProgress) => void;
+  /** Host-only detailed execution trace. The host must explicitly opt in before persisting it. */
+  onTrace?: (event: AgentTraceEvent) => void;
+  /** Host-only correlation data for logs; never serialized into model prompts or tool arguments. */
+  traceContext?: AgentTraceContext;
   onUsage?: (usage: import('@mote/shared').TokenUsage) => void;
   question: string;
   /** Bounded host-owned input for background tasks, separate from the user question. */
@@ -119,8 +123,39 @@ export interface AgentProgress {
   tool?: string;
   count?: number;
 }
+export interface AgentTraceContext {
+  traceId?: string;
+  requestId?: string;
+  jobId?: string;
+  batchId?: string;
+  batchIndex?: number;
+  attempt?: number;
+  phase?: string;
+  operation?: string;
+  moduleId?: string;
+  profileId?: string;
+  provider?: string;
+  protocol?: string;
+  model?: string;
+}
+export interface AgentTraceEvent {
+  type: string;
+  at?: string;
+  runId?: string;
+  stage?: AgentProgress['stage'];
+  phase?: AgentProgress['phase'] | string;
+  step?: number;
+  tool?: string;
+  durationMs?: number;
+  status?: string;
+  /** Detailed data is intentionally opaque to the model and only emitted through the host trace sink. */
+  payload?: unknown;
+}
 export function reportProgress(input: QueryInput, event: AgentProgress): void {
   try { input.onProgress?.(event); } catch { /* Observation cannot change evidence permissions or fail a query. */ }
+}
+export function reportTrace(input: QueryInput, event: AgentTraceEvent): void {
+  try { input.onTrace?.({at: new Date().toISOString(), ...event}); } catch { /* Trace sinks cannot change model execution. */ }
 }
 export interface Citation {
   id: string;

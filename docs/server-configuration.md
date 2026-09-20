@@ -105,13 +105,14 @@
 |---|---|---|
 | `MOTE_DIAGNOSTICS_ENABLED` | `1` | 0/1；关闭后不积累或持久化结构化诊断事件，即时状态仍可看 |
 | `MOTE_DEBUG` | `0` | 0/1；增加固定阶段事件，将非 silent 的日志级别提升为 debug；不记录原文或模型提示词 |
+| `MOTE_AGENT_TRACE_ENABLED` | dev 为 `1`，其它环境为 `0` | 0/1；显式记录 Agent 请求上下文、完整 prompt、模型输出、工具参数/结果、校验和阶段状态到普通 `central.N.ndjson`。可能包含个人内容，只建议开发环境开启 |
 | `MOTE_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error` / `silent` |
 | `MOTE_LOG_DIR` | 空 | 为空使用数据目录下 `logs/`；CLI 原生新环境为 `./logs`；Docker 强制 `/data/logs` |
 | `MOTE_LOG_MAX_MB` | `2` | 0.1–8 MiB，每个结构化日志文件上限；跨 UTC 日期或达到上限时轮转，单条日志最多 20 KiB，超出截断而非丢弃 |
 | `MOTE_LOG_MAX_FILES` | `3` | 1–10 整数，轮转文件总数 |
 | `MOTE_LOG_MAX_ENTRIES` | `2000` | 100–5000 整数，内存最近事件上限 |
 
-配置页面包含私有路径，不能当作安全支持包公开分享；`GET /api/configuration` 同样要求节点所有者令牌。安全诊断包仍只含固定事件、计数和耗时。Cloudflare connector 使用独立日志级别，不继承 `MOTE_DEBUG`；不要自行开启会记录 Authorization headers 的 cloudflared debug。排错流程见 [运行诊断](troubleshooting.md)。
+配置页面包含私有路径，不能当作安全支持包公开分享；`GET /api/configuration` 同样要求节点所有者令牌。安全诊断包仍只含固定事件、计数和耗时，即使开发环境开启详细 Agent trace 也会排除其正文。Cloudflare connector 使用独立日志级别，不继承 `MOTE_DEBUG`；不要自行开启会记录 Authorization headers 的 cloudflared debug。排错流程见 [运行诊断](troubleshooting.md)。
 
 ## 部署层配置
 
