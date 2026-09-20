@@ -7,6 +7,9 @@ import { join } from 'node:path';
 
 export type LogLevel = 'debug'|'info'|'warn'|'error'|'silent';
 export type Stage = 'ingest'|'index'|'agent'|'source'|'maintenance'|'file';
+export type DiagnosticStage = Stage|'request'|'system'|'unknown';
+export const diagnosticStageFilters=['all','system','request','ingest','index','agent','source','maintenance','file','unknown'] as const;
+export type DiagnosticStageFilter=typeof diagnosticStageFilters[number];
 export type Operation = 'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention'|'extract'|'diarize'|'align'|'turns'|'summary'|'file_upload'|'file_part'|'file_commit'|'file_revision'|'file_process'|'file_settings'|'file_retry';
 const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
@@ -29,12 +32,37 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const bounded=(n:number|undefined,fallback:number,min:number,max:number)=>Math.min(max,Math.max(min,Math.floor(typeof n==='number'&&Number.isFinite(n)?n:fallback)));
 const logDay=(at:string)=>at.slice(0,10);
 const maxEventBytes=20*1024;
+const requiredEventFields=new Set(['seq','at','instanceId','event','level','stage']);
+const serializedBytes=(value:unknown)=>Buffer.byteLength(JSON.stringify(value));
+const truncateUtf8=(value:string,maxBytes:number)=>Buffer.byteLength(value)<=maxBytes?value:Buffer.from(value).subarray(0,Math.max(0,maxBytes)).toString('utf8');
+const eventStage=(event:string):DiagnosticStage=>{
+  const prefix=event.split('.',1)[0];
+  if(prefix==='request')return 'request';
+  if(prefix==='ingest'||prefix==='index'||prefix==='agent'||prefix==='source'||prefix==='maintenance'||prefix==='file')return prefix;
+  if(prefix==='server'||prefix==='queue'||prefix==='support')return 'system';
+  return 'unknown';
+};
+const validStage=(value:unknown):value is DiagnosticStage=>typeof value==='string'&&value!=='all'&&diagnosticStageFilters.includes(value as DiagnosticStageFilter);
 const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
 type QueuedLine = {line:string;day:string};
 export type EventFields = Metrics & { requestId?:string;jobId?:string;method?:'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'HEAD'|'OPTIONS';operation?:Operation;route?:string;category?:string;reason?:string };
-export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'> }
+export interface DiagnosticEvent extends EventFields { seq:number;at:string;instanceId:string;event:string;level:Exclude<LogLevel,'silent'>;stage?:DiagnosticStage;truncated?:boolean }
 export interface ServerDiagnosticsOptions { enabled?:boolean;debug?:boolean;level?:LogLevel;directory:string;maxBytes?:number;maxFiles?:number;maxEntries?:number;now?:()=>Date }
+
+export function serializeDiagnosticEvent(entry:DiagnosticEvent,maxBytes=maxEventBytes):string {
+  const original=JSON.stringify(entry)+'\n';
+  if(Buffer.byteLength(original)<=maxBytes)return original;
+  const candidate:Record<string,unknown>={...entry,truncated:true};
+  const stringFields=Object.keys(candidate).filter(key=>!requiredEventFields.has(key)&&typeof candidate[key]==='string').sort((a,b)=>Buffer.byteLength(String(candidate[b]))-Buffer.byteLength(String(candidate[a])));
+  for(const key of stringFields) {
+    const value=String(candidate[key]);let low=0,high=value.length,best='';
+    while(low<=high) {const middle=Math.floor((low+high)/2),part=truncateUtf8(value,middle);candidate[key]=part;if(serializedBytes(candidate)+1<=maxBytes){best=part;low=middle+1;}else high=middle-1;}
+    candidate[key]=best;
+  }
+  if(serializedBytes(candidate)+1>maxBytes)for(const key of Object.keys(candidate))if(!requiredEventFields.has(key)&&key!=='truncated')delete candidate[key];
+  return JSON.stringify(candidate)+'\n';
+}
 
 /** Error text, stacks, headers, provider bodies and arbitrary codes never cross this boundary. */
 export function safeError(error:unknown):{status:number;category:string;message:string;reason?:string} {
@@ -71,7 +99,7 @@ function cleanEvent(value:unknown):DiagnosticEvent|undefined {
   if(!value||typeof value!=='object')return;
   const v=value as Record<string,unknown>;
   if(typeof v.event!=='string'||!events.has(v.event)||!levels.slice(0,4).includes(v.level as 'info')||typeof v.seq!=='number'||!Number.isSafeInteger(v.seq)||v.seq<1||typeof v.at!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(v.at)||!Number.isFinite(Date.parse(v.at))||typeof v.instanceId!=='string'||!uuid.test(v.instanceId))return;
-  return {seq:v.seq,at:v.at,instanceId:v.instanceId,event:v.event,level:v.level as DiagnosticEvent['level'],...fields(v)};
+  return {seq:v.seq,at:v.at,instanceId:v.instanceId,event:v.event,level:v.level as DiagnosticEvent['level'],stage:validStage(v.stage)?v.stage:eventStage(v.event),...fields(v),...(v.truncated===true?{truncated:true}: {})};
 }
 
 /** Bounded numeric events only, with no API for arbitrary strings or Error objects. */
@@ -149,7 +177,7 @@ export class ServerDiagnostics {
           }
           finally {await file.close();}
           for(const line of raw.split('\n')) {
-            if(!line||Buffer.byteLength(line)>maxEventBytes)continue;
+            if(!line)continue;
             try {const event=cleanEvent(JSON.parse(line));if(event){this.entries.push(event);this.seq=Math.max(this.seq,event.seq);if(index===0)currentDay=logDay(event.at);if(this.entries.length>this.maxEntries)this.entries.shift();}}catch{this.readFailures++;}
           }
         }catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')this.readFailures++;}
@@ -162,9 +190,8 @@ export class ServerDiagnostics {
   record(event:string,value:EventFields={},level:DiagnosticEvent['level']='info') {
     if(this.closed||!this.enabled||this.level==='silent'||!events.has(event)||!['debug','info','warn','error'].includes(level)||levels.indexOf(level)<levels.indexOf(this.level))return;
     const at=this.now().toISOString();
-    const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event,level,...fields({requestId:this.context.getStore(),...value})};
-    const line=JSON.stringify(entry)+'\n';
-    if(Buffer.byteLength(line)>Math.min(maxEventBytes,this.maxBytes)){this.dropped++;return;}
+    const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event,level,stage:eventStage(event),...fields({requestId:this.context.getStore(),...value})};
+    const line=serializeDiagnosticEvent(entry,Math.min(maxEventBytes,this.maxBytes));
     this.entries.push(entry);if(this.entries.length>this.maxEntries)this.entries.shift();
     if(!this.writable||this.queue.length>=Math.min(this.maxEntries,1024)||Date.now()<this.nextAttempt){this.dropped++;return;}
     this.queue.push({line,day:logDay(at)});this.startWrite();
@@ -224,14 +251,18 @@ export class ServerDiagnostics {
       this.readFailures++;throw error;
     }
   }
-  async readPage(index=0,page=1,pageSize=100) {
+  async readPage(index=0,page=1,pageSize=100,stage:DiagnosticStageFilter='all') {
     if(!Number.isInteger(index)||index<0||index>=this.maxFiles)throw Object.assign(new Error('Invalid log file'),{statusCode:400});
     if(!Number.isInteger(page)||page<1)throw Object.assign(new Error('Invalid log page'),{statusCode:400});
     if(!Number.isInteger(pageSize)||pageSize<1||pageSize>500)throw Object.assign(new Error('Invalid log page size'),{statusCode:400});
-    const lines=(await this.readRaw(index)).split('\n').filter(line=>line.length>0);
+    if(!diagnosticStageFilters.includes(stage))throw Object.assign(new Error('Invalid log stage'),{statusCode:400});
+    const lines=(await this.readRaw(index)).split('\n').filter(line=>line.length>0).filter(line=>stage==='all'||this.lineStage(line)===stage);
     const totalLines=lines.length,totalPages=Math.max(1,Math.ceil(totalLines/pageSize)),currentPage=Math.min(page,totalPages);
     const end=totalLines-(currentPage-1)*pageSize,start=Math.max(0,end-pageSize);
     return {items:lines.slice(start,end),page:currentPage,pageSize,totalLines,totalPages,hasPrevious:currentPage<totalPages,hasNext:currentPage>1};
+  }
+  private lineStage(line:string):DiagnosticStage {
+    try {const value=JSON.parse(line) as Record<string,unknown>;return validStage(value.stage)?value.stage:typeof value.event==='string'?eventStage(value.event):'unknown';}catch{return 'unknown';}
   }
   async exportRange(after:string,before:string) {
     await this.flush();

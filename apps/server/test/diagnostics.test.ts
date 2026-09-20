@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { AgentNotConfiguredError,AgentResponseError,AgentTimeoutError } from '@mote/agent';
-import { ServerDiagnostics,safeError } from '../src/diagnostics.js';
+import { ServerDiagnostics,safeError,serializeDiagnosticEvent } from '../src/diagnostics.js';
 import { buildApp,type QueryAgent } from '../src/app.js';
 import type { Config } from '../src/config.js';
 
@@ -34,12 +34,13 @@ test('event whitelist excludes content even when supplied as Error-like fields a
   assert.equal((await stat(join(directory,'central.0.ndjson'))).mode&0o777,0o600);
 });
 
-test('diagnostic log lines allow 20 KiB and reject larger lines on restart',async t=>{
+test('diagnostic log lines truncate instead of dropping oversized events',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-line-limit-'));t.after(()=>rm(directory,{recursive:true,force:true}));
   const base={seq:1,at:'2026-09-20T12:00:00.000Z',instanceId:randomUUID(),event:'server.started',level:'info'};
-  const accepted=JSON.stringify({...base,padding:'x'.repeat(19*1024)})+'\n';const rejected=JSON.stringify({...base,seq:2,padding:'x'.repeat(21*1024)})+'\n';
-  await writeFile(join(directory,'central.0.ndjson'),accepted+rejected);const d=new ServerDiagnostics({directory,maxBytes:64*1024,maxFiles:1});await d.init();
-  assert.equal(d.events().items.length,1);assert.equal(d.events().items[0].seq,1);await d.close();
+  const accepted=serializeDiagnosticEvent({...base,padding:'x'.repeat(19*1024)} as never);const truncated=serializeDiagnosticEvent({...base,seq:2,padding:'x'.repeat(25*1024)} as never);
+  assert.ok(Buffer.byteLength(accepted)<=20*1024);assert.ok(Buffer.byteLength(truncated)<=20*1024);assert.equal(JSON.parse(accepted).truncated,undefined);assert.equal(JSON.parse(truncated).truncated,true);
+  const legacyOversized=JSON.stringify({...base,seq:3,padding:'x'.repeat(25*1024)})+'\n';await writeFile(join(directory,'central.0.ndjson'),accepted+legacyOversized);
+  const d=new ServerDiagnostics({directory,maxBytes:64*1024,maxFiles:1});await d.init();assert.equal(d.events().items.length,2);assert.deepEqual(d.events().items.map(event=>event.seq),[1,3]);await d.close();
 });
 
 test('log rotation, memory, pending queue and forward cursor remain bounded under bursts',async t=>{
@@ -195,6 +196,8 @@ test('raw log endpoint returns file text verbatim with owner authentication and 
   assert.equal(result.headers['cache-control'],'no-store');assert.ok(result.body.startsWith(raw));
   const pageResult=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file=0&page=1&pageSize=1',headers:{authorization:`Bearer ${config(dataDir).token}`}});
   assert.equal(pageResult.statusCode,200);assert.equal(pageResult.headers['cache-control'],'no-store');const pageBody=pageResult.json();assert.equal(pageBody.page,1);assert.equal(pageBody.pageSize,1);assert.equal(pageBody.totalLines,pageBody.totalPages);assert.ok(pageBody.items.length===1);assert.ok(pageBody.totalLines>=latestPage.totalLines);
+  const filtered=await app.inject({method:'GET',url:'/api/diagnostics/log-pages?file=0&page=1&pageSize=10&stage=unknown',headers:{authorization:`Bearer ${config(dataDir).token}`}});
+  assert.equal(filtered.statusCode,200);assert.equal(filtered.json().totalLines,2);assert.equal((await app.inject({method:'GET',url:'/api/diagnostics/log-pages?stage=invalid',headers:{authorization:`Bearer ${config(dataDir).token}`}})).statusCode,400);
 });
 
 test('stage failures use warning for rejected input and error for failed execution', async t=>{
@@ -203,4 +206,6 @@ test('stage failures use warning for rejected input and error for failed executi
   await assert.rejects(d.measure('ingest','note',()=>{throw {statusCode:400};}));
   await assert.rejects(d.measure('index','embedding',()=>{throw new Error('synthetic');}));
   assert.deepEqual(d.events().items.map(e=>e.level),['debug','warn','debug','error']);
+  assert.deepEqual(d.events().items.map(e=>e.stage),['ingest','ingest','index','index']);
+  const ingestPage=await d.readPage(0,1,100,'ingest');assert.equal(ingestPage.totalLines,2);assert.ok(ingestPage.items.every(line=>JSON.parse(line).stage==='ingest'));
 });

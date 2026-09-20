@@ -15,6 +15,8 @@ interface LogPage {
   items:string[];page:number;pageSize:number;totalLines:number;totalPages:number;
   hasPrevious:boolean;hasNext:boolean;
 }
+type LogStage='all'|'system'|'request'|'ingest'|'index'|'agent'|'source'|'maintenance'|'file'|'unknown';
+const logStages:readonly [LogStage,string][]= [['all',moteText("全部阶段")],['system',moteText("系统")],['request',moteText("请求")],['ingest',moteText("入库")],['index',moteText("索引")],['agent','Agent'],['source',moteText("资料")],['maintenance',moteText("维护")],['file',moteText("文件")],['unknown',moteText("未知")]];
 export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
   const [snapshot,setSnapshot]=useState<Snapshot>();
   const [logPageData,setLogPageData]=useState<LogPage>();
@@ -23,6 +25,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
   const [logFile,setLogFile]=useState(0);
   const [logPage,setLogPage]=useState(1);
   const [pageSize,setPageSize]=useState(100);
+  const [logStage,setLogStage]=useState<LogStage>('all');
   const [autoRefresh,setAutoRefresh]=useState(false);
   const [copyStatus,setCopyStatus]=useState('');
   const logRef=useRef<HTMLTextAreaElement>(null);
@@ -36,11 +39,11 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
     setBusy(true);setError('');
     void (async()=>{
       const value=await api.request<Snapshot>('/api/diagnostics',{signal:controller.signal});
-      const page=await api.request<LogPage>(`/api/diagnostics/log-pages?file=${logFile}&page=${logPage}&pageSize=${pageSize}`,{signal:controller.signal});
+      const page=await api.request<LogPage>(`/api/diagnostics/log-pages?file=${logFile}&page=${logPage}&pageSize=${pageSize}&stage=${logStage}`,{signal:controller.signal});
       if(active){setSnapshot(value);setLogPageData(page);setLogPage(page.page);setRawLog(page.items.length?page.items.join('\n')+'\n':'');setCopyStatus('');}
     })().catch(e=>{if(active)setError(errorMessage(e));}).finally(()=>{if(active)setBusy(false);});
     return()=>{active=false;controller.abort();};
-  },[api,revision,logFile,logPage,pageSize]);
+  },[api,revision,logFile,logPage,pageSize,logStage]);
   useEffect(()=>{
     if(!autoRefresh)return;
     const timer=window.setInterval(()=>setRevision(n=>n+1),5000);
@@ -89,7 +92,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
             <button className="button subtle" aria-pressed={wrap} onClick={()=>setWrap(v=>!v)}>{moteText("自动换行")}</button>
           </div>
         </div>
-        <p className="fine-print">{moteText("默认从当前日志的最新一页开始；翻页查看更早内容，刷新时不会离开当前页。日志按原始顺序显示，不拆字段或重排。")}</p>
+        <p className="fine-print">{moteText("默认从当前日志的最新一页开始；翻页查看更早内容，刷新时不会离开当前页。可按阶段筛选，日志仍按原始顺序显示，不拆字段或重排。")}</p>
         <div className="log-pagination" aria-label={moteText("日志分页")}>
           <div className="log-pagination-controls">
             <button className="button subtle" disabled={busy||logPage===1} onClick={()=>setLogPage(1)}>{moteText("最新")}</button>
@@ -98,6 +101,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
             <button className="button subtle" disabled={busy||!logPageData?.hasPrevious} onClick={()=>setLogPage(page=>page+1)}>{moteText("较旧")}</button>
           </div>
           <div className="log-pagination-options">
+            <label>{moteText("阶段")}{' '}<select aria-label={moteText("日志阶段")} value={logStage} disabled={busy} onChange={e=>{setLogPage(1);setLogStage(e.target.value as LogStage);}}>{logStages.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
             <button className="button subtle" onClick={()=>setRevision(n=>n+1)} disabled={busy}><RefreshCw size={14} className={busy?'spin':''}/>{moteText("手动刷新")}</button>
             <label>{moteText("每页")}{' '}<select aria-label={moteText("每页条数")} value={pageSize} disabled={busy} onChange={e=>{setLogPage(1);setPageSize(Number(e.target.value));}}><option value={50}>50</option><option value={100}>100</option><option value={200}>200</option><option value={500}>500</option></select></label>
             <label className="log-auto-refresh"><input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)}/>{moteText("自动刷新（5 秒）")}</label>

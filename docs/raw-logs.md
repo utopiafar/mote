@@ -3,6 +3,7 @@
 Web、桌面、Android 日志查看器直接读取文件文本，不解析 JSON、不翻译字段、不重新排序。损坏或未完成的文本也保留显示，便于排查写入问题。支持手动刷新、选择文本、全选、复制全部和切换自动换行。剪贴板不可用时，Web/桌面会全选并提示键盘复制。
 
 - Web：开发者选项 → 日志中心；选择 `central.0.ndjson` 当前文件或编号更大的历史轮转文件。API 为 `GET /api/diagnostics/logs?file=0`，只允许管理身份，返回 `text/plain`，禁止缓存。固定文件编号与单文件大小上限限制读取范围。
+- 日志中心支持按阶段筛选并分页；阶段是新增的兼容字段，旧日志会按事件名前缀回退推导。分页 API 可追加 `stage=system|request|ingest|index|agent|source|maintenance|file|unknown`，省略或使用 `stage=all` 保持原行为。
 - 桌面：开发者选项 → 查看本地日志；读取 `events.json`，上限 256 KiB。
 - Android：本地日志查看器；读取应用私有 `support-events.json`，上限 256 KiB，长按选择复制。
 
