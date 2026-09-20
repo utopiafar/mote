@@ -1,6 +1,6 @@
 # Mote
 
-> 0.0.55 将主链路升级为通用观察、内容对象、加工产物和增量记忆；新增可插拔持久 DAG、有界片段、分层检索与低成本目录索引。见 [架构升级](docs/context-architecture.md) 和 [测试报告](docs/context-architecture-validation.md)。
+> 0.0.56 将主链路升级为通用观察、内容对象、加工产物和增量记忆；新增可插拔持久 DAG、有界片段、分层检索与低成本目录索引。见 [架构升级](docs/context-architecture.md) 和 [测试报告](docs/context-architecture-validation.md)。
 
 > 0.0.53 新增可配置的页面内容采集，支持 Android / macOS 独立文字上报。默认关闭，内置规则为实验适配。见 [使用与贡献](docs/ui-page-capture.md) 和 [项目实践调研](docs/ui-page-research.md)。
 

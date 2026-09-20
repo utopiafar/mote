@@ -31,6 +31,8 @@ export class LocalSourceManager {
   private states = new Map<string, SourceStatus>();
   private engines = new Map<string, SourceSync>();
   private task?: Promise<void>;
+  private taskForced = false;
+  private forceRequested = false;
   private controller?: AbortController;
   private timer?: ReturnType<typeof setInterval>;
   private readonly watcher: FileWatcher;
@@ -150,9 +152,16 @@ export class LocalSourceManager {
   }
   async sync(force = true): Promise<void> {
     if (this.stopped || this.connectionHeld) return;
-    if (this.task) return this.task;
-    const controller = new AbortController(); this.controller = controller;
-    this.task = this.run(force, controller.signal).finally(() => { this.task = undefined; if (this.controller === controller) this.controller = undefined; if (this.rerunRequested && !this.stopped) { this.rerunRequested = false; void this.sync(false); } });
+    if (this.task) { if (force && !this.taskForced) this.forceRequested = true; return this.task; }
+    const controller = new AbortController(); this.controller = controller; this.taskForced = force;
+    this.forceRequested = false;
+    this.task = this.run(force, controller.signal).finally(async () => {
+      const forceNext = this.forceRequested && !this.stopped && !this.connectionHeld && !controller.signal.aborted;
+      this.forceRequested = false; this.task = undefined; this.taskForced = false;
+      if (this.controller === controller) this.controller = undefined;
+      if (forceNext) { this.rerunRequested = false; await this.sync(true); }
+      else if (this.rerunRequested && !this.stopped) { this.rerunRequested = false; void this.sync(false); }
+    });
     return this.task;
   }
   private async run(force: boolean, signal: AbortSignal): Promise<void> {
