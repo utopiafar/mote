@@ -28,6 +28,7 @@ const responseReasons:Record<string,string>={
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const bounded=(n:number|undefined,fallback:number,min:number,max:number)=>Math.min(max,Math.max(min,Math.floor(typeof n==='number'&&Number.isFinite(n)?n:fallback)));
 const logDay=(at:string)=>at.slice(0,10);
+const maxEventBytes=20*1024;
 const processStartedAt=Date.now()-process.uptime()*1000;
 type Metrics = Partial<Record<typeof numberKeys[number],number>>;
 type QueuedLine = {line:string;day:string};
@@ -148,7 +149,7 @@ export class ServerDiagnostics {
           }
           finally {await file.close();}
           for(const line of raw.split('\n')) {
-            if(!line||line.length>2048)continue;
+            if(!line||Buffer.byteLength(line)>maxEventBytes)continue;
             try {const event=cleanEvent(JSON.parse(line));if(event){this.entries.push(event);this.seq=Math.max(this.seq,event.seq);if(index===0)currentDay=logDay(event.at);if(this.entries.length>this.maxEntries)this.entries.shift();}}catch{this.readFailures++;}
           }
         }catch(e){if((e as NodeJS.ErrnoException).code!=='ENOENT')this.readFailures++;}
@@ -163,7 +164,7 @@ export class ServerDiagnostics {
     const at=this.now().toISOString();
     const entry:DiagnosticEvent={seq:++this.seq,at,instanceId:this.instanceId,event,level,...fields({requestId:this.context.getStore(),...value})};
     const line=JSON.stringify(entry)+'\n';
-    if(Buffer.byteLength(line)>Math.min(2048,this.maxBytes)){this.dropped++;return;}
+    if(Buffer.byteLength(line)>Math.min(maxEventBytes,this.maxBytes)){this.dropped++;return;}
     this.entries.push(entry);if(this.entries.length>this.maxEntries)this.entries.shift();
     if(!this.writable||this.queue.length>=Math.min(this.maxEntries,1024)||Date.now()<this.nextAttempt){this.dropped++;return;}
     this.queue.push({line,day:logDay(at)});this.startWrite();

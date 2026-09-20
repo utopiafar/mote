@@ -34,6 +34,14 @@ test('event whitelist excludes content even when supplied as Error-like fields a
   assert.equal((await stat(join(directory,'central.0.ndjson'))).mode&0o777,0o600);
 });
 
+test('diagnostic log lines allow 20 KiB and reject larger lines on restart',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-line-limit-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const base={seq:1,at:'2026-09-20T12:00:00.000Z',instanceId:randomUUID(),event:'server.started',level:'info'};
+  const accepted=JSON.stringify({...base,padding:'x'.repeat(19*1024)})+'\n';const rejected=JSON.stringify({...base,seq:2,padding:'x'.repeat(21*1024)})+'\n';
+  await writeFile(join(directory,'central.0.ndjson'),accepted+rejected);const d=new ServerDiagnostics({directory,maxBytes:64*1024,maxFiles:1});await d.init();
+  assert.equal(d.events().items.length,1);assert.equal(d.events().items[0].seq,1);await d.close();
+});
+
 test('log rotation, memory, pending queue and forward cursor remain bounded under bursts',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-bounds-'));const d=new ServerDiagnostics({directory,maxBytes:1024,maxFiles:3,maxEntries:17});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});await d.init();
   for(let round=0;round<20;round++) {for(let i=0;i<100;i++)d.record('request.completed',{count:i});assert.ok(d.snapshot().pendingWrites<=81);await d.flush();}
