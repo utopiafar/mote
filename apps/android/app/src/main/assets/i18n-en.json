@@ -411,6 +411,7 @@
   "第 {0} / {1} 页": "Page {0} / {1}",
   "共 {0} 条": "{0} lines",
   "每页": "Per page",
+  "手动刷新": "Refresh now",
   "自动刷新（5 秒）": "Auto-refresh (5 sec)",
   "原始日志": "Raw log",
   "暂无日志。": "No logs yet.",

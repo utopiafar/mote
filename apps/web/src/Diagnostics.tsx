@@ -98,6 +98,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
             <button className="button subtle" disabled={busy||!logPageData?.hasPrevious} onClick={()=>setLogPage(page=>page+1)}>{moteText("较旧")}</button>
           </div>
           <div className="log-pagination-options">
+            <button className="button subtle" onClick={()=>setRevision(n=>n+1)} disabled={busy}><RefreshCw size={14} className={busy?'spin':''}/>{moteText("手动刷新")}</button>
             <label>{moteText("每页")}{' '}<select aria-label={moteText("每页条数")} value={pageSize} disabled={busy} onChange={e=>{setLogPage(1);setPageSize(Number(e.target.value));}}><option value={50}>50</option><option value={100}>100</option><option value={200}>200</option><option value={500}>500</option></select></label>
             <label className="log-auto-refresh"><input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)}/>{moteText("自动刷新（5 秒）")}</label>
           </div>
