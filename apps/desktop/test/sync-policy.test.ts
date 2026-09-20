@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultConfig, updateConfig } from '../src/config';
 import { decideSync } from '../src/sync-policy';
 const origin = Date.parse('2026-09-14T00:00:00.000Z');
-const config = { ...defaultConfig(), token: 'synthetic-sync-token' };
+const config = { ...defaultConfig(), token: 'synthetic-sync-token', syncIntervalMinutes:15 };
 const pending = { pendingRecords: 1, oldestPendingAt: new Date(origin).toISOString() };
 describe('durable synchronization policy', () => {
   it('allows local configuration and performs no implicit or explicit network work without both connection fields', () => {
@@ -33,7 +33,7 @@ describe('durable synchronization policy', () => {
     const retryAt = new Date(origin + 30000).toISOString();
     expect(decideSync(config, { ...pending, nextRetryAt: retryAt }, origin)).toMatchObject({ ready: false, nextUploadAt: retryAt });
     expect(decideSync(config, { ...pending, nextRetryAt: retryAt }, origin + 30000).ready).toBe(true);
-    for (const value of [{ syncIntervalMinutes: 14 }, { syncIntervalMinutes: 1441 }, { syncBatchSize: 0 }, { syncBatchSize: 501 }, { syncMode: 'unknown' }]) expect(() => updateConfig(config, { ...config, ...value } as never)).toThrow();
+    for (const value of [{ syncIntervalMinutes: 0 }, { syncIntervalMinutes: 1441 }, { syncBatchSize: 0 }, { syncBatchSize: 501 }, { syncMode: 'unknown' }]) expect(() => updateConfig(config, { ...config, ...value } as never)).toThrow();
   });
 });
 it('schedules metadata-only source changes without inventing a record count', () => {
@@ -44,3 +44,5 @@ it('schedules metadata-only source changes without inventing a record count', ()
   }
   expect(decideSync({ ...config, syncMode: 'manual' }, metadata, origin + 86400000).ready).toBe(false);
 });
+
+it('new installations batch for at most one minute or 100 observations, with explicit flush available',()=>{const cfg={...defaultConfig(),token:'synthetic'};expect(cfg.packedUpload).toBe(true);expect(decideSync(cfg,pending,origin+59000).ready).toBe(false);expect(decideSync(cfg,pending,origin+60000).ready).toBe(true);expect(decideSync(cfg,{...pending,pendingRecords:100},origin).ready).toBe(true);expect(decideSync(cfg,pending,origin,true).ready).toBe(true);});

@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProtectedCaptureTest {
-    private val config = CollectorConfig(deviceName = "Generated phone", nsfw = NsfwConfig())
+    private val config = CollectorConfig(deviceName = "Generated phone", nsfw = NsfwConfig(), appCollectionRules = AppCollectionRules.LEGACY_DEFAULT)
     @Test fun skipsMoteForegroundAndSplitScreenWithoutChangingOtherApplications() {
         val own = BuildConfig.APPLICATION_ID
         assertEquals(AppCollectionMode.OFF, CapturePipeline.policy(config, WindowSnapshot(setOf(own), own, true)))

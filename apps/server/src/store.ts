@@ -1,3 +1,6 @@
+import {initializeSourceCatalog} from './source-catalog.js';
+import {EvidenceArchive} from './evidence-archive.js';
+import {StorageLedger} from './storage-ledger.js';
 import {isStateExtension,samples as stateSamples} from '@mote/shared/state-series';
 import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
@@ -29,6 +32,8 @@ function searchText(record:Pick<CaptureInput,'appId'|'appName'|'windowTitle'|'oc
 }
 export class Store {
   db:DatabaseSync;
+  readonly archive:EvidenceArchive;
+  private ledger!:StorageLedger;
   blobsDir:string;
   readonly contentEncryption:ContentEncryption;
   get key(){return this.contentEncryption.key;}
@@ -52,6 +57,7 @@ export class Store {
         INSERT INTO perception_jobs(capture_id,kind,state,created_at) VALUES(new.id,'ocr','waiting',CAST(strftime('%s','now') AS INTEGER)*1000);
         INSERT INTO perception_jobs(capture_id,kind,state,created_at) VALUES(new.id,'semantic','waiting',CAST(strftime('%s','now') AS INTEGER)*1000);
       END;
+      CREATE INDEX IF NOT EXISTS captures_vectors ON captures(embedding_model,captured_at DESC,id) WHERE embedding IS NOT NULL;
       CREATE INDEX IF NOT EXISTS captures_time ON captures(captured_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS captures_device ON captures(device_id,captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_device_source_time ON captures(device_id,json_extract(json,'$.source'),captured_at DESC,id DESC);
@@ -111,19 +117,29 @@ export class Store {
       INSERT OR IGNORE INTO memory_batch_dependencies SELECT d.batch_id,c.capture_id FROM memory_batch_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;`);
     try{this.contentEncryption=new ContentEncryption(directory,this.db,options);}catch(error){this.db.close();throw error;}
     this.db.function('mote_search_text',{deterministic:true},json=>searchText(JSON.parse(String(json))));
-    this.db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS captures_trigram USING fts5(id UNINDEXED,text,tokenize='trigram');
-      CREATE TRIGGER IF NOT EXISTS captures_trigram_insert AFTER INSERT ON captures BEGIN INSERT INTO captures_trigram(id,text) VALUES(new.id,mote_search_text(new.json)); END;
-      CREATE TRIGGER IF NOT EXISTS captures_trigram_delete AFTER DELETE ON captures BEGIN DELETE FROM captures_trigram WHERE id=old.id; END;
-      CREATE TRIGGER IF NOT EXISTS captures_trigram_update AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN DELETE FROM captures_trigram WHERE id=old.id; INSERT INTO captures_trigram(id,text) VALUES(new.id,mote_search_text(new.json)); END;`);
-    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='trigram-v1'").get())this.db.exec("BEGIN IMMEDIATE; INSERT INTO captures_trigram(id,text) SELECT id,mote_search_text(json) FROM captures; INSERT INTO settings VALUES('trigram-v1','1'); COMMIT");
+    this.db.exec(`DROP TRIGGER IF EXISTS captures_trigram_insert; DROP TRIGGER IF EXISTS captures_trigram_delete; DROP TRIGGER IF EXISTS captures_trigram_update; CREATE VIRTUAL TABLE IF NOT EXISTS captures_trigram USING fts5(id UNINDEXED,text,tokenize='trigram');
+      CREATE TRIGGER IF NOT EXISTS captures_trigram_insert AFTER INSERT ON captures BEGIN INSERT INTO captures_trigram(rowid,id,text) VALUES(new.rowid,new.id,mote_search_text(new.json)); END;
+      CREATE TRIGGER IF NOT EXISTS captures_trigram_delete AFTER DELETE ON captures BEGIN DELETE FROM captures_trigram WHERE rowid=old.rowid; END;
+      CREATE TRIGGER IF NOT EXISTS captures_trigram_update AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN DELETE FROM captures_trigram WHERE rowid=old.rowid; INSERT INTO captures_trigram(rowid,id,text) VALUES(new.rowid,new.id,mote_search_text(new.json)); END;`);
+    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='trigram-v1'").get())this.db.exec("BEGIN IMMEDIATE; INSERT INTO captures_trigram(rowid,id,text) SELECT rowid,id,mote_search_text(json) FROM captures; INSERT INTO settings VALUES('trigram-v1','1'); COMMIT");
     if(!this.db.prepare('SELECT value FROM settings WHERE key=? AND value=?').get('search_text_version','2')){
       this.db.exec('BEGIN IMMEDIATE');
       try{
-        this.db.exec('DELETE FROM captures_fts; INSERT INTO captures_fts(id,text) SELECT id,mote_search_text(json) FROM captures');
+        this.db.exec('DELETE FROM captures_fts; INSERT INTO captures_fts(rowid,id,text) SELECT rowid,id,mote_search_text(json) FROM captures');
         this.db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)').run('search_text_version','2');
         this.db.exec('COMMIT');
       }catch(error){this.db.exec('ROLLBACK');this.db.close();throw error;}
     }
+    if(!this.db.prepare("SELECT 1 FROM settings WHERE key='fts-rowid-v2'").get())this.db.exec(`BEGIN IMMEDIATE;
+      DELETE FROM captures_fts; DELETE FROM captures_trigram;
+      INSERT INTO captures_fts(rowid,id,text) SELECT rowid,id,mote_search_text(json)||COALESCE((SELECT group_concat(json_extract(p.json,'$.text'),' ') FROM perception_results p WHERE p.capture_id=captures.id AND p.current=1),'') FROM captures;
+      INSERT INTO captures_trigram(rowid,id,text) SELECT rowid,id,text FROM captures_fts;
+      INSERT INTO settings VALUES('fts-rowid-v2','1'); COMMIT;`);
+    this.db.exec('CREATE TRIGGER IF NOT EXISTS captures_words_delete BEFORE DELETE ON captures BEGIN DELETE FROM captures_fts WHERE rowid=old.rowid; END;');
+    initializeSourceCatalog(this.db);
+    this.archive=new EvidenceArchive(this);
+    this.ledger=new StorageLedger(this.db);
+    this.ledger.bytes();
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
     this.sweep();
   }
@@ -136,7 +152,7 @@ export class Store {
     return {...original,...(ocr?{ocrText:ocr.text,ocr:{status:'completed',updatedAt:ocr.generatedAt}}:ocrJob?{ocr:{status:ocrJob.state==='failed'?'failed':'pending'}}:{}),...(derived.length?{perception:{results:derived.map((r:Record<string,unknown>)=>{const {transcript,text,...metadata}=r;return {...metadata,textLength:typeof text==='string'?text.length:0};}),layers:derived.map(r=>r.kind==='ocr'?'L1':'L2')}}:{}),...(row.blob_hash?{perceptionJobs:jobs}:{}),receivedAt:row.received_at,blobHash:row.blob_hash,imageMime:row.mime,indexingStatus:row.index_status,...(semantic?{summary:semantic.text}:row.summary?{summary:row.summary}:{})};
   }
   private clauses(range:Range={}) {
-    const clauses:string[]=["(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
+    const clauses:string[]=["(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=captures.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=captures.id AND h.deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
     if(range.after) {clauses.push('mote_context_end(json) >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push('mote_context_time(json) < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
@@ -225,16 +241,45 @@ export class Store {
     const receivedAt=p.receivedAt??new Date().toISOString();
     this.db.prepare('INSERT INTO captures(id,device_id,captured_at,received_at,json,fingerprint,blob_hash,mime,index_status) VALUES(?,?,?,?,?,?,?,?,?)')
       .run(p.input.id,p.input.deviceId,p.input.capturedAt,receivedAt,json,p.fingerprint,p.hash,imageMime??null,status);
-    this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(p.input.id,searchText(p.input));
+    this.db.prepare('INSERT INTO captures_fts(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)').run(p.input.id,p.input.id,searchText(p.input));
     this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(p.input.id,'upsert',new Date().toISOString());
     const device=this.db.prepare('SELECT json FROM devices WHERE id=?').get(p.input.deviceId) as {json:string}|undefined;
     if(!device)this.heartbeat({deviceId:p.input.deviceId,deviceName:p.input.deviceName,platform:p.input.platform,status:'offline',queueDepth:0,lastCaptureAt:p.input.capturedAt,...(p.input.metadata?{metadata:p.input.metadata}:{})});
     return {id:p.input.id,duplicate:false,blobHash:p.hash,indexingStatus:status};
   }
   async ingest(raw:unknown,transaction?:(result:{id:string;duplicate:boolean})=>void) {
-    const p=await this.prepare(raw);
+    return (await this.ingestBatch([raw],transaction))[0];
+  }
+  /** Validation and image decoding happen before a single bounded durable commit.
+   * No await is allowed inside the transaction. A failed item acknowledges nothing. */
+  async ingestBatch(raw:unknown[],transaction?:(result:{id:string;duplicate:boolean},index:number)=>void,before?:()=>void) {
+    if(!Array.isArray(raw)||!raw.length||raw.length>500)throw new StoreError('Expected 1–500 observations',413);
+    if(Buffer.byteLength(JSON.stringify(raw))>32*1024*1024)throw new StoreError('Observation batch exceeds 32 MiB',413);
+    const prepared:Prepared[]=[];
+    // Bound decoder memory independently of caller batch size.
+    for(let i=0;i<raw.length;i+=4)prepared.push(...await Promise.all(raw.slice(i,i+4).map(item=>this.prepare(item))));
+    const size=prepared.reduce((n,p)=>n+Buffer.byteLength(JSON.stringify(p.input)),0);
+    if(size>32*1024*1024)throw new StoreError('Observation batch exceeds 32 MiB',413);
     this.db.exec('BEGIN IMMEDIATE');
-    try {const result=this.insert(p);transaction?.(result);this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');this.sweep();throw e;}
+    try {before?.();const results=prepared.map((p,i)=>{const result=this.insert(p);transaction?.(result,i);return result;});this.db.exec('COMMIT');return results;}
+    catch(e){this.db.exec('ROLLBACK');this.sweep();throw e;}
+  }
+  async ingestSettled(raw:CaptureInput[],authorize?:()=>void) {
+    if(!raw.length||raw.length>100)throw new StoreError('Expected 1–100 observations',413);
+    const prepared:PromiseSettledResult<Prepared>[]=[];
+    for(let i=0;i<raw.length;i+=4)prepared.push(...await Promise.allSettled(raw.slice(i,i+4).map(item=>this.prepare(item))));
+    this.db.exec('BEGIN IMMEDIATE');
+    let failed=false;
+    try {
+      authorize?.();
+      const results=prepared.map((p,i)=>{
+        if(p.status==='rejected')return {id:raw[i].id,error:p.reason as unknown};
+        this.db.exec('SAVEPOINT capture_member');
+        try{const result=this.insert(p.value);this.captureReceived(p.value.input.deviceId);this.db.exec('RELEASE capture_member');return {id:raw[i].id,result};}
+        catch(error){failed=true;this.db.exec('ROLLBACK TO capture_member; RELEASE capture_member');return {id:raw[i].id,error};}
+      });
+      this.db.exec('COMMIT');if(failed)this.sweep();return results;
+    }catch(error){this.db.exec('ROLLBACK');this.sweep();throw error;}
   }
   async importArchive(raw:unknown) {
     const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[]};
@@ -277,7 +322,7 @@ export class Store {
         if(current){
           this.db.prepare("UPDATE perception_jobs SET state='succeeded' WHERE capture_id=? AND kind=?").run(row.capture_id,row.kind);
           const record=this.evidence([row.capture_id])[0];
-          for(const table of ['captures_fts','captures_trigram']){this.db.prepare(`DELETE FROM ${table} WHERE id=?`).run(row.capture_id);this.db.prepare(`INSERT INTO ${table}(id,text) VALUES(?,?)`).run(row.capture_id,searchText(record)+'\n'+(record.summary??''));}
+          for(const table of ['captures_fts','captures_trigram']){this.db.prepare(`DELETE FROM ${table} WHERE rowid=(SELECT rowid FROM captures WHERE id=?)`).run(row.capture_id);this.db.prepare(`INSERT INTO ${table}(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)`).run(row.capture_id,row.capture_id,searchText(record)+'\n'+(record.summary??''));}
         }
       }
       for(const m of memoryEntries){if(m.evidenceIds.some(id=>!this.evidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');for(const e of m.evidence??[]){const record=this.evidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record||(e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote)))throw new StoreError('Memory archive evidence quote mismatch');}this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,JSON.stringify({...m,status:'stale',staleReason:'restored_archive'}));for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);}
@@ -301,13 +346,13 @@ export class Store {
   }
   evidence(ids:string[]) {return ids.slice(0,200).map(id=>this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as Row|undefined).filter((x):x is Row=>Boolean(x)).map(r=>this.record(r));}
   isCurrentEvidence(id:string):boolean {
-    return Boolean(this.db.prepare('SELECT id FROM captures WHERE id=? AND (id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0))').get(id));
+    return Boolean(this.db.prepare('SELECT id FROM captures WHERE id=? AND (NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=captures.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=captures.id AND h.deleted=0))').get(id));
   }
   /** Called inside the evidence mutation transaction so in-flight extraction cannot revive old claims. */
   invalidateMemoryEvidence(id:string,deleted=false) {
     const excerpts=this.db.prepare('SELECT capture_id FROM file_evidence_links WHERE parent_id=?').all(id) as {capture_id:string}[];
     this.db.prepare('DELETE FROM file_evidence_links WHERE parent_id=?').run(id);
-    for(const excerpt of excerpts){this.invalidateMemoryEvidence(excerpt.capture_id,deleted);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(excerpt.capture_id);if(deleted){this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(excerpt.capture_id);this.db.prepare('DELETE FROM captures WHERE id=?').run(excerpt.capture_id);}}
+    for(const excerpt of excerpts){this.invalidateMemoryEvidence(excerpt.capture_id,deleted);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(excerpt.capture_id);if(deleted){this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(excerpt.capture_id);this.db.prepare('DELETE FROM captures WHERE id=?').run(excerpt.capture_id);}}
 
     this.db.exec('DELETE FROM insights');
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='working_memories'").get())this.db.exec('DELETE FROM working_memories');
@@ -327,7 +372,7 @@ export class Store {
     return {...page,items};
   }
   gallery(range:{after:string;before:string;deviceId?:string;appId?:string;cursor?:string;limit:number}, albums:boolean) {
-    const filters=['captured_at>=?','captured_at<?',"(id NOT IN (SELECT capture_id FROM source_versions) OR id IN (SELECT capture_id FROM source_heads WHERE deleted=0) OR id IN (SELECT capture_id FROM file_heads))"];const args:(string|number)[]=[new Date(range.after).toISOString(),new Date(range.before).toISOString()];
+    const filters=['captured_at>=?','captured_at<?',"(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=capture_gallery.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=capture_gallery.id AND h.deleted=0) OR id IN (SELECT capture_id FROM file_heads))"];const args:(string|number)[]=[new Date(range.after).toISOString(),new Date(range.before).toISOString()];
     if(range.deviceId){filters.push('device_id=?');args.push(range.deviceId);}
     if(range.appId!==undefined){filters.push('app_id=?');args.push(range.appId);}
     let cursor: {at:string;id:string}|{after:string;deviceId:string;appId:string}|undefined;
@@ -392,6 +437,8 @@ export class Store {
   }
   savePerception(id:string,kind:string,result:{id:string;text:string;fingerprint:string;[key:string]:unknown}) {
     if(!this.imageReference(id)?.blobHash)throw new StoreError('Capture not found',404);
+    const before=this.evidence([id])[0];
+    const previousText=searchText(before)+'\n'+(before.summary??'');
     this.db.exec('BEGIN IMMEDIATE');
     try {
       this.reserveMetadata(Buffer.byteLength(JSON.stringify(result))+4096);
@@ -399,13 +446,15 @@ export class Store {
       this.db.prepare('INSERT INTO perception_results(id,capture_id,kind,fingerprint,json) VALUES(?,?,?,?,?)').run(result.id,id,kind,result.fingerprint,JSON.stringify(result));
       this.db.prepare("UPDATE perception_jobs SET state='succeeded',error=NULL WHERE capture_id=? AND kind=?").run(id,kind);
       const record=this.evidence([id])[0];
-      this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(id);
-      this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(id,searchText(record)+'\n'+(record.summary??''));
-      this.db.prepare('DELETE FROM captures_trigram WHERE id=?').run(id);
-      this.db.prepare('INSERT INTO captures_trigram(id,text) VALUES(?,?)').run(id,searchText(record)+'\n'+(record.summary??''));
+      if(searchText(record)+'\n'+(record.summary??'')!==previousText){
+      this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(id);
+      this.db.prepare('INSERT INTO captures_fts(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)').run(id,id,searchText(record)+'\n'+(record.summary??''));
+      this.db.prepare('DELETE FROM captures_trigram WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(id);
+      this.db.prepare('INSERT INTO captures_trigram(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)').run(id,id,searchText(record)+'\n'+(record.summary??''));
       this.db.prepare("UPDATE captures SET index_status=?,embedding=NULL,embedding_model=NULL WHERE id=?").run(this.options.embeddingEnabled&&record.ocrText.trim()?'pending':'text_ready',id);
       this.invalidateMemoryEvidence(id);
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,new Date().toISOString());
+      }
       this.db.exec('COMMIT');
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
@@ -430,8 +479,8 @@ export class Store {
       this.db.prepare('INSERT OR IGNORE INTO capture_ocr_receipts(id,original_fingerprint) VALUES(?,?)').run(id,row.fingerprint);
       this.db.prepare('UPDATE captures SET json=?,fingerprint=?,index_status=?,embedding=NULL,embedding_model=NULL,summary=NULL,index_error=NULL,attempts=0 WHERE id=?')
         .run(json,fingerprint,this.options.embeddingEnabled&&update.ocrText.trim()?'pending':'text_ready',id);
-      this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(id);
-      this.db.prepare('INSERT INTO captures_fts(id,text) VALUES(?,?)').run(id,searchText(next));
+      this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(id);
+      this.db.prepare('INSERT INTO captures_fts(rowid,id,text) VALUES((SELECT rowid FROM captures WHERE id=?),?,?)').run(id,id,searchText(next));
       this.invalidateMemoryEvidence(id);
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,ocr.updatedAt);
       this.db.exec('COMMIT');return {id,ocr,duplicate:false};
@@ -457,11 +506,15 @@ export class Store {
   }
   vectorSearch(vector:number[], model:string, range:Range={}) {
     const {where,values}=this.clauses(range);
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${where?' AND ':' WHERE '}embedding_model=? AND embedding IS NOT NULL`).all(...values,model) as unknown as (Row&{embedding:string})[];
-    const norm=Math.sqrt(vector.reduce((s,n)=>s+n*n,0));
-    return rows.map(row=>{const v=JSON.parse(row.embedding) as number[];const vn=Math.sqrt(v.reduce((s,n)=>s+n*n,0));return {row,score:v.length===vector.length&&vn&&norm?v.reduce((s,n,i)=>s+n*vector[i],0)/(vn*norm):-1};})
-      .sort((a,b)=>b.score-a.score).slice(0,Math.min(range.limit??30,200)).map(r=>this.record(r.row));
+    const candidates=4096,limit=Math.min(range.limit??30,200),norm=Math.hypot(...vector);
+    const rows=this.db.prepare(`SELECT id,embedding FROM captures${where}${where?' AND ':' WHERE '}embedding_model=? AND embedding IS NOT NULL ORDER BY captured_at DESC,id LIMIT ?`).iterate(...values,model,candidates+1);
+    const best:{id:string;score:number}[]=[];let scanned=0,bounded=false;
+    for(const row of rows){if(scanned++>=candidates){bounded=true;break;}const v=JSON.parse(String(row.embedding)) as number[],vn=Math.hypot(...v);if(v.length!==vector.length||!vn||!norm||!v.every(Number.isFinite))continue;
+      const score=v.reduce((sum,n,i)=>sum+n*vector[i],0)/(vn*norm);best.push({id:String(row.id),score});best.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id));if(best.length>limit)best.pop();
+    }
+    return Object.assign(best.flatMap(r=>this.evidence([r.id])),{coverage:{candidateLimit:candidates,scanned:Math.min(scanned,candidates),bounded,selection:'recent_within_scope'}});
   }
+
   image(id:string) {
     const row=this.db.prepare('SELECT blob_hash,mime FROM captures WHERE id=?').get(id) as {blob_hash:string|null;mime:string}|undefined;
     if(!row?.blob_hash)throw new StoreError('Image not found',404);
@@ -529,18 +582,7 @@ export class Store {
     return mediaActivity((function*(){for(const row of rows)yield record(row as unknown as Row);})(),range);
   }
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
-  logicalBytes() {
-    const tables=new Set((this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {name:string}[]).map(row=>row.name));
-    const jsonTables=['perception_results','captures','memories','source_connections','conversations','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_lifecycle_state','working_memories','action_meta','action_proposals','action_targets'].filter(name=>tables.has(name));
-    const bytes=Number((this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM blobs').get() as {n:number}).n);
-    const files=tables.has('file_blobs')?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
-    const scalar=(sql:string)=>Number(this.db.prepare(sql).get()!.n);
-    const nativeBytes=scalar('SELECT COALESCE(SUM(bytes),0) AS n FROM file_objects')
-      +scalar('SELECT COALESCE(SUM(bytes),0) AS n FROM file_parts p JOIN file_uploads u ON u.id=p.upload_id WHERE u.ack IS NULL')
-      +scalar('SELECT COALESCE(SUM(length(CAST(text AS BLOB))+COALESCE(length(embedding),0)),0) AS n FROM file_chunks')
-      +scalar('SELECT COALESCE(SUM(length(CAST(manifest AS BLOB))),0) AS n FROM (SELECT manifest FROM file_versions UNION ALL SELECT manifest FROM file_uploads)');
-    return bytes+files+nativeBytes+Number(this.db.prepare('SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM ('+jsonTables.map(name=>'SELECT json FROM '+name).join(' UNION ALL ')+')').get()!.n);
-  }
+  logicalBytes() { return this.ledger.bytes(); }
   stats() {
     const counts=this.db.prepare("SELECT COUNT(*) AS captures, COUNT(blob_hash) AS imageCaptures, SUM(CASE WHEN json_extract(json,'$.source')='activity' THEN 1 ELSE 0 END) AS activityEvents, SUM(CASE WHEN json_extract(json,'$.source')='media' THEN 1 ELSE 0 END) AS mediaEvents, MIN(captured_at) AS firstCaptureAt,MAX(captured_at) AS lastCaptureAt FROM captures").get() as {captures:number;imageCaptures:number;activityEvents:number|null;mediaEvents:number|null;firstCaptureAt:string|null;lastCaptureAt:string|null};
     const blob=this.db.prepare('SELECT COUNT(*) AS blobs,COALESCE(SUM(bytes),0) AS imageBytes FROM blobs').get() as {blobs:number;imageBytes:number};
@@ -566,11 +608,11 @@ export class Store {
   delete(id:string) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const result=this.db.prepare('DELETE FROM captures WHERE id=?').run(id);this.db.prepare('DELETE FROM captures_fts WHERE id=?').run(id);
+      const result=this.db.prepare('DELETE FROM captures WHERE id=?').run(id);this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(id);
       if(result.changes)this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,'delete',new Date().toISOString());
       // Derived retrospectives can refer to removed evidence; invalidate, rather than retain stale personal facts.
       if(result.changes){this.invalidateMemoryEvidence(id,true);this.invalidateConversationAnswers();this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);}
-      this.db.exec('COMMIT');this.sweep();return {deleted:Number(result.changes)};
+      this.db.exec('COMMIT');this.sweep();this.archive.collect();return {deleted:Number(result.changes)};
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   prune(before:string) {
@@ -578,9 +620,9 @@ export class Store {
     try {
       const removed=this.db.prepare('SELECT id FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)').all(before) as {id:string}[];
       this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
-      this.db.prepare('DELETE FROM captures_fts WHERE id IN (SELECT id FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
+      this.db.prepare('DELETE FROM captures_fts WHERE rowid IN (SELECT rowid FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
       const result=this.db.prepare('DELETE FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
-      if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();return Number(result.changes);
+      if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();this.archive.collect();return Number(result.changes);
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   invalidateConversationAnswers() {

@@ -43,3 +43,7 @@ test('a selected file chunk keeps its timing and exact text bounds while file di
  const result=parseAnswer(JSON.stringify({answer:`合成陈述 [${id}]`,citationIds:[id]}),b.records);
  assert.equal(result.citations[0].excerpt,text);assert.deepEqual(result.citations[0].fileEvidence,chunk.fileEvidence);
 });
+test('segment navigation discovers scoped members without authorizing unread citations',async t=>{
+ const b=await startBridge(reader({segments:async()=>({items:[{id:'segment',members:[record.id],deviceId:'allowed',firstAt:record.capturedAt,lastAt:record.capturedAt},{id:'outside',members:['outside'],deviceId:'other',firstAt:record.capturedAt,lastAt:record.capturedAt}],nextCursor:null})}),{question:'segments',deviceId:'allowed'},12);t.after(()=>b.close());
+ const result=await request(b,'segments');assert.equal(result.body.data.items.length,1);assert.throws(()=>parseAnswer(JSON.stringify({answer:'Unverified',citationIds:[record.id]}),b.records));assert.equal((await request(b,'evidence',{ids:['outside']})).status,400);assert.equal((await request(b,'evidence',{ids:[record.id]})).status,200);assert.equal(parseAnswer(JSON.stringify({answer:`Supported [${record.id}]`,citationIds:[record.id]}),b.records).citations.length,1);
+});

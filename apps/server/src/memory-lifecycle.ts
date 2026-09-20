@@ -18,8 +18,8 @@ export const defaultLifecycleSettings:LifecycleSettings={
   drainWindows:100,batchCharacters:12000,recentTurns:8,contextCharacters:24000,summaryCharacters:6000,
 };
 export type LifecycleWindow={id:string;version:string;from:number;through:number;ids:string[];startedAt:number;settings:LifecycleSettings;checkpoint?:string};
-type State={drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
-export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'consolidation'|'insights'|'working'>;version:string;stream:'evidence'|'memory'|'conversation';
+type State={stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
+export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'consolidation'|'insights'|'working'>;version:string;stream:'evidence'|'artifact'|'memory'|'conversation';
   run:(window:LifecycleWindow,checkpoint:(id:string)=>void)=>Promise<void>};
 
 /** The host owns persistence/admission; replaceable extensions own model procedures.
@@ -53,7 +53,10 @@ export class MemoryLifecycle {
   register(extension:LifecycleExtension){
     if(this.extensions.has(extension.id))throw new Error('Duplicate lifecycle extension: '+extension.id);
     this.extensions.set(extension.id,extension);
-    if(!this.store.db.prepare('SELECT id FROM memory_lifecycle_state WHERE id=?').get(extension.id))this.save(extension.id,{cursor:0,lastSuccess:this.now(),failures:0});
+    const exists=this.store.db.prepare('SELECT id FROM memory_lifecycle_state WHERE id=?').get(extension.id);
+    // A journal cursor is meaningful only in its original stream. Rebuild the
+    // new artifact cursor; existing memories and durable manual jobs stay intact.
+    if(!exists||(extension.stream==='artifact'&&this.state(extension.id).stream!=='artifact'))this.save(extension.id,{stream:extension.stream,cursor:0,lastSuccess:this.now(),failures:0});
   }
   replace(extension:LifecycleExtension){
     if(!this.extensions.has(extension.id))return this.register(extension);
@@ -65,11 +68,11 @@ export class MemoryLifecycle {
   private state(id:string):State{return JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_lifecycle_state WHERE id=?').get(id)!.json));}
   private save(id:string,state:State){this.store.db.prepare('INSERT INTO memory_lifecycle_state VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,JSON.stringify(state));}
   private events(extension:LifecycleExtension,cursor:number,limit:number){
-    return (extension.stream==='evidence'?this.store.db.prepare('SELECT seq,id AS entity FROM changes WHERE seq>? ORDER BY seq LIMIT ?').all(cursor,limit):this.store.db.prepare('SELECT seq,entity FROM memory_events WHERE stream=? AND seq>? ORDER BY seq LIMIT ?').all(extension.stream,cursor,limit)) as {seq:number;entity:string}[];
+    return (extension.stream==='artifact'?this.store.db.prepare('SELECT seq,entity FROM artifact_events WHERE seq>? ORDER BY seq LIMIT ?').all(cursor,limit):extension.stream==='evidence'?this.store.db.prepare('SELECT seq,id AS entity FROM changes WHERE seq>? ORDER BY seq LIMIT ?').all(cursor,limit):this.store.db.prepare('SELECT seq,entity FROM memory_events WHERE stream=? AND seq>? ORDER BY seq LIMIT ?').all(extension.stream,cursor,limit)) as {seq:number;entity:string}[];
   }
   private count(extension:LifecycleExtension,cursor:number){
     // Turns (including repeated conversation IDs) are increments for working memory.
-    return Number((extension.stream==='evidence'?this.store.db.prepare('SELECT count(*) AS n FROM changes WHERE seq>?').get(cursor):this.store.db.prepare('SELECT count(*) AS n FROM memory_events WHERE stream=? AND seq>?').get(extension.stream,cursor))!.n);
+    return Number((extension.stream==='artifact'?this.store.db.prepare('SELECT count(*) AS n FROM artifact_events WHERE seq>?').get(cursor):extension.stream==='evidence'?this.store.db.prepare('SELECT count(*) AS n FROM changes WHERE seq>?').get(cursor):this.store.db.prepare('SELECT count(*) AS n FROM memory_events WHERE stream=? AND seq>?').get(extension.stream,cursor))!.n);
   }
   view(){const settings=this.settings();return {settings,trigger:'interval AND incremental',storage:'text',extensions:[...this.extensions.values()].map(e=>{
     const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():state.lastSuccess+p.intervalHours*3600000;
@@ -78,6 +81,7 @@ export class MemoryLifecycle {
       active:state.active?{id:state.active.id,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){if(this.closed)return Promise.resolve();return this.pending??=this.execute().finally(()=>{this.pending=undefined;});}
   private async execute(){
+    this.store.archive.aggregate(100);
     for(const extension of this.extensions.values()){
       if(this.closed||!this.configured())return;
       const settings=this.settings(),p=settings[extension.id],state=this.state(extension.id),now=this.now();
@@ -87,7 +91,7 @@ export class MemoryLifecycle {
           if(now<state.lastSuccess+p.intervalHours*3600000||this.count(extension,state.cursor)<p.minChanges)continue;
           // Freeze a bounded extraction round. Arrivals after this watermark wait
           // for the next round; one window per tick keeps other workflows fair.
-          if(extension.id==='extraction')state.drainThrough=Number(this.store.db.prepare('SELECT max(seq) AS seq FROM (SELECT seq FROM changes WHERE seq>? ORDER BY seq LIMIT ?)').get(state.cursor,p.maxItems*settings.drainWindows)?.seq)||undefined;
+          if(extension.id==='extraction')state.drainThrough=Number(this.store.db.prepare(`SELECT max(seq) AS seq FROM (SELECT seq FROM ${extension.stream==='artifact'?'artifact_events':'changes'} WHERE seq>? ORDER BY seq LIMIT ?)`).get(state.cursor,p.maxItems*settings.drainWindows)?.seq)||undefined;
         }
         const events=this.events(extension,state.cursor,p.maxItems).filter(e=>!state.drainThrough||e.seq<=state.drainThrough);if(!events.length)continue;
         state.active={id:randomUUID(),version:extension.version,from:state.cursor,through:events.at(-1)!.seq,ids:[...new Set(events.map(e=>e.entity))],startedAt:now,settings};this.save(extension.id,state);

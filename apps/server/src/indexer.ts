@@ -61,11 +61,12 @@ export class Indexer {
   async close() {this.closing=true;this.abort.abort();await this.current;}
   async search(args:Range&{query?:string}) {
     const lexical=[this.store.search(args),this.files?.search(args)??[]];
-    let channels=lexical,degraded=false;
+    let channels=lexical,degraded=false;let vectorCoverage:unknown;
     if(this.configured&&args.query&&args.source!=='activity'&&args.source!=='media'&&args.collection!=='activity'){
       try{
         const vector=await this.embed(args.query);
-        channels=[...lexical,this.store.vectorSearch(vector,this.config.embeddingModel,args),this.files?.vectorSearch(vector,this.config.embeddingModel,args)??[]];
+        const captures=this.store.vectorSearch(vector,this.config.embeddingModel,args),files=this.files?.vectorSearch(vector,this.config.embeddingModel,args)??[];
+        vectorCoverage={captures:captures.coverage,files:'coverage' in files?files.coverage:null};channels=[...lexical,captures,files];
       }catch(error){if(this.closing)throw error;degraded=true;}
     }
     // Reciprocal rank fusion across independent channels; no file-table priority.
@@ -75,8 +76,8 @@ export class Indexer {
       const previous=ranked.get(record.id);
       ranked.set(record.id,{record:previous?.record??record,score:(previous?.score??0)+1/(60+index+1)});
     });}
-    const result=[...ranked.values()].sort((a,b)=>b.score-a.score||a.record.id.localeCompare(b.record.id)).slice(0,args.limit??50).map(({record})=>({...record,retrieval:{mode:channels===lexical?'lexical':'hybrid',degraded,...(degraded?{reason:'embedding_unavailable'}:{})}}));
+    const result=[...ranked.values()].sort((a,b)=>b.score-a.score||a.record.id.localeCompare(b.record.id)).slice(0,args.limit??50).map(({record})=>({...record,retrieval:{mode:channels===lexical?'lexical':'hybrid',degraded,...(vectorCoverage?{vectorCoverage}:{}),...(degraded?{reason:'embedding_unavailable'}:{})}}));
     // Preserve degradation even for an empty result, without changing the public array API.
-    return Object.assign(result,{retrieval:{mode:channels===lexical?'lexical':'hybrid',degraded,...(degraded?{reason:'embedding_unavailable'}:{})}});
+    return Object.assign(result,{retrieval:{mode:channels===lexical?'lexical':'hybrid',degraded,...(vectorCoverage?{vectorCoverage}:{}),...(degraded?{reason:'embedding_unavailable'}:{})}});
   }
 }

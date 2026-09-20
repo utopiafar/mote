@@ -17,6 +17,7 @@ import type {
 } from "./types.js";
 
 export const TOOL_NAMES = [
+  "segments",
   "read_image",
   "progress_update",
   "search_context",
@@ -333,6 +334,17 @@ export async function startBridge(
         const scope=range({},bounds);effective={...scope,id:args.id};value=await reader.sourceHistory?.({...scope,id:args.id})??[];
       }
       else if(tool==='sources')value=await reader.sources?.(range(args,bounds))??[];
+      else if(tool==='segments'){
+        const scope=range(args,bounds);
+        if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw Error('Invalid segment id');
+        if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw Error('Invalid segment query');
+        effective={...scope,id:args.id,query:args.query};
+        const page=await reader.segments?.({...scope,id:args.id as string|undefined,query:args.query as string|undefined})??{items:[],nextCursor:null};
+        // IDs become discoverable, never citable until original text is delivered.
+        const items=page.items.filter(item=>(!scope.deviceId||item.deviceId===scope.deviceId)&&(!scope.after||typeof item.firstAt==='string'&&Date.parse(item.firstAt)>=Date.parse(scope.after))&&(!scope.before||typeof item.lastAt==='string'&&Date.parse(item.lastAt)<Date.parse(scope.before)));
+        discoveredMemoryIds.push(...items.flatMap(item=>item.members));
+        value={...page,items};pagination={nextCursor:page.nextCursor};
+      }
       else if(tool==='memories'){
         const scope=range(args,bounds);
         if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw Error('Invalid memory id');

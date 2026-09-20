@@ -15,11 +15,12 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
   lifecycle:MemoryLifecycle;store:Store;files:FileStore;memories:MemoryStore;pipeline:MemoryPipeline;working:WorkingMemory;
   query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;model:()=>string;
 }){
-  lifecycle.register({id:'extraction',version:'1.0.0',stream:'evidence',async run(window,checkpoint){
+  lifecycle.register({id:'extraction',version:'2.0.0',stream:'artifact',async run(window,checkpoint){
     let job=window.checkpoint?pipeline.get(window.checkpoint):undefined;
     if(!job){
       const ids=new Set<string>();
-      for(const id of window.ids){
+      const readyIds=window.ids.flatMap(id=>{const artifact=store.archive.get(id);return artifact?.kind==='segment'?artifact.representatives:[];});
+      for(const id of readyIds){
         if(store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(id)&&store.evidence([id])[0]?.provenance?.document?.fileIndex?.mode!=='index'){
           for(let offset=0;;offset+=200){const chunks=files.chunks(id,offset,200);for(const chunk of chunks)if(memories.isCurrentEvidence(chunk.id))ids.add(chunk.id);if(ids.size>20000)throw new StoreError('Scheduled file batch exceeds evidence budget',413);if(chunks.length<200)break;}
         }else if(memories.isCurrentEvidence(id))ids.add(id);

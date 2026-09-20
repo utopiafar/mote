@@ -63,3 +63,12 @@ describe('explicit local text sources', () => {
     for (const change of [{ excludedPaths: ['../outside'] }, { extensions: ['md'] }, { redactLiterals: [''] }, { intervalSeconds: 1 }, { retention: 'other' }]) expect(() => normalizeSourceOptions({ ...DEFAULT_SOURCE_OPTIONS, ...change })).toThrow();
   });
 });
+
+it('invalidates cached directory listings between reconciliations in the same catalog instance', async () => {
+  const { DirectoryCatalog } = await import('../src/directory-catalog');
+  await writeFile(join(root, 'first.txt'), 'Generated');
+  const catalog = new DirectoryCatalog(root);
+  const first = await catalog.next(100, []); expect(first.complete).toBe(true); catalog.finishReconciliation();
+  await writeFile(join(root, 'second.txt'), 'Generated');
+  const second = await catalog.next(100, []); expect(second.candidates.map(c => c.relativePath)).toEqual(['first.txt', 'second.txt']);
+});

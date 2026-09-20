@@ -53,8 +53,9 @@ function builtin(processor:FileProcessor):Plugin {
 /** A persistent Cordis context, independent from short-lived query-agent runtimes. */
 export class FileProcessorRuntime {
   readonly context=new Context();readonly registry=new ProcessorRegistry();readonly ready:Promise<void>;
-  constructor(provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[]){
+  constructor(provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry){
     this.context.provide('moteFileProcessors',this.registry);
+    if(contextProcessors)this.context.provide('moteContextProcessors',contextProcessors);
     const audio=(id:string,localOnly=false)=>builtin({id,version:'1',name:localOnly?moteText("本地多人录音"):moteText("转写接口"),stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',parameters:localOnly?[{key:'speakerCount',label:moteText("预期说话人数"),type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:moteText("留空由模型自动识别")},{key:'semanticTurns',label:moteText("使用本地语言模型合并自然发言轮次"),type:'boolean',default:false}]:[],
       process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,maxAudioMs:input.maxAudioMs,signal:input.signal})});
     this.ready=(async()=>{

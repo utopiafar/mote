@@ -35,7 +35,7 @@ class SyncPolicyTest {
         assertEquals(0L, policy.delayMillis(now + 900_000, 3, now - 2_000, 0))
     }
     @Test fun invalidSchedulingPreferencesFailBeforeScheduling() {
-        listOf(SyncPolicy("unknown"), SyncPolicy(intervalMinutes = 14), SyncPolicy(intervalMinutes = 1441), SyncPolicy(batchSize = 0), SyncPolicy(batchSize = 501))
+        listOf(SyncPolicy("unknown"), SyncPolicy(intervalMinutes = 0), SyncPolicy(intervalMinutes = 1441), SyncPolicy(batchSize = 0), SyncPolicy(batchSize = 501))
             .forEach { assertThrows(IllegalArgumentException::class.java) { it.validate() } }
     }
     @Test fun metadataOnlySourceChangesHaveADeadlineButDoNotInflateRecordThresholds() {

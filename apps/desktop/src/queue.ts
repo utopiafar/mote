@@ -332,7 +332,7 @@ export class DurableQueue {
       for (const record of records.slice(0, Math.min(25, limit))) {
         const image = record.blobHash ? await readFile(this.blobPath(record.blobHash)) : undefined;
         const size = Buffer.byteLength(JSON.stringify(record.event)) + (image ? Math.ceil(image.length / 3) * 4 : 0) + 64;
-        if (result.length && bytes + size > 8 * 1024 * 1024) break;
+        if (result.length && bytes + size > 4 * 1024 * 1024) break;
         if (image) { validateImage(image); if (await imageWork.run<string>({ kind: 'hash', bytes: image }) !== record.blobHash) throw new Error(moteText("队列图片校验和不正确")); }
         result.push({ record: structuredClone(record), image }); bytes += size;
       }
