@@ -50,6 +50,8 @@ app.on('browser-window-created', (_event, window) => {
     if (!window.webContents.getURL().startsWith('file:')) return;
     const js = code => window.webContents.executeJavaScript(code);
     void (async () => {
+      // Generated fixture intentionally discards its manual drafts when navigating.
+      await js('window.confirm = () => true; true;');
       await js(`document.querySelector('[data-nav="connection"]').click()`);
       assert.equal((await js('window.mote.status()')).running, false);
       const originalFile = await readFile(join(profile, 'config.json'));
