@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, realpath, rm, writeFile, readFile, mkdir } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -84,4 +84,18 @@ it('checkpoints pending source bodies before credential persistence and recovers
   // Simulate exit after new config was saved but before changeConnection updated in-memory state.
   release(); await value.close(); value = await manager(server.url, replacement.token); await value.sync();
   expect(value.connectionActivity().pending).toBe(0); expect(server.items).toHaveLength(2); expect(server.items[1]).toEqual(oldBody);
+});
+
+
+it('a manual sync overlapping an automatic scan waits for one coalesced forced flush', async () => {
+  const app = await manager('http://127.0.0.1:1'); await app.sync();
+  let release!: () => void, started!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const begin = new Promise<void>(resolve => { started = resolve; });
+  const modes: boolean[] = [];
+  vi.spyOn(app as any, 'run').mockImplementation(async (force: unknown) => { modes.push(Boolean(force)); if (!force) { started(); await gate; } });
+  const background = app.sync(false); await begin;
+  const first = app.sync(true), second = app.sync(true);
+  release(); await Promise.all([background, first, second]);
+  expect(modes).toEqual([false, true]);
 });

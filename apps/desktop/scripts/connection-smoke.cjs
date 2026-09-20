@@ -18,7 +18,7 @@ safeStorage.isEncryptionAvailable = () => true;
 safeStorage.encryptString = value => Buffer.from('fixture:' + Buffer.from(value).toString('base64'));
 safeStorage.decryptString = value => Buffer.from(value.toString().slice(8), 'base64').toString();
 const oldToken = 'old-synthetic-owner-token-' + 'o'.repeat(32), token = 'new-synthetic-collector-token-' + 'c'.repeat(32), owner = 'separate-synthetic-admin-token-' + 'a'.repeat(32);
-const config = { ...defaultConfig(), deviceName: 'Synthetic onboarding Mac', serverUrl: 'http://127.0.0.1:1', excludedAppIds: ['dev.synthetic.private'], masks: [{ x: 0, y: 0, width: 0.1, height: 0.1 }], ocrEnabled: false, metadataEnabled: false };
+const config = { ...defaultConfig(), syncMode: 'realtime', packedUpload: false, deviceName: 'Synthetic onboarding Mac', serverUrl: 'http://127.0.0.1:1', excludedAppIds: ['dev.synthetic.private'], masks: [{ x: 0, y: 0, width: 0.1, height: 0.1 }], ocrEnabled: false, metadataEnabled: false };
 writeFileSync(join(profile, 'config.json'), JSON.stringify({ version: 1, config, encryptedToken: safeStorage.encryptString(oldToken).toString('base64') }));
 mkdirSync(join(profile, 'models')); writeFileSync(join(profile, 'models', 'preserved-fixture'), 'synthetic-model-marker');
 let releaseFirstRedeem, releaseSecondRedeem, releaseImport, delayImport = false, selected, origin, invitation, failRedeem = true, requests = 0, ownerApiHeaders = [], finished = false, responseToken = token, uploadsAllowed = false; const uploadBodies = [];

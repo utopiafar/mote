@@ -38,7 +38,7 @@ const freePort = () => new Promise(resolve => { const server = createServer(); s
     const next = await queue.next(); assert(next); await uploadCapture(config, next.record.event); await queue.acknowledge(saved.id); assert.equal(queue.stats().depth, 0);
     assert.equal((await request('/api/captures/' + saved.id)).status, 200); assert.equal((await request('/api/configuration', undefined, 'GET', config.token)).status, 403);
     const text = join(root, 'selected.md'); await writeFile(text, 'Generated file synced with device-scoped credential.');
-    sources = new LocalSourceManager(join(profile, 'local-sources'), config, '/unused-calendar-helper'); await sources.initialize(); await sources.addFiles(text, DEFAULT_SOURCE_OPTIONS); await sources.sync(); assert.equal(sources.status()[0].pending, 0); assert.equal(sources.status()[0].state, 'idle');
+    sources = new LocalSourceManager(join(profile, 'local-sources'), config, '/unused-calendar-helper'); await sources.initialize(); await sources.addFiles(text, DEFAULT_SOURCE_OPTIONS); await sources.sync(); assert.equal(sources.status()[0].pending, 0, sources.status()[0].message); assert.equal(sources.status()[0].state, 'idle');
     const sourceId = sources.status()[0].source.id; const listed = await request('/api/sources', undefined, 'GET', config.token); assert.equal(listed.status, 200); assert(JSON.stringify(await listed.json()).includes(sourceId));
     // An existing device cannot be rebound by an unbound invitation.
     const replacementInvite = (await (await request('/api/connections/invitations', { serverUrl: origin, label: 'Unbound fixture' })).json()).invitation;
@@ -74,4 +74,4 @@ const freePort = () => new Promise(resolve => { const server = createServer(); s
     assert.equal((await store.load()).deviceId, original.deviceId); assert.deepEqual((await store.load()).masks, original.masks);
     console.log(JSON.stringify({ ok: true, realIsolatedCentral: true, invitationRedeemAndSelf: true, preservedDeviceAndPrivacy: true, encryptedConfigAdapter: true, noteQueueUploadAck: true, scopedFileSourceSync: true, adminAccessDenied: true, existingDeviceUnboundInviteDenied: true, revokedCredentialKeepsQueue: true, sameOriginBoundInvitationResumesExactNoteAndSource: true, differentOriginWithPendingBlocked: true, personalDataRead: false }));
   } finally { await sources?.close(); if (central && central.exitCode === null) { central.kill('SIGTERM'); await new Promise(resolve => central.once('exit', resolve)); } await rm(root, { recursive: true, force: true }); }
-})().catch(error => { process.stderr.write('Real central connection fixture failed: ' + error.message + '\n'); process.exitCode = 1; });
+})().catch(error => { process.stderr.write('Real central connection fixture failed: ' + error.stack + '\n'); process.exitCode = 1; });
