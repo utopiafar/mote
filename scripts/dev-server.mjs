@@ -11,13 +11,15 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { repository, profilePaths, loadProfile, isolatedEnvironment, stopNative, withProfileLock, atomicJson, readJson } from './profile-lib.mjs';
 
 const help = `Mote foreground debug server (macOS/Linux, Node 24+)
-  node scripts/dev-server.mjs [--install] [--profile NAME] [--home PATH]
+  node scripts/dev-server.mjs [--install] [--startup-timeout MS] [--profile NAME] [--home PATH]
 
 Stops this profile's managed server, installs changed dependencies, builds the
 current checkout's libraries/server/web and stays attached.
 Ctrl+C stops the server and its children. --install forces npm ci.
 Uses existing native development profiles; prod and port 47832 are excluded.
 Existing tunnel connections keep using the same port. Deployment selection is unchanged.`;
+
+const DEFAULT_STARTUP_TIMEOUT_MS = 120_000;
 
 // Each command owns a process group, so interrupting npm also stops its build grandchildren.
 export function startCommand(command, args, { cwd, env, signal, graceMs = 5000 } = {}) {
@@ -126,6 +128,8 @@ export async function runDevServer(options = {}, root = repository) {
   if (process.platform === 'win32' || Number(process.versions.node.split('.')[0]) < 24) throw Error('Use macOS/Linux with Node.js 24 or newer');
   const p = await loadProfile(profilePaths(options.profile ?? 'dev', options.home));
   if (p.profile === 'prod' || p.port === 47832 || p.meta.runtime !== 'native') throw Error('dev-server requires an existing native development profile, not prod');
+  const startupTimeoutMs = options.startupTimeoutMs === undefined ? DEFAULT_STARTUP_TIMEOUT_MS : Number(options.startupTimeoutMs);
+  if (!Number.isInteger(startupTimeoutMs) || startupTimeoutMs < 1000 || startupTimeoutMs > 600_000) throw Error('--startup-timeout must be an integer between 1000 and 600000 milliseconds');
   const controller = new AbortController(), { signal } = controller;
   const interrupt = () => { if (!signal.aborted) console.info('\n[dev] Stopping…'); controller.abort(); };
   for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(name, interrupt);
@@ -146,16 +150,19 @@ export async function runDevServer(options = {}, root = repository) {
       });
       // Register before health checks: stop/status work on this source run too.
       await atomicJson(p.processFile, { pid: server.child.pid, marker, envFile: p.envFile, release: root, startedAt: new Date().toISOString() });
-      const deadline = Date.now() + 30000;
+      console.info(`[dev] Starting Mote; waiting up to ${Math.ceil(startupTimeoutMs / 1000)} seconds for HTTP readiness…`);
+      const deadline = Date.now() + startupTimeoutMs;
       while (true) {
         signal.throwIfAborted();
         if (server.child.exitCode !== null || server.child.signalCode !== null) throw Error('Server exited during startup; see the output above');
         try {
-          const response = await fetch(p.url + '/api/status', { headers: { Authorization: `Bearer ${p.env.MOTE_TOKEN}` }, redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(1000)]) });
+          // /api/status performs archive and diagnostics statistics. Keep startup
+          // readiness independent of the size or state of the local archive.
+          const response = await fetch(p.url + '/api/health', { redirect: 'error', signal: AbortSignal.any([signal, AbortSignal.timeout(1000)]) });
           await response.body?.cancel();
           if (response.ok) break;
         } catch { signal.throwIfAborted(); }
-        if (Date.now() > deadline) throw Error('Server did not become ready within 30 seconds');
+        if (Date.now() > deadline) throw Error(`Server did not become ready within ${Math.ceil(startupTimeoutMs / 1000)} seconds`);
         await sleep(100, undefined, { signal });
       }
       console.info(`[dev] Mote ${version} (${p.profile}) ready at ${p.url}. Web rebuilt. Ctrl+C to stop.`);
@@ -184,8 +191,8 @@ export async function runDevServer(options = {}, root = repository) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const { values } = parseArgs({ options: { profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, install: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } });
+    const { values } = parseArgs({ options: { profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, install: { type: 'boolean' }, 'startup-timeout': { type: 'string' }, help: { type: 'boolean', short: 'h' } } });
     if (values.help) console.info(help);
-    else await runDevServer(values);
+    else await runDevServer({ ...values, startupTimeoutMs: values['startup-timeout'] });
   } catch (error) { console.error(`[dev] ${error.message}`); process.exitCode = 1; }
 }
