@@ -89,14 +89,15 @@ export class SourceStore {
     if(!args.includeDeleted)clauses.push('h.deleted=0');
     if(args.kind){clauses.push("json_extract(c.json,'$.source')=?");values.push(args.kind);}
     // Calendars use planned time; documents use explicit authored time, otherwise observation time.
-    const start="COALESCE(json_extract(c.json,'$.provenance.calendar.start'),mote_context_time(c.json))",end="COALESCE(json_extract(c.json,'$.provenance.calendar.end'),mote_context_time(c.json))";
+    const start="COALESCE(json_extract(c.json,'$.provenance.calendar.start'),c.context_at)",end="COALESCE(json_extract(c.json,'$.provenance.calendar.end'),c.context_at)";
     if(args.after){clauses.push(`julianday(${end})>=julianday(?)`);values.push(args.after);}
     if(args.before){clauses.push(`julianday(${start})<julianday(?)`);values.push(args.before);}
-    let offset=0;if(args.cursor){if(!/^\d{1,9}$/.test(args.cursor))throw new StoreError('Invalid source cursor');offset=Number(args.cursor);}
+    let position:{at:string;id:string}|undefined;
+    if(args.cursor){try{position=z.object({at:z.string().datetime(),id:z.string().uuid()}).parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid source cursor');}clauses.push('(c.context_at<? OR (c.context_at=? AND c.id>?))');values.push(position.at,position.at,position.id);}
     const limit=Math.max(1,Math.min(args.limit??50,200));
-    const rows=this.store.db.prepare(`SELECT c.id,h.deleted FROM captures c JOIN source_heads h ON c.id=h.capture_id WHERE ${clauses.join(' AND ')} ORDER BY mote_context_time(c.json) DESC,c.id LIMIT ? OFFSET ?`).all(...values,limit+1,offset) as {id:string;deleted:number}[];
+    const rows=this.store.db.prepare(`SELECT c.id,c.context_at,h.deleted FROM captures c JOIN source_heads h ON c.id=h.capture_id WHERE ${clauses.join(' AND ')} ORDER BY c.context_at DESC,c.id LIMIT ?`).all(...values,limit+1) as {id:string;context_at:string;deleted:number}[];
     const items=rows.slice(0,limit).flatMap(r=>this.store.evidence([r.id]).map(c=>({...this.item(c,true),deleted:Boolean(r.deleted)})));
-    return {items,nextCursor:rows.length>limit?String(offset+limit):null};
+    const last=rows.slice(0,limit).at(-1);return {items,nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({at:last.context_at,id:last.id})).toString('base64url'):null};
   }
   summary(){const layers=this.store.db.prepare("SELECT COALESCE(json_extract(json,'$.provenance.layer'),'original') AS layer,COUNT(*) AS count FROM captures GROUP BY layer").all();return {sources:this.listSources().length,layers,originals:'Authored text and source snapshots are retained in SQLite; referenced remote originals are never fetched implicitly.',index:'FTS5 plus optional embeddings',history:'Immutable revisions with a current pointer; original source deletion is recorded separately.'};}
 }

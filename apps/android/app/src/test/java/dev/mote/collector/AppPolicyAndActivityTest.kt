@@ -8,6 +8,14 @@ import java.nio.file.Files
 import java.util.UUID
 
 class AppPolicyAndActivityTest {
+    @Test fun normalSystemBarsDoNotBlockContentButRealOverlaysStillDo() {
+        val rules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "com.example.page=content")
+        val app = CollectionWindow(1, "com.example.page")
+        val chrome = CollectionWindows.snapshot(listOf(app, CollectionWindow(3, "com.android.systemui", systemBar = true)), app.packageName)
+        assertEquals(AppCollectionMode.CONTENT, rules.decide(chrome, emptySet()))
+        assertEquals(AppCollectionMode.OFF, rules.decide(CollectionWindows.snapshot(listOf(app, CollectionWindow(3, "com.android.systemui")), app.packageName), emptySet()))
+        assertEquals(AppCollectionMode.OFF, rules.decide(CollectionWindows.snapshot(listOf(app, CollectionWindow(3, "com.example.overlay", systemBar = true)), app.packageName), emptySet()))
+    }
     @Test fun defaultContentIncludesLauncherSystemAndUnidentifiedSurfaces() {
         val defaults = AppCollectionRules.parse(AppCollectionRules.LEGACY_DEFAULT)
         val launcher = CollectionWindows.snapshot(listOf(CollectionWindow(1, "com.example.launcher")), "com.example.launcher")

@@ -10,6 +10,8 @@ import java.net.URL
 import java.util.concurrent.TimeUnit
 
 object HttpJson {
+    private val active = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
+    fun cancelActive() { active.toList().forEach { runCatching { it.disconnect() } } }
     @Volatile var onRequest: (() -> Unit)? = null
     @Volatile var onComplete: ((Long) -> Unit)? = null
     fun post(url: String, body: JSONObject, token: String? = null): Pair<Int, JSONObject?> = request("POST", url, body, token)
@@ -22,7 +24,9 @@ object HttpJson {
         val started = android.os.SystemClock.elapsedRealtime()
         runCatching { onRequest?.invoke() }
         val connection = URL(url).openConnection() as HttpURLConnection
+        active.add(connection)
         try {
+            if (ConnectionGuard.reconfiguring() && !ConnectionGuard.ownsConfiguration()) throw java.io.InterruptedIOException("Configuration changed")
             connection.requestMethod = method
             connection.connectTimeout = 15_000
             connection.readTimeout = 30_000
@@ -56,7 +60,7 @@ object HttpJson {
                 output.toString("UTF-8")
             }
             return code to response?.let { runCatching { JSONObject(it) }.getOrNull() }
-        } finally { connection.disconnect(); runCatching { onComplete?.invoke(android.os.SystemClock.elapsedRealtime() - started) } }
+        } finally { active.remove(connection); connection.disconnect(); runCatching { onComplete?.invoke(android.os.SystemClock.elapsedRealtime() - started) } }
     }
 }
 

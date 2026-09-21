@@ -283,6 +283,9 @@ class CaptureRecordsActivity : MoteActivity() {
                 }
             } catch (error: Exception) {
                 runOnUiThread { if (!isDestroyed && request == loadGeneration) {
+                    // Removing a session anchor changes its identity. Return to fresh groups
+                    // instead of leaving deleted thumbnails visible in the old selection.
+                    if (!remote && error is CaptureSessionChangedException) { reload(); return@runOnUiThread }
                     if (!backgroundRefresh) { clearList(); progress.visibility = View.GONE }
                     status.text = errorMessage(error, remote); previousPage.isEnabled = cursors.size > 1
                 } }

@@ -13,6 +13,7 @@ object ConnectionGuard {
     val processing = AtomicInteger(0)
     fun changing() = lock.isWriteLocked || updating.get()
     fun reconfiguring() = updating.get()
+    fun ownsConfiguration() = lock.isWriteLockedByCurrentThread
     fun beginReconfiguration() = updating.compareAndSet(false, true)
     fun endReconfiguration() { updating.set(false) }
     fun configurationStamp(context: Context) = SourceRules.hash(Settings(context).read().toString())

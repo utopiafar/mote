@@ -945,6 +945,7 @@ class MainActivity : MoteActivity() {
             }.onFailure { toast(it.message ?: MoteI18n.text("停止未完成，请重试")) }
             refreshStatus()
         }
+        refreshStatus()
     }
     private fun refreshStatus() {
         if (!::status.isInitialized) return
@@ -1032,7 +1033,7 @@ class MainActivity : MoteActivity() {
         val connectionText = when {
             c == null || !c.hasSyncConnection() -> MoteI18n.text("记录只保存在本机；连接后按你的策略上传。")
             settings.syncState() == "error" -> settings.uploadStatus()
-            pending != null && pending > 0 -> MoteI18n.text("{0} 条记录等待中央确认 · 节点：{1}", pending, c.server)
+            pending != null && pending > 0 -> MoteI18n.text("待同步 {0} 条 · 节点：{1}", pending, c.server)
             connectionState == "unchecked" -> MoteI18n.text("节点已保存，但尚未完成最近一次连接验证：{0}", c.server)
             else -> MoteI18n.text("节点：{0} · 最近一次验证成功", c.server)
         }

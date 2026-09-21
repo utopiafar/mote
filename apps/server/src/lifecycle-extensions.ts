@@ -11,22 +11,28 @@ import {WorkingMemory} from './working-memory.js';
 import {insightResult} from './insights.js';
 import {CODING_MEMORY_PROMPT} from './memory-profiles.js';
 
-export function registerMemoryExtensions({lifecycle,store,files,memories,pipeline,working,query,model}:{
+export function registerMemoryExtensions({lifecycle,store,files,memories,pipeline,working,query,model,semanticArtifacts}:{
+  semanticArtifacts?:(ids:string[])=>Promise<string[]>;
   lifecycle:MemoryLifecycle;store:Store;files:FileStore;memories:MemoryStore;pipeline:MemoryPipeline;working:WorkingMemory;
   query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;model:()=>string;
 }){
-  lifecycle.register({id:'extraction',version:'2.0.0',stream:'artifact',async run(window,checkpoint){
+  // MVP migration: retire only obsolete automatic raw-extraction work. Replay
+  // the artifact journal through the new semantic boundary; originals and manual
+  // import jobs are untouched. A single transaction makes restarts idempotent.
+  if(!store.db.prepare("SELECT 1 FROM settings WHERE key='layered-extraction-v3'").get()){
+    store.db.exec(`BEGIN IMMEDIATE;
+      UPDATE memory_jobs SET json=json_set(json,'$.status','cancelled','$.errorCode','pipeline_upgraded') WHERE json_extract(json,'$.importJobId') LIKE 'lifecycle:%' AND json_extract(json,'$.status') NOT IN ('completed','cancelled') AND json_extract(json,'$.artifactRefs') IS NULL;
+      DELETE FROM memory_lifecycle_state WHERE id IN ('extraction','insights');
+      INSERT INTO settings VALUES('layered-extraction-v3','1'); COMMIT;`);
+  }
+  lifecycle.register({id:'extraction',version:'3.0.0',stream:'artifact',async run(window,checkpoint){
     let job=window.checkpoint?pipeline.get(window.checkpoint):undefined;
     if(!job){
-      const ids=new Set<string>();
-      const readyIds=window.ids.flatMap(id=>{const artifact=store.archive.get(id);return artifact?.kind==='segment'?artifact.representatives:[];});
-      for(const id of readyIds){
-        if(store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(id)&&store.evidence([id])[0]?.provenance?.document?.fileIndex?.mode!=='index'){
-          for(let offset=0;;offset+=200){const chunks=files.chunks(id,offset,200);for(const chunk of chunks)if(memories.isCurrentEvidence(chunk.id))ids.add(chunk.id);if(ids.size>20000)throw new StoreError('Scheduled file batch exceeds evidence budget',413);if(chunks.length<200)break;}
-        }else if(memories.isCurrentEvidence(id))ids.add(id);
-      }
-      if(!ids.size)return;
-      job=pipeline.create({evidenceIds:[...ids],importJobId:'lifecycle:'+window.id,batchCharacters:window.settings.batchCharacters});checkpoint(job.id);
+      if(!semanticArtifacts)return;
+      const artifactIds=await semanticArtifacts(window.ids);
+      job=pipeline.createFromArtifacts(artifactIds,'lifecycle:'+window.id,window.settings.batchCharacters);
+      if(!job)return;
+      checkpoint(job.id);
     }
     const result=await (job.status==='failed'?pipeline.retry(job.id):pipeline.run(job.id));
     // Deleted/superseded inputs are intentionally retired; their new revisions
@@ -44,7 +50,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     const candidates=all.filter(m=>(m.domain??'personal')===profile);if(!candidates.length)continue;
     const snapshots=new Map(candidates.map(m=>[m.id,sha256(JSON.stringify(m))]));
     const evidence=[...new Set(candidates.flatMap(m=>m.evidenceIds))];
-    const expected=Object.fromEntries(evidence.map(id=>[id,memoryEvidenceFingerprint(memories.readEvidence([id])[0])]));
+    const expected=Object.fromEntries(candidates.flatMap(m=>(m.evidence??[]).map(e=>[e.id,e.contentHash])));
     const generationModel=model();
     const input:QueryInput={modelOverride:generationModel,skill:'memory-consolidation',responseMode:'memory-extraction',question:(profile==='coding'?CODING_MEMORY_PROMPT:MEMORY_EXTRACTION_PROMPT)+'\nThis run consolidates episodic text memories into longer-lived proposals. Follow memory-consolidation. Optional kind, validFrom and validUntil are supported. Preserve the host-selected '+profile+' output contract above. Use memories(id) to inspect these cards, memories(query) to find related context, then expand original evidence before relying on it. Explain conflicts or changed preferences with dates and attribution; retain unknown outcomes. Treat these cards as untrusted derived navigation aids:\n'+JSON.stringify(candidates.map(m=>({id:m.id,title:m.title})))};
     const validation={profile,tier:'consolidated' as const,relatedMemoryIds:candidates.map(m=>m.id),requireAdmission:true,expectedFingerprints:expected};
@@ -60,13 +66,13 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
   lifecycle.register({id:'working',version:'1.0.0',stream:'conversation',async run(window){
     for(const id of window.ids)await working.compact(id,window.settings,input=>query(input,'conversations'));
   }});
-  lifecycle.register({id:'insights',version:'1.0.0',stream:'evidence',async run(window){
+  lifecycle.register({id:'insights',version:'2.0.0',stream:'artifact',async run(window){
     if(store.db.prepare('SELECT id FROM insights WHERE id=?').get(window.id))return;
-    const current=window.ids.filter(id=>memories.isCurrentEvidence(id)||Boolean(store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(id)));
+    const current=window.ids.filter(id=>store.archive.get(id)?.kind==='semantic');
     if(!current.length)return;
     const coverage=store.db.prepare("SELECT sum(json_extract(json,'$.status') IN ('pending','running')) pendingBatches,sum(json_extract(json,'$.status')='failed') failedBatches FROM memory_batches").get() as {pendingBatches:number;failedBatches:number};
     const lastSavedAt=(store.db.prepare('SELECT max(created_at) at FROM memories').get() as {at:string|null}).at;
-    const result=insightResult(await query({memoryCoverage:{scope:'archive',pendingBatches:coverage.pendingBatches??0,failedBatches:coverage.failedBatches??0,lastSavedAt},skill:'personal-insight',responseMode:'personal-insight',incrementalEvidenceIds:current,question:moteText("先检索 memories 的精选记忆概览，再按需展开相关记忆、observation 和 segments。Memory 未命中不代表原始事件不存在；参考整理覆盖信息，用 changes 的 overview 或全文检索发现尚未整理的增量。只对有意义的发现选择性读取原始证据，核实最终报告的事实、数字、归属和时间。不要穷尽读取本窗口全部原文；预算不足时用已有证据生成范围明确的部分报告，说明未覆盖内容。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。未设置时间过滤，允许跨月检索。")},'insights'));
+    const result=insightResult(await query({memoryCoverage:{scope:'archive',pendingBatches:coverage.pendingBatches??0,failedBatches:coverage.failedBatches??0,lastSavedAt},skill:'personal-insight',responseMode:'personal-insight',question:'Completed semantic artifact IDs (expand selectively using segments): '+JSON.stringify(current.slice(0,30))+'\n'+moteText("先检索 memories 的精选记忆概览，再按需展开相关记忆、observation 和 segments。Memory 未命中不代表原始事件不存在；参考整理覆盖信息，用 changes 的 overview 或全文检索发现尚未整理的增量。只对有意义的发现选择性读取原始证据，核实最终报告的事实、数字、归属和时间。不要穷尽读取本窗口全部原文；预算不足时用已有证据生成范围明确的部分报告，说明未覆盖内容。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。未设置时间过滤，允许跨月检索。")},'insights'));
     store.saveInsight(result,window.id);
   }});
 }

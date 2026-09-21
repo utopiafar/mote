@@ -59,7 +59,7 @@ class CaptureRecordsInstrumentedTest {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
-            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", excludedPackages = "", contentEncryptionEnabled = false, appCollectionRules = AppCollectionRules.LEGACY_DEFAULT))
+            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", uploadedRetentionDays = 0, excludedPackages = "", contentEncryptionEnabled = false, appCollectionRules = AppCollectionRules.LEGACY_DEFAULT))
             test(context, settings, ids)
         } finally {
             settings.enabled = false; cancel(); shell("dumpsys battery reset")
@@ -83,7 +83,7 @@ class CaptureRecordsInstrumentedTest {
     private fun views(root: View): List<View> = buildList { add(root); if (root is ViewGroup) for (i in 0 until root.childCount) addAll(views(root.getChildAt(i))) }
     private fun waitUntil(condition: () -> Boolean) { val deadline = System.currentTimeMillis() + 45000; while (!condition()) { check(System.currentTimeMillis() < deadline) { "Generated capture fixture timeout" }; Thread.sleep(100) } }
 
-    @Test fun deduplicationAcrossModesSynchronizesToRealCentral() = fixture { context, settings, ids ->
+    @Test fun deduplicationWithDiagnosticsAcrossModesSynchronizesToRealCentral() = fixture { context, settings, ids ->
         require(!CaptureAccessibilityService.connected && !ProjectionService.running)
         val args = InstrumentationRegistry.getArguments()
         val url = requireNotNull(args.getString("fixtureServer"))
@@ -92,7 +92,8 @@ class CaptureRecordsInstrumentedTest {
         val expected = org.json.JSONArray()
         var sequence = 0
         val start = Instant.now().minusSeconds(720)
-        val base = settings.read().copy(server = url, token = token, debugHttp = true, wifiOnly = false,
+        // Diagnostics deliberately exercises the reviewed-pair path; early discard is covered separately.
+        val base = settings.read().copy(server = url, token = token, debugHttp = true, wifiOnly = false, imageDedupeDiagnosticsEnabled = true,
             syncMode = "manual", syncChargingOnly = false, syncBatteryNotLow = false,
             chargingOnly = false, ocrChargingOnly = false, masks = "", localReviewUrl = "",
             nsfw = settings.read().nsfw.copy(enabled = false))
@@ -115,7 +116,10 @@ class CaptureRecordsInstrumentedTest {
                     waitUntil { !pipeline.isBusy() }
                     val page = context.queue().capturePage(start.minusSeconds(1).toString(), start.plusSeconds(900).toString(), limit = 60)
                     val rows = page.getJSONArray("items")
-                    val row = (0 until rows.length()).map { rows.getJSONObject(it) }.singleOrNull { it.getString("capturedAt") == at }
+                    val row = (0 until rows.length()).map { rows.getJSONObject(it) }.singleOrNull { record ->
+                        val samples = record.optJSONObject("stateSeries")?.optJSONArray("samples")
+                        record.getString("capturedAt") == at || samples != null && (0 until samples.length()).any { samples.getJSONObject(it).getString("at") == at }
+                    }
                     assertNotNull("Capture $mode/$index persisted: ${settings.message()}", row)
                     val id = row!!.getString("id"); ids += id
                     val duplicate = mode != "off" && (index == 1 || (index == 2 && (mode != "exact" || !metadata)))
@@ -128,7 +132,9 @@ class CaptureRecordsInstrumentedTest {
                         assertEquals(mode, record.getJSONObject("metadata").getJSONObject("capture").getJSONObject("deduplication").getString("mode"))
                         if (!metadata) assertFalse(record.getJSONObject("metadata").has("device"))
                     }
-                    assertEquals(if (index == 0) 0L else 30000L, record.getLong("durationMs"))
+                    val samples = record.optJSONObject("stateSeries")?.optJSONArray("samples")
+                    val measured = samples?.let { rows -> (0 until rows.length()).map { rows.getJSONObject(it) }.first { it.getString("at") == at }.getLong("durationMs") } ?: record.getLong("durationMs")
+                    assertEquals(if (index == 0) 0L else 30000L, measured)
                     expected.put(JSONObject().put("id", id).put("duplicate", duplicate).put("mode", mode))
                     sequence++
                 }
@@ -151,7 +157,7 @@ class CaptureRecordsInstrumentedTest {
             .put("records", expected).put("generatedOnly", true).toString())
     }
 
-    @Test fun batteryKeepsMaskedImagesAndChargingBackfillsAfterCaptureStopsWithoutChangingOriginalEvent() = fixture { context, settings, ids ->
+    @Test fun batteryCaptureKeepsMaskedImageForCentralOcrWithoutChangingOriginalEvent() = fixture { context, settings, ids ->
         shell("dumpsys battery unplug"); shell("dumpsys battery set status 3")
         waitUntil { !Diagnostics.battery(context).second }
         val config = settings.read().copy(ocrChargingOnly = true, chargingOnly = false, metadataEnabled = false, masks = "0,0,0.2,1", nsfw = settings.read().nsfw.copy(enabled = false))
@@ -164,18 +170,18 @@ class CaptureRecordsInstrumentedTest {
             pipeline.submit(generated(), unknown, config)
             waitUntil { context.queue().depth() == 1 && !pipeline.isBusy() }
             val event = context.queue().peek()!!; val id = event.getString("id"); ids += id
-            assertEquals("pending", event.getJSONObject("ocr").getString("status")); assertEquals("", event.getString("ocrText")); assertFalse(event.has("metadata"))
+            assertEquals("disabled", event.getJSONObject("ocr").getString("status")); assertEquals("", event.getString("ocrText")); assertFalse(event.has("metadata"))
             val bytes = context.queue().image(id)!!
             val image = CapturePreview.decode(bytes, 1000)!!
             try { assertTrue(Color.red(image.getPixel(10, 80)) < 10) } finally { image.recycle() }
             settings.enabled = false; pipeline.close()
             val original = context.queue().peek()!!.toString()
-            assertEquals("charging", JSONObject(File(context.noBackupFilesDir, "queue/$id.event").readText()).getJSONObject("ocr").getString("reason"))
+            assertNull(context.queue().pendingOcr())
             shell("dumpsys battery set ac 1"); shell("dumpsys battery set status 2")
             waitUntil { Diagnostics.battery(context).second }
             CaptureOcrWorker.schedule(context, config, replace = true)
-            waitUntil { context.queue().capture(id)?.optJSONObject("ocr")?.optString("status") == "completed" }
-            assertFalse(settings.enabled); assertTrue(context.queue().capture(id)!!.getString("ocrText").contains("MOTE"))
+            assertNull(context.queue().pendingOcr())
+            assertFalse(settings.enabled); assertEquals("", context.queue().capture(id)!!.getString("ocrText"))
             assertEquals(original, context.queue().peek()!!.toString())
             assertFalse(context.queue().peek()!!.keys().asSequence().any { it.startsWith("_") })
         } finally { settings.enabled = false; if (pipeline.isBusy()) waitUntil { !pipeline.isBusy() }; runCatching { pipeline.close() } }
@@ -305,10 +311,12 @@ class CaptureRecordsInstrumentedTest {
                 } else if (length > 0) JSONObject(String(body, Charsets.UTF_8)) else JSONObject()
                 val response: ByteArray
                 var contentType = "application/json"
+                var statusCode = 200
                 if (route.endsWith("/image")) { response = image; contentType = "image/jpeg" }
                 else {
                     val value = when {
                         route == "/api/devices/heartbeat" -> JSONObject().put("ok", true)
+                        route == "/api/capture-browser/updates" -> JSONObject().put("items", JSONArray()).put("nextCursor", 0)
                         method == "POST" && route in setOf("/api/captures/bundle", "/api/captures/batch") -> {
                             val items = json.getJSONArray("captures"); check(items.length() == 1)
                             val capture = items.getJSONObject(0)
@@ -321,15 +329,15 @@ class CaptureRecordsInstrumentedTest {
                             patches.incrementAndGet(); check(original != null); check(json.getString("ocrText") == "Generated PATCH OCR"); result = json
                             JSONObject().put("id", if (wrongPatchAck) "wrong-id" else original!!.getString("id"))
                         }
-                        route == "/api/capture-browser" -> JSONObject().put("items", org.json.JSONArray().put(JSONObject().put("id", original!!.getString("id"))))
-                            .put("totalCount", 1).put("nextCursor", JSONObject.NULL)
-                        method == "GET" && route.startsWith("/api/capture-browser/") -> JSONObject(original!!.toString()).put("ocrText", result!!.getString("ocrText"))
+                        route == "/api/capture-browser" -> JSONObject().put("items", org.json.JSONArray().apply { original?.let { put(JSONObject().put("id", it.getString("id"))) } })
+                            .put("totalCount", if (original == null) 0 else 1).put("nextCursor", JSONObject.NULL)
+                        method == "GET" && route.startsWith("/api/capture-browser/") -> original?.let { JSONObject(it.toString()).apply { result?.let { put("ocrText", it.getString("ocrText")) } } } ?: JSONObject().put("error", "capture_not_found").also { statusCode = 404 }
                         else -> error("Unexpected generated fixture route")
                     }
                     response = value.toString().toByteArray()
                 }
                 client.getOutputStream().apply {
-                    write("HTTP/1.1 200 OK\r\nContent-Type: $contentType\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray()); write(response); flush()
+                    write("HTTP/1.1 $statusCode Fixture\r\nContent-Type: $contentType\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray()); write(response); flush()
                 }
             } } catch (error: Exception) { if (running) throw error }
         }.apply { isDaemon = true; start() }

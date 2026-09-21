@@ -49,11 +49,12 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
 }
 
 /** All identified visible windows participate, including launchers, keyboards and system surfaces. */
-internal data class CollectionWindow(val type: Int, val packageName: String?)
+internal data class CollectionWindow(val type: Int, val packageName: String?, val systemBar: Boolean = false)
 internal object CollectionWindows {
     fun snapshot(windows: List<CollectionWindow>, foreground: String?): WindowSnapshot {
-        val packages = windows.mapNotNull { it.packageName }.toSet()
-        val trustworthy = windows.isNotEmpty() && windows.all { it.type in 1..3 && !it.packageName.isNullOrBlank() } &&
+        val contentWindows = windows.filterNot { it.type == 3 && it.packageName == "com.android.systemui" && it.systemBar }
+        val packages = contentWindows.mapNotNull { it.packageName }.toSet()
+        val trustworthy = contentWindows.isNotEmpty() && contentWindows.all { it.type in 1..3 && !it.packageName.isNullOrBlank() } &&
             (foreground.isNullOrBlank() || foreground in packages)
         return WindowSnapshot(packages, foreground, trustworthy)
     }

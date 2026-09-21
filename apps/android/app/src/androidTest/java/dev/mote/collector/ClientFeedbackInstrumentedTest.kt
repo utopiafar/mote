@@ -11,6 +11,15 @@ import org.junit.Test
 
 /** Synthetic events only; never enables collection or a model. */
 class ClientFeedbackInstrumentedTest {
+    private var previousLanguage = "system"
+    @org.junit.Before fun selectFixtureLanguage() {
+        previousLanguage = MoteI18n.preference()
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, "zh-CN")
+    }
+    @org.junit.After fun restoreFixtureLanguage() {
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, previousLanguage)
+    }
+
     @Test fun statisticsCanBrowsePastFirstPageWithoutExpandingAllDetails() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val ledger = Operations.ledger(context); ledger.reset()
@@ -34,20 +43,30 @@ class ClientFeedbackInstrumentedTest {
     private fun views(root: View): List<View> = buildList {
         add(root); if (root is ViewGroup) for (i in 0 until root.childCount) addAll(views(root.getChildAt(i)))
     }
+    @Test fun captureRecordsCanOpenAndRecreateWithoutMissingBackControl() {
+        ActivityScenario.launch(CaptureRecordsActivity::class.java).use { scenario ->
+            scenario.recreate()
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity { activity ->
+                assertNotNull(activity.window.decorView)
+                assertFalse(Settings(activity).enabled)
+            }
+        }
+    }
     @Test fun notificationPreservesCurrentMainPageAndDraft() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             var original: MainActivity? = null
             scenario.onActivity { activity ->
                 original = activity
-                views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "随手记" }.performClick()
+                views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.contentDescription?.toString() == "写一条随手记" }.performClick()
                 Notifications.create(activity)
                 Notifications.notification(activity, "合成测试通知").contentIntent.send()
             }
             instrumentation.waitForIdleSync()
             scenario.onActivity { activity ->
                 assertSame(original, activity)
-                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.isSelected && it.text.toString() == "随手记" })
+                assertTrue(views(activity.window.decorView).filterIsInstance<android.widget.EditText>().any { it.isShown && it.isEnabled && it.hint?.toString() == "记下此刻的想法…" })
                 assertFalse(Settings(activity).enabled)
             }
         }
@@ -82,8 +101,8 @@ class ClientFeedbackInstrumentedTest {
     }
     @Test fun rawLogsPreserveTextAndAllowSelection() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val journal = SupportEvents.journal(context)
-        repeat(45) { journal.record(EventStage.UPLOAD, if (it == 44) EventCode.AUTH else EventCode.OK, it.toLong()) }
+        val journal = SupportEvents.runtime(context)
+        repeat(45) { journal.event(EventStage.UPLOAD, if (it == 44) EventCode.AUTH else EventCode.OK, it.toLong()) }
         val expected = journal.readRaw()
         ActivityScenario.launch(LogViewerActivity::class.java).use { scenario ->
             var ready = false

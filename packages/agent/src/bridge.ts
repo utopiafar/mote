@@ -1,5 +1,5 @@
 import {rememberEvidence} from './evidence-ledger.js';
-import {taskTools,HOST_CONTEXT_LIMITS} from './task-context.js';
+import {taskTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
 import {actionEvidenceText} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {AgentResponseError,reportTrace,reportProgress} from './types.js';
@@ -20,6 +20,7 @@ import type {
 const hostError=(message:string)=>new ContextToolError('invalid_tool_arguments',message,'correct_arguments');
 
 export const TOOL_NAMES = [
+  "context_index",
   "segments",
   "read_image",
   "progress_update",
@@ -77,7 +78,7 @@ function range(
     after: effectiveAfter,
     before: effectiveBefore,
     deviceId: bounds.deviceId ?? args.deviceId as string | undefined,
-    limit: Math.min(Number(args.limit ?? 30), 100),
+    limit: Math.min(Number(args.limit ?? (bounds.skill==='personal-insight'?30:8)), bounds.skill==='personal-insight'?30:12),
     ...(args.cursor === undefined ? {} : { cursor: args.cursor as string }),
     ...(args.source === undefined ? {} : {source: sourceSchema.parse(args.source)}),
     ...(args.appId === undefined ? {} : {appId: args.appId as string}),
@@ -188,6 +189,7 @@ export async function startBridge(
   const trace: ToolTrace[] = [];
   const records = new Map<string, ContextRecord>();
   const restricted = bounds.evidenceIds !== undefined;
+  const limits=retrievalLimits(bounds);
   const permitted = new Map<string,ContextRecord>();
   const ranges = bounds.evidenceRanges ?? bounds.evidenceIds?.map(id=>({id,offset:0,length:12000})) ?? [];
   const splitsPair=(text:string,at:number)=>at>0&&at<text.length&&/[\uD800-\uDBFF]/.test(text[at-1])&&/[\uDC00-\uDFFF]/.test(text[at]);
@@ -221,7 +223,7 @@ export async function startBridge(
   let rejectFailure!:(error:Error)=>void;
   const failure=new Promise<never>((_,reject)=>rejectFailure=reject);void failure.catch(()=>{});
   let previousFailure='',repeatedFailures=0;
-  const budgetError=()=>new ContextToolError('evidence_budget_exceeded','Context result exceeds the evidence budget. Request fewer records or a shorter range. If no useful reads fit, finish with existing evidence and explicitly state incomplete coverage.','use_existing_evidence',{remainingCharacters:Math.max(0,HOST_CONTEXT_LIMITS.totalToolCharacters-deliveredCharacters),perResultCharacters:HOST_CONTEXT_LIMITS.toolResultCharacters});
+  const budgetError=()=>new ContextToolError('evidence_budget_exceeded','Context result exceeds the evidence budget. Request fewer records or a shorter range. If no useful reads fit, finish with existing evidence and explicitly state incomplete coverage.','use_existing_evidence',{remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters),perResultCharacters:limits.toolResultCharacters});
 
   const server: Server = createServer(async (req, res) => {
     const given = Buffer.from(req.headers.authorization ?? "");
@@ -270,12 +272,13 @@ export async function startBridge(
         reportProgress(bounds,{stage:'model',message:args.message.trim()});
         res.end('{"ok":true}');return;
       }
-      if (!['timeline','search_context','activity','media_activity'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
+      if (!['timeline','search_context','activity','media_activity','segments','context_index'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
         throw hostError('App/source/collection filters require a context or activity tool');
       if (tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
         throw hostError('Media state filters require media_activity');
       if (++calls > maxToolCalls)
         throw new ContextToolError('tool_budget_exceeded','Tool call budget reached. Finish using already retrieved evidence; do not call retrieval tools again.','use_existing_evidence',{remainingCalls:0});
+      if(deliveredCharacters>=limits.totalToolCharacters-1000)throw budgetError();
       reportProgress(bounds,{stage:'tool',tool,phase:'started'});
       if(bounds.skill==='working-memory')throw hostError('Working memory uses only the supplied dialogue; retrieval is disabled');
       if(restricted){
@@ -294,7 +297,7 @@ export async function startBridge(
           });
         }
         const serialized=JSON.stringify({source:'untrusted_personal_context',data});
-        if(serialized.length>HOST_CONTEXT_LIMITS.toolResultCharacters||deliveredCharacters+serialized.length>HOST_CONTEXT_LIMITS.totalToolCharacters)throw budgetError();
+        if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters)throw budgetError();
         deliveredCharacters+=serialized.length;
         trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:data.length});
@@ -338,6 +341,7 @@ export async function startBridge(
         if(Array.isArray(value))value=value.filter(r=>{const document=documentSchema.safeParse(r.provenance?.document),at=sourceContentTime({capturedAt:r.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));});
         pagination={nextCursor:Array.isArray(value)&&value.length===30?String(Number(offset)+30):null};
       }
+      else if(tool==='context_index'){const scope=range(args,bounds);if(args.path!==undefined&&(typeof args.path!=='string'||args.path.length>100)||args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid context index arguments');value=await reader.catalog?.({...scope,path:args.path as string|undefined,query:args.query as string|undefined})??{entries:[],coverage:'unavailable'};metadataOnly=true;}
       else if(tool==='source_history'){
         if(typeof args.id!=='string'||!records.has(args.id))throw hostError('Discover a source record before requesting history');
         const scope=range({},bounds);effective={...scope,id:args.id};value=await reader.sourceHistory?.({...scope,id:args.id})??[];
@@ -351,7 +355,7 @@ export async function startBridge(
         const page=await reader.segments?.({...scope,id:args.id as string|undefined,query:args.query as string|undefined})??{items:[],nextCursor:null};
         // IDs become discoverable, never citable until original text is delivered.
         const items=page.items.filter(item=>(!scope.deviceId||item.deviceId===scope.deviceId)&&(!scope.after||typeof item.firstAt==='string'&&Date.parse(item.firstAt)>=Date.parse(scope.after))&&(!scope.before||typeof item.lastAt==='string'&&Date.parse(item.lastAt)<Date.parse(scope.before)));
-        discoveredMemoryIds.push(...items.flatMap(item=>item.members));
+        discoveredMemoryIds.push(...items.flatMap(item=>[...item.members,...((item.metadata as {citations?:string[]}|undefined)?.citations??[])]));
         value={...page,items};pagination={nextCursor:page.nextCursor};
       }
       else if(tool==='memories'){
@@ -365,8 +369,8 @@ export async function startBridge(
         effective={...scope,id:args.id,...search};
         const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
         const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,characters:r.ocrText.length}));
-        discoveredMemoryIds.push(...evidence.map(r=>r.id));
-        value={items:result.items,evidence,coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
+        discoveredMemoryIds.push(...evidence.map(r=>r.id),...(result.references??[]).map(r=>r.id));
+        value={items:result.items,evidence:[...evidence,...(result.references??[])],coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
       }
       else if (tool === "evidence") {
         if (
@@ -378,20 +382,22 @@ export async function startBridge(
           throw hostError("ids must contain 1–30 record identifiers");
         // Evidence expansion only reads records discovered in this run, inside its scope.
         const ids = args.ids as string[];
+        if(ids.length>5)throw hostError('Expand at most five evidence spans per call');
         if (ids.some((id) => !discovered.has(id)))
           throw hostError(
             "Discover records with search_context or timeline before expanding evidence",
           );
         if(args.layer!==undefined&&!['ocr','semantic'].includes(String(args.layer)))throw hostError('Invalid derived layer');
         const scope=range({},bounds);
-        value = (await reader.evidence({ ids })).filter(r=>{
-          const at=sourceContentTime(r);return ids.includes(r.id)&&(!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));
-        }).map(r=>args.layer==='semantic'?{...r,ocrText:String(r.summary??''),contentLayer:'L2_model_interpretation'}:{...r,...(r.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})});
-        for (const [key, fallback, min, max] of [["offset", 0, 0, 100000], ["length", 12000, 1, 12000]] as const) {
+        for (const [key, fallback, min, max] of [["offset", 0, 0, 100000], ["length", Math.max(1,Math.min(12000,Math.floor((Math.min(limits.toolResultCharacters,limits.totalToolCharacters-deliveredCharacters)-1200*ids.length)/ids.length))), 1, 12000]] as const) {
           const n = args[key] ?? fallback;
           if (typeof n !== "number" || !Number.isSafeInteger(n) || n < min || n > max) throw hostError(`${key} must be an integer from ${min} to ${max}`);
           if (key === "offset") textOffset = n; else textLength = n;
         }
+        if(textLength*ids.length+1200*ids.length>Math.min(limits.toolResultCharacters,limits.totalToolCharacters-deliveredCharacters))throw budgetError();
+        value = (await reader.evidence({ ids })).filter(r=>{
+          const at=sourceContentTime(r);return ids.includes(r.id)&&(!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));
+        }).map(r=>args.layer==='semantic'?{...r,ocrText:String(r.summary??''),contentLayer:'L2_model_interpretation'}:{...r,...(r.sourceType==='screen'?{contentLayer:'L1_machine_extraction'}:{})});
         effective = { ids, ...(args.layer?{layer:args.layer}:{}), ...(args.offset === undefined ? {} : { offset:textOffset }), ...(args.length === undefined ? {} : { length:textLength }) };
       } else {
         const filters = range(args, bounds);
@@ -399,7 +405,7 @@ export async function startBridge(
         if(tool==='changes'){
         const ids=bounds.incrementalEvidenceIds??[],offset=args.cursor===undefined?0:Number(args.cursor),limit=Math.min(Number(args.limit??30),30);
         if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1)throw hostError('Invalid changes page');
-        const scope=range({},bounds);
+        const scope=range({},bounds);effective={...filters,limit};
         value=(await reader.evidence({ids:ids.slice(offset,offset+limit)})).filter(r=>{const at=sourceContentTime(r);return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));});
         if(args.view!==undefined&&!['overview','text'].includes(String(args.view)))throw new ContextToolError('invalid_changes_view','view must be overview or text.','correct_arguments');
         metadataOnly=args.view==='overview'||(args.view===undefined&&bounds.skill==='personal-insight');
@@ -470,7 +476,7 @@ export async function startBridge(
         ...(retrieval?{retrieval}:{}),
         ...(pagination ? { pagination } : {}),
       });
-      if (serialized.length > HOST_CONTEXT_LIMITS.toolResultCharacters || deliveredCharacters+serialized.length>HOST_CONTEXT_LIMITS.totalToolCharacters || Buffer.byteLength(serialized) > 1_500_000)
+      if (serialized.length > limits.toolResultCharacters || deliveredCharacters+serialized.length>limits.totalToolCharacters || Buffer.byteLength(serialized) > 1_500_000)
         throw budgetError();
       deliveredCharacters+=serialized.length;
       for(const id of discoveredMemoryIds)discovered.add(id);
@@ -498,7 +504,7 @@ export async function startBridge(
       const signature=JSON.stringify([tool,issue.code,canonical(args)]);
       repeatedFailures=signature===previousFailure?repeatedFailures+1:1;previousFailure=signature;
       if(repeatedFailures>=3)issue=new ContextToolError('repeated_tool_failure','The same invalid tool request failed three times. This run has stopped; no output will be committed.','stop',{originalCode:issue.code});
-      reportTrace(bounds,{type:'tool.rejected',stage:'tool',tool,status:'rejected',payload:{...issue.toJSON(),call:calls,repeatCount:repeatedFailures,remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharacters:Math.max(0,HOST_CONTEXT_LIMITS.totalToolCharacters-deliveredCharacters)}});
+      reportTrace(bounds,{type:'tool.rejected',stage:'tool',tool,status:'rejected',payload:{...issue.toJSON(),call:calls,repeatCount:repeatedFailures,remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters)}});
       res.writeHead(400).end(JSON.stringify({error:issue.message,toolError:issue.toJSON()}));
       if(issue.recovery==='stop'||calls>maxToolCalls+2)rejectFailure(new AgentResponseError('Tool failure recovery exhausted.','tool_failure'));
 

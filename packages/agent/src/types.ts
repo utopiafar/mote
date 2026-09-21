@@ -38,6 +38,7 @@ export interface MediaContextRange extends ContextRange {
 }
 
 export interface ContextReader {
+  catalog?(args:ContextRange&{path?:string;query?:string}):Promise<unknown>;
   segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
   readImage?(args:{id:string}):Promise<{mimeType:string;data:string}>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
@@ -51,7 +52,7 @@ export interface ContextReader {
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
-  memories?(args:ContextRange & {id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[]}>;
+  memories?(args:ContextRange & {id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[]}>;
 }
 
 export interface AgentOptions {
@@ -82,6 +83,7 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  executionLane?:'interactive'|'background';
   /** Pure host validation before the session closes. Return only trusted repair guidance; never commit output here. */
   validateOutput?: (answer: AgentAnswer) => Promise<{code:string;feedback:string}|undefined> | {code:string;feedback:string}|undefined;
   language?: "zh-CN" | "en";

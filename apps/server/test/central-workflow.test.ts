@@ -69,7 +69,7 @@ test('an import with historical revisions completes and extracts only the newly 
   const node=await buildApp(cfg,{prepareImport:async({workspace,inputPaths})=>{
     writeFileSync(join(workspace,'records.jsonl'),[1,2].map(revision=>JSON.stringify({item:{externalId:'same-object',revision:String(revision),observedAt:`2020-01-0${revision}T00:00:00Z`,kind:'file',layer:'original',text:`合成资料版本 ${revision}`},evidencePaths:inputPaths})).join('\n'));
     return {summary:'同一原始对象的两个历史版本。'};
-  },agent:{configured:true,close:async()=>{},query:async input=>{seen.push(input);return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};}}});
+  },agent:{configured:true,close:async()=>{},query:async input=>{seen.push(input);return {answer:JSON.stringify({summary:'Synthetic current revision',evidence:[]}),citations:[],trace:[],runId:randomUUID()};}}});
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${cfg.token}`};
   const uploaded=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'history.json',dataBase64:Buffer.from('synthetic history').toString('base64')}]}});
@@ -80,6 +80,7 @@ test('an import with historical revisions completes and extracts only the newly 
   assert.equal(imported.memoryJobId,undefined);assert.equal(seen.length,0);
   const policy=node.lifecycle.settings();policy.extraction.minChanges=1;node.lifecycle.configure(policy);
   node.store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json,'$.lastSuccess',0) WHERE id='extraction'").run();
+  node.store.archive.aggregate(100);
   await node.lifecycle.tick();
   assert.equal(seen.length,1);assert.deepEqual(seen[0].evidenceIds,[imported.captureIds[1]]);
 });

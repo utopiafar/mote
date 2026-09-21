@@ -29,6 +29,15 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Dedicated emulator only; all records and images below are generated. */
 @RunWith(AndroidJUnit4::class)
 class LocalStateInstrumentedTest {
+    private var previousLanguage = "system"
+    @org.junit.Before fun selectFixtureLanguage() {
+        previousLanguage = MoteI18n.preference()
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, "zh-CN")
+    }
+    @org.junit.After fun restoreFixtureLanguage() {
+        MoteI18n.select(InstrumentationRegistry.getInstrumentation().targetContext, previousLanguage)
+    }
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
     private fun shell(command: String) = instrumentation.uiAutomation.executeShellCommand(command).use { ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().use { r -> r.readText() } }

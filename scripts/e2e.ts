@@ -12,7 +12,7 @@ import type { Config } from '../apps/server/src/config.js';
 const dir=await mkdtemp(join(tmpdir(),'mote-e2e-'));const id=randomUUID();const noteId=randomUUID();let rounds=0;
 const fixtureModel=createServer(async(req,res)=>{
   let raw='';for await(const c of req)raw+=c;
-  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.function.name).sort(),['activity','changes','devices','evidence','file_chunks','media_activity','memories','progress_update','read_file_evidence','read_image','search_context','segments','skill','source_history','source_items','sources','timeline']);
+  const body=JSON.parse(raw);assert.deepEqual(body.tools.map((t:any)=>t.function.name).sort(),['activity','changes','context_index','devices','evidence','file_chunks','media_activity','memories','progress_update','read_file_evidence','read_image','search_context','segments','skill','source_history','source_items','sources','timeline']);
   assert.ok(body.messages.some((m:any)=>typeof m.content==='string'&&m.content.includes('\"language\":\"en\"')), 'The selected language must be explicit in every model request');
   const stage=(body.messages??[]).filter((message:any)=>message.role==='tool').length;rounds++;
   const tool=stage===0?{name:'search_context',arguments:JSON.stringify({query:'orbital observatory'})}:stage===1?{name:'evidence',arguments:JSON.stringify({ids:[id,noteId]})}:null;

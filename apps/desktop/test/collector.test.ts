@@ -364,6 +364,20 @@ it('does not reinterpret failed final heartbeats as failed or missing record upl
 });
 
 describe.skipIf(process.platform !== 'darwin')('immediate settings with generated capture only', () => {
+  it('cancels a stalled central heartbeat before applying local settings', async () => {
+    const {collector}=await makeCollector({metadataEnabled:false});
+    let requestSignal:AbortSignal|undefined;
+    vi.stubGlobal('fetch',vi.fn((_url,init)=>new Promise((_resolve,reject)=>{
+      requestSignal=init.signal;requestSignal!.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true});
+    })));
+    const heartbeat=(collector as any).sendHeartbeat(true);
+    await vi.waitFor(()=>expect(requestSignal).toBeDefined());
+    const hold=collector.suspendForSettings();
+    await vi.waitFor(()=>expect(requestSignal!.aborted).toBe(true),{timeout:500});
+    const release=await hold;await heartbeat;expect(collector.connectionActivity().inFlight).toBe(false);
+    collector.updateConfig({...fixtureConfig(),serverUrl:'',token:undefined,nsfwEnabled:false});await release();
+  });
+
   it('waits for an old capture, discards it, applies the new mask and timer, then resumes only prior running intent', async () => {
     let release!: (value: unknown) => void;
     mocks.capture.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));

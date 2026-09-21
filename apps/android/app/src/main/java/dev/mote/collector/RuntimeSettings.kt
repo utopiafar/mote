@@ -32,6 +32,7 @@ object RuntimeSettings {
         stopGeneration.incrementAndGet(); stopping = true
         startedAt = SystemClock.elapsedRealtime(); reportProgress(MoteI18n.text("正在停止采集"))
         val app = context.applicationContext
+        Settings(app).enabled = false
         val ownsHold = ConnectionGuard.beginReconfiguration()
         CaptureAccessibilityService.instance?.stopCapture()
         ProjectionService.instance?.pauseForConfiguration()
@@ -71,6 +72,7 @@ object RuntimeSettings {
         }
         executor.execute {
             val result = runCatching {
+                HttpJson.cancelActive()
                 reportProgress(MoteI18n.text("正在等待后台处理结束"))
                 val work = WorkManager.getInstance(app)
                 listOf("mote-heartbeat", "mote-heartbeat-now", "mote-sync-recovery", "mote-upload", "mote-upload-timer", "mote-upload-recovery", "mote-source-upload", "mote-source-scan", "mote-source-periodic", "mote-capture-ocr", "mote-capture-ocr-recovery")

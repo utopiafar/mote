@@ -280,7 +280,7 @@ function render(status: import('./contracts').Status): void {
     : centralState === 'error'
       ? status.sync.message
       : status.sync.pendingRecords > 0
-        ? moteText("{0} 条记录等待中央确认", status.sync.pendingRecords.toLocaleString(getLocale()))
+        ? moteText("待同步 {0} 条", status.sync.pendingRecords.toLocaleString(getLocale()))
         : status.sync.message;
   byId('setup-prompt').hidden = hasCentralConnection;
   byId('central-status').className = `central-status ${centralState}`;

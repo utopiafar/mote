@@ -1,3 +1,4 @@
+import {initializeReadModels} from './read-models.js';
 import {initializeSourceCatalog} from './source-catalog.js';
 import {EvidenceArchive} from './evidence-archive.js';
 import {StorageLedger} from './storage-ledger.js';
@@ -21,7 +22,7 @@ import {ContentEncryption,replaceContentFile} from './content-encryption.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
-export type Range = {after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
+export type Range = {includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
 type Row = {id:string;json:string;received_at:string;blob_hash:string|null;mime:string|null;index_status:CaptureRecord['indexingStatus'];summary:string|null};
 // Media evidence is searchable without rewriting the original screenshot OCR.
@@ -37,7 +38,7 @@ export class Store {
   blobsDir:string;
   readonly contentEncryption:ContentEncryption;
   get key(){return this.contentEncryption.key;}
-  constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;maxStorageBytes?:number;embeddingEnabled?:boolean}={}) {
+  constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;maxStorageBytes?:number;embeddingEnabled?:boolean;maintenance?:boolean}={}) {
     privateDirectory(directory);
     this.blobsDir=join(directory,'blobs'); privateDirectory(this.blobsDir);
     privateFile(join(directory,'mote.sqlite'),true);
@@ -117,7 +118,7 @@ export class Store {
       INSERT OR IGNORE INTO memory_batch_dependencies SELECT d.batch_id,c.capture_id FROM memory_batch_dependencies d JOIN file_chunks c ON c.id=d.evidence_id;`);
     try{this.contentEncryption=new ContentEncryption(directory,this.db,options);}catch(error){this.db.close();throw error;}
     this.db.function('mote_search_text',{deterministic:true},json=>searchText(JSON.parse(String(json))));
-    this.db.exec(`DROP TRIGGER IF EXISTS captures_trigram_insert; DROP TRIGGER IF EXISTS captures_trigram_delete; DROP TRIGGER IF EXISTS captures_trigram_update; CREATE VIRTUAL TABLE IF NOT EXISTS captures_trigram USING fts5(id UNINDEXED,text,tokenize='trigram');
+    this.db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS captures_trigram USING fts5(id UNINDEXED,text,tokenize='trigram');
       CREATE TRIGGER IF NOT EXISTS captures_trigram_insert AFTER INSERT ON captures BEGIN INSERT INTO captures_trigram(rowid,id,text) VALUES(new.rowid,new.id,mote_search_text(new.json)); END;
       CREATE TRIGGER IF NOT EXISTS captures_trigram_delete AFTER DELETE ON captures BEGIN DELETE FROM captures_trigram WHERE rowid=old.rowid; END;
       CREATE TRIGGER IF NOT EXISTS captures_trigram_update AFTER UPDATE OF json ON captures WHEN new.json!=old.json BEGIN DELETE FROM captures_trigram WHERE rowid=old.rowid; INSERT INTO captures_trigram(rowid,id,text) VALUES(new.rowid,new.id,mote_search_text(new.json)); END;`);
@@ -136,12 +137,13 @@ export class Store {
       INSERT INTO captures_trigram(rowid,id,text) SELECT rowid,id,text FROM captures_fts;
       INSERT INTO settings VALUES('fts-rowid-v2','1'); COMMIT;`);
     this.db.exec('CREATE TRIGGER IF NOT EXISTS captures_words_delete BEFORE DELETE ON captures BEGIN DELETE FROM captures_fts WHERE rowid=old.rowid; END;');
+    initializeReadModels(this.db);
     initializeSourceCatalog(this.db);
     this.archive=new EvidenceArchive(this);
     this.ledger=new StorageLedger(this.db);
     this.ledger.bytes();
     // Remove only orphan content-addressed files left by interrupted writes/transactions.
-    this.sweep();
+    if(!options.maintenance)this.sweep();
   }
   private record(row:Row):CaptureRecord {
     const derived=this.db.prepare('SELECT kind,json FROM perception_results WHERE capture_id=? AND current=1').all(row.id).map(r=>({kind:String(r.kind),...JSON.parse(String(r.json))}));
@@ -153,8 +155,8 @@ export class Store {
   }
   private clauses(range:Range={}) {
     const clauses:string[]=["(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=captures.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=captures.id AND h.deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
-    if(range.after) {clauses.push('mote_context_end(json) >= ?');values.push(new Date(range.after).toISOString());}
-    if(range.before) {clauses.push('mote_context_time(json) < ?');values.push(new Date(range.before).toISOString());}
+    if(range.after) {clauses.push('context_end >= ?');values.push(new Date(range.after).toISOString());}
+    if(range.before) {clauses.push('context_at < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
     if(range.appId!==undefined) {
       clauses.push("((json_extract(json,'$.source') != 'media' AND json_extract(json,'$.appId') = ?) OR (json_extract(json,'$.source') = 'media' AND EXISTS (SELECT 1 FROM json_each(captures.json,'$.metadata.media.sessions') AS session WHERE json_extract(session.value,'$.appId') = ?)))");
@@ -168,7 +170,7 @@ export class Store {
     if(range.collection==='activity')clauses.push("json_extract(json,'$.privacy.collection') = 'activity'");
     if(range.collection==='content')clauses.push("json_extract(json,'$.source') != 'activity' AND COALESCE(json_extract(json,'$.privacy.collection'),'content') = 'content'");
     if(range.cursor) {
-      try {const c=JSON.parse(Buffer.from(range.cursor,'base64url').toString());if(typeof c.t!=='string'||typeof c.id!=='string')throw Error();clauses.push('(mote_context_time(json) < ? OR (mote_context_time(json) = ? AND id < ?))');values.push(c.t,c.t,c.id);}catch {throw new StoreError('Invalid pagination cursor');}
+      try {const c=JSON.parse(Buffer.from(range.cursor,'base64url').toString());if(typeof c.t!=='string'||typeof c.id!=='string')throw Error();clauses.push('(context_at < ? OR (context_at = ? AND id < ?))');values.push(c.t,c.t,c.id);}catch {throw new StoreError('Invalid pagination cursor');}
     }
     return {where:clauses.length?' WHERE '+clauses.join(' AND '):'',values};
   }
@@ -337,10 +339,10 @@ export class Store {
     const {cursor:_cursor,...scope}=range;const {where,values}=this.clauses(scope);const limit=Math.min(200,Math.max(1,range.limit??50));
     let position:{t:string;id:string}|undefined;
     if(range.cursor){try{position=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid capture cursor');}}
-    const seek=position?`${where?' AND ':' WHERE '}(mote_context_time(json)<? OR (mote_context_time(json)=? AND id<?))`:'';
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${seek} ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`).all(...values,...(position?[position.t,position.t,position.id]:[]),limit+1) as unknown as Row[];
+    const seek=position?`${where?' AND ':' WHERE '}(context_at<? OR (context_at=? AND id<?))`:'';
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${seek} ORDER BY context_at DESC,id DESC LIMIT ?`).all(...values,...(position?[position.t,position.t,position.id]:[]),limit+1) as unknown as Row[];
     const totalScope=this.clauses(scope);
-    const totalCount=Number((this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}`).get(...totalScope.values) as {count:number}).count);
+    const totalCount=range.includeTotal===false?undefined:Number((this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}`).get(...totalScope.values) as {count:number}).count);
     const more=rows.length>limit;const items=rows.slice(0,limit).map(r=>this.record(r));const last=items.at(-1);
     return {items,nextCursor:more&&last?Buffer.from(JSON.stringify({t:new Date(sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null,totalCount};
   }
@@ -486,23 +488,23 @@ export class Store {
       this.db.exec('COMMIT');return {id,ocr,duplicate:false};
     } catch(error){this.db.exec('ROLLBACK');throw error;}
   }
-  searchPage(range:Range&{query?:string}) {
+  searchPage(range:Range&{query?:string;includeTotal?:boolean}) {
     if(!range.query?.trim()){const page=this.list(range);return {...page,retrieval:{mode:'lexical' as const,degraded:false}};}
     const {cursor:_cursor,...scope}=range;
     const {where,values}=this.clauses(scope); const conjunction=where?' AND ':' WHERE ';
     const lexical=textSearch(range.query,{id:'captures.id',text:"(mote_search_text(captures.json) || coalesce((SELECT group_concat(json_extract(json,'$.text'),' ') FROM perception_results WHERE capture_id=captures.id AND current=1),''))",words:'captures_fts',trigrams:'captures_trigram'});
     let position:{t:string;id:string}|undefined;
     if(range.cursor){try{position=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid search cursor');}}
-    const seek=position?` AND (mote_context_time(json)<? OR (mote_context_time(json)=? AND captures.id<?))`:'';
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}${lexical.sql}${seek} ORDER BY mote_context_time(json) DESC,id DESC LIMIT ?`)
+    const seek=position?` AND (context_at<? OR (context_at=? AND captures.id<?))`:'';
+    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}${lexical.sql}${seek} ORDER BY context_at DESC,id DESC LIMIT ?`)
       .all(...values,...lexical.values,...(position?[position.t,position.t,position.id]:[]),Math.min((range.limit??50)+1,201)) as unknown as Row[];
     const limit=Math.min(range.limit??50,200),items=rows.slice(0,limit).map(r=>this.record(r)),last=items.at(-1);
     const totalScope=this.clauses(scope);
-    const totalCount=Number(this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}${totalScope.where?' AND ':' WHERE '}${lexical.sql}`).get(...totalScope.values,...lexical.values)!.count);
+    const totalCount=range.includeTotal===false?undefined:Number(this.db.prepare(`SELECT COUNT(*) AS count FROM captures${totalScope.where}${totalScope.where?' AND ':' WHERE '}${lexical.sql}`).get(...totalScope.values,...lexical.values)!.count);
     return {items,totalCount,nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({t:new Date(sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null,retrieval:{mode:'lexical' as const,degraded:false}};
   }
   search(range:Range&{query?:string}) {
-    return this.searchPage(range).items;
+    return this.searchPage({...range,includeTotal:false}).items;
   }
   vectorSearch(vector:number[], model:string, range:Range={}) {
     const {where,values}=this.clauses(range);
@@ -584,13 +586,23 @@ export class Store {
   reserveMetadata(bytes:number){if(this.options.maxStorageBytes&&this.logicalBytes()+bytes>this.options.maxStorageBytes)throw new StoreError('Vault storage limit reached',507);}
   logicalBytes() { return this.ledger.bytes(); }
   stats() {
-    const counts=this.db.prepare("SELECT COUNT(*) AS captures, COUNT(blob_hash) AS imageCaptures, SUM(CASE WHEN json_extract(json,'$.source')='activity' THEN 1 ELSE 0 END) AS activityEvents, SUM(CASE WHEN json_extract(json,'$.source')='media' THEN 1 ELSE 0 END) AS mediaEvents, MIN(captured_at) AS firstCaptureAt,MAX(captured_at) AS lastCaptureAt FROM captures").get() as {captures:number;imageCaptures:number;activityEvents:number|null;mediaEvents:number|null;firstCaptureAt:string|null;lastCaptureAt:string|null};
-    const blob=this.db.prepare('SELECT COUNT(*) AS blobs,COALESCE(SUM(bytes),0) AS imageBytes FROM blobs').get() as {blobs:number;imageBytes:number};
-    const indexing=this.db.prepare('SELECT index_status AS status,COUNT(*) AS count FROM captures GROUP BY index_status').all();
-    const filePaths:string[]=[];const fileRoot=join(this.directory,'files');if(existsSync(fileRoot))for(const entry of readdirSync(fileRoot,{recursive:true,withFileTypes:true}))if(entry.isFile())filePaths.push(join(entry.parentPath,entry.name));
-    const physicalBytes=[...filePaths,join(this.directory,'mote.sqlite'),join(this.directory,'mote.sqlite-wal'),...readdirSync(this.blobsDir).map(p=>join(this.blobsDir,p))].reduce((n,p)=>n+(existsSync(p)?statSync(p).size:0),0);
-    const fileBytes=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='file_blobs'").get()?Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM file_blobs').get()!.n):0;
-    return {...counts,activityEvents:counts.activityEvents??0,mediaEvents:counts.mediaEvents??0,...blob,fileBytes,bytes:physicalBytes,logicalBytes:this.logicalBytes(),maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:this.contentEncryption.enabled};
+    const counts=this.db.prepare("SELECT coalesce(sum(n),0) captures,coalesce(sum(n*has_image),0) imageCaptures,coalesce(sum(CASE WHEN source='activity' THEN n ELSE 0 END),0) activityEvents,coalesce(sum(CASE WHEN source='media' THEN n ELSE 0 END),0) mediaEvents FROM capture_counts").get() as {captures:number;imageCaptures:number;activityEvents:number;mediaEvents:number};
+    const times={firstCaptureAt:this.db.prepare('SELECT captured_at FROM captures ORDER BY captured_at LIMIT 1').get()?.captured_at??null,lastCaptureAt:this.db.prepare('SELECT captured_at FROM captures ORDER BY captured_at DESC LIMIT 1').get()?.captured_at??null};
+    const blob=this.db.prepare('SELECT n blobs,bytes imageBytes FROM blob_counts WHERE id=1').get() as {blobs:number;imageBytes:number};
+    const indexing=this.db.prepare('SELECT index_status status,sum(n) count FROM capture_counts GROUP BY index_status HAVING sum(n)>0').all();
+    const physical=this.db.prepare("SELECT value FROM settings WHERE key='physical-storage-snapshot'").get();
+    const snapshot=physical?JSON.parse(String(physical.value)):{bytes:0,asOf:null};
+    const logicalBytes=this.logicalBytes();
+    const fileBytes=Number(this.db.prepare("SELECT bytes FROM storage_ledger WHERE name='file_blobs'").get()?.bytes??0);
+    return {...counts,...times,...blob,fileBytes,bytes:snapshot.bytes,asOf:snapshot.asOf,physicalPending:!snapshot.asOf,logicalBytes,maxBytes:this.options.maxStorageBytes??null,indexing,imagesEncrypted:this.contentEncryption.enabled};
+  }
+  /** Run only in the maintenance worker, never from an HTTP request. */
+  measurePhysicalStorage(){
+    let bytes=0;const visit=(path:string)=>{if(!existsSync(path))return;for(const entry of readdirSync(path,{withFileTypes:true})){const child=join(path,entry.name);if(entry.isDirectory())visit(child);else if(entry.isFile())try{bytes+=statSync(child).size;}catch{/* concurrent retention */}}};
+    visit(join(this.directory,'files'));visit(this.blobsDir);
+    for(const name of ['mote.sqlite','mote.sqlite-wal'])try{bytes+=statSync(join(this.directory,name)).size;}catch{}
+    const snapshot={bytes,asOf:new Date().toISOString()};
+    this.db.prepare("INSERT INTO settings VALUES('physical-storage-snapshot',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(snapshot));return snapshot;
   }
   exportArchive(maxBytes:number) {
     if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError(moteText("文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。"),409);
@@ -618,10 +630,10 @@ export class Store {
   prune(before:string) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const removed=this.db.prepare('SELECT id FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)').all(before) as {id:string}[];
-      this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
-      this.db.prepare('DELETE FROM captures_fts WHERE rowid IN (SELECT rowid FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
-      const result=this.db.prepare('DELETE FROM captures WHERE mote_context_end(json) < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
+      const removed=this.db.prepare('SELECT id FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)').all(before) as {id:string}[];
+      this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
+      this.db.prepare('DELETE FROM captures_fts WHERE rowid IN (SELECT rowid FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
+      const result=this.db.prepare('DELETE FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
       if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();this.archive.collect();return Number(result.changes);
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
@@ -635,12 +647,9 @@ export class Store {
     }
     // As with insights, a model reply may contain removed facts even without an
     // explicit citation. Keep authored questions, but never retain derived copies.
-    const rows=this.db.prepare('SELECT id,json FROM conversations').all() as {id:string;json:string}[];
-    for(const row of rows) {
-      const value=JSON.parse(row.json) as {turns:{result:{answer:string;citations:unknown[];trace:unknown[];runId:string};evidenceDeleted?:boolean}[]};
-      if(value.turns.every(turn=>turn.evidenceDeleted))continue;
-      for(const turn of value.turns){turn.evidenceDeleted=true;turn.result={answer:moteText("原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。"),citations:[],trace:[],runId:turn.result.runId};}
-      this.db.prepare('UPDATE conversations SET json=? WHERE id=?').run(JSON.stringify(value),row.id);
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversation_turns'").get()){
+      this.db.prepare(`UPDATE conversation_turns SET json=json_set(json,'$.evidenceDeleted',json('true'),'$.result',json_object('answer',?,'citations',json('[]'),'trace',json('[]'),'runId',coalesce(json_extract(json,'$.result.runId'),''))) WHERE coalesce(json_extract(json,'$.evidenceDeleted'),0)!=1 AND json_extract(json,'$.result') IS NOT NULL`).run(moteText("原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。"));
+      this.db.exec("UPDATE conversations SET json=json_set(json,'$.revision',coalesce(json_extract(json,'$.revision'),0)+1)");
     }
   }
   sweep() {
@@ -651,7 +660,7 @@ export class Store {
   pending(limit=10) {return (this.db.prepare("SELECT * FROM captures WHERE index_status='pending' AND id NOT IN (SELECT capture_id FROM file_versions) AND json_extract(json,'$.source')!='activity' ORDER BY received_at LIMIT ?").all(limit) as unknown as Row[]).map(r=>this.record(r));}
   indexCounts() {
     const result={pending:0,failed:0,indexed:0,textReady:0};
-    for(const row of this.db.prepare('SELECT index_status AS status,COUNT(*) AS count FROM captures GROUP BY index_status').all() as {status:string;count:number}[]) {
+    for(const row of this.db.prepare('SELECT index_status AS status,SUM(n) AS count FROM capture_counts GROUP BY index_status').all() as {status:string;count:number}[]) {
       if(row.status==='pending')result.pending=row.count;else if(row.status==='failed')result.failed=row.count;else if(row.status==='indexed')result.indexed=row.count;else if(row.status==='text_ready')result.textReady=row.count;
     }
     return result;
