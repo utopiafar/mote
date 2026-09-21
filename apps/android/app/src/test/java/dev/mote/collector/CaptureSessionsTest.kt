@@ -21,6 +21,11 @@ class CaptureSessionsTest {
         val first = CaptureSessions.page(rows, null, 2); val second = CaptureSessions.page(rows, first.getString("nextCursor"), 2)
         assertEquals(2, second.getJSONArray("items").length()); assertTrue(second.isNull("nextCursor"))
     }
+    @Test fun deletingSessionAnchorSignalsARefreshInsteadOfReturningStaleMembers() {
+        val first = sample(1, 0); val remaining = sample(2, 1000)
+        assertThrows(CaptureSessionChangedException::class.java) { CaptureSessions.images(listOf(remaining), first.getString("id"), null) }
+        assertEquals(remaining.getString("id"), CaptureSessions.page(listOf(remaining), null).getJSONArray("items").getJSONObject(0).getString("id"))
+    }
     @Test fun switchesAtIdenticalTimestampsDoNotLeakOtherSessionsIntoGrid() {
         val rows = listOf(sample(1,0),sample(2,0,"b"),sample(3,0))
         assertEquals(3, CaptureSessions.page(rows, null).getInt("sessionCount"))
