@@ -54,6 +54,19 @@ test('a real central process recovers a previous lock with its own reused PID an
     await delay(50);
   }
   assert.ok(healthy, `Central health did not become ready: ${node.output()}`);
+  // Wait for the fork to initialize too: an inherited --eval bootstrap could
+  // replace server.pid just after health becomes available.
+  let maintenanceReady = false;
+  const workerDeadline = Date.now() + 10000;
+  while (Date.now() < workerDeadline) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/status`, {
+      headers:{authorization:'Bearer synthetic-startup-fixture-token-only'}, signal:AbortSignal.timeout(2000),
+    });
+    const status = await response.json() as {runtime?:{maintenance?:{status:string}}};
+    if (status.runtime?.maintenance?.status === 'ready') { maintenanceReady = true; break; }
+    await delay(50);
+  }
+  assert.ok(maintenanceReady, `Maintenance worker did not become ready: ${node.output()}`);
   assert.equal(await readFile(join(directory, 'server.pid'), 'utf8'), String(node.child.pid));
   await stop(node.child, node.exited);
   assert.equal(await node.exited, 0);

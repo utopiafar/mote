@@ -1,4 +1,5 @@
 import {fork,type ChildProcess} from 'node:child_process';
+import {createRequire} from 'node:module';
 import type {Config} from './config.js';
 
 /** One deployable service, isolated CPU/disk maintenance with automatic recovery. */
@@ -10,7 +11,10 @@ export class MaintenanceWorker {
   private start(){
     if(this.closed)return;
     const extension=import.meta.url.endsWith('.ts')?'ts':'js';
-    const child=this.child=fork(new URL(`./maintenance-worker.${extension}`,import.meta.url),[],{stdio:['ignore','ignore','ignore','ipc'],execArgv:process.execArgv.filter(a=>!a.startsWith('--test'))});
+    // Inheriting -e/--eval re-executes the parent's bootstrap instead of this
+    // worker (and can overwrite its PID lock). Only the source loader is needed.
+    const execArgv=extension==='ts'?['--import',createRequire(import.meta.url).resolve('tsx')]:[];
+    const child=this.child=fork(new URL(`./maintenance-worker.${extension}`,import.meta.url),[],{stdio:['ignore','ignore','ignore','ipc'],execArgv});
     child.send({directory:this.config.dataDir,options:{maintenance:true,dataKey:this.config.dataKey,contentEncryptionEnabled:this.config.contentEncryptionEnabled,maxStorageBytes:this.config.maxStorageBytes,embeddingEnabled:Boolean(this.config.embeddingModel)}});
     child.on('message',(event:any)=>{if(event.type==='tick')this.state={...this.state,status:'ready',lastCompletedAt:new Date().toISOString(),durationMs:event.durationMs};else if(event.type==='error'){this.state.status='degraded';this.state.failures++;}});
     child.on('error',()=>{this.state.status='degraded';});
