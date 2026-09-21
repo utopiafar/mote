@@ -8,11 +8,12 @@ const reader={search:async()=>[record],timeline:async()=>[],evidence:async()=>[r
 async function call(b,tool,args){const r=await fetch(b.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+b.token,'Content-Type':'application/json'},body:JSON.stringify(args)});return {status:r.status,body:await r.json()};}
 test('range errors return actionable grants; corrected call stays within the original grant',async t=>{
   const events=[],b=await startBridge(reader,{question:'fixture',evidenceIds:[id],evidenceRanges:[{id,offset:7,length:18}],onTrace:e=>events.push(e)},10);t.after(()=>b.close());
+  const wrongId=await call(b,'evidence',{ids:['not-a-record-id']});assert.equal(wrongId.body.toolError.code,'evidence_scope_denied');assert.deepEqual(wrongId.body.toolError.details.allowedRanges,[{id,offset:7,length:18}]);
   const failed=await call(b,'evidence',{ids:[id],offset:0,length:12000});
   assert.equal(failed.status,400);assert.equal(failed.body.toolError.code,'evidence_range_exceeded');
   assert.deepEqual(failed.body.toolError.details.allowedRanges,[{offset:7,length:18}]);
   const corrected=await call(b,'evidence',{ids:[id]});assert.equal(corrected.status,200);assert.equal(corrected.body.data[0].ocrText,'generated evidence');
-  assert.equal(events.find(e=>e.type==='tool.rejected').payload.code,'evidence_range_exceeded');
+  assert.equal(events.filter(e=>e.type==='tool.rejected').at(-1).payload.code,'evidence_range_exceeded');
 });
 test('third identical rejected call stops the run, including reordered object keys',async t=>{
   const b=await startBridge(reader,{question:'fixture',evidenceIds:[id],evidenceRanges:[{id,offset:7,length:18}]},10);t.after(()=>b.close());

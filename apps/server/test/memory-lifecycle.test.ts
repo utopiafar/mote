@@ -123,3 +123,12 @@ test('startup recovers detached queued jobs without bypassing active retry or di
   const settings=lifecycle.settings();lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});
   assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual']);
 });
+
+test('shutdown preserves the checkpoint without counting interrupted work as another failure',async t=>{
+  const store=fixture(t);let now=0,reject!:(error:Error)=>void;
+  const lifecycle=new MemoryLifecycle(store,()=>true,()=>now);
+  lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(_window,checkpoint){checkpoint('resume-after-restart');await new Promise<void>((_resolve,r)=>reject=r);}});
+  for(let i=0;i<25;i++)event(store);now=6*3600000;
+  const running=lifecycle.tick();await new Promise(r=>setImmediate(r));const closing=lifecycle.close();reject(Error('shutdown'));
+  await Promise.all([running,closing]);const state=lifecycle.view().extensions[0];assert.equal(state.failures,0);assert.equal(state.retryAt,undefined);assert.equal(state.cursor,0);assert.equal(state.active?.checkpoint,'resume-after-restart');
+});

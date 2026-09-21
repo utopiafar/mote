@@ -39,7 +39,7 @@ export function buildContextEnvelope(input:QueryInput,seedEvidence:ContextRecord
     responseMode:input.responseMode??(input.skill==='coding-memory'||input.skill==='memory-extraction'?'memory-extraction':input.skill==='personal-insight'?'personal-insight':input.skill==='calendar-extraction'?'calendar-extraction':'answer'),
     ...(input.skill?{requiredSkill:input.skill,procedure:skillContent(input.skill)}:{}),
     ...(input.taskContext?{untrustedTaskContext:input.taskContext}:{}),
-    ...(seedEvidence.length?{untrustedEvidence:seedEvidence,evidenceScope:'Only these IDs and delivered text ranges may be used in this extraction session.'}:{}),
+    ...(seedEvidence.length?{untrustedEvidence:seedEvidence,evidenceScope:'Only these record.id values and delivered text ranges may be used in this extraction session. Fingerprints/content hashes are not record IDs. The supplied text is already available; call evidence only if needed, preferably with ids alone (omit offset and length) to read the authorized segments.'}:{}),
     ...(input.conversation?{conversation:input.conversation}:{}),
     ...(input.incrementalEvidenceIds?{incrementalContext:{count:input.incrementalEvidenceIds.length,tool:'changes',instruction:'Start with relevant memory cards. Inspect changes as a lightweight overview when needed to identify uncovered arrivals; selectively expand originals. Do not exhaustively read the snapshot. State inspected coverage; occurrence dates may predate arrival.'}}:{}),
     ...(input.memoryCoverage?{memoryCoverage:input.memoryCoverage}:{}),

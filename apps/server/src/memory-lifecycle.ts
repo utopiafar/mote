@@ -109,7 +109,7 @@ export class MemoryLifecycle {
         await extension.run(structuredClone(state.active),id=>{state.active!.checkpoint=id;this.save(extension.id,state);});
         if(this.closed)return;
         state.cursor=state.active.through;if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.error;delete state.retryAt;state.failures=0;
-      }catch(error){state.failures++;state.error=error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';state.retryAt=this.now()+Math.min(6*3600000,60000*2**Math.min(state.failures,8));}
+      }catch(error){if(this.closed)return;state.failures++;state.error=error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';state.retryAt=this.now()+Math.min(6*3600000,60000*2**Math.min(state.failures,8));}
       this.save(extension.id,state);
   }
   async close(){this.closed=true;await Promise.allSettled([...this.running.values()]);}

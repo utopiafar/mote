@@ -280,7 +280,7 @@ export async function startBridge(
       if(bounds.skill==='working-memory')throw hostError('Working memory uses only the supplied dialogue; retrieval is disabled');
       if(restricted){
         if(tool!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
-        if(!Array.isArray(args.ids)||!args.ids.length||args.ids.some(id=>typeof id!=='string'||!permitted.has(id)))throw new ContextToolError('evidence_scope_denied','Use only evidence IDs supplied by the host for this batch.','correct_arguments');
+        if(!Array.isArray(args.ids)||!args.ids.length||args.ids.some(id=>typeof id!=='string'||!permitted.has(id)))throw new ContextToolError('evidence_scope_denied','Use only record.id values supplied by the host for this batch, never fingerprints or content hashes. Copy IDs from allowedRanges; omit offset and length to read the supplied segments.','correct_arguments',{allowedRanges:ranges.map(({id,offset,length})=>({id,offset,length}))});
         const current=await reader.evidence({ids:args.ids as string[]});
         if((args.ids as string[]).some(id=>{const before=permitted.get(id)!,after=current.find(r=>r.id===id);return !after||(bounds.skill==='calendar-extraction'?actionEvidenceText(after):after.ocrText)!==before.ocrText||JSON.stringify(after.provenance)!==JSON.stringify(before.provenance);}))throw new ContextToolError('evidence_changed','Source evidence was deleted or revised. Stop this run; its original grant cannot be repaired by changing arguments.','stop');
         let data=seedEvidence.filter(record=>(args.ids as string[]).includes(record.id));
