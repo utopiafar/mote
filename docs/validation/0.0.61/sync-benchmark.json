@@ -9,4 +9,3 @@
   "personalData": false,
   "transport": "in-process desktop SourceSync to central FileStore; excludes network RTT"
 }
-
