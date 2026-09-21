@@ -1271,6 +1271,22 @@ function App() {
   }, []);
   const [period, setPeriod] = useState("week");
   const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(()=>{
+    if(!menuOpen)return;
+    const menu=document.getElementById('primary-navigation'),opener=document.querySelector<HTMLButtonElement>('.mobile-menu');
+    const controls=()=>Array.from(menu?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled)')??[]).filter(element=>element.getClientRects().length>0);
+    controls()[0]?.focus();
+    const key=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){event.preventDefault();setMenuOpen(false);return;}
+      if(event.key!=='Tab')return;
+      const items=controls(),first=items[0],last=items.at(-1);
+      if(!first)return;
+      if(event.shiftKey&&(document.activeElement===first||!menu?.contains(document.activeElement))){event.preventDefault();last?.focus();}
+      else if(!event.shiftKey&&(document.activeElement===last||!menu?.contains(document.activeElement))){event.preventDefault();first.focus();}
+    };
+    document.addEventListener('keydown',key);
+    return()=>{document.removeEventListener('keydown',key);opener?.focus();};
+  },[menuOpen]);
   const [status, setStatus] = useState<Status | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [activity, setActivity] = useState<Activity>({
@@ -1422,7 +1438,7 @@ function App() {
   }
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
+      <aside id="primary-navigation" className={`sidebar ${menuOpen ? "open" : ""}`}>
         <button
           className="brand"
           onClick={() => onPage("overview")}
@@ -1475,6 +1491,7 @@ function App() {
             <button
               className="icon-button mobile-menu"
               aria-label={moteText("打开导航")}
+              aria-controls="primary-navigation" aria-expanded={menuOpen}
               onClick={() => setMenuOpen(!menuOpen)}
             >
               <Menu size={21} />

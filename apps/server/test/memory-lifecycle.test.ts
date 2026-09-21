@@ -132,3 +132,18 @@ test('shutdown preserves the checkpoint without counting interrupted work as ano
   const running=lifecycle.tick();await new Promise(r=>setImmediate(r));const closing=lifecycle.close();reject(Error('shutdown'));
   await Promise.all([running,closing]);const state=lifecycle.view().extensions[0];assert.equal(state.failures,0);assert.equal(state.retryAt,undefined);assert.equal(state.cursor,0);assert.equal(state.active?.checkpoint,'resume-after-restart');
 });
+
+test('cross-turn summaries persist and consume only newly uncovered turns, with edits invalidating the prefix',async t=>{
+ const store=fixture(t),conversations=new Conversations(store),working=new WorkingMemory(store,conversations),lifecycle=new MemoryLifecycle(store,()=>true),settings=lifecycle.settings();t.after(()=>lifecycle.close());
+ let id:string|undefined;
+ const append=(n:number)=>{id=conversations.append(id?conversations.get(id):undefined,{question:'Generated question '+n},{...empty(),answer:'Generated answer '+n}).conversationId;};
+ for(let n=0;n<20;n++)append(n);
+ let calls=0;
+ const summarize=async(input:any)=>{calls++;if(calls===2){assert.equal(input.taskContext.previousSummary,'Generated persistent summary');assert.equal(input.taskContext.turns.length,1);assert.equal(input.taskContext.turns[0].question,'Generated question 12');}return {...empty(),answer:'Generated persistent summary'};};
+ await working.compact(id!,settings,summarize);assert.equal(calls,1);
+ const reopened=new WorkingMemory(store,new Conversations(store));assert.equal(reopened.get(conversations.get(id!))?.coveredTurns,12);
+ await reopened.compact(id!,settings,summarize);assert.equal(calls,1,'No repeated summarization of a covered prefix');
+ append(20);await reopened.compact(id!,settings,summarize);assert.equal(calls,2);assert.equal(reopened.get(conversations.get(id!))?.coveredTurns,13);
+ store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.question','Generated edited constraint') WHERE conversation_id=? AND idx=0").run(id!);
+ assert.equal(reopened.get(conversations.get(id!)),undefined,'An edited source turn retires the persisted summary');
+});

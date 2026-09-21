@@ -1,3 +1,4 @@
+import type {SourceCapabilities} from './source-capabilities.js';
 import {fileIndexSchema} from './file-index.js';
 import {z} from 'zod';
 import {sourceMetadataSchema} from './metadata.js';
@@ -50,7 +51,7 @@ export const sourceConnectionSchema=z.object({
   deviceId:sourceIdSchema,platform:z.enum(['macos','windows','linux','android','import']),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();
-export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};
+export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{capabilities?:SourceCapabilities;createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};
 export const calendarSchema=z.object({start:timestamp,end:timestamp,allDay:z.boolean(),timeZone:z.string().max(100).optional(),status:z.enum(['confirmed','tentative','cancelled']).default('confirmed')}).strict().refine(v=>Date.parse(v.end)>=Date.parse(v.start),{message:'Calendar end must not precede start'});
 export const sourceItemSchema=z.object({
   externalId:z.string().min(1).max(1000),revision:z.string().min(1).max(200),observedAt:timestamp.describe('Actual source observation time. For document imports without an explicit source observation timestamp, copy the request importedAt exactly. Never substitute recordedAt, createdAt, modifiedAt, or an event date.'),modifiedAt:timestamp.optional(),

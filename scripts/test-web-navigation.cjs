@@ -28,6 +28,22 @@ async function run(){
  async function screenshot(name){await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');assert.equal(await js('document.documentElement.scrollWidth<=window.innerWidth'),true,'no page overflow: '+name);writeFileSync(join(output,name+'.png'),(await wc.capturePage()).toPNG());}
  await window.loadURL(endpoint);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);await until(()=>js(`document.body.innerText.includes('已登录 ·')&&document.querySelector('.capture-card')`),'home');
  assert.equal(await js(`document.body.innerText.includes('MOTE_MODEL_API_KEY')`),false);assert.equal(await js(`document.body.innerText.includes('运行诊断')`),false);await screenshot('home-desktop');
+ // Real keyboard events at 200% browser zoom exercise the mobile navigation and evidence path.
+ async function key(keyCode){wc.sendInputEvent({type:'keyDown',keyCode});if(keyCode==='Enter')wc.sendInputEvent({type:'char',keyCode:'\r'});wc.sendInputEvent({type:'keyUp',keyCode});await delay(30);}
+ async function tabTo(predicate,label){for(let i=0;i<100;i++){if(await js(`(()=>{const e=document.activeElement;return ${predicate};})()`))return;await key('Tab');}throw Error('Keyboard target unreachable: '+label);}
+ wc.setZoomFactor(2);await delay(200);await screenshot('home-200-percent');
+ await js('document.activeElement?.blur()');
+ await tabTo(`e?.getAttribute('aria-label')==='打开导航'`,'navigation opener');await key('Enter');
+ await until(()=>js(`document.querySelector('.sidebar')?.classList.contains('open')`),'keyboard navigation open');
+ await tabTo(`e?.closest('.sidebar nav')&&e.textContent.trim()==='资料库'`,'archive navigation');await key('Enter');
+ await until(()=>js(`!!document.querySelector('.archive-page .capture-card')&&!document.querySelector('.sidebar.open')`),'keyboard archive');
+ await tabTo(`e?.classList.contains('capture-card')`,'original evidence');await key('Enter');
+ await until(()=>js(`!!document.querySelector('.evidence-modal')`),'keyboard evidence');await screenshot('evidence-200-percent');
+ await tabTo(`e?.getAttribute('aria-label')==='关闭证据详情'`,'close evidence');await key('Enter');
+ await until(()=>js(`!document.querySelector('.evidence-modal')`),'keyboard close evidence');
+ await tabTo(`e?.getAttribute('aria-label')==='打开导航'`,'reopen navigation');await key('Enter');await key('Escape');
+ assert.equal(await js(`document.activeElement?.getAttribute('aria-label')`),'打开导航','Escape restores focus');
+ wc.setZoomFactor(1);await delay(150);await click('今天');
  await js(`document.querySelector('.capture-card').click()`);await until(()=>js(`!!document.querySelector('.evidence-modal')`),'evidence drawer');assert.ok(await js(`location.hash.includes('evidence=')`));await js(`history.back()`);await until(()=>js(`!document.querySelector('.evidence-modal')`),'back to records');await js(`history.forward()`);await until(()=>js(`!!document.querySelector('.evidence-modal')`),'forward to evidence');await js(`document.querySelector('[aria-label="关闭证据详情"]').click()`);
 
  await js(`window.confirm=()=>true;true;`);assert.equal(await js(`document.querySelectorAll('.sidebar nav button').length`),5);

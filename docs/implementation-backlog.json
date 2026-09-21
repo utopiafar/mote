@@ -48,12 +48,14 @@
       "title": "来源能力注册",
       "change": "声明发现、监听、回源、同步、写回能力；区分持续来源与一次导入",
       "acceptance": "新来源自动复用目录、任务、检索和详情；Shadow 默认不发送正文；一次 MCP 导入不伪装成持续挂载",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
-        "packages/shared/src/sources.ts",
-        "apps/server/src/connectors/gmail.ts"
+        "packages/shared/src/source-capabilities.ts",
+        "apps/server/src/sources.ts",
+        "apps/server/test/sources.test.ts",
+        "apps/web/src/Sources.tsx"
       ],
-      "remaining": "缺统一声明发现/监听/回源/同步/写回能力的来源注册表。"
+      "remaining": ""
     },
     {
       "id": "SRC-02",
@@ -156,12 +158,14 @@
       "title": "增量扫描",
       "change": "watcher 优先路径＋周期 reconciliation；保存扫描 epoch；NAS I/O 有界并发",
       "acceptance": "无变化不重读正文；卷卸载、权限失败、半轮扫描不发送全目录删除",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
-        "apps/desktop/src/source-files.ts",
-        "apps/desktop/test/source-metadata.test.ts"
+        "apps/desktop/src/directory-catalog.ts",
+        "apps/desktop/src/source-manager.ts",
+        "apps/desktop/test/source-files.test.ts",
+        "apps/desktop/test/source-state-store.test.ts"
       ],
-      "remaining": "持久扫描 epoch、watcher 优先队列与 NAS 有界并发仍未统一。"
+      "remaining": ""
     },
     {
       "id": "SYNC-03",
@@ -467,11 +471,14 @@
       "title": "对话摘要边界",
       "change": "Mote 持久跨轮摘要；Harness 管单次运行压缩；新增 turn 增量摘要，提前后台整理",
       "acceptance": "换设备继续对话；未覆盖内容不静默丢失；不每次压同一段；删除与编辑使相关摘要失效",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
-        "apps/server/test/conversations.test.ts"
+        "apps/server/src/working-memory.ts",
+        "apps/server/src/lifecycle-extensions.ts",
+        "apps/server/test/conversations.test.ts",
+        "apps/server/test/memory-lifecycle.test.ts"
       ],
-      "remaining": "对话持久化和删除失效已测试；跨轮增量摘要与运行内压缩的统一边界仍需完善。"
+      "remaining": ""
     },
     {
       "id": "MEM-01",
@@ -663,12 +670,14 @@
       "title": "性能与可访问性",
       "change": "路由懒加载；大组件按需；分页优先、必要才窗口化；共享组件契约",
       "acceptance": "窄屏、200% 缩放、键盘可完成主路径；长任务、首包与首屏有对照数据",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
         "apps/web/src/main.tsx",
-        "apps/web/scripts/capture-browser-smoke.cjs"
+        "scripts/test-web-navigation.cjs",
+        "apps/web/scripts/capture-browser-smoke.cjs",
+        "docs/validation/0.0.61/frontend-comparison.json"
       ],
-      "remaining": "16 个路由懒加载与窄屏测试已做；缺 200% 缩放、键盘全旅程及首包前后对照。"
+      "remaining": ""
     },
     {
       "id": "OPS-01",

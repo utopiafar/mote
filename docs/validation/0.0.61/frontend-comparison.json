@@ -1,0 +1,115 @@
+{
+  "baselineFrontendCommit": "3561947",
+  "dependencyNote": "Both frontend builds use the same currently installed dependencies and shared library build; isolates frontend code changes. No runtime latency or model claims.",
+  "baseline": {
+    "entryAssets": [
+      {
+        "name": "/assets/index-Bun2bteO.js",
+        "bytes": 1286212,
+        "gzipBytes": 414253
+      }
+    ],
+    "allJavaScriptBytes": 1311988
+  },
+  "current": {
+    "entryAssets": [
+      {
+        "name": "/assets/index-DMLKzc_B.js",
+        "bytes": 1136591,
+        "gzipBytes": 370179
+      }
+    ],
+    "allJavaScriptBytes": 1325016
+  },
+  "runtime": {
+    "fixtureOnly": true,
+    "environment": "Electron offscreen Chromium, 1360x1000, loopback, same generated central archive, five alternating cold-cache rounds",
+    "samples": [
+      {
+        "round": 0,
+        "variant": "baseline",
+        "readyMs": 362.19999998807907,
+        "fcpMs": 44,
+        "domInteractiveMs": 14.400000005960464,
+        "jsBytes": 1286212
+      },
+      {
+        "round": 0,
+        "variant": "current",
+        "readyMs": 264.2000000178814,
+        "fcpMs": null,
+        "domInteractiveMs": 5,
+        "jsBytes": 1136591
+      },
+      {
+        "round": 1,
+        "variant": "baseline",
+        "readyMs": 271.30000001192093,
+        "fcpMs": 52,
+        "domInteractiveMs": 5.9000000059604645,
+        "jsBytes": 1286212
+      },
+      {
+        "round": 1,
+        "variant": "current",
+        "readyMs": 266.09999999403954,
+        "fcpMs": null,
+        "domInteractiveMs": 4.800000011920929,
+        "jsBytes": 1136591
+      },
+      {
+        "round": 2,
+        "variant": "baseline",
+        "readyMs": 265.09999999403954,
+        "fcpMs": null,
+        "domInteractiveMs": 4.799999982118607,
+        "jsBytes": 1286212
+      },
+      {
+        "round": 2,
+        "variant": "current",
+        "readyMs": 263.69999998807907,
+        "fcpMs": null,
+        "domInteractiveMs": 4.5,
+        "jsBytes": 1136591
+      },
+      {
+        "round": 3,
+        "variant": "baseline",
+        "readyMs": 266.09999999403954,
+        "fcpMs": null,
+        "domInteractiveMs": 4.9000000059604645,
+        "jsBytes": 1286212
+      },
+      {
+        "round": 3,
+        "variant": "current",
+        "readyMs": 271.90000000596046,
+        "fcpMs": null,
+        "domInteractiveMs": 5.5,
+        "jsBytes": 1136591
+      },
+      {
+        "round": 4,
+        "variant": "baseline",
+        "readyMs": 277.59999999403954,
+        "fcpMs": 40,
+        "domInteractiveMs": 4.5999999940395355,
+        "jsBytes": 1286212
+      },
+      {
+        "round": 4,
+        "variant": "current",
+        "readyMs": 268.59999999403954,
+        "fcpMs": null,
+        "domInteractiveMs": 4.699999988079071,
+        "jsBytes": 1136591
+      }
+    ],
+    "medianReadyMs": {
+      "baseline": 271.30000001192093,
+      "current": 266.09999999403954
+    },
+    "limitations": "Readiness is the detected signed-in home with its first generated capture card, polled every 20 ms. Offscreen paint entries were incomplete, so no FCP improvement is claimed. Local CPU/network results do not predict mobile-network latency."
+  }
+}

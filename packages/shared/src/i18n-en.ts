@@ -1302,6 +1302,8 @@ export const english: Readonly<Record<string, string>> = {
   "筛选来源": "Filter sources",
   "已连接来源": "Connected sources",
   "所有来源": "All sources",
+  "一次导入来源": "One-time import source",
+  "等待外部写入": "Waiting for external submissions",
   "等待下次同步": "Waiting for next sync",
   "同步中": "Syncing",
   "需要处理": "Needs attention",

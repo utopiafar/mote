@@ -21,7 +21,7 @@ export interface FileCatalogEntry {
 }
 export interface LocalFileCheckpoint {
   version: 1; root: string; scanNumber: number; scanStartedAt: string; initialized: boolean;
-  inProgress: boolean; pendingDirectories: string[]; activeDirectory?: { path: string; after?: string };
+  inProgress: boolean; scanFaulted?: boolean; pendingDirectories: string[]; activeDirectory?: { path: string; after?: string };
   nextFile?: string; catalog: Record<string, FileCatalogEntry>;
 }
 export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint;

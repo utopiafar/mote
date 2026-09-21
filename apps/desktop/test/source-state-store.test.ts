@@ -30,3 +30,22 @@ test('opening source state waits for a concurrent initialization transaction',as
  sourceState(path,[{section:'state',key:'checkpoint',value:{cursor:7}}]);
  assert.deepEqual(sourceState(path)?.checkpoint,{cursor:7});
 });
+
+
+test('directory scan checkpoints persist only changed catalog rows and migrate inline SQLite catalogs',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-catalog-state-')),path=join(directory,'source.json');afterEach(()=>rm(directory,{recursive:true,force:true}));
+ const catalog=Object.fromEntries(Array.from({length:1000},(_,i)=>['file-'+i,{size:i,lastSeenScan:1,hash:'generated-'+i}]));
+ const before={version:2,known:{},pendingRealtime:[],pendingHistory:[],checkpoint:{version:1,root:'/generated',scanNumber:1,catalog}};
+ sourceState(path,sourceStatePatch({},before),100);assert.deepEqual(sourceState(path),before);
+ const next={...before,checkpoint:{...before.checkpoint,catalog:{...catalog,'file-7':{size:42,lastSeenScan:2,hash:'changed'}}}};
+ const patches=sourceStatePatch(before,next);assert.deepEqual(patches.map(p=>[p.section,p.key]),[['catalog','file-7']]);
+ sourceState(path,patches,100);assert.deepEqual(sourceState(path),next);
+ const db=new DatabaseSync(path+'.sqlite');
+ assert.equal(db.prepare("SELECT count(*) n FROM entries WHERE section='catalog'").get()!.n,1000);
+ db.prepare("UPDATE entries SET value=? WHERE section='state' AND key='checkpoint'").run(Buffer.from(JSON.stringify(before.checkpoint)));
+ db.exec("DELETE FROM entries WHERE section='catalog'");db.close();
+ assert.deepEqual(sourceState(path),before);
+ const inspect=new DatabaseSync(path+'.sqlite');assert.ok(Number(inspect.prepare("SELECT length(value) n FROM entries WHERE section='state' AND key='checkpoint'").get()!.n)<200);inspect.close();
+ sourceState(path,sourceStatePatch(before,{...before,checkpoint:undefined}));assert.equal(sourceState(path)?.checkpoint,undefined);
+ const cleared=new DatabaseSync(path+'.sqlite');assert.equal(cleared.prepare("SELECT count(*) n FROM entries WHERE section='catalog'").get()!.n,0);cleared.close();
+});

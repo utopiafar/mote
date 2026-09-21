@@ -1,6 +1,6 @@
 # 0.0.61 验证记录（发布前工作记录）
 
-本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 18 项通过所列验收、34 项部分实现、3 项待迁移；尚未发布版本。
+本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 22 项通过所列验收、30 项部分实现、3 项待迁移；尚未发布版本。
 
 ## 生成数据与规模
 
@@ -47,7 +47,24 @@ python3 apps/android/scripts/run-complex-fixtures.py --connection /private/fixtu
 
 ## 发布前尚需核验
 
-- GitHub Checks 的 Docker 容器/Compose/隧道测试；本机没有 Docker，未宣称本地验证。
+- GitHub Checks 两轮通过，包含 Docker 容器、Compose 备份/回滚、隧道与协议/工作区全量测试：[push](https://github.com/utopiafar/mote/actions/runs/35616437562)、[PR](https://github.com/utopiafar/mote/actions/runs/35616502313)。这是提交 f67e70a 的 CI 结果，后续提交仍需重新核验。本机没有 Docker。
 - 最终提交的 Release workflow、Mac/Android 安装包下载、版本与签名核验。
 - 清单中剩余架构工作，包括单一执行引擎、统一资产存储、跨调用预算预留和旧逻辑退役；不能仅凭现有测试通过宣布这些项目完成。
 - npm audit 仍有 ExcelJS 间接依赖 uuid 8 的两项 moderate 报告（uuid v3/v5 越界问题；ExcelJS 调用 v4）。未通过强制降级或删除依赖掩盖报告。
+
+## 后续补充验证
+
+- 来源能力注册：10 类来源都复用归档、版本和读取流程；reference 拒绝正文、能力字段不能被客户端伪造；MCP/upload 明确为一次导入，不自动监听或执行外部写入。
+- 跨轮摘要：保留既有摘要，仅摘要新增的未覆盖 turn；重复调用不重新压缩；重建读取实例后覆盖游标仍在，编辑旧 turn 则使摘要失效。12 项生命周期/摘要测试通过。
+- 200% 浏览器缩放下用真实键盘事件打开导航、进入资料库、打开/关闭原文、Esc 关闭导航并恢复焦点；发现并修复隐藏侧栏仍可聚焦的问题。桌面/窄屏布局回归通过。
+- 同依赖下对比基线 3561947 的前端代码：入口 JavaScript 1,286,212 → 1,136,591 bytes，gzip 414,253 → 370,179 bytes。5 轮交替冷缓存、同一生成归档的首页内容就绪中位数 271.3 → 266.1 ms，20 ms 检测粒度，这个差值不能证明明显提速。离屏 Chromium 的 FCP 条目不完整，不宣称 FCP 改善。详细数据见 [前端对比](validation/0.0.61/frontend-comparison.json)。
+
+- 扫描与目录存储：扫描中途目录不可读时，失败标记跨分片和重启持久化；失败 epoch 不判断删除，后续完整扫描才确认缺失。元数据 I/O 最多 4 个并发且保持名称游标顺序。目录 checkpoint 由整段 JSON 改为 SQLite 逐条目录行，修改一项只更新一行；旧 SQLite 内嵌目录会原子迁移。24 项扫描/同步/状态测试通过。
+- 后续工作区全量测试通过：server 407、desktop 267、web 60、agent 101 + 1 可选跳过、diagnostics 5、local-inference 13、shared 53。之后新增的 3 项扫描/目录测试在上述 24 项定向回归中通过；离线首次绑定/上传 UI 再次通过。
+
+复现前端构建与首屏对照（两次构建使用当前相同依赖；connection 是专用生成数据中央的私有 JSON）：
+
+```sh
+python3 scripts/benchmark-web-bundle.py --baseline 3561947 --out /tmp/mote-web-comparison.json
+node_modules/.bin/electron scripts/benchmark-web-startup.cjs --comparison /tmp/mote-web-comparison.json --connection /private/fixture-connection.json --out /tmp/mote-render-comparison.json --generated-fixture
+```
