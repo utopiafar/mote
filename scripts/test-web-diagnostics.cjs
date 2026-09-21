@@ -33,10 +33,11 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   assert.equal(created.status,201);const requestId=created.headers.get('X-Request-Id');assert.ok(requestId);
   window=new BrowserWindow({width:1360,height:1100,show:false,webPreferences:{contextIsolation:true,sandbox:true,nodeIntegration:false}});
   const wc=window.webContents,errors=[];wc.on('console-message',(_event,level,message)=>{if(level>=3)errors.push(message);});
+  const execute=wc.executeJavaScript.bind(wc);wc.executeJavaScript=(code,...args)=>execute(code,...args).catch(error=>{console.error('Renderer fixture failed:',code);throw error;});
   await window.loadURL(url);
   await wc.executeJavaScript(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('已登录 ·')`),'authenticated app');
-  await wc.executeJavaScript(`location.hash='/system/diagnostics'`);
+  await wc.executeJavaScript(`location.hash='/system/models'`);
   await until(()=>wc.executeJavaScript(`!!document.querySelector('.preference-menu')`),'settings hub');
   const feedback = await wc.executeJavaScript(`(()=>{const link=document.querySelector('.preference-menu a.feedback-link');return {href:link.href,target:link.target,rel:link.rel};})()`);
   const feedbackUrl = new URL(feedback.href);
@@ -46,6 +47,11 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   for(const privateValue of [token,modelKey,generatedText,url,root])assert.equal(decodeURIComponent(feedback.href).includes(privateValue),false);
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('.preference-menu button')).find(b=>b.querySelector('strong')?.textContent==='开发者选项').click()`);
   await until(()=>wc.executeJavaScript(`!!document.querySelector('.deployment-details')`),'effective server configuration');
+  await until(()=>wc.executeJavaScript(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='保存并应用')`),'live diagnostic preferences');
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('label')).find(l=>l.textContent.includes('记录详细 Agent 过程')).querySelector('input').click()`);
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent==='保存并应用').click()`);
+  await until(()=>wc.executeJavaScript(`document.body.innerText.includes('已保存，立即生效。')`),'live preferences saved');
+  const preferences=await(await fetch(url+'/api/diagnostics-settings',{headers:{Authorization:`Bearer ${token}`}})).json();assert.equal(preferences.traceEnabled,true);
   await wc.executeJavaScript(`document.querySelector('.deployment-details').open=true`);
   const settingsText=await wc.executeJavaScript(`document.querySelector('.deployment-details').innerText`);
   assert.ok(settingsText.includes(join(root,'data','mote.sqlite')));
@@ -62,10 +68,8 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   await wc.executeJavaScript(`document.querySelector('.deployment-details').open=false`);
   await until(()=>wc.executeJavaScript(`document.body.innerText.includes('本次运行')`),'diagnostic snapshot');
   assert.equal(await wc.executeJavaScript(`document.querySelector('#diagnostics-title').textContent`),'运行诊断');
-  await wc.executeJavaScript(`document.querySelector('.diagnostics-events').open=true;document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'})`);
-  await until(()=>wc.executeJavaScript(`document.querySelector('.diagnostics-events tbody').innerText.includes(${JSON.stringify(requestId)})`),'request correlation');
-  await wc.executeJavaScript(`(()=>{const input=document.querySelector('[aria-label="诊断请求编号"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(requestId)});input.dispatchEvent(new Event('input',{bubbles:true}));})();`);
-  await until(()=>wc.executeJavaScript(`(()=>{const rows=Array.from(document.querySelectorAll('.diagnostics-events tbody tr'));return rows.length>0&&rows.every(row=>row.lastElementChild.textContent===${JSON.stringify(requestId)});})()`),'filtered stage and request events');
+  await wc.executeJavaScript(`document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'})`);
+  await until(()=>wc.executeJavaScript(`document.querySelector('.raw-log-output')?.value.includes(${JSON.stringify(requestId)})`),'request correlation in raw logs');
   const download=new Promise((resolve,reject)=>{wc.session.once('will-download',(_event,item)=>{const path=join(root,'support.json');item.setSavePath(path);item.once('done',(_e,state)=>{if(state!=='completed')reject(Error('Download failed'));else resolve(path);});});});
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('.diagnostics-actions button')).find(b=>b.innerText==='导出诊断包').click()`);
   const path=await Promise.race([download,sleep(15000).then(()=>{throw Error('Support download timed out');})]);
@@ -78,8 +82,17 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   assert.equal(await wc.executeJavaScript('document.documentElement.scrollWidth<=window.innerWidth'),true);
   await wc.executeJavaScript(`document.querySelector('.diagnostics-panel').scrollIntoView({block:'start'})`);
   writeFileSync(join(output,'web-diagnostics-mobile.png'),(await wc.capturePage()).toPNG());
+  await wc.executeJavaScript(`Array.from(document.querySelectorAll('h2')).find(h=>h.textContent==='诊断偏好').closest('section').scrollIntoView({block:'start'})`);
+  await sleep(100);writeFileSync(join(output,'web-live-preferences-mobile.png'),(await wc.capturePage()).toPNG());
+  const memoryJob={id:randomUUID(),status:'running',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),evidenceIds:[],totalBatches:10,completedBatches:3,failedBatches:1,skippedChunks:0,memoryIds:[],skillVersion:'generated',runningBatches:1,pendingBatches:5,batches:[{id:randomUUID(),index:4,status:'running',attempts:1,memoryIds:[],phase:'review',stage:'等待模型执行名额',startedAt:new Date(Date.now()-180000).toISOString(),lastActivityAt:new Date(Date.now()-130000).toISOString(),validationFailures:[{at:new Date().toISOString(),code:'quote_offset_mismatch',phase:'extract',attempt:1,details:{candidateIndex:0,spanIndex:1}}]}]};
+  await wc.executeJavaScript(`(()=>{const fetchOriginal=window.fetch;const job=${JSON.stringify(memoryJob)};window.fetch=async(input,init)=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;if(path==='/api/memory-jobs')return new Response(JSON.stringify({items:[job]}),{headers:{'content-type':'application/json'}});if(path==='/api/memory-jobs/'+job.id)return new Response(JSON.stringify(job),{headers:{'content-type':'application/json'}});return fetchOriginal(input,init);};location.hash='/library/memories';})()`);
+  await until(()=>wc.executeJavaScript(`document.body.innerText.includes('独立审核')&&document.body.innerText.includes('执行队列')`),'memory execution and phase fixture');
+  assert.equal(await wc.executeJavaScript('document.documentElement.scrollWidth<=window.innerWidth'),true);
+  await wc.executeJavaScript(`document.querySelector('.memory-progress').scrollIntoView({block:'start'})`);
+  writeFileSync(join(output,'web-memory-progress-mobile.png'),(await wc.capturePage()).toPNG());
+  window.setSize(1360,1100);await sleep(100);writeFileSync(join(output,'web-memory-progress-desktop.png'),(await wc.capturePage()).toPNG());
   assert.deepEqual(errors,[]);
-  console.info('PASS: actual renderer → isolated central node → effective settings/storage paths/secret status/refresh → profile/snapshot → request ID filter → safe support download; desktop/mobile layouts rendered. Generated notes only.');
+  console.info('PASS: actual renderer → isolated central node → effective settings/storage paths/secret status/refresh → profile/snapshot → raw NDJSON request correlation → safe support download; desktop/mobile layouts rendered. Generated notes only.');
 })().then(()=>finish(0),error=>{console.error(error.stack);finish(1);});
 async function finish(code){
   if(window&&!window.isDestroyed())window.destroy();

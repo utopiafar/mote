@@ -82,6 +82,7 @@ export function configFromEnv() {
     modelProvider:modelProviderId,modelProtocol,modelHeaders,modelExtraBody,
     codexBin:text('MOTE_CODEX_BIN')||undefined,codexHome:text('MOTE_CODEX_HOME')?resolve(baseDir,text('MOTE_CODEX_HOME')):undefined,
     modelReasoningEffort,modelMaxTokens:number('MOTE_MODEL_MAX_TOKENS',DEFAULT_MODEL_MAX_TOKENS,1,128000,true),
+    agentConcurrency:number('MOTE_AGENT_CONCURRENCY',8,1,64,true),llmConcurrency:number('MOTE_LLM_CONCURRENCY',4,1,64,true),memoryConcurrency:number('MOTE_MEMORY_CONCURRENCY',3,1,16,true),
     modelRequestTimeoutMs,agentTimeoutMs,modelTimeoutMs:agentTimeoutMs??undefined,
     maxStorageBytes:number('MOTE_MAX_STORAGE_MB',10240,1,1_000_000)*1024*1024,
     maxExportBytes:number('MOTE_MAX_EXPORT_MB',64,1,256)*1024*1024,
@@ -137,5 +138,5 @@ export function configFromEnv() {
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelRequestTimeoutMs'|'agentTimeoutMs'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'agentTraceEnabled'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='agentConcurrency'|'llmConcurrency'|'memoryConcurrency'|'codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelRequestTimeoutMs'|'agentTimeoutMs'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'agentTraceEnabled'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

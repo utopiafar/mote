@@ -55,6 +55,8 @@ export interface ContextReader {
 }
 
 export interface AgentOptions {
+  /** Host-wide admission for model runs; Codex turns include their internal tool loop. */
+  runModel?: <T>(task:()=>Promise<T>,signal?:AbortSignal)=>Promise<T>;
   reader: ContextReader;
   baseUrl?: string;
   apiKey?: string;
@@ -80,6 +82,8 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Pure host validation before the session closes. Return only trusted repair guidance; never commit output here. */
+  validateOutput?: (answer: AgentAnswer) => Promise<{code:string;feedback:string}|undefined> | {code:string;feedback:string}|undefined;
   language?: "zh-CN" | "en";
   /** Host-selected saved connection; never interpreted as prompt content. */
   modelProfileId?: string;
@@ -189,7 +193,7 @@ export class AgentNotConfiguredError extends Error {
   }
 }
 
-export type AgentResponseReason = 'invalid_response' | 'invalid_json' | 'invalid_shape' | 'response_too_large' | 'unretrieved_citation' | 'truncated_citation' | 'undeclared_citation' | 'output_limit' | 'tools_unverified';
+export type AgentResponseReason = 'invalid_response' | 'invalid_json' | 'invalid_shape' | 'response_too_large' | 'unretrieved_citation' | 'truncated_citation' | 'undeclared_citation' | 'output_limit' | 'tools_unverified' | 'host_validation';
 export class AgentResponseError extends Error {
   readonly statusCode = 502;
   constructor(message: string, readonly reason: AgentResponseReason = 'invalid_response') {
@@ -221,4 +225,10 @@ export class AgentTimeoutError extends Error {
     super("The agent request timed out. Please retry or narrow the question.");
     this.name = "AgentTimeoutError";
   }
+}
+
+/** Runs before closing the model conversation, so a rejected output can be repaired in place. */
+export async function validateHostOutput(input:QueryInput, answer:AgentAnswer):Promise<void> {
+  const issue=await input.validateOutput?.(answer);
+  if(issue){reportTrace(input,{type:'validation.host_rejected',runId:answer.runId,stage:'validating',status:'rejected',payload:{code:issue.code,feedback:issue.feedback}});throw new AgentResponseError(`${issue.code}: ${issue.feedback}`,'host_validation');}
 }

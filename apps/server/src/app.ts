@@ -1,3 +1,6 @@
+import {AsyncLocalStorage} from 'node:async_hooks';
+import {ConcurrencyGate} from './concurrency.js';
+import {ExecutionSettings} from './execution-settings.js';
 import {browseSourceCatalog} from './source-catalog.js';
 import {ProcessingRuntime} from './processing-runtime.js';
 import {reviewMemory} from './memory-review.js';
@@ -34,7 +37,7 @@ import { serverConfiguration } from './configuration.js';
 import {FileEvidenceRequests} from './file-evidence.js';
 import { SourceStore } from './sources.js';
 import {registerConnectors} from './connectors/index.js';
-import { MemoryStore,MEMORY_EXTRACTION_PROMPT } from './memory.js';
+import { MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT } from './memory.js';
 import {createUpdateService,registerUpdateRoutes} from './updates.js';
 import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
 import {registerCaptureBrowser} from './capture-browser.js';
@@ -50,7 +53,7 @@ import {registerMemoryExtensions} from './lifecycle-extensions.js';
 import {WorkingMemory} from './working-memory.js';
 import {MemoryPipeline} from './memory-pipeline.js';
 import {ContentStorageService,registerContentStorage} from './content-storage.js';
-import {insightResult} from './insights.js';
+import {insightResult,validateInsightOutput} from './insights.js';
 
 type QueryScope = {after?:string;before?:string;deviceId?:string;timeZone?:string};
 export interface QueryAgent {configured:boolean;configuredFor?(id:string):boolean;query(args:QueryInput):Promise<QueryResult>;close():Promise<void>}
@@ -76,7 +79,15 @@ const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.me
 export async function buildApp(config:Config,dependencies?:{memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   config={...config};
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel)});
-  const diagnostics=new ServerDiagnostics({enabled:config.diagnosticsEnabled,debug:config.diagnosticsDebug,level:config.logLevel,traceEnabled:config.agentTraceEnabled,directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
+  const runtimeSettings=new ExecutionSettings(store,config),execution=runtimeSettings.execution();
+  const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
+  const modelContext=new AsyncLocalStorage<QueryInput>();
+  const runModel:NonNullable<import('@mote/agent').AgentOptions['runModel']>=(task,signal)=>{
+    const input=modelContext.getStore();input?.onTrace?.({type:'model.queued',stage:'model',payload:llmGate.snapshot()});
+    input?.onProgress?.({stage:'model',message:moteText('等待模型执行名额')});
+    return llmGate.run(async()=>{input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:llmGate.snapshot()});return task();},signal??input?.signal);
+  };
+  const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
   const sources=new SourceStore(store),files=new FileStore(store,sources);const fileEvidence=new FileEvidenceRequests(sources);
   const indexer=new Indexer(store,config,diagnostics,files);
@@ -107,8 +118,12 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
       search:async args=>diagnostics.measure('source','search',async()=>{const results=await indexer.search(args);return Object.assign(context(results),{retrieval:results.retrieval});},rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list(args);return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>allEvidence(args.ids),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const codex={executable:config.codexBin,home:config.codexHome};
-  const factory:ModelAgentFactory=dependencies?.createModelAgent??((settings,reader)=>createModelAgent(settings,reader,codex));
-  let initialAgent=dependencies?.agent;
+  const wrapAgent=(inner:QueryAgent):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:input=>{
+    input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
+    return agentGate.run(()=>modelContext.run(input,()=>inner.query(input)),input.signal);
+  }});
+  const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModel)));
+  let initialAgent=dependencies?.agent?wrapAgent(dependencies.agent):undefined;
   const modelSettings=new ModelSettingsStore({
     directory:config.dataDir,environment:modelSettingsFromConfig(config),codex,
     prepare:async (settings,profiles)=>{
@@ -157,7 +172,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
-    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories','memory-jobs':'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query','query-runs':'query',usage:'configuration',conversations:'conversations',files:'files','archived-files':'files','file-sync':'file-sync','file-processing':'file-processing',insights:'insights','insight-runs':'insights',index:'index',export:'export',import:'import',imports:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
+    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration','execution-settings':'configuration','diagnostics-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories','memory-jobs':'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query','query-runs':'query',usage:'configuration',conversations:'conversations',files:'files','archived-files':'files','file-sync':'file-sync','file-processing':'file-processing',insights:'insights','insight-runs':'insights',index:'index',export:'export',import:'import',imports:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
   };
   app.addHook('onRequest', (req, reply, done) => {
     const locale = negotiateLocale(req.headers['accept-language'], 'zh-CN');
@@ -189,7 +204,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     if(error instanceof ModelSettingsError)return reply.code(error.statusCode).send({error:error.code,message:error.message,requestId:req.id});
     reply.code(failure.status).send({error:failure.category,message:failure.message,...(failure.reason?{reason:failure.reason}:{}),requestId:req.id});
   });
-  const actions=new Actions(store,files,input=>agent.query({...input,language:requestLocale.getStore()??'zh-CN'}),()=>agent.configured);
+  const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured);
   registerActions(app,actions,connections,credential);
   const connectors=await registerConnectors(app,{files,sources,store,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
   const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
@@ -213,7 +228,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.put('/api/sources/:id/read-requests/:requestId',async req=>{const {id,requestId}=req.params as {id:string;requestId:string};sourceOwner(req,id);return fileEvidence.complete(id,requestId,req.body);});
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
   app.get('/api/status',async()=>{const profiles=modelSettings.profiles(),current=modelSettings.current(),unbounded=profiles.some(p=>p.settings.agentTimeoutMs===null),agentTimeouts=profiles.map(p=>p.settings.agentTimeoutMs).filter((value):value is number=>value!==null);return {profile:config.profile??'legacy',agent:{configured:agent.configured,provider:modelProvider(config.modelProvider??'deepseek')?.name??config.modelProvider,runtime:config.modelProtocol==='codex-app-server'?'Codex App Server':'DeepSeek Harness',protocol:config.modelProtocol,model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??DEFAULT_MODEL_MAX_TOKENS,modelRequestTimeoutMs:current.modelRequestTimeoutMs,agentTimeoutMs:unbounded?null:agentTimeouts.length?Math.max(...agentTimeouts):null},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:lifecycle.settings().insights.enabled?lifecycle.settings().insights.intervalHours:0,serverTime:new Date().toISOString()};});
-  app.get('/api/configuration',async()=>{const view=serverConfiguration(config,{modelSource:modelSettings.view().source}),policy=lifecycle.settings().insights,field=view.groups.flatMap(g=>g.fields).find(f=>f.key==='insightIntervalHours');if(field){field.value=policy.enabled?policy.intervalHours:0;field.source='derived';field.description=moteText("已保存的洞察策略：周期到达并且至少 {0} 次增量变化时运行。在记忆设置中直接修改。", policy.minChanges);delete field.envVar;}return view;});
+  app.get('/api/configuration',async()=>{const d=runtimeSettings.diagnostics(),view=serverConfiguration({...config,...runtimeSettings.execution(),diagnosticsEnabled:d.enabled,diagnosticsDebug:d.debug,agentTraceEnabled:d.traceEnabled,logLevel:d.level},{modelSource:modelSettings.view().source}),policy=lifecycle.settings().insights,field=view.groups.flatMap(g=>g.fields).find(f=>f.key==='insightIntervalHours');for(const f of view.groups.flatMap(g=>g.fields))if(['agentConcurrency','llmConcurrency','memoryConcurrency','diagnosticsEnabled','diagnosticsDebug','agentTraceEnabled','logLevel'].includes(f.key)){f.source='derived';f.restartRequired=false;}if(field){field.value=policy.enabled?policy.intervalHours:0;field.source='derived';field.description=moteText("已保存的洞察策略：周期到达并且至少 {0} 次增量变化时运行。在记忆设置中直接修改。", policy.minChanges);delete field.envVar;}return view;});
   let codexCatalogPending:ReturnType<typeof codexModels>|undefined;
   app.get('/api/model-settings/codex-models',{config:connectionRate},async()=>codexCatalogPending??=codexModels(undefined,codex).finally(()=>{codexCatalogPending=undefined;}));
   app.get('/api/model-settings/profiles/:id/models',async req=>{const profile=modelSettings.select('chat',z.object({id:modelProfileIdSchema}).parse(req.params).id);return profile.settings.protocol==='codex-app-server'?codexModels(undefined,codex):providerModels(profile.settings);});
@@ -312,27 +327,34 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   const activeQueries=new Set<Promise<QueryResult>>();
   function queryAgent(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations') {
     if(closing)throw new StoreError('Central node is shutting down',503);
-    if(activeQueries.size>=2)throw new StoreError('Two Agent queries are already running; retry shortly',429);
+    if(input.skill==='personal-insight'&&!input.validateOutput)input={...input,validateOutput:validateInsightOutput};
+    if(activeQueries.size>=1000)throw new StoreError('Agent queue is full; retry shortly',429);
     const profile=modelSettings.select(input.responseMode==='memory-extraction'||input.skill==='memory-extraction'||input.skill==='coding-memory'||moduleId==='memories'?'memory':input.skill==='personal-insight'?'insight':'chat',input.modelProfileId);
     input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
     const traceContext:AgentTraceContext={...input.traceContext,traceId:randomUUID(),requestId:diagnostics.requestId(),operation,moduleId,profileId:profile.id,provider:profile.settings.provider,protocol:profile.settings.protocol,model:input.modelOverride??profile.settings.model};
-    const trace=(event:AgentTraceEvent)=>{if(config.agentTraceEnabled)diagnostics.agentTrace(event,traceContext);};
+    const startedAt=Date.now();let lastActivity=startedAt;
+    const trace=(event:AgentTraceEvent)=>{lastActivity=Date.now();diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);};
     trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
     const meter=usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null});
-    const observed={...input,traceContext,onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:config.agentTraceEnabled?trace:undefined,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
+    const observed={...input,traceContext,onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
+    const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
       if(store.deletionRevision()!==revision)throw new StoreError('Evidence was deleted during this run; retry against the updated archive',409);
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       return {...result,usage:meter.finish('completed')};
     }).catch(error=>{meter.finish('failed');trace({type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
-    activeQueries.add(promise);void promise.finally(()=>activeQueries.delete(promise)).catch(()=>{});return promise;
+    activeQueries.add(promise);void promise.finally(()=>{clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
-  const memoryPipeline=new MemoryPipeline({store,memories,requireAdmission:true,review:(input,result)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories')),query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({store,memories,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:(input,result)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories')),query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours),working=new WorkingMemory(store,conversations);
   registerMemoryExtensions({lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
-  app.get('/api/memory-settings',async()=>lifecycle.view());
+  app.get('/api/execution-settings',async()=>({...runtimeSettings.execution(),queues:{agents:agentGate.snapshot(),llm:llmGate.snapshot()}}));
+  app.put('/api/execution-settings',async req=>{const value=runtimeSettings.saveExecution(req.body);agentGate.configure(value.agentConcurrency);llmGate.configure(value.llmConcurrency);memoryPipeline.wake();return value;});
+  app.get('/api/diagnostics-settings',async()=>runtimeSettings.diagnostics());
+  app.put('/api/diagnostics-settings',async req=>{const value=runtimeSettings.saveDiagnostics(req.body);await diagnostics.configure(value);return value;});
+  app.get('/api/memory-settings',async()=>{const view=lifecycle.view();return {...view,extensions:view.extensions.map(extension=>({...extension,status:extension.retryAt&&extension.retryAt>Date.now()?'retry_wait':extension.id==='extraction'&&extension.active?.checkpoint?memoryPipeline.get(extension.active.checkpoint).status:extension.status}))};});
   app.put('/api/memory-settings',{bodyLimit:8192},async req=>lifecycle.configure(req.body));
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
   let importQueue:Promise<unknown>=Promise.resolve();
@@ -343,7 +365,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
       const settings=selected.settings,prepared=await prepareImportInput(input);
       const meter=usageLedger.start(settings.provider,settings.model,'document-import',{agentId:'document-import',moduleId:'imports',skillId:'document-import'});
       let runtime:ReturnType<typeof createImportAgent>|undefined;
-      try{runtime=createImportAgent({...settings,codex});importAgents.add(runtime);const result=await runtime.prepare({...prepared,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,meter.update);meter.finish('completed');return result;}
+      try{runtime=createImportAgent({...settings,codex,runModel});importAgents.add(runtime);const result=await agentGate.run(()=>runtime!.prepare({...prepared,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,meter.update));meter.finish('completed');return result;}
       catch(error){meter.finish('failed');throw error;}finally{try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
     }),
     // Capture/file journals are durable. Import completion only queues increments;
@@ -396,10 +418,14 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     ids=[...expanded];if(!ids.length)throw new StoreError('No processed evidence in this range',409);
     const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send(job);
   });
+  app.post('/api/memory-jobs/:id/pause',async req=>memoryPipeline.pause(jobId(req.params)));
+  app.post('/api/memory-jobs/:id/resume',async req=>{const id=jobId(req.params);memoryPipeline.resume(id);return memoryPipeline.get(id);});
+  app.post('/api/memory-jobs/:id/cancel',async req=>memoryPipeline.cancel(jobId(req.params)));
   app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
   app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
     const input:QueryInput={...scope,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
+    input.validateOutput=result=>{try{memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const draft=await queryAgent(input,'query','memories');
     memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true});
     const result=await reviewMemory(input,draft,next=>queryAgent(next,'query','memories'));
@@ -484,14 +510,14 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   app.post('/api/import',{bodyLimit:config.maxExportBytes},async req=>diagnostics.measure('ingest','import',()=>store.importArchive(req.body),r=>({count:r.imported})));
   function diagnosticSnapshot() {
     const counts=store.indexCounts(),devices=store.devices(),storage=store.stats();
-    return {version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot(),services:{agentConfigured:agent.configured,embeddingConfigured:indexer.configured,activeQueries:activeQueries.size,closing},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,maxBytes:storage.maxBytes,imagesEncrypted:storage.imagesEncrypted}};
+    return {version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot(),execution:{agents:agentGate.snapshot(),llm:llmGate.snapshot()},services:{agentConfigured:agent.configured,embeddingConfigured:indexer.configured,activeQueries:activeQueries.size,closing},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,maxBytes:storage.maxBytes,imagesEncrypted:storage.imagesEncrypted}};
   }
   app.get('/api/storage-statistics',async()=>{const types=new Map((store.db.prepare("SELECT object_hash,MIN(json_extract(manifest,'$.item.mimeType')) AS mime FROM file_versions WHERE object_hash IS NOT NULL GROUP BY object_hash").all() as {object_hash:string;mime:string}[]).map(r=>[r.object_hash,r.mime]));return storageStatistics([config.dataDir],path=>path.startsWith(store.blobsDir+'/')?'image':path.startsWith(files.objects+'/')?types.get(path.slice(files.objects.length+1).split('/')[0])??'original':undefined);});
   app.get('/api/diagnostics',async()=>diagnosticSnapshot());
   app.get('/api/diagnostics/logs',async(req,reply)=>{const {file}=z.object({file:z.coerce.number().int().min(0).max(9).default(0)}).strict().parse(req.query);return reply.type('text/plain; charset=utf-8').send(await diagnostics.readRaw(file));});
   app.get('/api/diagnostics/log-pages',async req=>{const args=z.object({file:z.coerce.number().int().min(0).max(9).default(0),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(500).default(100),stage:z.enum(diagnosticStageFilters).default('all')}).strict().parse(req.query);return diagnostics.readPage(args.file,args.page,args.pageSize,args.stage);});
   app.get('/api/diagnostics/events',async req=>{const args=z.object({afterSeq:z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),limit:z.coerce.number().int().min(1).max(500).default(200)}).strict().parse(req.query);return diagnostics.events(args.afterSeq,args.limit);});
-  app.get('/api/support-bundle',async(req,reply)=>{const range=z.object({after:z.string().datetime().default(new Date(Date.now()-86400000).toISOString()),before:z.string().datetime().default(new Date().toISOString())}).strict().refine(v=>v.after<v.before).parse(req.query);diagnostics.record('support.exported',{requestId:req.id});const logs=await diagnostics.exportRange(range.after,range.before);return reply.header('Content-Disposition','attachment; filename="mote-support.json"').type('application/json').send({version:1,scope:'central-safe-support',createdAt:new Date().toISOString(),snapshot:diagnosticSnapshot(),...logs});});
+  app.get('/api/support-bundle',async(req,reply)=>{const range=z.object({after:z.string().datetime().default(new Date(Date.now()-86400000).toISOString()),before:z.string().datetime().default(new Date(Date.now()+1).toISOString())}).strict().refine(v=>v.after<v.before).parse(req.query);diagnostics.record('support.exported',{requestId:req.id});const logs=await diagnostics.exportRange(range.after,range.before);return reply.header('Content-Disposition','attachment; filename="mote-support.json"').type('application/json').send({version:1,scope:'central-safe-support',createdAt:new Date().toISOString(),snapshot:diagnosticSnapshot(),...logs});});
   const web=join(repositoryRoot,'apps/web/dist');
   let webVersion:string|null=null;
   try {webVersion=JSON.parse(readFileSync(join(web,'build-info.json'),'utf8')).version??null;} catch {}
@@ -522,10 +548,9 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('onClose',async()=>{
-    closing=true;clearInterval(perceptionTimer);await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
+    closing=true;const memoryClose=memoryPipeline.close();agentGate.close();llmGate.close();clearInterval(perceptionTimer);await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
     clearInterval(actionTimer);const actionClose=actions.close();
     await workflows.close();
-    const memoryClose=memoryPipeline.close();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
     await contentStorage.close();

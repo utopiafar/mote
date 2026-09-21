@@ -3955,3 +3955,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .connection-catalog>aside { max-height:none; display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
 .connection-catalog>aside>h2,.connection-catalog>aside>button { grid-column:1/-1; }
 .connection-catalog>aside>article { margin:0; padding:18px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+
+.memory-batch-status.notice,.execution-queue-overview.notice{display:block;overflow-wrap:anywhere}.memory-batch-status p,.execution-queue-overview p{margin:8px 0}.memory-batch-status small{display:block;line-height:1.6}

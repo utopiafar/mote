@@ -37,3 +37,11 @@ export function insightResult(result:QueryResult):InsightResult {
   validateInlineCitations(parsed.data.markdown,ids,ids);
   return {...result,answer:parsed.data.markdown,artifact:{id:result.runId,title:parsed.data.title,html:staticReportHtml(parsed.data.html,ids),createdAt:new Date().toISOString(),skillId:'personal-insight',skillVersion:SKILL_VERSION}};
 }
+
+/** Read-only acceptance check, usable while the provider conversation is still open. */
+export function validateInsightOutput(result:QueryResult){
+  try{insightResult(result);}catch(error){
+    if(error instanceof StoreError&&error.statusCode===502)return {code:'insight_shape',feedback:'Return a JSON object in answer with nonempty title (<=200 characters), markdown (<=60000), and html (<=120000). Preserve exact evidence citations in both presentations.'};
+    throw error;
+  }
+}

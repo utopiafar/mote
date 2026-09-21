@@ -26,3 +26,14 @@ for(const exhaustedAgain of [false,true])test(`typed output exhaustion ${exhaust
   assert.ok(requests[2].messages.some(m=>m.role==='tool'),'Evidence remains in the same session');
  }finally{await agent.close();provider.closeAllConnections();await new Promise(resolve=>provider.close(resolve));}
 });
+
+test('HTTP host validation receives original evidence and sends trusted feedback in the existing conversation',{timeout:30000},async()=>{
+ const requests=[];let validations=0;
+ const provider=createServer(async(req,res)=>{
+  let raw='';for await(const part of req)raw+=part;requests.push(JSON.parse(raw));const first=requests.length===1;
+  const delta=first?{role:'assistant',tool_calls:[{index:0,id:'discover',type:'function',function:{name:'search_context',arguments:'{"query":"generated"}'}}]}:{role:'assistant',content:JSON.stringify({answer:`Generated review. [${record.id}]`,citationIds:[record.id]})};
+  res.writeHead(200,{'Content-Type':'text/event-stream'});res.write(`data: ${JSON.stringify({choices:[{index:0,delta,finish_reason:null}]})}\n\n`);res.end(`data: ${JSON.stringify({choices:[{index:0,delta:{},finish_reason:first?'tool_calls':'stop'}]})}\n\ndata: [DONE]\n\n`);
+ });await new Promise(resolve=>provider.listen(0,'127.0.0.1',resolve));
+ const agent=createAgent({reader,model:'generated',apiKey:'synthetic',baseUrl:`http://127.0.0.1:${provider.address().port}`,timeoutMs:20000});
+ try{await agent.query({question:'Generated review',validateOutput:()=>++validations===1?{code:'quote_ambiguous',feedback:'Candidate 0 span 0: disambiguate the exact authorized quote offset.'}:undefined});assert.equal(validations,2);assert.equal(requests.length,3);const messages=requests[2].messages;assert.ok(messages.some(m=>m.role==='tool'));assert.match(messages.filter(m=>m.role==='user').at(-1).content,/quote_ambiguous/);}finally{await agent.close();provider.closeAllConnections();await new Promise(resolve=>provider.close(resolve));}
+});

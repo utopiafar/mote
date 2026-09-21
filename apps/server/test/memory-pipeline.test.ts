@@ -136,11 +136,12 @@ test('invalid inner memory schema regenerates once with trusted feedback and unc
 test('quote offset errors are model validation failures and repair keeps exact UTF-16 evidence bounds',async t=>{
   const {store,sources,memories}=fixture(t),text='🌱开头\n合成原文：我计划学习。',a=await sources.upsert('generated',item('quote',text));
   const offset=text.indexOf('我计划'),quote=text.slice(offset),calls:MemoryPipelineQuery[]=[];
-  assert.throws(()=>memories.extract(result(a.id,{offset:offset+1,quote}),'fixture'),error=>error instanceof MemoryOutputValidationError&&error.code==='quote'&&error.statusCode===502);
+  assert.throws(()=>memories.extract(result(a.id,{offset:offset+1,quote}),'fixture'),error=>error instanceof MemoryOutputValidationError&&error.code==='quote_offset_mismatch'&&error.statusCode===502);
   const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async input=>{
     calls.push(input);if(calls.length===1)return result(a.id,{offset:offset+1,quote});assert.equal(memories.list().length,0);assert.match(input.question,/absolute UTF-16 offset/);return result(a.id,{offset,quote});
   }});t.after(()=>pipeline.close());
   const done=await pipeline.run(pipeline.create({evidenceIds:[a.id]}).id);assert.equal(done.status,'completed');assert.equal(done.batches[0].attempts,2);assert.deepEqual(calls[1].evidenceRanges,calls[0].evidenceRanges);
+  assert.equal(done.batches[0].validationFailures?.[0].code,'quote_offset_mismatch');assert.equal(done.batches[0].validationFailures?.[0].details?.spanIndex,0);
   const saved=memories.get(done.memoryIds[0]);assert.equal(saved.evidence![0].offset,offset);assert.equal(saved.evidence![0].quote,quote);
 });
 
@@ -156,4 +157,62 @@ test('source changes prevent a second model call even when the first inner outpu
     calls++;await sources.upsert('generated',item('a','已变更的合成资料','2','2026-09-15T02:00:00Z'));return {...empty(),answer:'malformed output'};
   }});t.after(()=>pipeline.close());
   const done=await pipeline.run(pipeline.create({evidenceIds:[a.id]}).id);assert.equal(done.status,'failed');assert.equal(done.batches[0].status,'invalidated');assert.equal(done.batches[0].errorCode,'evidence_changed');assert.equal(done.batches[0].attempts,1);assert.equal(calls,1);assert.equal(memories.list().length,0);
+});
+
+test('quote diagnostics distinguish exact failure modes without retaining source or model text',async t=>{
+  const {sources,memories}=fixture(t),text='🌱prefix\nrepeat repeat\nunique-secret-fixture',a=await sources.upsert('generated',item('quote-codes',text));
+  const base=result(a.id),candidate=JSON.parse(base.answer).memories[0];
+  const check=(span:Record<string,unknown>,code:string,ranges?:{id:string;offset:number;length:number}[])=>{
+    assert.throws(()=>memories.extract({...base,answer:JSON.stringify({memories:[{...candidate,evidence:[{id:a.id,...span}]}]})},'fixture',{evidenceRanges:ranges}),error=>{
+      assert.ok(error instanceof MemoryOutputValidationError);assert.equal(error.code,code);assert.equal(error.details.candidateIndex,0);assert.equal(error.details.spanIndex,0);
+      assert.ok(!JSON.stringify(error.details).includes('unique-secret-fixture'));return true;
+    });
+    assert.equal(memories.list().length,0);
+  };
+  check({quote:'repeat',offset:0},'quote_offset_mismatch');
+  check({quote:'repeat',length:2},'quote_length_mismatch');
+  check({quote:'not-present'},'quote_not_found');
+  check({quote:'not-present',offset:0},'quote_not_found');
+  check({quote:'repeat'},'quote_ambiguous');
+  check({quote:'unique-secret-fixture'},'quote_range',[{id:a.id,offset:0,length:8}]);
+  check({quote:'repeat',id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'},'quote_evidence_undeclared');
+  const saved=memories.extract({...base,answer:JSON.stringify({memories:[{...candidate,evidence:[{id:a.id,quote:'repeat'}]}]})},'fixture',{evidenceRanges:[{id:a.id,offset:text.indexOf('repeat'),length:6}]}).items[0];
+  assert.equal(saved.evidence![0].offset,text.indexOf('repeat'));
+});
+
+test('review quote failure persists run and attempt locations and emits an ordinary safe diagnostic',async t=>{
+  const {directory,store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('review-diagnostic','synthetic exact source'));
+  const {ServerDiagnostics}=await import('../src/diagnostics.js');
+  const diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),traceEnabled:false});await diagnostics.init();t.after(()=>diagnostics.close());
+  const runId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,
+    query:async()=>{const draft=result(a.id,{offset:0,quote:'synthetic exact source'}),value=JSON.parse(draft.answer);value.memories[0].admission={layer:'memory',reason:'Explicit fixture instruction',scope:'Fixture only',attribution:'user'};return {...draft,answer:JSON.stringify(value)};},
+    review:async()=>({...result(a.id,{offset:1,quote:'synthetic exact source'}),runId}),
+    onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,runId:event.runId,attempt:event.attempt,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),
+  });t.after(()=>pipeline.close());
+  const done=await pipeline.run(pipeline.create({evidenceIds:[a.id]}).id);
+  assert.equal(done.status,'failed');assert.equal(done.errorCode,'invalid_model_output');
+  assert.deepEqual(done.batches[0].validationFailures?.map(f=>[f.phase,f.code,f.attempt,f.runId]),[['review','quote_offset_mismatch',1,runId],['review','quote_offset_mismatch',2,runId]]);
+  const persisted=JSON.parse(String(store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(done.batches[0].id)!.json));
+  assert.equal(persisted.validationFailures[1].details.declaredOffset,1);
+  await diagnostics.flush();const events=diagnostics.events().items;
+  assert.equal(events.length,2);assert.equal(events[1].jobId,done.id);assert.equal(events[1].batchId,done.batches[0].id);assert.equal(events[1].validationCode,'quote_offset_mismatch');assert.equal(events[1].validationPhase,'review');assert.equal(events[1].candidateIndex,0);assert.equal(events[1].quoteLength,22);
+  assert.ok(!JSON.stringify(events).includes('synthetic exact source'));assert.equal(memories.list().length,0);
+});
+
+test('independent memory batches overlap; same evidence is serialized and pause finishes only in-flight work',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('parallel-a','a'.repeat(600))),b=await sources.upsert('generated',item('parallel-b','b'.repeat(300)));
+ const running=new Set<string>(),releases:(()=>void)[]=[];let peak=0;
+ const pipeline=new MemoryPipeline({store,memories,batchCharacters:256,concurrency:()=>3,model:()=> 'fixture',configured:()=>true,query:async input=>{const id=input.evidenceIds[0];assert.ok(!running.has(id));running.add(id);peak=Math.max(peak,running.size);await new Promise<void>(r=>releases.push(r));running.delete(id);return empty();}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[a.id,b.id]}),done=pipeline.run(job.id);await new Promise(r=>setImmediate(r));assert.equal(peak,2);assert.equal(pipeline.get(job.id).runningBatches,2);
+ assert.equal(pipeline.pause(job.id).status,'pausing');for(const release of releases.splice(0))release();const paused=await done;assert.equal(paused.status,'paused');assert.equal(paused.completedBatches,2);assert.ok(paused.pendingBatches!>0);
+ pipeline.resume(job.id);await new Promise(r=>setImmediate(r));pipeline.cancel(job.id);for(const release of releases.splice(0))release();await pipeline.run(job.id);assert.equal(pipeline.get(job.id).status,'cancelled');
+});
+
+test('host quote feedback is delivered before query session closes and successful repair does not restart extraction',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item()),failures:unknown[]=[];let calls=0;
+ const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,onValidationFailure:e=>failures.push(e),query:async input=>{
+   calls++;const bad=result(a.id,{offset:0,quote:'不存在的合成引文'}),issue=await input.validateOutput!(bad);assert.equal(issue?.code,'quote_not_found');assert.match(issue!.feedback,/quote/);assert.equal(memories.list({}).length,0);
+   const fixed=empty();assert.equal(await input.validateOutput!(fixed),undefined);return fixed;
+ }});t.after(()=>pipeline.close());const job=await pipeline.run(pipeline.create({evidenceIds:[a.id]}).id);assert.equal(calls,1);assert.equal(job.status,'completed');assert.equal(job.batches[0].attempts,1);assert.equal(failures.length,1);
 });

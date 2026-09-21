@@ -6,7 +6,7 @@ import {CodexSession,type CodexTool} from './codex-session.js';
 import {bundledSkills} from './skills.js';
 import {displayTime} from './time.js';
 import {parseAnswer,SYSTEM_PROMPT} from './index.js';
-import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,type AgentOptions,type QueryInput,type AgentAnswer} from './types.js';
+import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,validateHostOutput,type AgentOptions,type QueryInput,type AgentAnswer} from './types.js';
 
 export const codexContextTools:CodexTool[]=[...CONTEXT_TOOLS.map(([name,description,fields]):CodexTool=>({
   type:'function',name,description,inputSchema:{type:'object',properties:Object.fromEntries(Object.entries(fields).map(([key,{required:_,...schema}])=>[key,schema])),required:Object.entries(fields).filter(([,schema])=>schema.required).map(([key])=>key),additionalProperties:false},
@@ -47,8 +47,9 @@ export function createCodexAgent(options:AgentOptions){
         }
       };
       if(closed)throw new AgentProviderError();
-      session=new CodexSession(options,call);sessions.add(session);
+      session=new CodexSession(options,call,trace);sessions.add(session);
       input.signal?.throwIfAborted();
+      trace({type:'instructions.assembled',stage:'starting',payload:{system:input.skill==='working-memory'?WORKING_SYSTEM_PROMPT:SYSTEM_PROMPT,tools:codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill')}});
       await session.start(input.skill==='working-memory'?WORKING_SYSTEM_PROMPT:SYSTEM_PROMPT,codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill'));
       reportProgress(input,{stage:'model'});
       const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,input.skill==='working-memory'?WORKING_SYSTEM_PROMPT:SYSTEM_PROMPT,codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill'),options.maxTokens??65536);
@@ -60,7 +61,7 @@ export function createCodexAgent(options:AgentOptions){
       reportProgress(input,{stage:'validating'});
       trace({type:'validation.started',stage:'validating',phase:'started'});
       let answer:ReturnType<typeof parseAnswer>;
-      try{answer=parseAnswer(text,bridge.records);}
+      try{answer=parseAnswer(text,bridge.records);await validateHostOutput(input,{...answer,trace:bridge.trace,runId});}
       catch(error){
         if(!(error instanceof AgentResponseError))throw error;
         trace({type:'validation.failed',stage:'validating',phase:'completed',status:'rejected',payload:{reason:error.reason}});
@@ -70,6 +71,7 @@ export function createCodexAgent(options:AgentOptions){
         text=await session.run(repairPrompt,answerSchema);
         trace({type:'model.completed',stage:'model',phase:'completed',durationMs:performance.now()-repairStarted,payload:{response:text,repair:true}});
         answer=parseAnswer(text,bridge.records);
+        await validateHostOutput(input,{...answer,trace:bridge.trace,runId});
       }
       trace({type:'validation.completed',stage:'validating',phase:'completed',status:'accepted',payload:{citations:answer.citations.map(citation=>citation.id)}});
       trace({type:'run.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{citations:answer.citations.map(citation=>citation.id),toolCalls:bridge.trace}});

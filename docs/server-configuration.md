@@ -151,3 +151,11 @@ Caddy 使用 profile 文件中的 `MOTE_TLS_DOMAIN`、`MOTE_TLS_HTTP_PORT`（80�
 Google 三项配置需要一起填写，然后在“来源”页完成账户授权并选择日历。令牌保存在 `MOTE_DATA_DIR/connectors/` 的私有文件中，不进入 HTTP 资料导出或诊断包；迁移外部授权时请按[连接器说明](connectors.md)操作。修改环境文件后重启中央节点。
 
 原始资料、Shadow、快照、索引与 Memory 的保存和失效策略见[资料分层](context-layers.md)。
+
+
+Agent execution limits default to 8 Agent runs, 4 LLM turns, and 3 independent memory
+batches (`MOTE_AGENT_CONCURRENCY`, `MOTE_LLM_CONCURRENCY`, `MOTE_MEMORY_CONCURRENCY`).
+The model settings page saves runtime overrides immediately; diagnostics preferences
+also apply immediately. Both survive restarts. See
+[memory validation and scheduling](memory-validation-diagnostics.md) for admission,
+conflict handling, trace fields and same-conversation correction behavior.

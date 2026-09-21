@@ -5,7 +5,7 @@ import type { QueryAgent } from './app.js';
 import type { PreparedModelSettings } from './model-settings.js';
 
 export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader) => Promise<QueryAgent>;
-export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex']):Promise<QueryAgent> => createAgent({ ...settings, reader, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
+export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });
 
 /** A registry generation is immutable. ReloadableAgent leases it for the entire query. */
 export async function createModelRegistry(profiles:ModelProfile[], reader:ContextReader, factory:ModelAgentFactory, initial?:QueryAgent):Promise<QueryAgent> {

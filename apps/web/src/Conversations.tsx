@@ -36,7 +36,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
   const [modelProfileId,setModelProfileId]=useState(''),[modelOverride,setModelOverride]=useState('');
   const [items, setItems] = useState<ConversationSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [question, setQuestion] = useState(''), [selectedDevice, setSelectedDevice] = useState('');
+  const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false), [opening, setOpening] = useState(false), [loading, setLoading] = useState(true);
   const [error, setError] = useState(''), [historyError, setHistoryError] = useState('');
   const [pendingQuestion, setPendingQuestion] = useState(''), [confirmDelete, setConfirmDelete] = useState(false);
@@ -63,7 +63,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
       if(controller.signal.aborted)return;
       const recent=page.items.find(r=>r.status==='running')??page.items[0];
       if(recent){setRun(recent);setBusy(recent.status==='running');}
-      if(recent?.conversationId)void api.request<Conversation>(`/api/conversations/${recent.conversationId}`,{signal:controller.signal}).then(saved=>{if(!controller.signal.aborted){setConversation(saved);setSelectedDevice(saved.scope.deviceId??'');}}).catch(()=>{});
+      if(recent?.conversationId)void api.request<Conversation>(`/api/conversations/${recent.conversationId}`,{signal:controller.signal}).then(saved=>{if(!controller.signal.aborted){setConversation(saved);}}).catch(()=>{});
     }).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));}).finally(()=>{if(!controller.signal.aborted)setOpening(false);});
     return () => {controller.abort();operation.current?.abort(); historyRequest.current?.abort();};
   }, [api]);
@@ -81,7 +81,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
         if((current.status==='completed'||current.status==='failed')&&current.conversationId){
           const saved=await api.request<Conversation>(`/api/conversations/${current.conversationId}`,{signal:controller.signal});
           if(controller.signal.aborted)return;
-          setConversation(saved);setSelectedDevice(saved.scope.deviceId??'');
+          setConversation(saved);
           if(current.status==='completed')setQuestion('');
           else if(pendingQuestion)setQuestion(pendingQuestion);
           void loadHistory();
@@ -107,7 +107,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     setConversation(null);
     try {
       const result = await api.request<Conversation>(`/api/conversations/${encodeURIComponent(id)}`, {signal: controller.signal});
-      if (!controller.signal.aborted) {setConversation(result); setSelectedDevice(result.scope.deviceId ?? '');}
+      if (!controller.signal.aborted) {setConversation(result); }
     } catch (e) { if (!controller.signal.aborted) setError(errorMessage(e)); }
     finally { if (!controller.signal.aborted) {setOpening(false); operation.current = null;} }
   }
@@ -129,7 +129,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     setRun(null);setBusy(true); setError(''); setConfirmDelete(false); setPendingQuestion(text);
     try {
       const id=crypto.randomUUID();
-      const body=JSON.stringify({id,input:{question:text,modelProfileId:modelProfileId||undefined,modelOverride:modelOverride||undefined,...(conversation?{conversationId:conversation.id}:{}),after:range.after??null,before:range.before??null,deviceId:selectedDevice||null,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
+      const body=JSON.stringify({id,input:{question:text,modelProfileId:modelProfileId||undefined,modelOverride:modelOverride||undefined,...(conversation?{conversationId:conversation.id}:{}),after:range.after??null,before:range.before??null,deviceId:null,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
       let accepted:QueryRun;
       try{accepted=await api.request<QueryRun>('/api/query-runs',{method:'POST',signal:controller.signal,body});}
       catch(e){
@@ -181,9 +181,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
       <div ref={end}/>
       </div>
       {error && <p className="notice error" role="alert">{error}</p>}
-      <div className="filter-bar"><ModelSelector api={api} feature="chat" value={modelProfileId} onChange={setModelProfileId} model={modelOverride} onModelChange={setModelOverride} disabled={busy||opening}/><label><Monitor size={15}/><span>{moteText("筛选设备")}</span><select aria-label={moteText("问答设备")} value={selectedDevice} disabled={busy || opening} onChange={event => setSelectedDevice(event.target.value)}>
-        <option value="">{moteText("全部设备")}</option>{selectedDevice && !devices.some(device => device.deviceId === selectedDevice) && <option value={selectedDevice}>{moteText("历史设备（")}{selectedDevice}）</option>}{devices.map(device => <option key={device.deviceId} value={device.deviceId}>{device.deviceName}</option>)}
-      </select></label></div>
+      <div className="filter-bar"><ModelSelector api={api} feature="chat" value={modelProfileId} onChange={setModelProfileId} model={modelOverride} onModelChange={setModelOverride} disabled={busy||opening}/></div>
       <form className="ask-form" onSubmit={event => void submit(event)}>
         <textarea aria-label={moteText("向 Mote 提问")} aria-describedby="composer-hint" placeholder={conversation ? moteText("接着问，Mote 会结合前面的对话。") : moteText("比如，我最近都在忙什么？")} value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => {if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();void submit(event);}}} disabled={busy || opening} maxLength={8000} rows={3}/>
         <div><span><ShieldCheck size={14}/>{moteText("只读查询 · 回答附带原始证据")}</span><span id="composer-hint" className="composer-hint">{moteText("Enter 发送 · Shift+Enter 换行")}</span><button className="send-button" type="submit" disabled={busy || opening || !question.trim() || !configured} aria-label={moteText("发送问题")}>{busy ? <LoaderCircle className="spin" size={19}/> : <ArrowUp size={19}/>}</button></div>

@@ -28,6 +28,7 @@ export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLau
     const local=options.allowUnauthenticatedLocal&&options.baseUrl&&['localhost','127.0.0.1','[::1]'].includes(new URL(options.baseUrl).hostname);
     if(!options.model||(!options.apiKey&&!local))throw new AgentNotConfiguredError();
     if(closed)throw new AgentProviderError();
+    const modelAdmission=new AbortController();
     const root=await mkdtemp(join(tmpdir(),'mote-import-agent-')),runId=randomUUID();
     let harness:DeepSeekHarness|undefined,timeout:ReturnType<typeof setTimeout>|undefined,primaryFailure=false;
     try{
@@ -78,12 +79,12 @@ export function apply(ctx){
         return value as ImportAgentResult;
       };
       const readAnswer=async()=>{
-        let result=await harness!.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries, warnings and generated prose; preserve original quotes and field keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),runOptions);
+        let result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>harness!.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries, warnings and generated prose; preserve original quotes and field keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),runOptions),modelAdmission.signal);
         checkResult(result);
         try{return parseResult(result.finalResponse);}catch(error){
           if(!(error instanceof AgentResponseError))throw error;
           // One correction in the same session, inside the original total deadline.
-          result=await harness!.run(JSON.stringify({instruction:'Your final import response could not be accepted. Using only the analysis already completed in this session, return ONLY one JSON object with summary (a string in the selected language), optional recordsPath (a string), and optional warnings (an array of strings). Do not include Markdown fences or any text outside JSON. Do not repeat analysis, run tools, rewrite files, or claim an artifact exists unless it was actually produced. Preserve any reported limitations. The host will still independently validate the manifest and require review before import.',validationError:error.message}),runOptions);
+          result=await (options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>harness!.run(JSON.stringify({instruction:'Your final import response could not be accepted. Using only the analysis already completed in this session, return ONLY one JSON object with summary (a string in the selected language), optional recordsPath (a string), and optional warnings (an array of strings). Do not include Markdown fences or any text outside JSON. Do not repeat analysis, run tools, rewrite files, or claim an artifact exists unless it was actually produced. Preserve any reported limitations. The host will still independently validate the manifest and require review before import.',validationError:error.message}),runOptions),modelAdmission.signal);
           checkResult(result);return parseResult(result.finalResponse);
         }
       };
@@ -91,6 +92,7 @@ export function apply(ctx){
       return await Promise.race([readAnswer(),...deadline]);
     }catch(error){primaryFailure=true;if(error instanceof RequestTimeoutError)throw new AgentTimeoutError();if(error instanceof AgentNotConfiguredError||error instanceof AgentResponseError||error instanceof AgentTimeoutError)throw error;throw new AgentProviderError();}
     finally{
+      modelAdmission.abort();
       if(timeout)clearTimeout(timeout);
       const cleanup=await Promise.allSettled([Promise.resolve().then(()=>harness?.close())]);
       if(harness)active.delete(harness);

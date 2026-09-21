@@ -229,3 +229,38 @@ test('stage failures use warning for rejected input and error for failed executi
   assert.deepEqual(d.events().items.map(e=>e.stage),['ingest','ingest','index','index']);
   const ingestPage=await d.readPage(0,1,100,'ingest');assert.equal(ingestPage.totalLines,2);assert.ok(ingestPage.items.every(line=>JSON.parse(line).stage==='ingest'));
 });
+
+test('memory validation diagnostics survive reload without trace opt-in and reject arbitrary details',async t=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-validation-diagnostics-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const d=new ServerDiagnostics({directory,traceEnabled:false});await d.init();
+  const batchId=randomUUID(),runId=randomUUID(),evidenceId=randomUUID();
+  d.record('agent.memory_validation_failed',{batchId,runId,evidenceId,validationCode:'quote_ambiguous',validationPhase:'extract',candidateIndex:0,spanIndex:1,authorizedMatches:2,...{quote:marker,source:marker,message:marker}},'warn');
+  d.record('agent.memory_validation_failed',{batchId:marker,validationCode:marker,validationPhase:marker,declaredOffset:-1} as never,'warn');
+  await d.close();const raw=await readFile(join(directory,'central.0.ndjson'),'utf8');assert.ok(!raw.includes(marker));
+  const reloaded=new ServerDiagnostics({directory});await reloaded.init();t.after(()=>reloaded.close());
+  const events=reloaded.events().items;assert.equal(events.length,2);assert.equal(events[0].batchId,batchId);assert.equal(events[0].runId,runId);assert.equal(events[0].evidenceId,evidenceId);assert.equal(events[0].validationCode,'quote_ambiguous');assert.equal(events[0].validationPhase,'extract');assert.equal(events[0].authorizedMatches,2);assert.equal(events[0].stage,'agent');
+  assert.equal(events[1].validationCode,undefined);assert.equal(events[1].declaredOffset,undefined);
+});
+
+test('saved diagnostic preferences apply immediately and survive app restart',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-live-preferences-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+ let {app}=await buildApp({...config(directory),diagnosticsEnabled:false},{agent:inactive});
+ const headers={authorization:'Bearer synthetic-observability-token-only'};
+ try{
+  const update=await app.inject({method:'PUT',url:'/api/diagnostics-settings',headers,payload:{enabled:true,debug:true,traceEnabled:true,level:'debug'}});assert.equal(update.statusCode,200,update.body);
+  const status=(await app.inject({url:'/api/diagnostics',headers}));assert.equal(status.statusCode,200);
+  assert.equal((await app.inject({url:'/api/diagnostics-settings',headers})).json().traceEnabled,true);
+  const execution=await app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{agentConcurrency:6,llmConcurrency:3,memoryConcurrency:2}});assert.equal(execution.statusCode,200,execution.body);
+  const invalid=await app.inject({method:'PUT',url:'/api/execution-settings',headers,payload:{agentConcurrency:0,llmConcurrency:3,memoryConcurrency:2}});assert.equal(invalid.statusCode,400);
+ }finally{await app.close();}
+ ({app}=await buildApp(config(directory),{agent:inactive}));try{assert.equal((await app.inject({url:'/api/diagnostics-settings',headers})).json().traceEnabled,true);const settings=(await app.inject({url:'/api/execution-settings',headers})).json();assert.equal(settings.agentConcurrency,6);assert.equal(settings.queues.agents.limit,6);}finally{await app.close();}
+});
+
+test('live trace and logger toggles change the existing writer without restart',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-live-logger-')),d=new ServerDiagnostics({directory,enabled:false});t.after(async()=>{await d.close();await rm(directory,{recursive:true,force:true});});
+ await d.init();await d.configure({enabled:true,debug:false,traceEnabled:true,level:'info'});
+ d.agentTrace({type:'fixture.first',payload:{prompt:'generated'}},{});d.record('server.started');await d.flush();const count=d.recent().length;assert.ok(count>=2);
+ await d.configure({enabled:true,debug:false,traceEnabled:false,level:'info'});d.agentTrace({type:'fixture.hidden',payload:{}},{});assert.equal(d.recent().length,count);
+ await d.configure({enabled:false,debug:false,traceEnabled:false,level:'info'});d.record('server.started');assert.equal(d.recent().length,count);
+ await d.configure({enabled:true,debug:false,traceEnabled:false,level:'info'});d.record('server.started');await d.flush();assert.equal(d.recent().length,count+1);assert.equal(d.snapshot().writeFailures,0);
+});

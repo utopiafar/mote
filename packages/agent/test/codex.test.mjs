@@ -24,12 +24,12 @@ async function fake(t,mode='answer'){
   const root=await setup(t),bin=join(root,'fake-codex');
   await writeFile(bin,`#!${process.execPath}
 import readline from 'node:readline';
-import {writeFileSync} from 'node:fs';
+import {writeFileSync,appendFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(join(root,'runtime-home'))},process.env.CODEX_HOME);
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 const mode=${JSON.stringify(mode)};
 readline.createInterface({input:process.stdin}).on('line',line=>{
- const m=JSON.parse(line);
+ const m=JSON.parse(line);appendFileSync(${JSON.stringify(join(root,'rpc.ndjson'))},JSON.stringify(m)+'\\n');
  if(m.method==='initialize')send({id:m.id,result:{}});
  else if(m.method==='account/read')send({id:m.id,result:{account:{type:'apiKey'}}});
  else if(m.method==='thread/start'){
@@ -108,4 +108,21 @@ process.stdin.pipe(child.stdin);child.stdout.on('data',b=>{appendFileSync(${JSON
   let result;try{result=await agent.query({question:'Read generated records through timeline and evidence.'});}catch(error){t.diagnostic((await readFile(transcript,'utf8')).slice(-12000));throw error;}
   assert.equal(result.answer,'Generated response [synthetic-codex-record]');assert.equal(requests.length,3);assert.deepEqual(result.trace.map(t=>t.tool),['timeline','evidence']);
   assert.deepEqual(requests[0].tools.map(tool=>tool.name).sort(),[...codexContextTools.map(tool=>tool.name),'update_plan'].sort());
+});
+
+test('host output validation repairs within the same Codex thread and remains bounded',async t=>{
+ const root=await fake(t),events=[];let checked=0;
+ const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ const answer=await agent.query({question:'Generated quote check',onTrace:e=>events.push(e),validateOutput:result=>{checked++;assert.equal(result.citations[0].id,record.id);return checked===1?{code:'quote_offset_mismatch',feedback:'Candidate 0 span 0: omit offset and copy the exact original quote.'}:undefined;}});
+ assert.equal(checked,2);assert.equal(answer.citations[0].id,record.id);
+ const rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(line=>JSON.parse(line));assert.equal(rpc.filter(m=>m.method==='thread/start').length,1);assert.equal(rpc.filter(m=>m.method==='turn/start').length,2);
+ const repair=events.find(e=>e.type==='model.started'&&e.payload?.repair);assert.match(repair.payload.prompt,/quote_offset_mismatch/);
+ assert.equal(new Set(events.filter(e=>e.runId).map(e=>e.runId)).size,1);
+ checked=0;await assert.rejects(agent.query({question:'Generated rejected quote',validateOutput:()=>{checked++;return {code:'quote_not_found',feedback:'Use exact supplied evidence.'};}}),e=>e.reason==='host_validation');assert.equal(checked,2);
+});
+
+test('Codex deadline removes a waiting model admission before a turn starts',async t=>{
+ await fake(t);let started=false,aborted=false;
+ const session=new CodexSession({model:'fixture',timeoutMs:2000,runModel:(_task,signal)=>new Promise((_resolve,reject)=>{started=true;const stop=()=>{aborted=true;reject(signal.reason);};if(signal.aborted)stop();else signal.addEventListener('abort',stop,{once:true});})},async()=>({}));
+ try{await session.start('Generated queue fixture',[]);await assert.rejects(session.run('Generated'),AgentTimeoutError);assert.equal(started,true);assert.equal(aborted,true);}finally{await session.close();}
 });

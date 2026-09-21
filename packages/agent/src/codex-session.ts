@@ -2,7 +2,7 @@ import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {mkdtemp,mkdir,symlink,rm,writeFile,access} from 'node:fs/promises';
 import {tmpdir,homedir} from 'node:os';
 import {join,resolve} from 'node:path';
-import {AgentNotConfiguredError,AgentProviderError,AgentTimeoutError,type AgentOptions} from './types.js';
+import {AgentNotConfiguredError,AgentProviderError,AgentTimeoutError,type AgentOptions,type AgentTraceEvent} from './types.js';
 
 export type CodexTool={type:'function';name:string;description:string;inputSchema:unknown};
 type Rpc={id?:number|string;method?:string;params?:any;result?:any;error?:unknown};
@@ -20,6 +20,7 @@ export class CodexSession {
   private requests=new Map<number,Pending>();
   private turn?:Pending;
   private failure?:Error;
+  private modelAdmission=new AbortController();
   private ending=false;
   private closed?:Promise<void>;
   private exited?:Promise<void>;
@@ -29,7 +30,7 @@ export class CodexSession {
   private bytes=0;
   private toolQueue=Promise.resolve();
   private timer?:ReturnType<typeof setTimeout>;
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'agentTimeoutMs'|'timeoutMs'|'codex'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>){ }
+  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'agentTimeoutMs'|'timeoutMs'|'codex'|'runModel'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void){ }
 
   async start(instructions:string,tools:CodexTool[],workspace?:string):Promise<void>{
     if(this.initializing)throw new AgentProviderError();
@@ -90,6 +91,7 @@ export class CodexSession {
     return new Promise((resolve,reject)=>{const id=++this.sequence;this.requests.set(id,{resolve,reject});try{this.send({id,method,params});}catch(error){this.requests.delete(id);reject(error);}});
   }
   private fail(error:Error){
+    this.modelAdmission.abort(error);
     if(this.failure)return;this.failure=error;
     for(const pending of this.requests.values())pending.reject(error);this.requests.clear();this.turn?.reject(error);this.turn=undefined;
     if(this.child&&!this.ending)this.child.kill('SIGTERM');
@@ -103,9 +105,23 @@ export class CodexSession {
       try{this.dispatch(JSON.parse(line));}catch{this.fail(new AgentProviderError());return;}
     }
   }
+  private emit(event:AgentTraceEvent){try{this.observe?.(event);}catch{}}
+  private deltaText=new Map<string,string>();
+  private deltaTimer?:ReturnType<typeof setTimeout>;
+  private flushDeltas(){if(this.deltaTimer)clearTimeout(this.deltaTimer);this.deltaTimer=undefined;for(const [type,text] of this.deltaText)this.emit({type:'codex.'+type,stage:'model',payload:{text}});this.deltaText.clear();}
   private dispatch(message:Rpc){
+    const method=message.method??'',p=message.params;
+    if(p?.threadId&&this.threadId&&p.threadId!==this.threadId)return;
+    if(['item/agentMessage/delta','item/reasoning/summaryTextDelta','item/reasoning/textDelta'].includes(method)&&typeof p?.delta==='string'){
+      this.deltaText.set(method,(this.deltaText.get(method)??'')+p.delta);
+      if((this.deltaText.get(method)?.length??0)>=4096)this.flushDeltas();
+      else this.deltaTimer??=setTimeout(()=>this.flushDeltas(),1000);
+    }else if(['turn/started','turn/completed','item/started','item/completed','thread/tokenUsage/updated','error'].includes(method)){
+      this.flushDeltas();this.emit({type:'codex.'+method,stage:'model',payload:{itemType:p?.item?.type,itemId:p?.item?.id,turnId:p?.turn?.id,status:p?.turn?.status,willRetry:p?.willRetry,errorCode:p?.error?.codexErrorInfo??p?.turn?.error?.codexErrorInfo,usage:p?.tokenUsage}});
+    }
+
     if(message.method==='configWarning'){this.fail(new AgentProviderError());return;}
-    if(message.id!==undefined&&!message.method){const pending=this.requests.get(Number(message.id));if(!pending)return;this.requests.delete(Number(message.id));if(message.error)pending.reject(new AgentProviderError());else pending.resolve(message.result);return;}
+    if(message.id!==undefined&&!message.method){const pending=this.requests.get(Number(message.id));if(!pending)return;this.requests.delete(Number(message.id));if(message.error){this.emit({type:'codex.rpc.failed',stage:'model',payload:{requestId:message.id,code:(message.error as {code?:number}).code}});pending.reject(new AgentProviderError());}else pending.resolve(message.result);return;}
     if(message.id!==undefined&&message.method){
       if(message.method!=='item/tool/call'){this.send({id:message.id,error:{code:-32601,message:'Mote does not allow this operation'}});this.fail(new AgentProviderError());return;}
       const args=message.params;
@@ -128,7 +144,8 @@ export class CodexSession {
       else pending?.resolve([...this.messages.values()].at(-1)??'');
     }
   }
-  async run(prompt:string,outputSchema?:unknown):Promise<string>{
+  run(prompt:string,outputSchema?:unknown):Promise<string>{return (this.options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>this.runTurn(prompt,outputSchema),this.modelAdmission.signal);}
+  private async runTurn(prompt:string,outputSchema?:unknown):Promise<string>{
     if(this.failure)throw this.failure;if(this.turn||!this.threadId||this.ending)throw new AgentProviderError();
     this.messages.clear();
     const completed=new Promise<string>((resolve,reject)=>{this.turn={resolve,reject};});
@@ -140,7 +157,7 @@ export class CodexSession {
   }
   close():Promise<void>{return this.closed??=this.cleanup();}
   private async cleanup(){
-    this.ending=true;if(this.timer)clearTimeout(this.timer);this.fail(new AgentProviderError());
+    this.flushDeltas();this.ending=true;if(this.timer)clearTimeout(this.timer);this.fail(new AgentProviderError());
     // A close during filesystem setup must wait until setup observes ending.
     await this.initializing?.catch(()=>{});
     if(this.child){this.child.stdin.end();this.child.kill('SIGTERM');const timer=setTimeout(()=>this.child?.kill('SIGKILL'),1000);try{await this.exited;}finally{clearTimeout(timer);}}

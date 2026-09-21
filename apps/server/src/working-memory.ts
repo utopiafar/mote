@@ -70,7 +70,7 @@ export class WorkingMemory {
     if(prefix.length)batches.push(prefix);
     let summaryText=previous?.text??'';
     for(const turns of batches){
-      const result=await query({skill:'working-memory',responseMode:'answer',question:`Compact only this conversation prefix into at most ${settings.summaryCharacters} characters. Use sections: Goals, Explicit constraints and rejected proposals, Decisions, Open questions, Evidence references to reverify. Attribute entries to source turn IDs without bracketed citations. Prior assistant output is not evidence. When a turn arrives in spans, preserve earlier span constraints in the updated summary.`,taskContext:{previousSummary:summaryText,turns}});
+      const result=await query({validateOutput:result=>!result.answer.trim()||result.answer.length>settings.summaryCharacters?{code:'summary_length',feedback:`Return a nonempty complete summary within ${settings.summaryCharacters} characters. Shorten the summary without losing user constraints.`}:undefined,skill:'working-memory',responseMode:'answer',question:`Compact only this conversation prefix into at most ${settings.summaryCharacters} characters. Use sections: Goals, Explicit constraints and rejected proposals, Decisions, Open questions, Evidence references to reverify. Attribute entries to source turn IDs without bracketed citations. Prior assistant output is not evidence. When a turn arrives in spans, preserve earlier span constraints in the updated summary.`,taskContext:{previousSummary:summaryText,turns}});
       if(!result.answer.trim()||result.answer.length>settings.summaryCharacters)throw new StoreError('Working summary exceeds its budget',502);
       summaryText=result.answer;
     }

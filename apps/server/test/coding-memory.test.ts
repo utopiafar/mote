@@ -44,9 +44,9 @@ test('host addresses unique exact coding quotes only inside authorized ranges, w
  const claim={title:'Quoted lesson',statement:`A bounded observation [${ack.id}]`,uncertainty:'Fixture only',evidenceIds:[ack.id],coding:{kind:'pitfall',scope:'session',applicability:'This fixture',validation:'observed'}};
  const extract=(quote:string,offset?:number,ranges?:{id:string;offset:number;length:number}[])=>memories.extract({...empty,citations:[{id:ack.id,capturedAt:'2026-09-15T01:00:00Z',appName:'Fixture',excerpt:text}],answer:JSON.stringify({memories:[{...claim,evidence:[{id:ack.id,quote,offset}]}]})},'fixture',{profile:'coding',evidenceRanges:ranges});
  assert.equal(extract('unique\\noutput').items[0].evidence[0].offset,text.indexOf('unique'));
- assert.throws(()=>extract('repeat'),/unique authorized/);assert.throws(()=>extract('unique\\noutput',0),/unique authorized/);
- assert.throws(()=>extract('unique\noutput'),/unique authorized/);
- assert.throws(()=>extract('unique\\noutput',undefined,[{id:ack.id,offset:0,length:3}]),/unique authorized/);
+ assert.throws(()=>extract('repeat'),{code:'quote_ambiguous'});assert.throws(()=>extract('unique\\noutput',0),{code:'quote_offset_mismatch'});
+ assert.throws(()=>extract('unique\noutput'),{code:'quote_not_found'});
+ assert.throws(()=>extract('unique\\noutput',undefined,[{id:ack.id,offset:0,length:3}]),{code:'quote_range'});
  const at=text.lastIndexOf('repeat');assert.equal(extract('repeat',undefined,[{id:ack.id,offset:at,length:6}]).items[0].evidence[0].offset,at);
 });
 test('coding uploads share durable interval AND increment admission; legacy queued originals and replay remain safe',async t=>{

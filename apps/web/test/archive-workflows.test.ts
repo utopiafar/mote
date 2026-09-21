@@ -59,3 +59,10 @@ test('document evidence retains original metadata and authenticated download con
   assert.match(html,/&lt;script&gt;fixture&lt;\/script&gt;/);assert.doesNotMatch(html,/fixture-secret-token/);
   assert.doesNotMatch(html,/href="\/api\/files/);
 });
+
+test('memory status exposes admission waits, idle review, exact rejection and batch-boundary controls',()=>{
+ const html=renderToStaticMarkup(React.createElement(MemoryProgress,{job:{...job,runningBatches:1,pendingBatches:2,batches:[{id:'batch',index:1,status:'running',attempts:1,memoryIds:[],phase:'review',stage:'等待模型执行名额',startedAt:'2020-01-01T00:00:00Z',lastActivityAt:'2020-01-01T00:00:00Z',validationFailures:[{at:'2020-01-01T00:00:00Z',code:'quote_offset_mismatch',phase:'review',attempt:1,details:{candidateIndex:0,spanIndex:1}}]}]},onAction:()=>{}}));
+ for(const text of ['执行中 1 批','等待 2 批','独立审核','等待模型执行名额','较长时间未收到新活动','quote_offset_mismatch','当前批次结束后暂停','取消剩余批次'])assert.ok(html.includes(text),text);
+ const paused=renderToStaticMarkup(React.createElement(MemoryProgress,{job:{...job,status:'paused'},onAction:()=>{}}));assert.match(paused,/继续整理/);
+ const completed=renderToStaticMarkup(React.createElement(MemoryProgress,{job:{...job,status:'completed',memoryIds:[]}}));assert.match(completed,/本次没有发现需要新增的记忆/);
+});

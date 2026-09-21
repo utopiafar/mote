@@ -27,7 +27,7 @@ export class QueryRuns {
     const hash=createHash('sha256').update(JSON.stringify(input)).digest('hex');
     const existing=this.store.db.prepare('SELECT request_hash FROM query_runs WHERE id=?').get(id);
     if(existing){if(existing.request_hash!==hash)throw new StoreError('Run ID belongs to a different request',409);return this.get(id);}
-    if(this.pending.size>=2)throw new StoreError('Two conversations are already running',429);
+    if(this.pending.size>=1000)throw new StoreError('Conversation queue is full',429);
     const at=new Date().toISOString();const run:QueryRun={evidenceRevision:this.store.deletionRevision(),id,status:'running',createdAt:at,updatedAt:at,events:[],execution:{status:'running',attempts:1,allowedActions:['cancel']},...((input as {conversationId?:string}).conversationId?{conversationId:(input as {conversationId:string}).conversationId}:{})};
     this.store.reserveMetadata(32768);
     this.store.db.prepare('INSERT INTO query_runs VALUES(?,?,?)').run(id,hash,JSON.stringify(run));
