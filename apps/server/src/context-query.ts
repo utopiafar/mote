@@ -9,6 +9,7 @@ import {StoreError,type Range} from './store.js';
 export type ContextQueryInput = Range & {
   query?:string;
   projectKey?:string;
+  repositoryKey?:string;
   provider?:'claude'|'codex'|'kimi';
   sessionId?:string;
   cursor?:string;
@@ -28,6 +29,9 @@ export type ContextOrigin = {
   provider?:'claude'|'codex'|'kimi';
   sessionId?:string;
   projectKey?:string;
+  repositoryKey?:string;
+  projectName?:string;
+  branch?:string;
 };
 
 export type ContextCard = {
@@ -43,7 +47,7 @@ export type ContextCard = {
   evidenceRefs:string[];
   status?:string;
   applicability?:string;
-  expansion?:{kind:'search';scope:Pick<ContextQueryInput,'sourceId'|'source'|'deviceId'|'projectKey'|'provider'|'sessionId'|'after'|'before'>;refs:string[]};
+  expansion?:{kind:'search';scope:Pick<ContextQueryInput,'sourceId'|'source'|'deviceId'|'projectKey'|'repositoryKey'|'provider'|'sessionId'|'after'|'before'>;refs:string[]};
 };
 
 export type ContextCoverage = {
@@ -92,7 +96,7 @@ export type ContextBundle = {
   truncated:boolean;
 };
 
-type CodingScope={provider:'claude'|'codex'|'kimi';sessionId:string;projectKey:string};
+type CodingScope={provider:'claude'|'codex'|'kimi';sessionId:string;projectKey:string;repositoryKey?:string;projectName?:string;branch?:string};
 type Cursor={kind:'browse'|'search';hash:string;inner?:string|null};
 const position=(r:CaptureRecord)=>Buffer.from(JSON.stringify({t:new Date(sourceContentTime(r)).toISOString(),id:r.id})).toString('base64url');
 
@@ -104,7 +108,7 @@ const MAX_RESPONSE_CHARACTERS=16000;
 
 function codingScope(record:CaptureRecord):CodingScope|undefined {
   const value=record.provenance?.document?.coding;
-  return value?{provider:value.provider,sessionId:value.sessionId,projectKey:value.projectKey}:undefined;
+  return value?{provider:value.provider,sessionId:value.sessionId,projectKey:value.projectKey,...(value.repositoryKey?{repositoryKey:value.repositoryKey}:{}),...(value.projectName?{projectName:value.projectName}:{}),...(value.branch?{branch:value.branch}:{})}:undefined;
 }
 
 function hashQuery(value:unknown){return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,24);}
@@ -149,7 +153,7 @@ function recordOrigin(record:CaptureRecord):ContextOrigin {
 function matches(record:CaptureRecord,args:ContextQueryInput,requireText=false){
   const scope=codingScope(record),p=record.provenance;
   if(requireText&&args.query){
-    const haystack=lower([searchableText(record),scope?.projectKey,scope?.sessionId,scope?.provider].filter(Boolean).join('\n'));
+    const haystack=lower([searchableText(record),scope?.projectKey,scope?.projectName,scope?.repositoryKey,scope?.sessionId,scope?.provider].filter(Boolean).join('\n'));
     for(const term of args.query.trim().split(/\s+/u).filter(Boolean).slice(0,12))if(!haystack.includes(lower(term)))return false;
   }
   if(p?.deleted)return false;
@@ -201,13 +205,13 @@ export class ContextQuery {
     const result:ContextPage={items,coverage:pageCoverage(records.scanned,0,0,[],this.store.stats() as {lastCaptureAt?:string|null},null,false),nextCursor:null,truncated:false};
     for(const record of records.items){
       if(!matches(record,args,mode==='browse'&&Boolean(args.query))){consumed=record;continue;}
-      const scope=codingScope(record),key=scope?`project:${scope.projectKey}`:`source:${record.provenance?.sourceId??record.source}`;
+      const scope=codingScope(record),key=scope?`project:${hashQuery([record.provenance?.sourceId,record.deviceId,scope.provider,scope.projectKey])}`:`source:${record.provenance?.sourceId??record.source}`;
       // Collection references are navigation objects, never unreadable evidence IDs.
       if(mode==='browse'&&groups.has(key)){consumed=record;continue;}
       if(items.length>=args.limit){stopped=true;break;}
       const item=card(record,args.query);
       if(mode==='browse'){
-        Object.assign(item,{ref:`collection:${hashQuery([key,record.id])}`,kind:scope?'project-candidate':'source-collection',title:scope?.projectKey??record.provenance?.sourceId??record.source,snippet:'Related records; this is a query view, not a canonical project identity.',expansion:{kind:'search',scope:{...(scope?{projectKey:scope.projectKey}:record.provenance?.sourceId?{sourceId:record.provenance.sourceId}:{source:record.source}),...(raw.deviceId?{deviceId:raw.deviceId}:{}),...(raw.after?{after:raw.after}:{}),...(raw.before?{before:raw.before}:{})},refs:[item.ref]}});
+        Object.assign(item,{ref:`collection:${hashQuery([key,record.id])}`,kind:scope?'project-candidate':'source-collection',title:scope?.projectName??scope?.projectKey??record.provenance?.sourceId??record.source,snippet:'Related records; this is a query view, not a canonical project identity.',expansion:{kind:'search',scope:{...(scope?{sourceId:record.provenance?.sourceId,deviceId:record.deviceId,provider:scope.provider,projectKey:scope.projectKey}:record.provenance?.sourceId?{sourceId:record.provenance.sourceId}:{source:record.source}),...(raw.deviceId?{deviceId:raw.deviceId}:{}),...(raw.repositoryKey?{repositoryKey:raw.repositoryKey}:{}),...(raw.after?{after:raw.after}:{}),...(raw.before?{before:raw.before}:{})},refs:[item.ref]}});
       }
       const previous=consumed;consumed=record;items.push(item);result.nextCursor=makeCursor();result.coverage.recordsReturned=items.length;
       if(JSON.stringify(result).length>max-16){
@@ -296,5 +300,5 @@ export class ContextQuery {
 
 function cardFromMemory(memory:Memory):ContextCard {
   const scope=memory.scopeRefs?.[0],capturedAt=memory.createdAt;
-  return {ref:`memory:${memory.id}`,id:memory.id,kind:'memory',title:memory.title,snippet:memory.statement.slice(0,DEFAULT_SNIPPET),matchReasons:['published memory','evidence-linked'],origin:{source:'memory',deviceId:scope?.projectKey??'memory',appName:'Mote memory',capturedAt,receivedAt:capturedAt,...(scope??{})},evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope};
+  return {ref:`memory:${memory.id}`,id:memory.id,kind:'memory',title:memory.title,snippet:memory.statement.slice(0,DEFAULT_SNIPPET),matchReasons:['published memory','evidence-linked'],origin:{source:'memory',deviceId:scope?.deviceId??'memory',appName:'Mote memory',capturedAt,receivedAt:capturedAt,...(scope??{})},evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope};
 }

@@ -68,3 +68,5 @@ python3 apps/android/scripts/run-complex-fixtures.py --connection /private/fixtu
 python3 scripts/benchmark-web-bundle.py --baseline 3561947 --out /tmp/mote-web-comparison.json
 node_modules/.bin/electron scripts/benchmark-web-startup.cjs --comparison /tmp/mote-web-comparison.json --connection /private/fixture-connection.json --out /tmp/mote-render-comparison.json --generated-fixture
 ```
+
+编码身份补充：以来源、设备、provider、项目路径身份和真实 session 隔离提取批次。目录卡片保留每台设备的候选项目；显式 Git metadata 可产生剔除凭据的 repositoryKey，用于查询跨设备候选，不能自动扩大 Memory 适用范围。相同项目名而无 Git 信息时不产生统一身份。23 项定向测试通过；随后全量 npm test 通过。

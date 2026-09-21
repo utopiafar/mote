@@ -24,7 +24,7 @@ test('coding candidates require exact original quotes, typed applicability and h
  const {sources,memories}=fixture(t),ack=await sources.upsert('coding',item('a')),text=item('a').text;
  const claim={title:'Transaction boundary',statement:`Rollback was verified [${ack.id}]`,uncertainty:'Only the recorded test was checked',evidenceIds:[ack.id],evidence:[{id:ack.id,offset:0,quote:text}],coding:{kind:'pitfall',scope:'project',applicability:'When writes must commit together',validation:'tested'}};
  const result={...empty,answer:JSON.stringify({memories:[claim]}),citations:[{id:ack.id,capturedAt:'2026-09-15T01:00:00Z',appName:'Generated',excerpt:text}]};
- const saved=memories.extract(result,'fixture',{profile:'coding'}).items[0];assert.equal(saved.domain,'coding');assert.equal(saved.status,'proposed');assert.deepEqual(saved.scopeRefs,[{provider:'codex',sessionId:'s1',projectKey:'project-a'}]);
+ const saved=memories.extract(result,'fixture',{profile:'coding'}).items[0];assert.equal(saved.domain,'coding');assert.equal(saved.status,'proposed');assert.deepEqual(saved.scopeRefs,[{sourceId:'coding',deviceId:'fixture',provider:'codex',sessionId:'s1',projectKey:'project-a'}]);
  assert.throws(()=>memories.extract({...result,answer:JSON.stringify({memories:[{...claim,coding:{...claim.coding,scope:'shared'}}]})},'fixture',{profile:'coding'}),/Only principles/);
  assert.throws(()=>memories.extract({...result,answer:JSON.stringify({memories:[{...claim,evidence:undefined}]})},'fixture',{profile:'coding'}),/require/);
 });
@@ -82,7 +82,17 @@ test('consolidation retains coding contracts and checkpoints each domain across 
  now=24*3600000;await lifecycle.tick();assert.deepEqual(calls,['personal','personal','coding']);assert.equal(memories.page({tier:'consolidated'}).items.length,1);
  failCoding=false;now+=121000;await lifecycle.tick();assert.deepEqual(calls,['personal','personal','coding','coding','coding'],'completed personal generation is not repeated');
  const consolidated=memories.page({tier:'consolidated',level:'detail'}).items;assert.equal(consolidated.length,2);
- const code=consolidated.find(m=>m.domain==='coding')!;assert.equal(code.coding?.scope,'project');assert.deepEqual(code.scopeRefs,[{provider:'codex',sessionId:'s1',projectKey:'project-a'}]);assert.deepEqual(memories.get(code.id).relatedMemoryIds,[originals[1].id]);
+ const code=consolidated.find(m=>m.domain==='coding')!;assert.equal(code.coding?.scope,'project');assert.deepEqual(code.scopeRefs,[{sourceId:'coding',deviceId:'fixture',provider:'codex',sessionId:'s1',projectKey:'project-a'}]);assert.deepEqual(memories.get(code.id).relatedMemoryIds,[originals[1].id]);
  store.delete(coding);assert.throws(()=>memories.get(code.id));assert.equal(memories.page({tier:'consolidated'}).items.length,1);
  await lifecycle.close();await pipeline.close();
+});
+
+test('identical project and session labels on different sources and devices never share extraction batches',async t=>{
+ const {store,sources,memories}=fixture(t);
+ for(const [id,deviceId] of [['other-source','fixture'],['other-device','fixture-2']])sources.register({id,name:id,kind:'coding-agent',deviceId,platform:'macos'});
+ const evidenceIds=[];for(const source of ['coding','other-source','other-device'])evidenceIds.push((await sources.upsert(source,item(source))).id);
+ const calls:MemoryPipelineQuery[]=[];
+ const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async input=>{calls.push(input);return empty;}});
+ const job=pipeline.create({evidenceIds});assert.equal(job.totalBatches,3);await pipeline.run(job.id);
+ assert.equal(calls.length,3);assert.ok(calls.every(call=>call.evidenceIds.length===1));await pipeline.close();
 });

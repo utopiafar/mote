@@ -24,7 +24,7 @@ import {ContentEncryption,replaceContentFile} from './content-encryption.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
-export type Range = {sourceId?:string;projectKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
+export type Range = {sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
 type Row = {id:string;json:string;received_at:string;blob_hash:string|null;mime:string|null;index_status:CaptureRecord['indexingStatus'];summary:string|null};
 // Media evidence is searchable without rewriting the original screenshot OCR.
@@ -68,6 +68,7 @@ export class Store {
       CREATE INDEX IF NOT EXISTS captures_app ON captures(json_extract(json,'$.appId'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_source ON captures(json_extract(json,'$.source'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_collection ON captures(COALESCE(json_extract(json,'$.privacy.collection'),'content'),captured_at DESC);
+      CREATE INDEX IF NOT EXISTS captures_coding_repository ON captures(json_extract(json,'$.provenance.document.coding.repositoryKey'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_coding_project ON captures(json_extract(json,'$.provenance.document.coding.projectKey'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_coding_session ON captures(json_extract(json,'$.provenance.document.coding.sessionId'),captured_at DESC);
       CREATE INDEX IF NOT EXISTS captures_coding_provider ON captures(json_extract(json,'$.provenance.document.coding.provider'),captured_at DESC);
@@ -161,7 +162,7 @@ export class Store {
     if(range.after) {clauses.push('context_end >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push('context_at < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
-    for(const [key,path] of [['sourceId','sourceId'],['projectKey','document.coding.projectKey'],['provider','document.coding.provider'],['sessionId','document.coding.sessionId']] as const)if(range[key]){clauses.push("json_extract(json,'$.provenance."+path+"') = ?");values.push(range[key]!);}
+    for(const [key,path] of [['sourceId','sourceId'],['projectKey','document.coding.projectKey'],['repositoryKey','document.coding.repositoryKey'],['provider','document.coding.provider'],['sessionId','document.coding.sessionId']] as const)if(range[key]){clauses.push("json_extract(json,'$.provenance."+path+"') = ?");values.push(range[key]!);}
 
     if(range.appId!==undefined) {
       clauses.push("((json_extract(json,'$.source') != 'media' AND json_extract(json,'$.appId') = ?) OR (json_extract(json,'$.source') = 'media' AND EXISTS (SELECT 1 FROM json_each(captures.json,'$.metadata.media.sessions') AS session WHERE json_extract(session.value,'$.appId') = ?)))");

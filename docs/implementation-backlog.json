@@ -63,12 +63,14 @@
       "title": "Coding 身份关联",
       "change": "用项目名/git remote 发现候选；保留 provider、设备、分支和真实 session 身份",
       "acceptance": "不同同名项目不串用记忆；同仓库跨设备可关联；没有 git 时不伪造统一身份",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
+        "apps/desktop/src/coding-project.ts",
+        "apps/desktop/test/coding-agents.test.ts",
         "apps/server/test/coding-memory.test.ts",
         "apps/server/test/context-query.test.ts"
       ],
-      "remaining": "复合 session 范围已修复；跨设备仓库候选关联未统一。"
+      "remaining": ""
     },
     {
       "id": "SRC-03",

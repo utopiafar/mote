@@ -75,7 +75,7 @@ export class MemoryStore {
     return file.success&&file.data.chunkId===id&&file.data.captureId!==id;
   }
   dependencyIds(id:string):string[]{const record=this.readEvidence([id])[0],file=fileEvidenceSchema.safeParse(record?.fileEvidence);return file.success?[id,file.data.captureId]:[id];}
-  page(args:{sourceId?:string;projectKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory'|'legacy';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
+  page(args:{sourceId?:string;projectKey?:string;repositoryKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory'|'legacy';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
     const conditions:string[]=[],values:(string|number)[]=[],limit=Math.max(1,Math.min(args.limit??30,100));
     if(!args.includeStale)conditions.push("status!='stale'");
     for(const key of ['tier','kind','status','layer','id'] as const)if(args[key]){conditions.push(`${key}=?`);values.push(args[key]!);}
@@ -94,7 +94,7 @@ export class MemoryStore {
       if(args.before){mismatch.push('at>=?');values.push(new Date(args.before).toISOString());}
       conditions.push(`EXISTS(SELECT 1 FROM memory_scopes WHERE memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_scopes WHERE memory_id=memory_catalog.id AND (${mismatch.join(' OR ')}))`);
     }
-    const codingFilters=(['projectKey','provider','sessionId'] as const).filter(key=>args[key]);
+    const codingFilters=(['projectKey','repositoryKey','provider','sessionId'] as const).filter(key=>args[key]);
     if(codingFilters.length){
       conditions.push("json_array_length(json,'$.scopeRefs')>0");
       conditions.push(`NOT EXISTS(SELECT 1 FROM json_each(memory_catalog.json,'$.scopeRefs') scope WHERE ${codingFilters.map(key=>`coalesce(json_extract(scope.value,'$.${key}'),'')!=?`).join(' OR ')})`);
@@ -142,7 +142,7 @@ export class MemoryStore {
         if(options.profile==='coding'&&(!m.coding||!m.evidence||[...records.values()].some(r=>!r.provenance?.document?.coding)))throw new MemoryOutputValidationError('schema','Coding memories require typed original evidence, quotes and applicability');
         if(options.profile!=='coding'&&m.coding)throw new MemoryOutputValidationError('schema','Coding output requires the coding extraction profile');
         if(m.coding?.scope==='shared'&&!['principle','preference'].includes(m.coding.kind))throw new MemoryOutputValidationError('schema','Only principles and preferences can be shared');
-        const scopeRefs=[...new Map([...records.values()].flatMap(r=>{const c=r.provenance?.document?.coding;return c?[[JSON.stringify([c.provider,c.sessionId,c.projectKey]),{provider:c.provider,sessionId:c.sessionId,projectKey:c.projectKey}] as const]:[]})).values()];
+        const scopeRefs=[...new Map([...records.values()].flatMap(r=>{const c=r.provenance?.document?.coding;return c?[[JSON.stringify([r.provenance?.sourceId,r.deviceId,c.provider,c.sessionId,c.projectKey,c.branch]),{sourceId:r.provenance?.sourceId,deviceId:r.deviceId,provider:c.provider,sessionId:c.sessionId,projectKey:c.projectKey,...(c.repositoryKey?{repositoryKey:c.repositoryKey}:{}),...(c.branch?{branch:c.branch}:{})}] as const]:[]})).values()];
         const evidence:MemoryEvidence[]=[];
         if(m.evidence){
           for(const [spanIndex,span] of m.evidence.entries()){

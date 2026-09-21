@@ -23,7 +23,7 @@ export const memoryAdmissionSchema=z.object({
 }).strict();
 export const memorySchema=z.object({
   domain:z.enum(['personal','coding']).optional(),coding:codingMemorySchema.optional(),
-  scopeRefs:z.array(z.object({provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict()).max(30).optional(),
+  scopeRefs:z.array(z.object({sourceId:z.string().max(128).optional(),deviceId:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict()).max(30).optional(),
   admission:memoryAdmissionSchema.optional(),reviewRunId:z.string().max(200).optional(),
   id:z.string().uuid(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),relatedMemoryIds:z.array(z.string().uuid()).max(50).optional(),validFrom:timestamp.optional(),validUntil:timestamp.optional(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),
   evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(memoryEvidenceSchema).max(100).optional(),

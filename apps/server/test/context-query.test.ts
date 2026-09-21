@@ -31,7 +31,7 @@ test('unified context query keeps candidate projects explainable and reads exact
   assert.equal(next.items.length,1);assert.equal(next.items[0].id,first);
 
   const browse=query.browse({query:'mote',limit:10});
-  assert.equal(browse.items.length,2,'same projectKey is one query view; a different repository is separate');
+  assert.equal(browse.items.length,3,'candidate views preserve provider/device identities even with a matching project key');
   assert.ok(browse.items.every(item=>item.snippet.includes('not a canonical project identity')),JSON.stringify(browse.items));
   const read=query.read([`capture:${first}`],searched.items[0].locator!.offset,12);
   assert.equal(read.items[0].text,'ANCHOR_REFAC');assert.equal(read.missingRefs.length,0);
@@ -83,4 +83,17 @@ test('same session labels across providers do not merge; collections carry expan
  await coding(store,2,'github:fixture/mote','same','generated','claude');
  assert.equal(query.context({}).recentSessions.length,2);
  const card=query.browse({}).items[0];assert.equal(card.expansion?.kind,'search');assert.ok(query.search(card.expansion!.scope).items.length>0);assert.equal(query.read(card.expansion!.refs).items.length,1);
+});
+
+test('repository candidates span devices while expansion and memories keep exact source identity',async t=>{
+ const {sources,store,query}=await fixture(t),repositoryKey='a'.repeat(64);
+ for(let i=0;i<3;i++){
+  sources.register({id:`source-${i}`,name:'Generated example',kind:'coding-agent',deviceId:`device-${i}`,platform:'import'});
+  await sources.upsert(`source-${i}`,{externalId:'same',revision:'1',observedAt:captured(i),kind:'message',layer:'snapshot',text:'Generated evidence',document:{coding:{version:1,provider:'codex',sessionId:'same',projectKey:'same-path-hash',projectName:'example',...(i<2?{repositoryKey,branch:i?'main':'fixture'}:{}),eventId:'event',role:'user',part:0,parts:1}}});
+ }
+ const candidates=query.browse({query:'example'});assert.equal(candidates.items.length,3);
+ for(const card of candidates.items){const expanded=query.search(card.expansion!.scope);assert.equal(expanded.items.length,1);assert.equal(expanded.items[0].origin.sourceId,card.origin.sourceId);}
+ const related=query.browse({repositoryKey});assert.equal(related.items.length,2);assert.equal(new Set(related.items.map(c=>c.origin.deviceId)).size,2);
+ assert.equal(query.search({repositoryKey,sourceId:'source-2'}).items.length,0);
+ assert.equal(store.list({repositoryKey,limit:1}).items.length,1);
 });
