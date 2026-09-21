@@ -6,7 +6,7 @@ import type {Store,Range} from './store.js';
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const artifactOutput=z.object({kind:z.string().min(1).max(80),text:z.string().max(12000),metadata:z.record(z.unknown()).default({})}).strict();
 export type ArtifactOutput=z.infer<typeof artifactOutput>;
-export type Artifact={id:string;revision:string;kind:string;processor:string;processorVersion:string;configFingerprint:string;generatedAt:string;firstAt:string;lastAt:string;deviceId:string;appId:string;source:string;members:string[];representatives:string[];contentHash:string;metadata:Record<string,unknown>};
+export type Artifact={id:string;revision:string;kind:string;processor:string;processorVersion:string;configFingerprint:string;generatedAt:string;firstAt:string;lastAt:string;deviceId:string;appId:string;source:string;members:string[];representatives:string[];contentHash:string;metadata:Record<string,unknown>;parents?:{id:string;revision:string}[]};
 export function observationKey(record:{id:string;deviceId:string;capturedAt:string;source:string;appId?:string;windowTitle?:string;provenance?:CaptureRecord['provenance']}){
   // Mechanical boundaries, not an assertion that an app/window is one human task.
   // Only screen/UI samples can coalesce. Authored records keep their own identity.
@@ -18,11 +18,8 @@ export class EvidenceArchive {
     const db=store.db;
     db.function('mote_observation_key',{deterministic:true},json=>observationKey(JSON.parse(String(json))));
     if(db.prepare('PRAGMA table_info(context_dirty)').all().length&&!db.prepare('PRAGMA table_info(context_dirty)').all().some(row=>row.name==='error'))db.exec('ALTER TABLE context_dirty ADD COLUMN error TEXT');
+    db.exec('PRAGMA recursive_triggers=ON');
     db.exec(`
-      DROP TRIGGER IF EXISTS context_observation_insert;
-      DROP TRIGGER IF EXISTS context_observation_delete;
-      DROP TRIGGER IF EXISTS context_observation_update;
-      DROP TRIGGER IF EXISTS context_evidence_change;
       CREATE TABLE IF NOT EXISTS context_contents(hash TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS context_observations(id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,group_key TEXT NOT NULL,content_hash TEXT REFERENCES context_contents(hash));
       CREATE INDEX IF NOT EXISTS observations_group ON context_observations(group_key,id);
@@ -56,15 +53,32 @@ export class EvidenceArchive {
       END;
     `);
     if(!db.prepare('PRAGMA table_info(context_dirty)').all().some(row=>row.name==='error'))db.exec('ALTER TABLE context_dirty ADD COLUMN error TEXT');
+    if(!db.prepare('PRAGMA table_info(context_dirty)').all().some(row=>row.name==='changed_at'))db.exec('ALTER TABLE context_dirty ADD COLUMN changed_at INTEGER NOT NULL DEFAULT 0');
+    db.exec(`CREATE TRIGGER IF NOT EXISTS dirty_created AFTER INSERT ON context_dirty BEGIN UPDATE context_dirty SET changed_at=CAST(unixepoch('subsec')*1000 AS INTEGER) WHERE group_key=new.group_key; END;
+      CREATE TRIGGER IF NOT EXISTS dirty_changed AFTER UPDATE OF generation ON context_dirty BEGIN UPDATE context_dirty SET changed_at=CAST(unixepoch('subsec')*1000 AS INTEGER) WHERE group_key=new.group_key; END;
+      CREATE TABLE IF NOT EXISTS artifact_dependencies(artifact_id TEXT NOT NULL REFERENCES context_artifacts(id) ON DELETE CASCADE,parent_id TEXT NOT NULL REFERENCES context_artifacts(id) ON DELETE CASCADE,revision TEXT NOT NULL,PRIMARY KEY(artifact_id,parent_id));
+      CREATE TABLE IF NOT EXISTS memory_artifact_dependencies(memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,artifact_id TEXT NOT NULL REFERENCES context_artifacts(id) ON DELETE CASCADE,PRIMARY KEY(memory_id,artifact_id));
+      CREATE INDEX IF NOT EXISTS memory_artifact_parent ON memory_artifact_dependencies(artifact_id);
+      CREATE TRIGGER IF NOT EXISTS artifact_memory_invalidation BEFORE DELETE ON context_artifacts BEGIN
+        DELETE FROM memory_checkpoints WHERE evidence_id IN (SELECT evidence_id FROM memory_dependencies WHERE memory_id IN (SELECT memory_id FROM memory_artifact_dependencies WHERE artifact_id=old.id));
+        DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_artifact_dependencies WHERE artifact_id=old.id);
+      END;
+      CREATE INDEX IF NOT EXISTS artifact_parent ON artifact_dependencies(parent_id);
+      CREATE TRIGGER IF NOT EXISTS artifact_invalidate_descendants BEFORE DELETE ON context_artifacts BEGIN DELETE FROM context_artifacts WHERE id IN (SELECT artifact_id FROM artifact_dependencies WHERE parent_id=old.id); END;
+      CREATE VIRTUAL TABLE IF NOT EXISTS artifacts_fts USING fts5(id UNINDEXED,text,tokenize='trigram');
+      CREATE TRIGGER IF NOT EXISTS artifacts_search_insert AFTER INSERT ON context_artifacts BEGIN INSERT INTO artifacts_fts(id,text) SELECT new.id,json_extract(json,'$.text') FROM context_contents WHERE hash=new.content_hash; END;
+      CREATE TRIGGER IF NOT EXISTS artifacts_search_delete AFTER DELETE ON context_artifacts BEGIN DELETE FROM artifacts_fts WHERE id=old.id; END;
+      INSERT INTO artifacts_fts SELECT a.id,json_extract(c.json,'$.text') FROM context_artifacts a JOIN context_contents c ON c.hash=a.content_hash WHERE a.id NOT IN (SELECT id FROM artifacts_fts);`);
     if(!db.prepare("SELECT 1 FROM settings WHERE key='evidence-archive-v1'").get())db.exec(`BEGIN IMMEDIATE;
       INSERT OR IGNORE INTO context_observations(id,group_key) SELECT id,mote_observation_key(json) FROM captures;
       INSERT OR IGNORE INTO context_dirty(group_key) SELECT DISTINCT group_key FROM context_observations;
       INSERT INTO settings VALUES('evidence-archive-v1','1'); COMMIT;`);
   }
+  revision(id:string){return this.store.db.prepare('SELECT revision FROM context_artifacts WHERE id=?').get(id)?.revision;}
   fingerprint(id:string){const row=this.store.db.prepare('SELECT fingerprint FROM captures WHERE id=?').get(id);if(!row||!this.store.isCurrentEvidence(id))return null;return hash([row.fingerprint,this.store.db.prepare("SELECT kind,json_extract(json,'$.text') AS text FROM perception_results WHERE capture_id=? AND current=1 ORDER BY kind").all(id)]);}
   /** Incremental, deterministic exact-text reduction. No semantic inference or model calls. */
-  aggregate(limit=32){
-    const db=this.store.db,groups=db.prepare('SELECT group_key,generation FROM context_dirty WHERE error IS NULL LIMIT ?').all(Math.min(100,Math.max(1,limit)));
+  aggregate(limit=32,settledBefore?:number){
+    const db=this.store.db,groups=db.prepare('SELECT group_key,generation FROM context_dirty WHERE error IS NULL AND (? IS NULL OR changed_at<=?) LIMIT ?').all(settledBefore??null,settledBefore??null,Math.min(100,Math.max(1,limit)));
     for(const group of groups){
       // A 5-minute bucket may contain a replay burst: page on identity, bound every artifact.
       const ids=db.prepare('SELECT o.id FROM context_observations o JOIN captures c ON c.id=o.id WHERE o.group_key=? ORDER BY c.captured_at,o.id LIMIT 1001').all(group.group_key);
@@ -107,16 +121,17 @@ export class EvidenceArchive {
     }
     return groups.length;
   }
-  save(id:string,group:string,revision:string,output:ArtifactOutput,inputs:{id:string;fingerprint:string}[],processor:string,version:string,configFingerprint:string,representatives=inputs.map(i=>i.id)){
-    const db=this.store.db,records=this.store.evidence(inputs.map(i=>i.id));
-    if(!records.length||inputs.some(i=>this.fingerprint(i.id)!==i.fingerprint))throw new Error('evidence_changed');
-    const times=records.map(r=>r.capturedAt).sort(),contentHash=hash(output.text);
-    const artifact:Artifact={id,revision,kind:output.kind,processor,processorVersion:version,configFingerprint,generatedAt:new Date().toISOString(),firstAt:times[0],lastAt:times.at(-1)!,deviceId:records.every(r=>r.deviceId===records[0].deviceId)?records[0].deviceId:'',appId:records.every(r=>r.appId===records[0].appId)?records[0].appId:'',source:records.every(r=>r.source===records[0].source)?records[0].source:'',members:inputs.map(i=>i.id),representatives,contentHash,metadata:output.metadata};
+  save(id:string,group:string,revision:string,output:ArtifactOutput,inputs:{id:string;fingerprint:string}[],processor:string,version:string,configFingerprint:string,representatives=inputs.map(i=>i.id),parents:{id:string;revision:string}[]=[]){
+    const db=this.store.db,records=inputs.map(i=>db.prepare("SELECT captured_at AS capturedAt,device_id AS deviceId,json_extract(json,'$.appId') AS appId,json_extract(json,'$.source') AS source FROM captures WHERE id=?").get(i.id)).filter(Boolean) as {capturedAt:string;deviceId:string;appId:string;source:string}[],upstream=parents.map(ref=>this.get(ref.id));
+    if((!records.length&&!parents.length)||parents.some((ref,i)=>upstream[i]?.revision!==ref.revision)||inputs.some(i=>this.fingerprint(i.id)!==i.fingerprint))throw new Error('evidence_changed');
+    const scopeRecords=[...records,...upstream.flatMap(a=>a?[{capturedAt:a.firstAt,deviceId:a.deviceId,appId:a.appId,source:a.source},{capturedAt:a.lastAt,deviceId:a.deviceId,appId:a.appId,source:a.source}]:[])],times=scopeRecords.map(r=>r.capturedAt).sort(),contentHash=hash(output.text);
+    const artifact:Artifact={id,revision,kind:output.kind,processor,processorVersion:version,configFingerprint,generatedAt:new Date().toISOString(),firstAt:times[0],lastAt:times.at(-1)!,deviceId:scopeRecords.every(r=>r.deviceId===scopeRecords[0].deviceId)?scopeRecords[0].deviceId:'',appId:scopeRecords.every(r=>r.appId===scopeRecords[0].appId)?scopeRecords[0].appId:'',source:scopeRecords.every(r=>r.source===scopeRecords[0].source)?scopeRecords[0].source:'',members:inputs.map(i=>i.id),representatives,contentHash,metadata:output.metadata,parents};
     this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(artifact))+Buffer.byteLength(output.text)+4096);
     db.prepare('INSERT OR IGNORE INTO context_contents VALUES(?,?)').run(contentHash,JSON.stringify({text:output.text}));
     db.prepare('DELETE FROM context_artifacts WHERE id=?').run(id);
     db.prepare('INSERT INTO context_artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,group,revision,output.kind,artifact.firstAt,artifact.lastAt,artifact.deviceId,artifact.appId,artifact.source,contentHash,JSON.stringify(artifact));
     const insert=db.prepare('INSERT INTO artifact_inputs VALUES(?,?,?)');for(const input of inputs)insert.run(id,input.id,input.fingerprint);
+    for(const parent of parents)db.prepare('INSERT INTO artifact_dependencies VALUES(?,?,?)').run(id,parent.id,parent.revision);
     db.prepare("INSERT INTO artifact_events(entity,operation) VALUES(?,'ready')").run(id);
     return artifact;
   }
@@ -127,12 +142,12 @@ export class EvidenceArchive {
     // Only fully contained segments are disclosed under a narrowed query scope.
     if(args.after){where.push('a.first_at>=?');values.push(args.after);}if(args.before){where.push('a.last_at<?');values.push(args.before);}
     if(args.collection==='activity')where.push("a.source='activity'");else if(args.collection==='content')where.push("a.source!='activity'");
-    if(args.query)for(const term of args.query.trim().split(/\s+/u).slice(0,12)){where.push("instr(lower(json_extract(c.json,'$.text')),lower(?))>0");values.push(term);}
+    if(args.query)for(const term of args.query.trim().split(/\s+/u).slice(0,12)){if(Array.from(term).length>=3){where.push('a.id IN (SELECT id FROM artifacts_fts WHERE artifacts_fts MATCH ?)');values.push('\"'+term.replaceAll('\"','\"\"')+'\"');}else{where.push("instr(lower(json_extract(c.json,'$.text')),lower(?))>0");values.push(term);}}
     const scopeHash=hash({...args,cursor:undefined});let cursor:{at:string;id:string;scope:string}|undefined;
     if(args.cursor){cursor=z.object({at:z.string(),id:z.string(),scope:z.literal(scopeHash)}).parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));where.push('(a.last_at<? OR (a.last_at=? AND a.id>?))');values.push(cursor.at,cursor.at,cursor.id);}
-    const rows=db.prepare(`SELECT a.id FROM context_artifacts a JOIN context_contents c ON c.hash=a.content_hash WHERE ${where.join(' AND ')} ORDER BY a.last_at DESC,a.id LIMIT ?`).all(...values,Math.min(args.limit??20,100)+1);
+    const rows=db.prepare(`SELECT a.id,a.json,substr(json_extract(c.json,'$.text'),1,?) AS preview,length(json_extract(c.json,'$.text')) AS characters FROM context_artifacts a JOIN context_contents c ON c.hash=a.content_hash WHERE ${where.join(' AND ')} ORDER BY a.last_at DESC,a.id LIMIT ?`).all(args.id?12000:400,...values,Math.min(args.limit??20,100)+1);
     const items:ReturnType<EvidenceArchive['get']>[]=[];let used=0,truncated=false;
-    for(const row of rows){const artifact=this.get(String(row.id))!;const {text,...metadata}=artifact;const {entries:memberDetails,...detailMetadata}=artifact.metadata;const value={...metadata,metadata:detailMetadata,...(!args.id?{members:artifact.members.slice(0,3),representatives:artifact.representatives.slice(0,3),metadata:{observationCount:artifact.members.length,uniqueTexts:artifact.metadata.uniqueTexts,complete:artifact.metadata.complete,characters:artifact.metadata.characters,detail:artifact.id}}:{}),text:text.slice(0,args.id?12000:400),textRange:{offset:0,total:text.length,complete:args.id?true:text.length<=400}};const cost=JSON.stringify(value).length;if(items.length>=Math.min(args.limit??20,100)||used+cost>budget){truncated=true;break;}items.push(value);used+=cost;}
+    for(const row of rows){const artifact={...JSON.parse(String(row.json)) as Artifact,text:String(row.preview)};const {text,...metadata}=artifact;const {entries:memberDetails,...detailMetadata}=artifact.metadata;const value={...metadata,metadata:detailMetadata,...(!args.id?{members:artifact.members.slice(0,3),representatives:artifact.representatives.slice(0,3),metadata:{observationCount:artifact.members.length,uniqueTexts:artifact.metadata.uniqueTexts,complete:artifact.metadata.complete,characters:artifact.metadata.characters,detail:artifact.id}}:{}),text:text.slice(0,args.id?12000:400),textRange:{offset:0,total:Number(row.characters),complete:Number(row.characters)<=text.length}};const cost=JSON.stringify(value).length;if(items.length>=Math.min(args.limit??20,100)||used+cost>budget){truncated=true;break;}items.push(value);used+=cost;}
     const last=items.at(-1);
     return {items,nextCursor:truncated&&last?Buffer.from(JSON.stringify({at:last.lastAt,id:last.id,scope:scopeHash})).toString('base64url'):null,truncated,characters:used,budget,coverage:{pendingGroups:Number(db.prepare('SELECT COUNT(*) AS n FROM context_dirty').get()!.n),blockedGroups:Number(db.prepare('SELECT COUNT(*) AS n FROM context_dirty WHERE error IS NOT NULL').get()!.n),scope:'processed_segments_only',fallback:'search_context',originalsPreserved:true}};
   }

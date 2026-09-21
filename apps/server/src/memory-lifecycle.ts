@@ -81,7 +81,7 @@ export class MemoryLifecycle {
       active:state.active?{id:state.active.id,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){
     if(this.closed)return Promise.resolve();
-    this.store.archive.aggregate(100);
+    // Aggregation is independently scheduled by the maintenance worker.
     for(const extension of this.extensions.values()){
       if(this.running.has(extension.id)||!this.configured())continue;
       // Register ownership before invoking the handler, including synchronous re-entry.

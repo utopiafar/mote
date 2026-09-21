@@ -56,12 +56,15 @@ test('coding uploads share durable interval AND increment admission; legacy queu
  store.db.exec('CREATE TABLE coding_memory_inbox(evidence_id TEXT PRIMARY KEY,group_key TEXT,ready_at INTEGER)');
  store.db.prepare('INSERT INTO coding_memory_inbox VALUES(?,?,?)').run(a.id,'legacy-session',0);
  const lifecycle=new MemoryLifecycle(store,()=>configured,()=>now),files=new FileStore(store,sources),working=new WorkingMemory(store,new Conversations(store));
- registerMemoryExtensions({lifecycle,store,files,memories,pipeline,working,model:()=> 'fixture',query:async()=>empty});
+ registerMemoryExtensions({lifecycle,store,files,memories,pipeline,working,model:()=> 'fixture',query:async()=>empty,semanticArtifacts:async ids=>ids.flatMap(id=>{
+   const segment=store.archive.get(id);if(segment?.kind!=='segment')return [];
+   const out='a'.repeat(32)+id.slice(32);store.archive.save(out,out,out,{kind:'semantic',text:'Generated scoped interpretation',metadata:{evidenceRanges:segment.representatives.map(id=>({id,offset:0,length:store.evidence([id])[0].ocrText.length}))}},[],'fixture','1','fixture',[],[{id,revision:segment.revision}]);return [out];
+ })});
  const settings=lifecycle.settings();for(const key of ['consolidation','working','insights'] as const)settings[key].enabled=false;settings.extraction.minChanges=2;lifecycle.configure(settings);
  now=6*3600000;await lifecycle.tick();assert.equal(calls.length,0,'wait for model');configured=true;await lifecycle.tick();assert.equal(calls.length,0,'wait for increments');
  const before=store.db.prepare('SELECT count(*) n FROM changes').get()!.n;
  await assert.rejects(sources.upsert('coding',item('rollback'),undefined,()=>{throw Error('fixture rollback');}),/fixture rollback/);assert.equal(store.db.prepare('SELECT count(*) n FROM changes').get()!.n,before);
- await sources.upsert('coding',item('b','s2'));now=0;await lifecycle.tick();assert.equal(calls.length,0,'uploads do not bypass the interval');now=6*3600000;await lifecycle.tick();
+ await sources.upsert('coding',item('b','s2'));store.archive.aggregate(100);now=0;await lifecycle.tick();assert.equal(calls.length,0,'uploads do not bypass the interval');now=6*3600000;await lifecycle.tick();
  assert.equal(calls.length,2);assert.ok(calls.some(c=>c.evidenceIds.includes(a.id)));assert.ok(calls.every(c=>c.skill==='coding-memory'));
  await sources.upsert('coding',item('a'));now+=6*3600000;await lifecycle.tick();assert.equal(calls.length,2,'duplicate acknowledgements do not generate work');
  await lifecycle.close();await pipeline.close();

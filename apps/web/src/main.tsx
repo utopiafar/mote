@@ -1370,9 +1370,9 @@ function App() {
     void Promise.allSettled([
       load<Status>("/api/status", value => {api.setAgentTimeout(value.agent.agentTimeoutMs);setStatus(value);}),
       load<{items: Device[]}>("/api/devices", value => setDevices(value.items)),
-      load<Activity>(`/api/activity${queryString(range)}`, setActivity),
-      load<{items: Capture[]}>(`/api/captures${queryString(range, {limit: 4})}`, value => setRecent(value.items)),
-      load<{items: Answer[]}>("/api/insights", value => setInsights(value.items)),
+      ...(["overview", "activity", "timeline"].includes(page) ? [load<Activity>(`/api/activity${queryString(range)}`, setActivity)] : []),
+      ...(page === "overview" ? [load<{items: Capture[]}>(`/api/captures${queryString(range, {limit: 4})}`, value => setRecent(value.items))] : []),
+      ...(page === "overview" ? [load<{items: Answer[]}>("/api/insights", value => setInsights(value.items))] : []),
     ]).then(results => {
       if (!active) return;
       const failure = results.find(result => result.status === "rejected");
@@ -1380,10 +1380,10 @@ function App() {
       setLoading(false);
     });
     return () => { active = false; controller.abort(); };
-  }, [api, verified, range, revision]);
+  }, [api, verified, range, revision, page]);
   useEffect(() => {
     if (!api) return;
-    const timer = setInterval(() => setRevision((value) => value + 1), 30_000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") setRevision((value) => value + 1); }, 30_000);
     return () => clearInterval(timer);
   }, [api, refresh]);
   useEffect(() => {

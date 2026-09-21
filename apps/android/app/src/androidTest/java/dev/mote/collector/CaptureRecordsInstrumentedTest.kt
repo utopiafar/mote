@@ -59,7 +59,7 @@ class CaptureRecordsInstrumentedTest {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
-            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", excludedPackages = "", contentEncryptionEnabled = false, appCollectionRules = AppCollectionRules.LEGACY_DEFAULT))
+            cancel(); settings.save(settings.read().copy(server = "", token = "", syncMode = "manual", uploadedRetentionDays = 0, excludedPackages = "", contentEncryptionEnabled = false, appCollectionRules = AppCollectionRules.LEGACY_DEFAULT))
             test(context, settings, ids)
         } finally {
             settings.enabled = false; cancel(); shell("dumpsys battery reset")
@@ -305,10 +305,12 @@ class CaptureRecordsInstrumentedTest {
                 } else if (length > 0) JSONObject(String(body, Charsets.UTF_8)) else JSONObject()
                 val response: ByteArray
                 var contentType = "application/json"
+                var statusCode = 200
                 if (route.endsWith("/image")) { response = image; contentType = "image/jpeg" }
                 else {
                     val value = when {
                         route == "/api/devices/heartbeat" -> JSONObject().put("ok", true)
+                        route == "/api/capture-browser/updates" -> JSONObject().put("items", JSONArray()).put("nextCursor", 0)
                         method == "POST" && route in setOf("/api/captures/bundle", "/api/captures/batch") -> {
                             val items = json.getJSONArray("captures"); check(items.length() == 1)
                             val capture = items.getJSONObject(0)
@@ -321,15 +323,15 @@ class CaptureRecordsInstrumentedTest {
                             patches.incrementAndGet(); check(original != null); check(json.getString("ocrText") == "Generated PATCH OCR"); result = json
                             JSONObject().put("id", if (wrongPatchAck) "wrong-id" else original!!.getString("id"))
                         }
-                        route == "/api/capture-browser" -> JSONObject().put("items", org.json.JSONArray().put(JSONObject().put("id", original!!.getString("id"))))
-                            .put("totalCount", 1).put("nextCursor", JSONObject.NULL)
-                        method == "GET" && route.startsWith("/api/capture-browser/") -> JSONObject(original!!.toString()).put("ocrText", result!!.getString("ocrText"))
+                        route == "/api/capture-browser" -> JSONObject().put("items", org.json.JSONArray().apply { original?.let { put(JSONObject().put("id", it.getString("id"))) } })
+                            .put("totalCount", if (original == null) 0 else 1).put("nextCursor", JSONObject.NULL)
+                        method == "GET" && route.startsWith("/api/capture-browser/") -> original?.let { JSONObject(it.toString()).apply { result?.let { put("ocrText", it.getString("ocrText")) } } } ?: JSONObject().put("error", "capture_not_found").also { statusCode = 404 }
                         else -> error("Unexpected generated fixture route")
                     }
                     response = value.toString().toByteArray()
                 }
                 client.getOutputStream().apply {
-                    write("HTTP/1.1 200 OK\r\nContent-Type: $contentType\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray()); write(response); flush()
+                    write("HTTP/1.1 $statusCode Fixture\r\nContent-Type: $contentType\r\nContent-Length: ${response.size}\r\nConnection: close\r\n\r\n".toByteArray()); write(response); flush()
                 }
             } } catch (error: Exception) { if (running) throw error }
         }.apply { isDaemon = true; start() }

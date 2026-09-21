@@ -57,12 +57,12 @@ export async function uploadCapture(config: Config, event: CaptureEvent, image?:
   if (ack.id !== event.id) throw new TransportFailure(moteText("中央节点确认 ID 不匹配；队列已保留"), 'RESPONSE', response.status);
 }
 
-export async function heartbeat(config: Config, body: object, events?: EventJournal): Promise<void> {
+export async function heartbeat(config: Config, body: object, events?: EventJournal, signal?: AbortSignal): Promise<void> {
   if (!config.token) return;
   try {
     const response = await fetch(`${validateServerUrl(config.serverUrl)}/api/devices/heartbeat`, {
       method: 'POST', headers: { 'Accept-Language': getLocale(), 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
-      credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(5000), body: JSON.stringify(body),
+      credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : AbortSignal.timeout(5000), body: JSON.stringify(body),
     });
     await response.body?.cancel().catch(() => undefined);
     if (!response.ok) void events?.record('HEARTBEAT', httpFailure(response.status), { httpStatus: response.status });

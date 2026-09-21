@@ -6,13 +6,25 @@ import {Store,StoreError} from './store.js';
 export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'timeZone'>;
 export type ConversationTurn = {id:string;question:string;scope:ConversationScope;result?:QueryResult;status:'completed'|'failed';error?:{code:string;message:string};createdAt:string;evidenceDeleted?:boolean};
 export type ConversationSummary = {id:string;title:string;createdAt:string;updatedAt:string;turnCount:number;scope:ConversationScope;status:'completed'|'failed'};
-export type Conversation = ConversationSummary & {turns:ConversationTurn[]};
+export type Conversation = ConversationSummary & {turns:ConversationTurn[];revision?:number};
 type Row = {id:string;title:string;created_at:string;updated_at:string;json:string};
 type Failure = {code:string;message:string};
 
 /** Owner-only conversations share the vault's private SQLite backup and quota. */
 export class Conversations {
-  constructor(private readonly store:Store) {}
+  constructor(private readonly store:Store) {
+    store.db.exec(`CREATE TABLE IF NOT EXISTS conversation_turns(conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,idx INTEGER NOT NULL,id TEXT NOT NULL UNIQUE,json TEXT NOT NULL,PRIMARY KEY(conversation_id,idx));`);
+    if(!store.db.prepare("SELECT 1 FROM settings WHERE key='conversation-turns-v1'").get()){
+      store.db.exec('BEGIN IMMEDIATE');try{
+        for(const row of store.db.prepare('SELECT id,json FROM conversations').iterate()){
+          const value=JSON.parse(String(row.json)),turns=value.turns??[];
+          for(const [index,turn] of turns.entries())store.db.prepare('INSERT OR IGNORE INTO conversation_turns VALUES(?,?,?,?)').run(row.id,index,turn.id,JSON.stringify({...turn,status:turn.status??(turn.result?'completed':'failed')}));
+          store.db.prepare('UPDATE conversations SET json=? WHERE id=?').run(JSON.stringify({scope:value.scope,turnCount:turns.length,status:turns.at(-1)?.status??'completed',bytes:Buffer.byteLength(JSON.stringify(turns)),revision:1}),row.id);
+        }
+        store.db.exec("INSERT INTO settings VALUES('conversation-turns-v1','1'); COMMIT");
+      }catch(error){store.db.exec('ROLLBACK');throw error;}
+    }
+  }
 
   list({limit=50,cursor}:{limit?:number;cursor?:string}={}) {
     let where='';const values:(string|number)[]=[];
@@ -23,17 +35,26 @@ export class Conversations {
         where='WHERE (updated_at < ? OR (updated_at = ? AND id < ?))';values.push(value.at,value.at,value.id);
       }catch{throw new StoreError('Invalid conversation cursor');}
     }
-    const rows=this.store.db.prepare(`SELECT id,title,created_at,updated_at,json_extract(json,'$.scope') AS scope,json_array_length(json,'$.turns') AS turn_count,json_extract(json,'$.turns[#-1].status') AS last_turn_status FROM conversations ${where} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values,limit+1) as {id:string;title:string;created_at:string;updated_at:string;scope:string;turn_count:number;last_turn_status:string|null}[];
+    const rows=this.store.db.prepare(`SELECT id,title,created_at,updated_at,json_extract(json,'$.scope') AS scope,json_extract(json,'$.turnCount') AS turn_count,json_extract(json,'$.status') AS last_turn_status FROM conversations ${where} ORDER BY updated_at DESC,id DESC LIMIT ?`).all(...values,limit+1) as {id:string;title:string;created_at:string;updated_at:string;scope:string;turn_count:number;last_turn_status:string|null}[];
     const page=rows.slice(0,limit),last=page.at(-1);
     return {items:page.map(row=>({id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:JSON.parse(row.scope),turnCount:row.turn_count,status:row.last_turn_status==='failed'?'failed':'completed'}) as ConversationSummary),nextCursor:rows.length>limit&&last?Buffer.from(JSON.stringify({at:last.updated_at,id:last.id})).toString('base64url'):null};
   }
 
-  get(id:string):Conversation {
+  get(id:string):Conversation {return this.read(id);}
+  /** UI reads only the requested page. Cursor is the exclusive older turn index. */
+  page(id:string,{limit=20,cursor}:{limit?:number;cursor?:string}={}){
+    if(cursor!==undefined&&!/^\d{1,9}$/.test(cursor))throw new StoreError('Invalid turn cursor');
+    const value=this.read(id,Math.max(1,Math.min(limit,50)),cursor===undefined?undefined:Number(cursor));
+    const oldest=(value as Conversation&{firstIndex?:number}).firstIndex??0;
+    return {...value,nextCursor:oldest>0?String(oldest):null};
+  }
+  private read(id:string,limit=200,before?:number):Conversation&{firstIndex:number} {
     const row=this.store.db.prepare('SELECT * FROM conversations WHERE id=?').get(id) as Row|undefined;
     if(!row)throw new StoreError('Conversation not found',404);
-    const value=JSON.parse(row.json) as {scope:ConversationScope;turns:Array<Omit<ConversationTurn,'status'> & {status?:ConversationTurn['status']}>};
-    const turns=value.turns.map(turn=>({...turn,status:turn.status??(turn.result?'completed':'failed')}));
-    return {id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:value.scope,turnCount:turns.length,status:turns.at(-1)?.status??'completed',turns};
+    const value=JSON.parse(row.json);
+    const rows=this.store.db.prepare('SELECT idx,json FROM conversation_turns WHERE conversation_id=? AND idx<? ORDER BY idx DESC LIMIT ?').all(id,before??value.turnCount,limit).reverse();
+    const turns=rows.map(r=>JSON.parse(String(r.json)) as ConversationTurn);
+    return {id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:value.scope,turnCount:value.turnCount,status:value.status,revision:value.revision,turns,firstIndex:Number(rows[0]?.idx??0)};
   }
 
   append(previous:Conversation|undefined,input:ConversationScope&{question:string},result:QueryResult) {
@@ -52,18 +73,18 @@ export class Conversations {
     const now=turn.createdAt;
     const question=turn.question;
     const id=previous?.id??randomUUID(),title=previous?.title??Array.from(question).slice(0,80).join('');
-    const turns=[...(previous?.turns??[]),turn];
-    if(turns.length>200)throw new StoreError('Conversation has reached its turn limit; start a new conversation',409);
-    const json=JSON.stringify({scope:turn.scope,turns});
-    if(Buffer.byteLength(json)>4*1024*1024)throw new StoreError('Conversation has reached its storage limit; start a new conversation',413);
+    const json=JSON.stringify(turn),size=Buffer.byteLength(json);
     this.store.db.exec('BEGIN IMMEDIATE');
     try {
-      const existing=this.store.db.prepare('SELECT json FROM conversations WHERE id=?').get(id) as {json:string}|undefined;
-      const existingValue=existing?JSON.parse(existing.json) as {scope:ConversationScope;turns:Array<Omit<ConversationTurn,'status'> & {status?:ConversationTurn['status']}>}:undefined;
-      const existingTurns=existingValue?.turns.map(value=>({...value,status:value.status??(value.result?'completed':'failed')}));
-      if(previous&&(!existingValue||JSON.stringify({scope:previous.scope,turns:previous.turns})!==JSON.stringify({scope:existingValue.scope,turns:existingTurns})))throw new StoreError('Conversation changed during this answer; reload and retry',409);
-      this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-Buffer.byteLength(existing?.json??'')));
-      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(id,title,previous?.createdAt??now,now,json);
+      const existing=this.store.db.prepare('SELECT json,updated_at FROM conversations WHERE id=?').get(id);
+      const meta=existing?JSON.parse(String(existing.json)):undefined;
+      if(previous&&(!meta||meta.turnCount!==previous.turnCount||meta.revision!==previous.revision||existing!.updated_at!==previous.updatedAt))throw new StoreError('Conversation changed during this answer; reload and retry',409);
+      const count=meta?.turnCount??0;
+      if(count>=200)throw new StoreError('Conversation has reached its turn limit; start a new conversation',409);
+      if((meta?.bytes??0)+size>4*1024*1024)throw new StoreError('Conversation has reached its storage limit; start a new conversation',413);
+      this.store.reserveMetadata(size+512);
+      this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:turn.scope,turnCount:count+1,status:turn.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1}));
+      this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(id,count,turn.id,json);
       this.store.db.exec('COMMIT');
     }catch(error){this.store.db.exec('ROLLBACK');throw error;}
     return {conversationId:id,turnId:turn.id};

@@ -18,10 +18,11 @@ export class Indexer {
   private abort=new AbortController();
   constructor(private store:Store,private config:Pick<Config,'embeddingModel'|'embeddingBaseUrl'|'embeddingApiKey'>,private diagnostics?:ServerDiagnostics,private files?:FileStore) {}
   get configured() {return Boolean(this.config.embeddingModel&&this.config.embeddingBaseUrl);}
-  async embed(text:string):Promise<number[]> {
+  private queryCache=new Map<string,{at:number;vector:number[]}>();
+  async embed(text:string,timeoutMs=45000,signal?:AbortSignal):Promise<number[]> {
     const url=this.config.embeddingBaseUrl.replace(/\/$/,'')+'/embeddings';
     let response:Response;
-    try{response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(this.config.embeddingApiKey?{Authorization:`Bearer ${this.config.embeddingApiKey}`}:{})},body:JSON.stringify({model:this.config.embeddingModel,input:text.slice(0,20000)}),signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(45000)]),redirect:'error'});}catch{throw new EmbeddingError('embedding_transport');}
+    try{response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(this.config.embeddingApiKey?{Authorization:`Bearer ${this.config.embeddingApiKey}`}:{})},body:JSON.stringify({model:this.config.embeddingModel,input:text.slice(0,20000)}),signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(timeoutMs),...(signal?[signal]:[])]),redirect:'error'});}catch{throw new EmbeddingError('embedding_transport');}
     if(!response.ok){await response.body?.cancel();throw new EmbeddingError('embedding_http',response.status);}
     let data:{data?:{embedding?:number[]}[]};
     try {
@@ -59,12 +60,14 @@ export class Indexer {
     const counts=this.store.indexCounts();this.diagnostics?.record('queue.snapshot',{pending:counts.pending,failed:counts.failed});
   }
   async close() {this.closing=true;this.abort.abort();await this.current;}
-  async search(args:Range&{query?:string}) {
+  async search(args:Range&{query?:string;signal?:AbortSignal}) {
     const lexical=[this.store.search(args),this.files?.search(args)??[]];
     let channels=lexical,degraded=false;let vectorCoverage:unknown;
     if(this.configured&&args.query&&args.source!=='activity'&&args.source!=='media'&&args.collection!=='activity'){
       try{
-        const vector=await this.embed(args.query);
+        const key=this.config.embeddingModel+"\n"+args.query,cached=this.queryCache.get(key);
+        const vector=cached&&Date.now()-cached.at<60000?cached.vector:await this.embed(args.query,1200,args.signal);
+        if(!cached||cached.vector!==vector){if(this.queryCache.size>=128)this.queryCache.delete(this.queryCache.keys().next().value!);this.queryCache.set(key,{at:Date.now(),vector});}
         const captures=this.store.vectorSearch(vector,this.config.embeddingModel,args),files=this.files?.vectorSearch(vector,this.config.embeddingModel,args)??[];
         vectorCoverage={captures:captures.coverage,files:'coverage' in files?files.coverage:null};channels=[...lexical,captures,files];
       }catch(error){if(this.closing)throw error;degraded=true;}

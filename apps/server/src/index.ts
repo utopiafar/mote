@@ -17,7 +17,7 @@ if(existsSync(pidPath)) {
 }
 writeFileSync(pidPath,String(process.pid),{mode:0o600,flag:'wx'});
 process.on('exit',()=>{try{if(existsSync(pidPath)&&readFileSync(pidPath,'utf8').trim()===String(process.pid))unlinkSync(pidPath);}catch{/* Never print a filesystem exception containing private paths. */}});
-const {app}=await buildApp(config);
+const {app}=await buildApp(config,{backgroundWorker:true});
 try{await app.listen({host:config.host,port:config.port});}catch(error){await app.close();throw error;}
 console.info(JSON.stringify({event:'server.listening',port:config.port,tokenConfigured:true}));
 let closing=false;

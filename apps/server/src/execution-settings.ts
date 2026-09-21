@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {Store} from './store.js';
 import type {Config} from './config.js';
-export const executionSettingsSchema=z.object({agentConcurrency:z.number().int().min(1).max(64),llmConcurrency:z.number().int().min(1).max(64),memoryConcurrency:z.number().int().min(1).max(16)}).strict();
+export const executionSettingsSchema=z.object({interactiveConcurrency:z.number().int().min(1).max(8).default(2),agentConcurrency:z.number().int().min(1).max(64),llmConcurrency:z.number().int().min(1).max(64),memoryConcurrency:z.number().int().min(1).max(16)}).strict();
 export const diagnosticsSettingsSchema=z.object({enabled:z.boolean(),debug:z.boolean(),traceEnabled:z.boolean(),level:z.enum(['debug','info','warn','error','silent'])}).strict();
 export class ExecutionSettings {
   constructor(private store:Store,private config:Config){}

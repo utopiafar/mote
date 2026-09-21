@@ -23,7 +23,7 @@ interface ConversationTurn {
   createdAt: string;
   evidenceDeleted?: boolean;
 }
-interface Conversation extends ConversationSummary {turns: ConversationTurn[]}
+interface Conversation extends ConversationSummary {turns: ConversationTurn[];nextCursor?:string|null}
 interface HistoryPage {items: ConversationSummary[]; nextCursor?: string | null}
 
 export function Conversations({api, configured, devices, range, renderAnswer}: {
@@ -111,6 +111,11 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     } catch (e) { if (!controller.signal.aborted) setError(errorMessage(e)); }
     finally { if (!controller.signal.aborted) {setOpening(false); operation.current = null;} }
   }
+  async function loadOlderTurns(){
+    if(!conversation?.nextCursor||opening)return;
+    const id=conversation.id,cursor=conversation.nextCursor;setOpening(true);
+    try{const page=await api.request<Conversation>(`/api/conversations/${encodeURIComponent(id)}?cursor=${encodeURIComponent(cursor)}`);setConversation(current=>current?.id===id?{...current,turns:[...page.turns,...current.turns],nextCursor:page.nextCursor}:current);}catch(e){setError(errorMessage(e));}finally{setOpening(false);}
+  }
   function startNew() {
     if (busy) return;
     operation.current?.abort(); operation.current = null;
@@ -171,6 +176,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
       {confirmDelete && <div className="notice"><span>{moteText("删除此对话及全部问答记录？")}</span><button className="text-button" disabled={busy} onClick={() => void remove()}>{moteText("确认删除对话")}</button><button className="text-button" disabled={busy} onClick={() => setConfirmDelete(false)}>{moteText("取消")}</button></div>}
       {opening && <p className="loading" role="status"><LoaderCircle size={16} className="spin"/>{moteText("正在打开对话…")}</p>}
       <div className="conversation-messages">
+      {conversation?.nextCursor&&<button className="text-button" disabled={opening} onClick={()=>void loadOlderTurns()}>{moteText("加载更早的对话")}</button>}
       {conversation?.turns.map(turn => <article className={`answer-panel conversation-turn ${turn.status === 'failed' ? 'failed' : ''}`} key={turn.id}>
         <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}</span></div>
         {turn.status === 'failed' || !turn.result ? <div className="failed-answer" role="alert"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText("这次回答没有完成")}</strong><p>{turn.error?.message ?? moteText("请求未完成，请稍后重试。")}</p><button className="text-button" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div> : <>{turn.result.modelSelection&&<small className="model-used">{turn.result.modelSelection.profileName} · {turn.result.modelSelection.model}</small>}{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : renderAnswer(turn.result)}</>}

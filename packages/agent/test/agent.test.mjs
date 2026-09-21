@@ -155,7 +155,7 @@ test("bridge authentication, bounded scope, evidence discovery and field project
     assert.equal(response.status, 200);
     const body = await response.json();
     assert.equal(received.after, "2026-09-12T00:00:00.000Z");
-    assert.equal(received.limit, 100);
+    assert.equal(received.limit, 12);
     assert.equal(body.data[0].privatePath, undefined);
     assert.equal(body.data[0].token, undefined);
     assert.match(body.data[0].ocrText, /UNTRUSTED/);

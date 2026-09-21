@@ -31,6 +31,7 @@ export class Collector {
   private capturing = false;
   private uploading = false;
   private heartbeatInFlight = false;
+  private heartbeatAbort?: AbortController;
   private connectionHeld = false;
   private config: Config;
   private captureAbort?: AbortController;
@@ -102,8 +103,8 @@ export class Collector {
   async holdConnection(): Promise<() => void> {
     if (this.running || this.connectionHeld) throw new Error(moteText("请先停止采集，再更换连接"));
     this.connectionHeld = true;
-    this.captureAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
-    // Heartbeats already have a bounded timeout. Wait until no old-credential request can race a save.
+    this.heartbeatAbort?.abort(); this.captureAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
+    // Cancel old-credential requests before changing the local binding.
     while (this.connectionActivity().inFlight) await new Promise(resolve => setTimeout(resolve, 25));
     return () => { this.connectionHeld = false; };
   }
@@ -113,7 +114,7 @@ export class Collector {
     const resume = this.running, intent = this.stopIntent;
     this.connectionHeld = true; this.running = false; this.lastSample = undefined;
     if (this.timer) clearTimeout(this.timer);
-    this.captureAbort?.abort(); this.captureOcrAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
+    this.heartbeatAbort?.abort(); this.captureAbort?.abort(); this.captureOcrAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
     this.state = 'paused'; this.message = moteText("正在安全应用设置，已有记录保留"); this.publish();
     while (this.connectionActivity().inFlight) await new Promise(resolve => setTimeout(resolve, 25));
     let released = false;
@@ -159,7 +160,7 @@ export class Collector {
     while (this.capturing) await new Promise(resolve => setTimeout(resolve, 25));
   }
   shutdown(): void {
-    this.closed = true;
+    this.closed = true; this.heartbeatAbort?.abort();
     this.running = false; this.captureAbort?.abort(); this.uploadAbort?.abort(); this.ocrAbort?.abort();
     if (this.timer) clearTimeout(this.timer);
     if (this.uploadTimer) clearInterval(this.uploadTimer);
@@ -413,9 +414,10 @@ export class Collector {
   private async sendHeartbeat(explicit = false): Promise<void> {
     if (this.closed || this.connectionHeld || this.heartbeatInFlight || !this.config.serverUrl || !this.config.token || (this.config.syncMode === 'manual' && !explicit) || !this.queue.binding.matches(this.config)) return;
     this.heartbeatInFlight = true;
+    const abort=this.heartbeatAbort=new AbortController();
     const state = this.state === 'stopped' ? 'paused' : this.state;
     try {
-      const metadata = this.config.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined) : undefined;
+      const metadata = this.config.metadataEnabled ? await collectRecordMetadata(this.helperPath, this.queue.directory, undefined, abort.signal) : undefined;
       const sync = this.syncStatus();
       await heartbeat(this.config, {
         metadata, deviceId: this.config.deviceId, deviceName: this.config.deviceName, platform: currentPlatform,
@@ -425,7 +427,7 @@ export class Collector {
           intervalMinutes: this.config.syncIntervalMinutes, batchSize: this.config.syncBatchSize,
           pendingRecords: Math.min(1_000_000, sync.pendingRecords), lastUploadAt: sync.lastUploadAt, nextUploadAt: sync.nextUploadAt,
         },
-      }, this.events);
+      }, this.events, abort.signal);
     } catch (error) { void this.events?.record('HEARTBEAT', failureCode(error, 'HEARTBEAT')); }
     finally { this.heartbeatInFlight = false; }
   }

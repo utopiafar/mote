@@ -25,7 +25,7 @@ export class ContextProcessorRegistry {
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteContextProcessors:ContextProcessorRegistry;}}
 export class ProcessingFailure extends Error {constructor(readonly category:'transient'|'permanent'|'blocked',message:string=category){super(message);}}
-const stepSchema=z.object({name:z.string().regex(/^[\w.-]{1,80}$/),processor:z.string().max(100),inputs:z.array(z.string().uuid()).min(1).max(100),dependsOn:z.array(z.string().max(80)).max(32).default([]),artifactInputs:z.array(z.object({id:z.string().length(64),revision:z.string().length(64)}).strict()).max(32).default([]),config:z.record(z.unknown()).default({})}).strict();
+const stepSchema=z.object({name:z.string().regex(/^[\w.-]{1,80}$/),processor:z.string().max(100),inputs:z.array(z.string().uuid()).max(100).default([]),dependsOn:z.array(z.string().max(80)).max(32).default([]),artifactInputs:z.array(z.object({id:z.string().length(64),revision:z.string().length(64)}).strict()).max(32).default([]),config:z.record(z.unknown()).default({})}).strict();
 export type ProcessingStep=z.input<typeof stepSchema>;
 const lanePolicy=z.object({concurrency:z.number().int().min(1).max(8),dailyCalls:z.number().int().min(0).max(100000),dailyInputCharacters:z.number().int().min(0).max(1000000000).default(1200000)}).strict();
 const policies=z.object({extract:lanePolicy,aggregate:lanePolicy,semantic:lanePolicy,memory:lanePolicy}).strict();
@@ -54,9 +54,9 @@ export class ProcessingRuntime {
     for(const step of ordered){
       const processor=this.registry.get(step.processor);if(!processor)throw new StoreError('Processor unavailable',409);
       if(JSON.stringify(step.config).length>16000)throw new StoreError('Processor configuration too large',413);
-      const artifactIds=step.artifactInputs.flatMap(ref=>{const artifact=this.store.archive.get(ref.id);if(!artifact||artifact.revision!==ref.revision)throw new StoreError('Input artifact changed',409);return artifact.members;});
-      const inputs=[...new Set([...step.inputs,...artifactIds,...step.dependsOn.flatMap(name=>jobs.find(job=>job.id===ids.get(name))!.inputs.map(i=>i.id))])].sort().map(id=>{const version=this.store.archive.fingerprint(id);if(!version)throw new StoreError('Workflow evidence unavailable',409);return {id,fingerprint:version};});
-      if(inputs.length>100)throw new StoreError('Workflow transitive input budget exceeds 100 observations',413);
+      for(const ref of step.artifactInputs)if(this.store.archive.revision(ref.id)!==ref.revision)throw new StoreError('Input artifact changed',409);
+      if(!step.inputs.length&&!step.artifactInputs.length&&!step.dependsOn.length)throw new StoreError('Workflow needs execution inputs',400);
+      const inputs=[...new Set(step.inputs)].sort().map(id=>{const version=this.store.archive.fingerprint(id);if(!version)throw new StoreError('Workflow evidence unavailable',409);return {id,fingerprint:version};});
       const config=canonical(step.config) as Record<string,unknown>,dependencies=step.dependsOn.map(n=>ids.get(n)!).sort();
       const id=fingerprint([processor.id,processor.version,inputs,config,dependencies,step.artifactInputs]);ids.set(step.name,id);
       jobs.push({id,processor:processor.id,version:processor.version,lane:processor.lane,inputs,config,dependencies,artifactInputs:step.artifactInputs,outputs:[]});
@@ -101,12 +101,14 @@ export class ProcessingRuntime {
     const db=this.store.db,row=db.prepare("SELECT * FROM processing_jobs WHERE id=? AND state='waiting'").get(id);if(!row||this.stopping)return;
     const job=JSON.parse(String(row.json)) as Job,processor=this.registry.get(job.processor);
     if(!processor||processor.version!==job.version){db.prepare("UPDATE processing_jobs SET state='blocked',error='processor_version_unavailable' WHERE id=?").run(id);return;}
-    const valid=()=>(job.artifactInputs??[]).every(ref=>this.store.archive.get(ref.id)?.revision===ref.revision)&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
+    const valid=()=>(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
       const parent=db.prepare("SELECT json FROM processing_jobs WHERE id=? AND state='succeeded'").get(dep);return parent&&(JSON.parse(String(parent.json)) as Job).outputs.every(out=>this.store.archive.get(out));
     });
     if(!valid()){db.prepare("UPDATE processing_jobs SET state='stale',error='evidence_changed' WHERE id=?").run(id);return;}
     const now=this.now(),day=new Date(now).toISOString().slice(0,10),policy=this.settings()[job.lane],daily=policy.dailyCalls;
-    const inputCharacters=this.store.evidence(job.inputs.map(i=>i.id)).reduce((n,r)=>n+r.ocrText.length,0);
+    const artifacts=job.dependencies.map(dep=>JSON.parse(String(db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(dep)!.json)) as Job).map(parent=>({id:parent.id,outputs:parent.outputs.map(id=>this.store.archive.get(id)!)})).concat((job.artifactInputs??[]).map(ref=>({id:ref.id,outputs:[this.store.archive.get(ref.id)!]})));
+    const observations=this.store.evidence(job.inputs.map(i=>i.id));
+    const inputCharacters=observations.reduce((n,r)=>n+r.ocrText.length,0)+artifacts.reduce((n,a)=>n+a.outputs.reduce((m,o)=>m+o.text.length,0),0);
     const fence=randomUUID();db.exec('BEGIN IMMEDIATE');
     try{
       const usage=db.prepare('SELECT calls,input_characters FROM processing_usage WHERE day=? AND lane=?').get(day,job.lane);
@@ -119,14 +121,13 @@ export class ProcessingRuntime {
     const signal=AbortSignal.any([this.abort.signal,controller.signal,AbortSignal.timeout(120000)]);
     let abortListener:(()=>void)|undefined;
     try{
-      const artifacts=job.dependencies.map(dep=>JSON.parse(String(db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(dep)!.json)) as Job).map(parent=>({id:parent.id,outputs:parent.outputs.map(id=>this.store.archive.get(id)!)})).concat((job.artifactInputs??[]).map(ref=>({id:ref.id,outputs:[this.store.archive.get(ref.id)!]})));
       const aborted=new Promise<never>((_,reject)=>{abortListener=()=>reject(new ProcessingFailure('transient','cancelled'));signal.addEventListener('abort',abortListener,{once:true});if(signal.aborted)abortListener();});
-      const outputs=z.array(artifactOutput).min(1).max(16).parse(await Promise.race([processor.process({observations:this.store.evidence(job.inputs.map(i=>i.id)),artifacts,config:job.config,signal}),aborted]));
+      const outputs=z.array(artifactOutput).min(1).max(16).parse(await Promise.race([processor.process({observations,artifacts,config:job.config,signal}),aborted]));
       if(JSON.stringify(outputs).length>200000)throw new ProcessingFailure('permanent','output_limit');
       if(this.stopping||signal.aborted||db.prepare('SELECT fence FROM processing_jobs WHERE id=?').get(id)?.fence!==fence)return;
       db.exec('BEGIN IMMEDIATE');try{
         if(!valid())throw new ProcessingFailure('permanent','evidence_changed');
-        job.outputs=outputs.map((output,index)=>{const artifactId=fingerprint([id,index]);this.store.archive.save(artifactId,id,id,output,job.inputs,job.processor,job.version,fingerprint(job.config));return artifactId;});
+        job.outputs=outputs.map((output,index)=>{const artifactId=fingerprint([id,index]);this.store.archive.save(artifactId,id,id,output,job.inputs,job.processor,job.version,fingerprint(job.config),job.inputs.map(i=>i.id),artifacts.flatMap(a=>a.outputs.map(o=>({id:o.id,revision:o.revision}))));return artifactId;});
         db.prepare("UPDATE processing_jobs SET state='succeeded',fence=NULL,json=? WHERE id=? AND fence=?").run(JSON.stringify(job),id,fence);db.exec('COMMIT');
       }catch(error){db.exec('ROLLBACK');throw error;}
     }catch(error){

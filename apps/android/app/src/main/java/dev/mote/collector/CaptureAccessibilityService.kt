@@ -72,7 +72,13 @@ class CaptureAccessibilityService : AccessibilityService() {
                 val root = window.root
                 val name = root?.packageName?.toString()
                 @Suppress("DEPRECATION") root?.recycle()
-                CollectionWindow(window.type, name)
+                val bounds = android.graphics.Rect(); window.getBoundsInScreen(bounds)
+                val metrics = resources.displayMetrics
+                val barLimit = (96 * metrics.density).toInt()
+                val horizontalBar = bounds.width() >= metrics.widthPixels * 0.9 && bounds.height() <= barLimit && (bounds.top <= 0 || bounds.bottom >= metrics.heightPixels)
+                val verticalBar = bounds.height() >= metrics.heightPixels * 0.9 && bounds.width() <= barLimit && (bounds.left <= 0 || bounds.right >= metrics.widthPixels)
+                val chrome = window.title?.toString() in setOf("StatusBar", "NavigationBar") && !window.isActive && !window.isFocused && (horizontalBar || verticalBar)
+                CollectionWindow(window.type, name, chrome)
             }
             val root = rootInActiveWindow
             val foreground = root?.packageName?.toString()
