@@ -48,3 +48,17 @@ test('state compaction retains changing telemetry and normalizes all sample time
  const merged=extendState(extendState(undefined,a),b);assert.equal(merged.stateSeries?.samples.length,2);assert.equal(merged.stateSeries?.samples[1].availableStorageBytes,800);
  await store.ingest(merged);const stored=store.evidence([a.id])[0];const {receivedAt,blobHash,imageMime,indexingStatus,...raw}=stored;captureSchema.parse(raw);
 });
+
+test('device read requests survive central restart, reuse IDs and reject permission changes',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-read-restart-'));let store=new Store(directory),sources=new SourceStore(store),reads=new FileEvidenceRequests(sources);
+ t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+ sources.register({id:'restart-source',deviceId:'synthetic',name:'Generated',kind:'local-files',platform:'macos',retention:'snapshot'});
+ const ack=await sources.upsert('restart-source',{externalId:'file',revision:'1',observedAt:'2026-09-17T00:00:00Z',kind:'file',layer:'snapshot',text:'preview',document:{fileIndex:{version:1,fileId:'file',contentVersion:'a'.repeat(64),mode:'index',coverage:'lightweight',parser:'utf8',status:'ready',totalCharacters:50,offset:0,length:7,allowRead:true}}});
+ const response=await reads.read(ack.id,10,12);assert.equal(response.reason,'device_pending');const requestId=response.requestId;
+ store.close();store=new Store(directory);sources=new SourceStore(store);reads=new FileEvidenceRequests(sources);
+ assert.equal(reads.pending('restart-source').items[0].id,requestId);
+ await reads.complete('restart-source',requestId,{status:'ready',text:'fixture text',contentVersion:'a'.repeat(64)});
+ assert.equal((await reads.read(ack.id,10,12)).record.ocrText,'fixture text');
+ sources.update('restart-source',{enabled:false});assert.deepEqual(reads.pending('restart-source').items,[]);
+ await assert.rejects(reads.complete('restart-source',requestId,{status:'ready',text:'fixture text',contentVersion:'a'.repeat(64)}),{statusCode:409});
+});

@@ -1,3 +1,4 @@
+import {DatabaseSync} from 'node:sqlite';
 import { moteText } from '@mote/shared/i18n';
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, readFile, readdir, rename, unlink } from 'node:fs/promises';
@@ -92,9 +93,15 @@ export async function decryptLocalContent(roots: string[], signal: AbortSignal, 
   for (const path of files) {
     if (signal.aborted) break;
     try {
+      if(path.endsWith('.json.sqlite')){
+        const db=new DatabaseSync(path);let changed=false;
+        try{db.exec('BEGIN IMMEDIATE');for(const row of db.prepare('SELECT section,key,value FROM entries').all()){const bytes=Buffer.from(row.value as Uint8Array);if(isEncryptedContent(bytes)){db.prepare('UPDATE entries SET value=? WHERE section=? AND key=?').run(encodeLocalContent(decodeLocalContent(bytes,selected),{enabled:false}),row.section,row.key);changed=true;}}db.exec('COMMIT; PRAGMA wal_checkpoint(TRUNCATE);');}catch(error){try{db.exec('ROLLBACK');}catch{}throw error;}finally{db.close();}
+        if(changed)result.decrypted++;else result.skipped++;
+      }else{
       const bytes = await readFile(path);
       if (isEncryptedContent(bytes)) { await rawAtomic(path, encodeLocalContent(decodeLocalContent(bytes, selected), { enabled: false })); result.decrypted++; }
       else result.skipped++;
+      }
     } catch { result.failed++; }
     result.processed++; result.message = moteText("正在逐个解密本机内容"); progress({ ...result });
     await yieldTurn();

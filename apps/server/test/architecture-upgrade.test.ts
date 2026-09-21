@@ -65,9 +65,10 @@ test('in-flight source deletion and expired leases fence late completions',async
  runtime.registry.register({id:'fixture.wait',version:'1',lane:'extract',async process(){started();await waiting;return [{kind:'text',text:'Must not reappear',metadata:{}}];}});
  const id=runtime.enqueue([{name:'a',processor:'fixture.wait',inputs:[a.id]}]).a;const running=runtime.tick();await start;store.delete(a.id);release();await running;assert.equal(store.archive.stats().artifacts,0);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(id)!.state,'failed');
 });
-test('vector scoring is bounded and declares partial candidate coverage',async t=>{
- const store=fixture(t),inputs=Array.from({length:4097},()=>observation());for(let i=0;i<inputs.length;i+=500)await store.ingestBatch(inputs.slice(i,i+500));store.db.exec("UPDATE captures SET embedding='[1,0]',embedding_model='fixture'");
- const result=store.vectorSearch([1,0],'fixture',{limit:3});assert.equal(result.length,3);assert.equal(result.coverage.scanned,4096);assert.equal(result.coverage.bounded,true);
+test('vector scoring reaches historical evidence outside the former recent candidate window',async t=>{
+ const store=fixture(t),inputs=Array.from({length:4097},()=>observation());for(let i=0;i<inputs.length;i+=500)await store.ingestBatch(inputs.slice(i,i+500));store.db.exec("UPDATE captures SET embedding='[0,1]',embedding_model='fixture'");
+ store.db.prepare("UPDATE captures SET embedding='[1,0]',captured_at='2020-01-01T00:00:00Z' WHERE id=?").run(inputs[0].id);
+ const result=store.vectorSearch([1,0],'fixture',{limit:3});assert.equal(result.length,3);assert.equal(result[0].id,inputs[0].id);assert.equal(result.coverage.scanned,4097);assert.equal(result.coverage.bounded,false);
 });
 
 test('source directory catalog paginates without losing same-title files and tracks revisions/deletes',async t=>{

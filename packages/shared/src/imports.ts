@@ -16,8 +16,10 @@ export type ImportJob={
 };
 export const importRequestSchema=z.object({
   name:z.string().trim().min(1).max(200).optional(),
+  processing:z.enum(['automatic','preview']).default('preview'),
   instruction:z.string().max(12000).default(''),
   files:z.array(z.object({name:z.string().min(1).max(1000),mimeType:z.string().max(200).optional(),dataBase64:z.string().max(90_000_000)}).strict()).min(1).max(2000).optional(),
+  archivedFileIds:z.array(z.string().uuid()).min(1).max(2000).optional(),
   directory:z.string().min(1).max(4000).optional(),
-}).strict().refine(value=>Boolean(value.files)!==Boolean(value.directory),{message:'Choose uploaded files or a server directory'});
+}).strict().refine(value=>[value.files,value.directory,value.archivedFileIds].filter(Boolean).length===1,{message:'Choose uploaded files or a server directory'});
 export type ImportRequest=z.infer<typeof importRequestSchema>;

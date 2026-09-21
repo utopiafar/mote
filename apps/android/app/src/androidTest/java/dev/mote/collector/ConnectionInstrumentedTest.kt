@@ -66,6 +66,11 @@ class ConnectionInstrumentedTest {
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 Settings(context).saveConnection("https://generated-new.invalid", "synthetic-collector-token-no-network-123456789", "合成设备", false)
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+                scenario.onActivity { activity ->
+                    fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
+                    views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == "本机" }.performClick()
+                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:连接与同步" }.performClick()
+                }
                 scenario.awaitUiText("synthetic-collector-token-no-network-123456789")
                 scenario.onActivity { activity ->
                     val fields = mutableListOf<android.widget.EditText>()
@@ -159,7 +164,7 @@ class ConnectionInstrumentedTest {
             connectThroughRuntime(client, first)
             waitUntil { ConnectionGuard.sync { true } == true }; stopUploads()
             assertEquals("collector", client.test()); assertEquals(deviceId, settings.deviceId)
-            val config = settings.read().copy(wifiOnly = false, diagnosticsEnabled = false); settings.save(config)
+            val config = settings.read().copy(wifiOnly = false, diagnosticsEnabled = false, syncMode = "manual", uploadedRetentionDays = 0); settings.save(config)
             val credential = context.getSharedPreferences("connection", 0).getString("credentialId", "")!!
             assertEquals(410, HttpJson.post("$server/api/connections/redeem", JSONObject().put("code", first.code).put("deviceId", deviceId).put("deviceName", "合成").put("platform", "android")).first)
             assertEquals(403, HttpJson.get("$server/api/configuration", config.token).first)
@@ -169,9 +174,10 @@ class ConnectionInstrumentedTest {
             QuickNotes.draft(context).update("合成已准备提交草稿 e\u0301", "")
             val prepared = QuickNotes.draft(context).prepare(server) { event("note", it.text) }.prepared!!
             val queueBefore = context.queue().peek()!!.toString(); val preparedBefore = prepared.toString()
+            waitUntil { ConnectionGuard.sync { true } == true }
             assertEquals("pending", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://another.generated.invalid") { error("Must not run") } }.category)
-            UploadWorker.schedule(context, settings.read(), true)
-            waitUntil { Operations.ledger(context).read().getJSONObject("counts").getLong("HEARTBEAT_FAILED") > baseline.getLong("HEARTBEAT_FAILED") }
+            context.getSharedPreferences("sync-heartbeat", 0).edit().clear().commit()
+            assertThrows(IllegalStateException::class.java) { SyncHeartbeat.send(context, settings, settings.read(), context.queue()) }
             stopUploads(); assertEquals(queueBefore, context.queue().peek()!!.toString())
             val revokedEvents = Operations.ledger(context).read().getJSONArray("events")
             assertTrue((0 until revokedEvents.length()).any { revokedEvents.getJSONObject(it).let { e -> e.optString("reason") == "AUTH" && e.optInt("httpStatus") == 401 } })

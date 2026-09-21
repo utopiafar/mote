@@ -168,7 +168,7 @@ export class LocalSourceManager {
     if(this.connection.serverUrl&&this.connection.token&&this.nodeBinding.matches(this.connection))for(const source of this.sources.filter(s=>s.enabled&&s.kind==='local-files'&&s.allowRead&&s.retention==='snapshot')){
       try{const request=this.request(signal),pending=await request('/api/sources/'+source.id+'/read-requests',undefined,'GET',signal) as {items:import('@mote/shared').FileReadRequest[]};
         for(const read of pending.items){const result=await readSourceEvidence(source,read,this.fileLocations.get(source.id)??new Map(),signal);await request('/api/sources/'+source.id+'/read-requests/'+read.id,result,'PUT',signal);}
-      }catch{signal.throwIfAborted();}
+      }catch{if(signal.aborted)return;}
     }
     for (const source of this.sources) {
       if (!source.enabled || signal.aborted) continue;
@@ -180,6 +180,7 @@ export class LocalSourceManager {
       const started = Date.now(); void this.events?.record('SOURCE', 'STARTED');
       const wakeVersion = this.sourceWakeVersions.get(source.id) ?? 0;
       this.readable.delete(source.id);
+      let unqueuedScan: import('./source-types').SourceScan | undefined;
       try {
         let engine = this.engines.get(source.id);
         if (!engine) { engine = new SourceSync(join(this.directory, 'nodes', this.binding, source.id + '.json')); await engine.initialize(); this.engines.set(source.id, engine); }
@@ -189,6 +190,7 @@ export class LocalSourceManager {
         if(source.kind==='local-files')this.fileLocations.set(source.id,new Map());
         const priorityVersions = new Map(this.dirtyPathVersions.get(source.id) ?? []);
         const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint() as import('./coding-agents').CodingCheckpoint | undefined}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json'), this.fileLocations.get(source.id), engine.checkpoint() as LocalFileCheckpoint | undefined, [...priorityVersions.keys()]) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        unqueuedScan = scan;
         if (!scan.queue) scan.queue = source.initialSync === 'all' && !engine.initialized() ? 'history' : 'realtime';
         signal.throwIfAborted(); status.skipped = scan.skipped;
         if (source.kind === 'coding-agent' && scan.skipped) status.message = moteText("部分会话无法读取或格式不支持；保留游标，下次重试");
@@ -216,7 +218,7 @@ export class LocalSourceManager {
       } catch (e) {
         void this.events?.record('SOURCE', signal.aborted ? 'CANCELLED' : e instanceof CalendarPermissionError ? 'PERMISSION' : failureCode(e, 'SOURCE'), { elapsedMs: Date.now() - started });
         Object.assign(status, this.engines.get(source.id)?.status(), { state: e instanceof CalendarPermissionError ? 'permission_required' : 'error', message: signal.aborted ? moteText("同步已取消，待传版本已保留") : e instanceof CalendarPermissionError ? e.message : moteText("同步未完成：检查权限、网络或来源路径后重试；待传版本已保留") });
-      }
+      } finally { if (unqueuedScan) await this.engines.get(source.id)?.discardUnqueuedOriginals(unqueuedScan.items); }
     }
   }
   private request(signal: AbortSignal): SourceRequest {

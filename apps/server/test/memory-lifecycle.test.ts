@@ -15,13 +15,13 @@ const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUI
 function fixture(t:TestContext){const directory=mkdtempSync(join(tmpdir(),'mote-lifecycle-fixture-')),store=new Store(directory);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return store;}
 function event(store:Store,id=randomUUID()){store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(id,new Date().toISOString());return id;}
 
-test('durable AND admission, immutable window, arrivals during work, no empty repeats and coalesced ticks',async t=>{
+test('durable threshold-or-maximum-wait admission, immutable window, arrivals during work, no empty repeats and coalesced ticks',async t=>{
   const store=fixture(t);let now=0,calls=0,release!:()=>void,entered!:()=>void;const ready=new Promise<void>(r=>entered=r);
   const lifecycle=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>lifecycle.close());
-  lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(w){calls++;assert.equal(w.ids.length,25);entered();await new Promise<void>(r=>release=r);}});
-  for(let i=0;i<25;i++)event(store);await lifecycle.tick();assert.equal(calls,0);
+  lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(w){calls++;assert.equal(w.ids.length,calls===1?25:1);if(calls===1){entered();await new Promise<void>(r=>release=r);}}});
+  for(let i=0;i<24;i++)event(store);await lifecycle.tick();assert.equal(calls,0);event(store);
   now=6*3600000;const running=lifecycle.tick();await ready;const coalesced=lifecycle.tick();void coalesced;assert.equal(calls,1);event(store);release();await running;
-  assert.equal(lifecycle.view().extensions[0].pendingChanges,1);assert.equal(lifecycle.view().extensions[0].cursor,25);now+=24*3600000;await lifecycle.tick();assert.equal(calls,1);
+  assert.equal(lifecycle.view().extensions[0].pendingChanges,1);assert.equal(lifecycle.view().extensions[0].cursor,25);now+=3600000;await lifecycle.tick();assert.equal(calls,2);await lifecycle.tick();assert.equal(calls,2);
   assert.throws(()=>lifecycle.configure({...lifecycle.settings(),summaryCharacters:12000,contextCharacters:4000}));
 });
 

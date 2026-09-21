@@ -1,3 +1,5 @@
+import {ensureTodoSchema} from './todo-schema.js';
+import {archivedTodoSchema} from './todos.js';
 import {initializeReadModels} from './read-models.js';
 import {initializeSourceCatalog} from './source-catalog.js';
 import {EvidenceArchive} from './evidence-archive.js';
@@ -22,7 +24,7 @@ import {ContentEncryption,replaceContentFile} from './content-encryption.js';
 
 export class StoreError extends Error { constructor(message:string, public statusCode=400) {super(message);} }
 export const sha256 = (v:Buffer|string) => createHash('sha256').update(v).digest('hex');
-export type Range = {includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
+export type Range = {sourceId?:string;projectKey?:string;provider?:string;sessionId?:string;includeTotal?:boolean;after?:string;before?:string;deviceId?:string;appId?:string;source?:CaptureInput['source'];collection?:'content'|'activity';limit?:number;cursor?:string;ocrStatus?:OcrState['status']};
 type Prepared = {input:CaptureInput;bytes?:Buffer;hash:string|null;fingerprint:string;receivedAt?:string};
 type Row = {id:string;json:string;received_at:string;blob_hash:string|null;mime:string|null;index_status:CaptureRecord['indexingStatus'];summary:string|null};
 // Media evidence is searchable without rewriting the original screenshot OCR.
@@ -44,6 +46,7 @@ export class Store {
     privateFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new DatabaseSync(join(directory,'mote.sqlite'));
+    ensureTodoSchema(this.db);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS captures (
@@ -158,6 +161,8 @@ export class Store {
     if(range.after) {clauses.push('context_end >= ?');values.push(new Date(range.after).toISOString());}
     if(range.before) {clauses.push('context_at < ?');values.push(new Date(range.before).toISOString());}
     if(range.deviceId) {clauses.push('device_id = ?');values.push(range.deviceId);}
+    for(const [key,path] of [['sourceId','sourceId'],['projectKey','document.coding.projectKey'],['provider','document.coding.provider'],['sessionId','document.coding.sessionId']] as const)if(range[key]){clauses.push("json_extract(json,'$.provenance."+path+"') = ?");values.push(range[key]!);}
+
     if(range.appId!==undefined) {
       clauses.push("((json_extract(json,'$.source') != 'media' AND json_extract(json,'$.appId') = ?) OR (json_extract(json,'$.source') = 'media' AND EXISTS (SELECT 1 FROM json_each(captures.json,'$.metadata.media.sessions') AS session WHERE json_extract(session.value,'$.appId') = ?)))");
       values.push(range.appId,range.appId);
@@ -284,7 +289,7 @@ export class Store {
     }catch(error){this.db.exec('ROLLBACK');this.sweep();throw error;}
   }
   async importArchive(raw:unknown) {
-    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[]};
+    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[]};
     if(archive?.version!==1||!Array.isArray(archive.captures)||archive.captures.length>20000)throw new StoreError('Expected Mote archive version 1 (maximum 20,000 records per import)');
     const connections=(archive.sources??[]).map(v=>{const {createdAt,updatedAt,status,...fields}=v as Record<string,unknown>;const value=sourceConnectionSchema.parse(fields);return {...value,createdAt:typeof createdAt==='string'?createdAt:new Date().toISOString(),updatedAt:typeof updatedAt==='string'?updatedAt:new Date().toISOString()};});
     if(connections.length>500)throw new StoreError('Too many source connections');
@@ -297,6 +302,7 @@ export class Store {
       if(blobHash!==undefined&&blobHash!==p.hash)throw new StoreError('Archive image checksum mismatch');
       prepared.push(p);
     }
+    const todoEntries=z.array(archivedTodoSchema).max(100000).parse(archive.todos??[]);
     const memoryEntries=z.array(memorySchema).max(100000).parse(archive.memories??[]);
     const archivedFiles=new ArchivedFileStore(this),portableFiles=archivedFiles.preparePortable(archive.files??[]);
     const fileLinks=z.array(z.object({captureId:z.string().uuid(),fileId:z.string().uuid()}).strict()).max(100000).parse(archive.captureFiles??[]);
@@ -330,6 +336,11 @@ export class Store {
       for(const m of memoryEntries){if(m.evidenceIds.some(id=>!this.evidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');for(const e of m.evidence??[]){const record=this.evidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record||(e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote)))throw new StoreError('Memory archive evidence quote mismatch');}this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,JSON.stringify({...m,status:'stale',staleReason:'restored_archive'}));for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);}
       // Merging individually valid archives must still respect the destination's total limits.
       if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM source_connections').get()!.n)>500)throw new StoreError('Maximum 500 sources',413);
+      for(const {requestHash,...task} of todoEntries){
+        const prior=this.db.prepare('SELECT json,request_hash FROM todos WHERE id=?').get(task.id);
+        if(prior){if(prior.request_hash!==requestHash||!Object.entries(task).every(([key,value])=>JSON.stringify(JSON.parse(String(prior.json))[key])===JSON.stringify(value)))throw new StoreError('Archived task conflicts with an existing task',409);continue;}
+        const json=JSON.stringify(task);this.reserveMetadata(Buffer.byteLength(json)+1024);this.db.prepare('INSERT INTO todos VALUES(?,?,?,?,?,?)').run(task.id,task.createdAt,task.status,task.version,requestHash,json);
+      }
       if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM memories').get()!.n)>100000)throw new StoreError('Memory limit reached',507);
       this.reserveMetadata(0);
       this.db.exec('COMMIT');return {imported,duplicates};
@@ -496,7 +507,12 @@ export class Store {
     let position:{t:string;id:string}|undefined;
     if(range.cursor){try{position=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid search cursor');}}
     const seek=position?` AND (context_at<? OR (context_at=? AND captures.id<?))`:'';
-    const rows=this.db.prepare(`SELECT * FROM captures${where}${conjunction}${lexical.sql}${seek} ORDER BY context_at DESC,id DESC LIMIT ?`)
+    // Materialize only candidate keys before ordering. Otherwise SQLite may choose the
+    // chronological index and test FTS membership against the entire historical archive.
+    const rows=this.db.prepare(`WITH matches AS MATERIALIZED (
+      SELECT captures.id,context_at FROM captures${where}${conjunction}${lexical.sql}${seek}
+    ), page AS MATERIALIZED (SELECT id,context_at FROM matches ORDER BY context_at DESC,id DESC LIMIT ?)
+    SELECT captures.* FROM page JOIN captures ON captures.id=page.id ORDER BY page.context_at DESC,page.id DESC`)
       .all(...values,...lexical.values,...(position?[position.t,position.t,position.id]:[]),Math.min((range.limit??50)+1,201)) as unknown as Row[];
     const limit=Math.min(range.limit??50,200),items=rows.slice(0,limit).map(r=>this.record(r)),last=items.at(-1);
     const totalScope=this.clauses(scope);
@@ -508,13 +524,13 @@ export class Store {
   }
   vectorSearch(vector:number[], model:string, range:Range={}) {
     const {where,values}=this.clauses(range);
-    const candidates=4096,limit=Math.min(range.limit??30,200),norm=Math.hypot(...vector);
-    const rows=this.db.prepare(`SELECT id,embedding FROM captures${where}${where?' AND ':' WHERE '}embedding_model=? AND embedding IS NOT NULL ORDER BY captured_at DESC,id LIMIT ?`).iterate(...values,model,candidates+1);
-    const best:{id:string;score:number}[]=[];let scanned=0,bounded=false;
-    for(const row of rows){if(scanned++>=candidates){bounded=true;break;}const v=JSON.parse(String(row.embedding)) as number[],vn=Math.hypot(...v);if(v.length!==vector.length||!vn||!norm||!v.every(Number.isFinite))continue;
+    const limit=Math.min(range.limit??30,200),norm=Math.hypot(...vector);
+    const rows=this.db.prepare(`SELECT id,embedding FROM captures${where}${where?' AND ':' WHERE '}embedding_model=? AND embedding IS NOT NULL ORDER BY captured_at DESC,id`).iterate(...values,model);
+    const best:{id:string;score:number}[]=[];let scanned=0;
+    for(const row of rows){scanned++;const v=JSON.parse(String(row.embedding)) as number[],vn=Math.hypot(...v);if(v.length!==vector.length||!vn||!norm||!v.every(Number.isFinite))continue;
       const score=v.reduce((sum,n,i)=>sum+n*vector[i],0)/(vn*norm);best.push({id:String(row.id),score});best.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id));if(best.length>limit)best.pop();
     }
-    return Object.assign(best.flatMap(r=>this.evidence([r.id])),{coverage:{candidateLimit:candidates,scanned:Math.min(scanned,candidates),bounded,selection:'recent_within_scope'}});
+    return Object.assign(best.flatMap(r=>this.evidence([r.id])),{coverage:{candidateLimit:null,scanned,bounded:false,selection:'all_indexed_within_scope'}});
   }
 
   image(id:string) {
@@ -613,7 +629,7 @@ export class Store {
     if(estimated>maxBytes||stats.captures>20000)throw new StoreError('Archive too large for HTTP export; use npm run backup for a consistent database backup',413);
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
-    const archive={perceptionResults:this.db.prepare('SELECT capture_id,kind,json,current FROM perception_results').all(),version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
+    const archive={todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare('SELECT capture_id,kind,json,current FROM perception_results').all(),version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;
   }

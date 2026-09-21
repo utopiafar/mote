@@ -1,6 +1,6 @@
 {
   "name": "@mote/server",
-  "version": "0.0.60",
+  "version": "0.0.61",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
     "@fastify/cors": "^11.1.0",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/static": "^10.1.3",
@@ -28,8 +29,7 @@
     "sharp": "^0.35.4",
     "yaml": "^2.8.1",
     "zod": "^3.25.76",
-    "zod-to-json-schema": "^3.25.1",
-    "@deepseek-ai/cordis": "4.0.2"
+    "zod-to-json-schema": "^3.25.1"
   },
   "devDependencies": {
     "@types/sanitize-html": "^2.16.0"

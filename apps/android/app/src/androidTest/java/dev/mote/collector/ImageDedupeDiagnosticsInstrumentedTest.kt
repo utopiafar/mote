@@ -74,7 +74,11 @@ class ImageDedupeDiagnosticsInstrumentedTest {
                 pipeline.submit(generated(gray, privateColor), WindowSnapshot(setOf("dev.mote.generated"), "dev.mote.generated", true), config, at, sequence * 30000)
                 waitUntil("pipeline $sequence") { !pipeline.isBusy() }
                 val rows = context.queue().capturePage(start.toString(), start.plusSeconds(1000).toString(), limit = 60, source = source).getJSONArray("items")
-                val item = (0 until rows.length()).map { rows.getJSONObject(it) }.singleOrNull { it.getString("capturedAt") == at }
+                val item = (0 until rows.length()).map { rows.getJSONObject(it) }.singleOrNull { row ->
+                    val samples = row.optJSONObject("stateSeries")?.optJSONArray("samples")
+                    row.getString("capturedAt") == at || (samples != null && (0 until samples.length()).any { i -> samples.getJSONObject(i).getString("at") == at })
+                }
+
                 assertNotNull("Generated capture persisted: ${settings.message()}", item)
                 return context.queue().capture(item!!.getString("id"))!!.also { ids += it.getString("id") }
             }

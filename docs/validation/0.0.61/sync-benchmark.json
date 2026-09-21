@@ -1,0 +1,12 @@
+{
+  "count": 100000,
+  "durationMs": 163194.129542,
+  "requests": 1101,
+  "ackP95Ms": 221.13816600000064,
+  "listP95Ms": 0.47354099999938626,
+  "listSamples": 200,
+  "modelCalls": 0,
+  "personalData": false,
+  "transport": "in-process desktop SourceSync to central FileStore; excludes network RTT"
+}
+

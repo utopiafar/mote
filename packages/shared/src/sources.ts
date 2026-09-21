@@ -46,7 +46,7 @@ export function sourceContentTime(record:{capturedAt:string;provenance?:{documen
 export const sourceIdSchema=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 export const sourceConnectionSchema=z.object({
   id:sourceIdSchema,name:z.string().trim().min(1).max(200),
-  kind:z.enum(['local-calendar','local-files','coding-agent','google-calendar','lark-docs','lark-calendar','mcp','upload','custom']),
+  kind:z.enum(['local-calendar','local-files','coding-agent','google-calendar','gmail','lark-docs','lark-calendar','mcp','upload','custom']),
   deviceId:sourceIdSchema,platform:z.enum(['macos','windows','linux','android','import']),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();

@@ -14,7 +14,7 @@ const output=join(repository,'.mote/privacy-metadata-validation');mkdirSync(outp
 app.setPath('userData',join(root,'browser'));
 let server,window;
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function until(fn,label){const end=Date.now()+25000;while(Date.now()<end){if(await fn())return;await delay(100);}throw Error('Timed out: '+label);}
+async function until(fn,label){const end=Date.now()+25000;while(Date.now()<end){if(await fn())return;await delay(100);}if(window)console.error(await window.webContents.executeJavaScript('document.body.innerText'));throw Error('Timed out: '+label);}
 async function run(){
   await app.whenReady();
   const connectionFile=join(root,'connection.json');
@@ -37,10 +37,10 @@ async function run(){
   wc.session.webRequest.onBeforeRequest({urls:[url+'/*']},(details,callback)=>{if(new URL(details.url).pathname.endsWith('/image'))imageRequests.push(details.url);callback({});});
   const js=code=>wc.executeJavaScript(code);
   const click=label=>js(`(()=>{const b=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()===${JSON.stringify(label)});if(!b||b.disabled)return false;b.click();return true;})()`);
-  await window.loadURL(url);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
+  await window.loadURL(url);await js(`localStorage.setItem('mote.record-layout','grid');sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
   await until(()=>js(`document.body.innerText.includes('已登录 ·')`),'connected UI');
   assert.ok(await click('资料库'));await until(()=>js(`!!document.querySelector('.section-tabs')`),'library');assert.ok(await click('片段'));
-  await until(()=>js(`!!document.querySelector('[aria-label="记录视图"]')`),'record view selector');
+  await until(()=>js(`location.hash==='#/library/segments'&&!!document.querySelector('.timeline-heading')`),'record view selector');
   await js(`Array.from(document.querySelectorAll('[aria-label="记录视图"] button')).find(button=>button.innerText==='全部记录').click()`);
   await until(()=>js(`document.querySelectorAll('.capture-card').length===2`),'two records');
   await js(`(()=>{const s=document.querySelector('[aria-label="筛选采集级别"]');s.value='activity';s.dispatchEvent(new Event('change',{bubbles:true}));})()`);

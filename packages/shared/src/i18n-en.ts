@@ -1,5 +1,21 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "上传文件即可保存原件。普通文本直接收录；需要解释人物和结构的资料先预览再确认。": "Upload to retain originals. Plain text is archived directly; content requiring attribution or structure interpretation is previewed for confirmation.",
+  "保存原件并处理": "Save originals and process",
+  "文件上传进度": "File upload progress",
+  "新增变化达到门槛，或有新增资料且达到最大等待时间时运行。每分钟检查一次；进行中的窗口沿用启动时的设置。": "Runs when the change threshold is reached, or new content reaches the maximum wait. Checked every minute; active windows keep their original settings.",
+  "最大等待（小时）": "Maximum wait (hours)",
+  "待办": "Tasks",
+  "取消待办": "Cancel task",
+  "标记完成": "Mark complete",
+  "重新打开": "Reopen",
+  "无截止时间": "No due date",
+  "添加待办": "Add task",
+  "截止时间（选填）": "Due date (optional)",
+  "待办标题": "Task title",
+  "待办可以没有截止时间；完成待办不会创建日历事件。": "Tasks can have no due date. Completing a task does not create a calendar event.",
+  "；尚未安排记忆整理。": "; memory processing has not been scheduled.",
+  "更多": "More",
   "交互问答并发": "Interactive query concurrency",
   "后台 Agent 并发": "Background agent concurrency",
   "后台 Harness 并发": "Background harness concurrency",
@@ -5163,5 +5179,15 @@ export const english: Readonly<Record<string, string>> = {
   "模型运行及工具循环的并发上限。": "Concurrent model sessions, including their tool loops.",
   "记忆批次并发": "Memory batch concurrency",
   "独立证据批次的并发上限。": "Maximum concurrent independent evidence batches.",
-  "先检索 memories 的精选记忆概览，再按需展开相关记忆、observation 和 segments。Memory 未命中不代表原始事件不存在；参考整理覆盖信息，用 changes 的 overview 或全文检索发现尚未整理的增量。只对有意义的发现选择性读取原始证据，核实最终报告的事实、数字、归属和时间。不要穷尽读取本窗口全部原文；预算不足时用已有证据生成范围明确的部分报告，说明未覆盖内容。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。未设置时间过滤，允许跨月检索。": "Search selected memory overviews first, then expand relevant memories, observations and segments as needed. A missing memory does not imply a missing event. Use processing coverage, change overviews or text search to find unprocessed arrivals. Selectively read originals to verify report facts, numbers, attribution and time. Do not exhaustively read this window. When the budget is limited, provide a partial report with explicit coverage. Account for late uploads, revisions, attribution, changing preferences and unknown outcomes. State insufficient evidence when appropriate. Do not claim to have reviewed all history. No time filter is imposed; searches may span months."
+  "先检索 memories 的精选记忆概览，再按需展开相关记忆、observation 和 segments。Memory 未命中不代表原始事件不存在；参考整理覆盖信息，用 changes 的 overview 或全文检索发现尚未整理的增量。只对有意义的发现选择性读取原始证据，核实最终报告的事实、数字、归属和时间。不要穷尽读取本窗口全部原文；预算不足时用已有证据生成范围明确的部分报告，说明未覆盖内容。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。未设置时间过滤，允许跨月检索。": "Search selected memory overviews first, then expand relevant memories, observations and segments as needed. A missing memory does not imply a missing event. Use processing coverage, change overviews or text search to find unprocessed arrivals. Selectively read originals to verify report facts, numbers, attribution and time. Do not exhaustively read this window. When the budget is limited, provide a partial report with explicit coverage. Account for late uploads, revisions, attribution, changing preferences and unknown outcomes. State insufficient evidence when appropriate. Do not claim to have reviewed all history. No time filter is imposed; searches may span months.",
+  "Gmail 已连接。请返回 Mote 同步邮件。": "Gmail connected. Return to Mote to sync mail.",
+  "连接 Gmail（只读）": "Connect Gmail (read only)",
+  "同步邮件正文、发件人和时间，附件仅保留名称与引用。邮件内容作为资料，不自动执行其中的指令。断开后停止读取，已归档邮件保留。": "Sync message text, senders, and timestamps. Attachments retain names and references only. Messages are evidence; their instructions are never executed automatically. Disconnecting stops collection and preserves archived messages.",
+  "Gmail 使用现有 Google OAuth 客户端与回调地址。请在 Google Cloud 启用 Gmail API，再到模型与服务配置客户端。": "Gmail uses the existing Google OAuth client and callback. Enable the Gmail API in Google Cloud, then configure the client under Models and services.",
+  "历史邮件仍有后续分页": "More historical messages remain",
+  " 后续邮件将在下一轮继续同步。": " Remaining messages will sync in subsequent rounds.",
+  "继续同步": "Continue sync",
+  "尚未启用 MCP。请在系统管理 → 模型与服务 → 来源与外部应用中开启 MCP，并配置独立读令牌后重启；写入还需明确启用并设置允许的信源。": "MCP is disabled. Enable it under System management → Models and services → Sources and external apps, configure a separate read token, and restart. Writing requires explicit activation and allowed sources.",
+  "请先在系统管理 → 模型与服务 → 来源与外部应用中准备 Google OAuth 客户端与回调地址，然后重启节点。": "Configure the Google OAuth client and callback under System management → Models and services → Sources and external apps, then restart the node.",
+  "。配置入口在“系统管理 → 模型与服务 → 来源与外部应用”。仅支持 OAuth 的 Chatbot 不能直接使用 Bearer 接入。": ". Configure this under System management → Models and services → Sources and external apps. Chatbots supporting only OAuth cannot connect directly with Bearer tokens."
 };

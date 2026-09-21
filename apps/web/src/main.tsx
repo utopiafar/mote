@@ -1,16 +1,16 @@
 import {sections, routes, readPage, sectionFor, type Page} from './navigation';
 import {confirmNavigation} from './unsaved';
-import {Processing} from './Processing';
-import {Feedback} from './Feedback';
-import {StorageStatistics} from './StorageStatistics';
-import {LarkSettings} from './LarkSettings';
+const Processing = React.lazy(()=>import('./Processing').then(module=>({default:module.Processing})));
+const Feedback = React.lazy(()=>import('./Feedback').then(module=>({default:module.Feedback})));
+const StorageStatistics = React.lazy(()=>import('./StorageStatistics').then(module=>({default:module.StorageStatistics})));
+const LarkSettings = React.lazy(()=>import('./LarkSettings').then(module=>({default:module.LarkSettings})));
 import { LanguageSelector } from './LanguageSelector';
 import { getLocale } from '@mote/shared/i18n';
 import { moteText } from '@mote/shared/i18n';
 import {Usage,TurnUsage} from './Usage';
-import {Actions} from './Actions';
-import {CaptureSessions} from './CaptureSessions';
-import {ContentStorage} from './ContentStorage';
+const Actions = React.lazy(()=>import('./Actions').then(module=>({default:module.Actions})));
+const CaptureSessions = React.lazy(()=>import('./CaptureSessions').then(module=>({default:module.CaptureSessions})));
+const ContentStorage = React.lazy(()=>import('./ContentStorage').then(module=>({default:module.ContentStorage})));
 import { clearSession, persistSession, readSessionLifetime, readStoredSession, saveSessionLifetime, type SessionLifetime } from "./session";
 import {systemEventText} from '@mote/shared';
 import React, {
@@ -23,7 +23,7 @@ import React, {
 import { createRoot } from "react-dom/client";
 import {captureOcrState, type CapturePreview} from '@mote/shared';
 import { AnswerMarkdown, answerPreview } from "./AnswerMarkdown";
-import { Conversations } from "./Conversations";
+const Conversations = React.lazy(()=>import('./Conversations').then(module=>({default:module.Conversations})));
 import {captureDateRange, evidencePresentation, localDateInput, ocrPresentation} from './capture-presentation';
 import {
   ArrowDownToLine,
@@ -82,21 +82,21 @@ import {
   type Range,
 } from "./api";
 import "./styles.css";
-import { Notes } from "./Notes";
-import { Diagnostics } from "./Diagnostics";
+const Notes = React.lazy(()=>import('./Notes').then(module=>({default:module.Notes})));
+const Diagnostics = React.lazy(()=>import('./Diagnostics').then(module=>({default:module.Diagnostics})));
 import { ServerSettings, AdvancedConfiguration } from "./ServerSettings";
-import { SoftwareUpdate } from "./SoftwareUpdate";
+const SoftwareUpdate = React.lazy(()=>import('./SoftwareUpdate').then(module=>({default:module.SoftwareUpdate})));
 import { DeviceOverview, PageBack } from "./DeviceOverview";
-import { Connections } from "./Connections";
+const Connections = React.lazy(()=>import('./Connections').then(module=>({default:module.Connections})));
 import {Metadata, sourceLabels, activityExplanation} from './Metadata';
 import {MediaSnapshot,MediaActivitySummary} from './Media';
 import {mediaCardText,mediaStatus,mediaExplanation} from './media-presentation';
 
 import {Files,FileDetail} from './Files';
-import {Sources} from "./Sources";
-import {Memories} from "./Memories";
-import {Imports} from "./Imports";
-import {Insights} from "./Insights";
+const Sources = React.lazy(()=>import('./Sources').then(module=>({default:module.Sources})));
+const Memories = React.lazy(()=>import('./Memories').then(module=>({default:module.Memories})));
+const Imports = React.lazy(()=>import('./Imports').then(module=>({default:module.Imports})));
+const Insights = React.lazy(()=>import('./Insights').then(module=>({default:module.Insights})));
 import {SourceDocumentDetails} from './SourceDocumentDetails';
 
 declare global {
@@ -1527,7 +1527,7 @@ function App() {
               {moteText("我")}</button>
           </div>
         </header>
-        <div className="content">
+        <React.Suspense key={page} fallback={<p role="status">{moteText("正在读取…")}</p>}><div className="content">
           {(['library','connections','system'] as const).filter(group=>sectionFor(page)===group).map(group=><nav className="section-tabs" aria-label={group} key={group}>{sections[group].map(target=><button key={target} aria-current={page===target?'page':undefined} onClick={()=>onPage(target)}>{pageLabels[target]}</button>)}</nav>)}
           {notice && (
             <div className="notice" role="status">
@@ -1684,7 +1684,7 @@ function App() {
             </>
           )}
         </div>
-        <footer className="footer">
+        </React.Suspense><footer className="footer">
           <span>{moteText("Mote · 让上下文，有迹可循。")}</span>
           <span>
             {connection && status

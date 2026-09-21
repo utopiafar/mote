@@ -150,34 +150,29 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 var wireBytes = 0L
                 var response: Pair<Int, JSONObject?>
                 var individual = !config.packedUpload
+                fun jsonBatch() {
+                    val result = UploadNegotiation.sendShrinking(events.take(25)) { batch ->
+                        val body = JSONObject().put("captures", org.json.JSONArray(batch))
+                        wireBytes += body.toString().toByteArray(Charsets.UTF_8).size
+                        HttpJson.post("${config.server}/api/captures/batch", body, config.token)
+                    }
+                    sent = result.first; response = result.second; individual = false
+                }
+                response = 0 to null
                 if (useBundle) {
-                    val bundle = CaptureBundle.encode(sent)
-                    wireBytes = bundle.size.toLong()
-                    response = HttpJson.postBytes("${config.server}/api/captures/bundle", bundle, config.token, CaptureBundle.CONTENT_TYPE)
-                    if (response.first in setOf(403, 404, 405, 413)) {
+                    val result = UploadNegotiation.sendShrinking(sent) { batch ->
+                        val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
+                        HttpJson.postBytes("${config.server}/api/captures/bundle", bundle, config.token, CaptureBundle.CONTENT_TYPE)
+                    }
+                    sent = result.first; response = result.second
+                    if (UploadNegotiation.unsupported(response.first)) {
                         capability.edit().putString("server", config.server).putLong("at", System.currentTimeMillis()).apply()
-                        sent = events.take(25)
-                        val fallback = JSONObject().put("captures", org.json.JSONArray(sent))
-                        wireBytes = fallback.toString().toByteArray(Charsets.UTF_8).size.toLong()
-                        response = HttpJson.post("${config.server}/api/captures/batch", fallback, config.token)
-                        individual = false
-                        if (response.first in setOf(403, 404, 405, 413)) {
-                            sent = events.take(1); individual = true
-                            wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
-                            response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
-                        }
+                        jsonBatch()
                     }
-                } else if (config.packedUpload) {
-                    val body = JSONObject().put("captures", org.json.JSONArray(sent))
-                    wireBytes = body.toString().toByteArray(Charsets.UTF_8).size.toLong()
-                    response = HttpJson.post("${config.server}/api/captures/batch", body, config.token)
-                    if (response.first in setOf(403, 404, 405, 413)) {
-                        sent = events.take(1); individual = true
-                        wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
-                        response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
-                    }
-                } else {
-                    wireBytes = sent.first().toString().toByteArray(Charsets.UTF_8).size.toLong()
+                } else if (config.packedUpload) jsonBatch()
+                if (!config.packedUpload || UploadNegotiation.unsupported(response.first)) {
+                    sent = events.take(1); individual = true
+                    wireBytes += sent.first().toString().toByteArray(Charsets.UTF_8).size
                     response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
                 }
                 Diagnostics(applicationContext).add("uploadBytes", wireBytes)

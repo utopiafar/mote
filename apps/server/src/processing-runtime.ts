@@ -1,3 +1,4 @@
+import {setImmediate as yieldTurn} from 'node:timers/promises';
 import type {ProcessingJobView} from '@mote/shared';
 import {createHash,randomUUID} from 'node:crypto';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
@@ -69,14 +70,17 @@ export class ProcessingRuntime {
   }
   settings(){const saved=this.store.db.prepare("SELECT value FROM settings WHERE key='processing-policy'").get();return saved?policies.parse(JSON.parse(String(saved.value))):policies.parse(Object.fromEntries(lanes.map(lane=>[lane,{concurrency:this.limits[lane]?.concurrency??(lane==='aggregate'?2:1),dailyCalls:this.limits[lane]?.dailyCalls??(lane==='semantic'||lane==='memory'?100:10000),dailyInputCharacters:this.limits[lane]?.dailyInputCharacters??(lane==='semantic'||lane==='memory'?1200000:120000000)}])));}
   configure(input:unknown){const policy=policies.parse(input);this.store.db.prepare("INSERT INTO settings VALUES('processing-policy',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(policy));return this.settings();}
-  view(){
-    const jobs = this.store.db.prepare('SELECT id,lane,state,attempts,available_at,error,json FROM processing_jobs ORDER BY rowid DESC LIMIT 100').all().map((row):ProcessingJobView => {
+  view(args:{state?:string;cursor?:number;limit?:number}={}){
+    const limit=Math.max(1,Math.min(args.limit??100,100)),clauses:string[]=[],values:(string|number)[]=[];
+    if(args.state){clauses.push('state=?');values.push(args.state);}if(args.cursor!==undefined){clauses.push('rowid<?');values.push(args.cursor);}
+    const rows=this.store.db.prepare(`SELECT rowid,id,lane,state,attempts,available_at,error,json FROM processing_jobs ${clauses.length?'WHERE '+clauses.join(' AND '):''} ORDER BY rowid DESC LIMIT ?`).all(...values,limit+1);
+    const jobs = rows.slice(0,limit).map((row):ProcessingJobView => {
       const job=JSON.parse(String(row.json)) as Job;
       const state=String(row.state);
       return {id:String(row.id),engine:'context-dag' as const,title:job.processor,state,attempts:Number(row.attempts),lane:String(row.lane),reason:row.error?String(row.error):undefined,availableAt:Number(row.available_at),dependencies:job.dependencies,outputs:job.outputs,
         allowedActions:[...(['failed','blocked','cancelled'].includes(state)?['retry-step' as const]:[]),...(!['succeeded','cancelled'].includes(state)?['cancel' as const]:[])]};
     });
-    return {jobs,limit:100,settings:this.settings(),processors:this.registry.list(),queues:this.store.db.prepare('SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state').all(),usage:this.store.db.prepare('SELECT * FROM processing_usage ORDER BY day DESC LIMIT 28').all(),delivery:'at_least_once; output commit is fenced; provider retries may incur additional cost'};}
+    return {jobs,limit,nextCursor:rows.length>limit?Number(rows[limit-1].rowid):null,settings:this.settings(),processors:this.registry.list(),queues:this.store.db.prepare('SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state').all(),usage:this.store.db.prepare('SELECT * FROM processing_usage ORDER BY day DESC LIMIT 28').all(),delivery:'at_least_once; output commit is fenced; provider retries may incur additional cost'};}
   retry(id:string){this.store.db.prepare("UPDATE processing_jobs SET state='waiting',attempts=0,available_at=0,error=NULL WHERE id=? AND state IN ('failed','blocked','cancelled')").run(id);}
   cancel(id:string){this.active.get(id)?.abort();this.store.db.prepare("UPDATE processing_jobs SET state='cancelled',fence=NULL,error='cancelled' WHERE id=? AND state!='succeeded'").run(id);}
   tick(){if(this.stopping)return Promise.resolve();return this.ready.then(()=>this.run());}
@@ -88,10 +92,11 @@ export class ProcessingRuntime {
     const started:Promise<void>[]=[];
     for(const lane of lanes){
       if(this.stopping||this.lanesRunning.has(lane))continue;
+      if(!db.prepare("SELECT 1 FROM processing_jobs j WHERE lane=? AND state='waiting' AND available_at<=? AND attempts<4 AND NOT EXISTS(SELECT 1 FROM processing_dependencies d JOIN processing_jobs p ON p.id=d.dependency_id WHERE d.job_id=j.id AND p.state!='succeeded') LIMIT 1").get(lane,this.now()))continue;
       const task=(async()=>{
       const concurrency=this.settings()[lane].concurrency;
-      const rows=db.prepare("SELECT id FROM processing_jobs j WHERE lane=? AND state='waiting' AND available_at<=? AND attempts<4 AND NOT EXISTS(SELECT 1 FROM processing_dependencies d JOIN processing_jobs p ON p.id=d.dependency_id WHERE d.job_id=j.id AND p.state!='succeeded') ORDER BY rowid LIMIT ?").all(lane,now,concurrency);
-      await Promise.all(rows.map(row=>this.execute(String(row.id))));
+      const work=async()=>{for(;;){if(this.stopping)return;const row=db.prepare("SELECT id FROM processing_jobs j WHERE lane=? AND state='waiting' AND available_at<=? AND attempts<4 AND NOT EXISTS(SELECT 1 FROM processing_dependencies d JOIN processing_jobs p ON p.id=d.dependency_id WHERE d.job_id=j.id AND p.state!='succeeded') ORDER BY available_at,rowid LIMIT 1").get(lane,this.now());if(!row)return;await this.execute(String(row.id));await yieldTurn();}};
+      await Promise.all(Array.from({length:concurrency},work));
       })().finally(()=>this.lanesRunning.delete(lane));
       this.lanesRunning.set(lane,task);started.push(task);
     }

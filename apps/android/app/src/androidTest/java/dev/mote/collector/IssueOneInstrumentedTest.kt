@@ -95,9 +95,9 @@ class IssueOneInstrumentedTest {
                 val labels = views(activity.window.decorView).filterIsInstance<Button>().map { it.text.toString() }.toList()
                 assertTrue(labels.containsAll(listOf("导出配置 JSON", "导入配置 JSON", "导出本机记录 ZIP", "导入本机记录 ZIP"))); render(activity, "backup")
             } }
-            ActivityScenario.launch(AppUpdatesActivity::class.java).awaitUiText("检查更新").use { scenario -> scenario.onActivity { activity ->
+            ActivityScenario.launch(AppUpdatesActivity::class.java).awaitUiText(if (BuildConfig.APPLICATION_ID.endsWith(".dev")) "下载 DEV 安装包" else "检查更新").use { scenario -> scenario.onActivity { activity ->
                 val visible = views(activity.window.decorView).filterIsInstance<Button>().filter { it.isShown }.map { it.text.toString() }.toList()
-                assertTrue(visible.contains("检查更新")); assertFalse(visible.contains("下载更新")); assertFalse(visible.contains("安装更新")); render(activity, "updates")
+                assertTrue(visible.contains(if (BuildConfig.APPLICATION_ID.endsWith(".dev")) "下载 DEV 安装包" else "检查更新")); assertFalse(visible.contains("下载更新")); assertFalse(visible.contains("安装更新")); render(activity, "updates")
             } }
             assertFalse(Settings(context).enabled)
         } finally { queue.acknowledge(id) }

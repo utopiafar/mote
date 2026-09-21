@@ -6,6 +6,7 @@ export interface SourceDefinition {
   platform: 'macos' | 'import'; retention: SourceRetention; enabled: boolean;
 }
 export interface SourceItem {
+  localOriginal?: import('./original-spool').OriginalSpool;
   localOriginalBase64?: string;
   metadata?: import('@mote/shared').SourceMetadata;
   externalId: string; revision: string; observedAt: string; modifiedAt?: string;

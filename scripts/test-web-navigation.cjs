@@ -38,7 +38,7 @@ async function run(){
  await until(()=>js(`!!document.querySelector('.memory-settings input[type=number]')`),'memory settings');
  assert.equal((await(await request('/api/memory-settings')).json()).settings.extraction.intervalHours,6);
  await js(`(()=>{const input=document.querySelector('.memory-settings input[type=number]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'12');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
- await click('保存记忆设置');await until(async()=>(await(await request('/api/memory-settings')).json()).settings.extraction.intervalHours===12,'memory policy saved immediately');
+ await click('保存记忆设置');await until(async()=>(await(await request('/api/memory-settings')).json()).settings?.extraction.maxWaitHours===12,'memory policy saved immediately');
  await js(`document.querySelector('.memory-settings').scrollIntoView()`);await screenshot('memory-settings-desktop');
  window.setSize(430,900);await until(()=>js('window.innerWidth===430'),'mobile resize');await delay(300);await js(`document.querySelector('.memory-settings').scrollIntoView()`);await screenshot('memory-settings-mobile');window.setSize(1360,1000);await js(`window.scrollTo(0,0)`);
  await js(`document.querySelector('.server-settings .back-link').click()`);await click('模型 Provider');await click('旧版默认预设');await readyField('服务商类型');

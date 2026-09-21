@@ -1,0 +1,131 @@
+[
+  {
+    "command": "node_modules/.bin/electron scripts/test-web-tasks-imports.cjs",
+    "code": 0,
+    "seconds": 6.12
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/i18n-smoke.cjs",
+    "code": 0,
+    "seconds": 2.23
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/ui-smoke.cjs",
+    "code": 0,
+    "seconds": 16.04
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/ui-page-smoke.cjs",
+    "code": 0,
+    "seconds": 1.11
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/client-improvements-smoke.cjs",
+    "code": 0,
+    "seconds": 1.02
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/complex-ui-smoke.cjs",
+    "code": 0,
+    "seconds": 1.41
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/content-storage-smoke.cjs",
+    "code": 0,
+    "seconds": 1.04
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/offline-sync-smoke.cjs",
+    "code": 1,
+    "seconds": 2.45,
+    "rerun": {
+      "code": 0,
+      "reason": "SQLite busy_timeout configured before WAL initialization; lock contention regression test added"
+    }
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/capture-browser-smoke.cjs",
+    "code": 0,
+    "seconds": 5.52
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-web-i18n.cjs",
+    "code": 0,
+    "seconds": 5.61
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-model-profiles-ui.cjs",
+    "code": 0,
+    "seconds": 6.99
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-web-login.cjs",
+    "code": 0,
+    "seconds": 3.67
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-web-navigation.cjs",
+    "code": 0,
+    "seconds": 7.86
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-web-content-storage.cjs",
+    "code": 0,
+    "seconds": 2.09
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-web-conversations.cjs",
+    "code": 0,
+    "seconds": 9.55
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-calendar-actions-ui.cjs",
+    "code": 0,
+    "seconds": 2.0
+  },
+  {
+    "command": "node_modules/.bin/electron apps/web/scripts/capture-browser-smoke.cjs",
+    "code": 0,
+    "seconds": 33.4
+  },
+  {
+    "command": "node apps/desktop/scripts/connection-server-smoke.cjs",
+    "code": 0,
+    "seconds": 1.07
+  },
+  {
+    "command": "node apps/desktop/scripts/file-evidence-smoke.cjs",
+    "code": 0,
+    "seconds": 0.79
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/connection-smoke.cjs",
+    "code": 0,
+    "seconds": 3.66
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-web-connections.cjs",
+    "code": 0,
+    "seconds": 2.96
+  },
+  {
+    "command": "node_modules/.bin/electron scripts/test-web-metadata.cjs",
+    "code": 0,
+    "seconds": 2.16
+  },
+  {
+    "command": "node apps/desktop/scripts/window-identity-smoke.mjs",
+    "code": 0,
+    "seconds": 1.02
+  },
+  {
+    "command": "node_modules/.bin/electron apps/desktop/scripts/update-network-smoke.cjs",
+    "code": 0,
+    "seconds": 0.43
+  },
+  {
+    "command": "node apps/desktop/scripts/update-fixture.cjs",
+    "code": 0,
+    "seconds": 18.26
+  }
+]

@@ -188,7 +188,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 val encoded = if (!duplicate) jpeg(output, config.jpegQuality) else null
                 if (!duplicate) diagnostics.timing("encodeMs", SystemClock.elapsedRealtime() - encodeStart)
                 val queueStart = SystemClock.elapsedRealtime()
-                context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L, gate == "hold")
+                val committedId = context.queue().enqueue(event, encoded, config.maxQueueMiB * 1024L * 1024L, gate == "hold")
                 diagnostics.timing("queueMs", SystemClock.elapsedRealtime() - queueStart)
                 if (!duplicate) runCatching {
                     val ratio = minOf(1f, 320f / maxOf(output.width, output.height))
@@ -200,7 +200,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     val reference = dedupeReference?.takeIf { it.signature == previousSignature }
                     if (reference != null) runCatching {
                         context.imageDedupeDiagnostics().record(ImageDedupeDiagnosticsDetails.metadata(dedupeMode, comparison!!,
-                            reference.captureId, reference.capturedAt, event.getString("id"), capturedAt, windows.foreground,
+                            reference.captureId, reference.capturedAt, committedId, capturedAt, windows.foreground,
                             output.width, output.height, features.width, features.height), reference.image, jpeg(output, config.jpegQuality))
                     }.onFailure { SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE) }
                 }

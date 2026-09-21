@@ -25,3 +25,36 @@ test('a slow semantic request cannot block later OCR work or cause duplicate OCR
  runtime.registry.get('image.http').process=async args=>{if(args.settings.imageEndpoint.includes('vlm')){begin();await wait;}else ocr++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated result'}]};};
  await store.ingest(input);p.configure({...p.settings(),ocrEndpoint:'http://localhost/ocr',semanticEndpoint:'http://localhost/vlm',semanticMode:'realtime',batchSize:1});const running=p.tick();await started;await new Promise(resolve=>setImmediate(resolve));await store.ingest({...input,id:randomUUID()});await p.tick();assert.equal(ocr,1);assert.equal(store.db.prepare("SELECT COUNT(*) n FROM perception_jobs WHERE kind='ocr' AND state='succeeded'").get()!.n,2);release();await running;
 });
+
+test('a free OCR slot takes the next distinct image while an earlier image remains slow',async t=>{
+ const {store,p,input,runtime}=await setup(t);let release!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;});
+ const ids=[input.id,randomUUID(),randomUUID()];let third!:()=>void;const thirdStarted=new Promise<void>(resolve=>{third=resolve;});
+ runtime.registry.get('image.http').process=async args=>{if(args.file.id===ids[0])await held;if(args.file.id===ids[2])third();return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated OCR'}]};};
+ for(let i=0;i<ids.length;i++){const image=await sharp({create:{width:16,height:16,channels:3,background:['#ff0000','#00ff00','#0000ff'][i]}}).png().toBuffer();await store.ingest({...input,id:ids[i],imageBase64:image.toString('base64')});}
+ p.configure({...p.settings(),ocrEndpoint:'http://localhost/ocr',concurrency:2,batchSize:3});const running=p.tick();
+ try{await Promise.race([thirdStarted,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Free OCR slot stayed idle')),3000);timer.unref();})]);assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(ids[0])!.state,'running');}
+ finally{release();await running;}
+ assert.equal(store.db.prepare("SELECT COUNT(*) n FROM perception_jobs WHERE kind='ocr' AND state='succeeded'").get()!.n,3);
+});
+
+test('changing semantic scheduling preserves an in-flight OCR configuration and result',async t=>{
+ const {store,p,input,runtime}=await setup(t);let release!:()=>void,begin!:()=>void;const held=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{begin=resolve;});
+ runtime.registry.get('image.http').process=async()=>{begin();await held;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Generated retained OCR result'}]};};
+ await store.ingest(input);p.configure({...p.settings(),ocrEndpoint:'http://localhost/ocr'});const run=p.tick();await started;
+ p.configure({...p.settings(),semanticMode:'realtime',batchMinutes:5});release();await run;
+ assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.state,'succeeded');
+ assert.ok(store.search({query:'retained OCR result'}).length);
+});
+
+
+test('configuration cancellation releases an uncooperative plugin and fences its late result',async t=>{
+ const {store,p,input,runtime}=await setup(t);let begin!:()=>void,release!:()=>void;
+ const started=new Promise<void>(resolve=>{begin=resolve;}),held=new Promise<void>(resolve=>{release=resolve;});
+ runtime.registry.get('image.http').process=async()=>{begin();await held;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Obsolete provider result'}]};};
+ await store.ingest(input);p.configure({...p.settings(),ocrEndpoint:'http://localhost/old'});const running=p.tick();await started;
+ p.configure({...p.settings(),ocrEndpoint:'http://localhost/new'});
+ await Promise.race([running,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Cancelled provider held its slot')),1000);timer.unref();})]);
+ runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[{startMs:0,endMs:0,text:'Current provider result'}]});
+ await p.tick();release();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(store.evidence([input.id])[0].ocrText,'Current provider result');
+});

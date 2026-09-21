@@ -1,3 +1,4 @@
+import {sourceState} from '../src/source-state-store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,10 +21,10 @@ function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): S
 }
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
 describe('source revisions and durable acknowledgments', () => {
-  it('keeps the source index and pending snapshot readable as ordinary JSON across restart', async () => {
+  it('keeps the source index and pending snapshot in transactional SQLite across restart', async () => {
     const engine = await create();
     await engine.stage(scan([item]), false, '2026-09-14T01:00:00Z');
-    const disk = JSON.parse(await readFile(join(directory, 'state.json'), 'utf8'));
+    const disk = sourceState(join(directory,'state.json')) as any;
     const pending = [...(disk.pendingRealtime ?? []), ...(disk.pendingHistory ?? [])];
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({ externalId: item.externalId, text: item.text });
@@ -40,7 +41,7 @@ describe('source revisions and durable acknowledgments', () => {
     engine = await create(); await engine.flush(source, transport(saved));
     expect(saved[0]).toEqual(saved[1]); expect(engine.status().pending).toBe(0);
     expect(await engine.stage(scan([item]), false)).toBe(0);
-    const disk = await readFile(join(directory, 'state.json'), 'utf8'); expect(disk).not.toContain(item.text);
+    const disk = JSON.stringify(sourceState(join(directory,'state.json'))); expect(disk).not.toContain(item.text);
   });
   it('chains A → delete → same A with three distinct revisions', async () => {
     const engine = await create(); const saved: SourceItem[] = [];
@@ -94,7 +95,7 @@ describe('source revisions and durable acknowledgments', () => {
   it('a changed policy discards staged old bodies before any request, including across restart', async () => {
     let engine = await create(); await engine.ensurePolicy('snapshot'); await engine.stage(scan([item]), false);
     engine = await create(); await engine.ensurePolicy('reference');
-    expect(engine.status().pending).toBe(0); expect(await readFile(join(directory, 'state.json'), 'utf8')).not.toContain(item.text);
+    expect(engine.status().pending).toBe(0); expect(JSON.stringify(sourceState(join(directory,'state.json')))).not.toContain(item.text);
     await engine.stage(scan([{ ...item, text: '', layer: 'reference' }]), false);
     const saved: SourceItem[] = []; await engine.flush(source, transport(saved)); expect(saved[0].text).toBe('');
   });

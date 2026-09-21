@@ -1,3 +1,4 @@
+import {ImportUploads} from '../src/import-uploads.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,renameSync,rmSync,existsSync,symlinkSync,readdirSync} from 'node:fs';
@@ -169,4 +170,12 @@ test('developer content controls require owner auth and return background progre
   const response=await app.inject({method:'POST',url:'/api/content-storage/decrypt',headers,payload:{}});assert.equal(response.statusCode,202);
   assert.equal(response.json().job.state,'running');assert.ok(!response.body.includes(store.key!.toString('hex')));
   assert.equal((await app.inject({method:'PUT',url:'/api/content-storage',headers,payload:{enabled:'false'}})).statusCode,400);
+});
+
+test('binary browser import parts remain readable after bulk decryption and restart',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mote-import-decrypt-'));let store=new Store(dir,{dataKey:'aa'.repeat(32),contentEncryptionEnabled:true});
+ t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+ let archived=new ArchivedFileStore(store),uploads=new ImportUploads(store,archived);const bytes=Buffer.from('generated import bytes'),upload=uploads.begin({name:'fixture.txt',sizeBytes:bytes.length});uploads.part(upload.id,0,bytes);
+ store.contentEncryption.setEnabled(false);const service=new ContentStorageService(store,new FileStore(store,new SourceStore(store)),archived);service.start();assert.equal((await finish(service)).failed,0);
+ store.close();store=new Store(dir);archived=new ArchivedFileStore(store);uploads=new ImportUploads(store,archived);assert.deepEqual(archived.read(uploads.commit(upload.id).id),bytes);
 });

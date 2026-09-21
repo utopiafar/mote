@@ -45,8 +45,8 @@ try {
     assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Imported 1 changed/);
     assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Imported 0 changed/);
     const syncDirectory=join(p.directory,'file-sync');
-    const syncFiles=(await readdir(syncDirectory)).filter(name=>name.endsWith('.json'));
-    const stateFiles=syncFiles.filter(name=>!name.endsWith('.atime.json'));
+    const syncFiles=(await readdir(syncDirectory)).filter(name=>name.endsWith('.json')||name.endsWith('.json.sqlite'));
+    const stateFiles=syncFiles.filter(name=>name.endsWith('.json.sqlite')).map(name=>name.slice(0,-7));
     assert.equal(stateFiles.length,1);
     assert.deepEqual(syncFiles.filter(name=>name.endsWith('.atime.json')),[stateFiles[0]+'.atime.json']);
     assert.equal((await stat(join(syncDirectory,stateFiles[0]+'.atime.json'))).mode&0o777,0o600);

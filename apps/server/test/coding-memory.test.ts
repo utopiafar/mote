@@ -49,7 +49,7 @@ test('host addresses unique exact coding quotes only inside authorized ranges, w
  assert.throws(()=>extract('unique\\noutput',undefined,[{id:ack.id,offset:0,length:3}]),{code:'quote_range'});
  const at=text.lastIndexOf('repeat');assert.equal(extract('repeat',undefined,[{id:ack.id,offset:at,length:6}]).items[0].evidence[0].offset,at);
 });
-test('coding uploads share durable interval AND increment admission; legacy queued originals and replay remain safe',async t=>{
+test('coding uploads share durable threshold-or-maximum-wait admission; legacy queued originals and replay remain safe',async t=>{
  const {store,sources,memories}=fixture(t);let configured=false,now=0;const calls:MemoryPipelineQuery[]=[];
  const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>configured,query:async input=>{calls.push(input);assert.equal(input.responseMode,'memory-extraction');return empty;}});
  const a=await sources.upsert('coding',item('a'));
@@ -61,10 +61,10 @@ test('coding uploads share durable interval AND increment admission; legacy queu
    const out='a'.repeat(32)+id.slice(32);store.archive.save(out,out,out,{kind:'semantic',text:'Generated scoped interpretation',metadata:{evidenceRanges:segment.representatives.map(id=>({id,offset:0,length:store.evidence([id])[0].ocrText.length}))}},[],'fixture','1','fixture',[],[{id,revision:segment.revision}]);return [out];
  })});
  const settings=lifecycle.settings();for(const key of ['consolidation','working','insights'] as const)settings[key].enabled=false;settings.extraction.minChanges=2;lifecycle.configure(settings);
- now=6*3600000;await lifecycle.tick();assert.equal(calls.length,0,'wait for model');configured=true;await lifecycle.tick();assert.equal(calls.length,0,'wait for increments');
+ now=6*3600000;await lifecycle.tick();assert.equal(calls.length,0,'wait for model');configured=true;await lifecycle.tick();assert.equal(calls.length,0,'unaggregated evidence does not fabricate artifact coverage');
  const before=store.db.prepare('SELECT count(*) n FROM changes').get()!.n;
  await assert.rejects(sources.upsert('coding',item('rollback'),undefined,()=>{throw Error('fixture rollback');}),/fixture rollback/);assert.equal(store.db.prepare('SELECT count(*) n FROM changes').get()!.n,before);
- await sources.upsert('coding',item('b','s2'));store.archive.aggregate(100);now=0;await lifecycle.tick();assert.equal(calls.length,0,'uploads do not bypass the interval');now=6*3600000;await lifecycle.tick();
+ await sources.upsert('coding',item('b','s2'));store.archive.aggregate(100);now=0;await lifecycle.tick();assert.equal(calls.length,2,'quantity threshold admits both ready segments without an interval barrier');now=6*3600000;await lifecycle.tick();
  assert.equal(calls.length,2);assert.ok(calls.some(c=>c.evidenceIds.includes(a.id)));assert.ok(calls.every(c=>c.skill==='coding-memory'));
  await sources.upsert('coding',item('a'));now+=6*3600000;await lifecycle.tick();assert.equal(calls.length,2,'duplicate acknowledgements do not generate work');
  await lifecycle.close();await pipeline.close();

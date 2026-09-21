@@ -31,11 +31,12 @@ export function Memories({api,range,onOpen,refreshVersion=0,embedded=false}:{emb
   const {job,error:jobError,reload:reloadJob}=useMemoryJob(api,jobId);
   function refresh(){setRevision(value=>value+1);}
   useEffect(()=>{
-    const controller=new AbortController();
-    void api.request<{items:Memory[];nextCursor:string|null}>('/api/memories?'+new URLSearchParams({includeStale:'true',limit:'30',...(layer?{layer}:{}),...(query?{query}:{}),...(tier?{tier}:{}),...(cursor?{cursor}:{}),...(filter!=='all'?{status:filter}:{})}),{signal:controller.signal}).then(value=>{if(!controller.signal.aborted){setItems(value.items);setNextCursor(value.nextCursor);setLoading(false);}}).catch(e=>{if(!controller.signal.aborted){setError(errorMessage(e));setLoading(false);}});
+    const controller=new AbortController();setLoading(true);setError('');
+    void api.request<{items:Memory[];nextCursor:string|null}>('/api/memories?'+new URLSearchParams({...range,includeStale:'true',limit:'30',...(layer?{layer}:{}),...(query?{query}:{}),...(tier?{tier}:{}),...(cursor?{cursor}:{}),...(filter!=='all'?{status:filter}:{})}),{signal:controller.signal}).then(value=>{if(!controller.signal.aborted){setItems(value.items);setNextCursor(value.nextCursor);setLoading(false);}}).catch(e=>{if(!controller.signal.aborted){setError(errorMessage(e));setLoading(false);}});
     void api.request<{items:MemoryJob[]}>('/api/memory-jobs',{signal:controller.signal}).then(value=>{if(!controller.signal.aborted){setJobs(value.items);setJobId(current=>current??value.items.find(item=>['queued','running','pausing','paused','failed','waiting_for_model'].includes(item.status))?.id);}}).catch(()=>{});
     return ()=>controller.abort();
-  },[api,revision,refreshVersion,query,tier,layer,cursor,filter]);
+  },[api,revision,refreshVersion,query,tier,layer,cursor,filter,range.after,range.before,range.deviceId]);
+  useEffect(()=>{setCursor(undefined);setDetail(null);},[range.after,range.before,range.deviceId]);
   useEffect(()=>{if(job?.status==='completed'||job?.status==='failed')refresh();},[job?.id,job?.status]);
   async function extract(){
     setBusy(true);setError('');

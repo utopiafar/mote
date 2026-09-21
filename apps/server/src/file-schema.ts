@@ -4,6 +4,8 @@ export function fileSchema(db:DatabaseSync){db.exec(`
  CREATE TABLE IF NOT EXISTS file_objects(hash TEXT PRIMARY KEY,bytes INTEGER NOT NULL,parts INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS file_versions(capture_id TEXT PRIMARY KEY REFERENCES captures(id) ON DELETE CASCADE,source_id TEXT NOT NULL,external_id TEXT NOT NULL,revision TEXT NOT NULL,manifest TEXT NOT NULL,object_hash TEXT REFERENCES file_objects(hash));
  CREATE TABLE IF NOT EXISTS file_heads(source_id TEXT NOT NULL,external_id TEXT NOT NULL,capture_id TEXT NOT NULL REFERENCES file_versions(capture_id) ON DELETE CASCADE,origin_missing INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(source_id,external_id));
+ CREATE UNIQUE INDEX IF NOT EXISTS file_revision_identity ON file_versions(source_id,external_id,revision);
+ CREATE INDEX IF NOT EXISTS file_head_capture ON file_heads(capture_id);
  CREATE TABLE IF NOT EXISTS file_forgotten(source_id TEXT NOT NULL,external_id TEXT NOT NULL,PRIMARY KEY(source_id,external_id));
  CREATE TABLE IF NOT EXISTS file_uploads(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,manifest TEXT NOT NULL,fingerprint TEXT NOT NULL UNIQUE,created_at TEXT NOT NULL,ack TEXT);
  CREATE TABLE IF NOT EXISTS file_parts(upload_id TEXT NOT NULL REFERENCES file_uploads(id) ON DELETE CASCADE,part INTEGER NOT NULL,hash TEXT NOT NULL,bytes INTEGER NOT NULL,PRIMARY KEY(upload_id,part));

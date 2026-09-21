@@ -14,13 +14,23 @@ export const perceptionSettingsSchema=z.object({
 export type PerceptionSettings=z.infer<typeof perceptionSettingsSchema>;
 /** Durable screenshot adapter for the existing processor runtime. Ingest triggers create jobs atomically. */
 export class Perception {
-  private pending=new Map<string,Promise<void>>();private abort=new AbortController();private closed=false;
+  private pending=new Map<string,Promise<void>>();private aborts={ocr:new AbortController(),semantic:new AbortController()};private closed=false;
   constructor(private store:Store,private runtime:FileProcessorRuntime){
     store.db.exec("UPDATE perception_jobs SET state='waiting' WHERE state='running'");
   }
   settings(){const row=this.store.db.prepare("SELECT value FROM settings WHERE key='perception'").get();return perceptionSettingsSchema.parse(row?JSON.parse(String(row.value)):{});}
   view(){return {recent:this.store.db.prepare('SELECT capture_id AS id,kind,state,error FROM perception_jobs ORDER BY created_at DESC LIMIT 40').all(),settings:this.settings(),jobs:this.store.db.prepare('SELECT kind,state,count(*) AS count FROM perception_jobs GROUP BY kind,state').all()};}
-  configure(raw:unknown){const value=perceptionSettingsSchema.parse(raw);this.abort.abort();this.abort=new AbortController();this.store.db.prepare("INSERT INTO settings VALUES('perception',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(value));this.store.db.exec("UPDATE perception_jobs SET state='waiting',attempts=0,available_at=0 WHERE state IN ('failed','blocked','running')");return this.view();}
+  configure(raw:unknown){
+    const previous=this.settings(),value=perceptionSettingsSchema.parse(raw);
+    const execution=(s:PerceptionSettings,kind:'ocr'|'semantic')=>JSON.stringify([s.enabled,s.allowExternalProcessing,s.providerRevision,kind==='ocr'?s.ocrProcessorId:s.semanticProcessorId,kind==='ocr'?s.ocrEndpoint:s.semanticEndpoint]);
+    this.store.db.prepare("INSERT INTO settings VALUES('perception',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(value));
+    for(const kind of ['ocr','semantic'] as const)if(execution(previous,kind)!==execution(value,kind)){
+      this.aborts[kind].abort();this.aborts[kind]=new AbortController();
+      this.store.db.prepare("UPDATE perception_jobs SET state='waiting',attempts=0,available_at=0 WHERE kind=? AND state IN ('failed','blocked','running')").run(kind);
+    }
+    return this.view();
+  }
+
   retry(id:string,kind:'ocr'|'semantic'){
     if(!this.store.imageReference(id)?.blobHash)throw new StoreError('Screenshot not found',404);
     this.store.db.prepare("INSERT INTO perception_jobs(capture_id,kind,state,created_at) VALUES(?,?,'waiting',?) ON CONFLICT(capture_id,kind) DO UPDATE SET state='waiting',attempts=0,available_at=0,requested=1").run(id,kind,Date.now());
@@ -29,7 +39,7 @@ export class Perception {
   tick(){if(this.closed)return Promise.resolve();const started:Promise<void>[]=[];for(const lane of ['ocr','semantic'] as const)if(!this.pending.has(lane)){const task=this.run(lane).finally(()=>this.pending.delete(lane));this.pending.set(lane,task);started.push(task);}return Promise.all(started).then(()=>{});}
   private async run(lane:'ocr'|'semantic'){
     const settings=this.settings();if(!settings.enabled)return;
-    const revision=sha256(JSON.stringify(settings)),signal=this.abort.signal,now=Date.now();
+    const revision=sha256(JSON.stringify(settings)),signal=this.aborts[lane].signal,now=Date.now();
     const eligible=(url:string)=>Boolean(url)&&(settings.allowExternalProcessing||['localhost','127.0.0.1','[::1]'].includes(new URL(url).hostname));
     for(const kind of ['ocr','semantic']){const url=kind==='ocr'?settings.ocrEndpoint:settings.semanticEndpoint;if(!eligible(url))this.store.db.prepare("UPDATE perception_jobs SET state='blocked',error=? WHERE kind=? AND state IN ('waiting','failed','blocked')").run(url?'external_processing_disabled':'provider_not_configured',kind);}
     const jobs=this.store.db.prepare("SELECT * FROM perception_jobs WHERE kind=? AND state IN ('waiting','failed','blocked') AND attempts<4 AND available_at<=? AND ((kind='ocr' AND ?!='') OR (kind='semantic' AND ?!='' AND (requested=1 OR ?='realtime' OR (?='batch' AND created_at<=?)))) ORDER BY created_at LIMIT ?").all(lane,now,eligible(settings.ocrEndpoint)?settings.ocrEndpoint:'',eligible(settings.semanticEndpoint)?settings.semanticEndpoint:'',settings.semanticMode,settings.semanticMode,now-settings.batchMinutes*60000,settings.batchSize);
@@ -56,7 +66,12 @@ export class Perception {
         let result:unknown;
         if(cached)result=JSON.parse(String(cached.json)).transcript;else{
           let task=inFlight.get(fingerprint);
-          if(!task){const image=this.store.image(id);task=processor.process({file:{id,title:'Screenshot',mimeType:image.mime,sizeBytes:image.bytes.length},settings:fileProcessingSchema.parse({imageEndpoint:url}),maxAudioMs:0,signal:AbortSignal.any([signal,AbortSignal.timeout(120000)]),readOriginal:async function*(){yield image.bytes;}});inFlight.set(fingerprint,task);}
+          if(!task){
+            const image=this.store.image(id),executionSignal=AbortSignal.any([signal,AbortSignal.timeout(120000)]);
+            // Plugins receive cancellation, but a non-cooperative plugin must not hold a slot or shutdown open.
+            task=withCancellation(executionSignal,()=>processor.process({file:{id,title:'Screenshot',mimeType:image.mime,sizeBytes:image.bytes.length},settings:fileProcessingSchema.parse({imageEndpoint:url}),maxAudioMs:0,signal:executionSignal,readOriginal:async function*(){yield image.bytes;}}));
+            inFlight.set(fingerprint,task);
+          }
           result=await task;
         }
         const transcript=transcriptSchema.parse(result);
@@ -71,8 +86,17 @@ export class Perception {
     };
     await Promise.all(['ocr','semantic'].map(async kind=>{
       const selected=jobs.filter(job=>job.kind===kind),concurrency=kind==='ocr'?settings.concurrency:1;
-      for(let i=0;i<selected.length;i+=concurrency)await Promise.all(selected.slice(i,i+concurrency).map(processJob));
+      let next=0;
+      await Promise.all(Array.from({length:Math.min(concurrency,selected.length)},async()=>{while(next<selected.length&&!this.closed&&!signal.aborted){const job=selected[next++];await processJob(job);}}));
     }));
   }
-  async close(){this.closed=true;this.abort.abort();await Promise.allSettled([...this.pending.values()]);}
+  async close(){this.closed=true;for(const controller of Object.values(this.aborts))controller.abort();await Promise.allSettled([...this.pending.values()]);}
+}
+
+async function withCancellation<T>(signal:AbortSignal,run:()=>Promise<T>):Promise<T>{
+  signal.throwIfAborted();
+  let abort:()=>void=()=>{};
+  const cancelled=new Promise<never>((_,reject)=>{abort=()=>reject(signal.reason);signal.addEventListener('abort',abort,{once:true});});
+  try{return await Promise.race([Promise.resolve().then(run),cancelled]);}
+  finally{signal.removeEventListener('abort',abort);}
 }

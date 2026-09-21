@@ -43,6 +43,7 @@ export type ContextCard = {
   evidenceRefs:string[];
   status?:string;
   applicability?:string;
+  expansion?:{kind:'search';scope:Pick<ContextQueryInput,'sourceId'|'source'|'deviceId'|'projectKey'|'provider'|'sessionId'|'after'|'before'>;refs:string[]};
 };
 
 export type ContextCoverage = {
@@ -93,12 +94,13 @@ export type ContextBundle = {
 
 type CodingScope={provider:'claude'|'codex'|'kimi';sessionId:string;projectKey:string};
 type Cursor={kind:'browse'|'search';hash:string;inner?:string|null};
+const position=(r:CaptureRecord)=>Buffer.from(JSON.stringify({t:new Date(sourceContentTime(r)).toISOString(),id:r.id})).toString('base64url');
 
 const MAX_SCAN=200;
 const DEFAULT_LIMIT=20;
 const MAX_LIMIT=100;
-const DEFAULT_SNIPPET=480;
-const MAX_RESPONSE_CHARACTERS=24000;
+const DEFAULT_SNIPPET=400;
+const MAX_RESPONSE_CHARACTERS=16000;
 
 function codingScope(record:CaptureRecord):CodingScope|undefined {
   const value=record.provenance?.document?.coding;
@@ -106,13 +108,14 @@ function codingScope(record:CaptureRecord):CodingScope|undefined {
 }
 
 function hashQuery(value:unknown){return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0,24);}
-function encodeCursor(value:Cursor){return Buffer.from(JSON.stringify(value)).toString('base64url');}
+function encodeCursor(value:Cursor){const {inner,...rest}=value;return Buffer.from(JSON.stringify({...rest,...(inner?{position:JSON.parse(Buffer.from(inner,'base64url').toString())}:{})})).toString('base64url');}
 function decodeCursor(value:string|undefined,kind:'browse'|'search',query:unknown):Cursor|undefined {
   if(!value)return;
   try {
     const parsed=JSON.parse(Buffer.from(value,'base64url').toString()) as Cursor;
     if(parsed.kind!==kind||parsed.hash!==hashQuery(query))throw Error();
-    return parsed;
+    const position=(parsed as Cursor & {position?:unknown}).position;
+    return {...parsed,...(position?{inner:Buffer.from(JSON.stringify(position)).toString('base64url')}:{})};
   } catch {throw new StoreError('Invalid context cursor');}
 }
 
@@ -145,14 +148,6 @@ function recordOrigin(record:CaptureRecord):ContextOrigin {
 
 function matches(record:CaptureRecord,args:ContextQueryInput,requireText=false){
   const scope=codingScope(record),p=record.provenance;
-  if(args.deviceId&&record.deviceId!==args.deviceId)return false;
-  if(args.source&&record.source!==args.source)return false;
-  if(args.appId&&record.appId!==args.appId)return false;
-  if(args.after&&Date.parse(sourceContentTime(record))<Date.parse(args.after))return false;
-  if(args.before&&Date.parse(sourceContentTime(record))>=Date.parse(args.before))return false;
-  if(args.projectKey&&scope?.projectKey!==args.projectKey)return false;
-  if(args.provider&&scope?.provider!==args.provider)return false;
-  if(args.sessionId&&scope?.sessionId!==args.sessionId)return false;
   if(requireText&&args.query){
     const haystack=lower([searchableText(record),scope?.projectKey,scope?.sessionId,scope?.provider].filter(Boolean).join('\n'));
     for(const term of args.query.trim().split(/\s+/u).filter(Boolean).slice(0,12))if(!haystack.includes(lower(term)))return false;
@@ -175,7 +170,7 @@ function card(record:CaptureRecord,query?:string,extra?:Partial<ContextCard>):Co
   if(query)reasons.push(match.locator?'literal text match':'metadata or prefix match');
   if(scope?.projectKey)reasons.push(`projectKey=${scope.projectKey}`);
   if(scope?.sessionId)reasons.push(`sessionId=${scope.sessionId}`);
-  return {ref:`capture:${record.id}`,id:record.id,kind:kind(record),title:record.windowTitle||record.appName||record.source,snippet:match.text,matchReasons:reasons,origin:recordOrigin(record),
+  return {ref:`capture:${record.id}`,id:record.id,kind:kind(record),title:(record.windowTitle||record.appName||record.source).slice(0,200),snippet:match.text,matchReasons:reasons,origin:recordOrigin(record),
     ...(record.provenance?.revision?{revision:record.provenance.revision}:{}),...(match.locator?{locator:match.locator}:{}),evidenceRefs:[record.id],...extra};
 }
 
@@ -189,80 +184,106 @@ export class ContextQuery {
   constructor(private readonly store:Store,private readonly sources:SourceStore,private readonly files?:FileStore){this.memories=new MemoryStore(store,id=>this.evidence(id));}
 
   private evidence(ids:string[]){return [...this.store.evidence(ids),...(this.files?.evidence(ids)??[])];}
-  private records(args:ContextQueryInput,queryRequired=false,innerCursor?:string|null){
-    const limit=Math.min(MAX_SCAN,Math.max(boundLimit(args.limit)*4,50));
-    const range={...args,limit,cursor:innerCursor??undefined};
-    const searched=args.query&&queryRequired?this.store.searchPage({...range,query:args.query}):undefined;
-    const listed=searched?undefined:this.store.list(range);
-    const base=searched?.items??listed!.items;
-    const fileRecords=args.query&&queryRequired?(this.files?.search({...range,query:args.query})??[]):[];
-    const combined=[...base,...fileRecords].filter((record,index,array)=>array.findIndex(item=>item.id===record.id)===index).filter(record=>matches(record,args,!(!args.query||!queryRequired)));
-    const pageLimit=boundLimit(args.limit),last=combined[pageLimit-1];
-    const filteredCursor=searched&&!searched.nextCursor&&combined.length>pageLimit&&last?Buffer.from(JSON.stringify({t:new Date(sourceContentTime(last)).toISOString(),id:last.id})).toString('base64url'):null;
-    return {items:combined,sourceCursor:searched?(searched.nextCursor??filteredCursor):listed!.nextCursor,scanned:base.length+fileRecords.length};
+  private records(args:ContextQueryInput,queryRequired=false,innerCursor?:string|null,scanLimit=MAX_SCAN){
+    const range={...args,limit:Math.min(MAX_SCAN,scanLimit),includeTotal:false,cursor:innerCursor??undefined};
+    const base=args.query&&queryRequired?this.store.searchPage({...range,query:args.query}):this.store.list(range);
+    const chunks=args.query&&queryRequired?this.files?.searchPage({...range,query:args.query}):undefined;
+    const items=[...base.items,...(chunks?.items??[])].sort((a,b)=>sourceContentTime(b).localeCompare(sourceContentTime(a))||b.id.localeCompare(a.id));
+    return {items,more:Boolean(base.nextCursor||chunks?.nextCursor),scanned:items.length};
   }
 
-  browse(raw:ContextQueryInput):ContextPage {
-    const args={...raw,limit:boundLimit(raw.limit)},query=(()=>{const {cursor:_,...rest}=args;return {...rest,query:args.query??'',projectKey:args.projectKey??'',provider:args.provider??'',sessionId:args.sessionId??''};})();
-    const cursor=decodeCursor(args.cursor,'browse',query),inner=cursor?.inner;
-    const records=this.records(args,false,inner);
-    const groups=new Map<string,{records:CaptureRecord[];scope?:CodingScope;source?:string}>();
+  private page(raw:ContextQueryInput,mode:'browse'|'search'):ContextPage {
+    const args={...raw,limit:boundLimit(raw.limit)}, {cursor:_,limit:_limit,maxCharacters:_max,includeRecentSessions:_sessions,includeMemories:_memory,...query}=args;
+    const cursor=decodeCursor(args.cursor,mode,query),records=this.records(args,mode==='search'&&Boolean(args.query),cursor?.inner,mode==='search'?args.limit+1:MAX_SCAN);
+    const max=Math.max(1000,Math.min(raw.maxCharacters??MAX_RESPONSE_CHARACTERS,MAX_RESPONSE_CHARACTERS));
+    const items:ContextCard[]=[],groups=new Map<string,ContextCard>();let consumed:CaptureRecord|undefined,stopped=false;
+    const makeCursor=()=>consumed?encodeCursor({kind:mode,hash:hashQuery(query),inner:position(consumed)}):raw.cursor??null;
+    const result:ContextPage={items,coverage:pageCoverage(records.scanned,0,0,[],this.store.stats() as {lastCaptureAt?:string|null},null,false),nextCursor:null,truncated:false};
     for(const record of records.items){
-      const scope=codingScope(record),key=scope?`project:${scope.projectKey}`:record.provenance?.sourceId?`source:${record.provenance.sourceId}`:`source:${record.source}`;
-      if(args.query&&!matches(record,args,true))continue;
-      const group=groups.get(key)??{records:[],scope,source:record.provenance?.sourceId??record.source};group.records.push(record);groups.set(key,group);
+      if(!matches(record,args,mode==='browse'&&Boolean(args.query))){consumed=record;continue;}
+      const scope=codingScope(record),key=scope?`project:${scope.projectKey}`:`source:${record.provenance?.sourceId??record.source}`;
+      // Collection references are navigation objects, never unreadable evidence IDs.
+      if(mode==='browse'&&groups.has(key)){consumed=record;continue;}
+      if(items.length>=args.limit){stopped=true;break;}
+      const item=card(record,args.query);
+      if(mode==='browse'){
+        Object.assign(item,{ref:`collection:${hashQuery([key,record.id])}`,kind:scope?'project-candidate':'source-collection',title:scope?.projectKey??record.provenance?.sourceId??record.source,snippet:'Related records; this is a query view, not a canonical project identity.',expansion:{kind:'search',scope:{...(scope?{projectKey:scope.projectKey}:record.provenance?.sourceId?{sourceId:record.provenance.sourceId}:{source:record.source}),...(raw.deviceId?{deviceId:raw.deviceId}:{}),...(raw.after?{after:raw.after}:{}),...(raw.before?{before:raw.before}:{})},refs:[item.ref]}});
+      }
+      const previous=consumed;consumed=record;items.push(item);result.nextCursor=makeCursor();result.coverage.recordsReturned=items.length;
+      if(JSON.stringify(result).length>max-16){
+        if(items.length===1){item.snippet=item.snippet.slice(0,40);item.title=item.title.slice(0,40);item.matchReasons=[];delete item.locator;item.evidenceRefs=[];}
+        if(JSON.stringify(result).length>max-16){items.pop();consumed=previous;stopped=true;break;}
+      }
+      if(mode==='browse')groups.set(key,item);
     }
-    const items=[...groups.entries()].sort((a,b)=>Date.parse(b[1].records[0]?.capturedAt??'')-Date.parse(a[1].records[0]?.capturedAt??'')||a[0].localeCompare(b[0])).slice(0,args.limit).map(([key,group])=>{
-      const latest=group.records[0],scope=group.scope,refs=group.records.slice(0,20).map(r=>r.id),id=hashQuery([key,refs]);
-      return {ref:`collection:${id}`,id:`collection-${id}`,kind:scope?'project-candidate':'source-collection',title:scope?.projectKey??group.source??key,snippet:`${group.records.length} related records; this is a query view, not a canonical project identity.`,matchReasons:[scope?'shared coding projectKey':'shared source kind','generated from current visible records'],origin:recordOrigin(latest),evidenceRefs:refs,applicability:'Candidate collection generated at query time; verify repository, branch, device and session before applying decisions.'} satisfies ContextCard;
-    });
-    const truncated=Boolean(records.sourceCursor)||groups.size>items.length;
-    const sourceCursor=records.sourceCursor?encodeCursor({kind:'browse',hash:hashQuery(query),inner:records.sourceCursor}):null;
-    const stats=this.store.stats() as {lastCaptureAt?:string|null};
-    return {items,coverage:pageCoverage(records.scanned,items.length,0,this.sources.listSources(),stats,null,truncated),nextCursor:sourceCursor,truncated};
+    result.truncated=stopped||records.more;
+    result.nextCursor=result.truncated?makeCursor():null;
+    result.coverage.recordsReturned=items.length;result.coverage.truncated=result.truncated;
+    if(!items.length&&stopped&&!consumed)throw new StoreError('Context response budget too small for one card',413);
+    return result;
   }
 
-  search(raw:ContextQueryInput):ContextPage {
-    const args={...raw,limit:boundLimit(raw.limit)},query=(()=>{const {cursor:_,...rest}=args;return {...rest,query:args.query??'',projectKey:args.projectKey??'',provider:args.provider??'',sessionId:args.sessionId??''};})();
-    const cursor=decodeCursor(args.cursor,'search',query);
-    const records=this.records(args,Boolean(args.query),cursor?.inner);
-    const items=records.items.slice(0,args.limit).map(record=>card(record,args.query));
-    const truncated=records.items.length>items.length||Boolean(records.sourceCursor);
-    const nextCursor=records.sourceCursor?encodeCursor({kind:'search',hash:hashQuery(query),inner:records.sourceCursor}):null;
-    const stats=this.store.stats() as {lastCaptureAt?:string|null};
-    return {items,coverage:pageCoverage(records.scanned,items.length,0,this.sources.listSources(),stats,null,truncated),nextCursor,truncated};
-  }
+  browse(raw:ContextQueryInput):ContextPage {return this.page(raw,'browse');}
+  search(raw:ContextQueryInput):ContextPage {return this.page(raw,'search');}
 
   read(refs:string[],offset=0,length=4000):ContextReadPage {
     const result:ContextReadItem[]=[];const missing:string[]=[];
-    for(const ref of refs.slice(0,50)){
-      const raw=ref.startsWith('capture:')?ref.slice(8):ref;
+    let remaining=12000;
+    offset=Math.max(0,Math.floor(offset));length=Math.max(1,Math.min(4000,Math.floor(length)));
+    for(const ref of refs.slice(0,5)){
+      const take=Math.min(length,Math.floor(remaining/(Math.min(refs.length,5)-result.length-missing.length)));
+      const raw=ref.startsWith('capture:')?ref.slice(8):ref.startsWith('memory:')?ref.slice(7):ref;
       if(ref.startsWith('memory:')){
-        try {const memory=this.memories.get(raw);const text=`${memory.title}\n\n${memory.statement}\n\nUncertainty: ${memory.uncertainty}`;const bounded=text.slice(offset,offset+length);result.push({ref,id:memory.id,kind:'memory',text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:memory.title,evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope});} catch {missing.push(ref);}continue;
+        try {const memory=this.memories.get(raw);const text=`${memory.title}\n\n${memory.statement}\n\nUncertainty: ${memory.uncertainty}`;const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref,id:memory.id,kind:'memory',text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:memory.title,evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope});} catch {missing.push(ref);}continue;
       }
       const record=this.evidence([raw])[0];if(!record){missing.push(ref);continue;}
-      const text=record.ocrText||record.windowTitle||'';const bounded=text.slice(offset,offset+length);result.push({ref:`capture:${record.id}`,id:record.id,kind:kind(record),text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:record.windowTitle||record.appName,origin:recordOrigin(record),evidenceRefs:[record.id]});
+      const text=record.ocrText||record.windowTitle||'';const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref:`capture:${record.id}`,id:record.id,kind:kind(record),text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:record.windowTitle||record.appName,origin:recordOrigin(record),evidenceRefs:[record.id]});
     }
-    return {items:result,missingRefs:missing,truncated:refs.length>50};
+    const page={items:result,missingRefs:missing,truncated:refs.length>5};
+    // Metadata counts too. Preserve a resumable text offset for every shortened item.
+    for(const item of [...result].reverse()){
+      const excess=Math.max(JSON.stringify(page).length-MAX_RESPONSE_CHARACTERS,Math.ceil((Buffer.byteLength(JSON.stringify(page))-65536)/2));
+      if(excess<=0)break;
+      item.text=item.text.slice(0,Math.max(0,item.text.length-excess-64));item.textRange.nextOffset=item.textRange.offset+item.text.length<item.textRange.total?item.textRange.offset+item.text.length:null;page.truncated=true;
+    }
+    if(JSON.stringify(page).length>MAX_RESPONSE_CHARACTERS||Buffer.byteLength(JSON.stringify(page))>65536)throw new StoreError('Context metadata exceeds response budget; read fewer references',413);
+    return page;
   }
 
   context(raw:ContextQueryInput):ContextBundle {
-    const args={...raw,limit:boundLimit(raw.limit),maxCharacters:Math.max(1000,Math.min(raw.maxCharacters??MAX_RESPONSE_CHARACTERS,MAX_RESPONSE_CHARACTERS))};
-    const searchPage=this.search(args),memoryPage=args.includeMemories===false?{items:[],nextCursor:null}:{items:this.memories.page({query:args.query,status:'published',layer:'memory',includeStale:false,level:'detail',limit:args.limit}).items,nextCursor:null};
-    const stableMemories=(memoryPage.items as Memory[]).filter(memory=>!args.projectKey||memory.scopeRefs?.some(scope=>scope.projectKey===args.projectKey)).map(memory=>cardFromMemory(memory));
-    const recentRecords=searchPage.items.slice(0,args.limit);
-    const recentSessions=args.includeRecentSessions===false?[]:this.sessionCards(recentRecords);
-    let result:ContextBundle={stableMemories,recentSessions,recentRecords,coverage:{...searchPage.coverage,memoriesScanned:memoryPage.items.length,memoriesReturned:stableMemories.length,memoryLatestAt:stableMemories.map(item=>item.origin.capturedAt).sort().at(-1)??null},nextCursor:searchPage.nextCursor,truncated:searchPage.truncated};
-    while(JSON.stringify(result).length>args.maxCharacters&&(result.recentRecords.length||result.stableMemories.length||result.recentSessions.length)){
-      if(result.recentRecords.length)result.recentRecords.pop();else if(result.recentSessions.length)result.recentSessions.pop();else result.stableMemories.pop();
-      result={...result,truncated:true};
+    const {cursor:_,limit:_limit,maxCharacters:_max,...scope}=raw,hash=hashQuery(scope),max=Math.max(1000,Math.min(raw.maxCharacters??MAX_RESPONSE_CHARACTERS,MAX_RESPONSE_CHARACTERS));
+    type Position={kind:'context';hash:string;records?:string|null;memories?:string|null};
+    let position:Position={kind:'context',hash};
+    if(raw.cursor){try{position=JSON.parse(Buffer.from(raw.cursor,'base64url').toString());if(position.kind!=='context'||position.hash!==hash)throw Error();}catch{throw new StoreError('Invalid context cursor');}}
+    const base:ContextBundle={stableMemories:[],recentSessions:[],recentRecords:[],coverage:pageCoverage(0,0,0,[],this.store.stats() as {lastCaptureAt?:string|null},null,false),nextCursor:null,truncated:false};
+    const next:Position={...position};let total=0;
+    // Each item advances only its own channel. No hidden item can be skipped by a presentation trim.
+    for(const channel of ['memories','records'] as const){
+      if(next[channel]===null||channel==='memories'&&raw.includeMemories===false){next[channel]=null;continue;}
+      for(let n=0;n<boundLimit(raw.limit)&&total<boundLimit(raw.limit);n++){
+        let item:ContextCard|undefined,cursor:string|null;
+        if(channel==='records'){
+          const page=this.search({...raw,cursor:next.records??undefined,limit:1,maxCharacters:max});item=page.items[0];cursor=page.nextCursor;base.coverage.recordsScanned+=page.coverage.recordsScanned;
+        }else{
+          const page=this.memories.page({...raw,cursor:next.memories??undefined,status:'published',layer:'memory',includeStale:false,level:'detail',limit:1});item=page.items[0]?cardFromMemory(page.items[0]):undefined;cursor=page.nextCursor;base.coverage.memoriesScanned+=page.items.length;
+        }
+        if(!item){next[channel]=cursor;if(!cursor)break;continue;}
+        const items=channel==='records'?base.recentRecords:base.stableMemories;items.push(item);
+        const candidate={...next,[channel]:cursor};base.nextCursor=Buffer.from(JSON.stringify(candidate)).toString('base64url');
+        if(JSON.stringify(base).length>max-32){items.pop();break;}
+        next[channel]=cursor;total++;if(!cursor)break;
+      }
     }
-    return result;
+    base.nextCursor=next.records!==null||next.memories!==null?Buffer.from(JSON.stringify(next)).toString('base64url'):null;
+    base.truncated=Boolean(base.nextCursor);base.coverage.recordsReturned=base.recentRecords.length;base.coverage.memoriesReturned=base.stableMemories.length;base.coverage.truncated=base.truncated;
+    if(raw.includeRecentSessions!==false)for(const session of this.sessionCards(base.recentRecords)){base.recentSessions.push(session);if(JSON.stringify(base).length>max){base.recentSessions.pop();break;}}
+    if(!total&&base.nextCursor)throw new StoreError('Context response budget too small for one item',413);
+    return base;
   }
 
   private sessionCards(records:ContextCard[]):ContextCard[] {
     const map=new Map<string,ContextCard>();
-    for(const record of records){const session=record.origin.sessionId;if(!session)continue;const prior=map.get(session);if(prior){prior.evidenceRefs=[...new Set([...prior.evidenceRefs,...record.evidenceRefs])].slice(0,20);continue;}map.set(session,{...record,ref:`session:${hashQuery([record.origin.projectKey,session])}`,id:`session-${hashQuery([record.origin.projectKey,session])}`,kind:'session',title:session,snippet:`Recent session for ${record.origin.projectKey??'an unscoped source'}.`,matchReasons:['same sessionId'],evidenceRefs:[...record.evidenceRefs]});}
+    for(const record of records){const session=record.origin.sessionId;if(!session)continue;const identity=hashQuery([record.origin.sourceId,record.origin.deviceId,record.origin.provider,record.origin.projectKey,session]);const prior=map.get(identity);if(prior){prior.evidenceRefs=[...new Set([...prior.evidenceRefs,...record.evidenceRefs])].slice(0,20);continue;}map.set(identity,{...record,ref:`session:${identity}`,id:`session-${identity}`,expansion:{kind:'search',scope:{sourceId:record.origin.sourceId,deviceId:record.origin.deviceId,provider:record.origin.provider,projectKey:record.origin.projectKey,sessionId:session},refs:[record.ref]},kind:'session',title:session,snippet:`Recent session for ${record.origin.projectKey??'an unscoped source'}.`,matchReasons:['same sessionId'],evidenceRefs:[...record.evidenceRefs]});}
     return [...map.values()];
   }
 

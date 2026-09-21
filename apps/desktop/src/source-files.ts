@@ -1,9 +1,11 @@
+import {sourceWork} from './background';
+import type {OriginalSpool} from './original-spool';
 import {fileDigest,fileMime} from './file-index';
 import { contentAdapter } from './content-adapter';
 import { DirectoryCatalog, type DirectoryCandidate } from './directory-catalog';
 import { moteText } from '@mote/shared/i18n';
 import { constants, type Stats } from 'node:fs';
-import { lstat, open, realpath } from 'node:fs/promises';
+import { lstat, open, realpath,rm } from 'node:fs/promises';
 import { basename, extname, isAbsolute, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -38,18 +40,19 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     if (!options.extensions.includes(extension)) { result.skipped++; return 'ok'; }
     const externalId = 'file:' + sourceHash([candidate.fileId, candidate.birthtimeMs].join(':'));
     result.seen.push(externalId); locations?.set(externalId, candidate.path);
-    if (options.retention !== 'reference' && candidate.size > 16 * 1024 * 1024) { result.skipped++; return 'ok'; }
-    if (result.items.length >= 2000 || options.retention !== 'reference' && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
+    const maximumFile=options.retention==='archive'&&accessMarkerPath?512*1024*1024:16*1024*1024;
+    if (options.retention !== 'reference' && candidate.size > maximumFile) { result.skipped++; return 'ok'; }
+    if (result.items.length >= 2000 || options.retention !== 'reference' && result.items.length>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
     const unchanged = prior && prior.fileId === candidate.fileId && prior.size === candidate.size && prior.mtimeMs === candidate.mtimeMs && prior.ctimeMs === candidate.ctimeMs && prior.quickHash === candidate.quickHash && prior.contentHash;
     if (unchanged) { catalog?.markContent(candidate.relativePath, prior.contentHash, 'synced'); return 'ok'; }
     if (options.initialSync === 'new_only' && !previous?.initialized) { catalog?.markContent(candidate.relativePath, candidate.quickHash, 'synced'); return 'ok'; }
-    let handle;
+    let handle;let spooled:OriginalSpool|undefined;
     try {
       // Reconciliation validates the path before and after reading. It never follows a replaced symlink.
       if (await realpath(candidate.path) !== candidate.path) throw new Error('changed path');
       handle = await open(candidate.path, constants.O_RDONLY | constants.O_NOFOLLOW);
       const before = await handle.stat();
-      if (!before.isFile() || options.retention !== 'reference' && before.size > 16 * 1024 * 1024 || before.ino !== Number(candidate.fileId.split(':').at(-1)) || before.dev !== Number(candidate.fileId.split(':')[0])) throw new Error('changed file');
+      if (!before.isFile() || options.retention !== 'reference' && before.size > maximumFile || before.ino !== Number(candidate.fileId.split(':').at(-1)) || before.dev !== Number(candidate.fileId.split(':')[0])) throw new Error('changed file');
       // A watcher event can arrive between two writes. Give very recent files
       // a short quiet window, then verify metadata again before reading bytes.
       if (Date.now() - before.mtimeMs < 500) {
@@ -58,7 +61,10 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
         if (stable.mtimeMs !== before.mtimeMs || stable.ctimeMs !== before.ctimeMs || stable.size !== before.size) throw new Error('file is still changing');
       }
       let text = ''; let original: Buffer | undefined; let parsed = { text: '', parser: 'none', status: 'ready' as 'ready'|'pending'|'unsupported' };
-      if (options.retention !== 'reference') {
+      if(options.retention==='archive'&&accessMarkerPath){
+        spooled=await sourceWork.run<OriginalSpool>({kind:'spool-original',path:candidate.path,directory:accessMarkerPath+'.originals',expected:{dev:before.dev,ino:before.ino,size:before.size,mtimeMs:before.mtimeMs,ctimeMs:before.ctimeMs}});
+        signal?.throwIfAborted();
+      } else if (options.retention !== 'reference') {
         const buffer = Buffer.alloc(before.size + 1), read = await handle.read(buffer, 0, buffer.length, 0);
         if (read.bytesRead !== before.size) throw new Error('changed file');
         original = buffer.subarray(0, read.bytesRead);
@@ -70,11 +76,11 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       if (before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs || before.size !== after.size || await realpath(candidate.path) !== candidate.path) throw new Error('changed file');
       totalBytes += before.size;
       const accessedAtMs = accessMarkers.record(externalId, before, after), fileMetadata = observedFileMetadata(before, accessedAtMs);
-      const contentHash = original ? fileDigest(original) : candidate.quickHash;
-      result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: !text ? 'none' : text.length === parsed.text.length ? 'full' : 'lightweight', parser: parsed.parser, status: options.retention === 'archive' ? 'pending' : parsed.status, totalCharacters: parsed.text.length, offset: 0, length: text.length, allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(options.retention === 'archive' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
+      const contentHash = spooled?.sha256??(original ? fileDigest(original) : candidate.quickHash);
+      result.items.push({ externalId, title: redactSourceText(basename(candidate.path), options.redactLiterals), text, uri: options.redactLiterals.length ? undefined : pathToFileURL(candidate.path).href, modifiedAt: before.mtime.toISOString(), kind: 'file', layer: options.retention === 'archive' ? 'original' : options.retention, document: { fileIndex: { version: 1, fileId: externalId, contentVersion: contentHash, mode: options.retention === 'archive' ? 'archive' : options.retention === 'reference' ? 'catalog' : 'index', coverage: !text ? 'none' : text.length === parsed.text.length ? 'full' : 'lightweight', parser: parsed.parser, status: options.retention === 'archive' ? 'pending' : parsed.status, totalCharacters: parsed.text.length, offset: 0, length: text.length, allowRead: options.retention === 'snapshot' && Boolean(options.allowRead) } }, ...(spooled?{localOriginal:spooled}:{}), ...(options.retention === 'archive' && original ? { localOriginalBase64: original.toString('base64') } : {}), metadata: { version: 1, file: fileMetadata }, mimeType: fileMime(candidate.path), deleted: false });
       catalog?.markContent(candidate.relativePath, contentHash, 'synced');
       return 'ok';
-    } catch { result.skipped++; result.complete = false; catalog?.markContent(candidate.relativePath, undefined, 'error'); return 'ok'; }
+    } catch { if(spooled)await rm(spooled.directory,{force:true,recursive:true});result.skipped++; result.complete = false; catalog?.markContent(candidate.relativePath, undefined, 'error'); return 'ok'; }
     finally { await handle?.close(); }
   };
   if (selected.isDirectory() && catalog) {
@@ -87,7 +93,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       if (outcome === 'stop') { catalog.rollbackSavepoint(); result.complete = false; break; }
     }
     while (examined < 2000 && result.complete) {
-      catalog.savepoint(); const batch = await catalog.next(Math.min(256, 2000 - examined, 2000 - result.items.length), options.excludedPaths);
+      catalog.savepoint(); const batch = await catalog.next(Math.min(options.retention === 'archive' ? 1 : 256, 2000 - examined, 2000 - result.items.length), options.excludedPaths);
       if (!batch.candidates.length) { result.complete = batch.complete; result.skipped += batch.skipped; break; }
       examined += batch.candidates.length;
       const itemsBeforeBatch = result.items.length, seenBeforeBatch = result.seen.length;

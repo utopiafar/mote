@@ -11,9 +11,9 @@ export class StorageLedger {
     return Number(this.db.prepare('SELECT COALESCE(SUM(bytes),0) AS n FROM storage_ledger').get()!.n);
   }
   private refresh(){
-    const jsonTables=['perception_results','captures','memories','source_connections','conversations','conversation_turns','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_lifecycle_state','working_memories','action_meta','action_proposals','action_targets','context_contents','context_artifacts','processing_jobs'];
+    const jsonTables=['import_uploads','todos','perception_results','captures','memories','source_connections','conversations','conversation_turns','memory_jobs','memory_batches','archived_files','import_jobs','file_artifacts','file_reviews','insight_runs','query_runs','model_usage','model_prices','memory_lifecycle_settings','memory_lifecycle_state','working_memories','action_meta','action_proposals','action_targets','context_contents','context_artifacts','processing_jobs'];
     const expressions:Record<string,string>=Object.fromEntries(jsonTables.map(t=>[t,'length(CAST(json AS BLOB))']));
-    Object.assign(expressions,{blobs:'bytes',file_blobs:'bytes',file_objects:'bytes',file_chunks:'length(CAST(text AS BLOB))+COALESCE(length(embedding),0)',file_versions:'length(CAST(manifest AS BLOB))',file_uploads:'length(CAST(manifest AS BLOB))',file_parts:'bytes'});
+    Object.assign(expressions,{import_upload_parts:'bytes',blobs:'bytes',file_blobs:'bytes',file_objects:'bytes',file_chunks:'length(CAST(text AS BLOB))+COALESCE(length(embedding),0)',file_versions:'length(CAST(manifest AS BLOB))',file_uploads:'length(CAST(manifest AS BLOB))',file_parts:'bytes'});
     const tables=new Set(this.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r=>String(r.name)));
     const ownTransaction=!this.db.isTransaction;if(ownTransaction)this.db.exec('BEGIN IMMEDIATE');
     try{for(const [name,expression] of Object.entries(expressions)){

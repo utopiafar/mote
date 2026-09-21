@@ -1,3 +1,5 @@
+import {registerImportUploads} from './import-uploads.js';
+import {registerTodoRoutes} from './todos.js';
 import {contextIndex} from './context-index.js';
 import {monitorEventLoopDelay} from 'node:perf_hooks';
 import {MaintenanceWorker} from './maintenance.js';
@@ -284,18 +286,19 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   function scopedSourceRange(req:FastifyRequest){const q=sourceRange.parse(req.query),c=credential(req);if(c){connections.assertActive(c);if(q.deviceId&&q.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,moteText("只能读取本设备来源。"));if(q.sourceId)sourceOwner(req,q.sourceId);q.deviceId=c.deviceId;}return {...q,includeDeleted:q.includeDeleted==='true'};}
   app.get('/api/source-items',async req=>sources.listItems(scopedSourceRange(req)));
   app.get('/api/sources/:id/items',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.listItems({...scopedSourceRange(req),sourceId:id});});
-  app.put('/api/sources/:id/items',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.upsert(id,req.body,credential(req)?()=>sourceOwner(req,id):undefined);});
+  app.put('/api/sources/:id/items',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return sources.upsert(id,req.body,credential(req)?()=>sourceOwner(req,id):undefined);});
   app.post('/api/sources/:id/items/batch',{bodyLimit:32*1024*1024},async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const body=z.object({items:z.array(z.unknown()).min(1).max(500)}).strict().parse(req.body);return sources.upsertBatch(id,body.items,credential(req)?()=>sourceOwner(req,id):undefined);});
   app.get('/api/sources/:id/item',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {item:sources.getItem(id,externalId)??null};});
   app.get('/api/sources/:id/history',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {items:sources.history(id,externalId)};});
   app.get('/api/layers',async()=>({...sources.summary(),memories:Number((store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)}));
-  app.get('/api/memories',async req=>{const q=z.object({level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),layer:z.enum(['observation','memory','legacy']).optional(),cursor:z.string().max(1000).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return memories.page({...q,includeStale:q.includeStale==='true'});});
+  app.get('/api/memories',async req=>{const q=z.object({after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),deviceId:z.string().max(128).optional(),level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),layer:z.enum(['observation','memory','legacy']).optional(),cursor:z.string().max(1000).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return memories.page({...q,includeStale:q.includeStale==='true'});});
   app.get('/api/memories/:id',async req=>memories.get((req.params as {id:string}).id));
   app.get('/api/memories/:id/text',async(req,reply)=>reply.type('text/markdown; charset=utf-8').header('Content-Disposition','attachment; filename=memory.md').send(memories.text(z.string().uuid().parse((req.params as {id:string}).id))));
   app.get('/api/sources/:id/catalog',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);sources.getSource(id);return browseSourceCatalog(store.db,id,z.object({parent:z.string().optional(),cursor:z.string().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query));});
   app.get('/api/context/segments',async req=>store.archive.page(z.object({id:z.string().max(128).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),deviceId:z.string().max(128).optional(),after:z.string().datetime().optional(),before:z.string().datetime().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query)));
   app.get('/api/context-index',async req=>contextIndex(store,memories,sources,z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),after:scopeFields.after,before:scopeFields.before,deviceId:scopeFields.deviceId}).parse(req.query)));
-  app.get('/api/processing',async()=>({archive:store.archive.stats(),...workflows.view()}));
+  registerTodoRoutes(app,store);
+  app.get('/api/processing',async req=>{const q=z.object({state:z.enum(['waiting','running','blocked','failed','cancelled','succeeded','stale']).optional(),cursor:z.coerce.number().int().positive().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);return {archive:store.archive.stats(),...workflows.view(q)};});
   app.put('/api/processing/settings',async req=>workflows.configure(req.body));
   app.post('/api/processing/workflows',async(req,reply)=>{const {steps}=z.object({steps:z.array(z.any()).min(1).max(32)}).strict().parse(req.body);return reply.code(202).send(workflows.enqueue(steps.map(step=>step.processor==='mote.segment-understanding'?{...step,artifactInputs:[{id:step.config?.artifactId,revision:store.archive.get(step.config?.artifactId)?.revision}],config:{...step.config,modelRevision:modelSettings.view().revision}}:step)));});
   app.post('/api/processing/:id/retry',async req=>{workflows.retry((req.params as {id:string}).id);return {queued:true};});
@@ -382,9 +385,12 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
     const meter=usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null});
-    const observed={...input,traceContext,onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
+    const deadline=profile.settings.agentTimeoutMs;
+    const taskSignal=deadline===null?input.signal:AbortSignal.any([...(input.signal?[input.signal]:[]),AbortSignal.timeout(deadline)]);
+    const observed={...input,signal:taskSignal,traceContext,onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
+      taskSignal?.throwIfAborted();
       if(store.deletionRevision()!==revision)throw new StoreError('Evidence was deleted during this run; retry against the updated archive',409);
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       return {...result,usage:meter.finish('completed')};
@@ -414,7 +420,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       catch(error){meter.finish('failed');throw error;}finally{try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
     }),
     // Capture/file journals are durable. Import completion only queues increments;
-    // the lifecycle applies the owner's interval AND change threshold.
+    // the lifecycle applies the owner's change threshold or maximum wait.
     onImported:async()=>({}),
   });
   function launchImport(id:string,task:()=>Promise<unknown>){
@@ -426,6 +432,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   }
   const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.get('/api/skills',async()=>({items:skillCatalog()}));
+  registerImportUploads(app,store,archivedFiles);
   app.get('/api/imports',async()=>({items:imports.list()}));
   app.post('/api/imports',{bodyLimit:360*1024*1024,config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{const job=await imports.create(req.body);if(job.status==='queued')launchImport(job.id,()=>imports.prepare(job.id));return reply.code(202).send(imports.get(job.id));});
   app.get('/api/imports/:id',async req=>imports.get(jobId(req.params)));
@@ -497,7 +504,9 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     insightSchema.parse(scope);
     if(conversationId)runningConversations.add(conversationId);
     try {
-      modelSettings.select('chat',modelProfileId);
+      const selectedProfile=modelSettings.select('chat',modelProfileId),timeout=selectedProfile.settings.agentTimeoutMs;
+      signal=timeout===null?signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(timeout)]);
+      signal?.throwIfAborted();
       const result=await queryAgent({executionLane:'interactive',question,...scope,modelProfileId,modelOverride,onProgress,signal,...(previous?{conversation:await working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'))}:{})});
       signal?.throwIfAborted();
       return {...result,...conversations.append(previous,{question,...scope},result)};

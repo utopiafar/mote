@@ -46,13 +46,13 @@ export class SourceStore {
   async upsert(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
     return (await this.serialized(sourceId,()=>this.commitBatch(sourceId,[sourceItemSchema.parse(raw)],authorize,transaction))).receipts[0];
   }
-  async upsertBatch(sourceId:string,raw:unknown,authorize?:()=>void) {
+  async upsertBatch(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
     const items=z.array(sourceItemSchema).min(1).max(500).parse(raw);
     const identities=new Set<string>();
     for(const item of items){const key=JSON.stringify([item.externalId,item.revision]);if(identities.has(key))throw new StoreError('Batch contains duplicate source revisions',409);identities.add(key);}
-    return this.serialized(sourceId,()=>this.commitBatch(sourceId,items,authorize));
+    return this.serialized(sourceId,()=>this.commitBatch(sourceId,items,authorize,transaction));
   }
-  private async commitBatch(sourceId:string,items:SourceItem[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
+  private async commitBatch(sourceId:string,items:SourceItem[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
     const source=this.getSource(sourceId);
     const validate=()=>{authorize?.();const current=this.getSource(sourceId);if(!current.enabled)throw new StoreError('Source is paused',409);for(const item of items){
       if(Date.parse(item.observedAt)>Date.now()+86400000)throw new StoreError('Observation cannot be in the future');
@@ -78,7 +78,7 @@ export class SourceStore {
           if(head){this.store.invalidateMemoryEvidence(head.capture_id);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
         }
       }
-      transaction?.(ack);
+      transaction?.(ack,index);
     },validate);
     return {receipts:receipts.map((ack,index)=>({id:ack.id,sourceId,externalId:items[index].externalId,revision:items[index].revision,duplicate:ack.duplicate}))};
   }

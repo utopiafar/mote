@@ -40,7 +40,7 @@ class AppPolicyInstrumentedTest {
         var pipeline: CapturePipeline? = null
         try {
             val baseline = Operations.ledger(context).read().getJSONObject("counts")
-            val config = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-policy-test-token-only-123456789", mode = "projection", nsfw = settings.read().nsfw.copy(enabled = true),
+            val config = settings.read().copy(server = "https://127.0.0.1:1", token = "generated-policy-test-token-only-123456789", mode = "projection", nsfw = settings.read().nsfw.copy(enabled = false),
                 appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config); settings.enabled = true; assertEquals("accessibility", config.effectiveMode())
             val windows = WindowSnapshot(setOf("com.example.generated"), "com.example.generated", true)
@@ -90,33 +90,34 @@ class AppPolicyInstrumentedTest {
             shell("settings put secure accessibility_enabled 1")
             waitUntil { CaptureAccessibilityService.connected }
             openFixture()
-            val config = settings.read().copy(server = server, token = token, deviceName = "合成 Android 分级采集", intervalSeconds = 5, wifiOnly = false, debugHttp = true,
-                mode = "projection", nsfw = settings.read().nsfw.copy(enabled = true), appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
+            val config = settings.read().copy(server = server, token = token, deviceName = "合成 Android 分级采集", intervalSeconds = 5, wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0,
+                mode = "projection", nsfw = settings.read().nsfw.copy(enabled = false), appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "").json())
             settings.save(config)
             assertEquals("accessibility", config.effectiveMode())
             androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity -> MainActivity::class.java.getDeclaredMethod("startCapture").apply { isAccessible = true }.invoke(activity) }
-                assertTrue(settings.enabled); assertFalse(ProjectionService.running)
+                waitUntil { settings.enabled }; assertFalse(ProjectionService.running)
                 openFixture()
                 waitUntil { count("ACTIVITY_ACK") >= 2 }; stop()
                 assertFalse(ProjectionService.running)
             }
             openFixture()
             assertEquals(0, count("CAPTURE_REQUESTED")); assertEquals(0, count("FRAME_RECEIVED")); assertEquals(0, count("SCREEN_QUEUED"))
-            val activity = records("activity"); assertTrue(activity.length() >= 2)
+            val activity = records("activity"); assertTrue(activity.length() >= 1)
+            assertTrue((0 until activity.length()).sumOf { activity.getJSONObject(it).optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 1 } >= 2)
             for (i in 0 until activity.length()) {
                 val row = activity.getJSONObject(i); assertEquals("", row.getString("ocrText")); assertEquals("", row.getString("windowTitle")); assertTrue(row.isNull("blobHash"))
                 assertEquals("activity", row.getJSONObject("privacy").getString("collection"))
                 assertEquals(setOf("intervalMs"), row.getJSONObject("metadata").getJSONObject("capture").keys().asSequence().toSet())
             }
-            settings.save(config.copy(excludedPackages = context.packageName)); settings.enabled = true
+            settings.save(config.copy(excludedPackages = context.packageName + ".test")); settings.enabled = true
             val saved = count("ACTIVITY_QUEUED"); Thread.sleep(5500); stop()
             assertEquals(saved, count("ACTIVITY_QUEUED")); assertEquals(0, count("CAPTURE_REQUESTED"))
             // Explicit fixture setting disables image review only for generated screen/OCR transport validation.
-            val content = config.copy(mode = "accessibility", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}=content\ncom.android.systemui=content").json(), nsfw = config.nsfw.copy(enabled = false))
+            val content = config.copy(mode = "accessibility", appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=content\ncom.android.systemui=content").json(), nsfw = config.nsfw.copy(enabled = false))
             settings.save(content); settings.enabled = true; waitUntil { count("SCREEN_ACK") >= 1 }; stop(); waitUntil { context.queue().depth() == 0 }
             val screen = records("screen").getJSONObject(0); assertEquals("content", screen.getJSONObject("privacy").getString("collection"))
-            assertTrue(screen.getString("ocrText").contains("MOTE")); assertTrue(screen.getJSONObject("metadata").getJSONObject("capture").getInt("width") > 0)
+            assertEquals("", screen.getString("ocrText")); assertTrue(screen.getJSONObject("metadata").getJSONObject("capture").getInt("width") > 0)
             val authority = context.packageName + ".source-fixtures"
             context.getSharedPreferences("source-fixture", 0).edit().clear().putString("mode", "full").commit()
             val source = LocalSource(name = "Android 合成文件元数据", kind = "local-files", uri = "content://$authority/tree/root", tree = true)
@@ -164,7 +165,7 @@ class AppPolicyInstrumentedTest {
             pipeline.submit(generated(), windows, c, "2026-09-14T00:00:15Z", 15000)
             waitUntil { context.queue().depth() == 1 && pipeline?.isBusy() == false }
             val second = context.queue().peek()!!; assertEquals(15000, second.getLong("durationMs")); assertEquals("2026-09-14T00:00:15Z", second.getString("capturedAt"))
-            assertTrue(second.getString("ocrText").contains("MOTE")); context.queue().acknowledge(second.getString("id"))
+            assertEquals("", second.getString("ocrText")); assertEquals("disabled", second.getJSONObject("ocr").getString("status")); assertNotNull(context.queue().image(second.getString("id"))); context.queue().acknowledge(second.getString("id"))
         } finally { settings.enabled = false; pipeline?.close(); restore(prefs, original) }
     }
     @Test fun optionalGeneratedProjectionReusesDisplayAndNeverAttachesActivitySurface() {
@@ -185,10 +186,10 @@ class AppPolicyInstrumentedTest {
             shell("settings put secure enabled_accessibility_services ${context.packageName}/dev.mote.collector.CaptureAccessibilityService")
             shell("settings put secure accessibility_enabled 1"); waitUntil { CaptureAccessibilityService.connected }
             val base = settings.read().copy(server = fixture.getString("serverUrl"), token = fixture.getString("token"), deviceName = "合成 Android 投屏分级", intervalSeconds = 5,
-                wifiOnly = false, debugHttp = true, mode = "projection", excludedPackages = "")
+                wifiOnly = false, debugHttp = true, syncMode = "realtime", uploadedRetentionDays = 0, mode = "projection", excludedPackages = "")
             var activityRequests = -1L; var contentRequests = -1L
             for (mode in listOf(AppCollectionMode.ACTIVITY, AppCollectionMode.CONTENT)) {
-                val c = base.copy(appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}=${mode.wire}\ncom.android.systemui=content").json(),
+                val c = base.copy(appCollectionRules = AppCollectionRules.fromLines(AppCollectionMode.OFF, "${context.packageName}.test=${mode.wire}\ncom.android.systemui=content").json(),
                     nsfw = base.nsfw.copy(enabled = mode == AppCollectionMode.ACTIVITY))
                 settings.save(c)
                 val before = Operations.ledger(context).read().getJSONObject("counts")
@@ -224,13 +225,9 @@ class AppPolicyInstrumentedTest {
     }
     private fun openFixture() {
         val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
-        instrumentation.runOnMainSync { context.startActivity(Intent(context, FixtureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)) }
-        waitUntil {
-            var resumed = false
-            instrumentation.runOnMainSync { resumed = androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry.getInstance()
-                .getActivitiesInStage(androidx.test.runner.lifecycle.Stage.RESUMED).any { it is FixtureActivity } }
-            resumed
-        }
+        instrumentation.runOnMainSync { context.startActivity(Intent().setComponent(android.content.ComponentName(context.packageName + ".test", ExternalFixtureActivity::class.java.name)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+        waitUntil { instrumentation.getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES).rootInActiveWindow?.packageName?.toString() == context.packageName + ".test" }
+
     }
     private fun waitUntil(condition: () -> Boolean) { val deadline = android.os.SystemClock.elapsedRealtime() + 45000; while (!condition()) { check(android.os.SystemClock.elapsedRealtime() < deadline) { "Generated fixture deadline" }; Thread.sleep(100) } }
     private fun restore(prefs: android.content.SharedPreferences, original: Map<String, *>) {

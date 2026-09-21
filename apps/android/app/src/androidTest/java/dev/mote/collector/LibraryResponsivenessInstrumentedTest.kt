@@ -77,6 +77,7 @@ class LibraryResponsivenessInstrumentedTest {
             val started = SystemClock.elapsedRealtime()
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity ->
+                    views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "本机" }.performClick()
                     val button = views(activity.window.decorView).filterIsInstance<Button>().single { it.isShown && it.text == "开始采集" }
                     assertTrue(button.isEnabled); assertTrue(button.performClick())
                 }
@@ -158,72 +159,38 @@ class LibraryResponsivenessInstrumentedTest {
         }
     }
 
-    @Test fun developerEncryptionToggleAndCancellableDecryptionKeepCredentialsProtected() = fixture { settings, ids ->
+    @Test fun legacyContentMigrationCanCancelWithoutChangingCredentialsOrBlockingNavigation() = fixture { settings, ids ->
         val token = "generated-local-storage-credential-1234567890"
         settings.save(settings.read().copy(token = token))
+        assertFalse(settings.read().contentEncryptionEnabled)
         val preferences = context.getSharedPreferences("mote", 0)
-        val credentialBefore = preferences.getString("token", null)!!
-        assertFalse(String(android.util.Base64.decode(credentialBefore, android.util.Base64.NO_WRAP)).contains(token))
-        assertEquals(token, String(SecretBox().open(android.util.Base64.decode(credentialBefore, android.util.Base64.NO_WRAP))))
-        val encryptedId = UUID.randomUUID().toString(); ids += encryptedId
-        val plaintextId = UUID.randomUUID().toString(); ids += plaintextId
-        val directory = File(QueueStorage(context).current().path)
-        fun add(id: String) = context.queue().enqueue(JSONObject().put("id", id).put("source", "note")
-            .put("capturedAt", java.time.Instant.now().toString()).put("ocrText", "Generated local content")
+        val credential = preferences.getString("token", null)!!
+        assertFalse(String(android.util.Base64.decode(credential, android.util.Base64.NO_WRAP)).contains(token))
+        val id = UUID.randomUUID().toString(); ids += id
+        context.queue().enqueue(JSONObject().put("id", id).put("source", "note")
+            .put("capturedAt", java.time.Instant.now().toString()).put("ocrText", "Generated migration content")
             .put("privacy", JSONObject().put("excluded", false)), null, 64 * 1024 * 1024)
-        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            fun click(label: String) = scenario.onActivity { activity ->
-                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text == label }.performClick())
-            }
-            fun menu(label: String) = scenario.onActivity { activity -> views(activity.window.decorView).single { it.isShown && it.tag == "menu:$label" }.performClick() }
-            fun toggle(enabled: Boolean) {
-                scenario.onActivity { activity ->
-                    views(activity.window.decorView).filterIsInstance<android.widget.CheckBox>().single { it.text == "加密保存本地内容（默认关闭）" }.isChecked = enabled
-                }
-                click("保存设置")
-                waitFor("content encryption saved") { settings.read().contentEncryptionEnabled == enabled && !ConnectionGuard.reconfiguring() }
-            }
-            click("设置"); menu("关于与更新"); menu("开发者选项")
-            scenario.onActivity { activity -> assertFalse(views(activity.window.decorView).filterIsInstance<android.widget.CheckBox>().single { it.text == "加密保存本地内容（默认关闭）" }.isChecked) }
-            toggle(true); add(encryptedId)
-            val oldFile = File(directory, "$encryptedId.event")
-            assertTrue(LocalContentCipher().isLegacy(oldFile.readBytes()))
-            waitFor("encrypted metadata shard") { runCatching { LocalContentCipher().isLegacy(File(directory, ".browse-v1-${encryptedId.first()}").readBytes()) }.getOrDefault(false) }
-            assertEquals("Generated local content", context.queue().capture(encryptedId)!!.getString("ocrText"))
-            toggle(false); add(plaintextId)
-            // Saving settings legitimately re-encrypts the same token with a fresh IV.
-            // Only the explicit content migration must leave that saved ciphertext alone.
-            val credentialBeforeDecryption = preferences.getString("token", null)!!
-            assertFalse(String(android.util.Base64.decode(credentialBeforeDecryption, android.util.Base64.NO_WRAP)).contains(token))
-            assertEquals(plaintextId, JSONObject(File(directory, "$plaintextId.event").readText()).getString("id"))
-            waitFor("plaintext metadata shard") { runCatching { org.json.JSONArray(File(directory, ".browse-v1-${plaintextId.first()}").readText()).length() > 0 }.getOrDefault(false) }
-            assertTrue("Turning encryption off does not secretly rewrite old captures", LocalContentCipher().isLegacy(oldFile.readBytes()))
-            val entered = CountDownLatch(1); val release = CountDownLatch(1)
-            val holder = Thread { DurableQueue.exclusive { entered.countDown(); release.await(20, TimeUnit.SECONDS) } }.apply { start() }
-            try {
-                assertTrue(entered.await(5, TimeUnit.SECONDS))
-                val started = SystemClock.elapsedRealtime()
-                click("批量解密已有本地数据")
-                assertTrue(LocalContentDecryptor.snapshot.running)
-                assertTrue("Bulk decryption must not block its input callback", SystemClock.elapsedRealtime() - started < 1000)
+        val file = File(QueueStorage(context).current().path, "$id.event")
+        val original = file.readBytes(); assertEquals("Generated migration content", JSONObject(String(original)).getString("ocrText"))
+        file.writeBytes(SecretBox().seal(original))
+        assertEquals("Generated migration content", context.queue().capture(id)!!.getString("ocrText"))
+        val entered = CountDownLatch(1); val release = CountDownLatch(1)
+        val holder = Thread { DurableQueue.exclusive { entered.countDown(); release.await(20, TimeUnit.SECONDS) } }.apply { start() }
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val started = SystemClock.elapsedRealtime()
+            assertTrue(LocalContentDecryptor.start(context)); assertTrue(LocalContentDecryptor.snapshot.running)
+            assertTrue(SystemClock.elapsedRealtime()-started < 1000)
+            ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.recreate(); scenario.awaitMainUi()
-                assertTrue("Work must survive Activity recreation", LocalContentDecryptor.snapshot.running)
-                click("取消批量解密")
-            } finally { release.countDown(); holder.join(5000) }
-            waitFor("decryption cancellation") { !LocalContentDecryptor.snapshot.running }
-            assertTrue(LocalContentDecryptor.snapshot.message.contains("已取消"))
-            assertTrue(LocalContentCipher().isLegacy(oldFile.readBytes()))
-            waitFor("decrypt button available") {
-                var available = false
-                scenario.onActivity { activity -> available = views(activity.window.decorView).filterIsInstance<Button>().any { it.text == "批量解密已有本地数据" && it.isEnabled } }
-                available
+                assertTrue(LocalContentDecryptor.snapshot.running)
+                LocalContentDecryptor.cancel()
             }
-            click("批量解密已有本地数据")
-            waitFor("decryption complete") { !LocalContentDecryptor.snapshot.running }
-            assertTrue(LocalContentDecryptor.snapshot.message.contains("批量解密完成"))
-            assertEquals(encryptedId, JSONObject(oldFile.readText()).getString("id"))
-            assertEquals(credentialBeforeDecryption, preferences.getString("token", null))
-            assertEquals(token, settings.read().token)
-        }
+        } finally { release.countDown(); holder.join(5000) }
+        waitFor("cancelled content migration") { !LocalContentDecryptor.snapshot.running }
+        assertTrue(LocalContentDecryptor.start(context))
+        waitFor("completed content migration") { !LocalContentDecryptor.snapshot.running }
+        assertArrayEquals(original, file.readBytes())
+        assertEquals(credential, preferences.getString("token", null)); assertEquals(token, settings.read().token)
     }
 }

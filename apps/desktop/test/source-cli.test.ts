@@ -43,7 +43,7 @@ it('CLI restores an unacknowledged revision after failed process, then tracks ex
 it('CLI recovers a lock whose former process has exited, while preserving acknowledged state', async () => {
   await mkdir(join(root, 'selected')); await writeFile(join(root, 'selected', 'a.md'), '合成 crash lock');
   const imported = await run('dev'); expect(imported.code).toBe(0);
-  const stateDir = join(imported.directory, 'file-sync'); const stateFile = (await readdir(stateDir)).find(file => file.endsWith('.json'))!;
+  const stateDir = join(imported.directory, 'file-sync'); const stateFile = (await readdir(stateDir)).find(file => file.endsWith('.json.sqlite'))!.replace(/\.sqlite$/,'');
   const child = spawn(process.execPath, ['-e', 'process.exit(0)']); await new Promise(done => child.once('exit', done));
   await writeFile(join(stateDir, stateFile + '.lock'), String(child.pid));
   expect((await run('dev')).output).toContain('Imported 0 changed'); expect(items).toHaveLength(1);

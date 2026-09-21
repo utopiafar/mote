@@ -15,7 +15,7 @@ export type ImportPreparation={workspace:string;inputPaths:string[];instruction:
 export type ImportPreparationResult={summary:string;recordsPath?:string;warnings?:string[]};
 export type ImportRuntime={prepare?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;onImported?:(captureIds:string[],importJobId:string)=>Promise<{memoryJobId?:string}>};
 type PreparedRecord={item:SourceItem;evidencePaths:string[];attachments:string[]};
-type InternalJob=ImportJob&{workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
+type InternalJob=ImportJob&{parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
 export const importRecordSchema=z.object({item:sourceItemSchema,evidencePaths:z.array(z.string().min(1).max(4000)).min(1).max(100),attachments:z.array(z.string().min(1).max(4000)).max(100).default([])}).strict();
 const responseSchema=z.object({summary:z.string().max(20000),recordsPath:z.string().max(4000).optional(),warnings:z.array(z.string().max(2000)).max(200).optional()}).strict();
 const dispositionsSchema=z.object({items:z.array(z.object({path:z.string().min(1).max(4000),status:z.enum(['parsed','attachment','container','excluded','unsupported']),reason:z.string().min(1).max(1000)}).strict()).max(MAX_FILES)}).strict();
@@ -50,16 +50,18 @@ export class ImportStore {
     }
   }
   private load(id:string):InternalJob{const row=this.store.db.prepare('SELECT json FROM import_jobs WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Import job not found',404);return JSON.parse(row.json);}
-  private public(job:InternalJob):ImportJob{const {workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;return value;}
+  private public(job:InternalJob):ImportJob{const {parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;return value;}
   private save(job:InternalJob){job.updatedAt=new Date().toISOString();const json=JSON.stringify(job),old=this.store.db.prepare('SELECT length(CAST(json AS BLOB)) AS bytes FROM import_jobs WHERE id=?').get(job.id) as {bytes:number}|undefined;this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-(old?.bytes??0)));this.store.db.prepare('INSERT INTO import_jobs(id,created_at,updated_at,json) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(job.id,job.createdAt,job.updatedAt,json);}
   get(id:string):ImportJob{return this.public(this.load(id));}
   list():ImportJob[]{return (this.store.db.prepare('SELECT json FROM import_jobs ORDER BY created_at DESC LIMIT 100').all() as {json:string}[]).map(r=>this.public(JSON.parse(r.json)));}
   async create(raw:unknown):Promise<ImportJob> {
     const request=importRequestSchema.parse(raw);
     if(Number((this.store.db.prepare('SELECT COUNT(*) AS n FROM import_jobs').get() as {n:number}).n)>=1000)throw new StoreError('Import job limit reached',413);
-    const entries:{name:string;mimeType?:string;bytes:Buffer}[]=[];let total=0;
+    const entries:{name:string;mimeType?:string;bytes?:Buffer;fileId?:string}[]=[];let total=0;
     const add=(name:string,bytes:Buffer,mimeType?:string)=>{archiveRelativePath(name);total+=bytes.length;if(bytes.length>MAX_FILE_BYTES||total>MAX_INPUT_BYTES||entries.length>=MAX_FILES)throw new StoreError('Import exceeds file count or size limits (64 MiB per file, 256 MiB total)',413);entries.push({name,bytes,mimeType});};
-    if(request.files){
+    if(request.archivedFileIds){
+      for(const id of request.archivedFileIds){const file=this.files.get(id);total+=file.sizeBytes;if(total>MAX_INPUT_BYTES)throw new StoreError('Import exceeds 256 MiB',413);entries.push({name:file.relativePath,mimeType:file.mimeType,fileId:id});}
+    }else if(request.files){
       for(const file of request.files){if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.dataBase64))throw new StoreError('Invalid file base64');add(file.name,Buffer.from(file.dataBase64,'base64'),file.mimeType);}
     }else{
       const source=realpathSync(resolve(request.directory!)),vault=realpathSync(this.store.directory);
@@ -73,12 +75,12 @@ export class ImportStore {
     if(!entries.length)throw new StoreError('No files were supplied');
     if(new Set(entries.map(e=>e.name)).size!==entries.length)throw new StoreError('File paths must be unique within an import');
     const now=new Date().toISOString(),id=randomUUID(),workspace=join(this.directory,id);privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
-    const job:InternalJob={id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
-    const stage=(entry:{name:string;bytes:Buffer;mimeType?:string},expanded=false)=>{
+    const job:InternalJob={...(request.processing==='automatic'&&!request.instruction.trim()&&entries.every(entry=>/\.(txt|md|markdown|csv)$/i.test(entry.name))?{parserMode:'plain' as const}:{}),id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
+    const stage=(entry:{name:string;bytes?:Buffer;fileId?:string;mimeType?:string},expanded=false)=>{
       if(job.inputs.length>=MAX_FILES)throw new StoreError('Expanded archive exceeds 4000 files',413);
       const path=join(workspace,'inputs',archiveRelativePath(entry.name));if(job.inputs.some(i=>i.path===path))throw new StoreError('Archive contains duplicate file paths');
-      const file=this.files.put({name:entry.name,relativePath:entry.name,mimeType:entry.mimeType,bytes:entry.bytes});
-      privateDirectory(dirname(path));writeFileSync(path,entry.bytes,{mode:0o600,flag:'wx'});job.files.push(file);job.inputs.push({path,fileId:file.id});job.archive.files++;job.archive.bytes+=file.sizeBytes;if(expanded)job.archive.expandedFiles++;
+      const file=entry.fileId?this.files.get(entry.fileId):this.files.put({name:entry.name,relativePath:entry.name,mimeType:entry.mimeType,bytes:entry.bytes!});
+      job.files.push(file);job.inputs.push({path,fileId:file.id});job.archive.files++;job.archive.bytes+=file.sizeBytes;if(expanded)job.archive.expandedFiles++;
     };
     // Store every original first, even if extraction later fails.
     for(const entry of entries)stage(entry);
@@ -88,7 +90,8 @@ export class ImportStore {
     this.save(job);
     try{
       let expandedBytes=0;
-      for(const entry of entries){
+      for(const input of entries){
+        const entry={...input,bytes:input.bytes??this.files.read(input.fileId!)};
         const isZip=entry.bytes.length>=4&&entry.bytes[0]===0x50&&entry.bytes[1]===0x4b&&((entry.bytes[2]===3&&entry.bytes[3]===4)||(entry.bytes[2]===5&&entry.bytes[3]===6));
         // Office packages have their own generic decoders; exposing every XML part is unnecessary.
         if(!isZip||/\.(docx|xlsx|pptx|odt|ods)$/i.test(entry.name))continue;
@@ -150,10 +153,34 @@ export class ImportStore {
     if(counts.unsupported)job.warnings.push(`${counts.unsupported} archived file(s) remain unsupported and were not fully parsed.`);
     return {counts,items};
   }
+  /** Format decoding only. No author, event time, intent or personal fact is inferred. */
+  private async preparePlain(job:InternalJob):Promise<ImportJob>{
+    try{
+      const records:PreparedRecord[]=[];
+      for(const input of job.inputs){
+        const file=this.files.get(input.fileId),text=new TextDecoder('utf-8',{fatal:true}).decode(this.files.read(file.id));
+        const parts=Math.max(1,Math.ceil(text.length/24000));
+        for(let part=0,offset=0;part<parts;part++){
+          let end=part===parts-1?text.length:Math.min(text.length,offset+24000);
+          if(end<text.length&&text.charCodeAt(end-1)>=0xd800&&text.charCodeAt(end-1)<=0xdbff)end--;
+          records.push({item:sourceItemSchema.parse({externalId:file.relativePath+':'+part,revision:file.hash,observedAt:job.createdAt,title:file.name,text:text.slice(offset,end),kind:'file',layer:'original',mimeType:file.mimeType,document:{fileId:file.id,path:file.relativePath,contentRole:'other',timeBasis:'unknown',originalMetadata:{decoder:'utf8-v1',offset,length:end-offset,totalCharacters:text.length}}}),evidencePaths:[input.path],attachments:[]});offset=end;
+        }
+      }
+      if(records.length>MAX_RECORDS)throw new StoreError('Decoded record count exceeds limit',413);
+      const serialized=records.map(record=>JSON.stringify(record)).join('\n')+'\n';if(Buffer.byteLength(serialized)>MAX_MANIFEST_BYTES)throw new StoreError('Decoded text exceeds import budget',413);
+      const path=join(job.workspace,'prepared.jsonl');privateFile(path,true);writeFileSync(path,serialized,{mode:0o600});
+      job.manifestHash=sha256(serialized);job.summary='UTF-8 source text archived directly; author and original dates remain unspecified.';
+      job.preview={count:records.length,samples:records.slice(0,12).map(record=>({title:record.item.title,text:record.item.text.slice(0,1800),kind:'file',attachmentCount:0}))};
+      job.progress.total=records.length;job.status='awaiting_confirmation';job.processingStatus='preview_ready';
+      job.dispositions={counts:{parsed:job.files.length,attachment:0,container:0,excluded:0,unsupported:0},items:job.files.map(file=>({fileId:file.id,path:file.relativePath,status:'parsed',reason:'Deterministic UTF-8 decoder; no attribution or original date inferred'}))};
+      this.save(job);return await this.confirm(job.id);
+    }catch(error){job.status='failed';job.processingStatus='blocked';job.failurePhase='prepare';job.error=message(error);this.save(job);return this.public(job);}
+  }
   async prepare(id:string):Promise<ImportJob>{
     const job=this.load(id);if(this.running.has(id))throw new StoreError('Import is already processing',409);
     if(job.blockedArchive)return this.public(job);
     if(job.progress.processed>0||job.status==='completed')throw new StoreError('Saved records cannot be reanalyzed in the same job',409);
+    if(job.parserMode==='plain')return this.preparePlain(job);
     if(!this.runtime.prepare){job.status='needs_configuration';job.processingStatus='blocked';job.error='Configure a model to analyze the archived files.';this.save(job);return this.public(job);}
     this.running.add(id);const previous=job.summary||job.error?{summary:job.summary,error:job.error}:undefined;
     job.status='preparing';job.processingStatus='analyzing';job.error=undefined;job.preview=undefined;job.dispositions=undefined;job.manifestHash=undefined;job.failurePhase='prepare';this.save(job);

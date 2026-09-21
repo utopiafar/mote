@@ -32,8 +32,9 @@ function reference(record:MemoryRecord,span?:{offset:number;length:number;quote?
     ...(d?.fileIndex?{fileIndex:d.fileIndex}:{}),...span,contentHash:memoryEvidenceFingerprint(record)};
 }
 export type MemoryExtractOptions={requireAdmission?:boolean;reviewRunId?:string;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
+const initializedStores=new WeakSet<Store>();
 export class MemoryStore {
-  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){this.ensureIndex();this.ensureCatalog();}
+  constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){if(!initializedStores.has(store)){this.ensureIndex();this.ensureCatalog();initializedStores.add(store);}}
   private ensureIndex(){
     this.store.db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(id UNINDEXED,text,tokenize='trigram');
       CREATE TRIGGER IF NOT EXISTS memories_fts_insert AFTER INSERT ON memories BEGIN INSERT INTO memories_fts(id,text) VALUES(new.id,json_extract(new.json,'$.title')||' '||json_extract(new.json,'$.statement')||' '||json_extract(new.json,'$.uncertainty')); END;
@@ -74,10 +75,13 @@ export class MemoryStore {
     return file.success&&file.data.chunkId===id&&file.data.captureId!==id;
   }
   dependencyIds(id:string):string[]{const record=this.readEvidence([id])[0],file=fileEvidenceSchema.safeParse(record?.fileEvidence);return file.success?[id,file.data.captureId]:[id];}
-  page(args:{id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory'|'legacy';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
+  page(args:{sourceId?:string;projectKey?:string;provider?:string;sessionId?:string;id?:string;query?:string;tier?:Memory['tier'];kind?:Memory['kind'];status?:Memory['status'];layer?:'observation'|'memory'|'legacy';cursor?:string;level?:'overview'|'detail';limit?:number;includeStale?:boolean;deviceId?:string;after?:string;before?:string}={}) {
     const conditions:string[]=[],values:(string|number)[]=[],limit=Math.max(1,Math.min(args.limit??30,100));
     if(!args.includeStale)conditions.push("status!='stale'");
     for(const key of ['tier','kind','status','layer','id'] as const)if(args[key]){conditions.push(`${key}=?`);values.push(args[key]!);}
+    if(args.sourceId){
+      conditions.push("EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN captures c ON c.id=d.evidence_id WHERE d.memory_id=memory_catalog.id AND coalesce(json_extract(c.json,'$.provenance.sourceId'),'')!=?)");values.push(args.sourceId);
+    }
     if(args.query?.trim()){
       const terms=args.query.trim().split(/\s+/u).slice(0,12),long=terms.filter(t=>Array.from(t).length>=3);
       if(long.length){conditions.push('id IN (SELECT id FROM memories_fts WHERE memories_fts MATCH ?)');values.push(long.map(t=>'"'+t.replaceAll('"','""')+'"').join(' AND '));}
@@ -89,6 +93,12 @@ export class MemoryStore {
       if(args.after){mismatch.push('at<?');values.push(new Date(args.after).toISOString());}
       if(args.before){mismatch.push('at>=?');values.push(new Date(args.before).toISOString());}
       conditions.push(`EXISTS(SELECT 1 FROM memory_scopes WHERE memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_scopes WHERE memory_id=memory_catalog.id AND (${mismatch.join(' OR ')}))`);
+    }
+    const codingFilters=(['projectKey','provider','sessionId'] as const).filter(key=>args[key]);
+    if(codingFilters.length){
+      conditions.push("json_array_length(json,'$.scopeRefs')>0");
+      conditions.push(`NOT EXISTS(SELECT 1 FROM json_each(memory_catalog.json,'$.scopeRefs') scope WHERE ${codingFilters.map(key=>`coalesce(json_extract(scope.value,'$.${key}'),'')!=?`).join(' OR ')})`);
+      values.push(...codingFilters.map(key=>args[key]!));
     }
     if(args.cursor){let position:{at:string;id:string};try{position=z.object({at:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid memory cursor');}conditions.push('(created_at<? OR (created_at=? AND id<?))');values.push(position.at,position.at,position.id);}
     const rows=this.store.db.prepare(`SELECT id,created_at,json FROM memory_catalog ${conditions.length?'WHERE '+conditions.join(' AND '):''} ORDER BY created_at DESC,id DESC LIMIT ?`).all(...values,limit+1);

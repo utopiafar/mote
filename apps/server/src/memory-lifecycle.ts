@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {Store,StoreError} from './store.js';
 
-const policy=z.object({enabled:z.boolean(),intervalHours:z.number().min(1/60).max(8760),minChanges:z.number().int().min(1).max(100000),maxItems:z.number().int().min(1).max(2000)}).strict();
+const policy=z.object({maxWaitHours:z.number().min(1/60).max(8760).optional(),enabled:z.boolean(),intervalHours:z.number().min(1/60).max(8760),minChanges:z.number().int().min(1).max(100000),maxItems:z.number().int().min(1).max(2000)}).strict();
 export const lifecycleSettingsSchema=z.object({
   extraction:policy,consolidation:policy.extend({maxItems:z.number().int().min(1).max(50)}),insights:policy,working:policy,
   drainWindows:z.number().int().min(1).max(1000).default(100),
@@ -74,10 +74,10 @@ export class MemoryLifecycle {
     // Turns (including repeated conversation IDs) are increments for working memory.
     return Number((extension.stream==='artifact'?this.store.db.prepare('SELECT count(*) AS n FROM artifact_events WHERE seq>?').get(cursor):extension.stream==='evidence'?this.store.db.prepare('SELECT count(*) AS n FROM changes WHERE seq>?').get(cursor):this.store.db.prepare('SELECT count(*) AS n FROM memory_events WHERE stream=? AND seq>?').get(extension.stream,cursor))!.n);
   }
-  view(){const settings=this.settings();return {settings,trigger:'interval AND incremental',storage:'text',extensions:[...this.extensions.values()].map(e=>{
-    const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():state.lastSuccess+p.intervalHours*3600000;
+  view(){const settings=this.settings();return {settings,trigger:'increment threshold OR maximum wait',storage:'text',extensions:[...this.extensions.values()].map(e=>{
+    const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():state.lastSuccess+(p.maxWaitHours??Math.min(p.intervalHours,1))*3600000;
     return {id:e.id,version:e.version,stream:e.stream,pendingChanges,dueAt,retryAt:state.retryAt,cursor:state.cursor,failures:state.failures,error:state.error,
-      drainThrough:state.drainThrough,status:!p.enabled?'disabled':this.running.has(e.id)?'running':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':this.now()<dueAt?'waiting_for_interval':!state.drainThrough&&pendingChanges<p.minChanges?'waiting_for_increment':'ready',
+      drainThrough:state.drainThrough,status:!p.enabled?'disabled':this.running.has(e.id)?'running':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':pendingChanges>=p.minChanges||this.now()>=dueAt?'ready':'waiting_for_interval',
       active:state.active?{id:state.active.id,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){
     if(this.closed)return Promise.resolve();
@@ -96,7 +96,10 @@ export class MemoryLifecycle {
       if(!p.enabled||(state.retryAt??0)>now)return;
       if(!state.active){
         if(!state.drainThrough){
-          if(now<state.lastSuccess+p.intervalHours*3600000||this.count(extension,state.cursor)<p.minChanges)return;
+          const pending=this.count(extension,state.cursor);
+          if(pending===0)return;
+          const maximumWait=(p.maxWaitHours??Math.min(p.intervalHours,1))*3600000;
+          if(pending<p.minChanges&&now<state.lastSuccess+maximumWait)return;
           // Freeze a bounded extraction round. Arrivals after this watermark wait
           // for the next round; one window per tick keeps other workflows fair.
           if(extension.id==='extraction')state.drainThrough=Number(this.store.db.prepare(`SELECT max(seq) AS seq FROM (SELECT seq FROM ${extension.stream==='artifact'?'artifact_events':'changes'} WHERE seq>? ORDER BY seq LIMIT ?)`).get(state.cursor,p.maxItems*settings.drainWindows)?.seq)||undefined;
