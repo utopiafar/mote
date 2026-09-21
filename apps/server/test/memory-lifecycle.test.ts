@@ -20,7 +20,7 @@ test('durable AND admission, immutable window, arrivals during work, no empty re
   const lifecycle=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>lifecycle.close());
   lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(w){calls++;assert.equal(w.ids.length,25);entered();await new Promise<void>(r=>release=r);}});
   for(let i=0;i<25;i++)event(store);await lifecycle.tick();assert.equal(calls,0);
-  now=6*3600000;const running=lifecycle.tick();await ready;assert.equal(lifecycle.tick(),running);event(store);release();await running;
+  now=6*3600000;const running=lifecycle.tick();await ready;const coalesced=lifecycle.tick();void coalesced;assert.equal(calls,1);event(store);release();await running;
   assert.equal(lifecycle.view().extensions[0].pendingChanges,1);assert.equal(lifecycle.view().extensions[0].cursor,25);now+=24*3600000;await lifecycle.tick();assert.equal(calls,1);
   assert.throws(()=>lifecycle.configure({...lifecycle.settings(),summaryCharacters:12000,contextCharacters:4000}));
 });
@@ -96,4 +96,30 @@ test('a single huge turn is summarized in bounded spans and partial failure neve
  const pieces:string[]=[];
  await working.prepare(conversations.get(conversationId),lifecycle.settings(),'continue',async input=>{assert.ok(JSON.stringify(input.taskContext).length<80000);for(const span of input.taskContext!.turns)if(span.field==='answer')pieces.push(String(span.text));return {...empty(),answer:'complete generated summary'};});
  assert.equal(pieces.join(''),text);assert.equal(working.get(conversations.get(conversationId))?.coveredTurns,1);
+});
+
+test('a slow insight does not block subsequent extraction windows or overlap itself',async t=>{
+  const store=fixture(t);let now=0,extractions=0,insights=0,release!:()=>void;
+  const lifecycle=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>lifecycle.close());
+  lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){extractions++;}});
+  lifecycle.register({id:'insights',version:'fixture',stream:'evidence',async run(){insights++;await new Promise<void>(r=>release=r);}});
+  const settings=lifecycle.settings();lifecycle.configure({...settings,extraction:{...settings.extraction,minChanges:1,maxItems:1},insights:{...settings.insights,minChanges:1}});
+  event(store);event(store);now=24*3600000;
+  const first=lifecycle.tick();await new Promise(r=>setImmediate(r));
+  assert.equal(extractions,1);assert.equal(insights,1);
+  const second=lifecycle.tick();await new Promise(r=>setImmediate(r));
+  assert.equal(extractions,2);assert.equal(insights,1);assert.equal(lifecycle.view().extensions.find(e=>e.id==='insights')!.cursor,0);
+  release();await Promise.all([first,second]);assert.ok(lifecycle.view().extensions.find(e=>e.id==='insights')!.cursor>0);
+});
+
+test('startup recovers detached queued jobs without bypassing active retry or disabled extraction',async t=>{
+  const {recoverableMemoryJobs}=await import('../src/lifecycle-extensions.js');
+  const store=fixture(t),lifecycle=new MemoryLifecycle(store,()=>true);t.after(()=>lifecycle.close());
+  lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){}});
+  store.db.exec('CREATE TABLE IF NOT EXISTS memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL)');
+  for(const [id,status,importJobId] of [['manual','queued',null],['orphan','queued','lifecycle:old'],['active','queued','lifecycle:current'],['paused','paused','lifecycle:paused'],['cancelled','cancelled',null]])store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run(id,new Date().toISOString(),JSON.stringify({id,status,importJobId}));
+  store.db.prepare('UPDATE memory_lifecycle_state SET json=? WHERE id=?').run(JSON.stringify({cursor:0,lastSuccess:0,failures:1,retryAt:Date.now()+60000,active:{checkpoint:'active',ids:[]}}),'extraction');
+  assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual','orphan']);
+  const settings=lifecycle.settings();lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});
+  assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual']);
 });

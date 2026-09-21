@@ -185,3 +185,13 @@ HTML 布局由模型生成，展示失败时仍可查看文字和引用。引用
 - 原生 Harness、通用解析、任务恢复及报告展示有合成 fixture 测试。测试包含真实 Harness 子进程与模拟模型响应；这不等同真实模型语义效果、真实私人资料完整覆盖或物理设备验收。实网模型和真机结果应单独记录，不能从构建或 fixture 通过推导。
 
 关键实现入口：[导入服务](../apps/server/src/imports.ts)、[解析辅助程序](../apps/server/src/import-parser.mjs)、[Memory 流水线](../apps/server/src/memory-pipeline.ts)、[报告处理](../apps/server/src/insights.ts)、[导入 Harness](../packages/agent/src/import-agent.ts)、[查询 Harness](../packages/agent/src/index.ts)。
+
+## 后台任务独立推进与工具修复
+
+提取、整合、工作记忆与洞察分别持有运行状态、增量游标、检查点和退避时间。同一种任务不重入，不同任务可同时推进，仍受全局 Agent、LLM 和批次并发配置约束。每个任务内部等待执行成功后才提交游标；慢洞察不会挡住提取的下一窗口。启动时恢复脱离生命周期检查点的 queued 整理任务；关闭自动提取时不自动恢复这类任务，paused/cancelled 不会被恢复。仍被活动窗口引用的任务由该窗口按退避时间接管。
+
+洞察先查看精选 Memory，再按需查看 observation、segment 和原始证据。`memoryCoverage` 标明全库待处理/失败批次及最近保存时间，不能代表当前窗口的完整覆盖率。增量 `changes` 在洞察中默认返回 overview（ID、时间、来源、字符数），不会授权正文引用；需要时用 evidence 读取原文，或显式选择 text。最终事实仍须核实原始证据，预算不足应明确报告覆盖范围，不能把没有整理出的记忆当成没有发生的事件。
+
+只读工具失败会在当前 Agent 对话返回 `toolError`：code、message、recovery 和 details。范围错误包含允许的绝对 UTF-16 区间，预算错误给出剩余预算。宿主生成的参数错误可以反馈，底层异常原文不会成为模型指令。同一错误和参数重复三次或继续超出工具调用预算会终止运行；原始证据已删除或修订时也停止使用旧授权。成功保存前原有引用和版本校验仍然生效。
+
+普通 NDJSON 日志增加 `agent.tool_rejected`，保留受控错误码、运行/批次关联和剩余预算；开启 agent trace 后，同格式日志还记录允许范围、修复反馈及调用过程。普通日志不包含引用正文或任意底层错误文本。

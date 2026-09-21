@@ -107,7 +107,7 @@ export async function apply(ctx) {
     });
     const result = await response.json();
     if (!response.ok)
-      throw new Error(result.error || "Mote context tool failed");
+      throw new Error(result.toolError ? JSON.stringify({toolError:result.toolError}) : "Mote context tool failed");
     return result;
   }
   const allowed = JSON.parse(process.env.MOTE_TASK_TOOLS || JSON.stringify(names));

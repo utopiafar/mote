@@ -106,6 +106,8 @@ export interface QueryInput {
   evidenceIds?: string[];
   /** Host snapshot for paginated change disclosure; does not restrict historical retrieval. */
   incrementalEvidenceIds?:string[];
+  /** Host-reported archive-wide coverage, not a guarantee for the selected window. */
+  memoryCoverage?:{scope:'archive';pendingBatches:number;failedBatches:number;lastSavedAt:string|null};
   evidenceRanges?: {id:string;offset:number;length:number}[];
   after?: string;
   before?: string;
@@ -193,7 +195,7 @@ export class AgentNotConfiguredError extends Error {
   }
 }
 
-export type AgentResponseReason = 'invalid_response' | 'invalid_json' | 'invalid_shape' | 'response_too_large' | 'unretrieved_citation' | 'truncated_citation' | 'undeclared_citation' | 'output_limit' | 'tools_unverified' | 'host_validation';
+export type AgentResponseReason = 'invalid_response' | 'invalid_json' | 'invalid_shape' | 'response_too_large' | 'unretrieved_citation' | 'truncated_citation' | 'undeclared_citation' | 'output_limit' | 'tools_unverified' | 'host_validation' | 'tool_failure';
 export class AgentResponseError extends Error {
   readonly statusCode = 502;
   constructor(message: string, readonly reason: AgentResponseReason = 'invalid_response') {

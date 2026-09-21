@@ -1,3 +1,4 @@
+import {ContextToolError} from './tool-errors.js';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {mkdtemp,mkdir,symlink,rm,writeFile,access} from 'node:fs/promises';
 import {tmpdir,homedir} from 'node:os';
@@ -128,7 +129,7 @@ export class CodexSession {
       if(args?.threadId!==this.threadId||args.namespace){this.fail(new AgentProviderError());return;}
       this.toolQueue=this.toolQueue.then(async()=>{
         try{const result=await this.toolCall(args.tool,args.arguments);this.send({id:message.id,result:{contentItems:args.tool==='read_image'&&result&&typeof result==='object'&&'image' in result?[{type:'inputText',text:JSON.stringify({id:(result as any).id,source:'untrusted_personal_context'})},{type:'inputImage',imageUrl:`data:${(result as any).image.mimeType};base64,${(result as any).image.data}`}]:[{type:'inputText',text:JSON.stringify(result)}],success:true}});}
-        catch{if(!this.failure&&!this.ending)this.send({id:message.id,result:{contentItems:[{type:'inputText',text:'Tool unavailable or arguments outside the permitted scope.'}],success:false}});}
+        catch(error){if(!this.failure&&!this.ending)this.send({id:message.id,result:{contentItems:[{type:'inputText',text:error instanceof ContextToolError?JSON.stringify({toolError:error.toJSON()}):'Tool unavailable or arguments outside the permitted scope.'}],success:false}});}
       }).catch(()=>this.fail(new AgentProviderError()));return;
     }
     const params=message.params;

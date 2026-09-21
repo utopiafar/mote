@@ -64,7 +64,18 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     if(store.db.prepare('SELECT id FROM insights WHERE id=?').get(window.id))return;
     const current=window.ids.filter(id=>memories.isCurrentEvidence(id)||Boolean(store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(id)));
     if(!current.length)return;
-    const result=insightResult(await query({skill:'personal-insight',responseMode:'personal-insight',incrementalEvidenceIds:current,question:moteText("请先用 changes 工具分页检查这轮增量，再用全文检索和记忆工具寻找必要的历史上下文，生成有原始证据引用的洞察报告。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。未设置时间过滤，允许跨月检索。")},'insights'));
+    const coverage=store.db.prepare("SELECT sum(json_extract(json,'$.status') IN ('pending','running')) pendingBatches,sum(json_extract(json,'$.status')='failed') failedBatches FROM memory_batches").get() as {pendingBatches:number;failedBatches:number};
+    const lastSavedAt=(store.db.prepare('SELECT max(created_at) at FROM memories').get() as {at:string|null}).at;
+    const result=insightResult(await query({memoryCoverage:{scope:'archive',pendingBatches:coverage.pendingBatches??0,failedBatches:coverage.failedBatches??0,lastSavedAt},skill:'personal-insight',responseMode:'personal-insight',incrementalEvidenceIds:current,question:moteText("先检索 memories 的精选记忆概览，再按需展开相关记忆、observation 和 segments。Memory 未命中不代表原始事件不存在；参考整理覆盖信息，用 changes 的 overview 或全文检索发现尚未整理的增量。只对有意义的发现选择性读取原始证据，核实最终报告的事实、数字、归属和时间。不要穷尽读取本窗口全部原文；预算不足时用已有证据生成范围明确的部分报告，说明未覆盖内容。注意迟到上传、修订、人物归属、偏好变化及计划的未知结果。没有支持时明确说明信息不足。不要声称完整回顾了全部历史。未设置时间过滤，允许跨月检索。")},'insights'));
     store.saveInsight(result,window.id);
   }});
+}
+
+/** Active windows own their retry schedule; only detached queued jobs need recovery. */
+export function recoverableMemoryJobs(store:Store,lifecycle:MemoryLifecycle):string[]{
+  const state=lifecycle.view(),active=state.extensions.find(e=>e.id==='extraction')?.active?.checkpoint;
+  return (store.db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string;json:string}[]).filter(row=>{
+    const job=JSON.parse(row.json) as {importJobId?:string};
+    return !job.importJobId?.startsWith('lifecycle:')||(state.settings.extraction.enabled&&row.id!==active);
+  }).map(row=>row.id);
 }

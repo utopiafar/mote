@@ -264,3 +264,11 @@ test('live trace and logger toggles change the existing writer without restart',
  await d.configure({enabled:false,debug:false,traceEnabled:false,level:'info'});d.record('server.started');assert.equal(d.recent().length,count);
  await d.configure({enabled:true,debug:false,traceEnabled:false,level:'info'});d.record('server.started');await d.flush();assert.equal(d.recent().length,count+1);assert.equal(d.snapshot().writeFailures,0);
 });
+
+test('tool rejections retain only approved error codes and budget metrics without requiring trace',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'mote-tool-diagnostics-')),d=new ServerDiagnostics({directory,traceEnabled:false});
+  try{await d.init();d.record('agent.tool_rejected',{toolErrorCode:'evidence_range_exceeded',remainingCalls:8,remainingCharacters:12000,repeatCount:1,...{message:'PRIVATE_FIXTURE',arguments:'PRIVATE_FIXTURE'}},'warn');
+    d.record('agent.tool_rejected',{toolErrorCode:'PRIVATE_FIXTURE'},'warn');
+    const entries=d.recent().filter(e=>e.event==='agent.tool_rejected');assert.equal(entries[0].toolErrorCode,'evidence_range_exceeded');assert.equal(entries[0].remainingCalls,8);assert.ok(!JSON.stringify(entries).includes('PRIVATE_FIXTURE'));
+  }finally{await d.close();await rm(directory,{recursive:true,force:true});}
+});

@@ -27,7 +27,7 @@ export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'co
  * No timers, semantic dispatch, or write tools are installed in query sessions. */
 export class MemoryLifecycle {
   private extensions=new Map<string,LifecycleExtension>();
-  private pending?:Promise<void>;
+  private running=new Map<string,Promise<void>>();
   private closed=false;
   constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,legacyInsightHours=0){
     store.db.exec(`
@@ -60,7 +60,7 @@ export class MemoryLifecycle {
   }
   replace(extension:LifecycleExtension){
     if(!this.extensions.has(extension.id))return this.register(extension);
-    if(this.state(extension.id).active)throw new StoreError('Finish the active window before replacing an extension',409);
+    if(this.running.has(extension.id)||this.state(extension.id).active)throw new StoreError('Finish the active window before replacing an extension',409);
     this.extensions.set(extension.id,extension);
   }
   settings():LifecycleSettings{return lifecycleSettingsSchema.parse(JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_lifecycle_settings WHERE id=1').get()!.json)));}
@@ -77,23 +77,31 @@ export class MemoryLifecycle {
   view(){const settings=this.settings();return {settings,trigger:'interval AND incremental',storage:'text',extensions:[...this.extensions.values()].map(e=>{
     const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():state.lastSuccess+p.intervalHours*3600000;
     return {id:e.id,version:e.version,stream:e.stream,pendingChanges,dueAt,retryAt:state.retryAt,cursor:state.cursor,failures:state.failures,error:state.error,
-      drainThrough:state.drainThrough,status:!p.enabled?'disabled':state.active?'pending':!this.configured()?'waiting_for_model':this.now()<dueAt?'waiting_for_interval':!state.drainThrough&&pendingChanges<p.minChanges?'waiting_for_increment':'ready',
+      drainThrough:state.drainThrough,status:!p.enabled?'disabled':this.running.has(e.id)?'running':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':this.now()<dueAt?'waiting_for_interval':!state.drainThrough&&pendingChanges<p.minChanges?'waiting_for_increment':'ready',
       active:state.active?{id:state.active.id,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
-  tick(){if(this.closed)return Promise.resolve();return this.pending??=this.execute().finally(()=>{this.pending=undefined;});}
-  private async execute(){
+  tick(){
+    if(this.closed)return Promise.resolve();
     this.store.archive.aggregate(100);
     for(const extension of this.extensions.values()){
+      if(this.running.has(extension.id)||!this.configured())continue;
+      // Register ownership before invoking the handler, including synchronous re-entry.
+      const task=Promise.resolve().then(()=>this.execute(extension)).finally(()=>this.running.delete(extension.id));
+      this.running.set(extension.id,task);
+    }
+    return Promise.all([...this.running.values()]).then(()=>{});
+  }
+  private async execute(extension:LifecycleExtension){
       if(this.closed||!this.configured())return;
       const settings=this.settings(),p=settings[extension.id],state=this.state(extension.id),now=this.now();
-      if(!p.enabled||(state.retryAt??0)>now)continue;
+      if(!p.enabled||(state.retryAt??0)>now)return;
       if(!state.active){
         if(!state.drainThrough){
-          if(now<state.lastSuccess+p.intervalHours*3600000||this.count(extension,state.cursor)<p.minChanges)continue;
+          if(now<state.lastSuccess+p.intervalHours*3600000||this.count(extension,state.cursor)<p.minChanges)return;
           // Freeze a bounded extraction round. Arrivals after this watermark wait
           // for the next round; one window per tick keeps other workflows fair.
           if(extension.id==='extraction')state.drainThrough=Number(this.store.db.prepare(`SELECT max(seq) AS seq FROM (SELECT seq FROM ${extension.stream==='artifact'?'artifact_events':'changes'} WHERE seq>? ORDER BY seq LIMIT ?)`).get(state.cursor,p.maxItems*settings.drainWindows)?.seq)||undefined;
         }
-        const events=this.events(extension,state.cursor,p.maxItems).filter(e=>!state.drainThrough||e.seq<=state.drainThrough);if(!events.length)continue;
+        const events=this.events(extension,state.cursor,p.maxItems).filter(e=>!state.drainThrough||e.seq<=state.drainThrough);if(!events.length)return;
         state.active={id:randomUUID(),version:extension.version,from:state.cursor,through:events.at(-1)!.seq,ids:[...new Set(events.map(e=>e.entity))],startedAt:now,settings};this.save(extension.id,state);
       }
       try{
@@ -103,7 +111,6 @@ export class MemoryLifecycle {
         state.cursor=state.active.through;if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.error;delete state.retryAt;state.failures=0;
       }catch(error){state.failures++;state.error=error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';state.retryAt=this.now()+Math.min(6*3600000,60000*2**Math.min(state.failures,8));}
       this.save(extension.id,state);
-    }
   }
-  async close(){this.closed=true;await this.pending;}
+  async close(){this.closed=true;await Promise.allSettled([...this.running.values()]);}
 }

@@ -208,7 +208,7 @@ export function createAgent(options: AgentOptions) {
     try {
       bridge = await startBridge(
         options.reader,
-        input,
+        {...input,onTrace:trace},
         options.maxToolCalls ?? 24,
       );
     } catch (error) {
@@ -299,7 +299,7 @@ export function createAgent(options: AgentOptions) {
         trace({type:'validation.started',stage:'validating',phase:'started'});
         try { const answer=completeAnswer(result);await validateHostOutput(input,{...answer,trace:bridge.trace,runId});trace({type:'validation.completed',stage:'validating',phase:'completed',status:'accepted',payload:{citations:answer.citations.map(citation=>citation.id)}});return answer; }
         catch (error) {
-          if (!(error instanceof AgentResponseError)) throw error;
+          if (!(error instanceof AgentResponseError)||error.reason==='tool_failure') throw error;
           trace({type:'validation.failed',stage:'validating',phase:'completed',status:'rejected',payload:{reason:error.reason}});
           // One model-authored correction in the same evidence session. Never turn
           // malformed output into a hand-built answer, and keep the original deadline.
@@ -335,6 +335,7 @@ export function createAgent(options: AgentOptions) {
           input.signal?.addEventListener('abort',abortListener,{once:true});
         }),
         readAnswer(),
+        bridge.failure,
         ...deadline,
       ]);
       trace({type:'run.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{citations:answer.citations.map(citation=>citation.id),toolCalls:bridge.trace}});

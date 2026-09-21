@@ -49,7 +49,7 @@ import {ArchivedFileStore} from './archived-files.js';
 import {ImportStore,type ImportPreparation,type ImportPreparationResult} from './imports.js';
 import {prepareImportInput} from './import-runtime.js';
 import {MemoryLifecycle,type LifecycleExtension} from './memory-lifecycle.js';
-import {registerMemoryExtensions} from './lifecycle-extensions.js';
+import {registerMemoryExtensions,recoverableMemoryJobs} from './lifecycle-extensions.js';
 import {WorkingMemory} from './working-memory.js';
 import {MemoryPipeline} from './memory-pipeline.js';
 import {ContentStorageService,registerContentStorage} from './content-storage.js';
@@ -333,7 +333,18 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
     input={...input,language:input.language??requestLocale.getStore()??'zh-CN',modelProfileId:profile.id,modelOverride:input.modelOverride??profile.settings.model};
     const traceContext:AgentTraceContext={...input.traceContext,traceId:randomUUID(),requestId:diagnostics.requestId(),operation,moduleId,profileId:profile.id,provider:profile.settings.provider,protocol:profile.settings.protocol,model:input.modelOverride??profile.settings.model};
     const startedAt=Date.now();let lastActivity=startedAt;
-    const trace=(event:AgentTraceEvent)=>{lastActivity=Date.now();diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);};
+    const trace=(event:AgentTraceEvent)=>{
+      lastActivity=Date.now();diagnostics.agentTrace(event,traceContext);
+      if(event.type==='tool.rejected'){
+        const payload=(event.payload??{}) as Record<string,unknown>;
+        diagnostics.record('agent.tool_rejected',{requestId:traceContext.requestId,jobId:traceContext.jobId,batchId:traceContext.batchId,batchIndex:traceContext.batchIndex,attempt:traceContext.attempt,runId:event.runId,
+          toolErrorCode:typeof payload.code==='string'?payload.code:undefined,
+          remainingCalls:typeof payload.remainingCalls==='number'?payload.remainingCalls:undefined,
+          remainingCharacters:typeof payload.remainingCharacters==='number'?payload.remainingCharacters:undefined,
+          repeatCount:typeof payload.repeatCount==='number'?payload.repeatCount:undefined},'warn');
+      }
+      input.onTrace?.(event);
+    };
     trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
     const meter=usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null});
@@ -544,7 +555,7 @@ export async function buildApp(config:Config,dependencies?:{memoryExtensions?:Li
   const lifecycleTimer=setInterval(()=>{if(!closing)void lifecycle.tick().catch(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));},60000);lifecycleTimer.unref();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
-    for(const row of store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.status')='queued' AND coalesce(json_extract(json,'$.importJobId'),'') NOT LIKE 'lifecycle:%'").all() as {id:string}[])void memoryPipeline.run(row.id).catch(()=>{});
+    for(const id of recoverableMemoryJobs(store,lifecycle))void memoryPipeline.run(id).catch(()=>{});
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('onClose',async()=>{

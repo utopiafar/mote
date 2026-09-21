@@ -43,8 +43,12 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='import'){send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
   if(mode==='timeout')return;
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
-  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:{}}});
- }else if(m.id===999){
+  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
+ }else if(m.id===999&&mode==='tool-repair'){
+  const feedback=JSON.parse(m.result.contentItems[0].text);
+  if(m.result.success!==false||feedback.toolError.code!=='invalid_tool_arguments'||feedback.toolError.recovery!=='correct_arguments')process.exit(5);
+  send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:{}}});
+ }else if(m.id===999||m.id===1000){
   if(!m.result?.success)process.exit(3);
   send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:'Generated evidence [synthetic-codex-record]',citationIds:['synthetic-codex-record']})}}});
   send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
@@ -125,4 +129,13 @@ test('Codex deadline removes a waiting model admission before a turn starts',asy
  await fake(t);let started=false,aborted=false;
  const session=new CodexSession({model:'fixture',timeoutMs:2000,runModel:(_task,signal)=>new Promise((_resolve,reject)=>{started=true;const stop=()=>{aborted=true;reject(signal.reason);};if(signal.aborted)stop();else signal.addEventListener('abort',stop,{once:true});})},async()=>({}));
  try{await session.start('Generated queue fixture',[]);await assert.rejects(session.run('Generated'),AgentTimeoutError);assert.equal(started,true);assert.equal(aborted,true);}finally{await session.close();}
+});
+
+
+test('Codex receives structured tool feedback and corrects arguments within the same turn',async t=>{
+  const root=await fake(t,'tool-repair'),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+  assert.equal((await agent.query({question:'Generated recovery fixture'})).citations[0].id,record.id);
+  const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(messages.filter(m=>m.method==='turn/start').length,1);
+  assert.match(messages.find(m=>m.id===999).result.contentItems[0].text,/limit must be a positive integer/);
 });
