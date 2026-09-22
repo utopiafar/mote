@@ -27,7 +27,7 @@ do{const page=await request('/api/files?'+new URLSearchParams({sourceId:android.
 assert.equal(report.referenceCount,205);
 const missing=await request(`/api/files/${android.retainedAfterSourceDelete}`);assert.equal(missing.hasOriginal,true);
 report.initialSync=android.newOnlyThenBackfill;report.phoneOriginalsKept=android.phoneOriginalsKept;report.stagingCleared=android.stagingCleared;report.historyCount=android.historyCount;
-report.legacyReferenceUpgraded=android.legacyReferenceUpgraded;report.networkResumeAfterTwoParts=android.networkResumeAfterTwoParts;save();
+report.legacyReferenceUpgraded=android.legacyReferenceUpgraded;report.networkResumeAfterOnePart=android.networkResumeAfterOnePart;save();
 console.info(JSON.stringify({transport:'passed',originals:report.originals.length,references:report.referenceCount}));
 
 if(process.argv.includes('--live-model')){

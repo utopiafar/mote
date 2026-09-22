@@ -33,7 +33,7 @@ export interface QueueRecord {
   syncError?: string;
 }
 export interface QueueLimits { maxQueueBytes: number; maxQueueEvents: number }
-export interface QueueStats { depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string; eligibleDepth: number; waitingOcr: number; blocked: number }
+export interface QueueStats { archiveAcknowledgment?:{at:string;origin:string}; depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string; eligibleDepth: number; waitingOcr: number; blocked: number }
 export interface QueueArchive {
   format: 'mote-desktop-queue';
   version: 1;
@@ -132,6 +132,7 @@ export class DurableQueue {
   private storageBinding: ConnectionBindingStore;
   private storageDirectory: string;
   private lastUploadAt?: string;
+  private archiveAcknowledgment?:{at:string;origin:string};
   private sourceRetryAt?: string;
   constructor(directory: string, private limits: QueueLimits) { this.storageDirectory = directory; this.storageBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json'), async (path, value) => { await this.storageGuard?.(); await atomicWrite(path, JSON.stringify(value)); }); }
   get directory(): string { return this.storageDirectory; }
@@ -191,7 +192,7 @@ export class DurableQueue {
       }
       const config = this.limits as QueueLimits & Partial<Config>;
       await this.binding.initialize({ serverUrl: config.serverUrl ?? '', token: config.token }, restored.size > 0);
-      try { const checkpoint = JSON.parse(await readFile(join(this.directory, 'sync-checkpoint.json'), 'utf8')); this.lastUploadAt = checkpoint.lastUploadAt; this.sourceRetryAt = checkpoint.nextRetryAt; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      try { const checkpoint = JSON.parse(await readFile(join(this.directory, 'sync-checkpoint.json'), 'utf8')); this.lastUploadAt = checkpoint.lastUploadAt; this.sourceRetryAt = checkpoint.nextRetryAt; this.archiveAcknowledgment = checkpoint.archiveAcknowledgment; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
       this.initialized = true;
     });
   }
@@ -276,13 +277,13 @@ export class DurableQueue {
       if (!record.syncBlocked && record.nextAttemptAt > 0) nextRetry = Math.min(nextRetry ?? Infinity, record.nextAttemptAt);
     }
     const values = [...this.records.values()];
-    this.cachedStats = { depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt,
+    this.cachedStats = { ...(this.archiveAcknowledgment?{archiveAcknowledgment:{...this.archiveAcknowledgment}}:{}), depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt,
       eligibleDepth: values.filter(r => !r.syncBlocked && (!r.uploaded || r.ocrResult !== undefined)).length,
       waitingOcr: values.filter(r => r.uploaded && r.ocrResult === undefined).length, blocked: values.filter(r => r.syncBlocked).length };
     return { ...this.cachedStats };
   }
-  async syncCheckpoint(lastUploadAt = this.lastUploadAt, nextRetryAt?: string): Promise<void> {
-    await this.exclusive(async () => { await atomicWrite(join(this.directory, 'sync-checkpoint.json'), JSON.stringify({ lastUploadAt, nextRetryAt })); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; });
+  async syncCheckpoint(lastUploadAt = this.lastUploadAt, nextRetryAt?: string, archiveAcknowledgment=this.archiveAcknowledgment): Promise<void> {
+    await this.exclusive(async () => { await atomicWrite(join(this.directory, 'sync-checkpoint.json'), JSON.stringify({ lastUploadAt, nextRetryAt, archiveAcknowledgment })); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; this.archiveAcknowledgment=archiveAcknowledgment; this.cachedStats=undefined; });
   }
   atCapacity(): boolean { const stats = this.stats(); return stats.depth >= this.limits.maxQueueEvents || stats.bytes >= this.limits.maxQueueBytes; }
   private lastState?: CaptureEvent;

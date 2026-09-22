@@ -53,10 +53,12 @@ export interface ContextReader {
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
-  memories?(args:ContextRange & {id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[]}>;
+  memories?(args:ContextRange & {includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[]}>;
 }
 
 export interface AgentOptions {
+  /** Host-only admission before each outbound HTTP model attempt, including SDK turns/repairs. */
+  admitModelRequest?: (inputBytes:number)=>void|Promise<void>;
   /** Host-wide admission for model runs; Codex turns include their internal tool loop. */
   runModel?: <T>(task:()=>Promise<T>,signal?:AbortSignal)=>Promise<T>;
   reader: ContextReader;
@@ -84,6 +86,10 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Host-only bounded observation and coverage snapshot for one insight version. */
+  insightSnapshot?: import('@mote/shared').InsightSnapshot;
+  /** Host-only read grant for original action proposals. No mutation capability is exposed. */
+  actionCatalog?: (args:ContextRange & {id?:string;query?:string})=>Promise<{items:unknown[];nextCursor:string|null}>;
   /** Host-owned temporal snapshot for a durable task; retries use the same clock. */
   contextTime?:string;
   executionLane?:'interactive'|'background';
@@ -135,6 +141,7 @@ export interface AgentProgress {
   count?: number;
 }
 export interface AgentTraceContext {
+  operationId?: string;
   traceId?: string;
   requestId?: string;
   jobId?: string;

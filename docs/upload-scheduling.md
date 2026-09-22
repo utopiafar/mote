@@ -1,4 +1,4 @@
-# Desktop upload scheduling
+# Cross-client upload scheduling
 
 The production desktop collector alternates bounded capture turns with source-upload slices. A source yields after admitting about 4 MiB of request bodies, 64 requests or 15 seconds. An already admitted request finishes, so the byte limit may overshoot by one protocol-bounded request and the time limit by that request's own timeout. Original parts remain 4 MiB. The next source then runs, and capture/note uploads get a turn between sources. The same manual sync action continues the rounds until the selected sources drain; yielding is not an error or a new confirmation request.
 
@@ -16,4 +16,4 @@ Generated tests cover a 20 MiB original yielding to 400 dated notes, process rec
 
 `scripts/test-upload-fairness.cjs` uses the actual compiled desktop source manager, workers and central HTTP/SQLite. With one 20 MiB original and 400 small generated files, all four small-file manifest batches complete between original parts 0 and 1; seven source turns finish the large original with an identical SHA-256. The Electron offline-binding fixture also checks the real main/preload IPC, manual-sync policy, unchanged payloads and both queues draining.
 
-This is the desktop path. Android/Web byte arbitration is not yet unified, and a local source scan still waits for that manager's active flush to finish. Scans and uploads do not yet share a cross-device scheduler. Those remaining boundaries are recorded under SYNC-05 in the implementation backlog.
+Android now rotates per-source 4 MiB/64-request/15-second slices within bounded dispatches, with a separate bounded capture queue. Web uploads one 4 MiB part per file in round-robin order and preserves upload IDs after lost ACKs. Desktop scan and upload tasks are independent; serial source-state mutations do not hold their lock across a network wait. See [client contract and focused evidence](client-scheduling-and-status.md). Scheduling is local to each client and central resource pool; it is not a global bandwidth allocator across devices.

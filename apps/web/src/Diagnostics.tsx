@@ -1,3 +1,4 @@
+import {useResource} from './useResource';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect, useRef, useState} from 'react';
 import {ArrowDownToLine, RefreshCw} from 'lucide-react';
@@ -18,9 +19,6 @@ interface LogPage {
 type LogStage='all'|'system'|'request'|'ingest'|'index'|'agent'|'source'|'maintenance'|'file'|'unknown';
 const logStages:readonly [LogStage,string][]= [['all',moteText("全部阶段")],['system',moteText("系统")],['request',moteText("请求")],['ingest',moteText("入库")],['index',moteText("索引")],['agent','Agent'],['source',moteText("资料")],['maintenance',moteText("维护")],['file',moteText("文件")],['unknown',moteText("未知")]];
 export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
-  const [snapshot,setSnapshot]=useState<Snapshot>();
-  const [logPageData,setLogPageData]=useState<LogPage>();
-  const [rawLog,setRawLog]=useState('');
   const [wrap,setWrap]=useState(true);
   const [logFile,setLogFile]=useState(0);
   const [logPage,setLogPage]=useState(1);
@@ -29,26 +27,14 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
   const [autoRefresh,setAutoRefresh]=useState(false);
   const [copyStatus,setCopyStatus]=useState('');
   const logRef=useRef<HTMLTextAreaElement>(null);
-  const [revision,setRevision]=useState(0);
-  const [busy,setBusy]=useState(false);
   const [exporting,setExporting]=useState(false);
   const [hours,setHours]=useState(24);
   const [error,setError]=useState('');
-  useEffect(()=>{
-    const controller=new AbortController();let active=true;
-    setBusy(true);setError('');
-    void (async()=>{
-      const value=await api.request<Snapshot>('/api/diagnostics',{signal:controller.signal});
-      const page=await api.request<LogPage>(`/api/diagnostics/log-pages?file=${logFile}&page=${logPage}&pageSize=${pageSize}&stage=${logStage}`,{signal:controller.signal});
-      if(active){setSnapshot(value);setLogPageData(page);setLogPage(page.page);setRawLog(page.items.length?page.items.join('\n')+'\n':'');setCopyStatus('');}
-    })().catch(e=>{if(active)setError(errorMessage(e));}).finally(()=>{if(active)setBusy(false);});
-    return()=>{active=false;controller.abort();};
-  },[api,revision,logFile,logPage,pageSize,logStage]);
-  useEffect(()=>{
-    if(!autoRefresh)return;
-    const timer=window.setInterval(()=>setRevision(n=>n+1),5000);
-    return()=>window.clearInterval(timer);
-  },[autoRefresh]);
+  const statusResource=useResource<Snapshot>(api,'/api/diagnostics',autoRefresh?5000:undefined);
+  const logs=useResource<LogPage>(api,`/api/diagnostics/log-pages?file=${logFile}&page=${logPage}&pageSize=${pageSize}&stage=${logStage}`,autoRefresh?5000:undefined);
+  const snapshot=statusResource.data,logPageData=logs.data,rawLog=logs.data?.items.length?logs.data.items.join('\n')+'\n':'',busy=statusResource.loading||logs.loading;
+  const refresh=()=>{statusResource.refresh();logs.refresh();};
+  useEffect(()=>{if(logs.data)setLogPage(logs.data.page);setCopyStatus('');},[logs.data]);
   async function download() {
     setExporting(true);setError('');
     try{
@@ -65,12 +51,12 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
   return <section className="panel diagnostics-panel" aria-labelledby="diagnostics-title">
     <div className="section-heading"><div><h2 id="diagnostics-title">{moteText("运行诊断")}</h2><p>{moteText("环境 ·")}{' '}{profile||'legacy'}{' '}{moteText("· 中央节点")}</p></div>
       <div className="diagnostics-actions">
-        <button className="button subtle" onClick={()=>setRevision(n=>n+1)} disabled={busy}><RefreshCw size={15} className={busy?'spin':''}/>{moteText("刷新诊断")}</button>
+        <button className="button subtle" onClick={refresh} disabled={busy}><RefreshCw size={15} className={busy?'spin':''}/>{moteText("刷新诊断")}</button>
         <select aria-label={moteText("导出时间范围")} value={hours} onChange={e=>setHours(Number(e.target.value))}><option value={1}>{moteText("最近 1 小时")}</option><option value={24}>{moteText("最近 24 小时")}</option><option value={168}>{moteText("最近 7 天")}</option></select><button className="button subtle" onClick={()=>void download()} disabled={exporting}><ArrowDownToLine size={15}/>{exporting?moteText("正在导出…"):moteText("导出诊断包")}</button>
       </div>
     </div>
     <p className="fine-print">{moteText("导出所选时段内全部已保留日志；日志轮转前已清理的部分无法恢复，导出包会注明覆盖范围。")}</p><p className="fine-print">{moteText("诊断包包含运行状态、数量、耗时和最近事件，不包含笔记、截图、模型对话或访问令牌。客户端的采集、电量和本地队列诊断从各自 App 导出。")}</p>
-    {error&&<div className="notice error" role="alert">{error}</div>}
+    {Boolean(error||statusResource.error||logs.error)&&<div className="notice error" role="alert">{error||errorMessage(statusResource.error||logs.error)}</div>}
     {snapshot&&<>
       <div className="diagnostics-metrics">
         <div><strong>{duration(snapshot.runtime.uptimeMs)}</strong><span>{moteText("本次运行")}</span></div>
@@ -84,7 +70,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
       <section className="diagnostics-events" aria-labelledby="raw-log-title">
         <div className="section-heading"><div><h3 id="raw-log-title">{moteText("日志中心")}</h3><p>{moteText("原始顺序 · 刷新时更新")}</p></div>
           <div className="diagnostics-actions">
-            <select aria-label={moteText("日志文件")} value={logFile} disabled={busy} onChange={e=>{setRawLog('');setLogFile(Number(e.target.value));}}>
+            <select aria-label={moteText("日志文件")} value={logFile} disabled={busy} onChange={e=>{setLogFile(Number(e.target.value));}}>
               {Array.from({length:snapshot.limits.maxFiles},(_,index)=><option key={index} value={index}>central.{index}.ndjson{index===0?moteText(" · 当前"):moteText(" · 历史 ")+index}</option>)}
             </select>
             <button className="button subtle" disabled={!rawLog} onClick={()=>void copyLogs()}>{moteText("复制当前页")}</button>
@@ -102,7 +88,7 @@ export function Diagnostics({api,profile}:{api:Api;profile?:string}) {
           </div>
           <div className="log-pagination-options">
             <label>{moteText("阶段")}{' '}<select aria-label={moteText("日志阶段")} value={logStage} disabled={busy} onChange={e=>{setLogPage(1);setLogStage(e.target.value as LogStage);}}>{logStages.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
-            <button className="button subtle" onClick={()=>setRevision(n=>n+1)} disabled={busy}><RefreshCw size={14} className={busy?'spin':''}/>{moteText("手动刷新")}</button>
+            <button className="button subtle" onClick={refresh} disabled={busy}><RefreshCw size={14} className={busy?'spin':''}/>{moteText("手动刷新")}</button>
             <label>{moteText("每页")}{' '}<select aria-label={moteText("每页条数")} value={pageSize} disabled={busy} onChange={e=>{setLogPage(1);setPageSize(Number(e.target.value));}}><option value={50}>50</option><option value={100}>100</option><option value={200}>200</option><option value={500}>500</option></select></label>
             <label className="log-auto-refresh"><input type="checkbox" checked={autoRefresh} onChange={e=>setAutoRefresh(e.target.checked)}/>{moteText("自动刷新（5 秒）")}</label>
           </div>

@@ -1,3 +1,5 @@
+import {useResource} from './useResource';
+import {resources} from './resource-cache';
 import {RuntimeSettings} from './RuntimeSettings';
 import {confirmNavigation} from './unsaved';
 import {PerceptionSettings} from './PerceptionSettings';
@@ -25,15 +27,15 @@ function EffectiveField({field}:{field:ConfigurationField}) {
  return <div className="effective-field" data-config-key={field.key}><div><strong>{field.label}</strong><small>{field.description}</small></div><div>{field.visibility==='secret-status'?<span className={`badge ${value?'green':'muted'}`}>{value?moteText("已配置"):moteText("未配置")}</span>:<span>{value===null||value===''?moteText("未设置"):field.unit==='bytes'&&typeof value==='number'?bytes(value):Array.isArray(value)?value.join('、')||moteText("未设置"):typeof value==='boolean'?value?moteText("已开启"):moteText("已关闭"):String(value)}{typeof value==='number'&&field.unit&&field.unit!=='bytes'?` ${{days:moteText("天"),hours:moteText("小时"),seconds:moteText("秒"),ms:moteText("毫秒"),tokens:'tokens',files:moteText("个"),entries:moteText("条")}[field.unit]||field.unit}`:''}</span>}<small>{origins[field.source]}</small></div></div>;
 }
 export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNavigate:(page:SettingsDestination)=>void;onModelApplied:()=>void}) {
- const [config,setConfig]=useState<ServerConfiguration>(),[category,setCategory]=useState<ConfigCategory|'providers'|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[revision,setRevision]=useState(0);
- useEffect(()=>{const controller=new AbortController();setBusy(true);setError('');void api.request<ServerConfiguration>('/api/configuration',{signal:controller.signal}).then(setConfig).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));}).finally(()=>{if(!controller.signal.aborted)setBusy(false);});return()=>controller.abort();},[api,revision]);
- const [sources,setSources]=useState<SourceConnection[]>([]),[sourcesError,setSourcesError]=useState('');
- useEffect(()=>{if(category!=='connectors')return;const controller=new AbortController();setSourcesError('');void api.request<{items:SourceConnection[]}>('/api/sources',{signal:controller.signal}).then(v=>setSources(v.items)).catch(e=>{if(!controller.signal.aborted)setSourcesError(errorMessage(e));});return()=>controller.abort();},[api,category,revision]);
+ const [category,setCategory]=useState<ConfigCategory|'providers'|null>(null),[revision,setRevision]=useState(0);
+ const configuration=useResource<ServerConfiguration>(api,'/api/configuration'),sourceResource=useResource<{items:SourceConnection[]}>(api,category==='connectors'?'/api/sources':null);
+ const config=configuration.data,busy=configuration.loading,error=configuration.error,sources=sourceResource.data?.items??[],sourcesError=sourceResource.error?errorMessage(sourceResource.error):'';
+ const refresh=()=>{resources(api).invalidate(key=>key==='/api/configuration'||key==='/api/sources'||key.startsWith('/api/model-settings'));setRevision(n=>n+1);};
  useEffect(()=>{const heading=document.querySelector<HTMLElement>('.server-settings h1');if(heading?.getClientRects().length){heading.tabIndex=-1;heading.focus({preventScroll:true});}},[category]);
  const selected=categories.find(c=>c.id===category);
  return <div className="server-settings">
-  <div className="page-heading settings-heading"><div>{category&&<button className="back-link" onClick={()=>{if(confirmNavigation())setCategory(null);}}><ArrowLeft size={16}/>{moteText("设置")}</button>}<div className="eyebrow">{moteText("按你的方式运行")}</div><h1>{selected?.title||moteText("设置")}</h1><p>{selected?.description||moteText("连接、记录与理解，各自有清楚的位置。")}</p></div><button className="button subtle" disabled={busy} onClick={()=>setRevision(n=>n+1)}><RefreshCw size={15} className={busy?'spin':''}/>{moteText("刷新生效配置")}</button></div>
-  {error&&<p className="notice error" role="alert">{error}</p>}
+  <div className="page-heading settings-heading"><div>{category&&<button className="back-link" onClick={()=>{if(confirmNavigation())setCategory(null);}}><ArrowLeft size={16}/>{moteText("设置")}</button>}<div className="eyebrow">{moteText("按你的方式运行")}</div><h1>{selected?.title||moteText("设置")}</h1><p>{selected?.description||moteText("连接、记录与理解，各自有清楚的位置。")}</p></div><button className="button subtle" disabled={busy} onClick={refresh}><RefreshCw size={15} className={busy?'spin':''}/>{moteText("刷新生效配置")}</button></div>
+  {error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)}</p>}
   {!config&&busy&&<p role="status">{moteText("正在读取节点设置…")}</p>}
   {!category&&<>
    <div className="settings-category-label">{moteText("偏好设置")}</div><div className="preference-menu">{categories.map(item=><button key={item.id} className="preference-menu-row" onClick={()=>setCategory(item.id)}><span className="preference-menu-icon"><item.icon size={21}/></span><span><strong>{item.title}</strong><small>{item.description}</small></span><ArrowRight size={17}/></button>)}</div>
@@ -46,7 +48,6 @@ export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNaviga
  </div>;
 }
 export function AdvancedConfiguration({api}:{api:Api}) {
- const [config,setConfig]=useState<ServerConfiguration>(),[error,setError]=useState(''),[revision,setRevision]=useState(0);
- useEffect(()=>{const controller=new AbortController();void api.request<ServerConfiguration>('/api/configuration',{signal:controller.signal}).then(setConfig).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));});return()=>controller.abort();},[api,revision]);
- return <>{error&&<p className="notice error" role="alert">{error}</p>}{config&&<><RuntimeSettings api={api} kind="diagnostics" onApplied={()=>setRevision(n=>n+1)}/><details className="panel deployment-details"><summary><Settings2 size={17}/>{moteText("部署与全部生效配置")}</summary><p>{config.description}</p><dl className="settings-locations"><div><dt>{moteText("配置文件")}</dt><dd><code>{config.envFile||moteText("进程环境变量")}</code></dd></div><div><dt>{moteText("数据目录")}</dt><dd><code>{config.storage.dataDir}</code></dd></div><div><dt>{moteText("相对路径基准")}</dt><dd><code>{config.baseDir}</code></dd></div></dl>{config.groups.map(group=><section key={group.id} className="advanced-config-group"><h3>{group.title}</h3>{group.fields.map(field=><div key={field.key}><EffectiveField field={field}/>{field.envVar&&<code className="env-variable">{field.envVar}</code>}</div>)}</section>)}</details></>}</>;
+ const {data:config,error,refresh}=useResource<ServerConfiguration>(api,'/api/configuration');
+ return <>{error!==undefined&&<p className="notice error" role="alert">{errorMessage(error)}</p>}{config&&<><RuntimeSettings api={api} kind="diagnostics" onApplied={refresh}/><details className="panel deployment-details"><summary><Settings2 size={17}/>{moteText("部署与全部生效配置")}</summary><p>{config.description}</p><dl className="settings-locations"><div><dt>{moteText("配置文件")}</dt><dd><code>{config.envFile||moteText("进程环境变量")}</code></dd></div><div><dt>{moteText("数据目录")}</dt><dd><code>{config.storage.dataDir}</code></dd></div><div><dt>{moteText("相对路径基准")}</dt><dd><code>{config.baseDir}</code></dd></div></dl>{config.groups.map(group=><section key={group.id} className="advanced-config-group"><h3>{group.title}</h3>{group.fields.map(field=><div key={field.key}><EffectiveField field={field}/>{field.envVar&&<code className="env-variable">{field.envVar}</code>}</div>)}</section>)}</details></>}</>;
 }

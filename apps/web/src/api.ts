@@ -1,3 +1,4 @@
+import {failureMessage} from './failure-message';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import type {RecordMetadata, SourceMetadata, OcrResult, CaptureRecord} from '@mote/shared';
 export interface Connection {
@@ -101,6 +102,7 @@ export interface Status {
   serverTime: string;
 }
 export interface Answer {
+  snapshot?:import('@mote/shared').InsightSnapshot;
   modelSelection?: import("@mote/shared/models").ModelSelection;
   usage?:import('@mote/shared').UsageReceipt;
   answer: string;
@@ -130,6 +132,7 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public requestId?: string,
+    public code?: string,
   ) {
     super(message);
   }
@@ -174,8 +177,11 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
             ? moteText("入口暂时无法连接中央服务（502）。请检查中央进程和隧道的 origin 地址。")
             : moteText("请求未完成（{0}）", response.status);
       let requestId = response.headers.get("X-Request-Id") ?? undefined;
+      let code: string | undefined;
       try {
         const value = await response.json();
+        const candidate=value.reason??value.code??(typeof value.error==='object'?value.error?.code:value.error);
+        if(typeof candidate==='string'&&/^[a-z][a-z0-9_.-]{0,99}$/.test(candidate))code=candidate;
         if (typeof value.message === "string") message = value.message;
         else if (typeof value.error === "string") message = value.error;
         if (!requestId && typeof value.requestId === "string") requestId = value.requestId;
@@ -183,7 +189,7 @@ export function createApi(connection: Connection, onUnauthorized?: () => void, i
         /* response might not be JSON */
       }
       if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) requestId = undefined;
-      throw new ApiError(message, response.status, requestId);
+      throw new ApiError(message, response.status, requestId, code);
     }
     return response;
   }
@@ -248,6 +254,6 @@ export const deviceLabels: Record<string, string> = {
   stale: moteText("状态待更新"),
 };
 export function errorMessage(error: unknown) {
-  if (error instanceof ApiError && error.requestId) return moteText("{0} 请求编号：{1}", error.message, error.requestId);
-  return error instanceof Error ? error.message : moteText("请求未完成，请稍后重试。");
+  const message=error instanceof ApiError&&error.code?failureMessage(error.code):error instanceof TypeError?failureMessage('network'):error instanceof Error?error.message:moteText("请求未完成，请稍后重试。");
+  return error instanceof ApiError&&error.requestId?moteText("{0} 请求编号：{1}",message,error.requestId):message;
 }

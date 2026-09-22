@@ -76,6 +76,18 @@
       "import": "./dist/execution.js",
       "require": "./dist/execution.js",
       "default": "./dist/execution.js"
+    },
+    "./native-status": {
+      "types": "./dist/native-status.d.ts",
+      "import": "./dist/native-status.js",
+      "require": "./dist/native-status.js",
+      "default": "./dist/native-status.js"
+    },
+    "./document-decoder": {
+      "types": "./dist/document-decoder.d.ts",
+      "import": "./dist/document-decoder.js",
+      "require": "./dist/document-decoder.js",
+      "default": "./dist/document-decoder.js"
     }
   },
   "typesVersions": {
@@ -112,6 +124,12 @@
       ],
       "execution": [
         "dist/execution.d.ts"
+      ],
+      "native-status": [
+        "dist/native-status.d.ts"
+      ],
+      "document-decoder": [
+        "dist/document-decoder.d.ts"
       ]
     }
   },

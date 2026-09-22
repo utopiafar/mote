@@ -1,0 +1,81 @@
+{
+  "model": "gpt-5.6-luna",
+  "personalDataUsed": false,
+  "calls": [
+    {
+      "case": "author-and-scope",
+      "mode": "all-source-rules",
+      "startupMs": 4185.710375,
+      "durationMs": 11163.900708,
+      "usage": {
+        "measurement": "thread_cumulative",
+        "complete": true,
+        "requests": 0,
+        "reportedRequests": 0,
+        "inputTokens": 5092,
+        "outputTokens": 100,
+        "totalTokens": 5192,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 26
+      },
+      "contextCharacters": 19145
+    },
+    {
+      "case": "author-and-scope",
+      "mode": "bounded-source-rules",
+      "startupMs": 3785.234625000001,
+      "durationMs": 11378.783459,
+      "usage": {
+        "measurement": "thread_cumulative",
+        "complete": true,
+        "requests": 0,
+        "reportedRequests": 0,
+        "inputTokens": 4676,
+        "outputTokens": 133,
+        "totalTokens": 4809,
+        "cacheReadTokens": 3840,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 33
+      },
+      "contextCharacters": 16828
+    },
+    {
+      "phase": "independent-judgment",
+      "usage": {
+        "measurement": "thread_cumulative",
+        "complete": true,
+        "requests": 0,
+        "reportedRequests": 0,
+        "inputTokens": 8164,
+        "outputTokens": 154,
+        "totalTokens": 8318,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 60
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "author-and-scope",
+      "text": "Generated article: Author Mira prefers morning meetings. Separately, user Lin explicitly requests that Project Aurora meetings start after 14:00. The Aurora constraint does not apply to other projects. No preference for mornings has been stated by Lin.",
+      "question": "Whose preference is mornings, and which scheduling constraint applies to Lin?",
+      "rubric": "Mira owns the morning preference. Lin requested after 14:00 only for Project Aurora. Must not generalize to all Lin meetings or swap speakers.",
+      "answers": {
+        "all-source-rules": "Mira prefers mornings. Lin’s scheduling constraint is that Project Aurora meetings must start after 14:00; it does not apply to other projects.",
+        "bounded-source-rules": "Mira prefers mornings. Lin’s scheduling constraint is that Project Aurora meetings start after 14:00; this does not apply to other projects. [a7ffd9a4-353b-4771-aa5b-3f2ac8daca16]"
+      }
+    }
+  ],
+  "judgment": {
+    "cases": [
+      {
+        "name": "author-and-scope",
+        "baselinePass": true,
+        "boundedPass": true,
+        "reason": "两份回答都正确区分了 Mira 的晨间偏好与 Lin 针对 Project Aurora、14:00 之后的明确约束，也没有将该约束泛化到其他项目或调换人物。"
+      }
+    ]
+  }
+}

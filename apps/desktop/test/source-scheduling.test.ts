@@ -56,3 +56,11 @@ it('persists the first unsynchronized source-metadata timestamp across restarts 
   const source = app.status()[0].source; await app.update(source.id, { ...source, enabled: true }); await app.sync(true);
   expect(app.pendingStats().oldestUpdateAt).toBe(original);
 });
+it('continues local discovery during a blocked upload and commits both versions exactly once',async()=>{
+ const config={...defaultConfig(),token:'generated-concurrent-token',syncMode:'manual' as const},file=join(directory,'live.txt');await writeFile(file,'first generated version');const app=await create(config);await app.addFiles(file,DEFAULT_SOURCE_OPTIONS);await app.sync(true);
+ let release!:()=>void,started!:()=>void;const gate=new Promise<void>(resolve=>release=resolve),ready=new Promise<void>(resolve=>started=resolve);const bodies:any[]=[];
+ vi.mocked(fetch).mockImplementation(async(url,init)=>{const path=String(url).replace(config.serverUrl,''),body=init?.body?JSON.parse(await new Response(init.body).text()):undefined;if(init?.method==='GET')return new Response(JSON.stringify({revision:null}));if(path==='/api/sources')return new Response(JSON.stringify(body));if(init?.method==='PATCH')return new Response(JSON.stringify({...body,id:app.status()[0].source.id}));const record=body.item??body;bodies.push(record);if(bodies.length===1){started();await gate;}return new Response(JSON.stringify({id:'b67c1b84-f2cd-4e59-bf67-215545a882dc',sourceId:app.status()[0].source.id,externalId:record.externalId,revision:record.revision,duplicate:false}));});
+ const upload=app.flushPending(new AbortController().signal);await ready;
+ try{await writeFile(file,'second generated version');void app.sync(true);await vi.waitFor(()=>expect(app.pendingStats().pendingRecords).toBe(2),{timeout:5000,interval:25});expect(app.connectionActivity().inFlight).toBe(true);}finally{release();}
+ await upload;expect(bodies.map(body=>body.text)).toEqual(['first generated version','second generated version']);expect(app.pendingStats().pendingRecords).toBe(0);
+});

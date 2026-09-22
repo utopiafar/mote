@@ -1,3 +1,4 @@
+import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import {createHash} from 'node:crypto';
 import type {FileProcessingSettings,FilePolicy} from '@mote/shared';
 import {effectiveFileSettings,selectFilePolicy,migrateFilePolicy,type AppliedFilePolicy} from './file-policy.js';
@@ -10,7 +11,7 @@ const builtinKeys:Record<string,(keyof FileProcessingSettings)[]>={
  'audio.local-dialogue':['endpoint','apiKey','allowRemote','diarizationProcessor','speakerCount','semanticTurns','localModelEndpoint','localModelName','localModelApiKey'],
  'audio.diarize':['endpoint','apiKey','speakerCount'],
  'image.http':['imageEndpoint','apiKey','allowRemote'],
- 'text.utf8':[],
+ 'text.utf8':[],'document.generic':[],
 };
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value,(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(key=>[key,v[key]])):v)).digest('hex');
 export function processorSettingsFingerprint(id:string,settings:FileProcessingSettings,parameters:unknown){
@@ -20,7 +21,7 @@ export function processorSettingsFingerprint(id:string,settings:FileProcessingSe
 export function fileConfiguration(saved:FileConfiguration,sourceId:string,mime:string,registry:ProcessorRegistry,prior?:AppliedFilePolicy){
  const base=saved.settings,policy=saved.policy??migrateFilePolicy(base,registry);
  const applied=prior??(saved.policy?selectFilePolicy(policy,sourceId,mime,saved.revision):undefined);
- const override=base.sourceProfiles[sourceId],processorId=applied?.profile.processorId??(override&&override!=='inherit'?override:base.typeProfiles[mime]??base.typeProfiles[mime.split('/')[0]+'/*']??({audio:base.audioProcessor,text:'text.utf8',image:base.imageProcessor} as Record<string,string>)[mime.split('/')[0]])??'archive';
+ const override=base.sourceProfiles[sourceId],processorId=applied?.profile.processorId??(override&&override!=='inherit'?override:base.typeProfiles[mime]??base.typeProfiles[mime.split('/')[0]+'/*']??(DOCUMENT_MIME_TYPES.some(type=>type===mime)?'document.generic':({audio:base.audioProcessor,text:'text.utf8',image:base.imageProcessor} as Record<string,string>)[mime.split('/')[0]]))??'archive';
  const processor=registry.list().find(p=>p.id===processorId);
  let settings=base,unavailable=false;
  try{if(applied&&processorId!=='archive')settings=effectiveFileSettings(applied,policy,base,registry);}catch{unavailable=true;}

@@ -115,3 +115,6 @@ export const MODEL_PROVIDER_PRESETS: readonly ModelProviderPreset[] = [
 export function modelProvider(id: string): ModelProviderPreset | undefined {
   return MODEL_PROVIDER_PRESETS.find(provider => provider.id === id);
 }
+
+/** Credential-free receipt of the configuration actually leased by one task. */
+export interface ModelConfigurationReceipt {owner:'models';fingerprint:string;revision:number;profileId:string;provider:string;model:string}

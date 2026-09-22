@@ -232,15 +232,21 @@ class NavigationInstrumentedTest {
 
     @Test fun renderGeneratedNavigationPagesWhenExplicitlyRequested() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        if (InstrumentationRegistry.getArguments().getString("renderGeneratedUi") != "true") return
+        org.junit.Assume.assumeTrue("Explicit generated-only UI rendering required", InstrumentationRegistry.getArguments().getString("renderGeneratedUi") == "true")
         val context = instrumentation.targetContext
         require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
         require(!Settings(context).enabled && context.queue().depth() == 0)
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            listOf("概览" to "overview", "随手记" to "notes", "来源" to "sources", "设置" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
-                scenario.onActivity { if (file.endsWith("-settings")) { tab(it, "设置"); if (file == "processing-settings") menu(it, "采集与存储"); menu(it, label) } else tab(it, label) }
+            listOf("今天" to "overview", "记录" to "notes", "资料" to "library", "问一问" to "ask", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
+                scenario.onActivity {
+                    when {
+                        file == "sources" -> { tab(it, "本机"); menu(it, label) }
+                        file.endsWith("-settings") -> { tab(it, "本机"); if (file == "processing-settings") menu(it, "采集与存储"); menu(it, label) }
+                        else -> tab(it, label)
+                    }
+                }
                 instrumentation.waitForIdleSync()
                 scenario.onActivity { activity ->
                     assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)

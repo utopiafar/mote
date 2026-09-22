@@ -2,9 +2,9 @@
 import {readFile,lstat,realpath} from 'node:fs/promises';
 import {dirname,extname,isAbsolute,relative,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {decodeDocument} from "__DOCUMENT_DECODER__";
 import {sourceItemSchema} from "__MOTE_SHARED__";
 import {z} from "__ZOD__";
-import {unzipSync} from "__FFLATE__";
 
 const MAX_BYTES=64*1024*1024,MAX_CHARS=2_000_000,MAX_ROWS=20000,MAX_COLUMNS=500;
 const workspace=dirname(fileURLToPath(import.meta.url));
@@ -19,10 +19,6 @@ async function fileBytes(path,maximum=MAX_BYTES){
 }
 const unsupported=(path,format,reason)=>({status:'unsupported',sourcePath:path,format,warnings:[reason],truncated:false});
 const parsed=(path,format,fields={},warnings=[],truncated=false)=>({status:'parsed',sourcePath:path,format,...fields,warnings,truncated});
-function inspectOfficeZip(bytes){
-  let total=0,count=0;
-  unzipSync(bytes,{filter:entry=>{total+=entry.originalSize;count++;if(total>128*1024*1024||entry.originalSize>64*1024*1024||count>20000)throw Error('Office archive exceeds decompression limits');return false;}});
-}
 function csvRows(text,delimiter){
   const rows=[];let row=[],cell='',quoted=false,closed=false,truncated=false;
   const pushCell=()=>{row.push(cell);cell='';closed=false;if(row.length>MAX_COLUMNS)throw Error('Delimited text exceeds the 500 column helper limit');};
@@ -38,61 +34,17 @@ function csvRows(text,delimiter){
   if(quoted)throw Error('Unterminated quoted CSV field');if(!truncated&&(cell||row.length||closed))pushRow();
   return {rows,truncated};
 }
-function plainCell(value){
-  if(value instanceof Date)return value.toISOString();
-  if(value&&typeof value==='object'){
-    if('richText'in value)return value.richText.map(part=>part.text).join('');
-    if('formula'in value||'sharedFormula'in value)return {formula:value.formula??value.sharedFormula,result:plainCell(value.result??null)};
-    if('hyperlink'in value)return {text:value.text??'',hyperlink:value.hyperlink};
-    if('error'in value)return {error:value.error};
-  }
-  return value??null;
-}
-
 async function decodeFile(input){
   const path=resolve(workspace,input);
   if(!inputPaths.has(path))throw Error('Choose one of the supplied input paths');
   let loaded;try{loaded=await fileBytes(path);}catch(error){return unsupported(path,'unknown',error.message);}
   const {bytes}=loaded,extension=extname(path).toLowerCase();
   try{
-    if(bytes.subarray(0,5).toString()==='%PDF-'||extension==='.pdf'){
-      const pdfjs=await import("__PDFJS__");pdfjs.GlobalWorkerOptions.workerSrc="__PDF_WORKER__";
-      const document=await pdfjs.getDocument({data:new Uint8Array(bytes),useWorkerFetch:false,isEvalSupported:false,disableFontFace:true,useSystemFonts:false,standardFontDataUrl:"__PDF_STANDARD_FONTS__"}).promise;
-      const pages=[];let count=0,truncated=false;
-      try{for(let pageNumber=1;pageNumber<=Math.min(document.numPages,500);pageNumber++){
-        const page=await document.getPage(pageNumber),content=await page.getTextContent();
-        let text=content.items.map(item=>'str'in item?item.str+(item.hasEOL?'\n':' '):'').join('').trimEnd();
-        if(count+text.length>MAX_CHARS){text=text.slice(0,MAX_CHARS-count);truncated=true;}
-        pages.push({pageNumber,text});count+=text.length;page.cleanup();if(truncated)break;
-      }
-      truncated ||= pages.length<document.numPages;
-      const emptyPages=pages.filter(page=>!page.text.trim()).map(page=>page.pageNumber),warnings=[];
-      if(emptyPages.length)warnings.push(`Pages without a text layer: ${emptyPages.join(', ')}. No OCR was performed; image text may be missing.`);
-      if(truncated)warnings.push('PDF extraction stopped at the 500-page or 2,000,000-character helper limit.');
-      if(!count)return {...unsupported(path,'pdf','No text layer was found. This may be a scanned PDF; no OCR was performed.'),pageCount:document.numPages,pages};
-      return parsed(path,'pdf',{pageCount:document.numPages,pages},warnings,truncated);
-      }finally{await document.destroy();}
-    }
-    if(extension==='.docx'){
-      inspectOfficeZip(bytes);const mammoth=await import("__MAMMOTH__");const result=await (mammoth.default??mammoth).extractRawText({buffer:bytes});
-      const truncated=result.value.length>MAX_CHARS,warnings=result.messages.map(message=>String(message.message).slice(0,1000)).slice(0,100);
-      warnings.push('DOCX plain text preserves paragraph breaks; page layout and embedded image text are not extracted.');if(truncated)warnings.push('Text was truncated at 2,000,000 characters.');
-      if(!result.value.trim())return unsupported(path,'docx','No text was extracted. Embedded images were not OCR processed.');
-      return parsed(path,'docx',{text:result.value.slice(0,MAX_CHARS)},warnings,truncated);
-    }
-    if(extension==='.xlsx'){
-      inspectOfficeZip(bytes);const excel=await import("__EXCELJS__"),book=new (excel.default??excel).Workbook();await book.xlsx.load(bytes);
-      const sheets=[];let rowCount=0,characters=0,truncated=false;
-      for(const sheet of book.worksheets.slice(0,100)){
-        const rows=[];sheet.eachRow({includeEmpty:false},(row,rowNumber)=>{
-          if(truncated)return;
-          const values=[];row.eachCell({includeEmpty:true},(cell,column)=>{if(column>MAX_COLUMNS){truncated=true;return;}values.push({column,value:plainCell(cell.value)});});
-          const size=JSON.stringify(values).length;if(rowCount>=MAX_ROWS||characters+size>MAX_CHARS){truncated=true;return;}
-          rows.push({rowNumber,cells:values});rowCount++;characters+=size;
-        });sheets.push({name:sheet.name,rows});if(truncated)break;
-      }
-      truncated ||= book.worksheets.length>100;
-      return parsed(path,'xlsx',{sheets},['Formula expressions and cached results are preserved; formulas were not recalculated.',...(truncated?['Spreadsheet output reached a helper limit (100 sheets, 20,000 rows, 500 columns, or 2,000,000 characters).']:[])],truncated);
+    if(bytes.subarray(0,5).toString()==='%PDF-'||extension==='.pdf'||extension==='.docx'||extension==='.xlsx'){
+      const format=extension==='.docx'?'docx':extension==='.xlsx'?'xlsx':'pdf',mime=format==='pdf'?'application/pdf':format==='xlsx'?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      const decoded=await decodeDocument(bytes,mime,{pdf:async()=>{const pdf=await import("__PDFJS__");pdf.GlobalWorkerOptions.workerSrc="__PDF_WORKER__";return pdf;},docx:()=>import("__MAMMOTH__"),xlsx:()=>import("__EXCELJS__"),pdfOptions:{standardFontDataUrl:"__PDF_STANDARD_FONTS__"}});
+      const fields=decoded.sheets?{sheets:decoded.sheets}:decoded.pages?{pages:decoded.pages,pageCount:decoded.pageCount}:{text:decoded.text};
+      return {status:decoded.status==='ready'?'parsed':'unsupported',sourcePath:path,format,...fields,warnings:decoded.warnings,truncated:decoded.coverage==='partial',coverage:decoded.coverage};
     }
     const textExtensions=['.txt','.md','.markdown','.json','.jsonl','.ndjson','.csv','.tsv','.yaml','.yml','.log'];
     if(!textExtensions.includes(extension))return unsupported(path,extension.slice(1)||'unknown','No generic helper decoder is available for this format. Keep the original and use an appropriate parser; do not invent extracted content.');

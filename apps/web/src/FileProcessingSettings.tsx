@@ -1,13 +1,22 @@
+import {useResource} from './useResource';
+import {resources} from './resource-cache';
+import {useUnsavedChanges} from './unsaved';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect,useState} from 'react';
 import {matchesFileType,type ProcessorParameter,type ProcessingProfile} from '@mote/shared';
-import {type Api,errorMessage} from './api';
+import {type Api,errorMessage,ApiError} from './api';
 
 const types=[['audio/*',moteText("录音")],['image/*',moteText("图片")],['text/*',moteText("文本")],['application/pdf','PDF'],['*/*',moteText("其他 / 全部类型")]];
 const uid=(prefix:string)=>prefix+'.'+crypto.randomUUID();
 export function FileProcessingSettings({api}:{api:Api}){
- const [saved,setSaved]=useState<any>(null),[dirty,setDirty]=useState(false),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[sources,setSources]=useState<{id:string;name:string}[]>([]),[preview,setPreview]=useState<any>(null),[scope,setScope]=useState({sourceId:'',type:'*/*'}),[match,setMatch]=useState<any>(null),[mime,setMime]=useState('audio/wav');
- useEffect(()=>{void api.request('/api/file-processing').then(setSaved).catch(e=>setMessage(errorMessage(e)));void api.request<any>('/api/sources').then(r=>setSources(r.items)).catch(()=>{});},[api]);
+ const [saved,setSaved]=useState<any>(null),[dirty,setDirty]=useState(false),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[preview,setPreview]=useState<any>(null),[scope,setScope]=useState({sourceId:'',type:'*/*'}),[match,setMatch]=useState<any>(null),[mime,setMime]=useState('audio/wav');
+ const resource=useResource<any>(api,'/api/file-processing'),sourceList=useResource<{items:{id:string;name:string}[]}>(api,'/api/sources'),sources=sourceList.data?.items??[];
+ useUnsavedChanges(dirty);
+ useEffect(()=>{setSaved(null);setDirty(false);setPreview(null);setMatch(null);setMessage('');},[api]);
+ useEffect(()=>{if(resource.data&&!dirty)setSaved(resource.data);},[api,resource.data]);
+ useEffect(()=>{if(resource.error instanceof ApiError&&[401,403,404,410].includes(resource.error.status)){setSaved(null);setDirty(false);}},[resource.error]);
+ const readError=resource.error||sourceList.error;
+
  const policy=saved?.policy,settings=saved?.settings,processors=saved?.processors??[];
  function edit(fn:(v:any)=>void){setSaved((v:any)=>{const next=structuredClone(v);fn(next);return next;});setDirty(true);setPreview(null);setMatch(null);}
  async function action(fn:()=>Promise<void>){setBusy(true);setMessage('');try{await fn();}catch(e){setMessage(errorMessage(e));}finally{setBusy(false);}}
@@ -18,7 +27,8 @@ export function FileProcessingSettings({api}:{api:Api}){
   return <label key={d.key}>{d.type==='boolean'?<><input type="checkbox" checked={value===true} onChange={e=>change(e.target.checked)}/>{d.label}</>:<>{d.label}{d.options?<select aria-label={d.label} value={String(value)} onChange={e=>change(e.target.value)}>{d.options.map(o=><option key={o}>{o}</option>)}</select>:<input aria-label={d.label} type={d.type==='number'?'number':'text'} value={String(value)} min={d.min} max={d.max} step={d.integer?1:'any'} required={!d.nullable&&d.type==='number'} onChange={e=>change(d.type==='number'?(e.target.value===''?null:Number(e.target.value)):e.target.value)}/>}</>}{d.description&&<small>{d.description}</small>}</label>;
  }
  return <details className="source-item file-processing-settings"><summary>{moteText("中央文件处理设置")}</summary><p>{moteText("按文件类型选择处理方案。服务保存地址和密钥；方案保存独立参数；同一目录可对录音和图片采用不同方案。处理均由中央节点调度。")}</p>
- {saved&&<><form onSubmit={e=>{e.preventDefault();void action(async()=>{setSaved(await api.request('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:saved.revision,settings,policy})}));setDirty(false);setPreview(null);setMessage(moteText("设置已保存。新文件和未完成任务使用新配置；已完成文件保留原结果。"));});}}>
+ {resource.loading&&!saved&&<p role="status">{moteText("正在读取…")}</p>}{readError&&<p role="alert" className="error-banner">{errorMessage(readError)}</p>}
+ {saved&&<><form onSubmit={e=>{e.preventDefault();void action(async()=>{setSaved(await api.request('/api/file-processing',{method:'PUT',body:JSON.stringify({revision:saved.revision,settings,policy})}));resources(api).invalidate(key=>key==='/api/file-processing');setDirty(false);setPreview(null);setMessage(moteText("设置已保存。新文件和未完成任务使用新配置；已完成文件保留原结果。"));});}}>
  <fieldset disabled={busy}><legend>{moteText("处理开关与预算")}</legend><label><input type="checkbox" checked={settings.enabled} onChange={e=>edit(s=>{s.settings.enabled=e.target.checked;})}/>{moteText("启用中央文件处理")}</label><div className="policy-grid"><label>{moteText("每天音频预算（分钟）")}<input aria-label={moteText("每天音频预算（分钟）")} type="number" min="1" max="100000" value={settings.dailyAudioMinutes} onChange={e=>edit(s=>{s.settings.dailyAudioMinutes=Number(e.target.value);})}/></label><label>{moteText("单文件超时（秒）")}<input aria-label={moteText("单文件超时（秒）")} type="number" min="1" max="3600" value={settings.timeoutMs/1000} onChange={e=>edit(s=>{s.settings.timeoutMs=Number(e.target.value)*1000;})}/></label></div></fieldset>
  <fieldset disabled={busy}><legend>{moteText("1. 类型策略")}</legend><p>{moteText("具体 MIME 类型优先于类型通配符；未配置的格式按“其他”处理。PDF 处理插件可由管理员接入 Cordis，接入后可在此选择。")}</p>
  <div className="policy-rules">{policy.rules.map((r:any,i:number)=>!r.sourceId&&<div className="policy-rule" key={i}><label>{moteText("文件类型")}{types.some(([t])=>t===r.type)?<strong>{types.find(([t])=>t===r.type)?.[1]}</strong>:<input aria-label={moteText("精确 MIME 类型")} value={r.type} placeholder="application/json" onChange={e=>edit(s=>{s.policy.rules[i].type=e.target.value;})}/>}</label><label>{moteText("处理方案")}<select aria-label={moteText("处理方案")} value={r.profileId} onChange={e=>edit(s=>{s.policy.rules[i].profileId=e.target.value;})}>{profileOptions(r.type,r.profileId)}</select></label>{r.type!=='*/*'&&<button type="button" className="text-button" onClick={()=>edit(s=>{s.policy.rules.splice(i,1);})}>{moteText("删除规则")}</button>}</div>)}</div>

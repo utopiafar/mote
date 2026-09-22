@@ -21,6 +21,14 @@ function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): S
 }
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
 describe('source revisions and durable acknowledgments', () => {
+  it('records archive acknowledgment only after a validated item ACK, never an empty sync',async()=>{
+    const engine=await create(),sent:SourceItem[]=[];
+    await engine.flush(source,transport(sent));expect(engine.status().lastAcknowledgedAt).toBeUndefined();
+    await engine.stage(scan([item]),false);await expect(engine.flush(source,transport(sent,()=>true))).rejects.toThrow();
+    expect(engine.status().lastAcknowledgedAt).toBeUndefined();
+    await engine.flush(source,transport(sent));expect(engine.status().lastAcknowledgedAt).toMatch(/^20\d\d-/);
+    const reopened=await create();expect(reopened.status().lastAcknowledgedAt).toBe(engine.status().lastAcknowledgedAt);
+  });
   it('keeps the source index and pending snapshot in transactional SQLite across restart', async () => {
     const engine = await create();
     await engine.stage(scan([item]), false, '2026-09-14T01:00:00Z');
@@ -110,3 +118,10 @@ describe('source revisions and durable acknowledgments', () => {
    engine=await create();expect(await engine.stage(scan([old,second,fresh]),true,undefined,'all')).toBe(2);
    await engine.flush(source,transport(saved));expect(new Set(saved.map(i=>i.externalId)).size).toBe(3);
  });
+it('serializes new scan commits with in-flight ACKs without replaying old revisions or losing new work',async()=>{
+ const engine=await create();await engine.stage(scan([item]),false);let release!:()=>void,started!:()=>void;const gate=new Promise<void>(resolve=>release=resolve),ready=new Promise<void>(resolve=>started=resolve);const saved:SourceItem[]=[];
+ const request:SourceRequest=async(path,body)=>{if(path==='/api/sources')return source;const records=(body as any).items??[body];for(const record of records){saved.push(record);if(record.externalId===item.externalId){started();await gate;}}const receipts=records.map((record:any)=>({id:'b67c1b84-f2cd-4e59-bf67-215545a882dc',sourceId:source.id,externalId:record.externalId,revision:record.revision,duplicate:false}));return (body as any).items?{receipts}:receipts[0];};
+ const upload=engine.flush(source,request);await ready;
+ const newlyObserved=Array.from({length:400},(_,i)=>({...item,externalId:'new:'+i,text:'Generated '+i}));const stage=engine.stage(scan(newlyObserved,false),false);release();await Promise.all([upload,stage]);
+ expect(saved).toHaveLength(401);expect(new Set(saved.map(row=>row.externalId)).size).toBe(401);expect(engine.status().pending).toBe(0);expect((await create()).status().pending).toBe(0);
+});

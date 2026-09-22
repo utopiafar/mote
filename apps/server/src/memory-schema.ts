@@ -27,7 +27,10 @@ export const memoryReviewReceiptSchema=z.object({
   checkedAt:timestamp,contextTime:timestamp.optional(),inputHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),model:z.string().max(512).optional(),
 }).strict();
 export type MemoryReviewReceipt=z.infer<typeof memoryReviewReceiptSchema>;
+export const memoryRelationSchema=z.object({kind:z.enum(['contradicts','supersedes']),memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),version:z.number().int().positive()}).strict();
 export const memorySchema=z.object({
+  version:z.number().int().positive().optional(),relations:z.array(memoryRelationSchema).max(20).optional(),supersededBy:z.string().uuid().optional(),supersededAt:timestamp.optional(),
+  correction:z.object({memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),noteId:z.string().uuid()}).strict().optional(),
   domain:z.enum(['personal','coding']).optional(),coding:codingMemorySchema.optional(),
   scopeRefs:z.array(z.object({sourceId:z.string().max(128).optional(),deviceId:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict()).max(30).optional(),
   admission:memoryAdmissionSchema.optional(),reviewRunId:z.string().max(200).optional(),reviewReceipt:memoryReviewReceiptSchema.optional(),

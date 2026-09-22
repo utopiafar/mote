@@ -1,3 +1,6 @@
+import {useResource} from './useResource';
+import {resources} from './resource-cache';
+import {useOperationUpdates} from './useOperationUpdates';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect,useRef,useState} from 'react';
 import {type Api,bytes,dateTime,errorMessage} from './api';
@@ -10,20 +13,30 @@ const errors:Record<string,string>={archive_only:moteText("仅归档原件"),pro
 const states:Record<string,string>={waiting:moteText("等待处理"),running:moteText("处理中"),succeeded:moteText("已完成"),blocked:moteText("等待配置或格式支持"),failed:moteText("处理失败")};
 
 export function Files({api,onOpen}:{api:Api;onOpen:(id:string)=>void}){
- const [items,setItems]=useState<FileRow[]>([]),[cursor,setCursor]=useState<string|null>(null),[query,setQuery]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[sourceId,setSourceId]=useState(''),[mimePrefix,setMimePrefix]=useState(''),[sources,setSources]=useState<{id:string;name:string;deviceId:string}[]>([]);
- async function load(more=false){setBusy(true);setError('');try{const r=await api.request<{items:FileRow[];nextCursor:string|null}>('/api/files?'+new URLSearchParams({query,...(sourceId?{sourceId}:{}),...(mimePrefix?{mimePrefix}:{}),...(more&&cursor?{cursor}:{})}));setItems(v=>more?[...v,...r.items]:r.items);setCursor(r.nextCursor);}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
- useEffect(()=>{void load();void api.request<{items:{id:string;name:string;deviceId:string}[]}>('/api/sources').then(r=>setSources(r.items)).catch(()=>{});},[api]);
- return <section><h2>{moteText("文件归档")}</h2><p>{moteText("集中浏览手机、电脑和 NAS 来源。手机删除原件后，中央已归档内容仍保留。")}</p><form className="source-toolbar" onSubmit={e=>{e.preventDefault();void load();}}><input aria-label={moteText("文件名")} placeholder={moteText("按文件名或目录查找")} value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label={moteText("文件来源")} value={sourceId} onChange={e=>setSourceId(e.target.value)}><option value="">{moteText("全部来源")}</option>{sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><select aria-label={moteText("文件格式")} value={mimePrefix} onChange={e=>setMimePrefix(e.target.value)}><option value="">{moteText("全部格式")}</option><option value="audio/">{moteText("录音")}</option><option value="text/">{moteText("文本")}</option><option value="image/">{moteText("图片")}</option></select><button className="button" disabled={busy}>{moteText("查找 / 刷新")}</button></form>{error&&<p className="error-banner" role="alert">{error}</p>}{!items.length&&!busy&&<p className="muted">{moteText("尚无匹配文件。在手机“日历与文件”中选择录音目录后，文件会出现在这里。")}</p>}<div className="source-list">{items.map(f=><button className="source-item file-card" key={f.captureId} onClick={()=>onOpen(f.captureId)}><strong>{f.item.title}</strong><span>{bytes(f.sizeBytes)} · {fileAvailability(f)}{f.originMissing?moteText(" · 原位置已不可见"):''}</span><span>{dateTime(f.item.observedAt)} · {f.job?states[f.job.state]??f.job.state:moteText("无需内容处理")}</span></button>)}</div>{cursor&&<button disabled={busy} className="button" onClick={()=>void load(true)}>{moteText("继续加载")}</button>}<FileProcessingSettings api={api}/></section>;
+ const [query,setQuery]=useState(''),[sourceId,setSourceId]=useState(''),[mimePrefix,setMimePrefix]=useState('');
+ const [applied,setApplied]=useState({query:'',sourceId:'',mimePrefix:''}),[cursor,setCursor]=useState<string|null>(null),[previous,setPrevious]=useState<FileRow[]>([]);
+ const path='/api/files?'+new URLSearchParams({query:applied.query,...(applied.sourceId?{sourceId:applied.sourceId}:{}),...(applied.mimePrefix?{mimePrefix:applied.mimePrefix}:{}),...(cursor?{cursor}:{})});
+ const page=useResource<{items:FileRow[];nextCursor:string|null}>(api,path),sourceList=useResource<{items:{id:string;name:string;deviceId:string}[]}>(api,'/api/sources');
+ useOperationUpdates(api);
+ const items=[...previous,...(page.data?.items??[]).filter(item=>!previous.some(old=>old.captureId===item.captureId))],nextCursor=page.data?.nextCursor,sources=sourceList.data?.items??[],busy=page.loading;
+ const error=page.error?errorMessage(page.error):sourceList.error?errorMessage(sourceList.error):'';
+ function load(more=false){if(more&&nextCursor){setPrevious(items);setCursor(nextCursor);}else{setApplied({query,sourceId,mimePrefix});setPrevious([]);setCursor(null);resources(api).invalidate(key=>key.startsWith('/api/files?'));}}
+
+ return <section><h2>{moteText("文件归档")}</h2><p>{moteText("集中浏览手机、电脑和 NAS 来源。手机删除原件后，中央已归档内容仍保留。")}</p><form className="source-toolbar" onSubmit={e=>{e.preventDefault();void load();}}><input aria-label={moteText("文件名")} placeholder={moteText("按文件名或目录查找")} value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label={moteText("文件来源")} value={sourceId} onChange={e=>setSourceId(e.target.value)}><option value="">{moteText("全部来源")}</option>{sources.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><select aria-label={moteText("文件格式")} value={mimePrefix} onChange={e=>setMimePrefix(e.target.value)}><option value="">{moteText("全部格式")}</option><option value="audio/">{moteText("录音")}</option><option value="text/">{moteText("文本")}</option><option value="image/">{moteText("图片")}</option></select><button className="button" disabled={busy}>{moteText("查找 / 刷新")}</button></form>{error&&<p className="error-banner" role="alert">{error}</p>}{!items.length&&!busy&&!error&&<p className="muted">{moteText("尚无匹配文件。在手机“日历与文件”中选择录音目录后，文件会出现在这里。")}</p>}<div className="source-list">{items.map(f=><button className="source-item file-card" key={f.captureId} onClick={()=>onOpen(f.captureId)}><strong>{f.item.title}</strong><span>{bytes(f.sizeBytes)} · {fileAvailability(f)}{f.originMissing?moteText(" · 原位置已不可见"):''}</span><span>{dateTime(f.item.observedAt)} · {f.job?states[f.job.state]??f.job.state:moteText("无需内容处理")}</span></button>)}</div>{nextCursor&&<button disabled={busy} className="button" onClick={()=>void load(true)}>{moteText("继续加载")}</button>}<FileProcessingSettings api={api}/></section>;
 }
 
-export function FileDetail({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs?:number;onOpen:(id:string)=>void}){
- const [file,setFile]=useState<FileRow|null>(null),[error,setError]=useState(''),[chunks,setChunks]=useState<any[]>([]),[offset,setOffset]=useState<number|null>(0),[url,setUrl]=useState('');
+export function FileDetail(props:{api:Api;id:string;startMs?:number;onOpen:(id:string)=>void}){return <FileDetailContents key={props.id} {...props}/>;}
+function FileDetailContents({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs?:number;onOpen:(id:string)=>void}){
+ const {data:file,error:readError,loading,refresh}=useResource<FileRow>(api,'/api/files/'+encodeURIComponent(id));
+ useOperationUpdates(api);
+ const [mutationError,setError]=useState(''),[chunks,setChunks]=useState<any[]>([]),[offset,setOffset]=useState<number|null>(0),[url,setUrl]=useState('');
  const player=useRef<HTMLAudioElement>(null);
  useEffect(()=>{if(player.current)player.current.currentTime=startMs/1000;},[startMs,url]);
- async function load(){setFile(await api.request<FileRow>('/api/files/'+encodeURIComponent(id)));}
- useEffect(()=>{let active=true;setFile(null);setError('');setChunks([]);setOffset(0);setUrl('');void api.request<FileRow>('/api/files/'+encodeURIComponent(id)).then(f=>{if(active)setFile(f);}).catch(()=>{});return()=>{active=false;};},[api,id]);
+ const error=mutationError||(readError?errorMessage(readError):'');
+ async function load(){refresh();}
+ useEffect(()=>()=>{const audio=player.current;if(audio){audio.pause();audio.removeAttribute('src');audio.load();}},[]);
  async function action(fn:()=>Promise<void>){try{setError('');await fn();}catch(e){setError(errorMessage(e));}}
- if(!file)return null;
+ if(!file)return <section className="file-detail">{loading&&<p role="status">{moteText('正在读取…')}</p>}{error&&<p role="alert" className="error-banner">{error}<button className="button" onClick={refresh}>{moteText('重新读取')}</button></p>}</section>;
  return <section className="file-detail"><h3>{file.item.title}</h3><p>{bytes(file.sizeBytes)} · {fileAvailability(file)}{file.originMissing?moteText(" · 来源已不可见，中央归档仍可使用"):''}</p>
  {file.hasOriginal&&<div className="source-toolbar"><button className="button" onClick={()=>void action(async()=>{const r=await api.request<{url:string}>('/api/files/'+id+'/playback',{method:'POST',body:'{}'});setUrl(r.url);})}>{moteText("加载原件 / 回听")}</button><button className="button" onClick={()=>void action(async()=>{await api.request('/api/files/'+id+'/playback',{method:'POST',body:'{}'});const a=document.createElement('a');a.href='/api/files/'+id+'/content?download=1';a.download=file.item.title;a.click();})}>{moteText("下载原件")}</button></div>}
  {url&&file.item.mimeType?.startsWith('audio/')&&<audio onError={()=>setError(moteText("浏览器无法播放此编码，可下载原件使用本机播放器打开。"))} ref={player} controls src={url} preload="metadata" onLoadedMetadata={()=>{if(player.current)player.current.currentTime=startMs/1000;}}/>}

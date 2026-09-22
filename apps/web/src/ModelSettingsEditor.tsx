@@ -1,3 +1,4 @@
+import {readResource,resources} from './resource-cache';
 import {useUnsavedChanges} from './unsaved';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {useEffect, useRef, useState} from 'react';
@@ -56,7 +57,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   useEffect(() => {
     const controller = new AbortController(), requestEpoch = epoch.current;
     loadRef.current?.abort(); loadRef.current = controller; setLoading(true);
-    void api.request<ModelSettingsView>('/api/model-settings', {signal: controller.signal}).then(result => {
+    void readResource<ModelSettingsView>(api,'/api/model-settings',controller.signal).then(result => {
       const snapshot=profileView(result);
       if (controller.signal.aborted || requestEpoch !== epoch.current) return;
       setState(previous => {
@@ -65,7 +66,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
       });
       setError('');
     }).catch(e => {
-      if (!controller.signal.aborted && requestEpoch === epoch.current) setError(e instanceof ApiError && e.status === 404 ? moteText("此中央节点尚不支持页面模型配置，请先升级中央节点。") : errorMessage(e));
+      if (!controller.signal.aborted && requestEpoch === epoch.current) {if(e instanceof ApiError&&[401,403,404,410].includes(e.status))setState(undefined);setError(e instanceof ApiError && e.status === 404 ? moteText("此中央节点尚不支持页面模型配置，请先升级中央节点。") : errorMessage(e));}
     }).finally(() => { if (!controller.signal.aborted && requestEpoch === epoch.current) setLoading(false); });
     return () => controller.abort();
   }, [api, revision, reload]);
@@ -82,7 +83,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
     setState({...active, snapshot: active.latest, name:profileName(active.latest), draft: createModelDraft(active.latest.settings)});
     setError(''); setNotice(''); setProbe(undefined); setConflict(false); setRestoreReview(false);
   }
-  function reread() { reset(); setState(undefined); setReload(n => n + 1); }
+  function reread() { resources(api).invalidate(key=>key==='/api/model-settings');reset(); setState(undefined); setReload(n => n + 1); }
   async function run(kind: 'save' | 'test' | 'restore') {
     if (!active || busy) return;
     let body: unknown;
@@ -107,6 +108,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
         setNotice(kind === 'restore' ? moteText("默认项已恢复部署配置，功能分配保持不变。") : moteText("已保存。选择此配置的新请求将立即使用这些设置。"));
         const agentTimeoutValues=[snapshot.settings.agentTimeoutMs,...(snapshot.profiles??[]).map(p=>p.settings.agentTimeoutMs)],agentTimeouts=agentTimeoutValues.filter((value):value is number=>value!==null);
         api.setAgentTimeout(agentTimeoutValues.some(value=>value===null)?null:agentTimeouts.length?Math.max(...agentTimeouts):null);
+        resources(api).invalidate(key=>key.startsWith('/api/model-settings'));
         onApplied();
       }
     } catch (e) {

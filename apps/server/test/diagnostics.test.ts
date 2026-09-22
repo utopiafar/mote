@@ -172,9 +172,9 @@ test('request correlation survives the per-query local HTTP tool bridge boundary
 test('background indexing records timings, queue state and only a fixed failure marker',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-index-'));const cfg={...config(directory),embeddingModel:'synthetic-model',embeddingBaseUrl:'http://127.0.0.1:1'};
   const {app,indexer,store,diagnostics}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
-  let calls=0;t.mock.method(indexer,'embed',async()=>{calls++;throw new Error(marker);});
+  let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;throw new Error(marker);});
   const id=randomUUID();await store.ingest({id,deviceId:'fixture',deviceName:'fixture',platform:'import',capturedAt:'2020-01-01T00:00:00Z',source:'note',ocrText:marker,durationMs:0});await indexer.tick();
-  assert.equal(calls,1);assert.equal(store.indexCounts().failed,1);const stored=store.db.prepare('SELECT index_error FROM captures WHERE id=?').get(id) as {index_error:string};assert.equal(stored.index_error,'Embedding operation failed');
+  assert.equal(calls,1);assert.equal(store.indexCounts().failed,1);const stored=store.db.prepare('SELECT index_error FROM captures WHERE id=?').get(id) as {index_error:string};assert.equal(stored.index_error,'embedding_transport');
   const failed=diagnostics.events().items.find(e=>e.event==='index.failed');assert.ok(failed);assert.equal(failed.operation,'embedding');assert.equal(typeof failed.durationMs,'number');assert.match(failed.requestId!,/^[a-f0-9-]{36}$/);assert.ok(diagnostics.events().items.some(e=>e.event==='queue.snapshot'&&e.failed===1&&e.requestId===failed.requestId));assert.ok(!JSON.stringify(diagnostics.events()).includes(marker));
 });
 

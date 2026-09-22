@@ -46,6 +46,9 @@ export interface LocalSource extends SourceDefinition, SourceOptions {
   path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi';
 }
 export interface SourceStatus {
+  facts?: import('@mote/shared/native-status').NativeStatusView;
+  scanComplete?: boolean;
+  lastAcknowledgedAt?: string;
   source: LocalSource; state: 'idle' | 'syncing' | 'paused' | 'error' | 'permission_required';
   message: string; pending: number; lastSyncAt?: string; items: number; skipped: number;
 }

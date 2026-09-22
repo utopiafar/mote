@@ -8,4 +8,6 @@
 
 启动时对旧全局 revision 任务建立兼容映射，复用可验证的提取缓存；相关配置已变更则重新排队。新记录纳入容量计费和删除级联。配置 JSON 写入使用私有权限、fsync 和原子替换，数据库工作在恢复时协调。
 
-Memory 和问答仍需统一持久配置归属及跨恢复的变更处理，不能把本文件的验证等同于所有任务快照迁移完成。验证入口：`apps/server/test/file-config-snapshot.test.ts`、`file-policy.test.ts`、`file-processing.test.ts`。
+Memory 作业和每个批次现也保存相关模型的公开指纹回执。提取、独立审核和提交使用同一模型配置；中途相关配置改变时阻塞为 `configuration_changed`，进程重启不会静默换模型。显式重试才接纳新配置，已完成批次及检查点保留。无关配置的保存 revision 不使任务失效。问答在选择模型时固定公开回执，与答案一起持久保存；正在运行的问答保留原运行时。统一语义提取同样按相关指纹固定。
+
+验证入口：`apps/server/test/file-config-snapshot.test.ts`、`memory-config-snapshot.test.ts`、`model-settings-api.test.ts`，以及语义提取定向夹具。

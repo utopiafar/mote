@@ -174,8 +174,14 @@ class ConnectionInstrumentedTest {
             QuickNotes.draft(context).update("合成已准备提交草稿 e\u0301", "")
             val prepared = QuickNotes.draft(context).prepare(server) { event("note", it.text) }.prepared!!
             val queueBefore = context.queue().peek()!!.toString(); val preparedBefore = prepared.toString()
-            waitUntil { ConnectionGuard.sync { true } == true }
-            assertEquals("pending", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://another.generated.invalid") { error("Must not run") } }.category)
+            // A read-lock probe can succeed while another reader still prevents a connection change.
+            // Wait on the guarded operation itself, retaining the required pending-data rejection.
+            var wrongOriginFailure: ConnectionFailure? = null
+            waitUntil {
+                wrongOriginFailure = assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://another.generated.invalid") { error("Must not run") } }
+                wrongOriginFailure!!.category != "busy"
+            }
+            assertEquals("pending", wrongOriginFailure!!.category)
             context.getSharedPreferences("sync-heartbeat", 0).edit().clear().commit()
             assertThrows(IllegalStateException::class.java) { SyncHeartbeat.send(context, settings, settings.read(), context.queue()) }
             stopUploads(); assertEquals(queueBefore, context.queue().peek()!!.toString())

@@ -1,3 +1,6 @@
+import {useResource} from './useResource';
+import {ApiError} from './api';
+import {failureMessage} from './failure-message';
 import {useUnsavedChanges} from './unsaved';
 import {moteText} from '@mote/shared/i18n';
 import {useEffect,useState} from 'react';
@@ -5,11 +8,13 @@ import {type Api,errorMessage} from './api';
 type Settings={providerRevision:string;enabled:boolean;ocrEndpoint:string;semanticEndpoint:string;semanticMode:'manual'|'realtime'|'batch';batchMinutes:number;batchSize:number;allowExternalProcessing:boolean;allowQueryImages:boolean};
 type View={recent:{id:string;kind:string;state:string;error?:string}[];settings:Settings;jobs:{kind:string;state:string;count:number}[]};
 export function PerceptionSettings({api}:{api:Api}){
- const [view,setView]=useState<View>(),[settings,setSettings]=useState<Settings>(),[error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false);
- useUnsavedChanges(!!view && JSON.stringify(settings) !== JSON.stringify(view.settings));
- useEffect(()=>{const c=new AbortController();api.request<View>('/api/perception',{signal:c.signal}).then(v=>{setView(v);setSettings(v.settings);}).catch(e=>{if(!c.signal.aborted)setError(errorMessage(e));});return()=>c.abort();},[api]);
- const change=<K extends keyof Settings>(key:K,value:Settings[K])=>{setSettings(s=>s?{...s,[key]:value}:s);setSaved(false);};
- return <section className="panel perception-settings"><h2>{moteText("中央感知")}</h2><p>{moteText("截图先可靠归档，再独立生成 L1 OCR 与 L2 语义结果。识别失败不影响原图归档，语义失败不阻塞已完成的文字检索。")}</p>{error&&<p role="alert">{error}</p>}{settings&&<form onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{const v=await api.request<View>('/api/perception',{method:'PUT',body:JSON.stringify(settings)});setView(v);setSettings(v.settings);setSaved(true);}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}}>
+ const [settings,setSettings]=useState<Settings>(),[error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false),[dirty,setDirty]=useState(false);
+ const read=useResource<View>(api,'/api/perception'),view=read.data;
+ useUnsavedChanges(dirty);
+ useEffect(()=>{setSettings(undefined);setDirty(false);setError('');setSaved(false);},[api]);
+ useEffect(()=>{if(read.data&&!dirty)setSettings(read.data.settings);if(read.error instanceof ApiError&&[401,403,404,410].includes(read.error.status)){setSettings(undefined);setDirty(false);}},[api,read.data,read.error]);
+ const change=<K extends keyof Settings>(key:K,value:Settings[K])=>{setSettings(s=>s?{...s,[key]:value}:s);setSaved(false);setDirty(true);};
+ return <section className="panel perception-settings"><h2>{moteText("中央感知")}</h2><p>{moteText("截图先可靠归档，再独立生成 L1 OCR 与 L2 语义结果。识别失败不影响原图归档，语义失败不阻塞已完成的文字检索。")}</p>{Boolean(error||read.error)&&<p role="alert">{error||errorMessage(read.error)}</p>}{settings&&<form onSubmit={async e=>{e.preventDefault();setBusy(true);setError('');try{const v=await api.request<View>('/api/perception',{method:'PUT',body:JSON.stringify(settings)});setSettings(v.settings);setDirty(false);setSaved(true);read.refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}}>
  <label><input type="checkbox" checked={settings.enabled} onChange={e=>change('enabled',e.target.checked)}/>{moteText("启用中央截图处理")}</label>
  <label>{moteText("处理模型／配置版本")}<input value={settings.providerRevision} maxLength={128} required onChange={e=>change('providerRevision',e.target.value)}/></label><label>{moteText("OCR Worker 地址")}<input type="url" value={settings.ocrEndpoint} onChange={e=>change('ocrEndpoint',e.target.value)}/></label><p>{moteText("使用已有 image.http 图片处理接口；未配置时保留待处理任务，不伪造识别结果。")}</p>
  <label>{moteText("语义理解 Worker 地址")}<input type="url" value={settings.semanticEndpoint} onChange={e=>change('semanticEndpoint',e.target.value)}/></label>
@@ -19,5 +24,5 @@ export function PerceptionSettings({api}:{api:Api}){
  <label><input type="checkbox" checked={settings.allowExternalProcessing} onChange={e=>change('allowExternalProcessing',e.target.checked)}/>{moteText("允许将截图发往上述非本机 Worker（默认关闭）")}</label>
  <label><input type="checkbox" checked={settings.allowQueryImages} onChange={e=>change('allowQueryImages',e.target.checked)}/>{moteText("允许查询模型按需读取已发现记录的原图（可能发往所选模型服务）")}</label><p>{moteText("查询先读取 OCR／语义派生结果。只有模型显式调用读图工具才披露图片；不自动附加图像。截图中的文字始终作为不可信证据。")}</p>
  <button className="button primary" disabled={busy} type="submit">{busy?moteText("保存中…"):moteText("保存中央感知设置")}</button>{saved&&<span role="status">{moteText("已保存")}</span>}
- </form>}<ul>{view?.jobs.map(j=><li key={j.kind+j.state}>{j.kind==='ocr'?'OCR':moteText("语义理解")} · {j.state} · {j.count}</li>)}</ul><h3>{moteText("最近处理任务")}</h3><button className="button" type="button" disabled={busy} onClick={async()=>{setBusy(true);try{setView(await api.request<View>('/api/perception'));}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}}>{moteText("刷新")}</button>{view?.recent.map(j=><div className="perception-task" key={j.id+j.kind}><code>{j.id}</code> · {j.kind} · {j.state} {j.error&&`· ${j.error}`} <button type="button" disabled={busy||j.state==='running'} onClick={async()=>{setBusy(true);try{await api.request(`/api/perception/${j.id}/retry`,{method:'POST',body:JSON.stringify({kind:j.kind})});setView(await api.request<View>('/api/perception'));}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}}>{j.state==='succeeded'?moteText("重新处理"):moteText("立即处理／重试")}</button></div>)}</section>;
+ </form>}<ul>{view?.jobs.map(j=><li key={j.kind+j.state}>{j.kind==='ocr'?'OCR':moteText("语义理解")} · {j.state} · {j.count}</li>)}</ul><h3>{moteText("最近处理任务")}</h3><button className="button" type="button" disabled={busy} onClick={read.refresh}>{moteText("刷新")}</button>{view?.recent.map(j=><div className="perception-task" key={j.id+j.kind}><code>{j.id}</code> · {j.kind} · {j.state} {j.error&&`· ${failureMessage(j.error)}`} <button type="button" disabled={busy||j.state==='running'} onClick={async()=>{setBusy(true);try{await api.request(`/api/perception/${j.id}/retry`,{method:'POST',body:JSON.stringify({kind:j.kind})});read.refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}}>{j.state==='succeeded'?moteText("重新处理"):moteText("立即处理／重试")}</button></div>)}</section>;
 }

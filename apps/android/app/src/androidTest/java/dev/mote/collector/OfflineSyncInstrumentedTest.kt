@@ -26,6 +26,17 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(AndroidJUnit4::class)
 class OfflineSyncInstrumentedTest {
     private val token = "generated-android-local-sync-token-1234567890"
+    private fun <T> changeWhenIdle(context: Context, server: String, bindLocal: Boolean = false, action: () -> T): T {
+        val deadline = android.os.SystemClock.elapsedRealtime() + 45000
+        while (true) {
+            try { return ConnectionGuard.change(context, server, bindLocal, action) }
+            catch (error: ConnectionFailure) {
+                // Startup/background readers may briefly hold the lock; authorization failures remain exact.
+                if (error.category != "busy" || android.os.SystemClock.elapsedRealtime() >= deadline) throw error
+                Thread.sleep(50)
+            }
+        }
+    }
     private fun fixture(test: (Context, Settings) -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
@@ -80,14 +91,14 @@ class OfflineSyncInstrumentedTest {
             .put("ocrText", draft.text).put("capturedAt", Instant.now().toString()).put("privacy", JSONObject().put("excluded", false)) }.prepared!!
         val before = context.queue().peek()!!.toString()
         waitUntil { ConnectionGuard.processing.get() == 0 }
-        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, origin) { error("No implicit binding") } }.category)
-        ConnectionGuard.change(context, origin, bindLocal = true) { settings.save(local.copy(server = origin, token = token)) }
+        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { changeWhenIdle(context, origin) { error("No implicit binding") } }.category)
+        changeWhenIdle(context, origin, bindLocal = true) { settings.save(local.copy(server = origin, token = token)) }
         assertEquals(origin, settings.dataOrigin()); assertEquals(before, context.queue().peek()!!.toString())
         assertEquals(prepared.getString("id"), QuickNotes.save(context, "Generated prepared note", ""))
-        ConnectionGuard.change(context, "") { settings.save(settings.read().copy(server = "", token = "")) }
+        changeWhenIdle(context, "") { settings.save(settings.read().copy(server = "", token = "")) }
         assertEquals(origin, settings.dataOrigin())
-        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://other.generated.invalid", bindLocal = true) { error("Never redirect") } }.category)
-        ConnectionGuard.change(context, origin) { settings.save(settings.read().copy(server = origin, token = token + "-renewed")) }
+        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { changeWhenIdle(context, "https://other.generated.invalid", bindLocal = true) { error("Never redirect") } }.category)
+        changeWhenIdle(context, origin) { settings.save(settings.read().copy(server = origin, token = token + "-renewed")) }
         assertEquals(2, context.queue().depth())
     }
     @Test fun unboundSourceRevisionsParticipateInTheSameOriginAndBatchProtection() = fixture { context, settings ->
@@ -96,9 +107,9 @@ class OfflineSyncInstrumentedTest {
         store.scan(source, SourceScan(listOf(JSONObject().put("externalId", "generated.txt").put("title", "Generated").put("text", "Generated source body")
             .put("kind", "file").put("layer", "snapshot").put("observedAt", Instant.now().toString())), true, Instant.now().toString()))
         assertEquals(1, SyncSchedule.pending(context).count); assertEquals(1, SyncSchedule.pending(context).pendingUpdates); assertNotNull(SyncSchedule.pending(context).oldestAt)
-        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://first.generated.invalid") { } }.category)
-        ConnectionGuard.change(context, "https://first.generated.invalid", true) { settings.save(settings.read().copy(server = "https://first.generated.invalid", token = token)) }
-        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://other.generated.invalid", true) { } }.category)
+        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { changeWhenIdle(context, "https://first.generated.invalid") { error("No implicit source binding") } }.category)
+        changeWhenIdle(context, "https://first.generated.invalid", true) { settings.save(settings.read().copy(server = "https://first.generated.invalid", token = token)) }
+        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { changeWhenIdle(context, "https://other.generated.invalid", true) { error("Never redirect source data") } }.category)
         assertEquals(1, store.pendingSync().count)
     }
     @Test fun manualDoesNotSendHeartbeatOrNotesUntilExplicitSync() = fixture { context, settings ->

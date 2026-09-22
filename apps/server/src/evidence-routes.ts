@@ -24,8 +24,8 @@ export function registerEvidenceRoutes(app:FastifyInstance,reader:EvidenceReader
  });
  app.get('/api/notes/:id',async req=>{const value=capture(req);if(value.source!=='note')throw new StoreError('Note not found',404);return value;});
  app.get('/api/memories',async req=>{
-  const q=z.object({...navigationScopeSchema.shape,level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),layer:z.enum(['observation','memory','legacy']).optional(),cursor:z.string().max(1000).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);
-  return reader.memoryPage({...q,includeStale:q.includeStale==='true'});
+  const q=z.object({...navigationScopeSchema.shape,level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),layer:z.enum(['observation','memory','legacy']).optional(),cursor:z.string().max(1000).optional(),includeHistory:z.enum(['true','false']).optional(),asOf:z.string().datetime({offset:true}).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);
+  return reader.memoryPage({...q,includeStale:q.includeStale==='true',includeHistory:q.includeHistory==='true'});
  });
  app.get('/api/memories/:id',async req=>memory(req));
  app.get('/api/memories/:id/text',async(req,reply)=>reply.type('text/markdown; charset=utf-8').header('Content-Disposition','attachment; filename=memory.md').send(reader.memories.text(memory(req).id)));

@@ -32,7 +32,7 @@ do {
             }
         }
         try output(["applications": applications.map { ["appId": $0.key, "appName": $0.value] }])
-    case "calendar-permission", "calendar-list", "calendar-scan", "calendar-create":
+    case "calendar-permission", "calendar-list", "calendar-scan", "calendar-create", "calendar-change":
         let command = CommandLine.arguments[1]
         let store = EKEventStore()
         func fullAccess() -> Bool {
@@ -51,6 +51,46 @@ do {
             while !completed && Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
         }
         guard fullAccess() else { try output(["permission": "required", "calendars": []]); break }
+        if command == "calendar-change" {
+            let input = FileHandle.standardInput.readDataToEndOfFile()
+            guard input.count < 32768, let q = try JSONSerialization.jsonObject(with: input) as? [String: Any],
+                  let id = q["id"] as? String, UUID(uuidString: id) != nil,
+                  let operation = q["operationId"] as? String, UUID(uuidString: operation) != nil,
+                  let kind = q["kind"] as? String, ["calendar.update", "calendar.cancel"].contains(kind),
+                  let externalID = q["externalId"] as? String,
+                  let calendarID = q["calendarId"] as? String, let calendar = store.calendar(withIdentifier: calendarID), calendar.allowsContentModifications,
+                  let expected = q["expected"] as? [String: Any] else { throw NSError(domain: "Mote", code: 4) }
+            let marker = "[Mote:\(id)]", operationMarker = "[Mote-operation:\(operation)]"
+            guard let event = store.calendarItem(withIdentifier: externalID) as? EKEvent else {
+                if kind == "calendar.cancel" { try output(["externalId": externalID]); break }
+                throw NSError(domain: "Mote", code: 5)
+            }
+            guard event.calendar.calendarIdentifier == calendarID, (event.notes ?? "").contains(marker),
+                  (event.recurrenceRules ?? []).isEmpty, (event.attendees ?? []).isEmpty else { throw NSError(domain: "Mote", code: 5) }
+            if kind == "calendar.update" && (event.notes ?? "").contains(operationMarker) { try output(["externalId": externalID]); break }
+            func date(_ value: String, _ allDay: Bool, _ zone: TimeZone) -> Date? {
+                if allDay { let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = zone; f.dateFormat = "yyyy-MM-dd"; f.isLenient = false; return f.date(from: value) }
+                let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                return f.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+            }
+            guard q["mutationAllowed"] as? Bool == true,
+                  let oldAllDay = expected["allDay"] as? Bool, let oldZoneName = expected["timeZone"] as? String, let oldZone = TimeZone(identifier: oldZoneName),
+                  let oldStart = expected["start"] as? String, let oldEnd = expected["end"] as? String,
+                  date(oldStart, oldAllDay, oldZone) == event.startDate, date(oldEnd, oldAllDay, oldZone) == event.endDate,
+                  oldAllDay == event.isAllDay, expected["title"] as? String == event.title,
+                  (expected["location"] as? String ?? "") == (event.location ?? ""),
+                  (expected["description"] as? String ?? "") == (event.notes ?? "") else { throw NSError(domain: "Mote", code: 5) }
+            if kind == "calendar.cancel" { try store.remove(event, span: .thisEvent, commit: true); try output(["externalId": externalID]); break }
+            guard let title = q["title"] as? String, !title.isEmpty, title.count <= 200,
+                  let startValue = q["start"] as? String, let endValue = q["end"] as? String,
+                  let zoneValue = q["timeZone"] as? String, let zone = TimeZone(identifier: zoneValue), let allDay = q["allDay"] as? Bool,
+                  let start = date(startValue, allDay, zone), let end = date(endValue, allDay, zone), end > start, end > Date(), end.timeIntervalSince(start) <= 366 * 86400,
+                  let description = q["description"] as? String, description.contains(marker), description.contains(operationMarker) else { throw NSError(domain: "Mote", code: 4) }
+            event.title = title; event.startDate = start; event.endDate = end; event.timeZone = zone; event.isAllDay = allDay
+            event.location = q["location"] as? String; event.notes = description
+            try store.save(event, span: .thisEvent, commit: true)
+            try output(["externalId": externalID]); break
+        }
         if command == "calendar-create" {
             let input = FileHandle.standardInput.readDataToEndOfFile()
             guard input.count < 16384, let q = try JSONSerialization.jsonObject(with: input) as? [String: Any],

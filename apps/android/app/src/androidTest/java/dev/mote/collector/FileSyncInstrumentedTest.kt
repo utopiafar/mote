@@ -82,8 +82,8 @@ class FileSyncInstrumentedTest {
                 val manifest = inFlight?.getJSONObject("pending")?.getJSONObject("manifest")
                 if (!networkInterrupted && manifest != null && manifest.getLong("sizeBytes") > FileArchiveQueue.PART_BYTES) {
                     val (code, session) = HttpJson.post("$base/api/file-sync/v1/uploads", manifest, token)
-                    assertEquals(200, code); assertEquals(2, session!!.getJSONArray("parts").length())
-                    // Simulate a disconnected central endpoint after two real network parts.
+                    assertEquals(200, code); assertEquals(1, session!!.getJSONArray("parts").length())
+                    // Simulate a disconnected central endpoint after one byte-bounded network part.
                     val saved = inFlight.toString()
                     assertThrows(Exception::class.java) { FileUpload.sync(context, archive, config.copy(server = "http://127.0.0.1:1")) { true } }
                     assertEquals(saved, context.fileArchives().next(archive.id).toString())
@@ -91,7 +91,7 @@ class FileSyncInstrumentedTest {
                 }
             }
             assertTrue("Multi-part transport resumed after unavailable endpoint", networkInterrupted)
-            report.put("networkResumeAfterTwoParts", true)
+            report.put("networkResumeAfterOnePart", true)
             assertEquals(3, list(archive).length()); assertTrue(note.exists() && audio.exists() && large.exists())
             assertFalse(File(context.noBackupFilesDir, "file-archives/${archive.id}/spool").exists())
             val entries = list(archive)

@@ -7,7 +7,7 @@ export type ImportPreview={count:number;samples:{title:string;text:string;kind:s
 export type ImportDispositionStatus='parsed'|'attachment'|'container'|'excluded'|'unsupported';
 export type ImportDispositions={counts:Record<ImportDispositionStatus,number>;items:{fileId:string;path:string;status:ImportDispositionStatus;reason:string}[]};
 export type ImportJob={
-  id:string;name:string;instruction:string;sourceId:string;status:ImportStatus;
+  id:string;operationId?:string;execution?:import('./execution.js').ExecutionEnvelope;name:string;instruction:string;sourceId:string;status:ImportStatus;
   processingStatus:'archived'|'analyzing'|'preview_ready'|'saving'|'saved'|'blocked';
   createdAt:string;updatedAt:string;files:ArchivedFile[];summary:string;warnings:string[];
   archive:{files:number;bytes:number;expandedFiles:number};

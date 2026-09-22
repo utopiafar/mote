@@ -115,12 +115,18 @@ try {
         if(hasTable('file_parts'))snapshot.exec('DELETE FROM file_parts');
         if(hasTable('file_jobs'))snapshot.exec("UPDATE file_jobs SET state='waiting' WHERE state='running'; UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running'");
         if(hasTable('file_steps'))snapshot.exec("UPDATE file_steps SET state='waiting' WHERE state='running'");
+        // A lease belongs to the original running host, never to the restored vault.
+        // Keep attempts/deadlines and completed steps; domain recovery decides whether
+        // interrupted work can resume. Interactive model calls are never replayed.
+        if(hasTable('execution_steps'))snapshot.exec("UPDATE execution_steps SET lease_until=0,fence=NULL WHERE state='running'");
+        if(hasTable('run_execution_owners'))snapshot.exec('DELETE FROM run_execution_owners');
         if(hasTable('import_jobs')){
           const jobs = snapshot.prepare('SELECT id,json FROM import_jobs').all() as {id:string;json:string}[];
           for (const row of jobs) {
             const job=JSON.parse(row.json);
-            delete job.workspace;delete job.inputs;delete job.manifestHash;
+            delete job.workspace;delete job.inputs;
             if(job.status!=='completed'){
+              delete job.manifestHash;
               job.status=job.blockedArchive?'failed':'queued';job.processingStatus=job.blockedArchive?'blocked':'archived';job.failurePhase='prepare';
               job.progress={total:0,processed:0,imported:0,duplicates:0};delete job.preview;delete job.dispositions;
               if(!job.blockedArchive)job.error='Restored backup: original files are retained. Analyze this import again and review a new preview before continuing.';

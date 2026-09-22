@@ -11,7 +11,7 @@ const projection=`json_object(
  'stateSeries',json_object('samples',json_array(json_object('at',${field('stateSeries.samples[#-1].at')}))),
  'provenance',json_object('sourceId',${field('provenance.sourceId')},'document',json_object(
   'timeBasis',${field('provenance.document.timeBasis')},'occurredAt',${field('provenance.document.occurredAt')},'recordedAt',${field('provenance.document.recordedAt')},'coding',${field('provenance.document.coding')})),
- 'metadata',json_object('media',json_object('sessions',json(coalesce((SELECT json_group_array(json_object('appId',json_extract(value,'$.appId'))) FROM json_each(captures.json,'$.metadata.media.sessions')),'[]'))))
+ 'metadata',json_object('memoryCorrection',${field('metadata.memoryCorrection')},'media',json_object('sessions',json(coalesce((SELECT json_group_array(json_object('appId',json_extract(value,'$.appId'))) FROM json_each(captures.json,'$.metadata.media.sessions')),'[]'))))
 )`;
 export function scopeRecord(store:Store,id:string):CaptureRecord|undefined {
  const row=store.db.prepare(`SELECT ${projection} AS scope FROM captures WHERE id=?`).get(id);

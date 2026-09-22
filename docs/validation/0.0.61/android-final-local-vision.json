@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T15:49:44.369023+00:00",
+  "status": "pass",
+  "generatedImagesOnly": true,
+  "physicalDevice": false,
+  "emulator": "mote_fixture_api35",
+  "weights": {
+    "id": "unsloth/Qwen3.5-0.8B-GGUF",
+    "revision": "88467eb7c8e3b6e7894c794f373050d4dbc6ae8a",
+    "upstreamRevision": "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0",
+    "bytes": 737504352,
+    "runtime": {
+      "name": "llama.cpp",
+      "revision": "1744c6bde8d687ce9774b3b54e688eee0bfdf5b7",
+      "backend": "cpu"
+    },
+    "files": [
+      {
+        "role": "language",
+        "fileName": "model.gguf",
+        "size": 532517120,
+        "sha256": "bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517"
+      },
+      {
+        "role": "vision",
+        "fileName": "mmproj.gguf",
+        "size": 204987232,
+        "sha256": "56e4c6cfe73b0c82e3e82bc518d7591997e61d81f723fc41a586f4fa69ea2453"
+      }
+    ],
+    "downloadSource": "existing automatic ModelScope/HuggingFace downloader",
+    "hostAndAndroidSha256Verified": true
+  },
+  "networkDuringNativeInference": {
+    "wifi": "disabled",
+    "cellularData": "disabled",
+    "adbReverseMappings": "removed",
+    "restoredAfterwards": true
+  },
+  "nativeInferenceCalls": 8,
+  "functionalPipelineVlmEnabled": false,
+  "tests": [
+    {
+      "class": "ComplexVlmInstrumentedTest",
+      "method": "pausedVisualModelDoesNotClaimShapeRejectionAndLocalTextGateStillBlocks",
+      "status": "pass",
+      "seconds": 4.8
+    },
+    {
+      "class": "NsfwInstrumentedTest",
+      "method": "wrongModelImportPreservesVerifiedFileAndFailsClosed",
+      "status": "pass",
+      "seconds": 2.85
+    },
+    {
+      "class": "NsfwInstrumentedTest",
+      "method": "actualModelRunsOfflineAndReloadsAfterProcessReset",
+      "status": "pass",
+      "seconds": 23.88
+    },
+    {
+      "class": "ComplexVlmInstrumentedTest",
+      "method": "actualModelReviewsComplexGeneratedImagesAcrossNativeReload",
+      "status": "pass",
+      "seconds": 46.76
+    }
+  ],
+  "ordinaryImageAndNativeReload": "first=ReviewDecision(allow=true, reason=The image displays a plain design with text and a colored rectangle. No sexually explicit content or nudity is present., labels=[no nudity, no sexual content]); Qwen CPU reviewed · 12848 ms · Frame passed\nLoad 2560 / Image prefill 5029 / Decode 3204 ms · 60 tokens\nsecond=ReviewDecision(allow=true, reason=The image displays a plain design with text and a colored rectangle. No sexually explicit content or nudity is present., labels=[no nudity, no sexual content]); Qwen CPU reviewed · 8532 ms · Frame passed\nLoad 1045 / Image prefill 3784 / Decode 2620 ms · 60 tokens\n",
+  "complexGeneratedCases": [
+    {
+      "round": 1,
+      "fixture": "portrait-notes",
+      "policy": "shared-default",
+      "allow": true,
+      "reason": "The image displays a synthetic document with text about project planning and coding. No nudity or sexual activity is present.",
+      "labels": [
+        "text",
+        "document",
+        "code"
+      ],
+      "elapsedMs": 9642,
+      "status": "Qwen CPU reviewed · 9638 ms · Frame passed\nLoad 1642 / Image prefill 4442 / Decode 2970 ms · 62 tokens"
+    },
+    {
+      "round": 1,
+      "fixture": "untrusted-visible-instructions",
+      "policy": "shared-default",
+      "allow": true,
+      "reason": "The image contains a document with text and two colored shapes. No sexually explicit nudity or sexual activity is present.",
+      "labels": [
+        "document",
+        "text",
+        "shape"
+      ],
+      "elapsedMs": 6661,
+      "status": "Qwen CPU reviewed · 6661 ms · Frame passed\nLoad 1642 / Image prefill 3931 / Decode 2707 ms · 62 tokens"
+    },
+    {
+      "round": 1,
+      "fixture": "project-diagram",
+      "policy": "shared-default",
+      "allow": true,
+      "reason": "The image contains no sexually explicit content. It is a synthetic project diagram with text about phone, private queue, and NAS devices.",
+      "labels": [
+        "text",
+        "diagram",
+        "device"
+      ],
+      "elapsedMs": 6480,
+      "status": "Qwen CPU reviewed · 6480 ms · Frame passed\nLoad 1642 / Image prefill 3611 / Decode 2858 ms · 67 tokens"
+    },
+    {
+      "round": 2,
+      "fixture": "portrait-notes",
+      "policy": "shared-default",
+      "allow": true,
+      "reason": "The image displays a synthetic document with text about project planning and coding. No nudity or sexual activity is present.",
+      "labels": [
+        "text",
+        "document",
+        "code"
+      ],
+      "elapsedMs": 8177,
+      "status": "Qwen CPU reviewed · 8176 ms · Frame passed\nLoad 974 / Image prefill 3541 / Decode 2626 ms · 62 tokens"
+    },
+    {
+      "round": 2,
+      "fixture": "untrusted-visible-instructions",
+      "policy": "shared-default",
+      "allow": true,
+      "reason": "The image contains a document with text and two colored shapes. No sexually explicit nudity or sexual activity is present.",
+      "labels": [
+        "document",
+        "text",
+        "shape"
+      ],
+      "elapsedMs": 6168,
+      "status": "Qwen CPU reviewed · 6168 ms · Frame passed\nLoad 974 / Image prefill 3501 / Decode 2644 ms · 62 tokens"
+    },
+    {
+      "round": 2,
+      "fixture": "project-diagram",
+      "policy": "shared-default",
+      "allow": true,
+      "reason": "The image contains no sexually explicit content. It is a synthetic project diagram with text about phone, private queue, and NAS devices.",
+      "labels": [
+        "text",
+        "diagram",
+        "device"
+      ],
+      "elapsedMs": 7366,
+      "status": "Qwen CPU reviewed · 7365 ms · Frame passed\nLoad 974 / Image prefill 4225 / Decode 3127 ms · 67 tokens"
+    }
+  ],
+  "pausedPipelineContract": {
+    "generatedOnly": true,
+    "visualModelPaused": true,
+    "legacyShapePolicyNotApplied": true,
+    "localTextRuleBlocked": true,
+    "queueDepth": 0,
+    "modelInferenceStarted": false
+  },
+  "fixtureRepair": {
+    "firstAttempt": "Used requested legacy nsfw.enabled=true config instead of normalized persisted config; production snapshot fence correctly rejected the frame.",
+    "resolution": "Read and assert persisted nsfw.enabled=false, then verify generated red shape is not falsely claimed as VLM-blocked; owner text rule still prevents persistence.",
+    "firstFailureSeconds": 0.96,
+    "rerunSeconds": 4.8
+  },
+  "COL01Compatibility": "Configured app exclusions, masks, literal local text privacy and cache invalidation stay on-device. The current product reserves and pauses VLM; direct native backend checks do not enable it."
+}

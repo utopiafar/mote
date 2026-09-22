@@ -1,0 +1,11 @@
+# Model budgets
+
+The owner can set token and cost limits for each UTC day, provider/day, and Operation. Omitted limits are unlimited. Settings use an optimistic revision; a stale editor must reload. All model features share SQLite reservations, so separate node connections cannot both spend the same remaining balance.
+
+The private transport admission channel runs before every outbound HTTP model attempt, including retries, output repair and Harness compression. It sends only the request byte count. Each attempt reserves at least 128,000 input tokens (or one token per serialized request byte, if larger) plus the configured output cap. This deliberately conservative upper bound can refuse a request whose actual usage would fit; lowering it without a provider-specific bound would weaken the limit. Embeddings use their validated input bound and zero output. Monetary reservations require a configured price in the budget currency and reserve input at the largest input/cache bucket price.
+
+A complete cumulative usage receipt releases the unused reservation. Missing or partial usage retains it; a terminated host's active reservation also remains charged. Unknown cost never becomes zero. Rates are snapshots from the beginning of the run. A run that crosses midnight remains charged to its first reservation's UTC day; a new run uses the new day. Operation limits span days and include extraction, review and retry work.
+
+Codex App Server reports cumulative token usage but cannot be intercepted before every internal model request. Its default remains unlimited. When a hard budget applies to that provider, the host blocks before starting the Codex turn with an explicit explanation. It never pretends that an after-the-fact usage notification enforces a pre-request cap. No credentials or model bodies are stored in reservation rows or returned by the budget API.
+
+Validation: `model-budgets.test.ts`, `model-budgets-api.test.ts`, `model-admission.test.mjs`, `usage.test.ts` and `codex-protocol.test.mjs`. These cover two database hosts, retry/review reservations, unknown settlement, price requirements, stale configuration, cross-midnight accounting, and real Harness denial before any outbound provider call. Provider-account billing is not tested by these fixtures.

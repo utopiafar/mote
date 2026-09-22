@@ -52,7 +52,7 @@ test('activity has no embedding work while content indexes normally; query filte
   const store=fixture(t,true),indexer=new Indexer(store,{embeddingBaseUrl:'https://synthetic.invalid/v1',embeddingApiKey:'',embeddingModel:'synthetic'});t.after(()=>indexer.close());
   const ids:string[]=[];for(let i=0;i<3;i++){const value=event('activity',{capturedAt:at(15+i),metadata});ids.push(value.id);await store.ingest(value);}
   const content=event('screen',{appId:'synthetic.other',capturedAt:at(20)}),legacy=event('screen',{privacy:{excluded:false,redacted:false,mode:'none'}});await store.ingest(content);await store.ingest(legacy);
-  const calls:string[]=[];indexer.embed=async text=>{calls.push(text);return [1,0];};
+  const calls:string[]=[];t.mock.method(globalThis,'fetch',async(_url:unknown,input:RequestInit)=>{calls.push(JSON.parse(String(input.body)).input);return new Response(JSON.stringify({data:[{embedding:[1,0]}]}),{status:200});});
   await indexer.tick();assert.equal(calls.length,2);assert.equal(store.pending().length,0);assert.equal(store.indexCounts().failed,0);
   assert.equal((await indexer.search({query:'Same visible name',collection:'activity',appId:'synthetic.app'})).length,3);assert.equal(calls.length,2,'Activity search must not request a model embedding');
   assert.equal(store.search({query:'original',collection:'content',appId:'synthetic.other'}).length,1);
@@ -62,7 +62,7 @@ test('activity has no embedding work while content indexes normally; query filte
   const first=store.list({appId:'synthetic.app',source:'activity',collection:'activity',limit:2}),second=store.list({appId:'synthetic.app',source:'activity',collection:'activity',limit:2,cursor:first.nextCursor!});
   assert.equal(first.totalCount,3);assert.equal(second.totalCount,3);assert.equal(new Set([...first.items,...second.items].map(r=>r.id)).size,3);assert.equal(second.nextCursor,null);
   assert.equal(store.list({source:'screen',collection:'activity'}).totalCount,0);
-  assert.equal(store.retryIndex().queued,2);assert.ok(store.pending().every(r=>r.source==='screen'));
+  assert.equal(indexer.retry().queued,2);assert.ok(store.pending().every(r=>r.source==='screen'));
   await indexer.tick();assert.equal(calls.length,4);
 });
 

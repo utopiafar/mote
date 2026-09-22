@@ -66,7 +66,7 @@ jobs:
           node_modules/.bin/electron apps/desktop/scripts/offline-sync-smoke.cjs
           node_modules/.bin/electron apps/desktop/scripts/capture-browser-smoke.cjs
       - name: Verify central navigation, settings drafts and sync status with generated data
-        timeout-minutes: 5
+        timeout-minutes: 10
         run: |
           node_modules/.bin/electron scripts/test-web-i18n.cjs
           node_modules/.bin/electron scripts/test-model-profiles-ui.cjs
@@ -76,6 +76,13 @@ jobs:
           node_modules/.bin/electron scripts/test-web-conversations.cjs
           node_modules/.bin/electron scripts/test-calendar-actions-ui.cjs
           node_modules/.bin/electron scripts/test-web-tasks-imports.cjs
+          node_modules/.bin/electron scripts/test-memory-revisions-ui.cjs
+          node_modules/.bin/electron scripts/test-web-budgets.cjs
+          node_modules/.bin/electron scripts/test-web-evidence-focus.cjs
+          node_modules/.bin/electron scripts/test-web-operations.cjs
+          node_modules/.bin/electron scripts/test-web-sessions-insights.cjs
+          node_modules/.bin/electron scripts/test-web-sources.cjs
+          node_modules/.bin/electron scripts/test-web-diagnostics.cjs
           node_modules/.bin/electron apps/web/scripts/capture-browser-smoke.cjs
       - name: Verify client onboarding, central UI and update networking with generated data
         run: |

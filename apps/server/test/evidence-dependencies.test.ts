@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {Store,sha256} from '../src/store.js';
+import {SourceStore} from '../src/sources.js';
+import {FileStore} from '../src/files.js';
+import {FileProcessing} from '../src/file-processing.js';
+import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
+import {InsightRuns} from '../src/insight-runs.js';
+import {createInsightSnapshot,assertInsightSnapshot} from '../src/insight-snapshots.js';
+import {evidenceDependents} from '../src/evidence-dependencies.js';
+
+test('one changed segment invalidates only its descendants; unchanged chunks and old reports survive container replacement',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-file-dependencies-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);let revision=1;
+ sources.register({id:'generated',name:'Generated audio',kind:'local-files',deviceId:'fixture',platform:'macos',retention:'archive'});
+ const bytes=Buffer.from('Generated audio fixture'),upload=files.begin({sourceId:'generated',previousRevision:null,item:{externalId:'generated.wav',revision:'1',observedAt:'2025-01-01T00:00:00.000Z',title:'Generated',text:'',kind:'file',layer:'original',mimeType:'audio/wav',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes),relativePath:'generated.wav'},()=>{});files.part(upload.uploadId,0,bytes,()=>{});const original=await files.commit(upload.uploadId,()=>{});
+ const processing=new FileProcessing(files,{transcribe:async()=>({durationMs:2000,segments:[{startMs:0,endMs:1000,text:'Stable first segment'},{startMs:1000,endMs:2000,text:'Second segment version '+revision}]})},undefined,{analyze:async records=>({answer:'Generated summary',citations:[{id:records[0].id}]})});
+ const runs=new InsightRuns(store,{executor:processing.engine});
+ t.after(async()=>{await processing.close();await runs.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true}});await processing.tick();
+ const before=files.chunks(original.id),oldArtifact=before[0].fileEvidence!.artifactId,stableFingerprint=memoryEvidenceFingerprint(before[0]),memories=new MemoryStore(store,ids=>files.evidence(ids),id=>files.isCurrentEvidence(id));
+ const save=(index:number)=>{const record=before[index];return memories.extract({answer:JSON.stringify({memories:[{title:'Generated '+index,statement:`Generated statement [${record.id}]`,uncertainty:'Fixture only',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()},'fixture').items[0];};
+ const proposal=save(0),snapshot=createInsightSnapshot(store,randomUUID(),{after:'2025-01-01T00:00:00Z',before:'2025-01-02T00:00:00Z',deviceId:'fixture'});assert.doesNotThrow(()=>assertInsightSnapshot(store,snapshot));
+ const stable=memories.publish(proposal.id),changed=memories.publish(save(1).id),reportId=randomUUID();assert.throws(()=>assertInsightSnapshot(store,snapshot),{statusCode:409});store.saveInsight({runId:reportId,answer:'Historical generated report'},reportId);
+ assert.ok(evidenceDependents(store,{kind:'file_chunk',id:before[0].id}).some(node=>node.kind==='memory'&&node.id===stable.id));
+ revision++;processing.retry(original.id);await processing.tick();const after=files.chunks(original.id);
+ assert.equal(after[0].id,before[0].id);assert.notEqual(after[1].id,before[1].id);assert.notEqual(after[0].fileEvidence!.artifactId,oldArtifact);assert.equal(memoryEvidenceFingerprint(after[0]),stableFingerprint);
+ assert.equal(memories.get(stable.id).status,'published');assert.equal(memories.get(changed.id).status,'stale');assert.equal(files.isCurrentEvidence(before[1].id),false);
+ assert.equal(processing.artifact(oldArtifact).transcript.segments[1].text,'Second segment version 1');assert.equal(files.evidence([before[1].id]).length,0);assert.equal(store.db.prepare('SELECT COUNT(*) n FROM insights WHERE id=?').get(reportId)!.n,1);
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,summarize:true}});await processing.tick();assert.equal(memories.get(stable.id).status,'published');assert.equal(store.db.prepare('SELECT COUNT(*) n FROM insights WHERE id=?').get(reportId)!.n,1);
+});

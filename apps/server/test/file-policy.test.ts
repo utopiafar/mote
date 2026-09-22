@@ -42,9 +42,9 @@ test('migration preserves legacy services and credentials, persists atomically, 
 
 test('mixed-source routing respects exact MIME, source overrides, global families and archive fallback',async t=>{
  const f=await fixture(t),policy=customPolicy(f);policy.rules.push({sourceId:'phone',type:'audio/mpeg',profileId:'two'},{type:'audio/flac',profileId:'four'});f.save(policy);
- for(const [sourceId,mimeType,expected] of [['phone','audio/wav','four'],['phone','audio/mpeg','two'],['nas','audio/wav','two'],['nas','audio/flac','four'],['phone','text/plain','profile.text.utf8'],['phone','application/pdf','archive'],['phone','application/zip','archive']])assert.equal(f.processing.match({sourceId,mimeType}).profile.id,expected);
+ for(const [sourceId,mimeType,expected] of [['phone','audio/wav','four'],['phone','audio/mpeg','two'],['nas','audio/wav','two'],['nas','audio/flac','four'],['phone','text/plain','profile.text.utf8'],['phone','application/pdf','profile.document.generic'],['phone','application/zip','archive']])assert.equal(f.processing.match({sourceId,mimeType}).profile.id,expected);
  const audio=await f.upload('phone.wav'),text=await f.upload('notes.txt','text/plain'),pdf=await f.upload('scan.pdf','application/pdf');await f.processing.tick();await f.processing.tick();
- assert.equal(f.files.detail(audio).job.state,'succeeded');assert.equal(f.files.detail(text).job.state,'succeeded');assert.equal(f.files.detail(pdf).job.error,'archive_only');assert.equal(f.calls.length,1);
+ assert.equal(f.files.detail(audio).job.state,'succeeded');assert.equal(f.files.detail(text).job.state,'succeeded');assert.equal(f.files.detail(pdf).job.error,'unsupported_format','Malformed PDF is attempted by the deterministic document decoder');assert.equal(f.files.detail(pdf).item.mimeType,'application/pdf');assert.equal(f.files.detail(pdf).hasOriginal,true);assert.equal(f.calls.length,1);
 });
 
 test('shared services keep profile parameters and keys isolated through actual Cordis execution',async t=>{
@@ -75,7 +75,7 @@ test('completed results retain their policy until previewed reprocessing, and st
 });
 
 test('batch preview excludes Shadow, archive-only, superseded and active files and rejects changed file states',async t=>{
- const f=await fixture(t);f.save(customPolicy(f));await f.upload('ref.wav','audio/wav','phone','reference');await f.upload('archive.pdf','application/pdf');const old=await f.upload('version.wav');const current=await f.upload('version.wav','audio/wav','phone','original','2','1');const running=await f.upload('running.wav');f.store.db.prepare("UPDATE file_jobs SET state='running' WHERE capture_id=?").run(running);
+ const f=await fixture(t),policy=customPolicy(f);policy.rules.find(r=>r.type==='application/pdf')!.profileId='archive';f.save(policy);await f.upload('ref.wav','audio/wav','phone','reference');await f.upload('archive.pdf','application/pdf');const old=await f.upload('version.wav');const current=await f.upload('version.wav','audio/wav','phone','original','2','1');const running=await f.upload('running.wav');f.store.db.prepare("UPDATE file_jobs SET state='running' WHERE capture_id=?").run(running);
  const p=f.processing.preview({revision:f.processing.view().revision});assert.deepEqual(p.items.map(x=>x.id),[current]);assert.equal(p.skipped,2);assert.ok(!p.items.some(x=>x.id===old));
  f.processing.retry(current);f.store.db.prepare("UPDATE file_jobs SET attempts=1 WHERE capture_id=?").run(current);assert.throws(()=>f.processing.reprocess({token:p.token}),{statusCode:409});
 });

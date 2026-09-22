@@ -35,6 +35,7 @@ test('failures and interrupted runs are visible without provider secrets; run en
   const id=randomUUID();await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{requestId:id}});await insightRuns.close();
   assert.equal(insightRuns.get(id).status,'failed');assert.equal(insightRuns.get(id).error?.code,'agent_response');
   store.db.prepare("UPDATE insight_runs SET json=json_set(json,'$.status','running') WHERE id=?").run(id);
+  store.db.prepare('DELETE FROM execution_steps WHERE id=?').run(`insight:${id}`);
   const recovered=new InsightRuns(store);assert.equal(recovered.get(id).error?.code,'interrupted');
   const invalid=await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{requestId:randomUUID(),after:'2026-09-16T00:00:00Z',before:'2026-09-15T00:00:00Z'}});assert.equal(invalid.statusCode,400);
 });

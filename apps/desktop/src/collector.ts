@@ -1,3 +1,4 @@
+import {collectorStatusView} from './native-status';
 import {extractUiPage,uiSnapshotSchema,uiPageText} from '@mote/shared';
 import {runHelper} from './native';
 import { reviewUpload, uploadGateConfig } from './upload-gate';
@@ -51,9 +52,10 @@ export class Collector {
   private message = moteText("尚未开始采集。请确认隐私设置后手动开始。");
   private lastCaptureAt?: string;
   private lastUploadAt?: string;
+  private archiveAcknowledgment?:{at:string;origin:string};
   private lastUploadError?: string;
   constructor(config: Config, private readonly queue: DurableQueue, private readonly helperPath: string, private readonly tokenStorageAvailable: () => boolean, private readonly onChange: (status: Status) => void, private readonly nsfw?: NsfwGate, private readonly diagnostics?: DiagnosticsRecorder, private readonly events?: EventJournal, private readonly sources?: LocalSourceManager) {
-    this.config = config; this.lastUploadAt = this.queue.stats().lastUploadAt;
+    this.config = config; this.lastUploadAt = this.queue.stats().lastUploadAt; this.archiveAcknowledgment=this.queue.stats().archiveAcknowledgment;
     powerMonitor.on('lock-screen', () => { this.locked = true; this.pause(moteText("屏幕已锁定，暂停采集")); });
     powerMonitor.on('unlock-screen', () => { this.locked = false; this.lastSample = undefined; });
     powerMonitor.on('suspend', () => { this.sleeping = true; this.pause(moteText("电脑休眠，暂停采集")); });
@@ -69,9 +71,10 @@ export class Collector {
     void this.upload();
   }
   status(): Status {
-    const queue = this.queue.stats();
+    const queue = this.queue.stats(), sync = this.syncStatus();
     return {
-      running: this.running, state: this.state, message: statusMessage(this.message), sync: this.syncStatus(),
+      facts: collectorStatusView({...sync,lastUploadAt:this.archiveAcknowledgment?.origin===this.config.serverUrl?this.archiveAcknowledgment.at:undefined}, queue.blocked),
+      running: this.running, state: this.state, message: statusMessage(this.message), sync,
       queueDepth: queue.depth, queueBytes: queue.bytes, nextRetryAt: queue.nextRetryAt,
       lastCaptureAt: this.lastCaptureAt, lastUploadAt: this.lastUploadAt, lastUploadError: this.lastUploadError,
       screenPermission: currentPlatform === 'macos' ? systemPreferences.getMediaAccessStatus('screen') : 'unsupported',
@@ -377,7 +380,7 @@ export class Collector {
               if (code === 200 || code === 201) {
                 await this.queue.acknowledge(item.record.event.id, false, item.record.event.stateSeries?.samples.length ?? 0);
                 this.diagnostics?.recordUpload(Buffer.byteLength(JSON.stringify({ ...item.record.event, ...(item.image ? {imageBase64: item.image.toString('base64')} : {}) })));
-                this.lastUploadAt = new Date().toISOString();
+                this.lastUploadAt = new Date().toISOString(); this.archiveAcknowledgment={at:this.lastUploadAt,origin:this.config.serverUrl};
               }
               else if (code === 409 || code === 410) await this.queue.blockSync(item.record.event.id, moteText("中央记录冲突或已删除，本机副本保留待处理。"));
               else { await this.queue.failed(item.record.event.id); incomplete = true; }
@@ -393,7 +396,7 @@ export class Collector {
           if (entry.record.uploaded || !this.config.packedUpload) this.diagnostics?.recordUpload(entry.record.uploaded
             ? Buffer.byteLength(JSON.stringify({ ocrText: entry.record.ocrResult, status: 'completed' }))
             : Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
-          this.lastUploadAt = new Date().toISOString(); this.lastUploadError = undefined;completed++;
+          this.lastUploadAt = new Date().toISOString(); if(entry.record.uploaded||!this.config.packedUpload)this.archiveAcknowledgment={at:this.lastUploadAt,origin:this.config.serverUrl}; this.lastUploadError = undefined;completed++;
         } catch (error) {
           if (abort.signal.aborted) break;
           const stage: EventStage = error instanceof TransportFailure ? 'UPLOAD' : 'QUEUE';
@@ -417,10 +420,11 @@ export class Collector {
           if(!await flushCaptures())break;
         }
         if (pending.pendingRecords > this.pendingSync().pendingRecords || pending.pendingUpdates > this.pendingSync().pendingUpdates) this.lastUploadAt = new Date().toISOString();
-        await this.queue.syncCheckpoint(this.lastUploadAt);
+        if(pending.pendingRecords>this.pendingSync().pendingRecords)this.archiveAcknowledgment={at:this.lastUploadAt!,origin:this.config.serverUrl};
+        await this.queue.syncCheckpoint(this.lastUploadAt,undefined,this.archiveAcknowledgment);
       }
     } catch (error) {
-      if (!abort.signal.aborted) { this.lastUploadError = error instanceof Error ? error.message : moteText("同步失败，本地记录已保留"); await this.queue.syncCheckpoint(this.lastUploadAt, new Date(Date.now() + 30000).toISOString()).catch(() => undefined); }
+      if (!abort.signal.aborted) { this.lastUploadError = error instanceof Error ? error.message : moteText("同步失败，本地记录已保留"); await this.queue.syncCheckpoint(this.lastUploadAt, new Date(Date.now() + 30000).toISOString(),this.archiveAcknowledgment).catch(() => undefined); }
       void this.events?.record('QUEUE', 'STORAGE'); }
     finally { this.uploading = false; this.publish(); }
   }

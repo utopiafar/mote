@@ -1,3 +1,4 @@
+import {uploadImportFiles} from './import-upload-scheduler';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect,useState,useRef} from 'react';
 import {ArrowRight,Check,FileArchive,FileText,FolderOpen,LoaderCircle,Plus,RefreshCw,Trash2,Upload,X} from 'lucide-react';
@@ -43,19 +44,7 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
   async function create(){
     setBusy(true);setError('');
     try{
-      const archivedFileIds:string[]=[];let accepted=0;setUploadedBytes(0);
-      if(mode==='files')for(const file of files){
-        let id=uploadIds.current.get(file);if(!id){id=crypto.randomUUID();uploadIds.current.set(file,id);}
-        const upload=await api.request<{id:string;partBytes:number;fileId?:string;parts:{part:number;hash:string}[]}>('/api/import-uploads',{method:'POST',body:JSON.stringify({id,name:file.webkitRelativePath||file.name,sizeBytes:file.size,mimeType:file.type||undefined})});
-        if(upload.fileId){archivedFileIds.push(upload.fileId);accepted+=file.size;setUploadedBytes(accepted);continue;}
-        for(let offset=0;offset<file.size;offset+=upload.partBytes){
-          const part=offset/upload.partBytes,body=await file.slice(offset,offset+upload.partBytes).arrayBuffer();
-          // Re-send parts on retry: the server verifies their hashes before acknowledging a duplicate.
-          await api.request('/api/import-uploads/'+upload.id+'/parts/'+part,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body});
-          accepted+=body.byteLength;setUploadedBytes(accepted);
-        }
-        const saved=await api.request<{id:string}>('/api/import-uploads/'+upload.id+'/commit',{method:'POST'});archivedFileIds.push(saved.id);
-      }
+      const archivedFileIds=mode==='files'?await uploadImportFiles(api,files,uploadIds.current,setUploadedBytes):[];
       const payload={name:name.trim()||undefined,instruction,processing:instruction.trim()?'preview':'automatic',...(mode==='files'?{archivedFileIds}:{directory:directory.trim()})};
       const job=await api.request<ImportJob>('/api/imports',{method:'POST',body:JSON.stringify(payload)});
       update(job);setFiles([]);setName('');setInstruction('');setDirectory('');onChanged();

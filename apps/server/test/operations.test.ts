@@ -49,3 +49,17 @@ test('operations routes are read-only, bounded and reject collector credentials'
  for(const url of ['/api/operations','/api/operations/changes','/api/operations/file%3Aa']){assert.equal((await app.inject({url,headers:{authorization:'Bearer collector'}})).statusCode,403);const res=await app.inject({url});assert.equal(res.statusCode,200);assert.doesNotMatch(res.body,/private provider input/);}
  assert.equal((await app.inject({url:'/api/operations/file%3Aa',method:'POST'})).statusCode,404);
 });
+
+test('optional failures retain actual receipts without failing required work across replay and rollback',async t=>{
+ const {store,engine,operations}=fixture(t);
+ const required=engine.enqueue('query:complete','fixture',{required:true});await engine.drain([required]);
+ const optional=engine.enqueue('query:complete','fixture',{vector:true},{id:'optional-vector',optional:true,initial:{state:'failed',attempts:1,availableAt:0,error:'provider_unavailable'}});
+ let detail=operations.detail('query:complete');assert.equal(detail.operation.state,'succeeded');assert.equal(detail.operation.notScheduled,0);assert.equal(detail.operation.optionalIssues,1);assert.equal(detail.operation.counts.failed,0);
+ assert.equal(detail.steps.find(s=>s.id===optional)?.state,'failed');assert.equal(detail.steps.find(s=>s.id===optional)?.reason,'provider_unavailable');assert.equal(detail.steps.find(s=>s.id===optional)?.attempts,1);
+ engine.enqueue('embedding:standalone','fixture',{vector:true},{id:optional});assert.equal(operations.detail('embedding:standalone').operation.state,'failed');
+ store.db.exec('BEGIN');engine.retry(optional);assert.equal(operations.detail('query:complete').operation.optionalIssues,0);store.db.exec('ROLLBACK');assert.equal(operations.detail('query:complete').operation.optionalIssues,1);
+ // Simulate the old persisted counter projection, leaving source receipts intact.
+ store.db.prepare("DELETE FROM settings WHERE key='operation-optional-terminal-v2'").run();store.db.prepare("UPDATE operation_progress SET failed=1 WHERE id='query:complete'").run();
+ const restored=new ExecutionEngine(store);await restored.close();assert.equal(operations.detail('query:complete').operation.state,'succeeded');assert.equal(operations.detail('query:complete').operation.optionalIssues,1);
+ engine.retry(optional);await engine.drain([optional]);detail=operations.detail('query:complete');assert.equal(detail.operation.optionalIssues,0);assert.equal(detail.operation.counts.succeeded,2);assert.equal(operations.detail('embedding:standalone').operation.state,'succeeded');
+});

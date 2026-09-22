@@ -1,3 +1,4 @@
+import {ExecutionEngine} from './execution-engine.js';
 import {ProviderFailure} from '@mote/shared';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -20,8 +21,9 @@ export const defaultLifecycleSettings:LifecycleSettings={
 };
 export type LifecycleWindow={id:string;version:string;from:number;through:number;ids:string[];startedAt:number;settings:LifecycleSettings;checkpoint?:string};
 type State={stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
+export type LifecycleExecution={operationId:string;jobId:string;signal:AbortSignal;interrupted:()=>boolean;commit:<T>(write:()=>T)=>T};
 export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'consolidation'|'insights'|'working'>;version:string;stream:'evidence'|'artifact'|'memory'|'conversation';
-  run:(window:LifecycleWindow,checkpoint:(id:string)=>void)=>Promise<void>};
+  run:(window:LifecycleWindow,checkpoint:(id:string)=>void,execution?:LifecycleExecution)=>Promise<void>};
 
 /** The host owns persistence/admission; replaceable extensions own model procedures.
  * Each window is a contiguous journal prefix. Arrivals during a run stay pending.
@@ -29,8 +31,8 @@ export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'co
 export class MemoryLifecycle {
   private extensions=new Map<string,LifecycleExtension>();
   private running=new Map<string,Promise<void>>();
-  private closed=false;
-  constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,legacyInsightHours=0){
+  private closed=false;private abort=new AbortController();
+  constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,legacyInsightHours=0,private executor?:ExecutionEngine){
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS memory_lifecycle_settings(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_lifecycle_state(id TEXT PRIMARY KEY,json TEXT NOT NULL);
@@ -78,8 +80,8 @@ export class MemoryLifecycle {
   view(){const settings=this.settings();return {settings,trigger:'increment threshold OR maximum wait',storage:'text',extensions:[...this.extensions.values()].map(e=>{
     const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():state.lastSuccess+(p.maxWaitHours??Math.min(p.intervalHours,1))*3600000;
     return {id:e.id,version:e.version,stream:e.stream,pendingChanges,dueAt,retryAt:state.retryAt,cursor:state.cursor,failures:state.failures,error:state.error,
-      drainThrough:state.drainThrough,status:!p.enabled?'disabled':this.running.has(e.id)?'running':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':pendingChanges>=p.minChanges||this.now()>=dueAt?'ready':'waiting_for_interval',
-      active:state.active?{id:state.active.id,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
+      drainThrough:state.drainThrough,status:!p.enabled?'disabled':state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':this.running.has(e.id)?'running':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':pendingChanges>=p.minChanges||this.now()>=dueAt?'ready':'waiting_for_interval',
+      active:state.active?{id:state.active.id,operationId:this.executor?'workflow:lifecycle:'+state.active.id:undefined,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){
     if(this.closed)return Promise.resolve();
     // Aggregation is independently scheduled by the maintenance worker.
@@ -94,7 +96,7 @@ export class MemoryLifecycle {
   private async execute(extension:LifecycleExtension){
       if(this.closed||!this.configured())return;
       const settings=this.settings(),p=settings[extension.id],state=this.state(extension.id),now=this.now();
-      if(!p.enabled||(state.retryAt??0)>now)return;
+      if(!p.enabled||(state.retryAt??0)>now||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled')return;
       if(!state.active){
         if(!state.drainThrough){
           const pending=this.count(extension,state.cursor);
@@ -110,11 +112,28 @@ export class MemoryLifecycle {
       }
       try{
         if(state.active.version!==extension.version)throw new StoreError('Active window requires its original extension version',409);
-        await extension.run(structuredClone(state.active),id=>{state.active!.checkpoint=id;this.save(extension.id,state);});
-        if(this.closed)return;
+        const window=structuredClone(state.active),checkpoint=(id:string)=>{state.active!.checkpoint=id;this.save(extension.id,state);};
+        if(this.executor){
+          const executor=this.executor,id='lifecycle:'+window.id,operationId='workflow:lifecycle:'+window.id;
+          await executor.runStep({id,operationId,kind:'lifecycle-window',pool:'lifecycle.'+extension.id,input:{windowId:window.id,extensionId:extension.id,version:window.version},signal:this.abort.signal,timeoutMs:2147483647,
+            validate:()=>!this.closed&&this.state(extension.id).active?.id===window.id,
+            execute:async signal=>{
+              const fence=this.store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(id)?.fence;
+              const commit=<T>(write:()=>T):T=>{signal.throwIfAborted();const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');try{if(!fence||!executor.isCurrentGrant(id,String(fence))||this.state(extension.id).active?.id!==window.id)throw new StoreError('Lifecycle execution grant expired',409);const result=write();if(own)db.exec('COMMIT');return result;}catch(error){if(own)db.exec('ROLLBACK');throw error;}};
+              await extension.run(window,value=>commit(()=>checkpoint(value)),{operationId,jobId:window.id,signal,interrupted:()=>this.closed||executor.closed,commit});signal.throwIfAborted();return true;
+            },commit:()=>{},read:()=>executor.get(id)?.state==='succeeded'?true:undefined,project:()=>{},
+          });
+        }else await extension.run(window,checkpoint);
+        if(this.closed||this.state(extension.id).active?.id!==state.active.id)return;
         state.cursor=state.active.through;if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.error;delete state.retryAt;state.failures=0;
-      }catch(error){if(this.closed)return;state.failures++;state.error=error instanceof ProviderFailure?error.details.code:error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';state.retryAt=this.now()+Math.max(error instanceof ProviderFailure?error.details.retryAfterMs??0:0,Math.min(6*3600000,60000*2**Math.min(state.failures,8)));}
+      }catch(error){if(this.closed)return;if(state.active&&this.executor){if(this.executor.get('lifecycle:'+state.active.id)?.state==='running')return;const latest=this.state(extension.id);if(latest.active?.id!==state.active.id)return;Object.assign(state,latest);}state.failures++;state.error=error instanceof ProviderFailure?error.details.code:error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';state.retryAt=this.now()+Math.max(error instanceof ProviderFailure?error.details.retryAfterMs??0:0,Math.min(6*3600000,60000*2**Math.min(state.failures,8)));}
       this.save(extension.id,state);
   }
-  async close(){this.closed=true;await Promise.allSettled([...this.running.values()]);}
+  async close(){
+    this.closed=true;
+    // Shutdown interrupts replayable work; explicit user cancellation stays terminal.
+    const interrupted=[...this.running.keys()].flatMap(key=>{const window=this.state(key).active,id=window?'lifecycle:'+window.id:undefined;return id&&this.executor?.get(id)?.state==='running'?[id]:[];});
+    this.abort.abort();await Promise.allSettled([...this.running.values()]);
+    for(const id of interrupted)if(this.executor?.get(id)?.state==='cancelled')this.executor.retry(id,false);
+  }
 }

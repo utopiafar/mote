@@ -1,0 +1,217 @@
+{
+  "initial": [
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-evidence-focus.cjs",
+      "code": 1,
+      "seconds": 6.27,
+      "log": "/tmp/mote-final-ui-00.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-budgets.cjs",
+      "code": 0,
+      "seconds": 13.23,
+      "log": "/tmp/mote-final-ui-01.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-memory-revisions-ui.cjs",
+      "code": 0,
+      "seconds": 3.44,
+      "log": "/tmp/mote-final-ui-02.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-operations.cjs",
+      "code": 0,
+      "seconds": 8.08,
+      "log": "/tmp/mote-final-ui-03.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-sessions-insights.cjs",
+      "code": 1,
+      "seconds": 14.46,
+      "log": "/tmp/mote-final-ui-04.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-sources.cjs",
+      "code": 0,
+      "seconds": 4.17,
+      "log": "/tmp/mote-final-ui-05.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-diagnostics.cjs",
+      "code": 0,
+      "seconds": 5.25,
+      "log": "/tmp/mote-final-ui-06.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-tasks-imports.cjs",
+      "code": 0,
+      "seconds": 8.75,
+      "log": "/tmp/mote-final-ui-07.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/i18n-smoke.cjs",
+      "code": 0,
+      "seconds": 2.88,
+      "log": "/tmp/mote-final-ui-08.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/ui-smoke.cjs",
+      "code": 0,
+      "seconds": 18.71,
+      "log": "/tmp/mote-final-ui-09.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/ui-page-smoke.cjs",
+      "code": 0,
+      "seconds": 1.31,
+      "log": "/tmp/mote-final-ui-10.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/client-improvements-smoke.cjs",
+      "code": 0,
+      "seconds": 1.01,
+      "log": "/tmp/mote-final-ui-11.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/complex-ui-smoke.cjs",
+      "code": 0,
+      "seconds": 1.53,
+      "log": "/tmp/mote-final-ui-12.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/content-storage-smoke.cjs",
+      "code": 0,
+      "seconds": 1.26,
+      "log": "/tmp/mote-final-ui-13.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/offline-sync-smoke.cjs",
+      "code": 0,
+      "seconds": 9.66,
+      "log": "/tmp/mote-final-ui-14.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/capture-browser-smoke.cjs",
+      "code": 0,
+      "seconds": 10.24,
+      "log": "/tmp/mote-final-ui-15.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-i18n.cjs",
+      "code": 0,
+      "seconds": 6.97,
+      "log": "/tmp/mote-final-ui-16.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-model-profiles-ui.cjs",
+      "code": 0,
+      "seconds": 8.15,
+      "log": "/tmp/mote-final-ui-17.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-login.cjs",
+      "code": 0,
+      "seconds": 4.38,
+      "log": "/tmp/mote-final-ui-18.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-navigation.cjs",
+      "code": 0,
+      "seconds": 9.31,
+      "log": "/tmp/mote-final-ui-19.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-content-storage.cjs",
+      "code": 0,
+      "seconds": 1.85,
+      "log": "/tmp/mote-final-ui-20.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-conversations.cjs",
+      "code": 0,
+      "seconds": 9.43,
+      "log": "/tmp/mote-final-ui-21.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-calendar-actions-ui.cjs",
+      "code": 0,
+      "seconds": 2.23,
+      "log": "/tmp/mote-final-ui-22.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/web/scripts/capture-browser-smoke.cjs",
+      "code": 1,
+      "seconds": 28.14,
+      "log": "/tmp/mote-final-ui-23.log"
+    },
+    {
+      "command": "node apps/desktop/scripts/connection-server-smoke.cjs",
+      "code": 0,
+      "seconds": 1.25,
+      "log": "/tmp/mote-final-ui-24.log"
+    },
+    {
+      "command": "node apps/desktop/scripts/file-evidence-smoke.cjs",
+      "code": 0,
+      "seconds": 0.78,
+      "log": "/tmp/mote-final-ui-25.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/connection-smoke.cjs",
+      "code": 0,
+      "seconds": 3.97,
+      "log": "/tmp/mote-final-ui-26.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-connections.cjs",
+      "code": 0,
+      "seconds": 2.93,
+      "log": "/tmp/mote-final-ui-27.log"
+    },
+    {
+      "command": "node_modules/.bin/electron scripts/test-web-metadata.cjs",
+      "code": 0,
+      "seconds": 2.23,
+      "log": "/tmp/mote-final-ui-28.log"
+    },
+    {
+      "command": "node apps/desktop/scripts/window-identity-smoke.mjs",
+      "code": 0,
+      "seconds": 2.2,
+      "log": "/tmp/mote-final-ui-29.log"
+    },
+    {
+      "command": "node_modules/.bin/electron apps/desktop/scripts/update-network-smoke.cjs",
+      "code": 0,
+      "seconds": 0.45,
+      "log": "/tmp/mote-final-ui-30.log"
+    },
+    {
+      "command": "node apps/desktop/scripts/update-fixture.cjs",
+      "code": 0,
+      "seconds": 17.48,
+      "log": "/tmp/mote-final-ui-31.log"
+    }
+  ],
+  "targetedCorrections": [
+    {
+      "script": "scripts/test-web-evidence-focus.cjs",
+      "cause": "Fixture parent read its ready JSON between file creation and the completed write; publish ready data by atomic rename",
+      "exitCode": 0,
+      "log": "/tmp/mote-final-evidence-focus-retest.log"
+    },
+    {
+      "script": "scripts/test-web-sessions-insights.cjs",
+      "cause": "Fixture polling and 35 individual setup writes exceeded the unchanged owner rate limit; seed in two production batches, verify every ACK, wait for UI completion before one API assertion",
+      "exitCode": 0,
+      "log": "/tmp/mote-final-sessions-insights-retest.log"
+    },
+    {
+      "script": "apps/web/scripts/capture-browser-smoke.cjs",
+      "cause": "Fixture clicked disabled refresh before its new media range was ready; await the active button and retain all count/duration assertions",
+      "exitCode": 0,
+      "log": "/tmp/mote-final-capture-browser-retest.log"
+    }
+  ],
+  "status": "all 32 groups passed, comprising 29 initial passes and 3 corrected targeted passes"
+}

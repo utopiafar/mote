@@ -15,7 +15,7 @@ const output = resolve(__dirname, '../artifacts/capture-browser');
 mkdirSync(output, {recursive:true});
 app.setPath('userData', join(fixture, 'browser'));
 app.on('window-all-closed', () => {});
-let server, window;
+let server, window;const responseErrors=[],requestCounts={};
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(fn, label) {const deadline=Date.now()+20000;while(Date.now()<deadline){if(await fn())return;await sleep(100);}throw Error(`Timed out: ${label}`);}
 async function freePort() {return new Promise((resolve,reject)=>{const socket=net.createServer();socket.once('error',reject);socket.listen(0,'127.0.0.1',()=>{const port=socket.address().port;socket.close(()=>resolve(port));});});}
@@ -47,7 +47,8 @@ async function finish(code) {
   }
   window=new BrowserWindow({width:1360,height:1000,show:false,webPreferences:{contextIsolation:true,sandbox:true,nodeIntegration:false,backgroundThrottling:false}});
   const wc=window.webContents,requests=[],errors=[];
-  wc.session.webRequest.onBeforeRequest((details,callback)=>{requests.push(details.url);callback({});});
+  wc.session.webRequest.onBeforeRequest((details,callback)=>{requests.push(details.url);const path=new URL(details.url).pathname;requestCounts[path]=(requestCounts[path]??0)+1;callback({});});
+  wc.session.webRequest.onCompleted(details=>{if(details.statusCode>=400)responseErrors.push({path:new URL(details.url).pathname,status:details.statusCode});});
   wc.on('console-message',(_event,level,message)=>{if(level>=3)errors.push(message);});
   const js=code=>wc.executeJavaScript(code);
   const recordsView=()=>until(()=>js(`(()=>{const button=Array.from(document.querySelectorAll('[aria-label="记录视图"] button')).find(button=>button.innerText==='全部记录');if(!button)return false;button.click();return true;})()`),'select individual record view');
@@ -143,7 +144,9 @@ async function finish(code) {
   await js(`document.querySelector('[aria-label="关闭证据详情"]').click()`);
   window.setSize(1360,1000);await sleep(100);
   await clickNav('资料库');
-  await js(`document.querySelector('[aria-label="刷新资料"]').click()`);
+  // Navigation briefly disables refresh while shared summaries load. Clicking a
+  // disabled control is a no-op and leaves the old upper time bound in place.
+  await until(()=>js(`(()=>{const button=document.querySelector('[aria-label="刷新资料"]');if(!button||button.disabled)return false;button.click();return true;})()`),'refresh range after generated media intake');
   await js(`Array.from(document.querySelectorAll('.segmented-nav button')).find(button=>button.innerText==='媒体播放').click()`);
   await until(()=>js(`document.querySelector('.media-stats')?.innerText.includes('4 次状态观察')`),'media aggregates');
   assert.equal(await js(`document.querySelector('.media-stats>div:first-child strong').innerText`),'1 分钟 15 秒');
@@ -159,4 +162,4 @@ async function finish(code) {
   assert(await js(`document.querySelector('.device-card .media-snapshot').innerText.includes('最近上报的媒体状态')`));
   assert.deepEqual(errors,[]);
   console.info('PASS: generated fixtures only; capture navigation/thumbnails/cursors/OCR, media source filter, locked/background playback evidence, independent playback totals, permission coverage, recent device metadata and desktop/mobile layout.');
-})().then(()=>finish(0),error=>{console.error(error.stack);finish(1);});
+})().then(()=>finish(0),async error=>{console.error(error.stack);console.error(JSON.stringify({responseErrors,requestCounts}));if(window&&!window.isDestroyed()){console.error(await window.webContents.executeJavaScript('document.body.innerText'));writeFileSync(join(output,'failure.png'),(await window.webContents.capturePage()).toPNG());}finish(1);});

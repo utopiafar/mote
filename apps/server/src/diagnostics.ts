@@ -14,6 +14,7 @@ export const diagnosticStageFilters=['all','system','request','ingest','index','
 export type DiagnosticStageFilter=typeof diagnosticStageFilters[number];
 export type Operation = 'capture'|'note'|'import'|'embedding'|'search'|'timeline'|'evidence'|'activity'|'devices'|'query'|'insight'|'retention'|'extract'|'diarize'|'align'|'turns'|'summary'|'file_upload'|'file_part'|'file_commit'|'file_revision'|'file_process'|'file_settings'|'file_retry';
 export interface AgentTraceContext {
+  operationId?: string;
   traceId?: string; requestId?: string; jobId?: string; batchId?: string; batchIndex?: number; attempt?: number;
   phase?: string; operation?: string; moduleId?: string; profileId?: string; provider?: string; protocol?: string; model?: string;
 }
@@ -28,6 +29,15 @@ const routes = new Set(['files','file-sync','file-processing','conversations','c
 const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part','batchIndex','candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches','idleMs','elapsedMs','remainingCalls','remainingCharacters','repeatCount'] as const;
 const responseReasons:Record<string,string>={
+  provider_quota:"模型服务额度不足，恢复账户额度后再继续。",
+  provider_policy:"模型服务拒绝了本次请求，请调整内容或处理范围。",
+  recovery_window_exhausted:"自动恢复时间已用完，可手动重试开启新的恢复周期。",
+  model_token_budget:"模型 token 预算不足，等待预算重置或调整预算后继续。",
+  model_cost_budget:"模型金额预算不足，等待预算重置或调整预算后继续。",
+  budget_price_required:"金额预算需要当前币种的模型价格，请先设置价格。",
+  budget_unbounded_runtime:"当前运行时无法强制限制每次请求的预算，请选择支持预算限制的运行时或调整预算。",
+  model_budget_unavailable:"模型预算服务不可用，请稍后重试。",
+  configuration_changed:"相关模型配置已改变，请重试以使用新配置；已完成批次会保留。",
   provider_authentication:"处理服务拒绝了凭据，请检查服务权限与密钥。",
   provider_endpoint:"处理服务地址不可用，请检查端点配置。",
   provider_redirect:"处理服务返回了重定向，请配置最终服务地址。",
@@ -265,7 +275,7 @@ export class ServerDiagnostics {
     const payload=compactTraceValue(event.payload);
     const traceId=typeof context.traceId==='string'&&uuid.test(context.traceId)?context.traceId:randomUUID();
     const trace:Record<string,unknown>={
-      type:event.type.slice(0,120),traceId,
+      type:event.type.slice(0,120),traceId,...(context.operationId&&/^[a-z]+:[a-zA-Z0-9:-]{1,200}$/.test(context.operationId)?{operationId:context.operationId}:{}),
       ...(typeof event.runId==='string'?{runId:event.runId.slice(0,200)}:{}),
       ...(typeof event.stage==='string'?{stage:event.stage.slice(0,80)}:{}),
       ...(typeof event.phase==='string'?{phase:event.phase.slice(0,80)}:{}),

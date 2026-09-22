@@ -13,7 +13,7 @@ export type ProcessingInput={id:string;fingerprint:string};
 export interface ContextProcessor {
   id:string;version:string;lane:ProcessingLane;
   /** All inputs are untrusted evidence. No Store or mutation capability is passed. */
-  process(input:{observations:ReturnType<Store['evidence']>;artifacts:{id:string;outputs:NonNullable<ReturnType<Store['archive']['get']>>[]}[];config:Record<string,unknown>;signal:AbortSignal}):Promise<ArtifactOutput[]>;
+  process(input:{observations:ReturnType<Store['evidence']>;artifacts:{id:string;outputs:NonNullable<ReturnType<Store['archive']['get']>>[]}[];config:Record<string,unknown>;signal:AbortSignal;execution?:{operationId:string;jobId:string;stepId:string}}):Promise<ArtifactOutput[]>;
 }
 export class ContextProcessorRegistry {
   private processors=new Map<string,ContextProcessor>();
@@ -46,7 +46,7 @@ export class ProcessingRuntime {
     if(!store.db.prepare('PRAGMA table_info(processing_usage)').all().some(r=>r.name==='input_characters'))store.db.exec('ALTER TABLE processing_usage ADD COLUMN input_characters INTEGER NOT NULL DEFAULT 0');
     this.engine=engine??new ExecutionEngine(store,now);this.owned=!engine;
     for(const lane of lanes)this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,
-      validate:step=>this.valid(this.job(step.id)),admit:step=>this.admit(this.job(step.id)),execute:(step,signal)=>this.process(this.job(step.id),signal),commit:(step,result)=>this.commit(this.job(step.id),result),project:step=>this.project(step),
+      validate:step=>this.valid(this.job(step.id)),admit:step=>this.admit(this.job(step.id)),execute:(step,signal)=>this.process(this.job(step.id),signal,step),commit:(step,result)=>this.commit(this.job(step.id),result),project:step=>this.project(step),
       classify:error=>{const category=error instanceof ProcessingFailure?error.category:error instanceof z.ZodError?'permanent':error instanceof StoreError?(error.statusCode===409?'blocked':error.statusCode<500?'permanent':'transient'):'transient';return new ExecutionFailure(category,category);},
     });
     this.migrate();
@@ -130,7 +130,7 @@ export class ProcessingRuntime {
     // Runs within the same claim transaction, so concurrent admissions cannot spend twice.
     db.prepare('INSERT INTO processing_usage(day,lane,calls,input_characters) VALUES(?,?,1,?) ON CONFLICT(day,lane) DO UPDATE SET calls=calls+1,input_characters=input_characters+excluded.input_characters').run(day,job.lane,characters);
   }
-  private process(job:Job,signal:AbortSignal){return this.registry.get(job.processor)!.process({...this.inputs(job),config:job.config,signal});}
+  private process(job:Job,signal:AbortSignal,step:ExecutionStep){return this.registry.get(job.processor)!.process({...this.inputs(job),config:job.config,signal,execution:{operationId:step.operationId,jobId:job.id,stepId:step.id}});}
   private commit(job:Job,result:unknown){
     const outputs=z.array(artifactOutput).min(1).max(16).parse(result);if(JSON.stringify(outputs).length>200000)throw new ProcessingFailure('permanent','output_limit');
     const {artifacts}=this.inputs(job);

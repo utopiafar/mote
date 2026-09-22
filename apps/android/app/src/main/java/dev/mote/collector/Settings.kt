@@ -201,12 +201,13 @@ class Settings(private val context: Context) {
     }
     fun lastSyncDispatch(): Long = prefs.getLong("lastSyncDispatch", 0)
     fun syncDispatched(at: Long) { prefs.edit().putLong("lastSyncDispatch", at).apply() }
+    fun lastAcknowledgedAt(): String? = prefs.getString("lastUploadAt", null)?.takeIf { prefs.getString("lastUploadOrigin", null) == read().server }
     fun lastUploadAt(): String? = prefs.getString("lastUploadAt", null)
     fun syncState(): String = prefs.getString("syncState", "idle")!!
     fun syncStatus(state: String, message: String, uploaded: Boolean = false) {
         if (!uploaded && syncState() == state && uploadStatus() == message) return
         val edit = prefs.edit().putString("syncState", state).putString("uploadStatus", message)
-        if (uploaded) edit.putString("lastUploadAt", java.time.Instant.now().toString())
+        if (uploaded) edit.putString("lastUploadAt", java.time.Instant.now().toString()).putString("lastUploadOrigin", read().server)
         edit.apply()
     }
     companion object {

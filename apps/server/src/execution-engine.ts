@@ -23,9 +23,10 @@ export interface ExecutionHandler {
  classify?:(error:unknown)=>ExecutionFailure;
  timeoutMs?:number|(()=>number);
  maxAttempts?:number;
+ maxRecoveryWindowMs?:number;
 }
 type ProgramStep<T>=OperationMembership&{id:string;operationId:string;kind:string;pool:string;input:Record<string,unknown>;signal:AbortSignal;validate:()=>boolean;execute:(signal:AbortSignal)=>Promise<unknown>;commit:(result:unknown)=>void;read:()=>T|undefined;project:(step:ExecutionStep)=>void;cached?:boolean;initialAttempts?:number;timeoutMs?:number};
-type Row={id:string;operation_id:string;kind:string;pool:string;input:string;state:ExecutionState;attempts:number;available_at:number;error:string|null;fence:string|null;lease_until:number};
+type Row={id:string;operation_id:string;kind:string;pool:string;input:string;state:ExecutionState;attempts:number;available_at:number;error:string|null;fence:string|null;lease_until:number;recovery_deadline?:number};
 const view=(row:Row):ExecutionStep=>({id:row.id,operationId:row.operation_id,kind:row.kind,pool:row.pool,input:JSON.parse(row.input),state:row.state,attempts:row.attempts,availableAt:row.available_at,...(row.error?{error:row.error}:{})});
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,canonical(v)])):value;
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -49,6 +50,8 @@ export class ExecutionEngine {
    CREATE INDEX IF NOT EXISTS execution_operations ON execution_steps(operation_id,created_at);
    CREATE TABLE IF NOT EXISTS execution_sequence(pool TEXT PRIMARY KEY,next INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS execution_fairness(pool TEXT NOT NULL,operation_id TEXT NOT NULL,last_started INTEGER NOT NULL,PRIMARY KEY(pool,operation_id));`);
+  if(!store.db.prepare('PRAGMA table_info(execution_steps)').all().some(row=>row.name==='recovery_deadline'))store.db.exec('ALTER TABLE execution_steps ADD COLUMN recovery_deadline INTEGER NOT NULL DEFAULT 0');
+  store.db.exec('CREATE INDEX IF NOT EXISTS execution_recovery_deadline ON execution_steps(state,recovery_deadline)');
   installOperationProjection(store);
  }
  get closed(){return this.stopping;}
@@ -82,11 +85,22 @@ export class ExecutionEngine {
  cancel(id:string){
   const db=this.store.db;db.prepare("UPDATE execution_steps SET state='cancelled',fence=NULL,error='cancelled',updated_at=? WHERE id=? AND state!='succeeded'").run(this.now(),id);this.active.get(id)?.controller.abort();this.project(id);
  }
+ /** Revoke an unfinished run after a host deadline without pretending the user cancelled. */
+ fail(id:string,code:string){
+  if(!/^[a-z][a-z0-9_]{0,80}$/.test(code))throw new StoreError('Invalid execution failure code',400);
+  const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+  try{db.prepare("UPDATE execution_steps SET state='failed',fence=NULL,error=?,updated_at=? WHERE id=? AND state NOT IN ('succeeded','failed','cancelled','stale')").run(code,this.now(),id);this.project(id);if(own)db.exec('COMMIT');}
+  catch(error){if(own)db.exec('ROLLBACK');throw error;}
+  this.active.get(id)?.controller.abort();
+ }
  cancelKind(kind:string){for(;;){const rows=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state NOT IN ('succeeded','cancelled','stale') LIMIT 500").all(kind);if(!rows.length)return;for(const row of rows)this.cancel(String(row.id));}}
  retry(id:string,resetAttempts=true){
   if(this.get(id)?.state==='running')throw new StoreError('Cancel the active step before retrying',409);
-  this.active.get(id)?.controller.abort();this.store.db.prepare("UPDATE execution_steps SET state='waiting',attempts=CASE WHEN ? THEN 0 ELSE attempts END,available_at=0,lease_until=0,fence=NULL,error=NULL,updated_at=? WHERE id=? AND state!='running'").run(Number(resetAttempts),this.now(),id);this.project(id);
+  this.active.get(id)?.controller.abort();this.store.db.prepare("UPDATE execution_steps SET state='waiting',attempts=CASE WHEN ? THEN 0 ELSE attempts END,available_at=0,lease_until=0,fence=NULL,error=NULL,recovery_deadline=CASE WHEN ? THEN 0 ELSE recovery_deadline END,updated_at=? WHERE id=? AND state!='running'").run(Number(resetAttempts),Number(resetAttempts),this.now(),id);this.project(id);
  }
+ /** Stop only this host's work after another writer revoked its durable grant. */
+ abortLocal(id:string){this.active.get(id)?.controller.abort();}
+ isCurrentGrant(id:string,fence:string){return Boolean(this.store.db.prepare("SELECT 1 FROM execution_steps WHERE id=? AND fence=? AND state='running' AND lease_until>?").get(id,fence,this.now()));}
  hasActive(kind:string){return [...this.active.keys()].some(id=>this.get(id)?.kind===kind);}
  async drain(ids:string[]){
   void this.tick().catch(()=>{});
@@ -94,6 +108,11 @@ export class ExecutionEngine {
  }
  private recover(){
   const db=this.store.db,now=this.now();
+  for(const row of db.prepare("SELECT * FROM execution_steps WHERE state='waiting' AND recovery_deadline>0 AND recovery_deadline<=?").all(now) as Row[]){
+   const handler=this.handlers.get(row.kind);
+   if(handler&&!handler.validate(view(row))){db.prepare("UPDATE execution_steps SET state='stale',fence=NULL,error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(now,row.id);this.project(row.id);}
+   else this.fail(row.id,'recovery_window_exhausted');
+  }
   for(const row of db.prepare("SELECT * FROM execution_steps WHERE state='running' AND lease_until<=?").all(now) as Row[]){
    const max=this.handlers.get(row.kind)?.maxAttempts??4;
    db.prepare("UPDATE execution_steps SET state=?,fence=NULL,error='interrupted',available_at=0,updated_at=? WHERE id=? AND state='running' AND lease_until<=?").run(row.attempts>=max?'failed':'waiting',now,row.id,now);this.project(row.id);
@@ -142,7 +161,10 @@ export class ExecutionEngine {
    db.prepare('INSERT INTO execution_fairness(pool,operation_id,last_started) VALUES(?,?,?) ON CONFLICT(pool,operation_id) DO UPDATE SET last_started=excluded.last_started').run(row.pool,row.operation_id,sequence);
    this.project(row.id);db.exec('COMMIT');
   }catch(error){if(db.isTransaction)db.exec('ROLLBACK');db.prepare("UPDATE execution_steps SET state='blocked',error=?,updated_at=? WHERE id=? AND state='waiting'").run(error instanceof StoreError&&error.statusCode===507?'storage_full':'admission_failed',this.now(),row.id);this.project(row.id);return;}
-  const step=this.get(row.id)!,signal=AbortSignal.any([controller.signal,AbortSignal.timeout(timeout)]);
+  // Dispose deadlines when work settles. Composed AbortSignal.timeout sources
+  // can remain strongly retained by Node until a long deadline actually fires.
+  const step=this.get(row.id)!,signal=controller.signal;
+  const deadline=setTimeout(()=>controller.abort(new DOMException('The operation was aborted due to timeout','TimeoutError')),timeout);deadline.unref();
   const renewal=setInterval(()=>{if(this.stopping)return;try{if(!db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=?").run(this.now()+30000,row.id,fence).changes)controller.abort();}catch{controller.abort();}},10000);renewal.unref();
   try{
    const result=await withExecutionCancellation(signal,()=>handler.execute(step,signal));
@@ -156,9 +178,13 @@ export class ExecutionEngine {
    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }catch(error){
    const failure=error instanceof ExecutionFailure?error:error instanceof ProviderFailure?new ExecutionFailure(error.details.category,error.details.code,error.details.retryAfterMs):handler.classify?.(error)??new ExecutionFailure('transient','processor_failed');
-   const state:ExecutionState=this.stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':failure.category==='waiting'?'waiting':failure.category==='permanent'||step.attempts>=(handler.maxAttempts??4)?'failed':'waiting';
-   db.prepare('UPDATE execution_steps SET state=?,error=?,available_at=?,fence=NULL,updated_at=? WHERE id=? AND fence=?').run(state,this.stopping?'interrupted':failure.code,this.stopping?0:this.now()+(failure.retryAfterMs??Math.min(3600000,1000*2**(step.attempts-1))),this.now(),row.id,fence);this.project(row.id);
-  }finally{clearInterval(renewal);}
+   let state:ExecutionState=this.stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':failure.category==='waiting'?'waiting':failure.category==='permanent'||step.attempts>=(handler.maxAttempts??4)?'failed':'waiting';
+   const at=this.now(),availableAt=this.stopping?0:at+(failure.retryAfterMs??Math.min(3600000,1000*2**(step.attempts-1)));
+   const recoveryDeadline=failure.category==='transient'&&!this.stopping?(Number(row.recovery_deadline)||at+Math.max(1,Math.min(handler.maxRecoveryWindowMs??6*3600000,30*86400000))):Number(row.recovery_deadline)||0;
+   let code=this.stopping?'interrupted':failure.code;
+   if(state==='waiting'&&failure.category==='transient'&&recoveryDeadline&&availableAt>=recoveryDeadline){state='failed';code='recovery_window_exhausted';}
+   db.prepare('UPDATE execution_steps SET state=?,error=?,available_at=?,recovery_deadline=?,fence=NULL,updated_at=? WHERE id=? AND fence=?').run(state,code,availableAt,recoveryDeadline,at,row.id,fence);this.project(row.id);
+  }finally{clearTimeout(deadline);clearInterval(renewal);}
   await yieldTurn();
  }
  /** Replayable host programs define a substep when reached. State and its artifact

@@ -26,6 +26,7 @@ interface State {
   pendingRealtime: SourceItem[];
   pendingHistory: SourceItem[];
   lastSyncAt?: string;
+  lastAcknowledgedAt?: string;
 }
 
 const receiptId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,6 +34,8 @@ const itemKey = (item: Pick<SourceItem, 'externalId' | 'revision'>) => `${item.e
 
 /** Durable outbox with a latency-sensitive queue and a resumable backfill queue. */
 export class SourceSync {
+  private writes:Promise<unknown>=Promise.resolve();
+  private mutate<T>(operation:()=>Promise<T>):Promise<T>{const next=this.writes.then(operation,operation);this.writes=next.catch(()=>undefined);return next;}
   private scheduler=new PriorityScheduler(16*1024*1024);
   private manifestBatch?:boolean;
   private data: State = { version: 2, known: {}, pendingRealtime: [], pendingHistory: [] };
@@ -60,13 +63,14 @@ export class SourceSync {
   checkpoint(): SourceCheckpoint | undefined { return structuredClone(this.data.checkpoint); }
   initialized() { return Boolean(this.data.initialized); }
   private pendingItems(): SourceItem[] { return [...this.data.pendingRealtime, ...this.data.pendingHistory]; }
-  status(): { pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; oldestPendingAt?: string } {
+  status(): { pending: number; realtimePending: number; historyPending: number; items: number; lastSyncAt?: string; lastAcknowledgedAt?: string; oldestPendingAt?: string } {
     const pending = this.pendingItems();
-    return { oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? Object.values(this.data.known).filter(v => !v.item.deleted).length, lastSyncAt: this.data.lastSyncAt };
+    return { oldestPendingAt: pending.reduce<string | undefined>((oldest, item) => !oldest || item.observedAt < oldest ? item.observedAt : oldest, undefined), pending: pending.length, realtimePending: this.data.pendingRealtime.length, historyPending: this.data.pendingHistory.length, items: this.data.collectedItems ?? Object.values(this.data.known).filter(v => !v.item.deleted).length, lastSyncAt: this.data.lastSyncAt, lastAcknowledgedAt:this.data.lastAcknowledgedAt };
   }
   async checkpointTo(path: string): Promise<void> { const previous=await sourceWork.run<Record<string,unknown>|undefined>({kind:'source-state',path});await sourceWork.run({kind:'source-state',path,patches:sourceStatePatch(previous??{},this.data as unknown as Record<string,unknown>)}); }
 
-  async ensurePolicy(policy: string): Promise<void> {
+  async ensurePolicy(policy:string):Promise<void>{return this.mutate(()=>this.ensurePolicyInternal(policy));}
+  private async ensurePolicyInternal(policy: string): Promise<void> {
     if (this.data.policy === policy) return;
     const next = { ...this.data, checkpoint: undefined, delivered: undefined, predecessors: undefined, policy, known: Object.fromEntries(Object.entries(this.data.known).map(([k, v]) => [k, { ...v, contentHash: '' }])), pendingRealtime: [], pendingHistory: [] } as State;
     const retired = this.pendingItems();
@@ -75,7 +79,7 @@ export class SourceSync {
   }
 
   async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime'): Promise<number> {
-    try { return await this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue); }
+    try { return await this.mutate(()=>this.stageInternal(scan, trackDeletions, observedAt, initialSync, defaultQueue)); }
     finally { await this.discardUnqueuedOriginals(scan.items); }
   }
 
@@ -152,7 +156,7 @@ export class SourceSync {
       scheduler.committed(queue,bytes);
       if (failure) throw failure;
     }
-    await this.commit({ ...this.data, lastSyncAt: new Date().toISOString() }); return 'ready';
+    await this.mutate(()=>this.commit({ ...this.data, lastSyncAt: new Date().toISOString() })); return 'ready';
   }
 
   async flushSlice(source:SourceDefinition,request:SourceRequest,signal?:AbortSignal){
@@ -206,7 +210,7 @@ export class SourceSync {
     const { localOriginalBase64,localOriginal, ...wire } = item, key = sourceHash(item.externalId);
     let previousRevision = Object.hasOwn(this.data.predecessors ?? {}, item.revision) ? this.data.predecessors![item.revision] ?? '' : this.data.delivered?.[key];
     if (previousRevision === undefined) { const head = await request('/api/file-sync/v1/head?sourceId=' + encodeURIComponent(source.id) + '&externalId=' + encodeURIComponent(item.externalId), undefined, 'GET', signal) as { revision: string | null }; previousRevision = head.revision ?? ''; }
-    if (!Object.hasOwn(this.data.predecessors ?? {}, item.revision)) await this.commit({ ...this.data, predecessors: { ...this.data.predecessors, [item.revision]: previousRevision || null } });
+    await this.mutate(async()=>{if (!Object.hasOwn(this.data.predecessors ?? {}, item.revision)) await this.commit({ ...this.data, predecessors: { ...this.data.predecessors, [item.revision]: previousRevision || null } });});
     const original = localOriginalBase64 ? Buffer.from(localOriginalBase64, 'base64') : undefined, manifest = { sourceId: source.id, previousRevision: previousRevision || null, item: wire, sizeBytes: item.metadata?.file?.sizeBytes ?? 0, ...(localOriginal?{sha256:localOriginal.sha256}:original ? { sha256: sourceHash(original) } : {}) };
     let ack: Record<string, unknown>;
     if (original||localOriginal) {
@@ -224,14 +228,15 @@ export class SourceSync {
     return value;
   }
 
-  private async acknowledge(_source: SourceDefinition, batch: SourceItem[], acks: Record<string, unknown>[]): Promise<void> {
+  private async acknowledge(source: SourceDefinition, batch: SourceItem[], acks: Record<string, unknown>[]): Promise<void> {return this.mutate(()=>this.acknowledgeInternal(source,batch,acks));}
+  private async acknowledgeInternal(_source: SourceDefinition, batch: SourceItem[], acks: Record<string, unknown>[]): Promise<void> {
     const acked = new Set(acks.map(ack => itemKey({ externalId: String(ack.externalId), revision: String(ack.revision) })));
     const expected = new Set(batch.map(itemKey));
     if (acked.size !== batch.length || [...expected].some(key => !acked.has(key))) throw new Error(moteText("中央批量来源确认不完整，已保留待重试版本"));
     const predecessors = { ...this.data.predecessors }, delivered = { ...this.data.delivered };
     for (const item of batch) { delete predecessors[item.revision]; delivered[sourceHash(item.externalId)] = item.revision; }
     const remove = new Set(batch.map(itemKey)), filter = (items: SourceItem[]) => items.filter(item => !remove.has(itemKey(item)));
-    await this.commit({ ...this.data, predecessors, delivered, pendingRealtime: filter(this.data.pendingRealtime), pendingHistory: filter(this.data.pendingHistory) });
+    await this.commit({ ...this.data, lastAcknowledgedAt:batch.length?new Date().toISOString():this.data.lastAcknowledgedAt, predecessors, delivered, pendingRealtime: filter(this.data.pendingRealtime), pendingHistory: filter(this.data.pendingHistory) });
     for(const item of batch)if(item.localOriginal)await rm(item.localOriginal.directory,{force:true,recursive:true}).catch(()=>{});
   }
 

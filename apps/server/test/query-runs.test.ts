@@ -31,7 +31,8 @@ test('background admission survives client departure, deduplicates and persists 
   for(let i=0;i<20;i++){await new Promise(r=>setImmediate(r));finished=(await app.inject({url:`/api/query-runs/${id}`,headers})).json();if(finished.status==='completed')break;}
   assert.equal(finished.status,'completed');assert.ok(!JSON.stringify(finished).includes('Generated question'));
   const conversation=(await app.inject({url:`/api/conversations/${finished.conversationId}`,headers})).json();assert.equal(conversation.turns[0].result.usage.tokens.totalTokens,40);
-  assert.deepEqual(conversation.turns[0].result.usage.attribution,{agentId:'context-query',moduleId:'conversations',skillId:null});
+  assert.equal(conversation.turns[0].result.usage.attribution.operationId,`query:${id}`);assert.ok(conversation.turns[0].result.usage.attribution.requestId);
+  const {agentId,moduleId,skillId}=conversation.turns[0].result.usage.attribution;assert.deepEqual({agentId,moduleId,skillId},{agentId:'context-query',moduleId:'conversations',skillId:null});
   const today=new Date().toISOString().slice(0,10),url=`/api/usage?from=${today}&to=${today}&groupBy=module&agentId=context-query&skillId=__none__`;
   const summary=(await app.inject({url,headers})).json();assert.equal(summary.groups[0].id,'conversations');assert.equal(summary.total.totalTokens,40);
   assert.equal((await app.inject({url})).statusCode,401);
@@ -70,6 +71,7 @@ test('interrupted runs recover as failures, and deleted evidence clears public s
   finish({conversationId:randomUUID(),turnId:randomUUID()});await runs.close();
   assert.ok(!JSON.stringify(runs.get(id)).includes('Generated private status'));assert.ok(!JSON.stringify(runs.get(id)).includes('Must not restore'));
   store.db.prepare("UPDATE query_runs SET json=json_set(json,'$.status','running') WHERE id=?").run(id);
+  store.db.prepare('DELETE FROM execution_steps WHERE id=?').run(`query:${id}`);
   const restarted=new QueryRuns(store);assert.equal(restarted.get(id).status,'failed');assert.equal(restarted.get(id).error?.code,'interrupted');
 });
 
@@ -85,7 +87,7 @@ test('execution entrypoints attribute insight, memory and isolated file analysis
   failFile=true;await assert.rejects(processing.analyze('generated-file-id',[],'Generated failure'));assert.equal(closedFiles,2);
   const today=new Date().toISOString().slice(0,10),summary=(await app.inject({url:`/api/usage?from=${today}&to=${today}&groupBy=module`,headers})).json();
   assert.equal(summary.total.runs,4);assert.equal(summary.total.failed,1);assert.equal(summary.total.totalTokens,160);
-  assert.deepEqual(summary.items.map((r:any)=>r.attribution).sort((a:any,b:any)=>a.moduleId.localeCompare(b.moduleId)),[
+  assert.deepEqual(summary.items.map((r:any)=>({agentId:r.attribution.agentId,moduleId:r.attribution.moduleId,skillId:r.attribution.skillId})).sort((a:any,b:any)=>a.moduleId.localeCompare(b.moduleId)),[
     {agentId:'file-analysis',moduleId:'files',skillId:null},{agentId:'file-analysis',moduleId:'files',skillId:null},
     {agentId:'context-query',moduleId:'insights',skillId:'personal-insight'}, {agentId:'context-query',moduleId:'memories',skillId:'memory-extraction'},
   ]);

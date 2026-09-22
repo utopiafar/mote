@@ -8,6 +8,8 @@ if (!entry || !logPath || !/^--mote-instance=[a-f0-9-]{36}$/.test(marker ?? ''))
 const bounded = (value, fallback, min, max) => Number.isFinite(Number(value)) ? Math.max(min, Math.min(max, Number(value))) : fallback;
 const maxBytes = Math.floor(bounded(process.env.MOTE_LOG_MAX_MB ?? 2, 2, 0.1, 8) * 1024 * 1024);
 const maxFiles = Math.floor(bounded(process.env.MOTE_LOG_MAX_FILES ?? 3, 3, 1, 10));
+const maxBufferedBytes = 16 * 1024;
+let buffered = [], bufferedBytes = 0, logFailed = false;
 mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
 const size = path => { try { return statSync(path).size; } catch (error) { if (error.code === 'ENOENT') return 0; throw error; } };
 function rotate() {
@@ -18,6 +20,7 @@ function rotate() {
   }
 }
 function write(chunk) {
+  if (logFailed) return;
   try {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     for (let offset = 0; offset < bytes.length;) {
@@ -27,8 +30,23 @@ function write(chunk) {
     }
   } catch {
     // Disk failure must not leave a running server whose supervisor died or an unbounded pipe.
+    logFailed = true; buffered = []; bufferedBytes = 0;
     child?.kill('SIGTERM'); process.exitCode = 1;
   }
+}
+function flush() {
+  if (!bufferedBytes) return;
+  const bytes = Buffer.concat(buffered, bufferedBytes);
+  buffered = []; bufferedBytes = 0;
+  write(bytes);
+}
+function safeWrite(line) {
+  if (logFailed) return;
+  const bytes = Buffer.from(line);
+  if (bufferedBytes + bytes.length > maxBufferedBytes) flush();
+  if (logFailed) return;
+  if (bytes.length > maxBufferedBytes) { write(bytes); return; }
+  buffered.push(bytes); bufferedBytes += bytes.length;
 }
 if (size(logPath) >= maxBytes) rotate();
 const child = spawn(process.execPath, [entry, marker], { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -47,7 +65,8 @@ function safeLine(line, stream, byteCount = Buffer.byteLength(line)) {
       if (candidate.category === 'configuration' && fields.has(candidate.field)) event.field = candidate.field;
     }
   } catch { /* Arbitrary SDK/runtime output is never a diagnostic payload. */ }
-  write(JSON.stringify(event) + '\n');
+  // Only allowlisted/suppressed JSON enters this bounded buffer; raw output never does.
+  safeWrite(JSON.stringify(event) + '\n');
 }
 for (const stream of ['stdout', 'stderr']) {
   let pending = '', discarded = 0;
@@ -62,10 +81,12 @@ for (const stream of ['stdout', 'stderr']) {
         pending = ''; discarded = 0;
       }
     }
+    // Amortize filesystem calls within this data event without delaying diagnostics until a timer.
+    flush();
   });
-  child[stream].on('end', () => { if (discarded) safeLine('', stream, discarded); else if (pending) safeLine(pending, stream); });
+  child[stream].on('end', () => { if (discarded) safeLine('', stream, discarded); else if (pending) safeLine(pending, stream); flush(); });
 }
-child.on('error', () => { write('{"event":"process.spawn_failed"}\n'); process.exitCode = 1; });
-child.on('close', (code, signal) => { process.exitCode = process.exitCode || code || (signal ? 1 : 0); });
+child.on('error', () => { safeWrite('{"event":"process.spawn_failed"}\n'); flush(); process.exitCode = 1; });
+child.on('close', (code, signal) => { flush(); process.exitCode = process.exitCode || code || (signal ? 1 : 0); });
 process.on('SIGTERM', () => child.kill('SIGTERM'));
 process.on('SIGINT', () => child.kill('SIGINT'));

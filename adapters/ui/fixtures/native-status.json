@@ -1,0 +1,329 @@
+[
+  {
+    "name": "never-processed",
+    "facts": {
+      "pending": 0,
+      "syncState": "idle"
+    },
+    "expected": {
+      "archive": {
+        "state": "unknown",
+        "pending": 0,
+        "lastAcknowledgedAt": null
+      },
+      "processing": {
+        "state": "unknown",
+        "allowedActions": [],
+        "errorCode": null,
+        "retryAt": null
+      },
+      "sync": {
+        "state": "idle",
+        "errorCode": null,
+        "retryAt": null,
+        "allowedActions": [
+          "retry_sync"
+        ]
+      },
+      "coverage": {
+        "state": "unknown",
+        "knownItems": null,
+        "skipped": null
+      }
+    }
+  },
+  {
+    "name": "local-only",
+    "facts": {
+      "pending": 400,
+      "syncState": "unconfigured"
+    },
+    "expected": {
+      "archive": {
+        "state": "local",
+        "pending": 400,
+        "lastAcknowledgedAt": null
+      },
+      "processing": {
+        "state": "unknown",
+        "allowedActions": [],
+        "errorCode": null,
+        "retryAt": null
+      },
+      "sync": {
+        "state": "unconfigured",
+        "errorCode": "connection_required",
+        "retryAt": null,
+        "allowedActions": [
+          "configure_connection"
+        ]
+      },
+      "coverage": {
+        "state": "unknown",
+        "knownItems": null,
+        "skipped": null
+      }
+    }
+  },
+  {
+    "name": "archive-survives-ocr-failure",
+    "facts": {
+      "pending": 0,
+      "lastAcknowledgedAt": "2026-09-21T08:00:00Z",
+      "syncState": "idle",
+      "processing": {
+        "state": "failed",
+        "errorCode": "ocr_failed",
+        "allowedActions": [
+          "retry-step"
+        ],
+        "retryAt": "2026-09-21T08:01:00Z"
+      },
+      "scanComplete": true,
+      "knownItems": 400,
+      "skipped": 0
+    },
+    "expected": {
+      "archive": {
+        "state": "acknowledged",
+        "pending": 0,
+        "lastAcknowledgedAt": "2026-09-21T08:00:00Z"
+      },
+      "processing": {
+        "state": "failed",
+        "allowedActions": [
+          "retry-step"
+        ],
+        "errorCode": "ocr_failed",
+        "retryAt": "2026-09-21T08:01:00Z"
+      },
+      "sync": {
+        "state": "idle",
+        "errorCode": null,
+        "retryAt": null,
+        "allowedActions": [
+          "retry_sync",
+          "open_processing"
+        ]
+      },
+      "coverage": {
+        "state": "scanned",
+        "knownItems": 400,
+        "skipped": 0
+      }
+    }
+  },
+  {
+    "name": "memory-not-scheduled",
+    "facts": {
+      "pending": 0,
+      "lastAcknowledgedAt": "2026-09-21T08:00:00Z",
+      "syncState": "idle",
+      "processing": {
+        "state": "not_scheduled",
+        "allowedActions": []
+      }
+    },
+    "expected": {
+      "archive": {
+        "state": "acknowledged",
+        "pending": 0,
+        "lastAcknowledgedAt": "2026-09-21T08:00:00Z"
+      },
+      "processing": {
+        "state": "not_scheduled",
+        "allowedActions": [],
+        "errorCode": null,
+        "retryAt": null
+      },
+      "sync": {
+        "state": "idle",
+        "errorCode": null,
+        "retryAt": null,
+        "allowedActions": [
+          "retry_sync",
+          "open_processing"
+        ]
+      },
+      "coverage": {
+        "state": "unknown",
+        "knownItems": null,
+        "skipped": null
+      }
+    }
+  },
+  {
+    "name": "permission-partial-scan",
+    "facts": {
+      "pending": 3,
+      "lastAcknowledgedAt": "2026-09-21T08:00:00Z",
+      "syncState": "blocked",
+      "errorCode": "permission_required",
+      "scanComplete": false,
+      "knownItems": 397,
+      "skipped": 3
+    },
+    "expected": {
+      "archive": {
+        "state": "partial",
+        "pending": 3,
+        "lastAcknowledgedAt": "2026-09-21T08:00:00Z"
+      },
+      "processing": {
+        "state": "unknown",
+        "allowedActions": [],
+        "errorCode": null,
+        "retryAt": null
+      },
+      "sync": {
+        "state": "blocked",
+        "errorCode": "permission_required",
+        "retryAt": null,
+        "allowedActions": [
+          "grant_permission",
+          "open_processing"
+        ]
+      },
+      "coverage": {
+        "state": "partial",
+        "knownItems": 397,
+        "skipped": 3
+      }
+    }
+  },
+  {
+    "name": "transport-recovery",
+    "facts": {
+      "pending": 2,
+      "lastAcknowledgedAt": "2026-09-21T08:00:00Z",
+      "syncState": "error",
+      "retryAt": "2026-09-21T08:01:00Z"
+    },
+    "expected": {
+      "archive": {
+        "state": "partial",
+        "pending": 2,
+        "lastAcknowledgedAt": "2026-09-21T08:00:00Z"
+      },
+      "processing": {
+        "state": "unknown",
+        "allowedActions": [],
+        "errorCode": null,
+        "retryAt": null
+      },
+      "sync": {
+        "state": "error",
+        "errorCode": "transport_error",
+        "retryAt": "2026-09-21T08:01:00Z",
+        "allowedActions": [
+          "retry_sync",
+          "open_processing"
+        ]
+      },
+      "coverage": {
+        "state": "unknown",
+        "knownItems": null,
+        "skipped": null
+      }
+    }
+  },
+  {
+    "name": "active-upload",
+    "facts": {
+      "pending": 1,
+      "syncState": "uploading"
+    },
+    "expected": {
+      "archive": {
+        "state": "local",
+        "pending": 1,
+        "lastAcknowledgedAt": null
+      },
+      "processing": {
+        "state": "unknown",
+        "allowedActions": [],
+        "errorCode": null,
+        "retryAt": null
+      },
+      "sync": {
+        "state": "uploading",
+        "errorCode": null,
+        "retryAt": null,
+        "allowedActions": []
+      },
+      "coverage": {
+        "state": "unknown",
+        "knownItems": null,
+        "skipped": null
+      }
+    }
+  },
+  {
+    "name": "unreadable-local-inventory",
+    "facts": {
+      "pending": null,
+      "syncState": "blocked",
+      "errorCode": "local_state_unavailable"
+    },
+    "expected": {
+      "archive": {
+        "state": "unknown",
+        "pending": null,
+        "lastAcknowledgedAt": null
+      },
+      "processing": {
+        "state": "unknown",
+        "allowedActions": [],
+        "errorCode": null,
+        "retryAt": null
+      },
+      "sync": {
+        "state": "blocked",
+        "errorCode": "local_state_unavailable",
+        "retryAt": null,
+        "allowedActions": [
+          "retry_sync"
+        ]
+      },
+      "coverage": {
+        "state": "unknown",
+        "knownItems": null,
+        "skipped": null
+      }
+    }
+  },
+  {
+    "name": "central-read-proves-presence-not-processing",
+    "facts": {
+      "pending": 0,
+      "archiveAcknowledged": true,
+      "syncState": "idle"
+    },
+    "expected": {
+      "archive": {
+        "state": "acknowledged",
+        "pending": 0,
+        "lastAcknowledgedAt": null
+      },
+      "processing": {
+        "state": "unknown",
+        "allowedActions": [],
+        "errorCode": null,
+        "retryAt": null
+      },
+      "sync": {
+        "state": "idle",
+        "errorCode": null,
+        "retryAt": null,
+        "allowedActions": [
+          "retry_sync"
+        ]
+      },
+      "coverage": {
+        "state": "unknown",
+        "knownItems": null,
+        "skipped": null
+      }
+    }
+  }
+]

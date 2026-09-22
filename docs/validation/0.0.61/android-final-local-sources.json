@@ -1,0 +1,10 @@
+{
+  "sourceIds": [
+    "android-ce15f588-ec15-442f-8de4-4f7c6538d09b",
+    "android-c03f95be-0c24-4be4-b5b5-5b228b5a874f"
+  ],
+  "historyCount": 3,
+  "providerFixture": true,
+  "lostAckRetry": true,
+  "restorationCurrent": true
+}

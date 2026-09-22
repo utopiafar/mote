@@ -3,6 +3,9 @@ import {MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION,MEMORY_ADMISSION_PROMPT} f
 
 /** Routing follows an explicit evidence contract, never text, app names or semantic heuristics. */
 export function memoryProfile(record:CaptureRecord){
+  const correction=record.source==='note'?record.metadata?.memoryCorrection:undefined;
+  if(correction?.domain==='coding'&&correction.coding&&correction.scopeRefs.length)return {id:'coding' as const,skill:'coding-memory' as const,version:'coding-memory@5',group:JSON.stringify(['coding-owner-correction',correction.scopeRefs]),prompt:CODING_MEMORY_PROMPT+' This is an explicit owner correction already saved as a confirmed memory. Do not create another candidate that only restates it. Preserve its metadata.memoryCorrection project/session applicability; do not globalize it or infer that the owner authored the old source.'};
+  if(correction?.domain==='personal')return {id:'personal' as const,skill:'memory-extraction' as const,version:MEMORY_SKILL_VERSION,group:'personal',prompt:MEMORY_EXTRACTION_PROMPT+' This original note is an explicit owner correction already saved as a confirmed memory. Preserve its scope and owner attribution. Do not restate the same correction as another candidate; only genuinely additional evidence-supported synthesis may need a proposal. Its replacement relation applies to the selected memory claim, not every fact in the old original.'};
   const coding=record.provenance?.document?.coding;
   return coding?{id:'coding' as const,skill:'coding-memory' as const,version:'coding-memory@5',group:JSON.stringify(['coding',record.provenance?.sourceId,record.deviceId,coding.provider,coding.projectKey,coding.sessionId]),prompt:CODING_MEMORY_PROMPT}
     :{id:'personal' as const,skill:'memory-extraction' as const,version:MEMORY_SKILL_VERSION,group:'personal',prompt:MEMORY_EXTRACTION_PROMPT};

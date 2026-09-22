@@ -41,7 +41,8 @@ class LocalSourcesTest {
         restored.acknowledge(source.id, "wrong-target", pending.getString("externalId"), pending.getString("revision")); assertNotNull(restored.next(source.id, "target-a"))
         restored.acknowledge(source.id, "target-a", pending.getString("externalId"), "wrong-revision"); assertNotNull(restored.next(source.id, "target-a"))
         restored.acknowledge(source.id, "target-a", pending.getString("externalId"), pending.getString("revision")); assertNull(restored.next(source.id, "target-a"))
-        restored.selectTarget(source.id, "target-b"); assertEquals(pending.toString(), restored.next(source.id, "target-b")!!.toString()); assertFalse(restored.state(source.id).optBoolean("registered"))
+        assertTrue(restored.state(source.id).has("lastAcknowledgedAt"))
+        restored.selectTarget(source.id, "target-b"); assertFalse(restored.state(source.id).has("lastAcknowledgedAt")); assertEquals(pending.toString(), restored.next(source.id, "target-b")!!.toString()); assertFalse(restored.state(source.id).optBoolean("registered"))
     }
     @Test fun `offline edits deletion and restoration preserve order with distinct versions`() {
         val store = LocalSourceStore(folder.newFolder(), cipher); val source = source(); store.save(source); store.selectTarget(source.id, "target")

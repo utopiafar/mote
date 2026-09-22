@@ -34,7 +34,7 @@ export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLau
     let transportObserver:Awaited<ReturnType<typeof observeModelTransport>>|undefined;
     let harness:DeepSeekHarness|undefined,timeout:ReturnType<typeof setTimeout>|undefined,primaryFailure=false;
     try{
-      transportObserver=await observeModelTransport();
+      transportObserver=await observeModelTransport(options.admitModelRequest);
       const transportPath=join(root,'transport.mjs');
       await writeFile(transportPath,readFileSync(new URL('./plugin.mjs',import.meta.url),'utf8')
         .replace('from "./context-tools.js"',`from ${JSON.stringify(new URL('./context-tools.js',import.meta.url).href)}`)

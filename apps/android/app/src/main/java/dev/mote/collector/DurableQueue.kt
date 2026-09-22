@@ -230,14 +230,14 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     fun peek(): JSONObject? = peekBatch(1).firstOrNull()
     /** Bound both count and UTF-8 transport size; never acknowledges while selecting. */
-    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024, metadataWindowMinutes: Int = 10): List<JSONObject> {
+    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024, metadataWindowMinutes: Int = 10, preferSince: Long? = null): List<JSONObject> {
         prepareIndex()
         return guarded {
             require(maxCount in 1..500 && maxBytes > 0 && metadataWindowMinutes in 1..1440)
             val result = mutableListOf<JSONObject>()
             var bytes = 32L
             var metadataWindow: Long? = null
-            for (row in metadata().sortedWith(compareBy<JSONObject> { it.getLong("modified") }.thenBy { it.getString("id") })) {
+            for (row in metadata().sortedWith(compareBy<JSONObject> { if (preferSince != null && it.getLong("modified") >= preferSince) 0 else 1 }.thenBy { it.getLong("modified") }.thenBy { it.getString("id") })) {
                 if (row.optBoolean("uploaded") || row.optBoolean("blocked")) continue
                 val event = read(File(dir, "${row.getString("id")}.event"))
                 localFields.forEach(event::remove)

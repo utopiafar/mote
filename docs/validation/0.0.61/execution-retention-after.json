@@ -1,0 +1,2345 @@
+{
+  "generatedAt": "2026-09-22T16:13:13.743Z",
+  "startedAt": "2026-09-22T16:12:01.385Z",
+  "implementationHash": "1b6ca1e91a5a95d47afa049373e7f255b14c212775ca88b8453826f3268fd174",
+  "usesAbortSignalTimeout": false,
+  "node": "v24.15.0",
+  "fixtureOnly": true,
+  "personalDataUsed": false,
+  "forcedGc": false,
+  "iterations": 10000,
+  "backgroundExecutions": 10004,
+  "durationMs": 72355.07062500001,
+  "fixedOriginals": 4,
+  "queryReceipts": 10000,
+  "finalCounts": {
+    "handlers": 2,
+    "active": 0,
+    "programs": 0,
+    "pending": 0,
+    "started": 0,
+    "observed": 0
+  },
+  "samples": [
+    {
+      "atMs": 11.555624999999992,
+      "completed": 0,
+      "rss": 116244480,
+      "heap": 19075176,
+      "heapTotal": 33996800,
+      "external": 5731929,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 727.526709,
+      "completed": 250,
+      "rss": 168280064,
+      "heap": 19389200,
+      "heapTotal": 37666816,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 1584.298459,
+      "completed": 500,
+      "rss": 172589056,
+      "heap": 21274528,
+      "heapTotal": 38977536,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 2586.934209,
+      "completed": 750,
+      "rss": 173178880,
+      "heap": 29299768,
+      "heapTotal": 41074688,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 3733.757584,
+      "completed": 1000,
+      "rss": 154746880,
+      "heap": 29634328,
+      "heapTotal": 42909696,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 4782.359917,
+      "completed": 1250,
+      "rss": 156696576,
+      "heap": 29766688,
+      "heapTotal": 45006848,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 5747.661666999999,
+      "completed": 1500,
+      "rss": 158924800,
+      "heap": 29611768,
+      "heapTotal": 46841856,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 6746.658292,
+      "completed": 1750,
+      "rss": 160890880,
+      "heap": 35924032,
+      "heapTotal": 48676864,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 7791.268792,
+      "completed": 2000,
+      "rss": 164069376,
+      "heap": 35487192,
+      "heapTotal": 50511872,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 9058.374125,
+      "completed": 2250,
+      "rss": 166215680,
+      "heap": 34929472,
+      "heapTotal": 52346880,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 10256.537209,
+      "completed": 2500,
+      "rss": 168214528,
+      "heap": 40687416,
+      "heapTotal": 54706176,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 11437.852584,
+      "completed": 2750,
+      "rss": 170213376,
+      "heap": 39819592,
+      "heapTotal": 56541184,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 12698.830875000001,
+      "completed": 3000,
+      "rss": 172146688,
+      "heap": 45568744,
+      "heapTotal": 58376192,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 14034.340125,
+      "completed": 3250,
+      "rss": 174112768,
+      "heap": 44602904,
+      "heapTotal": 60473344,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 15453.090667,
+      "completed": 3500,
+      "rss": 176013312,
+      "heap": 50346552,
+      "heapTotal": 61784064,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 16894.11175,
+      "completed": 3750,
+      "rss": 178094080,
+      "heap": 49446944,
+      "heapTotal": 64143360,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 18376.070375,
+      "completed": 4000,
+      "rss": 180027392,
+      "heap": 48545016,
+      "heapTotal": 65716224,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 19901.658542,
+      "completed": 4250,
+      "rss": 182190080,
+      "heap": 54172928,
+      "heapTotal": 67551232,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 21493.268959,
+      "completed": 4500,
+      "rss": 184827904,
+      "heap": 53132288,
+      "heapTotal": 69386240,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 23220.632334,
+      "completed": 4750,
+      "rss": 186843136,
+      "heap": 58841200,
+      "heapTotal": 71745536,
+      "external": 5731369,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 24957.471084,
+      "completed": 5000,
+      "rss": 255246336,
+      "heap": 26600816,
+      "heapTotal": 86949888,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 27252.902167,
+      "completed": 5250,
+      "rss": 255721472,
+      "heap": 25207672,
+      "heapTotal": 86949888,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 29394.196917,
+      "completed": 5500,
+      "rss": 255885312,
+      "heap": 23641720,
+      "heapTotal": 86949888,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 31559.791334,
+      "completed": 5750,
+      "rss": 255492096,
+      "heap": 35493024,
+      "heapTotal": 86949888,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 33450.117834,
+      "completed": 6000,
+      "rss": 255885312,
+      "heap": 28410232,
+      "heapTotal": 57065472,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 35407.050959,
+      "completed": 6250,
+      "rss": 255934464,
+      "heap": 26710640,
+      "heapTotal": 57065472,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 37374.320625,
+      "completed": 6500,
+      "rss": 255950848,
+      "heap": 25123112,
+      "heapTotal": 57065472,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 39393.104667,
+      "completed": 6750,
+      "rss": 256327680,
+      "heap": 36885872,
+      "heapTotal": 58638336,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 41483.606583999994,
+      "completed": 7000,
+      "rss": 256458752,
+      "heap": 26701584,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 43589.640084,
+      "completed": 7250,
+      "rss": 256458752,
+      "heap": 25194664,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 45715.768459,
+      "completed": 7500,
+      "rss": 256475136,
+      "heap": 23759072,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 47890.750834,
+      "completed": 7750,
+      "rss": 256507904,
+      "heap": 35562984,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 50126.097708999994,
+      "completed": 8000,
+      "rss": 256540672,
+      "heap": 33923024,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 52489.697959,
+      "completed": 8250,
+      "rss": 256589824,
+      "heap": 23662096,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 54848.148499999996,
+      "completed": 8500,
+      "rss": 256622592,
+      "heap": 22216144,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 57276.288167,
+      "completed": 8750,
+      "rss": 256622592,
+      "heap": 34190464,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 59749.797625,
+      "completed": 9000,
+      "rss": 256638976,
+      "heap": 32533888,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 62268.065459,
+      "completed": 9250,
+      "rss": 256688128,
+      "heap": 22395840,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 64935.615084,
+      "completed": 9500,
+      "rss": 256688128,
+      "heap": 20960176,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 67657.374167,
+      "completed": 9750,
+      "rss": 256704512,
+      "heap": 32748904,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 70335.085334,
+      "completed": 10000,
+      "rss": 256737280,
+      "heap": 31219136,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    },
+    {
+      "atMs": 72335.57312500001,
+      "completed": 10000,
+      "rss": 256753664,
+      "heap": 31223848,
+      "heapTotal": 60211200,
+      "external": 5722886,
+      "counts": {
+        "handlers": 2,
+        "active": 0,
+        "programs": 0,
+        "pending": 0,
+        "started": 0,
+        "observed": 0
+      }
+    }
+  ],
+  "naturalGc": [
+    {
+      "atMs": 49.938125000000014,
+      "durationMs": 1.9726669788360596,
+      "major": false,
+      "heap": 16970232,
+      "completed": 9
+    },
+    {
+      "atMs": 99.81787500000002,
+      "durationMs": 3.183791995048523,
+      "major": false,
+      "heap": 17127440,
+      "completed": 26
+    },
+    {
+      "atMs": 156.442584,
+      "durationMs": 2.4850000143051147,
+      "major": false,
+      "heap": 17515520,
+      "completed": 46
+    },
+    {
+      "atMs": 211.35250000000002,
+      "durationMs": 2.429834008216858,
+      "major": false,
+      "heap": 17661600,
+      "completed": 65
+    },
+    {
+      "atMs": 293.146459,
+      "durationMs": 4.41712498664856,
+      "major": false,
+      "heap": 17931744,
+      "completed": 94
+    },
+    {
+      "atMs": 378.050292,
+      "durationMs": 3.817916989326477,
+      "major": false,
+      "heap": 18261072,
+      "completed": 125
+    },
+    {
+      "atMs": 463.873292,
+      "durationMs": 3.7287920713424683,
+      "major": false,
+      "heap": 18521600,
+      "completed": 156
+    },
+    {
+      "atMs": 550.096792,
+      "durationMs": 3.641957998275757,
+      "major": false,
+      "heap": 18859808,
+      "completed": 187
+    },
+    {
+      "atMs": 635.510042,
+      "durationMs": 3.697708010673523,
+      "major": false,
+      "heap": 19112296,
+      "completed": 218
+    },
+    {
+      "atMs": 722.444875,
+      "durationMs": 3.6386669874191284,
+      "major": false,
+      "heap": 19346536,
+      "completed": 249
+    },
+    {
+      "atMs": 813.089834,
+      "durationMs": 3.710291028022766,
+      "major": false,
+      "heap": 19629816,
+      "completed": 280
+    },
+    {
+      "atMs": 911.6308750000001,
+      "durationMs": 3.8595000505447388,
+      "major": false,
+      "heap": 19842000,
+      "completed": 311
+    },
+    {
+      "atMs": 1018.3230000000001,
+      "durationMs": 4.241209030151367,
+      "major": false,
+      "heap": 20094832,
+      "completed": 342
+    },
+    {
+      "atMs": 1128.713625,
+      "durationMs": 4.079292058944702,
+      "major": false,
+      "heap": 20402080,
+      "completed": 374
+    },
+    {
+      "atMs": 1237.53725,
+      "durationMs": 4.050041913986206,
+      "major": false,
+      "heap": 20572272,
+      "completed": 405
+    },
+    {
+      "atMs": 1347.620375,
+      "durationMs": 4.033208966255188,
+      "major": false,
+      "heap": 20886592,
+      "completed": 437
+    },
+    {
+      "atMs": 1467.754959,
+      "durationMs": 4.647875070571899,
+      "major": false,
+      "heap": 21063440,
+      "completed": 468
+    },
+    {
+      "atMs": 1579.541084,
+      "durationMs": 4.0087080001831055,
+      "major": false,
+      "heap": 21273608,
+      "completed": 500
+    },
+    {
+      "atMs": 1702.648667,
+      "durationMs": 4.059875011444092,
+      "major": false,
+      "heap": 21697712,
+      "completed": 531
+    },
+    {
+      "atMs": 1846.843584,
+      "durationMs": 4.168625116348267,
+      "major": false,
+      "heap": 21919400,
+      "completed": 562
+    },
+    {
+      "atMs": 1960.706125,
+      "durationMs": 4.008625030517578,
+      "major": false,
+      "heap": 22300504,
+      "completed": 594
+    },
+    {
+      "atMs": 2079.0852919999998,
+      "durationMs": 4.235458016395569,
+      "major": false,
+      "heap": 22442288,
+      "completed": 625
+    },
+    {
+      "atMs": 2206.669417,
+      "durationMs": 4.245916962623596,
+      "major": false,
+      "heap": 22652656,
+      "completed": 657
+    },
+    {
+      "atMs": 2337.9329589999998,
+      "durationMs": 4.151125073432922,
+      "major": false,
+      "heap": 22893752,
+      "completed": 689
+    },
+    {
+      "atMs": 2468.6379589999997,
+      "durationMs": 4.198915958404541,
+      "major": false,
+      "heap": 23164768,
+      "completed": 721
+    },
+    {
+      "atMs": 2601.765125,
+      "durationMs": 4.348708987236023,
+      "major": false,
+      "heap": 23392104,
+      "completed": 753
+    },
+    {
+      "atMs": 2746.3743750000003,
+      "durationMs": 4.746083974838257,
+      "major": false,
+      "heap": 23623760,
+      "completed": 785
+    },
+    {
+      "atMs": 2882.3155420000003,
+      "durationMs": 4.260625004768372,
+      "major": false,
+      "heap": 23918656,
+      "completed": 817
+    },
+    {
+      "atMs": 3039.6378750000003,
+      "durationMs": 4.67425000667572,
+      "major": false,
+      "heap": 24124464,
+      "completed": 849
+    },
+    {
+      "atMs": 3181.9875,
+      "durationMs": 4.308084011077881,
+      "major": false,
+      "heap": 24482712,
+      "completed": 882
+    },
+    {
+      "atMs": 3356.173,
+      "durationMs": 4.368499994277954,
+      "major": false,
+      "heap": 24661912,
+      "completed": 914
+    },
+    {
+      "atMs": 3499.5153339999997,
+      "durationMs": 4.356083035469055,
+      "major": false,
+      "heap": 25050496,
+      "completed": 947
+    },
+    {
+      "atMs": 3642.1822920000004,
+      "durationMs": 4.83650004863739,
+      "major": false,
+      "heap": 25227088,
+      "completed": 979
+    },
+    {
+      "atMs": 3778.5252920000003,
+      "durationMs": 4.461874961853027,
+      "major": false,
+      "heap": 25395112,
+      "completed": 1011
+    },
+    {
+      "atMs": 3909.923084,
+      "durationMs": 4.4516249895095825,
+      "major": false,
+      "heap": 25663000,
+      "completed": 1043
+    },
+    {
+      "atMs": 4064.123584,
+      "durationMs": 4.720124959945679,
+      "major": false,
+      "heap": 25914728,
+      "completed": 1075
+    },
+    {
+      "atMs": 4212.246999999999,
+      "durationMs": 4.267542004585266,
+      "major": false,
+      "heap": 26117944,
+      "completed": 1107
+    },
+    {
+      "atMs": 4365.82425,
+      "durationMs": 4.507459044456482,
+      "major": false,
+      "heap": 26463232,
+      "completed": 1140
+    },
+    {
+      "atMs": 4494.435292,
+      "durationMs": 4.068542003631592,
+      "major": false,
+      "heap": 26676616,
+      "completed": 1172
+    },
+    {
+      "atMs": 4612.103333999999,
+      "durationMs": 4.028500080108643,
+      "major": false,
+      "heap": 26982576,
+      "completed": 1205
+    },
+    {
+      "atMs": 4733.2207499999995,
+      "durationMs": 4.139417052268982,
+      "major": false,
+      "heap": 27165952,
+      "completed": 1237
+    },
+    {
+      "atMs": 4854.662375,
+      "durationMs": 4.240625023841858,
+      "major": false,
+      "heap": 27337192,
+      "completed": 1269
+    },
+    {
+      "atMs": 4981.4722919999995,
+      "durationMs": 4.111667037010193,
+      "major": false,
+      "heap": 27650848,
+      "completed": 1302
+    },
+    {
+      "atMs": 5102.092375,
+      "durationMs": 4.006249904632568,
+      "major": false,
+      "heap": 27871992,
+      "completed": 1334
+    },
+    {
+      "atMs": 5225.8983339999995,
+      "durationMs": 4.428540945053101,
+      "major": false,
+      "heap": 28220160,
+      "completed": 1367
+    },
+    {
+      "atMs": 5353.238249999999,
+      "durationMs": 4.195791959762573,
+      "major": false,
+      "heap": 28351520,
+      "completed": 1399
+    },
+    {
+      "atMs": 5480.293417,
+      "durationMs": 4.145250082015991,
+      "major": false,
+      "heap": 28659808,
+      "completed": 1432
+    },
+    {
+      "atMs": 5605.627875,
+      "durationMs": 4.207417011260986,
+      "major": false,
+      "heap": 28999704,
+      "completed": 1465
+    },
+    {
+      "atMs": 5733.082042,
+      "durationMs": 4.110583066940308,
+      "major": false,
+      "heap": 29147272,
+      "completed": 1497
+    },
+    {
+      "atMs": 5859.331584,
+      "durationMs": 4.192541003227234,
+      "major": false,
+      "heap": 29452984,
+      "completed": 1530
+    },
+    {
+      "atMs": 5986.620042,
+      "durationMs": 4.257833003997803,
+      "major": false,
+      "heap": 29604192,
+      "completed": 1562
+    },
+    {
+      "atMs": 6119.090416999999,
+      "durationMs": 4.214124917984009,
+      "major": false,
+      "heap": 29851968,
+      "completed": 1595
+    },
+    {
+      "atMs": 6252.2087089999995,
+      "durationMs": 4.322957992553711,
+      "major": false,
+      "heap": 30102928,
+      "completed": 1628
+    },
+    {
+      "atMs": 6382.264542,
+      "durationMs": 4.113999962806702,
+      "major": false,
+      "heap": 30417416,
+      "completed": 1661
+    },
+    {
+      "atMs": 6516.279042,
+      "durationMs": 4.094833016395569,
+      "major": false,
+      "heap": 30593480,
+      "completed": 1693
+    },
+    {
+      "atMs": 6646.931541999999,
+      "durationMs": 4.051167011260986,
+      "major": false,
+      "heap": 30932312,
+      "completed": 1726
+    },
+    {
+      "atMs": 6784.748959,
+      "durationMs": 4.209666013717651,
+      "major": false,
+      "heap": 31127472,
+      "completed": 1758
+    },
+    {
+      "atMs": 6920.737375,
+      "durationMs": 4.29479193687439,
+      "major": false,
+      "heap": 31387816,
+      "completed": 1791
+    },
+    {
+      "atMs": 7055.971375,
+      "durationMs": 4.333958983421326,
+      "major": false,
+      "heap": 31675504,
+      "completed": 1824
+    },
+    {
+      "atMs": 7188.6068749999995,
+      "durationMs": 4.241750001907349,
+      "major": false,
+      "heap": 31994608,
+      "completed": 1857
+    },
+    {
+      "atMs": 7328.368917,
+      "durationMs": 4.188374996185303,
+      "major": false,
+      "heap": 32133616,
+      "completed": 1889
+    },
+    {
+      "atMs": 7464.748834,
+      "durationMs": 4.138957977294922,
+      "major": false,
+      "heap": 32395248,
+      "completed": 1922
+    },
+    {
+      "atMs": 7596.887584,
+      "durationMs": 4.086916089057922,
+      "major": false,
+      "heap": 32723320,
+      "completed": 1955
+    },
+    {
+      "atMs": 7735.490667,
+      "durationMs": 4.21274995803833,
+      "major": false,
+      "heap": 32872664,
+      "completed": 1987
+    },
+    {
+      "atMs": 7875.815125,
+      "durationMs": 4.38129198551178,
+      "major": false,
+      "heap": 33146936,
+      "completed": 2020
+    },
+    {
+      "atMs": 8024.064541999999,
+      "durationMs": 4.624916911125183,
+      "major": false,
+      "heap": 33380952,
+      "completed": 2053
+    },
+    {
+      "atMs": 8271.417125,
+      "durationMs": 5.114959001541138,
+      "major": false,
+      "heap": 33620776,
+      "completed": 2086
+    },
+    {
+      "atMs": 8455.071334,
+      "durationMs": 4.7031660079956055,
+      "major": false,
+      "heap": 33938080,
+      "completed": 2119
+    },
+    {
+      "atMs": 8615.071625,
+      "durationMs": 4.228541970252991,
+      "major": false,
+      "heap": 34253320,
+      "completed": 2152
+    },
+    {
+      "atMs": 8763.99775,
+      "durationMs": 4.295709013938904,
+      "major": false,
+      "heap": 34433752,
+      "completed": 2184
+    },
+    {
+      "atMs": 8906.782459,
+      "durationMs": 4.37816596031189,
+      "major": false,
+      "heap": 34739936,
+      "completed": 2217
+    },
+    {
+      "atMs": 9050.951084,
+      "durationMs": 4.149708032608032,
+      "major": false,
+      "heap": 34890512,
+      "completed": 2249
+    },
+    {
+      "atMs": 9261.662542,
+      "durationMs": 4.469375014305115,
+      "major": false,
+      "heap": 35104864,
+      "completed": 2282
+    },
+    {
+      "atMs": 9408.302334,
+      "durationMs": 4.649583101272583,
+      "major": false,
+      "heap": 35384704,
+      "completed": 2315
+    },
+    {
+      "atMs": 9561.087334,
+      "durationMs": 4.458999991416931,
+      "major": false,
+      "heap": 35644376,
+      "completed": 2348
+    },
+    {
+      "atMs": 9711.29225,
+      "durationMs": 4.437416911125183,
+      "major": false,
+      "heap": 35855432,
+      "completed": 2381
+    },
+    {
+      "atMs": 9864.551042000001,
+      "durationMs": 4.228042006492615,
+      "major": false,
+      "heap": 36179616,
+      "completed": 2414
+    },
+    {
+      "atMs": 10012.813792,
+      "durationMs": 4.218582987785339,
+      "major": false,
+      "heap": 36396560,
+      "completed": 2447
+    },
+    {
+      "atMs": 10165.701542,
+      "durationMs": 4.282624959945679,
+      "major": false,
+      "heap": 36649472,
+      "completed": 2480
+    },
+    {
+      "atMs": 10318.235125000001,
+      "durationMs": 4.236375093460083,
+      "major": false,
+      "heap": 36906432,
+      "completed": 2513
+    },
+    {
+      "atMs": 10470.746417,
+      "durationMs": 4.42091691493988,
+      "major": false,
+      "heap": 37148352,
+      "completed": 2546
+    },
+    {
+      "atMs": 10623.706292,
+      "durationMs": 4.519917011260986,
+      "major": false,
+      "heap": 37436088,
+      "completed": 2579
+    },
+    {
+      "atMs": 10777.367792000001,
+      "durationMs": 4.754292011260986,
+      "major": false,
+      "heap": 37652528,
+      "completed": 2612
+    },
+    {
+      "atMs": 10935.938584000001,
+      "durationMs": 4.374333024024963,
+      "major": false,
+      "heap": 37932256,
+      "completed": 2645
+    },
+    {
+      "atMs": 11090.717209,
+      "durationMs": 4.471458077430725,
+      "major": false,
+      "heap": 38218104,
+      "completed": 2678
+    },
+    {
+      "atMs": 11251.39825,
+      "durationMs": 4.2881669998168945,
+      "major": false,
+      "heap": 38486864,
+      "completed": 2711
+    },
+    {
+      "atMs": 11406.679250000001,
+      "durationMs": 4.519917011260986,
+      "major": false,
+      "heap": 38732096,
+      "completed": 2744
+    },
+    {
+      "atMs": 11564.866417000001,
+      "durationMs": 4.233916997909546,
+      "major": false,
+      "heap": 38979760,
+      "completed": 2777
+    },
+    {
+      "atMs": 11725.707709,
+      "durationMs": 4.709457993507385,
+      "major": false,
+      "heap": 39233776,
+      "completed": 2810
+    },
+    {
+      "atMs": 11895.109542,
+      "durationMs": 4.27620804309845,
+      "major": false,
+      "heap": 39460072,
+      "completed": 2843
+    },
+    {
+      "atMs": 12061.333292000001,
+      "durationMs": 4.291249990463257,
+      "major": false,
+      "heap": 39740144,
+      "completed": 2876
+    },
+    {
+      "atMs": 12232.064084000001,
+      "durationMs": 4.306957960128784,
+      "major": false,
+      "heap": 39961992,
+      "completed": 2909
+    },
+    {
+      "atMs": 12400.555625,
+      "durationMs": 4.173875093460083,
+      "major": false,
+      "heap": 40212248,
+      "completed": 2942
+    },
+    {
+      "atMs": 12568.7155,
+      "durationMs": 4.2653340101242065,
+      "major": false,
+      "heap": 40497464,
+      "completed": 2975
+    },
+    {
+      "atMs": 12743.821834,
+      "durationMs": 4.699290990829468,
+      "major": false,
+      "heap": 40712904,
+      "completed": 3008
+    },
+    {
+      "atMs": 12916.542000000001,
+      "durationMs": 4.334083914756775,
+      "major": false,
+      "heap": 40992392,
+      "completed": 3041
+    },
+    {
+      "atMs": 13089.164834000001,
+      "durationMs": 4.497207999229431,
+      "major": false,
+      "heap": 41211000,
+      "completed": 3074
+    },
+    {
+      "atMs": 13268.268417000001,
+      "durationMs": 4.3032920360565186,
+      "major": false,
+      "heap": 41456768,
+      "completed": 3107
+    },
+    {
+      "atMs": 13443.478084,
+      "durationMs": 4.563958048820496,
+      "major": false,
+      "heap": 41705856,
+      "completed": 3140
+    },
+    {
+      "atMs": 13618.176667000002,
+      "durationMs": 4.295875072479248,
+      "major": false,
+      "heap": 41956624,
+      "completed": 3173
+    },
+    {
+      "atMs": 13799.953625,
+      "durationMs": 4.244125008583069,
+      "major": false,
+      "heap": 42241112,
+      "completed": 3206
+    },
+    {
+      "atMs": 13974.974625,
+      "durationMs": 4.497375011444092,
+      "major": false,
+      "heap": 42470144,
+      "completed": 3239
+    },
+    {
+      "atMs": 14154.561917,
+      "durationMs": 4.328583002090454,
+      "major": false,
+      "heap": 42710320,
+      "completed": 3272
+    },
+    {
+      "atMs": 14334.699292000001,
+      "durationMs": 4.2353750467300415,
+      "major": false,
+      "heap": 42986728,
+      "completed": 3305
+    },
+    {
+      "atMs": 14513.367,
+      "durationMs": 4.219334006309509,
+      "major": false,
+      "heap": 43234488,
+      "completed": 3338
+    },
+    {
+      "atMs": 14698.171125,
+      "durationMs": 4.332416892051697,
+      "major": false,
+      "heap": 43487712,
+      "completed": 3371
+    },
+    {
+      "atMs": 14918.70975,
+      "durationMs": 4.443874955177307,
+      "major": false,
+      "heap": 43735984,
+      "completed": 3404
+    },
+    {
+      "atMs": 15101.601959000001,
+      "durationMs": 4.300457954406738,
+      "major": false,
+      "heap": 43979944,
+      "completed": 3437
+    },
+    {
+      "atMs": 15288.272209,
+      "durationMs": 4.469332933425903,
+      "major": false,
+      "heap": 44200976,
+      "completed": 3470
+    },
+    {
+      "atMs": 15474.349167,
+      "durationMs": 4.788082957267761,
+      "major": false,
+      "heap": 44496600,
+      "completed": 3503
+    },
+    {
+      "atMs": 15660.732334,
+      "durationMs": 4.668499946594238,
+      "major": false,
+      "heap": 44746048,
+      "completed": 3536
+    },
+    {
+      "atMs": 15850.222000000002,
+      "durationMs": 4.2544169425964355,
+      "major": false,
+      "heap": 45048296,
+      "completed": 3569
+    },
+    {
+      "atMs": 16035.429750000001,
+      "durationMs": 4.289458990097046,
+      "major": false,
+      "heap": 45298592,
+      "completed": 3602
+    },
+    {
+      "atMs": 16226.527375000001,
+      "durationMs": 4.809709072113037,
+      "major": false,
+      "heap": 45514672,
+      "completed": 3635
+    },
+    {
+      "atMs": 16416.202542,
+      "durationMs": 4.301417112350464,
+      "major": false,
+      "heap": 45762656,
+      "completed": 3668
+    },
+    {
+      "atMs": 16607.839959,
+      "durationMs": 4.44712495803833,
+      "major": false,
+      "heap": 46059088,
+      "completed": 3701
+    },
+    {
+      "atMs": 16803.453375,
+      "durationMs": 4.465041995048523,
+      "major": false,
+      "heap": 46273144,
+      "completed": 3734
+    },
+    {
+      "atMs": 16992.928959,
+      "durationMs": 4.515332937240601,
+      "major": false,
+      "heap": 46525624,
+      "completed": 3767
+    },
+    {
+      "atMs": 17186.835292,
+      "durationMs": 4.397958040237427,
+      "major": false,
+      "heap": 46782800,
+      "completed": 3800
+    },
+    {
+      "atMs": 17380.938542,
+      "durationMs": 4.270457983016968,
+      "major": false,
+      "heap": 47050696,
+      "completed": 3833
+    },
+    {
+      "atMs": 17574.944959,
+      "durationMs": 4.620082974433899,
+      "major": false,
+      "heap": 47268584,
+      "completed": 3866
+    },
+    {
+      "atMs": 17772.81325,
+      "durationMs": 4.485709071159363,
+      "major": false,
+      "heap": 47552248,
+      "completed": 3899
+    },
+    {
+      "atMs": 17970.332625,
+      "durationMs": 4.3796669244766235,
+      "major": false,
+      "heap": 47804920,
+      "completed": 3932
+    },
+    {
+      "atMs": 18165.091792,
+      "durationMs": 4.258291959762573,
+      "major": false,
+      "heap": 48049304,
+      "completed": 3965
+    },
+    {
+      "atMs": 18364.172792,
+      "durationMs": 4.297667026519775,
+      "major": false,
+      "heap": 48297232,
+      "completed": 3998
+    },
+    {
+      "atMs": 18562.117667000002,
+      "durationMs": 4.476083040237427,
+      "major": false,
+      "heap": 48513088,
+      "completed": 4031
+    },
+    {
+      "atMs": 18765.631917000002,
+      "durationMs": 4.32670795917511,
+      "major": false,
+      "heap": 48797864,
+      "completed": 4064
+    },
+    {
+      "atMs": 18965.472292000002,
+      "durationMs": 4.273542046546936,
+      "major": false,
+      "heap": 48984072,
+      "completed": 4097
+    },
+    {
+      "atMs": 19166.980709,
+      "durationMs": 4.318875074386597,
+      "major": false,
+      "heap": 49370632,
+      "completed": 4131
+    },
+    {
+      "atMs": 19371.271792,
+      "durationMs": 4.42691695690155,
+      "major": false,
+      "heap": 49655976,
+      "completed": 4164
+    },
+    {
+      "atMs": 19571.413125,
+      "durationMs": 4.552291989326477,
+      "major": false,
+      "heap": 49899768,
+      "completed": 4197
+    },
+    {
+      "atMs": 19776.958709000002,
+      "durationMs": 4.634124994277954,
+      "major": false,
+      "heap": 50116536,
+      "completed": 4230
+    },
+    {
+      "atMs": 19978.955334000002,
+      "durationMs": 4.218000054359436,
+      "major": false,
+      "heap": 50364776,
+      "completed": 4263
+    },
+    {
+      "atMs": 20187.47175,
+      "durationMs": 4.443416953086853,
+      "major": false,
+      "heap": 50646504,
+      "completed": 4296
+    },
+    {
+      "atMs": 20392.027875,
+      "durationMs": 4.57383406162262,
+      "major": false,
+      "heap": 50868760,
+      "completed": 4329
+    },
+    {
+      "atMs": 20601.284459000002,
+      "durationMs": 4.27649998664856,
+      "major": false,
+      "heap": 51142992,
+      "completed": 4362
+    },
+    {
+      "atMs": 20810.386709000002,
+      "durationMs": 4.513416051864624,
+      "major": false,
+      "heap": 51358968,
+      "completed": 4395
+    },
+    {
+      "atMs": 21019.7435,
+      "durationMs": 4.510959029197693,
+      "major": false,
+      "heap": 51607384,
+      "completed": 4428
+    },
+    {
+      "atMs": 21235.676917,
+      "durationMs": 4.33745801448822,
+      "major": false,
+      "heap": 51834064,
+      "completed": 4461
+    },
+    {
+      "atMs": 21454.673667,
+      "durationMs": 4.63070809841156,
+      "major": false,
+      "heap": 52051584,
+      "completed": 4494
+    },
+    {
+      "atMs": 21680.126125000003,
+      "durationMs": 4.904584050178528,
+      "major": false,
+      "heap": 52262768,
+      "completed": 4527
+    },
+    {
+      "atMs": 21909.812875,
+      "durationMs": 4.768374919891357,
+      "major": false,
+      "heap": 52529408,
+      "completed": 4560
+    },
+    {
+      "atMs": 22138.011084,
+      "durationMs": 4.447750091552734,
+      "major": false,
+      "heap": 52795872,
+      "completed": 4593
+    },
+    {
+      "atMs": 22368.323,
+      "durationMs": 4.45579206943512,
+      "major": false,
+      "heap": 53009824,
+      "completed": 4626
+    },
+    {
+      "atMs": 22595.187792,
+      "durationMs": 4.471750020980835,
+      "major": false,
+      "heap": 53257856,
+      "completed": 4659
+    },
+    {
+      "atMs": 22820.440167,
+      "durationMs": 4.472583055496216,
+      "major": false,
+      "heap": 53510256,
+      "completed": 4692
+    },
+    {
+      "atMs": 23050.49275,
+      "durationMs": 4.4195839166641235,
+      "major": false,
+      "heap": 53787928,
+      "completed": 4725
+    },
+    {
+      "atMs": 23280.207459,
+      "durationMs": 4.571915984153748,
+      "major": false,
+      "heap": 53975208,
+      "completed": 4758
+    },
+    {
+      "atMs": 23509.413917,
+      "durationMs": 4.6966670751571655,
+      "major": false,
+      "heap": 54355376,
+      "completed": 4792
+    },
+    {
+      "atMs": 23738.587750000002,
+      "durationMs": 4.8650840520858765,
+      "major": false,
+      "heap": 54599712,
+      "completed": 4825
+    },
+    {
+      "atMs": 23749.23775,
+      "durationMs": 0.2355419397354126,
+      "major": false,
+      "heap": 54667992,
+      "completed": 4825
+    },
+    {
+      "atMs": 23756.359875000002,
+      "durationMs": 1.0336250066757202,
+      "major": true,
+      "heap": 17136064,
+      "completed": 4826
+    },
+    {
+      "atMs": 24196.093959,
+      "durationMs": 11.823624968528748,
+      "major": false,
+      "heap": 17762216,
+      "completed": 4893
+    },
+    {
+      "atMs": 24653.614334,
+      "durationMs": 8.547165989875793,
+      "major": false,
+      "heap": 18372696,
+      "completed": 4960
+    },
+    {
+      "atMs": 25175.779042000002,
+      "durationMs": 9.131791949272156,
+      "major": false,
+      "heap": 18810496,
+      "completed": 5026
+    },
+    {
+      "atMs": 25801.378209000002,
+      "durationMs": 10.677041053771973,
+      "major": false,
+      "heap": 19412056,
+      "completed": 5093
+    },
+    {
+      "atMs": 26449.260042,
+      "durationMs": 9.205958008766174,
+      "major": false,
+      "heap": 19842864,
+      "completed": 5159
+    },
+    {
+      "atMs": 27050.785042,
+      "durationMs": 9.450624942779541,
+      "major": false,
+      "heap": 20376832,
+      "completed": 5226
+    },
+    {
+      "atMs": 27607.697292,
+      "durationMs": 9.099250078201294,
+      "major": false,
+      "heap": 20960040,
+      "completed": 5293
+    },
+    {
+      "atMs": 28179.336,
+      "durationMs": 8.716417074203491,
+      "major": false,
+      "heap": 21490128,
+      "completed": 5360
+    },
+    {
+      "atMs": 28754.21325,
+      "durationMs": 9.560874938964844,
+      "major": false,
+      "heap": 22024360,
+      "completed": 5427
+    },
+    {
+      "atMs": 29337.482834000002,
+      "durationMs": 9.460291028022766,
+      "major": false,
+      "heap": 22553800,
+      "completed": 5494
+    },
+    {
+      "atMs": 30015.828917,
+      "durationMs": 9.347291946411133,
+      "major": false,
+      "heap": 23096864,
+      "completed": 5561
+    },
+    {
+      "atMs": 30602.933875000002,
+      "durationMs": 9.498959064483643,
+      "major": false,
+      "heap": 23622360,
+      "completed": 5628
+    },
+    {
+      "atMs": 31150.798084000002,
+      "durationMs": 8.779374957084656,
+      "major": false,
+      "heap": 24189080,
+      "completed": 5695
+    },
+    {
+      "atMs": 31646.481209,
+      "durationMs": 8.556707978248596,
+      "major": false,
+      "heap": 24794952,
+      "completed": 5762
+    },
+    {
+      "atMs": 32163.41225,
+      "durationMs": 8.424749970436096,
+      "major": false,
+      "heap": 25223240,
+      "completed": 5828
+    },
+    {
+      "atMs": 32553.008125,
+      "durationMs": 0.20254206657409668,
+      "major": false,
+      "heap": 36225928,
+      "completed": 5881
+    },
+    {
+      "atMs": 32559.64125,
+      "durationMs": 7.937374949455261,
+      "major": true,
+      "heap": 17117688,
+      "completed": 5881
+    },
+    {
+      "atMs": 33060.785708999996,
+      "durationMs": 8.470624923706055,
+      "major": false,
+      "heap": 17749024,
+      "completed": 5948
+    },
+    {
+      "atMs": 33570.4915,
+      "durationMs": 8.674584031105042,
+      "major": false,
+      "heap": 18277736,
+      "completed": 6015
+    },
+    {
+      "atMs": 34094.938083999994,
+      "durationMs": 9.09137499332428,
+      "major": false,
+      "heap": 18798960,
+      "completed": 6082
+    },
+    {
+      "atMs": 34615.261333999995,
+      "durationMs": 8.601208090782166,
+      "major": false,
+      "heap": 19296792,
+      "completed": 6149
+    },
+    {
+      "atMs": 35141.854167,
+      "durationMs": 8.74970805644989,
+      "major": false,
+      "heap": 19789584,
+      "completed": 6216
+    },
+    {
+      "atMs": 35660.806791999996,
+      "durationMs": 8.582374930381775,
+      "major": false,
+      "heap": 20357560,
+      "completed": 6283
+    },
+    {
+      "atMs": 36184.731042,
+      "durationMs": 8.890625,
+      "major": false,
+      "heap": 20871744,
+      "completed": 6350
+    },
+    {
+      "atMs": 36720.134542,
+      "durationMs": 8.819833040237427,
+      "major": false,
+      "heap": 21403296,
+      "completed": 6417
+    },
+    {
+      "atMs": 37246.457583999996,
+      "durationMs": 8.429916024208069,
+      "major": false,
+      "heap": 21961688,
+      "completed": 6484
+    },
+    {
+      "atMs": 37782.302708999996,
+      "durationMs": 8.635540962219238,
+      "major": false,
+      "heap": 22455600,
+      "completed": 6551
+    },
+    {
+      "atMs": 38327.757459,
+      "durationMs": 8.51449990272522,
+      "major": false,
+      "heap": 22983568,
+      "completed": 6618
+    },
+    {
+      "atMs": 38876.674792,
+      "durationMs": 8.653374910354614,
+      "major": false,
+      "heap": 23508992,
+      "completed": 6685
+    },
+    {
+      "atMs": 39415.536458999995,
+      "durationMs": 8.33004105091095,
+      "major": false,
+      "heap": 24011160,
+      "completed": 6752
+    },
+    {
+      "atMs": 39957.615,
+      "durationMs": 8.48941695690155,
+      "major": false,
+      "heap": 24599592,
+      "completed": 6819
+    },
+    {
+      "atMs": 40526.312291999995,
+      "durationMs": 8.922749996185303,
+      "major": false,
+      "heap": 25089896,
+      "completed": 6886
+    },
+    {
+      "atMs": 41095.765959,
+      "durationMs": 8.330708026885986,
+      "major": false,
+      "heap": 25630104,
+      "completed": 6953
+    },
+    {
+      "atMs": 41104.107625,
+      "durationMs": 0.08091700077056885,
+      "major": false,
+      "heap": 25630760,
+      "completed": 6953
+    },
+    {
+      "atMs": 41106.375374999996,
+      "durationMs": 0.652999997138977,
+      "major": true,
+      "heap": 17183440,
+      "completed": 6954
+    },
+    {
+      "atMs": 41657.090041999996,
+      "durationMs": 8.831624984741211,
+      "major": false,
+      "heap": 17836592,
+      "completed": 7021
+    },
+    {
+      "atMs": 42226.518208999994,
+      "durationMs": 8.774333000183105,
+      "major": false,
+      "heap": 18236232,
+      "completed": 7087
+    },
+    {
+      "atMs": 42788.202999999994,
+      "durationMs": 8.709209084510803,
+      "major": false,
+      "heap": 18793304,
+      "completed": 7154
+    },
+    {
+      "atMs": 43345.362917,
+      "durationMs": 8.419708013534546,
+      "major": false,
+      "heap": 19315056,
+      "completed": 7221
+    },
+    {
+      "atMs": 43911.531708999995,
+      "durationMs": 8.322333097457886,
+      "major": false,
+      "heap": 19814848,
+      "completed": 7288
+    },
+    {
+      "atMs": 44473.768334,
+      "durationMs": 8.761083006858826,
+      "major": false,
+      "heap": 20368296,
+      "completed": 7355
+    },
+    {
+      "atMs": 45036.7795,
+      "durationMs": 8.794584035873413,
+      "major": false,
+      "heap": 20954264,
+      "completed": 7422
+    },
+    {
+      "atMs": 45609.732874999994,
+      "durationMs": 8.760792016983032,
+      "major": false,
+      "heap": 21429600,
+      "completed": 7488
+    },
+    {
+      "atMs": 46190.909125,
+      "durationMs": 8.714416980743408,
+      "major": false,
+      "heap": 21926744,
+      "completed": 7555
+    },
+    {
+      "atMs": 46777.518249999994,
+      "durationMs": 8.502917051315308,
+      "major": false,
+      "heap": 22456048,
+      "completed": 7622
+    },
+    {
+      "atMs": 47358.916084,
+      "durationMs": 8.72683298587799,
+      "major": false,
+      "heap": 23005648,
+      "completed": 7689
+    },
+    {
+      "atMs": 47948.496625,
+      "durationMs": 8.46025002002716,
+      "major": false,
+      "heap": 23552344,
+      "completed": 7756
+    },
+    {
+      "atMs": 48536.020291999994,
+      "durationMs": 8.77620792388916,
+      "major": false,
+      "heap": 24080952,
+      "completed": 7823
+    },
+    {
+      "atMs": 49139.198041999996,
+      "durationMs": 8.793416976928711,
+      "major": false,
+      "heap": 24612688,
+      "completed": 7890
+    },
+    {
+      "atMs": 49745.057167,
+      "durationMs": 8.446999907493591,
+      "major": false,
+      "heap": 25139432,
+      "completed": 7957
+    },
+    {
+      "atMs": 50341.681709,
+      "durationMs": 8.758457899093628,
+      "major": false,
+      "heap": 25633632,
+      "completed": 8024
+    },
+    {
+      "atMs": 50354.837416999995,
+      "durationMs": 0.07949995994567871,
+      "major": false,
+      "heap": 25798432,
+      "completed": 8025
+    },
+    {
+      "atMs": 50363.587042,
+      "durationMs": 0.9252079725265503,
+      "major": true,
+      "heap": 17134016,
+      "completed": 8025
+    },
+    {
+      "atMs": 50975.577874999995,
+      "durationMs": 8.517374992370605,
+      "major": false,
+      "heap": 17771384,
+      "completed": 8092
+    },
+    {
+      "atMs": 51590.103417,
+      "durationMs": 8.823874950408936,
+      "major": false,
+      "heap": 18292464,
+      "completed": 8159
+    },
+    {
+      "atMs": 52270.459708999995,
+      "durationMs": 8.83174991607666,
+      "major": false,
+      "heap": 18824856,
+      "completed": 8226
+    },
+    {
+      "atMs": 52892.157834,
+      "durationMs": 8.728624939918518,
+      "major": false,
+      "heap": 19448576,
+      "completed": 8293
+    },
+    {
+      "atMs": 53515.032209,
+      "durationMs": 8.339582920074463,
+      "major": false,
+      "heap": 19875288,
+      "completed": 8359
+    },
+    {
+      "atMs": 54142.926667,
+      "durationMs": 8.58983302116394,
+      "major": false,
+      "heap": 20403608,
+      "completed": 8426
+    },
+    {
+      "atMs": 54781.084749999995,
+      "durationMs": 8.468791961669922,
+      "major": false,
+      "heap": 20928256,
+      "completed": 8493
+    },
+    {
+      "atMs": 55408.404209,
+      "durationMs": 8.466832995414734,
+      "major": false,
+      "heap": 21519880,
+      "completed": 8560
+    },
+    {
+      "atMs": 56084.176999999996,
+      "durationMs": 8.41729199886322,
+      "major": false,
+      "heap": 21968968,
+      "completed": 8626
+    },
+    {
+      "atMs": 56730.177666999996,
+      "durationMs": 8.565541982650757,
+      "major": false,
+      "heap": 22492632,
+      "completed": 8693
+    },
+    {
+      "atMs": 57374.942124999994,
+      "durationMs": 8.624000072479248,
+      "major": false,
+      "heap": 23027752,
+      "completed": 8760
+    },
+    {
+      "atMs": 58031.395459,
+      "durationMs": 8.453749895095825,
+      "major": false,
+      "heap": 23513912,
+      "completed": 8827
+    },
+    {
+      "atMs": 58696.09,
+      "durationMs": 8.821583986282349,
+      "major": false,
+      "heap": 24075752,
+      "completed": 8894
+    },
+    {
+      "atMs": 59361.915499999996,
+      "durationMs": 8.469375014305115,
+      "major": false,
+      "heap": 24573112,
+      "completed": 8961
+    },
+    {
+      "atMs": 60028.666958999995,
+      "durationMs": 8.546832919120789,
+      "major": false,
+      "heap": 25096760,
+      "completed": 9028
+    },
+    {
+      "atMs": 60658.20175,
+      "durationMs": 0.0953749418258667,
+      "major": false,
+      "heap": 38029104,
+      "completed": 9090
+    },
+    {
+      "atMs": 60668.649667,
+      "durationMs": 8.918874979019165,
+      "major": true,
+      "heap": 16190704,
+      "completed": 9091
+    },
+    {
+      "atMs": 61341.326209,
+      "durationMs": 8.686000108718872,
+      "major": false,
+      "heap": 16789576,
+      "completed": 9158
+    },
+    {
+      "atMs": 62021.29612499999,
+      "durationMs": 8.920416951179504,
+      "major": false,
+      "heap": 17361888,
+      "completed": 9225
+    },
+    {
+      "atMs": 62706.771416999996,
+      "durationMs": 8.62833297252655,
+      "major": false,
+      "heap": 17890480,
+      "completed": 9292
+    },
+    {
+      "atMs": 63437.047709,
+      "durationMs": 8.966416001319885,
+      "major": false,
+      "heap": 18466192,
+      "completed": 9359
+    },
+    {
+      "atMs": 64148.930167,
+      "durationMs": 8.536875009536743,
+      "major": false,
+      "heap": 18928248,
+      "completed": 9425
+    },
+    {
+      "atMs": 64853.504917,
+      "durationMs": 8.719291925430298,
+      "major": false,
+      "heap": 19461664,
+      "completed": 9492
+    },
+    {
+      "atMs": 65564.445959,
+      "durationMs": 8.579457998275757,
+      "major": false,
+      "heap": 19995784,
+      "completed": 9559
+    },
+    {
+      "atMs": 66277.646542,
+      "durationMs": 8.638208031654358,
+      "major": false,
+      "heap": 20489456,
+      "completed": 9626
+    },
+    {
+      "atMs": 66992.054,
+      "durationMs": 8.824458956718445,
+      "major": false,
+      "heap": 21019736,
+      "completed": 9693
+    },
+    {
+      "atMs": 67775.155417,
+      "durationMs": 10.375917077064514,
+      "major": false,
+      "heap": 21536528,
+      "completed": 9760
+    },
+    {
+      "atMs": 68501.03979200001,
+      "durationMs": 9.035625100135803,
+      "major": false,
+      "heap": 22061192,
+      "completed": 9827
+    },
+    {
+      "atMs": 69215.39454200001,
+      "durationMs": 8.451958060264587,
+      "major": false,
+      "heap": 22630680,
+      "completed": 9894
+    },
+    {
+      "atMs": 69918.035042,
+      "durationMs": 8.38670790195465,
+      "major": false,
+      "heap": 23214016,
+      "completed": 9961
+    }
+  ],
+  "scope": "Generated accelerated retention diagnostic; heap at natural GC notification is an observation, not a retained-size proof or production latency benchmark."
+}

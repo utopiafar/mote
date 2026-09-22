@@ -2,7 +2,7 @@ import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Conversations,type Conversation} from './conversations.js';
 import {Store,StoreError,sha256} from './store.js';
-import type {LifecycleSettings} from './memory-lifecycle.js';
+import type {LifecycleExecution,LifecycleSettings} from './memory-lifecycle.js';
 
 type Summary={text:string;coveredTurns:number;generatedAt:string;fingerprint:string};
 export class WorkingMemory {
@@ -20,7 +20,7 @@ export class WorkingMemory {
     const result=this.conversations.context(tail,20,settings.contextCharacters-(summary?.text.length??0));
     return {...result,omittedTurns:tail.turns.filter(t=>t.status!=='failed'&&t.result).length-result.turns.length,...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
   }
-  async prepare(conversation:Conversation,settings:LifecycleSettings,question:string,query:(input:QueryInput)=>Promise<QueryResult>){
+  async prepare(conversation:Conversation,settings:LifecycleSettings,question:string,query:(input:QueryInput)=>Promise<QueryResult>,execution?:Pick<LifecycleExecution,'signal'|'commit'>){
     // Current input consumes the same host dialogue budget. Never silently drop
     // an unsummarized prefix: compact it first, or surface the provider failure.
     const available=Math.max(settings.summaryCharacters+1000,settings.contextCharacters-question.length);
@@ -30,17 +30,17 @@ export class WorkingMemory {
       if(context.omittedTurns===0&&!context.turns.some(t=>t.answerTruncated))return context;
       const before=this.get(current)?.coveredTurns??0;
       const truncated=current.turns.findIndex((t,i)=>i>=before&&Boolean(t.result&&t.result.answer.length>20000));
-      await this.compact(conversation.id,{...scoped,recentTurns:0},query,Math.max(before+1,current.turns.length-context.turns.length,truncated+1));
+      await this.compact(conversation.id,{...scoped,recentTurns:0},query,Math.max(before+1,current.turns.length-context.turns.length,truncated+1),execution);
       if((this.get(this.conversations.get(conversation.id))?.coveredTurns??0)<=before)throw new StoreError('Unable to compact conversation within context budget',502);
     }
     throw new StoreError('Conversation context exceeds its budget',413);
   }
-  async compact(id:string,settings:LifecycleSettings,query:(input:QueryInput)=>Promise<QueryResult>,targetEnd?:number){
+  async compact(id:string,settings:LifecycleSettings,query:(input:QueryInput)=>Promise<QueryResult>,targetEnd?:number,execution?:Pick<LifecycleExecution,'signal'|'commit'>){
     const running=this.active.get(id);if(running){await running;return;}
-    const task=this.compactPrefix(id,settings,query,targetEnd);this.active.set(id,task);
+    const task=this.compactPrefix(id,settings,query,targetEnd,execution);this.active.set(id,task);
     try{await task;}finally{this.active.delete(id);}
   }
-  private async compactPrefix(id:string,settings:LifecycleSettings,query:(input:QueryInput)=>Promise<QueryResult>,targetEnd?:number){
+  private async compactPrefix(id:string,settings:LifecycleSettings,query:(input:QueryInput)=>Promise<QueryResult>,targetEnd?:number,execution?:Pick<LifecycleExecution,'signal'|'commit'>){
     if(!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id))return;
     const conversation=this.conversations.get(id),previous=this.get(conversation),start=previous?.coveredTurns??0,end=targetEnd??conversation.turns.length-settings.recentTurns;
     if(end<=start)return;
@@ -74,9 +74,11 @@ export class WorkingMemory {
       if(!result.answer.trim()||result.answer.length>settings.summaryCharacters)throw new StoreError('Working summary exceeds its budget',502);
       summaryText=result.answer;
     }
+    const commit=()=>{
     if(this.store.deletionRevision()!==revision||!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)||this.fingerprint(this.conversations.get(id),count)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
     const json=JSON.stringify({text:summaryText,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint});
     this.store.reserveMetadata(Buffer.byteLength(json));
     this.store.db.prepare('INSERT INTO working_memories VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,json);
+    };if(execution)execution.commit(commit);else commit();
   }
 }

@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import sharp, { type Metadata } from 'sharp';
 import {z} from 'zod';
 import { sourceConnectionSchema, sourceItemSchema, captureSchema, captureOcrState, type CapturePreview, type OcrState, type CaptureInput, type CaptureRecord, type Heartbeat, type DeviceRecord, type Activity } from '@mote/shared';
-import {privateDirectory,privateFile} from './private-storage.js';
+import {privateDirectory,privateSqliteFile} from './private-storage.js';
 import {mediaActivity,type MediaActivityRange} from './media-activity.js';
 import {ArchivedFileStore} from './archived-files.js';
 import {ContentEncryption,replaceContentFile} from './content-encryption.js';
@@ -45,8 +45,8 @@ export class EvidenceStore {
   constructor(public directory:string, private options:{dataKey?:string;contentEncryptionEnabled?:boolean;maxStorageBytes?:number;embeddingEnabled?:boolean;maintenance?:boolean}={}) {
     privateDirectory(directory);
     this.blobsDir=join(directory,'blobs'); privateDirectory(this.blobsDir);
-    privateFile(join(directory,'mote.sqlite'),true);
-    for(const suffix of ['-wal','-shm','-journal'])privateFile(join(directory,`mote.sqlite${suffix}`));
+    privateSqliteFile(join(directory,'mote.sqlite'),true);
+    for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new DatabaseSync(join(directory,'mote.sqlite'));
     ensureTodoSchema(this.db);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;

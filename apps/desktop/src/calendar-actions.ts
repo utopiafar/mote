@@ -6,7 +6,7 @@ import {moteActionMarker,calendarEventSchema,calendarDescription,type ActionProp
 import {calendarHelper} from './source-calendar';
 import {validateServerUrl} from './config';
 import type {Config} from './contracts';
-export interface CalendarActionIO {request:(path:string,body?:unknown)=>Promise<any>;native:(command:'calendar-permission'|'calendar-create',input?:unknown)=>Promise<any>;read:(key:string)=>Promise<string|undefined>;write:(key:string,value:string)=>Promise<void>}
+export interface CalendarActionIO {request:(path:string,body?:unknown)=>Promise<any>;native:(command:'calendar-permission'|'calendar-create'|'calendar-change',input?:unknown)=>Promise<any>;read:(key:string)=>Promise<string|undefined>;write:(key:string,value:string)=>Promise<void>}
 /** Native ledger is written before creation; a crash can only reconcile, never blindly insert again. */
 const executionQueues=new Map<unknown,Promise<unknown>>();
 export class CalendarActions {
@@ -16,15 +16,15 @@ export class CalendarActions {
  async deliver(){if(await this.io.read('enabled')!=='1')return;const data=await this.io.request('/api/actions/deliveries?deviceId='+encodeURIComponent(this.config.deviceId));for(const a of data.items)await this.execute(a.id);}
  execute(id:string){return this.serial(async()=>{
   if(!/^[0-9a-f-]{36}$/i.test(id))throw Error(moteText("日程编号无效"));
-  const action=await this.io.request(`/api/actions/${id}/claim`,{deviceId:this.config.deviceId}) as ActionProposal;
-  if(action.id!==id||action.kind!=='calendar.create'||action.target?.deviceId!==this.config.deviceId||!action.operationId)throw Error(moteText("日程确认信息无效"));
+  const action=await this.io.request(`/api/actions/${id}/claim`,{deviceId:this.config.deviceId}) as ActionProposal&{mutationAllowed?:boolean};
+  if(action.id!==id||!['calendar.create','calendar.update','calendar.cancel'].includes(action.kind)||action.target?.deviceId!==this.config.deviceId||!action.operationId)throw Error(moteText("日程确认信息无效"));
   moteActionMarker(action.operationId);
   if(action.status==='succeeded')return;
   if(!['executing','uncertain'].includes(action.status))throw Error(moteText("日程尚未获准执行"));
-  calendarEventSchema.parse(action.event);
+  calendarEventSchema.parse(action.event);if(action.kind!=='calendar.create'&&(!action.related?.externalId||action.related.target?.deviceId!==this.config.deviceId||action.related.target.calendarId!==action.target.calendarId))throw Error(moteText('原日程确认信息无效'));
   const previous=await this.io.read(action.operationId);let externalId=previous&&previous!=='attempting'?previous:undefined;
   try{
-   if(!externalId){await this.io.write(action.operationId,'attempting');const result=await this.io.native('calendar-create',{id:action.id,calendarId:action.target.calendarId,...action.event,description:calendarDescription(action),createAllowed:!previous});if(typeof result.externalId!=='string'||!result.externalId)throw Error(moteText("保存结果待核实，请查看系统日历后重试"));externalId=result.externalId;await this.io.write(action.operationId,externalId!);}
+   if(!externalId){await this.io.write(action.operationId,'attempting');const result=action.kind==='calendar.create'?await this.io.native('calendar-create',{id:action.id,calendarId:action.target.calendarId,...action.event,description:calendarDescription(action),createAllowed:action.mutationAllowed===true&&!previous}):await this.io.native('calendar-change',{id:action.related!.actionId,operationId:action.operationId,kind:action.kind,externalId:action.related!.externalId,calendarId:action.target.calendarId,...action.event,description:calendarDescription(action),expected:{...action.related!.event,description:calendarDescription({id:action.related!.actionId,event:action.related!.event,operationId:action.related!.operationId})},mutationAllowed:action.mutationAllowed===true&&!previous});if(typeof result.externalId!=='string'||!result.externalId)throw Error(moteText("保存结果待核实，请查看系统日历后重试"));externalId=result.externalId;await this.io.write(action.operationId,externalId!);}
    await this.io.request(`/api/actions/${id}/receipt`,{deviceId:this.config.deviceId,operationId:action.operationId,status:'succeeded',externalId});
   }catch{await this.io.request(`/api/actions/${id}/receipt`,{deviceId:this.config.deviceId,operationId:action.operationId,status:'uncertain'}).catch(()=>{});throw Error(moteText("保存结果待核实。请检查日历权限与网络后再次核实；不会重复插入。"));}
  });}

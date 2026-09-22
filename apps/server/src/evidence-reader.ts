@@ -15,7 +15,8 @@ export {parseEvidenceRef} from '@mote/shared';
 export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
   const p=record.provenance,coding=p?.document?.coding,at=sourceContentTime(record);
   if(scope.deviceId&&record.deviceId!==scope.deviceId||scope.source&&record.source!==scope.source||scope.sourceId&&p?.sourceId!==scope.sourceId)return false;
-  for(const key of ['projectKey','repositoryKey','provider','sessionId'] as const)if(scope[key]&&coding?.[key]!==scope[key])return false;
+  const correction=record.source==='note'?record.metadata?.memoryCorrection:undefined;
+  for(const key of ['projectKey','repositoryKey','provider','sessionId'] as const)if(scope[key]&&(correction?.domain==='coding'?!correction.scopeRefs.length||correction.scopeRefs.some(ref=>ref[key]!==scope[key]):coding?.[key]!==scope[key]))return false;
   if(scope.after&&Date.parse(record.stateSeries?.samples?.at(-1)?.at??at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))return false;
   if(scope.appId!==undefined&&(record.source==='media'?!record.metadata?.media?.sessions.some(s=>s.appId===scope.appId):record.appId!==scope.appId))return false;
   if(scope.collection==='activity'&&record.privacy.collection!=='activity'||scope.collection==='content'&&(record.source==='activity'||record.privacy.collection==='activity'))return false;
@@ -39,7 +40,7 @@ export class EvidenceReader {
   }
   memory(ref:string,scope:Range={}){
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
-    return this.memoryPage({...scope,id:parsed.id,includeStale:true,level:'detail',limit:1}).items[0];
+    return this.memoryPage({...scope,id:parsed.id,includeStale:true,includeHistory:true,level:'detail',limit:1}).items[0];
   }
   memoryPage(args:Parameters<MemoryStore['page']>[0]&Range={}){
     const id=args.id===undefined?undefined:evidenceRefId(args.id,'memory');

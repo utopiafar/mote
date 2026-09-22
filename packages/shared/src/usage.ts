@@ -1,6 +1,9 @@
 import { moteText } from './i18n.js';
 /** Provider-reported quantities. Optional buckets are unknown, never assumed zero. */
 export interface TokenUsage {
+  /** Codex reports thread totals without underlying request counts. */
+  measurement?: 'thread_cumulative';
+  complete?: boolean;
   requests: number;
   reportedRequests: number;
   inputTokens: number;
@@ -9,6 +12,9 @@ export interface TokenUsage {
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
   reasoningTokens?: number;
+}
+export function hasCompleteTokenUsage(value:TokenUsage|undefined):value is TokenUsage {
+  return Boolean(value&&(value.measurement==='thread_cumulative'?value.complete===true:value.requests>0&&value.requests===value.reportedRequests));
 }
 export interface UsageReceipt {
   id: string;
@@ -36,6 +42,9 @@ export interface ModelPrice {
 
 /** Host-assigned execution identity, never inferred from question or evidence text. */
 export interface UsageAttribution {
+  operationId?: string;
+  jobId?: string;
+  requestId?: string;
   agentId: string;
   moduleId: string;
   /** null means no primary skill; absent attribution means historical/unknown. */
@@ -66,6 +75,7 @@ export interface UsageTotals {
   cacheReadTokens: number;
   cacheHitRate: number | null;
   unknownUsage: number;
+  unknownRequestCounts?: number;
   unknownCache: number;
   unpriced: number;
   costs: Record<string, number | null>;

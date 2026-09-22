@@ -1,3 +1,4 @@
+import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import { moteText } from './i18n.js';
 import {filePolicySchema,fileProcessingSchema,resolveFileRule,matchesFileType,type FilePolicy,type FileProcessingSettings,type ProcessingProfile,type ProcessingService,type PolicyRule} from '@mote/shared';
 import {type ProcessorRegistry,isLoopback} from './file-processors.js';
@@ -12,7 +13,7 @@ export function migrateFilePolicy(s:FileProcessingSettings,registry:ProcessorReg
     const local=processorId==='audio.local-dialogue',plugin=registry.list().find(p=>p.id===processorId),id=processorId==='archive'?'archive':`profile.${processorId.length<=90?processorId:sha256(processorId).slice(0,40)}`;
     profiles.push({id,name:processorId==='archive'?moteText("仅归档原件"):plugin?.name??processorId,processorId,parameters:local?{speakerCount:s.speakerCount,semanticTurns:s.semanticTurns}:{},diarizationProcessor:s.diarizationProcessor,
       ...(plugin?.serviceKind==='asr'?{serviceId:local?'asr-local':'asr-api'}:plugin?.serviceKind==='image'&&s.imageEndpoint?{serviceId:'image-api'}:{}),...(local&&s.localModelName?{modelServiceId:'model-local'}:{}),summarize:!local&&processorId!=='archive'&&s.summarize});return id;};
-  const rules:PolicyRule[]=[{type:'audio/*',profileId:add(s.audioProcessor)},{type:'image/*',profileId:add(s.imageProcessor)},{type:'text/*',profileId:add('text.utf8')},{type:'application/pdf',profileId:add('archive')},{type:'*/*',profileId:add('archive')}];add('audio.local-dialogue');
+  const rules:PolicyRule[]=[{type:'audio/*',profileId:add(s.audioProcessor)},{type:'image/*',profileId:add(s.imageProcessor)},{type:'text/*',profileId:add('text.utf8')},...DOCUMENT_MIME_TYPES.map(type=>({type,profileId:add('document.generic')})),{type:'*/*',profileId:add('archive')}];add('audio.local-dialogue');
   for(const [type,processor] of Object.entries(s.typeProfiles)){const rule=rules.find(r=>r.type===type);if(rule)rule.profileId=add(processor);else rules.push({type,profileId:add(processor)});}
   for(const [sourceId,processor] of Object.entries(s.sourceProfiles)){if(processor==='inherit')continue;const types=processor==='archive'?['*/*']:registry.list().find(p=>p.id===processor)?.mediaTypes??['*/*'];for(const type of types)rules.push({sourceId,type:type.endsWith('/')?type+'*':type,profileId:add(processor)});}
   return {version:1,services,profiles,rules};
