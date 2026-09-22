@@ -5224,5 +5224,15 @@ export const english: Readonly<Record<string, string>> = {
   "任务类型": "Task type",
   "进度连接暂时中断，正在自动重连。": "Progress connection interrupted. Reconnecting automatically.",
   "更新时间": "Updated",
-  "上下文步骤操作": "Context step controls"
+  "上下文步骤操作": "Context step controls",
+  "处理服务拒绝了凭据，请检查服务权限与密钥。": "The processing service rejected the credentials. Check its permissions and API key.",
+  "处理服务地址不可用，请检查端点配置。": "The processing endpoint is unavailable. Check its configuration.",
+  "处理服务返回了重定向，请配置最终服务地址。": "The processing service redirected the request. Configure its final address.",
+  "处理服务正在限流，请等待允许重试的时间。": "The processing service is rate-limiting requests. Wait until retry is allowed.",
+  "处理服务暂时不可用，请稍后重试。": "The processing service is temporarily unavailable. Try again later.",
+  "处理服务报告请求超时，请稍后重试。": "The processing service reported a request timeout. Try again later.",
+  "无法连接处理服务，请检查网络与服务地址。": "Cannot connect to the processing service. Check the network and endpoint.",
+  "处理服务拒绝了内容大小，请缩小本次处理范围。": "The processing service rejected the content size. Reduce the processing scope.",
+  "处理服务不支持此内容格式。": "The processing service does not support this content format.",
+  "处理服务拒绝了请求参数，请检查处理配置。": "The processing service rejected the request parameters. Check the processing configuration."
 };

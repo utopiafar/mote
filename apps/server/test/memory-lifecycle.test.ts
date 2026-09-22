@@ -147,3 +147,11 @@ test('cross-turn summaries persist and consume only newly uncovered turns, with 
  store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.question','Generated edited constraint') WHERE conversation_id=? AND idx=0").run(id!);
  assert.equal(reopened.get(conversations.get(id!)),undefined,'An edited source turn retires the persisted summary');
 });
+
+test('provider Retry-After survives lifecycle restart and exceeds the ordinary backoff when required',async t=>{
+ const {ProviderFailure}=await import('@mote/shared');const store=fixture(t);let now=6*3600000,calls=0;let lifecycle=new MemoryLifecycle(store,()=>true,()=>now);
+ lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){calls++;throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:86400000});}});
+ for(let i=0;i<25;i++)event(store);await lifecycle.tick();assert.equal(calls,1);assert.equal(lifecycle.view().extensions[0].retryAt,now+86400000);assert.equal(lifecycle.view().extensions[0].error,'rate_limited');await lifecycle.close();
+ lifecycle=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>lifecycle.close());lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){calls++;}});
+ now+=86399999;await lifecycle.tick();assert.equal(calls,1);now++;await lifecycle.tick();assert.equal(calls,2);assert.equal(lifecycle.view().extensions[0].pendingChanges,0);
+});

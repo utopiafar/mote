@@ -334,9 +334,13 @@
       "evidence": [
         "apps/server/test/architecture-upgrade.test.ts",
         "apps/server/test/perception.test.ts",
-        "apps/server/test/memory-pipeline.test.ts"
+        "apps/server/test/memory-pipeline.test.ts",
+        "packages/shared/src/provider-failure.ts",
+        "packages/agent/src/model-transport-observer.ts",
+        "packages/agent/test/provider-failure.test.mjs",
+        "apps/server/test/provider-failure.test.ts"
       ],
-      "remaining": "各引擎已有提交防护；跨引擎错误分类、预算等待和重试协议仍未统一。"
+      "remaining": "处理器与 Harness 已传递类型化 HTTP 失败及 Retry-After，并由宿主控制重试；尚需全局 provider 预算/冷却、最长恢复窗口和无 HTTP 状态的 Codex 错误协议。"
     },
     {
       "id": "JOB-04",

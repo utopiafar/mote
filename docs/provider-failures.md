@@ -1,0 +1,13 @@
+# Provider failures and host retry
+
+Provider error bodies are never used to decide recovery. `ProviderFailure` carries host-selected categories and codes derived from HTTP status: authentication/endpoint/redirect failures need configuration, rate limits and temporary server/network failures may retry, and invalid requests or unsupported sizes/formats are permanent for that input. Retry-After accepts bounded integer seconds or an HTTP date, capped at seven days.
+
+Direct file/image processors cancel error bodies before parsing and pass this structured failure to the shared executor. The engine persists the reason and next eligible time. A blocked service does not consume additional attempts merely because the executor is ticked, and unrelated operations keep running.
+
+Query and import Harness sessions report only status and Retry-After over a private loopback channel to the host. The channel is authenticated, bounded and not registered as a model tool; it accepts no endpoint, body or credential fields. The runtime cancels the provider error body and returns a fixed non-retryable SDK response after reporting it, so the host decides subsequent retry. Explicitly aborted requests retain the existing cancellation/deadline path. Protocols that provide no structured status, including the current Codex App Server error path, remain generic provider failures; free-form SDK messages are not inspected.
+
+Memory preserves the provider failure through its extraction/review boundary. Authentication waits finish the caller's observation cleanly and can resume after configuration repair. Failed Memory batches retain a provider retry deadline; a premature manual retry cannot bypass it. Scheduled extraction propagates that deadline to lifecycle backoff, including after restart. This does not introduce global per-provider quotas, money/token reservations, or a new automatic retry policy for all Memory failures.
+
+Owner API responses use fixed localized explanations and recovery metadata. Provider authentication failures return 502 rather than invalidating the owner's Mote login; explicit retry delays also appear in Retry-After. Diagnostic exports never include provider response text.
+
+Validation uses generated content only: real Harness against synthetic local HTTP services checks 401/429/503 under both OpenAI Completions and DeepSeek transports, plus an import failure, with exactly one outbound model request per case. Shared tests validate date/delay bounds; executor tests verify attempts, persistence and independent work; Memory tests verify actionable waits, repaired credentials, zero premature retries/checkpoints and restarted lifecycle deferral. No additional live model or personal data was used.

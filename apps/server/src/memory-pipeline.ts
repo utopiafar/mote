@@ -6,7 +6,7 @@ import {memoryProfile} from './memory-profiles.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {modelProfileIdSchema} from './model-settings.js';
-import {executionEnvelope,type ExecutionEnvelope,type QueryResult} from '@mote/shared';
+import {ProviderFailure,executionEnvelope,type ExecutionEnvelope,type QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION,memoryEvidenceFingerprint,type EvidenceRange} from './memory.js';
 
@@ -16,9 +16,9 @@ export type MemoryValidationFailure={at:string;code:string;phase:'extract'|'revi
 export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;batchId:string;batchIndex:number};
 
 type Chunk=EvidenceRange&{profile?:'personal'|'coding';profileVersion?:string;group?:string;fingerprint:string;key:string};
-export type MemoryBatch={id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope};
+export type MemoryBatch={id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];availableAt?:number;errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope};
 type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];skillVersion?:string};
-export type MemoryJob={artifactRefs?:{id:string;revision:string}[];language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
+export type MemoryJob={artifactRefs?:{id:string;revision:string}[];language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
 export type MemoryPipelineOptions={executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
@@ -98,13 +98,13 @@ export class MemoryPipeline {
     const memoryIds=[...new Set(batches.flatMap(b=>b.memoryIds))].filter(memoryId=>this.store.db.prepare('SELECT id FROM memories WHERE id=?').get(memoryId));
     const status=job.status==='completed'&&failedBatches?'failed':job.status==='queued'&&batches.some(b=>b.status==='running')?'running':job.status,attempts=batches.reduce((sum,b)=>sum+b.attempts,0);
     return {...job,status,queuePosition:this.queuePosition(id),runningBatches:batches.filter(b=>b.status==='running').length,pendingBatches:batches.filter(b=>b.status==='pending').length,lastSavedAt:(this.store.db.prepare("SELECT max(created_at) AS at FROM memories WHERE id IN (SELECT value FROM json_each(?))").get(JSON.stringify(memoryIds)) as {at?:string})?.at??undefined,totalBatches:batches.length,completedBatches:batches.filter(b=>b.status==='completed').length,failedBatches,memoryIds,
-      execution:executionEnvelope({status:status==='paused'?'waiting':status==='pausing'?'running':status,attempts,errorCode:job.errorCode??batches.find(b=>b.errorCode)?.errorCode,updatedAt:job.updatedAt}),
-      batches:batches.map(({chunks:_chunks,...batch})=>({...batch,execution:executionEnvelope({status:batch.status==='pending'?'queued':batch.status==='completed'?'succeeded':batch.status==='invalidated'?'skipped':batch.status,attempts:batch.attempts,errorCode:batch.errorCode})}))};
+      execution:executionEnvelope({status:status==='paused'?'waiting':status==='pausing'?'running':status,attempts,errorCode:job.errorCode??batches.find(b=>b.errorCode)?.errorCode,availableAt:job.availableAt,updatedAt:job.updatedAt}),
+      batches:batches.map(({chunks:_chunks,...batch})=>({...batch,execution:executionEnvelope({status:batch.status==='pending'?'queued':batch.status==='completed'?'succeeded':batch.status==='invalidated'?'skipped':batch.status,attempts:batch.attempts,errorCode:batch.errorCode,availableAt:batch.availableAt})}))};
   }
   list(limit=30):MemoryJob[]{return this.store.db.prepare("SELECT json_remove(json,'$.evidenceIds','$.memoryIds','$.artifactRefs') json FROM memory_jobs ORDER BY created_at DESC,id DESC LIMIT ?").all(Math.max(1,Math.min(limit,100))).map(row=>{
     const job=JSON.parse(String(row.json)) as MemoryJob;
     const counts=this.counts(job.id);
-    return {...job,status:job.status==='completed'&&Number(counts.failed)>0?'failed':job.status,evidenceIds:[],memoryIds:[],totalBatches:Number(counts.total),completedBatches:Number(counts.completed??0),failedBatches:Number(counts.failed??0),runningBatches:Number(counts.running??0),pendingBatches:Number(counts.pending??0),queuePosition:this.queuePosition(job.id),execution:executionEnvelope({status:job.status==='paused'?'waiting':job.status==='pausing'?'running':job.status,attempts:Number(counts.attempts??0),errorCode:job.errorCode,updatedAt:job.updatedAt})};
+    return {...job,status:job.status==='completed'&&Number(counts.failed)>0?'failed':job.status,evidenceIds:[],memoryIds:[],totalBatches:Number(counts.total),completedBatches:Number(counts.completed??0),failedBatches:Number(counts.failed??0),runningBatches:Number(counts.running??0),pendingBatches:Number(counts.pending??0),queuePosition:this.queuePosition(job.id),execution:executionEnvelope({status:job.status==='paused'?'waiting':job.status==='pausing'?'running':job.status,attempts:Number(counts.attempts??0),errorCode:job.errorCode,availableAt:job.availableAt,updatedAt:job.updatedAt})};
   });}
   createFromArtifacts(artifactIds:string[],importJobId:string,batchCharacters=12000){
     const artifacts=artifactIds.map(id=>this.store.archive.get(id)).filter(a=>a?.kind==='semantic');
@@ -181,6 +181,7 @@ export class MemoryPipeline {
   async retry(id:string):Promise<MemoryJobDetail> {
     if(this.active.has(id))return this.active.get(id)!;
     const job=this.storedJob(id);
+    if(job.availableAt&&job.availableAt>Date.now())throw new ProviderFailure({category:'transient',code:job.errorCode??'provider_unavailable',retryAfterMs:job.availableAt-Date.now()});
     if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
     for(const batch of this.batches(id))if(batch.status==='failed'){batch.status='pending';delete batch.errorCode;this.saveBatch(batch);}
     job.status='queued';delete job.errorCode;this.saveJob(job);return this.run(id);
@@ -197,10 +198,12 @@ export class MemoryPipeline {
     if(batch.status!=='invalidated'){
       batch.status=step.state==='succeeded'?'completed':step.state==='running'?'running':step.state==='failed'?'failed':step.state==='stale'?'invalidated':'pending';
       batch.errorCode=step.error==='input_changed'?'evidence_changed':step.error;
+      batch.availableAt=['rate_limited','provider_unavailable','provider_timeout','provider_network'].includes(step.error??'')?step.availableAt:undefined;
       if(step.state==='running'){batch.phase='extract';batch.stage='starting';batch.startedAt=new Date().toISOString();batch.lastActivityAt=batch.startedAt;}
       this.saveBatch(batch);
     }
-    if(step.state==='blocked'&&step.error==='model_unconfigured'&&!this.options.configured(job.modelProfileId)&&!['cancelled','paused','pausing'].includes(job.status)){job.status='waiting_for_model';job.errorCode='model_unconfigured';this.saveJob(job);}
+    if(step.state==='blocked'&&['model_unconfigured','provider_authentication','provider_endpoint','provider_redirect'].includes(step.error??'')&&!['cancelled','paused','pausing'].includes(job.status)){job.status='waiting_for_model';job.errorCode=step.error;this.saveJob(job);}
+    else if(['waiting','running'].includes(step.state)&&job.status==='waiting_for_model'&&this.active.has(id)){job.status='queued';delete job.errorCode;this.saveJob(job);}
     this.refreshJob(id);this.wake();
   }
   private refreshJob(id:string){
@@ -208,6 +211,7 @@ export class MemoryPipeline {
     if(job.status==='pausing'&&Number(counts.running)===0)job.status='paused';
     if(!['cancelled','paused','pausing','waiting_for_model'].includes(job.status))job.status=Number(counts.running)>0?'running':Number(counts.pending)>0?'queued':Number(counts.failed)>0?'failed':'completed';
     if(job.status!=='waiting_for_model')job.errorCode=String(this.store.db.prepare("SELECT json_extract(json,'$.errorCode') error FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','invalidated') LIMIT 1").get(id)?.error??'')||undefined;
+    job.availableAt=Number(this.store.db.prepare("SELECT max(json_extract(json,'$.availableAt')) at FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','pending')").get(id)?.at)||undefined;
     job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);this.saveJob(job);
   }
   private commitBatch(step:ExecutionStep,output:BatchOutput|undefined){
@@ -271,7 +275,7 @@ export class MemoryPipeline {
             }if(generation===0&&error instanceof MemoryOutputValidationError){feedback=error;continue;}throw error;}
         }
     }catch(error){
-      throw error instanceof ExecutionFailure?error:new ExecutionFailure(error instanceof StoreError&&error.statusCode===409?'stale':'permanent',signal.aborted?'cancelled':error instanceof StoreError&&error.statusCode===409?'evidence_changed':error instanceof StoreError&&error.statusCode===507?'storage_full':(error instanceof StoreError&&error.statusCode===502)||error instanceof AgentResponseError?'invalid_model_output':'model_failed');
+      throw error instanceof ExecutionFailure||error instanceof ProviderFailure?error:new ExecutionFailure(error instanceof StoreError&&error.statusCode===409?'stale':'permanent',signal.aborted?'cancelled':error instanceof StoreError&&error.statusCode===409?'evidence_changed':error instanceof StoreError&&error.statusCode===507?'storage_full':(error instanceof StoreError&&error.statusCode===502)||error instanceof AgentResponseError?'invalid_model_output':'model_failed');
     }
   }
   async close(){

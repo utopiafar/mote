@@ -98,12 +98,12 @@ export function canonicalRunStatus(input:LegacyExecutionInput):RunStatus {
 }
 
 function failureFor(input:LegacyExecutionInput,status:RunStatus):TaskFailure|undefined {
-  const code=stringValue(input.errorCode)??(typeof input.error==='object'&&input.error&&'code' in input?stringValue((input.error as {code?:unknown}).code):undefined);
+  const code=stringValue(input.errorCode)??(typeof input.error==='object'&&input.error&&'code' in input.error?stringValue((input.error as {code?:unknown}).code):undefined);
   if(!code)return undefined;
-  const retryable=new Set(['provider_failed','model_failed','agent_response','timeout','network','rate_limited','worker_interrupted']);
-  const waiting=new Set(['model_unconfigured','provider_unavailable','daily_budget','worker_offline','awaiting_confirmation']);
+  const retryable=new Set(['provider_failed','model_failed','agent_response','timeout','network','rate_limited','worker_interrupted','provider_unavailable','provider_timeout','provider_network']);
+  const waiting=new Set(['model_unconfigured','provider_authentication','provider_endpoint','provider_redirect','daily_budget','worker_offline','awaiting_confirmation']);
   const recovery:FailureRecovery=waiting.has(code)?'needs_action':retryable.has(code)?'auto_retry':'permanent';
-  const scope:FailureScope=waiting.has(code)&&code!=='daily_budget'?'provider':code==='worker_offline'?'system':'item';
+  const scope:FailureScope=(waiting.has(code)&&code!=='daily_budget')||['rate_limited','provider_unavailable','provider_timeout','provider_network'].includes(code)?'provider':code==='worker_offline'?'system':'item';
   const safeMessage=code==='model_unconfigured'?'Model configuration is required before this step can continue.':
     code==='daily_budget'?'The configured processing budget is exhausted for now.':
     code==='provider_unavailable'?'The configured provider is unavailable.':
@@ -116,7 +116,7 @@ function failureFor(input:LegacyExecutionInput,status:RunStatus):TaskFailure|und
 function waitFor(input:LegacyExecutionInput,status:RunStatus,failure?:TaskFailure):WaitCondition|undefined {
   if(status!=='waiting')return undefined;
   const code=failure?.code??stringValue(input.errorCode);
-  const reason:WaitReason=code==='model_unconfigured'||code==='provider_unavailable'?'provider_unavailable':
+  const reason:WaitReason=['model_unconfigured','provider_unavailable','provider_authentication','provider_endpoint','provider_redirect'].includes(code??'')?'provider_unavailable':
     code==='daily_budget'?'resource_limit':code==='awaiting_confirmation'?'user_confirmation':code==='worker_offline'?'worker_offline':
     code==='dependency'?'dependency':code==='configuration'?'configuration':'dependency';
   return {reason,...(failure?.scope==='provider'?{resource:'configured-provider'}:{}),...(failure?.retryAfterMs!==undefined?{retryAfterMs:failure.retryAfterMs}:{}),...(reason==='provider_unavailable'?{requiredAction:'update_configuration'}:{})};

@@ -285,3 +285,17 @@ test('shared engine cannot bypass explicit lifecycle activation after recovery',
  await engine.tick();assert.equal(engine.get(batchId)!.error,'awaiting_activation');assert.equal(engine.get(batchId)!.attempts,0);assert.equal(pipeline.get(job.id).completedBatches,0);
  assert.equal((await pipeline.run(job.id)).status,'completed');await engine.close();await pipeline.close();
 });
+
+test('typed provider authentication failures remain actionable without hanging or saving checkpoints',async t=>{
+ const {ProviderFailure}=await import('@mote/shared');const {store,sources,memories}=fixture(t);const capture=await sources.upsert('generated',item());let calls=0,repaired=false;
+ const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture',query:async()=>{calls++;if(!repaired)throw new ProviderFailure({category:'blocked',code:'provider_authentication'});return empty();}});
+ try{const job=pipeline.create({evidenceIds:[capture.id]}),blocked=await pipeline.run(job.id);assert.equal(blocked.status,'waiting_for_model');assert.equal(blocked.errorCode,'provider_authentication');assert.equal(calls,1);assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ repaired=true;const complete=await pipeline.retry(job.id);assert.equal(complete.status,'completed');assert.equal(calls,2);
+ }finally{await pipeline.close();}
+});
+
+test('memory keeps provider retry deadlines and refuses premature manual retry',async t=>{
+ const {ProviderFailure}=await import('@mote/shared');const {store,sources,memories}=fixture(t),capture=await sources.upsert('generated',item());let calls=0;
+ const pipeline=new MemoryPipeline({store,memories,configured:()=>true,model:()=> 'fixture',query:async()=>{calls++;throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:12000});}});
+ try{const job=pipeline.create({evidenceIds:[capture.id]}),failed=await pipeline.run(job.id);assert.equal(failed.status,'failed');assert.equal(failed.errorCode,'rate_limited');assert.ok(failed.availableAt!>Date.now());assert.ok(failed.execution!.failure!.retryAfterMs!>0);await assert.rejects(pipeline.retry(job.id),error=>error instanceof ProviderFailure&&error.details.code==='rate_limited');assert.equal(calls,1);assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);}finally{await pipeline.close();}
+});

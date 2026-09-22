@@ -1,3 +1,4 @@
+import {ProviderFailure} from '@mote/shared';
 import {validationFeedback} from './memory-validation.js';
 import { moteText } from './i18n.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -27,6 +28,17 @@ const routes = new Set(['files','file-sync','file-processing','conversations','c
 const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part','batchIndex','candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches','idleMs','elapsedMs','remainingCalls','remainingCharacters','repeatCount'] as const;
 const responseReasons:Record<string,string>={
+  provider_authentication:"处理服务拒绝了凭据，请检查服务权限与密钥。",
+  provider_endpoint:"处理服务地址不可用，请检查端点配置。",
+  provider_redirect:"处理服务返回了重定向，请配置最终服务地址。",
+  rate_limited:"处理服务正在限流，请等待允许重试的时间。",
+  provider_unavailable:"处理服务暂时不可用，请稍后重试。",
+  provider_timeout:"处理服务报告请求超时，请稍后重试。",
+  provider_network:"无法连接处理服务，请检查网络与服务地址。",
+  processing_limit:"处理服务拒绝了内容大小，请缩小本次处理范围。",
+  unsupported_format:"处理服务不支持此内容格式。",
+  provider_request_invalid:"处理服务拒绝了请求参数，请检查处理配置。",
+
   invalid_response:"模型未返回可验证的回答，请重试或检查模型配置。",
   tool_failure:"工具调用修复次数已耗尽，本次任务已停止。",
   host_validation:"模型输出未通过业务校验，当前对话内修复后仍不合规。",
@@ -84,6 +96,7 @@ function describeError(error:unknown):{status:number;category:string;message:str
   if(e.name==='ZodError')return {status:400,category:'validation',message:moteText("输入格式无效，请检查必填项和取值范围。")};
   if(e.name==='AgentNotConfiguredError')return {status:503,category:'model_not_configured',message:moteText("Agent 未配置，请在中央节点配置模型后重试。")};
   if(e.name==='AgentTimeoutError')return {status:504,category:'timeout',message:moteText("Agent 请求已超时，请稍后重试或缩小查询范围。")};
+  if(error instanceof ProviderFailure&&Object.hasOwn(responseReasons,error.details.code)){const reason=error.details.code;return {status:502,category:error.details.category==='blocked'?'model_not_configured':error.details.category==='permanent'?'validation':reason==='rate_limited'?'rate_limited':'unavailable',reason,message:moteText(responseReasons[reason])};}
   if(e.name==='AgentProviderError')return {status:502,category:'agent_response',message:moteText("模型服务请求未完成，请检查地址、凭据和模型配置。")};
   if(e.name==='AgentResponseError') {const reason=typeof e.reason==='string'&&Object.hasOwn(responseReasons,e.reason)?e.reason:'invalid_response';return {status:502,category:'agent_response',reason,message:moteText(responseReasons[reason])};}
   if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:moteText("操作已取消或超时，请稍后重试。")};

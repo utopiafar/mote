@@ -16,6 +16,7 @@ export interface MemoryJob {
   skippedChunks: number;
   memoryIds: string[];
   errorCode?: string;
+  availableAt?:number;
   skillVersion: string;
   queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;
   batches?: {id:string;index:number;status:string;attempts:number;memoryIds:string[];errorCode?:string;phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;validationFailures?:{at:string;code:string;phase:string;attempt?:number;details?:{candidateIndex?:number;spanIndex?:number}}[]}[];
@@ -64,6 +65,7 @@ export function MemoryProgress({job,onRetry,onView,busy=false,onAction}:{job:Mem
     {job.skippedChunks>0&&<p className="muted">{moteText("有")}{' '}{job.skippedChunks}{' '}{moteText("个片段已处理过或没有可提取的正文，本次未重复处理。原始资料仍可查看。")}</p>}
     {job.status==='waiting_for_model'&&<p className="muted">{moteText("在设置中配置模型后，可从这里继续。")}</p>}
     <div className="source-toolbar">{(job.status==='failed'||job.status==='waiting_for_model')&&onRetry&&<button className="button" disabled={busy} onClick={onRetry}><RefreshCw size={14}/>{moteText("继续提取记忆")}</button>}{job.memoryIds.length>0&&onView&&<button className="button subtle" onClick={onView}>{moteText("查看候选记忆")}</button>}</div>
+    {job.availableAt&&job.availableAt>Date.now()&&<p>{moteText('下次可运行时间')} · {new Date(job.availableAt).toLocaleString()}</p>}
     {job.errorCode&&<details className="run-details"><summary>{moteText("处理详情")}</summary><code>{job.errorCode}</code></details>}
   </section>;
 }

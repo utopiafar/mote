@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
-import { AgentNotConfiguredError,AgentResponseError,AgentTimeoutError } from '@mote/agent';
+import { AgentNotConfiguredError,AgentResponseError,AgentTimeoutError,AgentProviderError } from '@mote/agent';
 import { ServerDiagnostics,safeError,serializeDiagnosticEvent } from '../src/diagnostics.js';
 import { buildApp,type QueryAgent } from '../src/app.js';
 import type { Config } from '../src/config.js';
@@ -191,6 +191,8 @@ test('explicit agent timeout returns correlated 504 diagnostics while invalid an
   assert.ok(events.some(e=>e.event==='request.failed'&&e.category==='timeout'&&e.statusCode===504));
   failure=new AgentResponseError(marker);const invalid=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
   assert.equal(invalid.statusCode,502);assert.equal(invalid.json().error,'agent_response');
+  failure=new AgentProviderError({category:'blocked',code:'provider_authentication'});failure.message=marker;const auth=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(auth.statusCode,502);assert.equal(auth.json().recovery,'needs_action');assert.equal(auth.json().reason,'provider_authentication');assert.ok(!auth.body.includes(marker));
+  failure=new AgentProviderError({category:'transient',code:'rate_limited',retryAfterMs:12000});failure.message=marker;const rate=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(rate.statusCode,502);assert.equal(rate.json().retryAfterMs,12000);assert.equal(rate.headers['retry-after'],'12');assert.ok(!rate.body.includes(marker));
   const bundle=await app.inject({url:'/api/support-bundle',headers});for(const privateValue of [marker,cfg.token,cfg.apiKey])assert.ok(!bundle.body.includes(privateValue));
 });
 

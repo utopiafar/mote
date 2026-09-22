@@ -1,3 +1,4 @@
+import {ProviderFailure,providerHttpFailure} from '@mote/shared';
 import {extractUtf8} from './format-work.js';
 import { moteText } from './i18n.js';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
@@ -11,7 +12,7 @@ export interface TranscriptionProvider {
 }
 export function isLoopback(endpoint:string){try{return ['127.0.0.1','localhost','[::1]'].includes(new URL(endpoint).hostname);}catch{return false;}}
 export async function readProcessorJson(response:Response,limit=32*1024*1024){
-  if(!response.ok){await response.body?.cancel();throw new StoreError(response.status===413?'Processing limit exceeded':'Processing service failed',response.status===413?413:502);}
+  if(!response.ok){await response.body?.cancel();throw new ProviderFailure(providerHttpFailure(response.status,response.headers.get('retry-after')));}
   const reader=response.body?.getReader();if(!reader)throw new StoreError('Empty processing response',502);
   const chunks:Uint8Array[]=[];let size=0;
   try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw new StoreError('Processing response exceeds limit',502);chunks.push(value);}}

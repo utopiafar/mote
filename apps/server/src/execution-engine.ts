@@ -1,3 +1,4 @@
+import {ProviderFailure} from '@mote/shared';
 import {installOperationProjection,linkOperation,type OperationMembership} from './operation-projection.js';
 import {randomUUID,createHash} from 'node:crypto';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
@@ -154,7 +155,7 @@ export class ExecutionEngine {
     db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,updated_at=? WHERE id=? AND fence=?").run(this.now(),row.id,fence);this.project(row.id);db.exec('COMMIT');
    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }catch(error){
-   const failure=error instanceof ExecutionFailure?error:handler.classify?.(error)??new ExecutionFailure('transient','processor_failed');
+   const failure=error instanceof ExecutionFailure?error:error instanceof ProviderFailure?new ExecutionFailure(error.details.category,error.details.code,error.details.retryAfterMs):handler.classify?.(error)??new ExecutionFailure('transient','processor_failed');
    const state:ExecutionState=this.stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':failure.category==='waiting'?'waiting':failure.category==='permanent'||step.attempts>=(handler.maxAttempts??4)?'failed':'waiting';
    db.prepare('UPDATE execution_steps SET state=?,error=?,available_at=?,fence=NULL,updated_at=? WHERE id=? AND fence=?').run(state,this.stopping?'interrupted':failure.code,this.stopping?0:this.now()+(failure.retryAfterMs??Math.min(3600000,1000*2**(step.attempts-1))),this.now(),row.id,fence);this.project(row.id);
   }finally{clearInterval(renewal);}

@@ -1,7 +1,7 @@
 import {reviewMemory} from './memory-review.js';
 import { moteText } from './i18n.js';
 import type {QueryInput} from '@mote/agent';
-import type {QueryResult} from '@mote/shared';
+import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {MemoryLifecycle} from './memory-lifecycle.js';
 import {MemoryPipeline} from './memory-pipeline.js';
 import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,memoryEvidenceFingerprint} from './memory.js';
@@ -37,7 +37,10 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     const result=await (job.status==='failed'?pipeline.retry(job.id):pipeline.run(job.id));
     // Deleted/superseded inputs are intentionally retired; their new revisions
     // are later journal entries. Other failures retain this window for retry.
-    if(result.batches.some(b=>b.status!=='completed'&&b.status!=='invalidated'))throw new StoreError('Scheduled extraction is incomplete',503);
+    if(result.batches.some(b=>b.status!=='completed'&&b.status!=='invalidated')){
+      if(result.availableAt)throw new ProviderFailure({category:'transient',code:result.errorCode??'provider_unavailable',retryAfterMs:Math.max(0,result.availableAt-Date.now())});
+      throw new StoreError('Scheduled extraction is incomplete',503);
+    }
   }});
   lifecycle.register({id:'consolidation',version:'1.1.0',stream:'memory',async run(window,checkpoint){
     if(window.checkpoint==='completed')return;

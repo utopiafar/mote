@@ -1,3 +1,4 @@
+import {ProviderFailure,type ProviderFailureDetails} from '@mote/shared';
 import type {CaptureInput,SourceDocument,fileEvidenceSchema} from '@mote/shared';
 import type {MoteSkillId} from './skills.js';
 import type {ModelProtocol} from '@mote/shared/models';
@@ -214,10 +215,9 @@ export class AgentConfigurationError extends Error {
   }
 }
 
-export class AgentProviderError extends Error {
-  readonly statusCode = 502;
-  constructor() {
-    super('The model request failed. Check the endpoint, API credential, model and protocol settings.');
+export class AgentProviderError extends ProviderFailure {
+  constructor(details:ProviderFailureDetails={category:'transient',code:'provider_failed'}) {
+    super(details,'The model request failed. Check the endpoint, API credential, model and protocol settings.');
     this.name = 'AgentProviderError';
   }
 }

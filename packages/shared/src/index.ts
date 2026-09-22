@@ -167,3 +167,4 @@ export type {ProcessingJobView,ProcessingView} from './ui-contracts.js';
 export * from './source-capabilities.js';
 
 export * from './operations.js';
+export * from './provider-failure.js';

@@ -1,3 +1,4 @@
+import {observeModelTransport} from './model-transport-observer.js';
 import {CONTEXT_TOOLS} from './context-tools.js';
 import {evidenceExcerpt} from './evidence-ledger.js';
 import {assembleContext,taskTools,WORKING_SYSTEM_PROMPT} from './task-context.js';
@@ -217,10 +218,12 @@ export function createAgent(options: AgentOptions) {
       throw error;
     }
     let harness: DeepSeekHarness | undefined;
+    let transportObserver:Awaited<ReturnType<typeof observeModelTransport>>|undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let primaryFailure = false;
     let abortListener: (() => void) | undefined;
     try {
+      transportObserver=await observeModelTransport();
       await mkdir(join(root, "workspace"));
       const patch = join(root, "mote.patch.json");
       const pluginPath=join(root,"mote-plugin.mjs");
@@ -259,6 +262,7 @@ export function createAgent(options: AgentOptions) {
           DEEPSEEK_API_KEY: options.apiKey || "mote-local-no-auth",
           DEEPSEEK_BASE_URL: connection.baseUrl,
           MOTE_MODEL_API_KEY: options.apiKey || "mote-local-no-auth",
+          MOTE_MODEL_OBSERVER:JSON.stringify(transportObserver.configuration),
           MOTE_MODEL_TRANSPORT: JSON.stringify({
             baseUrl: connection.baseUrl, protocol: connection.protocol, reasoningEffort: connection.effort,
             provider: options.provider, headers: options.headers, extraBody: options.extraBody,
@@ -336,6 +340,7 @@ export function createAgent(options: AgentOptions) {
         }),
         readAnswer(),
         bridge.failure,
+        transportObserver.failure,
         ...deadline,
       ]);
       trace({type:'run.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{citations:answer.citations.map(citation=>citation.id),toolCalls:bridge.trace}});
@@ -350,7 +355,7 @@ export function createAgent(options: AgentOptions) {
       // The SDK message may contain child stderr. Class identity establishes the
       // timeout; never inspect or forward provider/runtime message text.
       if (error instanceof RequestTimeoutError) throw new AgentTimeoutError();
-      if (error instanceof AgentTimeoutError || error instanceof AgentResponseError || error instanceof AgentClosedError) throw error;
+      if (error instanceof AgentTimeoutError || error instanceof AgentResponseError || error instanceof AgentClosedError || error instanceof AgentProviderError) throw error;
       throw new AgentProviderError();
     } finally {
       modelAdmission.abort();
@@ -359,6 +364,7 @@ export function createAgent(options: AgentOptions) {
       const cleanup = await Promise.allSettled([
         Promise.resolve().then(() => harness?.close()),
         Promise.resolve().then(() => bridge.close()),
+        Promise.resolve().then(() => transportObserver?.close()),
       ]);
       if (harness) active.delete(harness);
       const removal = await Promise.allSettled([rm(root, { recursive: true, force: true })]);
