@@ -321,13 +321,13 @@ export class DurableQueue {
     await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
     this.cachedStats = undefined; this.records.set(record.event.id, record);
   }
-  async next(now = Date.now()): Promise<{ record: QueueRecord; image?: Buffer } | undefined> {
-    return (await this.nextBatch(1, now))[0];
+  async next(now = Date.now(), preferSince?:number): Promise<{ record: QueueRecord; image?: Buffer } | undefined> {
+    return (await this.nextBatch(1, now, false, preferSince))[0];
   }
-  async nextBatch(limit = 25, now = Date.now(), capturesOnly = false): Promise<{ record: QueueRecord; image?: Buffer }[]> {
+  async nextBatch(limit = 25, now = Date.now(), capturesOnly = false, preferSince?:number): Promise<{ record: QueueRecord; image?: Buffer }[]> {
     return this.exclusive(async () => {
       this.assertReady();
-      const records = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now && (!r.uploaded || (!capturesOnly && r.ocrResult !== undefined))).sort((a, b) => a.event.capturedAt.localeCompare(b.event.capturedAt));
+      const records = [...this.records.values()].filter(r => !r.syncBlocked && r.nextAttemptAt <= now && (!r.uploaded || (!capturesOnly && r.ocrResult !== undefined))).sort((a, b) => (preferSince===undefined?0:Number(Date.parse(b.event.capturedAt)>=preferSince)-Number(Date.parse(a.event.capturedAt)>=preferSince))||a.event.capturedAt.localeCompare(b.event.capturedAt));
       const result: { record: QueueRecord; image?: Buffer }[] = []; let bytes = 0;
       for (const record of records.slice(0, Math.min(25, limit))) {
         const image = record.blobHash ? await readFile(this.blobPath(record.blobHash)) : undefined;

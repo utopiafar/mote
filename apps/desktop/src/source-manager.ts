@@ -250,22 +250,32 @@ export class LocalSourceManager {
     await this.watcher.setTargets(this.sources.filter(source => source.enabled && (source.kind === 'local-files' || source.kind === 'coding-agent') && source.path).map(source => ({ sourceId: source.id, path: source.path! })));
   }
   /** Managed by the collector's one sync decision across screenshots, notes and source versions. */
-  async flushPending(signal: AbortSignal): Promise<void> {
+  async flushPending(signal: AbortSignal,betweenSlices?:()=>Promise<void>): Promise<void> {
     if (this.stopped || this.connectionHeld) return;
     await this.task;
     const controller = new AbortController(); this.controller = controller;
     const combined = AbortSignal.any([signal, controller.signal]);
     const run = async () => {
       combined.throwIfAborted();
-      for (const source of this.sources) {
-        if (!source.enabled || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
-        const engine = this.engines.get(source.id)!;
-        if (!engine.status().pending && !this.metadataDirty.has(source.id)) continue;
-        const request = this.request(combined);
-        await this.prepareSource(source, request, combined);
-        const ready = await engine.flush(sourceDefinition(source), request, combined);
-        const previous = this.states.get(source.id);
-        this.states.set(source.id, { source, skipped: 0, ...previous, ...engine.status(), state: ready === 'paused' ? 'paused' : 'idle', message: ready === 'paused' ? moteText("中央已暂停，待传版本保留在本机") : moteText("已同步；后台继续检查本地变化") });
+      // Snapshot source membership, then rotate one bounded transport slice per
+      // source. Large originals retain their server-acknowledged parts on yield.
+      let pending=[...this.sources];
+      while(pending.length){
+        const again:LocalSource[]=[];
+        for (const source of pending) {
+          combined.throwIfAborted();
+          if (!source.enabled || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
+          const engine = this.engines.get(source.id)!;
+          if (!engine.status().pending && !this.metadataDirty.has(source.id)) continue;
+          const request = this.request(combined);
+          await this.prepareSource(source, request, combined);
+          const slice = await engine.flushSlice(sourceDefinition(source), request, combined);
+          const previous = this.states.get(source.id);
+          this.states.set(source.id, { source, skipped: 0, ...previous, ...engine.status(), state: slice.state === 'paused' ? 'paused' : slice.state==='yielded'?'syncing':'idle', message: slice.state === 'paused' ? moteText("中央已暂停，待传版本保留在本机") : slice.state==='yielded'?moteText("部分内容已上传，等待下一轮同步"):moteText("已同步；后台继续检查本地变化") });
+          if(slice.state==='yielded')again.push(source);
+          await betweenSlices?.();
+        }
+        pending=again;
       }
     };
     // A hold/update can abort and await this network work, just like local scans.

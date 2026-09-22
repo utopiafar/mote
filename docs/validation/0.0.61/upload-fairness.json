@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "generatedFiles": 401,
+  "largeBytes": 20971533,
+  "turns": 7,
+  "sequence": [
+    "part:0",
+    "small-manifest",
+    "small-manifest",
+    "small-manifest",
+    "small-manifest",
+    "part:1",
+    "part:2",
+    "part:3",
+    "part:4",
+    "part:5",
+    "commit"
+  ],
+  "personalDataUsed": false,
+  "realModelCalls": 0,
+  "transport": "actual loopback HTTP with production desktop source manager and central"
+}

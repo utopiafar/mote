@@ -5237,5 +5237,6 @@
   "审核记录": "Review history",
   "复用了相同候选与证据版本的独立审核结果，并重新校验了引用和范围。": "Reused an independent review of the identical candidate and evidence versions, then revalidated citations and scope.",
   "候选已经过独立模型审核和引用校验；用户确认单独记录。": "The candidate received an independent model review and citation checks. User confirmation is recorded separately.",
-  "审核编号": "Review ID"
+  "审核编号": "Review ID",
+  "部分内容已上传，等待下一轮同步": "Some content has uploaded; waiting for the next sync turn."
 }

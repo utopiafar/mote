@@ -352,19 +352,24 @@ export class Collector {
     const abort = this.uploadAbort = new AbortController();
     this.publish();
     try {
+      const captureRounds=this.queue.stats().depth,liveSince=Date.now();let liveBytes=0;
+      const flushCaptures=async()=>{
+      let sliceBytes=0,completed=0;const sliceStarted=performance.now(),preferSince=liveBytes<16*1024*1024?liveSince:undefined;
       // Bound each flush so the UI and new capture policy changes stay responsive.
-      for (let count = 0, limit = this.queue.stats().depth; count < limit && !abort.signal.aborted; count++) {
-        const entry = await this.queue.next();
+      for (let count = 0, limit = Math.min(25,this.queue.stats().depth); count < limit && sliceBytes<4*1024*1024 && (count===0||performance.now()-sliceStarted<15000) && !abort.signal.aborted; count++) {
+        const entry = await this.queue.next(Date.now(),preferSince);
         if (!entry) break;
         const uploadStarted = Date.now();
         void this.events?.record('UPLOAD', 'STARTED');
         try {
           if (entry.record.uploaded) {
+            sliceBytes+=Buffer.byteLength(JSON.stringify({ocrText:entry.record.ocrResult,status:'completed'}));
             await uploadDeferredOcr(this.config, entry.record.event.id, entry.record.ocrResult!, abort.signal);
             await this.queue.acknowledge(entry.record.event.id, true);
           } else if (this.config.packedUpload) {
-            const batch = await this.queue.nextBatch(25, Date.now(), true);
+            const batch = await this.queue.nextBatch(25, Date.now(), true,preferSince);
             if (!batch.length) continue;
+            sliceBytes+=batch.reduce((sum,item)=>sum+Buffer.byteLength(JSON.stringify(item.record.event))+Math.ceil((item.image?.length??0)/3)*4+64,0);
             const receipts = await uploadCaptureBatch(this.config, batch.map(item => ({ event: item.record.event, image: item.image })), abort.signal);
             let incomplete = false;
             for (const item of batch) {
@@ -380,6 +385,7 @@ export class Collector {
             if (incomplete) { this.lastUploadError = moteText("部分记录未确认，已保留等待重试"); break; }
             count += batch.length - 1;
           } else {
+            sliceBytes+=Buffer.byteLength(JSON.stringify(entry.record.event))+Math.ceil((entry.image?.length??0)/3)*4+64;
             await uploadCapture(this.config, entry.record.event, entry.image, abort.signal);
             await this.queue.acknowledge(entry.record.event.id, false, entry.record.event.stateSeries?.samples.length??0);
           }
@@ -387,7 +393,7 @@ export class Collector {
           if (entry.record.uploaded || !this.config.packedUpload) this.diagnostics?.recordUpload(entry.record.uploaded
             ? Buffer.byteLength(JSON.stringify({ ocrText: entry.record.ocrResult, status: 'completed' }))
             : Buffer.byteLength(JSON.stringify({ ...entry.record.event, ...(entry.image ? { imageBase64: entry.image.toString('base64') } : {}) })));
-          this.lastUploadAt = new Date().toISOString(); this.lastUploadError = undefined;
+          this.lastUploadAt = new Date().toISOString(); this.lastUploadError = undefined;completed++;
         } catch (error) {
           if (abort.signal.aborted) break;
           const stage: EventStage = error instanceof TransportFailure ? 'UPLOAD' : 'QUEUE';
@@ -401,8 +407,15 @@ export class Collector {
           break;
         }
       }
+      liveBytes=preferSince===undefined?0:liveBytes+sliceBytes;
+      return completed;
+      };
+      await flushCaptures();
       if (!abort.signal.aborted && !this.lastUploadError) {
-        await this.sources?.flushPending(abort.signal);
+        await this.sources?.flushPending(abort.signal,async()=>{await flushCaptures();if(this.lastUploadError)throw new Error(this.lastUploadError);});
+        for(let round=1;round<captureRounds&&!abort.signal.aborted&&!this.lastUploadError;round++){
+          if(!await flushCaptures())break;
+        }
         if (pending.pendingRecords > this.pendingSync().pendingRecords || pending.pendingUpdates > this.pendingSync().pendingUpdates) this.lastUploadAt = new Date().toISOString();
         await this.queue.syncCheckpoint(this.lastUploadAt);
       }

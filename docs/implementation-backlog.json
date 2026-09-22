@@ -212,9 +212,13 @@
       "evidence": [
         "apps/android/app/src/main/java/dev/mote/collector/UploadNegotiation.kt",
         "apps/android/app/src/test/java/dev/mote/collector/UploadNegotiationTest.kt",
-        "apps/desktop/test/source-sync.test.ts"
+        "apps/desktop/test/source-sync.test.ts",
+        "apps/desktop/src/upload-slice.ts",
+        "apps/desktop/test/original-spool.test.ts",
+        "apps/desktop/test/collector.test.ts",
+        "scripts/test-upload-fairness.cjs"
       ],
-      "remaining": "413/ACK 分类已修复；跨来源上传仍缺统一按字节时间片公平调度。"
+      "remaining": "桌面已按字节切片轮转来源，并穿插新笔记/采集上传；Android/Web 尚未统一字节仲裁，本机来源扫描仍等待该管理器的在途整轮上传。"
     },
     {
       "id": "SYNC-06",

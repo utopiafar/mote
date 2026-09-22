@@ -23,6 +23,8 @@ jobs:
       - run: node --test scripts/release/dev-assets.test.mjs
       - run: npm run typecheck
       - run: npm run build -w @mote/server -w @mote/web
+      - name: Verify byte-sliced desktop uploads against generated central HTTP
+        run: npx tsc -p apps/desktop/tsconfig.json && node scripts/test-upload-fairness.cjs
       - run: node --import tsx scripts/test-live-metadata.ts --prepare-only --out .mote/ci-metadata-fixture
       - run: npm test
       - run: node --test scripts/check-dependencies-tests.mjs

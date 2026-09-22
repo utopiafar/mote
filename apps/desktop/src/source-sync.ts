@@ -6,6 +6,7 @@ import { sourceWork } from './background';
 import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { SourceCheckpoint, SourceDefinition, SourceItem, SourceRequest, SourceScan, ScannedItem } from './source-types';
 import { PriorityScheduler } from './priority-scheduler';
+import {UploadSlice,UploadSliceYield,requestBytes} from './upload-slice';
 
 export const sourceHash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
@@ -32,6 +33,7 @@ const itemKey = (item: Pick<SourceItem, 'externalId' | 'revision'>) => `${item.e
 
 /** Durable outbox with a latency-sensitive queue and a resumable backfill queue. */
 export class SourceSync {
+  private scheduler=new PriorityScheduler(16*1024*1024);
   private manifestBatch?:boolean;
   private data: State = { version: 2, known: {}, pendingRealtime: [], pendingHistory: [] };
   private readonly limits: { maxEvents: number; maxBytes: number; batchSize: number; concurrency: number };
@@ -137,18 +139,27 @@ export class SourceSync {
     const registered = await request('/api/sources', source, 'POST', signal) as { id?: unknown; enabled?: unknown };
     if (!registered || registered.id !== source.id || typeof registered.enabled !== 'boolean') throw new Error(moteText("中央来源注册确认无效"));
     if (!registered.enabled) return 'paused';
-    const scheduler = new PriorityScheduler(4);
+    const scheduler = this.scheduler;
     while (this.status().pending) {
       signal?.throwIfAborted();
       const queue = scheduler.next(this.data.pendingRealtime.length, this.data.pendingHistory.length) as QueueName;
       const batches = this.takeBatches(queue);
-      const outcomes = await Promise.all(batches.map(async batch => { try { return { batch, acks: await this.sendBatch(source, batch, request, signal) }; } catch (error) { return { batch, error }; } }));
+      let bytes=0;
+      const measured:SourceRequest=(path,body,method,signal)=>{const pending=request(path,body,method,signal);bytes+=requestBytes(body);return pending;};
+      const outcomes = await Promise.all(batches.map(async batch => { try { return { batch, acks: await this.sendBatch(source, batch, measured, signal) }; } catch (error) { return { batch, error }; } }));
       let failure: unknown;
-      for (const outcome of outcomes) { if ('error' in outcome) { failure ??= outcome.error; continue; } await this.acknowledge(source, outcome.batch, outcome.acks); }
+      for (const outcome of outcomes) { if ('error' in outcome) { if(!failure||failure instanceof UploadSliceYield)failure=outcome.error;continue; } await this.acknowledge(source, outcome.batch, outcome.acks); }
+      scheduler.committed(queue,bytes);
       if (failure) throw failure;
-      scheduler.committed(queue, batches.length);
     }
     await this.commit({ ...this.data, lastSyncAt: new Date().toISOString() }); return 'ready';
+  }
+
+  async flushSlice(source:SourceDefinition,request:SourceRequest,signal?:AbortSignal){
+    const slice=new UploadSlice();
+    const bounded:SourceRequest=(path,body,method,requestSignal)=>{signal?.throwIfAborted();slice.admit(body);return request(path,body,method,requestSignal);};
+    try{return {state:await this.flush(source,bounded,signal),bytes:slice.bytes,requests:slice.requests};}
+    catch(error){if(!(error instanceof UploadSliceYield))throw error;return {state:'yielded' as const,bytes:slice.bytes,requests:slice.requests};}
   }
 
   private takeBatches(queue: QueueName): SourceItem[][] {
