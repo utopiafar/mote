@@ -143,9 +143,9 @@ test('changing a processing provider during a job requeues it and rejects the ol
  const {files,store}=fixture(t),bytes=Buffer.from('provider change'),ack=await upload(files,manifest(bytes),bytes);
  let release!:(v:any)=>void,started!:()=>void;const begun=new Promise<void>(r=>{started=r;});let first=true;
  const processing=new FileProcessing(files,{transcribe:async()=>{if(first){first=false;started();return new Promise(r=>{release=r;});}return {durationMs:1000,segments:[]};}});t.after(()=>processing.close());
- const update=()=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true}});update();
- const running=processing.tick();await begun;update();release({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'superseded output'}]});await running;
- assert.equal(files.detail(ack.id).job.state,'waiting');assert.equal(files.chunks(ack.id).length,0);await processing.tick();
+ const update=(endpoint=processing.view().settings.endpoint)=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,endpoint}});update();
+ const running=processing.tick();await begun;update('http://127.0.0.1:9010/transcribe');release({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'superseded output'}]});await running;
+ assert.equal(files.detail(ack.id).job.state,'waiting');assert.equal(files.chunks(ack.id).length,0);for(const until=Date.now()+5000;Date.now()<until&&files.detail(ack.id).job.state!=='succeeded';){await processing.tick();if(files.detail(ack.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(files.detail(ack.id).job.state,'succeeded');assert.equal(store.db.prepare('SELECT audio_ms FROM file_usage').get()!.audio_ms,1000);assert.equal(files.chunks(ack.id).length,0);
 });
 

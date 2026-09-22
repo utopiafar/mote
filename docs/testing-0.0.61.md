@@ -1,6 +1,6 @@
 # 0.0.61 验证记录（发布前工作记录）
 
-本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 27 项通过所列验收、28 项部分实现、0 项待迁移；尚未发布版本。
+本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 28 项通过所列验收、27 项部分实现、0 项待迁移；尚未发布版本。
 
 ## 生成数据与规模
 
@@ -147,3 +147,5 @@ Artifact and legacy-read follow-up: derived refs now pin a revision and verify e
 Full server **464/464**, Agent **106 + 1 optional skip**, shared **58/58**, full build, all-workspace and scripts type checks pass. After adding the final 100-original bounded-lineage fixture and clearer tool descriptions, the **7 shared-reader tests** and Agent/server rebuilds pass. The 400-day individual/batch fixture also enumerates every scoped artifact across bounded pages. Real Electron navigation/settings/configuration and Todo/eight-file-import/read-only-Gmail fixture journeys pass again. No real Gmail, personal screenshots, physical device or new live-model checks were used.
 
 Reference commit `12ffd84` passed protocol/app and Docker CI in both [push](https://github.com/utopiafar/mote/actions/runs/35728654367) and [PR](https://github.com/utopiafar/mote/actions/runs/35728659407) runs. The artifact follow-up requires fresh CI before release.
+
+- 文件配置快照：8 项新增生成夹具通过，覆盖无关 OCR 配置不取消音频、真实服务变更中止并丢弃迟到结果、同值保存不重复执行、旧全局 revision/提取缓存恢复、配置落盘后崩溃恢复、41 段音频分三批摘要时的模型固定/变更隔离，以及配置记录容量计费、事务回滚和删除级联。最终服务器全量 473 项通过，服务器类型检查通过。私有凭据仅参与哈希，不出现在公开任务输入或快照回执中。

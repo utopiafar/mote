@@ -50,9 +50,13 @@
       "evidence": [
         "apps/server/src/perception.ts",
         "apps/server/test/configuration.test.ts",
-        "apps/server/test/perception.test.ts"
+        "apps/server/test/perception.test.ts",
+        "apps/server/src/file-configuration.ts",
+        "apps/server/src/file-processing.ts",
+        "apps/server/test/file-config-snapshot.test.ts",
+        "docs/configuration-ownership.md"
       ],
-      "remaining": "文件处理配置仍按全局 revision 失效；缺统一配置归属快照。"
+      "remaining": "文件处理已按实际相关配置失效，分批摘要固定模型快照；仍需统一 Memory/问答任务的持久配置归属与配置变更恢复语义。"
     },
     {
       "id": "SRC-01",
