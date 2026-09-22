@@ -18,3 +18,15 @@ export function formatEvidenceRef(kind:EvidenceRefKind,id:string):string {
   if(!parsed)throw new Error('Invalid evidence reference');
   return `${kind}:${parsed}`;
 }
+
+export type ArtifactRef={id:string;revision:string};
+/** Derived artifacts have mutable logical IDs, so public refs always pin the produced revision. */
+export function formatArtifactRef(id:string,revision:string):string {
+  if(!id||!revision||id.length>128||revision.length>128)throw new Error('Invalid artifact reference');
+  return `artifact:${encodeURIComponent(id)}:${encodeURIComponent(revision)}`;
+}
+export function parseArtifactRef(ref:string):ArtifactRef|undefined {
+  if(ref.length>1600)return;
+  const match=/^artifact:([^:]+):([^:]+)$/.exec(ref);if(!match)return;
+  try{const id=decodeURIComponent(match[1]),revision=decodeURIComponent(match[2]);return formatArtifactRef(id,revision)===ref?{id,revision}:undefined;}catch{return;}
+}

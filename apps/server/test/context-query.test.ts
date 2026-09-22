@@ -127,6 +127,17 @@ test('navigation references survive reader reconstruction and intersect the orig
   const expanded=restored.search(narrower.expansion!.scope);assert.ok(expanded.items.length>0);
   assert.ok(expanded.items.every(row=>row.origin.sourceId==='nav-0'&&row.origin.capturedAt>=narrower.expansion!.scope.after!&&row.origin.capturedAt<scope.before));
  }
+ while(store.archive.stats().pendingGroups)store.archive.aggregate(100);
+ const expected=sources.listItems({...scope,limit:200}).items.length,seen=new Set<string>();let cursor:string|undefined;
+ for(let page=0;page<60;page++){
+  const result=restored.reader.segments({...scope,limit:10,cursor});
+  for(const item of result.items){
+   assert.equal(seen.has(item.id),false);seen.add(item.id);
+   const expanded=restored.read([item.ref],0,4000,scope).items[0];assert.equal(expanded.kind,'artifact');assert.equal(expanded.evidenceRefs!.length,1);
+  }
+  if(!result.nextCursor)break;assert.notEqual(result.nextCursor,cursor);cursor=result.nextCursor;
+ }
+ assert.equal(seen.size,expected,'bounded post-filtered pages enumerate every in-scope generated artifact');
  const anchor=cards[0].expansion!.refs[0].slice('capture:'.length);store.delete(anchor);
  assert.equal(restored.read([cards[0].ref]).items.length,0,'deleted anchors do not silently switch to another record');
  for(const ref of [cards[0].ref+'=',cards[0].ref+'/x','collection:v1:'+Buffer.from(JSON.stringify({anchor,scope:{sourceId:'nav-0'},instructions:'untrusted'})).toString('base64url')])assert.equal(restored.read([ref]).items.length,0);

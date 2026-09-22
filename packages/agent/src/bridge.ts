@@ -360,7 +360,7 @@ export async function startBridge(
       else if(tool==='sources')value=await reader.sources?.(range(args,bounds))??[];
       else if(tool==='segments'){
         const scope=range(args,bounds);
-        if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw hostError('Invalid segment id');
+        if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>1600))throw hostError('Invalid segment id');
         if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid segment query');
         effective={...scope,id:args.id,query:args.query};
         const page=await reader.segments?.({...scope,id:args.id as string|undefined,query:args.query as string|undefined})??{items:[],nextCursor:null};

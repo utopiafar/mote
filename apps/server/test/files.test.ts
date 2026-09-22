@@ -103,6 +103,12 @@ MOTE_LOG_LEVEL=silent
  const started=await app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:m});assert.equal(started.statusCode,200,started.body);const session=started.json();
  assert.equal((await app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${session.uploadId}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes})).statusCode,200);
  const committed=await app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${session.uploadId}/commit`,headers,payload:{}});assert.equal(committed.statusCode,200,committed.body);const ack=committed.json();
+ const typedRef=encodeURIComponent(`CAPTURE:${ack.id.toUpperCase()}`);
+ for(const suffix of ['', '/chunks','/content']){
+  assert.equal((await app.inject({url:`/api/files/${typedRef}${suffix}`,headers})).statusCode,200);
+  assert.equal((await app.inject({url:`/api/files/${typedRef}${suffix}?deviceId=other`,headers})).statusCode,404);
+ }
+ assert.equal((await app.inject({url:`/api/files/${encodeURIComponent('memory:'+ack.id)}`,headers})).statusCode,400);
  assert.equal((await app.inject(`/api/files/${ack.id}/content`)).statusCode,401);
  const playback=await app.inject({method:'POST',url:`/api/files/${ack.id}/playback`,headers,payload:{}});assert.equal(playback.statusCode,200);const cookie=String(playback.headers['set-cookie']).split(';')[0];
  const content=await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie,range:'bytes=2-5'}});assert.equal(content.statusCode,206);assert.equal(content.body,'2345');

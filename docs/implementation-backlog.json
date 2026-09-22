@@ -24,16 +24,21 @@
       "title": "引用、身份和范围",
       "change": "集中解析 ref；区分设备、来源、会话、项目；明确授权范围与查询范围",
       "acceptance": "所有公开引用可往返；同名 session 不碰撞；历史版本、时间范围和撤权不能被展开接口绕过",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
         "apps/server/src/context-query.ts",
         "apps/server/test/context-query.test.ts",
         "packages/shared/src/evidence-ref.ts",
         "apps/server/src/context-navigation.ts",
         "apps/server/test/evidence-reader.test.ts",
-        "packages/agent/test/tool-recovery.test.mjs"
+        "packages/agent/test/tool-recovery.test.mjs",
+        "apps/server/src/evidence-reader.ts",
+        "apps/server/src/evidence-routes.ts",
+        "apps/server/src/evidence-scope-record.ts",
+        "apps/server/test/capture-browser.test.ts",
+        "apps/server/test/files.test.ts"
       ],
-      "remaining": "capture/Memory 引用与导航卡片已统一解析并复验范围；处理产物的版本化 ref 与全部旧详情路由仍需纳入同一契约。"
+      "remaining": ""
     },
     {
       "id": "BASE-03",

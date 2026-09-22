@@ -1,4 +1,5 @@
-import {sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,type CaptureRecord} from '@mote/shared';
+import {scopeRecord} from './evidence-scope-record.js';
+import {sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,type CaptureRecord} from '@mote/shared';
 import type {ContextReader} from '@mote/agent';
 import {StoreError,type Store,type Range} from './store.js';
 import {MemoryStore} from './memory.js';
@@ -26,6 +27,11 @@ export class EvidenceReader {
   readonly memories:MemoryStore;
   constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidenceRequests){
     this.memories=new MemoryStore(store,ids=>this.evidence(ids),id=>Boolean(files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
+  }
+  imageReference(ref:string,scope:Range={}){
+    const id=evidenceRefId(ref,'capture');if(!id)return;
+    const metadata=scopeRecord(this.store,id);if(!metadata||!withinEvidenceScope(metadata,scope))return;
+    const value=this.store.imageReference(id);return value?{...value,id,source:metadata.source}:undefined;
   }
   evidence(refs:string[],scope:Range={}){
     const ids=[...new Set(refs.map(ref=>parseEvidenceRef(ref)).filter(ref=>ref?.kind==='capture').map(ref=>ref!.id))];
@@ -63,9 +69,47 @@ export class EvidenceReader {
     return Promise.resolve(Object.assign(this.records(args,true).items.slice(0,args.limit??50),{retrieval:{mode:'lexical',degraded:false}}));
   }
   timeline(args:Range){return this.store.list(args);}
-  catalog(args:Range&{path?:string;query?:string}={}){return contextIndex(this.store,{page:args=>this.memoryPage(args)},this.sources,args);}
+  catalog(args:Range&{path?:string;query?:string}={}){return contextIndex(this.store,{page:args=>this.memoryPage(args)},this.sources,args,args=>this.segments(args));}
   fileCatalog(sourceId:string,args:Parameters<typeof browseSourceCatalog>[2]){this.sources.getSource(sourceId);return browseSourceCatalog(this.store.db,sourceId,args);}
-  segments(args:Parameters<Store['archive']['page']>[0]){return this.store.archive.page(args);}
+  private artifactMembers(id:string,revision:string,scope:Range={}){
+    const pending=[{id,revision}],seen=new Set<string>(),members=new Set<string>();
+    while(pending.length){
+      const ref=pending.pop()!,key=JSON.stringify(ref);if(seen.has(key))continue;seen.add(key);
+      if(seen.size>1000)return;
+      const row=this.store.db.prepare('SELECT revision,json FROM context_artifacts WHERE id=?').get(ref.id);
+      if(!row||row.revision!==ref.revision)return;
+      const value=JSON.parse(String(row.json)) as {members:string[];parents?:{id:string;revision:string}[]};
+      for(const member of value.members){members.add(member);if(members.size>1000)return;}
+      pending.push(...value.parents??[]);if(pending.length>1000)return;
+    }
+    if(!members.size)return;
+    let firstAt:string|undefined,lastAt:string|undefined;
+    for(const member of members){
+      const record=scopeRecord(this.store,member);if(!record||!withinEvidenceScope(record,scope))return;
+      const start=sourceContentTime(record),end=record.stateSeries?.samples.at(-1)?.at??start;
+      if(scope.after&&Date.parse(start)<Date.parse(scope.after)||scope.before&&Date.parse(end)>=Date.parse(scope.before))return;
+      if(!firstAt||Date.parse(start)<Date.parse(firstAt))firstAt=start;
+      if(!lastAt||Date.parse(end)>Date.parse(lastAt))lastAt=end;
+    }
+    return {members:[...members],firstAt:firstAt!,lastAt:lastAt!};
+  }
+  artifact(ref:string,scope:Range={}){
+    const parsed=parseArtifactRef(ref);if(!parsed)return;
+    const originals=this.artifactMembers(parsed.id,parsed.revision,scope);if(!originals)return;
+    const value=this.store.archive.get(parsed.id);return value?{...value,ref:formatArtifactRef(value.id,value.revision),...originals}:undefined;
+  }
+  segments(args:NonNullable<Parameters<Store['archive']['page']>[0]>={}){
+    const parsed=args.id?.startsWith('artifact:')?parseArtifactRef(args.id):undefined;
+    if(args.id?.startsWith('artifact:')&&!parsed)throw new StoreError('Invalid artifact reference');
+    // Preserve scope in the cursor, then check authored times through every original dependency.
+    const page=this.store.archive.page({...args,id:parsed?.id??args.id,originalTimeScope:true});
+    return {...page,items:page.items.flatMap(item=>{
+      if(!item||parsed&&item.revision!==parsed.revision)return [];
+      const originals=this.artifactMembers(item.id,item.revision,args);if(!originals)return [];
+      const {members}=originals,limit=args.id?30:3;
+      return [{...item,...originals,ref:formatArtifactRef(item.id,item.revision),members:members.slice(0,limit),evidenceCount:members.length,membersTruncated:members.length>limit}];
+    })};
+  }
   chunks(args:Range&{id:string;offset?:number}){
     if(!this.files)return [];
     const id=evidenceRefId(args.id,'capture');if(!id)return [];

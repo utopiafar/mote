@@ -1,6 +1,6 @@
 import {navigationScope,navigationRef,parseNavigationRef,intersectNavigationScope,type NavigationExpansion} from './context-navigation.js';
 import {createHash} from 'node:crypto';
-import {sourceContentTime,formatEvidenceRef,type CaptureRecord,type SourceConnection} from '@mote/shared';
+import {sourceContentTime,formatEvidenceRef,parseArtifactRef,type CaptureRecord,type SourceConnection} from '@mote/shared';
 import type {FileStore} from './files.js';
 import {type MemoryStore,type Memory} from './memory.js';
 import {EvidenceReader,parseEvidenceRef} from './evidence-reader.js';
@@ -71,6 +71,8 @@ export type ContextPage = {
 };
 
 export type ContextReadItem = {
+  evidenceCount?:number;
+  evidenceRefsTruncated?:boolean;
   expansion?:NavigationExpansion;
   ref:string;
   id:string;
@@ -257,6 +259,12 @@ export class ContextQuery {
         const narrowed=intersectNavigationScope(navigation.scope,scope),record=narrowed?this.reader.evidence([navigation.anchor],narrowed)[0]:undefined;
         if(!record||!narrowed){missing.push(ref);continue;}
         result.push({ref,id:ref,kind:navigation.kind,text:'',textRange:{offset:0,total:0,nextOffset:null},expansion:{kind:'search',scope:navigationScope(narrowed),refs:[navigation.anchor]}});
+        continue;
+      }
+      if(parseArtifactRef(ref)){
+        const artifact=this.reader.artifact(ref,scope);if(!artifact){missing.push(ref);continue;}
+        const text=artifact.text.slice(offset,offset+take);remaining-=text.length;
+        result.push({ref:artifact.ref,id:artifact.id,kind:'artifact',text,textRange:{offset,total:artifact.text.length,nextOffset:offset+text.length<artifact.text.length?offset+text.length:null},evidenceRefs:artifact.members.slice(0,30),evidenceCount:artifact.members.length,evidenceRefsTruncated:artifact.members.length>30});
         continue;
       }
       const parsed=parseEvidenceRef(ref);if(!parsed){missing.push(ref);continue;}const raw=parsed.id;

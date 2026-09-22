@@ -1,3 +1,5 @@
+import {registerEvidenceRoutes} from './evidence-routes.js';
+import {navigationScopeSchema} from './context-navigation.js';
 import {ProviderAdmission} from './provider-admission.js';
 import {ProviderFailure} from '@mote/shared';
 import {Operations,registerOperations} from './operations.js';
@@ -253,8 +255,9 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
   registerUpdateRoutes(app,softwareUpdate);
   registerContentStorage(app,contentStorage);
-  registerCaptureBrowser(app,{store,connections,credential});
-  playbackAuthorization=registerFileRoutes(app,files,processing,sourceOwner,req=>credential(req)?.deviceId,diagnostics);
+  registerCaptureBrowser(app,{store,connections,credential,evidenceReader});
+  registerEvidenceRoutes(app,evidenceReader);
+  playbackAuthorization=registerFileRoutes(app,files,processing,sourceOwner,req=>credential(req)?.deviceId,evidenceReader,diagnostics);
   app.get('/api/sources/:id/read-requests',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);return fileEvidence.pending(id);});
   app.put('/api/sources/:id/read-requests/:requestId',async req=>{const {id,requestId}=req.params as {id:string;requestId:string};sourceOwner(req,id);return fileEvidence.complete(id,requestId,req.body);});
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
@@ -287,12 +290,9 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.get('/api/sources/:id/item',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {item:sources.getItem(id,externalId)??null};});
   app.get('/api/sources/:id/history',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);const {externalId}=z.object({externalId:z.string().min(1).max(1000)}).strict().parse(req.query);return {items:sources.history(id,externalId)};});
   app.get('/api/layers',async()=>({...sources.summary(),memories:Number((store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)}));
-  app.get('/api/memories',async req=>{const q=z.object({after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),deviceId:z.string().max(128).optional(),level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),layer:z.enum(['observation','memory','legacy']).optional(),cursor:z.string().max(1000).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return memories.page({...q,includeStale:q.includeStale==='true'});});
-  app.get('/api/memories/:id',async req=>memories.get((req.params as {id:string}).id));
-  app.get('/api/memories/:id/text',async(req,reply)=>reply.type('text/markdown; charset=utf-8').header('Content-Disposition','attachment; filename=memory.md').send(memories.text(z.string().uuid().parse((req.params as {id:string}).id))));
   app.get('/api/sources/:id/catalog',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);sources.getSource(id);return evidenceReader.fileCatalog(id,z.object({parent:z.string().optional(),cursor:z.string().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query));});
-  app.get('/api/context/segments',async req=>evidenceReader.segments(z.object({id:z.string().max(128).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),deviceId:z.string().max(128).optional(),after:z.string().datetime().optional(),before:z.string().datetime().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query)));
-  app.get('/api/context-index',async req=>evidenceReader.catalog(z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),after:scopeFields.after,before:scopeFields.before,deviceId:scopeFields.deviceId}).parse(req.query)));
+  app.get('/api/context/segments',async req=>evidenceReader.segments(z.object({...navigationScopeSchema.shape,id:z.string().max(1600).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query)));
+  app.get('/api/context-index',async req=>evidenceReader.catalog(z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),...navigationScopeSchema.shape}).strict().parse(req.query)));
   registerContextRoutes(app,new ContextQuery(store,sources,files,evidenceReader));
   registerTodoRoutes(app,store);
   registerOperations(app,new Operations(store),req=>Boolean(credential(req)));
@@ -301,7 +301,6 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.post('/api/processing/workflows',async(req,reply)=>{const {steps}=z.object({steps:z.array(z.any()).min(1).max(32)}).strict().parse(req.body);return reply.code(202).send(workflows.enqueue(steps.map(step=>step.processor==='mote.segment-understanding'?{...step,artifactInputs:[{id:step.config?.artifactId,revision:store.archive.get(step.config?.artifactId)?.revision}],config:{...step.config,modelRevision:modelSettings.view().revision}}:step)));});
   app.post('/api/processing/:id/retry',async req=>{workflows.retry((req.params as {id:string}).id);return {queued:true};});
   app.post('/api/processing/:id/cancel',async req=>{workflows.cancel((req.params as {id:string}).id);return {cancelled:true};});
-  app.get('/api/memories/:id/evidence',async req=>{const m=memories.get((req.params as {id:string}).id);return {items:allEvidence(m.evidenceIds),status:m.status};});
   app.post('/api/memories/:id/publish',async req=>memories.publish((req.params as {id:string}).id));
   app.delete('/api/memories/:id',async req=>memories.delete((req.params as {id:string}).id));
   app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));store.captureReceived(input.deviceId);return reply.code(result.duplicate?200:201).send(result);});
@@ -327,8 +326,6 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
     return diagnostics.measure('source','timeline',()=>store.list({...args,cursor:raw.cursor}),page=>({count:page.items.length}));
   });
-  app.get('/api/captures/:id/image',async(req,reply)=>{const {bytes,mime}=store.image((req.params as {id:string}).id);return reply.type(mime).send(bytes);});
-  app.get('/api/captures/:id',async req=>{const record=allEvidence([(req.params as {id:string}).id])[0];if(!record)throw new StoreError('Capture not found',404);return record;});
   app.delete('/api/captures/:id',async req=>{const id=(req.params as {id:string}).id;const file=store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(id,id) as {capture_id:string}|undefined;return file?files.forget(file.capture_id):store.delete(id);});
   // Notes share capture IDs, indexing, archive export and deletion tombstones.
   // The convenience route does not rewrite the author's text or infer their mood.
@@ -337,8 +334,6 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
     return diagnostics.measure('source','timeline',()=>store.list({...args,source:'note',cursor:raw.cursor}),page=>({count:page.items.length}));
   });
-  function noteById(id:string) {const record=store.evidence([id])[0];if(!record||record.source!=='note')throw new StoreError('Note not found',404);return record;}
-  app.get('/api/notes/:id',async req=>noteById((req.params as {id:string}).id));
   app.delete('/api/notes/:id',async req=>{const {id}=req.params as {id:string};const record=store.evidence([id])[0];if(record&&record.source!=='note')throw new StoreError('Note not found',404);return store.delete(id);});
   app.post('/api/devices/heartbeat',async req=>{const beat=heartbeatSchema.parse(req.body),c=credential(req);if(c){connections.assertOwnDevice(c,beat);connections.assertPlatform(c,beat.platform);}const result=store.heartbeat(beat);diagnostics.record('queue.snapshot',{queueDepth:beat.queueDepth});return result;});
   app.get('/api/devices',async()=>({items:store.devices()}));
@@ -450,7 +445,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.post('/api/imports/:id/retry',async(req,reply)=>{const id=jobId(req.params);imports.get(id);launchImport(id,()=>imports.retry(id));return reply.code(202).send(imports.get(id));});
   app.get('/api/archived-files/:id',async req=>archivedFiles.get(jobId(req.params)));
   app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.stream(id));});
-  app.get('/api/captures/:id/archived-files',async req=>({items:archivedFiles.listForCapture(jobId(req.params))}));
+  app.get('/api/captures/:id/archived-files',async req=>{const record=evidenceReader.evidence([(req.params as {id:string}).id],navigationScopeSchema.parse(req.query))[0];if(!record)throw new StoreError('Capture not found',404);return {items:archivedFiles.listForCapture(record.id)};});
   app.get('/api/memory-jobs',async()=>({items:memoryPipeline.list()}));
   app.get('/api/memory-jobs/:id',async req=>memoryPipeline.get(jobId(req.params)));
   app.post('/api/memory-jobs',async(req,reply)=>{

@@ -21,3 +21,12 @@ test('navigation, nested, path, padded and malformed references cannot become ev
   }
   assert.deepEqual(parseEvidenceRef(id),{kind:'capture',id});
 });
+
+test('derived artifact refs pin a case-sensitive revision and reject ambiguous encodings',async()=>{
+ const {formatArtifactRef,parseArtifactRef}=await import('../dist/evidence-ref.js');
+ for(const [id,revision] of [['a'.repeat(64),'b'.repeat(64)],['artifact:a/b 🌱','Revision:1']]){
+  const ref=formatArtifactRef(id,revision);assert.deepEqual(parseArtifactRef(ref),{id,revision});
+  assert.equal(parseEvidenceRef(ref),undefined);
+  for(const invalid of [ref+':extra',ref+'\n',ref.replace('artifact:','ARTIFACT:'),'artifact:%zz:1','artifact::1'])assert.equal(parseArtifactRef(invalid),undefined);
+ }
+});

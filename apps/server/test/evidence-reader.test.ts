@@ -95,9 +95,18 @@ test('typed Memory refs cannot select a capture with the same UUID; adapters rec
  assert.deepEqual(await call('mote_read',{refs:[ref]}),web);
  assert.equal((await call('mote_memories',{id:ref}) as any).items[0].id,id);
  assert.equal(((await agentReader.memories!({id:ref})).items[0] as any).id,id);
+ for(const suffix of ['', '/text','/evidence']){
+  const url=`/api/memories/${encodeURIComponent(ref)}${suffix}`;
+  assert.equal((await app.inject({url,headers})).statusCode,200);
+  assert.equal((await app.inject({url:url+'?appId=outside',headers})).statusCode,404);
+ }
+ assert.equal((await app.inject({url:'/api/memories?appId=outside',headers})).json().items.length,0);
  const captureRef=`CAPTURE:${id.toUpperCase()}`;
  assert.equal((await call('mote_evidence',{ids:[captureRef]}) as any)[0].text,'Different capture in another namespace');
  assert.equal((await agentReader.evidence({ids:[captureRef]}))[0].id,id);
+ assert.equal((await app.inject({url:'/api/captures/'+encodeURIComponent(captureRef),headers})).json().id,id);
+ assert.equal((await app.inject({url:'/api/captures/'+encodeURIComponent(ref),headers})).statusCode,404);
+ assert.equal((await app.inject({url:'/api/captures/'+encodeURIComponent(captureRef)+'?source=note',headers})).statusCode,404);
  assert.equal((await agentReader.evidence({ids:[ref]})).length,0);
  assert.equal((await agentReader.memories!({id:captureRef})).items.length,0);
  for(const scope of [{appId:'different-app'},{source:'note' as const},{deviceId:'other'},{before:'2024-01-01T00:00:00.000Z'}]){
@@ -120,4 +129,65 @@ test('shared source item expansion preserves calendar planned-time overlap',asyn
  const result:any=await agentReader.sourceItems!(scope);assert.equal(result.items.length,1);assert.equal(result.items[0].source,'calendar');
  assert.equal((await agentReader.sourceItems!({...scope,deviceId:'other'}) as any).items.length,0);
  assert.equal((await agentReader.sourceItems!({after:'2027-01-01T00:00:00Z'}) as any).items.length,0);
+});
+
+test('artifact refs pin revisions across Web/MCP/Agent and scope every transitive original',async t=>{
+ const {app,store,sources,agentReader,call}=await fixture(t);
+ for(const sourceId of ['artifact-a','artifact-b']){
+  sources.register({id:sourceId,name:'Generated derived scope',kind:'custom',deviceId:'artifact-device',platform:'import'});
+  await sources.upsert(sourceId,{externalId:'item',revision:'1',observedAt:'2024-06-01T00:00:00.000Z',title:'Generated original',text:sourceId+' original',kind:'message',layer:'original'});
+ }
+ const a=sources.getItem('artifact-a','item')!.captureId,b=sources.getItem('artifact-b','item')!.captureId;
+ store.archive.aggregate(100);
+ const parent=store.archive.page({}).items.find(item=>item?.members.includes(a))!;
+ const child=store.archive.save('generated-child','generated-group','revision:1',{kind:'episode',text:'Derived fixture, verify the original',metadata:{}},[],'generated','1','config',[],[{id:parent.id,revision:parent.revision}]);
+ const page:any=await call('mote_segments',{id:child.id});assert.equal(page.items.length,1);
+ const ref=page.items[0].ref;assert.match(ref,/^artifact:/);
+ assert.equal((await call('mote_segments',{id:ref}) as any).items[0].id,child.id);
+ assert.equal((await agentReader.segments!({id:ref})).items[0].id,child.id);assert.deepEqual((await agentReader.segments!({id:ref})).items[0].members,[a]);
+ assert.equal((await app.inject({url:'/api/context/segments?'+new URLSearchParams({id:ref,sourceId:'artifact-b'}),headers})).json().items.length,0);
+ const web=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs:[ref],sourceId:'artifact-a'}})).json();
+ assert.equal(web.items[0].kind,'artifact');assert.equal(web.items[0].text,'Derived fixture, verify the original');assert.deepEqual(web.items[0].evidenceRefs,[a]);
+ assert.deepEqual(await call('mote_read',{refs:[ref],sourceId:'artifact-a'}),web);
+ for(const scope of [{sourceId:'artifact-b'},{deviceId:'other'},{after:'2025-01-01T00:00:00.000Z'},{appId:'other-app'}]){
+  assert.equal((await call('mote_read',{refs:[ref],...scope}) as any).items.length,0);
+  assert.equal((await call('mote_segments',{id:ref,...scope}) as any).items.length,0);
+ }
+ store.archive.save(child.id,'generated-group','revision:2',{kind:'episode',text:'New derived version',metadata:{}},[],'generated','1','config',[],[{id:parent.id,revision:parent.revision}]);
+ assert.equal((await call('mote_read',{refs:[ref]}) as any).items.length,0);
+ assert.equal((await call('mote_segments',{id:ref}) as any).items.length,0);
+ const current=(await call('mote_segments',{id:child.id}) as any).items[0].ref;assert.notEqual(current,ref);
+ const mixed=store.archive.save('generated-mixed','mixed','1',{kind:'episode',text:'Mixed derived fixture',metadata:{}},[a,b].map(id=>({id,fingerprint:store.archive.fingerprint(id)!})),'generated','1','config');
+ const mixedRef=(await call('mote_segments',{id:mixed.id}) as any).items[0].ref;
+ assert.equal((await call('mote_read',{refs:[mixedRef],sourceId:'artifact-a'}) as any).items.length,0);
+ assert.equal((await call('mote_segments',{sourceId:'artifact-a'}) as any).items.some((item:any)=>item.id===mixed.id),false);
+ assert.equal(((await agentReader.catalog!({path:'/context/episodes',appId:'other-app'})) as any).entries.length,0);
+ store.delete(a);
+ assert.equal((await call('mote_read',{refs:[current,mixedRef]}) as any).items.length,0);
+});
+
+test('artifact listing and direct expansion use original authored time instead of later import time',async t=>{
+ const {sources,store,agentReader,call}=await fixture(t);
+ sources.register({id:'authored',name:'Generated authored dates',kind:'custom',deviceId:'authored-device',platform:'import'});
+ await sources.upsert('authored',{externalId:'old-note',revision:'1',observedAt:'2026-09-01T00:00:00.000Z',title:'Generated historical note',text:'Authored in 2024',kind:'message',layer:'original',document:{recordedAt:'2024-06-01T00:00:00.000Z'}});
+ store.archive.aggregate(100);
+ const scope={after:'2024-01-01T00:00:00.000Z',before:'2025-01-01T00:00:00.000Z'};
+ const page=await agentReader.segments!(scope);assert.equal(page.items.length,1);assert.equal(page.items[0].firstAt,'2024-06-01T00:00:00.000Z');assert.equal(page.items[0].lastAt,'2024-06-01T00:00:00.000Z');
+ assert.equal((await call('mote_read',{refs:[page.items[0].ref],...scope}) as any).items.length,1);
+ assert.equal((await call('mote_segments',{id:page.items[0].ref,after:'2026-01-01T00:00:00.000Z'}) as any).items.length,0);
+});
+
+test('large artifact lineages expose bounded original refs with explicit coverage',async t=>{
+ const {sources,store,agentReader,call}=await fixture(t);
+ sources.register({id:'bounded-lineage',name:'Generated bounded lineage',kind:'custom',deviceId:'lineage-device',platform:'import'});
+ const input=Array.from({length:100},(_,i)=>({externalId:`item-${i}`,revision:'1',observedAt:new Date(Date.UTC(2024,0,1+i)).toISOString(),text:`Generated original ${i}`,kind:'message',layer:'original'}));
+ for(const item of input.slice(0,50))await sources.upsert('bounded-lineage',item);
+ await sources.upsertBatch('bounded-lineage',input.slice(50));
+ const ids=input.map(item=>sources.getItem('bounded-lineage',item.externalId)!.captureId);
+ const artifact=store.archive.save('generated-large','generated-large','1',{kind:'episode',text:'Bounded generated derived view',metadata:{}},ids.map(id=>({id,fingerprint:store.archive.fingerprint(id)!})),'generated','1','config');
+ const detail=await agentReader.segments!({id:artifact.id});assert.equal(detail.items[0].members.length,30);assert.equal(detail.items[0].evidenceCount,100);assert.equal(detail.items[0].membersTruncated,true);
+ const read:any=await call('mote_read',{refs:[detail.items[0].ref]});assert.equal(read.items[0].evidenceRefs.length,30);assert.equal(read.items[0].evidenceCount,100);assert.equal(read.items[0].evidenceRefsTruncated,true);
+ assert.equal((await call('mote_read',{refs:[detail.items[0].ref],after:'2024-02-01T00:00:00.000Z'}) as any).items.length,0,'a partial date overlap never discloses the whole derived claim');
+ store.delete(ids.at(-1)!);
+ assert.equal((await call('mote_read',{refs:[detail.items[0].ref]}) as any).items.length,0,'a dependency outside the preview still fences the whole claim');
 });

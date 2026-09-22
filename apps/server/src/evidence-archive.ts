@@ -136,11 +136,11 @@ export class EvidenceArchive {
     return artifact;
   }
   get(id:string){const row=this.store.db.prepare('SELECT a.json,c.json AS content FROM context_artifacts a JOIN context_contents c ON c.hash=a.content_hash WHERE a.id=?').get(id);return row?{...JSON.parse(String(row.json)) as Artifact,text:String(JSON.parse(String(row.content)).text)}:undefined;}
-  page(args:Range&{query?:string;id?:string;maxCharacters?:number}={}){
+  page(args:Range&{query?:string;id?:string;maxCharacters?:number;originalTimeScope?:boolean}={}){
     const db=this.store.db,where=['1=1'],values:(string|number)[]=[],budget=Math.max(1000,Math.min(args.maxCharacters??(args.id?24000:12000),24000));
     for(const [key,column] of [['deviceId','device_id'],['appId','app_id'],['source','source'],['id','id']] as const)if(args[key]){where.push(`a.${column}=?`);values.push(args[key]!);}
     // Only fully contained segments are disclosed under a narrowed query scope.
-    if(args.after){where.push('a.first_at>=?');values.push(args.after);}if(args.before){where.push('a.last_at<?');values.push(args.before);}
+    if(!args.originalTimeScope){if(args.after){where.push('a.first_at>=?');values.push(args.after);}if(args.before){where.push('a.last_at<?');values.push(args.before);}}
     if(args.collection==='activity')where.push("a.source='activity'");else if(args.collection==='content')where.push("a.source!='activity'");
     if(args.query)for(const term of args.query.trim().split(/\s+/u).slice(0,12)){if(Array.from(term).length>=3){where.push('a.id IN (SELECT id FROM artifacts_fts WHERE artifacts_fts MATCH ?)');values.push('\"'+term.replaceAll('\"','\"\"')+'\"');}else{where.push("instr(lower(json_extract(c.json,'$.text')),lower(?))>0");values.push(term);}}
     const scopeHash=hash({...args,cursor:undefined});let cursor:{at:string;id:string;scope:string}|undefined;
