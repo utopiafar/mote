@@ -63,7 +63,7 @@ test('lane budget, retries, permanent failures, stale input and cancellation are
 test('in-flight source deletion and expired leases fence late completions',async t=>{
  const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let release!:()=>void;const waiting=new Promise<void>(resolve=>{release=resolve;});let started!:()=>void;const start=new Promise<void>(resolve=>{started=resolve;});
  runtime.registry.register({id:'fixture.wait',version:'1',lane:'extract',async process(){started();await waiting;return [{kind:'text',text:'Must not reappear',metadata:{}}];}});
- const id=runtime.enqueue([{name:'a',processor:'fixture.wait',inputs:[a.id]}]).a;const running=runtime.tick();await start;store.delete(a.id);release();await running;assert.equal(store.archive.stats().artifacts,0);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(id)!.state,'failed');
+ const id=runtime.enqueue([{name:'a',processor:'fixture.wait',inputs:[a.id]}]).a;const running=runtime.tick();await start;store.delete(a.id);release();await running;assert.equal(store.archive.stats().artifacts,0);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(id)!.state,'stale');
 });
 test('vector scoring reaches historical evidence outside the former recent candidate window',async t=>{
  const store=fixture(t),inputs=Array.from({length:4097},()=>observation());for(let i=0;i<inputs.length;i+=500)await store.ingestBatch(inputs.slice(i,i+500));store.db.exec("UPDATE captures SET embedding='[0,1]',embedding_model='fixture'");
@@ -85,7 +85,7 @@ test('dependent artifact lineage preserves invalidation without expanding ancest
 });
 test('restart recovers expired lease once and permanently failing parent blocks descendants',async t=>{
  const store=fixture(t);let now=1000;const runtime=new ProcessingRuntime(store,[],{},()=>now);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;runtime.registry.register({id:'fixture.permanent',version:'1',lane:'extract',async process(){calls++;throw new ProcessingFailure('permanent');}});
- const jobs=runtime.enqueue([{name:'parent',processor:'fixture.permanent',inputs:[a.id]},{name:'child',processor:'fixture.permanent',inputs:[a.id],dependsOn:['parent']}]);store.db.prepare("UPDATE processing_jobs SET state='running',lease_until=100,attempts=1,fence='old' WHERE id=?").run(jobs.parent);await runtime.tick();await runtime.tick();assert.equal(calls,1);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(jobs.child)!.state,'blocked');
+ const jobs=runtime.enqueue([{name:'parent',processor:'fixture.permanent',inputs:[a.id]},{name:'child',processor:'fixture.permanent',inputs:[a.id],dependsOn:['parent']}]);store.db.prepare("UPDATE execution_steps SET state='running',lease_until=100,attempts=1,fence='old' WHERE id=?").run(jobs.parent);await runtime.tick();await runtime.tick();assert.equal(calls,1);assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(jobs.child)!.state,'blocked');
 });
 test('a stalled semantic lane does not stop new extraction work and cancellation fences its result',async t=>{
  const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation(),b=observation('Second');await store.ingestBatch([a,b]);let started!:()=>void;const begin=new Promise<void>(resolve=>{started=resolve;});let release!:()=>void;const wait=new Promise<void>(resolve=>{release=resolve;});let extracted=0;
@@ -94,7 +94,7 @@ test('a stalled semantic lane does not stop new extraction work and cancellation
 });
 test('artifact revision changes fence a downstream job even when its original input is unchanged',async t=>{
  const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);store.archive.aggregate();const artifact=store.archive.page().items[0]!;let release!:()=>void;const wait=new Promise<void>(resolve=>{release=resolve;});let started!:()=>void;const begin=new Promise<void>(resolve=>{started=resolve;});
- runtime.registry.register({id:'fixture.artifact',version:'1',lane:'semantic',async process(){started();await wait;return [{kind:'semantic',text:'Old revision',metadata:{}}];}});const job=runtime.enqueue([{name:'s',processor:'fixture.artifact',inputs:[a.id],artifactInputs:[{id:artifact.id,revision:artifact.revision}]}]).s;const running=runtime.tick();await begin;store.db.prepare('UPDATE context_artifacts SET revision=?,json=json_set(json,\'$.revision\',?) WHERE id=?').run('f'.repeat(64),'f'.repeat(64),artifact.id);release();await running;assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(job)!.state,'failed');assert.equal(store.archive.page({query:'Old revision'}).items.length,0);
+ runtime.registry.register({id:'fixture.artifact',version:'1',lane:'semantic',async process(){started();await wait;return [{kind:'semantic',text:'Old revision',metadata:{}}];}});const job=runtime.enqueue([{name:'s',processor:'fixture.artifact',inputs:[a.id],artifactInputs:[{id:artifact.id,revision:artifact.revision}]}]).s;const running=runtime.tick();await begin;store.db.prepare('UPDATE context_artifacts SET revision=?,json=json_set(json,\'$.revision\',?) WHERE id=?').run('f'.repeat(64),'f'.repeat(64),artifact.id);release();await running;assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(job)!.state,'stale');assert.equal(store.archive.page({query:'Old revision'}).items.length,0);
 });
 
 test('oversized replay group is reported, preserves originals and becomes retryable after deletion',async t=>{
@@ -120,4 +120,31 @@ test('processing presentation exposes bounded steps and valid actions without ra
  let view=runtime.view();assert.equal(view.jobs.length,1);assert.deepEqual(view.jobs[0].allowedActions,['cancel']);assert.equal(JSON.stringify(view).includes('generated-only-secret'),false);assert.equal(JSON.stringify(view).includes(a.ocrText),false);
  await runtime.tick();view=runtime.view();assert.equal(view.jobs[0].state,'failed');assert.deepEqual(view.jobs[0].allowedActions,['retry-step','cancel']);
  runtime.cancel(view.jobs[0].id);assert.deepEqual(runtime.view().jobs[0].allowedActions,['retry-step']);
+});
+
+test('legacy DAG authority migration preserves IDs, artifacts and interrupted retry counts',async t=>{
+ const store=fixture(t),a=observation();await store.ingest(a);
+ let runtime=new ProcessingRuntime(store),calls=0;
+ const register=(fail=false)=>{runtime.registry.register({id:'fixture.migration',version:'1',lane:'extract',async process(input){calls++;if(fail&&input.config.child)throw new ProcessingFailure('transient');return [{kind:'text',text:input.config.child?'Migrated child':'Preserved parent',metadata:{}}];}});};register(true);
+ const graph=[{name:'parent',processor:'fixture.migration',inputs:[a.id]},{name:'child',processor:'fixture.migration',inputs:[a.id],dependsOn:['parent'],config:{child:true}}];
+ const ids=runtime.enqueue(graph);await runtime.tick();const parent=JSON.parse(String(store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(ids.parent)!.json));const original=store.archive.get(parent.outputs[0]);assert.ok(original);
+ await runtime.close();
+ // Generated legacy checkpoint: no common-engine authority existed before upgrade.
+ store.db.exec("DELETE FROM execution_dependencies; DELETE FROM execution_operation_steps; DELETE FROM execution_steps; DELETE FROM settings WHERE key='execution-dag-v1'");
+ store.db.prepare("UPDATE processing_jobs SET state='running',attempts=2,lease_until=1,available_at=0,fence='legacy' WHERE id=?").run(ids.child);
+ runtime=new ProcessingRuntime(store);register();t.after(()=>runtime.close());
+ assert.equal(runtime.engine.get(ids.parent)!.state,'succeeded');assert.equal(runtime.engine.get(ids.child)!.state,'waiting');assert.equal(runtime.engine.get(ids.child)!.attempts,2);
+ assert.deepEqual(store.archive.get(parent.outputs[0]),original);const before=calls;await runtime.tick();assert.equal(calls,before+1);
+ assert.equal(runtime.engine.get(ids.child)!.state,'succeeded');assert.equal(runtime.engine.get(ids.child)!.attempts,3);
+ assert.deepEqual(runtime.enqueue(graph),ids);await runtime.tick();assert.equal(calls,before+1,'migration replay reran an existing result');
+});
+
+test('cached DAG steps can be traced from each operation without a second execution owner',async t=>{
+ const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;
+ runtime.registry.register({id:'fixture.operations',version:'1',lane:'extract',async process(){calls++;return [{kind:'text',text:'Generated operation output',metadata:{}}];}});
+ const parent={name:'root',processor:'fixture.operations',inputs:[a.id]},first=runtime.enqueue([parent]);await runtime.tick();
+ const second=runtime.enqueue([parent,{name:'child',processor:'fixture.operations',inputs:[a.id],dependsOn:['root']}]);assert.equal(second.root,first.root);await runtime.tick();
+ const operations=store.db.prepare('SELECT operation_id FROM execution_operation_steps WHERE step_id=?').all(first.root);assert.equal(operations.length,2);
+ assert.deepEqual(operations.map(o=>runtime.engine.list({operationId:String(o.operation_id)}).items.length).sort(),[1,2]);assert.equal(calls,2);
+ assert.ok(store.db.prepare('SELECT fence,lease_until FROM processing_jobs').all().every(row=>row.fence===null&&row.lease_until===0),'legacy projection still owned execution leases');
 });

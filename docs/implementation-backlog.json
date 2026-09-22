@@ -295,9 +295,11 @@
         "apps/server/src/execution-engine.ts",
         "apps/server/src/perception.ts",
         "apps/server/test/execution-engine.test.ts",
-        "apps/server/test/perception.test.ts"
+        "apps/server/test/perception.test.ts",
+        "apps/server/src/processing-runtime.ts",
+        "apps/server/test/architecture-upgrade.test.ts"
       ],
-      "remaining": "截图 OCR/语义处理已迁入公共引擎，生产定时器只准备步骤并运行引擎；ProcessingRuntime、FileProcessing、MemoryPipeline 仍待迁入，尚未全局单一执行。"
+      "remaining": "截图 OCR/语义与 Context DAG 已共用公共引擎，旧领取/重试/取消循环退役；FileProcessing、MemoryPipeline 仍待迁入，尚未全局单一执行。"
     },
     {
       "id": "JOB-02",
