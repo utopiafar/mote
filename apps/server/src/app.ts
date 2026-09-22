@@ -441,7 +441,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.post('/api/imports/:id/confirm',async(req,reply)=>{const id=jobId(req.params),job=imports.get(id);if(job.status!=='awaiting_confirmation'&&job.status!=='completed')throw new StoreError('Review an import preview before confirming',409);launchImport(id,()=>imports.confirm(id));return reply.code(202).send(imports.get(id));});
   app.post('/api/imports/:id/retry',async(req,reply)=>{const id=jobId(req.params);imports.get(id);launchImport(id,()=>imports.retry(id));return reply.code(202).send(imports.get(id));});
   app.get('/api/archived-files/:id',async req=>archivedFiles.get(jobId(req.params)));
-  app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.read(id));});
+  app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.stream(id));});
   app.get('/api/captures/:id/archived-files',async req=>({items:archivedFiles.listForCapture(jobId(req.params))}));
   app.get('/api/memory-jobs',async()=>({items:memoryPipeline.list()}));
   app.get('/api/memory-jobs/:id',async req=>memoryPipeline.get(jobId(req.params)));

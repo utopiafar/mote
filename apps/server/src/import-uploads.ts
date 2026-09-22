@@ -34,8 +34,9 @@ export class ImportUploads {
  }
  commit(id:string){const manifest=this.load(id);if(manifest.fileId)return this.files.get(manifest.fileId);
   const parts=this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id);if(parts.length!==Math.ceil(manifest.sizeBytes/PART))throw new StoreError('Import upload incomplete',409);
-  const buffers=parts.map((part,index)=>{if(Number(part.part)!==index)throw new StoreError('Missing import part',409);const bytes=this.store.contentEncryption.read(join(this.directory,id,String(index)));if(bytes.length!==part.bytes||sha256(bytes)!==part.hash)throw new StoreError('Import checksum mismatch',409);return bytes;});
-  const file=this.files.put({name:manifest.name,mimeType:manifest.mimeType,bytes:Buffer.concat(buffers,manifest.sizeBytes)});
+  const store=this.store,directory=this.directory;
+  function* buffers(){for(const [index,part] of parts.entries()){if(Number(part.part)!==index)throw new StoreError('Missing import part',409);const bytes=store.contentEncryption.read(join(directory,id,String(index)));if(bytes.length!==part.bytes||sha256(bytes)!==part.hash)throw new StoreError('Import checksum mismatch',409);yield bytes;}}
+  const file=this.files.putParts({name:manifest.name,mimeType:manifest.mimeType},buffers(),manifest.sizeBytes);
   this.store.db.prepare('UPDATE import_uploads SET json=? WHERE id=?').run(JSON.stringify({...manifest,fileId:file.id}),id);
   this.store.db.prepare('DELETE FROM import_upload_parts WHERE upload_id=?').run(id);rmSync(join(this.directory,id),{force:true,recursive:true});return file;
  }

@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {textSearch} from './text-search.js';
 import {randomUUID,createHash} from 'node:crypto';
-import {existsSync,renameSync,rmSync,readdirSync,openSync,closeSync,fsyncSync,statSync} from 'node:fs';
+import {rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,type FileRevision,type CaptureRecord,fileEvidenceSchema} from '@mote/shared';
@@ -15,7 +15,6 @@ type Version={capture_id:string;source_id:string;external_id:string;revision:str
 type Chunk={id:string;capture_id:string;artifact_id:string;start_ms:number|null;end_ms:number|null;text:string;metadata?:string};
 const activeChunks="a.current=1 AND NOT EXISTS (SELECT 1 FROM file_artifacts preferred WHERE preferred.capture_id=a.capture_id AND preferred.current=1 AND ((preferred.kind='corrected-dialogue' AND a.kind!='corrected-dialogue') OR (preferred.kind='dialogue' AND a.kind IN ('transcript','text','image-text'))))";
 const timestamp=()=>new Date().toISOString();
-function syncDir(path:string){const fd=openSync(path,'r');try{fsyncSync(fd);}finally{closeSync(fd);}}
 
 /** Bounded parts using the configured content write policy. No caller supplies a filesystem path. */
 export class FileStore {
@@ -107,16 +106,16 @@ export class FileStore {
     const total=createHash('sha256');let size=0;
     for(const [i,p] of parts.entries()){if(p.part!==i)throw new StoreError('Missing file part',409);const bytes=this.readPart(join(this.uploads,id),i);if(bytes.length!==p.bytes||sha256(bytes)!==p.hash)throw new StoreError('File part checksum failed',409);total.update(bytes);size+=bytes.length;}
     if(size!==input.sizeBytes||total.digest('hex')!==input.sha256)throw new StoreError('File checksum failed',409);
-    const hash=input.sha256!,destination=join(this.objects,hash);
-    if(!existsSync(destination)){
-      const staging=destination+'.'+randomUUID()+'.tmp';privateDirectory(staging);
-      try{for(const p of parts)this.store.contentEncryption.write(join(staging,String(p.part)),this.readPart(join(this.uploads,id),p.part));syncDir(staging);renameSync(staging,destination);syncDir(this.objects);}finally{rmSync(staging,{recursive:true,force:true});}
-    }else this.verifyObject(destination,hash,input.sizeBytes,parts.length);
+    const hash=input.sha256!,self=this;
+    function* sourceParts(){for(const p of parts)yield self.readPart(join(self.uploads,id),p.part);}
+    const {release}=this.store.assets.putParts(sourceParts(),input.sizeBytes,hash);
+    try{
     const ack=await this.revision(input,authorize,(captureId)=>{
       const value={id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:hash,sha256:hash,sizeBytes:input.sizeBytes,duplicate:false};
       this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(value),id);return value;
     });
     this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(ack),id);rmSync(join(this.uploads,id),{recursive:true,force:true});return ack;
+    }finally{release();}
   });}
   async revision(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown):Promise<any>{
     const input=fileRevisionSchema.parse(raw);return this.serialize('item:'+input.sourceId+':'+input.item.externalId,async()=>{
@@ -161,16 +160,16 @@ export class FileStore {
   }
   saveAsset(artifactId:string,name:string,mime:string,bytes:Buffer){
     if(!/^speaker_samples\/SPEAKER_[0-9]{1,2}\.wav$/.test(name)||bytes.length>768*1024)throw new StoreError('Invalid artifact asset');
-    this.store.reserveMetadata(bytes.length+1024);const hash=sha256(bytes),destination=join(this.objects,hash);
-    if(!existsSync(destination)){const temp=destination+'.'+randomUUID()+'.tmp';privateDirectory(temp);try{this.store.contentEncryption.write(join(temp,'0'),bytes);syncDir(temp);renameSync(temp,destination);syncDir(this.objects);}finally{rmSync(temp,{force:true,recursive:true});}}
-    else this.verifyObject(destination,hash,bytes.length,1);
+    this.store.reserveMetadata(bytes.length+1024);const asset=this.store.assets.put(bytes),hash=asset.hash;
+    try{
     this.store.db.prepare('INSERT OR IGNORE INTO file_objects VALUES(?,?,?)').run(hash,bytes.length,1);
     this.store.db.prepare('INSERT INTO file_assets VALUES(?,?,?,?)').run(artifactId,name,mime,hash);
+    }finally{asset.release();}
   }
   asset(captureId:string,artifactId:string,name:string){
     this.version(captureId);const row=this.store.db.prepare('SELECT f.object_hash,f.mime FROM file_assets f JOIN file_artifacts a ON a.id=f.artifact_id WHERE a.capture_id=? AND a.id=? AND f.name=?').get(captureId,artifactId,name) as {object_hash:string;mime:string}|undefined;
     if(!row||!/^[a-f0-9]{64}$/.test(row.object_hash))throw new StoreError('Asset not found',404);
-    return {mime:row.mime,bytes:this.readPart(join(this.objects,row.object_hash),0)};
+    return {mime:row.mime,bytes:this.store.assets.read(row.object_hash)};
   }
 
   list(args:ContextRange&{sourceId?:string;query?:string;mimePrefix?:string}={}){
@@ -183,19 +182,8 @@ export class FileStore {
     return {items:rows.slice(0,limit).map(r=>this.detail(r.capture_id,false)),nextCursor:rows.length>limit?String(offset+limit):null};
   }
   private readPart(directory:string,part:number){privateDirectory(directory);return this.store.contentEncryption.read(join(directory,String(part)));}
-  private verifyObject(directory:string,hash:string,expectedSize:number,parts:number){
-    privateDirectory(directory);
-    const digest=createHash('sha256');let size=0;
-    for(let part=0;part<parts;part++){
-      const bytes=this.readPart(directory,part);
-      if(bytes.length!==Math.min(FILE_PART_BYTES,expectedSize-part*FILE_PART_BYTES))throw new StoreError('Stored file part checksum failed',409);
-      digest.update(bytes);size+=bytes.length;
-    }
-    if(size!==expectedSize||digest.digest('hex')!==hash)throw new StoreError('Stored file checksum failed',409);
-  }
-  *bytes(id:string,start=0,end?:number):Generator<Buffer>{const v=this.version(id);if(!v.object_hash)throw new StoreError('Original is not archived',404);if(!/^[a-f0-9]{64}$/.test(v.object_hash))throw new StoreError('Invalid object identifier',500);const m=JSON.parse(v.manifest) as FileRevision;end??=m.sizeBytes-1;
-    if(start<0||end>=m.sizeBytes||start>end){if(m.sizeBytes===0&&start===0)return;throw new StoreError('Invalid byte range',416);}
-    for(let p=Math.floor(start/FILE_PART_BYTES);p<=Math.floor(end/FILE_PART_BYTES);p++){this.version(id);const bytes=this.readPart(join(this.objects,v.object_hash),p);yield bytes.subarray(Math.max(0,start-p*FILE_PART_BYTES),Math.min(bytes.length,end-p*FILE_PART_BYTES+1));}
+  *bytes(id:string,start=0,end?:number):Generator<Buffer>{const v=this.version(id);if(!v.object_hash)throw new StoreError('Original is not archived',404);
+    for(const bytes of this.store.assets.bytes(v.object_hash,start,end)){this.version(id);yield bytes;}
   }
   stream(id:string,start=0,end?:number){return Readable.from(this.bytes(id,start,end));}
   chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
@@ -236,6 +224,6 @@ export class FileStore {
   sweep(){
     for(const u of this.store.db.prepare('SELECT id FROM file_uploads WHERE ack IS NOT NULL OR created_at<?').all(new Date(Date.now()-7*86400000).toISOString()) as {id:string}[]){rmSync(join(this.uploads,u.id),{recursive:true,force:true});this.store.db.prepare('DELETE FROM file_uploads WHERE id=?').run(u.id);}
     this.store.db.exec('DELETE FROM file_objects WHERE hash NOT IN (SELECT object_hash FROM file_versions WHERE object_hash IS NOT NULL UNION SELECT object_hash FROM file_assets)');
-    for(const name of readdirSync(this.objects)){const path=join(this.objects,name);if(Date.now()-statSync(path).mtimeMs<3600000)continue;if(!/^[a-f0-9]{64}(\.[a-f0-9-]+\.tmp)?$/.test(name))continue;if(!this.store.db.prepare('SELECT 1 FROM file_objects WHERE hash=?').get(name))rmSync(path,{recursive:true,force:true});}
+    this.store.assets.sweep();
   }
 }

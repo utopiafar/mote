@@ -5191,5 +5191,8 @@ export const english: Readonly<Record<string, string>> = {
   "继续同步": "Continue sync",
   "尚未启用 MCP。请在系统管理 → 模型与服务 → 来源与外部应用中开启 MCP，并配置独立读令牌后重启；写入还需明确启用并设置允许的信源。": "MCP is disabled. Enable it under System management → Models and services → Sources and external apps, configure a separate read token, and restart. Writing requires explicit activation and allowed sources.",
   "请先在系统管理 → 模型与服务 → 来源与外部应用中准备 Google OAuth 客户端与回调地址，然后重启节点。": "Configure the Google OAuth client and callback under System management → Models and services → Sources and external apps, then restart the node.",
-  "。配置入口在“系统管理 → 模型与服务 → 来源与外部应用”。仅支持 OAuth 的 Chatbot 不能直接使用 Bearer 接入。": ". Configure this under System management → Models and services → Sources and external apps. Chatbots supporting only OAuth cannot connect directly with Bearer tokens."
+  "。配置入口在“系统管理 → 模型与服务 → 来源与外部应用”。仅支持 OAuth 的 Chatbot 不能直接使用 Bearer 接入。": ". Configure this under System management → Models and services → Sources and external apps. Chatbots supporting only OAuth cannot connect directly with Bearer tokens.",
+  "原件资产目录": "Original asset directory",
+  "图片、导入文件与目录原件按内容哈希共享分片；观察记录和来源版本各自保留。": "Images, imported files and directory originals share content-addressed parts; observations and source versions retain their own identities.",
+  "限制去重原件、记录和处理元数据的逻辑字节；SQLite 索引、WAL、日志等额外占盘。达到上限返回 507，端点保留待传队列。": "Limits logical bytes for deduplicated originals, records and processing metadata; SQLite indexes, WAL and logs use additional space. At capacity the server returns 507 and clients retain their pending queues."
 };

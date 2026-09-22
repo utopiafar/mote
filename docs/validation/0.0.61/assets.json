@@ -1,0 +1,33 @@
+{
+  "kind": "generated-fixtures",
+  "version": "0.0.61",
+  "assetContract": {
+    "observations": 400,
+    "days": 400,
+    "batch": 200,
+    "individual": 200,
+    "sharedWith": [
+      "browser-import",
+      "directory-original"
+    ],
+    "uploadBytes": 67108864,
+    "partBytes": 4194304,
+    "maxConcatAssertionBytes": 4194432,
+    "gcAcrossConnections": true,
+    "legacyMigration": true
+  },
+  "workspace": {
+    "server": 413,
+    "desktop": 271,
+    "web": 60,
+    "agent": 101,
+    "agentSkipped": 1,
+    "diagnostics": 5,
+    "localInference": 13,
+    "shared": 53
+  },
+  "typecheck": "passed",
+  "i18nMessages": 5195,
+  "physicalDevice": false,
+  "realGmail": false
+}

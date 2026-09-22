@@ -189,13 +189,15 @@
       "title": "流式原件上传",
       "change": "Web 使用 `File.slice`，原生使用文件流；outbox 只存文件定位和版本",
       "acceptance": "不创建整体 Base64/JSON；内存随分片和并发有界；断网只补缺块；文件中途变化不生成混合原件",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
-        "apps/desktop/src/original-spool.ts",
-        "apps/desktop/test/original-spool.test.ts",
-        "apps/server/test/import-uploads.test.ts"
+        "apps/server/src/assets.ts",
+        "apps/server/src/evidence-store.ts",
+        "apps/server/test/assets.test.ts",
+        "apps/server/test/import-uploads.test.ts",
+        "apps/server/test/import-backup.test.ts"
       ],
-      "remaining": "Web/桌面分片已实现；中央导入 commit 仍会物化最多 64 MiB，缺统一全链流式资产存储。"
+      "remaining": ""
     },
     {
       "id": "SYNC-05",
@@ -244,12 +246,15 @@
       "title": "资产与证据存储",
       "change": "`AssetStore` 管 bytes/引用/GC；`EvidenceStore` 管观察/版本/provenance；工作区只是临时物化",
       "acceptance": "相同内容共享 blob 但不合并观察；删除一条引用不误删共享原件；在途资产不被 GC",
-      "status": "pending",
+      "status": "verified",
       "evidence": [
-        "apps/server/src/archived-files.ts",
-        "apps/server/src/files.ts"
+        "apps/server/src/assets.ts",
+        "apps/server/src/evidence-store.ts",
+        "apps/server/test/assets.test.ts",
+        "apps/server/test/import-uploads.test.ts",
+        "apps/server/test/import-backup.test.ts"
       ],
-      "remaining": "截图、导入文件、目录原件仍有分离的物理资产存储，尚未收敛到 AssetStore/EvidenceStore。"
+      "remaining": ""
     },
     {
       "id": "ING-03",

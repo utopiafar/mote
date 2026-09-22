@@ -75,18 +75,27 @@ try {
       ? db.prepare('SELECT hash FROM file_blobs').all() as { hash: unknown }[] : [];
     const fileObjects = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='file_objects'").get()
       ? db.prepare('SELECT hash,parts FROM file_objects').all() as {hash:unknown;parts:unknown}[] : [];
-    const paths:string[]=[];
+    const assets=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='assets'").get()?db.prepare('SELECT hash,parts,format FROM assets WHERE hash IN (SELECT hash FROM asset_references)').all() as {hash:string;parts:number;format:string}[]:[];
+    const unified=new Set(assets.map(asset=>asset.hash)),paths:string[]=[];
+    for(const asset of assets){
+      if(!/^[a-f0-9]{64}$/.test(asset.hash)||!Number.isSafeInteger(asset.parts)||asset.parts<0||asset.parts>128)throw new Error('Invalid asset metadata');
+      if(asset.format==='chunks')for(let part=0;part<asset.parts;part++)paths.push(await selectedContentPath(`files/objects/${asset.hash}/${part}`));
+      else if(asset.format==='image-legacy')paths.push('blobs/'+asset.hash);
+      else if(asset.format==='archive-legacy')paths.push(await selectedContentPath('files/'+asset.hash));
+      else throw new Error('Invalid asset format');
+    }
     // Restored databases are data, never authority to read arbitrary vault files.
     for (const { hash } of rows) {
       if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid blob hash in backup source');
-      paths.push('blobs/'+hash);
+      if(!unified.has(hash))paths.push('blobs/'+hash);
     }
     for (const { hash } of fileRows) {
       if (typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) throw new Error('Invalid file hash in backup source');
-      paths.push(await selectedContentPath('files/'+hash));
+      if(!unified.has(hash))paths.push(await selectedContentPath('files/'+hash));
     }
     for(const object of fileObjects){
       if(typeof object.hash!=='string'||!/^[a-f0-9]{64}$/.test(object.hash)||typeof object.parts!=='number'||!Number.isSafeInteger(object.parts)||object.parts<0||object.parts>128)throw new Error('Invalid file object in backup source');
+      if(unified.has(object.hash))continue;
       for(let part=0;part<object.parts;part++)paths.push(await selectedContentPath(`files/objects/${object.hash}/${part}`));
     }
     for(const path of paths)await ordinarySource(join(source,path));
@@ -101,6 +110,8 @@ try {
       try{
         // Upload staging is excluded. Clients open new sessions from their own durable queues.
         if(hasTable('file_uploads'))snapshot.exec('DELETE FROM file_uploads');
+        if(hasTable('asset_pins'))snapshot.exec('DELETE FROM asset_pins');
+        if(hasTable('assets'))snapshot.exec('DELETE FROM assets WHERE hash NOT IN (SELECT hash FROM asset_references)');
         if(hasTable('file_parts'))snapshot.exec('DELETE FROM file_parts');
         if(hasTable('file_jobs'))snapshot.exec("UPDATE file_jobs SET state='waiting' WHERE state='running'; UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running'");
         if(hasTable('file_steps'))snapshot.exec("UPDATE file_steps SET state='waiting' WHERE state='running'");
