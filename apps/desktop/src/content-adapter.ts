@@ -1,6 +1,6 @@
 import { extractFileText } from './file-index';
 
-export interface ContentReadResult { text: string; parser: string; status: 'ready'|'pending'|'unsupported' }
+export interface ContentReadResult { text: string; parser: string; status: 'ready'|'pending'|'unsupported'; coverage?: 'full'|'partial'|'none'; warnings?: string[] }
 export interface ContentAdapter {
   readonly name: string;
   supports(mimeType: string): boolean;

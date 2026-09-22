@@ -1,12 +1,14 @@
+import {ProviderFailure} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
-import {assembleContext,taskTools,WORKING_SYSTEM_PROMPT} from './task-context.js';
+import {assembleContext,taskTools} from './task-context.js';
 import {randomUUID} from 'node:crypto';
 import {startBridge,TOOL_NAMES} from './bridge.js';
 import {CONTEXT_TOOLS} from './context-tools.js';
 import {CodexSession,type CodexTool} from './codex-session.js';
 import {bundledSkills} from './skills.js';
 import {displayTime} from './time.js';
-import {parseAnswer,SYSTEM_PROMPT} from './index.js';
+import {parseAnswer} from './index.js';
+import {systemInstructions} from './instructions.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,validateHostOutput,type AgentOptions,type QueryInput,type AgentAnswer} from './types.js';
 
 export const codexContextTools:CodexTool[]=[...CONTEXT_TOOLS.map(([name,description,fields]):CodexTool=>({
@@ -48,12 +50,13 @@ export function createCodexAgent(options:AgentOptions){
         }
       };
       if(closed)throw new AgentProviderError();
-      session=new CodexSession(options,call,trace);sessions.add(session);
+      session=new CodexSession(options,call,trace,input.onUsage);sessions.add(session);
       input.signal?.throwIfAborted();
-      trace({type:'instructions.assembled',stage:'starting',payload:{system:input.skill==='working-memory'?WORKING_SYSTEM_PROMPT:SYSTEM_PROMPT,tools:codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill')}});
-      await session.start(input.skill==='working-memory'?WORKING_SYSTEM_PROMPT:SYSTEM_PROMPT,codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill'));
+      const system=systemInstructions(input,bridge.seedEvidence);
+      trace({type:'instructions.assembled',stage:'starting',payload:{system:system,tools:codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill')}});
+      await session.start(system,codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill'));
       reportProgress(input,{stage:'model'});
-      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,input.skill==='working-memory'?WORKING_SYSTEM_PROMPT:SYSTEM_PROMPT,codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill'),options.maxTokens??65536);
+      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill'),options.maxTokens??65536);
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       trace({type:'model.started',stage:'model',phase:'started',payload:{prompt}});
       const modelStarted=performance.now();
@@ -77,7 +80,7 @@ export function createCodexAgent(options:AgentOptions){
       trace({type:'validation.completed',stage:'validating',phase:'completed',status:'accepted',payload:{citations:answer.citations.map(citation=>citation.id)}});
       trace({type:'run.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{citations:answer.citations.map(citation=>citation.id),toolCalls:bridge.trace}});
       return {...answer,trace:bridge.trace,contextUsage:{...metrics,toolResults:bridge.deliveredCharacters},runId};
-    }catch(error){trace({type:'run.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:error instanceof AgentResponseError?error.reason:undefined}});if(error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentResponseError)throw error;throw new AgentProviderError();}
+    }catch(error){trace({type:'run.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:error instanceof AgentResponseError?error.reason:undefined}});if(error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentResponseError||error instanceof ProviderFailure)throw error;throw new AgentProviderError();}
     finally{input.signal?.removeEventListener('abort',abort);try{await session?.close();}finally{if(session)sessions.delete(session);await bridge.close();}}
   }
   return {configured:Boolean(options.model?.trim()),query(input:QueryInput){const task=execute(input);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};

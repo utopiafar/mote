@@ -13,10 +13,10 @@ const source: SourceDefinition = { id: 'fixture', name: 'fixture', kind: 'coding
 const item = (index: number, syncQueue: 'realtime' | 'history'): ScannedItem => ({ externalId: `event-${index}`, title: `event ${index}`, text: `generated ${index}`, kind: 'message', layer: 'snapshot', syncQueue });
 const receipt = (value: ScannedItem & { revision: string }) => ({ id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: source.id, externalId: value.externalId, revision: value.revision, duplicate: false });
 
-it('uploads ordinary source records in batches, gives realtime four turns for one history turn, and checkpoints per batch', async () => {
+it('schedules ordinary source records by admitted bytes and checkpoints per batch', async () => {
   const engine = new SourceSync(join(root, 'state.json'));
   await engine.initialize();
-  await engine.stage({ items: [...Array.from({ length: 500 }, (_, i) => item(i, 'realtime')), ...Array.from({ length: 100 }, (_, i) => item(i + 500, 'history'))], seen: [], complete: true, skipped: 0 }, false);
+  await engine.stage({ items: [...Array.from({ length: 900 }, (_, i) => ({...item(i, 'realtime'),text:'x'.repeat(24000)})), ...Array.from({ length: 100 }, (_, i) => item(i + 900, 'history'))], seen: [], complete: true, skipped: 0 }, false);
   const paths: string[] = [], firstIds: string[] = [];
   const request = async (path: string, body: unknown, method: 'GET' | 'POST' | 'PUT') => {
     paths.push(`${method} ${path}`);
@@ -25,13 +25,13 @@ it('uploads ordinary source records in batches, gives realtime four turns for on
     firstIds.push(records[0]!.externalId);
     return { receipts: records.map(receipt) };
   };
-  await engine.flush(source, request);
+  for(let turn=0;engine.status().pending&&turn<20;turn++)await engine.flushSlice(source,request);
   const batches = paths.filter(path => path.includes('/items/batch'));
-  expect(batches).toHaveLength(6);
-  expect(firstIds.slice(0, 4).every(id => Number(id.replace('event-', '')) < 500)).toBe(true);
-  expect(Number(firstIds[4]!.replace('event-', ''))).toBeGreaterThanOrEqual(500);
+  expect(batches).toHaveLength(10);
+  expect(firstIds.slice(0, 8).every(id => Number(id.replace('event-', '')) < 900)).toBe(true);
+  expect(Number(firstIds[8]!.replace('event-', ''))).toBeGreaterThanOrEqual(900);
   expect(engine.status()).toMatchObject({ pending: 0, realtimePending: 0, historyPending: 0 });
-});
+},30000);
 
 it('does not remove a batch when the central acknowledgement has the wrong identity', async () => {
   const engine = new SourceSync(join(root, 'state.json'));

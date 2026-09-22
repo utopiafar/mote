@@ -74,7 +74,7 @@ export class Conversations {
     const question=turn.question;
     const id=previous?.id??randomUUID(),title=previous?.title??Array.from(question).slice(0,80).join('');
     const json=JSON.stringify(turn),size=Buffer.byteLength(json);
-    this.store.db.exec('BEGIN IMMEDIATE');
+    const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try {
       const existing=this.store.db.prepare('SELECT json,updated_at FROM conversations WHERE id=?').get(id);
       const meta=existing?JSON.parse(String(existing.json)):undefined;
@@ -85,8 +85,8 @@ export class Conversations {
       this.store.reserveMetadata(size+512);
       this.store.db.prepare('INSERT INTO conversations(id,title,created_at,updated_at,json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(id,title,previous?.createdAt??now,now,JSON.stringify({scope:turn.scope,turnCount:count+1,status:turn.status,bytes:(meta?.bytes??0)+size,revision:(meta?.revision??0)+1}));
       this.store.db.prepare('INSERT INTO conversation_turns VALUES(?,?,?,?)').run(id,count,turn.id,json);
-      this.store.db.exec('COMMIT');
-    }catch(error){this.store.db.exec('ROLLBACK');throw error;}
+      if(own)this.store.db.exec('COMMIT');
+    }catch(error){if(own&&this.store.db.isTransaction)this.store.db.exec('ROLLBACK');throw error;}
     return {conversationId:id,turnId:turn.id};
   }
 

@@ -80,6 +80,7 @@ class LocalStateInstrumentedTest {
         try {
             WorkManager.getInstance(context).cancelAllWork().result.get()
             settings.save(original.copy(server = "", token = "", syncMode = "manual", ocrChargingOnly = true))
+            shell("dumpsys battery unplug"); shell("dumpsys battery set status 3")
             shell("pm grant ${context.packageName} android.permission.POST_NOTIFICATIONS")
             val a = add(); val b = add(); add(false)
             stock(2, 0)
@@ -156,7 +157,7 @@ class LocalStateInstrumentedTest {
         } finally {
             WorkManager.getInstance(context).cancelAllWork().result.get()
             ids.forEach { id -> listOf(queue, pending).forEach { q -> q.dedupeRow(id)?.let { q.resolveDedupe(id, it.optString("blob"), null, null, null) } } }
-            settings.save(original); settings.status(originalState, originalMessage); Notifications.clear(context)
+            shell("dumpsys battery reset"); settings.save(original); settings.status(originalState, originalMessage); Notifications.clear(context)
             observer.cancel(); scope.cancel(); repository.refresh()
         }
     }

@@ -1,0 +1,101 @@
+{
+  "scope": "final local workspace run plus focused corrections; final exact-source CI is recorded by GitHub Checks/Release",
+  "initialExitCode": 1,
+  "workspaces": [
+    {
+      "workspace": "@mote/desktop",
+      "tests": 291,
+      "pass": 291,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "workspace": "@mote/server",
+      "tests": 546,
+      "pass": 545,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 0,
+      "duration_ms": 129336.846333
+    },
+    {
+      "workspace": "@mote/web",
+      "tests": 101,
+      "pass": 100,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 0,
+      "duration_ms": 1689.223666
+    },
+    {
+      "workspace": "@mote/agent",
+      "tests": 118,
+      "pass": 117,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 1,
+      "duration_ms": 10054.279833
+    },
+    {
+      "workspace": "@mote/diagnostics",
+      "tests": 5,
+      "pass": 5,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "workspace": "@mote/local-inference",
+      "tests": 13,
+      "pass": 13,
+      "fail": 0,
+      "skipped": 0
+    },
+    {
+      "workspace": "@mote/shared",
+      "tests": 69,
+      "pass": 69,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "duration_ms": 329.734875
+    }
+  ],
+  "corrections": [
+    {
+      "cause": "Indexer migration omitted diagnostic stage measurement and its fixture mocked the previous execution entry",
+      "files": [
+        "apps/server/src/indexer.ts",
+        "apps/server/test/diagnostics.test.ts"
+      ],
+      "command": "node --import tsx --test apps/server/test/diagnostics.test.ts apps/server/test/indexer-execution.test.ts",
+      "tests": 31,
+      "passed": 31
+    },
+    {
+      "cause": "A new Operation UI fixture still expected the previous translation label",
+      "files": [
+        "apps/web/test/operation-ui-closure.test.ts"
+      ],
+      "command": "cd apps/web && node --import tsx --test test/operation-ui-closure.test.ts",
+      "tests": 3,
+      "passed": 3
+    }
+  ],
+  "additionalFocusedRegression": {
+    "cause": "Sustained memory analysis exposed retained long execution deadline timers",
+    "before": {
+      "tests": 2,
+      "passed": 1,
+      "failed": 1,
+      "retainedLongTimers": 9
+    },
+    "after": {
+      "command": "node --import tsx --test apps/server/test/execution-deadline-cleanup.test.ts apps/server/test/execution-engine.test.ts apps/server/test/query-commit-fence.test.ts apps/server/test/operation-runs.test.ts apps/server/test/indexer-execution.test.ts",
+      "tests": 23,
+      "passed": 23,
+      "retainedLongTimers": 0
+    },
+    "newTests": 2,
+    "finalSourceServerTests": 548
+  }
+}

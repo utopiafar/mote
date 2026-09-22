@@ -98,13 +98,13 @@ export function canonicalRunStatus(input:LegacyExecutionInput):RunStatus {
 }
 
 function failureFor(input:LegacyExecutionInput,status:RunStatus):TaskFailure|undefined {
-  const code=stringValue(input.errorCode)??(typeof input.error==='object'&&input.error&&'code' in input?stringValue((input.error as {code?:unknown}).code):undefined);
+  const code=stringValue(input.errorCode)??(typeof input.error==='object'&&input.error&&'code' in input.error?stringValue((input.error as {code?:unknown}).code):undefined);
   if(!code)return undefined;
-  const retryable=new Set(['provider_failed','model_failed','agent_response','timeout','network','rate_limited','worker_interrupted']);
-  const waiting=new Set(['model_unconfigured','provider_unavailable','daily_budget','worker_offline','awaiting_confirmation']);
+  const retryable=new Set(['provider_failed','model_failed','agent_response','timeout','network','rate_limited','worker_interrupted','provider_unavailable','provider_timeout','provider_network']);
+  const waiting=new Set(['provider_quota','recovery_window_exhausted','model_token_budget','model_cost_budget','budget_price_required','budget_unbounded_runtime','model_budget_unavailable','configuration_changed','model_unconfigured','provider_authentication','provider_endpoint','provider_redirect','daily_budget','worker_offline','awaiting_confirmation']);
   const recovery:FailureRecovery=waiting.has(code)?'needs_action':retryable.has(code)?'auto_retry':'permanent';
-  const scope:FailureScope=waiting.has(code)&&code!=='daily_budget'?'provider':code==='worker_offline'?'system':'item';
-  const safeMessage=code==='model_unconfigured'?'Model configuration is required before this step can continue.':
+  const scope:FailureScope=(waiting.has(code)&&code!=='daily_budget')||['rate_limited','provider_unavailable','provider_timeout','provider_network'].includes(code)?'provider':code==='worker_offline'?'system':'item';
+  const safeMessage=code==='recovery_window_exhausted'?'The automatic recovery window ended. Retry explicitly to start a new window.':code==='provider_quota'?'The provider quota is exhausted. Restore the account quota before continuing.':['model_token_budget','model_cost_budget'].includes(code)?'The configured model budget has no available reservation.':code==='budget_price_required'?'Set a model price in the budget currency before continuing.':code==='budget_unbounded_runtime'?'This runtime cannot enforce the configured per-request budget.':code==='model_budget_unavailable'?'The host model budget is unavailable.':code==='configuration_changed'?'The relevant model configuration changed. Retry to use the current configuration; completed batches are preserved.':code==='model_unconfigured'?'Model configuration is required before this step can continue.':
     code==='daily_budget'?'The configured processing budget is exhausted for now.':
     code==='provider_unavailable'?'The configured provider is unavailable.':
     code==='worker_offline'?'The required worker is offline.':
@@ -116,8 +116,8 @@ function failureFor(input:LegacyExecutionInput,status:RunStatus):TaskFailure|und
 function waitFor(input:LegacyExecutionInput,status:RunStatus,failure?:TaskFailure):WaitCondition|undefined {
   if(status!=='waiting')return undefined;
   const code=failure?.code??stringValue(input.errorCode);
-  const reason:WaitReason=code==='model_unconfigured'||code==='provider_unavailable'?'provider_unavailable':
-    code==='daily_budget'?'resource_limit':code==='awaiting_confirmation'?'user_confirmation':code==='worker_offline'?'worker_offline':
+  const reason:WaitReason=['model_unconfigured','provider_unavailable','provider_authentication','provider_endpoint','provider_redirect'].includes(code??'')?'provider_unavailable':
+    ['daily_budget','model_token_budget','model_cost_budget'].includes(code??'')?'resource_limit':code==='awaiting_confirmation'?'user_confirmation':code==='worker_offline'?'worker_offline':
     code==='dependency'?'dependency':code==='configuration'?'configuration':'dependency';
   return {reason,...(failure?.scope==='provider'?{resource:'configured-provider'}:{}),...(failure?.retryAfterMs!==undefined?{retryAfterMs:failure.retryAfterMs}:{}),...(reason==='provider_unavailable'?{requiredAction:'update_configuration'}:{})};
 }

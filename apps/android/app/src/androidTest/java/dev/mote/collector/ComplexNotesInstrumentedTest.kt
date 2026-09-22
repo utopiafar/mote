@@ -42,6 +42,24 @@ class ComplexNotesInstrumentedTest {
         if (view is android.view.ViewGroup) for (index in 0 until view.childCount) field(view.getChildAt(index), hint)?.let { return it }
         return null
     }
+    private fun ActivityScenario<MainActivity>.openNotes(): ActivityScenario<MainActivity> {
+        onActivity { activity ->
+            fun views(v: android.view.View): Sequence<android.view.View> = sequence {
+                yield(v)
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) yieldAll(views(v.getChildAt(i)))
+            }
+            views(activity.window.decorView).filterIsInstance<android.widget.TextView>()
+                .single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("记录") }.performClick()
+        }
+        val deadline = SystemClock.elapsedRealtime() + 10_000
+        var ready = false
+        while (!ready && SystemClock.elapsedRealtime() < deadline) {
+            onActivity { ready = field(it.window.decorView, "记下此刻的想法…")?.isEnabled == true }
+            if (!ready) Thread.sleep(25)
+        }
+        assertTrue("Note draft must finish loading", ready)
+        return this
+    }
     private fun get(path: String): JSONObject {
         val config = Settings(context).read()
         val connection = URL(config.server + path).openConnection() as HttpURLConnection
@@ -65,17 +83,18 @@ class ComplexNotesInstrumentedTest {
         }
         val settings = Settings(context)
         context.getSharedPreferences("mote", 0).edit().putString("deviceId", "android-complex-${UUID.randomUUID()}").commit()
-        val config = settings.read().copy(server = url, token = token, deviceName = "Android complex synthetic round $round", debugHttp = true, wifiOnly = false, contentEncryptionEnabled = false)
+        val config = settings.read().copy(server = url, token = token, deviceName = "Android complex synthetic round $round", debugHttp = true, wifiOnly = false, syncMode = "realtime", uploadedRetentionDays = 0, contentEncryptionEnabled = false)
         settings.save(config); val drafts = QuickNotes.draft(context); drafts.clear()
         val records = JSONArray()
         val fixtures = ComplexNoteFixtures.cases(round)
         var editorMs = 0L
         fixtures.forEach { fixture ->
             if (fixture.name == "maximum-length") {
-                ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { activity ->
+                ActivityScenario.launch(MainActivity::class.java).awaitMainUi().openNotes().use { activity ->
                     val started = SystemClock.elapsedRealtime()
                     activity.onActivity { field(it.window.decorView, "记下此刻的想法…")!!.setText(fixture.text) }
-                    activity.recreate(); activity.awaitMainUi()
+                    QuickNotes.io.submit {}.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                    activity.recreate(); activity.awaitMainUi().openNotes()
                     activity.onActivity { assertEquals(fixture.text, field(it.window.decorView, "记下此刻的想法…")!!.text.toString()) }
                     editorMs = SystemClock.elapsedRealtime() - started
                     assertEquals(fixture.text, drafts.read().text)
@@ -103,9 +122,9 @@ class ComplexNotesInstrumentedTest {
         assertEquals(records.length(), context.queue().depth())
         val drafts = QuickNotes.draft(context); val pending = drafts.read()
         assertEquals(before.getJSONObject("prepared").toString(), pending.prepared!!.toString())
-        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { activity ->
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().openNotes().use { activity ->
             activity.onActivity { assertEquals(pending.text, field(it.window.decorView, "记下此刻的想法…")!!.text.toString()) }
-            activity.recreate(); activity.awaitMainUi()
+            activity.recreate(); activity.awaitMainUi().openNotes()
             activity.onActivity { assertEquals(pending.text, field(it.window.decorView, "记下此刻的想法…")!!.text.toString()) }
         }
         val id = QuickNotes.save(context, pending.text, pending.mood)
@@ -137,6 +156,7 @@ class ComplexNotesInstrumentedTest {
                 .put("deviceName", actual.getString("deviceName")).put("platform", "android").put("capturedAt", actual.getString("capturedAt"))
                 .put("source", "note").put("appId", "dev.mote.notes").put("appName", "随手记").put("durationMs", 0)
                 .put("ocrText", item.getString("text")).put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
+            if (actual.has("metadata") && !actual.isNull("metadata")) duplicate.put("metadata", actual.getJSONObject("metadata"))
             if (item.getString("mood").isNotBlank()) duplicate.put("mood", item.getString("mood"))
             val (code, ack) = HttpJson.post(settings.read().server + "/api/captures", duplicate, settings.read().token)
             assertEquals(200, code); assertEquals(item.getString("id"), ack!!.getString("id")); assertTrue(ack.getBoolean("duplicate"))

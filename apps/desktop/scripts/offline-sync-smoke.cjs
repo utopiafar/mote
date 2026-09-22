@@ -33,10 +33,11 @@ const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/api/captures') captureBodies.push(body);
     if (req.url === '/api/captures/batch') captureBodies.push(...body.captures);
+    if (req.url === '/api/file-sync/v1/manifests') sourceBodies.push(...body.items.map(value=>value.item));
     if (req.method === 'PUT' && (req.url.endsWith('/items') || req.url === '/api/file-sync/v1/revisions')) sourceBodies.push(body.item ?? body);
     // Forward to the real Mote server API/SQLite fixture, retaining transport payloads for equality checks.
     const response = await fetch(actualOrigin + req.url, { method: req.method, headers: { authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}), redirect: 'error' });
-    const text = await response.text(); res.writeHead(response.status); res.end(text);
+    const text = await response.text(); if(!response.ok)process.stderr.write('Fixture HTTP '+req.url+' '+response.status+' '+text+'\n'); res.writeHead(response.status); res.end(text);
   } catch (error) { process.stderr.write('Fixture node rejected request: ' + error.message + '\n'); res.writeHead(500); res.end('{}'); }
 });
 const other = createServer((_req, res) => { otherRequests++; res.writeHead(500); res.end('{}'); });
@@ -44,7 +45,7 @@ const until = async fn => { for (let i = 0; i < 200; i++) { if (await fn()) retu
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const queueBodies = () => readdirSync(join(profile, 'queue/events')).filter(name => name.endsWith('.json')).map(name => JSON.parse(readFileSync(join(profile, 'queue/events', name), 'utf8')).event).sort((a, b) => a.id.localeCompare(b.id));
 const sourcePending = (url, credential, id) => {
-  const state = JSON.parse(readFileSync(join(profile, 'local-sources/nodes', createHash('sha256').update(url + ':' + credential).digest('hex'), id + '.json'), 'utf8'));
+  const state = require('../dist/source-state-store').sourceState(join(profile, 'local-sources/nodes', createHash('sha256').update(url + ':' + credential).digest('hex'), id + '.json'));
   // SourceSync v2 separates realtime and history queues; keep this fixture
   // compatible with the legacy state shape so it validates both migrations.
   return [

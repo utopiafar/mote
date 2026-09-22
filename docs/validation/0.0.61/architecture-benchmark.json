@@ -1,0 +1,83 @@
+{
+  "generatedAt": "2026-09-21T14:50:48.132Z",
+  "fixtureOnly": true,
+  "realModelsCalled": 0,
+  "node": "v24.15.0",
+  "cpu": "Apple M4",
+  "counts": {
+    "observations": 20000,
+    "files": 100000
+  },
+  "measurements": {
+    "observationIngest": {
+      "durationMs": 16338.480917,
+      "batchSize": 100,
+      "p50Ms": 79.03016600000046,
+      "p95Ms": 118.25816699999996,
+      "observationsPerSecond": 1224.0889130197236
+    },
+    "aggregation": {
+      "durationMs": 2797.664249999998,
+      "observations": 20000,
+      "contents": 2001,
+      "artifacts": 334,
+      "pendingGroups": 0,
+      "blockedGroups": 0,
+      "raw": 12826680,
+      "reduced": 1071770,
+      "representatives": 1667,
+      "textReductionRatio": 0.9164421346755357,
+      "representativeReductionRatio": 0.91665
+    },
+    "factRetrieval": {
+      "checked": 5,
+      "passed": 5,
+      "durationMs": 6.956041000001278
+    },
+    "fileCatalog": {
+      "durationMs": 90076.578041,
+      "files": 100000,
+      "batchSize": 500,
+      "p95Ms": 580.5506249999889,
+      "modelCalls": 0
+    },
+    "incrementalTextIndex": {
+      "files": 1000,
+      "durationMs": 1122.6492090000102,
+      "modelCalls": 0
+    },
+    "largeArchiveSearch": {
+      "durationMs": 1389.3761249999952
+    },
+    "capacityAccounting": {
+      "checks": 10000,
+      "durationMs": 48.380292000001646
+    },
+    "storage": {
+      "logicalBytes": 87391848,
+      "physicalBytes": 587758328,
+      "peakRssBytes": 648429568
+    }
+  },
+  "assumptions": {
+    "imageKiB": 150,
+    "jsonKiB": 4,
+    "activeHours": 16,
+    "sampleSeconds": 5
+  },
+  "estimates": {
+    "observationsPer16h": 11520,
+    "rawGiBPerDay": 1.69189453125,
+    "optimizedGiBPerDay": 0.50537109375,
+    "exactRepeatRate": 0.5,
+    "uiReplacementRate": 0.4,
+    "requestsPerDayAt60Seconds": 960,
+    "transmissionMinutesAt10Mbps": 7.2351744,
+    "ocrImagesPerDay": 3456,
+    "ocrSecondsAt2Workers2Seconds": 3456,
+    "rawInputTokensAt1000PerObservation": 11520000,
+    "segmentInputTokensUsingMeasuredTextRatio": 962587,
+    "pricing": "No live price assumptions; multiply input/output token totals by configured per-million prices.",
+    "gzipFixtureRatio": 0.00524
+  }
+}

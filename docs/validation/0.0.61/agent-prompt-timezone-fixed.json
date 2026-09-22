@@ -1,0 +1,81 @@
+{
+  "model": "gpt-5.6-luna",
+  "personalDataUsed": false,
+  "calls": [
+    {
+      "case": "partial-correction",
+      "mode": "all-source-rules",
+      "startupMs": 5416.995792000001,
+      "durationMs": 15083.296332999998,
+      "usage": {
+        "measurement": "thread_cumulative",
+        "complete": true,
+        "requests": 0,
+        "reportedRequests": 0,
+        "inputTokens": 5119,
+        "outputTokens": 165,
+        "totalTokens": 5284,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 47
+      },
+      "contextCharacters": 19186
+    },
+    {
+      "case": "partial-correction",
+      "mode": "bounded-source-rules",
+      "startupMs": 5087.058915999998,
+      "durationMs": 14832.626291,
+      "usage": {
+        "measurement": "thread_cumulative",
+        "complete": true,
+        "requests": 0,
+        "reportedRequests": 0,
+        "inputTokens": 4703,
+        "outputTokens": 227,
+        "totalTokens": 4930,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 86
+      },
+      "contextCharacters": 16869
+    },
+    {
+      "phase": "independent-judgment",
+      "usage": {
+        "measurement": "thread_cumulative",
+        "complete": true,
+        "requests": 0,
+        "reportedRequests": 0,
+        "inputTokens": 8309,
+        "outputTokens": 238,
+        "totalTokens": 8547,
+        "cacheReadTokens": 3840,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 132
+      }
+    }
+  ],
+  "cases": [
+    {
+      "name": "partial-correction",
+      "text": "Generated user Lin note v1: Project Aurora review is proposed for 2027-03-02 at 15:00; Project Birch review is proposed for 2027-03-05 at 17:00. Correction v2: only the Aurora date is changed to 2027-03-04 at 15:00. The Birch proposal is unchanged. Neither proposed meeting has occurred.",
+      "question": "List the current proposals, explain what changed, and whether any meeting occurred.",
+      "rubric": "Aurora changed from March 2 to March 4 at 15:00. Birch remains March 5 at 17:00. Both are proposals; no attendance/completion. Do not invalidate Birch because Aurora was corrected.",
+      "answers": {
+        "all-source-rules": "- **Project Aurora review:** proposed for **March 4, 2027 at 15:00**. The date changed from March 2 to March 4; the time stayed the same.\n- **Project Birch review:** proposed for **March 5, 2027 at 17:00**. No change.\n\nNeither proposed meeting has occurred.",
+        "bounded-source-rules": "- **Project Aurora review:** proposed for **2027-03-04 at 15:00**. It changed from **2027-03-02 at 15:00**.\n- **Project Birch review:** proposed for **2027-03-05 at 17:00**. It is unchanged.\n\nNeither proposed meeting has occurred. [13771710-82c8-4531-a8f3-f4df009b6bc1]"
+      }
+    }
+  ],
+  "judgment": {
+    "cases": [
+      {
+        "name": "partial-correction",
+        "baselinePass": true,
+        "boundedPass": true,
+        "reason": "两份答案都准确说明了Aurora从2027-03-02改为2027-03-04、时间保持15:00；Birch仍为2027-03-05 17:00，并正确说明两场会议都只是提案且尚未发生。"
+      }
+    ]
+  }
+}

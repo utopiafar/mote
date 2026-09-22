@@ -55,7 +55,7 @@ test('backlog drains bounded frozen rounds across restart, including small tail,
  const register=(l:MemoryLifecycle)=>l.register({id:'extraction',version:'fixture',stream:'evidence',async run(){calls++;}});
  let l=new MemoryLifecycle(store,()=>true,()=>now);register(l);l.configure({...l.settings(),drainWindows:3,extraction:{enabled:true,intervalHours:6,minChanges:25,maxItems:100}});
  const add=()=>store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(randomUUID(),new Date().toISOString());
- for(let i=0;i<205;i++)add();await l.tick();assert.equal(calls,0);now=6*3600000;await l.tick();assert.equal(calls,1);assert.equal(l.view().extensions[0].cursor,100);await l.close();
+ for(let i=0;i<205;i++)add();await l.tick();assert.equal(calls,1);assert.equal(l.view().extensions[0].cursor,100);await l.close();
  add();l=new MemoryLifecycle(store,()=>true,()=>now);register(l);t.after(()=>l.close());await l.tick();await l.tick();assert.equal(calls,3);assert.equal(l.view().extensions[0].cursor,205);await l.tick();assert.equal(calls,3);assert.equal(l.view().extensions[0].pendingChanges,1);
 });
 
@@ -66,13 +66,13 @@ test('generation receipt wins over stale configured model metadata',async t=>{
  assert.equal(memories.extract(value,'obsolete-config-model',{requireAdmission:true}).items[0].model,'actual-generation-model');
 });
 
-test('window budget ends a round even with backlog, and disabled draining pauses safely',async t=>{
+test('bounded rounds keep draining on threshold while disabled extraction pauses safely',async t=>{
  const {store}=fixture(t);let now=0;const l=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>l.close());
  l.register({id:'extraction',version:'fixture',stream:'evidence',async run(){}});
  l.configure({...l.settings(),drainWindows:2,extraction:{enabled:true,intervalHours:6,minChanges:1,maxItems:2}});
  for(let i=0;i<7;i++)store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(randomUUID(),new Date().toISOString());
  now=6*3600000;await l.tick();assert.equal(l.view().extensions[0].cursor,2);
  l.configure({...l.settings(),extraction:{...l.settings().extraction,enabled:false}});await l.tick();assert.equal(l.view().extensions[0].cursor,2);
- l.configure({...l.settings(),extraction:{...l.settings().extraction,enabled:true}});await l.tick();await l.tick();assert.equal(l.view().extensions[0].cursor,4);
+ l.configure({...l.settings(),extraction:{...l.settings().extraction,enabled:true}});await l.tick();assert.equal(l.view().extensions[0].cursor,4);await l.tick();assert.equal(l.view().extensions[0].cursor,6);
  now+=6*3600000;await l.tick();await l.tick();assert.equal(l.view().extensions[0].cursor,7);
 });

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T15:57:10.929948+00:00",
+  "status": "pass",
+  "scope": "Only bounded central supervisor stdout/stderr rotation; no profiles, central node, Android or model runs.",
+  "initialIntegrationFailure": {
+    "location": "scripts/test-profiles.mjs:119",
+    "outcome": "Noisy supervisor exit code null after helper 60 second deadline; preceding live restore/upgrade/profile checks had passed.",
+    "causalLimit": "The 60 second timeout did not reproduce in isolation. Parallel disk contention is plausible but not established as the sole cause."
+  },
+  "diagnosis": "Original implementation performs synchronous stat/append/chmod for every sanitized line. High output amplifies filesystem work even though privacy and storage bounds remain correct.",
+  "change": {
+    "sanitizedBufferMaxBytes": 16384,
+    "rawOutputBufferedInLogBatch": false,
+    "flush": "Every child data event, stream end, spawn error and child close; no timer-delayed output.",
+    "diskFailure": "Stop further log writes, terminate child, preserve failure exit status.",
+    "rotationLimitsAndFilePermissions": "Unchanged"
+  },
+  "sameGeneratedWorkload": {
+    "stdoutLines": 60000,
+    "stderrBytes": 2300000,
+    "maxLogBytes": 104857,
+    "maxFiles": 3,
+    "before": {
+      "lines": 60000,
+      "code": 0,
+      "signal": null,
+      "seconds": 2.1349155,
+      "counts": {
+        "statSync": 120079,
+        "appendFileSync": 60039,
+        "chmodSync": 60039,
+        "rmSync": 38,
+        "renameSync": 76
+      },
+      "sizes": [
+        35506,
+        104857,
+        104857
+      ],
+      "privateLeaked": false,
+      "stderr": ""
+    },
+    "after": {
+      "lines": 60000,
+      "code": 0,
+      "signal": null,
+      "seconds": 0.291232042,
+      "counts": {
+        "statSync": 585,
+        "appendFileSync": 292,
+        "chmodSync": 292,
+        "rmSync": 38,
+        "renameSync": 76
+      },
+      "sizes": [
+        35506,
+        104857,
+        104857
+      ],
+      "privateLeaked": false,
+      "stderr": ""
+    },
+    "measurementLimit": "One isolated pre-change and one isolated post-change full workload with identical fs-call instrumentation. This is not a broad performance benchmark."
+  },
+  "targetedValidation": {
+    "status": "passed",
+    "noisyRestarts": 2,
+    "stdoutLinesPerRestart": 60000,
+    "stderrBytesPerRestart": 2300000,
+    "noisyMs": 561,
+    "boundedFiles": 3,
+    "fileMode": "0600",
+    "privateContentSuppressed": true,
+    "splitFinalLineFlushed": true,
+    "childExitCodePreserved": true,
+    "signalFlush": true,
+    "diskFailureStopsChild": true
+  },
+  "command": "node scripts/test-central-runner.mjs",
+  "fullProfilesRerun": false
+}

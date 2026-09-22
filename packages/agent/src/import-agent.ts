@@ -1,4 +1,5 @@
-import type {TokenUsage} from '@mote/shared';
+import {observeModelTransport} from './model-transport-observer.js';
+import {ProviderFailure,type TokenUsage} from '@mote/shared';
 import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {createCodexImportAgent} from './codex-import.js';
@@ -30,19 +31,21 @@ export function createImportAgent(options:Omit<AgentOptions,'reader'>,prepareLau
     if(closed)throw new AgentProviderError();
     const modelAdmission=new AbortController();
     const root=await mkdtemp(join(tmpdir(),'mote-import-agent-')),runId=randomUUID();
+    let transportObserver:Awaited<ReturnType<typeof observeModelTransport>>|undefined;
     let harness:DeepSeekHarness|undefined,timeout:ReturnType<typeof setTimeout>|undefined,primaryFailure=false;
     try{
+      transportObserver=await observeModelTransport(options.admitModelRequest);
       const transportPath=join(root,'transport.mjs');
       await writeFile(transportPath,readFileSync(new URL('./plugin.mjs',import.meta.url),'utf8')
         .replace('from "./context-tools.js"',`from ${JSON.stringify(new URL('./context-tools.js',import.meta.url).href)}`)
         .replace('from "@deepseek-ai/dsh-tools"',`from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tools'))}`)
         .replace('from "@deepseek-ai/dsh-tool-skill"',`from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tool-skill'))}`),{mode:0o600});
       const plugin=join(root,'import-plugin.mjs');
-      await writeFile(plugin,`import {boundedModelFetch} from ${JSON.stringify(transportPath)};
+      await writeFile(plugin,`import {boundedModelFetch,modelFailureReporter} from ${JSON.stringify(transportPath)};
 import {apply as applySkillTool} from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tool-skill'))};
 export const name='mote-import'; export const inject=['tools','skills','agents'];
 export function apply(ctx){
- const transport=JSON.parse(process.env.MOTE_MODEL_TRANSPORT); globalThis.fetch=boundedModelFetch(globalThis.fetch.bind(globalThis),'mote-no-context-bridge',32*1024*1024,transport);
+ const transport=JSON.parse(process.env.MOTE_MODEL_TRANSPORT),raw=globalThis.fetch.bind(globalThis); globalThis.fetch=boundedModelFetch(raw,'mote-no-context-bridge',32*1024*1024,transport,modelFailureReporter(raw));
  for(const skill of JSON.parse(process.env.MOTE_SKILLS))ctx.skills.register({name:skill.name,description:skill.description,content:skill.content,source:'bundled',metadata:{version:skill.version}});
  applySkillTool(ctx);ctx.provide('moteImportReady',true);
 }`,{mode:0o600});
@@ -60,6 +63,7 @@ export function apply(ctx){
       const agentTimeoutMs = configuredAgentTimeoutMs === null ? null : Math.max(configuredAgentTimeoutMs ?? 300000, 300000);
       harness=new DeepSeekHarness({...launch?{dshBin:launch.dshBin}:{},profile:'sdk-minimal',patches:[patch],dshHome:join(root,'home'),cwd:input.workspace,processCwd:input.workspace,provider:connection.route,model:options.model,maxTokens:options.maxTokens??DEFAULT_MODEL_MAX_TOKENS,initializeTimeoutMs:30000,requestTimeoutMs:Math.max(requestTimeoutMs??120000,300000),
         env:{PATH:process.env.PATH,TMPDIR:tmpdir(),HOME:join(root,'home'),DEEPSEEK_API_KEY:options.apiKey||'mote-local-no-auth',DEEPSEEK_BASE_URL:connection.baseUrl,MOTE_MODEL_API_KEY:options.apiKey||'mote-local-no-auth',
+          MOTE_MODEL_OBSERVER:JSON.stringify(transportObserver.configuration),
           MOTE_MODEL_TRANSPORT:JSON.stringify({baseUrl:connection.baseUrl,protocol:connection.protocol,reasoningEffort:connection.effort,provider:options.provider,headers:options.headers,extraBody:options.extraBody}),
           MOTE_SKILLS:JSON.stringify(bundledSkills.filter(s=>s.id==='document-import'))}});
       active.add(harness);
@@ -89,12 +93,12 @@ export function apply(ctx){
         }
       };
       const deadline = agentTimeoutMs === null ? [] : [new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new AgentTimeoutError()),agentTimeoutMs);})];
-      return await Promise.race([readAnswer(),...deadline]);
-    }catch(error){primaryFailure=true;if(error instanceof RequestTimeoutError)throw new AgentTimeoutError();if(error instanceof AgentNotConfiguredError||error instanceof AgentResponseError||error instanceof AgentTimeoutError)throw error;throw new AgentProviderError();}
+      return await Promise.race([readAnswer(),transportObserver.failure,...deadline]);
+    }catch(error){primaryFailure=true;if(error instanceof RequestTimeoutError)throw new AgentTimeoutError();if(error instanceof AgentNotConfiguredError||error instanceof AgentResponseError||error instanceof AgentTimeoutError||error instanceof ProviderFailure)throw error;throw new AgentProviderError();}
     finally{
       modelAdmission.abort();
       if(timeout)clearTimeout(timeout);
-      const cleanup=await Promise.allSettled([Promise.resolve().then(()=>harness?.close())]);
+      const cleanup=await Promise.allSettled([Promise.resolve().then(()=>harness?.close()),Promise.resolve().then(()=>transportObserver?.close())]);
       if(harness)active.delete(harness);
       const removal=await Promise.allSettled([rm(root,{recursive:true,force:true})]);
       if(!primaryFailure&&[...cleanup,...removal].some(result=>result.status==='rejected'))throw new AgentProviderError();

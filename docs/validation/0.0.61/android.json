@@ -1,0 +1,570 @@
+{
+  "environment": "dedicated mote_fixture_api35 emulator; generated fixtures only",
+  "physicalDevice": false,
+  "methods": [
+    {
+      "class": "AccessibilityFixtureTest",
+      "methods": [
+        {
+          "method": "generatedScreenReachesHttpAcknowledgement",
+          "status": "skip"
+        }
+      ]
+    },
+    {
+      "class": "AnrRegressionInstrumentedTest",
+      "methods": [
+        {
+          "method": "launchAndNavigationRemainResponsiveAfterRecoveryWhileQueueIsBusy",
+          "status": "pass"
+        },
+        {
+          "method": "repeatedRefreshesCoalesceAndDestroyDoesNotWaitForQueueWork",
+          "status": "pass"
+        },
+        {
+          "method": "savingANoteAndNavigatingStayResponsiveWhileTheQueueIsLocked",
+          "status": "pass"
+        },
+        {
+          "method": "acceptedSettingsSaveSurvivesRotationWhilePreflightIsBlocked",
+          "status": "pass"
+        },
+        {
+          "method": "v001EncryptedScreenshotBacklogMigratesToReadableFilesWithoutChangingContent",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "AppNameInstrumentedTest",
+      "methods": [
+        {
+          "method": "platformLabelIsUsedInsteadOfPackageId",
+          "status": "pass"
+        },
+        {
+          "method": "missingApplicationIsExplicitlyUnknown",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "AppPolicyInstrumentedTest",
+      "methods": [
+        {
+          "method": "generatedProviderReportsActualSizeAndModificationWithoutInventingDates",
+          "status": "pass"
+        },
+        {
+          "method": "activityPipelineDoesNotNeedModelsAndMetadataTogglePreservesQueuedBytes",
+          "status": "pass"
+        },
+        {
+          "method": "optionalGeneratedServiceActivityContentAndFileMetadataReachCentral",
+          "status": "pass"
+        },
+        {
+          "method": "generatedImageProcessingKeepsObservationTimeInsteadOfCompletionTime",
+          "status": "pass"
+        },
+        {
+          "method": "optionalGeneratedProjectionReusesDisplayAndNeverAttachesActivitySurface",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "AppUpdateInstrumentedTest",
+      "methods": [
+        {
+          "method": "deletingDownloadsPreservesSettingsAndManifestAndRejectsActiveInstallation",
+          "status": "pass"
+        },
+        {
+          "method": "actualSignedApkRejectsWrongCertificatePackageDowngradeAndCorruption",
+          "status": "pass"
+        },
+        {
+          "method": "nativeUpdatePageDoesNotGrantInstallPermissionOrTriggerNetwork",
+          "status": "pass"
+        },
+        {
+          "method": "optionalSyntheticSystemReplacementPreservesPrivateState",
+          "status": "skip"
+        }
+      ]
+    },
+    {
+      "class": "BulkDedupeInstrumentedTest",
+      "methods": [
+        {
+          "method": "twoThousandGeneratedImagesScanAndDeleteThroughWorkerWithoutBlockingUi",
+          "status": "pass"
+        },
+        {
+          "method": "generatedImagesScanPreviewLifecycleMoveRestoreDeleteAndCancel",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "CaptureRecordsInstrumentedTest",
+      "methods": [
+        {
+          "method": "deduplicationWithDiagnosticsAcrossModesSynchronizesToRealCentral",
+          "status": "pass"
+        },
+        {
+          "method": "batteryCaptureKeepsMaskedImageForCentralOcrWithoutChangingOriginalEvent",
+          "status": "pass"
+        },
+        {
+          "method": "localBrowserDisplaysGeneratedThumbnailsPagesAndOcrDetail",
+          "status": "pass"
+        },
+        {
+          "method": "deferredOcrUploadsOriginalOnceAndKeepsResultUntilMatchingPatchAck",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "ClientFeedbackInstrumentedTest",
+      "methods": [
+        {
+          "method": "statisticsCanBrowsePastFirstPageWithoutExpandingAllDetails",
+          "status": "pass"
+        },
+        {
+          "method": "captureRecordsCanOpenAndRecreateWithoutMissingBackControl",
+          "status": "pass"
+        },
+        {
+          "method": "notificationPreservesCurrentMainPageAndDraft",
+          "status": "pass"
+        },
+        {
+          "method": "notificationPreservesAnOpenDetailActivity",
+          "status": "pass"
+        },
+        {
+          "method": "rawLogsPreserveTextAndAllowSelection",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "ComplexNotesInstrumentedTest",
+      "methods": [
+        {
+          "method": "stageOfflineComplexNotesAndPreparedRetry",
+          "status": "pass_three_phases_three_rounds"
+        },
+        {
+          "method": "recoverOfflinePreparedRetry",
+          "status": "pass_three_phases_three_rounds"
+        },
+        {
+          "method": "synchronizeAndCompareCentralEvidence",
+          "status": "pass_three_phases_three_rounds"
+        }
+      ]
+    },
+    {
+      "class": "ComplexVlmInstrumentedTest",
+      "methods": [
+        {
+          "method": "actualModelReviewsComplexGeneratedImagesAcrossNativeReload",
+          "status": "skip"
+        },
+        {
+          "method": "actualUserPolicyRejectsGeneratedShapeBeforeOcrQueueAndUpload",
+          "status": "skip"
+        }
+      ]
+    },
+    {
+      "class": "CompressionPreviewInstrumentedTest",
+      "methods": [
+        {
+          "method": "generatedPreviewShowsSizesZoomAndNeverSavesSettingsAutomatically",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "ConnectionInstrumentedTest",
+      "methods": [
+        {
+          "method": "connectionPageRefreshesSavedNodeAndSecondScanReplacesFirstPreview",
+          "status": "pass"
+        },
+        {
+          "method": "pairingReturnThenManualServerEditClearsPreviousCredential",
+          "status": "pass"
+        },
+        {
+          "method": "externalInvitationOpensReviewOnlyAndDoesNotRequestCamera",
+          "status": "pass"
+        },
+        {
+          "method": "activeSyncBlocksConnectionMutationWithoutWaitingForNetwork",
+          "status": "pass"
+        },
+        {
+          "method": "pendingCaptureConsentCannotStartDuringConnectionChangeOrAfterConfigChange",
+          "status": "pass"
+        },
+        {
+          "method": "optionalGeneratedCentralRePairPreservesOfflineQueueAndPreparedNote",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "FileSyncInstrumentedTest",
+      "methods": [
+        {
+          "method": "generatedFilesTravelThroughProductionScannerQueueAndCentralArchive",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "FixtureInstrumentedTest",
+      "methods": [
+        {
+          "method": "keystoreQueueSurvivesRecreationAndAcknowledgement",
+          "status": "pass"
+        },
+        {
+          "method": "bundledOcrReadsOnlyUnmaskedSyntheticText",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "ImageDedupeDiagnosticsInstrumentedTest",
+      "methods": [
+        {
+          "method": "pipelineKeepsMaskedAcceptedReferenceShowsMeasurementsAndDeletesLocalPairs",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "IssueOneInstrumentedTest",
+      "methods": [
+        {
+          "method": "settingsArchiveRoundTripsAndNeverReusesTokenOnAnotherHost",
+          "status": "pass"
+        },
+        {
+          "method": "systemHomeAndConfiguredSystemPackagesAreSelectable",
+          "status": "pass"
+        },
+        {
+          "method": "completedUpdateCannotBeOverwrittenByStaleReconciliationOrCancelledWorker",
+          "status": "pass"
+        },
+        {
+          "method": "saveCompletesWithoutNetworkAndKeepsCollectionStopped",
+          "status": "pass"
+        },
+        {
+          "method": "queueBackupAndUpdatePagesShowAvailableActions",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "LargeLibraryInstrumentedTest",
+      "methods": [
+        {
+          "method": "twoThousandImagesBrowseCountDeleteAndMoveWithoutWholeLibraryReads",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "LibraryResponsivenessInstrumentedTest",
+      "methods": [
+        {
+          "method": "startButtonCommitsWhileBackgroundLibraryWorkHoldsTheQueue",
+          "status": "pass"
+        },
+        {
+          "method": "twoThousandRecordsPageImmediatelyAndUnrelatedChangesKeepExistingRows",
+          "status": "pass"
+        },
+        {
+          "method": "legacyContentMigrationCanCancelWithoutChangingCredentialsOrBlockingNavigation",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "LocalSourcesInstrumentedTest",
+      "methods": [
+        {
+          "method": "generatedProviderCalendarFilesReferenceAndPartialDeletion",
+          "status": "pass"
+        },
+        {
+          "method": "nativeSourcesScreenDoesNotRequestCalendarPermissionUntilUserConnects",
+          "status": "pass"
+        },
+        {
+          "method": "optionalActualCentralRoundTripLostAckDeletionAndRestoration",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "LocalStateInstrumentedTest",
+      "methods": [
+        {
+          "method": "stockUpdatesAllConsumersAndSurvivesBackgroundWithoutCounterDeltas",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "NativeAskInstrumentedTest",
+      "methods": [
+        {
+          "method": "askIsNativeAndOfflineFailureKeepsQuestionEditable",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "NavigationInstrumentedTest",
+      "methods": [
+        {
+          "method": "tappingOutsideTheNoteDismissesEditorFocus",
+          "status": "pass"
+        },
+        {
+          "method": "everyBottomTabSwitchesOnItsFirstTouch",
+          "status": "pass"
+        },
+        {
+          "method": "permissionsAndLocalLogsOpenWithoutStartingCapture",
+          "status": "pass"
+        },
+        {
+          "method": "leavingSettingsPagesDiscardsInputsAndHidesSaveBar",
+          "status": "pass"
+        },
+        {
+          "method": "activePageDraftSurvivesRotationAndBackgroundWithoutChangingSavedConfiguration",
+          "status": "pass"
+        },
+        {
+          "method": "numericAppAndMaskPickersKeepConfigurationStructured",
+          "status": "pass"
+        },
+        {
+          "method": "renderGeneratedNavigationPagesWhenExplicitlyRequested",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "NotesDiagnosticsInstrumentedTest",
+      "methods": [
+        {
+          "method": "readableDraftRestoresNativeEditorAfterActivityRecreation",
+          "status": "pass"
+        },
+        {
+          "method": "numericDiagnosticsContainOnlyAllowedFieldsAndRespectOptIn",
+          "status": "pass"
+        },
+        {
+          "method": "explicitNoteUploadsWithoutScreenshotOrModelDependency",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "NsfwInstrumentedTest",
+      "methods": [
+        {
+          "method": "actualModelRunsOfflineAndReloadsAfterProcessReset",
+          "status": "skip"
+        },
+        {
+          "method": "wrongModelImportPreservesVerifiedFileAndFailsClosed",
+          "status": "skip"
+        }
+      ]
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "methods": [
+        {
+          "method": "localNoteWithoutNodeIsReadableAndDoesNotScheduleUploads",
+          "status": "pass"
+        },
+        {
+          "method": "generatedActivityCaptureIsLocalWithoutEndpointOrModel",
+          "status": "pass"
+        },
+        {
+          "method": "firstBindingRequiresConfirmationAndDisconnectCannotRedirectBoundRecords",
+          "status": "pass"
+        },
+        {
+          "method": "unboundSourceRevisionsParticipateInTheSameOriginAndBatchProtection",
+          "status": "pass"
+        },
+        {
+          "method": "manualDoesNotSendHeartbeatOrNotesUntilExplicitSync",
+          "status": "pass"
+        },
+        {
+          "method": "batchFlushesAtThresholdAndOldestAgeWithoutStrandingSmallQueues",
+          "status": "pass"
+        },
+        {
+          "method": "intervalHoldsNewRecordsUntilDueAndThenFlushes",
+          "status": "pass"
+        },
+        {
+          "method": "manualWrongAckAndDisconnectKeepRecordWithoutAutomaticRetry",
+          "status": "pass"
+        },
+        {
+          "method": "manualSourceAckFailureDoesNotScheduleRetry",
+          "status": "pass"
+        },
+        {
+          "method": "exactTwentyFiveRecordChunkReportsIdleBeforeFinalHeartbeat",
+          "status": "pass"
+        },
+        {
+          "method": "unsupportedLegacyRoutesFallBackToIndividualAcks",
+          "status": "pass"
+        },
+        {
+          "method": "partialBatchAcknowledgementKeepsOnlyUnconfirmedRecords",
+          "status": "pass"
+        },
+        {
+          "method": "emptyRealtimeQueueNeverStartsDataUploadSession",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "PairingNavigationInstrumentedTest",
+      "methods": [
+        {
+          "method": "confirmedScannedInvitationSurvivesReturnReentryAndAnotherSettingsSave",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "PowerOptimizationInstrumentedTest",
+      "methods": [
+        {
+          "method": "earlyDuplicatesDoNotRunOcrOrCarryContentAndConfigurationInvalidatesReference",
+          "status": "pass"
+        },
+        {
+          "method": "configurationSnapshotSurvivesStatusWritesButReflectsDirectPrivacyChanges",
+          "status": "pass"
+        },
+        {
+          "method": "repeatedVisibleNotificationStatePublishesAndCancelsOnlyOnce",
+          "status": "pass"
+        },
+        {
+          "method": "freshDefaultIsStickyAndLegacyUnconfiguredRulesRemainContent",
+          "status": "pass"
+        },
+        {
+          "method": "ocrModeControlDisplaysSavedSelection",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "ProfileSupportInstrumentedTest",
+      "methods": [
+        {
+          "method": "developmentProfileIsIndependentAndSupportExportContainsNoSecretsOrDraft",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "ServiceResponsivenessInstrumentedTest",
+      "methods": [
+        {
+          "method": "captureEligibilityNeverWaitsForQueueAccountingOrDiagnosticSampling",
+          "status": "pass"
+        },
+        {
+          "method": "serviceSyncSchedulingReturnsWhileQueueIsBusyAndSchedulesAfterRelease",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "SettingsStorageInstrumentedTest",
+      "methods": [
+        {
+          "method": "startupRecoveryGateDoesNotBlockMainThreadOnQueueLock",
+          "status": "pass"
+        },
+        {
+          "method": "staleSettingsSnapshotCannotOverwriteANewerInvitationConnection",
+          "status": "pass"
+        },
+        {
+          "method": "imageDiagnosticsDefaultOffAndDisablingDeletesStoredPairsBeforeReadingThem",
+          "status": "pass"
+        },
+        {
+          "method": "activeSettingsApplyWithoutManualStopAndConcurrentStopIsRespected",
+          "status": "pass"
+        },
+        {
+          "method": "failedSinglePreferenceCommitRestoresConfigWithoutRollingBackUserStopOrStatus",
+          "status": "pass"
+        },
+        {
+          "method": "realAppStorageMigrationKeepsReadableFilesSettingsAndQueueBinding",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "UiPageReaderInstrumentedTest",
+      "methods": [
+        {
+          "method": "sensitiveAndHiddenContentNeverLeavesReader",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "class": "UiTaskInstrumentedTest",
+      "methods": [
+        {
+          "method": "slowWorkDoesNotBlockInputPollingStopsOnPauseAndDestroyedViewsReceiveNoResult",
+          "status": "pass"
+        },
+        {
+          "method": "rejectedExecutorFinishesInsteadOfLeavingTaskBusy",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}

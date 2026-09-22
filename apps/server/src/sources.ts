@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
-import {sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
+import {sourceCapabilities,sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 
 const uuid=(text:string)=>{const h=createHash('sha256').update(text).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;};
@@ -9,22 +9,23 @@ type Version={capture_id:string;hash:string};
 export class SourceStore {
   private pending=new Map<string,Promise<unknown>>();
   constructor(public store:Store){}
-  listSources():SourceConnection[]{return (this.store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));}
-  getSource(id:string):SourceConnection {const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Source not found',404);return JSON.parse(row.json);}
+  listSources():SourceConnection[]{return (this.store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>this.present(JSON.parse(r.json)));}
+  getSource(id:string):SourceConnection {const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Source not found',404);return this.present(JSON.parse(row.json));}
   register(raw:unknown):SourceConnection {
     const input=sourceConnectionSchema.parse(raw),existing=this.listSources().find(s=>s.id===input.id);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
     if(this.listSources().length>=500)throw new StoreError('Maximum 500 sources',413);
-    const now=new Date().toISOString(),value={...input,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return value;
+    const now=new Date().toISOString(),value={...input,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
   }
   update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only'}):SourceConnection {
-    const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch});
+    const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch});
     const value={...existing,...input,updatedAt:new Date().toISOString()};
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
     if(growth>0)this.store.reserveMetadata(growth);
-    this.save(value);return value;
+    this.save(value);return this.present(value);
   }
-  private save(value:SourceConnection){this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(value));}
+  private present(value:SourceConnection):SourceConnection{return {...value,capabilities:sourceCapabilities.describe(value)};}
+  private save(value:SourceConnection){const {capabilities,...persisted}=value;this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));}
   reportStatus(id:string,status:NonNullable<SourceConnection['status']>){const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});}
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {
     const p=c.provenance!;return {sourceId:p.sourceId,externalId:p.externalId,revision:p.revision,observedAt:c.capturedAt,modifiedAt:p.modifiedAt,title:c.windowTitle,text:p.layer==='reference'||p.deleted?'':c.ocrText,uri:p.uri,kind:c.source as SourceItem['kind'],layer:p.layer,calendar:p.calendar,mimeType:p.mimeType,deleted:p.deleted,metadata:p.metadata,document:p.document,captureId:c.id,receivedAt:c.receivedAt,current};
@@ -46,13 +47,13 @@ export class SourceStore {
   async upsert(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
     return (await this.serialized(sourceId,()=>this.commitBatch(sourceId,[sourceItemSchema.parse(raw)],authorize,transaction))).receipts[0];
   }
-  async upsertBatch(sourceId:string,raw:unknown,authorize?:()=>void) {
+  async upsertBatch(sourceId:string,raw:unknown,authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
     const items=z.array(sourceItemSchema).min(1).max(500).parse(raw);
     const identities=new Set<string>();
     for(const item of items){const key=JSON.stringify([item.externalId,item.revision]);if(identities.has(key))throw new StoreError('Batch contains duplicate source revisions',409);identities.add(key);}
-    return this.serialized(sourceId,()=>this.commitBatch(sourceId,items,authorize));
+    return this.serialized(sourceId,()=>this.commitBatch(sourceId,items,authorize,transaction));
   }
-  private async commitBatch(sourceId:string,items:SourceItem[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean})=>void) {
+  private async commitBatch(sourceId:string,items:SourceItem[],authorize?:()=>void,transaction?:(result:{id:string;duplicate:boolean},index:number)=>void) {
     const source=this.getSource(sourceId);
     const validate=()=>{authorize?.();const current=this.getSource(sourceId);if(!current.enabled)throw new StoreError('Source is paused',409);for(const item of items){
       if(Date.parse(item.observedAt)>Date.now()+86400000)throw new StoreError('Observation cannot be in the future');
@@ -78,7 +79,7 @@ export class SourceStore {
           if(head){this.store.invalidateMemoryEvidence(head.capture_id);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}
         }
       }
-      transaction?.(ack);
+      transaction?.(ack,index);
     },validate);
     return {receipts:receipts.map((ack,index)=>({id:ack.id,sourceId,externalId:items[index].externalId,revision:items[index].revision,duplicate:ack.duplicate}))};
   }

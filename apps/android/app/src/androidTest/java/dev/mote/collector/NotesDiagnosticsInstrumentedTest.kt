@@ -23,6 +23,13 @@ class NotesDiagnosticsInstrumentedTest {
         }
         androidx.test.core.app.ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { activity ->
             try {
+                activity.onActivity { a ->
+                    fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
+                    views(a.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == "记录" }.performClick()
+                }
+                val deadline=System.currentTimeMillis()+10000; var ready=false
+                while(!ready && System.currentTimeMillis()<deadline){activity.onActivity { ready=editor(it.window.decorView)?.isEnabled==true };if(!ready)Thread.sleep(25)}
+                assertTrue(ready)
                 activity.onActivity { editor(it.window.decorView)!!.setText(value) }
                 QuickNotes.io.submit {}.get(5, java.util.concurrent.TimeUnit.SECONDS)
                 assertEquals(value, drafts.read().text)
@@ -47,7 +54,7 @@ class NotesDiagnosticsInstrumentedTest {
             assertEquals(1234, sample.getLong("inferenceMs")); assertTrue(sample.has("batteryPct")); assertTrue(sample.has("queueBytes"))
             assertThrows(IllegalArgumentException::class.java) { diagnostics.add("ocrText") }
             settings.save(config.copy(diagnosticsEnabled = false)); diagnostics.add("capturedCount"); diagnostics.sample(config.copy(diagnosticsEnabled = false), true)
-            assertEquals(result.toString(), JSONObject(diagnostics.export()).toString())
+            val latest = JSONObject(diagnostics.export()); result.remove("exportedAtMs"); latest.remove("exportedAtMs"); assertEquals(result.toString(), latest.toString())
         } finally { if (original.server.isNotBlank()) settings.save(original) else settings.save(config.copy(diagnosticsEnabled = false)) }
     }
     @Test fun explicitNoteUploadsWithoutScreenshotOrModelDependency() {
@@ -56,7 +63,7 @@ class NotesDiagnosticsInstrumentedTest {
         val token = args.getString("fixtureToken") ?: error("fixtureToken required")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val settings = Settings(context); val original = settings.read()
-        val config = original.copy(server = url, token = token, debugHttp = true, wifiOnly = false, deviceName = "Android generated-note fixture")
+        val config = original.copy(server = url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime", uploadedRetentionDays = 0, deviceName = "Android generated-note fixture")
         try {
             assertEquals(0, context.queue().depth()); settings.save(config)
             val id = QuickNotes.save(context, "合成随手记：今天完成了本机模型和离线同步验证。", "平静（合成）")

@@ -8,7 +8,7 @@ const {LocalSourceManager}=require('../dist/source-manager');const {DEFAULT_SOUR
  const parent=node.store.list({source:'file'}).items[0];assert.equal(parent.provenance.document.fileIndex.coverage,'lightweight');assert.equal(node.files.detail(parent.id).hasOriginal,false);
  const pending=reader.readFileEvidence({id:parent.id,offset:9000,length:100});await new Promise(r=>setTimeout(r,50));await manager.sync();const response=await pending;
  assert.equal(response.status,'ready');assert.equal(response.record.ocrText,text.slice(9000,9100));assert.equal(response.record.provenance.document.fileIndex.offset,9000);
- await writeFile(join(directory,'fixture.txt'),'changed content');const second=reader.readFileEvidence({id:parent.id,offset:9000,length:100});
+ await writeFile(join(directory,'fixture.txt'),'changed content');const second=reader.readFileEvidence({id:parent.id,offset:10000,length:100});
  let superseded=false;
  for(let attempt=0;attempt<20&&!superseded;attempt++){
    await new Promise(r=>setTimeout(r,100));

@@ -21,10 +21,19 @@ export const memoryAdmissionSchema=z.object({
   scope:z.string().trim().min(1).max(600),
   attribution:z.enum(['user','third_party','observed','inferred']),
 }).strict();
+export const memoryReviewReceiptSchema=z.object({
+  policy:z.literal('bounded-exact-review@1'),decision:z.enum(['independent','reused','empty']),
+  draftRunId:z.string().max(200),reviewRunId:z.string().max(200).optional(),
+  checkedAt:timestamp,contextTime:timestamp.optional(),inputHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),model:z.string().max(512).optional(),
+}).strict();
+export type MemoryReviewReceipt=z.infer<typeof memoryReviewReceiptSchema>;
+export const memoryRelationSchema=z.object({kind:z.enum(['contradicts','supersedes']),memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),version:z.number().int().positive()}).strict();
 export const memorySchema=z.object({
+  version:z.number().int().positive().optional(),relations:z.array(memoryRelationSchema).max(20).optional(),supersededBy:z.string().uuid().optional(),supersededAt:timestamp.optional(),
+  correction:z.object({memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),noteId:z.string().uuid()}).strict().optional(),
   domain:z.enum(['personal','coding']).optional(),coding:codingMemorySchema.optional(),
-  scopeRefs:z.array(z.object({provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict()).max(30).optional(),
-  admission:memoryAdmissionSchema.optional(),reviewRunId:z.string().max(200).optional(),
+  scopeRefs:z.array(z.object({sourceId:z.string().max(128).optional(),deviceId:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict()).max(30).optional(),
+  admission:memoryAdmissionSchema.optional(),reviewRunId:z.string().max(200).optional(),reviewReceipt:memoryReviewReceiptSchema.optional(),
   id:z.string().uuid(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),relatedMemoryIds:z.array(z.string().uuid()).max(50).optional(),validFrom:timestamp.optional(),validUntil:timestamp.optional(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),
   evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(memoryEvidenceSchema).max(100).optional(),
   createdAt:timestamp,updatedAt:timestamp.optional(),status:z.enum(['proposed','published','stale']),

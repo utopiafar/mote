@@ -2,14 +2,15 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {dirname,join,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {zodToJsonSchema} from 'zod-to-json-schema';
-import {importRecordSchema,type ImportPreparation} from './imports.js';
+import {importRecordSchema} from './import-record.js';
+import type {ImportPreparation} from './imports.js';
 import {privateFile} from './private-storage.js';
 
 /** Generate a portable helper with explicit dependency locations for this import workspace. */
 export function prepareImportInput(input:ImportPreparation){
   let helper=readFileSync(new URL('./import-parser.mjs',import.meta.url),'utf8');
   const dependencies:Record<string,string>={
-    '__MOTE_SHARED__':'@mote/shared','__ZOD__':'zod','__MAMMOTH__':'mammoth',
+    '__DOCUMENT_DECODER__':'@mote/shared/document-decoder','__MOTE_SHARED__':'@mote/shared','__ZOD__':'zod','__MAMMOTH__':'mammoth',
     '__PDFJS__':'pdfjs-dist/legacy/build/pdf.mjs','__PDF_WORKER__':'pdfjs-dist/legacy/build/pdf.worker.mjs',
     '__EXCELJS__':'exceljs','__YAML__':'yaml','__FFLATE__':'fflate',
   };

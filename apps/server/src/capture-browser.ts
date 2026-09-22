@@ -1,8 +1,10 @@
+import type {EvidenceReader} from './evidence-reader.js';
+import {navigationScopeSchema} from './context-navigation.js';
 import { moteText } from './i18n.js';
 import type {FastifyInstance,FastifyRequest} from 'fastify';
 import {z} from 'zod';
 import sharp from 'sharp';
-import {sourceSchema} from '@mote/shared';
+import {sourceSchema,evidenceRefId} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
 
@@ -15,12 +17,12 @@ const range=z.object({
 }).strict().refine(v=>!v.after||!v.before||Date.parse(v.after)<Date.parse(v.before),{message:'Invalid time range'});
 const update=z.object({status:z.enum(['completed','failed']),ocrText:z.string().max(100000)}).strict();
 
-export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;connections:Connections;credential:(req:FastifyRequest)=>ConnectionCredential|undefined}) {
-  const {store,connections,credential}=context;
+export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;evidenceReader:EvidenceReader;connections:Connections;credential:(req:FastifyRequest)=>ConnectionCredential|undefined}) {
+  const {store,connections,credential,evidenceReader}=context;
   const thumbnails=new Map<string,Buffer>();let cachedBytes=0;
   const ownRecord=(req:FastifyRequest)=>{
-    const id=z.string().uuid().parse((req.params as {id:string}).id);
-    const record=store.evidence([id])[0],c=credential(req);
+    const id=evidenceRefId((req.params as {id:string}).id,'capture');
+    const record=id?evidenceReader.evidence([id],navigationScopeSchema.parse(req.query))[0]:undefined,c=credential(req);
     if(c)connections.assertActive(c);
     // Missing and foreign IDs share a response so collectors cannot probe other devices.
     if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,moteText("采集记录不存在或已被清理。"));
@@ -69,17 +71,17 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     return store.sessions(query);
   });
   const ownImage=(req:FastifyRequest)=>{
-    const id=z.string().uuid().parse((req.params as {id:string}).id),c=credential(req);
+    const id=evidenceRefId((req.params as {id:string}).id,'capture'),c=credential(req);
     if(c)connections.assertActive(c);
-    const record=store.imageReference(id);
+    const record=id?evidenceReader.imageReference(id,navigationScopeSchema.strip().parse(req.query)):undefined;
     if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,moteText("采集记录不存在或已被清理。"));
-    return {...record,id};
+    return record;
   };
   app.get('/api/capture-browser/:id',async req=>ownRecord(req));
   app.get('/api/capture-browser/:id/image',async(req,reply)=>{
     const record=ownImage(req);
-    const {thumbnail,deviceId,source}=z.object({thumbnail:z.enum(['1','true']).optional(),deviceId:z.string().min(1).max(128).optional(),source:sourceSchema.optional()}).strict().parse(req.query);
-    if((deviceId && record.deviceId!==deviceId)||(source && store.evidence([record.id])[0]?.source!==source))throw new ConnectionError('capture_not_found',404,'采集记录不存在或已被清理。');
+    const {thumbnail,deviceId,source}=z.object({...navigationScopeSchema.shape,thumbnail:z.enum(['1','true']).optional()}).strict().parse(req.query);
+    if((deviceId && record.deviceId!==deviceId)||(source && record.source!==source))throw new ConnectionError('capture_not_found',404,'采集记录不存在或已被清理。');
     if(!record.blobHash)throw new StoreError('Capture has no image',404);
     if(!thumbnail){const image=store.image(record.id);return reply.type(image.mime!).send(image.bytes);}
     let bytes=thumbnails.get(record.blobHash);

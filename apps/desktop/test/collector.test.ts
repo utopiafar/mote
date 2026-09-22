@@ -68,6 +68,22 @@ async function makeCollector(extra: object = {}, gate?: NsfwGate) {
   return { collector, queue };
 }
 
+it('one manual flush drains 400 historical notes while admitting a new note between source upload slices',async()=>{
+ const {event}=await import('./fixtures'),config={...fixtureConfig(),token:'synthetic-token',syncMode:'manual' as const,packedUpload:true};
+ const queue=new DurableQueue(directory,config);await queue.initialize();
+ const note=(i:number,capturedAt:string)=>({...event(`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`),source:'note' as const,imageMime:undefined,durationMs:0,ocrText:'Generated note '+i,capturedAt,privacy:{excluded:false as const,redacted:false,mode:'none' as const}});
+ for(let i=0;i<400;i++)await queue.enqueue(note(i,new Date(Date.UTC(2025,0,1+i)).toISOString()));
+ const sent:string[]=[],phases:string[]=[];let sourcePending=1;
+ vi.mocked(fetch).mockImplementation(async (_url,init)=>{const body=JSON.parse(await new Response(init!.body).text()),items=body.captures??[body];sent.push(...items.map((v:{id:string})=>v.id));phases.push('captures');return new Response(JSON.stringify(body.captures?{results:items.map((v:{id:string})=>({id:v.id,status:201}))}:{id:body.id}),{status:body.captures?200:201});});
+ const fresh=note(999,new Date().toISOString());
+ const sources={nodeBinding:{unbound:()=>false},pendingStats:()=>({pendingRecords:sourcePending,eligibleRecords:sourcePending}),flushPending:async(_signal:AbortSignal,between:()=>Promise<void>)=>{
+   phases.push('source-part-0');fresh.capturedAt=new Date().toISOString();await queue.enqueue(fresh);await between();
+   expect(sent).toContain(fresh.id);expect(sent.indexOf(fresh.id)).toBe(25);phases.push('source-part-1');await between();sourcePending=0;
+ }};
+ collector=new Collector(config,queue,'/fixture/no-real-helper',()=>true,()=>undefined,undefined,undefined,undefined,sources as any);
+ await collector.upload(true);expect(queue.stats().depth).toBe(0);expect(new Set(sent).size).toBe(401);expect(phases.slice(0,4)).toEqual(['captures','source-part-0','captures','source-part-1']);expect(collector.status().sync.pendingRecords).toBe(0);
+},30000);
+
 describe.skipIf(process.platform !== 'darwin')('collector pipeline with generated pixels and mocked native APIs', () => {
   it('applies masks before OCR, disk queue and network payload, without ever persisting source pixels', async () => {
     const { collector, queue } = await makeCollector({ uploadGate:{enabled:true,blockedText:['never-matches'],failureAction:'hold'},masks: [{ x: 0, y: 0, width: 1, height: 0.5 }] });

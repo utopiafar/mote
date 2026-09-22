@@ -167,7 +167,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         check(current.optJSONObject("pending")?.getJSONObject("manifest")?.getJSONObject("item")?.getString("revision") == item.getString("revision"))
         current.put("indexPending", item.optJSONObject("document")?.optJSONObject("fileIndex")?.optString("status") == "pending")
         current.put("signature", pending.getString("signature")).put("revision", item.getString("revision")).remove("pending")
-        saveRow(id, current); File(root(id), "spool").deleteRecursively()
+        saveRow(id, current); saveState(id, state(id).put("lastAcknowledgedAt", Instant.now().toString())); File(root(id), "spool").deleteRecursively()
     }
     fun resetSynced() = synchronized(lock) { check(pendingSync().count == 0); directory.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }; Unit }
     fun remove(id: String) = synchronized(lock) { root(id).deleteRecursively() }

@@ -18,6 +18,19 @@ class DurableQueueTest {
     private fun event(excluded: Boolean = false) = JSONObject().put("id", UUID.randomUUID().toString())
         .put("capturedAt", "2026-01-01T00:00:00Z").put("platform", "android").put("durationMs", 30000)
         .put("privacy", JSONObject().put("excluded", excluded))
+    @Test fun `new captures can pass a 400 day history without losing the historical queue`() {
+        val queue = DurableQueue(folder.newFolder(), cipher)
+        repeat(400) { i -> queue.enqueue(event().put("source", "note").put("ocrText", "Generated history $i").put("capturedAt", java.time.Instant.parse("2024-01-01T00:00:00Z").plusSeconds(i * 86400L).toString()), null, 16L * 1024 * 1024) }
+        val since = System.currentTimeMillis() + 1
+        while (System.currentTimeMillis() < since) Thread.yield()
+        val fresh = event().put("source", "note").put("ocrText", "Generated fresh note")
+        queue.enqueue(fresh, null, 16L * 1024 * 1024)
+        val first = queue.peekBatch(maxCount = 25, preferSince = since)
+        assertEquals(fresh.getString("id"), first.first().getString("id"))
+        queue.acknowledge(fresh.getString("id")); assertEquals(400, queue.depth())
+        val historical = queue.peekBatch(maxCount = 25)
+        assertEquals("Generated history 0", historical.first().getString("ocrText"))
+    }
     @Test fun `batch selection is bounded and partial acknowledgement survives restart`() {
         val dir = folder.newFolder(); val queue = DurableQueue(dir, cipher)
         repeat(4) { queue.enqueue(event(), ByteArray(500) { it.toByte() }, 100000) }

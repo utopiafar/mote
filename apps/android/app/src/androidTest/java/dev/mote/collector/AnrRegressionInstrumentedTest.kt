@@ -62,10 +62,15 @@ class AnrRegressionInstrumentedTest {
     }
 
     private fun navigate(activity: MainActivity, label: String) {
-        val tab = views(activity.window.decorView).filterIsInstance<TextView>()
-            .single { it.isShown && it.isClickable && it.text.toString() == label }
-        assertTrue(tab.performClick())
-        assertTrue(tab.isSelected)
+        fun click(text: String) = views(activity.window.decorView).filterIsInstance<TextView>()
+            .single { it.isShown && it.isClickable && it.text.toString() == text }.also { assertTrue(it.performClick()) }
+        when (label) {
+            "来源" -> { click("本机"); views(activity.window.decorView).single { it.isShown && it.tag == "menu:本机来源" }.performClick() }
+            "随手记" -> click("记录")
+            "设置" -> assertTrue(click("本机").isSelected)
+            "概览" -> assertTrue(click("今天").isSelected)
+            else -> click(label)
+        }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -125,6 +130,7 @@ class AnrRegressionInstrumentedTest {
         try {
             scenario.onActivity {
                 activity = it
+                navigate(it, "设置")
                 executor = field(it, "statusExecutor")
                 field<kotlinx.coroutines.Job?>(it, "localStateJob")?.cancel()
                 // Keep the Activity resumed while removing automatic requests.
@@ -144,7 +150,6 @@ class AnrRegressionInstrumentedTest {
                 val started = SystemClock.elapsedRealtime()
                 instrumentation.runOnMainSync {
                     repeat(30) { refresh(activity) }
-                    navigate(activity, "设置")
                     assertTrue(field<Boolean>(activity, "statusLoading"))
                 }
                 assertTrue("refresh requests must not wait for the queue", SystemClock.elapsedRealtime() - started < 1000)
@@ -176,8 +181,11 @@ class AnrRegressionInstrumentedTest {
         val scenario = ActivityScenario.launch(MainActivity::class.java).awaitMainUi()
         var id: String? = null
         try {
+            scenario.onActivity { activity -> navigate(activity, "随手记") }
+            val deadline = SystemClock.elapsedRealtime() + 10000; var editorReady = false
+            while (!editorReady && SystemClock.elapsedRealtime() < deadline) { scenario.onActivity { activity -> editorReady = views(activity.window.decorView).filterIsInstance<android.widget.EditText>().single { it.hint?.toString() == "记下此刻的想法…" }.isEnabled }; if (!editorReady) Thread.sleep(25) }
+            assertTrue(editorReady)
             scenario.onActivity { activity ->
-                navigate(activity, "随手记")
                 views(activity.window.decorView).filterIsInstance<android.widget.EditText>()
                     .single { it.hint?.toString() == "记下此刻的想法…" }.setText("GENERATED ASYNC NOTE 🧑🏽‍💻")
             }

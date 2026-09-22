@@ -27,7 +27,7 @@ import readline from 'node:readline';
 import {writeFileSync,appendFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(join(root,'runtime-home'))},process.env.CODEX_HOME);
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
-const mode=${JSON.stringify(mode)};
+const mode=${JSON.stringify(mode)};let turns=0;
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);appendFileSync(${JSON.stringify(join(root,'rpc.ndjson'))},JSON.stringify(m)+'\\n');
  if(m.method==='initialize')send({id:m.id,result:{}});
@@ -38,9 +38,11 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)))process.exit(2);
   send({id:m.id,result:{thread:{id:'thread-fixture'},approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
+  turns++;
   if(mode==='max'&&m.params.effort!=='max')process.exit(4);
   send({id:m.id,result:{turn:{id:'turn-fixture'}}});
   if(mode==='import'){send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
+  if(mode==='structured-error'){send({method:'error',params:{threadId:'thread-fixture',willRetry:false,error:{codexErrorInfo:'usageLimitExceeded',message:'synthetic-private-secret'}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed'}}});return;}
   if(mode==='timeout')return;
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
   send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
@@ -50,6 +52,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:{}}});
  }else if(m.id===999||m.id===1000){
   if(!m.result?.success)process.exit(3);
+  if(mode==='usage')for(const sample of [turns*100,turns*100])send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
   send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:'Generated evidence [synthetic-codex-record]',citationIds:['synthetic-codex-record']})}}});
   send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
  }
@@ -111,7 +114,10 @@ process.stdin.pipe(child.stdin);child.stdout.on('data',b=>{appendFileSync(${JSON
   const agent=createAgent({reader,protocol:'codex-app-server',model:'gpt-5.4',timeoutMs:20000});t.after(()=>agent.close());
   let result;try{result=await agent.query({question:'Read generated records through timeline and evidence.'});}catch(error){t.diagnostic((await readFile(transcript,'utf8')).slice(-12000));throw error;}
   assert.equal(result.answer,'Generated response [synthetic-codex-record]');assert.equal(requests.length,3);assert.deepEqual(result.trace.map(t=>t.tool),['timeline','evidence']);
-  assert.deepEqual(requests[0].tools.map(tool=>tool.name).sort(),[...codexContextTools.map(tool=>tool.name),'update_plan'].sort());
+  // Older Codex exposes ephemeral update_plan; current versions honor its disabled flag.
+  const advertised=requests[0].tools.map(tool=>tool.name);
+  assert.deepEqual(advertised.filter(name=>name!=='update_plan').sort(),codexContextTools.map(tool=>tool.name).filter(name=>name!=='action_catalog').sort());
+  assert.ok(!advertised.includes('action_catalog'),'ordinary queries have no host action-catalog grant');
 });
 
 test('host output validation repairs within the same Codex thread and remains bounded',async t=>{
@@ -138,4 +144,16 @@ test('Codex receives structured tool feedback and corrects arguments within the 
   const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(messages.filter(m=>m.method==='turn/start').length,1);
   assert.match(messages.find(m=>m.id===999).result.contentItems[0].text,/limit must be a positive integer/);
+});
+
+
+test('Codex cumulative usage replaces duplicate samples and covers repair turns without inventing request counts',async t=>{
+ await fake(t,'usage');const samples=[];let validation=0;
+ const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ await agent.query({question:'Generated usage fixture',onUsage:u=>samples.push(u),validateOutput:()=>++validation===1?{code:'fixture',feedback:'Return exact original citation.'}:undefined});
+ assert.equal(samples.at(-1).totalTokens,300);assert.equal(samples.at(-1).complete,true);assert.equal(samples.at(-1).measurement,'thread_cumulative');assert.equal(samples.at(-1).requests,0);assert.equal(samples.at(-1).cacheReadTokens,40);assert.ok(samples.some(s=>s.complete===false));
+});
+test('Codex structured quota errors retain safe typed state without exposing provider text',async t=>{
+ await fake(t,'structured-error');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ await assert.rejects(agent.query({question:'Generated failure'}),e=>e.details?.category==='blocked'&&e.details.code==='provider_quota'&&!e.message.includes('synthetic-private'));
 });

@@ -1,6 +1,13 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {buildContextEnvelope,taskTools} from '../dist/task-context.js';
+
+test('durable task retries keep their host-owned time even across a clock boundary',()=>{
+ const input={question:'Review a proposed event',contextTime:'2026-09-01T23:59:59Z',timeZone:'UTC'};
+ const first=buildContextEnvelope(input,[],'2026-09-01T23:59:59Z'),retry=buildContextEnvelope(input,[],'2026-09-02T00:00:01Z');
+ assert.equal(first.currentTime,retry.currentTime);assert.equal(first.displayCurrentTime,retry.displayCurrentTime);
+ assert.equal(buildContextEnvelope({question:'Interactive request'},[],'2026-09-02T00:00:01Z').currentTime,'2026-09-02T00:00:01Z');
+});
 import {startBridge} from '../dist/bridge.js';
 import {parseAnswer} from '../dist/index.js';
 const record={id:'generated-evidence',capturedAt:'2026-09-18T00:00:00Z',deviceId:'fixture',appName:'Generated',ocrText:'a'.repeat(9000)+'NEEDLE the gate opens at 14:30. '+'b'.repeat(3000)};

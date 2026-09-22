@@ -69,6 +69,7 @@ export interface CaptureEvent {
   privacy: { excluded: false; redacted: boolean; mode: 'local' | 'none'; collection?: 'content' | 'activity'; reason?: string };
 }
 export interface Status {
+  facts?: import('@mote/shared/native-status').NativeStatusView;
   operations?: import('./background-jobs').BackgroundJob[];
   storage?: { directory: string; defaultDirectory: string; custom: boolean; cleanupPending: boolean; recoveryRequired?: string };
   sync: SyncStatus;

@@ -1,3 +1,7 @@
+import {useResource} from './useResource';
+import {useOperationUpdates} from './useOperationUpdates';
+import {readResource,resources} from './resource-cache';
+import {failureMessage} from './failure-message';
 import {ModelSelector} from './ModelSelector';
 import { moteText } from '@mote/shared/i18n';
 import {QueryProgress,type QueryRun} from './QueryProgress';
@@ -35,38 +39,41 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
 }) {
   const [modelProfileId,setModelProfileId]=useState(''),[modelOverride,setModelOverride]=useState('');
   const [items, setItems] = useState<ConversationSummary[]>([]), [cursor, setCursor] = useState<string | null>(null);
-  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [selectedId,setSelectedId]=useState<string|null>(null),[olderTurns,setOlderTurns]=useState<ConversationTurn[]>([]),[olderCursor,setOlderCursor]=useState<string|null|undefined>();
+  const detail=useResource<Conversation>(api,selectedId?`/api/conversations/${encodeURIComponent(selectedId)}`:null);
+  const conversation=detail.data?{...detail.data,turns:[...olderTurns.filter(turn=>!detail.data!.turns.some(next=>next.id===turn.id)),...detail.data.turns],...(olderCursor!==undefined?{nextCursor:olderCursor}:{})}:null;
   const [question, setQuestion] = useState('');
-  const [busy, setBusy] = useState(false), [opening, setOpening] = useState(false), [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false), [loadingOlder,setLoadingOlder]=useState(false), [loadingPage,setLoadingPage] = useState(false);
   const [error, setError] = useState(''), [historyError, setHistoryError] = useState('');
   const [pendingQuestion, setPendingQuestion] = useState(''), [confirmDelete, setConfirmDelete] = useState(false);
   const operation = useRef<AbortController | null>(null), historyRequest = useRef<AbortController | null>(null);
+  const selectionMade=useRef(false),olderRequest=useRef<AbortController|null>(null);
+  const history=useResource<HistoryPage>(api,'/api/conversations?limit=30'),recentRuns=useResource<{items:QueryRun[]}>(api,'/api/query-runs');
+  const feedError=useOperationUpdates(api);
+  const loading=history.loading||loadingPage,opening=detail.loading||loadingOlder;
   const end = useRef<HTMLDivElement>(null);
   const [run,setRun]=useState<QueryRun|null>(null),[pollError,setPollError]=useState('');
 
   async function loadHistory(next?: string) {
     historyRequest.current?.abort();
+    if(!next){setLoadingPage(false);setHistoryError('');history.refresh();return;}
     const controller = new AbortController(); historyRequest.current = controller;
-    setLoading(true); setHistoryError('');
+    setLoadingPage(true); setHistoryError('');
     try {
-      const page = await api.request<HistoryPage>(`/api/conversations?limit=30${next ? `&cursor=${encodeURIComponent(next)}` : ''}`, {signal: controller.signal});
+      const page = await readResource<HistoryPage>(api,`/api/conversations?limit=30&cursor=${encodeURIComponent(next)}`,controller.signal);
       if (controller.signal.aborted) return;
-      setItems(previous => next ? [...previous, ...page.items.filter(item => !previous.some(existing => existing.id === item.id))] : page.items);
+      setItems(previous => [...previous, ...page.items.filter(item => !previous.some(existing => existing.id === item.id))]);
       setCursor(page.nextCursor ?? null);
     } catch (e) { if (!controller.signal.aborted) setHistoryError(errorMessage(e)); }
-    finally { if (!controller.signal.aborted) setLoading(false); }
+    finally { if (!controller.signal.aborted) setLoadingPage(false); }
   }
-  useEffect(() => {
-    void loadHistory();setOpening(true);
-    const controller=new AbortController();
-    void api.request<{items:QueryRun[]}>('/api/query-runs',{signal:controller.signal}).then(page=>{
-      if(controller.signal.aborted)return;
-      const recent=page.items.find(r=>r.status==='running')??page.items[0];
-      if(recent){setRun(recent);setBusy(recent.status==='running');}
-      if(recent?.conversationId)void api.request<Conversation>(`/api/conversations/${recent.conversationId}`,{signal:controller.signal}).then(saved=>{if(!controller.signal.aborted){setConversation(saved);}}).catch(()=>{});
-    }).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));}).finally(()=>{if(!controller.signal.aborted)setOpening(false);});
-    return () => {controller.abort();operation.current?.abort(); historyRequest.current?.abort();};
-  }, [api]);
+  useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
+    return()=>{operation.current?.abort();historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
+  useEffect(()=>{if(history.data){setItems(history.data.items);setCursor(history.data.nextCursor??null);}else if(history.error){setItems([]);setCursor(null);}},[history.data,history.error]);
+  useEffect(()=>{if(!recentRuns.data||selectionMade.current)return;selectionMade.current=true;
+    const recent=recentRuns.data.items.find(r=>r.status==='running')??recentRuns.data.items[0];
+    if(recent){setRun(recent);setBusy(recent.status==='running');setSelectedId(recent.conversationId??null);}
+  },[recentRuns.data]);
   useEffect(() => {if (conversation?.turns.length) end.current?.scrollIntoView({block: 'nearest'});}, [conversation?.id, conversation?.turns.length]);
 
   useEffect(()=>{
@@ -74,14 +81,13 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
     const update=async()=>{
       try{
-        const current=await api.request<QueryRun>(`/api/query-runs/${run.id}`,{signal:controller.signal});
+        const current=await readResource<QueryRun>(api,`/api/query-runs/${run.id}`,controller.signal);
         if(controller.signal.aborted)return;
         setRun(current);setPollError('');
         if(current.status==='running'){setBusy(true);timer=setTimeout(()=>void update(),1000);return;}
         if((current.status==='completed'||current.status==='failed')&&current.conversationId){
-          const saved=await api.request<Conversation>(`/api/conversations/${current.conversationId}`,{signal:controller.signal});
-          if(controller.signal.aborted)return;
-          setConversation(saved);
+          setSelectedId(current.conversationId);
+          resources(api).invalidate(key=>key.startsWith('/api/conversations'));
           if(current.status==='completed')setQuestion('');
           else if(pendingQuestion)setQuestion(pendingQuestion);
           void loadHistory();
@@ -97,30 +103,23 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     return()=>{controller.abort();clearTimeout(timer);};
   },[api,run?.id]);
 
-  async function open(id: string) {
+  function open(id: string) {
     if (busy) return;
-    operation.current?.abort();
-    const controller = new AbortController(); operation.current = controller;
-    setRun(null);setPollError('');
-    setOpening(true); setError(''); setConfirmDelete(false); setQuestion(''); setPendingQuestion('');
-    // Clear the old answer immediately, so a failed read cannot be mistaken for the selected conversation.
-    setConversation(null);
-    try {
-      const result = await api.request<Conversation>(`/api/conversations/${encodeURIComponent(id)}`, {signal: controller.signal});
-      if (!controller.signal.aborted) {setConversation(result); }
-    } catch (e) { if (!controller.signal.aborted) setError(errorMessage(e)); }
-    finally { if (!controller.signal.aborted) {setOpening(false); operation.current = null;} }
+    selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
+    setRun(null);setPollError('');setError('');setConfirmDelete(false);setQuestion('');setPendingQuestion('');
+    setOlderTurns([]);setOlderCursor(undefined);setSelectedId(id);
   }
   async function loadOlderTurns(){
     if(!conversation?.nextCursor||opening)return;
-    const id=conversation.id,cursor=conversation.nextCursor;setOpening(true);
-    try{const page=await api.request<Conversation>(`/api/conversations/${encodeURIComponent(id)}?cursor=${encodeURIComponent(cursor)}`);setConversation(current=>current?.id===id?{...current,turns:[...page.turns,...current.turns],nextCursor:page.nextCursor}:current);}catch(e){setError(errorMessage(e));}finally{setOpening(false);}
+    const id=conversation.id,cursor=conversation.nextCursor,controller=new AbortController();olderRequest.current?.abort();olderRequest.current=controller;setLoadingOlder(true);
+    try{const page=await readResource<Conversation>(api,`/api/conversations/${encodeURIComponent(id)}?cursor=${encodeURIComponent(cursor)}`,controller.signal);
+      if(!controller.signal.aborted){setOlderTurns(current=>[...page.turns.filter(turn=>!current.some(old=>old.id===turn.id)),...current]);setOlderCursor(page.nextCursor??null);}
+    }catch(e){if(!controller.signal.aborted)setError(errorMessage(e));}finally{if(!controller.signal.aborted)setLoadingOlder(false);}
   }
   function startNew() {
     if (busy) return;
-    operation.current?.abort(); operation.current = null;
-    setRun(null);setPollError('');
-    setConversation(null); setOpening(false); setQuestion(''); setPendingQuestion(''); setError(''); setConfirmDelete(false);
+    selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
+    setRun(null);setPollError('');setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setQuestion('');setPendingQuestion('');setError('');setConfirmDelete(false);
   }
   function retry(question: string) {
     if (busy || opening) return;
@@ -130,6 +129,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     event?.preventDefault();
     const text = (sample ?? question).trim();
     if (!text || busy || opening || operation.current || !configured) return;
+    selectionMade.current=true;
     const controller = new AbortController(); operation.current = controller;
     setRun(null);setBusy(true); setError(''); setConfirmDelete(false); setPendingQuestion(text);
     try {
@@ -155,7 +155,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     try {
       await api.request(`/api/conversations/${encodeURIComponent(conversation.id)}`, {method: 'DELETE', signal: controller.signal});
       if (controller.signal.aborted) return;
-      setRun(null);setConversation(null); setQuestion(''); setConfirmDelete(false); void loadHistory();
+      setRun(null);setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);resources(api).invalidate(key=>key.startsWith('/api/conversations')||key.startsWith('/api/query-runs'));setQuestion(''); setConfirmDelete(false); void loadHistory();
     } catch (e) {if (!controller.signal.aborted) setError(errorMessage(e));}
     finally {if (!controller.signal.aborted) {setBusy(false); operation.current = null;}}
   }
@@ -163,8 +163,8 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     <aside className="conversation-history panel" aria-label={moteText("对话历史")}>
       <div className="conversation-history-heading"><div className="chat-section-title"><div className="chat-section-icon"><MessageSquare size={15}/></div><div><span className="eyebrow">MOTE CHAT</span><h2>{moteText("对话历史")}</h2></div></div><button className="icon-button" aria-label={moteText("刷新对话历史")} disabled={loading} onClick={() => void loadHistory()}><RefreshCw size={16} className={loading ? 'spin' : ''}/></button></div>
       <button className="button subtle full new-conversation-button" disabled={busy} onClick={startNew}><Plus size={16}/>{moteText("新对话")}</button>
-      {historyError && <p className="notice error" role="alert">{historyError}</p>}
-      {!loading && !historyError && !items.length && <p className="fine-print">{moteText("回答会自动保存在中央节点，随时回来继续。")}</p>}
+      {Boolean(historyError||history.error)&&<p className="notice error" role="alert">{historyError||errorMessage(history.error)}</p>}
+      {!loading && !historyError && !history.error && !items.length && <p className="fine-print">{moteText("回答会自动保存在中央节点，随时回来继续。")}</p>}
       <div className="conversation-list">{items.map(item => <button key={item.id} className={`conversation-item ${conversation?.id === item.id ? 'active' : ''} ${item.status === 'failed' ? 'failed' : ''}`} aria-current={conversation?.id === item.id ? 'true' : undefined} disabled={busy} onClick={() => void open(item.id)}>
         <strong>{item.title}</strong><span>{item.status === 'failed' ? <><AlertCircle size={12}/>{moteText("未完成")}{' · '}</> : null}{dateTime(item.updatedAt)} · {item.turnCount}{' '}{moteText("轮")}</span>
       </button>)}</div>
@@ -179,14 +179,14 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
       {conversation?.nextCursor&&<button className="text-button" disabled={opening} onClick={()=>void loadOlderTurns()}>{moteText("加载更早的对话")}</button>}
       {conversation?.turns.map(turn => <article className={`answer-panel conversation-turn ${turn.status === 'failed' ? 'failed' : ''}`} key={turn.id}>
         <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}</span></div>
-        {turn.status === 'failed' || !turn.result ? <div className="failed-answer" role="alert"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText("这次回答没有完成")}</strong><p>{turn.error?.message ?? moteText("请求未完成，请稍后重试。")}</p><button className="text-button" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div> : <>{turn.result.modelSelection&&<small className="model-used">{turn.result.modelSelection.profileName} · {turn.result.modelSelection.model}</small>}{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : renderAnswer(turn.result)}</>}
+        {turn.status === 'failed' || !turn.result ? <div className="failed-answer" role="alert"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText("这次回答没有完成")}</strong><p>{failureMessage(turn.error)}</p><button className="text-button" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div> : <>{turn.result.modelSelection&&<small className="model-used">{turn.result.modelSelection.profileName} · {turn.result.modelSelection.model}</small>}{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : renderAnswer(turn.result)}</>}
       </article>)}
       {pendingQuestion && <div className="asked-question"><MessageSquare size={16}/><span>{pendingQuestion}</span></div>}
       {run&&<QueryProgress run={run} error={pollError}/>}
       {run?.status==='running'&&<button className="button subtle" onClick={()=>void api.request<QueryRun>(`/api/query-runs/${run.id}/cancel`,{method:'POST'}).then(setRun).catch(e=>setError(errorMessage(e)))}>{moteText("停止生成")}</button>}
       <div ref={end}/>
       </div>
-      {error && <p className="notice error" role="alert">{error}</p>}
+      {Boolean(error||detail.error||recentRuns.error||feedError)&&<p className="notice error" role="alert">{error||errorMessage(detail.error||recentRuns.error||feedError)}</p>}
       <div className="filter-bar"><ModelSelector api={api} feature="chat" value={modelProfileId} onChange={setModelProfileId} model={modelOverride} onModelChange={setModelOverride} disabled={busy||opening}/></div>
       <form className="ask-form" onSubmit={event => void submit(event)}>
         <textarea aria-label={moteText("向 Mote 提问")} aria-describedby="composer-hint" placeholder={conversation ? moteText("接着问，Mote 会结合前面的对话。") : moteText("比如，我最近都在忙什么？")} value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => {if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();void submit(event);}}} disabled={busy || opening} maxLength={8000} rows={3}/>

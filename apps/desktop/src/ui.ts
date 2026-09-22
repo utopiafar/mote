@@ -1,3 +1,4 @@
+import {nativeStatusSummary} from './native-status';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {builtinUiRules} from '@mote/shared';
 const desktopApi = window.mote;
@@ -306,7 +307,7 @@ function render(status: import('./contracts').Status): void {
   byId('stop').hidden = !status.running && !(settingsApplying && wasRunningBeforeSave);
   // A source registration or settings update can need a flush even with no pending bodies.
   byId('retry').hidden = false;
-  byId<HTMLButtonElement>('retry').disabled = busy || status.sync.state === 'uploading' || status.sync.state === 'unconfigured';
+  byId<HTMLButtonElement>('retry').disabled = busy || (status.facts ? !status.facts.sync.allowedActions.includes('retry_sync') : status.sync.state === 'uploading' || status.sync.state === 'unconfigured');
   byId('retry').textContent = status.sync.state === 'error' ? moteText("重试上传") : moteText("立即上传");
   fields.disabled = busy;
   byId<HTMLInputElement>('device-name').disabled = busy;
@@ -322,7 +323,7 @@ function render(status: import('./contracts').Status): void {
   setText('sync-policy-label', syncModeLabels[status.sync.mode]);
   setText('upload-speed', status.sync.state === 'uploading' ? `${((status.sync.uploadBytesPerSecond ?? 0) / 1024).toFixed(1)} KiB/s` : '0 KiB/s');
   setText('sync-upload-speed', byId('upload-speed').textContent ?? '0 KiB/s');
-  setText('sync-message', moteText("{0} · 共 {1} 条待传（含本地来源）", status.sync.message, status.sync.pendingRecords.toLocaleString(getLocale())));
+  setText('sync-message', moteText("{0} · 共 {1} 条待传（含本地来源）", status.sync.message, status.sync.pendingRecords.toLocaleString(getLocale())) + (status.facts ? `\n${nativeStatusSummary(status.facts)}` : ''));
   setText('settings-sync-summary', `${syncModeLabels[status.sync.mode]} · ${status.sync.state === 'unconfigured' ? moteText("未连接时只在本机保存") : syncStateLabel}`);
   updateLocalBacklog();
   const uploadInfo = [];
@@ -566,7 +567,7 @@ async function refreshSources(): Promise<void> {
     const card = document.createElement('article'); card.className = 'source-card';
     const title = document.createElement('strong'); title.textContent = `${row.source.kind === 'local-calendar' ? moteText("日历") : row.source.kind === 'coding-agent' ? moteText("编码对话") : moteText("文件")} · ${row.source.name} · ${row.source.retention === 'reference' ? moteText("仅文件目录") : row.source.retention === 'archive' ? moteText("原件归档") : moteText("内容索引，原件留本机")}`;
     const detail = document.createElement('p'); detail.className = 'helper profile-path'; detail.textContent = row.source.path || moteText("所选系统日历");
-    const status = document.createElement('p'); status.className = 'helper'; status.textContent = moteText("{0} · {1} 项 · 待传 {2} · 跳过 {3}{4}", row.source.enabled ? row.message : moteText("本机已暂停"), row.items, row.pending, row.skipped, row.lastSyncAt ? moteText(" · 最近同步 ") + new Date(row.lastSyncAt).toLocaleString(getLocale()) : '');
+    const status = document.createElement('p'); status.className = 'helper'; status.textContent = moteText("{0} · {1} 项 · 待传 {2} · 跳过 {3}{4}", row.source.enabled ? row.message : moteText("本机已暂停"), row.items, row.pending, row.skipped, row.lastSyncAt ? moteText(" · 最近同步 ") + new Date(row.lastSyncAt).toLocaleString(getLocale()) : '') + (row.facts ? `\n${nativeStatusSummary(row.facts)}` : '');
     const actions = document.createElement('div'); actions.className = 'actions';
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary'; edit.textContent = moteText("编辑规则"); edit.addEventListener('click', () => editSource(row.source.id));
     const pause = document.createElement('button'); pause.type = 'button'; pause.className = 'secondary'; pause.textContent = row.source.enabled ? moteText("暂停本机同步") : moteText("恢复本机同步"); pause.disabled = sourceBusy;

@@ -13,6 +13,14 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-desktop-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 describe('durable capture queue', () => {
+  it('retains the archive ACK origin separately from retry and last-contact timestamps',async()=>{
+    queue.stats();
+    await queue.syncCheckpoint('2026-09-22T01:00:00Z','2026-09-22T01:01:00Z');
+    expect(queue.stats().archiveAcknowledgment).toBeUndefined();
+    const ack={at:'2026-09-22T01:02:00Z',origin:'https://fixture.invalid'};
+    await queue.syncCheckpoint(ack.at,undefined,ack);expect(queue.stats().archiveAcknowledgment).toEqual(ack);
+    const reopened=new DurableQueue(directory,limits);await reopened.initialize();expect(reopened.stats().archiveAcknowledgment).toEqual(ack);
+  });
   it('rejects a blank application name before accepting an upload record', async () => {
     for (const appName of ['', '  \t\n']) await expect(queue.enqueue({ ...event(), appName }, image)).rejects.toThrow();
     expect(queue.stats().depth).toBe(0);

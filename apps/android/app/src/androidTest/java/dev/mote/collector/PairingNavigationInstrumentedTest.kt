@@ -32,7 +32,7 @@ class PairingNavigationInstrumentedTest {
     }
     private fun editor(activity: Activity, hint: String) = views(activity.window.decorView).filterIsInstance<EditText>().single { it.hint?.toString() == hint }
     private fun click(activity: Activity, text: String) = views(activity.window.decorView).filterIsInstance<TextView>()
-        .single { it.isShown && it.isClickable && it.text.toString() == text }.performClick()
+        .single { it.isShown && it.isClickable && it.text.toString() == (if (text == "设置") "本机" else if (text == "概览") "今天" else text) }.performClick()
     private fun menu(activity: Activity, label: String) = views(activity.window.decorView).single { it.isShown && it.tag == "menu:$label" }.performClick()
     private fun saveVisible(activity: Activity) = views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text.toString() == "保存设置" }
 
@@ -162,6 +162,7 @@ class PairingNavigationInstrumentedTest {
                 }
                 scenario.onActivity { activity ->
                     assertEquals("60", editor(activity, "30").text.toString()); assertFalse(saveVisible(activity))
+                    click(activity, "设置"); menu(activity, "连接与同步")
                     assertEquals(node, editor(activity, "https://mote.example.com").text.toString())
                 }
             }

@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto';
 import {readdirSync,unlinkSync} from 'node:fs';
+import {Readable} from 'node:stream';
 import {basename,join} from 'node:path';
 import {z} from 'zod';
 import type {ArchivedFile} from '@mote/shared';
@@ -22,33 +23,35 @@ export class ArchivedFileStore {
     store.db.exec(`CREATE TABLE IF NOT EXISTS file_blobs(hash TEXT PRIMARY KEY,bytes INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS archived_files(id TEXT PRIMARY KEY,hash TEXT NOT NULL REFERENCES file_blobs(hash),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS capture_files(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,file_id TEXT NOT NULL REFERENCES archived_files(id),PRIMARY KEY(capture_id,file_id));`);
+    store.assets.connect();
   }
   put(input:{name:string;mimeType?:string;bytes:Buffer;relativePath?:string}):ArchivedFile {
-    if(input.bytes.length>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
-    const relativePath=archiveRelativePath(input.relativePath??input.name),name=basename(relativePath),hash=sha256(input.bytes);
-    const mimeType=input.mimeType?.trim()||'application/octet-stream';
+    return this.putParts(input,[input.bytes],input.bytes.length);
+  }
+  putParts(input:{name:string;mimeType?:string;relativePath?:string},parts:Iterable<Buffer>,sizeBytes:number):ArchivedFile {
+    if(sizeBytes>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
+    const relativePath=archiveRelativePath(input.relativePath??input.name),name=basename(relativePath),mimeType=input.mimeType?.trim()||'application/octet-stream';
     if(mimeType.length>200||/[\r\n\u0000]/.test(mimeType))throw new StoreError('Invalid file MIME type');
+    const asset=this.store.assets.putParts(parts,sizeBytes),hash=asset.hash;
+    try{
     const duplicate=this.store.db.prepare("SELECT json FROM archived_files WHERE hash=? AND json_extract(json,'$.relativePath')=? AND json_extract(json,'$.mimeType')=?").get(hash,relativePath,mimeType) as {json:string}|undefined;
     if(duplicate)return JSON.parse(duplicate.json);
-    const value:ArchivedFile={id:randomUUID(),hash,name,relativePath,mimeType,sizeBytes:input.bytes.length,createdAt:new Date().toISOString()};
-    const known=this.store.db.prepare('SELECT hash FROM file_blobs WHERE hash=?').get(hash);
-    this.store.reserveMetadata((known?0:input.bytes.length)+Buffer.byteLength(JSON.stringify(value)));
-    this.writeBytes(hash,input.bytes);
+    const value:ArchivedFile={id:randomUUID(),hash,name,relativePath,mimeType,sizeBytes,createdAt:new Date().toISOString()};
     this.store.db.exec('BEGIN IMMEDIATE');
-    try{this.store.db.prepare('INSERT OR IGNORE INTO file_blobs(hash,bytes) VALUES(?,?)').run(hash,input.bytes.length);this.store.db.prepare('INSERT INTO archived_files(id,hash,json) VALUES(?,?,?)').run(value.id,hash,JSON.stringify(value));this.store.db.exec('COMMIT');}
+    try{this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.store.db.prepare('INSERT OR IGNORE INTO file_blobs(hash,bytes) VALUES(?,?)').run(hash,sizeBytes);this.store.db.prepare('INSERT INTO archived_files(id,hash,json) VALUES(?,?,?)').run(value.id,hash,JSON.stringify(value));this.store.db.exec('COMMIT');}
     catch(error){this.store.db.exec('ROLLBACK');this.sweepOrphans();throw error;}
     return value;
+    }finally{asset.release();}
   }
-  private writeBytes(hash:string,original:Buffer){
-    const path=join(this.directory,hash);
-    if(!this.store.contentEncryption.exists(path))this.store.contentEncryption.write(path,original);
-  }
+  private writeBytes(hash:string,original:Buffer){this.store.assets.putParts([original],original.length,hash).release();}
 
   get(id:string):ArchivedFile {const row=this.store.db.prepare('SELECT json FROM archived_files WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Archived file not found',404);return JSON.parse(row.json);}
   read(id:string):Buffer {
-    const file=this.get(id),original=this.store.contentEncryption.read(join(this.directory,file.hash));
+    const file=this.get(id),original=this.store.assets.read(file.hash);
     if(sha256(original)!==file.hash)throw new StoreError('Archived file checksum mismatch',500);return original;
   }
+  *bytes(id:string){const file=this.get(id);for(const part of this.store.assets.bytes(file.hash)){this.get(id);yield part;}}
+  stream(id:string){return Readable.from(this.bytes(id));}
   decrypt(hash:string):boolean {
     if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid file hash');
     return this.store.contentEncryption.decrypt(join(this.directory,hash),bytes=>{if(sha256(bytes)!==hash)throw new StoreError('Archived file checksum mismatch',500);});
@@ -86,8 +89,9 @@ export class ArchivedFileStore {
     }
   }
   sweepOrphans(){
+    this.store.assets.sweep();
     const known=new Set((this.store.db.prepare('SELECT hash FROM file_blobs').all() as {hash:string}[]).map(row=>row.hash));
-    for(const name of readdirSync(this.directory))if((/^[a-f0-9]{64}(?:\.plain|\.aes)?$/.test(name)&&!known.has(name.split('.')[0]))||/^[a-f0-9]{64}(?:\.plain|\.aes)?\.[a-f0-9-]+\.tmp$/.test(name))unlinkSync(join(this.directory,name));
+    for(const name of readdirSync(this.directory))if((/^[a-f0-9]{64}(?:\.plain|\.aes)?$/.test(name)&&!known.has(name.split('.')[0])&&!this.store.db.prepare('SELECT 1 FROM assets WHERE hash=?').get(name.split('.')[0]))||/^[a-f0-9]{64}(?:\.plain|\.aes)?\.[a-f0-9-]+\.tmp$/.test(name))unlinkSync(join(this.directory,name));
   }
   removeUnreferenced(fileIds:string[],retained:Set<string>):{files:number;bytes:number}{
     let files=0,bytes=0;
@@ -97,9 +101,9 @@ export class ArchivedFileStore {
       this.store.db.prepare('DELETE FROM archived_files WHERE id=?').run(id);files++;
       if(!this.store.db.prepare('SELECT 1 FROM archived_files WHERE hash=? LIMIT 1').get(row.hash)){
         const blob=this.store.db.prepare('SELECT bytes FROM file_blobs WHERE hash=?').get(row.hash) as {bytes:number}|undefined;
-        this.store.db.prepare('DELETE FROM file_blobs WHERE hash=?').run(row.hash);this.store.contentEncryption.remove(join(this.directory,row.hash));bytes+=blob?.bytes??0;
+        this.store.db.prepare('DELETE FROM file_blobs WHERE hash=?').run(row.hash);bytes+=blob?.bytes??0;
       }
     }
-    return {files,bytes};
+    this.store.assets.sweep();return {files,bytes};
   }
 }

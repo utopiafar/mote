@@ -3,6 +3,7 @@ import {z} from 'zod';
 export const fileIndexSchema=z.object({
  version:z.literal(1),fileId:z.string().min(1).max(200),contentVersion:z.string().regex(/^[a-f0-9]{64}$/),
  mode:z.enum(['catalog','index','archive']),coverage:z.enum(['none','full','lightweight','excerpt']),
+ warnings:z.array(z.string().max(1000)).max(30).optional(),
  parser:z.string().min(1).max(100),status:z.enum(['ready','pending','unsupported']),
  totalCharacters:z.number().int().min(0).max(10000000),offset:z.number().int().min(0).max(10000000).default(0),
  length:z.number().int().min(0).max(100000),allowRead:z.boolean().default(false),

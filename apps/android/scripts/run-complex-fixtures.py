@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runs synthetic Android phases with real force-stop/offline/reconnect boundaries.
 
-Build the debug app and androidTest APK first. Reads URL/token from a local JSON
+Build the selected app and androidTest APK first. Reads URL/token from a local JSON
 connection file; never prints the token. Does not enable screen capture.
 """
 import argparse
@@ -18,6 +18,7 @@ parser.add_argument('--serial', default='emulator-5580')
 parser.add_argument('--adb', default=str(pathlib.Path.home() / 'Library/Android/sdk/platform-tools/adb'))
 parser.add_argument('--rounds', type=int, choices=range(1, 11), default=3)
 parser.add_argument('--output', type=pathlib.Path)
+parser.add_argument('--build-type', choices=('debug', 'development'), default='development')
 options = parser.parse_args()
 android = pathlib.Path(__file__).resolve().parent.parent
 output = options.output or android / 'app/build/reports/complex-fixtures'
@@ -36,7 +37,8 @@ def adb(*args, check=True):
 
 if adb('shell', 'getprop', 'ro.boot.qemu.avd_name') != 'mote_fixture_api35':
     raise SystemExit('Refusing to run outside the dedicated synthetic fixture AVD.')
-for path in (android / 'app/build/outputs/apk/debug/app-debug.apk', android / 'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk'):
+package = 'dev.mote.collector.dev' if options.build_type == 'development' else 'dev.mote.collector'
+for path in (android / f'app/build/outputs/apk/{options.build_type}/app-{options.build_type}.apk', android / f'app/build/outputs/apk/androidTest/{options.build_type}/app-{options.build_type}-androidTest.apk'):
     adb('install', '-r', str(path))
 
 class_name = 'dev.mote.collector.ComplexNotesInstrumentedTest'
@@ -45,13 +47,13 @@ try:
     for round_number in range(1, options.rounds + 1):
         adb('reverse', '--remove', port, check=False)
         for phase in ('stageOfflineComplexNotesAndPreparedRetry', 'recoverOfflinePreparedRetry', 'synchronizeAndCompareCentralEvidence'):
-            adb('shell', 'am', 'force-stop', 'dev.mote.collector')
-            adb('shell', 'am', 'force-stop', 'dev.mote.collector.test')
+            adb('shell', 'am', 'force-stop', package)
+            adb('shell', 'am', 'force-stop', package + '.test')
             if phase == 'synchronizeAndCompareCentralEvidence':
                 adb('reverse', port, port)
             arguments = ['am', 'instrument', '-w', '-r', '-e', 'class', f'{class_name}#{phase}',
                 '-e', 'fixtureRound', str(round_number), '-e', 'fixtureServer', connection['url'],
-                '-e', 'fixtureToken', connection['token'], 'dev.mote.collector.test/androidx.test.runner.AndroidJUnitRunner']
+                '-e', 'fixtureToken', connection['token'], f'{package}.test/androidx.test.runner.AndroidJUnitRunner']
             command = [*base, 'shell', shlex.join(arguments)]
             log = output / f'round-{round_number}-{phase}.log'
             with log.open('w') as stream:
@@ -60,10 +62,10 @@ try:
             if result.returncode or 'OK (1 test)' not in content or 'INSTRUMENTATION_STATUS_CODE: -4' in content:
                 raise RuntimeError(f'Round {round_number} {phase} failed; see {log}')
             print(f'Round {round_number}: {phase} passed', flush=True)
-        result = adb('exec-out', 'run-as', 'dev.mote.collector', 'cat', f'files/complex-notes-result-{round_number}.json')
+        result = adb('exec-out', 'run-as', package, 'cat', f'files/complex-notes-result-{round_number}.json')
         (output / f'round-{round_number}-evidence.json').write_text(result + '\n')
     print(f'{options.rounds} synthetic rounds passed. Metadata/digests: {output}')
 finally:
-    adb('shell', 'am', 'force-stop', 'dev.mote.collector', check=False)
-    adb('shell', 'am', 'force-stop', 'dev.mote.collector.test', check=False)
+    adb('shell', 'am', 'force-stop', package, check=False)
+    adb('shell', 'am', 'force-stop', package + '.test', check=False)
     adb('reverse', '--remove', port, check=False)

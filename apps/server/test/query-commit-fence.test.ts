@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {randomUUID} from 'node:crypto';
+import {buildApp,type QueryAgent} from '../src/app.js';
+import {Store} from '../src/store.js';
+import {ExecutionEngine} from '../src/execution-engine.js';
+import type {Config} from '../src/config.js';
+const token='generated-query-fence-owner',headers={authorization:`Bearer ${token}`};
+const cfg=(dataDir:string):Config=>({dataDir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+const result=()=>({answer:'Generated result must not survive a revoked grant',citations:[],trace:[],runId:randomUUID()});
+for(const outcome of ['answer','failure','uncooperative'] as const)test(`a second writer cancels ${outcome} work without a late conversation write or stranded close`,async t=>{
+ const root=mkdtempSync(join(tmpdir(),'mote-query-grant-'));let second!:ExecutionEngine,started!:()=>void,release!:()=>void,operationId='';
+ const entered=new Promise<void>(r=>started=r),held=new Promise<void>(r=>release=r);
+ const agent:QueryAgent={configured:true,close:async()=>{},query:async input=>{operationId=input.traceContext!.operationId!;started();if(outcome==='uncooperative')await held;else second.cancel(operationId);if(outcome==='failure')throw Error('Generated failure after cancellation');return result();}};
+ const node=await buildApp(cfg(root),{agent}),other=new Store(root);second=new ExecutionEngine(other);
+ t.after(async()=>{release();await node.app.close();await second.close();other.close();rmSync(root,{recursive:true,force:true});});
+ const request=node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated question'}}).then(x=>x);await entered;
+ if(outcome==='uncooperative')second.cancel(operationId);
+ const response=await Promise.race([request,new Promise<never>((_,reject)=>{const timer=setTimeout(()=>reject(Error('Cancelled query did not settle')),2000);timer.unref();})]);
+ assert.notEqual(response.statusCode,200);assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversations').get()!.n,0);
+ const run=(await node.app.inject({url:'/api/query-runs/'+operationId.slice(6),headers})).json();assert.equal(run.status,'cancelled');
+ release();await node.app.close();
+});
+test('conversation result and query receipt roll back together when final receipt commit fails',async t=>{
+ const root=mkdtempSync(join(tmpdir(),'mote-query-atomic-')),node=await buildApp(cfg(root),{agent:{configured:true,close:async()=>{},query:async()=>result()}});
+ t.after(async()=>{await node.app.close();rmSync(root,{recursive:true,force:true});});
+ node.store.db.exec("CREATE TRIGGER reject_query_receipt BEFORE UPDATE ON query_runs WHEN json_extract(NEW.json,'$.turnId') IS NOT NULL BEGIN SELECT RAISE(ABORT,'Generated final receipt failure'); END");
+ const response=await node.app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated rollback question'}});assert.notEqual(response.statusCode,200);
+ assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversations').get()!.n,0);assert.equal(node.store.db.prepare('SELECT count(*) n FROM conversation_turns').get()!.n,0);
+ assert.equal((await node.app.inject({url:'/api/query-runs',headers})).json().items[0].status,'failed');
+});

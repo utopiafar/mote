@@ -1,3 +1,4 @@
+import {legacyAsset} from './fixtures/legacy-asset.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {copyFileSync,existsSync,linkSync,mkdirSync,mkdtempSync,readFileSync,realpathSync,renameSync,rmSync,symlinkSync,writeFileSync} from 'node:fs';
@@ -50,7 +51,7 @@ for(const mode of ['plain','encrypted','mixed','legacy'] as const)test(`${mode} 
  if(legacy){
    // Old vaults used unsuffixed AES-GCM originals/parts and one vault-wide key identity.
    original.db.prepare('UPDATE settings SET value=? WHERE key=?').run(sha256(Buffer.from(key,'hex')),'encryption');
-   renameSync(join(archived.directory,imported.files[0].hash+'.aes'),join(archived.directory,imported.files[0].hash));
+   legacyAsset(original,imported.files[0].hash,'archive-legacy',true);
    if(mode==='legacy')for(let part=0;part<2;part++)renameSync(join(partBase,part+'.aes'),join(partBase,String(part)));
  }
  let plainOriginal:ReturnType<ArchivedFileStore['put']>|undefined;
@@ -67,7 +68,7 @@ for(const mode of ['plain','encrypted','mixed','legacy'] as const)test(`${mode} 
  const manifest=JSON.parse(readFileSync(join(snapshot,'backup-manifest.json'),'utf8'));
  const selectedPartSuffix=mode==='legacy'?'':mode==='mixed'?'.plain':suffix;
  assert.ok(Object.hasOwn(manifest.checksums,`files/objects/${sha256(bytes)}/0${selectedPartSuffix}`));
- assert.ok(Object.hasOwn(manifest.checksums,`files/${imported.files[0].hash}${legacy?'':suffix}`));
+ assert.ok(Object.hasOwn(manifest.checksums,legacy?`files/${imported.files[0].hash}`:`files/objects/${imported.files[0].hash}/0${suffix}`));
  if(mode==='mixed'){
    assert.ok(Object.hasOwn(manifest.checksums,`files/objects/${sha256(bytes)}/1.aes`));
    assert.equal(Object.hasOwn(manifest.checksums,`files/objects/${sha256(bytes)}/0.aes`),false);
@@ -104,7 +105,7 @@ test('format-aware backups reject unsafe preferred variants and remove incomplet
  const root=realpathSync(mkdtempSync(join(tmpdir(),'mote-backup-links-'))),source=join(root,'source'),outside=join(root,'outside');
  const store=new Store(source,{dataKey:'ed'.repeat(32),contentEncryptionEnabled:true}),archived=new ArchivedFileStore(store);
  t.after(()=>{store.close();rmSync(root,{recursive:true,force:true});});
- const file=archived.put({name:'generated.txt',bytes:Buffer.from('Generated stored content')}),preferred=join(archived.directory,file.hash+'.plain');
+ const file=archived.put({name:'generated.txt',bytes:Buffer.from('Generated stored content')}),preferred=join(store.assets.directory,file.hash,'0.plain');
  writeFileSync(outside,'Generated unrelated content');
  for(const kind of ['symlink','dangling','hardlink','directory']){
    const snapshot=join(root,'snapshot-'+kind);

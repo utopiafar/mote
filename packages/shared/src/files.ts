@@ -17,15 +17,17 @@ export const fileRevisionSchema=z.object({
   if(!v.item.deleted&&v.item.layer==='original'&&(!v.sha256||v.sizeBytes>FILE_MAX_BYTES))c.addIssue({code:'custom',message:'Original file requires a digest and must fit file limit'});
 });
 export type FileRevision=z.infer<typeof fileRevisionSchema>;
+export const documentLocationSchema=z.object({pageNumber:z.number().int().positive().optional(),sheetName:z.string().max(200).optional(),rowNumber:z.number().int().positive().optional(),offset:z.number().int().nonnegative(),length:z.number().int().nonnegative()}).strict();
 export const transcriptSegmentSchema=z.object({
   startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),text:z.string().min(1).max(8000),
   speaker:z.string().max(100).optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional(),
+  documentLocation:documentLocationSchema.optional(),
   words:z.array(z.object({startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),text:z.string().max(1000),probability:z.number().min(0).max(1).optional()}).strict()).max(8000).optional(),
 }).strict();
 export const transcriptSchema=z.object({
   durationMs:z.number().finite().nonnegative(),
   segments:z.array(transcriptSegmentSchema).max(50000),
-  engine:z.string().max(200).optional(),uncorrected:z.literal(true).optional(),warnings:z.array(z.string().max(1000)).max(30).optional(),
+  coverage:z.enum(['full','partial','none']).optional(),engine:z.string().max(200).optional(),uncorrected:z.literal(true).optional(),warnings:z.array(z.string().max(1000)).max(30).optional(),
 }).strict().superRefine((v,c)=>{let last=0;for(const s of v.segments){if(s.endMs<s.startMs||s.endMs>v.durationMs+1000||s.startMs<last)c.addIssue({code:'custom',message:'Invalid transcript timeline'});last=s.startMs;let wordLast=s.startMs;for(const w of s.words??[]){if(w.endMs<w.startMs||w.startMs<wordLast||w.startMs<s.startMs||w.endMs>s.endMs+1)c.addIssue({code:'custom',message:'Invalid word timeline'});wordLast=w.startMs;}}});
 export type Transcript=z.infer<typeof transcriptSchema>;
 const speakerLabel=z.string().regex(/^SPEAKER_(?:[0-9]{1,2}|UNKNOWN)$/);
@@ -38,7 +40,7 @@ export const diarizationSchema=z.object({
   warnings:z.array(z.string().max(1000)).max(30).default([]),
 }).strict().superRefine((v,c)=>{for(const s of [...v.segments,...v.samples])if(s.endMs<=s.startMs||s.endMs>v.durationMs+1000)c.addIssue({code:'custom',message:'Invalid diarization timeline'});});
 export type Diarization=z.infer<typeof diarizationSchema>;
-export const fileEvidenceSchema=z.object({captureId:z.string().uuid(),revision:z.string().max(200),artifactId:z.string().uuid(),chunkId:z.string().uuid(),startMs:z.number().nonnegative().optional(),endMs:z.number().nonnegative().optional(),speaker:z.string().max(100).optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional()}).strict();
+export const fileEvidenceSchema=z.object({documentLocation:documentLocationSchema.optional(),captureId:z.string().uuid(),revision:z.string().max(200),artifactId:z.string().uuid(),chunkId:z.string().uuid(),startMs:z.number().nonnegative().optional(),endMs:z.number().nonnegative().optional(),speaker:z.string().max(100).optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional()}).strict();
 export const fileProcessingSchema=z.object({
   enabled:z.boolean().default(false),
   endpoint:z.string().max(2000).default('http://127.0.0.1:9009/transcribe'),

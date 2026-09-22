@@ -1,3 +1,5 @@
+import {useResource} from './useResource';
+import {resources} from './resource-cache';
 import {confirmNavigation} from './unsaved';
 import {moteText} from '@mote/shared/i18n';
 import {useEffect,useState} from 'react';
@@ -8,13 +10,16 @@ import {ModelSettingsEditor} from './ModelSettingsEditor';
 import {createModelDraft,modelSettingsRequest} from './model-settings-form';
 
 export function ModelProfiles({api,revision,onApplied}:{api:Api;revision:number;onApplied:()=>void}){
-  const [view,setView]=useState<ModelSettingsView>(),[selected,setSelected]=useState(DEPLOYMENT_MODEL_PROFILE_ID);
+  const resource=useResource<ModelSettingsView>(api,'/api/model-settings'),view=resource.data;
+  const [selected,setSelected]=useState(DEPLOYMENT_MODEL_PROFILE_ID);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[confirmDelete,setConfirmDelete]=useState(false);
   const [copyName,setCopyName]=useState<string|null>(null),[includeCredentials,setIncludeCredentials]=useState(true),[probe,setProbe]=useState<ModelTestResult>();
-  useEffect(()=>{const c=new AbortController();void api.request<ModelSettingsView>('/api/model-settings',{signal:c.signal}).then(value=>{if(!c.signal.aborted){setView(value);setError('');setSelected(id=>value.profiles?.some(p=>p.id===id)?id:value.profiles?.[0]?.id??'default');}}).catch(e=>{if(!c.signal.aborted)setError(errorMessage(e));});return()=>c.abort();},[api,revision]);
+  useEffect(()=>{setSelected(DEPLOYMENT_MODEL_PROFILE_ID);setProbe(undefined);setError('');setConfirmDelete(false);setCopyName(null);},[api]);
+  useEffect(()=>{if(revision)resource.refresh();},[api,revision]);
+  useEffect(()=>{if(view)setSelected(id=>view.profiles?.some(p=>p.id===id)?id:view.profiles?.[0]?.id??'default');},[view]);
   async function mutate(path:string,method:string,body:unknown,after?:string){
     setBusy(true);setError('');
-    try{const next=await api.request<ModelSettingsView>(path,{method,body:JSON.stringify(body)});setView(next);if(after)setSelected(after);setConfirmDelete(false);setCopyName(null);onApplied();}
+    try{const next=await api.request<ModelSettingsView>(path,{method,body:JSON.stringify(body)});resources(api).invalidate(key=>key.startsWith('/api/model-settings'));if(after)setSelected(after);setConfirmDelete(false);setCopyName(null);onApplied();}
     catch(e){setError(errorMessage(e));}finally{setBusy(false);}
   }
   const profiles=view?.profiles??[],profile=profiles.find(p=>p.id===selected),atCapacity=profiles.filter(p=>!p.readOnly&&p.id!=='default').length>=30;
@@ -33,7 +38,7 @@ export function ModelProfiles({api,revision,onApplied}:{api:Api;revision:number;
       <div className="provider-list">{profiles.map(p=><button key={p.id} className="provider-card" aria-pressed={selected===p.id} disabled={busy} onClick={()=>choose(p.id)}><span className="provider-card-icon">{p.readOnly?<LockKeyhole size={18}/>:<Server size={18}/>}</span><span><strong>{p.name}</strong><small>{p.settings.protocol==='codex-app-server'?'Codex App Server':p.settings.provider} · {p.settings.model||moteText("待配置")}</small><small>{p.readOnly?moteText("部署文件 · 只读"):moteText("自定义预设")}</small></span></button>)}</div>
     </aside>
     <div className="provider-detail">
-      {error&&<p className="notice error" role="alert">{error}</p>}
+      {Boolean(error||resource.error)&&<p className="notice error" role="alert">{error||errorMessage(resource.error)}</p>}
       {profile&&view&&<>
         <section className="panel provider-actions"><div><h2>{profile.name}</h2><p>{uses.length?moteText("用于：")+uses.join('、'):moteText("尚未分配给模块，可在模块与模型中选择。")}</p></div><div className="provider-action-buttons"><button className="button subtle" disabled={busy||atCapacity} onClick={()=>{setCopyName((profile.name+moteText(" 副本")).slice(0,100));setIncludeCredentials(true);setConfirmDelete(false);}}><Copy size={15}/>{moteText("复制预设")}</button>{!profile.readOnly&&profile.id!=='default'&&<button className="button subtle" disabled={busy||uses.length>0} title={uses.length?moteText("请先更改使用此预设的模块"):undefined} onClick={()=>setConfirmDelete(true)}><Trash2 size={15}/>{moteText("删除")}</button>}</div>
           {copyName!==null&&<form className="provider-inline-form" onSubmit={e=>{e.preventDefault();const id=crypto.randomUUID();void mutate(`/api/model-settings/profiles/${encodeURIComponent(selected)}/copy`,'POST',{revision:view.revision,id,name:copyName.trim(),includeCredentials},id);}}><label className="preference-field">{moteText("副本名称")}<input aria-label={moteText("副本名称")} maxLength={100} value={copyName} onChange={e=>setCopyName(e.target.value)} required disabled={busy}/></label><label className="provider-copy-choice"><input type="checkbox" checked={includeCredentials} onChange={e=>setIncludeCredentials(e.target.checked)} disabled={busy}/>{moteText("同时复制凭据和高级参数（仅在服务器内部复制）")}</label><small>{moteText("副本独立保存。修改副本不会影响原预设；更换地址时仍需确认凭据复用。")}</small><div><button className="button primary" disabled={busy||!copyName.trim()}>{moteText("创建副本")}</button><button type="button" className="button subtle" disabled={busy} onClick={()=>setCopyName(null)}>{moteText("取消")}</button></div></form>}

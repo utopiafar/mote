@@ -2457,12 +2457,14 @@ strong {
 @media (max-width: 760px) {
   .sidebar {
     transform: translateX(-100%);
+    visibility: hidden;
     transition: transform 0.2s;
     width: 215px;
     z-index: 41;
   }
   .sidebar.open {
     transform: translateX(0);
+    visibility: visible;
   }
   .sidebar-scrim {
     display: block;
@@ -3772,7 +3774,13 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .insight-progress{margin-bottom:20px}.progress-title{display:flex;align-items:center;gap:10px}.progress-title h2{margin:0}.insight-steps{list-style:none;padding:0;max-height:270px;overflow:auto;border-top:1px solid #e8e4dd}.insight-steps li{display:flex;gap:10px;align-items:baseline;padding:10px 2px;border-bottom:1px solid #eee;font-size:13px}.insight-steps time{color:#777;white-space:nowrap}.insight-steps svg{flex-shrink:0}
 
 /* Model accounting and recoverable conversation progress. */
-.usage-page { display: grid; gap: 22px; }
+.usage-page { display: grid; grid-template-columns:minmax(0,1fr); gap: 22px; min-width:0; }
+.usage-page>.panel { min-width:0; }
+.usage-page fieldset { min-inline-size:0; }
+.model-budgets fieldset { border:0; padding:0; margin:0; }
+.model-budgets label { display:grid; gap:7px; min-width:0; font-size:13px; }
+.model-budgets input,.model-budgets select { min-width:0; max-width:100%; width:100%; box-sizing:border-box; }
+.model-budgets .source-toolbar>label { flex:1 1 180px; }
 .usage-filter,.usage-facts { display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
 .usage-filter label,.usage-price-fields label { display:grid; gap:7px; font-size:13px; }
 .usage-filter input,.usage-filter select,.usage-price-fields input,.usage-price-fields select { padding:9px 11px; border:1px solid var(--border,#ddd); border-radius:8px; background:transparent; color:inherit; min-width:0; }

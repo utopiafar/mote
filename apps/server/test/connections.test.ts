@@ -118,7 +118,7 @@ test('collector auth rejects device/capture/source impersonation and central arc
   assert.equal((await app.inject({url:'/api/source-items',headers:auth})).json().items.length,1);
   for(const url of ['/api/source-items?deviceId=owner-device','/api/source-items?sourceId=foreign','/api/sources/foreign/items','/api/sources/foreign/item?externalId=one','/api/sources/foreign/history?externalId=one'])assert.equal((await app.inject({url,headers:auth})).statusCode,403,url);
   for(const url of ['/api/status','/api/configuration','/api/captures','/api/notes','/api/devices','/api/activity','/api/export','/api/updates','/api/memories','/api/connections','/api/diagnostics','/api/support-bundle','/api/software-update',`/api/captures/${own.id}`,`/api/notes/${own.id}`])assert.equal((await app.inject({url,headers:auth})).statusCode,403,url);
-  for(const url of ['/api/query','/api/import','/api/index/retry','/api/connections/mcp','/api/connections/invitations','/api/connectors/google/start'])assert.equal((await app.inject({method:'POST',url,headers:auth,payload:{}})).statusCode,403,url);
+  for(const url of ['/api/query','/api/import','/api/index/retry','/api/connections/mcp','/api/connections/invitations','/api/connectors/google/start','/api/connectors/gmail/start','/api/connectors/gmail/sync'])assert.equal((await app.inject({method:'POST',url,headers:auth,payload:{}})).statusCode,403,url);
   assert.equal((await app.inject({method:'DELETE',url:`/api/captures/${own.id}`,headers:auth})).statusCode,403);
   assert.equal(store.evidence([original.id])[0].deviceId,'owner-device');
 });

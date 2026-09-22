@@ -1,3 +1,6 @@
+import {ProviderFailure,providerHttpFailure} from '@mote/shared';
+import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
+import {extractDocument,extractUtf8} from './format-work.js';
 import { moteText } from './i18n.js';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import {pathToFileURL} from 'node:url';
@@ -10,7 +13,7 @@ export interface TranscriptionProvider {
 }
 export function isLoopback(endpoint:string){try{return ['127.0.0.1','localhost','[::1]'].includes(new URL(endpoint).hostname);}catch{return false;}}
 export async function readProcessorJson(response:Response,limit=32*1024*1024){
-  if(!response.ok){await response.body?.cancel();throw new StoreError(response.status===413?'Processing limit exceeded':'Processing service failed',response.status===413?413:502);}
+  if(!response.ok){await response.body?.cancel();throw new ProviderFailure(providerHttpFailure(response.status,response.headers.get('retry-after')));}
   const reader=response.body?.getReader();if(!reader)throw new StoreError('Empty processing response',502);
   const chunks:Uint8Array[]=[];let size=0;
   try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit)throw new StoreError('Processing response exceeds limit',502);chunks.push(value);}}
@@ -62,12 +65,8 @@ export class FileProcessorRuntime {
       try{
         await this.context.plugin(audio('audio.http'));
         await this.context.plugin(audio('audio.local-dialogue',true));
-        await this.context.plugin(builtin({id:'text.utf8',version:'1',name:moteText("UTF-8 文字提取"),stage:'extract',mediaTypes:['text/'],localOnly:true,async process(input){
-          if(input.file.sizeBytes>2*1024*1024)throw new StoreError('Text exceeds extraction limit',413);
-          const buffers:Buffer[]=[];for await(const part of input.readOriginal())buffers.push(part);
-          const text=new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(buffers));
-          return {durationMs:0,segments:Array.from({length:Math.ceil(text.length/4000)},(_,i)=>({startMs:0,endMs:0,text:text.slice(i*4000,(i+1)*4000)}))};
-        }}));
+        await this.context.plugin(builtin({id:'text.utf8',version:'3',name:moteText("UTF-8 文字提取"),stage:'extract',mediaTypes:['text/'],localOnly:true,process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
+        await this.context.plugin(builtin({id:'document.generic',version:'1',name:moteText("文档文字提取"),stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
         await this.context.plugin(builtin({id:'image.http',version:'1',name:moteText("图片文字提取接口"),stage:'extract',mediaTypes:['image/'],serviceKind:'image',async process(input){
           if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
           const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);

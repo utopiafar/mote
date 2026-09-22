@@ -42,6 +42,7 @@ class MainActivity : MoteActivity() {
     private lateinit var connectionSummary: TextView
     private lateinit var saveBar: LinearLayout
     private var applyingSettings = false
+    private var pendingSubmission: Map<String, String>? = null
     private lateinit var saveHint: TextView
     private lateinit var pagesHost: FrameLayout
     private val pages = linkedMapOf<Page, ScrollView>()
@@ -193,29 +194,17 @@ class MainActivity : MoteActivity() {
         }
         root.addView(nav)
         setContentView(root)
+        // CollectorConfig is the complete draft baseline. Unvisited pages never supply defaults.
         buildToday()
-        buildLibrary()
-        buildAsk()
         buildOverview()
         buildSettings()
-        buildNotes()
-        buildSources()
-        buildConnection(config)
-        buildCapture(config)
-        buildProcessing(config)
-        buildStorage(config)
-        buildPrivacy(config)
-        buildPermissions()
-        buildAbout()
-        buildDeveloper(config)
-        buildDiagnostics(config)
-        buildModel(config)
+        val restoredPage = savedInstanceState?.getString("page")?.let { value -> Page.entries.find { it.name == value } } ?: Page.OVERVIEW
+        ensurePage(restoredPage)
         baseline = controlValues()
         retained?.let { retained ->
             if (retained.config == config) restoreControlValues(retained.fields)
         }
         initializing = false
-        val restoredPage = savedInstanceState?.getString("page")?.let { value -> Page.entries.find { it.name == value } } ?: Page.OVERVIEW
         showPage(restoredPage)
         refreshStatus()
     }
@@ -273,7 +262,6 @@ class MainActivity : MoteActivity() {
         menu(MoteI18n.text("采集记录"), MoteI18n.text("按天查看本机与中央归档的图片、OCR 状态和文字"), "capture") { startActivity(Intent(this, CaptureRecordsActivity::class.java)) }
         menu(MoteI18n.text("统计中心"), MoteI18n.text("按日期和文件类型查看空间占用"), "chart") { startActivity(Intent(this, StorageStatisticsActivity::class.java)) }
         menu(MoteI18n.text("采集与存储详情"), MoteI18n.text("查看累计结果、队列与使用空间"), "chart") { startActivity(Intent(this, ActivityStatsActivity::class.java)) }
-        menu(MoteI18n.text("权限与后台运行"), MoteI18n.text("管理采集权限和省电设置"), "settings") { showPage(Page.PERMISSIONS) }
     }
 
     private fun buildSettings() {
@@ -785,7 +773,7 @@ class MainActivity : MoteActivity() {
             applySettings(c, bindLocal, expected = current, appliedFields = savedFields, submitted = submitted, generation = generation, saved = after)
             return
         }
-        applyingSettings = true; updateSaveBar()
+        pendingSubmission = submitted; applyingSettings = true; updateSaveBar()
         val app = applicationContext
         // The accepted save must survive rotation while preflight is waiting on storage.
         // This handler only continues the operation; UiTask still owns all progress polling.
@@ -820,7 +808,7 @@ class MainActivity : MoteActivity() {
         submitted: Map<String, String> = baseline + controlValues().filterKeys { it in appliedFields },
         generation: Int = draftGeneration, saved: () -> Unit) {
         if (applyingSettings) return
-        applyingSettings = true; updateSaveBar()
+        pendingSubmission = submitted; applyingSettings = true; updateSaveBar()
         RuntimeSettings.apply(this, config, bindLocal, expected = expected) { result ->
             applyingSettings = false
             if (isDestroyed) return@apply
@@ -976,10 +964,11 @@ class MainActivity : MoteActivity() {
                     captureTitle.text = snapshot.title; captureAction.text = snapshot.action
                     captureProgress.visibility = if (settings.enabled) View.VISIBLE else View.GONE
                     status.text = snapshot.status; syncStatus.text = snapshot.sync + "\n" + MoteI18n.text("上传速率") + " · " + UploadMeter.label()
-                    totalsStatus.text = snapshot.totals; technicalStatus.text = snapshot.technical
+                    totalsStatus.text = snapshot.totals; if (::technicalStatus.isInitialized) technicalStatus.text = snapshot.technical
                     centralConnectionTitle.text = snapshot.connectionTitle; centralConnectionStatus.text = snapshot.connection
-                    connectionSummary.text = snapshot.connection; nsfwStatus.text = snapshot.model
-                    mediaStatus.text = snapshot.media
+                    if (::connectionSummary.isInitialized) connectionSummary.text = snapshot.connection
+                    if (::nsfwStatus.isInitialized) nsfwStatus.text = snapshot.model
+                    if (::mediaStatus.isInitialized) mediaStatus.text = snapshot.media
                     updateSaveBar()
                 }.onFailure { captureProgress.visibility = View.GONE; status.text = MoteI18n.text("状态暂不可读取，已有记录保留在本机；稍后自动重试") }
                 if (statusRefreshPending) { statusRefreshPending = false; refreshStatus() }
@@ -1019,7 +1008,11 @@ class MainActivity : MoteActivity() {
                 if (c.syncMode == "interval") MoteI18n.text("约每 {0} 分钟同步", c.syncIntervalMinutes) else MoteI18n.text("满 {0} 条或等待 {1} 分钟同步", c.syncBatchSize, c.syncIntervalMinutes)
             else -> settings.uploadStatus()
         }
-        val syncText = "${pending?.let { MoteI18n.text("待同步 {0} 条", it) } ?: MoteI18n.text("队列暂不可读取")}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}\n${syncMessage}"
+        val nativeFacts = NativeStatus.project(org.json.JSONObject().put("pending", pending ?: org.json.JSONObject.NULL)
+            .put("lastAcknowledgedAt", settings.lastAcknowledgedAt() ?: org.json.JSONObject.NULL)
+            .put("syncState", when { c == null || !c.hasSyncConnection() -> "unconfigured"; local.error != null || queueStats == null || queueStats.blocked > 0 -> "blocked"; else -> settings.syncState().takeIf { it in setOf("idle", "waiting", "uploading", "error", "paused") } ?: "waiting" })
+            .put("errorCode", when { local.error != null || queueStats == null -> "local_state_unavailable"; queueStats.blocked > 0 -> "retained_conflict"; else -> org.json.JSONObject.NULL }))
+        val syncText = "${pending?.let { MoteI18n.text("待同步 {0} 条", it) } ?: MoteI18n.text("队列暂不可读取")}${bytes?.let { " · ${"%.1f".format(it)} MiB" } ?: ""}\n${syncMessage}\n${NativeStatus.summary(nativeFacts)}"
         val totalsText = local.imageLabel() + (if (QueueStorage.maintaining) MoteI18n.text(" · 后台整理中，可正常采集") else "") + "\n" + if (stats == null) MoteI18n.text("累计统计暂不可读取") else MoteI18n.text("本周期累计截图记录 {0}    活动 {1}    媒体 {2}    随手记 {3}\n本周期已同步 {4} 条", stats.optLong("SCREEN_QUEUED"), stats.optLong("ACTIVITY_QUEUED"), stats.optLong("MEDIA_QUEUED"), stats.optLong("NOTE_QUEUED"), stats.optLong("SCREEN_ACK") + stats.optLong("NOTE_ACK") + stats.optLong("ACTIVITY_ACK") + stats.optLong("MEDIA_ACK"))
         val technicalText = MoteI18n.text("{0}\n{1}\n{2}\n{3}\n无障碍 {4} · 使用情况 {5}\n最近采集 {6}", state, totals, syncText, settings.uploadStatus(), if (CaptureAccessibilityService.connected) MoteI18n.text("已连接") else MoteI18n.text("未连接"), if (ForegroundApps.usageAllowed(this)) MoteI18n.text("已授权") else MoteI18n.text("未授权"), settings.lastCapture() ?: MoteI18n.text("无"))
         val connectionState = c?.takeIf { it.hasSyncConnection() }?.let { ConnectionClient(this).status() } ?: "unchecked"
@@ -1101,14 +1094,35 @@ class MainActivity : MoteActivity() {
         text(subtitle, 14, MoteUi.muted)
     }
 
+    private fun ensurePage(page: Page) {
+        if (pages.containsKey(page)) return
+        val wasInitializing = initializing
+        initializing = true
+        try {
+            when (page) {
+                Page.OVERVIEW -> buildToday()
+                Page.LIBRARY -> buildLibrary()
+                Page.ASK -> buildAsk()
+                Page.NOTES -> buildNotes()
+                Page.SOURCES -> buildSources()
+                Page.SETTINGS -> { buildOverview(); buildSettings() }
+                Page.PERMISSIONS -> buildPermissions()
+                Page.ABOUT -> buildAbout()
+                else -> buildSettingsPage(page, loadedConfig)
+            }
+            baseline = baseline + controlValues(controls.filter { controlPages[it] == page })
+        } finally { initializing = wasInitializing }
+    }
+
     private fun showPage(page: Page, discardConfirmed: Boolean = false) {
-        if (!initializing && page != currentPage && !discardConfirmed && pageControlValues().any { (key, value) -> baseline[key] != value }) {
+        if (!initializing && page != currentPage && !discardConfirmed && pageControlValues().any { (key, value) -> baseline[key] != value && (!applyingSettings || pendingSubmission?.get(key) != value) }) {
             MoteDialogBuilder(this).setTitle(MoteI18n.text("有未保存的更改"))
                 .setMessage(MoteI18n.text("离开并丢弃修改？"))
                 .setNegativeButton(MoteI18n.text("继续编辑"), null)
                 .setPositiveButton(MoteI18n.text("丢弃修改")) { _, _ -> showPage(page, true) }.show()
             return
         }
+        ensurePage(page)
         if (page == Page.PERMISSIONS) updatePermissionSummary()
         if (currentPage != page) {
             if (pageControlValues().isNotEmpty()) discardPageDraft()

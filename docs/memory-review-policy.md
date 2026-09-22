@@ -1,0 +1,19 @@
+# Bounded memory review reuse
+
+New Memory candidates receive an independent read-only model review. The host always validates schema, exact quotations, citation membership, supplied ranges and current evidence versions. Model review and the user's later publication/confirmation are separate decisions.
+
+`bounded-exact-review@1` permits reuse only for a previously reviewed, identical bounded extraction. It does not classify text, topics or intent, and never trusts a candidate's own claim that it is low risk. The key covers the candidate JSON, outer citations, all semantic request fields, the host-owned task time, the admission rules, full original records including source/speaker/time/version metadata, and a digest of the selected model configuration. Changed credentials, models, scope, source metadata, dates or instructions invalidate reuse. Consolidation, open archive retrieval and requests without a frozen task time always receive a fresh review.
+
+Memory jobs pin the model's current-time context to their persisted creation time, including retries after midnight. Without this snapshot, otherwise identical inputs could have different temporal meaning. Both model runtimes consume the same context contract.
+
+Reuse is process-local and archive-local, limited to 128 entries and 8 MiB of output, with a five-minute expiry. It is an optimization, not authoritative storage. Restart or eviction simply restores independent review. Entries are copied on read, and shutdown clears them. Cache hits validate both the new draft and saved verdict again and check source/config snapshots before and after validation. Cancellation, deletion, validation failure or changed inputs prevent reuse and commit. No pending model result is shared across callers.
+
+A candidate stores a host-authored receipt with the policy, decision, draft run, original independent review run, model when reported, frozen task time, validation time and input digest. Reuse retains the original reviewer identity and does not create a second usage receipt or count unknown usage as zero. Duplicate existing memories keep their original creation receipt. The Web detail shows review history separately from the user's confirmation state; old records do not receive invented review history.
+
+A useful recovery case is a successful model review followed by a failed database commit: the candidate and checkpoint roll back together, and retrying the same durable job may reuse the verified review without paying for another review call. All result and checkpoint writes still pass the execution engine's cancellation/version fence.
+
+## Validation
+
+`apps/server/test/memory-review.test.ts` covers configuration/scope/clock changes, invalid outputs, cancellation/deletion races, cache expiry/count/byte bounds, archive isolation, immutable receipts, publication and a real SQLite checkpoint rollback/retry. The existing 400-day Memory fixture covers individual and batch ingestion and replay through the shared executor.
+
+`scripts/test-memory-review-policy-live.ts` compares always-review and reuse with local Codex Server `gpt-5.6-luna` using six generated cases: injected product display, proposal versus completion, third-party attribution, a project-scoped constraint, a temporary resource request and cancellation versus external execution. Each policy performs six first-time reviews; the optimized policy repeats the identical six inputs without additional reviews. A separate model call evaluates both first-pass outputs against the same explicit rubric, and the host checks exact citations and byte-identical reused answers. This measures avoided duplicate review calls, not a reduction in calls for novel candidates, total extraction cost or general model quality. Usage remains unknown when the runtime does not provide it.

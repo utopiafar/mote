@@ -9,7 +9,10 @@ const missing=[];
 function check(key,file){if(/\p{Script=Han}/u.test(key)&&!Object.hasOwn(catalog,key))missing.push({file,key});}
 for(const dir of ['apps/web/src','apps/desktop/src','apps/server/src','packages/shared/src','packages/local-inference/src','packages/diagnostics/src'])for(const file of walk(dir).filter(f=>/\.tsx?$/.test(f))){
  const ast=ts.createSourceFile(file,readFileSync(file,'utf8'),ts.ScriptTarget.Latest,true);
- const visit=n=>{if(ts.isCallExpression(n)&&n.expression.getText(ast)==='moteText'&&n.arguments[0]&&ts.isStringLiteralLike(n.arguments[0]))check(n.arguments[0].text,file);ts.forEachChild(n,visit);};visit(ast);
+ const visit=n=>{if(ts.isCallExpression(n)&&n.expression.getText(ast)==='moteText'&&n.arguments[0]&&ts.isStringLiteralLike(n.arguments[0]))check(n.arguments[0].text,file);
+  // This authored protocol-code catalog is translated through a dynamic key.
+  if(file==='apps/web/src/failure-message.ts'&&ts.isVariableDeclaration(n)&&n.name.getText(ast)==='messages'&&n.initializer&&ts.isObjectLiteralExpression(n.initializer))for(const entry of n.initializer.properties){assert.ok(ts.isPropertyAssignment(entry)&&ts.isStringLiteralLike(entry.initializer),'Failure messages must be authored literals');check(entry.initializer.text,file);}
+  ts.forEachChild(n,visit);};visit(ast);
 }
 for(const file of walk('apps/android/app/src/main/java').filter(f=>f.endsWith('.kt'))){
  const text=readFileSync(file,'utf8');

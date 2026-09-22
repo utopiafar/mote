@@ -179,13 +179,13 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             !event.has("imageMime") && !event.has("imageBase64")
     }
     private fun capacityUpperBound(): Long = diskBytes() + browseIndex().pendingDiskBytes() + browseIndex().reservationUpperBound(browseFiles())
-    fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long, reviewHeld: Boolean = false) {
+    fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long, reviewHeld: Boolean = false): String {
         // Sufficient upper-bound headroom permits capture before a legacy index has finished
         // rebuilding. Otherwise discover the exact reservation without monopolizing the lock.
         val event = rawEvent
         val maximumAddition = event.toString().toByteArray().size + 4096L + (image?.size ?: 0) + ocrReserve(event)
         if (guarded { capacityUpperBound() > maxBytes - maximumAddition }) prepareIndex()
-        guarded {
+        return guarded {
         val event = StateSeries.extend(stateHeads[dir.absolutePath], rawEvent)
         require(!event.getJSONObject("privacy").optBoolean("excluded")) { "Excluded captures must never be queued" }
         fun requireAppName(value: JSONObject) {
@@ -212,8 +212,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         }
         val hash = image?.let { MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { byte -> "%02x".format(byte) } }
         val stored = JSONObject(event.toString()).put("_blob", hash)
-        if (file.exists() && SourceRules.canonical(read(file).apply { localFields.forEach(::remove) }) == SourceRules.canonical(stored)) return@guarded
-        if (file.exists() && !event.has("stateSeries")) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { MoteI18n.text("相同记录 ID 的内容发生变化") }; return@guarded }
+        if (file.exists() && SourceRules.canonical(read(file).apply { localFields.forEach(::remove) }) == SourceRules.canonical(stored)) return@guarded id
+        if (file.exists() && !event.has("stateSeries")) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { MoteI18n.text("相同记录 ID 的内容发生变化") }; return@guarded id }
         val blob = hash?.let { File(dir, "$it.blob") }
         if (reviewHeld) stored.put("_uploadConflict", true).put("_reviewHeld", true)
         val body = stored.toString().toByteArray()
@@ -225,18 +225,19 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         atomic(file, body)
         stateHeads[dir.absolutePath] = JSONObject(event.toString())
         onChange?.invoke(when (source) { "ui_page" -> OperationKind.PAGE_QUEUED; "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
+        id
         }
     }
     fun peek(): JSONObject? = peekBatch(1).firstOrNull()
     /** Bound both count and UTF-8 transport size; never acknowledges while selecting. */
-    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024, metadataWindowMinutes: Int = 10): List<JSONObject> {
+    fun peekBatch(maxCount: Int = 25, maxBytes: Int = 8 * 1024 * 1024, metadataWindowMinutes: Int = 10, preferSince: Long? = null): List<JSONObject> {
         prepareIndex()
         return guarded {
             require(maxCount in 1..500 && maxBytes > 0 && metadataWindowMinutes in 1..1440)
             val result = mutableListOf<JSONObject>()
             var bytes = 32L
             var metadataWindow: Long? = null
-            for (row in metadata().sortedWith(compareBy<JSONObject> { it.getLong("modified") }.thenBy { it.getString("id") })) {
+            for (row in metadata().sortedWith(compareBy<JSONObject> { if (preferSince != null && it.getLong("modified") >= preferSince) 0 else 1 }.thenBy { it.getLong("modified") }.thenBy { it.getString("id") })) {
                 if (row.optBoolean("uploaded") || row.optBoolean("blocked")) continue
                 val event = read(File(dir, "${row.getString("id")}.event"))
                 localFields.forEach(event::remove)

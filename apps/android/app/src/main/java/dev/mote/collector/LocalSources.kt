@@ -174,7 +174,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     fun selectTarget(id: String, target: String) = synchronized(lock) {
         val state = state(id)
         if (state.optString("target") != target) {
-            state.put("target", target).put("registered", false)
+            state.put("target", target).put("registered", false).remove("lastAcknowledgedAt")
             val pending = state.optJSONArray("pending") ?: JSONArray(); val current = state.optJSONObject("current") ?: JSONObject()
             val keys = (0 until pending.length()).map { identity(pending.getJSONObject(it)) }.toMutableSet()
             for (key in current.keys()) { val body = current.getJSONObject(key).getJSONObject("body"); if (keys.add(identity(body))) pending.put(body) }
@@ -244,6 +244,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
         val old = state.optJSONArray("pending") ?: JSONArray(); val next = JSONArray()
         for (i in 0 until old.length()) { val value = old.getJSONObject(i); if (value.getString("externalId") != externalId || value.getString("revision") != revision) next.put(value) }
         if (next.length() == 0) state.remove("pendingSince")
+        if (next.length() < old.length()) state.put("lastAcknowledgedAt", java.time.Instant.now().toString())
         state.put("pending", next); write(file(id), state)
     }
     private fun identity(value: JSONObject) = value.getString("externalId") + "\u0000" + value.getString("revision")

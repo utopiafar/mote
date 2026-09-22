@@ -1,4 +1,6 @@
 import {ContextToolError} from './tool-errors.js';
+import {codexFailure,codexUsage} from './codex-protocol.js';
+import type {TokenUsage} from '@mote/shared';
 import {spawn,type ChildProcessWithoutNullStreams} from 'node:child_process';
 import {mkdtemp,mkdir,symlink,rm,writeFile,access} from 'node:fs/promises';
 import {tmpdir,homedir} from 'node:os';
@@ -31,7 +33,9 @@ export class CodexSession {
   private bytes=0;
   private toolQueue=Promise.resolve();
   private timer?:ReturnType<typeof setTimeout>;
-  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'agentTimeoutMs'|'timeoutMs'|'codex'|'runModel'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void){ }
+  private usage?:TokenUsage;
+  private turnError?:unknown;
+  constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'agentTimeoutMs'|'timeoutMs'|'codex'|'runModel'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void){ }
 
   async start(instructions:string,tools:CodexTool[],workspace?:string):Promise<void>{
     if(this.initializing)throw new AgentProviderError();
@@ -84,7 +88,7 @@ export class CodexSession {
       });
       if(typeof thread.thread?.id!=='string'||thread.approvalPolicy!=='never'||thread.sandbox?.type!==(workspace?'workspaceWrite':'readOnly'))throw new AgentProviderError();
       this.threadId=thread.thread.id;
-    }catch(error){throw error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError?error:new AgentProviderError();}
+    }catch(error){throw error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentProviderError?error:new AgentProviderError();}
   }
 
   private send(message:Rpc){if(this.failure)throw this.failure;if(!this.child||this.ending)throw new AgentProviderError();this.child.stdin.write(JSON.stringify(message)+'\n');}
@@ -107,6 +111,7 @@ export class CodexSession {
     }
   }
   private emit(event:AgentTraceEvent){try{this.observe?.(event);}catch{}}
+  private publishUsage(value:TokenUsage){this.usage=value;try{this.onUsage?.(structuredClone(value));}catch{}}
   private deltaText=new Map<string,string>();
   private deltaTimer?:ReturnType<typeof setTimeout>;
   private flushDeltas(){if(this.deltaTimer)clearTimeout(this.deltaTimer);this.deltaTimer=undefined;for(const [type,text] of this.deltaText)this.emit({type:'codex.'+type,stage:'model',payload:{text}});this.deltaText.clear();}
@@ -121,8 +126,16 @@ export class CodexSession {
       this.flushDeltas();this.emit({type:'codex.'+method,stage:'model',payload:{itemType:p?.item?.type,itemId:p?.item?.id,turnId:p?.turn?.id,status:p?.turn?.status,willRetry:p?.willRetry,errorCode:p?.error?.codexErrorInfo??p?.turn?.error?.codexErrorInfo,usage:p?.tokenUsage}});
     }
 
+    if(method==='thread/tokenUsage/updated'){
+      const sample=codexUsage(p?.tokenUsage);
+      if(sample&&(!this.usage||sample.totalTokens>=this.usage.totalTokens))this.publishUsage(sample);
+    }
+    if(method==='error'){
+      this.turnError=p?.error?.codexErrorInfo;
+      if(this.usage)this.publishUsage({...this.usage,complete:false});
+    }
     if(message.method==='configWarning'){this.fail(new AgentProviderError());return;}
-    if(message.id!==undefined&&!message.method){const pending=this.requests.get(Number(message.id));if(!pending)return;this.requests.delete(Number(message.id));if(message.error){this.emit({type:'codex.rpc.failed',stage:'model',payload:{requestId:message.id,code:(message.error as {code?:number}).code}});pending.reject(new AgentProviderError());}else pending.resolve(message.result);return;}
+    if(message.id!==undefined&&!message.method){const pending=this.requests.get(Number(message.id));if(!pending)return;this.requests.delete(Number(message.id));if(message.error){this.emit({type:'codex.rpc.failed',stage:'model',payload:{requestId:message.id,code:(message.error as {code?:number}).code}});pending.reject(new AgentProviderError(codexFailure((message.error as {data?:{codexErrorInfo?:unknown}}).data?.codexErrorInfo)));}else pending.resolve(message.result);return;}
     if(message.id!==undefined&&message.method){
       if(message.method!=='item/tool/call'){this.send({id:message.id,error:{code:-32601,message:'Mote does not allow this operation'}});this.fail(new AgentProviderError());return;}
       const args=message.params;
@@ -141,7 +154,8 @@ export class CodexSession {
     // separately scoped import workspace; query sessions have no environment.
     if(message.method==='turn/completed'){
       const pending=this.turn;this.turn=undefined;
-      if(params.turn?.status!=='completed')pending?.reject(new AgentProviderError());
+      if(params.turn?.status!=='completed'&&this.usage)this.publishUsage({...this.usage,complete:false});
+      if(params.turn?.status!=='completed')pending?.reject(params.turn?.status==='interrupted'?new AgentProviderError({category:'permanent',code:'cancelled'}):new AgentProviderError(codexFailure(params.turn?.error?.codexErrorInfo??this.turnError)));
       else pending?.resolve([...this.messages.values()].at(-1)??'');
     }
   }
@@ -149,6 +163,8 @@ export class CodexSession {
   private async runTurn(prompt:string,outputSchema?:unknown):Promise<string>{
     if(this.failure)throw this.failure;if(this.turn||!this.threadId||this.ending)throw new AgentProviderError();
     this.messages.clear();
+    this.turnError=undefined;
+    if(this.usage)this.publishUsage({...this.usage,complete:false});
     const completed=new Promise<string>((resolve,reject)=>{this.turn={resolve,reject};});
     // Attach a rejection handler before awaiting the start acknowledgement.
     void completed.catch(()=>{});

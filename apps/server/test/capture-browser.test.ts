@@ -219,3 +219,22 @@ test('session members sharing a timestamp stay separate and pages do not include
  for(const method of ['GET','PUT'] as const)assert.equal((await app.inject({method,url:'/api/perception',headers:auth(phone.token),...(method==='PUT'?{payload:{}}:{})})).statusCode,403);
  assert.equal((await app.inject({url:'/api/perception',headers:auth()})).json().settings.allowQueryImages,false);
  });
+
+test('typed screenshot refs keep owner and collector scope checks before original or cached image reads',async t=>{
+ const {app,capture,paired,image}=await fixture(t),phone=await paired(),record=capture();
+ await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:record});
+ const ref=encodeURIComponent('CAPTURE:'+record.id.toUpperCase());
+ for(const root of ['captures','capture-browser']){
+  for(const suffix of ['', '/image']){
+   const url=`/api/${root}/${ref}${suffix}`;
+   assert.equal((await app.inject({url,headers:auth()})).statusCode,200);
+   for(const scope of ['deviceId=other','source=note','after=2027-01-01T00:00:00Z'])assert.equal((await app.inject({url:url+'?'+scope,headers:auth()})).statusCode,404);
+  }
+ }
+ const url=`/api/capture-browser/${ref}/image?thumbnail=1`;
+ assert.equal((await app.inject({url,headers:auth(phone.token)})).statusCode,200);
+ assert.equal((await app.inject({url:url+'&after=2027-01-01T00:00:00Z',headers:auth(phone.token)})).statusCode,404);
+ await app.inject({method:'DELETE',url:`/api/connections/${phone.credentialId}`,headers:auth()});
+ assert.equal((await app.inject({url,headers:auth(phone.token)})).statusCode,401);
+ assert.deepEqual((await app.inject({url:`/api/captures/${ref}/image`,headers:auth()})).rawPayload,image);
+});

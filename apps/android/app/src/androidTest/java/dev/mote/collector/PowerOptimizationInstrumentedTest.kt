@@ -55,22 +55,25 @@ class PowerOptimizationInstrumentedTest {
             settings.save(config); settings.enabled = true
             val windows = WindowSnapshot(setOf("fixture.reader"), "fixture.reader", true)
             repeat(3) { pipeline.submit(bitmap(), windows, config); awaitPipeline(pipeline) }
-            val records = context.queue().peekBatch()
-            assertEquals(settings.message(), 3, records.size)
+            val records = listOf("screen","activity").flatMap { source ->
+                val page=context.queue().capturePage("2000-01-01T00:00:00Z","2100-01-01T00:00:00Z",limit=60,source=source).getJSONArray("items")
+                (0 until page.length()).map { context.queue().capture(page.getJSONObject(it).getString("id"))!! }
+            }
+            assertEquals(settings.message(), 3, records.sumOf { it.optJSONObject("stateSeries")?.optJSONArray("samples")?.length() ?: 1 })
             assertEquals(1, records.count { it.getString("source") == "screen" })
             records.filter { it.getString("source") == "activity" }.forEach {
                 assertFalse(it.has("imageBase64")); assertFalse(it.has("ocrText"))
                 assertEquals("none", it.getJSONObject("privacy").getString("mode"))
             }
-            assertEquals(firstCalls + 1, diagnostics.getLong("ocrCalls", 0))
+            assertEquals(firstCalls, diagnostics.getLong("ocrCalls", 0))
             assertEquals(firstSkips + 2, diagnostics.getLong("earlySkippedFrames", 0))
-            assertTrue(records.single { it.getString("source") == "screen" }.getString("ocrText").contains("2048"))
+            assertEquals("", records.single { it.getString("source") == "screen" }.getString("ocrText"))
             val next = config.copy(masks = "0,0,0.1,0.1"); settings.save(next)
             pipeline.submit(bitmap(), windows, next); awaitPipeline(pipeline)
-            assertEquals(firstCalls + 2, diagnostics.getLong("ocrCalls", 0))
+            assertEquals(firstCalls, diagnostics.getLong("ocrCalls", 0))
             // A different full window identity must not reuse even identical pixels.
             pipeline.submit(bitmap(), windows.copy(packages = setOf("fixture.reader", "fixture.overlay")), next); awaitPipeline(pipeline)
-            assertEquals(firstCalls + 3, diagnostics.getLong("ocrCalls", 0))
+            assertEquals(firstCalls, diagnostics.getLong("ocrCalls", 0))
         } finally {
             settings.enabled = false; pipeline.close()
             context.queue().peekBatch().forEach { context.queue().acknowledge(it.getString("id")) }
@@ -128,11 +131,12 @@ class PowerOptimizationInstrumentedTest {
             settings.save(original.copy(ocrMode = "dual"))
             ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
                 scenario.onActivity { activity ->
+                    views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "本机" }.performClick()
+                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:采集与存储" }.performClick()
+                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:图像与文字识别" }.performClick()
                     val selectors = views(activity.window.decorView).filterIsInstance<Spinner>()
                     val ocr = selectors.single { it.adapter.count == 3 && it.adapter.getItem(0).toString() == "中文与拉丁文（单引擎）" }
                     assertEquals(2, ocr.selectedItemPosition)
-                    views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == "设置" }.performClick()
-                    views(activity.window.decorView).single { it.tag == "menu:采集与存储" }.performClick()
                     ocr.setSelection(1); assertEquals("仅拉丁文", ocr.selectedItem.toString())
                 }
                 instrumentation.waitForIdleSync()

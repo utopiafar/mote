@@ -113,3 +113,14 @@ test('calendar skill receives notification evidence without OCR and exposes no w
   const agent=createAgent({reader:{...reader,evidence:async()=>[notification]},model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:45000});
   try{const result=await agent.query({question:'只读分析合成日程',skill:'calendar-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:text.length}],timeZone:'Asia/Shanghai'});assert.deepEqual(JSON.parse(result.answer),{actions:[]});assert.deepEqual(fixture.errors,[]);}finally{await agent.close();await fixture.close();}
 });
+
+test('calendar Harness actually retrieves historical action comparisons through its host grant', {timeout:60000},async()=>{
+  const seen=[];const fixture=await provider((request,stage)=>{
+    assert.deepEqual(request.tools.map(t=>t.function.name).sort(),['action_catalog','evidence','skill']);
+    if(stage===0)return {tool:{name:'action_catalog',args:{query:'Generated previous participant',limit:1}}};
+    if(stage===1){assert.ok(JSON.stringify(request.messages).includes('generated-next-page'));return {tool:{name:'action_catalog',args:{query:'Generated previous participant',cursor:'generated-next-page',limit:1}}};}
+    assert.ok(JSON.stringify(request.messages).includes('Generated historical comparison'));return {answer:{answer:'{"actions":[]}',citationIds:[]}};
+  });
+  const agent=createAgent({reader,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:45000});
+  try{const result=await agent.query({question:'Compare generated update with older proposals',skill:'calendar-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:prefix.length,length:body.length}],actionCatalog:async args=>{seen.push(args);return args.cursor?{items:[{id:other,event:{title:'Generated historical comparison'}}],nextCursor:null}:{items:[],nextCursor:'generated-next-page'};}});assert.equal(seen.length,2);assert.equal(seen[1].cursor,'generated-next-page');assert.equal(result.citations.length,0);assert.deepEqual(result.trace.map(row=>row.tool),['action_catalog','action_catalog']);assert.deepEqual(fixture.errors,[]);}finally{await agent.close();await fixture.close();}
+});

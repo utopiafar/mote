@@ -1,3 +1,5 @@
+import {spoolOriginal,originalPart} from './original-spool';
+import {sourceState} from './source-state-store';
 import { moteText, configureLocale, type Locale } from '@mote/shared/i18n';
 import {scanCodingAgent} from './coding-agents';
 import {compressionPreview} from './compression-preview';
@@ -14,6 +16,9 @@ import { configureLocalContent, encodeLocalContent, readLocalContent, type Conte
 
 async function execute(request: BackgroundRequest, progress: (value: WorkProgress) => void): Promise<unknown> {
   switch (request.kind) {
+    case 'spool-original': return spoolOriginal(request.path,request.directory,request.expected);
+    case 'original-part': return originalPart(request.spool,request.part);
+    case 'source-state': return sourceState(request.path,request.patches,request.maximum);
     case 'coding-scan': return scanCodingAgent(request.root,request.provider,request.options,request.checkpoint);
     case 'compression-preview': return compressionPreview(request.quality,request.maxSide);
     case 'browse': {

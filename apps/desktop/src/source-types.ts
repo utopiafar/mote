@@ -6,6 +6,7 @@ export interface SourceDefinition {
   platform: 'macos' | 'import'; retention: SourceRetention; enabled: boolean;
 }
 export interface SourceItem {
+  localOriginal?: import('./original-spool').OriginalSpool;
   localOriginalBase64?: string;
   metadata?: import('@mote/shared').SourceMetadata;
   externalId: string; revision: string; observedAt: string; modifiedAt?: string;
@@ -20,7 +21,7 @@ export interface FileCatalogEntry {
 }
 export interface LocalFileCheckpoint {
   version: 1; root: string; scanNumber: number; scanStartedAt: string; initialized: boolean;
-  inProgress: boolean; pendingDirectories: string[]; activeDirectory?: { path: string; after?: string };
+  inProgress: boolean; scanFaulted?: boolean; pendingDirectories: string[]; activeDirectory?: { path: string; after?: string };
   nextFile?: string; catalog: Record<string, FileCatalogEntry>;
 }
 export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint;
@@ -45,6 +46,9 @@ export interface LocalSource extends SourceDefinition, SourceOptions {
   path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi';
 }
 export interface SourceStatus {
+  facts?: import('@mote/shared/native-status').NativeStatusView;
+  scanComplete?: boolean;
+  lastAcknowledgedAt?: string;
   source: LocalSource; state: 'idle' | 'syncing' | 'paused' | 'error' | 'permission_required';
   message: string; pending: number; lastSyncAt?: string; items: number; skipped: number;
 }

@@ -1,3 +1,5 @@
+import {useResource} from './useResource';
+import {readResource,resources} from './resource-cache';
 import { moteText } from '@mote/shared/i18n';
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, Link2, QrCode, RefreshCw, ShieldCheck, Unplug, X } from 'lucide-react';
@@ -21,7 +23,8 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
   const [endpoint,setEndpoint]=useState(serverUrl);
   const [label,setLabel]=useState(moteText("我的新设备"));
   const [deviceId,setDeviceId]=useState('');
-  const [inventory,setInventory]=useState<Inventory>();
+  const inventoryResource=useResource<Inventory>(api,'/api/connections'),configuration=useResource<ServerConfiguration>(api,'/api/configuration');
+  const inventory=inventoryResource.data;
   const [invite,setInvite]=useState<InvitationResponse>();
   const [qr,setQr]=useState('');
   const [mcp,setMcp]=useState<McpResponse>();
@@ -31,18 +34,13 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
   const [message,setMessage]=useState('');
   const [now,setNow]=useState(Date.now());
   const [revoking,setRevoking]=useState('');
-  const mounted=useRef(true),active=useRef<AbortController|null>(null),loading=useRef(false),acting=useRef(false);
+  const mounted=useRef(true),active=useRef<AbortController|null>(null),acting=useRef(false);
+  useEffect(()=>{mounted.current=true;setEndpoint(serverUrl);setInvite(undefined);setMcp(undefined);setQr('');setError('');setMessage('');setBusy('');acting.current=false;
+    return()=>{mounted.current=false;active.current?.abort();};},[api,serverUrl]);
   useEffect(()=>{
-    mounted.current=true;
-    const controller=new AbortController();
-    void api.request<Inventory>('/api/connections',{signal:controller.signal}).then(setInventory).catch(e=>{if(!controller.signal.aborted)setError(errorMessage(e));});
-    // An explicitly configured Tunnel URL is usually reachable from phones; loopback is not.
-    void api.request<ServerConfiguration>('/api/configuration',{signal:controller.signal}).then(config=>{
-      const configured=config.groups.flatMap(group=>group.fields).find(field=>field.key==='publicUrl')?.value;
-      if(typeof configured==='string'&&configured){try{const url=connectionServerUrl(configured);if(!controller.signal.aborted)setEndpoint(current=>current===serverUrl?url:current);}catch{/* Keep the visible address for manual correction. */}}
-    }).catch(()=>{});
-    return ()=>{mounted.current=false;controller.abort();active.current?.abort();};
-  },[api,serverUrl]);
+    const configured=configuration.data?.groups.flatMap(group=>group.fields).find(field=>field.key==='publicUrl')?.value;
+    if(typeof configured==='string'&&configured){try{const url=connectionServerUrl(configured);setEndpoint(current=>current===serverUrl?url:current);}catch{/* Keep the visible address for manual correction. */}}
+  },[configuration.data,serverUrl]);
   useEffect(()=>{if(!invite)return;const timer=setInterval(()=>setNow(Date.now()),1000);return ()=>clearInterval(timer);},[invite]);
   useEffect(()=>{
     setQr('');if(!invite)return;let alive=true;
@@ -51,11 +49,9 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
   },[invite]);
   const expired=!!invite&&Date.parse(invite.invitation.expiresAt)<=now;
   useEffect(()=>{if(expired){setInvite(undefined);setQr('');setMessage(moteText("连接邀请已到期，请重新生成；已经连接的设备不受影响。"));}},[expired]);
-  async function refresh(signal?:AbortSignal) {
-    if(loading.current)return;
-    loading.current=true;
-    try{const result=await api.request<Inventory>('/api/connections',{signal:signal??AbortSignal.timeout(15000)});if(mounted.current)setInventory(result);}
-    finally{loading.current=false;}
+  async function refresh(signal:AbortSignal) {
+    resources(api).invalidate(key=>key==='/api/connections');
+    await readResource<Inventory>(api,'/api/connections',signal);
   }
   async function action(name:string,operation:(signal:AbortSignal)=>Promise<void>) {
     if(acting.current)return;acting.current=true;
@@ -63,8 +59,8 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     const timeout=setTimeout(()=>controller.abort(),20000);
     setBusy(name);setError('');setMessage('');
     try{await operation(controller.signal);}
-    catch(e){if(mounted.current)setError(controller.signal.aborted?moteText("请求超时，请刷新连接列表确认结果后重试。"):errorMessage(e));}
-    finally{clearTimeout(timeout);acting.current=false;if(active.current===controller)active.current=null;if(mounted.current)setBusy('');}
+    catch(e){if(mounted.current&&active.current===controller)setError(controller.signal.aborted?moteText("请求超时，请刷新连接列表确认结果后重试。"):errorMessage(e));}
+    finally{clearTimeout(timeout);if(active.current===controller){acting.current=false;active.current=null;if(mounted.current)setBusy('');}}
   }
   async function copy(value:string) {
     try{await navigator.clipboard.writeText(value);setMessage(moteText("已复制，请只粘贴到你信任的客户端。"));}
@@ -75,20 +71,20 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     if(invite)await api.request('/api/connections/invitations/revoke',{method:'POST',signal,body:JSON.stringify({code:invite.invitation.code})});
     setInvite(undefined);setQr('');
     const result=await api.request<InvitationResponse>('/api/connections/invitations',{method:'POST',signal,body:JSON.stringify({serverUrl:url,label:label.trim(),...(deviceId?{deviceId}:{})})});
-    if(!mounted.current)return;setNow(Date.now());setInvite(result);
+    if(!mounted.current||signal.aborted)return;setNow(Date.now());setInvite(result);
     await refresh(signal);
   });}
   function cancelInvitation(){void action('cancel',async signal=>{
     if(invite)await api.request('/api/connections/invitations/revoke',{method:'POST',signal,body:JSON.stringify({code:invite.invitation.code})});
-    if(mounted.current){setInvite(undefined);setQr('');setMessage(moteText("邀请已取消，旧二维码和 JSON 不再有效。"));}
+    if(mounted.current&&!signal.aborted){setInvite(undefined);setQr('');setMessage(moteText("邀请已取消，旧二维码和 JSON 不再有效。"));}
   });}
   function createMcp(){void action('mcp',async signal=>{
     const result=await api.request<McpResponse>('/api/connections/mcp',{method:'POST',signal,body:JSON.stringify({serverUrl:connectionServerUrl(endpoint.trim()),label:label.trim(),access:mcpAccess})});
-    if(mounted.current)setMcp(result);await refresh(signal);
+    if(mounted.current&&!signal.aborted)setMcp(result);await refresh(signal);
   });}
   function revoke(id:string){void action('revoke',async signal=>{
     await api.request(`/api/connections/${encodeURIComponent(id)}`,{method:'DELETE',signal});
-    if(mounted.current){setRevoking('');if(mcp?.credential.id===id)setMcp(undefined);setMessage(moteText("连接凭据已撤销；归档资料保留，客户端队列不会被删除。"));}
+    if(mounted.current&&!signal.aborted){setRevoking('');if(mcp?.credential.id===id)setMcp(undefined);setMessage(moteText("连接凭据已撤销；归档资料保留，客户端队列不会被删除。"));}
     await refresh(signal);
   });}
   const loopback=(()=>{try{return ['localhost','127.0.0.1','[::1]'].includes(new URL(endpoint).hostname);}catch{return false;}})();
@@ -100,7 +96,7 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
   return <section className="panel connections" aria-labelledby="connections-title">
     <div className="section-heading"><div><span className="eyebrow">CONNECT ONCE</span><h2 id="connections-title"><QrCode size={19}/>{moteText("设备二维码与连接授权")}</h2><p>{moteText("扫码或导入一次性邀请，把手机和电脑连接到中央节点。")}</p></div><span className="badge muted">{activeCount}{' '}{moteText("个有效连接")}</span></div>
     <div className="connection-steps"><span><b>1</b>{moteText("填写设备可访问的地址")}</span><span><b>2</b>{moteText("生成邀请或 MCP 配置")}</span><span><b>3</b>{moteText("在客户端确认并连接")}</span></div>
-    {error&&<div className="notice error" role="alert">{error}</div>}
+    {Boolean(error||inventoryResource.error||configuration.error)&&<div className="notice error" role="alert">{error||errorMessage(inventoryResource.error||configuration.error)}</div>}
     {message&&<div className="notice" role="status"><Check size={16}/>{message}</div>}
     <div className="connection-fields">
       <label>{moteText("本服务供设备访问的地址")}<input aria-label={moteText("邀请节点地址")} type="url" value={endpoint} disabled={!!busy} onChange={event=>setEndpoint(event.target.value)} placeholder="https://mote.example.com" maxLength={2048}/><small>{moteText("填写指向本服务的 HTTPS 地址，供客户端配对和上传使用。二维码不会自动打通网络。")}</small></label>
@@ -117,7 +113,7 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
       <div className="connection-method" hidden={method!=='chatbot'}><h3><ShieldCheck size={18}/>{moteText("连接其他 Chatbot · MCP")}</h3>
         <p>{moteText("生成标准 HTTP MCP 连接 JSON，粘贴到支持 URL 与 Bearer 请求头的客户端。")}</p>
         <label>{moteText("访问权限")}<select aria-label={moteText("MCP 访问权限")} value={mcpAccess} disabled={!!busy||!inventory?.mcp.enabled} onChange={event=>setMcpAccess(event.target.value as 'read'|'write')}><option value="read">{moteText("只读归档资料")}</option><option value="write" disabled={!inventory?.mcp.writeEnabled}>{moteText("仅写入指定来源")}</option></select></label>
-        {inventory&&!inventory.mcp.enabled?<small>{moteText("尚未启用 MCP。请在设置 → 来源与外部应用中开启 MCP，并配置独立读令牌后重启；写入还需明确启用并设置允许的信源。")}</small>:<small>{mcpAccess==='write'?moteText("仅可写入：{0}。", inventory?.mcp.writeSourceIds.join('、')||moteText("未配置")):moteText("只读权限能检索归档中的个人资料，请只交给你信任的应用。")}{' '}{moteText("只接受 OAuth 的客户端暂不能直接使用此 JSON。")}</small>}
+        {inventory&&!inventory.mcp.enabled?<small>{moteText("尚未启用 MCP。请在系统管理 → 模型与服务 → 来源与外部应用中开启 MCP，并配置独立读令牌后重启；写入还需明确启用并设置允许的信源。")}</small>:<small>{mcpAccess==='write'?moteText("仅可写入：{0}。", inventory?.mcp.writeSourceIds.join('、')||moteText("未配置")):moteText("只读权限能检索归档中的个人资料，请只交给你信任的应用。")}{' '}{moteText("只接受 OAuth 的客户端暂不能直接使用此 JSON。")}</small>}
         <button className="button" disabled={!!busy||!label.trim()||!inventory?.mcp.enabled||!!mcp} onClick={createMcp}><Link2 size={16}/>{busy==='mcp'?moteText("正在生成…"):moteText("生成 MCP JSON")}</button>
       </div>
     </div>
@@ -130,6 +126,6 @@ export function Connections({api,serverUrl,devices}:{api:Api;serverUrl:string;de
     </div>}
     {mcp&&<div className="connection-mcp" aria-label={moteText("MCP 连接配置")}><h3>{moteText("保存此 MCP 配置")}</h3><p>{moteText("专用凭据仅在此次生成时显示。离开页面后仍有效；丢失时可以撤销并重新生成。")}</p><textarea readOnly aria-label="MCP JSON" value={JSON.stringify(mcp.config,null,2)} spellCheck={false}/><div className="connection-actions"><button className="button" onClick={()=>void copy(JSON.stringify(mcp.config,null,2))}><Copy size={15}/>{moteText("复制 MCP JSON")}</button><button className="button" onClick={()=>downloadFile('mote-mcp.json',new Blob([JSON.stringify(mcp.config,null,2)],{type:'application/json'}))}><Download size={15}/>{moteText("下载 MCP JSON")}</button><button className="button subtle" onClick={()=>setMcp(undefined)}>{moteText("已保存，隐藏凭据")}</button></div></div>}
     <div className="section-heading connection-list-heading"><div><h3>{moteText("已授权的连接")}</h3><p>{moteText("撤销立即阻止后续请求，已归档资料保持不变。")}</p></div><button className="button subtle" disabled={!!busy} onClick={()=>void action('refresh',refresh)}><RefreshCw size={15}/>{moteText("刷新连接")}</button></div>
-    {!inventory?<p>{moteText("正在读取连接…")}</p>:!inventory.items.length?<p className="fine-print">{moteText("还没有独立连接。旧版手填中央令牌的设备仍然可用；迁移后会显示在这里。")}</p>:<ul className="connection-list">{inventory.items.map(item=><li key={item.id}><div><strong>{item.label}</strong><span className={`badge ${item.revokedAt?'muted':'green'}`}>{item.revokedAt?moteText("已撤销"):scopes[item.scope]}</span><p>{item.deviceName||moteText("外部 Chatbot")}{item.platform?` · ${item.platform}`:''}{' '}{moteText("· 创建于")}{' '}{dateTime(item.createdAt)}</p><code>{item.tokenHint} {item.deviceId?`· ${item.deviceId}`:''}</code>{item.revokedAt&&<small>{moteText("撤销于")}{' '}{ago(item.revokedAt)}</small>}</div>{!item.revokedAt&&(revoking===item.id?<div className="connection-revoke"><span>{moteText("停止此连接的后续同步？")}</span><button className="button danger" disabled={!!busy} onClick={()=>revoke(item.id)}>{moteText("确认撤销")}</button><button className="button subtle" disabled={!!busy} onClick={()=>setRevoking('')}>{moteText("取消")}</button></div>:<button className="button subtle" disabled={!!busy} onClick={()=>setRevoking(item.id)}><Unplug size={15}/>{moteText("撤销")}</button>)}</li>)}</ul>}
+    {!inventory?inventoryResource.loading?<p>{moteText("正在读取连接…")}</p>:null:!inventory.items.length?<p className="fine-print">{moteText("还没有独立连接。旧版手填中央令牌的设备仍然可用；迁移后会显示在这里。")}</p>:<ul className="connection-list">{inventory.items.map(item=><li key={item.id}><div><strong>{item.label}</strong><span className={`badge ${item.revokedAt?'muted':'green'}`}>{item.revokedAt?moteText("已撤销"):scopes[item.scope]}</span><p>{item.deviceName||moteText("外部 Chatbot")}{item.platform?` · ${item.platform}`:''}{' '}{moteText("· 创建于")}{' '}{dateTime(item.createdAt)}</p><code>{item.tokenHint} {item.deviceId?`· ${item.deviceId}`:''}</code>{item.revokedAt&&<small>{moteText("撤销于")}{' '}{ago(item.revokedAt)}</small>}</div>{!item.revokedAt&&(revoking===item.id?<div className="connection-revoke"><span>{moteText("停止此连接的后续同步？")}</span><button className="button danger" disabled={!!busy} onClick={()=>revoke(item.id)}>{moteText("确认撤销")}</button><button className="button subtle" disabled={!!busy} onClick={()=>setRevoking('')}>{moteText("取消")}</button></div>:<button className="button subtle" disabled={!!busy} onClick={()=>setRevoking(item.id)}><Unplug size={15}/>{moteText("撤销")}</button>)}</li>)}</ul>}
   </section>;
 }

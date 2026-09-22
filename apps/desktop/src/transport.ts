@@ -77,7 +77,15 @@ export async function uploadCaptureBatch(config: Config, entries: { event: Captu
     body: meteredBody(JSON.stringify({ captures: entries.map(({event, image}) => ({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })) })),
     ...({ duplex: 'half' } as object),
   });
-  if ([403, 404, 405, 413].includes(response.status)) {
+  if (response.status===413&&entries.length>1) {
+    await response.body?.cancel();
+    const middle=Math.ceil(entries.length/2),receipts=await uploadCaptureBatch(config,entries.slice(0,middle),signal);
+    for(const [id,status] of await uploadCaptureBatch(config,entries.slice(middle),signal))receipts.set(id,status);
+    return receipts;
+  }
+  // Unsupported routes may use the legacy protocol. Authorization and rate
+  // limits are authoritative; they never trigger another upload endpoint.
+  if ([404, 405].includes(response.status)) {
     await response.body?.cancel();
     const receipts = new Map<string, number>();
     for (const entry of entries) {

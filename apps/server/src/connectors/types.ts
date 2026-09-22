@@ -15,6 +15,8 @@ export interface ConnectorConfig {
   syncIntervalMs?: number;
 }
 export interface ConnectorContext {
+  evidenceReader?: import('../evidence-reader.js').EvidenceReader;
+  contextQuery?: import('../context-query.js').ContextQuery;
   files?: import('../files.js').FileStore;
   sources: SourceStore;
   store: Store;

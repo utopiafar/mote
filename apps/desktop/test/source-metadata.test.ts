@@ -1,3 +1,4 @@
+import {sourceState} from '../src/source-state-store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, realpath, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
@@ -43,7 +44,7 @@ describe('observed file and calendar timestamps', () => {
     const first = await scanSourceFiles(path, DEFAULT_SOURCE_OPTIONS); const enginePath = join(directory, '.state.json'); const engine = new SourceSync(enginePath); await engine.initialize(); await engine.stage(first, true);
     const absent: SourceScan = { items: [], seen: [], complete: false, skipped: 1 }; expect(await engine.stage(absent, true)).toBe(0);
     const observedAt = '2026-09-14T02:00:00Z'; expect(await engine.stage({ ...absent, complete: true }, true, observedAt)).toBe(1);
-    const saved = JSON.parse(await readFile(enginePath, 'utf8')), tombstone = [...(saved.pendingRealtime ?? []), ...(saved.pendingHistory ?? [])].at(-1); expect(tombstone.deleted).toBe(true); expect(tombstone.metadata.file.deletionObservedAt).toBe(observedAt); expect(tombstone.modifiedAt).toBe(first.items[0].modifiedAt);
+    const saved = sourceState(enginePath) as any, tombstone = [...(saved.pendingRealtime ?? []), ...(saved.pendingHistory ?? [])].at(-1); expect(tombstone.deleted).toBe(true); expect(tombstone.metadata.file.deletionObservedAt).toBe(observedAt); expect(tombstone.modifiedAt).toBe(first.items[0].modifiedAt);
     expect(await engine.stage({ ...absent, complete: true }, true, '2026-09-15T02:00:00Z')).toBe(0);
   });
   it('keeps provider creation/update dates distinct from event occurrence times and validates unsupported values', () => {

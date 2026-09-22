@@ -1,0 +1,948 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-22T15:49:44.369023+00:00",
+  "versionName": "0.0.61-dev",
+  "versionCode": 72,
+  "status": "pass_with_explicit_skips",
+  "environment": {
+    "avd": "mote_fixture_api35",
+    "serial": "emulator-5580",
+    "package": "dev.mote.collector.dev",
+    "physicalDevice": false,
+    "generatedFixturesOnly": true,
+    "central": "isolated loopback 57569; no model configuration"
+  },
+  "build": {
+    "status": "pass",
+    "tasks": [
+      "testDebugUnitTest",
+      "lintDevelopment",
+      "assembleDevelopment",
+      "assembleDevelopmentAndroidTest"
+    ],
+    "unitTests": 188,
+    "unitFailures": 0,
+    "unitErrors": 0,
+    "unitSkipped": 0,
+    "lint": {
+      "Warning": 187
+    },
+    "artifacts": [
+      {
+        "path": "apps/android/app/build/outputs/apk/development/app-development.apk",
+        "bytes": 50147473,
+        "sha256": "05e666a508f4b3e9f42944d25426c583ad260bef39f4c5e03b8b1cd400b9e673"
+      },
+      {
+        "path": "apps/android/app/build/outputs/apk/androidTest/development/app-development-androidTest.apk",
+        "bytes": 2354532,
+        "sha256": "732c58a8d2d4fbcc7ac23995350c8e0a76b868b4c056b31cfdbc1b10cd5e3527"
+      }
+    ],
+    "incrementalTestApkRebuild": "pass; retired legacy production-package fixture",
+    "initialArtifacts": [
+      {
+        "path": "apps/android/app/build/outputs/apk/development/app-development.apk",
+        "bytes": 50147473,
+        "sha256": "05e666a508f4b3e9f42944d25426c583ad260bef39f4c5e03b8b1cd400b9e673"
+      },
+      {
+        "path": "apps/android/app/build/outputs/apk/androidTest/development/app-development-androidTest.apk",
+        "bytes": 2353468,
+        "sha256": "5fa92c7bcaf9ab0f1985cc39f1b7f741ee6abbe96cdf013d057bb6a535fc420b"
+      }
+    ],
+    "productionApkUnchanged": true,
+    "finalTestOnlyIncrementalBuild": "pass; source synchronization/current navigation/explicit rendering opt-in/current VLM-pause contract",
+    "lintScope": "Production freeze build; 0 errors and 187 warnings. Later edits affect instrumentation fixtures only."
+  },
+  "retiredFixture": {
+    "method": "AccessibilityFixtureTest.generatedScreenReachesHttpAcknowledgement",
+    "reason": "Hardcoded production package and stale freshness guard; removed instead of recording an early exit as a passing test.",
+    "replacementCoverage": [
+      "AppPolicyInstrumentedTest.optionalGeneratedServiceActivityContentAndFileMetadataReachCentral: generated screen/activity, exclusion, actual central ACK and queue drain via dedicated DEV accessibility service",
+      "AppPolicyInstrumentedTest.optionalGeneratedProjectionReusesDisplayAndNeverAttachesActivitySurface: generated projection path",
+      "FixtureInstrumentedTest.bundledOcrReadsOnlyUnmaskedSyntheticText: generated OCR/masking",
+      "NsfwInstrumentedTest and ComplexVlmInstrumentedTest: optional pinned local model validation, reported separately"
+    ]
+  },
+  "limitations": [
+    "No physical Android device validation.",
+    "No real personal calendar, mailbox or screenshots used.",
+    "Legacy optional update fixture hardcodes versionCode 6 to 7 and is not applicable to versionCode 72; signed APK/certificate/package/downgrade/corruption tests remain enabled.",
+    "Production screenshot pipeline intentionally pauses VLM; successful isolated native model tests do not claim active NSFW filtering in that pipeline."
+  ],
+  "resumedAfterUserStop": {
+    "retainedPassingMethods": 15,
+    "retainedSkippedMethods": 1,
+    "interruptedMethod": "BulkDedupeInstrumentedTest.twoThousandGeneratedImagesScanAndDeleteThroughWorkerWithoutBlockingUi",
+    "interruptedAttemptCountedAsPass": false,
+    "productionApkRebuiltAfterResume": false
+  },
+  "summary": {
+    "unitTestsPassed": 188,
+    "uniqueInstrumentationMethods": 100,
+    "passed": 99,
+    "skipped": 1,
+    "unresolvedFailures": 0,
+    "initialFixtureFailuresResolved": 4,
+    "targetedMethodsRerun": 5,
+    "complexRounds": 3,
+    "complexPhaseInvocations": 9,
+    "completedInstrumentationInvocations": 115,
+    "additionalNoOptInRenderControl": "expected_skip; excluded from functional pass counts",
+    "nativeVisualInferenceCalls": 8
+  },
+  "methods": [
+    {
+      "class": "AnrRegressionInstrumentedTest",
+      "method": "launchAndNavigationRemainResponsiveAfterRecoveryWhileQueueIsBusy",
+      "status": "pass",
+      "seconds": 5.65,
+      "attempts": 1
+    },
+    {
+      "class": "AnrRegressionInstrumentedTest",
+      "method": "repeatedRefreshesCoalesceAndDestroyDoesNotWaitForQueueWork",
+      "status": "pass",
+      "seconds": 4.53,
+      "attempts": 1
+    },
+    {
+      "class": "AnrRegressionInstrumentedTest",
+      "method": "savingANoteAndNavigatingStayResponsiveWhileTheQueueIsLocked",
+      "status": "pass",
+      "seconds": 5.54,
+      "attempts": 1
+    },
+    {
+      "class": "AnrRegressionInstrumentedTest",
+      "method": "acceptedSettingsSaveSurvivesRotationWhilePreflightIsBlocked",
+      "status": "pass",
+      "seconds": 4.05,
+      "attempts": 1
+    },
+    {
+      "class": "AnrRegressionInstrumentedTest",
+      "method": "v001EncryptedScreenshotBacklogMigratesToReadableFilesWithoutChangingContent",
+      "status": "pass",
+      "seconds": 3.24,
+      "attempts": 1
+    },
+    {
+      "class": "AppNameInstrumentedTest",
+      "method": "platformLabelIsUsedInsteadOfPackageId",
+      "status": "pass",
+      "seconds": 0.54,
+      "attempts": 1
+    },
+    {
+      "class": "AppNameInstrumentedTest",
+      "method": "missingApplicationIsExplicitlyUnknown",
+      "status": "pass",
+      "seconds": 0.58,
+      "attempts": 1
+    },
+    {
+      "class": "AppPolicyInstrumentedTest",
+      "method": "generatedProviderReportsActualSizeAndModificationWithoutInventingDates",
+      "status": "pass",
+      "seconds": 0.6,
+      "attempts": 1
+    },
+    {
+      "class": "AppPolicyInstrumentedTest",
+      "method": "activityPipelineDoesNotNeedModelsAndMetadataTogglePreservesQueuedBytes",
+      "status": "pass",
+      "seconds": 0.91,
+      "attempts": 1
+    },
+    {
+      "class": "AppPolicyInstrumentedTest",
+      "method": "optionalGeneratedServiceActivityContentAndFileMetadataReachCentral",
+      "status": "pass",
+      "seconds": 20.6,
+      "attempts": 1
+    },
+    {
+      "class": "AppPolicyInstrumentedTest",
+      "method": "generatedImageProcessingKeepsObservationTimeInsteadOfCompletionTime",
+      "status": "pass",
+      "seconds": 1.65,
+      "attempts": 1
+    },
+    {
+      "class": "AppPolicyInstrumentedTest",
+      "method": "optionalGeneratedProjectionReusesDisplayAndNeverAttachesActivitySurface",
+      "status": "pass",
+      "seconds": 17.98,
+      "attempts": 1
+    },
+    {
+      "class": "AppUpdateInstrumentedTest",
+      "method": "deletingDownloadsPreservesSettingsAndManifestAndRejectsActiveInstallation",
+      "status": "pass",
+      "seconds": 0.77,
+      "attempts": 1
+    },
+    {
+      "class": "AppUpdateInstrumentedTest",
+      "method": "actualSignedApkRejectsWrongCertificatePackageDowngradeAndCorruption",
+      "status": "pass",
+      "seconds": 1.78,
+      "attempts": 1
+    },
+    {
+      "class": "AppUpdateInstrumentedTest",
+      "method": "nativeUpdatePageDoesNotGrantInstallPermissionOrTriggerNetwork",
+      "status": "pass",
+      "seconds": 2.18,
+      "attempts": 1
+    },
+    {
+      "class": "AppUpdateInstrumentedTest",
+      "method": "optionalSyntheticSystemReplacementPreservesPrivateState",
+      "status": "skip",
+      "seconds": 0.56,
+      "attempts": 1,
+      "reason": "Optional legacy installation fixture requires versionCode 6 to 7, incompatible with current versionCode 72."
+    },
+    {
+      "class": "BulkDedupeInstrumentedTest",
+      "method": "twoThousandGeneratedImagesScanAndDeleteThroughWorkerWithoutBlockingUi",
+      "status": "pass",
+      "seconds": 92.59,
+      "attempts": 1
+    },
+    {
+      "class": "BulkDedupeInstrumentedTest",
+      "method": "generatedImagesScanPreviewLifecycleMoveRestoreDeleteAndCancel",
+      "status": "pass",
+      "seconds": 10.23,
+      "attempts": 1
+    },
+    {
+      "class": "CaptureRecordsInstrumentedTest",
+      "method": "deduplicationWithDiagnosticsAcrossModesSynchronizesToRealCentral",
+      "status": "pass",
+      "seconds": 4.33,
+      "attempts": 1
+    },
+    {
+      "class": "CaptureRecordsInstrumentedTest",
+      "method": "batteryCaptureKeepsMaskedImageForCentralOcrWithoutChangingOriginalEvent",
+      "status": "pass",
+      "seconds": 1.07,
+      "attempts": 1
+    },
+    {
+      "class": "CaptureRecordsInstrumentedTest",
+      "method": "localBrowserDisplaysGeneratedThumbnailsPagesAndOcrDetail",
+      "status": "pass",
+      "seconds": 6.13,
+      "attempts": 1
+    },
+    {
+      "class": "CaptureRecordsInstrumentedTest",
+      "method": "deferredOcrUploadsOriginalOnceAndKeepsResultUntilMatchingPatchAck",
+      "status": "pass",
+      "seconds": 1.96,
+      "attempts": 1
+    },
+    {
+      "class": "ClientFeedbackInstrumentedTest",
+      "method": "statisticsCanBrowsePastFirstPageWithoutExpandingAllDetails",
+      "status": "pass",
+      "seconds": 2.04,
+      "attempts": 1
+    },
+    {
+      "class": "ClientFeedbackInstrumentedTest",
+      "method": "captureRecordsCanOpenAndRecreateWithoutMissingBackControl",
+      "status": "pass",
+      "seconds": 2.01,
+      "attempts": 1
+    },
+    {
+      "class": "ClientFeedbackInstrumentedTest",
+      "method": "notificationPreservesCurrentMainPageAndDraft",
+      "status": "pass",
+      "seconds": 2.21,
+      "attempts": 1
+    },
+    {
+      "class": "ClientFeedbackInstrumentedTest",
+      "method": "notificationPreservesAnOpenDetailActivity",
+      "status": "pass",
+      "seconds": 2.98,
+      "attempts": 1
+    },
+    {
+      "class": "ClientFeedbackInstrumentedTest",
+      "method": "rawLogsPreserveTextAndAllowSelection",
+      "status": "pass",
+      "seconds": 2.64,
+      "attempts": 1
+    },
+    {
+      "class": "ComplexVlmInstrumentedTest",
+      "method": "actualModelReviewsComplexGeneratedImagesAcrossNativeReload",
+      "status": "pass",
+      "seconds": 46.76,
+      "attempts": 2,
+      "initialSkipResolved": "Pinned public model downloaded and verified; generated-only offline native check passed."
+    },
+    {
+      "class": "CompressionPreviewInstrumentedTest",
+      "method": "generatedPreviewShowsSizesZoomAndNeverSavesSettingsAutomatically",
+      "status": "pass",
+      "seconds": 2.99,
+      "attempts": 1
+    },
+    {
+      "class": "ConnectionInstrumentedTest",
+      "method": "connectionPageRefreshesSavedNodeAndSecondScanReplacesFirstPreview",
+      "status": "pass",
+      "seconds": 3.01,
+      "attempts": 1
+    },
+    {
+      "class": "ConnectionInstrumentedTest",
+      "method": "pairingReturnThenManualServerEditClearsPreviousCredential",
+      "status": "pass",
+      "seconds": 3.67,
+      "attempts": 1
+    },
+    {
+      "class": "ConnectionInstrumentedTest",
+      "method": "externalInvitationOpensReviewOnlyAndDoesNotRequestCamera",
+      "status": "pass",
+      "seconds": 2.04,
+      "attempts": 1
+    },
+    {
+      "class": "ConnectionInstrumentedTest",
+      "method": "activeSyncBlocksConnectionMutationWithoutWaitingForNetwork",
+      "status": "pass",
+      "seconds": 0.68,
+      "attempts": 1
+    },
+    {
+      "class": "ConnectionInstrumentedTest",
+      "method": "pendingCaptureConsentCannotStartDuringConnectionChangeOrAfterConfigChange",
+      "status": "pass",
+      "seconds": 0.52,
+      "attempts": 1
+    },
+    {
+      "class": "ConnectionInstrumentedTest",
+      "method": "optionalGeneratedCentralRePairPreservesOfflineQueueAndPreparedNote",
+      "status": "pass",
+      "seconds": 4.98,
+      "attempts": 2,
+      "initialFailure": "expected pending; received busy",
+      "resolution": "Test probed a read lock before requesting an exclusive connection change. It now waits on the actual guarded change and still requires pending-data rejection."
+    },
+    {
+      "class": "FileSyncInstrumentedTest",
+      "method": "generatedFilesTravelThroughProductionScannerQueueAndCentralArchive",
+      "status": "pass",
+      "seconds": 9.66,
+      "attempts": 1
+    },
+    {
+      "class": "FixtureInstrumentedTest",
+      "method": "keystoreQueueSurvivesRecreationAndAcknowledgement",
+      "status": "pass",
+      "seconds": 0.62,
+      "attempts": 1
+    },
+    {
+      "class": "FixtureInstrumentedTest",
+      "method": "bundledOcrReadsOnlyUnmaskedSyntheticText",
+      "status": "pass",
+      "seconds": 0.78,
+      "attempts": 1
+    },
+    {
+      "class": "ImageDedupeDiagnosticsInstrumentedTest",
+      "method": "pipelineKeepsMaskedAcceptedReferenceShowsMeasurementsAndDeletesLocalPairs",
+      "status": "pass",
+      "seconds": 4.66,
+      "attempts": 1
+    },
+    {
+      "class": "IssueOneInstrumentedTest",
+      "method": "settingsArchiveRoundTripsAndNeverReusesTokenOnAnotherHost",
+      "status": "pass",
+      "seconds": 1.92,
+      "attempts": 1
+    },
+    {
+      "class": "IssueOneInstrumentedTest",
+      "method": "systemHomeAndConfiguredSystemPackagesAreSelectable",
+      "status": "pass",
+      "seconds": 3.04,
+      "attempts": 1
+    },
+    {
+      "class": "IssueOneInstrumentedTest",
+      "method": "completedUpdateCannotBeOverwrittenByStaleReconciliationOrCancelledWorker",
+      "status": "pass",
+      "seconds": 0.99,
+      "attempts": 1
+    },
+    {
+      "class": "IssueOneInstrumentedTest",
+      "method": "saveCompletesWithoutNetworkAndKeepsCollectionStopped",
+      "status": "pass",
+      "seconds": 0.91,
+      "attempts": 1
+    },
+    {
+      "class": "IssueOneInstrumentedTest",
+      "method": "queueBackupAndUpdatePagesShowAvailableActions",
+      "status": "pass",
+      "seconds": 4.76,
+      "attempts": 1
+    },
+    {
+      "class": "LargeLibraryInstrumentedTest",
+      "method": "twoThousandImagesBrowseCountDeleteAndMoveWithoutWholeLibraryReads",
+      "status": "pass",
+      "seconds": 68.28,
+      "attempts": 1
+    },
+    {
+      "class": "LibraryResponsivenessInstrumentedTest",
+      "method": "startButtonCommitsWhileBackgroundLibraryWorkHoldsTheQueue",
+      "status": "pass",
+      "seconds": 3.35,
+      "attempts": 1
+    },
+    {
+      "class": "LibraryResponsivenessInstrumentedTest",
+      "method": "twoThousandRecordsPageImmediatelyAndUnrelatedChangesKeepExistingRows",
+      "status": "pass",
+      "seconds": 59.96,
+      "attempts": 1
+    },
+    {
+      "class": "LibraryResponsivenessInstrumentedTest",
+      "method": "legacyContentMigrationCanCancelWithoutChangingCredentialsOrBlockingNavigation",
+      "status": "pass",
+      "seconds": 2.95,
+      "attempts": 1
+    },
+    {
+      "class": "LocalSourcesInstrumentedTest",
+      "method": "generatedProviderCalendarFilesReferenceAndPartialDeletion",
+      "status": "pass",
+      "seconds": 0.67,
+      "attempts": 1
+    },
+    {
+      "class": "LocalSourcesInstrumentedTest",
+      "method": "nativeSourcesScreenDoesNotRequestCalendarPermissionUntilUserConnects",
+      "status": "pass",
+      "seconds": 1.83,
+      "attempts": 1
+    },
+    {
+      "class": "LocalSourcesInstrumentedTest",
+      "method": "optionalActualCentralRoundTripLostAckDeletionAndRestoration",
+      "status": "pass",
+      "seconds": 1.85,
+      "attempts": 1
+    },
+    {
+      "class": "LocalStateInstrumentedTest",
+      "method": "stockUpdatesAllConsumersAndSurvivesBackgroundWithoutCounterDeltas",
+      "status": "pass",
+      "seconds": 20.38,
+      "attempts": 1
+    },
+    {
+      "class": "NativeAskInstrumentedTest",
+      "method": "askIsNativeAndOfflineFailureKeepsQuestionEditable",
+      "status": "pass",
+      "seconds": 3.41,
+      "attempts": 1
+    },
+    {
+      "class": "NavigationInstrumentedTest",
+      "method": "tappingOutsideTheNoteDismissesEditorFocus",
+      "status": "pass",
+      "seconds": 2.32,
+      "attempts": 1
+    },
+    {
+      "class": "NavigationInstrumentedTest",
+      "method": "everyBottomTabSwitchesOnItsFirstTouch",
+      "status": "pass",
+      "seconds": 4.15,
+      "attempts": 1
+    },
+    {
+      "class": "NavigationInstrumentedTest",
+      "method": "permissionsAndLocalLogsOpenWithoutStartingCapture",
+      "status": "pass",
+      "seconds": 4.17,
+      "attempts": 1
+    },
+    {
+      "class": "NavigationInstrumentedTest",
+      "method": "leavingSettingsPagesDiscardsInputsAndHidesSaveBar",
+      "status": "pass",
+      "seconds": 3.94,
+      "attempts": 1
+    },
+    {
+      "class": "NavigationInstrumentedTest",
+      "method": "activePageDraftSurvivesRotationAndBackgroundWithoutChangingSavedConfiguration",
+      "status": "pass",
+      "seconds": 4.7,
+      "attempts": 1
+    },
+    {
+      "class": "NavigationInstrumentedTest",
+      "method": "numericAppAndMaskPickersKeepConfigurationStructured",
+      "status": "pass",
+      "seconds": 6.66,
+      "attempts": 1
+    },
+    {
+      "class": "NavigationInstrumentedTest",
+      "method": "renderGeneratedNavigationPagesWhenExplicitlyRequested",
+      "status": "pass",
+      "seconds": 3.27,
+      "attempts": 2,
+      "initialFailure": "NoSuchElementException for obsolete Sources tab",
+      "resolution": "Opt-in renderer now follows current Today/Records/Library/Ask/Local navigation and Local Sources menu; generated rendering covers 11 pages. Missing opt-in explicitly reports JUnit skip."
+    },
+    {
+      "class": "NotesDiagnosticsInstrumentedTest",
+      "method": "readableDraftRestoresNativeEditorAfterActivityRecreation",
+      "status": "pass",
+      "seconds": 3.1,
+      "attempts": 1
+    },
+    {
+      "class": "NotesDiagnosticsInstrumentedTest",
+      "method": "numericDiagnosticsContainOnlyAllowedFieldsAndRespectOptIn",
+      "status": "pass",
+      "seconds": 0.76,
+      "attempts": 1
+    },
+    {
+      "class": "NotesDiagnosticsInstrumentedTest",
+      "method": "explicitNoteUploadsWithoutScreenshotOrModelDependency",
+      "status": "pass",
+      "seconds": 0.95,
+      "attempts": 1
+    },
+    {
+      "class": "NsfwInstrumentedTest",
+      "method": "actualModelRunsOfflineAndReloadsAfterProcessReset",
+      "status": "pass",
+      "seconds": 23.88,
+      "attempts": 2,
+      "initialSkipResolved": "Pinned public model downloaded and verified; generated-only offline native check passed."
+    },
+    {
+      "class": "NsfwInstrumentedTest",
+      "method": "wrongModelImportPreservesVerifiedFileAndFailsClosed",
+      "status": "pass",
+      "seconds": 2.85,
+      "attempts": 2,
+      "initialSkipResolved": "Pinned public model downloaded and verified; generated-only offline native check passed."
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "localNoteWithoutNodeIsReadableAndDoesNotScheduleUploads",
+      "status": "pass",
+      "seconds": 0.68,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "generatedActivityCaptureIsLocalWithoutEndpointOrModel",
+      "status": "pass",
+      "seconds": 0.68,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "firstBindingRequiresConfirmationAndDisconnectCannotRedirectBoundRecords",
+      "status": "pass",
+      "seconds": 0.75,
+      "attempts": 2
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "unboundSourceRevisionsParticipateInTheSameOriginAndBatchProtection",
+      "status": "pass",
+      "seconds": 0.63,
+      "attempts": 2,
+      "initialFailure": "expected local_confirmation; received busy",
+      "resolution": "Fixture now waits only through transient lock contention, preserving exact local_confirmation and pending authorization assertions and never executing rejected mutations."
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "manualDoesNotSendHeartbeatOrNotesUntilExplicitSync",
+      "status": "pass",
+      "seconds": 1.77,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "batchFlushesAtThresholdAndOldestAgeWithoutStrandingSmallQueues",
+      "status": "pass",
+      "seconds": 1.68,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "intervalHoldsNewRecordsUntilDueAndThenFlushes",
+      "status": "pass",
+      "seconds": 1.51,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "manualWrongAckAndDisconnectKeepRecordWithoutAutomaticRetry",
+      "status": "pass",
+      "seconds": 2.07,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "manualSourceAckFailureDoesNotScheduleRetry",
+      "status": "pass",
+      "seconds": 1.47,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "exactTwentyFiveRecordChunkReportsIdleBeforeFinalHeartbeat",
+      "status": "pass",
+      "seconds": 1.58,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "unsupportedLegacyRoutesFallBackToIndividualAcks",
+      "status": "pass",
+      "seconds": 0.91,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "partialBatchAcknowledgementKeepsOnlyUnconfirmedRecords",
+      "status": "pass",
+      "seconds": 0.85,
+      "attempts": 1
+    },
+    {
+      "class": "OfflineSyncInstrumentedTest",
+      "method": "emptyRealtimeQueueNeverStartsDataUploadSession",
+      "status": "pass",
+      "seconds": 1.2,
+      "attempts": 1
+    },
+    {
+      "class": "PairingNavigationInstrumentedTest",
+      "method": "confirmedScannedInvitationSurvivesReturnReentryAndAnotherSettingsSave",
+      "status": "pass",
+      "seconds": 5.64,
+      "attempts": 1
+    },
+    {
+      "class": "PowerOptimizationInstrumentedTest",
+      "method": "earlyDuplicatesDoNotRunOcrOrCarryContentAndConfigurationInvalidatesReference",
+      "status": "pass",
+      "seconds": 1.19,
+      "attempts": 1
+    },
+    {
+      "class": "PowerOptimizationInstrumentedTest",
+      "method": "configurationSnapshotSurvivesStatusWritesButReflectsDirectPrivacyChanges",
+      "status": "pass",
+      "seconds": 0.57,
+      "attempts": 1
+    },
+    {
+      "class": "PowerOptimizationInstrumentedTest",
+      "method": "repeatedVisibleNotificationStatePublishesAndCancelsOnlyOnce",
+      "status": "pass",
+      "seconds": 0.61,
+      "attempts": 1
+    },
+    {
+      "class": "PowerOptimizationInstrumentedTest",
+      "method": "freshDefaultIsStickyAndLegacyUnconfiguredRulesRemainContent",
+      "status": "pass",
+      "seconds": 0.87,
+      "attempts": 1
+    },
+    {
+      "class": "PowerOptimizationInstrumentedTest",
+      "method": "ocrModeControlDisplaysSavedSelection",
+      "status": "pass",
+      "seconds": 2.84,
+      "attempts": 1
+    },
+    {
+      "class": "ProfileSupportInstrumentedTest",
+      "method": "developmentProfileIsIndependentAndSupportExportContainsNoSecretsOrDraft",
+      "status": "pass",
+      "seconds": 3.08,
+      "attempts": 1
+    },
+    {
+      "class": "ServiceResponsivenessInstrumentedTest",
+      "method": "captureEligibilityNeverWaitsForQueueAccountingOrDiagnosticSampling",
+      "status": "pass",
+      "seconds": 0.75,
+      "attempts": 1
+    },
+    {
+      "class": "ServiceResponsivenessInstrumentedTest",
+      "method": "serviceSyncSchedulingReturnsWhileQueueIsBusyAndSchedulesAfterRelease",
+      "status": "pass",
+      "seconds": 0.64,
+      "attempts": 1
+    },
+    {
+      "class": "SettingsStorageInstrumentedTest",
+      "method": "startupRecoveryGateDoesNotBlockMainThreadOnQueueLock",
+      "status": "pass",
+      "seconds": 0.53,
+      "attempts": 1
+    },
+    {
+      "class": "SettingsStorageInstrumentedTest",
+      "method": "staleSettingsSnapshotCannotOverwriteANewerInvitationConnection",
+      "status": "pass",
+      "seconds": 0.54,
+      "attempts": 1
+    },
+    {
+      "class": "SettingsStorageInstrumentedTest",
+      "method": "imageDiagnosticsDefaultOffAndDisablingDeletesStoredPairsBeforeReadingThem",
+      "status": "pass",
+      "seconds": 0.63,
+      "attempts": 1
+    },
+    {
+      "class": "SettingsStorageInstrumentedTest",
+      "method": "activeSettingsApplyWithoutManualStopAndConcurrentStopIsRespected",
+      "status": "pass",
+      "seconds": 0.62,
+      "attempts": 1
+    },
+    {
+      "class": "SettingsStorageInstrumentedTest",
+      "method": "failedSinglePreferenceCommitRestoresConfigWithoutRollingBackUserStopOrStatus",
+      "status": "pass",
+      "seconds": 0.52,
+      "attempts": 1
+    },
+    {
+      "class": "SettingsStorageInstrumentedTest",
+      "method": "realAppStorageMigrationKeepsReadableFilesSettingsAndQueueBinding",
+      "status": "pass",
+      "seconds": 0.68,
+      "attempts": 1
+    },
+    {
+      "class": "UiPageReaderInstrumentedTest",
+      "method": "sensitiveAndHiddenContentNeverLeavesReader",
+      "status": "pass",
+      "seconds": 0.5,
+      "attempts": 1
+    },
+    {
+      "class": "UiTaskInstrumentedTest",
+      "method": "slowWorkDoesNotBlockInputPollingStopsOnPauseAndDestroyedViewsReceiveNoResult",
+      "status": "pass",
+      "seconds": 4.45,
+      "attempts": 1
+    },
+    {
+      "class": "UiTaskInstrumentedTest",
+      "method": "rejectedExecutorFinishesInsteadOfLeavingTaskBusy",
+      "status": "pass",
+      "seconds": 1.74,
+      "attempts": 1
+    },
+    {
+      "class": "ComplexNotesInstrumentedTest",
+      "method": "stageOfflineComplexNotesAndPreparedRetry",
+      "status": "pass",
+      "rounds": 3
+    },
+    {
+      "class": "ComplexNotesInstrumentedTest",
+      "method": "recoverOfflinePreparedRetry",
+      "status": "pass",
+      "rounds": 3
+    },
+    {
+      "class": "ComplexNotesInstrumentedTest",
+      "method": "synchronizeAndCompareCentralEvidence",
+      "status": "pass",
+      "rounds": 3
+    },
+    {
+      "class": "ComplexVlmInstrumentedTest",
+      "method": "pausedVisualModelDoesNotClaimShapeRejectionAndLocalTextGateStillBlocks",
+      "status": "pass",
+      "seconds": 4.8,
+      "attempts": 2,
+      "replacesObsoleteFixture": "actualUserPolicyRejectsGeneratedShapeBeforeOcrQueueAndUpload",
+      "initialFailure": "Used requested legacy nsfw.enabled=true config instead of normalized persisted config; production snapshot fence correctly rejected the frame.",
+      "resolution": "Read and assert persisted nsfw.enabled=false, then verify generated red shape is not falsely claimed as VLM-blocked; owner text rule still prevents persistence."
+    }
+  ],
+  "complexNotes": {
+    "status": "pass",
+    "centralExactTextAndSha256Comparison": true,
+    "rounds": [
+      {
+        "round": 1,
+        "status": "pass",
+        "phases": 3,
+        "records": 6,
+        "maximumUtf16Length": 100000,
+        "editorRecreationMs": 621,
+        "processRestartVerified": true,
+        "evidence": "android-final-complex-round-1.json"
+      },
+      {
+        "round": 2,
+        "status": "pass",
+        "phases": 3,
+        "records": 6,
+        "maximumUtf16Length": 100000,
+        "editorRecreationMs": 484,
+        "processRestartVerified": true,
+        "evidence": "android-final-complex-round-2.json"
+      },
+      {
+        "round": 3,
+        "status": "pass",
+        "phases": 3,
+        "records": 6,
+        "maximumUtf16Length": 100000,
+        "editorRecreationMs": 965,
+        "processRestartVerified": true,
+        "evidence": "android-final-complex-round-3.json"
+      }
+    ]
+  },
+  "fileSync": {
+    "status": "pass",
+    "report": "android-final-file-sync.json",
+    "originalSha256AndSizeVerified": 3,
+    "crossPartRangeBytesVerified": true,
+    "referenceOnlyRecords": 205,
+    "sourceDeletionRetainsOriginal": true,
+    "newOnlyThenBackfill": true,
+    "lostNetworkAfterOnePartResumed": true,
+    "legacyReferenceUpgraded": true,
+    "historyRevisions": 4
+  },
+  "localSources": {
+    "status": "pass",
+    "report": "android-final-local-sources.json"
+  },
+  "generatedUi": {
+    "status": "pass",
+    "renderOptIn": true,
+    "viewTreeOnly": true,
+    "images": [
+      {
+        "path": "android-ui/ask.png",
+        "bytes": 86195,
+        "sha256": "db972bed1b960f832792f597dcf2b041619cf4c6f5b0cd3cd532a04982f21126"
+      },
+      {
+        "path": "android-ui/capture-settings.png",
+        "bytes": 203471,
+        "sha256": "23486cacd17261b3983ac4acf93224aa81a0777615dca0305ab7a740870543cd"
+      },
+      {
+        "path": "android-ui/library.png",
+        "bytes": 127238,
+        "sha256": "c968f587328317881e96005bbaf2639d6a94a4723c71cfb4d7a073cfa3e93e90"
+      },
+      {
+        "path": "android-ui/notes.png",
+        "bytes": 137634,
+        "sha256": "210c567e92228ee4d755f8d2b19c28a23eab9bb331f4212325dba32c58c7f297"
+      },
+      {
+        "path": "android-ui/overview.png",
+        "bytes": 160595,
+        "sha256": "ff71965f971c33d16bb7569c49e9b13b25ae90f5bd34c6cc6a610297fd89a2b6"
+      },
+      {
+        "path": "android-ui/privacy-settings.png",
+        "bytes": 321474,
+        "sha256": "420a659d4508b13affd5162778437101b2646341ea8a001600006a671db6f2cf"
+      },
+      {
+        "path": "android-ui/processing-settings.png",
+        "bytes": 146940,
+        "sha256": "d9a5092d3d0d9e94116f53c5af1cb8f57aaa1051ea89c8fcec53c0d5247219f9"
+      },
+      {
+        "path": "android-ui/settings.png",
+        "bytes": 169829,
+        "sha256": "f8e659f09191d8fb8decf6225be5c88a555b06f6064563ef75af6738b48c64d9"
+      },
+      {
+        "path": "android-ui/sources.png",
+        "bytes": 207727,
+        "sha256": "26536c1e56fbf14765e87635ebfd27539872c9862f983663610ec1e626f52bc4"
+      },
+      {
+        "path": "android-ui/storage-settings.png",
+        "bytes": 166121,
+        "sha256": "0d5120b71dbd7c5b1e6a5044b9da8400a9410af4b2fc5128b8f07f1779249d42"
+      },
+      {
+        "path": "android-ui/sync-settings.png",
+        "bytes": 173629,
+        "sha256": "ab79bed40429b593e18c3c6323eed3eb0a6f6b9129b89763fd21c8e4a5481f44"
+      }
+    ],
+    "visuallyInspectedPages": 11,
+    "scope": "Generated DEV application view tree, initial viewport; not personal screenshots or full scroll-height exports.",
+    "withoutOptIn": "JUnit skip verified explicitly"
+  },
+  "changesInFinalValidation": {
+    "productionCodeChanged": false,
+    "retired": "AccessibilityFixtureTest legacy production-package fixture",
+    "testFilesModified": [
+      "ConnectionInstrumentedTest.kt",
+      "OfflineSyncInstrumentedTest.kt",
+      "NavigationInstrumentedTest.kt",
+      "ComplexVlmInstrumentedTest.kt"
+    ]
+  },
+  "localVision": {
+    "status": "pass",
+    "report": "android-final-local-vision.json",
+    "nativeInferenceCalls": 8,
+    "publicFixedWeightsVerified": true,
+    "productionPipelineVlm": "paused; local owner text rules remain active"
+  },
+  "cleanup": {
+    "emulator5580": "stopped successfully",
+    "fixtureCentralPid53815": "stopped successfully",
+    "testRunners": "completed",
+    "publicWeightCache": "/tmp/mote-final-public-qwen; retained for reuse"
+  }
+}

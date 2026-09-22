@@ -24,7 +24,7 @@ test('coding candidates require exact original quotes, typed applicability and h
  const {sources,memories}=fixture(t),ack=await sources.upsert('coding',item('a')),text=item('a').text;
  const claim={title:'Transaction boundary',statement:`Rollback was verified [${ack.id}]`,uncertainty:'Only the recorded test was checked',evidenceIds:[ack.id],evidence:[{id:ack.id,offset:0,quote:text}],coding:{kind:'pitfall',scope:'project',applicability:'When writes must commit together',validation:'tested'}};
  const result={...empty,answer:JSON.stringify({memories:[claim]}),citations:[{id:ack.id,capturedAt:'2026-09-15T01:00:00Z',appName:'Generated',excerpt:text}]};
- const saved=memories.extract(result,'fixture',{profile:'coding'}).items[0];assert.equal(saved.domain,'coding');assert.equal(saved.status,'proposed');assert.deepEqual(saved.scopeRefs,[{provider:'codex',sessionId:'s1',projectKey:'project-a'}]);
+ const saved=memories.extract(result,'fixture',{profile:'coding'}).items[0];assert.equal(saved.domain,'coding');assert.equal(saved.status,'proposed');assert.deepEqual(saved.scopeRefs,[{sourceId:'coding',deviceId:'fixture',provider:'codex',sessionId:'s1',projectKey:'project-a'}]);
  assert.throws(()=>memories.extract({...result,answer:JSON.stringify({memories:[{...claim,coding:{...claim.coding,scope:'shared'}}]})},'fixture',{profile:'coding'}),/Only principles/);
  assert.throws(()=>memories.extract({...result,answer:JSON.stringify({memories:[{...claim,evidence:undefined}]})},'fixture',{profile:'coding'}),/require/);
 });
@@ -49,7 +49,7 @@ test('host addresses unique exact coding quotes only inside authorized ranges, w
  assert.throws(()=>extract('unique\\noutput',undefined,[{id:ack.id,offset:0,length:3}]),{code:'quote_range'});
  const at=text.lastIndexOf('repeat');assert.equal(extract('repeat',undefined,[{id:ack.id,offset:at,length:6}]).items[0].evidence[0].offset,at);
 });
-test('coding uploads share durable interval AND increment admission; legacy queued originals and replay remain safe',async t=>{
+test('coding uploads share durable threshold-or-maximum-wait admission; legacy queued originals and replay remain safe',async t=>{
  const {store,sources,memories}=fixture(t);let configured=false,now=0;const calls:MemoryPipelineQuery[]=[];
  const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>configured,query:async input=>{calls.push(input);assert.equal(input.responseMode,'memory-extraction');return empty;}});
  const a=await sources.upsert('coding',item('a'));
@@ -61,10 +61,10 @@ test('coding uploads share durable interval AND increment admission; legacy queu
    const out='a'.repeat(32)+id.slice(32);store.archive.save(out,out,out,{kind:'semantic',text:'Generated scoped interpretation',metadata:{evidenceRanges:segment.representatives.map(id=>({id,offset:0,length:store.evidence([id])[0].ocrText.length}))}},[],'fixture','1','fixture',[],[{id,revision:segment.revision}]);return [out];
  })});
  const settings=lifecycle.settings();for(const key of ['consolidation','working','insights'] as const)settings[key].enabled=false;settings.extraction.minChanges=2;lifecycle.configure(settings);
- now=6*3600000;await lifecycle.tick();assert.equal(calls.length,0,'wait for model');configured=true;await lifecycle.tick();assert.equal(calls.length,0,'wait for increments');
+ now=6*3600000;await lifecycle.tick();assert.equal(calls.length,0,'wait for model');configured=true;await lifecycle.tick();assert.equal(calls.length,0,'unaggregated evidence does not fabricate artifact coverage');
  const before=store.db.prepare('SELECT count(*) n FROM changes').get()!.n;
  await assert.rejects(sources.upsert('coding',item('rollback'),undefined,()=>{throw Error('fixture rollback');}),/fixture rollback/);assert.equal(store.db.prepare('SELECT count(*) n FROM changes').get()!.n,before);
- await sources.upsert('coding',item('b','s2'));store.archive.aggregate(100);now=0;await lifecycle.tick();assert.equal(calls.length,0,'uploads do not bypass the interval');now=6*3600000;await lifecycle.tick();
+ await sources.upsert('coding',item('b','s2'));store.archive.aggregate(100);now=0;await lifecycle.tick();assert.equal(calls.length,2,'quantity threshold admits both ready segments without an interval barrier');now=6*3600000;await lifecycle.tick();
  assert.equal(calls.length,2);assert.ok(calls.some(c=>c.evidenceIds.includes(a.id)));assert.ok(calls.every(c=>c.skill==='coding-memory'));
  await sources.upsert('coding',item('a'));now+=6*3600000;await lifecycle.tick();assert.equal(calls.length,2,'duplicate acknowledgements do not generate work');
  await lifecycle.close();await pipeline.close();
@@ -82,7 +82,17 @@ test('consolidation retains coding contracts and checkpoints each domain across 
  now=24*3600000;await lifecycle.tick();assert.deepEqual(calls,['personal','personal','coding']);assert.equal(memories.page({tier:'consolidated'}).items.length,1);
  failCoding=false;now+=121000;await lifecycle.tick();assert.deepEqual(calls,['personal','personal','coding','coding','coding'],'completed personal generation is not repeated');
  const consolidated=memories.page({tier:'consolidated',level:'detail'}).items;assert.equal(consolidated.length,2);
- const code=consolidated.find(m=>m.domain==='coding')!;assert.equal(code.coding?.scope,'project');assert.deepEqual(code.scopeRefs,[{provider:'codex',sessionId:'s1',projectKey:'project-a'}]);assert.deepEqual(memories.get(code.id).relatedMemoryIds,[originals[1].id]);
+ const code=consolidated.find(m=>m.domain==='coding')!;assert.equal(code.coding?.scope,'project');assert.deepEqual(code.scopeRefs,[{sourceId:'coding',deviceId:'fixture',provider:'codex',sessionId:'s1',projectKey:'project-a'}]);assert.deepEqual(memories.get(code.id).relatedMemoryIds,[originals[1].id]);
  store.delete(coding);assert.throws(()=>memories.get(code.id));assert.equal(memories.page({tier:'consolidated'}).items.length,1);
  await lifecycle.close();await pipeline.close();
+});
+
+test('identical project and session labels on different sources and devices never share extraction batches',async t=>{
+ const {store,sources,memories}=fixture(t);
+ for(const [id,deviceId] of [['other-source','fixture'],['other-device','fixture-2']])sources.register({id,name:id,kind:'coding-agent',deviceId,platform:'macos'});
+ const evidenceIds=[];for(const source of ['coding','other-source','other-device'])evidenceIds.push((await sources.upsert(source,item(source))).id);
+ const calls:MemoryPipelineQuery[]=[];
+ const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async input=>{calls.push(input);return empty;}});
+ const job=pipeline.create({evidenceIds});assert.equal(job.totalBatches,3);await pipeline.run(job.id);
+ assert.equal(calls.length,3);assert.ok(calls.every(call=>call.evidenceIds.length===1));await pipeline.close();
 });

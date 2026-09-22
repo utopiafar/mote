@@ -30,7 +30,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
   const secret = { visibility: 'secret-status' as const };
   const nativeStorage = runtime === 'native' ? dataDir : null;
   const storage: ServerConfiguration['storage'] = {
-    dataDir, sqlitePath: join(dataDir, 'mote.sqlite'), blobsDir: join(dataDir, 'blobs'), logDir,
+    dataDir, sqlitePath: join(dataDir, 'mote.sqlite'), blobsDir: join(dataDir, 'blobs'), assetDir: join(dataDir,'files','objects'), logDir,
     kind: context?.storageKind ?? 'unknown', source: context?.storageSource ?? nativeStorage,
     mountPath: context?.storageMount ?? null,
     description: runtime === 'docker'
@@ -60,11 +60,11 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
       { id: 'storage', title: moteText("数据与空间"), description: storage.description, fields: [
         field('dataDirectory', moteText("数据目录"), dataDir, moteText("中央资料库所在路径。迁移需先停止服务、备份并恢复到空目录，不要在线改动。"), 'MOTE_DATA_DIR', ownerPath),
         field('sqlitePath', moteText("SQLite 数据库"), storage.sqlitePath, moteText("保存原文、元数据、全文索引和可选向量；运行时还有 WAL/SHM 文件。"), undefined, ownerPath),
-        field('blobsDirectory', moteText("图片对象目录"), storage.blobsDir, moteText("按内容哈希存储图片，多次观察事件可共享一个对象。"), undefined, ownerPath),
+        field('assetDirectory', moteText("原件资产目录"), storage.assetDir??join(dataDir,'files','objects'), moteText("图片、导入文件与目录原件按内容哈希共享分片；观察记录和来源版本各自保留。"), undefined, ownerPath),
         field('storageKind', moteText("存储类型"), storage.kind, moteText("部署声明的本地目录、Docker 命名卷或 bind mount；不是磁盘自动检测结果。"), 'MOTE_STORAGE_KIND'),
         field('storageSource', moteText("宿主存储来源"), storage.source, moteText("Docker 卷名或宿主挂载源。未声明则无法从容器内部可靠获知。"), 'MOTE_STORAGE_SOURCE', { ...ownerPath, source: context?.storageSource ? context.sources.MOTE_STORAGE_SOURCE ?? 'environment' : 'derived' }),
         field('storageMount', moteText("容器挂载点"), storage.mountPath, moteText("例如 /data；原生部署无需容器挂载。"), 'MOTE_STORAGE_MOUNT', ownerPath),
-        field('maxStorageBytes', moteText("资料容量上限"), config.maxStorageBytes, moteText("限制去重图片与记录 JSON 的逻辑字节；SQLite 索引、WAL、日志等额外占盘，不是全磁盘硬配额。达到上限返回 507，端点保留待传队列。"), 'MOTE_MAX_STORAGE_MB', { unit: 'bytes' }),
+        field('maxStorageBytes', moteText("资料容量上限"), config.maxStorageBytes, moteText("限制去重原件、记录和处理元数据的逻辑字节；SQLite 索引、WAL、日志等额外占盘。达到上限返回 507，端点保留待传队列。"), 'MOTE_MAX_STORAGE_MB', { unit: 'bytes' }),
         field('retentionDays', moteText("历史保留天数"), config.retentionDays, moteText("0 表示不自动按时间删除；正数按采集时间清理过期记录和无引用图片，并使关联洞察失效。"), 'MOTE_RETENTION_DAYS', { unit: 'days' }),
         field('maxExportBytes', moteText("HTTP 归档大小上限"), config.maxExportBytes, moteText("应用于 HTTP 导出/导入；最多 20,000 条记录，较大仓库使用离线备份。导出含可读原文与图片。"), 'MOTE_MAX_EXPORT_MB', { unit: 'bytes' }),
         field('dataKeyConfigured', moteText("图片加密密钥已配置"), Boolean(config.dataKey), moteText("只表示部署密钥是否配置，不表示已启用加密；默认明文保存，可在开发者选项单独开启。已有密文需保留原密钥。"), 'MOTE_DATA_KEY', secret),

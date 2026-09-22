@@ -1,0 +1,105 @@
+{
+  "generatedAt": "2026-09-22T16:19:10.902099+00:00",
+  "fixtureOnly": true,
+  "personalDataUsed": false,
+  "forcedGc": false,
+  "status": "stopped_partial_diagnostic",
+  "plannedSteadyMs": 720000,
+  "observedThroughMs": 300013.3665,
+  "completedSteadyWindow": false,
+  "plateauAssessment": null,
+  "reason": "Stopped as redundant after the matched 10000-run natural-GC comparison and exact deadline cleanup regression confirmed the specific retention fix. This partial window is not counted as a 12-minute stability pass.",
+  "configuration": {
+    "catalog": 500,
+    "generatedNotes": 12,
+    "initialMinimumMs": 2000
+  },
+  "samplesAvailable": "Only one-minute console observations survived the deliberate stop; no full per-second or GC report was emitted.",
+  "observations": [
+    {
+      "stage": "steady-progress",
+      "elapsedMs": 60012.020708000004,
+      "queries": 339,
+      "workers": 304,
+      "atMs": 62056.915458999996,
+      "rss": 278052864,
+      "heap": 45165672,
+      "heapTotal": 72663040,
+      "external": 9277352,
+      "arrayBuffers": 5360728,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "stage": "steady-progress",
+      "elapsedMs": 120013.136083,
+      "queries": 677,
+      "workers": 608,
+      "atMs": 122119.187542,
+      "rss": 253476864,
+      "heap": 29173624,
+      "heapTotal": 46186496,
+      "external": 8216787,
+      "arrayBuffers": 4300163,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "stage": "steady-progress",
+      "elapsedMs": 180013.04287499998,
+      "queries": 1015,
+      "workers": 912,
+      "atMs": 182160.423917,
+      "rss": 233750528,
+      "heap": 29952160,
+      "heapTotal": 43302912,
+      "external": 8184019,
+      "arrayBuffers": 4267395,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "stage": "steady-progress",
+      "elapsedMs": 240012.963417,
+      "queries": 1351,
+      "workers": 1215,
+      "atMs": 242258.586917,
+      "rss": 201064448,
+      "heap": 34381736,
+      "heapTotal": 44089344,
+      "external": 8184019,
+      "arrayBuffers": 4251011,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "stage": "steady-progress",
+      "elapsedMs": 300013.3665,
+      "queries": 1686,
+      "workers": 1518,
+      "atMs": 301298.194459,
+      "rss": 199393280,
+      "heap": 31551120,
+      "heapTotal": 44875776,
+      "external": 8184019,
+      "arrayBuffers": 4251011,
+      "queued": 0,
+      "oldestMs": 0
+    }
+  ],
+  "databaseAtStop": {
+    "captures": 511,
+    "queryReceipts": 1820,
+    "executionStates": {
+      "stale": 1,
+      "succeeded": 1832
+    }
+  },
+  "finalDrainVerified": false,
+  "process": {
+    "pid": 64185,
+    "exitCode": 143,
+    "stoppedBy": "SIGTERM from owning task"
+  },
+  "scope": "Supplemental partial diagnostic, not a performance or plateau acceptance result."
+}

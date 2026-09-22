@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
-import { AgentNotConfiguredError,AgentResponseError,AgentTimeoutError } from '@mote/agent';
+import { AgentNotConfiguredError,AgentResponseError,AgentTimeoutError,AgentProviderError } from '@mote/agent';
 import { ServerDiagnostics,safeError,serializeDiagnosticEvent } from '../src/diagnostics.js';
 import { buildApp,type QueryAgent } from '../src/app.js';
 import type { Config } from '../src/config.js';
@@ -172,16 +172,16 @@ test('request correlation survives the per-query local HTTP tool bridge boundary
 test('background indexing records timings, queue state and only a fixed failure marker',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-index-'));const cfg={...config(directory),embeddingModel:'synthetic-model',embeddingBaseUrl:'http://127.0.0.1:1'};
   const {app,indexer,store,diagnostics}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
-  let calls=0;t.mock.method(indexer,'embed',async()=>{calls++;throw new Error(marker);});
+  let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;throw new Error(marker);});
   const id=randomUUID();await store.ingest({id,deviceId:'fixture',deviceName:'fixture',platform:'import',capturedAt:'2020-01-01T00:00:00Z',source:'note',ocrText:marker,durationMs:0});await indexer.tick();
-  assert.equal(calls,1);assert.equal(store.indexCounts().failed,1);const stored=store.db.prepare('SELECT index_error FROM captures WHERE id=?').get(id) as {index_error:string};assert.equal(stored.index_error,'Embedding operation failed');
+  assert.equal(calls,1);assert.equal(store.indexCounts().failed,1);const stored=store.db.prepare('SELECT index_error FROM captures WHERE id=?').get(id) as {index_error:string};assert.equal(stored.index_error,'embedding_transport');
   const failed=diagnostics.events().items.find(e=>e.event==='index.failed');assert.ok(failed);assert.equal(failed.operation,'embedding');assert.equal(typeof failed.durationMs,'number');assert.match(failed.requestId!,/^[a-f0-9-]{36}$/);assert.ok(diagnostics.events().items.some(e=>e.event==='queue.snapshot'&&e.failed===1&&e.requestId===failed.requestId));assert.ok(!JSON.stringify(diagnostics.events()).includes(marker));
 });
 
 test('explicit agent timeout returns correlated 504 diagnostics while invalid answers remain 502',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-timeout-')),cfg=config(directory);
-  let failure:Error=new AgentTimeoutError();
-  const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{throw failure;}};
+  let failure:Error=new AgentTimeoutError(),modelCalls=0;
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{modelCalls++;throw failure;}};
   const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${cfg.token}`};
   const timed=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
@@ -191,6 +191,10 @@ test('explicit agent timeout returns correlated 504 diagnostics while invalid an
   assert.ok(events.some(e=>e.event==='request.failed'&&e.category==='timeout'&&e.statusCode===504));
   failure=new AgentResponseError(marker);const invalid=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
   assert.equal(invalid.statusCode,502);assert.equal(invalid.json().error,'agent_response');
+  failure=new AgentProviderError({category:'blocked',code:'provider_authentication'});failure.message=marker;const auth=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(auth.statusCode,502);assert.equal(auth.json().recovery,'needs_action');assert.equal(auth.json().reason,'provider_authentication');assert.ok(!auth.body.includes(marker));
+  failure=new AgentProviderError({category:'transient',code:'rate_limited',retryAfterMs:12000});failure.message=marker;const rate=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(rate.statusCode,502);assert.equal(rate.json().retryAfterMs,12000);assert.equal(rate.headers['retry-after'],'12');assert.ok(!rate.body.includes(marker));
+  const before=modelCalls;const queued=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(queued.statusCode,502);assert.equal(queued.json().reason,'rate_limited');assert.equal(modelCalls,before,'shared cooldown must reject before invoking the model');assert.equal((await app.inject({url:'/api/execution-settings',headers})).json().providers.coolingDown,1);
+  const backgroundId=randomUUID();assert.equal((await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id:backgroundId,input:{question:marker}}})).statusCode,202);let background:any;for(let i=0;i<50;i++){await new Promise(r=>setImmediate(r));background=(await app.inject({url:'/api/query-runs/'+backgroundId,headers})).json();if(background.status==='failed')break;}assert.equal(background.status,'failed');assert.equal(background.error.code,'rate_limited');assert.equal(background.execution.failure.recovery,'auto_retry');assert.ok(background.execution.failure.retryAfterMs>0);assert.equal(modelCalls,before);
   const bundle=await app.inject({url:'/api/support-bundle',headers});for(const privateValue of [marker,cfg.token,cfg.apiKey])assert.ok(!bundle.body.includes(privateValue));
 });
 

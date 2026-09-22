@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {Store} from '../src/store.js';
+import {modelConfiguration} from '../src/model-configuration.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {Conversations} from '../src/conversations.js';
@@ -74,11 +75,11 @@ test('conversation revision prevents stale append after same-millisecond evidenc
 });
 test('semantic boundary grants actual bounded lengths for more than eight representatives',async t=>{
  const {buildApp}=await import('../src/app.js');const store=fixture(t);let ranges:{id:string;offset:number;length:number}[]=[];
- const runtime=await buildApp({dataDir:store.directory,token:'synthetic-semantic-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:0,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{store,agent:{configured:true,close:async()=>{},query:async input=>{ranges=input.evidenceRanges??[];return {answer:JSON.stringify({summary:'Generated ten short observations',evidence:[]}),citations:[],trace:[],runId:randomUUID()};}}});
+ const runtime=await buildApp({dataDir:store.directory,token:'synthetic-semantic-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:0,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''},{store,agent:{configured:true,close:async()=>{},query:async input=>{ranges=input.evidenceRanges??[];return {answer:JSON.stringify({summary:'Generated ten short observations',evidence:[],events:[],memoryCandidates:[],actionCues:[]}),citations:[],trace:[],runId:randomUUID()};}}});
  try{
  const records=Array.from({length:10},(_,i)=>note('Generated short observation '+i));await store.ingestBatch(records);
  const id='c'.repeat(64),revision='d'.repeat(64);store.archive.save(id,id,revision,{kind:'segment',text:records.map(r=>r.ocrText).join('\n'),metadata:{complete:true}},records.map(r=>({id:r.id,fingerprint:store.archive.fingerprint(r.id)!})),'fixture','1','fixture');
- const job=runtime.workflows.enqueue([{name:'semantic',processor:'mote.segment-understanding',artifactInputs:[{id,revision}],config:{artifactId:id,modelRevision:runtime.modelSettings.view().revision}}]).semantic;await runtime.workflows.tick();
+ const job=runtime.workflows.enqueue([{name:'semantic',processor:'mote.segment-understanding',artifactInputs:[{id,revision}],config:{artifactId:id,modelFingerprint:modelConfiguration(runtime.modelSettings.select('memory').id,runtime.modelSettings.select('memory').settings,runtime.modelSettings.view().revision).fingerprint}}]).semantic;await runtime.workflows.tick();
  assert.equal(store.db.prepare('SELECT state FROM processing_jobs WHERE id=?').get(job)!.state,'succeeded');assert.equal(ranges.length,10);assert.equal(ranges.reduce((n,r)=>n+r.length,0),records.reduce((n,r)=>n+r.ocrText.length,0));
  }finally{await runtime.app.close();}
 });

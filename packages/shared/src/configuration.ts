@@ -32,6 +32,7 @@ export interface ServerConfiguration {
     dataDir: string;
     sqlitePath: string;
     blobsDir: string;
+    assetDir?: string;
     logDir: string;
     kind: 'local-directory' | 'docker-volume' | 'bind-mount' | 'unknown';
     source: string | null;

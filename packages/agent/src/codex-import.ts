@@ -1,3 +1,4 @@
+import type {TokenUsage} from '@mote/shared';
 import {CodexSession} from './codex-session.js';
 import {skillContent} from './skills.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,type AgentOptions} from './types.js';
@@ -6,10 +7,10 @@ import type {ImportAgentInput,ImportAgentResult,ImportAgentObserver} from './imp
 /** Import has a dedicated writable staging workspace. It never receives archive tools. */
 export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<ImportAgentResult>>();
-  async function execute(input:ImportAgentInput):Promise<ImportAgentResult>{
+  async function execute(input:ImportAgentInput,onUsage?:(usage:TokenUsage)=>void):Promise<ImportAgentResult>{
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();
     const agentTimeoutMs = options.agentTimeoutMs !== undefined ? options.agentTimeoutMs : options.timeoutMs ?? 120000;
-    const session=new CodexSession({...options,agentTimeoutMs},async()=>{throw new AgentProviderError();});sessions.add(session);
+    const session=new CodexSession({...options,agentTimeoutMs},async()=>{throw new AgentProviderError();},undefined,onUsage);sessions.add(session);
     try{
       await session.start(skillContent('document-import'),[],input.workspace);
       const text=await session.run(JSON.stringify({...input,language:input.language??'zh-CN',languageInstruction:'Use the selected language for summaries and warnings; preserve original quotes and schema keys.',requiredSkill:'document-import',importedAt:new Date().toISOString(),nodeExecutable:process.execPath}),{
@@ -21,5 +22,5 @@ export function createCodexImportAgent(options:Omit<AgentOptions,'reader'>){
       return {...result,recordsPath:result.recordsPath??undefined};
     }finally{await session.close();sessions.delete(session);}
   }
-  return {prepare(input:ImportAgentInput,_observer?:ImportAgentObserver){const task=execute(input);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};
+  return {prepare(input:ImportAgentInput,_observer?:ImportAgentObserver,onUsage?:(usage:TokenUsage)=>void){const task=execute(input,onUsage);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};
 }

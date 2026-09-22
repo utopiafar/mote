@@ -15,13 +15,13 @@ const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUI
 function fixture(t:TestContext){const directory=mkdtempSync(join(tmpdir(),'mote-lifecycle-fixture-')),store=new Store(directory);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return store;}
 function event(store:Store,id=randomUUID()){store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(id,new Date().toISOString());return id;}
 
-test('durable AND admission, immutable window, arrivals during work, no empty repeats and coalesced ticks',async t=>{
+test('durable threshold-or-maximum-wait admission, immutable window, arrivals during work, no empty repeats and coalesced ticks',async t=>{
   const store=fixture(t);let now=0,calls=0,release!:()=>void,entered!:()=>void;const ready=new Promise<void>(r=>entered=r);
   const lifecycle=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>lifecycle.close());
-  lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(w){calls++;assert.equal(w.ids.length,25);entered();await new Promise<void>(r=>release=r);}});
-  for(let i=0;i<25;i++)event(store);await lifecycle.tick();assert.equal(calls,0);
+  lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(w){calls++;assert.equal(w.ids.length,calls===1?25:1);if(calls===1){entered();await new Promise<void>(r=>release=r);}}});
+  for(let i=0;i<24;i++)event(store);await lifecycle.tick();assert.equal(calls,0);event(store);
   now=6*3600000;const running=lifecycle.tick();await ready;const coalesced=lifecycle.tick();void coalesced;assert.equal(calls,1);event(store);release();await running;
-  assert.equal(lifecycle.view().extensions[0].pendingChanges,1);assert.equal(lifecycle.view().extensions[0].cursor,25);now+=24*3600000;await lifecycle.tick();assert.equal(calls,1);
+  assert.equal(lifecycle.view().extensions[0].pendingChanges,1);assert.equal(lifecycle.view().extensions[0].cursor,25);now+=3600000;await lifecycle.tick();assert.equal(calls,2);await lifecycle.tick();assert.equal(calls,2);
   assert.throws(()=>lifecycle.configure({...lifecycle.settings(),summaryCharacters:12000,contextCharacters:4000}));
 });
 
@@ -131,4 +131,27 @@ test('shutdown preserves the checkpoint without counting interrupted work as ano
   for(let i=0;i<25;i++)event(store);now=6*3600000;
   const running=lifecycle.tick();await new Promise(r=>setImmediate(r));const closing=lifecycle.close();reject(Error('shutdown'));
   await Promise.all([running,closing]);const state=lifecycle.view().extensions[0];assert.equal(state.failures,0);assert.equal(state.retryAt,undefined);assert.equal(state.cursor,0);assert.equal(state.active?.checkpoint,'resume-after-restart');
+});
+
+test('cross-turn summaries persist and consume only newly uncovered turns, with edits invalidating the prefix',async t=>{
+ const store=fixture(t),conversations=new Conversations(store),working=new WorkingMemory(store,conversations),lifecycle=new MemoryLifecycle(store,()=>true),settings=lifecycle.settings();t.after(()=>lifecycle.close());
+ let id:string|undefined;
+ const append=(n:number)=>{id=conversations.append(id?conversations.get(id):undefined,{question:'Generated question '+n},{...empty(),answer:'Generated answer '+n}).conversationId;};
+ for(let n=0;n<20;n++)append(n);
+ let calls=0;
+ const summarize=async(input:any)=>{calls++;if(calls===2){assert.equal(input.taskContext.previousSummary,'Generated persistent summary');assert.equal(input.taskContext.turns.length,1);assert.equal(input.taskContext.turns[0].question,'Generated question 12');}return {...empty(),answer:'Generated persistent summary'};};
+ await working.compact(id!,settings,summarize);assert.equal(calls,1);
+ const reopened=new WorkingMemory(store,new Conversations(store));assert.equal(reopened.get(conversations.get(id!))?.coveredTurns,12);
+ await reopened.compact(id!,settings,summarize);assert.equal(calls,1,'No repeated summarization of a covered prefix');
+ append(20);await reopened.compact(id!,settings,summarize);assert.equal(calls,2);assert.equal(reopened.get(conversations.get(id!))?.coveredTurns,13);
+ store.db.prepare("UPDATE conversation_turns SET json=json_set(json,'$.question','Generated edited constraint') WHERE conversation_id=? AND idx=0").run(id!);
+ assert.equal(reopened.get(conversations.get(id!)),undefined,'An edited source turn retires the persisted summary');
+});
+
+test('provider Retry-After survives lifecycle restart and exceeds the ordinary backoff when required',async t=>{
+ const {ProviderFailure}=await import('@mote/shared');const store=fixture(t);let now=6*3600000,calls=0;let lifecycle=new MemoryLifecycle(store,()=>true,()=>now);
+ lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){calls++;throw new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:86400000});}});
+ for(let i=0;i<25;i++)event(store);await lifecycle.tick();assert.equal(calls,1);assert.equal(lifecycle.view().extensions[0].retryAt,now+86400000);assert.equal(lifecycle.view().extensions[0].error,'rate_limited');await lifecycle.close();
+ lifecycle=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>lifecycle.close());lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){calls++;}});
+ now+=86399999;await lifecycle.tick();assert.equal(calls,1);now++;await lifecycle.tick();assert.equal(calls,2);assert.equal(lifecycle.view().extensions[0].pendingChanges,0);
 });

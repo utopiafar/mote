@@ -47,7 +47,8 @@ const freePort = () => new Promise(resolve => { const server = createServer(); s
     const retained = notes.get(); await notes.submit({ ...retained, text: 'Generated offline note after revocation', revision: retained.revision + 1 }, config, 'macos', queue);
     await assert.rejects(uploadCapture(config, (await queue.next()).record.event), /拒绝/); assert.equal(queue.stats().depth, 1);
     await writeFile(text, 'Generated source version pending after revocation'); await sources.sync(); assert.equal(sources.connectionActivity().pending, 1);
-    const oldSourceBytes = await readFile(join(profile, 'local-sources', 'nodes', sourceHash(config.serverUrl + ':' + config.token), sourceId + '.json'));
+    const {sourceState}=require('../dist/source-state-store');
+    const oldSourceBytes = Buffer.from(JSON.stringify(sourceState(join(profile, 'local-sources', 'nodes', sourceHash(config.serverUrl + ':' + config.token), sourceId + '.json'))));
     const pendingEvent = JSON.stringify((await queue.next()).record.event);
     const newInvitationResponse = await request('/api/connections/invitations', { serverUrl: origin, label: 'Synthetic bound recovery', deviceId: config.deviceId }); assert.equal(newInvitationResponse.status, 200);
     const newInvitation = (await newInvitationResponse.json()).invitation, reconnect = new ConnectionOnboarding(), newPreview = reconnect.preview(JSON.stringify(newInvitation));
@@ -58,7 +59,7 @@ const freePort = () => new Promise(resolve => { const server = createServer(); s
     const nextConfig = { ...config, token: newCredential.token, credentialScope: newCredential.scope };
     const newIdentity = await testConnection(nextConfig); assert.equal(newIdentity.credential.id, newCredential.credentialId); assert.equal(newIdentity.credential.deviceId, config.deviceId);
     await sources.prepareReauthorization(nextConfig);
-    assert.deepEqual(await readFile(join(profile, 'local-sources', 'nodes', sourceHash(nextConfig.serverUrl + ':' + nextConfig.token), sourceId + '.json')), oldSourceBytes);
+    assert.deepEqual(sourceState(join(profile, 'local-sources', 'nodes', sourceHash(nextConfig.serverUrl + ':' + nextConfig.token), sourceId + '.json')), JSON.parse(oldSourceBytes.toString()));
     await store.save(nextConfig); await sources.changeConnection(nextConfig); assert.equal(sources.connectionActivity().pending, 1); releaseSources();
     assert.equal(JSON.stringify((await queue.next()).record.event), pendingEvent);
     const pending = await queue.next(); await uploadCapture(nextConfig, pending.record.event); await queue.acknowledge(pending.record.event.id); assert.equal(queue.stats().depth, 0);

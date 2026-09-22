@@ -25,3 +25,10 @@ test('old query and insight rows expose the additive execution projection',()=>{
     store.close();rmSync(directory,{recursive:true,force:true});
   }
 });
+
+test('current execution receipts retain attempts and provider deadlines; stale running receipts cannot hide restart failure',async()=>{
+ const {normalizeRun}=await import('../src/execution.js');
+ const value={status:'failed',availableAt:Date.now()+5000,execution:{status:'failed',attempts:3,maxAttempts:4,allowedActions:['retry'],failure:{code:'rate_limited',scope:'provider',recovery:'auto_retry',safeMessage:'Wait for the provider.',retryAfterMs:9999}}};
+ const read=normalizeRun(value);assert.equal(read.execution.attempts,3);assert.equal(read.execution.maxAttempts,4);assert.ok(read.execution.failure!.retryAfterMs!<=5000);assert.ok(read.execution.failure!.retryAfterMs!>0);
+ const stale=normalizeRun({...value,status:'failed',execution:{status:'running',attempts:1,allowedActions:['cancel']}});assert.equal(stale.execution.status,'failed');
+});

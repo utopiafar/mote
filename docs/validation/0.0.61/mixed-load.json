@@ -1,0 +1,1013 @@
+{
+  "generatedAt": "2026-09-22T14:33:37.801Z",
+  "fixtureOnly": true,
+  "liveModelCalls": 0,
+  "personalDataUsed": false,
+  "transport": "actual desktop SourceSync to central FileStore in process; query runtime with generated model work",
+  "counts": {
+    "catalog": 100000,
+    "captures": 400,
+    "days": 400,
+    "queries": 400,
+    "workerCalls": 413,
+    "requests": 1207,
+    "deleted": 1
+  },
+  "durationMs": 152197.232666,
+  "latencyP95Ms": {
+    "query": 338.7952500000101,
+    "browse": 1.6598750000121072,
+    "capture": 2.568083000020124,
+    "ack": 99.19379099999787
+  },
+  "eventLoopP95Ms": 177.471487,
+  "queue": {
+    "peak": 1,
+    "oldestMs": 100,
+    "remaining": 0
+  },
+  "resources": [
+    {
+      "atMs": 1048.814333,
+      "rss": 266665984,
+      "heap": 27887592,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 2097.435708,
+      "rss": 291667968,
+      "heap": 55507744,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 3104.7674580000003,
+      "rss": 353665024,
+      "heap": 90345504,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 4181.717333,
+      "rss": 429015040,
+      "heap": 50555512,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 5244.7429999999995,
+      "rss": 440860672,
+      "heap": 49505936,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 6244.378333,
+      "rss": 450232320,
+      "heap": 75592584,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 7306.184166,
+      "rss": 459358208,
+      "heap": 65351480,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 8375.401625,
+      "rss": 459259904,
+      "heap": 71268120,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 9463.745875,
+      "rss": 460652544,
+      "heap": 49571736,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 10511.409375000001,
+      "rss": 460292096,
+      "heap": 61259032,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 11531.968666,
+      "rss": 468451328,
+      "heap": 87632472,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 12592.851458000001,
+      "rss": 447643648,
+      "heap": 122273168,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 13668.131708,
+      "rss": 454623232,
+      "heap": 94779024,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 14720.507500000002,
+      "rss": 472137728,
+      "heap": 93115032,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 15732.717541,
+      "rss": 461766656,
+      "heap": 81231872,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 16757.281666,
+      "rss": 462241792,
+      "heap": 72190144,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 17778.914333,
+      "rss": 486965248,
+      "heap": 147429752,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 18821.793916000002,
+      "rss": 488996864,
+      "heap": 132822832,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 19886.572458000002,
+      "rss": 493043712,
+      "heap": 134602248,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 20968.262041,
+      "rss": 500187136,
+      "heap": 131871728,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 22060.911,
+      "rss": 473923584,
+      "heap": 71983888,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 23161.143791000002,
+      "rss": 476184576,
+      "heap": 68407352,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 24167.573833000002,
+      "rss": 500744192,
+      "heap": 129228088,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 25186.170375,
+      "rss": 495910912,
+      "heap": 99378136,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 26289.36825,
+      "rss": 535494656,
+      "heap": 194224744,
+      "queued": 1,
+      "oldestMs": 100
+    },
+    {
+      "atMs": 27343.63625,
+      "rss": 472956928,
+      "heap": 98619936,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 28347.394166000002,
+      "rss": 496402432,
+      "heap": 166136224,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 29446.396833,
+      "rss": 484278272,
+      "heap": 153378376,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 30493.794125,
+      "rss": 493912064,
+      "heap": 146532480,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 31560.945833,
+      "rss": 458080256,
+      "heap": 68652616,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 32562.354874999997,
+      "rss": 491569152,
+      "heap": 124450632,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 33601.742708,
+      "rss": 477102080,
+      "heap": 96495464,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 34630.921125,
+      "rss": 515735552,
+      "heap": 174296160,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 35734.23775,
+      "rss": 509001728,
+      "heap": 154570392,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 36795.171500000004,
+      "rss": 550617088,
+      "heap": 227632440,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 37813.308541,
+      "rss": 550846464,
+      "heap": 187371192,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 38932.933916,
+      "rss": 555925504,
+      "heap": 176128536,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 39933.165208,
+      "rss": 607305728,
+      "heap": 245099128,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 41032.336166,
+      "rss": 594886656,
+      "heap": 213494568,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 42048.266666,
+      "rss": 625623040,
+      "heap": 281452360,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 43048.590625,
+      "rss": 648134656,
+      "heap": 319827800,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 44093.924666,
+      "rss": 532070400,
+      "heap": 112139096,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 45116.160541,
+      "rss": 529219584,
+      "heap": 98357464,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 46121.524625,
+      "rss": 560054272,
+      "heap": 149054352,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 47176.211708,
+      "rss": 607764480,
+      "heap": 224798080,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 48235.999083,
+      "rss": 589676544,
+      "heap": 175209944,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 49290.933291,
+      "rss": 600637440,
+      "heap": 226673240,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 50322.722375,
+      "rss": 641368064,
+      "heap": 286262976,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 51421.556916,
+      "rss": 614531072,
+      "heap": 274344736,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 52527.348375,
+      "rss": 624508928,
+      "heap": 269392888,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 53560.769541,
+      "rss": 649838592,
+      "heap": 297101416,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 54600.705375,
+      "rss": 534478848,
+      "heap": 117062384,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 55625.170375,
+      "rss": 561790976,
+      "heap": 162643312,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 56716.088166,
+      "rss": 599523328,
+      "heap": 225018216,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 57754.370416,
+      "rss": 581844992,
+      "heap": 178202992,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 58864.648833,
+      "rss": 632963072,
+      "heap": 268253672,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 59984.825625,
+      "rss": 615989248,
+      "heap": 238045280,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 61071.033916,
+      "rss": 671498240,
+      "heap": 329152168,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 62104.588208,
+      "rss": 668844032,
+      "heap": 296377672,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 63199.995875,
+      "rss": 727826432,
+      "heap": 387864136,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 64268.697166,
+      "rss": 727973888,
+      "heap": 354872560,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 65388.570083000006,
+      "rss": 562266112,
+      "heap": 155993688,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 66460.09383299999,
+      "rss": 610615296,
+      "heap": 228839488,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 67481.40020799999,
+      "rss": 563298304,
+      "heap": 147250056,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 68517.333583,
+      "rss": 591265792,
+      "heap": 202994096,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 69600.565125,
+      "rss": 642154496,
+      "heap": 282127976,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 70627.04812499999,
+      "rss": 612073472,
+      "heap": 220083856,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 71627.245791,
+      "rss": 609353728,
+      "heap": 264167760,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 72669.30333299999,
+      "rss": 638959616,
+      "heap": 312307008,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 73674.069708,
+      "rss": 671121408,
+      "heap": 362678000,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 74810.24795799999,
+      "rss": 670810112,
+      "heap": 328663672,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 75830.51404099999,
+      "rss": 706101248,
+      "heap": 379605592,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 76857.70345799999,
+      "rss": 745717760,
+      "heap": 435212200,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 77936.45899999999,
+      "rss": 590135296,
+      "heap": 182029176,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 78987.126291,
+      "rss": 604618752,
+      "heap": 194422152,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 80033.421416,
+      "rss": 648839168,
+      "heap": 258172304,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 81156.69949999999,
+      "rss": 659652608,
+      "heap": 258288424,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 82219.67812499999,
+      "rss": 703938560,
+      "heap": 305905216,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 83342.188375,
+      "rss": 727990272,
+      "heap": 369753504,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 84382.296083,
+      "rss": 713146368,
+      "heap": 329012904,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 85457.313333,
+      "rss": 754204672,
+      "heap": 373308280,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 86554.646541,
+      "rss": 523829248,
+      "heap": 117961704,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 87565.831916,
+      "rss": 560824320,
+      "heap": 171392064,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 88641.377625,
+      "rss": 595869696,
+      "heap": 215815168,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 89734.2465,
+      "rss": 629342208,
+      "heap": 266006424,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 90787.865916,
+      "rss": 663961600,
+      "heap": 296041488,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 91902.939583,
+      "rss": 632537088,
+      "heap": 254589904,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 93001.895416,
+      "rss": 675938304,
+      "heap": 313330360,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 94053.754416,
+      "rss": 726745088,
+      "heap": 369435024,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 95163.738625,
+      "rss": 774455296,
+      "heap": 438717800,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 96296.515458,
+      "rss": 764968960,
+      "heap": 412237912,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 97416.384125,
+      "rss": 538853376,
+      "heap": 165644448,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 98545.325791,
+      "rss": 584515584,
+      "heap": 230792192,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 99679.519416,
+      "rss": 576094208,
+      "heap": 205238936,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 100728.576666,
+      "rss": 627261440,
+      "heap": 267495696,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 101843.93262499999,
+      "rss": 624066560,
+      "heap": 248027560,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 102972.817166,
+      "rss": 677396480,
+      "heap": 322128832,
+      "queued": 1,
+      "oldestMs": 2
+    },
+    {
+      "atMs": 104048.403666,
+      "rss": 668958720,
+      "heap": 301840880,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 105117.27325,
+      "rss": 694026240,
+      "heap": 329603760,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 106245.18699999999,
+      "rss": 745684992,
+      "heap": 404261872,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 107257.645291,
+      "rss": 768245760,
+      "heap": 430053704,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 108321.448666,
+      "rss": 822460416,
+      "heap": 489016160,
+      "queued": 1,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 109351.844375,
+      "rss": 563101696,
+      "heap": 201729848,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 110385.33920799999,
+      "rss": 586629120,
+      "heap": 231857288,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 111411.90679099999,
+      "rss": 616742912,
+      "heap": 262914304,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 112439.77674999999,
+      "rss": 646610944,
+      "heap": 298215264,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 113531.18866599999,
+      "rss": 648232960,
+      "heap": 285437608,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 114592.704791,
+      "rss": 703021056,
+      "heap": 355907192,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 115675.769666,
+      "rss": 737001472,
+      "heap": 370900784,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 116811.149916,
+      "rss": 757972992,
+      "heap": 368676440,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 117884.61962499999,
+      "rss": 835190784,
+      "heap": 459588744,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 119031.150291,
+      "rss": 859291648,
+      "heap": 460374192,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 120031.072416,
+      "rss": 593379328,
+      "heap": 190523344,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 121122.980333,
+      "rss": 668860416,
+      "heap": 279667808,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 122226.39554099999,
+      "rss": 687472640,
+      "heap": 282902344,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 123302.28641599999,
+      "rss": 756383744,
+      "heap": 372259064,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 124410.62624999999,
+      "rss": 768835584,
+      "heap": 369649664,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 125519.3225,
+      "rss": 837730304,
+      "heap": 459459072,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 126541.26699999999,
+      "rss": 850165760,
+      "heap": 457634304,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 127649.13824999999,
+      "rss": 919961600,
+      "heap": 547381208,
+      "queued": 1,
+      "oldestMs": 1
+    },
+    {
+      "atMs": 128660.080708,
+      "rss": 891289600,
+      "heap": 533944896,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 129661.29929099999,
+      "rss": 612171776,
+      "heap": 215087360,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 130814.54025,
+      "rss": 625033216,
+      "heap": 224589888,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 131960.14500000002,
+      "rss": 690716672,
+      "heap": 310916704,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 133088.908958,
+      "rss": 697729024,
+      "heap": 302626632,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 134208.973583,
+      "rss": 763166720,
+      "heap": 388806976,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 135233.530458,
+      "rss": 795164672,
+      "heap": 423438608,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 136376.881541,
+      "rss": 797851648,
+      "heap": 415196080,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 137376.405833,
+      "rss": 854622208,
+      "heap": 472058464,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 138376.758875,
+      "rss": 877658112,
+      "heap": 493778592,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 139376.826166,
+      "rss": 881672192,
+      "heap": 496720768,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 140377.51958300002,
+      "rss": 885620736,
+      "heap": 499367424,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 141379.341458,
+      "rss": 890109952,
+      "heap": 502139872,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 142381.1005,
+      "rss": 897613824,
+      "heap": 505036688,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 143382.225708,
+      "rss": 903708672,
+      "heap": 507868776,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 144383.455583,
+      "rss": 909492224,
+      "heap": 510285544,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 145383.34812500002,
+      "rss": 916471808,
+      "heap": 513182768,
+      "queued": 0,
+      "oldestMs": 0
+    },
+    {
+      "atMs": 146383.58075,
+      "rss": 923713536,
+      "heap": 515624464,
+      "queued": 0,
+      "oldestMs": 0
+    }
+  ],
+  "faults": {
+    "lostAck": true,
+    "offline": true,
+    "rateLimit": true,
+    "storageQuota": true,
+    "processSigkill": true,
+    "leaseExpiry": "injected expiry after confirmed SIGKILL",
+    "lateDelete": true
+  },
+  "checks": {
+    "allCatalogPages": true,
+    "allAcksRecovered": true,
+    "scopesIsolated": true,
+    "noLateResurrection": true,
+    "exactlyOnceCommit": true
+  }
+}

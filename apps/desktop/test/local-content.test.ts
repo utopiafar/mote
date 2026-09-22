@@ -61,8 +61,9 @@ it('encrypts queue records/images, drafts and source indexes, then decrypts mixe
   const sourcePath = join(directory, 'sources', 'state.json');
   const sources = new SourceSync(sourcePath); await sources.initialize();
   await sources.stage({ items: [{ externalId: 'fixture', title: 'source title', text: 'source body', kind: 'file', layer: 'snapshot', deleted: false }], seen: ['fixture'], skipped: 0, complete: true }, false);
-  const paths = [join(directory, 'queue', 'events', second.id + '.json'), join(directory, 'queue', 'blobs', imageHash(secondImage) + '.jpg'), join(directory, 'queue', 'sync-checkpoint.json'), join(directory, 'notes', 'draft.json'), sourcePath];
-  for (const path of paths) expect(isEncryptedContent(await readFile(path))).toBe(true);
+  const paths = [join(directory, 'queue', 'events', second.id + '.json'), join(directory, 'queue', 'blobs', imageHash(secondImage) + '.jpg'), join(directory, 'queue', 'sync-checkpoint.json'), join(directory, 'notes', 'draft.json'), sourcePath+'.sqlite'];
+  for (const path of paths.slice(0,-1)) expect(isEncryptedContent(await readFile(path))).toBe(true);
+  expect((await readFile(sourcePath+'.sqlite')).includes(Buffer.from('source body'))).toBe(false);
   const reopened = new DurableQueue(join(directory, 'queue'), config); await reopened.initialize();
   expect(reopened.stats().depth).toBe(2); expect(await reopened.imageForBrowser(second.id)).toEqual(secondImage);
   const reopenedDraft = new NoteDraftStore(join(directory, 'notes')); await reopenedDraft.initialize(); expect(reopenedDraft.get().text).toBe(draft.text);

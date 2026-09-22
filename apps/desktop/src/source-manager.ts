@@ -1,3 +1,4 @@
+import {nativeStatusView} from './native-status';
 import { meteredBody } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
@@ -31,6 +32,8 @@ export class LocalSourceManager {
   private states = new Map<string, SourceStatus>();
   private engines = new Map<string, SourceSync>();
   private task?: Promise<void>;
+  private uploadTask?:Promise<void>;
+  private uploadController?:AbortController;
   private taskForced = false;
   private forceRequested = false;
   private controller?: AbortController;
@@ -68,8 +71,8 @@ export class LocalSourceManager {
     this.timer = setInterval(() => { void this.refreshWatchers(); void this.sync(false); }, 5000); this.timer.unref();
     void this.sync(false);
   }
-  status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.message)})); }
-  connectionActivity(): { pending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), inFlight: Boolean(this.task || this.permissionTask) }; }
+  status(): SourceStatus[] { return this.sources.map<SourceStatus>(source => ({ state: source.enabled ? 'idle' : 'paused', message: source.enabled ? moteText("等待首次同步") : moteText("本机已暂停"), pending: 0, items: 0, skipped: 0, ...this.states.get(source.id), ...this.engines.get(source.id)?.status(), source: structuredClone(source), ...(!source.enabled ? { state: 'paused' as const, message: moteText("本机已暂停") } : {}) })).map(row => ({...row, message: statusMessage(row.message), facts:nativeStatusView({pending:row.pending,lastAcknowledgedAt:row.lastAcknowledgedAt,syncState:!this.connection.serverUrl||!this.connection.token?'unconfigured':row.state==='permission_required'?'blocked':row.state==='syncing'?'uploading':row.state==='idle'&&row.pending>0?'waiting':row.state,errorCode:row.state==='permission_required'?'permission_required':row.state==='error'?'source_unavailable':null,scanComplete:row.scanComplete,knownItems:row.items,skipped:row.skipped})})); }
+  connectionActivity(): { pending: number; inFlight: boolean } { return { pending: [...this.engines.values()].reduce((sum, engine) => sum + engine.status().pending, 0), inFlight: Boolean(this.task || this.uploadTask || this.permissionTask) }; }
   async holdConnection(): Promise<() => void> {
     if (this.connectionHeld || this.permissionTask) throw new Error(moteText("本地来源授权尚未结束，请稍后重试连接"));
     this.connectionHeld = true;
@@ -77,14 +80,14 @@ export class LocalSourceManager {
     catch (error) { this.connectionHeld = false; throw error; }
   }
   async prepareReauthorization(connection: Pick<Config, 'serverUrl' | 'token' | 'deviceId'>): Promise<void> {
-    if (!this.connectionHeld || this.task || this.permissionTask || connection.serverUrl !== this.connection.serverUrl || connection.deviceId !== this.connection.deviceId) throw new Error(moteText("仅允许已暂停同步的同一节点、同一设备重新授权"));
+    if (!this.connectionHeld || this.task || this.uploadTask || this.permissionTask || connection.serverUrl !== this.connection.serverUrl || connection.deviceId !== this.connection.deviceId) throw new Error(moteText("仅允许已暂停同步的同一节点、同一设备重新授权"));
     const binding = sourceHash(connection.serverUrl + ':' + (connection.token ?? ''));
     if (binding === this.binding) return;
     for (const [id, engine] of this.engines) await engine.checkpointTo(join(this.directory, 'nodes', binding, id + '.json'));
     await this.nodeBinding.commit(connection, this.connectionActivity().pending > 0, false, true);
   }
   async prepareInitialConnection(connection: SourceConnection): Promise<void> {
-    if (!this.connectionHeld || !this.nodeBinding.unbound() || this.task || this.permissionTask || connection.deviceId !== this.connection.deviceId) throw new Error(moteText("仅允许为未绑定的本地来源确认首次连接"));
+    if (!this.connectionHeld || !this.nodeBinding.unbound() || this.task || this.uploadTask || this.permissionTask || connection.deviceId !== this.connection.deviceId) throw new Error(moteText("仅允许为未绑定的本地来源确认首次连接"));
     const binding = sourceHash(connection.serverUrl + ':' + (connection.token ?? ''));
     for (const [id, engine] of this.engines) await engine.checkpointTo(join(this.directory, 'nodes', binding, id + '.json'));
   }
@@ -168,7 +171,7 @@ export class LocalSourceManager {
     if(this.connection.serverUrl&&this.connection.token&&this.nodeBinding.matches(this.connection))for(const source of this.sources.filter(s=>s.enabled&&s.kind==='local-files'&&s.allowRead&&s.retention==='snapshot')){
       try{const request=this.request(signal),pending=await request('/api/sources/'+source.id+'/read-requests',undefined,'GET',signal) as {items:import('@mote/shared').FileReadRequest[]};
         for(const read of pending.items){const result=await readSourceEvidence(source,read,this.fileLocations.get(source.id)??new Map(),signal);await request('/api/sources/'+source.id+'/read-requests/'+read.id,result,'PUT',signal);}
-      }catch{signal.throwIfAborted();}
+      }catch{if(signal.aborted)return;}
     }
     for (const source of this.sources) {
       if (!source.enabled || signal.aborted) continue;
@@ -180,6 +183,7 @@ export class LocalSourceManager {
       const started = Date.now(); void this.events?.record('SOURCE', 'STARTED');
       const wakeVersion = this.sourceWakeVersions.get(source.id) ?? 0;
       this.readable.delete(source.id);
+      let unqueuedScan: import('./source-types').SourceScan | undefined;
       try {
         let engine = this.engines.get(source.id);
         if (!engine) { engine = new SourceSync(join(this.directory, 'nodes', this.binding, source.id + '.json')); await engine.initialize(); this.engines.set(source.id, engine); }
@@ -189,8 +193,9 @@ export class LocalSourceManager {
         if(source.kind==='local-files')this.fileLocations.set(source.id,new Map());
         const priorityVersions = new Map(this.dirtyPathVersions.get(source.id) ?? []);
         const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint() as import('./coding-agents').CodingCheckpoint | undefined}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json'), this.fileLocations.get(source.id), engine.checkpoint() as LocalFileCheckpoint | undefined, [...priorityVersions.keys()]) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        unqueuedScan = scan;
         if (!scan.queue) scan.queue = source.initialSync === 'all' && !engine.initialized() ? 'history' : 'realtime';
-        signal.throwIfAborted(); status.skipped = scan.skipped;
+        signal.throwIfAborted(); status.skipped = scan.skipped; status.scanComplete = scan.complete;
         if (source.kind === 'coding-agent' && scan.skipped) status.message = moteText("部分会话无法读取或格式不支持；保留游标，下次重试");
         this.readable.add(source.id);
         if (this.managedUploads) {
@@ -216,7 +221,7 @@ export class LocalSourceManager {
       } catch (e) {
         void this.events?.record('SOURCE', signal.aborted ? 'CANCELLED' : e instanceof CalendarPermissionError ? 'PERMISSION' : failureCode(e, 'SOURCE'), { elapsedMs: Date.now() - started });
         Object.assign(status, this.engines.get(source.id)?.status(), { state: e instanceof CalendarPermissionError ? 'permission_required' : 'error', message: signal.aborted ? moteText("同步已取消，待传版本已保留") : e instanceof CalendarPermissionError ? e.message : moteText("同步未完成：检查权限、网络或来源路径后重试；待传版本已保留") });
-      }
+      } finally { if (unqueuedScan) await this.engines.get(source.id)?.discardUnqueuedOriginals(unqueuedScan.items); }
     }
   }
   private request(signal: AbortSignal): SourceRequest {
@@ -248,30 +253,43 @@ export class LocalSourceManager {
     await this.watcher.setTargets(this.sources.filter(source => source.enabled && (source.kind === 'local-files' || source.kind === 'coding-agent') && source.path).map(source => ({ sourceId: source.id, path: source.path! })));
   }
   /** Managed by the collector's one sync decision across screenshots, notes and source versions. */
-  async flushPending(signal: AbortSignal): Promise<void> {
+  async flushPending(signal: AbortSignal,betweenSlices?:()=>Promise<void>): Promise<void> {
     if (this.stopped || this.connectionHeld) return;
+    if(this.uploadTask)return this.uploadTask;
     await this.task;
-    const controller = new AbortController(); this.controller = controller;
+    if(this.stopped||this.connectionHeld)return;
+    if(this.uploadTask)return this.uploadTask;
+    const controller = new AbortController(); this.uploadController = controller;
     const combined = AbortSignal.any([signal, controller.signal]);
     const run = async () => {
       combined.throwIfAborted();
-      for (const source of this.sources) {
-        if (!source.enabled || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
-        const engine = this.engines.get(source.id)!;
-        if (!engine.status().pending && !this.metadataDirty.has(source.id)) continue;
-        const request = this.request(combined);
-        await this.prepareSource(source, request, combined);
-        const ready = await engine.flush(sourceDefinition(source), request, combined);
-        const previous = this.states.get(source.id);
-        this.states.set(source.id, { source, skipped: 0, ...previous, ...engine.status(), state: ready === 'paused' ? 'paused' : 'idle', message: ready === 'paused' ? moteText("中央已暂停，待传版本保留在本机") : moteText("已同步；后台继续检查本地变化") });
+      // Snapshot source membership, then rotate one bounded transport slice per
+      // source. Large originals retain their server-acknowledged parts on yield.
+      let pending=[...this.sources];
+      while(pending.length){
+        const again:LocalSource[]=[];
+        for (const source of pending) {
+          combined.throwIfAborted();
+          if (!source.enabled || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
+          const engine = this.engines.get(source.id)!;
+          if (!engine.status().pending && !this.metadataDirty.has(source.id)) continue;
+          const request = this.request(combined);
+          await this.prepareSource(source, request, combined);
+          const slice = await engine.flushSlice(sourceDefinition(source), request, combined);
+          const previous = this.states.get(source.id);
+          this.states.set(source.id, { source, skipped: 0, ...previous, ...engine.status(), state: slice.state === 'paused' ? 'paused' : slice.state==='yielded'?'syncing':'idle', message: slice.state === 'paused' ? moteText("中央已暂停，待传版本保留在本机") : slice.state==='yielded'?moteText("部分内容已上传，等待下一轮同步"):moteText("已同步；后台继续检查本地变化") });
+          if(slice.state==='yielded')again.push(source);
+          await betweenSlices?.();
+        }
+        pending=again;
       }
     };
     // A hold/update can abort and await this network work, just like local scans.
-    this.task = run();
-    try { await this.task; } finally { this.task = undefined; if (this.controller === controller) this.controller = undefined; }
+    const task=this.uploadTask=run();
+    try { await task; } finally { if(this.uploadTask===task)this.uploadTask = undefined; if (this.uploadController === controller) this.uploadController = undefined; }
   }
   private markMetadataDirty(id: string): void { if (!this.metadataDirty.size) this.metadataDirtyAt = new Date().toISOString(); this.metadataDirty.add(id); }
   private async persist(): Promise<void> { await atomicSourceJson(join(this.directory, 'sources.json'), { version: 1, sources: this.sources, metadataDirty: [...this.metadataDirty], metadataDirtyAt: this.metadataDirtyAt }); }
-  private async interrupt(): Promise<void> { this.controller?.abort(); await this.task; }
+  private async interrupt(): Promise<void> { this.controller?.abort(); this.uploadController?.abort(); await Promise.allSettled([this.task,this.uploadTask]); }
   async close(): Promise<void> { this.stopped = true; if (this.timer) clearInterval(this.timer); this.watcher.close(); this.permissionController?.abort(); await Promise.allSettled([this.interrupt(), this.permissionTask]); }
 }

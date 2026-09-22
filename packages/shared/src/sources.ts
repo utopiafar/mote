@@ -1,3 +1,4 @@
+import type {SourceCapabilities} from './source-capabilities.js';
 import {fileIndexSchema} from './file-index.js';
 import {z} from 'zod';
 import {sourceMetadataSchema} from './metadata.js';
@@ -21,6 +22,7 @@ const originalMetadataSchema=z.record(z.unknown()).superRefine((value,ctx)=>{
 export const codingEvidenceSchema=z.object({
   version:z.literal(1),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().min(1).max(500),
   projectKey:z.string().min(1).max(200),cwd:z.string().max(4000).optional(),
+  projectName:z.string().max(400).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),
   eventId:z.string().min(1).max(200),role:z.enum(['user','assistant','tool_call','tool_result','assistant_delta','tool_call_delta']),
   callId:z.string().max(500).optional(),parentSessionId:z.string().max(500).optional(),
   part:z.number().int().min(0),parts:z.number().int().min(1),
@@ -46,11 +48,11 @@ export function sourceContentTime(record:{capturedAt:string;provenance?:{documen
 export const sourceIdSchema=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
 export const sourceConnectionSchema=z.object({
   id:sourceIdSchema,name:z.string().trim().min(1).max(200),
-  kind:z.enum(['local-calendar','local-files','coding-agent','google-calendar','lark-docs','lark-calendar','mcp','upload','custom']),
+  kind:z.enum(['local-calendar','local-files','coding-agent','google-calendar','gmail','lark-docs','lark-calendar','mcp','upload','custom']),
   deviceId:sourceIdSchema,platform:z.enum(['macos','windows','linux','android','import']),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();
-export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};
+export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{capabilities?:SourceCapabilities;createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};
 export const calendarSchema=z.object({start:timestamp,end:timestamp,allDay:z.boolean(),timeZone:z.string().max(100).optional(),status:z.enum(['confirmed','tentative','cancelled']).default('confirmed')}).strict().refine(v=>Date.parse(v.end)>=Date.parse(v.start),{message:'Calendar end must not precede start'});
 export const sourceItemSchema=z.object({
   externalId:z.string().min(1).max(1000),revision:z.string().min(1).max(200),observedAt:timestamp.describe('Actual source observation time. For document imports without an explicit source observation timestamp, copy the request importedAt exactly. Never substitute recordedAt, createdAt, modifiedAt, or an event date.'),modifiedAt:timestamp.optional(),

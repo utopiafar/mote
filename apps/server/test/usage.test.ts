@@ -4,9 +4,16 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Store} from '../src/store.js';
-import {UsageLedger,estimateCost} from '../src/usage.js';
+import {UsageLedger,estimateCost,usageTotals} from '../src/usage.js';
 const price={provider:'fixture',model:'fixture-model',currency:'USD' as const,input:2,output:8,cacheRead:0.5,cacheWrite:3};
 const tokens={requests:2,reportedRequests:2,inputTokens:1000000,outputTokens:100000,cacheReadTokens:500000,cacheWriteTokens:100000,totalTokens:1100000,reasoningTokens:50000};
+test('cumulative Codex tokens are priced independently of the unknown underlying request count',()=>{
+  const cumulative={...tokens,requests:0,reportedRequests:0,measurement:'thread_cumulative' as const,complete:true};
+  assert.equal(estimateCost(cumulative,price),2.15);
+  assert.equal(estimateCost({...cumulative,complete:false},price),null);
+  const summary=usageTotals([{id:'codex',provider:'codex',model:'fixture',operation:'query',createdAt:new Date().toISOString(),durationMs:1,status:'completed',currency:'USD',estimatedCost:2.15,tokens:cumulative}]);
+  assert.equal(summary.totalTokens,1100000);assert.equal(summary.unknownUsage,0);assert.equal(summary.unknownRequestCounts,1);assert.equal(summary.requests,0);
+});
 test('disjoint token buckets, incomplete costs, price snapshots and timezone days',t=>{
   assert.equal(estimateCost(tokens,price),2.15);
   assert.equal(estimateCost({...tokens,reportedRequests:1},price),null);

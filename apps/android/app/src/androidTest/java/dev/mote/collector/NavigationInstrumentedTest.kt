@@ -35,15 +35,22 @@ class NavigationInstrumentedTest {
     }
     private fun editor(activity: MainActivity, hint: String) = views(activity.window.decorView)
         .filterIsInstance<EditText>().single { it.hint?.toString() == hint }
-    private fun tab(activity: MainActivity, label: String) = views(activity.window.decorView)
-        .filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == label }.performClick()
+    private fun tab(activity: MainActivity, label: String) {
+        val current = when(label) { "设置" -> "本机"; "概览" -> "今天"; "随手记" -> "记录"; else -> label }
+        views(activity.window.decorView).filterIsInstance<TextView>().single { it.isShown && it.isClickable && it.text.toString() == current }.performClick()
+        // The product explicitly confirms discarding a settings draft.
+        android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap { views(it) }
+            .filterIsInstance<TextView>().firstOrNull { it.isShown && it.text.toString() == "丢弃修改" }?.performClick()
+    }
     private fun menu(activity: MainActivity, label: String) = views(activity.window.decorView)
         .single { it.isShown && it.tag == "menu:$label" }.performClick()
 
     @Test fun tappingOutsideTheNoteDismissesEditorFocus() {
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            scenario.onActivity { activity -> tab(activity, "随手记") }
+            val deadline=SystemClock.elapsedRealtime()+10000; var enabled=false
+            while(!enabled && SystemClock.elapsedRealtime()<deadline){scenario.onActivity { enabled=editor(it,"记下此刻的想法…").isEnabled };if(!enabled)Thread.sleep(25)}
             scenario.onActivity { activity ->
-                tab(activity, "随手记")
                 val field = editor(activity, "记下此刻的想法…")
                 field.requestFocus(); assertTrue(field.hasFocus())
                 val down = SystemClock.uptimeMillis()
@@ -58,7 +65,7 @@ class NavigationInstrumentedTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(true)
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            for (label in listOf("随手记", "来源", "设置", "概览", "设置", "随手记", "概览")) {
+            for (label in listOf("资料", "问一问", "本机", "今天", "本机", "资料", "今天")) {
                 instrumentation.waitForIdleSync()
                 var x = 0f; var y = 0f
                 scenario.onActivity { activity ->
@@ -74,7 +81,7 @@ class NavigationInstrumentedTest {
                 scenario.onActivity { activity ->
                     assertTrue("$label must select on one touch", views(activity.window.decorView).filterIsInstance<TextView>()
                         .single { it.isShown && it.isClickable && it.text.toString() == label }.isSelected)
-                    assertEquals(label == "随手记", editor(activity, "记下此刻的想法…").isShown)
+                    assertFalse(views(activity.window.decorView).filterIsInstance<EditText>().any { it.isShown })
                 }
             }
         }
@@ -88,7 +95,7 @@ class NavigationInstrumentedTest {
             scenario.onActivity { activity ->
                 tab(activity, "设置"); menu(activity, "权限与后台运行")
                 assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any {
-                    it.isShown && it.text.contains("媒体通知使用权：")
+                    it.isShown && it.text.contains("通知使用权")
                 })
                 assertFalse(Settings(activity).enabled)
             }
@@ -109,39 +116,49 @@ class NavigationInstrumentedTest {
         assertFalse(Settings(context).enabled)
     }
 
+    private fun navigate(scenario: ActivityScenario<MainActivity>, label: String) {
+        val instrumentation=InstrumentationRegistry.getInstrumentation()
+        scenario.onActivity { tab(it,label) };instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap { views(it) }
+                .filterIsInstance<TextView>().firstOrNull { it.isShown && it.text.toString()=="丢弃修改" }?.performClick()
+        }
+        instrumentation.waitForIdleSync()
+    }
     @Test fun leavingSettingsPagesDiscardsInputsAndHidesSaveBar() {
+        val saved=Settings(InstrumentationRegistry.getInstrumentation().targetContext).read()
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             scenario.onActivity { activity ->
-                val saved = Settings(activity).read()
                 assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
-                assertFalse(editor(activity, "https://mote.example.com").isShown)
-                assertFalse(editor(activity, "记下此刻的想法…").isShown)
-                tab(activity, "设置"); menu(activity, "连接与同步")
-                assertTrue(editor(activity, "https://mote.example.com").isShown)
-                editor(activity, "https://mote.example.com").setText("https://127.0.0.1:1")
-                editor(activity, "建议通过邀请获取本设备凭据").setText("generated-navigation-fixture-token-1234567890")
-                tab(activity, "设置"); menu(activity, "采集与存储")
-                assertEquals(saved.server, editor(activity, "https://mote.example.com").text.toString())
-                assertEquals(saved.token, editor(activity, "建议通过邀请获取本设备凭据").text.toString())
-                editor(activity, "30").setText("47")
-                tab(activity, "随手记")
-                assertTrue(editor(activity, "记下此刻的想法…").isShown)
-                assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text == "保存设置" })
-                tab(activity, "设置"); menu(activity, "采集与存储")
-                assertEquals(saved.intervalSeconds.toString(), editor(activity, "30").text.toString())
-                editor(activity, "30").setText("")
-                activity.onBackPressed()
-                assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text == "保存设置" })
-                menu(activity, "采集与存储")
-                assertEquals(saved.intervalSeconds.toString(), editor(activity, "30").text.toString())
-                assertNull(editor(activity, "30").error)
-                assertEquals(saved, Settings(activity).read())
-                assertFalse(Settings(activity).enabled)
+                assertFalse("Advanced forms are lazy",views(activity.window.decorView).any { it is EditText })
+            }
+            navigate(scenario,"设置")
+            scenario.onActivity { activity ->
+                menu(activity,"连接与同步")
+                editor(activity,"https://mote.example.com").setText("https://127.0.0.1:1")
+                editor(activity,"建议通过邀请获取本设备凭据").setText("generated-navigation-fixture-token-1234567890")
+            }
+            navigate(scenario,"设置")
+            scenario.onActivity { activity ->
+                menu(activity,"采集与存储")
+                assertEquals(saved,Settings(activity).read())
+                editor(activity,"30").setText("47")
+            }
+            navigate(scenario,"随手记")
+            scenario.onActivity { activity ->
+                assertTrue(editor(activity,"记下此刻的想法…").isShown)
+                assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown&&it.text=="保存设置" })
+            }
+            navigate(scenario,"设置")
+            scenario.onActivity { activity ->
+                menu(activity,"采集与存储")
+                assertEquals(saved.intervalSeconds.toString(),editor(activity,"30").text.toString())
+                assertEquals(saved,Settings(activity).read());assertFalse(Settings(activity).enabled)
             }
         }
     }
 
-    @Test fun activePageDraftSurvivesRotationButNotLeavingTheActivity() {
+    @Test fun activePageDraftSurvivesRotationAndBackgroundWithoutChangingSavedConfiguration() {
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
             val saved = Settings(InstrumentationRegistry.getInstrumentation().targetContext).read()
             scenario.onActivity { activity ->
@@ -156,8 +173,8 @@ class NavigationInstrumentedTest {
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
             scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
             scenario.onActivity { activity ->
-                assertEquals(saved.intervalSeconds.toString(), editor(activity, "30").text.toString())
-                assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text == "保存设置" })
+                assertEquals("47", editor(activity, "30").text.toString())
+                assertTrue(views(activity.window.decorView).filterIsInstance<TextView>().any { it.isShown && it.text == "保存设置" })
                 assertEquals(saved, Settings(activity).read())
             }
         }
@@ -193,8 +210,9 @@ class NavigationInstrumentedTest {
             clickDialogLabel("60")
             scenario.onActivity { activity ->
                 assertEquals("60", editor(activity, "30").text.toString())
-                tab(activity, "设置"); menu(activity, "隐私与应用规则"); tab(activity, "管理应用 · 查看每个应用的记录方式")
             }
+            navigate(scenario,"设置")
+            scenario.onActivity { activity -> menu(activity,"隐私与应用规则");tab(activity,"管理应用 · 查看每个应用的记录方式") }
             val appName = instrumentation.targetContext.applicationInfo.loadLabel(instrumentation.targetContext.packageManager).toString()
             instrumentation.waitForIdleSync()
             instrumentation.runOnMainSync {
@@ -214,15 +232,21 @@ class NavigationInstrumentedTest {
 
     @Test fun renderGeneratedNavigationPagesWhenExplicitlyRequested() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        if (InstrumentationRegistry.getArguments().getString("renderGeneratedUi") != "true") return
+        org.junit.Assume.assumeTrue("Explicit generated-only UI rendering required", InstrumentationRegistry.getArguments().getString("renderGeneratedUi") == "true")
         val context = instrumentation.targetContext
         require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
         require(!Settings(context).enabled && context.queue().depth() == 0)
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            listOf("概览" to "overview", "随手记" to "notes", "来源" to "sources", "设置" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
-                scenario.onActivity { if (file.endsWith("-settings")) { tab(it, "设置"); if (file == "processing-settings") menu(it, "采集与存储"); menu(it, label) } else tab(it, label) }
+            listOf("今天" to "overview", "记录" to "notes", "资料" to "library", "问一问" to "ask", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
+                scenario.onActivity {
+                    when {
+                        file == "sources" -> { tab(it, "本机"); menu(it, label) }
+                        file.endsWith("-settings") -> { tab(it, "本机"); if (file == "processing-settings") menu(it, "采集与存储"); menu(it, label) }
+                        else -> tab(it, label)
+                    }
+                }
                 instrumentation.waitForIdleSync()
                 scenario.onActivity { activity ->
                     assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)

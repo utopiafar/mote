@@ -45,8 +45,8 @@ try {
     assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Imported 1 changed/);
     assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Imported 0 changed/);
     const syncDirectory=join(p.directory,'file-sync');
-    const syncFiles=(await readdir(syncDirectory)).filter(name=>name.endsWith('.json'));
-    const stateFiles=syncFiles.filter(name=>!name.endsWith('.atime.json'));
+    const syncFiles=(await readdir(syncDirectory)).filter(name=>name.endsWith('.json')||name.endsWith('.json.sqlite'));
+    const stateFiles=syncFiles.filter(name=>name.endsWith('.json.sqlite')).map(name=>name.slice(0,-7));
     assert.equal(stateFiles.length,1);
     assert.deepEqual(syncFiles.filter(name=>name.endsWith('.atime.json')),[stateFiles[0]+'.atime.json']);
     assert.equal((await stat(join(syncDirectory,stateFiles[0]+'.atime.json'))).mode&0o777,0o600);
@@ -65,9 +65,9 @@ try {
 
   await cli(home, 'dev', 'stop');
   const snapshot = join(directory, 'snapshot'); await cli(home, 'dev', 'backup', ['--out', snapshot]);
-  const entries = await readdir(snapshot); assert.deepEqual(entries.sort(), ['backup-manifest.json', 'blobs', 'mote.sqlite']);
+  const entries = await readdir(snapshot); assert.deepEqual(entries.sort(), ['backup-manifest.json', 'blobs', 'files', 'mote.sqlite']);
   const manifest = JSON.parse(await readFile(join(snapshot, 'backup-manifest.json'), 'utf8')); assert.equal(Object.keys(manifest.checksums).length, 2);
-  const blob = Object.keys(manifest.checksums).find(name => name.startsWith('blobs/'));
+  const blob = Object.keys(manifest.checksums).find(name => name.startsWith('files/objects/') && name.endsWith('/0.aes'));
   assert.notDeepEqual(await readFile(join(snapshot, blob)), image, 'Encrypted stored blob must not become plaintext in backup');
   const restored = await initializeFixture(restoreHome, 'test', { dataKey: dev.env.MOTE_DATA_KEY }); profiles.push(restored);
   // An unrelated central process's vault lock also prevents restore, even without our process.json.

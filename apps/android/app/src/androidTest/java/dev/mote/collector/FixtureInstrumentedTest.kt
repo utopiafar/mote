@@ -27,7 +27,7 @@ class FixtureInstrumentedTest {
         val dir = File(context.noBackupFilesDir, "fixture-${UUID.randomUUID()}")
         try {
             val event = JSONObject().put("id", UUID.randomUUID().toString()).put("privacy", JSONObject().put("excluded", false))
-                .put("ocrText", "GENERATED FIXTURE ONLY")
+                .put("ocrText", "GENERATED FIXTURE ONLY").put("capturedAt", "2026-09-21T00:00:00Z").put("source", "note")
             DurableQueue(dir, SecretBox()).enqueue(event, "synthetic pixels".toByteArray(), 10000)
             val reopened = DurableQueue(dir, SecretBox())
             assertEquals("GENERATED FIXTURE ONLY", reopened.peek()!!.getString("ocrText"))

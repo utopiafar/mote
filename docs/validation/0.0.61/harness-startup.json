@@ -1,0 +1,100 @@
+{
+  "generatedAt": "2026-09-22T14:38:52.211Z",
+  "fixtureOnly": true,
+  "liveModelCalls": 0,
+  "runtime": "real Harness with generated HTTP completion replies",
+  "sessionReuse": false,
+  "runs": [
+    {
+      "label": "first-cold",
+      "profile": "a",
+      "startupToProviderMs": 347.136917,
+      "totalMs": 401.752625,
+      "requestBytes": 18767,
+      "syntheticUsage": {
+        "requests": 1,
+        "reportedRequests": 1,
+        "inputTokens": 100,
+        "outputTokens": 20,
+        "totalTokens": 120,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    },
+    {
+      "label": "fresh-session-same-profile",
+      "profile": "a",
+      "startupToProviderMs": 339.71458299999995,
+      "totalMs": 385.79612499999996,
+      "requestBytes": 18767,
+      "syntheticUsage": {
+        "requests": 1,
+        "reportedRequests": 1,
+        "inputTokens": 100,
+        "outputTokens": 20,
+        "totalTokens": 120,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    },
+    {
+      "label": "fresh-session-other-profile",
+      "profile": "b",
+      "startupToProviderMs": 343.96608299999997,
+      "totalMs": 394.517667,
+      "requestBytes": 18767,
+      "syntheticUsage": {
+        "requests": 1,
+        "reportedRequests": 1,
+        "inputTokens": 100,
+        "outputTokens": 20,
+        "totalTokens": 120,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    },
+    {
+      "label": "repeat-profile",
+      "profile": "b",
+      "startupToProviderMs": 332.2922080000001,
+      "totalMs": 372.326458,
+      "requestBytes": 18767,
+      "syntheticUsage": {
+        "requests": 1,
+        "reportedRequests": 1,
+        "inputTokens": 100,
+        "outputTokens": 20,
+        "totalTokens": 120,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      }
+    }
+  ],
+  "requests": [
+    {
+      "profile": "a",
+      "path": "/a/v1/chat/completions",
+      "bytes": 18767
+    },
+    {
+      "profile": "a",
+      "path": "/a/v1/chat/completions",
+      "bytes": 18767
+    },
+    {
+      "profile": "b",
+      "path": "/b/v1/chat/completions",
+      "bytes": 18767
+    },
+    {
+      "profile": "b",
+      "path": "/b/v1/chat/completions",
+      "bytes": 18767
+    }
+  ],
+  "checks": {
+    "scopeIsolation": true,
+    "credentialIsolation": true,
+    "noSessionReuse": true
+  }
+}

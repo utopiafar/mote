@@ -62,7 +62,9 @@ export function captureOcrState(record: {source: string; ocr?: OcrResult; ocrTex
 }
 
 /** Explicit, bounded fields only: never an arbitrary bag of device identifiers or content. */
+export const memoryScopeRefSchema=z.object({sourceId:z.string().max(128).optional(),deviceId:z.string().max(200).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().max(500),projectKey:z.string().max(200)}).strict();
 export const recordMetadataSchema = z.object({
+  memoryCorrection:z.object({memoryId:z.string().uuid(),domain:z.enum(['personal','coding']),scopeRefs:z.array(memoryScopeRefSchema).max(30),coding:z.object({kind:z.enum(['pitfall','decision','principle','preference']),scope:z.enum(['session','project','shared']),applicability:z.string().max(2000),validation:z.literal('user_confirmed')}).strict().optional()}).strict().optional(),
   uiPage: uiPageSchema.optional(),
   attachments: z.array(z.string().uuid()).max(10).optional(),
   version: z.literal(1),

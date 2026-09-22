@@ -1,3 +1,4 @@
+import {EvidenceReader} from '../src/evidence-reader.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync,readdirSync,writeFileSync} from 'node:fs';
@@ -54,13 +55,18 @@ test('reference handles a huge external file without bytes or processing; versio
 });
 
 test('processor builds timestamped layers and tail search, source removal retains them, forget blocks resurrection',async t=>{
- const {files,store}=fixture(t),bytes=Buffer.from('synthetic audio placeholder'),ack=await upload(files,manifest(bytes),bytes);let calls=0;
+ const {files,store,sources}=fixture(t),bytes=Buffer.from('synthetic audio placeholder'),ack=await upload(files,manifest(bytes),bytes);let calls=0;
  const provider:TranscriptionProvider={transcribe:async()=>{calls++;return {durationMs:90000,segments:[{startMs:0,endMs:1000,text:'计划下周联系对方，并未完成。'},{startMs:89000,endMs:90000,text:'尾部校验：项目代号青杉，金额三百元。'}]};}};
  const processing=new FileProcessing(files,provider,async records=>({answer:`合成摘要 [${records[0].id}]`,citations:[{id:records[0].id}]}));t.after(()=>processing.close());
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'blocked');
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,summarize:true}});await processing.tick();
  assert.equal(calls,1);assert.equal(files.detail(ack.id).job.state,'succeeded');assert.equal(files.detail(ack.id).job.summary_state,'succeeded');
  const tail=files.search({query:'青杉'});assert.equal(tail.length,1);assert.deepEqual(files.search({query:'青杉 金额'}).map(r=>r.id),tail.map(r=>r.id));assert.deepEqual(files.search({query:'青杉 三百元'}).map(r=>r.id),tail.map(r=>r.id));assert.equal((tail[0].fileEvidence as any).startMs,89000);assert.equal(files.search({query:'青杉',deviceId:'other'}).length,0);
+ const reader=new EvidenceReader(store,sources,files),typed=`CAPTURE:${ack.id.toUpperCase()}`;
+ assert.deepEqual(reader.chunks({id:typed}).map(r=>r.id),reader.chunks({id:ack.id}).map(r=>r.id));
+ assert.equal(reader.chunks({id:typed,deviceId:'other'}).length,0);
+ assert.equal(reader.chunks({id:`memory:${ack.id}`}).length,0);
+ assert.equal(reader.sourceHistory({id:typed})[0].id,ack.id);
  const deletion=manifest(bytes,'removed','v1');delete deletion.sha256;deletion.item.deleted=true;await files.revision(deletion,owner);assert.equal(files.search({query:'青杉'}).length,1);
  files.forget(ack.id);assert.equal(files.evidence(tail.map(r=>r.id)).length,0);assert.equal(files.search({query:'青杉'}).length,0);assert.equal(store.db.prepare('SELECT count(*) AS n FROM file_chunks_trigram WHERE id=?').get(tail[0].id)!.n,0);
  await assert.rejects(upload(files,manifest(bytes,'v3','removed'),bytes),{statusCode:410});
@@ -97,6 +103,12 @@ MOTE_LOG_LEVEL=silent
  const started=await app.inject({method:'POST',url:'/api/file-sync/v1/uploads',headers,payload:m});assert.equal(started.statusCode,200,started.body);const session=started.json();
  assert.equal((await app.inject({method:'PUT',url:`/api/file-sync/v1/uploads/${session.uploadId}/parts/0`,headers:{...headers,'content-type':'application/octet-stream'},payload:bytes})).statusCode,200);
  const committed=await app.inject({method:'POST',url:`/api/file-sync/v1/uploads/${session.uploadId}/commit`,headers,payload:{}});assert.equal(committed.statusCode,200,committed.body);const ack=committed.json();
+ const typedRef=encodeURIComponent(`CAPTURE:${ack.id.toUpperCase()}`);
+ for(const suffix of ['', '/chunks','/content']){
+  assert.equal((await app.inject({url:`/api/files/${typedRef}${suffix}`,headers})).statusCode,200);
+  assert.equal((await app.inject({url:`/api/files/${typedRef}${suffix}?deviceId=other`,headers})).statusCode,404);
+ }
+ assert.equal((await app.inject({url:`/api/files/${encodeURIComponent('memory:'+ack.id)}`,headers})).statusCode,400);
  assert.equal((await app.inject(`/api/files/${ack.id}/content`)).statusCode,401);
  const playback=await app.inject({method:'POST',url:`/api/files/${ack.id}/playback`,headers,payload:{}});assert.equal(playback.statusCode,200);const cookie=String(playback.headers['set-cookie']).split(';')[0];
  const content=await app.inject({url:`/api/files/${ack.id}/content`,headers:{cookie,range:'bytes=2-5'}});assert.equal(content.statusCode,206);assert.equal(content.body,'2345');
@@ -131,9 +143,9 @@ test('changing a processing provider during a job requeues it and rejects the ol
  const {files,store}=fixture(t),bytes=Buffer.from('provider change'),ack=await upload(files,manifest(bytes),bytes);
  let release!:(v:any)=>void,started!:()=>void;const begun=new Promise<void>(r=>{started=r;});let first=true;
  const processing=new FileProcessing(files,{transcribe:async()=>{if(first){first=false;started();return new Promise(r=>{release=r;});}return {durationMs:1000,segments:[]};}});t.after(()=>processing.close());
- const update=()=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true}});update();
- const running=processing.tick();await begun;update();release({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'superseded output'}]});await running;
- assert.equal(files.detail(ack.id).job.state,'waiting');assert.equal(files.chunks(ack.id).length,0);await processing.tick();
+ const update=(endpoint=processing.view().settings.endpoint)=>processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,endpoint}});update();
+ const running=processing.tick();await begun;update('http://127.0.0.1:9010/transcribe');release({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'superseded output'}]});await running;
+ assert.equal(files.detail(ack.id).job.state,'waiting');assert.equal(files.chunks(ack.id).length,0);for(const until=Date.now()+5000;Date.now()<until&&files.detail(ack.id).job.state!=='succeeded';){await processing.tick();if(files.detail(ack.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(files.detail(ack.id).job.state,'succeeded');assert.equal(store.db.prepare('SELECT audio_ms FROM file_usage').get()!.audio_ms,1000);assert.equal(files.chunks(ack.id).length,0);
 });
 

@@ -1,0 +1,1009 @@
+{
+  "source": "https://chatgpt.com/share/6ab12a43-4abc-83e8-86e7-4ed4eccc3aea",
+  "baseline": "3561947",
+  "items": [
+    {
+      "id": "BASE-01",
+      "priority": "P0",
+      "title": "状态与覆盖率契约",
+      "change": "拆开资料就绪、任务执行、来源同步；统一错误码、恢复时间和 `allowedActions`",
+      "acceptance": "三端同一夹具含义一致；OCR 失败不导致已归档资料变成导入失败；未运行 Memory 不显示完成",
+      "status": "verified",
+      "evidence": [
+        "packages/shared/src/ui-contracts.ts",
+        "apps/server/test/execution-protocol.test.ts",
+        "packages/shared/src/operations.ts",
+        "apps/server/src/operation-projection.ts",
+        "apps/server/test/operations.test.ts",
+        "packages/shared/src/native-status.ts",
+        "apps/desktop/src/native-status.ts",
+        "adapters/ui/fixtures/native-status.json",
+        "packages/shared/test/native-status.test.mjs",
+        "docs/client-scheduling-and-status.md"
+      ],
+      "remaining": "",
+      "assessment": "三端采用分离的归档确认、中央执行、来源同步和扫描覆盖事实；同一9场景JSON由TS/Kotlin验证，OCR失败和未安排Memory不再推导为导入失败/全部完成。"
+    },
+    {
+      "id": "BASE-02",
+      "priority": "P0",
+      "title": "引用、身份和范围",
+      "change": "集中解析 ref；区分设备、来源、会话、项目；明确授权范围与查询范围",
+      "acceptance": "所有公开引用可往返；同名 session 不碰撞；历史版本、时间范围和撤权不能被展开接口绕过",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/context-query.ts",
+        "apps/server/test/context-query.test.ts",
+        "packages/shared/src/evidence-ref.ts",
+        "apps/server/src/context-navigation.ts",
+        "apps/server/test/evidence-reader.test.ts",
+        "packages/agent/test/tool-recovery.test.mjs",
+        "apps/server/src/evidence-reader.ts",
+        "apps/server/src/evidence-routes.ts",
+        "apps/server/src/evidence-scope-record.ts",
+        "apps/server/test/capture-browser.test.ts",
+        "apps/server/test/files.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "统一解析公开ref和固定版本引用，展开时重验原始scope、anchor和授权；400日跨协议与不同来源同session夹具覆盖往返、删除和范围交集。"
+    },
+    {
+      "id": "BASE-03",
+      "priority": "P1",
+      "title": "配置归属与快照",
+      "change": "服务凭据、处理策略、预算、设备隐私分开；每任务固定相关配置 revision",
+      "acceptance": "修改 OCR 不重跑无关 Memory；旧 revision 保存被拒绝；API 和日志不暴露密钥",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/perception.ts",
+        "apps/server/test/configuration.test.ts",
+        "apps/server/test/perception.test.ts",
+        "apps/server/src/file-configuration.ts",
+        "apps/server/src/file-processing.ts",
+        "apps/server/test/file-config-snapshot.test.ts",
+        "docs/configuration-ownership.md",
+        "apps/server/test/memory-config-snapshot.test.ts",
+        "apps/server/test/model-settings-api.test.ts",
+        "docs/model-budgets.md"
+      ],
+      "remaining": "",
+      "assessment": "文件配置按实际依赖生成指纹；Memory固定提取/审核配置，相关变化受阻且显式重试才接纳新配置；Query保存配置回执，乐观revision和秘密脱敏保留。"
+    },
+    {
+      "id": "SRC-01",
+      "priority": "P1",
+      "title": "来源能力注册",
+      "change": "声明发现、监听、回源、同步、写回能力；区分持续来源与一次导入",
+      "acceptance": "新来源自动复用目录、任务、检索和详情；Shadow 默认不发送正文；一次 MCP 导入不伪装成持续挂载",
+      "status": "verified",
+      "evidence": [
+        "packages/shared/src/source-capabilities.ts",
+        "apps/server/src/sources.ts",
+        "apps/server/test/sources.test.ts",
+        "apps/web/src/Sources.tsx"
+      ],
+      "remaining": "",
+      "assessment": "能力注册保持目录/读原件/持续来源语义；Shadow默认只发引用，一次导入不声明持续挂载。"
+    },
+    {
+      "id": "SRC-02",
+      "priority": "P1",
+      "title": "Coding 身份关联",
+      "change": "用项目名/git remote 发现候选；保留 provider、设备、分支和真实 session 身份",
+      "acceptance": "不同同名项目不串用记忆；同仓库跨设备可关联；没有 git 时不伪造统一身份",
+      "status": "verified",
+      "evidence": [
+        "apps/desktop/src/coding-project.ts",
+        "apps/desktop/test/coding-agents.test.ts",
+        "apps/server/test/coding-memory.test.ts",
+        "apps/server/test/context-query.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "项目候选与稳定Git身份分开；provider、设备、分支和session保留，授权/项目范围不以同名替代。"
+    },
+    {
+      "id": "SRC-03",
+      "priority": "P0",
+      "title": "配对和授权旅程",
+      "change": "接口明确上传、本机查看、中央读取、管理能力；撤权清缓存和在途读取",
+      "acceptance": "collector 不能调用 owner API；中央离线不影响本机记录；撤权后旧游标和缓存不继续披露",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/connections.test.ts",
+        "apps/desktop/scripts/offline-sync-smoke.cjs",
+        "apps/android/app/src/androidTest/java/dev/mote/collector/ConnectionInstrumentedTest.kt",
+        "apps/web/test/resource-cache.test.ts",
+        "docs/validation/0.0.61/android-final.json"
+      ],
+      "remaining": "",
+      "assessment": "collector与owner能力隔离；离线队列、本机草稿、凭据切换和撤权缓存清除有协议和模拟器实测，未声称实体设备通过。"
+    },
+    {
+      "id": "COL-01",
+      "priority": "P1",
+      "title": "采集流水线契约",
+      "change": "统一采集、隐私、去重、标准化、持久化输出；重 OCR 放中央，隐私审查留本机",
+      "acceptance": "应用切换、遮罩和配置变化使相关缓存失效；近似重复不能继承隐私批准",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/ui-page.test.ts",
+        "apps/android/app/src/androidTest/java/dev/mote/collector/AppPolicyInstrumentedTest.kt",
+        "apps/android/app/src/androidTest/java/dev/mote/collector/ImageDedupeDiagnosticsInstrumentedTest.kt",
+        "docs/validation/0.0.61/android-final.json"
+      ],
+      "remaining": "",
+      "assessment": "采集缓存以应用/遮罩/隐私配置为边界，近似重复不能借用安全批准；生成画面与中央ACK的DEV模拟器旅程覆盖。"
+    },
+    {
+      "id": "COL-02",
+      "priority": "P1",
+      "title": "UI 适配器约束",
+      "change": "适配器版本化；限制节点、深度、字符和耗时；明确截断、失败和回退",
+      "acceptance": "超大页面不阻塞；`page_only` 失败不偷偷截图；规则有 fixture 和回滚",
+      "status": "verified",
+      "evidence": [
+        "packages/shared/src/ui-page.ts",
+        "apps/server/test/ui-page.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "版本化适配器保留节点/深度/字符/耗时上限；page_only失败状态明确，生成超大页面不回退为隐蔽截图。"
+    },
+    {
+      "id": "COL-03",
+      "priority": "P1",
+      "title": "采样与功耗基准",
+      "change": "事件触发加有界心跳；不变状态压缩但保留采样缺口；同步和采集调度独立",
+      "acceptance": "压缩前后时长统计一致；连续运行无无界资源增长；功耗只报告固定真机条件下的实测差值",
+      "status": "partial",
+      "evidence": [
+        "apps/android/app/src/androidTest/java/dev/mote/collector/PowerOptimizationInstrumentedTest.kt",
+        "apps/server/test/media.test.ts",
+        "apps/server/test/insight-snapshots.test.ts",
+        "docs/client-scheduling-and-status.md",
+        "docs/validation/0.0.61/android-final.json"
+      ],
+      "remaining": "固定条件物理Android功耗/持续资源对照未执行；模拟器采样、显示复用、隐私与生成数据统计已有证据。",
+      "assessment": "事件/心跳和独立同步调度已实现，模拟器验证显示复用与采样；统计按观察间隔并集保留缺口。固定实体设备功耗及持续资源条件仍未满足。"
+    },
+    {
+      "id": "COL-04",
+      "priority": "P1",
+      "title": "Android 懒构建",
+      "change": "从 `MainActivity` 分离导航、完整配置草稿、运行状态；页面首次访问再构建",
+      "acceptance": "首页不初始化全部高级页；未访问页面的配置不会在保存时被清空；旋转、后台和返回保留草稿",
+      "status": "verified",
+      "evidence": [
+        "apps/android/app/src/main/java/dev/mote/collector/MainActivity.kt",
+        "apps/android/app/src/androidTest/java/dev/mote/collector/NavigationInstrumentedTest.kt",
+        "apps/android/app/src/androidTest/java/dev/mote/collector/PairingNavigationInstrumentedTest.kt",
+        "docs/validation/0.0.61/android-final.json"
+      ],
+      "remaining": "",
+      "assessment": "Android首页懒构建、完整草稿和导航状态分离；旋转/返回/保存未访问页和连接切换覆盖于当前DEV模拟器批次。"
+    },
+    {
+      "id": "SYNC-01",
+      "priority": "P0",
+      "title": "本机 SQLite",
+      "change": "建立目录、checkpoint、outbox、分片、收据表；ACK 和游标事务化",
+      "acceptance": "十万目录且 outbox 为空不被 32 MiB 状态限额卡住；确认一批不重写全库；崩溃恢复不丢合法版本",
+      "status": "verified",
+      "evidence": [
+        "apps/desktop/src/source-state-store.ts",
+        "apps/desktop/test/source-state-store.test.ts",
+        "scripts/benchmark-sync-scale.ts",
+        "docs/validation/0.0.61/sync-benchmark.json"
+      ],
+      "remaining": "",
+      "assessment": "本机SQLite目录/outbox/checkpoint与ACK事务化，10万目录基准及崩溃恢复不再重写整份JSON。"
+    },
+    {
+      "id": "SYNC-02",
+      "priority": "P1",
+      "title": "增量扫描",
+      "change": "watcher 优先路径＋周期 reconciliation；保存扫描 epoch；NAS I/O 有界并发",
+      "acceptance": "无变化不重读正文；卷卸载、权限失败、半轮扫描不发送全目录删除",
+      "status": "verified",
+      "evidence": [
+        "apps/desktop/src/directory-catalog.ts",
+        "apps/desktop/src/source-manager.ts",
+        "apps/desktop/test/source-files.test.ts",
+        "apps/desktop/test/source-state-store.test.ts",
+        "docs/client-scheduling-and-status.md"
+      ],
+      "remaining": "",
+      "assessment": "watcher优先加reconciliation/持久scan epoch；扫描和上传解耦时不重新枚举未完成轮，卷失联/权限/半轮不误发全目录删除。"
+    },
+    {
+      "id": "SYNC-03",
+      "priority": "P0",
+      "title": "批量 manifest",
+      "change": "一批提交版本和元数据，返回已存在、接受、缺原件、冲突；取消每文件预先 HEAD",
+      "acceptance": "请求数量按批次增长；重复提交返回相同收据；同来源版本冲突可恢复",
+      "status": "verified",
+      "evidence": [
+        "apps/desktop/src/source-sync.ts",
+        "apps/server/src/files.ts",
+        "scripts/benchmark-sync-scale.ts",
+        "docs/validation/0.0.61/upload-fairness.json"
+      ],
+      "remaining": "",
+      "assessment": "manifest批量确认稳定收据，元数据/版本冲突有原子处理；实际401文件上传请求按批次增长。"
+    },
+    {
+      "id": "SYNC-04",
+      "priority": "P0",
+      "title": "流式原件上传",
+      "change": "Web 使用 `File.slice`，原生使用文件流；outbox 只存文件定位和版本",
+      "acceptance": "不创建整体 Base64/JSON；内存随分片和并发有界；断网只补缺块；文件中途变化不生成混合原件",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/assets.ts",
+        "apps/server/src/evidence-store.ts",
+        "apps/server/test/assets.test.ts",
+        "apps/server/test/import-uploads.test.ts",
+        "apps/server/test/import-backup.test.ts",
+        "apps/web/src/import-upload-scheduler.ts",
+        "apps/web/test/import-upload-scheduler.test.ts",
+        "docs/validation/0.0.61/android-final-file-sync.json"
+      ],
+      "remaining": "",
+      "assessment": "三端按part流式上传且只保存定位/版本；hash校验和lostACK恢复只补缺片，保留单文件上传身份。"
+    },
+    {
+      "id": "SYNC-05",
+      "priority": "P0",
+      "title": "上传调度与背压",
+      "change": "实时、手动、历史共用调度；字节时间片公平；统一 413/429/403 分类",
+      "acceptance": "历史积压不饿死新笔记；413 拆包而非缓存一天“不支持”；错 ACK 不清队列",
+      "status": "verified",
+      "evidence": [
+        "apps/android/app/src/main/java/dev/mote/collector/UploadNegotiation.kt",
+        "apps/android/app/src/test/java/dev/mote/collector/UploadNegotiationTest.kt",
+        "apps/desktop/test/source-sync.test.ts",
+        "apps/desktop/src/upload-slice.ts",
+        "apps/desktop/test/original-spool.test.ts",
+        "apps/desktop/test/collector.test.ts",
+        "scripts/test-upload-fairness.cjs",
+        "docs/client-scheduling-and-status.md",
+        "docs/validation/0.0.61/upload-fairness.json",
+        "apps/web/test/import-upload-scheduler.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "桌面和Android按字节/请求/时间片调度，源扫描与上传解耦；Web多文件part轮转；400旧记录+实时新笔记、20MiB大文件+400小文件以及413/错误ACK已分组验证。"
+    },
+    {
+      "id": "SYNC-06",
+      "priority": "P1",
+      "title": "Shadow 回源",
+      "change": "持久 read request，保存期望版本、授权、范围和 deadline；先返回已有定位",
+      "acceptance": "中央重启不丢请求；离线不白等普通查询；新版本正文不能冒充旧版本证据",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/file-evidence.ts",
+        "apps/server/test/files.test.ts",
+        "apps/desktop/scripts/file-evidence-smoke.cjs"
+      ],
+      "remaining": "",
+      "assessment": "Shadow持久回源请求保存期望版本、scope、授权和deadline；离线先返回已有定位，重启不丢请求，不用新正文冒充旧版本。"
+    },
+    {
+      "id": "ING-01",
+      "priority": "P0",
+      "title": "入库与重处理分离",
+      "change": "API 有界接收；大解压、解析、扫描移到 Worker；版本、变更日志、任务 outbox 同事务提交",
+      "acceptance": "入库后调度前崩溃仍可恢复；磁盘满不返回假 ACK；导入不阻塞常用状态接口",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/test/import-uploads.test.ts",
+        "apps/server/src/format-worker.ts",
+        "apps/server/test/format-work.test.ts",
+        "apps/server/test/imports.test.ts",
+        "apps/server/test/import-manifest-worker.test.ts",
+        "apps/server/test/operation-runs.test.ts",
+        "apps/server/test/combined-backup-recovery.test.ts",
+        "docs/operation-import-insight-closure.md"
+      ],
+      "remaining": "",
+      "assessment": "重解析与完整manifest校验在bounded worker，导入prepare/commit迁入共享引擎；逐行fenced入库、资产/版本事务及重启恢复覆盖，无假ACK。"
+    },
+    {
+      "id": "ING-02",
+      "priority": "P1",
+      "title": "资产与证据存储",
+      "change": "`AssetStore` 管 bytes/引用/GC；`EvidenceStore` 管观察/版本/provenance；工作区只是临时物化",
+      "acceptance": "相同内容共享 blob 但不合并观察；删除一条引用不误删共享原件；在途资产不被 GC",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/assets.ts",
+        "apps/server/src/evidence-store.ts",
+        "apps/server/test/assets.test.ts",
+        "apps/server/test/import-uploads.test.ts",
+        "apps/server/test/import-backup.test.ts",
+        "apps/server/test/sqlite-process-locks.test.ts",
+        "docs/sqlite-concurrency.md"
+      ],
+      "remaining": "",
+      "assessment": "AssetStore字节/引用/GC与EvidenceStore观察/版本分开；同字节共享不合并观察，在途/引用删除受事务约束。本批补POSIX sidecar开关fd导致丢SQLite锁的真实缺陷。"
+    },
+    {
+      "id": "ING-03",
+      "priority": "P1",
+      "title": "解析器复用",
+      "change": "已知格式走确定性解析器；Copy、目录同步、一次导入共享解析契约；未知结构才请 Agent 生成映射预览",
+      "acceptance": "标准文件不因结构理解消耗 LLM；未知归属未确认不写成事实；不支持格式仍保留原件",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/imports.ts",
+        "apps/server/test/import-uploads.test.ts",
+        "apps/server/test/file-processing.test.ts",
+        "packages/shared/src/document-decoder.ts",
+        "packages/shared/test/document-decoder.test.mjs",
+        "apps/server/test/document-ingestion.test.ts",
+        "docs/operation-import-insight-closure.md"
+      ],
+      "remaining": "",
+      "assessment": "PDF/DOCX/XLSX与文本共享document-decoder契约，Desktop/中央/导入使用同一确定性解析；未知作者/时间不编造，无文本层或不支持格式保留原件和覆盖说明。"
+    },
+    {
+      "id": "ING-04",
+      "priority": "P0",
+      "title": "变化和删除语义",
+      "change": "分开源端缺失、暂停、停止未来采集、Mote 删除、本机缓存清理；统一失效传播",
+      "acceptance": "源目录离线不视为真实删除；旧 outbox 不复活已删除版本；晚到模型结果不能恢复内容",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/source-regressions.test.ts",
+        "apps/server/test/long-horizon-protocol.test.ts",
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/test/evidence-dependencies.test.ts",
+        "docs/validation/0.0.61/mixed-load.json"
+      ],
+      "remaining": "",
+      "assessment": "源缺失、停止同步、Mote删除分离；删除/改版本撤销在途提交资格，source和chunk后代失效不复活已删数据。"
+    },
+    {
+      "id": "JOB-01",
+      "priority": "P0",
+      "title": "统一执行引擎",
+      "change": "执行引擎唯一管理领取、重试、取消、恢复；领域模块只定义步骤与结果",
+      "acceptance": "一步只有一个执行状态写入者；一个 Operation 可追踪所有子步骤；迁入一条就关闭旧 `tick`",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/execution-engine.ts",
+        "apps/server/src/perception.ts",
+        "apps/server/test/execution-engine.test.ts",
+        "apps/server/test/perception.test.ts",
+        "apps/server/src/processing-runtime.ts",
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/src/file-processing.ts",
+        "apps/server/src/memory-pipeline.ts",
+        "apps/server/test/file-processing.test.ts",
+        "apps/server/test/memory-pipeline.test.ts",
+        "apps/server/test/actions-execution.test.ts",
+        "apps/server/test/indexer-execution.test.ts",
+        "apps/server/test/lifecycle-execution.test.ts",
+        "apps/server/test/operation-runs.test.ts",
+        "docs/operation-import-insight-closure.md"
+      ],
+      "remaining": "",
+      "assessment": "文件/OCR/Memory/上下文/导入/Query/Insight/生命周期/Actions/Indexer都以ExecutionEngine步骤领取、重试、取消与fence提交；领域tick现为发现/触发drain，兼容表只是投影，父子membership不复制执行。"
+    },
+    {
+      "id": "JOB-02",
+      "priority": "P1",
+      "title": "空槽补位与公平性",
+      "change": "取消批次屏障，任务完成即补位；区分优先级、工作类型、资源池",
+      "acceptance": "慢任务不让空槽闲置；大来源不饿死小来源；交互与后台均可推进",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/perception.test.ts",
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/test/execution-engine.test.ts",
+        "apps/server/test/operation-fairness.test.ts",
+        "docs/agent-prompt-and-startup.md"
+      ],
+      "remaining": "",
+      "assessment": "公共引擎按资源池与最久未服务Operation补位；模型gate带Operation键，交互与后台各保留容量，小夹具证明慢OCR不饿死小文件/Memory/Query。"
+    },
+    {
+      "id": "JOB-03",
+      "priority": "P0",
+      "title": "失败与提交统一",
+      "change": "暂时错误有限重试；预算/设备/配置等待不算失败；取消撤销提交资格",
+      "acceptance": "欠费、401、429、坏文件分别处理；取消、删除、改版本后晚结果不能提交",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/test/perception.test.ts",
+        "apps/server/test/memory-pipeline.test.ts",
+        "packages/shared/src/provider-failure.ts",
+        "packages/agent/src/model-transport-observer.ts",
+        "packages/agent/test/provider-failure.test.mjs",
+        "apps/server/test/provider-failure.test.ts",
+        "apps/server/src/provider-admission.ts",
+        "apps/server/test/provider-admission.test.ts",
+        "apps/server/test/model-budgets.test.ts",
+        "apps/server/test/query-commit-fence.test.ts",
+        "apps/server/test/indexer-execution.test.ts",
+        "packages/agent/test/codex-protocol.test.mjs"
+      ],
+      "remaining": "",
+      "assessment": "HTTP/Codex错误码统一恢复含义，预算/配置等待不消耗失败尝试，Retry-After与恢复窗口持久；跨host取消、删除、改版本均撤销最终提交，optional检索降级保留真实失败步骤。"
+    },
+    {
+      "id": "JOB-04",
+      "priority": "P1",
+      "title": "局部失效与缓存",
+      "change": "统一依赖图和加工指纹；只给步骤传实际执行输入，不重复展开祖先全文",
+      "acceptance": "同图 OCR 可复用但时间观察独立；改一段只重算后代；旧新产物不同时作为当前版本",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/test/perception.test.ts",
+        "apps/server/test/evidence-dependencies.test.ts",
+        "docs/operation-import-insight-closure.md"
+      ],
+      "remaining": "",
+      "assessment": "统一派生依赖边投影文件chunk/Memory/批次；仅改变片段重新生成后代，未变chunk保持ID；历史产物/洞察保留但不与新结果同时声称current。"
+    },
+    {
+      "id": "JOB-05",
+      "priority": "P0",
+      "title": "稀疏触发与水位",
+      "change": "数量阈值、最大等待、手动触发取或；记录连续水位与缺口",
+      "acceptance": "一条重要笔记也能被评估或明确受阻；坏项隔离后其他项继续；积压不能被显示成完成",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/memory-lifecycle.ts",
+        "apps/server/test/memory-lifecycle.test.ts",
+        "apps/server/test/lifecycle-execution.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "数量/最大等待/手动触发取或，连续水位和gap/checkpoint区分；坏项隔离、无模型/配置等待均显式，少量输入可评估。"
+    },
+    {
+      "id": "RET-01",
+      "priority": "P0",
+      "title": "ref 与范围修复",
+      "change": "修 `memory:` 前缀；定义集合引用的展开方式；Memory 使用一致 scope；session 采用复合身份",
+      "acceptance": "每类公开 ref 可往返；不同来源相同 session 不混合；筛选范围对所有层一致",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/context-query.test.ts",
+        "apps/server/test/coding-memory.test.ts",
+        "apps/server/test/evidence-reader.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "memory/集合/会话/派生ref集中解析，来源+会话复合身份和scope交集贯穿展开与检索。"
+    },
+    {
+      "id": "RET-02",
+      "priority": "P0",
+      "title": "分页与截断",
+      "change": "游标对应实际消费位置；多路结果保存各自位置或使用稳定快照；裁剪后重算覆盖数",
+      "acceptance": "137 条混合数据按 20 条遍历无漏无重；同时间戳、稀疏过滤、小预算仍可继续",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/context-query.test.ts",
+        "apps/server/test/long-horizon-protocol.test.ts",
+        "apps/server/test/todos.test.ts",
+        "apps/server/test/actions.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "游标按实际消费前进，稀疏范围/小预算可续页；137混合数据与400日跨协议遍历无漏重，400历史行动catalog亦用同范围cursor。"
+    },
+    {
+      "id": "RET-03",
+      "priority": "P1",
+      "title": "共享检索服务",
+      "change": "Web、MCP、Agent 共用召回与 EvidenceReader；协议适配器不各写 SQL",
+      "acceptance": "相同范围返回等价 ref；请求热路径不执行索引迁移；共享实例不残留上次授权",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/evidence-reader.ts",
+        "apps/server/src/context-routes.ts",
+        "apps/server/src/connectors/mcp.ts",
+        "apps/server/test/evidence-reader.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "Web/MCP/Agent复用EvidenceReader、分层投影及授权检查；400日生成资料中逐个/批量入库的ref/内容等价，热路径不做迁移。"
+    },
+    {
+      "id": "RET-04",
+      "priority": "P1",
+      "title": "分块与向量",
+      "change": "长文可定位分块；embedding 批量或有界并发；替换最近 4,096 条候选窗口",
+      "acceptance": "历史和长文尾部事实可命中；全文回退及时；索引覆盖不因截断虚报完成",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/test/issue-3.test.ts",
+        "apps/server/test/indexer.test.ts",
+        "apps/server/test/indexer-execution.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "全文定位分块、历史向量候选不再限最近4096；向量有界资源池与1200ms查询回退，覆盖信息与optional降级如实暴露。"
+    },
+    {
+      "id": "RET-05",
+      "priority": "P0",
+      "title": "响应预算与账本",
+      "change": "卡片、证据、原始元数据不同投影；所有工具共享响应上限；账本按 ID＋版本＋层存范围",
+      "acceptance": "大 UI metadata、多个 refs 不绕过预算；先后读不同层不会覆盖原文引用资格",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/context-query.test.ts",
+        "packages/agent/test/evidence-ledger.test.mjs",
+        "apps/server/test/semantic-products.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "卡片/原件/派生层不同投影共用预算，固定版本与层的账本不覆盖已读原文资格；大metadata和多ref受限。"
+    },
+    {
+      "id": "RET-06",
+      "priority": "P1",
+      "title": "分层目录",
+      "change": "目录卡提供范围、版本、覆盖、子项、读取成本；允许精确/近期查询跳层",
+      "acceptance": "无 Memory 也能找文件位置；十万目录浏览不读正文；摘要遗漏可回到原文",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/architecture-upgrade.test.ts",
+        "scripts/benchmark-sync-scale.ts",
+        "docs/validation/0.0.61/sync-benchmark.json"
+      ],
+      "remaining": "",
+      "assessment": "10万目录浏览不读取正文，卡片带定位/版本/覆盖；可直接读原文或近期证据，无Memory也能定位文件。"
+    },
+    {
+      "id": "AGT-01",
+      "priority": "P1",
+      "title": "Runtime 适配",
+      "change": "Codex App Server 和 DeepSeek Harness 并列；声明各自 usage、取消、压缩、结构化能力",
+      "acceptance": "Codex 无需改成普通 API；同一任务契约跨 Runtime 可测试；不伪造不存在的底层能力",
+      "status": "verified",
+      "evidence": [
+        "packages/agent/test",
+        "docs/testing-0.0.61.md",
+        "packages/agent/src/codex-protocol.ts",
+        "packages/agent/test/codex-protocol.test.mjs",
+        "apps/web/src/Usage.tsx",
+        "docs/model-budgets.md"
+      ],
+      "remaining": "",
+      "assessment": "Codex App Server与Harness共任务契约；Codex按真实thread_cumulative tokens及complete计量，底层request count未知置0并解释，取消/错误能力不伪造。"
+    },
+    {
+      "id": "AGT-02",
+      "priority": "P0",
+      "title": "预算与 deadline",
+      "change": "Operation、Job、请求、供应商、每日预算关联；请求前预留；重试、审核、压缩、embedding 都计入",
+      "acceptance": "并发不重复花同一余额；排队和准备也受 deadline 约束；usage 未知不能记成零费用",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/app.ts",
+        "apps/server/src/usage.ts",
+        "apps/server/test/query-runs.test.ts",
+        "apps/server/test/model-budgets.test.ts",
+        "apps/server/test/model-budgets-api.test.ts",
+        "packages/agent/test/model-admission.test.mjs",
+        "apps/server/test/operation-runs.test.ts",
+        "docs/model-budgets.md"
+      ],
+      "remaining": "",
+      "assessment": "SQLite预留覆盖provider/day/Operation/token/cost及重试审核压缩embedding；跨host防超支，deadline含排队准备，未知usage保留额度。Codex无法拦截内部请求时硬预算启动前blocked；默认不限。"
+    },
+    {
+      "id": "AGT-03",
+      "priority": "P1",
+      "title": "Prompt 与启动优化",
+      "change": "稳定安全核心＋任务规则＋来源规则；减少无关技能；固定提取轻量化；单独测 Harness 启动",
+      "acceptance": "以累计 usage 和同质量结果验收；预热不串会话、scope、密钥；无效重复查询有上限",
+      "status": "verified",
+      "evidence": [
+        "packages/agent/test",
+        "docs/testing-0.0.61.md",
+        "packages/agent/test/instructions.test.mjs",
+        "docs/agent-prompt-and-startup.md",
+        "docs/validation/0.0.61/agent-prompt-before-timezone-fix.json",
+        "docs/validation/0.0.61/agent-prompt-timezone-fixed.json",
+        "docs/validation/0.0.61/harness-startup.json",
+        "docs/validation/0.0.61/agent-prompt-final-proposal.json",
+        "docs/validation/0.0.61/agent-prompt-final-author.json"
+      ],
+      "remaining": "",
+      "assessment": "最终共享指令的3组同模型/同证据前后回答均通过独立rubric，完整累计usage有回执；Harness启动和不同会话/配置的scope与密钥隔离单测，不宣称复用或普遍质量保证。"
+    },
+    {
+      "id": "AGT-04",
+      "priority": "P1",
+      "title": "对话摘要边界",
+      "change": "Mote 持久跨轮摘要；Harness 管单次运行压缩；新增 turn 增量摘要，提前后台整理",
+      "acceptance": "换设备继续对话；未覆盖内容不静默丢失；不每次压同一段；删除与编辑使相关摘要失效",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/working-memory.ts",
+        "apps/server/src/lifecycle-extensions.ts",
+        "apps/server/test/conversations.test.ts",
+        "apps/server/test/memory-lifecycle.test.ts",
+        "apps/server/test/query-commit-fence.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "跨轮摘要持久且增量，单run压缩归runtime；删除/编辑失效、换设备续接、compaction最终fence和未覆盖原文保留有回归。"
+    },
+    {
+      "id": "MEM-01",
+      "priority": "P1",
+      "title": "统一候选提取",
+      "change": "结构可靠消息可直接提候选；截图先识别；一次有界提取可产生事件、记忆候选、行动线索",
+      "acceptance": "普通目录/活动不自动调用通用 Agent；无新增记忆不是失败；固定引文数量不让其他事实永久不可检索",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/memory-pipeline.test.ts",
+        "apps/server/test/memory-admission.test.ts",
+        "apps/server/test/semantic-products.test.ts",
+        "docs/memory-updates.md",
+        "docs/validation/0.0.61/semantic-memory-accepted.json"
+      ],
+      "remaining": "",
+      "assessment": "一次完整有界segment返回summary/events/memoryCandidates/actionCues，Memory与Actions独立消费；空候选合法，普通目录不自动语义分类，未被挑选事实仍由原始检索可见。"
+    },
+    {
+      "id": "MEM-02",
+      "priority": "P0",
+      "title": "校验与审核策略",
+      "change": "精确引文、范围、版本校验必保留；独立模型审核按风险策略；机器校验与用户确认分开",
+      "acceptance": "第三方不是用户事实，计划不是完成；降低审核调用后通过同一质量集；每条记忆可追溯",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/memory-admission.test.ts",
+        "docs/testing-0.0.61.md",
+        "apps/server/src/memory-review.ts",
+        "apps/server/src/memory-review-cache.ts",
+        "apps/server/test/memory-review.test.ts",
+        "docs/memory-review-policy.md",
+        "docs/validation/0.0.61/memory-review-policy.json"
+      ],
+      "remaining": "",
+      "assessment": "精确引文/归属/scope/version必校验，独立审核只复用相同冻结请求收据，用户确认另一步；6场景双策略LUNA质量比较保留，重复避免调用不扩称新候选审核降本。"
+    },
+    {
+      "id": "MEM-03",
+      "priority": "P1",
+      "title": "长期整合与纠正",
+      "change": "按项目/主题增量整合；保留有效期、矛盾、替代和用户纠正",
+      "acceptance": "当前值和历史变化都可查；项目经验不自动全局化；用户确认不会被后续自动整理无故覆盖",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/coding-memory.test.ts",
+        "apps/server/test/memory-lifecycle.test.ts",
+        "apps/server/test/memory-revisions.test.ts",
+        "apps/server/test/memory-owner-boundary.test.ts",
+        "scripts/test-memory-revisions-ui.cjs",
+        "docs/memory-updates.md"
+      ],
+      "remaining": "",
+      "assessment": "有效期/矛盾/替代/owner纠正均版本绑定；当前/history/asOf可读，确认不能被自动提取覆盖，项目scope保留；纠正笔记及Memory原子写入，UI新时间边界已修。"
+    },
+    {
+      "id": "MEM-04",
+      "priority": "P1",
+      "title": "洞察快照与统计",
+      "change": "洞察固定范围、水位和缺口；统计服务算时长/重叠，模型解释；迟到资料形成新版本",
+      "acceptance": "双设备重叠不算双倍工作时间；覆盖不足只给局部结论；旧洞察不被无提示改写",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/insight-runs.test.ts",
+        "apps/server/test/insights.test.ts",
+        "apps/server/test/media.test.ts",
+        "apps/server/test/insight-snapshots.test.ts",
+        "apps/server/test/lifecycle-execution.test.ts",
+        "docs/operation-import-insight-closure.md"
+      ],
+      "remaining": "",
+      "assessment": "Insight固定scope/watermark/gap/derivedfingerprint快照并版本化；迟到范围内资料需新report，不改旧报告；设备间重叠按观察并集计算且不是工作时长推断。"
+    },
+    {
+      "id": "ACT-01",
+      "priority": "P1",
+      "title": "Todo 与 Calendar 分开",
+      "change": "Todo 有状态、可选截止时间和证据；Calendar 保留开始结束与目标日历",
+      "acceptance": "“找时间联系客户”不伪造明天九点；待办完成与日历创建成功不混为一谈",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/todos.ts",
+        "apps/server/test/todos.test.ts",
+        "scripts/test-web-tasks-imports.cjs"
+      ],
+      "remaining": "",
+      "assessment": "无截止时间Todo不编造日程时刻，完成待办与创建Calendar分离，独立状态/证据。"
+    },
+    {
+      "id": "ACT-02",
+      "priority": "P0",
+      "title": "提议到执行闭环",
+      "change": "确认 payload、目标、版本和 operationId 绑定；结果不明先核实",
+      "acceptance": "双击不重复创建；撤权和证据变化阻止旧草稿；回执丢失不直接再次执行",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/actions.test.ts",
+        "scripts/test-calendar-actions-ui.cjs",
+        "apps/desktop/test/calendar-actions.test.ts",
+        "docs/action-updates.md"
+      ],
+      "remaining": "",
+      "assessment": "确认绑定payload/目标/原件版本/operationId；首次claim唯一mutationAllowed，回执丢失或本机ledger丢失仅reconcile，撤权/证据变化不能授权旧草稿。"
+    },
+    {
+      "id": "ACT-03",
+      "priority": "P1",
+      "title": "跨来源去重更新",
+      "change": "直接消费行动线索，不等长期 Memory；处理同事项的改期、取消、完成",
+      "acceptance": "邮件与聊天可归并依据；不同人的同名任务不误合并；后续取消不是另一条新建",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/actions.test.ts",
+        "apps/server/test/semantic-products.test.ts",
+        "packages/agent/test/action-catalog.test.mjs",
+        "scripts/test-calendar-actions-ui.cjs",
+        "docs/action-updates.md"
+      ],
+      "remaining": "",
+      "assessment": "模型通过有界只读action_catalog建立同事项关系，跨来源create/update/cancel/complete需要独立确认；禁止按同名同时间宿主启发式合并，native目标固定原Mote事件。"
+    },
+    {
+      "id": "ACT-04",
+      "priority": "P2",
+      "title": "邮件来源",
+      "change": "新增只读邮箱适配器，保留 message/thread、时间和增量游标；复用资产与解析链",
+      "acceptance": "重放不重复；撤权停止抓取；未接邮箱时不声称待办覆盖邮箱",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/gmail.test.ts",
+        "scripts/test-web-tasks-imports.cjs",
+        "docs/gmail.md"
+      ],
+      "remaining": "",
+      "assessment": "Gmail只读增量适配器保留message/thread/time/cursor；replay去重与撤权停止有生成fixture，未连接时UI不宣称覆盖邮箱。真实账户连接由用户明确暂缓。"
+    },
+    {
+      "id": "UI-01",
+      "priority": "P1",
+      "title": "导航和页面职责",
+      "change": "保留 Slate 一级导航；任务全局入口；统一资料详情路由；技术层级收起",
+      "acceptance": "同 ref 从不同入口打开一致；返回保留焦点/筛选；旧 hash 不保留第二套页面",
+      "status": "verified",
+      "evidence": [
+        "scripts/test-web-navigation.cjs",
+        "scripts/test-web-evidence-focus.cjs",
+        "apps/web/test/evidence-navigation.test.ts",
+        "apps/web/test/read-state-closure.test.ts",
+        "docs/client-scheduling-and-status.md"
+      ],
+      "remaining": "",
+      "assessment": "Slate导航/旧hash归一，typed-reference共享详情从conversation/insight/archive进入，nested原文保留origin范围和精确焦点；实际Electron发现并修复Markdown renderer重建导致opener脱离DOM。"
+    },
+    {
+      "id": "UI-02",
+      "priority": "P0",
+      "title": "导入旅程",
+      "change": "一次导入/持续连接→位置→Copy/Shadow→处理策略；上传、入库、识别、记忆分别展示",
+      "acceptance": "无 Memory 任务不勾完成；服务器路径说明明确；刷新后找回同 Operation",
+      "status": "verified",
+      "evidence": [
+        "apps/web/src/Imports.tsx",
+        "scripts/test-web-tasks-imports.cjs",
+        "apps/server/test/operation-runs.test.ts",
+        "apps/server/test/combined-backup-recovery.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "原件上传/预览/记录保存/Memory独立步骤，不安排Memory不显示完成；中央服务器目录说明明确，历史导入保留稳定job/operationId，prepare/commit/子文件通过共享Operation追踪。"
+    },
+    {
+      "id": "UI-03",
+      "priority": "P0",
+      "title": "加载和请求竞争",
+      "change": "共享查询 key、取消、请求序号；区分无资料、无匹配、离线、权限和失败",
+      "acceptance": "A→B 快速切换不被 A 晚响应覆盖；请求中不闪假空态；范围说明一致",
+      "status": "verified",
+      "evidence": [
+        "apps/web/src/Sources.tsx",
+        "apps/web/src/Memories.tsx",
+        "scripts/test-web-tasks-imports.cjs",
+        "apps/web/src/resource-cache.ts",
+        "apps/web/src/useResource.ts",
+        "apps/web/test/resource-cache.test.ts",
+        "apps/web/test/resource-views.test.ts",
+        "apps/web/test/read-state-closure.test.ts",
+        "apps/web/test/operation-ui-closure.test.ts",
+        "docs/client-scheduling-and-status.md"
+      ],
+      "remaining": "",
+      "assessment": "主列表/详情/配置/run/connector迁共享认证资源缓存，代际取消阻止A晚响应盖B；旧资料与加载/空匹配/错误分离；dirty设置保留原revision、撤权清除。"
+    },
+    {
+      "id": "UI-04",
+      "priority": "P1",
+      "title": "资料详情与证据",
+      "change": "统一外围权限、版本、状态；保留各媒体专用预览；按需原图和长文",
+      "acceptance": "旧引用不静默打开新版本；Shadow 不伪造预览；关闭释放资源并恢复位置",
+      "status": "verified",
+      "evidence": [
+        "apps/web/scripts/capture-browser-smoke.cjs",
+        "apps/desktop/scripts/file-evidence-smoke.cjs",
+        "apps/web/src/ReferenceDetail.tsx",
+        "apps/web/src/EvidenceState.tsx",
+        "scripts/test-web-evidence-focus.cjs",
+        "apps/web/test/resource-views.test.ts",
+        "docs/client-scheduling-and-status.md"
+      ],
+      "remaining": "",
+      "assessment": "固定typed-ref不静默替换新版本；共享外围权限/归档/处理事实，保留专业媒体viewer与Shadow说明；关闭/返回释放订阅并恢复原位置，当前夹具跨三入口含手机宽度。"
+    },
+    {
+      "id": "UI-05",
+      "priority": "P1",
+      "title": "用户任务中心",
+      "change": "按 Operation 展示，展开看步骤；服务端筛选和分页；统一增量订阅",
+      "acceptance": "旧失败任务仍可查；各页面同状态；后台页不各自高频轮询",
+      "status": "verified",
+      "evidence": [
+        "apps/web/src/Processing.tsx",
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/src/operations.ts",
+        "apps/server/src/operation-projection.ts",
+        "apps/web/src/operation-feed.ts",
+        "scripts/test-web-operations.cjs",
+        "apps/server/test/operations.test.ts",
+        "apps/web/test/resource-cache.test.ts",
+        "apps/web/test/operation-ui-closure.test.ts",
+        "docs/operations.md"
+      ],
+      "remaining": "",
+      "assessment": "Operation增量投影和服务端分页筛选，历史失败仍可见，共享feed失效各相关resource；页面hidden暂停polling。Actions/Indexer新增step与optionalIssues有最小实际DOM测试。"
+    },
+    {
+      "id": "UI-06",
+      "priority": "P1",
+      "title": "文案与确认",
+      "change": "统一术语、错误码映射、真实导航链接；暂停/停止/取消/删除不同说明",
+      "acceptance": "不明结果不显示“失败重试”；zh/en 完整；状态含义跨端一致",
+      "status": "verified",
+      "evidence": [
+        "scripts/check-i18n.mjs",
+        "scripts/test-web-i18n.cjs",
+        "apps/web/src/failure-message.ts",
+        "apps/web/test/api.test.ts",
+        "apps/web/test/operation-ui-closure.test.ts"
+      ],
+      "remaining": "",
+      "assessment": "固定错误code/reason集中本地化，不直接显示provider英文原文；取消/受阻/未知回执分开，cross端状态契约明确。最后中文keys已交root，最终zh/en catalog检查归统一gate。"
+    },
+    {
+      "id": "UI-07",
+      "priority": "P1",
+      "title": "性能与可访问性",
+      "change": "路由懒加载；大组件按需；分页优先、必要才窗口化；共享组件契约",
+      "acceptance": "窄屏、200% 缩放、键盘可完成主路径；长任务、首包与首屏有对照数据",
+      "status": "verified",
+      "evidence": [
+        "apps/web/src/main.tsx",
+        "scripts/test-web-navigation.cjs",
+        "apps/web/scripts/capture-browser-smoke.cjs",
+        "docs/validation/0.0.61/frontend-comparison.json",
+        "scripts/test-web-operations.cjs",
+        "scripts/test-web-evidence-focus.cjs",
+        "scripts/test-web-budgets.cjs"
+      ],
+      "remaining": "",
+      "assessment": "路由lazy与分页保留，实际Electron导航/任务/原件/纠正/预算旅程覆盖键盘、200%与430px；首包和首屏有同环境基线，offscreen FCP缺失未编造改进。"
+    },
+    {
+      "id": "OPS-01",
+      "priority": "P1",
+      "title": "统一观测",
+      "change": "Operation/Job/Request 串联；计量队列等待、执行、检索、模型、覆盖与费用；状态读增量投影",
+      "acceptance": "常用状态不扫原文/文件树；unknown usage 单列；“为什么慢”能定位到阶段",
+      "status": "verified",
+      "evidence": [
+        "apps/server/test/diagnostics.test.ts",
+        "apps/server/test/usage.test.ts",
+        "apps/server/test/actions-execution.test.ts",
+        "apps/server/test/indexer-execution.test.ts",
+        "docs/operation-import-insight-closure.md"
+      ],
+      "remaining": "",
+      "assessment": "模型usage/trace以实际Operation/Job/request关联，包括Actions、语义child、Indexer；状态从增量投影读取不扫原件，未知usage单列，阶段诊断能定位等待/检索/模型。"
+    },
+    {
+      "id": "OPS-02",
+      "priority": "P0",
+      "title": "迁移与恢复",
+      "change": "显式 schema 迁移、ID 映射、一致性备份；一条链路只保留一个权威写入者",
+      "acceptance": "前后原件哈希和版本一致；任意批次中断可恢复；回滚用迁移前备份",
+      "status": "verified",
+      "evidence": [
+        "apps/desktop/test/source-state-store.test.ts",
+        "apps/server/test/import-backup.test.ts",
+        "apps/server/test/gmail.test.ts",
+        "apps/server/test/combined-backup-recovery.test.ts",
+        "apps/server/test/operation-runs.test.ts",
+        "docs/combined-backup-recovery.md"
+      ],
+      "remaining": "",
+      "assessment": "真实backup/restore组合夹具保留加密原件hash、两源版本/ID、纠正Memory、已完成Query/Insight、导入和Memory部分checkpoint；仅副本规范化lease，交互任务interrupted不静默重放，回滚用迁移前独立备份。"
+    },
+    {
+      "id": "OPS-03",
+      "priority": "P0",
+      "title": "混合压力测试",
+      "change": "十万目录＋持续采集＋后台处理＋浏览和问答；加入限流、断网、磁盘满、删除、崩溃",
+      "acceptance": "不漏 ACK、不漏分页、不越 scope、不复活数据；稳定负载下队列年龄和资源不无界增长",
+      "status": "verified",
+      "evidence": [
+        "scripts/benchmark-architecture.ts",
+        "scripts/benchmark-sync-scale.ts",
+        "apps/server/test/long-horizon-protocol.test.ts",
+        "scripts/benchmark-mixed-load.ts",
+        "docs/validation/0.0.61/mixed-load.json",
+        "docs/sqlite-concurrency.md",
+        "apps/server/test/execution-deadline-cleanup.test.ts",
+        "scripts/diagnose-execution-retention.ts",
+        "docs/mixed-load-stability.md",
+        "docs/validation/0.0.61/mixed-load-steady-window.json",
+        "docs/validation/0.0.61/execution-retention-before.json",
+        "docs/validation/0.0.61/execution-retention-after.json"
+      ],
+      "remaining": "",
+      "assessment": "十万目录与400日生成采集的混合负载通过ACK、分页、scope、删除/崩溃/故障恢复及排空检查；旧持续窗heap斜率未过自定门槛并保留false。随后精确复现并修复完成步骤的长deadline滞留：9→0定时器、同参数10000次QueryRuns/后台的自然major GC后heap由持续增长变为约15–16MiB稳定，运行态集合归零。本项限定生成负载与已复现资源累积问题闭环，不宣称修复后十万数据12分钟窗已通过或长期无泄漏。"
+    },
+    {
+      "id": "OPS-04",
+      "priority": "P0",
+      "title": "质量与旅程基准",
+      "change": "分场景测召回、事实支持、归属、时间、成本；真机测配对、离线、续传、权限恢复",
+      "acceptance": "不能仅凭几题冒烟宣称质量保证；优化前后同模型同数据对照；未验证项明确标注",
+      "status": "partial",
+      "evidence": [
+        "docs/testing-0.0.61.md",
+        "docs/validation/0.0.61/android-final.json",
+        "docs/validation/0.0.61/memory-review-policy.json",
+        "docs/validation/0.0.61/semantic-memory-accepted.json",
+        "docs/validation/0.0.61/agent-prompt-timezone-fixed.json"
+      ],
+      "remaining": "物理Android配对、离线、权限恢复和覆盖安装尚未验证；Gmail实账号按用户要求豁免。有限rubric对照、真实Electron和模拟器旅程已完成，不声称普遍质量保证。",
+      "assessment": "长周期400日逐条/批量资料、跨协议检索、复杂长笔记、真实Electron及API35模拟器广泛journey完成；LUNA语义/审核/Prompt小质量集保留失败和复测。无实体设备和广泛场景质量保证。"
+    },
+    {
+      "id": "OPS-05",
+      "priority": "P1",
+      "title": "旧逻辑退役",
+      "change": "删除旧调度、重复 DTO、全量状态写入和失效文案；`app.ts` 收敛为装配入口",
+      "acceptance": "每类对象只有一个权威写入口；旧 `tick` 不再运行；README、设置和行为一致",
+      "status": "verified",
+      "evidence": [
+        "apps/server/src/app.ts",
+        "apps/server/src/execution-engine.ts",
+        "apps/server/src/indexer.ts",
+        "apps/server/src/actions.ts",
+        "docs/operation-import-insight-closure.md",
+        "docs/operations.md"
+      ],
+      "remaining": "",
+      "assessment": "app.ts缩为装配并抽离来源/处理/Memory/model/runtime路由；共享engine为领域步骤唯一执行写入者，旧领域tick只发现/drain，兼容DTO/表投影仍保留对外契约，不伪造已迁移历史关联。"
+    }
+  ],
+  "reviewedVersion": "0.0.61",
+  "statusMeaning": {
+    "verified": "该项验收已有实现与所列测试证据；不代表真实账户或物理设备验证",
+    "partial": "已有实现和测试，但 remaining 所列验收尚未闭环",
+    "pending": "尚未完成要求的架构迁移"
+  },
+  "counts": {
+    "total": 55,
+    "verified": 53,
+    "partial": 2
+  },
+  "validationPolicy": "状态以逐项实现和所列验收证据为依据；真机和个人账号验证与生成夹具、模拟器及有限真实模型对照分开。最终发布受Checks/Release门槛约束。"
+}

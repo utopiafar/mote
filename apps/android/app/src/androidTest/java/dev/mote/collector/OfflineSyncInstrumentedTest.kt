@@ -26,6 +26,17 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(AndroidJUnit4::class)
 class OfflineSyncInstrumentedTest {
     private val token = "generated-android-local-sync-token-1234567890"
+    private fun <T> changeWhenIdle(context: Context, server: String, bindLocal: Boolean = false, action: () -> T): T {
+        val deadline = android.os.SystemClock.elapsedRealtime() + 45000
+        while (true) {
+            try { return ConnectionGuard.change(context, server, bindLocal, action) }
+            catch (error: ConnectionFailure) {
+                // Startup/background readers may briefly hold the lock; authorization failures remain exact.
+                if (error.category != "busy" || android.os.SystemClock.elapsedRealtime() >= deadline) throw error
+                Thread.sleep(50)
+            }
+        }
+    }
     private fun fixture(test: (Context, Settings) -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:"))
@@ -36,24 +47,26 @@ class OfflineSyncInstrumentedTest {
             WorkManager.getInstance(context).cancelUniqueWork(it).result.get(5, TimeUnit.SECONDS)
         } }
         try {
-            cancel(); settings.save(settings.read().copy(server = "", token = "", deviceName = "Generated Android fixture", syncMode = "manual"))
+            cancel(); settings.save(settings.read().copy(server = "", token = "", deviceName = "Generated Android fixture", syncMode = "manual", uploadedRetentionDays = 0))
             test(context, settings)
         } finally {
             cancel(); waitUntil { !ConnectionGuard.changing() && ConnectionGuard.processing.get() == 0 }
-            while (context.queue().depth() > 0) context.queue().acknowledge(context.queue().peek()!!.getString("id"))
+            val pending = context.queue().pendingPage(0, 60).getJSONArray("items")
+            for (i in 0 until pending.length()) context.queue().acknowledge(pending.getJSONObject(i).getString("id"))
             context.localSources().sources().forEach { context.localSources().remove(it.id) }
             QuickNotes.draft(context).clear()
             val edit = prefs.edit().clear()
             original.forEach { (key, value) -> when (value) { is String -> edit.putString(key, value); is Boolean -> edit.putBoolean(key, value); is Int -> edit.putInt(key, value); is Long -> edit.putLong(key, value); is Float -> edit.putFloat(key, value) } }; edit.commit()
         }
     }
-    @Test fun localNoteWithoutNodeIsEncryptedAndDoesNotScheduleUploads() = fixture { context, settings ->
+    @Test fun localNoteWithoutNodeIsReadableAndDoesNotScheduleUploads() = fixture { context, settings ->
+        assertFalse(settings.read().contentEncryptionEnabled)
         settings.read().validate(); assertFalse(settings.read().hasSyncConnection())
         val text = "Generated local-only note 👩🏽‍💻"
         val id = QuickNotes.save(context, text, "")
         assertEquals(1, context.queue().depth()); assertEquals(text, context.queue().peek()!!.getString("ocrText"))
         assertEquals("", settings.dataOrigin()); assertEquals("unconfigured", settings.syncState())
-        assertFalse(String(File(QueueStorage(context).current().path, "$id.event").readBytes()).contains(text))
+        assertTrue(String(File(QueueStorage(context).current().path, "$id.event").readBytes()).contains(text))
         assertTrue(QuickNotes.draft(context).read().text.isEmpty())
     }
     @Test fun generatedActivityCaptureIsLocalWithoutEndpointOrModel() = fixture { context, settings ->
@@ -77,14 +90,15 @@ class OfflineSyncInstrumentedTest {
         val prepared = QuickNotes.draft(context).prepare("") { draft -> JSONObject().put("id", UUID.randomUUID().toString()).put("source", "note")
             .put("ocrText", draft.text).put("capturedAt", Instant.now().toString()).put("privacy", JSONObject().put("excluded", false)) }.prepared!!
         val before = context.queue().peek()!!.toString()
-        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, origin) { error("No implicit binding") } }.category)
-        ConnectionGuard.change(context, origin, bindLocal = true) { settings.save(local.copy(server = origin, token = token)) }
+        waitUntil { ConnectionGuard.processing.get() == 0 }
+        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { changeWhenIdle(context, origin) { error("No implicit binding") } }.category)
+        changeWhenIdle(context, origin, bindLocal = true) { settings.save(local.copy(server = origin, token = token)) }
         assertEquals(origin, settings.dataOrigin()); assertEquals(before, context.queue().peek()!!.toString())
         assertEquals(prepared.getString("id"), QuickNotes.save(context, "Generated prepared note", ""))
-        ConnectionGuard.change(context, "") { settings.save(settings.read().copy(server = "", token = "")) }
+        changeWhenIdle(context, "") { settings.save(settings.read().copy(server = "", token = "")) }
         assertEquals(origin, settings.dataOrigin())
-        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://other.generated.invalid", bindLocal = true) { error("Never redirect") } }.category)
-        ConnectionGuard.change(context, origin) { settings.save(settings.read().copy(server = origin, token = token + "-renewed")) }
+        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { changeWhenIdle(context, "https://other.generated.invalid", bindLocal = true) { error("Never redirect") } }.category)
+        changeWhenIdle(context, origin) { settings.save(settings.read().copy(server = origin, token = token + "-renewed")) }
         assertEquals(2, context.queue().depth())
     }
     @Test fun unboundSourceRevisionsParticipateInTheSameOriginAndBatchProtection() = fixture { context, settings ->
@@ -93,9 +107,9 @@ class OfflineSyncInstrumentedTest {
         store.scan(source, SourceScan(listOf(JSONObject().put("externalId", "generated.txt").put("title", "Generated").put("text", "Generated source body")
             .put("kind", "file").put("layer", "snapshot").put("observedAt", Instant.now().toString())), true, Instant.now().toString()))
         assertEquals(1, SyncSchedule.pending(context).count); assertEquals(1, SyncSchedule.pending(context).pendingUpdates); assertNotNull(SyncSchedule.pending(context).oldestAt)
-        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://first.generated.invalid") { } }.category)
-        ConnectionGuard.change(context, "https://first.generated.invalid", true) { settings.save(settings.read().copy(server = "https://first.generated.invalid", token = token)) }
-        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://other.generated.invalid", true) { } }.category)
+        assertEquals("local_confirmation", assertThrows(ConnectionFailure::class.java) { changeWhenIdle(context, "https://first.generated.invalid") { error("No implicit source binding") } }.category)
+        changeWhenIdle(context, "https://first.generated.invalid", true) { settings.save(settings.read().copy(server = "https://first.generated.invalid", token = token)) }
+        assertEquals("pending", assertThrows(ConnectionFailure::class.java) { changeWhenIdle(context, "https://other.generated.invalid", true) { error("Never redirect source data") } }.category)
         assertEquals(1, store.pendingSync().count)
     }
     @Test fun manualDoesNotSendHeartbeatOrNotesUntilExplicitSync() = fixture { context, settings ->
@@ -186,14 +200,14 @@ class OfflineSyncInstrumentedTest {
             assertEquals("25 notes use one transport request", 1, archive.batches.get())
         }
     }
-    @Test fun oldCollectorRouteDenialFallsBackToIndividualAcks() = fixture { context, settings ->
+    @Test fun unsupportedLegacyRoutesFallBackToIndividualAcks() = fixture { context, settings ->
         LoopbackArchive().use { archive ->
             val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
             settings.save(config); archive.fault = "legacy"
             repeat(2) { QuickNotes.save(context, "Generated legacy $it", "") }
             UploadWorker.schedule(context, config, true)
             waitUntil { context.queue().depth() == 0 && settings.syncState() == "idle" }
-            assertEquals(2, archive.notes.get()); assertEquals(1, archive.batches.get())
+            assertEquals(2, archive.notes.get()); assertEquals(3, archive.batches.get())
         }
     }
     @Test fun partialBatchAcknowledgementKeepsOnlyUnconfirmedRecords() = fixture { context, settings ->
@@ -224,7 +238,7 @@ class OfflineSyncInstrumentedTest {
             assertEquals(before, counters.getLong("uploadSessions", 0))
         }
     }
-    private fun waitUntil(check: () -> Boolean) { val deadline = System.currentTimeMillis() + 30_000; while (!check()) { require(System.currentTimeMillis() < deadline) { "Generated sync fixture timeout" }; Thread.sleep(50) } }
+    private fun waitUntil(check: () -> Boolean) { val deadline = System.currentTimeMillis() + 30_000; while (!check()) { require(System.currentTimeMillis() < deadline) { "Generated sync fixture timeout: ${Settings(InstrumentationRegistry.getInstrumentation().targetContext).syncState()} ${InstrumentationRegistry.getInstrumentation().targetContext.getSharedPreferences("mote", 0).getString("uploadStatus", "")}" }; Thread.sleep(50) } }
     private class LoopbackArchive : Closeable {
         private val socket = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))
         val url = "http://127.0.0.1:${socket.localPort}"
@@ -244,13 +258,13 @@ class OfflineSyncInstrumentedTest {
                 val body = if (contentType.startsWith(CaptureBundle.CONTENT_TYPE)) {
                     val lines = GZIPInputStream(ByteArrayInputStream(data)).bufferedReader().readLines()
                     JSONObject().put("captures", JSONArray(lines.map(::JSONObject)))
-                } else JSONObject(String(data, Charsets.UTF_8)); requests.incrementAndGet()
+                } else if(data.isEmpty()) JSONObject() else JSONObject(String(data, Charsets.UTF_8)); requests.incrementAndGet()
                 var responseStatus = 200
                 val result = when (route) {
                     "/api/devices/heartbeat" -> { heartbeats.incrementAndGet(); require(body.has("sync")); lastSync = body.getJSONObject("sync"); JSONObject().put("ok", true) }
                     "/api/captures/bundle", "/api/captures/batch" -> {
                         batches.incrementAndGet()
-                        if (fault == "legacy") { responseStatus = 403; JSONObject().put("error", "forbidden") }
+                        if (fault == "legacy") { responseStatus = 404; JSONObject().put("error", "forbidden") }
                         else {
                             val captures = body.getJSONArray("captures"); notes.addAndGet(captures.length())
                             if (fault == "dropNote") return@use
@@ -265,7 +279,7 @@ class OfflineSyncInstrumentedTest {
                         .put("sourceId", route.split('/')[3]).put("externalId", body.getString("externalId"))
                         .put("revision", if (fault == "wrongSourceAck") "wrong-revision" else body.getString("revision"))
                     else if (route?.startsWith("/api/sources/") == true) JSONObject().put("id", route.substringAfterLast('/'))
-                    else error("Unexpected fixture route")
+                    else { responseStatus=404; JSONObject().put("error","fixture_route_missing") }
                 }.toString().toByteArray(Charsets.UTF_8)
                 client.getOutputStream().write("HTTP/1.1 $responseStatus Fixture\r\nContent-Type: application/json\r\nContent-Length: ${result.size}\r\nConnection: close\r\n\r\n".toByteArray())
                 client.getOutputStream().write(result); client.getOutputStream().flush()

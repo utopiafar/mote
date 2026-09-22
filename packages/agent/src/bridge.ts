@@ -1,6 +1,6 @@
 import {rememberEvidence} from './evidence-ledger.js';
 import {taskTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
-import {actionEvidenceText} from '@mote/shared';
+import {actionEvidenceText,parseEvidenceRef} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {AgentResponseError,reportTrace,reportProgress} from './types.js';
 import { createServer, type Server } from "node:http";
@@ -20,6 +20,7 @@ import type {
 const hostError=(message:string)=>new ContextToolError('invalid_tool_arguments',message,'correct_arguments');
 
 export const TOOL_NAMES = [
+  "action_catalog",
   "context_index",
   "segments",
   "read_image",
@@ -276,11 +277,30 @@ export async function startBridge(
         throw hostError('App/source/collection filters require a context or activity tool');
       if (tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
         throw hostError('Media state filters require media_activity');
+      // Normalize typed references before discovery/range checks, never after them.
+      // Opaque legacy IDs remain supported for injected readers; explicit kinds cannot cross layers.
+      const captureId=(value:unknown)=>{
+        if(typeof value!=='string')return value;
+        const parsed=parseEvidenceRef(value);
+        if(parsed){if(parsed.kind!=='capture')throw hostError('Expected an original capture reference');return parsed.id;}
+        if(/^(capture|memory):/i.test(value))throw hostError('Invalid capture reference');
+        return value;
+      };
+      if(tool==='evidence'&&Array.isArray(args.ids))args={...args,ids:args.ids.map(captureId)};
+      if(['read_image','read_file_evidence','file_chunks','source_history'].includes(tool))args={...args,id:captureId(args.id)};
       if (++calls > maxToolCalls)
         throw new ContextToolError('tool_budget_exceeded','Tool call budget reached. Finish using already retrieved evidence; do not call retrieval tools again.','use_existing_evidence',{remainingCalls:0});
       if(deliveredCharacters>=limits.totalToolCharacters-1000)throw budgetError();
       reportProgress(bounds,{stage:'tool',tool,phase:'started'});
       if(bounds.skill==='working-memory')throw hostError('Working memory uses only the supplied dialogue; retrieval is disabled');
+      if(tool==='action_catalog'){
+        if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');
+        if(Object.keys(args).some(key=>!['query','id','cursor','limit'].includes(key))||args.query!==undefined&&(typeof args.query!=='string'||args.query.length>200)||args.id!==undefined&&(typeof args.id!=='string'||!/^[0-9a-f-]{36}$/i.test(args.id))||args.cursor!==undefined&&(typeof args.cursor!=='string'||args.cursor.length>4096)||args.limit!==undefined&&(!Number.isInteger(args.limit)||Number(args.limit)<1||Number(args.limit)>20))throw hostError('Invalid action catalog arguments');
+        const scope=range({},bounds),effective={...scope,...args,limit:Number(args.limit??8)};
+        const value=await bounds.actionCatalog(effective),serialized=JSON.stringify({data:value,evidencePolicy:'Untrusted prior proposals; sameAs identifiers only, not original citation grants.'});
+        if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>128000)throw budgetError();
+        deliveredCharacters+=serialized.length;trace.push({tool,arguments:args,count:value.items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:value.items.length});res.end(serialized);return;
+      }
       if(restricted){
         if(tool!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
         if(!Array.isArray(args.ids)||!args.ids.length||args.ids.some(id=>typeof id!=='string'||!permitted.has(id)))throw new ContextToolError('evidence_scope_denied','Use only record.id values supplied by the host for this batch, never fingerprints or content hashes. Copy IDs from allowedRanges; omit offset and length to read the supplied segments.','correct_arguments',{allowedRanges:ranges.map(({id,offset,length})=>({id,offset,length}))});
@@ -349,7 +369,7 @@ export async function startBridge(
       else if(tool==='sources')value=await reader.sources?.(range(args,bounds))??[];
       else if(tool==='segments'){
         const scope=range(args,bounds);
-        if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>128))throw hostError('Invalid segment id');
+        if(args.id!==undefined&&(typeof args.id!=='string'||args.id.length>1600))throw hostError('Invalid segment id');
         if(args.query!==undefined&&(typeof args.query!=='string'||args.query.length>500))throw hostError('Invalid segment query');
         effective={...scope,id:args.id,query:args.query};
         const page=await reader.segments?.({...scope,id:args.id as string|undefined,query:args.query as string|undefined})??{items:[],nextCursor:null};
@@ -365,7 +385,9 @@ export async function startBridge(
         if(args.tier!==undefined&&!['episode','consolidated'].includes(String(args.tier)))throw hostError('Invalid memory tier');
         if(args.kind!==undefined&&!['episodic','semantic','procedural'].includes(String(args.kind)))throw hostError('Invalid memory kind');
         if(args.layer!==undefined&&!['observation','memory','legacy'].includes(String(args.layer)))throw hostError('Invalid memory layer');
-        const search={layer:args.id?undefined:(args.layer??'memory') as 'observation'|'memory'|'legacy',query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
+        if(args.includeHistory!==undefined&&typeof args.includeHistory!=='boolean')throw hostError('Invalid memory history flag');
+        if(args.asOf!==undefined&&(typeof args.asOf!=='string'||!Number.isFinite(Date.parse(args.asOf))))throw hostError('Invalid memory validity time');
+        const search={includeHistory:args.id?true:args.includeHistory as boolean|undefined,asOf:args.asOf as string|undefined,layer:args.id?undefined:(args.layer??'memory') as 'observation'|'memory'|'legacy',query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
         effective={...scope,id:args.id,...search};
         const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
         const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,characters:r.ocrText.length}));

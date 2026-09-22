@@ -14,6 +14,7 @@ export type ProcessingJobView = {
 };
 export type ProcessingView = {
   jobs:ProcessingJobView[];
+  nextCursor?:number|null;
   limit:number;
   processors:{id:string;version:string;lane:string}[];
   queues:{lane:string;state:string;count:number}[];

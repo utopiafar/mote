@@ -1,3 +1,5 @@
+import {legacyAsset} from './fixtures/legacy-asset.js';
+import {ImportUploads} from '../src/import-uploads.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,renameSync,rmSync,existsSync,symlinkSync,readdirSync} from 'node:fs';
@@ -22,17 +24,17 @@ test('content encryption is off even with an environment key, and opt-in persist
   const dir=mkdtempSync(join(tmpdir(),'mote-content-option-'));let store=new Store(dir,{dataKey:'ab'.repeat(32)});
   t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
   const image=await generatedImage(),plain=await store.ingest(capture(image));
-  assert.equal(store.contentEncryption.enabled,false);assert.deepEqual(readFileSync(join(store.blobsDir,plain.blobHash!)),image);
+  assert.equal(store.contentEncryption.enabled,false);assert.deepEqual(readFileSync(join(store.assets.directory,plain.blobHash!,'0.plain')),image);
   const originals=new ArchivedFileStore(store),raw=originals.put({name:'raw.bin',bytes:Buffer.from('MOTE1 arbitrary plain bytes')});
-  assert.equal(readFileSync(join(originals.directory,raw.hash+'.plain'),'utf8'),'MOTE1 arbitrary plain bytes');
+  assert.equal(readFileSync(join(store.assets.directory,raw.hash,'0.plain'),'utf8'),'MOTE1 arbitrary plain bytes');
   store.contentEncryption.setEnabled(true);
   const secret=originals.put({name:'encrypted.bin',bytes:Buffer.from('generated opt-in content')});
-  assert.notEqual(readFileSync(join(originals.directory,secret.hash+'.aes'),'utf8'),'generated opt-in content');
+  assert.notEqual(readFileSync(join(store.assets.directory,secret.hash,'0.aes'),'utf8'),'generated opt-in content');
   store.close();store=new Store(dir,{dataKey:'ab'.repeat(32)});
   assert.equal(store.contentEncryption.enabled,true);assert.deepEqual(store.image(plain.id).bytes,image);
   assert.equal(new ArchivedFileStore(store).read(secret.id).toString(),'generated opt-in content');
   store.contentEncryption.setEnabled(false);
-  assert.ok(existsSync(join(originals.directory,secret.hash+'.aes')),'Disabling future writes must not silently convert old files');
+  assert.ok(existsSync(join(store.assets.directory,secret.hash,'0.aes')),'Disabling future writes must not silently convert old files');
   assert.throws(()=>new Store(dir,{dataKey:'cd'.repeat(32)}),/key mismatch/);
 });
 
@@ -48,6 +50,7 @@ test('one-time decrypt handles legacy images, originals, committed parts and pen
   const manifest=(externalId:string)=>({sourceId:'fixture',previousRevision:null,item:{externalId,revision:'v1',observedAt:new Date().toISOString(),title:'Generated file',kind:'file',layer:'original',text:'',mimeType:'application/octet-stream',deleted:false},relativePath:'generated.bin',sizeBytes:bytes.length,sha256:sha256(bytes)});
   const completed=files.begin(manifest('completed'),()=>{});files.part(completed.uploadId,0,bytes,()=>{});const ack=await files.commit(completed.uploadId,()=>{});
   const pending=files.begin(manifest('pending'),()=>{});files.part(pending.uploadId,0,bytes,()=>{});
+  legacyAsset(store,saved.blobHash!,'image-legacy');legacyAsset(store,original.hash,'archive-legacy');
   // Exact pre-0.0.25 format: unmarked AES-GCM file parts + vault-wide encryption identity.
   for(const base of [join(archived.directory,original.hash),join(files.objects,ack.sha256,'0'),join(files.uploads,pending.uploadId,'0')])renameSync(base+'.aes',base);
   store.db.prepare('UPDATE settings SET value=? WHERE key=?').run(sha256(Buffer.from(key,'hex')),'encryption');
@@ -70,9 +73,9 @@ test('failed decrypt keeps the original ciphertext and preserves the key require
   const dir=mkdtempSync(join(tmpdir(),'mote-content-failure-')),key='ad'.repeat(32),store=new Store(dir,{dataKey:key,contentEncryptionEnabled:true});
   t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
   const archived=new ArchivedFileStore(store),file=archived.put({name:'broken.bin',bytes:Buffer.from('Generated content')});
-  const path=join(archived.directory,file.hash+'.aes'),damaged=readFileSync(path);damaged[15]^=128;writeFileSync(path,damaged);
+  const path=join(store.assets.directory,file.hash,'0.aes'),damaged=readFileSync(path);damaged[15]^=128;writeFileSync(path,damaged);
   store.contentEncryption.setEnabled(false);const service=new ContentStorageService(store,new FileStore(store,new SourceStore(store)),archived);
-  service.start();assert.equal((await finish(service)).failed,1);assert.deepEqual(readFileSync(path),damaged);assert.equal(existsSync(join(archived.directory,file.hash+'.plain')),false);
+  service.start();assert.equal((await finish(service)).failed,1);assert.deepEqual(readFileSync(path),damaged);assert.equal(existsSync(join(store.assets.directory,file.hash,'0.plain')),false);
   assert.throws(()=>new Store(dir),/key mismatch/);
 });
 
@@ -101,7 +104,7 @@ test('decrypt includes untracked legacy objects and uploads before dropping the 
   // Existing hash-named storage cannot be trusted solely because its directory exists.
   writeFileSync(join(object,'0.plain'),Buffer.alloc(bytes.length));
   const corrupt=files.begin(manifest('corrupt-reuse'),()=>{});files.part(corrupt.uploadId,0,bytes,()=>{});
-  await assert.rejects(files.commit(corrupt.uploadId,()=>{}),/Stored file checksum failed/);
+  await assert.rejects(files.commit(corrupt.uploadId,()=>{}),/Asset checksum mismatch/);
   assert.equal(files.upload(corrupt.uploadId,()=>{}).ack,null);
 });
 
@@ -122,7 +125,7 @@ test('decrypt preserves conflicting retained ciphertext copies for a retry',asyn
   const dir=mkdtempSync(join(tmpdir(),'mote-content-conflict-')),store=new Store(dir,{dataKey:'bc'.repeat(32),contentEncryptionEnabled:true});
   t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
   const files=new FileStore(store,new SourceStore(store)),archived=new ArchivedFileStore(store),original=archived.put({name:'generated.txt',bytes:Buffer.from('Generated canonical content')});
-  const base=join(archived.directory,original.hash),sealed=readFileSync(base+'.aes'),conflicting=Buffer.from('Generated different content');
+  const base=join(store.assets.directory,original.hash,'0'),sealed=readFileSync(base+'.aes'),conflicting=Buffer.from('Generated different content');
   writeFileSync(base,conflicting);store.contentEncryption.setEnabled(false);
   const service=new ContentStorageService(store,files,archived);service.start();assert.equal((await finish(service)).failed,1);
   assert.deepEqual(readFileSync(base+'.aes'),sealed);assert.deepEqual(readFileSync(base),conflicting);assert.equal(existsSync(base+'.plain'),false);
@@ -169,4 +172,12 @@ test('developer content controls require owner auth and return background progre
   const response=await app.inject({method:'POST',url:'/api/content-storage/decrypt',headers,payload:{}});assert.equal(response.statusCode,202);
   assert.equal(response.json().job.state,'running');assert.ok(!response.body.includes(store.key!.toString('hex')));
   assert.equal((await app.inject({method:'PUT',url:'/api/content-storage',headers,payload:{enabled:'false'}})).statusCode,400);
+});
+
+test('binary browser import parts remain readable after bulk decryption and restart',async t=>{
+ const dir=mkdtempSync(join(tmpdir(),'mote-import-decrypt-'));let store=new Store(dir,{dataKey:'aa'.repeat(32),contentEncryptionEnabled:true});
+ t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+ let archived=new ArchivedFileStore(store),uploads=new ImportUploads(store,archived);const bytes=Buffer.from('generated import bytes'),upload=uploads.begin({name:'fixture.txt',sizeBytes:bytes.length});uploads.part(upload.id,0,bytes);
+ store.contentEncryption.setEnabled(false);const service=new ContentStorageService(store,new FileStore(store,new SourceStore(store)),archived);service.start();assert.equal((await finish(service)).failed,0);
+ store.close();store=new Store(dir);archived=new ArchivedFileStore(store);uploads=new ImportUploads(store,archived);assert.deepEqual(archived.read(uploads.commit(upload.id).id),bytes);
 });

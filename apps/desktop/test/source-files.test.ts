@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, lstat, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scanSourceFiles } from '../src/source-files';
@@ -71,4 +71,33 @@ it('invalidates cached directory listings between reconciliations in the same ca
   const first = await catalog.next(100, []); expect(first.complete).toBe(true); catalog.finishReconciliation();
   await writeFile(join(root, 'second.txt'), 'Generated');
   const second = await catalog.next(100, []); expect(second.candidates.map(c => c.relativePath)).toEqual(['first.txt', 'second.txt']);
+});
+
+
+it('a failed scan epoch survives restart and cannot turn unreadable paths into deletions', async () => {
+  const {DirectoryCatalog}=await import('../src/directory-catalog');
+  await writeFile(join(root,'a.txt'),'Generated root');
+  for(const name of ['b','c','d']){await mkdir(join(root,name));await writeFile(join(root,name,'file.txt'),'Generated '+name);}
+  const first=new DirectoryCatalog(root);expect((await first.next(100,[])).complete).toBe(true);first.finishReconciliation();
+  const scan=new DirectoryCatalog(root,first.checkpoint());expect((await scan.next(1,[])).candidates[0].relativePath).toBe('a.txt');
+  await rename(join(root,'b'),join(root,'.temporarily-unavailable'));
+  const failed=await scan.next(1,[]);expect(failed.faulted).toBe(true);expect(scan.checkpoint().inProgress).toBe(true);
+  const resumed=new DirectoryCatalog(root,scan.checkpoint());const tail=await resumed.next(100,[]);
+  expect(tail.complete).toBe(false);expect(tail.faulted).toBe(true);expect(resumed.finishReconciliation()).toEqual([]);
+  expect(resumed.catalog['b/file.txt']).toBeDefined();
+  await rename(join(root,'.temporarily-unavailable'),join(root,'b'));
+  expect((await resumed.next(100,[])).complete).toBe(true);expect(resumed.finishReconciliation()).toEqual([]);
+  await rm(join(root,'b'),{recursive:true});expect((await resumed.next(100,[])).complete).toBe(true);
+  expect(resumed.finishReconciliation()).toEqual(['b/file.txt']);
+});
+
+
+it('directory metadata I/O overlaps within four slots without reordering committed names',async()=>{
+ const {DirectoryCatalog}=await import('../src/directory-catalog');
+ for(let i=0;i<20;i++)await writeFile(join(root,String(i).padStart(2,'0')+'.txt'),'Generated');
+ let active=0,peak=0;
+ const catalog=new DirectoryCatalog(root,undefined,async path=>{active++;peak=Math.max(peak,active);try{await new Promise(resolve=>setTimeout(resolve,5));return await lstat(path);}finally{active--;}});
+ const first=await catalog.next(7,[]),resumed=new DirectoryCatalog(root,catalog.checkpoint());const rest=await resumed.next(100,[]);
+ expect(peak).toBe(4);expect(first.candidates.length).toBe(7);expect(rest.complete).toBe(true);
+ expect([...first.candidates,...rest.candidates].map(item=>item.relativePath)).toEqual(Array.from({length:20},(_,i)=>String(i).padStart(2,'0')+'.txt'));
 });

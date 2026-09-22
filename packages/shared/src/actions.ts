@@ -13,11 +13,13 @@ export const calendarChoiceSchema=z.object({id:z.string().min(1).max(1000),title
 export type CalendarChoice=z.infer<typeof calendarChoiceSchema>;
 export type ActionStatus='proposed'|'dismissed'|'approved'|'executing'|'succeeded'|'uncertain'|'stale';
 export interface ActionEvidence {id:string;quote:string;fingerprint:string;source:string;capturedAt:string}
-export interface ActionProposal {id:string;kind:'calendar.create';version:number;status:ActionStatus;event:CalendarDraft;uncertainty:string;evidence:ActionEvidence[];createdAt:string;updatedAt:string;operationId?:string;target?:{deviceId:string;calendarId:string};externalId?:string;error?:string}
+export type ActionKind='calendar.create'|'calendar.update'|'calendar.cancel'|'calendar.complete';
+export interface ActionRelation {operationId?:string;actionId:string;version:number;status:ActionStatus;event:CalendarDraft;target?:{deviceId:string;calendarId:string};externalId?:string}
+export interface ActionProposal {id:string;kind:ActionKind;related?:ActionRelation;resolution?:'cancelled'|'completed';version:number;status:ActionStatus;event:CalendarDraft;uncertainty:string;evidence:ActionEvidence[];createdAt:string;updatedAt:string;operationId?:string;nativeOperationId?:string;target?:{deviceId:string;calendarId:string};externalId?:string;error?:string}
 export interface ActionSettings {enabled:boolean;timeZone:string;reviewDeviceIds:string[]}
 export interface ActionTarget {deviceId:string;deviceName:string;calendars:CalendarChoice[];updatedAt:string}
 export const moteActionMarker=(id:string)=>`[Mote:${z.string().uuid().parse(id)}]`;
-export function calendarDescription(action:Pick<ActionProposal,'id'|'event'>):string{return moteText("{0}\n\n#Mote · 由 Mote 创建\n{1}", action.event.description, moteActionMarker(action.id)).trim();}
+export function calendarDescription(action:Pick<ActionProposal,'id'|'event'|'related'|'operationId'>):string{return moteText("{0}\n\n#Mote · 由 Mote 创建\n{1}", action.event.description, moteActionMarker(action.related?.actionId??action.id)+(action.operationId?`\n[Mote-operation:${action.operationId}]`:'')).trim();}
 
 /** Lossless structural projection for model evidence; no semantic routing or classification. */
 export function actionEvidenceText(record:{ocrText?:string;metadata?:{notification?:{title?:string;text?:string;bigText?:string;subText?:string;textLines?:string[]}}}):string {

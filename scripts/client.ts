@@ -15,7 +15,7 @@ export function apiClient() {
   if(!token)throw new Error('Set MOTE_TOKEN or MOTE_TOKEN_FILE; start the central node once to generate a token');
   return Object.assign(async function request(path:string,body?:unknown,method=body?'POST':'GET',signal?:AbortSignal) {
     const response=await fetch(url+path,{method,headers:{Authorization:`Bearer ${token}`,'Content-Type':body instanceof Uint8Array?'application/octet-stream':'application/json'},...(body?{body:body instanceof Uint8Array?new Uint8Array(body):JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(180000)]):AbortSignal.timeout(180000),redirect:'error'});
-    if(!response.ok){const text=await response.text();throw new Error(`HTTP ${response.status}: ${text.slice(0,400)}`);}
+    if(!response.ok){const text=await response.text();throw Object.assign(new Error(`HTTP ${response.status}: ${text.slice(0,400)}`),{httpStatus:response.status});}
     return response.json();
   }, { binding: createHash('sha256').update(url + '\0' + token).digest('hex') });
 }

@@ -9,7 +9,7 @@ import {exportTar} from './file-export.js';
 export function registerArchiveExport(app:FastifyInstance,store:Store,files:FileStore,archivedFiles:ArchivedFileStore,maxBytes:number){
   app.get('/api/export-bundle',async(req,reply)=>{
     const {mode}=z.object({mode:z.enum(['metadata','data']).default('metadata')}).strict().parse(req.query);
-    const jsonTables=['captures','devices','memories','insights','conversations','archived_files','source_connections'] as const;
+    const jsonTables=['captures','devices','memories','insights','conversations','archived_files','source_connections','todos'] as const;
     const estimate=jsonTables.reduce((total,table)=>total+Number(store.db.prepare(`SELECT COALESCE(SUM(length(CAST(json AS BLOB))),0) AS n FROM ${table}`).get()!.n),0);
     if(estimate>maxBytes)throw new StoreError('Metadata exceeds HTTP export limit; use offline backup',413);
     const entries:{name:string;bytes:Buffer}[]=[];let total=0;
@@ -19,7 +19,7 @@ export function registerArchiveExport(app:FastifyInstance,store:Store,files:File
     const sources=(store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));
     const imported=(store.db.prepare('SELECT json FROM archived_files ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));
     const attachments=store.db.prepare('SELECT capture_id,file_id FROM capture_files ORDER BY capture_id,file_id').all();
-    const derived=Object.fromEntries(['devices','memories','insights','conversations'].map(table=>[table,(store.db.prepare(`SELECT json FROM ${table} ORDER BY id`).all() as {json:string}[]).map(r=>JSON.parse(r.json))]));
+    const derived=Object.fromEntries(['devices','memories','insights','conversations','todos'].map(table=>[table,(store.db.prepare(`SELECT json FROM ${table} ORDER BY id`).all() as {json:string}[]).map(r=>JSON.parse(r.json))]));
     add('metadata.json',Buffer.from(JSON.stringify({format:'mote-data-export',version:1,mode,exportedAt:new Date().toISOString(),captures,sources,...derived,importedFiles:imported,attachments,files:versions.map(r=>({captureId:r.capture_id,...JSON.parse(r.manifest)}))})));
     if(mode==='data'){
       const seen=new Set<string>();

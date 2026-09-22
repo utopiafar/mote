@@ -1,3 +1,4 @@
+import {useMemo} from 'react';
 import { moteText } from '@mote/shared/i18n';
 import ReactMarkdown from 'react-markdown';
 import type { Answer } from './api';
@@ -42,13 +43,17 @@ export function citationLinks(citations:Answer['citations']) {
 }
 
 export function AnswerMarkdown({answer,onOpen}:{answer:Answer;onOpen:(id:string)=>void}) {
-  const verified=new Map(answer.citations.map(citation=>[citationHref(citation.id),citation.id]));
-  return <ReactMarkdown skipHtml remarkPlugins={[citationLinks(answer.citations)]} components={{
+  const citationIds=JSON.stringify(answer.citations.map(citation=>citation.id));
+  const verified=useMemo(()=>new Map((JSON.parse(citationIds) as string[]).map(id=>[citationHref(id),id])),[citationIds]);
+  // Stable renderer types keep the focused citation mounted when the shared
+  // evidence dialog updates its route or switches to a nested reference.
+  const components=useMemo<NonNullable<React.ComponentProps<typeof ReactMarkdown>['components']>>(()=>({
     img:()=>null,
     a:({href,children})=>{
       const id=href?verified.get(href):undefined;
       return id ? <button type="button" className="inline-citation" onClick={()=>onOpen(id)} aria-label={moteText("查看证据：{0}", children)}>{children}</button>
         : <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
     },
-  }}>{answer.answer}</ReactMarkdown>;
+  }),[verified,onOpen]);
+  return <ReactMarkdown skipHtml remarkPlugins={[citationLinks(answer.citations)]} components={components}>{answer.answer}</ReactMarkdown>;
 }

@@ -6,6 +6,7 @@ import {join,basename,dirname,relative,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 import type {SourceOptions,SourceScan,ScannedItem} from './source-types';
 import {redactSourceText} from './source-types';
+import {repositoryCandidate} from './coding-project';
 
 export type CodingProvider='claude'|'codex'|'kimi';
 export const codingProviders={claude:'Claude Code',codex:'Codex',kimi:'Kimi Code'} as const;
@@ -16,7 +17,7 @@ export function codingRoot(provider:CodingProvider,home=homedir()):string {
 export async function discoverCodingAgents(home=homedir()) {
   return Promise.all((Object.keys(codingProviders) as CodingProvider[]).map(async provider=>({provider,name:codingProviders[provider],path:codingRoot(provider,home),available:await lstat(codingRoot(provider,home)).then(s=>s.isDirectory()&&!s.isSymbolicLink(),()=>false)})));
 }
-type Context={sessionId:string;cwd?:string;parentSessionId?:string;callId?:string};
+type Context={sessionId:string;cwd?:string;repositoryKey?:string;branch?:string;parentSessionId?:string;callId?:string};
 type Cursor={offset:number;anchor:string;ino:number;size?:number;mtimeMs?:number;ctimeMs?:number;quickHash?:string;generation:number;context:Context};
 export type CodingCatalogEntry={relativePath:string;fileId:string;size:number;mtimeMs:number;ctimeMs:number;quickHash:string;contentHash?:string;lastSeenScan:number;syncState:'pending'|'synced'|'error'};
 export type CodingCheckpoint={version:1;files:Record<string,Cursor>;initialized:boolean;catalog?:Record<string,CodingCatalogEntry>;scanNumber?:number;scanStartedAt?:string;nextFile?:string};
@@ -30,7 +31,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
   const add=(role:Event['role'],text:string,callId?:string)=>{if(text)events.push({role,text,callId,at});};
   if(provider==='codex'){
     const p=row.payload;
-    if(row.type==='session_meta'&&p){context.sessionId=String(p.id??p.session_id??context.sessionId);context.cwd=typeof p.cwd==='string'?p.cwd:context.cwd;context.parentSessionId=p.parent_thread_id;}
+    if(row.type==='session_meta'&&p){context.sessionId=String(p.id??p.session_id??context.sessionId);context.cwd=typeof p.cwd==='string'?p.cwd:context.cwd;context.parentSessionId=p.parent_thread_id;context.repositoryKey=repositoryCandidate(p.git?.repository_url);context.branch=typeof p.git?.branch==='string'?p.git.branch:undefined;}
     if(row.type!=='response_item'||!p)return [];
     if(p.type==='message'&&['user','assistant'].includes(p.role))add(p.role,textParts(p.content));
     if(['function_call','custom_tool_call'].includes(p.type))add('tool_call',JSON.stringify({name:p.name,arguments:p.arguments??p.input}),p.call_id);
@@ -38,6 +39,7 @@ export function decodeCodingEvent(provider:CodingProvider,row:any,context:Contex
   }else if(provider==='claude'){
     if(typeof row.cwd==='string')context.cwd=row.cwd;
     if(typeof row.sessionId==='string')context.sessionId=row.sessionId;
+    if(typeof row.gitBranch==='string')context.branch=row.gitBranch;
     if(!['user','assistant'].includes(row.type)||!row.message||row.isMeta)return [];
     const m=row.message;add(row.type,textParts(m.content));
     if(Array.isArray(m.content))for(const part of m.content){
@@ -116,7 +118,7 @@ export async function scanCodingAgent(rootPath:string,provider:CodingProvider,op
             const eventId=hash(`${key}:${cursor.generation}:${cursor.offset}:${eventIndex}`),body=redactSourceText(event.text,options.redactLiterals);
             const pieces:string[]=[];for(let offset=0;offset<body.length;){let end=Math.min(offset+8000,body.length);if(end<body.length&&/[\uD800-\uDBFF]/.test(body[end-1]))end--;pieces.push(body.slice(offset,end));offset=end;}
             const cwd=context.cwd?redactSourceText(context.cwd,options.redactLiterals):undefined;
-            for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,eventId,role:event.role,callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
+            for(const [part,text] of pieces.entries())items.push({externalId:`coding:${provider}:${eventId}:${part}`,kind:'message',layer:options.retention==='reference'?'reference':'snapshot',title:`${codingProviders[provider]} · ${redactSourceText(context.sessionId,options.redactLiterals).slice(0,80)} · ${event.role}`,text:options.retention==='reference'?'':text,mimeType:'text/plain',syncQueue:itemQueue,document:{contentRole:'transcript',timeBasis:event.at?'recorded':'unknown',recordedAt:event.at,coding:{version:1,provider,sessionId:redactSourceText(context.sessionId,options.redactLiterals).slice(0,500),projectKey:hash(context.cwd??`${provider}:${context.sessionId}`),cwd,projectName:cwd?basename(cwd).slice(0,400):undefined,repositoryKey:context.repositoryKey,branch:context.branch?redactSourceText(context.branch,options.redactLiterals).slice(0,500):undefined,eventId,role:event.role,callId:event.callId?redactSourceText(event.callId,options.redactLiterals).slice(0,500):undefined,parentSessionId:context.parentSessionId?redactSourceText(context.parentSessionId,options.redactLiterals).slice(0,500):undefined,part,parts:pieces.length}}});
           }
           if(result.items.length+items.length>Math.max(limits.items,500)||bytes+raw.length>Math.max(limits.bytes,4*1024*1024)){result.complete=false;break;}
           result.items.push(...items);result.seen.push(...items.map(i=>i.externalId));bytes+=raw.length;

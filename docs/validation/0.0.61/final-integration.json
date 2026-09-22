@@ -1,0 +1,94 @@
+{
+  "initial": [
+    {
+      "command": "node --test scripts/release/dev-assets.test.mjs scripts/check-dependencies-tests.mjs",
+      "code": 0,
+      "seconds": 0.3,
+      "log": "/tmp/mote-final-integration-00.log"
+    },
+    {
+      "command": "npm run test:privacy",
+      "code": 0,
+      "seconds": 0.85,
+      "log": "/tmp/mote-final-integration-01.log"
+    },
+    {
+      "command": "npm run test:e2e",
+      "code": 0,
+      "seconds": 2.87,
+      "log": "/tmp/mote-final-integration-02.log"
+    },
+    {
+      "command": "npm run test:media-e2e",
+      "code": 0,
+      "seconds": 1.36,
+      "log": "/tmp/mote-final-integration-03.log"
+    },
+    {
+      "command": "node scripts/test-mcp-stdio.mjs",
+      "code": 0,
+      "seconds": 0.59,
+      "log": "/tmp/mote-final-integration-04.log"
+    },
+    {
+      "command": "node --test scripts/mcp-connection-tests.mjs",
+      "code": 0,
+      "seconds": 0.08,
+      "log": "/tmp/mote-final-integration-05.log"
+    },
+    {
+      "command": "node --test scripts/update-tests.mjs scripts/update-deployment-tests.mjs scripts/security-tests.mjs",
+      "code": 0,
+      "seconds": 5.44,
+      "log": "/tmp/mote-final-integration-06.log"
+    },
+    {
+      "command": "node scripts/test-setup-vision.mjs",
+      "code": 0,
+      "seconds": 0.59,
+      "log": "/tmp/mote-final-integration-07.log"
+    },
+    {
+      "command": "npm run test:profiles",
+      "code": 1,
+      "seconds": 82.16,
+      "log": "/tmp/mote-final-integration-08.log"
+    },
+    {
+      "command": "npm run test:tunnel",
+      "code": 0,
+      "seconds": 11.2,
+      "log": "/tmp/mote-final-integration-09.log"
+    },
+    {
+      "command": "python3 -m unittest discover -s scripts -p test_fact_archive.py",
+      "code": 0,
+      "seconds": 0.68,
+      "log": "/tmp/mote-final-integration-10.log"
+    },
+    {
+      "command": "python3 -m unittest discover -s scripts -p test_mote_audio.py",
+      "code": 0,
+      "seconds": 0.53,
+      "log": "/tmp/mote-final-integration-11.log"
+    }
+  ],
+  "targetedCorrections": [
+    {
+      "script": "scripts/test-central-runner.mjs",
+      "cause": "The final noisy log subprocess of test-profiles exceeded the helper deadline; prior actual profile/restore/upgrade checks passed. Isolated repetition did not reproduce the deadline, but exposed per-line synchronous logging amplification. Bounded sanitized batches preserve exact output and reduce writes.",
+      "exitCode": 0,
+      "evidence": "docs/validation/0.0.61/supervisor-logging.json",
+      "checks": [
+        "same 60000-line workload twice",
+        "rotation and 0600",
+        "private output suppression",
+        "split final line",
+        "exit 7",
+        "SIGTERM final output and exit 0",
+        "disk failure terminates child and exits 1"
+      ]
+    }
+  ],
+  "status": "11 complete initial groups passed; all profile stages before its last log-load check passed; last stage and additional supervisor regressions passed after focused correction. Final-source full profile integration is required by CI."
+}

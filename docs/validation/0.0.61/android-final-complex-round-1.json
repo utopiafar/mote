@@ -1,0 +1,45 @@
+{
+  "round": 1,
+  "deviceId": "android-complex-7229ee03-ac33-4e6d-858d-e2ce7cf3339b",
+  "stagePid": 13748,
+  "recoveryPid": 13915,
+  "editorRecreationMs": 621,
+  "records": [
+    {
+      "id": "054dab1f-fc12-4be1-96c9-0f8280125ca0",
+      "name": "paragraphs",
+      "utf16Length": 75,
+      "sha256": "4fcff495cca84a7c2897c269342311c2f15e94326bcf00b4e2ed07e629827b51"
+    },
+    {
+      "id": "bd208e54-fc3a-4d2f-8c73-89129113c506",
+      "name": "unicode",
+      "utf16Length": 106,
+      "sha256": "62e836a6e10dc8f6aea49f24f6a5b019ab5950c71de9cff77813e890d6a9b857"
+    },
+    {
+      "id": "f31b7f8d-c9aa-4562-98f8-b7f16ce54257",
+      "name": "quoted-instructions",
+      "utf16Length": 166,
+      "sha256": "93c90c9458e5e8035697883004a99ff916fadad1e8072aad8d71fb43b8f24cef"
+    },
+    {
+      "id": "29d7562f-9dd4-4951-b26e-267c0bf5b816",
+      "name": "maximum-length",
+      "utf16Length": 100000,
+      "sha256": "cf2502f00d69eecba3af61aa93be720fd81125298b1cbe2a0f57eb3c4963e98e"
+    },
+    {
+      "id": "898e8571-5d76-4448-aaf5-76a23e6ff089",
+      "name": "blank-mood",
+      "utf16Length": 19,
+      "sha256": "2b317bbf3d2a942a2a24b6c8eff51c83ba9e85e4a0d6835cd4445ac34f30fcf8"
+    },
+    {
+      "id": "30ef1002-7969-44ad-8e7f-d10d1c8e09f3",
+      "name": "post-enqueue-scheduler-failure",
+      "utf16Length": 48,
+      "sha256": "9486fe8f6db68d7909b89b16e93f767d7b8dec6fe13fc634f0459504011db920"
+    }
+  ]
+}

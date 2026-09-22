@@ -126,9 +126,9 @@ test('provider failure marks evidence failed; explicit retry returns it to pendi
   await indexer.tick();
   assert.equal(store.evidence([event.id])[0].indexingStatus, 'failed');
   const failed = store.db.prepare('SELECT attempts,index_error FROM captures WHERE id=?').get(event.id) as { attempts: number; index_error: string };
-  assert.equal(failed.attempts, 1); assert.match(failed.index_error, /HTTP 503/);
+  assert.equal(failed.attempts, 1); assert.match(failed.index_error, /provider_unavailable/);
   await indexer.tick(); assert.equal(calls.length, 1, 'failed rows wait for explicit retry');
-  assert.deepEqual(store.retryIndex(), { queued: 1 });
+  assert.deepEqual(indexer.retry(), { queued: 1 });
   assert.equal(store.evidence([event.id])[0].indexingStatus, 'pending');
   failing = false; await indexer.tick();
   assert.equal(store.evidence([event.id])[0].indexingStatus, 'indexed');
@@ -141,7 +141,7 @@ test('malformed provider vectors fail closed instead of storing unusable embeddi
   const { store, indexer } = await fixture(t, () => ({ body: { data: [{ embedding: [1, 'not-a-number'] }] } }));
   const event = capture('Generated malformed-vector evidence.'); await store.ingest(event); await indexer.tick();
   const row = store.db.prepare('SELECT index_status,embedding,index_error FROM captures WHERE id=?').get(event.id) as { index_status: string; embedding: null; index_error: string };
-  assert.equal(row.index_status, 'failed'); assert.equal(row.embedding, null); assert.match(row.index_error, /invalid vector/);
+  assert.equal(row.index_status, 'failed'); assert.equal(row.embedding, null); assert.match(row.index_error, /embedding_invalid/);
 });
 
 test('oversized provider JSON is bounded even when its embedding is valid, and retry can recover',async t=>{
@@ -150,8 +150,8 @@ test('oversized provider JSON is bounded even when its embedding is valid, and r
   const event=capture('Generated bounded-provider-response test');await store.ingest(event);await indexer.tick();
   assert.equal(store.evidence([event.id])[0].indexingStatus,'failed');assert.equal(calls.length,1);
   const row=store.db.prepare('SELECT embedding,index_error FROM captures WHERE id=?').get(event.id) as {embedding:null;index_error:string};
-  assert.equal(row.embedding,null);assert.match(row.index_error,/invalid vector/);
-  oversized=false;store.retryIndex();await indexer.tick();assert.equal(store.evidence([event.id])[0].indexingStatus,'indexed');
+  assert.equal(row.embedding,null);assert.match(row.index_error,/embedding_invalid/);
+  oversized=false;indexer.retry();await indexer.tick();assert.equal(store.evidence([event.id])[0].indexingStatus,'indexed');
 });
 
 test('close aborts an in-flight embedding, waits for the worker, and allows the database to close without later writes', { timeout: 5000 }, async t => {

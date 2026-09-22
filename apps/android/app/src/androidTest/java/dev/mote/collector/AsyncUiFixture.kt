@@ -33,11 +33,10 @@ fun ActivityScenario<MainActivity>.awaitMainUi(): ActivityScenario<MainActivity>
     while (!ready && SystemClock.elapsedRealtime() < deadline) {
         onActivity { activity ->
             val rows = views(activity.window.decorView).toList()
-            ready = rows.filterIsInstance<EditText>().any { it.hint?.toString() == "记下此刻的想法…" && it.isEnabled } ||
-                rows.filterIsInstance<TextView>().any { it.text.startsWith("加密草稿读取失败") }
+            ready = rows.filterIsInstance<TextView>().any { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("记录") }
         }
         if (!ready) Thread.sleep(25)
     }
-    assertTrue("Settings and encrypted draft must finish loading", ready)
+    assertTrue("Committed settings and initial page must finish loading", ready)
     return this
 }

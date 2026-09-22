@@ -19,7 +19,7 @@ test('generic originals preserve bytes, names and MIME with content-addressed de
 test('originals honor vault blob encryption and detect corrupted content',t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-files-')),store=new Store(directory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:true}),files=new ArchivedFileStore(store);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   const bytes=Buffer.from('synthetic original'),file=files.put({name:'fixture.bin',bytes});
-  assert.deepEqual(files.read(file.id),bytes);assert.notDeepEqual(readFileSync(join(directory,'files',file.hash+'.aes')),bytes);
+  assert.deepEqual(files.read(file.id),bytes);assert.notDeepEqual(readFileSync(join(store.assets.directory,file.hash,'0.aes')),bytes);
 });
 test('portable archive restores original bytes, stable file IDs and attachment relations',async t=>{
  const originDirectory=mkdtempSync(join(tmpdir(),'mote-file-origin-')),restoreDirectory=mkdtempSync(join(tmpdir(),'mote-file-restore-'));
@@ -29,7 +29,7 @@ test('portable archive restores original bytes, stable file IDs and attachment r
  const capture=await sources.upsert('portable-files',{externalId:'entry',revision:'v1',observedAt:'2026-09-15T12:00:00Z',kind:'file',layer:'original',text:'Synthetic authored text',document:{fileId:file.id,timeBasis:'unknown',contentRole:'authored',attachments:[{id:attachment.id,name:attachment.name}]}});files.attach(capture.id,[file.id,attachment.id]);
  const archive=origin.exportArchive(100000);assert.equal(archive.files.length,2);assert.equal('import_jobs'in archive,false);assert.equal('settings'in archive,false);
  await restored.importArchive(archive);const restoredFiles=new ArchivedFileStore(restored);assert.deepEqual(restoredFiles.get(file.id),file);assert.equal(restoredFiles.read(file.id).toString(),'synthetic original bytes');assert.deepEqual(restoredFiles.read(attachment.id),Buffer.from([0,255,8]));assert.equal(restoredFiles.listForCapture(capture.id).length,2);
- assert.equal(restored.evidence([capture.id])[0].provenance?.document?.fileId,file.id);assert.notDeepEqual(readFileSync(join(restoreDirectory,'files',file.hash+'.aes')),restoredFiles.read(file.id));
+ assert.equal(restored.evidence([capture.id])[0].provenance?.document?.fileId,file.id);assert.notDeepEqual(readFileSync(join(restored.assets.directory,file.hash,'0.aes')),restoredFiles.read(file.id));
  assert.equal((await restored.importArchive(archive)).duplicates,1);
 });
 test('portable file preflight, quota and late rollback leave no partial originals',async t=>{
@@ -37,6 +37,6 @@ test('portable file preflight, quota and late rollback leave no partial original
  const origin=new Store(originDirectory),restored=new Store(restoreDirectory),quota=new Store(quotaDirectory,{maxStorageBytes:100});t.after(()=>{origin.close();restored.close();quota.close();for(const path of [originDirectory,restoreDirectory,quotaDirectory])rmSync(path,{recursive:true,force:true});});
  const file=new ArchivedFileStore(origin).put({name:'fixture.bin',bytes:Buffer.from('synthetic original')});const archive=origin.exportArchive(10000);
  await assert.rejects(restored.importArchive({...archive,files:[{...archive.files[0],dataBase64:Buffer.from('corrupt').toString('base64')}]}),/checksum/);assert.equal(restored.db.prepare('SELECT COUNT(*) AS n FROM archived_files').get()?.n,0);
- await assert.rejects(restored.importArchive({...archive,sourceHeads:[{capture_id:'missing'}]}),/source pointer/);assert.equal(restored.db.prepare('SELECT COUNT(*) AS n FROM archived_files').get()?.n,0);assert.deepEqual(readdirSync(join(restoreDirectory,'files')),[]);
- await assert.rejects(quota.importArchive(archive),{statusCode:507});assert.deepEqual(readdirSync(join(quotaDirectory,'files')),[]);assert.throws(()=>origin.exportArchive(20),{statusCode:413});assert.equal(new ArchivedFileStore(origin).read(file.id).toString(),'synthetic original');
+ await assert.rejects(restored.importArchive({...archive,sourceHeads:[{capture_id:'missing'}]}),/source pointer/);assert.equal(restored.db.prepare('SELECT COUNT(*) AS n FROM archived_files').get()?.n,0);assert.deepEqual(readdirSync(restored.assets.directory),[]);
+ await assert.rejects(quota.importArchive(archive),{statusCode:507});assert.deepEqual(readdirSync(quota.assets.directory),[]);assert.throws(()=>origin.exportArchive(20),{statusCode:413});assert.equal(new ArchivedFileStore(origin).read(file.id).toString(),'synthetic original');
 });

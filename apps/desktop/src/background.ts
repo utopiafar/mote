@@ -6,6 +6,9 @@ import { localContentPolicy } from './local-content';
 
 export interface WorkProgress { message: string; completed?: number; total?: number }
 export type BackgroundRequest =
+  | {kind:'spool-original';path:string;directory:string;expected:import('./original-spool').OriginalIdentity}
+  | {kind:'original-part';spool:import('./original-spool').OriginalSpool;part:number}
+  | {kind:'source-state';path:string;patches?:import('./source-state-store').StatePatch[];maximum?:number}
   | {kind:'coding-scan';root:string;provider:import('./coding-agents').CodingProvider;options:import('./source-types').SourceOptions;checkpoint?:import('./coding-agents').CodingCheckpoint}
   | { kind: 'compression-preview'; quality: number; maxSide: number }
   | { kind: 'json-write'; path: string; value: unknown; maximum?: number }
@@ -51,7 +54,7 @@ export class BackgroundLane {
     this.worker.ref();
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: value => resolve(value as T), reject, progress });
-      try { this.worker!.postMessage({ id, request, locale: getLocale(), contentPolicy: ['json-read', 'json-write', 'archive-export'].includes(request.kind) ? localContentPolicy() : { enabled: false } }); }
+      try { this.worker!.postMessage({ id, request, locale: getLocale(), contentPolicy: ['spool-original','original-part','source-state', 'json-read', 'json-write', 'archive-export'].includes(request.kind) ? localContentPolicy() : { enabled: false } }); }
       catch (error) { this.pending.delete(id); if (!this.pending.size) this.worker!.unref(); reject(error); }
     });
   }

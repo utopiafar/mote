@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync,mkdtempSync,readFileSync,rmSync,writeFileSync} from 'node:fs';
+import {existsSync,mkdtempSync,readFileSync,rmSync,symlinkSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {zipSync} from 'fflate';
@@ -87,4 +87,50 @@ test('deleting an import preserves shared originals until the last owning job is
 test('running imports cannot be deleted',async t=>{
  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});const {imports}=fixture(t,{prepare:async()=>{await gate;return {summary:'No synthetic records'};}});
  const job=await imports.create({files:[entry('fixture.bin','fixture')]});const running=imports.prepare(job.id);assert.throws(()=>imports.delete(job.id),{statusCode:409});release();await running;assert.equal(imports.delete(job.id).deleted,true);
+});
+
+test('ZIP checksum and truncation failures retain only the supplied original',async t=>{
+ const {imports,files}=fixture(t),zip=Buffer.from(zipSync({'note.txt':Buffer.from('Synthetic CRC evidence')},{level:0}));
+ const corrupt=Buffer.from(zip);corrupt[30+Buffer.byteLength('note.txt')]^=1;
+ for(const [name,bytes] of [['crc.zip',corrupt],['truncated.zip',zip.subarray(0,zip.length-10)]] as const){
+  const job=await imports.create({files:[{name,dataBase64:bytes.toString('base64')}]});assert.equal(job.status,'failed');assert.equal(job.files.length,1);assert.equal(job.archive.expandedFiles,0);assert.deepEqual(files.read(job.files[0].id),bytes);
+ }
+});
+
+test('400 generated ZIP files recover an interrupted staging batch with stable original and child identities',async t=>{
+ const {imports,files,store,sources}=fixture(t),entries=Object.fromEntries(Array.from({length:400},(_,i)=>['day-'+i+'.txt',Buffer.from(new Date(Date.UTC(2024,0,1+i)).toISOString()+' Synthetic daily source '+i)])),zip=Buffer.from(zipSync(entries));
+ const put=files.putParts.bind(files);let staged=0,fail=true;
+ files.putParts=(input,parts,size)=>{if(input.relativePath?.includes('.contents/')&&++staged===28&&fail){fail=false;throw Object.assign(new Error('Generated interrupted staging'),{statusCode:507});}return put(input,parts,size);};
+ const job=await imports.create({files:[{name:'days.zip',dataBase64:zip.toString('base64')}]});assert.equal(job.status,'failed');assert.equal(job.archive.expandedFiles,27);
+ const ids=new Map(job.files.map(file=>[file.relativePath,file.id]));files.putParts=put;
+ const resumed=new ImportStore(store,files,sources),done=await resumed.retry(job.id);assert.equal(done.status,'needs_configuration');assert.equal(done.archive.expandedFiles,400);assert.equal(done.files.length,401);
+ for(const file of done.files){if(ids.has(file.relativePath))assert.equal(file.id,ids.get(file.relativePath));if(file.relativePath!=='days.zip')assert.deepEqual(files.read(file.id),entries[file.relativePath.slice('days.zip.contents/'.length)]);}
+ assert.deepEqual(files.read(done.files[0].id),zip);assert.equal(store.db.prepare('SELECT count(*) n FROM archived_files').get()!.n,401);
+});
+
+test('plain decoding is exclusive while its worker runs and preserves Unicode across decoder boundaries',async t=>{
+ const {imports,store}=fixture(t),text='x'.repeat(23999)+'🌱'+'合成资料'.repeat(12000),job=await imports.create({files:[entry('unicode.txt',text)],processing:'automatic'});
+ const pending=imports.prepare(job.id);await assert.rejects(imports.prepare(job.id),{statusCode:409});assert.throws(()=>imports.delete(job.id),{statusCode:409});
+ const done=await pending;assert.equal(done.status,'completed');assert.ok(done.progress.total>1);const records=done.captureIds.map(id=>store.evidence([id])[0]);
+ assert.equal(records.map(record=>record.ocrText).join(''),text);assert.ok(records.every(record=>!/[\uD800-\uDBFF]$/.test(record.ocrText)));assert.equal(done.progress.total,records.length);
+});
+
+
+test('directory staging streams originals and rejects a file changed after enumeration',async t=>{
+ const {imports,files}=fixture(t),directory=mkdtempSync(join(tmpdir(),'mote-directory-fixture-'));t.after(()=>rmSync(directory,{recursive:true,force:true}));
+ const path=join(directory,'note.txt');writeFileSync(path,'Original fixture');const put=files.putParts.bind(files);let changed=false;
+ files.putParts=(input,parts,size)=>{if(!changed){changed=true;writeFileSync(path,'Replaced fixture');}return put(input,parts,size);};
+ await assert.rejects(imports.create({directory,processing:'automatic'}),{statusCode:409});assert.equal(imports.list()[0].status,'failed');assert.equal(imports.list()[0].files.length,0);
+ files.putParts=put;const job=await imports.create({directory,processing:'automatic'});assert.equal((await imports.prepare(job.id)).status,'completed');assert.equal(files.read(job.files[0].id).toString(),'Replaced fixture');
+ symlinkSync(path,join(directory,'linked.txt'));await assert.rejects(imports.create({directory}),/symbolic links/);
+});
+
+test('decoder upgrades preserve legacy source versions while bounding the former oversized final Unicode segment',async t=>{
+ const {imports,files,sources,store}=fixture(t),text='x'.repeat(23999)+'🌱'+'y'.repeat(23999),file=files.put({name:'legacy.txt',bytes:Buffer.from(text)});
+ const job=await imports.create({archivedFileIds:[file.id],processing:'automatic'});
+ sources.register({id:job.sourceId,name:'Legacy fixture',kind:'upload',deviceId:'mote-import',platform:'import',retention:'archive'});
+ const legacy=await sources.upsert(job.sourceId,{externalId:'legacy.txt:1',revision:file.hash,observedAt:'2024-01-01T00:00:00Z',title:'legacy.txt',text:text.slice(23999),kind:'file',layer:'original'});
+ const done=await imports.prepare(job.id);assert.equal(done.status,'completed');assert.equal(done.progress.total,3);assert.equal(store.evidence([legacy.id])[0].ocrText,text.slice(23999));
+ const current=done.captureIds.map(id=>store.evidence([id])[0]);assert.ok(current.every(record=>record.ocrText.length<=24000));assert.equal(current.map(record=>record.ocrText).join(''),text);assert.notEqual(sources.getItem(job.sourceId,'legacy.txt:1')!.captureId,legacy.id);
+ const replay=await imports.create({archivedFileIds:[file.id],processing:'automatic'}),again=await imports.prepare(replay.id);assert.equal(again.progress.duplicates,3);
 });

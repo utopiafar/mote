@@ -53,9 +53,10 @@ export class ContentStorageService {
       if(steps.has(path))return;
       steps.set(path,()=>{directory(this.archived.directory,root,parent);return this.store.contentEncryption.decrypt(path,bytes=>{if(checksum&&sha256(bytes)!==checksum)throw Error('File part checksum mismatch');});});
     };
-    for(const row of this.store.db.prepare('SELECT hash FROM blobs').all() as {hash:string}[])image(row.hash);
-    for(const row of this.store.db.prepare('SELECT hash FROM file_blobs').all() as {hash:string}[])original(row.hash);
-    for(const row of this.store.db.prepare('SELECT hash,parts,bytes FROM file_objects').all() as {hash:string;parts:number;bytes:number}[]){
+    const importUploads=join(this.store.directory,'import-uploads');privateDirectory(importUploads);
+    for(const row of this.store.db.prepare("SELECT hash FROM assets WHERE format='image-legacy'").all() as {hash:string}[])image(row.hash);
+    for(const row of this.store.db.prepare("SELECT hash FROM assets WHERE format='archive-legacy'").all() as {hash:string}[])original(row.hash);
+    for(const row of this.store.db.prepare("SELECT hash,parts,bytes FROM assets WHERE format='chunks'").all() as {hash:string;parts:number;bytes:number}[]){
       if(!/^[a-f0-9]{64}$/.test(row.hash)||!Number.isSafeInteger(row.parts)||row.parts<0||row.parts>100000)throw Error('Invalid managed object');
       for(let index=0;index<row.parts;index++)part(this.files.objects,row.hash,index);
     }
@@ -71,7 +72,7 @@ export class ContentStorageService {
     for(const name of readdirSync(this.archived.directory)){
       const match=/^([a-f0-9]{64})(?:\.plain|\.aes)?$/.exec(name);if(match)original(match[1]);
     }
-    for(const [root,pattern] of [[this.files.objects,objectName],[this.files.uploads,uploadName]] as const){
+    for(const [root,pattern] of [[this.files.objects,objectName],[this.files.uploads,uploadName],[importUploads,uploadName]] as const){
       for(const name of readdirSync(root))if(pattern.test(name)){
         await setImmediate();if(this.stopped){this.progress.state='cancelled';return;}
         const parent=join(root,name);

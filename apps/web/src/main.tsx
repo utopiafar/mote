@@ -1,16 +1,24 @@
+import {EvidenceState} from './EvidenceState';
+import {readResource,resources} from './resource-cache';
+import {useResource} from './useResource';
+import {useOperationUpdates} from './useOperationUpdates';
+import {readEvidenceRoute,changeEvidenceRoute} from './evidence-route';
+import {containDialogFocus} from './dialog-focus';
+import {parseEvidenceRef} from '@mote/shared';
+import {ReferenceDetail} from './ReferenceDetail';
 import {sections, routes, readPage, sectionFor, type Page} from './navigation';
 import {confirmNavigation} from './unsaved';
-import {Processing} from './Processing';
-import {Feedback} from './Feedback';
-import {StorageStatistics} from './StorageStatistics';
-import {LarkSettings} from './LarkSettings';
+const Processing = React.lazy(()=>import('./Processing').then(module=>({default:module.Processing})));
+const Feedback = React.lazy(()=>import('./Feedback').then(module=>({default:module.Feedback})));
+const StorageStatistics = React.lazy(()=>import('./StorageStatistics').then(module=>({default:module.StorageStatistics})));
+const LarkSettings = React.lazy(()=>import('./LarkSettings').then(module=>({default:module.LarkSettings})));
 import { LanguageSelector } from './LanguageSelector';
 import { getLocale } from '@mote/shared/i18n';
 import { moteText } from '@mote/shared/i18n';
 import {Usage,TurnUsage} from './Usage';
-import {Actions} from './Actions';
-import {CaptureSessions} from './CaptureSessions';
-import {ContentStorage} from './ContentStorage';
+const Actions = React.lazy(()=>import('./Actions').then(module=>({default:module.Actions})));
+const CaptureSessions = React.lazy(()=>import('./CaptureSessions').then(module=>({default:module.CaptureSessions})));
+const ContentStorage = React.lazy(()=>import('./ContentStorage').then(module=>({default:module.ContentStorage})));
 import { clearSession, persistSession, readSessionLifetime, readStoredSession, saveSessionLifetime, type SessionLifetime } from "./session";
 import {systemEventText} from '@mote/shared';
 import React, {
@@ -23,7 +31,7 @@ import React, {
 import { createRoot } from "react-dom/client";
 import {captureOcrState, type CapturePreview} from '@mote/shared';
 import { AnswerMarkdown, answerPreview } from "./AnswerMarkdown";
-import { Conversations } from "./Conversations";
+const Conversations = React.lazy(()=>import('./Conversations').then(module=>({default:module.Conversations})));
 import {captureDateRange, evidencePresentation, localDateInput, ocrPresentation} from './capture-presentation';
 import {
   ArrowDownToLine,
@@ -82,21 +90,21 @@ import {
   type Range,
 } from "./api";
 import "./styles.css";
-import { Notes } from "./Notes";
-import { Diagnostics } from "./Diagnostics";
+const Notes = React.lazy(()=>import('./Notes').then(module=>({default:module.Notes})));
+const Diagnostics = React.lazy(()=>import('./Diagnostics').then(module=>({default:module.Diagnostics})));
 import { ServerSettings, AdvancedConfiguration } from "./ServerSettings";
-import { SoftwareUpdate } from "./SoftwareUpdate";
+const SoftwareUpdate = React.lazy(()=>import('./SoftwareUpdate').then(module=>({default:module.SoftwareUpdate})));
 import { DeviceOverview, PageBack } from "./DeviceOverview";
-import { Connections } from "./Connections";
+const Connections = React.lazy(()=>import('./Connections').then(module=>({default:module.Connections})));
 import {Metadata, sourceLabels, activityExplanation} from './Metadata';
 import {MediaSnapshot,MediaActivitySummary} from './Media';
 import {mediaCardText,mediaStatus,mediaExplanation} from './media-presentation';
 
 import {Files,FileDetail} from './Files';
-import {Sources} from "./Sources";
-import {Memories} from "./Memories";
-import {Imports} from "./Imports";
-import {Insights} from "./Insights";
+const Sources = React.lazy(()=>import('./Sources').then(module=>({default:module.Sources})));
+const Memories = React.lazy(()=>import('./Memories').then(module=>({default:module.Memories})));
+const Imports = React.lazy(()=>import('./Imports').then(module=>({default:module.Imports})));
+const Insights = React.lazy(()=>import('./Insights').then(module=>({default:module.Insights})));
 import {SourceDocumentDetails} from './SourceDocumentDetails';
 
 declare global {
@@ -426,40 +434,14 @@ function EvidenceDialog({
   onDeleted: () => void;
   onOpen: (id:string) => void;
 }) {
-  const [capture, setCapture] = useState<Capture | null>(null);
-  const [error, setError] = useState("");
+  const captureRef=parseEvidenceRef(id)?.kind==='capture';
+  const {data:capture,error:readError}=useResource<Capture>(api,captureRef?`/api/capture-browser/${encodeURIComponent(id)}`:null);
+  useOperationUpdates(api);
+  const [mutationError,setError]=useState('');
+  const error=mutationError||(readError?errorMessage(readError):'');
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    setCapture(null);
-    setError("");
-    setConfirm(false);
-    void api
-      .request<Capture>(`/api/capture-browser/${encodeURIComponent(id)}`, {signal: controller.signal})
-      .catch(()=>api.request<Capture>(`/api/captures/${encodeURIComponent(id)}`,{signal:controller.signal}))
-      .then((value) => active && setCapture(value))
-      .catch((e) => active && setError(errorMessage(e)));
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [api, id]);
-  useEffect(() => {
-    if (capture?.ocr?.status !== 'pending') return;
-    const controller = new AbortController();
-    let fetching = false;
-    const timer = setInterval(() => {
-      if (fetching || document.hidden) return;
-      fetching = true;
-      void api.request<Capture>(`/api/capture-browser/${encodeURIComponent(id)}`, {signal: controller.signal})
-        .then(value => {if (!controller.signal.aborted) setCapture(value);})
-        .catch(() => { /* Preserve the last reported state while the node is unavailable. */ })
-        .finally(() => {fetching = false;});
-    }, 10_000);
-    return () => {clearInterval(timer);controller.abort();};
-  }, [api, id, capture?.ocr?.status]);
+  useEffect(()=>{setError('');setConfirm(false);},[id]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -468,18 +450,8 @@ function EvidenceDialog({
     return () => document.removeEventListener("keydown", key);
   }, [onClose]);
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
     const panel = document.querySelector<HTMLElement>('.evidence-modal');
-    const items = () => Array.from(panel?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input,select,textarea,summary,[tabindex="0"]') ?? []).filter(el => el.getClientRects().length);
-    items()[0]?.focus();
-    const trap = (event:KeyboardEvent) => {
-      if(event.key !== 'Tab') return;
-      const nodes=items(), first=nodes[0],last=nodes.at(-1);
-      if(event.shiftKey && document.activeElement===first){event.preventDefault();last?.focus();}
-      else if(!event.shiftKey && document.activeElement===last){event.preventDefault();first?.focus();}
-    };
-    document.addEventListener('keydown',trap);
-    return () => {document.removeEventListener('keydown',trap);previous?.focus({preventScroll:true});};
+    return panel?containDialogFocus(panel,document.activeElement as HTMLElement|null):undefined;
   }, []);
   async function remove() {
     setBusy(true);
@@ -487,6 +459,7 @@ function EvidenceDialog({
       await api.request(`/api/captures/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
+      resources(api).invalidate(key=>/^\/api\/(capture-browser|captures|files|memories|source-items|sources)([/?]|$)/.test(key));
       onDeleted();
       onClose();
     } catch (e) {
@@ -528,7 +501,8 @@ function EvidenceDialog({
         </div>
         {presentation?.nativeFile && <FileDetail api={api} id={presentation.nativeFile.captureId} startMs={presentation.nativeFile.startMs} onOpen={onOpen}/>}
         {error && <ErrorNotice text={error} />}
-        {!capture && !error && (
+        {!captureRef&&<ReferenceDetail key={id} api={api} reference={id} onOpen={onOpen}/>}
+        {captureRef && !capture && !error && (
           <div className="panel-pad">
             <Spinner />
           </div>
@@ -537,7 +511,7 @@ function EvidenceDialog({
           <>
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
-              <div className="evidence-text">
+              <div className="evidence-text"><EvidenceState/>
                 <span className="eyebrow">{presentation?.textLabel}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || moteText("原始上下文")}</h3>
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
@@ -727,8 +701,8 @@ function Overview({api,status,devices,activity,recent,insights,onPage,onOpen,ran
 function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>{moteText("应用活动概况")}</h2><p>{moteText("前台应用采样时长 ·")}{' '}{duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">{moteText("多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。")}</p></>:<Empty icon={Clock3} title={moteText("这段时间还没有活动采样")}><p>{moteText("设备完成同步后，可以在这里查看应用时间分布。")}</p></Empty>}</section>;}
 
 type ArchiveTab = 'records'|'files'|'activity'|'media'|'memories'|'sources';
-function Archive({api,devices,range,activity,revision,onOpen,tab,setTab}:{api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
- return <div className="archive-page"><div className="page-heading"><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("浏览原始记录、活动与播放分布，以及有证据支撑的记忆。")}</p></div><nav className="segmented-nav" aria-label={moteText("资料库分类")}>{([['records',moteText("全部记录")],['sources',moteText("来源资料")],['activity',moteText("应用活动")],['media',moteText("媒体播放")],['memories',moteText("记忆")]] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='sources'&&<Sources mode="library" api={api} onOpen={onOpen} onImport={()=>{location.hash='/library/import';}}/>}{tab==='files'&&<Files api={api} onOpen={onOpen}/>} {tab==='records'&&<Timeline embedded api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories embedded api={api} range={range} onOpen={onOpen} refreshVersion={revision}/>}</div>;
+function Archive({api,devices,range,activity,revision,onOpen,tab,setTab,onChanged}:{onChanged?:()=>void;api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
+ return <div className="archive-page"><div className="page-heading"><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("浏览原始记录、活动与播放分布，以及有证据支撑的记忆。")}</p></div><nav className="segmented-nav" aria-label={moteText("资料库分类")}>{([['records',moteText("全部记录")],['sources',moteText("来源资料")],['activity',moteText("应用活动")],['media',moteText("媒体播放")],['memories',moteText("记忆")]] as const).map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} className={tab===id?'active':''} onClick={()=>setTab(id)}>{label}</button>)}</nav>{tab==='sources'&&<Sources mode="library" api={api} onOpen={onOpen} onImport={()=>{location.hash='/library/import';}}/>}{tab==='files'&&<Files api={api} onOpen={onOpen}/>} {tab==='records'&&<Timeline embedded api={api} devices={devices} revision={revision} onOpen={onOpen}/>} {tab==='activity'&&<ActivitySummary activity={activity}/>} {tab==='media'&&<MediaActivitySummary key={revision} api={api} range={range} onOpen={onOpen}/>} {tab==='memories'&&<Memories embedded api={api} range={range} onOpen={onOpen} refreshVersion={revision} onChanged={onChanged}/>}</div>;
 }
 
 function Timeline(props:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number;embedded?:boolean}) {
@@ -1264,13 +1238,29 @@ function App() {
         history.replaceState(null, '', '#/' + routes[pageRef.current]); return;
       }
       setPage(next); setMenuOpen(false);
-      updateEvidenceId(new URLSearchParams(location.hash.split('?')[1] || '').get('evidence'));
+      updateEvidenceId(readEvidenceRoute(location.hash));
     };
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
   const [period, setPeriod] = useState("week");
   const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(()=>{
+    if(!menuOpen)return;
+    const menu=document.getElementById('primary-navigation'),opener=document.querySelector<HTMLButtonElement>('.mobile-menu');
+    const controls=()=>Array.from(menu?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],select:not(:disabled),input:not(:disabled)')??[]).filter(element=>element.getClientRects().length>0);
+    controls()[0]?.focus();
+    const key=(event:KeyboardEvent)=>{
+      if(event.key==='Escape'){event.preventDefault();setMenuOpen(false);return;}
+      if(event.key!=='Tab')return;
+      const items=controls(),first=items[0],last=items.at(-1);
+      if(!first)return;
+      if(event.shiftKey&&(document.activeElement===first||!menu?.contains(document.activeElement))){event.preventDefault();last?.focus();}
+      else if(!event.shiftKey&&(document.activeElement===last||!menu?.contains(document.activeElement))){event.preventDefault();first.focus();}
+    };
+    document.addEventListener('keydown',key);
+    return()=>{document.removeEventListener('keydown',key);opener?.focus();};
+  },[menuOpen]);
   const [status, setStatus] = useState<Status | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [activity, setActivity] = useState<Activity>({
@@ -1285,12 +1275,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
-  const [evidenceId, updateEvidenceId] = useState<string | null>(()=>new URLSearchParams(location.hash.split('?')[1] || '').get('evidence'));
+  const [evidenceId, updateEvidenceId] = useState<string | null>(()=>readEvidenceRoute(location.hash));
   const setEvidenceId = useCallback((id:string|null) => {
-    const base = '#/' + routes[pageRef.current];
-    if (id) history.pushState({evidence:true}, '', base+'?evidence='+encodeURIComponent(id));
-    else history.replaceState(null, '', base);
-    updateEvidenceId(id);
+    updateEvidenceId(changeEvidenceRoute(window,id));
   }, []);
   const [notice, setNotice] = useState("");
   const [timelineRevision, setTimelineRevision] = useState(0);
@@ -1340,7 +1327,7 @@ function App() {
     if (!api || verified) return;
     const controller = new AbortController();
     setError("");
-    void api.request("/api/configuration", {signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)])})
+    void readResource(api,"/api/configuration",AbortSignal.any([controller.signal,AbortSignal.timeout(15000)]))
       .then(() => { if (!controller.signal.aborted) setVerified(true); })
       .catch(e => { if (!controller.signal.aborted) setError(e instanceof ApiError && e.status === 403 ? moteText("此令牌没有管理权限，请退出后使用管理令牌登录。") : errorMessage(e)); });
     return () => controller.abort();
@@ -1363,7 +1350,7 @@ function App() {
     const controller = new AbortController();
     setLoading(true); setError("");
     const load = async <T,>(path: string, apply: (value: T) => void) => {
-      const result = await api.request<T>(path, {signal: controller.signal});
+      const result = await readResource<T>(api,path,controller.signal);
       if (active) apply(result);
     };
     // Independent collections must not block navigation when one endpoint fails.
@@ -1387,7 +1374,7 @@ function App() {
     return () => clearInterval(timer);
   }, [api, refresh]);
   useEffect(() => {
-    if (showConnect) return;
+    if (showConnect||readEvidenceRoute(location.hash)) return;
     const tabs=document.querySelector<HTMLElement>('.content>.section-tabs');
     const active=tabs?.querySelector<HTMLElement>('[aria-current=page]');
     if(tabs&&active) tabs.scrollTo({left:active.offsetLeft-tabs.offsetLeft-16});
@@ -1422,7 +1409,7 @@ function App() {
   }
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
+      <aside id="primary-navigation" className={`sidebar ${menuOpen ? "open" : ""}`}>
         <button
           className="brand"
           onClick={() => onPage("overview")}
@@ -1475,6 +1462,7 @@ function App() {
             <button
               className="icon-button mobile-menu"
               aria-label={moteText("打开导航")}
+              aria-controls="primary-navigation" aria-expanded={menuOpen}
               onClick={() => setMenuOpen(!menuOpen)}
             >
               <Menu size={21} />
@@ -1527,7 +1515,7 @@ function App() {
               {moteText("我")}</button>
           </div>
         </header>
-        <div className="content">
+        <React.Suspense key={page} fallback={<p role="status">{moteText("正在读取…")}</p>}><div className="content">
           {(['library','connections','system'] as const).filter(group=>sectionFor(page)===group).map(group=><nav className="section-tabs" aria-label={group} key={group}>{sections[group].map(target=><button key={target} aria-current={page===target?'page':undefined} onClick={()=>onPage(target)}>{pageLabels[target]}</button>)}</nav>)}
           {notice && (
             <div className="notice" role="status">
@@ -1672,10 +1660,10 @@ function App() {
                       {page === "usage" && <Usage api={api}/>}
                       {page === "insights" && <Insights api={api} refreshVersion={timelineRevision} range={range} configured={status?.agent.configured??false} onOpen={setEvidenceId} onSettings={()=>onPage("settings")} onChanged={refresh}/>}
                       {page === "actions" && <Actions api={api} onOpen={setEvidenceId}/> }
-                      {page === "memories" && <Memories api={api} range={range} refreshVersion={timelineRevision} onOpen={setEvidenceId} />}
+                      {page === "memories" && <Memories api={api} range={range} refreshVersion={timelineRevision} onOpen={setEvidenceId} onChanged={refresh} />}
                       {page === "lark" && <LarkSettings api={api} onBack={()=>onPage("settings")} onSources={()=>onPage("sources")}/>}
                       {page === "settings" && <ServerSettings api={api} onNavigate={onPage} onModelApplied={refresh}/>}
-                      {page === "archive" && <Archive tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
+                      {page === "archive" && <Archive onChanged={refresh} tab={archiveTab} setTab={setArchiveTab} api={api} devices={devices} range={range} activity={activity} revision={timelineRevision} onOpen={setEvidenceId}/>}
                       {page === "connections" && <><Connections api={api} serverUrl={window.location.origin} devices={devices}/></>}
                       {page === "developer" && status && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("开发与维护")}</div><h1>{moteText("诊断与更新")}</h1><p>{moteText("查看运行诊断，按需调整日志与高级部署配置。")}</p></div><SoftwareUpdate api={api}/><Diagnostics api={api} profile={status.profile}/><AdvancedConfiguration api={api}/></>}
                       {page === "about" && <><PageBack title={moteText("设置")} onBack={()=>onPage("settings")}/><div className="page-heading"><div className="eyebrow">{moteText("你的资料，由你保管")}</div><h1>{moteText("设置")}</h1><p>{moteText("AI 原生个人上下文采集与中央归档。")}</p></div><SoftwareUpdate api={api}/><section className="panel session-settings"><h2>{moteText("当前服务（中央节点）")}</h2><p>{window.location.origin}</p><label className="session-lifetime-control"><span><strong>{moteText("登录会话有效期")}</strong><small>{sessionLifetime==='session'?moteText("仅保留在当前浏览器标签页；关闭后需要重新登录。"):moteText("管理令牌仍由中央节点控制；浏览器中的登录会话会在期限后自动清除。")}</small></span><select aria-label={moteText("登录会话有效期")} value={sessionLifetime} onChange={e=>changeSessionLifetime(e.target.value as SessionLifetime)}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label><p className="fine-print">{moteText("这是网页端登录会话的本地保存期限，不会修改中央节点的管理令牌或采集端凭据。")}</p><button className="button subtle" onClick={disconnect}><Unplug size={15}/>{moteText("退出登录")}</button></section></>}
@@ -1684,7 +1672,7 @@ function App() {
             </>
           )}
         </div>
-        <footer className="footer">
+        </React.Suspense><footer className="footer">
           <span>{moteText("Mote · 让上下文，有迹可循。")}</span>
           <span>
             {connection && status
