@@ -1,3 +1,4 @@
+import {ProviderFailure} from '@mote/shared';
 import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
 import type {AgentProgress} from '@mote/agent';
@@ -8,7 +9,7 @@ import {executionEnvelope,type ExecutionEnvelope} from '@mote/shared/execution';
 export interface QueryRun {
   id:string;status:'running'|'completed'|'failed'|'cancelled';createdAt:string;updatedAt:string;
   evidenceRevision?:number;conversationId?:string;turnId?:string;events:(AgentProgress&{at:string})[];
-  error?:{code:string;message:string};
+  error?:{code:string;message:string};availableAt?:number;
   execution?:ExecutionEnvelope;
 }
 /** Only identifiers and projected execution metadata; answers resolve from the conversation vault. */
@@ -40,7 +41,7 @@ export class QueryRuns {
       const next:AgentProgress&{at:string}={stage:e.stage,at:new Date().toISOString(),...(typeof e.message==='string'?{message:e.message.slice(0,600)}:{}),...(e.tool?{tool:e.tool.slice(0,80)}:{}),...(e.phase?{phase:e.phase}:{}),...(Number.isSafeInteger(e.step)?{step:e.step}:{}),...(Number.isSafeInteger(e.count)?{count:e.count}:{})};
       run.events.push(next);if(run.events.length>120)run.events.shift();run.updatedAt=next.at;this.save(run);
     };
-    const task=Promise.resolve().then(()=>work(observe,controller.signal)).then(result=>{if(controller.signal.aborted)return;Object.assign(run,{conversationId:result.conversationId,turnId:result.turnId,status:'completed',execution:{status:'succeeded',attempts:1,allowedActions:[]}});}).catch(e=>{if(controller.signal.aborted)return;const saved=(e&&typeof e==='object'?(e as {conversation?:{conversationId:string;turnId:string}}).conversation:undefined);if(saved)Object.assign(run,saved);const safe=safeError(e);run.status='failed';run.error={code:safe.category,message:safe.message};run.execution=executionEnvelope({status:'failed',attempts:1,errorCode:safe.category});}).finally(()=>{this.controllers.delete(id);if(run.evidenceRevision!==this.store.deletionRevision())run.events=run.events.map(({message:_,...e})=>e);run.updatedAt=new Date().toISOString();this.save(run);});
+    const task=Promise.resolve().then(()=>work(observe,controller.signal)).then(result=>{if(controller.signal.aborted)return;Object.assign(run,{conversationId:result.conversationId,turnId:result.turnId,status:'completed',execution:{status:'succeeded',attempts:1,allowedActions:[]}});}).catch(e=>{if(controller.signal.aborted)return;const saved=(e&&typeof e==='object'?(e as {conversation?:{conversationId:string;turnId:string}}).conversation:undefined);if(saved)Object.assign(run,saved);const safe=safeError(e);run.status='failed';run.error={code:e instanceof ProviderFailure?safe.reason??safe.category:safe.category,message:safe.message};run.availableAt=e instanceof ProviderFailure&&e.details.retryAfterMs!==undefined?Date.now()+e.details.retryAfterMs:undefined;run.execution=executionEnvelope({status:'failed',attempts:1,errorCode:run.error.code,availableAt:run.availableAt});}).finally(()=>{this.controllers.delete(id);if(run.evidenceRevision!==this.store.deletionRevision())run.events=run.events.map(({message:_,...e})=>e);run.updatedAt=new Date().toISOString();this.save(run);});
     this.pending.add(task);void task.finally(()=>this.pending.delete(task)).catch(()=>{});return initial;
   }
   async close(){await Promise.allSettled([...this.pending]);}

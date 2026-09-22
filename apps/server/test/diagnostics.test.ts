@@ -180,8 +180,8 @@ test('background indexing records timings, queue state and only a fixed failure 
 
 test('explicit agent timeout returns correlated 504 diagnostics while invalid answers remain 502',async t=>{
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-timeout-')),cfg=config(directory);
-  let failure:Error=new AgentTimeoutError();
-  const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{throw failure;}};
+  let failure:Error=new AgentTimeoutError(),modelCalls=0;
+  const agent:QueryAgent={configured:true,close:async()=>{},query:async()=>{modelCalls++;throw failure;}};
   const {app,diagnostics}=await buildApp(cfg,{agent});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${cfg.token}`};
   const timed=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
@@ -193,6 +193,8 @@ test('explicit agent timeout returns correlated 504 diagnostics while invalid an
   assert.equal(invalid.statusCode,502);assert.equal(invalid.json().error,'agent_response');
   failure=new AgentProviderError({category:'blocked',code:'provider_authentication'});failure.message=marker;const auth=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(auth.statusCode,502);assert.equal(auth.json().recovery,'needs_action');assert.equal(auth.json().reason,'provider_authentication');assert.ok(!auth.body.includes(marker));
   failure=new AgentProviderError({category:'transient',code:'rate_limited',retryAfterMs:12000});failure.message=marker;const rate=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(rate.statusCode,502);assert.equal(rate.json().retryAfterMs,12000);assert.equal(rate.headers['retry-after'],'12');assert.ok(!rate.body.includes(marker));
+  const before=modelCalls;const queued=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});assert.equal(queued.statusCode,502);assert.equal(queued.json().reason,'rate_limited');assert.equal(modelCalls,before,'shared cooldown must reject before invoking the model');assert.equal((await app.inject({url:'/api/execution-settings',headers})).json().providers.coolingDown,1);
+  const backgroundId=randomUUID();assert.equal((await app.inject({method:'POST',url:'/api/query-runs',headers,payload:{id:backgroundId,input:{question:marker}}})).statusCode,202);let background:any;for(let i=0;i<50;i++){await new Promise(r=>setImmediate(r));background=(await app.inject({url:'/api/query-runs/'+backgroundId,headers})).json();if(background.status==='failed')break;}assert.equal(background.status,'failed');assert.equal(background.error.code,'rate_limited');assert.equal(background.execution.failure.recovery,'auto_retry');assert.ok(background.execution.failure.retryAfterMs>0);assert.equal(modelCalls,before);
   const bundle=await app.inject({url:'/api/support-bundle',headers});for(const privateValue of [marker,cfg.token,cfg.apiKey])assert.ok(!bundle.body.includes(privateValue));
 });
 

@@ -1,3 +1,4 @@
+import {ProviderFailure} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {assembleContext,taskTools,WORKING_SYSTEM_PROMPT} from './task-context.js';
 import {randomUUID} from 'node:crypto';
@@ -77,7 +78,7 @@ export function createCodexAgent(options:AgentOptions){
       trace({type:'validation.completed',stage:'validating',phase:'completed',status:'accepted',payload:{citations:answer.citations.map(citation=>citation.id)}});
       trace({type:'run.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{citations:answer.citations.map(citation=>citation.id),toolCalls:bridge.trace}});
       return {...answer,trace:bridge.trace,contextUsage:{...metrics,toolResults:bridge.deliveredCharacters},runId};
-    }catch(error){trace({type:'run.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:error instanceof AgentResponseError?error.reason:undefined}});if(error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentResponseError)throw error;throw new AgentProviderError();}
+    }catch(error){trace({type:'run.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:error instanceof AgentResponseError?error.reason:undefined}});if(error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentResponseError||error instanceof ProviderFailure)throw error;throw new AgentProviderError();}
     finally{input.signal?.removeEventListener('abort',abort);try{await session?.close();}finally{if(session)sessions.delete(session);await bridge.close();}}
   }
   return {configured:Boolean(options.model?.trim()),query(input:QueryInput){const task=execute(input);pending.add(task);void task.finally(()=>pending.delete(task)).catch(()=>{});return task;},async close(){closed=true;await Promise.allSettled([...sessions].map(s=>s.close()));await Promise.allSettled([...pending]);}};

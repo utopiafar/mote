@@ -11,3 +11,9 @@ test('real Harness preserves HTTP recovery facts and does not retry opaque provi
  const workspace=await mkdtemp(join(tmpdir(),'mote-import-transport-'));status=429;const before=calls,agent=createImportAgent({protocol:'openai-completions',model:'fixture',apiKey:'synthetic-key',baseUrl:'http://127.0.0.1:'+provider.address().port});try{await assert.rejects(agent.prepare({workspace,inputPaths:[],helperPath:join(workspace,'helper.py'),instruction:'Generated transport check',manifestSchema:{}}),error=>error instanceof AgentProviderError&&error.details.code==='rate_limited'&&error.details.retryAfterMs===13000);assert.equal(calls-before,1);}finally{await agent.close();await rm(workspace,{recursive:true,force:true});}
  }finally{provider.closeAllConnections();await new Promise(r=>provider.close(r));}
 });
+
+test('host admission failures cross query and import adapters without becoming generic SDK errors',async()=>{
+ const {ProviderFailure}=await import('@mote/shared'),failure=new ProviderFailure({category:'transient',code:'rate_limited',retryAfterMs:23000});const options={protocol:'openai-completions',model:'fixture',apiKey:'synthetic-key',baseUrl:'http://127.0.0.1:1',runModel:async()=>{throw failure;}};
+ const agent=createAgent({...options,reader});try{await assert.rejects(agent.query({question:'Generated admission check'}),error=>error===failure);}finally{await agent.close();}
+ const workspace=await mkdtemp(join(tmpdir(),'mote-admission-import-')),importer=createImportAgent(options);try{await assert.rejects(importer.prepare({workspace,inputPaths:[],instruction:'Generated admission check',helperPath:join(workspace,'helper.py'),manifestSchema:{}}),error=>error===failure);}finally{await importer.close();await rm(workspace,{recursive:true,force:true});}
+});

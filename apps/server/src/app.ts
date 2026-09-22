@@ -1,3 +1,4 @@
+import {ProviderAdmission} from './provider-admission.js';
 import {ProviderFailure} from '@mote/shared';
 import {Operations,registerOperations} from './operations.js';
 import {registerImportUploads} from './import-uploads.js';
@@ -92,14 +93,15 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   // the background worker is enabled, let that worker perform maintenance after
   // the HTTP service is available instead of making startup scan the whole vault.
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(dependencies?.backgroundWorker)});
-  const runtimeSettings=new ExecutionSettings(store,config),execution=runtimeSettings.execution();
+  const runtimeSettings=new ExecutionSettings(store,config),execution=runtimeSettings.execution(),providerAdmission=new ProviderAdmission(store);
   const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
   const interactiveGate=new ConcurrencyGate(execution.interactiveConcurrency),interactiveModelGate=new ConcurrencyGate(execution.interactiveConcurrency);
   const modelContext=new AsyncLocalStorage<QueryInput>();
-  const runModel:NonNullable<import('@mote/agent').AgentOptions['runModel']>=(task,signal)=>{
+  const runModelFor=(settings:import('@mote/shared/models').ModelSettings):NonNullable<import('@mote/agent').AgentOptions['runModel']>=>(task,signal)=>{
+    signal?.throwIfAborted();providerAdmission.check(settings);
     const queuedAt=performance.now(),input=modelContext.getStore(),gate=input?.executionLane==='interactive'?interactiveModelGate:llmGate;input?.onTrace?.({type:'model.queued',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background'}});
     input?.onProgress?.({stage:'model',message:moteText('等待模型执行名额')});
-    return gate.run(async()=>{input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background',queueWaitMs:performance.now()-queuedAt}});return task();},signal??input?.signal);
+    return gate.run(async()=>{providerAdmission.check(settings);input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background',queueWaitMs:performance.now()-queuedAt}});return task();},signal??input?.signal);
   };
   const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
@@ -119,12 +121,13 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const reader=evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages});
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const codex={executable:config.codexBin,home:config.codexHome};
-  const wrapAgent=(inner:QueryAgent):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:input=>{
+  const wrapAgent=(inner:QueryAgent,settings:import('@mote/shared/models').ModelSettings):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:async input=>{
+    input.signal?.throwIfAborted();providerAdmission.check(settings);
     input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
-    return (input.executionLane==='interactive'?interactiveGate:agentGate).run(()=>modelContext.run(input,()=>inner.query(input)),input.signal);
+    return (input.executionLane==='interactive'?interactiveGate:agentGate).run(()=>providerAdmission.run(settings,()=>modelContext.run(input,()=>inner.query(input))),input.signal);
   }});
-  const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModel)));
-  let initialAgent=dependencies?.agent?wrapAgent(dependencies.agent):undefined;
+  const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModelFor(settings))),settings);
+  let initialAgent=dependencies?.agent?wrapAgent(dependencies.agent,modelSettingsFromConfig(config)):undefined;
   const modelSettings=new ModelSettingsStore({
     directory:config.dataDir,environment:modelSettingsFromConfig(config),codex,
     prepare:async (settings,profiles)=>{
@@ -395,7 +398,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours),working=new WorkingMemory(store,conversations);
   registerMemoryExtensions({semanticArtifacts,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
-  app.get('/api/execution-settings',async()=>({...runtimeSettings.execution(),queues:{agents:agentGate.snapshot(),llm:llmGate.snapshot(),interactive:interactiveGate.snapshot(),interactiveHarness:interactiveModelGate.snapshot(),maintenance:maintenanceWorker?.snapshot()??null},modelQuotaUnit:'harness_session'}));
+  app.get('/api/execution-settings',async()=>({...runtimeSettings.execution(),queues:{agents:agentGate.snapshot(),llm:llmGate.snapshot(),interactive:interactiveGate.snapshot(),interactiveHarness:interactiveModelGate.snapshot(),maintenance:maintenanceWorker?.snapshot()??null},modelQuotaUnit:'harness_session',providers:providerAdmission.snapshot()}));
   app.put('/api/execution-settings',async req=>{const value=runtimeSettings.saveExecution(req.body);interactiveGate.configure(value.interactiveConcurrency);interactiveModelGate.configure(value.interactiveConcurrency);agentGate.configure(value.agentConcurrency);llmGate.configure(value.llmConcurrency);memoryPipeline.wake();return value;});
   app.get('/api/diagnostics-settings',async()=>runtimeSettings.diagnostics());
   app.put('/api/diagnostics-settings',async req=>{const value=runtimeSettings.saveDiagnostics(req.body);await diagnostics.configure(value);return value;});
@@ -410,7 +413,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       const settings=selected.settings,prepared=await prepareImportInput(input);
       const meter=usageLedger.start(settings.provider,settings.model,'document-import',{agentId:'document-import',moduleId:'imports',skillId:'document-import'});
       let runtime:ReturnType<typeof createImportAgent>|undefined;
-      try{runtime=createImportAgent({...settings,codex,runModel});importAgents.add(runtime);const result=await agentGate.run(()=>runtime!.prepare({...prepared,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,meter.update));meter.finish('completed');return result;}
+      try{runtime=createImportAgent({...settings,codex,runModel:runModelFor(settings)});importAgents.add(runtime);const result=await agentGate.run(()=>providerAdmission.run(settings,()=>runtime!.prepare({...prepared,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,meter.update)));meter.finish('completed');return result;}
       catch(error){meter.finish('failed');throw error;}finally{try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
     }),
     // Capture/file journals are durable. Import completion only queues increments;

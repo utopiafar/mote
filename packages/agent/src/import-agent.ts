@@ -1,5 +1,5 @@
 import {observeModelTransport} from './model-transport-observer.js';
-import type {TokenUsage} from '@mote/shared';
+import {ProviderFailure,type TokenUsage} from '@mote/shared';
 import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {createCodexImportAgent} from './codex-import.js';
@@ -94,7 +94,7 @@ export function apply(ctx){
       };
       const deadline = agentTimeoutMs === null ? [] : [new Promise<never>((_,reject)=>{timeout=setTimeout(()=>reject(new AgentTimeoutError()),agentTimeoutMs);})];
       return await Promise.race([readAnswer(),transportObserver.failure,...deadline]);
-    }catch(error){primaryFailure=true;if(error instanceof RequestTimeoutError)throw new AgentTimeoutError();if(error instanceof AgentNotConfiguredError||error instanceof AgentResponseError||error instanceof AgentTimeoutError||error instanceof AgentProviderError)throw error;throw new AgentProviderError();}
+    }catch(error){primaryFailure=true;if(error instanceof RequestTimeoutError)throw new AgentTimeoutError();if(error instanceof AgentNotConfiguredError||error instanceof AgentResponseError||error instanceof AgentTimeoutError||error instanceof ProviderFailure)throw error;throw new AgentProviderError();}
     finally{
       modelAdmission.abort();
       if(timeout)clearTimeout(timeout);

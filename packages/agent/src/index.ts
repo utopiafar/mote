@@ -6,7 +6,7 @@ import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
 import {createCodexAgent} from './codex-agent.js';
 import {reportProgress,reportTrace,validateHostOutput} from './types.js';
-import {fileEvidenceSchema,recordMetadataSchema} from '@mote/shared';
+import {ProviderFailure,fileEvidenceSchema,recordMetadataSchema} from '@mote/shared';
 import { DeepSeekHarness, RequestTimeoutError } from "@deepseek-ai/dsh-sdk-client";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import {readFileSync} from "node:fs";
@@ -355,7 +355,7 @@ export function createAgent(options: AgentOptions) {
       // The SDK message may contain child stderr. Class identity establishes the
       // timeout; never inspect or forward provider/runtime message text.
       if (error instanceof RequestTimeoutError) throw new AgentTimeoutError();
-      if (error instanceof AgentTimeoutError || error instanceof AgentResponseError || error instanceof AgentClosedError || error instanceof AgentProviderError) throw error;
+      if (error instanceof AgentTimeoutError || error instanceof AgentResponseError || error instanceof AgentClosedError || error instanceof ProviderFailure) throw error;
       throw new AgentProviderError();
     } finally {
       modelAdmission.abort();
