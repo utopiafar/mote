@@ -27,9 +27,13 @@
       "status": "partial",
       "evidence": [
         "apps/server/src/context-query.ts",
-        "apps/server/test/context-query.test.ts"
+        "apps/server/test/context-query.test.ts",
+        "packages/shared/src/evidence-ref.ts",
+        "apps/server/src/context-navigation.ts",
+        "apps/server/test/evidence-reader.test.ts",
+        "packages/agent/test/tool-recovery.test.mjs"
       ],
-      "remaining": "尚未把全部协议适配器的 ref 解析集中到单一 EvidenceReader。"
+      "remaining": "capture/Memory 引用与导航卡片已统一解析并复验范围；处理产物的版本化 ref 与全部旧详情路由仍需纳入同一契约。"
     },
     {
       "id": "BASE-03",

@@ -1,4 +1,4 @@
-import {sourceContentTime,type CaptureRecord} from '@mote/shared';
+import {sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,type CaptureRecord} from '@mote/shared';
 import type {ContextReader} from '@mote/agent';
 import {StoreError,type Store,type Range} from './store.js';
 import {MemoryStore} from './memory.js';
@@ -10,11 +10,7 @@ import type {ServerDiagnostics} from './diagnostics.js';
 import {contextIndex} from './context-index.js';
 import {browseSourceCatalog} from './source-catalog.js';
 
-/** References name immutable observations, not the current version of an item. */
-export function parseEvidenceRef(ref:string):{kind:'capture'|'memory';id:string}|undefined {
-  const match=/^(?:(capture|memory):)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(ref);
-  return match?{kind:match[1]==='memory'?'memory':'capture',id:match[2]}:undefined;
-}
+export {parseEvidenceRef} from '@mote/shared';
 export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
   const p=record.provenance,coding=p?.document?.coding,at=sourceContentTime(record);
   if(scope.deviceId&&record.deviceId!==scope.deviceId||scope.source&&record.source!==scope.source||scope.sourceId&&p?.sourceId!==scope.sourceId)return false;
@@ -32,24 +28,29 @@ export class EvidenceReader {
     this.memories=new MemoryStore(store,ids=>this.evidence(ids),id=>Boolean(files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
   }
   evidence(refs:string[],scope:Range={}){
-    const ids=[...new Set(refs.map(parseEvidenceRef).filter(ref=>ref?.kind==='capture').map(ref=>ref!.id))];
+    const ids=[...new Set(refs.map(ref=>parseEvidenceRef(ref)).filter(ref=>ref?.kind==='capture').map(ref=>ref!.id))];
     return [...this.store.evidence(ids),...(this.files?.evidence(ids)??[])].filter(record=>withinEvidenceScope(record,scope));
   }
   memory(ref:string,scope:Range={}){
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
-    const value=this.memories.page({...scope,id:parsed.id,includeStale:true,level:'detail',limit:1}).items[0];
-    if(!value)return;
-    // Every dependency must remain in scope, including scopes not indexed by MemoryStore.
-    if(['deviceId','source','sourceId','appId','collection','projectKey','repositoryKey','provider','sessionId','after','before','ocrStatus'].some(key=>scope[key as keyof Range]!==undefined)){
-      const records=this.evidence(value.evidenceIds,scope);
-      if(!records.length||records.length!==new Set(value.evidenceIds).size)return;
-    }
-    return value;
+    return this.memoryPage({...scope,id:parsed.id,includeStale:true,level:'detail',limit:1}).items[0];
+  }
+  memoryPage(args:Parameters<MemoryStore['page']>[0]&Range={}){
+    const id=args.id===undefined?undefined:evidenceRefId(args.id,'memory');
+    if(args.id!==undefined&&!id)return {items:[],nextCursor:null};
+    const page=this.memories.page({...args,id});
+    // Every dependency must remain in scope, including filters not indexed by MemoryStore.
+    const scoped=['deviceId','source','sourceId','appId','collection','projectKey','repositoryKey','provider','sessionId','after','before','ocrStatus'].some(key=>args[key as keyof Range]!==undefined);
+    return {...page,items:scoped?page.items.filter(value=>{
+      const ids=this.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(value.id).map(row=>String(row.evidence_id));
+      const records=this.evidence(ids,args);
+      return records.length>0&&records.length===ids.length;
+    }):page.items};
   }
   context(records:CaptureRecord[]){return records.map(record=>{
     const nativeFile=this.files&&this.store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(record.id,record.id);
     const current=nativeFile?this.files!.isCurrentEvidence(record.id)||Boolean(this.store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance&&this.sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id;
-    return {...record,sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{})};
+    return {...record,ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{})};
   });}
   records(args:Range&{query?:string},search=false){
     const base=search&&args.query?this.store.searchPage({...args,includeTotal:false}):this.store.list({...args,includeTotal:false});
@@ -62,19 +63,21 @@ export class EvidenceReader {
     return Promise.resolve(Object.assign(this.records(args,true).items.slice(0,args.limit??50),{retrieval:{mode:'lexical',degraded:false}}));
   }
   timeline(args:Range){return this.store.list(args);}
-  catalog(args:Range&{path?:string;query?:string}={}){return contextIndex(this.store,this.memories,this.sources,args);}
+  catalog(args:Range&{path?:string;query?:string}={}){return contextIndex(this.store,{page:args=>this.memoryPage(args)},this.sources,args);}
   fileCatalog(sourceId:string,args:Parameters<typeof browseSourceCatalog>[2]){this.sources.getSource(sourceId);return browseSourceCatalog(this.store.db,sourceId,args);}
   segments(args:Parameters<Store['archive']['page']>[0]){return this.store.archive.page(args);}
   chunks(args:Range&{id:string;offset?:number}){
     if(!this.files)return [];
-    const v=this.files.version(args.id),parent=this.evidence([v.capture_id],args)[0];
-    return parent?this.context(this.files.chunks(args.id,args.offset??0,30)):[];
+    const id=evidenceRefId(args.id,'capture');if(!id)return [];
+    const v=this.files.version(id),parent=this.evidence([v.capture_id],args)[0];
+    return parent?this.context(this.files.chunks(id,args.offset??0,30)):[];
   }
   async readFileEvidence(args:Range&{id:string;offset:number;length:number}){
-    if(!this.fileEvidence||!this.evidence([args.id],args).length)return {status:'unavailable'};
-    const result=await this.fileEvidence.read(args.id,args.offset,args.length);
+    const id=evidenceRefId(args.id,'capture');
+    if(!id||!this.fileEvidence||!this.evidence([id],args).length)return {status:'unavailable'};
+    const result=await this.fileEvidence.read(id,args.offset,args.length);
     // Recheck after asynchronous Shadow reads; removal must not disclose a late response.
-    if(!this.evidence([args.id],args).length)return {status:'unavailable'};
+    if(!this.evidence([id],args).length)return {status:'unavailable'};
     return result.record?{status:'ready',record:this.context([result.record])[0]}:result;
   }
   sourceHistory(args:Range&{id:string}){
@@ -82,18 +85,19 @@ export class EvidenceReader {
     return this.context(this.evidence(this.sources.history(p.sourceId,p.externalId).map(i=>i.captureId),args));
   }
   agent(options:{diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean}):ContextReader {
-    const {store,sources,memories}=this,{diagnostics}=options;
+    const {store,sources}=this,{diagnostics}=options;
     return {
       catalog:async args=>this.catalog(args),
-      readImage:async ({id})=>{if(!options.allowQueryImages?.())throw new StoreError('Query image disclosure is disabled',403);const image=store.image(id);return {mimeType:image.mime,data:image.bytes.toString('base64')};},
+      readImage:async ({id})=>{if(!options.allowQueryImages?.())throw new StoreError('Query image disclosure is disabled',403);const captureId=evidenceRefId(id,'capture');if(!captureId)throw new StoreError('Invalid capture reference');const image=store.image(captureId);return {mimeType:image.mime,data:image.bytes.toString('base64')};},
       readFileEvidence:async args=>this.readFileEvidence(args),
       fileChunks:async args=>this.chunks(args),
       mediaActivity:async args=>diagnostics.measure('source','activity',()=>store.mediaActivity(args),result=>({count:result.observations})),
       sourceHistory:async args=>this.sourceHistory(args),
       sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
-      sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:this.context(store.evidence(page.items.map(i=>i.captureId)))};},
-      segments:async args=>store.archive.page(args) as any,
-      memories:async args=>{const page=memories.page({...args,level:args.id?'detail':'overview'});return {...page,references:args.id?page.items.flatMap((m:any)=>(m.evidence??[]).map((e:any)=>({id:e.id,capturedAt:e.capturedAt,characters:e.length??0}))):[]};},
+      // listItems applies calendar overlap / authored-time semantics; do not replace planned time with capture time.
+      sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:this.context(this.evidence(page.items.map(i=>i.captureId),{deviceId:args.deviceId}))};},
+      segments:async args=>this.segments(args) as any,
+      memories:async args=>{const page=this.memoryPage({...args,level:args.id?'detail':'overview'});return {...page,references:args.id?page.items.flatMap((m:any)=>(m.evidence??[]).map((e:any)=>({id:e.id,capturedAt:e.capturedAt,characters:e.length??0}))):[]};},
       search:async args=>diagnostics.measure('source','search',async()=>{const results=await this.search(args);return Object.assign(this.context(results),{retrieval:results.retrieval});},rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=this.timeline({...args,includeTotal:false});return {...page,items:this.context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>this.evidence(args.ids,args),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
   }
 }

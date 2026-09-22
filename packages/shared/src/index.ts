@@ -168,3 +168,4 @@ export * from './source-capabilities.js';
 
 export * from './operations.js';
 export * from './provider-failure.js';
+export * from './evidence-ref.js';

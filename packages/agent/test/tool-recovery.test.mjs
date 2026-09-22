@@ -38,3 +38,17 @@ test('source revision changes stop extraction instead of repeatedly repairing st
   const b=await startBridge({...reader,evidence:async()=>[{...record,ocrText:revised?'revised fixture':record.ocrText}]},{question:'fixture',evidenceIds:[id],evidenceRanges:[{id,offset:7,length:18}]},8);t.after(()=>b.close());
   revised=true;const result=await call(b,'evidence',{ids:[id]});assert.equal(result.body.toolError.code,'evidence_changed');assert.equal(result.body.toolError.recovery,'stop');await assert.rejects(b.failure,e=>e.reason==='tool_failure');
 });
+
+test('canonical capture refs pass through discovery and extraction grants before reading',async t=>{
+ const original={...record,id:'abcabcab-abca-4bca-8bca-abcabcabcabc'};
+ const reads=[],typedReader={...reader,search:async()=>[original],evidence:async({ids})=>{reads.push(ids);return ids.includes(original.id)?[original]:[];}};
+ const b=await startBridge(typedReader,{question:'fixture'},12);t.after(()=>b.close());
+ const ref='CAPTURE:'+original.id.toUpperCase();
+ assert.equal((await call(b,'evidence',{ids:[ref]})).status,400);assert.equal(reads.length,0);
+ await call(b,'search_context',{});
+ assert.equal((await call(b,'evidence',{ids:['memory:'+original.id]})).status,400);assert.equal(reads.length,0);
+ assert.equal((await call(b,'evidence',{ids:[ref]})).status,200);assert.deepEqual(reads,[[original.id]]);
+ const restricted=await startBridge(typedReader,{question:'fixture',evidenceIds:[original.id],evidenceRanges:[{id:original.id,offset:7,length:18}]},8);t.after(()=>restricted.close());
+ const accepted=await call(restricted,'evidence',{ids:[ref]});assert.equal(accepted.status,200);assert.equal(accepted.body.data[0].ocrText,'generated evidence');
+ assert.equal((await call(restricted,'evidence',{ids:[ref],offset:0,length:100})).status,400);
+});

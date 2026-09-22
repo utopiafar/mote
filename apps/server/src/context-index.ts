@@ -4,7 +4,7 @@ import type {SourceStore} from './sources.js';
 import {StoreError} from './store.js';
 
 /** Virtual read-only directories. Names express storage layers, never inferred user intent. */
-export function contextIndex(store:Store,memories:MemoryStore,sources:SourceStore,args:Range&{path?:string;query?:string}={}){
+export function contextIndex(store:Store,memories:Pick<MemoryStore,'page'>,sources:SourceStore,args:Range&{path?:string;query?:string}={}){
  const path=args.path??'/context',limit=Math.min(args.limit??6,12);
  if(!['/context','/context/memory','/context/episodes','/context/sources'].includes(path))throw new StoreError('Unknown context directory');
  const entries:unknown[]=[];

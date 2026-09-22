@@ -101,3 +101,48 @@ test('repository candidates span devices while expansion and memories keep exact
  assert.equal(query.search({repositoryKey,sourceId:'source-2'}).items.length,0);
  assert.equal(store.list({repositoryKey,limit:1}).items.length,1);
 });
+
+test('navigation references survive reader reconstruction and intersect the original view with later scopes',async t=>{
+ const {store,sources,query}=await fixture(t);
+ const repositoryKey='b'.repeat(64),batches=new Map<string,any[]>([['nav-0',[]],['nav-1',[]]]);
+ for(let i=0;i<400;i++){
+  const sourceId=`nav-${i%2}`,deviceId=`nav-device-${i%2}`;
+  if(i<2)sources.register({id:sourceId,name:'Generated navigation',kind:'coding-agent',deviceId,platform:'import'});
+  const item={externalId:`day-${i}`,revision:'1',observedAt:new Date(Date.UTC(2024,0,1+i)).toISOString(),kind:'message',layer:'snapshot',text:`NAVIGATION_${i}`,document:{coding:{version:1,provider:'codex',sessionId:'same-session',projectKey:'same-project',repositoryKey,eventId:`day-${i}`,role:'user',part:0,parts:1}}};
+  if(i<200)await sources.upsert(sourceId,item);else batches.get(sourceId)!.push(item);
+ }
+ for(const [sourceId,items] of batches)await sources.upsertBatch(sourceId,items);
+ const scope={sourceId:'nav-0',after:'2024-06-01T00:00:00.000Z',before:'2024-12-01T00:00:00.000Z'};
+ const cards=[...query.browse(scope).items,...query.context({...scope,includeMemories:false}).recentSessions];
+ assert.ok(cards.some(c=>c.kind==='session'));assert.ok(cards.some(c=>c.kind==='project-candidate'));
+ const restored=new ContextQuery(store,sources);
+ for(const card of cards){
+  assert.ok(card.ref.length<=4096);
+  const item=restored.read([card.ref]).items[0];assert.equal(item.text,'');assert.equal(item.evidenceRefs,undefined);
+  assert.deepEqual(item.expansion,card.expansion);
+  assert.equal(restored.read([card.ref],0,4000,{sourceId:'nav-1'}).items.length,0);
+  assert.equal(restored.read([card.ref],0,4000,{before:scope.after}).items.length,0);
+  const narrower=restored.read([card.ref],0,4000,{after:'2024-07-01T00:00:00.000Z',before:'2025-01-01T00:00:00.000Z'}).items[0];
+  assert.equal(narrower.expansion!.scope.after,'2024-07-01T00:00:00.000Z');assert.equal(narrower.expansion!.scope.before,scope.before);
+  const expanded=restored.search(narrower.expansion!.scope);assert.ok(expanded.items.length>0);
+  assert.ok(expanded.items.every(row=>row.origin.sourceId==='nav-0'&&row.origin.capturedAt>=narrower.expansion!.scope.after!&&row.origin.capturedAt<scope.before));
+ }
+ const anchor=cards[0].expansion!.refs[0].slice('capture:'.length);store.delete(anchor);
+ assert.equal(restored.read([cards[0].ref]).items.length,0,'deleted anchors do not silently switch to another record');
+ for(const ref of [cards[0].ref+'=',cards[0].ref+'/x','collection:v1:'+Buffer.from(JSON.stringify({anchor,scope:{sourceId:'nav-0'},instructions:'untrusted'})).toString('base64url')])assert.equal(restored.read([ref]).items.length,0);
+});
+
+test('post-filtered memory pages advance without a false response-budget error',async t=>{
+ const {store,query}=await fixture(t),evidence=await coding(store,1,'fixture','same','Scope fixture');
+ for(let i=0;i<25;i++){
+  const id=randomUUID(),createdAt=captured(i+2);
+  store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,createdAt,JSON.stringify({id,title:'Generated scoped memory',statement:'Fixture',uncertainty:'fixture',status:'published',createdAt,evidenceIds:[evidence],admission:{layer:'memory'}}));
+  store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidence);
+ }
+ let cursor:string|undefined,finished=false;
+ for(let page=0;page<4;page++){
+  const result=query.context({appId:'out-of-scope',limit:10,cursor});assert.deepEqual(result.stableMemories,[]);
+  if(!result.nextCursor){finished=true;break;}assert.notEqual(result.nextCursor,cursor);cursor=result.nextCursor;
+ }
+ assert.equal(finished,true);
+});

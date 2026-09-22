@@ -1,3 +1,4 @@
+import {EvidenceReader} from '../src/evidence-reader.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync,readdirSync,writeFileSync} from 'node:fs';
@@ -54,13 +55,18 @@ test('reference handles a huge external file without bytes or processing; versio
 });
 
 test('processor builds timestamped layers and tail search, source removal retains them, forget blocks resurrection',async t=>{
- const {files,store}=fixture(t),bytes=Buffer.from('synthetic audio placeholder'),ack=await upload(files,manifest(bytes),bytes);let calls=0;
+ const {files,store,sources}=fixture(t),bytes=Buffer.from('synthetic audio placeholder'),ack=await upload(files,manifest(bytes),bytes);let calls=0;
  const provider:TranscriptionProvider={transcribe:async()=>{calls++;return {durationMs:90000,segments:[{startMs:0,endMs:1000,text:'计划下周联系对方，并未完成。'},{startMs:89000,endMs:90000,text:'尾部校验：项目代号青杉，金额三百元。'}]};}};
  const processing=new FileProcessing(files,provider,async records=>({answer:`合成摘要 [${records[0].id}]`,citations:[{id:records[0].id}]}));t.after(()=>processing.close());
  await processing.tick();assert.equal(files.detail(ack.id).job.state,'blocked');
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,summarize:true}});await processing.tick();
  assert.equal(calls,1);assert.equal(files.detail(ack.id).job.state,'succeeded');assert.equal(files.detail(ack.id).job.summary_state,'succeeded');
  const tail=files.search({query:'青杉'});assert.equal(tail.length,1);assert.deepEqual(files.search({query:'青杉 金额'}).map(r=>r.id),tail.map(r=>r.id));assert.deepEqual(files.search({query:'青杉 三百元'}).map(r=>r.id),tail.map(r=>r.id));assert.equal((tail[0].fileEvidence as any).startMs,89000);assert.equal(files.search({query:'青杉',deviceId:'other'}).length,0);
+ const reader=new EvidenceReader(store,sources,files),typed=`CAPTURE:${ack.id.toUpperCase()}`;
+ assert.deepEqual(reader.chunks({id:typed}).map(r=>r.id),reader.chunks({id:ack.id}).map(r=>r.id));
+ assert.equal(reader.chunks({id:typed,deviceId:'other'}).length,0);
+ assert.equal(reader.chunks({id:`memory:${ack.id}`}).length,0);
+ assert.equal(reader.sourceHistory({id:typed})[0].id,ack.id);
  const deletion=manifest(bytes,'removed','v1');delete deletion.sha256;deletion.item.deleted=true;await files.revision(deletion,owner);assert.equal(files.search({query:'青杉'}).length,1);
  files.forget(ack.id);assert.equal(files.evidence(tail.map(r=>r.id)).length,0);assert.equal(files.search({query:'青杉'}).length,0);assert.equal(store.db.prepare('SELECT count(*) AS n FROM file_chunks_trigram WHERE id=?').get(tail[0].id)!.n,0);
  await assert.rejects(upload(files,manifest(bytes,'v3','removed'),bytes),{statusCode:410});

@@ -49,6 +49,11 @@ test('Web, MCP and Agent share ranked refs and scoped expansions across 400 gene
  const denied:any=await call('mote_read',{refs,deviceId:'b'});assert.equal(denied.items.length,0);assert.deepEqual(denied.missingRefs,refs);
  // A shared service never retains the previous request's filter.
  assert.equal((await call('mote_read',{refs}) as any).items.length,5);
+ const navigation=(await call('mote_browse',{...scope,query:undefined}) as any).items[0];
+ const webNavigation=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs:[navigation.ref],...readScope}})).json();
+ assert.equal(webNavigation.items[0].kind,'collection');assert.equal(webNavigation.items[0].text,'');
+ assert.deepEqual(await call('mote_read',{refs:[navigation.ref],...readScope}),webNavigation);
+ assert.equal((await call('mote_read',{refs:[navigation.ref],deviceId:'b'}) as any).items.length,0);
  const id=webRead.items[0].id;store.delete(id);
  assert.equal((await call('mote_read',{refs:[`capture:${id}`]}) as any).items.length,0);
  assert.equal((await agentReader.evidence({ids:[id]})).length,0);
@@ -74,4 +79,45 @@ test('context routes require owner access and immutable references never silentl
  assert.equal((await app.inject({method:'POST',url:'/api/context/read',headers:collector,payload:{refs:[old]}})).statusCode,403);
  for(const ref of ['session:'+old,'collection:'+old,'capture:memory:'+old,'../'+old])assert.equal(parseEvidenceRef(ref),undefined);
  assert.deepEqual(parseEvidenceRef('capture:'+old),{kind:'capture',id:old});
+});
+
+test('typed Memory refs cannot select a capture with the same UUID; adapters recheck all original scopes',async t=>{
+ const {app,store,sources,agentReader,call}=await fixture(t);
+ sources.register({id:'typed',name:'Generated typed refs',kind:'custom',deviceId:'typed-device',platform:'import'});
+ await sources.upsert('typed',{externalId:'original',revision:'1',observedAt:'2024-06-01T00:00:00.000Z',title:'Generated',text:'Memory support',kind:'message',layer:'original'});
+ const evidence=sources.getItem('typed','original')!.captureId,record=store.evidence([evidence])[0],id=randomUUID(),createdAt='2024-06-02T00:00:00.000Z';
+ await store.ingest({id,deviceId:record.deviceId,deviceName:'Generated device',platform:'import',capturedAt:record.capturedAt,durationMs:0,source:record.source,appId:record.appId,appName:record.appName,privacy:record.privacy,ocrText:'Different capture in another namespace'});
+ store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,createdAt,JSON.stringify({id,title:'Generated memory',statement:'Supported fixture',uncertainty:'fixture',status:'published',createdAt,evidenceIds:[evidence],evidence:[{id:evidence,deviceId:record.deviceId,capturedAt:record.capturedAt}],admission:{layer:'memory'}}));
+ store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidence);
+ const ref=`MEMORY:${id.toUpperCase()}`;
+ const web=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs:[ref]}})).json();
+ assert.equal(web.items[0].kind,'memory');assert.equal(web.items[0].ref,`memory:${id}`);assert.match(web.items[0].text,/Supported fixture/);
+ assert.deepEqual(await call('mote_read',{refs:[ref]}),web);
+ assert.equal((await call('mote_memories',{id:ref}) as any).items[0].id,id);
+ assert.equal(((await agentReader.memories!({id:ref})).items[0] as any).id,id);
+ const captureRef=`CAPTURE:${id.toUpperCase()}`;
+ assert.equal((await call('mote_evidence',{ids:[captureRef]}) as any)[0].text,'Different capture in another namespace');
+ assert.equal((await agentReader.evidence({ids:[captureRef]}))[0].id,id);
+ assert.equal((await agentReader.evidence({ids:[ref]})).length,0);
+ assert.equal((await agentReader.memories!({id:captureRef})).items.length,0);
+ for(const scope of [{appId:'different-app'},{source:'note' as const},{deviceId:'other'},{before:'2024-01-01T00:00:00.000Z'}]){
+  assert.equal((await call('mote_memories',{id:ref,...scope}) as any).items.length,0);
+  assert.equal((await agentReader.memories!({id:ref,...scope})).items.length,0);
+  assert.equal((await call('mote_memories',scope) as any).items.length,0);
+  assert.equal((await agentReader.memories!(scope)).items.length,0);
+  assert.equal((await call('mote_context',scope) as any).stableMemories.length,0);
+ }
+ assert.equal((await call('mote_memories',{id:ref,appId:record.appId}) as any).items.length,1);
+ store.delete(evidence);
+ assert.equal((await call('mote_memories',{id:ref,appId:record.appId,includeStale:true,status:'stale'}) as any).items.length,0);
+});
+
+test('shared source item expansion preserves calendar planned-time overlap',async t=>{
+ const {sources,agentReader}=await fixture(t);
+ sources.register({id:'calendar',name:'Generated calendar',kind:'local-calendar',deviceId:'calendar-device',platform:'import'});
+ await sources.upsert('calendar',{externalId:'event',revision:'1',observedAt:'2024-01-01T00:00:00.000Z',title:'Generated future plan',text:'A plan only',kind:'calendar',layer:'snapshot',calendar:{start:'2026-11-01T00:00:00-04:00',end:'2026-11-02T00:00:00-05:00',allDay:true,timeZone:'America/New_York',status:'confirmed'}});
+ const scope={after:'2026-11-01T23:00:00Z',before:'2026-11-02T01:00:00Z'};
+ const result:any=await agentReader.sourceItems!(scope);assert.equal(result.items.length,1);assert.equal(result.items[0].source,'calendar');
+ assert.equal((await agentReader.sourceItems!({...scope,deviceId:'other'}) as any).items.length,0);
+ assert.equal((await agentReader.sourceItems!({after:'2027-01-01T00:00:00Z'}) as any).items.length,0);
 });

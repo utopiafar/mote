@@ -1,6 +1,6 @@
 import {rememberEvidence} from './evidence-ledger.js';
 import {taskTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
-import {actionEvidenceText} from '@mote/shared';
+import {actionEvidenceText,parseEvidenceRef} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {AgentResponseError,reportTrace,reportProgress} from './types.js';
 import { createServer, type Server } from "node:http";
@@ -276,6 +276,17 @@ export async function startBridge(
         throw hostError('App/source/collection filters require a context or activity tool');
       if (tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
         throw hostError('Media state filters require media_activity');
+      // Normalize typed references before discovery/range checks, never after them.
+      // Opaque legacy IDs remain supported for injected readers; explicit kinds cannot cross layers.
+      const captureId=(value:unknown)=>{
+        if(typeof value!=='string')return value;
+        const parsed=parseEvidenceRef(value);
+        if(parsed){if(parsed.kind!=='capture')throw hostError('Expected an original capture reference');return parsed.id;}
+        if(/^(capture|memory):/i.test(value))throw hostError('Invalid capture reference');
+        return value;
+      };
+      if(tool==='evidence'&&Array.isArray(args.ids))args={...args,ids:args.ids.map(captureId)};
+      if(['read_image','read_file_evidence','file_chunks','source_history'].includes(tool))args={...args,id:captureId(args.id)};
       if (++calls > maxToolCalls)
         throw new ContextToolError('tool_budget_exceeded','Tool call budget reached. Finish using already retrieved evidence; do not call retrieval tools again.','use_existing_evidence',{remainingCalls:0});
       if(deliveredCharacters>=limits.totalToolCharacters-1000)throw budgetError();
