@@ -11,6 +11,7 @@ import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
 import {FileProcessing} from '../src/file-processing.js';
+import {ExecutionEngine} from '../src/execution-engine.js';
 import {FileProcessorRuntime} from '../src/file-processors.js';
 import {alignDialogue,applySemanticGroups} from '../src/file-dialogue.js';
 import {FileReviews} from '../src/file-reviews.js';
@@ -26,17 +27,18 @@ async function fixture(t:any,options:any={}){
  const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,wave,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
  const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return diary;}});return()=>{disposed=true;dispose();};});}};
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
- const processing=new FileProcessing(files,{transcribe:async()=>{asrCalls++;return raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{plugins:[plugin],analyze:options.analyze,diagnostics});
+ const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async()=>{asrCalls++;return options.transcribe?options.transcribe():raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics});instances.push(instance);return instance;};const processing=createProcessing();
  await processing.runtime.ready;
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:true,...options.settings}});
- t.after(async()=>{await processing.close();await diagnostics.close();store.close();rmSync(dir,{recursive:true,force:true});});
- return {dir,store,sources,files,processing,diagnostics,id:ack.id,counts:()=>({asrCalls,diaryCalls,summaries,disposed})};
+ t.after(async()=>{for(const instance of instances)await instance.close();await diagnostics.close();store.close();rmSync(dir,{recursive:true,force:true});});
+ return {dir,store,sources,files,processing,createProcessing,diagnostics,id:ack.id,counts:()=>({asrCalls,diaryCalls,summaries,disposed})};
 }
 
 test('actual Cordis registration and disposal; local pipeline checkpoints resume without repeating ASR',async t=>{
  const f=await fixture(t,{failFirst:true});await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'failed');assert.equal(f.files.detail(f.id).artifacts.filter((a:any)=>a.kind==='transcript').length,1);
- // Simulate restart, leaving its persisted checkpoint in place.
- f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.deepEqual(f.counts(),{asrCalls:1,diaryCalls:2,summaries:0,disposed:false});
+ // Reconstruct the engine and Cordis runtime, leaving the persisted checkpoint in place.
+ await f.processing.close();const resumed=f.createProcessing();await resumed.runtime.ready;
+ f.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE kind='files.pipeline'").run();f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();await resumed.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.deepEqual(f.counts(),{asrCalls:1,diaryCalls:2,summaries:0,disposed:true});
  const chunks=f.files.chunks(f.id);assert.equal(chunks.length,2);assert.equal(chunks[0].ocrText,'[SPEAKER_0] 使用扣迪斯插件。');assert.equal(chunks[1].fileEvidence?.speaker,'SPEAKER_1');
  assert.equal(f.files.pendingIndex('cloud-model').length,0);assert.equal(f.files.pendingIndex('local-model',true).length,2);
  await f.processing.close();assert.equal(f.counts().disposed,true);assert.equal(f.processing.runtime.registry.list().length,0);
@@ -110,7 +112,7 @@ test('changing defaults cannot send completed local-only transcripts into a clou
 
 test('file diagnostics trace retries and checkpoint reuse without original content or provider errors',async t=>{
  const f=await fixture(t,{failFirst:true});await f.processing.tick();
- f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();await f.processing.tick();
+ f.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE kind='files.pipeline'").run();f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();await f.processing.tick();
  const events=f.diagnostics.events().items;
  assert.ok(events.some(e=>e.event==='file.step.started'&&e.operation==='extract'&&e.level==='debug'));
  assert.ok(events.some(e=>e.event==='file.step.failed'&&e.operation==='diarize'&&e.level==='error'));
@@ -120,4 +122,27 @@ test('file diagnostics trace retries and checkpoint reuse without original conte
  assert.ok(events.some(e=>e.event==='file.blocked'&&e.category==='local_only'));
  assert.ok(events.filter(e=>e.operation==='extract').every(e=>e.jobId===f.id&&e.requestId));
  const serialized=JSON.stringify(events);for(const privateText of ['Synthetic interview','generated failure','使用扣迪斯','fixture.diarize'])assert.ok(!serialized.includes(privateText));
+});
+
+
+test('shared engine shutdown fences an uncooperative file provider and resumes the durable program',async t=>{
+ let begin!:()=>void,release!:(v:Transcript)=>void,calls=0;const started=new Promise<void>(r=>begin=r);
+ const f=await fixture(t,{transcribe:()=>{if(++calls===1){begin();return new Promise<Transcript>(r=>release=r);}return raw;}});
+ await f.processing.close();const engine=new ExecutionEngine(f.store),processing=f.createProcessing(engine);await processing.runtime.ready;
+ const ids=processing.prepare(),run=engine.drain(ids);await started;
+ await engine.close();await run;await processing.close();
+ assert.equal(engine.get(ids[0])!.state,'waiting');assert.equal(f.files.detail(f.id).artifacts.length,0);
+ const resumed=f.createProcessing();await resumed.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');
+ release({...raw,segments:[{startMs:0,endMs:1000,text:'Late synthetic result must not replace committed output'}]});await new Promise(r=>setImmediate(r));
+ assert.equal(calls,2);assert.equal(f.files.detail(f.id).artifacts.filter((a:any)=>a.kind==='transcript').length,1);assert.ok(!JSON.stringify(f.files.chunks(f.id)).includes('Late synthetic'));
+ const steps=resumed.engine.list({operationId:'file:'+f.id,limit:100}).items;assert.equal(steps.find(s=>s.kind==='files.pipeline')!.state,'succeeded');assert.equal(steps.filter(s=>s.kind.startsWith('file-step.')).length,3);
+ assert.equal(f.store.db.prepare('SELECT audio_ms FROM file_usage').get()!.audio_ms,3000);
+});
+
+test('daily quota admission defers file execution without consuming a provider attempt',async t=>{
+ const f=await fixture(t),day=new Date().toISOString().slice(0,10);
+ f.store.db.prepare('INSERT INTO file_usage VALUES(?,?)').run(day,f.processing.currentSettings().dailyAudioMinutes*60000);
+ await f.processing.tick();const step=f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items[0];
+ assert.equal(step.state,'waiting');assert.equal(step.error,'daily_budget');assert.equal(step.attempts,0);assert.equal(f.counts().asrCalls,0);
+ assert.ok(step.availableAt>=Date.parse(day)+86400000);assert.equal(f.files.detail(f.id).job.attempts,0);
 });

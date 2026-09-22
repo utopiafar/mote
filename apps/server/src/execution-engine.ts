@@ -18,9 +18,10 @@ export interface ExecutionHandler {
  /** Compatibility views are projections, never used to claim a running step. */
  project?:(step:ExecutionStep)=>void;
  classify?:(error:unknown)=>ExecutionFailure;
- timeoutMs?:number;
+ timeoutMs?:number|(()=>number);
  maxAttempts?:number;
 }
+type ProgramStep<T>={id:string;operationId:string;kind:string;pool:string;input:Record<string,unknown>;signal:AbortSignal;validate:()=>boolean;execute:(signal:AbortSignal)=>Promise<unknown>;commit:(result:unknown)=>void;read:()=>T|undefined;project:(step:ExecutionStep)=>void;cached?:boolean;initialAttempts?:number;timeoutMs?:number};
 type Row={id:string;operation_id:string;kind:string;pool:string;input:string;state:ExecutionState;attempts:number;available_at:number;error:string|null;fence:string|null;lease_until:number};
 const view=(row:Row):ExecutionStep=>({id:row.id,operationId:row.operation_id,kind:row.kind,pool:row.pool,input:JSON.parse(row.input),state:row.state,attempts:row.attempts,availableAt:row.available_at,...(row.error?{error:row.error}:{})});
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,canonical(v)])):value;
@@ -28,6 +29,7 @@ const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).d
 
 /** The host owns admission, retry, cancellation, leases and commit fences. */
 export class ExecutionEngine {
+ private programs=new Map<string,Promise<unknown>>();
  private handlers=new Map<string,ExecutionHandler>();
  private active=new Map<string,{controller:AbortController;task:Promise<void>;pool:string}>();
  private stopping=false;
@@ -74,9 +76,9 @@ export class ExecutionEngine {
   const db=this.store.db;db.prepare("UPDATE execution_steps SET state='cancelled',fence=NULL,error='cancelled',updated_at=? WHERE id=? AND state!='succeeded'").run(this.now(),id);this.active.get(id)?.controller.abort();this.project(id);
  }
  cancelKind(kind:string){for(;;){const rows=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state NOT IN ('succeeded','cancelled','stale') LIMIT 500").all(kind);if(!rows.length)return;for(const row of rows)this.cancel(String(row.id));}}
- retry(id:string){
+ retry(id:string,resetAttempts=true){
   if(this.get(id)?.state==='running')throw new StoreError('Cancel the active step before retrying',409);
-  this.active.get(id)?.controller.abort();this.store.db.prepare("UPDATE execution_steps SET state='waiting',attempts=0,available_at=0,lease_until=0,fence=NULL,error=NULL,updated_at=? WHERE id=? AND state!='running'").run(this.now(),id);this.project(id);
+  this.active.get(id)?.controller.abort();this.store.db.prepare("UPDATE execution_steps SET state='waiting',attempts=CASE WHEN ? THEN 0 ELSE attempts END,available_at=0,lease_until=0,fence=NULL,error=NULL,updated_at=? WHERE id=? AND state!='running'").run(Number(resetAttempts),this.now(),id);this.project(id);
  }
  hasActive(kind:string){return [...this.active.keys()].some(id=>this.get(id)?.kind===kind);}
  async drain(ids:string[]){
@@ -115,7 +117,7 @@ export class ExecutionEngine {
   return Promise.all(started).then(()=>{});
  }
  private async execute(row:Row,handler:ExecutionHandler,controller:AbortController){
-  const db=this.store.db,now=this.now(),fence=randomUUID(),timeout=handler.timeoutMs??120000;
+  const db=this.store.db,now=this.now(),fence=randomUUID(),timeout=(typeof handler.timeoutMs==='function'?handler.timeoutMs():handler.timeoutMs)??120000;
   db.exec('BEGIN IMMEDIATE');
   try{
    const limit=Math.max(1,Math.min(32,...[...this.handlers.values()].filter(h=>h.pool===row.pool).map(h=>h.concurrency())));
@@ -145,10 +147,43 @@ export class ExecutionEngine {
    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }catch(error){
    const failure=error instanceof ExecutionFailure?error:handler.classify?.(error)??new ExecutionFailure('transient','processor_failed');
-   const state:ExecutionState=this.stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':failure.category==='permanent'||step.attempts>=(handler.maxAttempts??4)?'failed':'waiting';
+   const state:ExecutionState=this.stopping?'waiting':failure.category==='blocked'?'blocked':failure.category==='stale'?'stale':failure.category==='waiting'?'waiting':failure.category==='permanent'||step.attempts>=(handler.maxAttempts??4)?'failed':'waiting';
    db.prepare('UPDATE execution_steps SET state=?,error=?,available_at=?,fence=NULL,updated_at=? WHERE id=? AND fence=?').run(state,this.stopping?'interrupted':failure.code,this.stopping?0:this.now()+(failure.retryAfterMs??Math.min(3600000,1000*2**(step.attempts-1))),this.now(),row.id,fence);this.project(row.id);
   }
   await yieldTurn();
  }
- async close(){this.stopping=true;for(const active of this.active.values())active.controller.abort();await Promise.allSettled([...this.active.values()].map(a=>a.task));}
+ /** Replayable host programs define a substep when reached. State and its artifact
+  * commit still belong to this engine; a restart reconstructs the definition. */
+ async runStep<T>(options:ProgramStep<T>):Promise<T>{
+  const prior=this.programs.get(options.id);
+  const task=(async()=>{if(prior)await withExecutionCancellation(options.signal,()=>prior.catch(()=>{}));return this.replayStep(options);})();
+  this.programs.set(options.id,task);
+  try{return await task;}finally{if(this.programs.get(options.id)===task)this.programs.delete(options.id);}
+ }
+ private async replayStep<T>(options:ProgramStep<T>):Promise<T>{
+  options.signal.throwIfAborted();
+  const kind=options.kind+'.'+options.id;let failure:unknown;
+  const unregister=this.register({kind,pool:options.pool,concurrency:()=>1,validate:()=>options.validate(),timeoutMs:options.timeoutMs,
+   execute:async(_step,signal)=>{try{return await options.execute(AbortSignal.any([signal,options.signal]));}catch(error){failure=error;throw error;}},
+   commit:(_step,result)=>{try{options.commit(result);}catch(error){failure=error;throw error;}},project:options.project,
+   // The program retries the failed step on replay; only it consumes a retry slot.
+   classify:()=>new ExecutionFailure('permanent','step_failed'),
+  });
+  const abort=()=>this.cancel(options.id);options.signal.addEventListener('abort',abort,{once:true});
+  try{
+   this.enqueue(options.operationId,kind,options.input,{id:options.id,initial:{state:options.cached?'succeeded':'waiting',attempts:options.initialAttempts??0,availableAt:0}});
+   const current=this.get(options.id)!;
+   if(['failed','blocked','cancelled','stale'].includes(current.state)||current.state==='succeeded'&&options.read()===undefined)this.retry(options.id,false);
+   await this.drain([options.id]);options.signal.throwIfAborted();
+   const step=this.get(options.id)!,value=step.state==='succeeded'?options.read():undefined;
+   if(value!==undefined)return value;
+   if(failure)throw failure;
+   if(step.state==='stale')throw new ExecutionFailure('stale','input_changed');
+   if(step.state==='cancelled')throw new ExecutionFailure('permanent','cancelled');
+   if(step.state==='blocked')throw new ExecutionFailure('blocked',step.error??'step_blocked');
+   if(step.state==='failed')throw new ExecutionFailure('transient',step.error??'step_failed');
+   throw new ExecutionFailure('waiting','step_pending',Math.max(1000,step.availableAt-this.now()));
+  }finally{options.signal.removeEventListener('abort',abort);unregister();}
+ }
+ async close(){this.stopping=true;for(const active of this.active.values())active.controller.abort();await Promise.allSettled([...this.active.values()].map(a=>a.task));await Promise.allSettled([...this.programs.values()]);}
 }
