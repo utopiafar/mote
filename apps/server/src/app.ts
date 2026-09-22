@@ -1,3 +1,4 @@
+import {Operations,registerOperations} from './operations.js';
 import {registerImportUploads} from './import-uploads.js';
 import {registerTodoRoutes} from './todos.js';
 import {ExecutionEngine} from './execution-engine.js';
@@ -288,6 +289,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.get('/api/context-index',async req=>evidenceReader.catalog(z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),after:scopeFields.after,before:scopeFields.before,deviceId:scopeFields.deviceId}).parse(req.query)));
   registerContextRoutes(app,new ContextQuery(store,sources,files,evidenceReader));
   registerTodoRoutes(app,store);
+  registerOperations(app,new Operations(store),req=>Boolean(credential(req)));
   app.get('/api/processing',async req=>{const q=z.object({state:z.enum(['waiting','running','blocked','failed','cancelled','succeeded','stale']).optional(),cursor:z.coerce.number().int().positive().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);return {archive:store.archive.stats(),...workflows.view(q)};});
   app.put('/api/processing/settings',async req=>workflows.configure(req.body));
   app.post('/api/processing/workflows',async(req,reply)=>{const {steps}=z.object({steps:z.array(z.any()).min(1).max(32)}).strict().parse(req.body);return reply.code(202).send(workflows.enqueue(steps.map(step=>step.processor==='mote.segment-understanding'?{...step,artifactInputs:[{id:step.config?.artifactId,revision:store.archive.get(step.config?.artifactId)?.revision}],config:{...step.config,modelRevision:modelSettings.view().revision}}:step)));});

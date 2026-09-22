@@ -1,0 +1,10 @@
+import {z} from 'zod';
+export const operationStepStateSchema=z.enum(['waiting','running','blocked','succeeded','failed','cancelled','stale']);
+export const operationStateSchema=z.enum([...operationStepStateSchema.options,'skipped']);
+export type OperationState=z.infer<typeof operationStateSchema>;
+export type OperationCounts=Record<z.infer<typeof operationStepStateSchema>,number>;
+export type OperationSummary={id:string;kind:string;state:OperationState;total:number;notScheduled:number;counts:OperationCounts;createdAt:number;updatedAt:number};
+export type OperationPage={items:OperationSummary[];nextCursor:number|null;changeCursor:number};
+export type OperationStepView={id:string;kind:string;state:OperationState;attempts:number;availableAt:number;reason?:string;current:boolean;notScheduled:boolean;dependencies:string[];updatedAt:number};
+export type OperationDetail={operation:OperationSummary;steps:OperationStepView[];nextCursor:number|null};
+export type OperationChanges={ids:string[];cursor:number;reset:boolean;hasMore:boolean};

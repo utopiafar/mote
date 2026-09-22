@@ -68,6 +68,8 @@ test('context routes require owner access and immutable references never silentl
  const invitation=(await app.inject({method:'POST',url:'/api/connections/invitations',headers,payload:{serverUrl:'https://synthetic.invalid',label:'fixture'}})).json();
  const credential=(await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.invitation.code,deviceId:'fixture',deviceName:'fixture',platform:'android'}})).json();
  const collector={authorization:`Bearer ${credential.token}`};
+ for(const url of ['/api/operations','/api/operations/changes','/api/operations/file%3Afixture']){assert.equal((await app.inject({url})).statusCode,401);assert.equal((await app.inject({url,headers:collector})).statusCode,403);}
+ for(const url of ['/api/operations?limit=101','/api/operations?cursor=-1','/api/operations?state=unknown','/api/operations/changes?since=9007199254740992'])assert.equal((await app.inject({url,headers})).statusCode,400,url);
  for(const path of ['search','browse','bundle','retrieve'])assert.equal((await app.inject({url:'/api/context/'+path,headers:collector})).statusCode,403,path);
  assert.equal((await app.inject({method:'POST',url:'/api/context/read',headers:collector,payload:{refs:[old]}})).statusCode,403);
  for(const ref of ['session:'+old,'collection:'+old,'capture:memory:'+old,'../'+old])assert.equal(parseEvidenceRef(ref),undefined);

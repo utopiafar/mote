@@ -1,3 +1,4 @@
+import {installOperationProjection,linkOperation,type OperationMembership} from './operation-projection.js';
 import {randomUUID,createHash} from 'node:crypto';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {StoreError,type Store} from './store.js';
@@ -22,7 +23,7 @@ export interface ExecutionHandler {
  timeoutMs?:number|(()=>number);
  maxAttempts?:number;
 }
-type ProgramStep<T>={id:string;operationId:string;kind:string;pool:string;input:Record<string,unknown>;signal:AbortSignal;validate:()=>boolean;execute:(signal:AbortSignal)=>Promise<unknown>;commit:(result:unknown)=>void;read:()=>T|undefined;project:(step:ExecutionStep)=>void;cached?:boolean;initialAttempts?:number;timeoutMs?:number};
+type ProgramStep<T>=OperationMembership&{id:string;operationId:string;kind:string;pool:string;input:Record<string,unknown>;signal:AbortSignal;validate:()=>boolean;execute:(signal:AbortSignal)=>Promise<unknown>;commit:(result:unknown)=>void;read:()=>T|undefined;project:(step:ExecutionStep)=>void;cached?:boolean;initialAttempts?:number;timeoutMs?:number};
 type Row={id:string;operation_id:string;kind:string;pool:string;input:string;state:ExecutionState;attempts:number;available_at:number;error:string|null;fence:string|null;lease_until:number};
 const view=(row:Row):ExecutionStep=>({id:row.id,operationId:row.operation_id,kind:row.kind,pool:row.pool,input:JSON.parse(row.input),state:row.state,attempts:row.attempts,availableAt:row.available_at,...(row.error?{error:row.error}:{})});
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([key,v])=>[key,canonical(v)])):value;
@@ -47,10 +48,11 @@ export class ExecutionEngine {
    CREATE INDEX IF NOT EXISTS execution_operations ON execution_steps(operation_id,created_at);
    CREATE TABLE IF NOT EXISTS execution_sequence(pool TEXT PRIMARY KEY,next INTEGER NOT NULL);
    CREATE TABLE IF NOT EXISTS execution_fairness(pool TEXT NOT NULL,operation_id TEXT NOT NULL,last_started INTEGER NOT NULL,PRIMARY KEY(pool,operation_id));`);
+  installOperationProjection(store);
  }
  get closed(){return this.stopping;}
  register(handler:ExecutionHandler){if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return ()=>{this.handlers.delete(handler.kind);};}
- enqueue(operationId:string,kind:string,input:Record<string,unknown>,options:{id?:string;dependencies?:string[];initial?:{state:ExecutionState;attempts:number;availableAt:number;error?:string}}={}){
+ enqueue(operationId:string,kind:string,input:Record<string,unknown>,options:OperationMembership&{id?:string;dependencies?:string[];initial?:{state:ExecutionState;attempts:number;availableAt:number;error?:string}}={}){
   const handler=this.handlers.get(kind);if(!handler)throw new StoreError('Execution handler unavailable',409);
   input=canonical(input) as Record<string,unknown>;
   const json=JSON.stringify(input);if(json.length>32768)throw new StoreError('Execution input exceeds metadata limit',413);
@@ -63,7 +65,7 @@ export class ExecutionEngine {
    if(options.initial&&!existing){const seed=options.initial;db.prepare('UPDATE execution_steps SET state=?,attempts=?,available_at=?,error=? WHERE id=?').run(seed.state==='running'?'waiting':seed.state,seed.attempts,seed.availableAt,seed.state==='running'?'interrupted':seed.error??null,id);}
    for(const key of new Set(handler.resourceKeys?.(step)??[]))if(!db.prepare('SELECT 1 FROM execution_resources WHERE step_id=? AND resource_key=?').get(id,key)){this.store.reserveMetadata(Buffer.byteLength(key)+64);db.prepare('INSERT INTO execution_resources VALUES(?,?)').run(id,key);}
    for(const dep of options.dependencies??[])db.prepare('INSERT OR IGNORE INTO execution_dependencies VALUES(?,?)').run(id,dep);
-   db.prepare('INSERT OR IGNORE INTO execution_operation_steps VALUES(?,?)').run(operationId,id);handler.project?.(this.get(id)!);if(own)db.exec('COMMIT');return id;
+   linkOperation(this.store,operationId,id,options);handler.project?.(this.get(id)!);if(own)db.exec('COMMIT');return id;
   }catch(error){if(own)db.exec('ROLLBACK');throw error;}
  }
  get(id:string){const row=this.store.db.prepare('SELECT * FROM execution_steps WHERE id=?').get(id) as Row|undefined;return row?view(row):undefined;}
@@ -177,7 +179,7 @@ export class ExecutionEngine {
   });
   const abort=()=>this.cancel(options.id);options.signal.addEventListener('abort',abort,{once:true});
   try{
-   this.enqueue(options.operationId,kind,options.input,{id:options.id,initial:{state:options.cached?'succeeded':'waiting',attempts:options.initialAttempts??0,availableAt:0}});
+   this.enqueue(options.operationId,kind,options.input,{id:options.id,generation:options.generation,optional:options.optional,initial:{state:options.cached?'succeeded':'waiting',attempts:options.initialAttempts??0,availableAt:0}});
    const current=this.get(options.id)!;
    if(['failed','blocked','cancelled','stale'].includes(current.state)||current.state==='succeeded'&&options.read()===undefined)this.retry(options.id,false);
    await this.drain([options.id]);options.signal.throwIfAborted();

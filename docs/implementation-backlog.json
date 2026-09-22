@@ -11,9 +11,12 @@
       "status": "partial",
       "evidence": [
         "packages/shared/src/ui-contracts.ts",
-        "apps/server/test/execution-protocol.test.ts"
+        "apps/server/test/execution-protocol.test.ts",
+        "packages/shared/src/operations.ts",
+        "apps/server/src/operation-projection.ts",
+        "apps/server/test/operations.test.ts"
       ],
-      "remaining": "三端尚未共用同一 Operation 状态投影。"
+      "remaining": "服务器与 Web 已共用 Operation 投影；原生两端和来源覆盖率仍需接入同一契约。"
     },
     {
       "id": "BASE-02",
@@ -639,9 +642,12 @@
       "evidence": [
         "apps/web/src/Sources.tsx",
         "apps/web/src/Memories.tsx",
-        "scripts/test-web-tasks-imports.cjs"
+        "scripts/test-web-tasks-imports.cjs",
+        "apps/web/src/resource-cache.ts",
+        "apps/web/src/useResource.ts",
+        "apps/web/test/resource-cache.test.ts"
       ],
-      "remaining": "来源/Memory/Processing 晚响应已修复；全部页面尚未共享 query cache。"
+      "remaining": "任务列表与详情已共享按认证会话隔离的缓存；来源/Memory 晚响应已修复，其他页面仍需迁入共享缓存。"
     },
     {
       "id": "UI-04",
@@ -665,9 +671,13 @@
       "status": "partial",
       "evidence": [
         "apps/web/src/Processing.tsx",
-        "apps/server/test/architecture-upgrade.test.ts"
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/src/operations.ts",
+        "apps/server/src/operation-projection.ts",
+        "apps/web/src/operation-feed.ts",
+        "scripts/test-web-operations.cjs"
       ],
-      "remaining": "DAG 服务端筛选分页已实现；尚未跨旧引擎按 Operation 聚合与统一订阅。"
+      "remaining": "四类执行步骤已按 Operation 聚合、分页并共享增量订阅；导入/问答端到端关联和其他页面订阅仍待接入。"
     },
     {
       "id": "UI-06",
@@ -756,11 +766,12 @@
       "title": "旧逻辑退役",
       "change": "删除旧调度、重复 DTO、全量状态写入和失效文案；`app.ts` 收敛为装配入口",
       "acceptance": "每类对象只有一个权威写入口；旧 `tick` 不再运行；README、设置和行为一致",
-      "status": "pending",
+      "status": "partial",
       "evidence": [
-        "apps/server/src/app.ts"
+        "apps/server/src/app.ts",
+        "apps/server/src/execution-engine.ts"
       ],
-      "remaining": "旧执行循环和多个领域 DTO 尚未整体退役。"
+      "remaining": "四套领域执行循环已退役；兼容 DTO、各页面轮询与 app.ts 的领域逻辑仍需收敛。"
     }
   ],
   "reviewedVersion": "0.0.61",

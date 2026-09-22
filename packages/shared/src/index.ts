@@ -165,3 +165,5 @@ export * from './ui-builtins.js';
 export type {ProcessingJobView,ProcessingView} from './ui-contracts.js';
 
 export * from './source-capabilities.js';
+
+export * from './operations.js';

@@ -70,7 +70,7 @@ export class Perception {
         const captureId=String(job.capture_id),original=this.store.imageReference(captureId);if(!original?.blobHash)continue;
         let processorVersion='';try{processorVersion=this.runtime.registry.get(kind==='ocr'?settings.ocrProcessorId:settings.semanticProcessorId).version;}catch{}
         const input={captureId,kind,processorVersion,blobHash:original.blobHash,configRevision:this.execution(settings,kind),requested:Boolean(job.requested)};
-        const stepId=this.engine.enqueue('capture:'+captureId,'perception.'+kind,input);
+        const stepId=this.engine.enqueue('capture:'+captureId,'perception.'+kind,input,{generation:{slot:kind,version:input.configRevision}});
         if(job.state==='waiting'&&['cancelled','blocked','failed'].includes(this.engine.get(stepId)!.state))this.engine.retry(stepId);
         ids.push(stepId);
       }

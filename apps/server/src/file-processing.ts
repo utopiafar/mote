@@ -112,10 +112,11 @@ export class FileProcessing {
     db.prepare('UPDATE file_jobs SET state=?,attempts=?,available_at=?,error=? WHERE capture_id=?').run(state,step.attempts,step.availableAt,step.error??null,id);
     if(state==='succeeded'){db.prepare("UPDATE file_jobs SET stage='indexed',summary_state='waiting' WHERE capture_id=?").run(id);this.enqueue(id,'summary',step.id);}
   }
+  private optionalSummary(id:string){try{const {settings,localOnly}=this.executionSettings(id,'summary');return localOnly||!settings.summarize;}catch{return false;}}
   private enqueue(id:string,phase:'pipeline'|'summary',parentId?:string){
     const job=this.files.store.db.prepare('SELECT * FROM file_jobs WHERE capture_id=?').get(id);if(!job)return;
     if(phase==='summary'&&!parentId)parentId=this.engine.list({operationId:'file:'+id,kind:'files.pipeline',limit:100}).items.find(step=>step.input.revision===this.saved.revision)?.id;
-    const stepId=this.engine.enqueue('file:'+id,'files.'+phase,{captureId:id,revision:this.saved.revision},{dependencies:parentId?[parentId]:[],initial:{state:(phase==='pipeline'?job.state:job.summary_state)==='failed'?'waiting':(phase==='pipeline'?job.state:job.summary_state) as import('./execution-engine.js').ExecutionState,attempts:phase==='pipeline'?Number(job.attempts):0,availableAt:Number(job.available_at)}});
+    const stepId=this.engine.enqueue('file:'+id,'files.'+phase,{captureId:id,revision:this.saved.revision},{generation:{slot:'file-pipeline',version:this.saved.revision},optional:phase==='summary'&&this.optionalSummary(id),dependencies:parentId?[parentId]:[],initial:{state:(phase==='pipeline'?job.state:job.summary_state)==='failed'?'waiting':(phase==='pipeline'?job.state:job.summary_state) as import('./execution-engine.js').ExecutionState,attempts:phase==='pipeline'?Number(job.attempts):0,availableAt:Number(job.available_at)}});
     if((phase==='pipeline'?job.state:job.summary_state)==='waiting'&&['succeeded','failed','cancelled','blocked','stale'].includes(this.engine.get(stepId)!.state))this.engine.retry(stepId);
     return stepId;
   }
@@ -144,7 +145,7 @@ export class FileProcessing {
     const active=this.execution.getStore();if(!active)throw new StoreError('File step needs an execution grant',409);
     const stepId=sha256(JSON.stringify(['file-step',id,name,fingerprint])),started=performance.now(),requestId=this.options.diagnostics?.requestId()??randomUUID();
     db.prepare("INSERT INTO file_steps(capture_id,step,processor,version,fingerprint,state,attempts,updated_at) VALUES(?,?,?,?,?,'waiting',0,?) ON CONFLICT(capture_id,step) DO UPDATE SET processor=excluded.processor,version=excluded.version,fingerprint=excluded.fingerprint,artifact_id=CASE WHEN file_steps.fingerprint=excluded.fingerprint THEN file_steps.artifact_id ELSE NULL END").run(id,name,processor,version,fingerprint,new Date().toISOString());
-    return this.engine.runStep({id:stepId,operationId:'file:'+id,kind:'file-step',pool:'file-work',input:{captureId:id,name,fingerprint},signal:active.signal,timeoutMs:this.saved.settings.timeoutMs,cached:Boolean(cached),initialAttempts:old?.fingerprint===fingerprint?old.attempts:0,validate:()=>this.exists(id,revision),
+    return this.engine.runStep({id:stepId,operationId:'file:'+id,kind:'file-step',pool:'file-work',input:{captureId:id,name,fingerprint},generation:{slot:'file-pipeline',version:revision},signal:active.signal,timeoutMs:this.saved.settings.timeoutMs,cached:Boolean(cached),initialAttempts:old?.fingerprint===fingerprint?old.attempts:0,validate:()=>this.exists(id,revision),
       execute:async()=>{this.log('file.step.started',id,{operation:name as Operation,requestId},'debug');return execute();},
       commit:value=>{const artifactId=save(value);db.prepare('UPDATE file_steps SET artifact_id=? WHERE capture_id=? AND step=?').run(artifactId,id,name);this.invalidate(id);this.log('file.step.completed',id,{operation:name as Operation,requestId,durationMs:performance.now()-started});},
       read:()=>{const row=db.prepare('SELECT artifact_id FROM file_steps WHERE capture_id=? AND step=? AND fingerprint=?').get(id,name,fingerprint);return row?.artifact_id&&db.prepare('SELECT 1 FROM file_artifacts WHERE id=?').get(row.artifact_id)?String(row.artifact_id):undefined;},
