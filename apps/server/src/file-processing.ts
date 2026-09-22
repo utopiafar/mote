@@ -36,7 +36,7 @@ export class FileProcessing {
       admit:step=>this.admit(String(step.input.captureId),phase),
       execute:(step,signal)=>{const run=()=>this.execution.run({step,signal},()=>phase==='pipeline'?this.runFile(step,signal):this.runSummary(step,signal));return this.options.diagnostics?this.options.diagnostics.run(randomUUID(),run):run();},
       commit:(step,result)=>{if(phase==='summary'){const id=String(step.input.captureId);this.saveArtifact(id,'summary',result,String(step.input.revision));this.invalidate(id);}},
-      project:step=>this.project(step,phase),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):new ExecutionFailure('transient',phase==='summary'?'summary_failed':'provider_failed',30000),
+      project:step=>this.project(step,phase),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===422?new ExecutionFailure('permanent','unsupported_format'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):new ExecutionFailure('transient',phase==='summary'?'summary_failed':'provider_failed',30000),
     });
   }
   private log(event:string,id?:string,fields:EventFields={},level:'debug'|'info'|'warn'|'error'='info') {

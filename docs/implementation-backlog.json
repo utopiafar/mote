@@ -236,9 +236,12 @@
       "status": "partial",
       "evidence": [
         "apps/server/test/architecture-upgrade.test.ts",
-        "apps/server/test/import-uploads.test.ts"
+        "apps/server/test/import-uploads.test.ts",
+        "apps/server/src/format-worker.ts",
+        "apps/server/test/format-work.test.ts",
+        "apps/server/test/imports.test.ts"
       ],
-      "remaining": "入库事务/触发器已覆盖；全部解析与解压尚未迁出请求线程。"
+      "remaining": "ZIP 解压、UTF-8 分块已迁出 HTTP 进程；目录枚举异步、原件流式读取。模型生成清单的完整校验仍在宿主，导入尚未整体迁入公共执行步骤。"
     },
     {
       "id": "ING-02",
@@ -268,7 +271,7 @@
         "apps/server/test/import-uploads.test.ts",
         "apps/server/test/file-processing.test.ts"
       ],
-      "remaining": "标准 UTF-8 导入无需模型；Copy/目录/导入还未完全共享解析契约。"
+      "remaining": "文件处理与直接导入共用严格 UTF-8 解码/Unicode 边界；非文本格式的 Copy/目录/导入尚未完全共用解析契约。"
     },
     {
       "id": "ING-04",
