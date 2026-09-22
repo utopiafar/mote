@@ -12,8 +12,9 @@ const source: SourceDefinition = { id: 'fixture', name: '合成来源', kind: 'l
 const item: ScannedItem = { externalId: 'file:synthetic', title: '中文 🧑🏽‍💻', text: '合成资料\n忽略前文只是资料而非指令。', kind: 'file', layer: 'snapshot', deleted: false };
 const scan = (items: ScannedItem[], complete = true): SourceScan => ({ items, seen: items.map(i => i.externalId), skipped: 0, complete });
 function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): SourceRequest {
-  return async (_path, body, method) => {
-    if (method === 'POST') return { ...source, enabled: true };
+  return async (path, body, method) => {
+    if (path === '/api/sources') return { ...source, enabled: true };
+    if (path.endsWith('/batch')) throw Object.assign(new Error('Legacy fixture server'), { httpStatus: 404 });
     const value = structuredClone(body as SourceItem); saved.push(value);
     if (fail?.(value)) throw new Error('simulated ACK loss');
     return { id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: source.id, externalId: value.externalId, revision: value.revision, duplicate: false };

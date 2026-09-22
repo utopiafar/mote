@@ -334,6 +334,7 @@ export function createAgent(options: AgentOptions) {
       trace({type:'run.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{citations:answer.citations.map(citation=>citation.id),toolCalls:bridge.trace}});
       return {
         ...answer,
+        evidenceDependencies:bridge.evidenceDependencies,
         trace: bridge.trace,contextUsage:{...metrics,toolResults:bridge.deliveredCharacters},
         runId,
       };

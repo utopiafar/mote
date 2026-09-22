@@ -1,0 +1,133 @@
+{
+  "generatedOnly": true,
+  "results": [
+    {
+      "script": "scripts/test-web-budgets.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 2413,
+      "output": "{\"passed\":true,\"fixtureOnly\":true,\"checks\":[\"daily/operation/provider limits\",\"real API save\",\"revision conflict preserves draft\",\"reload revision\",\"empty unlimited\",\"explicit Codex/unknown usage boundaries\",\"200% and mobile layout\"]}"
+    },
+    {
+      "script": "scripts/test-web-connections.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 2981,
+      "output": "PASS: generated QR/JSON → isolated central → scoped client capture/note ingestion → revoke; MCP JSON → real SDK read; responsive web UI. No live model or personal capture."
+    },
+    {
+      "script": "scripts/test-web-content-storage.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 1814,
+      "output": "PASS: real developer UI defaults off, saves optional encryption, preserves old files until explicit decryption, renders background results and fits mobile. Generated content only."
+    },
+    {
+      "script": "scripts/test-web-conversations.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 9271,
+      "output": "PASS: generated conversation history, continuation, restart, failure, deletion and responsive UI. No live model or personal content."
+    },
+    {
+      "script": "scripts/test-web-diagnostics.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 3263,
+      "output": "PASS: actual renderer → isolated central node → effective settings/storage paths/secret status/refresh → profile/snapshot → raw NDJSON request correlation → safe support download; desktop/mobile layouts rendered. Generated notes only."
+    },
+    {
+      "script": "scripts/test-web-evidence-focus.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 1849,
+      "output": "PASS: generated typed evidence across conversation, insight, archive, nested original, history and mobile focus."
+    },
+    {
+      "script": "scripts/test-web-i18n.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 4799,
+      "output": "PASS: Web Chinese/English switch and persistence, LTR, desktop/mobile layout, generated data only."
+    },
+    {
+      "script": "scripts/test-web-login.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 3012,
+      "output": "PASS after building desktop TypeScript fixture dependency: real central + browser login, permission gates, independent navigation and device QR; generated content only.",
+      "rerun": true
+    },
+    {
+      "script": "scripts/test-web-metadata.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 2125,
+      "output": "PASS: generated activity → central → real web timeline/filter/evidence/device metadata; no screen or image requests."
+    },
+    {
+      "script": "scripts/test-web-navigation.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 9247,
+      "output": "PASS: generated web navigation/model settings/config export/sync status/diagnostic UI and desktop/mobile screenshots."
+    },
+    {
+      "script": "scripts/test-web-operations.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 3152,
+      "output": "PASS: 400 generated operations; paging, filter reset, shared live updates, details focus restoration, 200% and mobile layout. No live model or personal data."
+    },
+    {
+      "script": "scripts/test-web-sessions-insights.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 8865,
+      "output": "{\"ok\":true,\"checks\":[\"session grouping\",\"thumbnail pagination\",\"mobile layout\",\"immediate review state\",\"navigation recovery\",\"reload recovery\",\"disconnect recovery\",\"report\",\"failure and retry\",\"output budget presets and custom save\"],\"output\":\"<workspace>/.mote/session-review-ui\"}"
+    },
+    {
+      "script": "scripts/test-web-sources.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 1831,
+      "output": "PASS: current revision/history, reference entry and content-free external reference, desktop/mobile layout."
+    },
+    {
+      "script": "scripts/test-web-tasks-imports.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 4541,
+      "output": "PASS enhanced rerun: batch imports eight generated originals and individually pauses/resumes one upload without a phantom job; task closure; unscheduled memory stays separate; Gmail fixture authorization, continuation and disconnect.",
+      "rerun": true
+    },
+    {
+      "script": "scripts/test-memory-revisions-ui.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 1525,
+      "output": "{\"passed\":true,\"checks\":[\"version-bound publish\",\"relation preview\",\"owner correction through real API\",\"current/history listing\",\"old/new navigation\",\"mobile layout\"],\"personalDataUsed\":false}"
+    },
+    {
+      "script": "scripts/test-model-profiles-ui.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 7220,
+      "output": "{\"ok\":true,\"checks\":[\"deployment read-only\",\"preset copy with write-only credentials\",\"profile create/edit\",\"write-only secrets\",\"feature defaults\",\"same conversation per-turn selection\",\"temporary model preserves provider defaults\",\"usage pagination preserves totals\",\"Provider grouping\",\"memory selector\",\"Codex editor\",\"desktop/mobile layout\"],\"screenshots\":\"<workspace>/.mote/model-profiles-ui\"}"
+    },
+    {
+      "script": "apps/web/scripts/capture-browser-smoke.cjs",
+      "code": 0,
+      "signal": null,
+      "durationMs": 8916,
+      "output": "PASS: generated fixtures only; capture navigation/thumbnails/cursors/OCR, media source filter, locked/background playback evidence, independent playback totals, permission coverage, recent device metadata and desktop/mobile layout."
+    }
+  ],
+  "passed": 17,
+  "total": 17,
+  "finalReruns": [
+    "scripts/test-web-budgets.cjs",
+    "scripts/test-web-tasks-imports.cjs"
+  ],
+  "finalRerunResult": "Both passed after the final budget copy and browser upload worker changes."
+}

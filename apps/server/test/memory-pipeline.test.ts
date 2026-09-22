@@ -9,6 +9,8 @@ import {ArchivedFileStore} from '../src/archived-files.js';
 import {MemoryStore,MemoryOutputValidationError,memoryEvidenceFingerprint} from '../src/memory.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
+import {AgentTimeoutError} from '@mote/agent';
+import {ProviderFailure} from '@mote/shared';
 
 function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-generated-')),store=new Store(directory),sources=new SourceStore(store),memories=new MemoryStore(store);
@@ -19,6 +21,50 @@ function fixture(t:TestContext){
 const item=(externalId='a',text='合成原文：我计划学习 TypeScript，尚未开始。',revision='1',observedAt='2026-09-15T01:00:00Z')=>({externalId,text,revision,observedAt,title:'Generated record',kind:'file',layer:'original'});
 const result=(id:string,quote?:{offset:number;quote:string})=>({answer:JSON.stringify({memories:[{title:'合成候选',statement:`尚未开始的计划 [${id}]`,uncertainty:'没有完成证据',evidenceIds:[id],...(quote?{evidence:[{id,...quote}]}:{})}]}),citations:[{id,capturedAt:'2026-09-15T01:00:00Z',appName:'Generated',excerpt:'合成'}],trace:[],runId:'generated-run'});
 const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty'});
+test('model deadlines remain typed and retryable without committing a checkpoint',async t=>{
+ const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item());let calls=0;
+ const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>{if(++calls===1)throw new AgentTimeoutError();return empty();}});t.after(()=>pipeline.close());
+ const job=pipeline.create({evidenceIds:[record.id]}),failed=await pipeline.run(job.id);
+ assert.equal(failed.status,'failed');assert.equal(failed.batches[0].errorCode,'provider_timeout');assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ await assert.rejects(pipeline.retry(job.id));await new Promise(resolve=>setTimeout(resolve,Math.max(0,failed.availableAt!-Date.now())+10));
+ assert.equal((await pipeline.retry(job.id)).status,'completed');assert.equal(calls,2);
+});
+test('deadline retry halves batches twice, survives restart, and concurrent retry creates no duplicate siblings',async t=>{
+ const {store,sources,memories}=fixture(t),ids:string[]=[],seen:string[]=[];
+ for(let i=0;i<20;i++)ids.push((await sources.upsert('generated',item(String(i),'前缀🌱合成原文内容'))).id);
+ const ranges=ids.map(id=>({id,offset:2,length:6}));
+ const query=async(input:MemoryPipelineQuery)=>{if(input.evidenceRanges.length>5)throw new ProviderFailure({category:'transient',code:'provider_timeout',retryAfterMs:0});for(const range of input.evidenceRanges){assert.equal(range.offset,2);assert.equal(range.length,6);seen.push(range.id);}return empty();};
+ let pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query});
+ try{
+  const job=pipeline.create({evidenceIds:ids,evidenceRanges:ranges});assert.equal((await pipeline.run(job.id)).failedBatches,1);
+  const [first,duplicate]=await Promise.all([pipeline.retry(job.id),pipeline.retry(job.id)]);assert.equal(first.totalBatches,2);assert.equal(duplicate.totalBatches,2);assert.equal(first.failedBatches,2);
+  const originalKeys=store.db.prepare('SELECT json FROM memory_batches WHERE job_id=?').all(job.id).flatMap(row=>JSON.parse(String(row.json)).chunks.map((chunk:{key:string})=>chunk.key));
+  await pipeline.close();pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query});
+  const completed=await pipeline.retry(job.id);assert.equal(completed.status,'completed');assert.equal(completed.totalBatches,4);assert.deepEqual(new Set(seen),new Set(ids));assert.equal(seen.length,20);
+  assert.ok(completed.batches.every(batch=>batch.splitDepth===2&&batch.splitHistory!.length===2));
+  assert.deepEqual(new Set(store.db.prepare('SELECT key FROM memory_checkpoints').all().map(row=>String(row.key))),new Set(originalKeys));
+  assert.equal((await pipeline.retry(job.id)).totalBatches,4);assert.equal(seen.length,20);assert.equal(pipeline.create({evidenceIds:ids,evidenceRanges:ranges}).totalBatches,0);
+ }finally{await pipeline.close();}
+});
+test('timeout splitting stops after two levels and never subdivides a lone original range',async t=>{
+ const {store,sources,memories}=fixture(t),ids:string[]=[];for(let i=0;i<8;i++)ids.push((await sources.upsert('generated',item(String(i)))).id);
+ let calls=0;const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>{calls++;throw new ProviderFailure({category:'transient',code:'provider_timeout',retryAfterMs:0});}});
+ try{const job=pipeline.create({evidenceIds:ids});await pipeline.run(job.id);await pipeline.retry(job.id);await pipeline.retry(job.id);const terminal=await pipeline.retry(job.id);assert.equal(terminal.status,'failed');assert.equal(terminal.totalBatches,4);assert.equal(calls,11);assert.ok(terminal.batches.every(batch=>batch.splitDepth===2));
+ const single=pipeline.create({evidenceIds:[ids[0]]});await pipeline.run(single.id);assert.equal((await pipeline.retry(single.id)).totalBatches,1);
+ }finally{await pipeline.close();}
+});
+test('late progress and validation from a timed-out attempt cannot overwrite its reclaimed split batch',async t=>{
+ const {store,sources,memories}=fixture(t),ids:string[]=[];for(let i=0;i<4;i++)ids.push((await sources.upsert('generated',item(String(i)))).id);
+ let oldInput!:MemoryPipelineQuery,calls=0,release!:()=>void,entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);
+ const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async input=>{if(++calls===1){oldInput=input;throw new ProviderFailure({category:'transient',code:'provider_timeout',retryAfterMs:0});}if(calls===2){entered();await new Promise<void>(resolve=>release=resolve);}return empty();}});
+ try{const job=pipeline.create({evidenceIds:ids});await pipeline.run(job.id);const retry=pipeline.retry(job.id);await started;
+ const before=store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(job.batches[0].id)!.json;
+ oldInput.onProgress?.({stage:'model',message:'Generated late callback'});oldInput.onTrace?.({type:'generated.late'});
+ assert.throws(()=>oldInput.validateOutput!(empty()));
+ assert.equal(store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(job.batches[0].id)!.json,before);
+ release();assert.equal((await retry).status,'completed');
+ }finally{release?.();await pipeline.close();}
+});
 
 test('memory references preserve source versions, authored time and exact UTF-16 quotes',async t=>{
   const {store,sources,memories}=fixture(t),text='开头🌱\n合成原文：我计划学习 TypeScript，尚未开始。';

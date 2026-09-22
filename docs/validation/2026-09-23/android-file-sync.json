@@ -1,0 +1,35 @@
+{
+  "deviceGenerated": true,
+  "networkResumeAfterOnePart": true,
+  "stagingCleared": true,
+  "phoneOriginalsKept": true,
+  "historyCount": 4,
+  "referenceCount": 205,
+  "referenceOpenedBytes": 0,
+  "providerFailureRetained": true,
+  "newOnlyThenBackfill": true,
+  "legacyReferenceUpgraded": true,
+  "centralForgetVerified": true,
+  "complete": true,
+  "initialFiles": [
+    {
+      "sizeBytes": 237,
+      "sha256": "fdc2d26874972da9fb4f6d4bbf8609eabc64ffb719a001e9f5cd2366c410402c",
+      "title": "plan.txt"
+    },
+    {
+      "sizeBytes": 9437187,
+      "sha256": "b34a3012ec708db43d22ad6f69759a6ad4bc5c887eb6b427d7bb7b0552105282",
+      "title": "large.bin"
+    },
+    {
+      "sizeBytes": 613176,
+      "sha256": "7a32663c0909c00bc816f1df45af23317ecc716356905d8bdb9571a9be393bcd",
+      "title": "call.wav"
+    }
+  ],
+  "personalData": false,
+  "physicalDevice": false,
+  "emulator": "mote_fixture_api35",
+  "testSeconds": 6.561
+}

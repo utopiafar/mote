@@ -9,13 +9,39 @@ const price={provider:'fixture',model:'fixture',currency:'USD' as const,input:1,
 const request=(id:string,operationId='one')=>({id,operationId,provider:'fixture',model:'fixture',inputTokens:100,outputTokens:50,price});
 function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-budgets-')),store=new Store(dir);t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {dir,store,budgets:new ModelBudgets(store)};}
 const code=(name:string)=>(error:any)=>error?.details?.code===name;
-test('a cross-midnight run keeps its admission day; a new run uses the new day without losing operation totals',t=>{
+test('each attempt uses its own UTC day while the operation total spans midnight',t=>{
  const f=fixture(t);let now=Date.parse('2026-09-21T23:59:59Z');const b=new ModelBudgets(f.store,()=>now);
  b.configure({revision:0,limits:{dailyTokens:300,operationTokens:450}});b.reserve(request('long'));
- now+=2000;b.reserve(request('long'));assert.equal(b.view().usage.length,0,'same run charged to first admission day');b.reserve(request('new'));assert.equal(b.view().usage[0].tokens,150);
- assert.throws(()=>b.reserve(request('overflow')),code('model_token_budget'));
+ now+=2000;b.reserve(request('long'));assert.equal(b.view().usage[0].tokens,150);b.reserve(request('new'));assert.equal(b.view().usage[0].tokens,300);
+ assert.throws(()=>b.reserve(request('overflow','separate')),code('model_token_budget'));
  b.finish('long',{requests:2,reportedRequests:1,inputTokens:10,outputTokens:10,totalTokens:20},price);
- assert.equal(f.store.db.prepare('SELECT tokens FROM model_budget_reservations WHERE id=?').get('long')?.tokens,300,'partial usage cannot release the reservation');
+ const attempts=f.store.db.prepare('SELECT day,tokens,status FROM model_budget_attempts WHERE reservation_id=? ORDER BY attempt').all('long');
+ assert.deepEqual(attempts.map(a=>[a.day,a.tokens,a.status]),[['2026-09-21',150,'unknown'],['2026-09-22',150,'unknown']]);
+ now+=86400000;assert.throws(()=>b.reserve(request('next-day')),code('model_token_budget'),'operation cap must survive midnight');
+});
+test('reported attempt usage settles on its admission day including cost and provider caps',t=>{
+ const f=fixture(t);let now=Date.parse('2026-09-21T23:59:59Z');const b=new ModelBudgets(f.store,()=>now);
+ b.configure({revision:0,limits:{providerDailyTokens:{fixture:200},providerDailyCost:{fixture:0.0003},dailyCost:1,operationCost:1}});
+ const usage={requests:1,reportedRequests:1,inputTokens:20,outputTokens:10,totalTokens:30,cacheReadTokens:0,cacheWriteTokens:0};
+ b.reserve(request('long'));b.observe('long',usage,price);now+=2000;b.reserve(request('long'));
+ assert.equal(b.view().usage[0].tokens,150);assert.throws(()=>b.reserve(request('concurrent','two')),code('model_token_budget'));
+ b.finish('long',{...usage,requests:2,reportedRequests:2,inputTokens:50,outputTokens:20,totalTokens:70},price);
+ const rows=f.store.db.prepare('SELECT day,tokens,cost,status FROM model_budget_attempts ORDER BY attempt').all();
+ assert.deepEqual(rows.map(r=>[r.day,r.tokens,r.status]),[['2026-09-21',30,'settled'],['2026-09-22',40,'settled']]);assert.ok(Math.abs(Number(rows[0].cost)-0.00004)<1e-12);assert.ok(Math.abs(Number(rows[1].cost)-0.00005)<1e-12);
+ b.reserve(request('concurrent','two'));assert.equal(b.view().usage[0].tokens,190);
+});
+test('missing intermediate usage cannot move a cross-day reservation to the completion date',t=>{
+ const f=fixture(t);let now=Date.parse('2026-09-21T23:59:59Z');const b=new ModelBudgets(f.store,()=>now);b.configure({revision:0,limits:{dailyTokens:1000}});
+ b.reserve(request('long'));now+=2000;b.reserve(request('long'));b.finish('long',{requests:2,reportedRequests:2,inputTokens:20,outputTokens:10,totalTokens:30},price);
+ assert.equal(b.view().usage[0].tokens,150);assert.equal(b.view().usage[0].unknown,1);
+ assert.equal(f.store.db.prepare('SELECT sum(tokens) tokens FROM model_budget_attempts').get()!.tokens,300);
+});
+test('a later receipt replaces the same attempt sample without undercounting or moving its day',t=>{
+ const f=fixture(t);let now=Date.parse('2026-09-21T23:59:59Z');const b=new ModelBudgets(f.store,()=>now);b.configure({revision:0,limits:{dailyTokens:1000}});
+ const sample=(inputTokens:number,requests=1)=>({requests,reportedRequests:requests,inputTokens,outputTokens:10,totalTokens:inputTokens+10,cacheReadTokens:0,cacheWriteTokens:0});
+ b.reserve(request('long'));b.observe('long',sample(10),price);b.observe('long',sample(20),price);
+ now+=2000;b.reserve(request('long'));b.observe('long',sample(40,2),price);b.observe('long',sample(50,2),price);b.finish('long',sample(50,2),price);
+ assert.deepEqual(f.store.db.prepare('SELECT day,tokens FROM model_budget_attempts ORDER BY attempt').all().map(r=>[r.day,r.tokens]),[['2026-09-21',30],['2026-09-22',30]]);
 });
 test('two hosts cannot reserve the same daily or operation balance; retries and review spend it too',t=>{
  const f=fixture(t),second=new Store(f.dir),other=new ModelBudgets(second);t.after(()=>second.close());f.budgets.configure({revision:0,limits:{dailyTokens:450,operationTokens:300}});

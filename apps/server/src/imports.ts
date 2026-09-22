@@ -11,7 +11,7 @@ import {Readable} from 'node:stream';
 import {pipeline} from 'node:stream/promises';
 import {setImmediate as yieldTurn} from 'node:timers/promises';
 import {z} from 'zod';
-import {importRequestSchema,sourceItemSchema,type ArchivedFile,type ImportDispositions,type ImportJob,type SourceItem} from '@mote/shared';
+import {importRequestSchema,sourceItemSchema,type ArchivedFile,type ImportDispositions,type ImportJob,type ImportRequest,type SourceItem} from '@mote/shared';
 import {ArchivedFileStore,MAX_FILE_BYTES,archiveRelativePath} from './archived-files.js';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {SourceStore} from './sources.js';
@@ -24,7 +24,7 @@ const MAX_INPUT_BYTES=256*1024*1024,MAX_EXPANDED_BYTES=512*1024*1024,MAX_FILES=4
 export type ImportPreparation={operationId?:string;signal?:AbortSignal;workspace:string;inputPaths:string[];instruction:string;previous?:{summary:string;error?:string}};
 export type ImportPreparationResult={summary:string;recordsPath?:string;warnings?:string[]};
 export type ImportRuntime={executor?:ExecutionEngine;prepare?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;onImported?:(captureIds:string[],importJobId:string)=>Promise<{memoryJobId?:string}>};
-type InternalJob=ImportJob&{preparationRevision?:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[]};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
+type InternalJob=ImportJob&{createFingerprint?:string;preparationRevision?:number;originalsPending?:boolean;expansion?:{originalIds:string[];completedIds:string[]};parserMode?:'plain';workspace:string;inputs:{path:string;fileId:string}[];manifestHash?:string;failurePhase?:'prepare'|'import';memoryNotified?:boolean;blockedArchive?:boolean};
 const responseSchema=z.object({summary:z.string().max(20000),recordsPath:z.string().max(4000).optional(),warnings:z.array(z.string().max(2000)).max(200).optional()}).strict();
 const message=(error:unknown)=>error instanceof Error?error.message.slice(0,2000):'Import failed';
 const inside=(root:string,path:string)=>{const rel=relative(root,path);return rel===''||(!rel.startsWith(`..${sep}`)&&rel!=='..'&&!isAbsolute(rel));};
@@ -32,6 +32,7 @@ const inside=(root:string,path:string)=>{const rel=relative(root,path);return re
 /** Deterministic formats decode locally; models map unfamiliar structures into reviewed records. */
 export class ImportStore {
   private running=new Set<string>();
+  private creating=new Map<string,{fingerprint:string;promise:Promise<ImportJob>}>();
   private executor:ExecutionEngine;
   private phaseWaiters=new Map<string,Set<()=>void>>();
   private isScheduled(id:string){return Boolean(this.store.db.prepare("SELECT 1 FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state IN ('waiting','running') LIMIT 1").get(id));}
@@ -39,6 +40,7 @@ export class ImportStore {
   constructor(public store:Store,public files:ArchivedFileStore,public sources:SourceStore,private runtime:ImportRuntime={}) {
     const directory=join(store.directory,'imports');privateDirectory(directory);this.directory=realpathSync(directory);
     store.db.exec('CREATE TABLE IF NOT EXISTS import_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL)');
+    store.db.exec('CREATE TABLE IF NOT EXISTS import_create_requests(request_id TEXT PRIMARY KEY,fingerprint TEXT NOT NULL,job_id TEXT NOT NULL)');
     this.executor=runtime.executor??new ExecutionEngine(store);
     for(const phase of ['prepare','commit'] as const)this.executor.register({kind:`imports.${phase}`,pool:'imports',concurrency:()=>1,maxAttempts:1,timeoutMs:2147483647,validate:step=>Boolean(store.db.prepare('SELECT 1 FROM import_jobs WHERE id=?').get(String(step.input.jobId))),execute:async(step,signal)=>{
       const result=await (phase==='prepare'?this.prepareNow(String(step.input.jobId),signal):this.confirmNow(String(step.input.jobId),signal));
@@ -72,12 +74,28 @@ export class ImportStore {
     }
   }
   private load(id:string):InternalJob{const row=this.store.db.prepare('SELECT json FROM import_jobs WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Import job not found',404);return JSON.parse(row.json);}
-  private public(job:InternalJob):ImportJob{job.operationId=`import:${job.id}`;const operation=this.store.db.prepare('SELECT state FROM operation_progress WHERE id=? AND total>0').get(job.operationId);if(operation)job.execution=executionEnvelope({status:operation.state==='waiting'?'queued':operation.state,attempts:job.execution?.attempts??0,errorCode:job.status==='awaiting_confirmation'?'awaiting_confirmation':job.execution?.failure?.code});const {preparationRevision,originalsPending,expansion,parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;return value;}
-  private save(job:InternalJob){job.updatedAt=new Date().toISOString();const json=JSON.stringify(job),old=this.store.db.prepare('SELECT length(CAST(json AS BLOB)) AS bytes FROM import_jobs WHERE id=?').get(job.id) as {bytes:number}|undefined;this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-(old?.bytes??0)));this.store.db.prepare('INSERT INTO import_jobs(id,created_at,updated_at,json) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(job.id,job.createdAt,job.updatedAt,json);}
+  private public(job:InternalJob):ImportJob{job.operationId=`import:${job.id}`;const operation=this.store.db.prepare('SELECT state FROM operation_progress WHERE id=? AND total>0').get(job.operationId);if(operation)job.execution=executionEnvelope({status:operation.state==='waiting'?'queued':operation.state,attempts:job.execution?.attempts??0,errorCode:job.status==='awaiting_confirmation'?'awaiting_confirmation':job.execution?.failure?.code});const {createFingerprint,preparationRevision,originalsPending,expansion,parserMode,workspace,inputs,manifestHash,failurePhase,memoryNotified,blockedArchive,...value}=job;return value;}
+  private save(job:InternalJob){job.updatedAt=new Date().toISOString();const json=JSON.stringify(job),old=this.store.db.prepare('SELECT length(CAST(json AS BLOB)) AS bytes FROM import_jobs WHERE id=?').get(job.id) as {bytes:number}|undefined;this.store.reserveMetadata(Math.max(0,Buffer.byteLength(json)-(old?.bytes??0)));this.store.db.prepare('INSERT INTO import_jobs(id,created_at,updated_at,json) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET updated_at=excluded.updated_at,json=excluded.json').run(job.id,job.createdAt,job.updatedAt,json);if(job.createFingerprint)this.store.db.prepare('INSERT OR IGNORE INTO import_create_requests(request_id,fingerprint,job_id) VALUES(?,?,?)').run(job.id,job.createFingerprint,job.id);}
   get(id:string):ImportJob{return this.public(this.load(id));}
   list():ImportJob[]{return (this.store.db.prepare('SELECT json FROM import_jobs ORDER BY created_at DESC LIMIT 100').all() as {json:string}[]).map(r=>this.public(JSON.parse(r.json)));}
+  private createdRequest(requestId:string,fingerprint:string):ImportJob|undefined {
+    const receipt=this.store.db.prepare('SELECT fingerprint,job_id FROM import_create_requests WHERE request_id=?').get(requestId) as {fingerprint:string;job_id:string}|undefined;
+    const row=this.store.db.prepare('SELECT json FROM import_jobs WHERE id=?').get(receipt?.job_id??requestId) as {json:string}|undefined;
+    const job=row?JSON.parse(row.json) as InternalJob:undefined;
+    if((receipt||job)&&(receipt?.fingerprint??job?.createFingerprint)!==fingerprint)throw new StoreError('Import request ID already belongs to a different request',409);
+    if(receipt&&!job)throw new StoreError('This import request was deleted; start a new import',410);
+    return job?this.public(job):undefined;
+  }
   async create(raw:unknown):Promise<ImportJob> {
     const request=importRequestSchema.parse(raw);
+    if(!request.requestId)return this.createRequest(request);
+    const fingerprint=sha256(JSON.stringify(request)),pending=this.creating.get(request.requestId);
+    if(pending){if(pending.fingerprint!==fingerprint)throw new StoreError('Import request ID already belongs to a different request',409);return pending.promise;}
+    const existing=this.createdRequest(request.requestId,fingerprint);if(existing)return existing;
+    const promise=this.createRequest(request,fingerprint);this.creating.set(request.requestId,{fingerprint,promise});
+    try{return await promise;}finally{if(this.creating.get(request.requestId)?.promise===promise)this.creating.delete(request.requestId);}
+  }
+  private async createRequest(request:ImportRequest,createFingerprint?:string):Promise<ImportJob> {
     if(Number((this.store.db.prepare('SELECT COUNT(*) AS n FROM import_jobs').get() as {n:number}).n)>=1000)throw new StoreError('Import job limit reached',413);
     const entries:{name:string;mimeType?:string;bytes?:Buffer;fileId?:string;path?:string;sizeBytes?:number;identity?:string}[]=[];let total=0;
     const add=(name:string,bytes:Buffer,mimeType?:string)=>{archiveRelativePath(name);total+=bytes.length;if(bytes.length>MAX_FILE_BYTES||total>MAX_INPUT_BYTES||entries.length>=MAX_FILES)throw new StoreError('Import exceeds file count or size limits (64 MiB per file, 256 MiB total)',413);entries.push({name,bytes,mimeType});};
@@ -99,8 +117,10 @@ export class ImportStore {
     }
     if(!entries.length)throw new StoreError('No files were supplied');
     if(new Set(entries.map(e=>e.name)).size!==entries.length)throw new StoreError('File paths must be unique within an import');
-    const now=new Date().toISOString(),id=randomUUID(),workspace=join(this.directory,id);privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
-    const job:InternalJob={...(request.processing==='automatic'&&!request.instruction.trim()&&entries.every(entry=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(entry.name))?{parserMode:'plain' as const}:{}),id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
+    // Directory enumeration yields; another host may have accepted this request meanwhile.
+    if(request.requestId){const existing=this.createdRequest(request.requestId,createFingerprint!);if(existing)return existing;}
+    const now=new Date().toISOString(),id=request.requestId??randomUUID(),workspace=join(this.directory,id);privateDirectory(workspace);privateDirectory(join(workspace,'inputs'));
+    const job:InternalJob={...(createFingerprint?{createFingerprint}:{}),...(request.processing==='automatic'&&!request.instruction.trim()&&entries.every(entry=>/\.(txt|md|markdown|csv|tsv|json|jsonl|ndjson|yaml|yml|log|ics|pdf|docx|xlsx)$/i.test(entry.name))?{parserMode:'plain' as const}:{}),id,name:request.name??(entries.length===1?basename(entries[0].name):moteText("导入 {0} 个文件", entries.length)),instruction:request.instruction,sourceId:'',status:'queued',processingStatus:'archived',createdAt:now,updatedAt:now,files:[],summary:'',warnings:[],archive:{files:0,bytes:0,expandedFiles:0},progress:{total:0,processed:0,imported:0,duplicates:0},captureIds:[],workspace,inputs:[]};
     const stage=(entry:{name:string;bytes?:Buffer;fileId?:string;mimeType?:string;path?:string;sizeBytes?:number;identity?:string})=>{
       if(job.inputs.length>=MAX_FILES)throw new StoreError('Expanded archive exceeds 4000 files',413);
       const path=join(workspace,'inputs',archiveRelativePath(entry.name));if(job.inputs.some(i=>i.path===path))throw new StoreError('Archive contains duplicate file paths');

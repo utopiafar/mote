@@ -17,7 +17,8 @@ async function endpoint(dropFirstAck = false) {
     if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({revision:null}));return;}
     const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
     res.setHeader('Content-Type', 'application/json');
-    if (req.method === 'POST') { id = body.id; registered.push(body); res.end(JSON.stringify(body)); }
+    if (req.url?.endsWith('/items/batch')) { res.statusCode = 404; res.end('{}'); }
+    else if (req.method === 'POST') { id = body.id; registered.push(body); res.end(JSON.stringify(body)); }
     else if (req.method === 'PATCH') res.end(JSON.stringify({ ...body, id }));
     else { items.push(body); if (dropNext) { dropNext = false; res.destroy(); return; } res.end(JSON.stringify({ id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: id, externalId: body.externalId, revision: body.revision, duplicate: items.length > 1 })); }
   });

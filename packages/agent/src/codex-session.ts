@@ -160,6 +160,12 @@ export class CodexSession {
     }
   }
   run(prompt:string,outputSchema?:unknown):Promise<string>{return (this.options.runModel??(async (task,_signal?:AbortSignal)=>task()))(()=>this.runTurn(prompt,outputSchema),this.modelAdmission.signal);}
+  cancel(reason:unknown):void {
+    // The host deadline may expire before this session's own timer. Preserve
+    // that cause before cleanup rejects pending work with a generic failure.
+    this.fail(reason instanceof AgentTimeoutError||reason instanceof Error&&reason.name==='TimeoutError'
+      ?new AgentTimeoutError():new AgentProviderError({category:'permanent',code:'cancelled'}));
+  }
   private async runTurn(prompt:string,outputSchema?:unknown):Promise<string>{
     if(this.failure)throw this.failure;if(this.turn||!this.threadId||this.ending)throw new AgentProviderError();
     this.messages.clear();

@@ -5,6 +5,14 @@ import { event, image } from './fixtures';
 
 afterEach(() => vi.unstubAllGlobals());
 describe('acknowledgment-gated uploads', () => {
+  it('normalizes batch network failures without exposing transport internals', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('synthetic-private-server synthetic-secret')));
+    await expect(uploadCaptureBatch({ ...defaultConfig(), token: 'synthetic-secret' }, [{ event: event() }])).rejects.toMatchObject({ classification: 'NETWORK', message: '无法连接中央节点，已保留本地队列并等待重试' });
+  });
+  it.each(['not-json', 'null', '{"results":[null]}'])('preserves queued records and reports invalid batch receipt envelopes (%s)', async body => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body, { status: 200 })));
+    await expect(uploadCaptureBatch({ ...defaultConfig(), token: 'synthetic-token' }, [{ event: event() }])).rejects.toMatchObject({ classification: 'RESPONSE' });
+  });
   it.each([401,403,429])('batch HTTP %s never probes a less privileged or different upload endpoint',async status=>{
     const fakeFetch=vi.fn().mockImplementation(async()=>new Response('generated error',{status}));vi.stubGlobal('fetch',fakeFetch);
     await expect(uploadCaptureBatch({...defaultConfig(),token:'synthetic-token'},[{event:event()}])).rejects.toMatchObject({httpStatus:status});

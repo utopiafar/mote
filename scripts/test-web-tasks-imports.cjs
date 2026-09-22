@@ -49,6 +49,20 @@ async function run(){
   const job=(await request('/api/imports')).items[0];assert.equal(job.archive.files,8);assert.equal(job.progress.imported,8);assert.equal(job.memoryJobId,undefined);
   await until(()=>js(`document.querySelector('.import-detail')?.innerText.includes('记录已保存')`),'saved import UI');
   assert.equal(await js(`document.querySelectorAll('.import-steps .done').length`),3,'Unscheduled memory must not be marked complete');
+  // Pause before the first upload acknowledgement, retain the selection, then
+  // resume the same generated file through the actual central upload routes.
+  assert.ok(await click('新建导入'));
+  await js(`(()=>{const files=new DataTransfer();files.items.add(new File(['Generated individual note'], 'single-generated.txt',{type:'text/plain'}));const input=document.querySelector('input[type="file"]');input.files=files.files;input.dispatchEvent(new Event('change',{bubbles:true}));const real=window.fetch.bind(window);window.restoreImportFetch=()=>{window.fetch=real;};let pause=true;window.fetch=(input,init)=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;if(pause&&path==='/api/import-uploads'){pause=false;return new Promise((resolve,reject)=>{init.signal.addEventListener('abort',()=>reject(init.signal.reason),{once:true});});}return real(input,init);};})()`);
+  assert.ok(await click('保存原件并处理'));
+  await until(()=>js(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.trim()==='暂停上传')`),'pausable upload');
+  assert.equal(await js(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()==='服务器目录').disabled`),true);
+  assert.ok(await click('暂停上传'));
+  await until(()=>js(`document.body.innerText.includes('上传已暂停')`),'upload pause acknowledgement');
+  assert.equal(await js(`document.querySelectorAll('.selected-files .file-row').length`),1);
+  assert.equal((await request('/api/imports')).items.length,1,'Pausing does not create a phantom import');
+  assert.ok(await click('保存原件并处理'));
+  await until(async()=>{const jobs=(await request('/api/imports')).items;return jobs.length===2&&jobs.every(job=>job.status==='completed');},'individual resumed import');
+  await js(`window.restoreImportFetch()`);
   // Gmail OAuth/transport is fixture-driven here; no real account or mail is accessed.
   await js(`(()=>{const real=window.fetch.bind(window);let connected=false,round=0;window.gmailFixture={starts:0,syncs:0,disconnects:0};window.fetch=async(input,init)=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;const json=value=>Promise.resolve(new Response(JSON.stringify(value),{status:200,headers:{'Content-Type':'application/json'}}));if(path==='/api/connectors/status')return json({gmail:{configured:true,connected,account:connected?'generated@example.invalid':undefined,state:'idle',hasMore:connected&&round<2},google:{configured:false},mcp:{enabled:false}});if(path==='/api/connectors/gmail/start'){window.gmailFixture.starts++;connected=true;return json({authorizationUrl:'https://accounts.google.com/o/oauth2/v2/auth?scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgmail.readonly&state=generated'});}if(path==='/api/connectors/gmail/sync'){window.gmailFixture.syncs++;round++;return json({imported:100,duplicates:0,hasMore:round<2});}if(path==='/api/connectors/gmail'&&init?.method==='DELETE'){window.gmailFixture.disconnects++;connected=false;return json({connected:false});}return real(input,init);};location.hash='/sources';})()`);
   await until(()=>js(`Array.from(document.querySelectorAll('summary')).some(e=>e.textContent.includes('连接 Gmail'))`),'Gmail source');
@@ -64,7 +78,7 @@ async function run(){
   await until(()=>js(`!document.body.innerText.includes('generated@example.invalid')`),'disconnected Gmail');
   assert.deepEqual(await js('window.gmailFixture'),{starts:1,syncs:2,disconnects:1});
   assert.deepEqual(errors,[]);assert.deepEqual(imageRequests,[]);
-  console.info('PASS: real browser creates/completes a task with no deadline or calendar side effect; binary imports eight generated originals without a model; unscheduled memory stays separate; Gmail fixture covers read-only authorization, continuation and disconnect.');
+  console.info('PASS: real browser creates/completes a task with no deadline or calendar side effect; batch imports eight generated originals and individually pauses/resumes one upload without a phantom job; unscheduled memory stays separate; Gmail fixture covers read-only authorization, continuation and disconnect.');
 }
 async function finish(code){if(window&&!window.isDestroyed())window.destroy();if(server&&server.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(resolve=>server.once('close',resolve)),delay(5000)]);}rmSync(root,{recursive:true,force:true});app.exit(code);}
 run().then(()=>finish(0),error=>{console.error(error.message);void finish(1);});

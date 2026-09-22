@@ -189,6 +189,8 @@ export async function startBridge(
   const token = randomBytes(32).toString("hex");
   const trace: ToolTrace[] = [];
   const records = new Map<string, ContextRecord>();
+  const disclosedIds=new Set(bounds.conversation?.evidenceDependencies?.ids??[]);
+  let completeLineage=!bounds.conversation||bounds.conversation.evidenceDependencies?.complete===true;
   const restricted = bounds.evidenceIds !== undefined;
   const limits=retrievalLimits(bounds);
   const permitted = new Map<string,ContextRecord>();
@@ -213,7 +215,7 @@ export async function startBridge(
   }
   const seedEvidence=ranges.flatMap(r=>{const record=permitted.get(r.id);return record?[project(record,r.offset,r.length,bounds.timeZone)]:[];});
   if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw hostError('Extraction evidence exceeds the byte budget');
-  for(const record of seedEvidence)rememberEvidence(records,record);
+  for(const record of seedEvidence){rememberEvidence(records,record);disclosedIds.add(record.id);}
   const discovered=new Set(records.keys());
   let deliveredCharacters=JSON.stringify(seedEvidence).length;
   const expanded=new Set<string>();
@@ -339,6 +341,7 @@ export async function startBridge(
       let textOffset = 0, textLength = 600;
       let retrieval:unknown;
       const discoveredMemoryIds:string[]=[];
+      const derivedIds:string[]=[];
       let memoryEvidence:ContextRecord[]=[];
       let pagination: { nextCursor: string | null; totalCount?: number } | undefined;
       if (tool === "devices") {
@@ -376,6 +379,7 @@ export async function startBridge(
         // IDs become discoverable, never citable until original text is delivered.
         const items=page.items.filter(item=>(!scope.deviceId||item.deviceId===scope.deviceId)&&(!scope.after||typeof item.firstAt==='string'&&Date.parse(item.firstAt)>=Date.parse(scope.after))&&(!scope.before||typeof item.lastAt==='string'&&Date.parse(item.lastAt)<Date.parse(scope.before)));
         discoveredMemoryIds.push(...items.flatMap(item=>[...item.members,...((item.metadata as {citations?:string[]}|undefined)?.citations??[])]));
+        derivedIds.push(...items.flatMap(item=>typeof item.id==='string'?[item.id]:[]));
         value={...page,items};pagination={nextCursor:page.nextCursor};
       }
       else if(tool==='memories'){
@@ -390,6 +394,7 @@ export async function startBridge(
         const search={includeHistory:args.id?true:args.includeHistory as boolean|undefined,asOf:args.asOf as string|undefined,layer:args.id?undefined:(args.layer??'memory') as 'observation'|'memory'|'legacy',query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
         effective={...scope,id:args.id,...search};
         const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
+        derivedIds.push(...result.items.flatMap(item=>typeof (item as {id?:unknown}).id==='string'?[(item as {id:string}).id]:[]));
         const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,characters:r.ocrText.length}));
         discoveredMemoryIds.push(...evidence.map(r=>r.id),...(result.references??[]).map(r=>r.id));
         value={items:result.items,evidence:[...evidence,...(result.references??[])],coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
@@ -501,14 +506,18 @@ export async function startBridge(
       if (serialized.length > limits.toolResultCharacters || deliveredCharacters+serialized.length>limits.totalToolCharacters || Buffer.byteLength(serialized) > 1_500_000)
         throw budgetError();
       deliveredCharacters+=serialized.length;
+      for(const id of [...discoveredMemoryIds,...derivedIds])disclosedIds.add(id);
+      // Aggregate tools do not yet expose exact contributing IDs. Keep their
+      // runs conservative instead of falsely claiming complete provenance.
+      if(['devices','sources','activity','media_activity','context_index'].includes(tool)||metadataOnly)completeLineage=false;
       for(const id of discoveredMemoryIds)discovered.add(id);
       // Only a successfully serialized, deliverable tool result authorizes evidence.
       if (!metadataOnly&&(tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes')) {
         for (const record of safeValue as ContextRecord[])
-          {rememberEvidence(records,record);discovered.add(record.id);}
+          {rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
         if(tool==='evidence')for(const record of safeValue as ContextRecord[])expanded.add(record.id);
       }
-      for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);}
+      for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
       trace.push({
         tool,
         arguments: effective,
@@ -547,6 +556,7 @@ export async function startBridge(
     trace,
     records,
     seedEvidence,
+    get evidenceDependencies(){return {version:1 as const,complete:completeLineage,ids:[...disclosedIds]};},
     get deliveredCharacters(){return deliveredCharacters;},
     get ready() {
       return ready;

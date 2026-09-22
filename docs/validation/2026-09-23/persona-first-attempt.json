@@ -1,0 +1,268 @@
+{
+  "persona": "林舟 / ORBIT 离线同步项目负责人（虚构）",
+  "days": 45,
+  "recordsPerDay": 24,
+  "records": 1080,
+  "model": "gpt-5.6-luna",
+  "reasoningEffort": "max",
+  "personalDataUsed": false,
+  "physicalDevicesTested": false,
+  "liveExtractionScope": "All 45 authored journal records; 1,035 passive observations remain searchable originals, not passed through live extraction.",
+  "startedAt": "2026-09-22T17:36:38.690Z",
+  "ingestMs": 1740,
+  "anchors": {
+    "initial-retention": "a631b767-2c29-5f01-a14d-0b54a550b0a5",
+    "outbox-decision": "6b06b14f-17ea-5788-a82c-a04981ef3fee",
+    "meeting-preference": "54cadf2d-05c2-5bad-abe8-c51a0459ff56",
+    "proposal-only": "e662f88e-8c79-5abb-a5ad-2ea0511675f3",
+    "third-party": "e098e20f-3e00-5ceb-afc3-c96cc399f60e",
+    "retention-revised": "3ef978ed-7b79-51f7-a960-ccae7faad578",
+    "verified-recovery": "2823e455-4290-5a1c-acce-9707febdc400",
+    "temporary-resource": "94bd8f83-51a6-5ad2-ade4-00b69cf26fae",
+    "preference-revised": "051ff911-ee99-5675-a5fb-cd1e8fe58bd9",
+    "injection": "718de685-0059-52b8-af44-ff2e9eef852e",
+    "open-outcome": "696a1fe5-758d-5f9e-adf9-80e45faca3b1"
+  },
+  "extraction": {
+    "durationMs": 393219,
+    "status": "failed",
+    "totalBatches": 3,
+    "completedBatches": 2,
+    "failedBatches": 1,
+    "batches": [
+      {
+        "status": "failed",
+        "attempts": 1,
+        "errorCode": "provider_failed"
+      },
+      {
+        "status": "completed",
+        "attempts": 1
+      },
+      {
+        "status": "completed",
+        "attempts": 1
+      }
+    ]
+  },
+  "memories": [
+    {
+      "version": 1,
+      "admission": {
+        "layer": "memory",
+        "reason": "未来检索 ORBIT 数据留存规则时，可直接区分原始记录与聚合统计的期限。",
+        "scope": "ORBIT 项目；原始记录与聚合统计留存期限；不适用于其他项目。",
+        "attribution": "user"
+      },
+      "title": "ORBIT 数据留存期限决策",
+      "statement": "ORBIT 的正式决策是：原始记录保留期限从试运行的 30 天改为 14 天，聚合统计保留 60 天，仅对 ORBIT 生效。[3ef978ed-7b79-51f7-a960-ccae7faad578]",
+      "uncertainty": "该规则不延伸到其他项目；原记录未说明其他项目的留存规则。[3ef978ed-7b79-51f7-a960-ccae7faad578]",
+      "evidenceIds": [
+        "3ef978ed-7b79-51f7-a960-ccae7faad578"
+      ],
+      "evidence": [
+        {
+          "id": "3ef978ed-7b79-51f7-a960-ccae7faad578",
+          "deviceId": "synthetic-persona",
+          "sourceId": "persona-journal",
+          "externalId": "journal-24",
+          "revision": "1",
+          "capturedAt": "2026-08-25T10:00:00.000Z",
+          "receivedAt": "2026-09-22T17:36:39.659Z",
+          "recordedAt": "2026-08-25T10:00:00.000Z",
+          "timeBasis": "recorded",
+          "contentRole": "authored",
+          "offset": 0,
+          "length": 90,
+          "quote": "8 月 25 日 ORBIT 正式决策：原始记录保留期限从试运行的 30 天改为 14 天，原因是参与者要求缩短原文暴露窗口。聚合统计保留 60 天。此变更仅对 ORBIT 生效。",
+          "contentHash": "57c127f7f1e6f177fd484d906244024aef02dc6106ebadddb2ca6f852ed7948a"
+        }
+      ],
+      "domain": "personal",
+      "id": "e298478a-09ca-47f3-9544-0aa90f4a4280",
+      "tier": "episode",
+      "kind": "episodic",
+      "reviewRunId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+      "reviewReceipt": {
+        "policy": "bounded-exact-review@1",
+        "decision": "independent",
+        "draftRunId": "6553a104-8851-4114-82f8-c9173f9562fc",
+        "reviewRunId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+        "checkedAt": "2026-09-22T17:42:57.545Z",
+        "contextTime": "2026-09-22T17:36:40.534Z",
+        "inputHash": "367f3cbe4d21c12020ab2fd1bb99e67816068e1a3b76fc345aaef417711e3d50",
+        "model": "gpt-5.6-luna"
+      },
+      "createdAt": "2026-09-22T17:42:57.550Z",
+      "status": "proposed",
+      "model": "gpt-5.6-luna",
+      "runId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+      "skillVersion": "memory-extraction@2.0.0",
+      "fingerprint": "c37003857d6760c31f760995a00ab51168740ae7850218ca894184085e320d62"
+    },
+    {
+      "version": 1,
+      "admission": {
+        "layer": "memory",
+        "reason": "未来排查 ORBIT 上传重试或去重问题时，可复用这次已验证的条件与边界。",
+        "scope": "ORBIT 恢复演练；120 条中断上传、失败重传与幂等去重；不涵盖其他项目或 Android 后台长时间挂起。",
+        "attribution": "user"
+      },
+      "title": "ORBIT 恢复演练的已验证范围",
+      "statement": "8 月 30 日的 ORBIT 恢复演练已完成：120 条中断上传后只补传 7 条失败记录，服务端最终正好 120 条、没有重复，并验证了 outbox 加幂等键方案。[2823e455-4290-5a1c-acce-9707febdc400]",
+      "uncertainty": "验证范围仅限这次演练；其他项目和 Android 后台长时间挂起均未验证，不能据此外推。[2823e455-4290-5a1c-acce-9707febdc400]",
+      "evidenceIds": [
+        "2823e455-4290-5a1c-acce-9707febdc400"
+      ],
+      "evidence": [
+        {
+          "id": "2823e455-4290-5a1c-acce-9707febdc400",
+          "deviceId": "synthetic-persona",
+          "sourceId": "persona-journal",
+          "externalId": "journal-29",
+          "revision": "1",
+          "capturedAt": "2026-08-30T10:00:00.000Z",
+          "receivedAt": "2026-09-22T17:36:39.847Z",
+          "recordedAt": "2026-08-30T10:00:00.000Z",
+          "timeBasis": "recorded",
+          "contentRole": "authored",
+          "offset": 0,
+          "length": 113,
+          "quote": "8 月 30 日 ORBIT 恢复演练已完成：120 条中断上传后只补传 7 条失败记录，服务端最终正好 120 条，没有重复；验证了 outbox 加幂等键方案。没有验证其他项目，也没有验证 Android 后台长时间挂起。",
+          "contentHash": "75dbfd72b331fccdc32163343f8b1dc1928d0856e9c6cbc0dfb1f375b27870dc"
+        }
+      ],
+      "domain": "personal",
+      "id": "95b94361-8a05-41e5-bd75-19a3dc5ccf41",
+      "tier": "episode",
+      "kind": "episodic",
+      "reviewRunId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+      "reviewReceipt": {
+        "policy": "bounded-exact-review@1",
+        "decision": "independent",
+        "draftRunId": "6553a104-8851-4114-82f8-c9173f9562fc",
+        "reviewRunId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+        "checkedAt": "2026-09-22T17:42:57.545Z",
+        "contextTime": "2026-09-22T17:36:40.534Z",
+        "inputHash": "367f3cbe4d21c12020ab2fd1bb99e67816068e1a3b76fc345aaef417711e3d50",
+        "model": "gpt-5.6-luna"
+      },
+      "createdAt": "2026-09-22T17:42:57.550Z",
+      "status": "proposed",
+      "model": "gpt-5.6-luna",
+      "runId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+      "skillVersion": "memory-extraction@2.0.0",
+      "fingerprint": "c80fee5930c1132a610ba9dc163bf62646c4b87727790d06e21eeb34984a3f3b"
+    },
+    {
+      "version": 1,
+      "admission": {
+        "layer": "memory",
+        "reason": "这是为明确的未来演示任务保留资源关联，并有明确的活动记忆期限，便于演示前检索和到期后停止关联。",
+        "scope": "ORBIT 社区演示；《Connector v2 接口草案》；仅服务本次演示，9 月 21 日之后不再作为活动记忆。",
+        "attribution": "user"
+      },
+      "title": "ORBIT 社区演示的资源关联",
+      "statement": "记录中的明确请求是：为 9 月 20 日的 ORBIT 社区演示保留《Connector v2 接口草案》，演示需要它的失败重试示例；该关联只服务本次演示，9 月 21 日之后无需继续作为活动记忆。[94bd8f83-51a6-5ad2-ade4-00b69cf26fae]",
+      "uncertainty": "这不表示认可全文；演示是否完成、资源所有权或长期兴趣均未由此记录确认。[94bd8f83-51a6-5ad2-ade4-00b69cf26fae]",
+      "evidenceIds": [
+        "94bd8f83-51a6-5ad2-ade4-00b69cf26fae"
+      ],
+      "evidence": [
+        {
+          "id": "94bd8f83-51a6-5ad2-ade4-00b69cf26fae",
+          "deviceId": "synthetic-persona",
+          "sourceId": "persona-journal",
+          "externalId": "journal-34",
+          "revision": "1",
+          "capturedAt": "2026-09-04T10:00:00.000Z",
+          "receivedAt": "2026-09-22T17:36:40.054Z",
+          "recordedAt": "2026-09-04T10:00:00.000Z",
+          "timeBasis": "recorded",
+          "contentRole": "authored",
+          "offset": 0,
+          "length": 104,
+          "quote": "请为 9 月 20 日的 ORBIT 社区演示保留《Connector v2 接口草案》这份资源，演示需要它的失败重试示例。这个关联只服务本次演示，不代表我认可全文，9 月 21 日之后无需继续作为活动记忆。",
+          "contentHash": "03c59a4a0c9781585d232987ca6c54a5b8b4eaeb219a4148ce3c03f568314359"
+        }
+      ],
+      "domain": "personal",
+      "id": "f3dc3b2e-c435-408d-9e5a-721d970a70ea",
+      "tier": "episode",
+      "kind": "episodic",
+      "reviewRunId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+      "reviewReceipt": {
+        "policy": "bounded-exact-review@1",
+        "decision": "independent",
+        "draftRunId": "6553a104-8851-4114-82f8-c9173f9562fc",
+        "reviewRunId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+        "checkedAt": "2026-09-22T17:42:57.545Z",
+        "contextTime": "2026-09-22T17:36:40.534Z",
+        "inputHash": "367f3cbe4d21c12020ab2fd1bb99e67816068e1a3b76fc345aaef417711e3d50",
+        "model": "gpt-5.6-luna"
+      },
+      "createdAt": "2026-09-22T17:42:57.550Z",
+      "status": "proposed",
+      "model": "gpt-5.6-luna",
+      "runId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+      "skillVersion": "memory-extraction@2.0.0",
+      "fingerprint": "2f0f8659ac9f828ea3de71c7b41b646f87719bd7aae597111366dd1f91d2f719"
+    },
+    {
+      "version": 1,
+      "admission": {
+        "layer": "memory",
+        "reason": "未来核对或生成 ORBIT 评审安排时，需要这一明确的项目级时段变更。",
+        "scope": "ORBIT；自 9 月 8 日起周三 15:00；不适用于其他项目，也不代表出席记录。",
+        "attribution": "user"
+      },
+      "title": "ORBIT 评审时段变更",
+      "statement": "从 9 月 8 日起，ORBIT 评审改到周三 15:00，替代之前周二、周四 14:00 后的安排，原因是新增协作者仅周三有重叠时段；仍只适用于 ORBIT。[051ff911-ee99-5675-a5fb-cd1e8fe58bd9]",
+      "uncertainty": "这是排期变更而非出席记录，不能据此确认评审已举行或有人出席；原记录未标明 15:00 的时区。[051ff911-ee99-5675-a5fb-cd1e8fe58bd9]",
+      "evidenceIds": [
+        "051ff911-ee99-5675-a5fb-cd1e8fe58bd9"
+      ],
+      "evidence": [
+        {
+          "id": "051ff911-ee99-5675-a5fb-cd1e8fe58bd9",
+          "deviceId": "synthetic-persona",
+          "sourceId": "persona-journal",
+          "externalId": "journal-38",
+          "revision": "1",
+          "capturedAt": "2026-09-08T10:00:00.000Z",
+          "receivedAt": "2026-09-22T17:36:40.192Z",
+          "recordedAt": "2026-09-08T10:00:00.000Z",
+          "timeBasis": "recorded",
+          "contentRole": "authored",
+          "offset": 0,
+          "length": 87,
+          "quote": "从 9 月 8 日起，ORBIT 评审改到周三 15:00，替代之前周二、周四 14:00 后的安排，因为新增协作者仅周三有重叠时段。仍只适用于 ORBIT，不改变其他项目。",
+          "contentHash": "ab70b295f82b19fda7022f45597c3444eda72ac7dea8eddf534b58aca6f5f48d"
+        }
+      ],
+      "domain": "personal",
+      "id": "4fb4799b-ccee-4f60-bfe1-95a95470ec67",
+      "tier": "episode",
+      "kind": "episodic",
+      "reviewRunId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+      "reviewReceipt": {
+        "policy": "bounded-exact-review@1",
+        "decision": "independent",
+        "draftRunId": "6553a104-8851-4114-82f8-c9173f9562fc",
+        "reviewRunId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+        "checkedAt": "2026-09-22T17:42:57.545Z",
+        "contextTime": "2026-09-22T17:36:40.534Z",
+        "inputHash": "367f3cbe4d21c12020ab2fd1bb99e67816068e1a3b76fc345aaef417711e3d50",
+        "model": "gpt-5.6-luna"
+      },
+      "createdAt": "2026-09-22T17:42:57.550Z",
+      "status": "proposed",
+      "model": "gpt-5.6-luna",
+      "runId": "e8c60906-5606-41de-98e8-08d21cc6a6f4",
+      "skillVersion": "memory-extraction@2.0.0",
+      "fingerprint": "56ed4e537c660b40522c8bbf930976277862479f5e7c893e195a7325004bb1a0"
+    }
+  ],
+  "status": "failed",
+  "failure": "{\"durationMs\":393219,\"status\":\"failed\",\"totalBatches\":3,\"completedBatches\":2,\"failedBatches\":1,\"batches\":[{\"status\":\"failed\",\"attempts\":1,\"errorCode\":\"provider_failed\"},{\"status\":\"completed\",\"attempts\":1},{\"status\":\"completed\",\"attempts\":1}]}\n+ actual - expected\n\n+ 'failed'\n- 'completed'\n"
+}

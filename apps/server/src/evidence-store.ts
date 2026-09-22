@@ -361,7 +361,7 @@ export class EvidenceStore {
     for(const excerpt of excerpts){this.invalidateMemoryEvidence(excerpt.capture_id,deleted);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(excerpt.capture_id);if(deleted){this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(excerpt.capture_id);this.db.prepare('DELETE FROM captures WHERE id=?').run(excerpt.capture_id);}}
 
     this.db.exec('DELETE FROM insights');
-    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='working_memories'").get())this.db.exec('DELETE FROM working_memories');
+    this.invalidateConversationAnswers([id]);
     if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
     else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);
     this.db.prepare('DELETE FROM memory_checkpoints WHERE evidence_id=? OR evidence_id IN (SELECT evidence_id FROM memory_batch_dependencies WHERE batch_id IN (SELECT batch_id FROM memory_batch_dependencies WHERE evidence_id=?))').run(id,id);
@@ -515,6 +515,10 @@ export class EvidenceStore {
   search(range:Range&{query?:string}) {
     return this.searchPage({...range,includeTotal:false}).items;
   }
+  vectorQuery(model:string,range:Range={}) {
+    const {where,values}=this.clauses(range);
+    return {sql:`SELECT captures.id,embedding FROM captures${where}${where?' AND ':' WHERE '}embedding_model=? AND embedding IS NOT NULL`,values:[...values,model]};
+  }
   vectorSearch(vector:number[], model:string, range:Range={}) {
     const {where,values}=this.clauses(range);
     const limit=Math.min(range.limit??30,200),norm=Math.hypot(...vector);
@@ -622,7 +626,7 @@ export class EvidenceStore {
       const result=this.db.prepare('DELETE FROM captures WHERE id=?').run(id);this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(id);
       if(result.changes)this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,'delete',new Date().toISOString());
       // Derived retrospectives can refer to removed evidence; invalidate, rather than retain stale personal facts.
-      if(result.changes){this.invalidateMemoryEvidence(id,true);this.invalidateConversationAnswers();this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);}
+      if(result.changes){this.invalidateMemoryEvidence(id,true);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);}
       this.db.exec('COMMIT');this.sweep();this.archive.collect();return {deleted:Number(result.changes)};
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
@@ -633,22 +637,26 @@ export class EvidenceStore {
       this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
       this.db.prepare('DELETE FROM captures_fts WHERE rowid IN (SELECT rowid FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
       const result=this.db.prepare('DELETE FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
-      if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.invalidateConversationAnswers();}this.db.exec('COMMIT');this.sweep();this.archive.collect();return Number(result.changes);
+      if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');}this.db.exec('COMMIT');this.sweep();this.archive.collect();return Number(result.changes);
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
-  invalidateConversationAnswers() {
-    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='working_memories'").get())this.db.exec('DELETE FROM working_memories');
+  invalidateConversationAnswers(evidenceIds?:string[]) {
+    const affected=(path:string,table:string)=>evidenceIds?`(coalesce(json_extract(${table}.json,'${path}.version'),0)!=1 OR coalesce(json_extract(${table}.json,'${path}.complete'),0)!=1 OR EXISTS(SELECT 1 FROM json_each(${table}.json,'${path}.ids') d JOIN json_each(?) removed ON removed.value=d.value))`:'1';
+    const parameters=evidenceIds?[JSON.stringify(evidenceIds)]:[];
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='working_memories'").get())this.db.prepare('DELETE FROM working_memories WHERE '+affected('$.evidenceDependencies','working_memories')).run(...parameters);
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='query_runs'").get()){
-      for(const row of this.db.prepare('SELECT id,json FROM query_runs').all() as {id:string;json:string}[]){
+      for(const row of this.db.prepare('SELECT id,json FROM query_runs WHERE '+affected('$.evidenceDependencies','query_runs')).all(...parameters) as {id:string;json:string}[]){
         const run=JSON.parse(row.json);run.events=run.events.map(({message:_,...event}: {message?:string;[key:string]:unknown})=>event);
         this.db.prepare('UPDATE query_runs SET json=? WHERE id=?').run(JSON.stringify(run),row.id);
       }
     }
-    // As with insights, a model reply may contain removed facts even without an
-    // explicit citation. Keep authored questions, but never retain derived copies.
+    // Recorded disclosure is broader than citations: uncited reads and derived
+    // ancestors can affect prose. Legacy/aggregate reads remain conservative.
     if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversation_turns'").get()){
-      this.db.prepare(`UPDATE conversation_turns SET json=json_set(json,'$.evidenceDeleted',json('true'),'$.result',json_object('answer',?,'citations',json('[]'),'trace',json('[]'),'runId',coalesce(json_extract(json,'$.result.runId'),''))) WHERE coalesce(json_extract(json,'$.evidenceDeleted'),0)!=1 AND json_extract(json,'$.result') IS NOT NULL`).run(moteText("原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。"));
-      this.db.exec("UPDATE conversations SET json=json_set(json,'$.revision',coalesce(json_extract(json,'$.revision'),0)+1)");
+      const condition=`coalesce(json_extract(json,'$.evidenceDeleted'),0)!=1 AND json_extract(json,'$.result') IS NOT NULL AND ${affected('$.result.evidenceDependencies','conversation_turns')}`;
+      const conversations=this.db.prepare('SELECT DISTINCT conversation_id FROM conversation_turns WHERE '+condition).all(...parameters);
+      this.db.prepare(`UPDATE conversation_turns SET json=json_set(json,'$.evidenceDeleted',json('true'),'$.result',json_object('answer',?,'citations',json('[]'),'trace',json('[]'),'runId',coalesce(json_extract(json,'$.result.runId'),''))) WHERE ${condition}`).run(moteText("原始资料已删除或到期，这条历史回答已清除。你可以继续提问，重新检索现有资料。"),...parameters);
+      for(const row of conversations)this.db.prepare("UPDATE conversations SET json=json_set(json,'$.revision',coalesce(json_extract(json,'$.revision'),0)+1) WHERE id=?").run(row.conversation_id);
     }
   }
   sweep() {

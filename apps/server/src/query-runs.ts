@@ -1,4 +1,4 @@
-import {ProviderFailure} from '@mote/shared';
+import {ProviderFailure,type EvidenceDependencies} from '@mote/shared';
 import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
 import type {AgentProgress} from '@mote/agent';
@@ -13,6 +13,7 @@ type QueryWork<T extends QueryReceipt=QueryReceipt>=(observe:(event:AgentProgres
 export interface QueryRun {
   id:string;operationId?:string;status:'running'|'completed'|'failed'|'cancelled';createdAt:string;updatedAt:string;
   evidenceRevision?:number;conversationId?:string;turnId?:string;events:(AgentProgress&{at:string})[];
+  evidenceDependencies?:EvidenceDependencies;
   error?:{code:string;message:string};availableAt?:number;
   execution?:ExecutionEnvelope;
 }
@@ -24,7 +25,7 @@ export class QueryRuns {
     this.execution=new RunExecution(store,'query',{
       exists:id=>Boolean(store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(id)),
       project:(id,step)=>this.project(id,step),
-      commit:(id,result)=>{const run=this.raw(id);Object.assign(run,typeof result==='function'?result():result);this.save(run);},
+      commit:(id,result)=>{const run=this.raw(id);Object.assign(run,typeof result==='function'?result():result);if(run.turnId&&store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='conversation_turns'").get()){const row=store.db.prepare("SELECT json_extract(json,'$.result.evidenceDependencies') dependencies FROM conversation_turns WHERE id=?").get(run.turnId);if(row?.dependencies)run.evidenceDependencies=JSON.parse(String(row.dependencies));}this.save(run);},
       failure:(id,error)=>{const run=this.raw(id),saved=(error&&typeof error==='object'?(error as {conversation?:{conversationId:string;turnId:string}}).conversation:undefined);if(saved)Object.assign(run,saved);const safe=safeError(error);run.error={code:error instanceof ProviderFailure?safe.reason??safe.category:safe.category,message:safe.message};run.availableAt=error instanceof ProviderFailure&&error.details.retryAfterMs!==undefined?Date.now()+error.details.retryAfterMs:undefined;this.save(run);},
     },options);
     for(const row of store.db.prepare('SELECT json FROM query_runs').all() as {json:string}[]){const run=JSON.parse(row.json) as QueryRun;this.execution.restore(run.id,{state:run.status==='completed'?'succeeded':run.status,attempts:run.execution?.attempts,createdAt:run.createdAt,updatedAt:run.updatedAt,error:run.error?.code,availableAt:run.availableAt});}
@@ -37,7 +38,7 @@ export class QueryRuns {
     if(step.error==='interrupted')run.error={code:'interrupted',message:moteText('中央节点重启中断了此次问答，请重新提问。')};
     else if(step.error==='timeout')run.error={code:'timeout',message:moteText('模型执行超时，请重试。')};
     run.execution=runEnvelope({...step,error:run.error?.code??step.error,availableAt:run.availableAt??step.availableAt});
-    if(run.evidenceRevision!==this.store.deletionRevision())run.events=run.events.map(({message:_,...event})=>event);
+    if(run.evidenceRevision!==this.store.deletionRevision()&&run.evidenceDependencies?.complete!==true)run.events=run.events.map(({message:_,...event})=>event);
     run.updatedAt=new Date(Math.max(Date.parse(run.updatedAt),Number(this.store.db.prepare('SELECT updated_at FROM execution_steps WHERE id=?').get(step.id)!.updated_at))).toISOString();if(JSON.stringify(run)!==before)this.save(run);
   }
   cancel(id:string){const run=this.get(id);if(run.status==='running')this.execution.cancel(id);return this.get(id);}

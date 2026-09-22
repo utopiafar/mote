@@ -1,0 +1,146 @@
+[
+  {
+    "name": "e2e",
+    "command": [
+      "node",
+      "--import",
+      "tsx",
+      "scripts/e2e.ts"
+    ],
+    "durationMs": 1194,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "media-e2e",
+    "command": [
+      "node",
+      "--import",
+      "tsx",
+      "scripts/media-e2e.ts"
+    ],
+    "durationMs": 752,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "privacy",
+    "command": [
+      "node",
+      "--import",
+      "tsx",
+      "scripts/test-privacy.ts"
+    ],
+    "durationMs": 521,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "mcp-stdio",
+    "command": [
+      "node",
+      "scripts/test-mcp-stdio.mjs"
+    ],
+    "durationMs": 540,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "security",
+    "command": [
+      "node",
+      "--test",
+      "scripts/security-tests.mjs",
+      "scripts/mcp-connection-tests.mjs"
+    ],
+    "durationMs": 1426,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "updates",
+    "command": [
+      "node",
+      "--test",
+      "scripts/check-dependencies-tests.mjs",
+      "scripts/update-tests.mjs",
+      "scripts/update-deployment-tests.mjs",
+      "scripts/release/dev-assets.test.mjs"
+    ],
+    "durationMs": 5359,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "central-runner",
+    "command": [
+      "node",
+      "scripts/test-central-runner.mjs"
+    ],
+    "durationMs": 719,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "setup-vision",
+    "command": [
+      "node",
+      "scripts/test-setup-vision.mjs"
+    ],
+    "durationMs": 219,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "profiles",
+    "command": [
+      "node",
+      "scripts/test-profiles.mjs"
+    ],
+    "durationMs": 6985,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "tunnel",
+    "command": [
+      "node",
+      "scripts/test-tunnel.mjs"
+    ],
+    "durationMs": 8804,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "fact-archive",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts",
+      "-p",
+      "test_fact_archive.py"
+    ],
+    "durationMs": 193,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "audio",
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts",
+      "-p",
+      "test_mote_audio.py"
+    ],
+    "durationMs": 295,
+    "code": 0,
+    "signal": null
+  }
+]

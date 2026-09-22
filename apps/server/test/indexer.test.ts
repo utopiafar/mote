@@ -103,18 +103,35 @@ test('hybrid search embeds the query and invokes both vector and lexical retriev
   const semantic = capture('Generated semantic neighbor.');
   const lexical = capture('needle', { capturedAt: '2026-09-12T01:00:15.000Z' });
   await store.ingest(semantic); await store.ingest(lexical); await indexer.tick();
-  const vectorCalls: Parameters<Store['vectorSearch']>[] = [];
+  const vectorCalls: Parameters<Store['vectorQuery']>[] = [];
   const lexicalCalls: Parameters<Store['search']>[] = [];
-  const originalVector = store.vectorSearch.bind(store), originalSearch = store.search.bind(store);
-  t.mock.method(store, 'vectorSearch', (...args: Parameters<Store['vectorSearch']>) => { vectorCalls.push(args); return originalVector(...args); });
+  const originalVector = store.vectorQuery.bind(store), originalSearch = store.search.bind(store);
+  t.mock.method(store, 'vectorQuery', (...args: Parameters<Store['vectorQuery']>) => { vectorCalls.push(args); return originalVector(...args); });
   t.mock.method(store, 'search', (...args: Parameters<Store['search']>) => { lexicalCalls.push(args); return originalSearch(...args); });
   const scope = { query: 'needle', after: '2026-09-12T00:00:00Z', before: '2026-09-13T00:00:00Z', deviceId: semantic.deviceId, limit: 2 };
   const matches = await indexer.search(scope);
   assert.deepEqual(matches.map(record => record.id), [lexical.id, semantic.id]);
-  assert.deepEqual(vectorCalls, [[[1, 0], config.embeddingModel, scope]]);
-  assert.deepEqual(lexicalCalls, [[scope]]);
+  assert.deepEqual(vectorCalls, [[config.embeddingModel, scope]]);
+  assert.deepEqual(lexicalCalls, [[scope],[scope]]);
   assert.equal(calls.at(-1)?.body.input, 'needle');
   assert.equal(new Set(matches.map(record => record.id)).size, matches.length);
+});
+
+test('a lexical match deleted during the asynchronous query embedding is not returned',async t=>{
+ const entered=deferred(),release=deferred();const {store,indexer}=await fixture(t,async()=>{entered.resolve();await release.promise;return {body:{data:[{embedding:[1,0]}]}};});
+ const event=capture('needle');await store.ingest(event);const task=indexer.search({query:'needle'});await entered.promise;store.delete(event.id);release.resolve();
+ assert.equal((await task).length,0);
+});
+
+test('prefix embeddings disclose their coverage and leave text beyond the prefix searchable',async t=>{
+ const {store,indexer,calls}=await fixture(t,()=>({body:{data:[{embedding:[1,0]}]}}));
+ const event=capture('generated '.repeat(2500)+'tailonlyneedle');await store.ingest(event);await indexer.tick();
+ assert.equal(calls[0].body.input.length,20000);assert.ok(!calls[0].body.input.includes('tailonlyneedle'));
+ const found=await indexer.search({query:'tailonlyneedle'});assert.equal(found[0].id,event.id);
+ assert.equal(store.evidence([event.id])[0].ocrText,event.ocrText);
+ assert.deepEqual(found.retrieval.embeddingInput,{maxUtf16CodeUnits:20000,evidencePolicy:'prefix_per_capture_or_file_chunk',queryTruncated:false,fullTextFallback:'lexical'});
+ const longQuery='z'.repeat(20001),empty=await indexer.search({query:longQuery,after:'2027-01-01T00:00:00Z'});
+ assert.equal(empty.length,0);assert.equal(empty.retrieval.embeddingInput?.queryTruncated,true);assert.equal(calls.at(-1)!.body.input.length,20000);
 });
 
 test('provider failure marks evidence failed; explicit retry returns it to pending and recovers without changing event identity', async t => {

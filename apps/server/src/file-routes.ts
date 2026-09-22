@@ -32,7 +32,12 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.post('/api/file-sync/v1/uploads',{bodyLimit:32768},async req=>measure('file_upload',()=>files.begin(req.body,check(req))));
   app.get('/api/file-sync/v1/uploads/:id',async req=>files.upload(id(req),check(req)));
   app.put('/api/file-sync/v1/uploads/:id/parts/:part',{bodyLimit:FILE_PART_BYTES},async req=>{if(!Buffer.isBuffer(req.body))throw new StoreError('Binary part required');return measure('file_part',()=>files.part(id(req),Number((req.params as {part:string}).part),req.body as Buffer,check(req)));});
-  app.post('/api/file-sync/v1/uploads/:id/commit',async req=>measure('file_commit',()=>files.commit(id(req),check(req))));
+  app.post('/api/file-sync/v1/uploads/:id/commit',async(req,reply)=>{
+    const controller=new AbortController(),abort=()=>{if(!reply.raw.writableEnded)controller.abort();};
+    req.raw.once('aborted',abort);reply.raw.once('close',abort);
+    try{return await measure('file_commit',()=>files.commit(id(req),check(req),controller.signal));}
+    finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
+  });
   app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>files.revision(req.body,check(req))));
   app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
   app.get('/api/files/:id',async req=>({...file(req),processingPolicy:processing.explain(fileId(req))}));

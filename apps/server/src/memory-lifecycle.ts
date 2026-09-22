@@ -1,4 +1,5 @@
 import {ExecutionEngine} from './execution-engine.js';
+import {AgentTimeoutError} from '@mote/agent';
 import {ProviderFailure} from '@mote/shared';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -126,7 +127,7 @@ export class MemoryLifecycle {
         }else await extension.run(window,checkpoint);
         if(this.closed||this.state(extension.id).active?.id!==state.active.id)return;
         state.cursor=state.active.through;if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.error;delete state.retryAt;state.failures=0;
-      }catch(error){if(this.closed)return;if(state.active&&this.executor){if(this.executor.get('lifecycle:'+state.active.id)?.state==='running')return;const latest=this.state(extension.id);if(latest.active?.id!==state.active.id)return;Object.assign(state,latest);}state.failures++;state.error=error instanceof ProviderFailure?error.details.code:error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';state.retryAt=this.now()+Math.max(error instanceof ProviderFailure?error.details.retryAfterMs??0:0,Math.min(6*3600000,60000*2**Math.min(state.failures,8)));}
+      }catch(error){if(this.closed)return;if(state.active&&this.executor){if(this.executor.get('lifecycle:'+state.active.id)?.state==='running')return;const latest=this.state(extension.id);if(latest.active?.id!==state.active.id)return;Object.assign(state,latest);}state.failures++;state.error=error instanceof ProviderFailure?error.details.code:error instanceof AgentTimeoutError?'provider_timeout':error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';state.retryAt=this.now()+Math.max(error instanceof ProviderFailure?error.details.retryAfterMs??0:0,Math.min(6*3600000,60000*2**Math.min(state.failures,8)));}
       this.save(extension.id,state);
   }
   async close(){

@@ -165,16 +165,18 @@ export class ExecutionEngine {
   // can remain strongly retained by Node until a long deadline actually fires.
   const step=this.get(row.id)!,signal=controller.signal;
   const deadline=setTimeout(()=>controller.abort(new DOMException('The operation was aborted due to timeout','TimeoutError')),timeout);deadline.unref();
-  const renewal=setInterval(()=>{if(this.stopping)return;try{if(!db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=?").run(this.now()+30000,row.id,fence).changes)controller.abort();}catch{controller.abort();}},10000);renewal.unref();
+  const renewal=setInterval(()=>{if(this.stopping)return;try{const at=this.now();if(!db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(at+30000,row.id,fence,at).changes)controller.abort();}catch{controller.abort();}},10000);renewal.unref();
   try{
    const result=await withExecutionCancellation(signal,()=>handler.execute(step,signal));
    signal.throwIfAborted();
    db.exec('BEGIN IMMEDIATE');
    try{
-    if(db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(row.id)?.fence!==fence){db.exec('ROLLBACK');clearInterval(renewal);return;}
+    if(!this.isCurrentGrant(row.id,fence)){db.exec('ROLLBACK');return;}
     if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
     handler.commit(step,result);
-    db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,updated_at=? WHERE id=? AND fence=?").run(this.now(),row.id,fence);this.project(row.id);db.exec('COMMIT');
+    const at=this.now();
+    if(!db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(at,row.id,fence,at).changes){db.exec('ROLLBACK');return;}
+    this.project(row.id);db.exec('COMMIT');
    }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }catch(error){
    const failure=error instanceof ExecutionFailure?error:error instanceof ProviderFailure?new ExecutionFailure(error.details.category,error.details.code,error.details.retryAfterMs):handler.classify?.(error)??new ExecutionFailure('transient','processor_failed');
@@ -183,7 +185,7 @@ export class ExecutionEngine {
    const recoveryDeadline=failure.category==='transient'&&!this.stopping?(Number(row.recovery_deadline)||at+Math.max(1,Math.min(handler.maxRecoveryWindowMs??6*3600000,30*86400000))):Number(row.recovery_deadline)||0;
    let code=this.stopping?'interrupted':failure.code;
    if(state==='waiting'&&failure.category==='transient'&&recoveryDeadline&&availableAt>=recoveryDeadline){state='failed';code='recovery_window_exhausted';}
-   db.prepare('UPDATE execution_steps SET state=?,error=?,available_at=?,recovery_deadline=?,fence=NULL,updated_at=? WHERE id=? AND fence=?').run(state,code,availableAt,recoveryDeadline,at,row.id,fence);this.project(row.id);
+   if(db.prepare("UPDATE execution_steps SET state=?,error=?,available_at=?,recovery_deadline=?,fence=NULL,updated_at=? WHERE id=? AND fence=? AND state='running' AND lease_until>?").run(state,code,availableAt,recoveryDeadline,at,row.id,fence,at).changes)this.project(row.id);
   }finally{clearTimeout(deadline);clearInterval(renewal);}
   await yieldTurn();
  }

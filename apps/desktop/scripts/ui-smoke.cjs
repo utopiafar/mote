@@ -240,6 +240,12 @@ app.on('browser-window-created', (_event, window) => {
       assert(await js(`document.querySelector('#source-editor-title').closest('details').open`), 'Editing a source reveals its rules');
       await js(`document.querySelector('#source-cancel-edit').click()`);
       assert(await window.webContents.executeJavaScript('Boolean(document.querySelector("#source-calendar-connect"))'));
+      ipcMain.removeHandler('mote:sources');
+      ipcMain.handle('mote:sources',()=>[{...sources[0],pending:0,blocked:1,failures:[{externalId:'generated-blocked',title:'Generated <script>blocked</script>.txt',status:410}]}]);
+      await navigate('overview');await navigate('sources');
+      for(let i=0;i<100&&!await js(`!!document.querySelector('.source-failures')`);i++)await new Promise(resolve=>setTimeout(resolve,50));
+      assert(await js(`document.querySelector('.source-failures')?.textContent.includes('本机待处理 1 项')&&document.querySelector('.source-failures')?.textContent.includes('中央已删除此文件')`),'A rejected file remains visible independently of the active queue');
+      assert.equal(await js(`document.querySelectorAll('.source-failures script').length`),0,'Untrusted filenames remain text');
       assert(!errors.some(message => !message.includes('Electron Security Warning')), errors.join('\n'));
       const output = resolve(process.env.MOTE_UI_SCREENSHOT || join(__dirname, '..', 'release', 'ui-fixture.png'));
       mkdirSync(require('node:path').dirname(output), { recursive: true });

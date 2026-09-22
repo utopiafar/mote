@@ -71,12 +71,17 @@ export async function heartbeat(config: Config, body: object, events?: EventJour
 
 export async function uploadCaptureBatch(config: Config, entries: { event: CaptureEvent; image?: Buffer }[], signal?: AbortSignal): Promise<Map<string, number>> {
   if (!config.token) throw new TransportFailure(moteText("请配置中央节点访问令牌"), 'CONFIG_INVALID');
-  const response = await fetch(`${validateServerUrl(config.serverUrl)}/api/captures/batch`, {
+  const origin = validateServerUrl(config.serverUrl);
+  let response: Response;
+  try { response = await fetch(`${origin}/api/captures/batch`, {
     method: 'POST', credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
     headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', 'Accept-Language': getLocale() },
     body: meteredBody(JSON.stringify({ captures: entries.map(({event, image}) => ({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })) })),
     ...({ duplex: 'half' } as object),
-  });
+  }); } catch (error) {
+    const code = failureCode(error, 'UPLOAD');
+    throw new TransportFailure(moteText("无法连接中央节点，已保留本地队列并等待重试"), code === 'RESPONSE' ? 'NETWORK' : code);
+  }
   if (response.status===413&&entries.length>1) {
     await response.body?.cancel();
     const middle=Math.ceil(entries.length/2),receipts=await uploadCaptureBatch(config,entries.slice(0,middle),signal);
@@ -94,11 +99,13 @@ export async function uploadCaptureBatch(config: Config, entries: { event: Captu
     return receipts;
   }
   if (response.status !== 200) { await response.body?.cancel(); throw new TransportFailure(moteText("批量上传未确认（HTTP {0}）", response.status), httpFailure(response.status), response.status); }
-  const body = JSON.parse(await readResponseText(response, 65536)) as { results?: {id: string; status: number}[] };
+  let body: { results?: {id: string; status: number}[] } | null;
+  try { body = JSON.parse(await readResponseText(response, 65536)); }
+  catch { throw new TransportFailure(moteText("中央节点确认格式无效；队列已保留"), 'RESPONSE', response.status); }
   const expected = new Set(entries.map(entry => entry.event.id)), result = new Map<string, number>();
-  if (!Array.isArray(body.results) || body.results.length > entries.length) throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
+  if (!body || !Array.isArray(body.results) || body.results.length > entries.length) throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
   for (const receipt of body.results) {
-    if (!expected.has(receipt.id) || result.has(receipt.id) || !Number.isInteger(receipt.status) || !([200, 201].includes(receipt.status) || receipt.status >= 400 && receipt.status <= 599)) throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
+    if (!receipt || !expected.has(receipt.id) || result.has(receipt.id) || !Number.isInteger(receipt.status) || !([200, 201].includes(receipt.status) || receipt.status >= 400 && receipt.status <= 599)) throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
     result.set(receipt.id, receipt.status);
   }
   return result;

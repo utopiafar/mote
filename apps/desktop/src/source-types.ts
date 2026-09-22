@@ -31,6 +31,8 @@ export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'> & {
 };
 export interface SourceScan {
   checkpoint?: SourceCheckpoint;
+  /** Changed directory rows; checkpoint.catalog is omitted from incremental scans. */
+  catalogChanges?: {key:string;value?:FileCatalogEntry}[];
   items: ScannedItem[]; seen: string[]; complete: boolean; skipped: number;
   /** Historical backfills never get to starve newly observed source changes. */
   queue?: 'realtime' | 'history';
@@ -46,6 +48,8 @@ export interface LocalSource extends SourceDefinition, SourceOptions {
   path?: string; calendarId?: string; agent?: 'claude' | 'codex' | 'kimi';
 }
 export interface SourceStatus {
+  blocked?: number;
+  failures?: {externalId:string;title:string;status:number}[];
   facts?: import('@mote/shared/native-status').NativeStatusView;
   scanComplete?: boolean;
   lastAcknowledgedAt?: string;

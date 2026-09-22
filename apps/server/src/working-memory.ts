@@ -3,8 +3,9 @@ import type {QueryResult} from '@mote/shared';
 import {Conversations,type Conversation} from './conversations.js';
 import {Store,StoreError,sha256} from './store.js';
 import type {LifecycleExecution,LifecycleSettings} from './memory-lifecycle.js';
+import {combineDependencies} from './conversation-lineage.js';
 
-type Summary={text:string;coveredTurns:number;generatedAt:string;fingerprint:string};
+type Summary={text:string;coveredTurns:number;generatedAt:string;fingerprint:string;evidenceDependencies?:QueryResult['evidenceDependencies']};
 export class WorkingMemory {
   private active=new Map<string,Promise<void>>();
   constructor(private store:Store,private conversations:Conversations){store.db.exec('CREATE TABLE IF NOT EXISTS working_memories(id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,json TEXT NOT NULL)');}
@@ -18,7 +19,9 @@ export class WorkingMemory {
   context(conversation:Conversation,settings:LifecycleSettings):NonNullable<QueryInput['conversation']>{
     const summary=this.get(conversation),tail={...conversation,turns:conversation.turns.slice(summary?.coveredTurns??0)};
     const result=this.conversations.context(tail,20,settings.contextCharacters-(summary?.text.length??0));
-    return {...result,omittedTurns:tail.turns.filter(t=>t.status!=='failed'&&t.result).length-result.turns.length,...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
+    const evidenceDependencies=combineDependencies([result.evidenceDependencies,...(summary?[summary.evidenceDependencies]:[])]);
+    const {evidenceDependencies:_previous,...context}=result;
+    return {...context,...(evidenceDependencies?{evidenceDependencies}:{}),omittedTurns:tail.turns.filter(t=>t.status!=='failed'&&t.result).length-result.turns.length,...(summary?{workingMemory:{text:summary.text,coveredTurns:summary.coveredTurns,generatedAt:summary.generatedAt}}:{})};
   }
   async prepare(conversation:Conversation,settings:LifecycleSettings,question:string,query:(input:QueryInput)=>Promise<QueryResult>,execution?:Pick<LifecycleExecution,'signal'|'commit'>){
     // Current input consumes the same host dialogue budget. Never silently drop
@@ -76,7 +79,8 @@ export class WorkingMemory {
     }
     const commit=()=>{
     if(this.store.deletionRevision()!==revision||!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)||this.fingerprint(this.conversations.get(id),count)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
-    const json=JSON.stringify({text:summaryText,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint});
+    const evidenceDependencies=combineDependencies(conversation.turns.slice(0,count).filter(turn=>turn.result).map(turn=>turn.evidenceDeleted?{version:1,complete:true,ids:[]}:turn.result!.evidenceDependencies));
+    const json=JSON.stringify({text:summaryText,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint,...(evidenceDependencies?{evidenceDependencies}:{})});
     this.store.reserveMetadata(Buffer.byteLength(json));
     this.store.db.prepare('INSERT INTO working_memories VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(id,json);
     };if(execution)execution.commit(commit);else commit();

@@ -1,0 +1,547 @@
+{
+  "generated": true,
+  "personalData": false,
+  "model": "deterministic embedding fixture",
+  "transport": "real loopback HTTP; no injected WAN RTT",
+  "days": 45,
+  "recordsPerDay": 200,
+  "records": 9000,
+  "thresholds": {
+    "httpP95Ms": 500,
+    "queryMs": 2500
+  },
+  "reports": [
+    {
+      "dimensions": 768,
+      "rows": 9000,
+      "elapsedMs": 265.5817079999997,
+      "retrieval": {
+        "mode": "hybrid",
+        "degraded": false,
+        "vectorCoverage": {
+          "captures": {
+            "candidateLimit": null,
+            "scanned": 9000,
+            "invalid": 0,
+            "bounded": false,
+            "selection": "all_indexed_within_scope"
+          },
+          "files": {
+            "candidateLimit": null,
+            "scanned": 0,
+            "invalid": 0,
+            "bounded": false,
+            "selection": "all_indexed_within_scope"
+          }
+        }
+      },
+      "http": {
+        "samples": 45,
+        "p95Ms": 4.188166999999339,
+        "maxMs": 22.48716599999989
+      },
+      "latencies": [
+        {
+          "route": "/api/health",
+          "ms": 22.48716599999989
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 6.069500000000517
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 4.188166999999339
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.8260409999993499
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.2351660000003903
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.546041999999943
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.6479170000002341
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.216374999999971
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.244207999999162
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.6902499999996508
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.134791999999834
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.9843339999997625
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5884999999998399
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.102666999999201
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.9671669999997903
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5896659999998519
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.063916000000063
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.8090840000004391
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5292920000001686
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.9960410000003321
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.7618750000001455
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.46170900000015536
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.9798749999999927
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.7319169999991573
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.6401659999992262
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.1104169999998703
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.9104999999999563
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.6187920000002123
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0925409999999829
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.079458000000159
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.6352090000000317
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.010707999999795
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.8531249999996362
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.41362500000013824
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.2082499999996799
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.7260829999995622
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.4174169999996593
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0381659999993644
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.9262079999998605
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.3822919999993246
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.917250000000422
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.500332999999955
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5287079999998241
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.008082999999715
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 3.2125420000002123
+        }
+      ]
+    },
+    {
+      "dimensions": 1536,
+      "rows": 9000,
+      "elapsedMs": 394.67049999999927,
+      "retrieval": {
+        "mode": "hybrid",
+        "degraded": false,
+        "vectorCoverage": {
+          "captures": {
+            "candidateLimit": null,
+            "scanned": 9015,
+            "invalid": 0,
+            "bounded": false,
+            "selection": "all_indexed_within_scope"
+          },
+          "files": {
+            "candidateLimit": null,
+            "scanned": 0,
+            "invalid": 0,
+            "bounded": false,
+            "selection": "all_indexed_within_scope"
+          }
+        }
+      },
+      "http": {
+        "samples": 72,
+        "p95Ms": 4.223291000000245,
+        "maxMs": 13.514583999999559
+      },
+      "latencies": [
+        {
+          "route": "/api/health",
+          "ms": 4.052042000000256
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 3.5196249999999054
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.652708999999959
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5044589999997697
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.9998750000004293
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.6917499999999563
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5647500000004584
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.06079199999931
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.7104170000002341
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.627292000000125
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.1123749999997017
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.0339999999996508
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.7834590000002208
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.2347499999996217
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.8870420000002923
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.500542000000678
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0135410000002594
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.074709000000439
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.4724999999998545
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0140410000003612
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.9747499999994034
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5559999999995853
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0710410000001502
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.9172910000006596
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.6920410000002448
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.172500000000582
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.747750000000451
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5210420000003069
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.9767499999998108
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.5475829999995767
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.45383399999991525
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.9905410000001211
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.6971249999996871
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.4894169999997757
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.051166999999623
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.5877500000005966
+        },
+        {
+          "route": "/api/health",
+          "ms": 1.2317089999996824
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 7.051542000000154
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 13.514583999999559
+        },
+        {
+          "route": "/api/health",
+          "ms": 1.294209000000592
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 6.742999999999483
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.8731250000000728
+        },
+        {
+          "route": "/api/health",
+          "ms": 1.3069580000001224
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 3.281875000000582
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 4.223291000000245
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.7446670000008453
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.2382079999997586
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.3029999999998836
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.550375000000713
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0405839999993987
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.687167000000045
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.53125
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0625829999999041
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.097208000000137
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.7560419999999795
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.1563329999999041
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.6951669999998558
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.7084580000000642
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0012090000000171
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.0449170000001686
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.4122079999997368
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.9311669999997321
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.5427920000001905
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.5069999999996071
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 1.0569589999995515
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 2.3584579999997004
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.43045900000015536
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.9747500000003129
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.835124999999607
+        },
+        {
+          "route": "/api/health",
+          "ms": 0.46329100000002654
+        },
+        {
+          "route": "/api/captures?limit=10",
+          "ms": 0.9735000000000582
+        },
+        {
+          "route": "POST /api/captures",
+          "ms": 1.7289580000006026
+        }
+      ]
+    }
+  ]
+}

@@ -94,7 +94,7 @@ export class FileReviews {
       db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(artifactId,id,kind,new Date().toISOString(),'user-confirmed',json);
       if(transcript)for(const segment of transcript.segments){const {speaker,uncertain,overlap}=segment;db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,start_ms,end_ms,text,metadata) VALUES(?,?,?,?,?,?,?)').run(randomUUID(),artifactId,id,segment.startMs,segment.endMs,segment.text,JSON.stringify({speaker,uncertain,overlap}));}
       db.prepare("UPDATE file_reviews SET status='accepted' WHERE id=?").run(reviewId);
-      if(transcript){db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);this.files.store.invalidateMemoryEvidence(id);this.files.store.invalidateConversationAnswers();}
+      if(transcript){db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);this.files.store.invalidateMemoryEvidence(id);}
       db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(id,new Date().toISOString());db.exec('COMMIT');
     }catch(error){db.exec('ROLLBACK');throw error;}
     return {status:'accepted',artifactId};

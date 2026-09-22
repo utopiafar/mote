@@ -3,7 +3,7 @@ import { moteText } from '@mote/shared/i18n';
 import {useEffect,useState,useRef} from 'react';
 import {ArrowRight,Check,FileArchive,FileText,FolderOpen,LoaderCircle,Plus,RefreshCw,Trash2,Upload,X} from 'lucide-react';
 import type {ImportJob,ImportStatus} from '@mote/shared';
-import {type Api,bytes,dateTime,errorMessage} from './api';
+import {ApiError,type Api,bytes,dateTime,errorMessage} from './api';
 import {ArchivedFileButton} from './ArchivedFileButton';
 import {MemoryProgress,useMemoryJob} from './MemoryProgress';
 
@@ -12,7 +12,10 @@ const working=(job:ImportJob)=>['queued','preparing','importing'].includes(job.s
 
 export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersion=0}:{refreshVersion?:number;api:Api;onOpen:(id:string)=>void;onMemories:()=>void;onSettings:()=>void;onChanged:()=>void}){
   const uploadIds=useRef(new WeakMap<File,string>());
+  const uploadController=useRef<AbortController|null>(null);
+  const submission=useRef<{fingerprint:string;id:string}|null>(null);
   const [uploadedBytes,setUploadedBytes]=useState(0);
+  const [uploading,setUploading]=useState(false),[notice,setNotice]=useState(''),[loadError,setLoadError]=useState('');
   const [items,setItems]=useState<ImportJob[]>([]),[selected,setSelected]=useState('');
   const [creating,setCreating]=useState(true),[mode,setMode]=useState<'files'|'directory'>('files');
   const [files,setFiles]=useState<File[]>([]),[directory,setDirectory]=useState(''),[name,setName]=useState(''),[instruction,setInstruction]=useState('');
@@ -21,19 +24,23 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
   const active=items.find(item=>item.id===selected);
   const {job:memoryJob,error:memoryError,reload:reloadMemory}=useMemoryJob(api,active?.memoryJobId);
   const [revision,setRevision]=useState(0);
+  useEffect(()=>()=>{uploadController.current?.abort();uploadController.current=null;},[api]);
+  useEffect(()=>{setItems([]);setSelected('');setCreating(true);setLoadError('');setError('');setNotice('');setBusy(false);setUploading(false);setFiles([]);setName('');setInstruction('');setDirectory('');uploadIds.current=new WeakMap();submission.current=null;},[api]);
   useEffect(()=>{
     const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
+    setLoading(true);
     async function load(){
       try{
         const result=await api.request<{items:ImportJob[]}>('/api/imports',{signal:controller.signal});
         if(controller.signal.aborted)return;
-        setItems(result.items);setLoading(false);
+        setItems(result.items);setLoadError('');setLoading(false);
         if(result.items.some(working))timer=setTimeout(()=>void load(),2000);
-      }catch(e){if(!controller.signal.aborted){setError(errorMessage(e));setLoading(false);timer=setTimeout(()=>void load(),8000);}}
+      }catch(e){if(!controller.signal.aborted){setLoadError(errorMessage(e));setLoading(false);if(e instanceof ApiError&&[401,403].includes(e.status)){setItems([]);setSelected('');}else timer=setTimeout(()=>void load(),8000);}}
     }
     void load();return()=>{controller.abort();clearTimeout(timer);};
   },[api,revision,refreshVersion]);
   function addFiles(next:File[]){
+    if(busy||uploadController.current)return;
     const total=[...files,...next];
     if(total.length>2000){setError(moteText("一次最多选择 2,000 个文件。较多文件可以打包为 ZIP 或使用服务器目录。"));return;}
     if(next.some(file=>file.size>64*1024*1024)){setError(moteText("单个上传文件不能超过 64 MB，请拆分文件后导入。"));return;}
@@ -42,20 +49,27 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
   }
   function update(job:ImportJob){setItems(current=>[job,...current.filter(item=>item.id!==job.id)]);setSelected(job.id);setCreating(false);setRevision(v=>v+1);}
   async function create(){
-    setBusy(true);setError('');
+    if(busy||uploadController.current)return;
+    const controller=new AbortController();uploadController.current=controller;
+    setBusy(true);setUploading(mode==='files');setError('');setNotice('');
     try{
-      const archivedFileIds=mode==='files'?await uploadImportFiles(api,files,uploadIds.current,setUploadedBytes):[];
+      const archivedFileIds=mode==='files'?await uploadImportFiles(api,files,uploadIds.current,setUploadedBytes,controller.signal):[];
+      controller.signal.throwIfAborted();setUploading(false);
       const payload={name:name.trim()||undefined,instruction,processing:instruction.trim()?'preview':'automatic',...(mode==='files'?{archivedFileIds}:{directory:directory.trim()})};
-      const job=await api.request<ImportJob>('/api/imports',{method:'POST',body:JSON.stringify(payload)});
-      update(job);setFiles([]);setName('');setInstruction('');setDirectory('');onChanged();
-    }catch(e){setError(errorMessage(e));}finally{setBusy(false);}
+      const fingerprint=JSON.stringify(payload);
+      if(submission.current?.fingerprint!==fingerprint)submission.current={fingerprint,id:crypto.randomUUID()};
+      const job=await api.request<ImportJob>('/api/imports',{method:'POST',body:JSON.stringify({...payload,requestId:submission.current.id}),signal:controller.signal});
+      controller.signal.throwIfAborted();
+      submission.current=null;update(job);setFiles([]);setName('');setInstruction('');setDirectory('');onChanged();
+    }catch(e){if(uploadController.current===controller){if(controller.signal.aborted)setNotice(moteText('上传已暂停；已选择的文件仍保留，可继续上传。'));else setError(errorMessage(e));}}
+    finally{if(uploadController.current===controller){uploadController.current=null;setBusy(false);setUploading(false);}}
   }
   async function action(path:string,body?:unknown){
     setBusy(true);setError('');
     try{update(await api.request<ImportJob>(path,{method:'POST',...(body?{body:JSON.stringify(body)}:{})}));onChanged();}
     catch(e){setError(errorMessage(e));}finally{setBusy(false);}
   }
-  async function retryMemory(){if(!memoryJob)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+encodeURIComponent(memoryJob.id)+'/retry',{method:'POST'});reloadMemory();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
+  async function controlMemory(action:'retry'|'pause'|'resume'|'cancel'){if(!memoryJob)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+encodeURIComponent(memoryJob.id)+'/'+action,{method:'POST'});reloadMemory();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function remove(){
     if(!active||deleteConfirm!==active.id)return;
     setBusy(true);setError('');
@@ -63,18 +77,19 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
     catch(e){setError(errorMessage(e));}finally{setBusy(false);}
   }
   return <section className="imports-page">
-    <div className="page-heading split-heading"><div><div className="eyebrow">{moteText("让已有资料成为可用的上下文")}</div><h1>{moteText("导入")}</h1><p>{moteText("上传文件即可保存原件。普通文本直接收录；需要解释人物和结构的资料先预览再确认。")}</p></div><button className="button primary" onClick={()=>{setCreating(true);setSelected('');setError('');}}><Plus size={16}/>{moteText("新建导入")}</button></div>
-    {error&&<div className="error-banner" role="alert">{error}<button className="text-button" onClick={()=>setRevision(v=>v+1)}>{moteText("刷新状态")}</button></div>}
+    <div className="page-heading split-heading"><div><div className="eyebrow">{moteText("让已有资料成为可用的上下文")}</div><h1>{moteText("导入")}</h1><p>{moteText("上传文件即可保存原件。普通文本直接收录；需要解释人物和结构的资料先预览再确认。")}</p></div><button className="button primary" disabled={busy} onClick={()=>{setCreating(true);setSelected('');setError('');setNotice('');}}><Plus size={16}/>{moteText("新建导入")}</button></div>
+    {(error||loadError)&&<div className="error-banner" role="alert">{error||loadError}<button className="text-button" onClick={()=>setRevision(v=>v+1)}>{moteText("刷新状态")}</button></div>}
+    {notice&&<p className="notice" role="status">{notice}</p>}
     <div className="workspace-layout">
-      <aside className="workspace-list" aria-label={moteText("导入历史")}><div className="workspace-list-heading"><h2>{moteText("导入记录")}</h2><button className="icon-button" aria-label={moteText("刷新导入记录")} onClick={()=>setRevision(v=>v+1)}><RefreshCw size={15}/></button></div>{loading&&<p className="muted">{moteText("正在读取…")}</p>}{!loading&&!items.length&&<p className="muted">{moteText("你的第一份导入会保留在这里，随时查看进度与原件。")}</p>}{items.map(job=><button key={job.id} className={'workspace-select '+(!creating&&selected===job.id?'active':'')} onClick={()=>{setSelected(job.id);setCreating(false);setError('');}}><strong>{job.name}</strong><span className={'status-label '+(job.status==='failed'?'attention':'')}>{working(job)&&<LoaderCircle size={12} className="spin"/>}{importStatusLabels[job.status]}</span><small>{dateTime(job.createdAt)} · {job.archive.files}{' '}{moteText("个文件")}</small></button>)}</aside>
+      <aside className="workspace-list" aria-label={moteText("导入历史")}><div className="workspace-list-heading"><h2>{moteText("导入记录")}</h2><button className="icon-button" aria-label={moteText("刷新导入记录")} onClick={()=>setRevision(v=>v+1)}><RefreshCw size={15}/></button></div>{loading&&<p className="muted">{moteText("正在读取…")}</p>}{!loading&&!loadError&&!items.length&&<p className="muted">{moteText("你的第一份导入会保留在这里，随时查看进度与原件。")}</p>}{items.map(job=><button key={job.id} disabled={busy} className={'workspace-select '+(!creating&&selected===job.id?'active':'')} onClick={()=>{setSelected(job.id);setCreating(false);setError('');}}><strong>{job.name}</strong><span className={'status-label '+(job.status==='failed'?'attention':'')}>{working(job)&&<LoaderCircle size={12} className="spin"/>}{importStatusLabels[job.status]}</span><small>{dateTime(job.createdAt)} · {job.archive.files}{' '}{moteText("个文件")}</small></button>)}</aside>
       <div className="workspace-content">
       {creating?<form className="panel import-form" onSubmit={e=>{e.preventDefault();void create();}}>
         <div className="section-heading"><div><h2>{moteText("添加一份资料")}</h2><p>{moteText("支持多个文件、ZIP 压缩包，或中央服务器上的目录。")}</p></div></div>
-        <nav className="segmented-nav" aria-label={moteText("导入方式")}><button type="button" className={mode==='files'?'active':''} onClick={()=>setMode('files')}><Upload size={15}/>{moteText("选择文件")}</button><button type="button" className={mode==='directory'?'active':''} onClick={()=>setMode('directory')}><FolderOpen size={15}/>{moteText("服务器目录")}</button></nav>
-        {mode==='files'?<><label className={'file-drop '+(dragging?'dragging':'')} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);addFiles(Array.from(e.dataTransfer.files));}}><FileArchive size={30}/><strong>{moteText("选择文件，或拖到这里")}</strong><span>{moteText("聊天导出、文档、笔记与附件可以一起提交")}</span><input type="file" multiple aria-label={moteText("选择导入文件")} disabled={busy} onChange={e=>{addFiles(Array.from(e.target.files??[]));e.target.value='';}}/></label>{files.length>0&&<div className="selected-files"><div className="source-toolbar"><strong>{moteText("已选")}{' '}{files.length}{' '}{moteText("个文件")}</strong><span className="muted">{bytes(files.reduce((sum,file)=>sum+file.size,0))}</span><button type="button" className="text-button" disabled={busy} onClick={()=>setFiles([])}>{moteText("清空")}</button></div>{files.map((file,index)=><div key={index} className="file-row"><FileText size={15}/><span>{file.name}</span><small>{bytes(file.size)}</small><button type="button" className="icon-button" disabled={busy} aria-label={moteText("移除 ")+file.name} onClick={()=>setFiles(value=>value.filter((_,i)=>i!==index))}><X size={14}/></button></div>)}</div>}</>:<label className="field-label">{moteText("中央服务器上的目录")}<input value={directory} onChange={e=>setDirectory(e.target.value)} placeholder="/data/imports/my-notes" required maxLength={4000}/><small>{moteText("这是运行 Mote 中央节点的机器上的路径。节点会复制可读取的文件到归档。")}</small></label>}
-        <label className="field-label">{moteText("资料名称")}{' '}<span className="muted">{moteText("选填")}</span><input value={name} onChange={e=>setName(e.target.value)} placeholder={moteText("例如：过去一年的随手记")} maxLength={200}/></label>
-        <label className="field-label">{moteText("告诉 Mote 如何理解这份资料")}<textarea value={instruction} onChange={e=>setInstruction(e.target.value)} rows={4} maxLength={12000} placeholder={moteText("例如：这是我的聊天导出，张三是我。时间是北京时间；每段对话独立保存，保留消息的时间和附件关系。")}/><small>{moteText("可以说明人物、时间、格式和需要保留的细节。含糊之处会出现在预览中。")}</small></label>
-        <div className="form-footer">{busy&&mode==='files'&&<label aria-live="polite">{bytes(uploadedBytes)} / {bytes(files.reduce((n,f)=>n+f.size,0))}<progress aria-label={moteText("文件上传进度")} value={uploadedBytes} max={files.reduce((n,f)=>n+f.size,0)||1}/></label>}<span className="muted">{moteText("先保存原件，解析完成后由你确认。")}</span><button className="button primary" disabled={busy||(mode==='files'?!files.length:!directory.trim())}>{busy?<LoaderCircle size={15} className="spin"/>:<ArrowRight size={15}/>} {busy?moteText("正在上传并保存原件…"):moteText("保存原件并处理")}</button></div>
+        <nav className="segmented-nav" aria-label={moteText("导入方式")}><button type="button" className={mode==='files'?'active':''} disabled={busy} onClick={()=>setMode('files')}><Upload size={15}/>{moteText("选择文件")}</button><button type="button" className={mode==='directory'?'active':''} disabled={busy} onClick={()=>setMode('directory')}><FolderOpen size={15}/>{moteText("服务器目录")}</button></nav>
+        {mode==='files'?<><label className={'file-drop '+(dragging?'dragging':'')} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);addFiles(Array.from(e.dataTransfer.files));}}><FileArchive size={30}/><strong>{moteText("选择文件，或拖到这里")}</strong><span>{moteText("聊天导出、文档、笔记与附件可以一起提交")}</span><input type="file" multiple aria-label={moteText("选择导入文件")} disabled={busy} onChange={e=>{addFiles(Array.from(e.target.files??[]));e.target.value='';}}/></label>{files.length>0&&<div className="selected-files"><div className="source-toolbar"><strong>{moteText("已选")}{' '}{files.length}{' '}{moteText("个文件")}</strong><span className="muted">{bytes(files.reduce((sum,file)=>sum+file.size,0))}</span><button type="button" className="text-button" disabled={busy} onClick={()=>setFiles([])}>{moteText("清空")}</button></div>{files.map((file,index)=><div key={index} className="file-row"><FileText size={15}/><span>{file.name}</span><small>{bytes(file.size)}</small><button type="button" className="icon-button" disabled={busy} aria-label={moteText("移除 ")+file.name} onClick={()=>setFiles(value=>value.filter((_,i)=>i!==index))}><X size={14}/></button></div>)}</div>}</>:<label className="field-label">{moteText("中央服务器上的目录")}<input disabled={busy} value={directory} onChange={e=>setDirectory(e.target.value)} placeholder="/data/imports/my-notes" required maxLength={4000}/><small>{moteText("这是运行 Mote 中央节点的机器上的路径。节点会复制可读取的文件到归档。")}</small></label>}
+        <label className="field-label">{moteText("资料名称")}{' '}<span className="muted">{moteText("选填")}</span><input disabled={busy} value={name} onChange={e=>setName(e.target.value)} placeholder={moteText("例如：过去一年的随手记")} maxLength={200}/></label>
+        <label className="field-label">{moteText("告诉 Mote 如何理解这份资料")}<textarea disabled={busy} value={instruction} onChange={e=>setInstruction(e.target.value)} rows={4} maxLength={12000} placeholder={moteText("例如：这是我的聊天导出，张三是我。时间是北京时间；每段对话独立保存，保留消息的时间和附件关系。")}/><small>{moteText("可以说明人物、时间、格式和需要保留的细节。含糊之处会出现在预览中。")}</small></label>
+        <div className="form-footer">{busy&&mode==='files'&&<label aria-live="polite">{bytes(uploadedBytes)} / {bytes(files.reduce((n,f)=>n+f.size,0))}<progress aria-label={moteText("文件上传进度")} value={uploadedBytes} max={files.reduce((n,f)=>n+f.size,0)||1}/></label>}{uploading&&<button type="button" className="button subtle" onClick={()=>uploadController.current?.abort()}>{moteText("暂停上传")}</button>}<span className="muted">{instruction.trim()?moteText("先保存原件，解析完成后由你确认。"):moteText("普通文本会自动保存为记录；原件始终保留。")}</span><button className="button primary" disabled={busy||(mode==='files'?!files.length:!directory.trim())}>{busy?<LoaderCircle size={15} className="spin"/>:<ArrowRight size={15}/>} {busy?(uploading?moteText("正在上传并保存原件…"):moteText("正在创建导入…")):moteText("保存原件并处理")}</button></div>
       </form>:active?<article className="panel import-detail">
         <div className="section-heading"><div><div className="eyebrow">{importStatusLabels[active.status]}</div><h2>{active.name}</h2><p>{dateTime(active.createdAt)} · {active.archive.files}{' '}{moteText("个原件 ·")}{' '}{bytes(active.archive.bytes)}</p></div></div>
         <ol className="import-steps" aria-label={moteText("导入流程")}><li className="done"><Check size={14}/>{moteText("保留原件")}</li><li className={active.preview?'done':''}>{moteText("2 理解与预览")}</li><li className={active.status==='completed'?'done':''}>{moteText("3 保存记录")}</li><li className={memoryJob?.status==='completed'?'done':''}>{moteText("4 提取候选记忆")}</li></ol>
@@ -91,7 +106,7 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
         {active.status==='awaiting_confirmation'&&<div className="confirm-import"><div><strong>{moteText("确认这份资料的理解方式")}</strong><p>{moteText("确认后保存记录，并在后台分批提取有证据的候选记忆。")}</p></div><button className="button primary" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/confirm')}><Check size={16}/>{moteText("确认并开始导入")}</button></div>}
         {active.status==='failed'&&<button className="button" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/retry')}><RefreshCw size={15}/>{moteText("重试导入")}</button>}
         {active.status==='completed'&&<div className="workflow-line"><span className="workflow-icon done"><Check size={18}/></span><div><strong>{moteText("记录已保存到中央归档")}</strong><p>{active.progress.imported}{' '}{moteText("条新记录 ·")}{' '}{active.progress.duplicates}{' '}{moteText("条重复记录")}{!active.memoryJobId?moteText("；尚未安排记忆整理。"):''}</p></div></div>}
-        {memoryJob&&<MemoryProgress job={memoryJob} onRetry={()=>void retryMemory()} onView={onMemories} busy={busy}/>}{memoryError&&<p className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{memoryError}</p>}
+        {memoryJob&&<MemoryProgress job={memoryJob} onRetry={()=>void controlMemory('retry')} onAction={action=>void controlMemory(action)} onView={onMemories} busy={busy}/>}{memoryError&&<p className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{memoryError}</p>}
         {active.status==='completed'&&!active.memoryJobId&&<button className="button" onClick={onMemories}>{moteText("前往记忆")}</button>}
         <details className="import-originals"><summary>{moteText("已保留的原件（")}{active.files.length}）</summary>{active.files.map(file=><div key={file.id} className="file-row"><FileText size={15}/><div><strong>{file.relativePath||file.name}</strong><small>{bytes(file.sizeBytes)}</small></div><ArchivedFileButton api={api} id={file.id} name={file.name}/></div>)}</details>
         {active.captureIds.length>0&&<details className="import-originals"><summary>{moteText("已归档的记录（")}{active.captureIds.length}）</summary><div className="evidence-buttons">{active.captureIds.map((id,index)=><button className="button subtle" key={id} onClick={()=>onOpen(id)}>{moteText("查看记录")}{' '}{index+1}</button>)}</div></details>}
@@ -103,5 +118,5 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
 }
 function ImportInstructions({instruction,busy,onPrepare}:{instruction:string;busy:boolean;onPrepare:(value:string)=>void}){
   const [value,setValue]=useState(instruction);
-  return <details className="import-instructions"><summary>{moteText("补充说明，重新理解资料")}</summary><label className="field-label">{moteText("这份资料应该如何理解")}<textarea rows={4} maxLength={12000} value={value} onChange={e=>setValue(e.target.value)}/></label><button className="button" disabled={busy} onClick={()=>onPrepare(value)}>{moteText("重新生成预览")}</button></details>;
+  return <details className="import-instructions"><summary>{moteText("补充说明，重新理解资料")}</summary><label className="field-label">{moteText("这份资料应该如何理解")}<textarea disabled={busy} rows={4} maxLength={12000} value={value} onChange={e=>setValue(e.target.value)}/></label><button className="button" disabled={busy} onClick={()=>onPrepare(value)}>{moteText("重新生成预览")}</button></details>;
 }

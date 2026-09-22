@@ -6,6 +6,7 @@ import {z} from 'zod';
 import type {ArchivedFile} from '@mote/shared';
 import {privateDirectory} from './private-storage.js';
 import {Store,StoreError,sha256} from './store.js';
+import type {Asset} from './assets.js';
 
 export const MAX_FILE_BYTES=64*1024*1024;
 const portableFileSchema=z.object({id:z.string().uuid(),hash:z.string().regex(/^[a-f0-9]{64}$/),name:z.string().min(1).max(1000),relativePath:z.string().min(1).max(1000),mimeType:z.string().min(1).max(200),sizeBytes:z.number().int().min(0).max(MAX_FILE_BYTES),createdAt:z.string().datetime({offset:true}),dataBase64:z.string().max(90_000_000)}).strict();
@@ -32,7 +33,19 @@ export class ArchivedFileStore {
     if(sizeBytes>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
     const relativePath=archiveRelativePath(input.relativePath??input.name),name=basename(relativePath),mimeType=input.mimeType?.trim()||'application/octet-stream';
     if(mimeType.length>200||/[\r\n\u0000]/.test(mimeType))throw new StoreError('Invalid file MIME type');
-    const asset=this.store.assets.putParts(parts,sizeBytes),hash=asset.hash;
+    const asset=this.store.assets.putParts(parts,sizeBytes);
+    return this.savePrepared({relativePath,name,mimeType},sizeBytes,asset);
+  }
+  async putUpload(input:{name:string;mimeType?:string},directory:string,parts:{part:number;hash:string;bytes:number}[],sizeBytes:number,signal?:AbortSignal,validate?:()=>void):Promise<ArchivedFile>{
+    if(sizeBytes>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
+    const relativePath=archiveRelativePath(input.name),name=basename(relativePath),mimeType=input.mimeType?.trim()||'application/octet-stream';
+    if(mimeType.length>200||/[\r\n\u0000]/.test(mimeType))throw new StoreError('Invalid file MIME type');
+    const asset=await this.store.assets.putUpload(directory,parts,sizeBytes,undefined,signal);
+    try{signal?.throwIfAborted();validate?.();}catch(error){asset.release();throw error;}
+    return this.savePrepared({relativePath,name,mimeType},sizeBytes,asset);
+  }
+  private savePrepared({relativePath,name,mimeType}:{relativePath:string;name:string;mimeType:string},sizeBytes:number,asset:Asset & {release:()=>void}):ArchivedFile{
+    const hash=asset.hash;
     try{
     const duplicate=this.store.db.prepare("SELECT json FROM archived_files WHERE hash=? AND json_extract(json,'$.relativePath')=? AND json_extract(json,'$.mimeType')=?").get(hash,relativePath,mimeType) as {json:string}|undefined;
     if(duplicate)return JSON.parse(duplicate.json);

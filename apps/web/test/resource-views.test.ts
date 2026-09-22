@@ -69,3 +69,13 @@ test('successful evidence read displays archival presence independently of unkno
  const {EvidenceState}=await import('../src/EvidenceState.js');const {root,document:d}=await fixture(t);await act(async()=>root.render(React.createElement(EvidenceState)));
  assert.equal(d.querySelector('[data-archive-state]')?.getAttribute('data-archive-state'),'acknowledged');assert.equal(d.querySelector('[data-processing-state]')?.getAttribute('data-processing-state'),'unknown');assert.doesNotMatch(d.body.textContent!,/记忆已完成/);
 });
+
+test('budget settings explain reservations and remove editable drafts after revocation or session change',async t=>{
+ const {ModelBudgets}=await import('../src/ModelBudgets.js'),{resources}=await import('../src/resource-cache.js'),{root,document:d}=await fixture(t);let revoked=false;
+ const value=(currency='USD')=>({minimumInputReservationTokens:128000,revision:1,limits:{dailyTokens:300000,dailyCost:null,operationTokens:null,operationCost:null,providerDailyTokens:{},providerDailyCost:{},currency},day:'2026-09-23',timeZone:'UTC',usage:[]});
+ const api=apiWith(()=>{if(revoked)throw new ApiError('Generated budget revoked',403);return value();});
+ await act(async()=>root.render(React.createElement(ModelBudgets,{api})));assert.match(d.body.textContent!,/128,000 个输入 token/);
+ await act(async()=>{const input=d.querySelector('select')!;input.value='CNY';input.dispatchEvent(new window.Event('change',{bubbles:true}));});
+ revoked=true;await act(async()=>resources(api).invalidate(key=>key==='/api/model-budgets'));assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/Generated budget revoked/);
+ const next=apiWith(()=>value());await act(async()=>root.render(React.createElement(ModelBudgets,{api:next})));assert.equal(d.querySelector('select')!.value,'USD');assert.doesNotMatch(d.body.textContent!,/Generated budget revoked/);
+});

@@ -10,7 +10,7 @@ import {scopeFields,validRange,type QueryScope} from './query-scope.js';
 import {semanticProcessor} from './semantic-extraction.js';
 import {registerEvidenceRoutes} from './evidence-routes.js';
 import {navigationScopeSchema} from './context-navigation.js';
-import {ModelBudgets} from './model-budgets.js';
+import {ModelBudgets,MINIMUM_MODEL_INPUT_RESERVATION_TOKENS} from './model-budgets.js';
 import {ProviderAdmission} from './provider-admission.js';
 import {ProviderFailure} from '@mote/shared';
 import {Operations,registerOperations} from './operations.js';
@@ -109,7 +109,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const interactiveGate=new ConcurrencyGate(execution.interactiveConcurrency),interactiveModelGate=new ConcurrencyGate(execution.interactiveConcurrency);
   const modelContext=new AsyncLocalStorage<QueryInput>();
   const budgetContext=new AsyncLocalStorage<{id:string;operationId:string;usage?:import('@mote/shared').TokenUsage;price?:import('@mote/shared').ModelPrice}>();
-  const admitModelRequest=(settings:import('@mote/shared/models').ModelSettings)=>(inputBytes:number)=>{const context=budgetContext.getStore();if(!context){if(modelBudgets.enabled(settings.provider))throw new ProviderFailure({category:'blocked',code:'model_budget_unavailable'});return;}modelBudgets.reserve({id:context.id,operationId:context.operationId,provider:settings.provider,model:settings.model,inputTokens:Math.max(128000,inputBytes),outputTokens:settings.maxTokens,price:context.price});};
+  const admitModelRequest=(settings:import('@mote/shared/models').ModelSettings)=>(inputBytes:number)=>{const context=budgetContext.getStore();if(!context){if(modelBudgets.enabled(settings.provider))throw new ProviderFailure({category:'blocked',code:'model_budget_unavailable'});return;}modelBudgets.reserve({id:context.id,operationId:context.operationId,provider:settings.provider,model:settings.model,inputTokens:Math.max(MINIMUM_MODEL_INPUT_RESERVATION_TOKENS,inputBytes),outputTokens:settings.maxTokens,price:context.price});};
   const runModelFor=(settings:import('@mote/shared/models').ModelSettings):NonNullable<import('@mote/agent').AgentOptions['runModel']>=>(task,signal)=>{
     signal?.throwIfAborted();providerAdmission.check(settings);if(settings.protocol==='codex-app-server')modelBudgets.requireBoundedRuntime(settings.provider);
     const queuedAt=performance.now(),input=modelContext.getStore(),gate=input?.executionLane==='interactive'?interactiveModelGate:llmGate;input?.onTrace?.({type:'model.queued',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background'}});
@@ -145,7 +145,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
     return (input.executionLane==='interactive'?interactiveGate:agentGate).run(async()=>{
       const id=randomUUID(),context={id,operationId:input.traceContext?.operationId??(input.traceContext?.jobId?'job:'+input.traceContext.jobId:'query:'+id),price:usageLedger.prices().find(p=>p.provider===settings.provider&&p.model===settings.model),usage:undefined as import('@mote/shared').TokenUsage|undefined};
-      const observed={...input,onUsage:(usage:import('@mote/shared').TokenUsage)=>{context.usage=usage;input.onUsage?.(usage);}};
+      const observed={...input,onUsage:(usage:import('@mote/shared').TokenUsage)=>{context.usage=usage;modelBudgets.observe(id,usage,context.price);input.onUsage?.(usage);}};
       try{return await budgetContext.run(context,()=>providerAdmission.run(settings,()=>modelContext.run(observed,()=>inner.query(observed))));}finally{modelBudgets.finish(id,context.usage,context.price);}
     },input.signal,input.traceContext?.operationId);
   }});
@@ -385,7 +385,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       const meter=usageLedger.start(settings.provider,settings.model,'document-import',{agentId:'document-import',moduleId:'imports',skillId:'document-import',operationId:input.operationId});
       const id=randomUUID(),context={id,operationId:input.operationId??'import:'+id,price:usageLedger.prices().find(p=>p.provider===settings.provider&&p.model===settings.model),usage:undefined as import('@mote/shared').TokenUsage|undefined};
       let runtime:ReturnType<typeof createImportAgent>|undefined;const abort=()=>{void runtime?.close();};input.signal?.addEventListener('abort',abort,{once:true});
-      try{runtime=createImportAgent({...settings,codex,runModel:runModelFor(settings),admitModelRequest:admitModelRequest(settings)});importAgents.add(runtime);const {signal:_signal,operationId:_operationId,...request}=prepared;const result=await agentGate.run(()=>budgetContext.run(context,()=>providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>{context.usage=usage;meter.update(usage);}))),input.signal,input.operationId);input.signal?.throwIfAborted();meter.finish('completed');return result;}
+      try{runtime=createImportAgent({...settings,codex,runModel:runModelFor(settings),admitModelRequest:admitModelRequest(settings)});importAgents.add(runtime);const {signal:_signal,operationId:_operationId,...request}=prepared;const result=await agentGate.run(()=>budgetContext.run(context,()=>providerAdmission.run(settings,()=>runtime!.prepare({...request,language:requestLocale.getStore()??'zh-CN'},dependencies?.observeImport?event=>dependencies.observeImport!(input.workspace,event):undefined,usage=>{context.usage=usage;modelBudgets.observe(id,usage,context.price);meter.update(usage);}))),input.signal,input.operationId);input.signal?.throwIfAborted();meter.finish('completed');return result;}
       catch(error){meter.finish('failed');throw error;}finally{input.signal?.removeEventListener('abort',abort);modelBudgets.finish(id,context.usage,context.price);try{await runtime?.close();}finally{if(runtime)importAgents.delete(runtime);}}
     }),
     // Capture/file journals are durable. Import completion only queues increments;
@@ -531,7 +531,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('onClose',async()=>{
-    closing=true;eventLoop.disable();await maintenanceWorker?.close();agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();clearInterval(perceptionTimer);await executor.close();const memoryClose=memoryPipeline.close();await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
+    closing=true;eventLoop.disable();await files.close();await maintenanceWorker?.close();agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();clearInterval(perceptionTimer);await executor.close();const memoryClose=memoryPipeline.close();await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
     clearInterval(actionTimer);const actionClose=actions.close();
     await workflows.close();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));

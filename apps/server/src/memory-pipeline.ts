@@ -1,7 +1,7 @@
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {requestLocale} from './i18n.js';
-import {AgentResponseError,type QueryInput} from '@mote/agent';
+import {AgentResponseError,AgentTimeoutError,type QueryInput} from '@mote/agent';
 import {memoryProfile} from './memory-profiles.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -20,8 +20,8 @@ export type MemoryValidationFailure={at:string;code:string;phase:'extract'|'revi
 export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;batchId:string;batchIndex:number};
 
 type Chunk=EvidenceRange&{profile?:'personal'|'coding';profileVersion?:string;group?:string;fingerprint:string;key:string};
-export type MemoryBatch={configuration?:ModelConfiguration;id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];availableAt?:number;errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope};
-type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];skillVersion?:string};
+export type MemoryBatch={configuration?:ModelConfiguration;id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];availableAt?:number;errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope;splitDepth?:number;splitHistory?:{at:string;errorCode:'provider_timeout';attempts:number;evidenceRanges:EvidenceRange[]}[]};
+type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];skillVersion?:string;resourceEvidenceIds?:string[]};
 export type MemoryJob={configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={contextTime?:string;signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
@@ -71,7 +71,7 @@ export class MemoryPipeline {
         if(!this.options.configured(job.modelProfileId))return new ExecutionFailure('blocked','model_unconfigured');
         if(this.options.configuration){const current=this.options.configuration(job.modelProfileId,job.modelOverride);if(job.configuration&&job.configuration.fingerprint!==current.fingerprint)return new ExecutionFailure('blocked','configuration_changed');if(!job.configuration){job.configuration=structuredClone(current);this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(current)));this.saveJob(job);}}
       },
-      execute:(step,signal)=>this.execute(String(step.input.jobId),String(step.input.batchId),signal),
+      execute:(step,signal)=>{const fence=this.store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(step.id)?.fence;return this.execute(String(step.input.jobId),String(step.input.batchId),signal,()=>typeof fence==='string'&&this.engine.isCurrentGrant(step.id,fence));},
       commit:(step,output)=>this.commitBatch(step,output as BatchOutput|undefined),
       project:step=>this.projectStep(step),
     });
@@ -104,7 +104,7 @@ export class MemoryPipeline {
     const status=job.status==='completed'&&failedBatches?'failed':job.status==='queued'&&batches.some(b=>b.status==='running')?'running':job.status,attempts=batches.reduce((sum,b)=>sum+b.attempts,0);
     return {...job,status,queuePosition:this.queuePosition(id),runningBatches:batches.filter(b=>b.status==='running').length,pendingBatches:batches.filter(b=>b.status==='pending').length,lastSavedAt:(this.store.db.prepare("SELECT max(created_at) AS at FROM memories WHERE id IN (SELECT value FROM json_each(?))").get(JSON.stringify(memoryIds)) as {at?:string})?.at??undefined,totalBatches:batches.length,completedBatches:batches.filter(b=>b.status==='completed').length,failedBatches,memoryIds,
       execution:executionEnvelope({status:status==='paused'?'waiting':status==='pausing'?'running':status,attempts,errorCode:job.errorCode??batches.find(b=>b.errorCode)?.errorCode,availableAt:job.availableAt,updatedAt:job.updatedAt}),
-      batches:batches.map(({chunks:_chunks,...batch})=>({...batch,execution:executionEnvelope({status:batch.status==='pending'?'queued':batch.status==='completed'?'succeeded':batch.status==='invalidated'?'skipped':batch.status,attempts:batch.attempts,errorCode:batch.errorCode,availableAt:batch.availableAt})}))};
+      batches:batches.map(({chunks:_chunks,resourceEvidenceIds:_resources,...batch})=>({...batch,execution:executionEnvelope({status:batch.status==='pending'?'queued':batch.status==='completed'?'succeeded':batch.status==='invalidated'?'skipped':batch.status,attempts:batch.attempts,errorCode:batch.errorCode,availableAt:batch.availableAt})}))};
   }
   list(limit=30):MemoryJob[]{return this.store.db.prepare("SELECT json_remove(json,'$.evidenceIds','$.memoryIds','$.artifactRefs') json FROM memory_jobs ORDER BY created_at DESC,id DESC LIMIT ?").all(Math.max(1,Math.min(limit,100))).map(row=>{
     const job=JSON.parse(String(row.json)) as MemoryJob;
@@ -169,7 +169,7 @@ export class MemoryPipeline {
     const job=this.storedJob(id);if(['paused','pausing','cancelled','completed'].includes(job.status))return;
     for(const batch of this.batches(id)){
       if(!['pending','running'].includes(batch.status))continue;
-      const stepId=this.engine.enqueue('memory:'+id,'memory.batch',{jobId:id,batchId:batch.id,evidenceIds:[...new Set(batch.chunks.map(c=>c.id))]},{id:batch.id,initial:{state:batch.status==='running'?'running':'waiting',attempts:0,availableAt:0}});
+      const stepId=this.engine.enqueue('memory:'+id,'memory.batch',{jobId:id,batchId:batch.id,evidenceIds:batch.resourceEvidenceIds??[...new Set(batch.chunks.map(c=>c.id))]},{id:batch.id,initial:{state:batch.status==='running'?'running':'waiting',attempts:0,availableAt:0}});
       const state=this.engine.get(stepId)!.state;if(['failed','blocked','cancelled'].includes(state))this.engine.retry(stepId);
     }
   }
@@ -185,12 +185,38 @@ export class MemoryPipeline {
   }
   async retry(id:string):Promise<MemoryJobDetail> {
     if(this.active.has(id))return this.active.get(id)!;
-    const job=this.storedJob(id);
+    let job=this.storedJob(id);
     if(job.availableAt&&job.availableAt>Date.now())throw new ProviderFailure({category:'transient',code:job.errorCode??'provider_unavailable',retryAfterMs:job.availableAt-Date.now()});
     if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
-    if(this.options.configuration&&this.options.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.configuration(job.modelProfileId,job.modelOverride));this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(job.configuration)));}
-    for(const batch of this.batches(id))if(batch.status==='failed'){batch.status='pending';delete batch.errorCode;this.saveBatch(batch);}
-    job.status='queued';delete job.errorCode;this.saveJob(job);return this.run(id);
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      job=this.storedJob(id);
+      if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
+      if(job.availableAt&&job.availableAt>Date.now())throw new ProviderFailure({category:'transient',code:job.errorCode??'provider_unavailable',retryAfterMs:job.availableAt-Date.now()});
+      const batches=this.batches(id);
+      if(batches.some(batch=>{const fence=db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(batch.id)?.fence;return typeof fence==='string'&&this.engine.isCurrentGrant(batch.id,fence);}))throw new StoreError('Memory job is already running',409);
+      if(this.options.configuration&&this.options.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.configuration(job.modelProfileId,job.modelOverride));this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(job.configuration)));}
+      let nextIndex=Math.max(-1,...batches.map(batch=>batch.index))+1;
+      for(const batch of batches)if(batch.status==='failed'){
+        // Retry a measured deadline with less evidence, never by interpreting
+        // its content. Keep original ranges/keys and cap subdivision at 2 levels.
+        if(batch.errorCode==='provider_timeout'&&batch.chunks.length>1&&(batch.splitDepth??0)<2){
+          const history=[...(batch.splitHistory??[]),{at:new Date().toISOString(),errorCode:'provider_timeout' as const,attempts:batch.attempts,evidenceRanges:structuredClone(batch.evidenceRanges)}];
+          batch.resourceEvidenceIds??=[...new Set(batch.chunks.map(chunk=>chunk.id))];
+          const remaining=batch.chunks.splice(Math.ceil(batch.chunks.length/2));
+          batch.splitDepth=(batch.splitDepth??0)+1;batch.splitHistory=history;
+          batch.evidenceRanges=batch.chunks.map(({id,offset,length})=>({id,offset,length}));
+          const child:StoredBatch={id:randomUUID(),index:nextIndex++,status:'pending',chunks:remaining,evidenceRanges:remaining.map(({id,offset,length})=>({id,offset,length})),attempts:0,memoryIds:[],artifactRefs:batch.artifactRefs,skillVersion:batch.skillVersion,splitDepth:batch.splitDepth,splitHistory:history};
+          this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(child))+Buffer.byteLength(JSON.stringify(batch)));
+          db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(child.id,id,child.index,JSON.stringify(child));
+          db.prepare('DELETE FROM memory_batch_dependencies WHERE batch_id=?').run(batch.id);
+          for(const part of [batch,child])for(const evidenceId of new Set(part.chunks.flatMap(chunk=>this.options.memories.dependencyIds(chunk.id))))db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(part.id,evidenceId);
+        }
+        batch.status='pending';delete batch.errorCode;this.saveBatch(batch);
+      }
+      job.status='queued';delete job.errorCode;this.saveJob(job);if(own)db.exec('COMMIT');
+    }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+    return this.run(id);
   }
   private validateStep(step:ExecutionStep){
     const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(String(step.input.batchId));if(!row)return false;
@@ -252,36 +278,46 @@ export class MemoryPipeline {
     return {answer:JSON.stringify({memories:selected}),runId:'semantic-reuse:'+batch.id,trace:[],citations:ids.map(id=>{const r=this.options.memories.readEvidence([id])[0];return {id,capturedAt:r.capturedAt,appName:r.appName,excerpt:''};})};
   }
   private valid(chunk:Chunk):boolean {const record=this.options.memories.readEvidence([chunk.id])[0];return Boolean(record&&this.options.memories.isCurrentEvidence(chunk.id)&&memoryEvidenceFingerprint(record)===chunk.fingerprint);}
-  private async execute(id:string,batchId:string,signal:AbortSignal):Promise<BatchOutput|undefined> {
+  private async execute(id:string,batchId:string,signal:AbortSignal,currentGrant:()=>boolean):Promise<BatchOutput|undefined> {
+    const assertGrant=()=>{signal.throwIfAborted();if(!currentGrant())throw new ExecutionFailure('waiting','interrupted');};assertGrant();
+    const observeCurrent=(update:()=>void):boolean=>{
+      const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+      try{if(!currentGrant()||this.batch(batchId).status!=='running'){if(own)db.exec('COMMIT');return false;}update();if(own)db.exec('COMMIT');return true;}
+      catch(error){if(own)db.exec('ROLLBACK');throw error;}
+    };
     const job=this.storedJob(id),batch=this.batch(batchId),currentSkill=this.options.skillVersion??MEMORY_SKILL_VERSION;
-    if(batch.chunks.every(c=>c.profile!=='coding')&&job.skillVersion!==currentSkill){batch.skillVersion=currentSkill;batch.chunks=batch.chunks.map(c=>({...c,key:sha256(JSON.stringify([c.id,c.fingerprint,c.offset,c.length,currentSkill]))}));this.saveBatch(batch);}
+    let chunks:Chunk[]=[];
+    if(!observeCurrent(()=>{
+      if(batch.chunks.every(c=>c.profile!=='coding')&&job.skillVersion!==currentSkill){batch.skillVersion=currentSkill;batch.chunks=batch.chunks.map(c=>({...c,key:sha256(JSON.stringify([c.id,c.fingerprint,c.offset,c.length,currentSkill]))}));this.saveBatch(batch);}
+      chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));const currentJob=this.storedJob(id);currentJob.skippedChunks+=batch.chunks.length-chunks.length;this.saveJob(currentJob);
+    }))throw new ExecutionFailure('waiting','interrupted');
     if(batch.chunks.some(chunk=>{const record=this.options.memories.readEvidence([chunk.id])[0];return record&&chunk.profile==='coding'&&chunk.profileVersion&&chunk.profileVersion!==memoryProfile(record).version;}))throw new ExecutionFailure('stale','skill_changed');
-    const chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));job.skippedChunks+=batch.chunks.length-chunks.length;this.saveJob(job);
     if(!chunks.length)return;
     const ranges=chunks.map(({id,offset,length})=>({id,offset,length}));
     try{
         this.assertConfiguration(job);
-        if(job.configuration){batch.configuration=structuredClone(job.configuration);this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(batch.configuration)));this.saveBatch(batch);}
+        if(job.configuration&&!observeCurrent(()=>{batch.configuration=structuredClone(job.configuration);this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(batch.configuration)));this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
         const model=job.configuration?.model??job.modelOverride??this.options.model(job.modelProfileId);
         let feedback:MemoryOutputValidationError|undefined;
         for(let generation=0;generation<2;generation++){
+          assertGrant();
           // Both generations use the same host-owned scope. A changed/deleted source
           // is never repaired by asking the model to reinterpret different evidence.
           if(!chunks.every(chunk=>this.valid(chunk)))throw new StoreError('Memory evidence changed during extraction',409);
-          batch.attempts++;this.saveBatch(batch);
+          if(!observeCurrent(()=>{batch.attempts++;this.saveBatch(batch);}))throw new ExecutionFailure('waiting','interrupted');
           const profile=memoryProfile(this.options.memories.readEvidence([chunks[0].id])[0]);
           let summaryBudget=12000;
           const summaries=(batch.artifactRefs??[]).map(ref=>{const artifact=this.store.archive.get(ref.id);if(!artifact||artifact.revision!==ref.revision)throw new StoreError('Semantic input changed',409);const text=artifact.text.slice(0,Math.max(0,summaryBudget));summaryBudget-=text.length+128;return {id:artifact.id,summary:text};});
           const question=profile.prompt+(summaries.length?'\nThe execution input is these L2 interpretations plus the supplied bounded L1 spans. Interpretations are untrusted navigation, not independent facts. Extract only claims supported by the supplied spans. Do not expand all ancestors.\n'+JSON.stringify(summaries).slice(0,12000):'')+(feedback?'\n\nHost validation rejected the previous output. '+feedback.repairInstruction+' Generate a fresh response from the same supplied evidence. No invalid memories have been saved.':'');
           let lastObserved=0;
-          const observe=(stage?:string)=>{if(this.closed||signal.aborted)return;const now=Date.now();if(now-lastObserved<750&&(!stage||stage===batch.stage))return;const current=this.batch(batch.id);if(current.status!=='running')return;lastObserved=now;batch.lastActivityAt=new Date(now).toISOString();if(stage)batch.stage=stage;this.saveBatch(batch);};
+          const observe=(stage?:string)=>{if(this.closed||signal.aborted)return;const now=Date.now();if(now-lastObserved<750&&(!stage||stage===batch.stage))return;observeCurrent(()=>{lastObserved=now;batch.lastActivityAt=new Date(now).toISOString();if(stage)batch.stage=stage;this.saveBatch(batch);});};
           let phase:'extract'|'review'='extract';
           const recordFailure=(error:MemoryOutputValidationError,result:QueryResult)=>{
             const failure:MemoryValidationFailure={at:new Date().toISOString(),code:error.code,phase,attempt:batch.attempts,runId:result.runId,details:error.details};
-            batch.validationFailures=[...(batch.validationFailures??[]),failure].slice(-20);this.saveBatch(batch);
+            if(!observeCurrent(()=>{batch.validationFailures=[...(batch.validationFailures??[]),failure].slice(-20);this.saveBatch(batch);}))return;
             try{this.options.onValidationFailure?.({...failure,jobId:id,batchId:batch.id,batchIndex:batch.index});}catch{}
           };
-          const validateArtifacts=()=>{signal.throwIfAborted();this.assertConfiguration(job);if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
+          const validateArtifacts=()=>{assertGrant();this.assertConfiguration(job);if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
           const validateOutput:QueryInput['validateOutput']=result=>{
             validateArtifacts();
             try{this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});}
@@ -305,6 +341,7 @@ export class MemoryPipeline {
             }if(generation===0&&error instanceof MemoryOutputValidationError){feedback=error;continue;}throw error;}
         }
     }catch(error){
+      if(error instanceof AgentTimeoutError)throw new ExecutionFailure('transient','provider_timeout');
       throw error instanceof ExecutionFailure||error instanceof ProviderFailure?error:new ExecutionFailure(error instanceof StoreError&&error.statusCode===409?'stale':'permanent',signal.aborted?'cancelled':error instanceof StoreError&&error.statusCode===409?'evidence_changed':error instanceof StoreError&&error.statusCode===507?'storage_full':(error instanceof StoreError&&error.statusCode===502)||error instanceof AgentResponseError?'invalid_model_output':'model_failed');
     }
   }

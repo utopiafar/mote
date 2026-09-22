@@ -238,6 +238,18 @@ class OfflineSyncInstrumentedTest {
             assertEquals(before, counters.getLong("uploadSessions", 0))
         }
     }
+    @Test fun realtimeSendsNewNotesWithoutAnExplicitSyncRequest() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime")
+            settings.save(config)
+            repeat(3) { index ->
+                QuickNotes.save(context, "Generated realtime note $index", "")
+                waitUntil { context.queue().depth() == 0 && archive.notes.get() == index + 1 && settings.syncState() == "idle" }
+            }
+            assertEquals(3, archive.notes.get())
+            assertNotNull(settings.lastUploadAt())
+        }
+    }
     private fun waitUntil(check: () -> Boolean) { val deadline = System.currentTimeMillis() + 30_000; while (!check()) { require(System.currentTimeMillis() < deadline) { "Generated sync fixture timeout: ${Settings(InstrumentationRegistry.getInstrumentation().targetContext).syncState()} ${InstrumentationRegistry.getInstrumentation().targetContext.getSharedPreferences("mote", 0).getString("uploadStatus", "")}" }; Thread.sleep(50) } }
     private class LoopbackArchive : Closeable {
         private val socket = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))

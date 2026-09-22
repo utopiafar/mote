@@ -5390,5 +5390,16 @@ export const english: Readonly<Record<string, string>> = {
   "日程分析服务已停止，请检查节点状态。": "The calendar analysis service stopped. Check the node status.",
   "日程分析设置已变化，请重新分析。": "The calendar analysis settings changed. Run the analysis again.",
   "日程分析未完成，请查看批次状态后重试。": "Calendar analysis did not complete. Check the batch status before retrying.",
-  "模型返回的日程建议未通过校验，请重试分析。": "The model calendar proposals did not pass validation. Run the analysis again."
+  "模型返回的日程建议未通过校验，请重试分析。": "The model calendar proposals did not pass validation. Run the analysis again.",
+  "上传已暂停；已选择的文件仍保留，可继续上传。": "Upload paused. Your selected files are retained; you can resume uploading.",
+  "暂停上传": "Pause upload",
+  "普通文本会自动保存为记录；原件始终保留。": "Plain text is saved as records automatically. Originals are always retained.",
+  "正在创建导入…": "Creating import…",
+  "每次请求至少预留 {0} 个输入 token，再加模型的输出上限；这不是实际消耗。低于预留总量的预算可能在请求发出前阻止运行。": "Each request reserves at least {0} input tokens plus the model output limit. This is not actual usage. A budget below this total can block a run before the request is sent.",
+  "本机待处理 {0} 项": "{0} items retained locally for attention",
+  "这些文件的本机副本仍保留，其他资料会继续同步。": "Local copies of these files are retained. Other content continues syncing.",
+  "中央已删除此文件": "This file was deleted from the central archive",
+  "文件版本冲突": "File revision conflict",
+  "中央拒绝此文件（{0}）": "The central node rejected this file ({0})",
+  "每次模型请求按发起时的 UTC 日期计入每日预算；单个任务额度跨日累计。未知用量保留预留额度。": "Each model request counts toward the daily budget on its UTC start date. Per-operation limits accumulate across dates. Unknown usage retains its reservation."
 };

@@ -13,14 +13,14 @@ import type { FileCatalogEntry, LocalFileCheckpoint, SourceOptions, SourceScan }
 import { redactSourceText } from './source-types';
 import { FileAccessMarkers } from './source-atime';
 import { sourceHash } from './source-sync';
-export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, locations?: Map<string,string>, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = []): Promise<SourceScan> {
+export async function scanSourceFiles(selectedPath: string, options: SourceOptions, signal?: AbortSignal, accessMarkerPath?: string, locations?: Map<string,string>, previous?: LocalFileCheckpoint, priorityPaths: readonly string[] = [], incrementalCheckpoint=false): Promise<SourceScan> {
   const accessMarkers = new FileAccessMarkers(accessMarkerPath); await accessMarkers.initialize();
   const selected = await lstat(selectedPath);
   if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error(moteText("所选来源必须是普通文件或目录，不能是符号链接"));
   const root = await realpath(selectedPath);
-  const catalog = selected.isDirectory() ? new DirectoryCatalog(root, previous) : undefined;
+  const catalog = selected.isDirectory() ? new DirectoryCatalog(root, previous, undefined, incrementalCheckpoint) : undefined;
   catalog?.begin();
-  const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0, ...(catalog ? { checkpoint: catalog.checkpoint() } : {}) };
+  const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0, ...(catalog ? { checkpoint: catalog.checkpoint(incrementalCheckpoint) } : {}) };
   let totalBytes = 0;
   const candidateForPath = async (path: string): Promise<DirectoryCandidate | undefined> => {
     if (!catalog) return undefined;
@@ -115,7 +115,8 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
       // not only the final batch returned by this invocation.
       result.seen = Object.values(catalog.catalog).filter(entry => options.extensions.includes(extname(entry.relativePath).toLowerCase())).map(entry => 'file:' + sourceHash([entry.fileId, entry.birthtimeMs].join(':')));
     }
-    result.checkpoint = catalog.checkpoint();
+    result.checkpoint = catalog.checkpoint(incrementalCheckpoint);
+    if(incrementalCheckpoint)result.catalogChanges=catalog.catalogChanges();
   } else {
     const fileId = `${selected.dev}:${selected.ino}`, candidate: DirectoryCandidate = { path: root, relativePath: basename(root), fileId, birthtimeMs: selected.birthtimeMs, size: selected.size, mtimeMs: selected.mtimeMs, ctimeMs: selected.ctimeMs, quickHash: sourceHash(`${fileId}:${selected.size}:${selected.mtimeMs}:${selected.ctimeMs}`) };
     await processFile(candidate, undefined);

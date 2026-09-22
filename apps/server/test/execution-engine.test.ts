@@ -70,3 +70,18 @@ test('resource claims serialize shared evidence across connections without block
  release();await run;await engine.drain([b]);await second.drain([b]);assert.equal(second.get(b)!.state,'succeeded');assert.equal(calls.filter(id=>id==='same').length,1);
  await second.close();other.close();
 });
+
+test('an expired lease cannot commit even before another host reclaims it',async t=>{
+ const {engine,advance}=await fixture(t);let calls=0;const committed:number[]=[];
+ engine.register({...base,execute:async()=>{calls++;if(calls===1)advance(30001);return calls;},commit:(_step,result)=>{committed.push(Number(result));}});
+ const id=engine.enqueue('expired-before-recovery','fixture',{});await engine.drain([id]);
+ assert.deepEqual(committed,[2],'the expired first attempt must be discarded and recovered');
+ assert.equal(engine.get(id)!.state,'succeeded');assert.equal(engine.get(id)!.attempts,2);
+});
+
+test('an expired lease cannot publish a permanent failure before recovery',async t=>{
+ const {engine,advance}=await fixture(t);let calls=0;
+ engine.register({...base,execute:async()=>{if(++calls===1){advance(30001);throw new ExecutionFailure('permanent','late_failure');}return null;}});
+ const id=engine.enqueue('expired-failure','fixture',{});await engine.drain([id]);
+ assert.equal(engine.get(id)!.state,'succeeded');assert.equal(engine.get(id)!.attempts,2);assert.equal(engine.get(id)!.error,undefined);
+});

@@ -44,3 +44,24 @@ test('imperative page reads share a generation and cancel independently of anoth
 test('shared polling performs one refresh for multiple readers, pauses while hidden and stops when detached',async t=>{
  const {api,calls}=fake(),resource=resources(api).get('/api/connector');const off1=resource.subscribe(()=>{}),off2=resource.subscribe(()=>{}),poll1=resource.poll(250),poll2=resource.poll(250);calls[0].resolve({});await turn();await new Promise(r=>setTimeout(r,270));assert.equal(calls.length,2);calls[1].resolve({});await turn();const before=Object.getOwnPropertyDescriptor(globalThis,'document');Object.defineProperty(globalThis,'document',{value:{hidden:true},configurable:true});t.after(()=>{if(before)Object.defineProperty(globalThis,'document',before);else Reflect.deleteProperty(globalThis,'document');});await new Promise(r=>setTimeout(r,270));assert.equal(calls.length,2,'Hidden views do not poll');off1();poll1();off2();poll2();await new Promise(r=>setTimeout(r,270));assert.equal(calls.length,2);
 });
+
+test('one-second invalidations cannot starve two-second reads and coalesce to one follow-up',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});
+ const calls:{signal:AbortSignal}[]=[],observed:number[]=[];
+ const api={request:(_path:string,init:{signal:AbortSignal})=>new Promise(resolve=>{const version=calls.push({signal:init.signal});setTimeout(()=>resolve({version}),2000);})} as Api;
+ const resource=resources(api).get<{version:number}>('/api/operations');
+ const off=resource.subscribe(()=>{const value=resource.getSnapshot().data?.version;if(value&&observed.at(-1)!==value)observed.push(value);});
+ t.mock.timers.tick(1000);resource.invalidate();resource.invalidate();assert.equal(calls.length,1);assert.equal(calls[0].signal.aborted,false);
+ const second=resource.subscribe(()=>{});assert.equal(calls.length,1,'A new observer also shares the dirty in-flight read');
+ t.mock.timers.tick(1000);await turn();assert.deepEqual(observed,[1]);assert.equal(calls.length,2);
+ resource.invalidate();t.mock.timers.tick(1000);resource.invalidate();assert.equal(calls[1].signal.aborted,false);
+ t.mock.timers.tick(1000);await turn();assert.deepEqual(observed,[1,2]);assert.equal(calls.length,3);
+ off();second();assert.equal(calls[2].signal.aborted,true);t.mock.timers.tick(2000);await turn();assert.deepEqual(observed,[1,2]);assert.equal(calls.length,3);
+});
+
+test('dirty in-flight reads keep scope and authenticated-session cancellation fences',async()=>{
+ const old=fake(),fresh=fake(),a=resources(old.api).get('/api/captures?scope=a'),b=resources(fresh.api).get('/api/captures?scope=b');
+ const off=a.subscribe(()=>{});a.invalidate();off();assert.equal(old.calls[0].signal.aborted,true);
+ const stop=b.subscribe(()=>{});old.calls[0].resolve({secret:'old session'});fresh.calls[0].resolve({value:'current session'});await turn();
+ assert.equal(a.getSnapshot().data,undefined);assert.deepEqual(b.getSnapshot().data,{value:'current session'});assert.equal(old.calls.length,1);stop();
+});

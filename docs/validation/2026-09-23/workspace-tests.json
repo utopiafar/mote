@@ -1,0 +1,95 @@
+{
+  "generatedDataOnly": true,
+  "physicalDevices": false,
+  "environment": {
+    "platform": "macOS arm64",
+    "cpu": "Apple M4",
+    "memoryGiB": 16,
+    "node": "v24.15.0"
+  },
+  "completeWorkspaceRun": {
+    "command": "npm test",
+    "exitCode": 0,
+    "suites": {
+      "desktop": {
+        "passed": 311
+      },
+      "server": {
+        "passed": 571
+      },
+      "web": {
+        "passed": 109
+      },
+      "agent": {
+        "passed": 118,
+        "skipped": 1
+      },
+      "diagnostics": {
+        "passed": 5
+      },
+      "localInference": {
+        "passed": 13
+      },
+      "shared": {
+        "passed": 69
+      }
+    },
+    "passed": 1196,
+    "skipped": 1
+  },
+  "note": "The initial complete workspace run and final changed-package runs are listed separately. Model semantic evaluation is an independent failed acceptance result, not counted among deterministic passes.",
+  "followUpRuns": [
+    {
+      "command": "npm run test -w @mote/agent",
+      "passed": 119,
+      "skipped": 1,
+      "failed": 0
+    },
+    {
+      "command": "npm run test -w @mote/server",
+      "passed": 579,
+      "skipped": 0,
+      "failed": 0,
+      "durationMs": 75716.085167,
+      "note": "Final full run includes backup restore and stale callback regression. Further atomic grant refinements, if any, receive focused checks."
+    },
+    {
+      "scope": "Atomic grant refinements",
+      "suites": [
+        "execution-engine",
+        "combined-backup-recovery",
+        "memory-pipeline"
+      ],
+      "passed": 36,
+      "failed": 0,
+      "note": "Executed by Memory reviewer after final atomic observer/initial-state write guards."
+    },
+    {
+      "command": "npm run test -w @mote/server",
+      "passed": 582,
+      "skipped": 0,
+      "failed": 0,
+      "durationMs": 81737.307709,
+      "note": "Final stable snapshot includes all atomic grant writes and lifecycle timeout projection."
+    }
+  ],
+  "buildChecks": {
+    "libraries": "passed",
+    "allWorkspaceAndScriptsTypes": "passed on final stable code",
+    "web": "passed; existing bundle-size warning",
+    "desktop": "Initial full build passed. Final TS, UI bundle, C++ and Swift compilation passed; final iconutil needed unrestricted macOS IconServices and then passed.",
+    "android": "Development APK and instrumentation APK compiled, including native dependency",
+    "i18nMessages": 5402,
+    "server": "passed on final stable code"
+  },
+  "testEnvironmentFailures": [
+    "Initial sandboxed tests could not bind loopback or start required local IPC; rerun in local-socket capable execution passed.",
+    "The final sandboxed desktop iconutil invocation failed; rerunning that exact generated-icon step outside sandbox passed."
+  ],
+  "latestSuiteTotals": {
+    "passed": 1208,
+    "skipped": 1,
+    "failed": 0,
+    "calculation": "desktop311 + server582 + web109 + agent119 + diagnostics5 + localInference13 + shared69"
+  }
+}

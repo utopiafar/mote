@@ -1,0 +1,132 @@
+[
+  {
+    "name": "i18n-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/i18n-smoke.cjs"
+    ],
+    "durationMs": 5896,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "ui-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/ui-smoke.cjs"
+    ],
+    "durationMs": 22530,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "ui-page-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/ui-page-smoke.cjs"
+    ],
+    "durationMs": 1951,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "client-improvements-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/client-improvements-smoke.cjs"
+    ],
+    "durationMs": 1293,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "complex-ui-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/complex-ui-smoke.cjs"
+    ],
+    "durationMs": 1894,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "content-storage-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/content-storage-smoke.cjs"
+    ],
+    "durationMs": 1228,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "offline-sync-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/offline-sync-smoke.cjs"
+    ],
+    "durationMs": 9845,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "capture-browser-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/capture-browser-smoke.cjs"
+    ],
+    "durationMs": 2561,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "connection-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/connection-smoke.cjs"
+    ],
+    "durationMs": 6094,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "update-network-smoke",
+    "command": [
+      "node_modules/.bin/electron",
+      "apps/desktop/scripts/update-network-smoke.cjs"
+    ],
+    "durationMs": 735,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "connection-server-smoke",
+    "command": [
+      "node",
+      "apps/desktop/scripts/connection-server-smoke.cjs"
+    ],
+    "durationMs": 1404,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "file-evidence-smoke",
+    "command": [
+      "node",
+      "apps/desktop/scripts/file-evidence-smoke.cjs"
+    ],
+    "durationMs": 1097,
+    "code": 0,
+    "signal": null
+  },
+  {
+    "name": "window-identity-smoke",
+    "command": [
+      "node",
+      "apps/desktop/scripts/window-identity-smoke.mjs"
+    ],
+    "durationMs": 6155,
+    "code": 0,
+    "signal": null
+  }
+]

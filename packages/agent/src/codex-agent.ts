@@ -29,7 +29,7 @@ export function createCodexAgent(options:AgentOptions){
     let bridge:Awaited<ReturnType<typeof startBridge>>;
     try{bridge=await startBridge(options.reader,{...input,onTrace:trace},options.maxToolCalls??24);}catch(error){trace({type:'run.failed',stage:'starting',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError'}});throw error;}
     let session:CodexSession|undefined,skillCalls=0;
-    const abort=()=>{void session?.close();};
+    const abort=()=>{session?.cancel(input.signal?.reason);void session?.close();};
     input.signal?.addEventListener('abort',abort,{once:true});
     try{
       const call=async(name:string,args:unknown)=>{
@@ -79,7 +79,7 @@ export function createCodexAgent(options:AgentOptions){
       }
       trace({type:'validation.completed',stage:'validating',phase:'completed',status:'accepted',payload:{citations:answer.citations.map(citation=>citation.id)}});
       trace({type:'run.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{citations:answer.citations.map(citation=>citation.id),toolCalls:bridge.trace}});
-      return {...answer,trace:bridge.trace,contextUsage:{...metrics,toolResults:bridge.deliveredCharacters},runId};
+      return {...answer,evidenceDependencies:bridge.evidenceDependencies,trace:bridge.trace,contextUsage:{...metrics,toolResults:bridge.deliveredCharacters},runId};
     }catch(error){trace({type:'run.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:error instanceof AgentResponseError?error.reason:undefined}});if(error instanceof AgentNotConfiguredError||error instanceof AgentTimeoutError||error instanceof AgentResponseError||error instanceof ProviderFailure)throw error;throw new AgentProviderError();}
     finally{input.signal?.removeEventListener('abort',abort);try{await session?.close();}finally{if(session)sessions.delete(session);await bridge.close();}}
   }

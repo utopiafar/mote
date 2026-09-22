@@ -1,12 +1,13 @@
 import {z} from 'zod';
 import {textSearch} from './text-search.js';
-import {randomUUID,createHash} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {rmSync} from 'node:fs';
+import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {Readable} from 'node:stream';
 import {fileRevisionSchema,FILE_MAX_BYTES,FILE_PART_BYTES,executionEnvelope,type FileRevision,type CaptureRecord,fileEvidenceSchema} from '@mote/shared';
 import type {ContextRecord,ContextRange} from '@mote/agent';
-import {Store,StoreError,sha256} from './store.js';
+import {Store,StoreError,sha256,type Range} from './store.js';
 import {SourceStore} from './sources.js';
 import {privateDirectory} from './private-storage.js';
 
@@ -21,6 +22,7 @@ export class FileStore {
   readonly objects:string;
   readonly uploads:string;
   private pending=new Map<string,Promise<unknown>>();
+  private readonly closing=new AbortController();
   constructor(readonly store:Store,readonly sources:SourceStore){
     const root=join(store.directory,'files');privateDirectory(root);
     this.objects=join(root,'objects');this.uploads=join(root,'uploads');privateDirectory(this.objects);privateDirectory(this.uploads);
@@ -99,22 +101,21 @@ export class FileStore {
     this.store.contentEncryption.write(path,bytes);this.store.db.prepare('INSERT INTO file_parts VALUES(?,?,?,?)').run(id,part,hash,bytes.length);
     return {part,hash,bytes:bytes.length};
   }
-  async commit(id:string,authorize:(sourceId:string)=>void){return this.serialize('upload:'+id,async()=>{
+  async close(){this.closing.abort();await Promise.allSettled([...this.pending.values()]);}
+  async commit(id:string,authorize:(sourceId:string)=>void,signal?:AbortSignal){return this.serialize('upload:'+id,async()=>{
+    const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();
     const row=this.session(id,authorize);if(row.ack)return JSON.parse(row.ack);
     const input=JSON.parse(row.manifest) as FileRevision,parts=this.store.db.prepare('SELECT part,hash,bytes FROM file_parts WHERE upload_id=? ORDER BY part').all(id) as {part:number;hash:string;bytes:number}[];
     if(parts.length!==Math.ceil(input.sizeBytes/FILE_PART_BYTES))throw new StoreError('Upload is incomplete',409);
-    const total=createHash('sha256');let size=0;
-    for(const [i,p] of parts.entries()){if(p.part!==i)throw new StoreError('Missing file part',409);const bytes=this.readPart(join(this.uploads,id),i);if(bytes.length!==p.bytes||sha256(bytes)!==p.hash)throw new StoreError('File part checksum failed',409);total.update(bytes);size+=bytes.length;}
-    if(size!==input.sizeBytes||total.digest('hex')!==input.sha256)throw new StoreError('File checksum failed',409);
-    const hash=input.sha256!,self=this;
-    function* sourceParts(){for(const p of parts)yield self.readPart(join(self.uploads,id),p.part);}
-    const {release}=this.store.assets.putParts(sourceParts(),input.sizeBytes,hash);
+    const hash=input.sha256!;
+    const {release}=await this.store.assets.putUpload(join(this.uploads,id),parts,input.sizeBytes,hash,cancellation);
     try{
-    const ack=await this.revision(input,authorize,(captureId)=>{
+    this.session(id,authorize);cancellation.throwIfAborted();
+    const ack=await this.revision(input,sourceId=>{cancellation.throwIfAborted();authorize(sourceId);},(captureId)=>{
       const value={id:captureId,captureId,sourceId:input.sourceId,externalId:input.item.externalId,revision:input.item.revision,objectId:hash,sha256:hash,sizeBytes:input.sizeBytes,duplicate:false};
       this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(value),id);return value;
     });
-    this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(ack),id);rmSync(join(this.uploads,id),{recursive:true,force:true});return ack;
+    this.store.db.prepare('UPDATE file_uploads SET ack=? WHERE id=?').run(JSON.stringify(ack),id);await rm(join(this.uploads,id),{recursive:true,force:true});return ack;
     }finally{release();}
   });}
   async revision(raw:unknown,authorize:(sourceId:string)=>void,onCommit?:(id:string)=>unknown):Promise<any>{
@@ -181,7 +182,6 @@ export class FileStore {
     const limit=Math.min(200,Math.max(1,args.limit??50)),rows=this.store.db.prepare(`SELECT v.capture_id FROM file_versions v,file_heads h,captures c WHERE ${clauses.join(' AND ')} ORDER BY c.captured_at DESC,c.id LIMIT ? OFFSET ?`).all(...values,limit+1,offset) as {capture_id:string}[];
     return {items:rows.slice(0,limit).map(r=>this.detail(r.capture_id,false)),nextCursor:rows.length>limit?String(offset+limit):null};
   }
-  private readPart(directory:string,part:number){privateDirectory(directory);return this.store.contentEncryption.read(join(directory,String(part)));}
   *bytes(id:string,start=0,end?:number):Generator<Buffer>{const v=this.version(id);if(!v.object_hash)throw new StoreError('Original is not archived',404);
     for(const bytes of this.store.assets.bytes(v.object_hash,start,end)){this.version(id);yield bytes;}
   }
@@ -208,6 +208,12 @@ export class FileStore {
   pendingIndex(model:string,allowLocalOnly=false){return this.store.db.prepare(`SELECT c.id,c.text FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_jobs j ON j.capture_id=c.capture_id WHERE ${activeChunks} AND (?=1 OR j.local_only=0) AND c.index_error IS NULL AND (c.embedding IS NULL OR c.embedding_model!=?) ORDER BY c.rowid LIMIT 8`).all(Number(allowLocalOnly),model) as {id:string;text:string}[];}
   indexed(id:string,vector:number[],model:string){const json=JSON.stringify(vector);this.store.reserveMetadata(Buffer.byteLength(json));this.store.db.prepare('UPDATE file_chunks SET embedding=?,embedding_model=?,index_error=NULL WHERE id=? AND artifact_id IN (SELECT id FROM file_artifacts WHERE current=1)').run(json,model,id);}
   indexFailed(id:string){this.store.db.prepare("UPDATE file_chunks SET index_error='provider_failed' WHERE id=?").run(id);}
+  vectorQuery(model:string,args:Range){
+    if(args.source&&args.source!=='file'||args.collection==='activity')return;
+    const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id','c.embedding_model=?','c.embedding IS NOT NULL'],values:(string|number)[]=[model];
+    for(const [key,column] of [['appId',"json_extract(r.json,'$.appId')"],['deviceId','r.device_id'],['after','r.context_end'],['before','r.context_at'],['sourceId',"json_extract(r.json,'$.provenance.sourceId')"],['projectKey',"json_extract(r.json,'$.provenance.document.coding.projectKey')"],['repositoryKey',"json_extract(r.json,'$.provenance.document.coding.repositoryKey')"],['provider',"json_extract(r.json,'$.provenance.document.coding.provider')"],['sessionId',"json_extract(r.json,'$.provenance.document.coding.sessionId')"]] as const)if(args[key]){clauses.push(`${column} ${key==='after'?'>=':key==='before'?'<':'='} ?`);values.push(key==='after'||key==='before'?new Date(args[key]!).toISOString():args[key]!);}
+    return {sql:`SELECT c.id,c.embedding FROM file_chunks c,file_artifacts a,file_heads h,captures r WHERE ${clauses.join(' AND ')}`,values};
+  }
   vectorSearch(vector:number[],model:string,args:ContextRange){
     if(args.source&&args.source!=='file'||args.collection==='activity')return [];
     const clauses=['h.capture_id=c.capture_id','a.id=c.artifact_id',activeChunks,'r.id=c.capture_id','c.embedding_model=?','c.embedding IS NOT NULL'],values:(string|number)[]=[model];

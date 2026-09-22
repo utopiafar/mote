@@ -1,0 +1,158 @@
+{
+  "generatedOnly": true,
+  "transport": "real loopback HTTP",
+  "rttInjectionMs": 0,
+  "writePolicy": "plaintext",
+  "limits": {
+    "apiMaxMs": 1500
+  },
+  "probeIntervalMs": 250,
+  "uploadCredentials": "fresh scoped generated device credential per case",
+  "results": [
+    {
+      "protocol": "browser-import",
+      "sizeMiB": 64,
+      "duplicate": false,
+      "commitMs": 330.56212500000004,
+      "eventLoopMaxMs": 15.499263,
+      "probes": {
+        "health": {
+          "samples": 2,
+          "p95Ms": 1.401124999999979,
+          "maxMs": 14.48050000000012
+        },
+        "files": {
+          "samples": 2,
+          "p95Ms": 1.7458329999999478,
+          "maxMs": 14.391374999999925
+        },
+        "ingest": {
+          "samples": 2,
+          "p95Ms": 6.653749999999945,
+          "maxMs": 14.413792000000058
+        }
+      }
+    },
+    {
+      "protocol": "browser-import",
+      "sizeMiB": 64,
+      "duplicate": true,
+      "commitMs": 357.30229099999997,
+      "eventLoopMaxMs": 12.558335,
+      "probes": {
+        "health": {
+          "samples": 2,
+          "p95Ms": 2.544582999999875,
+          "maxMs": 9.194083000000091
+        },
+        "files": {
+          "samples": 2,
+          "p95Ms": 2.4211660000000848,
+          "maxMs": 9.071457999999893
+        },
+        "ingest": {
+          "samples": 2,
+          "p95Ms": 2.4268749999998818,
+          "maxMs": 9.044875000000047
+        }
+      }
+    },
+    {
+      "protocol": "file-sync",
+      "sizeMiB": 100,
+      "duplicate": false,
+      "commitMs": 416.9137910000004,
+      "eventLoopMaxMs": 12.296191,
+      "probes": {
+        "health": {
+          "samples": 2,
+          "p95Ms": 7.678916000000299,
+          "maxMs": 8.255959000000075
+        },
+        "files": {
+          "samples": 2,
+          "p95Ms": 7.535292000000027,
+          "maxMs": 7.963917000000038
+        },
+        "ingest": {
+          "samples": 2,
+          "p95Ms": 7.509750000000167,
+          "maxMs": 7.967333000000053
+        }
+      }
+    },
+    {
+      "protocol": "file-sync",
+      "sizeMiB": 100,
+      "duplicate": true,
+      "commitMs": 1489.4615,
+      "eventLoopMaxMs": 138.280959,
+      "probes": {
+        "health": {
+          "samples": 6,
+          "p95Ms": 17.495582999999897,
+          "maxMs": 133.3336250000002
+        },
+        "files": {
+          "samples": 6,
+          "p95Ms": 17.35620800000015,
+          "maxMs": 133.20804099999987
+        },
+        "ingest": {
+          "samples": 6,
+          "p95Ms": 17.32483400000001,
+          "maxMs": 133.20875000000024
+        }
+      }
+    },
+    {
+      "protocol": "file-sync",
+      "sizeMiB": 512,
+      "duplicate": false,
+      "commitMs": 2250.092666999999,
+      "eventLoopMaxMs": 17.809407,
+      "probes": {
+        "health": {
+          "samples": 9,
+          "p95Ms": 14.16137499999968,
+          "maxMs": 17.081833000000188
+        },
+        "files": {
+          "samples": 9,
+          "p95Ms": 14.026249999998981,
+          "maxMs": 16.95533400000022
+        },
+        "ingest": {
+          "samples": 9,
+          "p95Ms": 14.01783400000022,
+          "maxMs": 16.94787499999984
+        }
+      }
+    },
+    {
+      "protocol": "file-sync",
+      "sizeMiB": 512,
+      "duplicate": true,
+      "commitMs": 2963.692708999999,
+      "eventLoopMaxMs": 16.859135,
+      "probes": {
+        "health": {
+          "samples": 12,
+          "p95Ms": 14.544499999999971,
+          "maxMs": 17.09349999999904
+        },
+        "files": {
+          "samples": 12,
+          "p95Ms": 14.208000000000538,
+          "maxMs": 16.836999999999534
+        },
+        "ingest": {
+          "samples": 12,
+          "p95Ms": 14.256999999999607,
+          "maxMs": 16.839624999998705
+        }
+      }
+    }
+  ],
+  "samplingNote": "Each case has 2–12 probe samples at 250 ms intervals; use measured maxima for this local smoke benchmark, not population p95 or a production SLO."
+}

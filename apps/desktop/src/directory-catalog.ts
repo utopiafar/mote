@@ -18,6 +18,8 @@ const clone = (value: LocalFileCheckpoint): LocalFileCheckpoint => structuredClo
  */
 export class DirectoryCatalog {
   private state: LocalFileCheckpoint;
+  private changes=new Map<string,FileCatalogEntry|undefined>();
+  private baseCatalog:Record<string,FileCatalogEntry>={};
   private rollback?:{state:Omit<LocalFileCheckpoint,'catalog'>;entries:Map<string,FileCatalogEntry|undefined>};
   private listing?:{path:string;entries:string[]};
   get inProgress(){return this.state.inProgress;}
@@ -25,14 +27,27 @@ export class DirectoryCatalog {
   previous(path:string){return this.rollback?.entries.has(path)?this.rollback.entries.get(path):this.state.catalog[path];}
   rollbackSavepoint(){if(!this.rollback)return;for(const [path,entry] of this.rollback.entries){if(entry)this.state.catalog[path]=entry;else delete this.state.catalog[path];}this.state={...this.rollback.state,catalog:this.state.catalog};this.rollback=undefined;this.listing=undefined;}
   private remember(path:string){if(this.rollback&&!this.rollback.entries.has(path))this.rollback.entries.set(path,this.state.catalog[path]);}
-  constructor(private readonly root: string, previous?: LocalFileCheckpoint, private readonly inspect:(path:string)=>Promise<Stats>=lstat) {
-    this.state = previous && previous.version === 1 && previous.root === root ? clone(previous) : {
+  constructor(private readonly root: string, previous?: LocalFileCheckpoint, private readonly inspect:(path:string)=>Promise<Stats>=lstat, incremental=false) {
+    const valid=previous && previous.version === 1 && previous.root === root;
+    this.state = valid ? incremental?{...structuredClone({...previous,catalog:undefined}),catalog:previous.catalog}:clone(previous) : {
       version: 1, root, scanNumber: 0, scanStartedAt: new Date(0).toISOString(), initialized: false,
       inProgress: false, pendingDirectories: [], catalog: {},
     };
+    if(incremental){
+      this.baseCatalog=this.state.catalog;
+      const lookup=(key:string)=>this.changes.has(key)?this.changes.get(key):this.baseCatalog[key];
+      this.state.catalog=new Proxy({} as Record<string,FileCatalogEntry>,{
+        get:(_target,key)=>typeof key==='string'?lookup(key):undefined,
+        set:(_target,key,value)=>{this.changes.set(String(key),value);return true;},
+        deleteProperty:(_target,key)=>{this.changes.set(String(key),undefined);return true;},
+        ownKeys:()=>[...new Set([...Object.keys(this.baseCatalog),...this.changes.keys()])].filter(key=>lookup(key)!==undefined),
+        getOwnPropertyDescriptor:(_target,key)=>typeof key==='string'&&lookup(key)!==undefined?{enumerable:true,configurable:true,writable:true,value:lookup(key)}:undefined,
+      });
+    }
   }
 
-  checkpoint(): LocalFileCheckpoint { return clone(this.state); }
+  checkpoint(incremental=false): LocalFileCheckpoint { return incremental?{...structuredClone({...this.state,catalog:undefined}),catalog:{}}:clone(this.state); }
+  catalogChanges():{key:string;value?:FileCatalogEntry}[]{return [...this.changes].filter(([key,value])=>value!==this.baseCatalog[key]).map(([key,value])=>({key,value}));}
   restore(checkpoint: LocalFileCheckpoint): void { this.state = clone(checkpoint); this.listing=undefined; }
   get catalog(): Readonly<Record<string, FileCatalogEntry>> { return this.state.catalog; }
 

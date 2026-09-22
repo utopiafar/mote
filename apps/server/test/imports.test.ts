@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {randomUUID} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {existsSync,mkdtempSync,readFileSync,rmSync,symlinkSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -12,6 +13,23 @@ import {ImportStore,type ImportRuntime} from '../src/imports.js';
 const entry=(name:string,text:string)=>({name,dataBase64:Buffer.from(text).toString('base64')});
 const item=(externalId='fixture-1')=>({externalId,revision:'v1',observedAt:'2026-09-15T12:00:00Z',kind:'file',layer:'original',title:'合成日记',text:'2020年的合成原文\n保留换行和引用。',document:{recordedAt:'2020-01-01T10:00:00Z',timeBasis:'recorded',contentRole:'authored'}});
 function fixture(t:any,runtime:ImportRuntime={}){const directory=mkdtempSync(join(tmpdir(),'mote-import-')),store=new Store(directory),files=new ArchivedFileStore(store),sources=new SourceStore(store),imports=new ImportStore(store,files,sources,runtime);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return {directory,store,files,sources,imports};}
+test('import creation survives lost responses and concurrent retries with one durable job',async t=>{
+ const {imports,files,store,sources}=fixture(t),request={requestId:randomUUID(),files:[entry('first.txt','Generated first'),entry('second.txt','Generated second')]};
+ const [first,concurrent]=await Promise.all([imports.create(request),imports.create(request)]);
+ assert.equal(first.id,concurrent.id);assert.equal(first.files.length,2);assert.equal(imports.list().length,1);
+ assert.equal((await imports.create(request)).id,first.id);
+ const reopened=new ImportStore(store,files,sources);assert.equal((await reopened.create(request)).id,first.id);
+ assert.equal(reopened.list().length,1);assert.equal('createFingerprint' in first,false);
+ await assert.rejects(reopened.create({...request,instruction:'Different intent'}),{statusCode:409});
+ reopened.delete(first.id);await assert.rejects(reopened.create(request),{statusCode:410});
+ const next=await reopened.create({...request,requestId:randomUUID()});assert.notEqual(next.id,first.id);
+});
+test('import creation rejects conflicting concurrent request IDs before staging a second job',async t=>{
+ const {imports}=fixture(t),request={requestId:randomUUID(),files:[entry('first.txt','Generated first'),entry('second.txt','Generated second')]};
+ const first=imports.create(request);
+ await assert.rejects(imports.create({...request,files:[entry('other.txt','Different generated source')]}),{statusCode:409});
+ await first;assert.equal(imports.list().length,1);
+});
 test('originals archive before model configuration without manufacturing parsed evidence',async t=>{
  const {imports,files,store,directory}=fixture(t),job=await imports.create({files:[entry('unknown.xyz','synthetic bytes')]});
  assert.equal(job.status,'queued');assert.equal(files.read(job.files[0].id).toString(),'synthetic bytes');assert.equal(store.list().items.length,0);

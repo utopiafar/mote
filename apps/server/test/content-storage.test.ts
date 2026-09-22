@@ -179,5 +179,5 @@ test('binary browser import parts remain readable after bulk decryption and rest
  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
  let archived=new ArchivedFileStore(store),uploads=new ImportUploads(store,archived);const bytes=Buffer.from('generated import bytes'),upload=uploads.begin({name:'fixture.txt',sizeBytes:bytes.length});uploads.part(upload.id,0,bytes);
  store.contentEncryption.setEnabled(false);const service=new ContentStorageService(store,new FileStore(store,new SourceStore(store)),archived);service.start();assert.equal((await finish(service)).failed,0);
- store.close();store=new Store(dir);archived=new ArchivedFileStore(store);uploads=new ImportUploads(store,archived);assert.deepEqual(archived.read(uploads.commit(upload.id).id),bytes);
+ store.close();store=new Store(dir);archived=new ArchivedFileStore(store);uploads=new ImportUploads(store,archived);assert.deepEqual(archived.read((await uploads.commit(upload.id)).id),bytes);
 });

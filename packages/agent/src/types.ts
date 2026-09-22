@@ -126,6 +126,7 @@ export interface QueryInput {
   timeZone?: string;
   /** Server-owned dialogue context. Earlier model prose is not original evidence. */
   conversation?: {
+    evidenceDependencies?:import('@mote/shared').EvidenceDependencies;
     turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean}[];
     omittedTurns:number;
     workingMemory?:{text:string;coveredTurns:number;generatedAt:string};
@@ -190,6 +191,7 @@ export interface ToolTrace {
   count: number;
 }
 export interface AgentAnswer {
+  evidenceDependencies?:import('@mote/shared').EvidenceDependencies;
   contextUsage?:{unit:'utf16_characters';system:number;tools:number;question:number;conversation:number;task:number;evidence:number;prompt:number;outputTokenReserve:number;toolResults:number};
   answer: string;
   citations: Citation[];

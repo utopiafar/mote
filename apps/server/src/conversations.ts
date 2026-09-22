@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {Store,StoreError} from './store.js';
+import {combineDependencies,resolveDependencies} from './conversation-lineage.js';
 
 export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'timeZone'>;
 export type ConversationTurn = {id:string;question:string;scope:ConversationScope;result?:QueryResult;status:'completed'|'failed';error?:{code:string;message:string};createdAt:string;evidenceDeleted?:boolean};
@@ -59,7 +60,8 @@ export class Conversations {
 
   append(previous:Conversation|undefined,input:ConversationScope&{question:string},result:QueryResult) {
     const {question,...scope}=input,now=new Date().toISOString();
-    const turn:ConversationTurn={id:randomUUID(),question,scope,result,status:'completed',createdAt:now};
+    const evidenceDependencies=resolveDependencies(this.store,result.evidenceDependencies);
+    const turn:ConversationTurn={id:randomUUID(),question,scope,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},status:'completed',createdAt:now};
     return this.write(previous,turn);
   }
 
@@ -98,6 +100,7 @@ export class Conversations {
 
   context(conversation:Conversation,maxTurns=20,maxCharacters=60000):NonNullable<QueryInput['conversation']> {
     const turns:NonNullable<QueryInput['conversation']>['turns']=[];
+    const dependencies:QueryResult['evidenceDependencies'][]=[];
     let length=0;
     const completedTurns=conversation.turns.filter(turn=>turn.status!=='failed'&&turn.result).length;
     for(const turn of [...conversation.turns].reverse()) {
@@ -108,7 +111,9 @@ export class Conversations {
       const size=JSON.stringify(value).length;
       if(turns.length===maxTurns||length+size>maxCharacters)break;
       turns.unshift(value);length+=size;
+      dependencies.push(turn.evidenceDeleted?{version:1,complete:true,ids:[]}:turn.result.evidenceDependencies);
     }
-    return {turns,omittedTurns:completedTurns-turns.length};
+    const evidenceDependencies=combineDependencies(dependencies);
+    return {turns,omittedTurns:completedTurns-turns.length,...(evidenceDependencies?{evidenceDependencies}:{})};
   }
 }

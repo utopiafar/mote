@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {join} from 'node:path';
 import {rmSync} from 'node:fs';
+import {rm} from 'node:fs/promises';
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
 import {Store,StoreError,sha256} from './store.js';
@@ -11,7 +12,7 @@ const manifestSchema=z.object({id:z.string().uuid().optional(),name:z.string().m
 type Manifest=z.infer<typeof manifestSchema>&{id:string;fileId?:string};
 /** Bounded binary upload. Each acknowledged part is durable and checksum checked on replay. */
 export class ImportUploads {
- private directory:string;
+ private directory:string;private pending=new Map<string,Promise<unknown>>();private closing=new AbortController();
  constructor(private store:Store,private files:ArchivedFileStore){this.directory=join(store.directory,'import-uploads');privateDirectory(this.directory);store.db.exec('CREATE TABLE IF NOT EXISTS import_uploads(id TEXT PRIMARY KEY,expires INTEGER NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS import_upload_parts(upload_id TEXT NOT NULL REFERENCES import_uploads(id) ON DELETE CASCADE,part INTEGER NOT NULL,bytes INTEGER NOT NULL,hash TEXT NOT NULL,PRIMARY KEY(upload_id,part))');}
  private load(id:string):Manifest{const row=this.store.db.prepare('SELECT json FROM import_uploads WHERE id=? AND expires>?').get(id,Date.now());if(!row)throw new StoreError('Upload expired or missing',404);return JSON.parse(String(row.json));}
  begin(raw:unknown){
@@ -32,13 +33,26 @@ export class ImportUploads {
   const hash=sha256(bytes),prior=this.store.db.prepare('SELECT hash FROM import_upload_parts WHERE upload_id=? AND part=?').get(id,part);if(prior){if(prior.hash!==hash)throw new StoreError('Import part conflicts',409);return {part,bytes:bytes.length,hash};}if(manifest.fileId)throw new StoreError('Upload already committed',409);
   this.store.reserveMetadata(bytes.length+128);const directory=join(this.directory,id);privateDirectory(directory);this.store.contentEncryption.write(join(directory,String(part)),bytes);this.store.db.prepare('INSERT INTO import_upload_parts VALUES(?,?,?,?)').run(id,part,bytes.length,hash);return {part,bytes:bytes.length,hash};
  }
- commit(id:string){const manifest=this.load(id);if(manifest.fileId)return this.files.get(manifest.fileId);
-  const parts=this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id);if(parts.length!==Math.ceil(manifest.sizeBytes/PART))throw new StoreError('Import upload incomplete',409);
+ async close(){this.closing.abort();await Promise.allSettled([...this.pending.values()]);}
+ async commit(id:string,signal?:AbortSignal){const prior=this.pending.get(id)??Promise.resolve(),next=prior.catch(()=>{}).then(()=>this.commitOnce(id,signal));this.pending.set(id,next);try{return await next;}finally{if(this.pending.get(id)===next)this.pending.delete(id);}}
+ private async commitOnce(id:string,signal?:AbortSignal){const cancellation=AbortSignal.any([this.closing.signal,...(signal?[signal]:[])]);cancellation.throwIfAborted();const manifest=this.load(id);if(manifest.fileId)return this.files.get(manifest.fileId);
+  const parts=this.store.db.prepare('SELECT part,bytes,hash FROM import_upload_parts WHERE upload_id=? ORDER BY part').all(id) as {part:number;bytes:number;hash:string}[];if(parts.length!==Math.ceil(manifest.sizeBytes/PART))throw new StoreError('Import upload incomplete',409);
   const store=this.store,directory=this.directory;
   function* buffers(){for(const [index,part] of parts.entries()){if(Number(part.part)!==index)throw new StoreError('Missing import part',409);const bytes=store.contentEncryption.read(join(directory,id,String(index)));if(bytes.length!==part.bytes||sha256(bytes)!==part.hash)throw new StoreError('Import checksum mismatch',409);yield bytes;}}
-  const file=this.files.putParts({name:manifest.name,mimeType:manifest.mimeType},buffers(),manifest.sizeBytes);
+  // A single part is bounded at 4 MiB; larger originals use the shared worker.
+  const file=manifest.sizeBytes<=PART?this.files.putParts({name:manifest.name,mimeType:manifest.mimeType},buffers(),manifest.sizeBytes):await this.files.putUpload({name:manifest.name,mimeType:manifest.mimeType},join(directory,id),parts,manifest.sizeBytes,cancellation,()=>{this.load(id);});
+  cancellation.throwIfAborted();this.load(id);
   this.store.db.prepare('UPDATE import_uploads SET json=? WHERE id=?').run(JSON.stringify({...manifest,fileId:file.id}),id);
-  this.store.db.prepare('DELETE FROM import_upload_parts WHERE upload_id=?').run(id);rmSync(join(this.directory,id),{force:true,recursive:true});return file;
+  this.store.db.prepare('DELETE FROM import_upload_parts WHERE upload_id=?').run(id);await rm(join(this.directory,id),{force:true,recursive:true});return file;
  }
 }
-export function registerImportUploads(app:FastifyInstance,store:Store,files:ArchivedFileStore){const uploads=new ImportUploads(store,files);app.post('/api/import-uploads',{bodyLimit:4096,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>uploads.begin(req.body));app.put('/api/import-uploads/:id/parts/:part',{bodyLimit:PART,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const {id,part}=z.object({id:z.string().uuid(),part:z.coerce.number().int().nonnegative()}).parse(req.params);return uploads.part(id,part,req.body as Buffer);});app.post('/api/import-uploads/:id/commit',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>uploads.commit(z.object({id:z.string().uuid()}).parse(req.params).id));}
+export function registerImportUploads(app:FastifyInstance,store:Store,files:ArchivedFileStore){
+ const uploads=new ImportUploads(store,files);
+ app.addHook('preClose',async()=>uploads.close());
+ app.post('/api/import-uploads',{bodyLimit:4096,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>uploads.begin(req.body));
+ app.put('/api/import-uploads/:id/parts/:part',{bodyLimit:PART,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const {id,part}=z.object({id:z.string().uuid(),part:z.coerce.number().int().nonnegative()}).parse(req.params);return uploads.part(id,part,req.body as Buffer);});
+ app.post('/api/import-uploads/:id/commit',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async(req,reply)=>{
+  const controller=new AbortController(),abort=()=>{if(!reply.raw.writableEnded)controller.abort();};req.raw.once('aborted',abort);reply.raw.once('close',abort);
+  try{return await uploads.commit(z.object({id:z.string().uuid()}).parse(req.params).id,controller.signal);}finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
+ });
+}

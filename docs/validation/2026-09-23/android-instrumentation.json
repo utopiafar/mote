@@ -1,0 +1,101 @@
+{
+  "emulator": "mote_fixture_api35",
+  "personalData": false,
+  "physicalDevice": false,
+  "liveModelCalls": 0,
+  "tests": 22,
+  "passed": 22,
+  "failed": 0,
+  "skipped": 0,
+  "seconds": 24.835,
+  "checks": [
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "manualSourceAckFailureDoesNotScheduleRetry"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "realtimeSendsNewNotesWithoutAnExplicitSyncRequest"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "generatedActivityCaptureIsLocalWithoutEndpointOrModel"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "localNoteWithoutNodeIsReadableAndDoesNotScheduleUploads"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "unsupportedLegacyRoutesFallBackToIndividualAcks"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "manualDoesNotSendHeartbeatOrNotesUntilExplicitSync"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "firstBindingRequiresConfirmationAndDisconnectCannotRedirectBoundRecords"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "manualWrongAckAndDisconnectKeepRecordWithoutAutomaticRetry"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "intervalHoldsNewRecordsUntilDueAndThenFlushes"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "batchFlushesAtThresholdAndOldestAgeWithoutStrandingSmallQueues"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "partialBatchAcknowledgementKeepsOnlyUnconfirmedRecords"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "unboundSourceRevisionsParticipateInTheSameOriginAndBatchProtection"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "exactTwentyFiveRecordChunkReportsIdleBeforeFinalHeartbeat"
+    },
+    {
+      "class": "dev.mote.collector.OfflineSyncInstrumentedTest",
+      "test": "emptyRealtimeQueueNeverStartsDataUploadSession"
+    },
+    {
+      "class": "dev.mote.collector.FixtureInstrumentedTest",
+      "test": "keystoreQueueSurvivesRecreationAndAcknowledgement"
+    },
+    {
+      "class": "dev.mote.collector.FixtureInstrumentedTest",
+      "test": "bundledOcrReadsOnlyUnmaskedSyntheticText"
+    },
+    {
+      "class": "dev.mote.collector.LocalStateInstrumentedTest",
+      "test": "stockUpdatesAllConsumersAndSurvivesBackgroundWithoutCounterDeltas"
+    },
+    {
+      "class": "dev.mote.collector.LocalSourcesInstrumentedTest",
+      "test": "generatedProviderCalendarFilesReferenceAndPartialDeletion"
+    },
+    {
+      "class": "dev.mote.collector.LocalSourcesInstrumentedTest",
+      "test": "nativeSourcesScreenDoesNotRequestCalendarPermissionUntilUserConnects"
+    },
+    {
+      "class": "dev.mote.collector.AppPolicyInstrumentedTest",
+      "test": "generatedImageProcessingKeepsObservationTimeInsteadOfCompletionTime"
+    },
+    {
+      "class": "dev.mote.collector.AppPolicyInstrumentedTest",
+      "test": "generatedProviderReportsActualSizeAndModificationWithoutInventingDates"
+    },
+    {
+      "class": "dev.mote.collector.AppPolicyInstrumentedTest",
+      "test": "activityPipelineDoesNotNeedModelsAndMetadataTogglePreservesQueuedBytes"
+    }
+  ]
+}

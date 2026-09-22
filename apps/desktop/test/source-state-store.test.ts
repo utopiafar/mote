@@ -49,3 +49,15 @@ test('directory scan checkpoints persist only changed catalog rows and migrate i
  sourceState(path,sourceStatePatch(before,{...before,checkpoint:undefined}));assert.equal(sourceState(path)?.checkpoint,undefined);
  const cleared=new DatabaseSync(path+'.sqlite');assert.equal(cleared.prepare("SELECT count(*) n FROM entries WHERE section='catalog'").get()!.n,0);cleared.close();
 });
+
+test('outbox arrays migrate into ordered per-revision rows and one ACK deletes only one row',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'mote-outbox-')),path=join(directory,'source.json');afterEach(()=>rm(directory,{recursive:true,force:true}));
+ const before={version:2,known:{},pendingRealtime:[{externalId:'one',revision:'2'},{externalId:'one',revision:'3'},{externalId:'two',revision:'1'}],pendingHistory:[]};
+ sourceState(path,sourceStatePatch({},before));
+ const db=new DatabaseSync(path+'.sqlite');db.exec("DELETE FROM entries WHERE section='pendingRealtime'");db.prepare("INSERT INTO entries VALUES('state','pendingRealtime',?)").run(Buffer.from(JSON.stringify(before.pendingRealtime)));db.close();
+ assert.deepEqual(sourceState(path),before);
+ const next={...before,pendingRealtime:before.pendingRealtime.slice(1)},patches=sourceStatePatch(before,next);
+ assert.equal(patches.length,1);assert.equal(patches[0].section,'pendingRealtime');assert.equal(patches[0].value,undefined);
+ sourceState(path,patches);assert.deepEqual(sourceState(path),next);
+ const inspect=new DatabaseSync(path+'.sqlite');assert.equal(inspect.prepare("SELECT count(*) n FROM entries WHERE section='pendingRealtime'").get()!.n,2);assert.equal(inspect.prepare("SELECT count(*) n FROM entries WHERE section='state' AND key='pendingRealtime'").get()!.n,0);inspect.close();
+});

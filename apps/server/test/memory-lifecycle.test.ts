@@ -4,7 +4,9 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {AgentTimeoutError} from '@mote/agent';
 import {Store} from '../src/store.js';
+import {ExecutionEngine} from '../src/execution-engine.js';
 import {MemoryStore} from '../src/memory.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {MemoryLifecycle} from '../src/memory-lifecycle.js';
@@ -32,6 +34,25 @@ test('restart preserves failed window, snapshot settings and backoff; success al
   lifecycle=new MemoryLifecycle(store,()=>true,()=>now);t.after(()=>lifecycle.close());let seen=0;
   lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(w){seen++;assert.equal(w.checkpoint,'durable-child');assert.equal(w.settings.batchCharacters,12000);}});
   lifecycle.configure({...lifecycle.settings(),batchCharacters:500});await lifecycle.tick();assert.equal(seen,0);now+=121000;await lifecycle.tick();assert.equal(seen,1);assert.equal(lifecycle.view().extensions[0].cursor,25);
+});
+
+test('consolidation model timeout remains visible across restart without changing its window or retry delay',async t=>{
+ for(const sharedEngine of [false,true])await t.test(sharedEngine?'shared executor':'direct extension',async t=>{
+  const store=fixture(t),engine=sharedEngine?new ExecutionEngine(store):undefined;let now=Date.now(),calls=0;
+  let lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,engine);
+  try{
+   lifecycle.register({id:'consolidation',version:'fixture',stream:'memory',async run(_window,checkpoint){calls++;checkpoint('generated-consolidation');throw new AgentTimeoutError();}});
+   lifecycle.configure({...lifecycle.settings(),consolidation:{...lifecycle.settings().consolidation,minChanges:1}});
+   store.db.prepare("INSERT INTO memory_events(stream,entity) VALUES('memory',?)").run(randomUUID());
+   await lifecycle.tick();const failed=lifecycle.view().extensions[0];
+   assert.equal(failed.error,'provider_timeout');assert.equal(failed.status,'retry_wait');assert.equal(failed.failures,1);assert.equal(failed.cursor,0);assert.equal(failed.retryAt,now+120000);assert.equal(failed.active?.checkpoint,'generated-consolidation');
+   await lifecycle.close();lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,engine);
+   lifecycle.register({id:'consolidation',version:'fixture',stream:'memory',async run(window){calls++;assert.equal(window.id,failed.active!.id);assert.equal(window.checkpoint,'generated-consolidation');}});
+   assert.equal(lifecycle.view().extensions[0].error,'provider_timeout');now=failed.retryAt!-1;await lifecycle.tick();assert.equal(calls,1);
+   now++;await lifecycle.tick();await lifecycle.tick();const completed=lifecycle.view().extensions[0];
+   assert.equal(calls,2);assert.equal(completed.cursor,failed.active!.through);assert.equal(completed.error,undefined);assert.equal(completed.retryAt,undefined);assert.equal(completed.failures,0);assert.equal(completed.active,undefined);
+  }finally{await lifecycle.close();await engine?.close();}
+ });
 });
 
 test('480 originals across six months replay all current segments; FTS finds old scoped Chinese/English; pagination and deletion stay correct',async t=>{

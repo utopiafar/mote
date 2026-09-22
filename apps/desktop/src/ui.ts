@@ -572,7 +572,14 @@ async function refreshSources(): Promise<void> {
     const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary'; edit.textContent = moteText("编辑规则"); edit.addEventListener('click', () => editSource(row.source.id));
     const pause = document.createElement('button'); pause.type = 'button'; pause.className = 'secondary'; pause.textContent = row.source.enabled ? moteText("暂停本机同步") : moteText("恢复本机同步"); pause.disabled = sourceBusy;
     pause.addEventListener('click', () => void sourceAction(async () => { await desktopApi.updateSource(row.source.id, { ...row.source, enabled: !row.source.enabled }); }));
-    actions.append(edit, pause); card.append(title, detail, status, actions); list.append(card);
+    actions.append(edit, pause); card.append(title, detail, status);
+    if(row.blocked){
+      const failures=document.createElement('details'),summary=document.createElement('summary'),explanation=document.createElement('p');
+      failures.className='source-failures';summary.textContent=moteText('本机待处理 {0} 项',row.blocked);explanation.className='helper';explanation.textContent=moteText('这些文件的本机副本仍保留，其他资料会继续同步。');failures.append(summary,explanation);
+      for(const failure of row.failures??[]){const item=document.createElement('p');item.className='helper profile-path';item.textContent=`${failure.title||failure.externalId} · ${failure.status===410?moteText('中央已删除此文件'):failure.status===409?moteText('文件版本冲突'):moteText('中央拒绝此文件（{0}）',failure.status)}`;failures.append(item);}
+      card.append(failures);
+    }
+    card.append(actions); list.append(card);
   }
   } finally { sourcesReading = false; }
 }

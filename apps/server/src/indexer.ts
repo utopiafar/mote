@@ -8,6 +8,10 @@ import type { Config } from './config.js';
 import type { Store, Range } from './store.js';
 import type { ServerDiagnostics } from './diagnostics.js';
 import { randomUUID } from 'node:crypto';
+import {join} from 'node:path';
+import {scanVectors,type VectorQuery,type VectorScan} from './vector-work.js';
+
+const EMBEDDING_INPUT_CODE_UNITS=20000;
 
 class EmbeddingError extends ProviderFailure {
   constructor(readonly code:'embedding_http'|'embedding_invalid'|'embedding_transport',readonly httpStatus?:number,retryAfter?:string|null) {
@@ -68,7 +72,7 @@ export class Indexer {
   }
   private async performEmbedding(text:string,timeoutMs:number,signal:AbortSignal,operationId:string):Promise<number[]>{
     const task=async()=>{
-    const receipt=this.admission?.({bytes:Buffer.byteLength(text.slice(0,20000)),operationId});
+    const receipt=this.admission?.({bytes:Buffer.byteLength(text.slice(0,EMBEDDING_INPUT_CODE_UNITS)),operationId});
     try{const result=await this.requestEmbedding(text,timeoutMs,signal);receipt?.finish(result.usage);return result.vector;}catch(error){receipt?.finish(undefined,true);throw error;}
     };
     return this.diagnostics?this.diagnostics.measure('index','embedding',task,()=>({count:1})):task();
@@ -76,7 +80,7 @@ export class Indexer {
   private async requestEmbedding(text:string,timeoutMs:number,signal?:AbortSignal) {
     const url=this.config.embeddingBaseUrl.replace(/\/$/,'')+'/embeddings';
     let response:Response;
-    try{response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(this.config.embeddingApiKey?{Authorization:`Bearer ${this.config.embeddingApiKey}`}:{})},body:JSON.stringify({model:this.config.embeddingModel,input:text.slice(0,20000)}),signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(timeoutMs),...(signal?[signal]:[])]),redirect:'error'});}catch{throw new EmbeddingError('embedding_transport');}
+    try{response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...(this.config.embeddingApiKey?{Authorization:`Bearer ${this.config.embeddingApiKey}`}:{})},body:JSON.stringify({model:this.config.embeddingModel,input:text.slice(0,EMBEDDING_INPUT_CODE_UNITS)}),signal:AbortSignal.any([this.abort.signal,AbortSignal.timeout(timeoutMs),...(signal?[signal]:[])]),redirect:'error'});}catch{throw new EmbeddingError('embedding_transport');}
     if(!response.ok){await response.body?.cancel();throw new EmbeddingError('embedding_http',response.status,response.headers.get('retry-after'));}
     let data:{data?:{embedding?:number[]}[];usage?:{prompt_tokens?:number;total_tokens?:number}};
     try {
@@ -109,17 +113,35 @@ export class Indexer {
   }
   async close() {this.closing=true;this.abort.abort();if(this.owned)await this.engine.close();await this.current;for(const unregister of this.unregister)unregister();this.unregister=[];}
   async search(args:Range&{query?:string;signal?:AbortSignal}) {
-    const lexical=[this.store.search(args),this.files?.search(args)??[]];
-    let channels=lexical,degraded=false;let vectorCoverage:unknown;
+    args.signal?.throwIfAborted();
+    // A completed vector scan is not full-text semantic coverage. Preserve this
+    // distinction in the tool envelope, including empty and degraded results.
+    const embeddingInput=this.configured?{maxUtf16CodeUnits:EMBEDDING_INPUT_CODE_UNITS,evidencePolicy:'prefix_per_capture_or_file_chunk',queryTruncated:(args.query?.length??0)>EMBEDDING_INPUT_CODE_UNITS,fullTextFallback:'lexical'}:undefined;
+    const readLexical=()=>[this.store.search(args),this.files?.search(args)??[]];
+    const lexical=readLexical();
+    let channels=lexical,degraded=false;let vectorCoverage:unknown,reason:string|undefined;
     if(this.configured&&args.query&&args.source!=='activity'&&args.source!=='media'&&args.collection!=='activity'){
+      const controller=new AbortController(),deadline=setTimeout(()=>controller.abort(new Error('vector_timeout')),1200);deadline.unref();
+      const signal=AbortSignal.any([controller.signal,this.abort.signal,...(args.signal?[args.signal]:[])]);
+      let scanning=false;
       try{
         const key=this.config.embeddingModel+"\n"+args.query,cached=this.queryCache.get(key);
-        const vector=cached&&Date.now()-cached.at<60000?cached.vector:await this.embed(args.query,1200,args.signal);
+        const vector=cached&&Date.now()-cached.at<60000?cached.vector:await this.embed(args.query,1200,signal);
         if(!cached||cached.vector!==vector){if(this.queryCache.size>=128)this.queryCache.delete(this.queryCache.keys().next().value!);this.queryCache.set(key,{at:Date.now(),vector});}
-        const captures=this.store.vectorSearch(vector,this.config.embeddingModel,args),files=this.files?.vectorSearch(vector,this.config.embeddingModel,args)??[];
-        vectorCoverage={captures:captures.coverage,files:'coverage' in files?files.coverage:null};channels=[...lexical,captures,files];
-      }catch(error){if(this.closing)throw error;degraded=true;}
+        const captureQuery=this.store.vectorQuery(this.config.embeddingModel,args),fileQuery=this.files?.vectorQuery(this.config.embeddingModel,args);
+        scanning=true;
+        const scans=await scanVectors({path:join(this.store.directory,'mote.sqlite'),queries:[captureQuery,...(fileQuery?[fileQuery]:[])],vector,limit:Math.max(1,Math.min(args.limit??50,200))},signal);
+        signal.throwIfAborted();
+        // The worker snapshot may predate a delete, revision or scope change.
+        // Recheck only the bounded Top-K against the same host query before disclosure.
+        const current=(query:VectorQuery,scan:VectorScan)=>{const expected=new Map(scan.candidates.map(c=>[c.id,c.embeddingHash]));const rows=this.store.db.prepare(`SELECT * FROM (${query.sql}) WHERE id IN (SELECT value FROM json_each(?))`).all(...query.values,JSON.stringify([...expected.keys()]));const valid=new Set(rows.filter(row=>expected.get(String(row.id))===sha256(String(row.embedding))).map(row=>String(row.id)));return scan.candidates.filter(c=>valid.has(c.id)).map(c=>c.id);};
+        const captures=this.store.evidence(current(captureQuery,scans[0])),files=fileQuery&&scans[1]?this.files!.evidence(current(fileQuery,scans[1])):[];
+        vectorCoverage={captures:scans[0].coverage,files:scans[1]?.coverage??null};channels=[...lexical,captures,files];
+      }catch(error){if(this.closing||args.signal?.aborted)throw error;degraded=true;reason=controller.signal.aborted?'retrieval_timeout':scanning?'vector_unavailable':'embedding_unavailable';vectorCoverage={complete:false,reason};}finally{clearTimeout(deadline);}
     }
+    // An asynchronous provider/worker may overlap deletion or source replacement.
+    // Refresh bounded lexical results as well before exposing this response.
+    if(this.configured&&args.query){const current=readLexical();lexical[0]=current[0];lexical[1]=current[1];if(channels!==lexical){channels[0]=current[0];channels[1]=current[1];}}
     // Reciprocal rank fusion across independent channels; no file-table priority.
     const ranked=new Map<string,{record:(typeof lexical)[number][number];score:number}>();
     for(const channel of channels){const seen=new Set<string>();channel.forEach((record,index)=>{
@@ -127,8 +149,9 @@ export class Indexer {
       const previous=ranked.get(record.id);
       ranked.set(record.id,{record:previous?.record??record,score:(previous?.score??0)+1/(60+index+1)});
     });}
-    const result=[...ranked.values()].sort((a,b)=>b.score-a.score||a.record.id.localeCompare(b.record.id)).slice(0,args.limit??50).map(({record})=>({...record,retrieval:{mode:channels===lexical?'lexical':'hybrid',degraded,...(vectorCoverage?{vectorCoverage}:{}),...(degraded?{reason:'embedding_unavailable'}:{})}}));
+    const retrieval={mode:channels===lexical?'lexical':'hybrid',degraded,...(embeddingInput?{embeddingInput}:{}),...(vectorCoverage?{vectorCoverage}:{}),...(degraded?{reason}:{})};
+    const result=[...ranked.values()].sort((a,b)=>b.score-a.score||a.record.id.localeCompare(b.record.id)).slice(0,args.limit??50).map(({record})=>({...record,retrieval}));
     // Preserve degradation even for an empty result, without changing the public array API.
-    return Object.assign(result,{retrieval:{mode:channels===lexical?'lexical':'hybrid',degraded,...(vectorCoverage?{vectorCoverage}:{}),...(degraded?{reason:'embedding_unavailable'}:{})}});
+    return Object.assign(result,{retrieval});
   }
 }

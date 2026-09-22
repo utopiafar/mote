@@ -38,7 +38,7 @@ class ComplexNotesInstrumentedTest {
     private fun state() = JSONObject(stateFile.readText())
     private fun writeState(value: JSONObject) { stateFile.writeText(value.toString()) } // Synthetic metadata/fixtures only.
     private fun field(view: android.view.View, hint: String): android.widget.EditText? {
-        if (view is android.widget.EditText && view.hint?.toString() == hint) return view
+        if (view is android.widget.EditText && view.hint?.toString() == MoteI18n.text(hint)) return view
         if (view is android.view.ViewGroup) for (index in 0 until view.childCount) field(view.getChildAt(index), hint)?.let { return it }
         return null
     }
@@ -154,7 +154,7 @@ class ComplexNotesInstrumentedTest {
             if (item.getString("mood").isBlank()) assertTrue(actual.isNull("mood")) else assertEquals(item.getString("mood"), actual.getString("mood"))
             val duplicate = JSONObject().put("id", actual.getString("id")).put("deviceId", actual.getString("deviceId"))
                 .put("deviceName", actual.getString("deviceName")).put("platform", "android").put("capturedAt", actual.getString("capturedAt"))
-                .put("source", "note").put("appId", "dev.mote.notes").put("appName", "随手记").put("durationMs", 0)
+                .put("source", "note").put("appId", actual.getString("appId")).put("appName", actual.getString("appName")).put("durationMs", 0)
                 .put("ocrText", item.getString("text")).put("privacy", JSONObject().put("excluded", false).put("redacted", false).put("mode", "none"))
             if (actual.has("metadata") && !actual.isNull("metadata")) duplicate.put("metadata", actual.getJSONObject("metadata"))
             if (item.getString("mood").isNotBlank()) duplicate.put("mood", item.getString("mood"))

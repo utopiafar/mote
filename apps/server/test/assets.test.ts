@@ -29,7 +29,7 @@ test('hundreds of long-period observations, import and directory original share 
  files.forget(ack.id);assert.equal(store.db.prepare('SELECT count(*) n FROM assets').get()!.n,0);
 });
 
-test('64 MiB import commit and streaming read are bounded by parts, resume and verify every part',t=>{
+test('64 MiB import commit and streaming read are bounded by parts, resume and verify every part',async t=>{
  const store=fixture(t),archived=new ArchivedFileStore(store),uploads=new ImportUploads(store,archived),id=randomUUID();
  const manifest={id,name:'generated-long.bin',sizeBytes:16*FILE_PART_BYTES},expected=createHash('sha256');
  uploads.begin(manifest);for(let part=0;part<16;part++){const bytes=Buffer.alloc(FILE_PART_BYTES,part);expected.update(bytes);uploads.part(id,part,bytes);}
@@ -37,8 +37,8 @@ test('64 MiB import commit and streaming read are bounded by parts, resume and v
  const originalConcat=Buffer.concat;let largest=0;
  Buffer.concat=((list:readonly Uint8Array[],totalLength?:number)=>{largest=Math.max(largest,totalLength??list.reduce((n,b)=>n+b.length,0));return originalConcat(list,totalLength);}) as typeof Buffer.concat;
  let file:ReturnType<ArchivedFileStore['get']>;
- try{file=uploads.commit(id);}finally{Buffer.concat=originalConcat;}
- assert.ok(largest<=FILE_PART_BYTES+128,`whole-file allocation: ${largest}`);assert.equal(file!.hash,expected.digest('hex'));assert.equal(uploads.commit(id).id,file!.id);
+ try{file=await uploads.commit(id);}finally{Buffer.concat=originalConcat;}
+ assert.ok(largest<=FILE_PART_BYTES+128,`whole-file allocation: ${largest}`);assert.equal(file!.hash,expected.digest('hex'));assert.equal((await uploads.commit(id)).id,file!.id);
  const actual=createHash('sha256');let total=0;for(const part of archived.bytes(file!.id)){assert.ok(part.length<=FILE_PART_BYTES);actual.update(part);total+=part.length;}
  assert.equal(total,manifest.sizeBytes);assert.equal(actual.digest('hex'),file!.hash);
  store.contentEncryption.write(join(store.assets.directory,file!.hash,'15'),Buffer.alloc(FILE_PART_BYTES,66));

@@ -1,0 +1,32 @@
+{
+  "ok": true,
+  "personalData": false,
+  "liveModelCalls": 0,
+  "http": {
+    "acceptedFiles": 199,
+    "blockedFiles": 1,
+    "followingNotes": 1,
+    "batches": [
+      100,
+      100,
+      100
+    ],
+    "ackPersistenceRestart": true,
+    "requests": 10,
+    "p95Ms": 195.13033299999995,
+    "injectedRttMs": 50,
+    "timing": "request through parsed response, plus configured round-trip delay",
+    "transport": "actual loopback HTTP; controlled delay is not a lossy WAN simulation"
+  },
+  "catalog": {
+    "existingItems": 100000,
+    "changedItemsPerRound": 1,
+    "rounds": 7,
+    "medianStageAckMs": 2.2295420000000377,
+    "maxStageAckMs": 19.601666999999907,
+    "incrementalCheckpointMs": 0.7855829999998605,
+    "maxWorkerPayloadBytes": 981,
+    "maxPatchesPerTransaction": 5,
+    "foregroundCatalogEnumerations": 0
+  }
+}

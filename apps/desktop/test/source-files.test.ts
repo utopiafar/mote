@@ -101,3 +101,22 @@ it('directory metadata I/O overlaps within four slots without reordering committ
  expect(peak).toBe(4);expect(first.candidates.length).toBe(7);expect(rest.complete).toBe(true);
  expect([...first.candidates,...rest.candidates].map(item=>item.relativePath)).toEqual(Array.from({length:20},(_,i)=>String(i).padStart(2,'0')+'.txt'));
 });
+
+it('incremental catalog drafts preserve prior state until durable commit and roll back an unfinished shard',async()=>{
+ const {DirectoryCatalog}=await import('../src/directory-catalog');
+ const {SourceSync}=await import('../src/source-sync');
+ const sync=new SourceSync(join(root,'state.json'));await sync.initialize();
+ const selected=join(root,'selected');await mkdir(selected);await writeFile(join(selected,'a.txt'),'Generated first');
+ const first=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,undefined,undefined,undefined,[],true);
+ expect(first.checkpoint&&'root' in first.checkpoint?first.checkpoint.catalog:undefined).toEqual({});expect(first.catalogChanges).toHaveLength(1);
+ await sync.stage(first,false);const old=sync.fileCheckpoint()!;expect(Object.keys(old.catalog)).toEqual(['a.txt']);
+ const draft=new DirectoryCatalog(selected,old,undefined,true);draft.savepoint();
+ const entry=old.catalog['a.txt'];draft.observe({path:join(selected,'a.txt'),...entry,size:123,quickHash:'changed'});
+ expect(old.catalog['a.txt'].size).not.toBe(123);expect(draft.catalogChanges()).toHaveLength(1);
+ draft.rollbackSavepoint();expect(draft.catalogChanges()).toEqual([]);expect(old.catalog['a.txt'].size).toBe(entry.size);
+ await writeFile(join(selected,'a.txt'),'Generated changed');
+ const changed=await scanSourceFiles(selected,DEFAULT_SOURCE_OPTIONS,undefined,undefined,undefined,sync.fileCheckpoint(),[],true);
+ expect(sync.fileCheckpoint()!.catalog['a.txt'].size).toBe(entry.size);await sync.stage(changed,false);
+ const reopened=new SourceSync(join(root,'state.json'));await reopened.initialize();
+ expect(reopened.fileCheckpoint()!.catalog['a.txt'].size).toBe(Buffer.byteLength('Generated changed'));
+});

@@ -89,8 +89,8 @@ export class ProcessingRuntime {
         allowedActions:[...(['failed','blocked','cancelled'].includes(state)?['retry-step' as const]:[]),...(!['succeeded','cancelled'].includes(state)?['cancel' as const]:[])]};
     });
     return {jobs,limit,nextCursor:rows.length>limit?Number(rows[limit-1].rowid):null,settings:this.settings(),processors:this.registry.list(),queues:this.store.db.prepare('SELECT lane,state,COUNT(*) AS count FROM processing_jobs GROUP BY lane,state').all(),usage:this.store.db.prepare('SELECT * FROM processing_usage ORDER BY day DESC LIMIT 28').all(),delivery:'at_least_once; output commit is fenced; provider retries may incur additional cost'};}
-  retry(id:string){this.engine.retry(id);}
-  cancel(id:string){this.engine.cancel(id);}
+  retry(id:string){this.job(id);const state=this.engine.get(id)?.state;if(!state||!['failed','blocked','cancelled'].includes(state))throw new StoreError('Workflow step cannot be retried in its current state',409);this.engine.retry(id);}
+  cancel(id:string){this.job(id);const state=this.engine.get(id)?.state;if(!state||state==='succeeded'||state==='cancelled')throw new StoreError('Workflow step cannot be cancelled in its current state',409);this.engine.cancel(id);}
   private job(id:string):Job{const row=this.store.db.prepare('SELECT json FROM processing_jobs WHERE id=?').get(id);if(!row)throw new StoreError('Workflow step unavailable',404);return JSON.parse(String(row.json));}
   private project(step:ExecutionStep){
     this.store.db.prepare('UPDATE processing_jobs SET state=?,attempts=?,available_at=?,lease_until=0,fence=NULL,error=? WHERE id=?').run(step.state,step.attempts,step.availableAt,step.error??null,step.id);
@@ -132,6 +132,7 @@ export class ProcessingRuntime {
   }
   private process(job:Job,signal:AbortSignal,step:ExecutionStep){return this.registry.get(job.processor)!.process({...this.inputs(job),config:job.config,signal,execution:{operationId:step.operationId,jobId:job.id,stepId:step.id}});}
   private commit(job:Job,result:unknown){
+    if(this.registry.get(job.processor)?.version!==job.version)throw new ExecutionFailure('blocked','processor_version_unavailable');
     const outputs=z.array(artifactOutput).min(1).max(16).parse(result);if(JSON.stringify(outputs).length>200000)throw new ProcessingFailure('permanent','output_limit');
     const {artifacts}=this.inputs(job);
     job.outputs=outputs.map((output,index)=>{const artifactId=fingerprint([job.id,index]);this.store.archive.save(artifactId,job.id,job.id,output,job.inputs,job.processor,job.version,fingerprint(job.config),job.inputs.map(i=>i.id),artifacts.flatMap(a=>a.outputs.map(o=>({id:o.id,revision:o.revision}))));return artifactId;});

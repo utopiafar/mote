@@ -1,9 +1,11 @@
 import {createHash,createDecipheriv,randomUUID} from 'node:crypto';
 import {existsSync,readFileSync,renameSync,rmSync,readdirSync,statSync,openSync,closeSync,fsyncSync} from 'node:fs';
+import {rm} from 'node:fs/promises';
 import {join} from 'node:path';
 import {FILE_PART_BYTES,FILE_MAX_BYTES} from '@mote/shared';
 import {privateDirectory,privateFile} from './private-storage.js';
 import {StoreError,type Store} from './store.js';
+import {prepareAsset} from './asset-work.js';
 
 export type Asset={hash:string;bytes:number;parts:number;format:'chunks'|'image-legacy'|'archive-legacy'};
 const hashOf=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
@@ -11,6 +13,7 @@ const syncDirectory=(path:string)=>{const fd=openSync(path,'r');try{fsyncSync(fd
 /** Authoritative bytes, deduplication, references and GC. Observations retain independent domain IDs. */
 export class AssetStore {
  readonly directory:string;
+ private uploads=new Map<string,Promise<unknown>>();
  constructor(private store:Store){
   const root=join(store.directory,'files');privateDirectory(root);this.directory=join(root,'objects');privateDirectory(this.directory);
   store.db.exec(`CREATE TABLE IF NOT EXISTS assets(hash TEXT PRIMARY KEY,bytes INTEGER NOT NULL,parts INTEGER NOT NULL,format TEXT NOT NULL);
@@ -53,6 +56,48 @@ export class AssetStore {
  get(hash:string):Asset{if(!/^[a-f0-9]{64}$/.test(hash))throw new StoreError('Invalid asset hash');const row=this.store.db.prepare('SELECT * FROM assets WHERE hash=?').get(hash);if(!row)throw new StoreError('Asset unavailable',404);if(!['chunks','image-legacy','archive-legacy'].includes(String(row.format))||!Number.isSafeInteger(row.bytes)||Number(row.bytes)<0||Number(row.bytes)>FILE_MAX_BYTES||!Number.isSafeInteger(row.parts)||Number(row.parts)<0||Number(row.parts)>128)throw new StoreError('Invalid asset metadata',500);return row as Asset;}
  hold(hash:string){const id=randomUUID();this.store.db.prepare('INSERT INTO asset_pins VALUES(?,?,?)').run(id,hash,Date.now()+86400000);return ()=>{this.store.db.prepare('DELETE FROM asset_pins WHERE id=?').run(id);};}
  put(bytes:Buffer){return this.putParts([bytes],bytes.length,hashOf(bytes));}
+ /** Prepare immutable upload parts outside the event loop and outside SQLite.
+  * The pin protects a deduplicated destination and staging from concurrent GC. */
+ async putUpload(directory:string,parts:{part:number;hash:string;bytes:number}[],expectedBytes:number,expectedHash:string|undefined,signal?:AbortSignal):Promise<Asset & {release:()=>void}>{
+  const key=expectedHash??directory,prior=this.uploads.get(key)??Promise.resolve(),next=prior.catch(()=>{}).then(()=>this.prepareUpload(directory,parts,expectedBytes,expectedHash,signal));
+  this.uploads.set(key,next);try{return await next;}finally{if(this.uploads.get(key)===next)this.uploads.delete(key);}
+ }
+ private async prepareUpload(directory:string,parts:{part:number;hash:string;bytes:number}[],expectedBytes:number,expectedHash:string|undefined,signal?:AbortSignal):Promise<Asset & {release:()=>void}>{
+  if(!Number.isSafeInteger(expectedBytes)||expectedBytes<0||expectedBytes>FILE_MAX_BYTES||expectedHash!==undefined&&!/^[a-f0-9]{64}$/.test(expectedHash)||parts.length!==Math.ceil(expectedBytes/FILE_PART_BYTES))throw new StoreError('Invalid asset size or hash',413);
+  if(this.store.db.isTransaction)throw new StoreError('Asset preparation cannot run inside a transaction',409);
+  this.directories();signal?.throwIfAborted();
+  const initialHash=expectedHash??'0'.repeat(64),staging=join(this.directory,initialHash+'.'+randomUUID()+'.tmp');let release=this.hold(initialHash);
+  let retained=false;
+  try{
+   privateDirectory(staging);
+   const encryption=this.store.contentEncryption;
+   const enabled=encryption.enabled;
+   const result=await prepareAsset({directory,staging,destinationRoot:this.directory,hash:expectedHash,bytes:expectedBytes,partBytes:FILE_PART_BYTES,parts,encryption:{enabled,legacyEncrypted:encryption.legacyEncrypted,key:encryption.key?.toString('hex')}},signal);
+   signal?.throwIfAborted();
+   const actualHash=result.hash;if(!/^[a-f0-9]{64}$/.test(actualHash)||expectedHash&&actualHash!==expectedHash)throw new StoreError('Asset checksum mismatch',409);
+   if(actualHash!==initialHash){const releaseInitial=release;release=this.hold(actualHash);releaseInitial();}
+   const destination=join(this.directory,actualHash);
+   if(encryption.enabled!==enabled)throw new StoreError('Content storage settings changed; retry commit',409);
+   // Another writer or conversion may have changed the destination while the
+   // worker ran. Retry, rather than synchronously scanning it on the HTTP thread.
+   if(existsSync(destination)){
+    const current=statSync(destination),verified=result.destination;
+    if(!verified||current.dev!==verified.dev||current.ino!==verified.ino||current.mtimeMs!==verified.mtimeMs)throw new StoreError('Asset changed during preparation; retry commit',503);
+   }else if(result.destination)throw new StoreError('Asset changed during preparation; retry commit',503);
+   const db=this.store.db;db.exec('BEGIN IMMEDIATE');
+   try{
+    const old=db.prepare('SELECT bytes FROM assets WHERE hash=?').get(actualHash);
+    if(old&&old.bytes!==expectedBytes)throw new StoreError('Asset size conflict',409);
+    this.store.reserveMetadata(old?0:expectedBytes);
+    if(!result.destination){renameSync(staging,destination);syncDirectory(this.directory);}
+    db.prepare("INSERT INTO assets VALUES(?,?,?,'chunks') ON CONFLICT(hash) DO UPDATE SET parts=excluded.parts,format='chunks'").run(actualHash,expectedBytes,parts.length);
+    const record=db.prepare('INSERT INTO asset_parts VALUES(?,?,?) ON CONFLICT(hash,part) DO UPDATE SET checksum=excluded.checksum');
+    for(const [index,checksum] of result.checksums.entries())record.run(actualHash,index,checksum);
+    db.exec('COMMIT');
+   }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+   retained=true;return {hash:actualHash,bytes:expectedBytes,parts:parts.length,format:'chunks',release};
+  }finally{if(!retained)release();await rm(staging,{recursive:true,force:true});}
+ }
  putParts(chunks:Iterable<Buffer>,expectedBytes:number,expectedHash?:string):Asset & {release:()=>void} {
   if(!Number.isSafeInteger(expectedBytes)||expectedBytes<0||expectedBytes>FILE_MAX_BYTES||expectedHash!==undefined&&!/^[a-f0-9]{64}$/.test(expectedHash))throw new StoreError('Invalid asset size or hash',413);
   this.directories();

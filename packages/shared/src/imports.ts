@@ -15,6 +15,7 @@ export type ImportJob={
   preview?:ImportPreview;dispositions?:ImportDispositions;error?:string;captureIds:string[];memoryJobId?:string;
 };
 export const importRequestSchema=z.object({
+  requestId:z.string().uuid().optional(),
   name:z.string().trim().min(1).max(200).optional(),
   processing:z.enum(['automatic','preview']).default('preview'),
   instruction:z.string().max(12000).default(''),

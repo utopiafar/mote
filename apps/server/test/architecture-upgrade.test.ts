@@ -148,3 +148,17 @@ test('cached DAG steps can be traced from each operation without a second execut
  assert.deepEqual(operations.map(o=>runtime.engine.list({operationId:String(o.operation_id)}).items.length).sort(),[1,2]);assert.equal(calls,2);
  assert.ok(store.db.prepare('SELECT fence,lease_until FROM processing_jobs').all().every(row=>row.fence===null&&row.lease_until===0),'legacy projection still owned execution leases');
 });
+
+test('workflow controls reject foreign or missing steps and preserve completed cache entries',async t=>{
+ const store=fixture(t),runtime=new ProcessingRuntime(store);t.after(()=>runtime.close());const a=observation();await store.ingest(a);let calls=0;
+ runtime.engine.register({kind:'foreign',pool:'foreign',concurrency:()=>1,validate:()=>true,execute:async()=>null,commit:()=>{}});
+ const foreign=runtime.engine.enqueue('query:unrelated','foreign',{});
+ for(const id of [foreign,'missing']){
+   assert.throws(()=>runtime.cancel(id),{statusCode:404});assert.throws(()=>runtime.retry(id),{statusCode:404});
+ }
+ assert.equal(runtime.engine.get(foreign)!.state,'waiting');
+ runtime.registry.register({id:'fixture.controls',version:'1',lane:'extract',async process(){calls++;return [{kind:'text',text:'Preserved output',metadata:{}}];}});
+ const id=runtime.enqueue([{name:'s',processor:'fixture.controls',inputs:[a.id]}]).s;await runtime.tick();
+ assert.throws(()=>runtime.retry(id),{statusCode:409});assert.throws(()=>runtime.cancel(id),{statusCode:409});
+ await runtime.tick();assert.equal(calls,1);assert.equal(runtime.engine.get(id)!.state,'succeeded');
+});

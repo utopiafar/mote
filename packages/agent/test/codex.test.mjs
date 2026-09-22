@@ -77,6 +77,16 @@ test('Codex deadlines terminate the child',async t=>{
   await fake(t,'timeout');const session=new CodexSession({model:'fixture',timeoutMs:100},async()=>({}));
   try{await assert.rejects(async()=>{await session.start('Generated test',codexContextTools);await session.run('Fixture');},AgentTimeoutError);}finally{await session.close();}
 });
+test('Codex preserves host deadlines and cancellation before its own deadline',async t=>{
+  await fake(t,'timeout');
+  for(const timeout of [true,false]){
+    const controller=new AbortController(),agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});
+    try{
+      const pending=agent.query({question:'Generated cancellation fixture',signal:controller.signal,onProgress:event=>{if(event.stage==='model')controller.abort(new DOMException('Generated abort',timeout?'TimeoutError':'AbortError'));}});
+      await assert.rejects(pending,error=>timeout?error instanceof AgentTimeoutError:error instanceof AgentProviderError&&error.details.code==='cancelled');
+    }finally{await agent.close();}
+  }
+});
 
 test('Codex close drains concurrent startup and import uses a separate writable workspace without archive tools',async t=>{
   const root=await fake(t,'import'),session=new CodexSession({model:'fixture',timeoutMs:1000},async()=>({}));
