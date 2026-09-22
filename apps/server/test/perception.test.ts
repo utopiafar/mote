@@ -58,3 +58,27 @@ test('configuration cancellation releases an uncooperative plugin and fences its
  await p.tick();release();await new Promise(resolve=>setImmediate(resolve));
  assert.equal(store.evidence([input.id])[0].ocrText,'Current provider result');
 });
+
+test('shared executor shutdown preserves restartable perception work and fences the old plugin',async t=>{
+ const {ExecutionEngine}=await import('../src/execution-engine.js');
+ const {store,p,input,runtime}=await setup(t);await p.close();
+ const engine=new ExecutionEngine(store),first=new Perception(store,runtime,engine);let begin!:()=>void,release!:()=>void;
+ const started=new Promise<void>(r=>begin=r),held=new Promise<void>(r=>release=r);
+ runtime.registry.get('image.http').process=async()=>{begin();await held;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Old interrupted result'}]};};
+ await store.ingest(input);first.configure({...first.settings(),ocrEndpoint:'http://localhost/ocr'});first.prepare();const running=engine.tick();await started;
+ await engine.close();await first.close();await running;
+ assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.state,'waiting');
+ const nextEngine=new ExecutionEngine(store),next=new Perception(store,runtime,nextEngine);t.after(async()=>{await nextEngine.close();await next.close();});
+ runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[{startMs:0,endMs:0,text:'Recovered current result'}]});
+ await next.tick();release();await new Promise(r=>setImmediate(r));assert.equal(store.evidence([input.id])[0].ocrText,'Recovered current result');
+});
+
+test('restoring a previous OCR configuration can retry its cancelled execution without waiting for the old plugin',async t=>{
+ const {store,p,input,runtime}=await setup(t);let begin!:()=>void,release!:()=>void;
+ const started=new Promise<void>(r=>begin=r),held=new Promise<void>(r=>release=r);
+ runtime.registry.get('image.http').process=async()=>{begin();await held;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'Cancelled result'}]};};
+ await store.ingest(input);p.configure({...p.settings(),ocrEndpoint:'http://localhost/ocr'});const running=p.tick();await started;
+ p.configure({...p.settings(),enabled:false});await running;p.configure({...p.settings(),enabled:true});
+ runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[{startMs:0,endMs:0,text:'New resumed result'}]});
+ await p.tick();release();await new Promise(r=>setImmediate(r));assert.equal(store.evidence([input.id])[0].ocrText,'New resumed result');
+});

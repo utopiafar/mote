@@ -35,14 +35,14 @@ async function freePort(){return new Promise((resolve,reject)=>{const s=net.crea
   await until(()=>wc.executeJavaScript(`${checkbox}.checked&&!${checkbox}.disabled`),'enabled policy');
   const image=await require('sharp')({create:{width:32,height:32,channels:3,background:'#246789'}}).png().toBuffer();
   const response=await fetch(url+'/api/captures',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({id:randomUUID(),deviceId:'generated',deviceName:'Generated fixture',platform:'import',capturedAt:new Date().toISOString(),durationMs:0,source:'screen',ocrText:'generated content',imageMime:'image/png',imageBase64:image.toString('base64')})});
-  assert.equal(response.status,201);const saved=await response.json(),path=join(root,'data','blobs',saved.blobHash);
-  assert.equal(readFileSync(path).subarray(0,5).toString(),'MOTE1');
+  assert.equal(response.status,201);const saved=await response.json(),path=join(root,'data','files','objects',saved.blobHash,'0');
+  assert.equal(readFileSync(path+'.aes').length,image.length+28);assert.notDeepEqual(readFileSync(path+'.aes'),image);
   await wc.executeJavaScript(`${checkbox}.click()`);
   await until(()=>wc.executeJavaScript(`!${checkbox}.checked&&!${checkbox}.disabled`),'disabled policy');
-  assert.equal(readFileSync(path).subarray(0,5).toString(),'MOTE1');
+  assert.equal(readFileSync(path+'.aes').length,image.length+28);assert.notDeepEqual(readFileSync(path+'.aes'),image);
   await wc.executeJavaScript(`Array.from(document.querySelectorAll('[aria-labelledby="content-storage-title"] button')).find(b=>b.innerText==='一次性批量解密').click()`);
   await until(()=>wc.executeJavaScript(`document.querySelector('[aria-labelledby="content-storage-title"]').innerText.includes('处理完成')`),'background conversion');
-  assert.deepEqual(readFileSync(path),image);
+  assert.deepEqual(readFileSync(path+'.plain'),image);
   assert.ok(await wc.executeJavaScript(`document.querySelector('[aria-labelledby="content-storage-title"]').innerText.includes('已转换 1 项')`));
   window.setSize(430,900);await sleep(100);
   assert.equal(await wc.executeJavaScript('document.documentElement.scrollWidth<=window.innerWidth'),true);

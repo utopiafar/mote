@@ -1,0 +1,9 @@
+# Common execution engine migration
+
+`ExecutionEngine` is the authority for migrated steps. It persists their immutable input description, operation ID, pool, attempts, retry time, lease and commit fence. Domain handlers define admission checks, an asynchronous read/process function and a synchronous host commit. A stale or cancelled fence cannot commit. Output and the success state are one SQLite transaction; a failing commit rolls both back.
+
+Pool capacity is checked inside the claim transaction, including leases held by other database connections. Fairness uses a monotonic admission sequence per operation, independent of clock resolution. Configuration waits do not consume attempts; transient execution errors have a finite retry limit. A noncooperative plugin cannot hold shutdown or a cancelled slot indefinitely. Physical provider cancellation still depends on that provider honoring the signal; late local results remain fenced.
+
+Screenshot OCR and screenshot semantic interpretation are migrated. Their immutable raw-image identity avoids treating the newly generated OCR text as a changed input to its own step. OCR caches share an image result while preserving independent observations. Changes to semantic scheduling do not cancel OCR. Production calls `Perception.prepare()` and `ExecutionEngine.tick()`; `Perception.tick()` is a compatibility helper that delegates to the engine.
+
+The DAG, file processing and Memory executors are still pending migration. This stage is not the claim that all work has a single execution owner or a complete user Operation view. Existing `perception_jobs` rows remain an ingestion outbox and a compatibility status projection. No new language-model calls were used by the migration tests.

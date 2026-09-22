@@ -290,14 +290,14 @@
       "title": "统一执行引擎",
       "change": "执行引擎唯一管理领取、重试、取消、恢复；领域模块只定义步骤与结果",
       "acceptance": "一步只有一个执行状态写入者；一个 Operation 可追踪所有子步骤；迁入一条就关闭旧 `tick`",
-      "status": "pending",
+      "status": "partial",
       "evidence": [
-        "apps/server/src/processing-runtime.ts",
+        "apps/server/src/execution-engine.ts",
         "apps/server/src/perception.ts",
-        "apps/server/src/file-processing.ts",
-        "apps/server/src/memory-pipeline.ts"
+        "apps/server/test/execution-engine.test.ts",
+        "apps/server/test/perception.test.ts"
       ],
-      "remaining": "ProcessingRuntime、Perception、FileProcessing、MemoryPipeline 仍各有执行循环，不能称单一执行引擎。"
+      "remaining": "截图 OCR/语义处理已迁入公共引擎，生产定时器只准备步骤并运行引擎；ProcessingRuntime、FileProcessing、MemoryPipeline 仍待迁入，尚未全局单一执行。"
     },
     {
       "id": "JOB-02",

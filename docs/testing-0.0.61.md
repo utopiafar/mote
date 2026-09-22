@@ -1,6 +1,6 @@
 # 0.0.61 验证记录（发布前工作记录）
 
-本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 26 项通过所列验收、27 项部分实现、2 项待迁移；尚未发布版本。
+本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 26 项通过所列验收、28 项部分实现、1 项待迁移；尚未发布版本。
 
 ## 生成数据与规模
 
@@ -88,3 +88,11 @@ node_modules/.bin/electron scripts/benchmark-web-startup.cjs --comparison /tmp/m
 ### Memory cancellation regression (2026-09-22)
 
 A new regression first reproduced a cancelled extraction saving a late candidate. Memory runs now propagate cancellation to extraction/review, race uncooperative providers, and check cancellation again before validation and commit. Closing returns promptly and leaves the interrupted batch recoverable. The late-response tests assert zero memories and zero checkpoints after cancellation, and a clean restart completes the interrupted batch. All 30 Memory-pipeline/perception tests and server type checks pass. This is a commit-fencing fix; it does not claim the remaining executors are unified.
+
+
+### Common executor: perception migration (2026-09-22)
+
+- Screenshot OCR and semantic work now use `ExecutionEngine` for durable steps, pool admission, bounded retries, leases, cancellation and synchronous fenced commit. Steps for one capture share `operationId=capture:<id>`. Production prepares steps and ticks the engine; it no longer runs a separate perception worker loop. `perception_jobs` remains the compatibility projection/intake outbox. Other engines have not yet migrated.
+- Generated 400-step test verifies operation fairness and idempotency. Separate SQLite connections enforce the same pool capacity and lease recovery fence. Transaction failures roll back output; configuration waits spend no attempt. Shutdown preserves restartable work, and restoring the previous provider configuration does not wait for a cancelled plugin.
+- All-workspace type checks and **421 server tests** passed; the two subsequently added perception shutdown/configuration-return tests also pass, in a **17-test** engine/perception run. A real Electron UI test enables encryption, archives generated pixels into canonical chunks, disables new encryption, explicitly decrypts existing parts and checks mobile layout.
+- Fresh CI after the retrieval changes reached profile backup assertions that still expected legacy `blobs/` image paths. Both native and Docker fixtures now assert the canonical encrypted asset part. The native real-process profile suite passes, including encrypted restore, actual release upgrade simulation and rollback. Docker requires the next CI run; no local Docker execution is claimed.

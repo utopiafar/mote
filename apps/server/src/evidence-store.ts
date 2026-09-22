@@ -441,16 +441,16 @@ export class EvidenceStore {
   imageReference(id:string) {
     return this.db.prepare('SELECT device_id AS deviceId,blob_hash AS blobHash FROM captures WHERE id=?').get(id) as {deviceId:string;blobHash:string|null}|undefined;
   }
-  savePerception(id:string,kind:string,result:{id:string;text:string;fingerprint:string;[key:string]:unknown}) {
+  savePerception(id:string,kind:string,result:{id:string;text:string;fingerprint:string;[key:string]:unknown},projectState=true) {
     if(!this.imageReference(id)?.blobHash)throw new StoreError('Capture not found',404);
     const before=this.evidence([id])[0];
     const previousText=searchText(before)+'\n'+(before.summary??'');
-    this.db.exec('BEGIN IMMEDIATE');
+    const own=!this.db.isTransaction;if(own)this.db.exec('BEGIN IMMEDIATE');
     try {
       this.reserveMetadata(Buffer.byteLength(JSON.stringify(result))+4096);
       this.db.prepare('UPDATE perception_results SET current=0 WHERE capture_id=? AND kind=?').run(id,kind);
       this.db.prepare('INSERT INTO perception_results(id,capture_id,kind,fingerprint,json) VALUES(?,?,?,?,?)').run(result.id,id,kind,result.fingerprint,JSON.stringify(result));
-      this.db.prepare("UPDATE perception_jobs SET state='succeeded',error=NULL WHERE capture_id=? AND kind=?").run(id,kind);
+      if(projectState)this.db.prepare("UPDATE perception_jobs SET state='succeeded',error=NULL WHERE capture_id=? AND kind=?").run(id,kind);
       const record=this.evidence([id])[0];
       if(searchText(record)+'\n'+(record.summary??'')!==previousText){
       this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(id);
@@ -461,8 +461,8 @@ export class EvidenceStore {
       this.invalidateMemoryEvidence(id);
       for(const operation of ['supersede','upsert'])this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,operation,new Date().toISOString());
       }
-      this.db.exec('COMMIT');
-    }catch(e){this.db.exec('ROLLBACK');throw e;}
+      if(own)this.db.exec('COMMIT');
+    }catch(e){if(own)this.db.exec('ROLLBACK');throw e;}
   }
   completeOcr(id:string,update:{status:'completed'|'failed';ocrText:string}) {
     const row=this.db.prepare('SELECT * FROM captures WHERE id=?').get(id) as (Row&{fingerprint:string})|undefined;
