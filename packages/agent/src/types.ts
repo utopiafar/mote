@@ -43,7 +43,7 @@ export interface ContextReader {
   readImage?(args:{id:string}):Promise<{mimeType:string;data:string}>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
   timeline(args: ContextRange): Promise<ContextRecord[] | ContextPage>;
-  evidence(args: { ids: string[] }): Promise<ContextRecord[]>;
+  evidence(args: ContextRange & { ids: string[] }): Promise<ContextRecord[]>;
   activity(args: ContextRange): Promise<unknown>;
   mediaActivity?(args: MediaContextRange): Promise<unknown>;
   devices(): Promise<unknown>;

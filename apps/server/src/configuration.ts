@@ -60,7 +60,7 @@ export function serverConfiguration(config: Config, options: { modelSource?: 'en
       { id: 'storage', title: moteText("数据与空间"), description: storage.description, fields: [
         field('dataDirectory', moteText("数据目录"), dataDir, moteText("中央资料库所在路径。迁移需先停止服务、备份并恢复到空目录，不要在线改动。"), 'MOTE_DATA_DIR', ownerPath),
         field('sqlitePath', moteText("SQLite 数据库"), storage.sqlitePath, moteText("保存原文、元数据、全文索引和可选向量；运行时还有 WAL/SHM 文件。"), undefined, ownerPath),
-        field('assetDirectory', moteText("原件资产目录"), storage.assetDir, moteText("图片、导入文件与目录原件按内容哈希共享分片；观察记录和来源版本各自保留。"), undefined, ownerPath),
+        field('assetDirectory', moteText("原件资产目录"), storage.assetDir??join(dataDir,'files','objects'), moteText("图片、导入文件与目录原件按内容哈希共享分片；观察记录和来源版本各自保留。"), undefined, ownerPath),
         field('storageKind', moteText("存储类型"), storage.kind, moteText("部署声明的本地目录、Docker 命名卷或 bind mount；不是磁盘自动检测结果。"), 'MOTE_STORAGE_KIND'),
         field('storageSource', moteText("宿主存储来源"), storage.source, moteText("Docker 卷名或宿主挂载源。未声明则无法从容器内部可靠获知。"), 'MOTE_STORAGE_SOURCE', { ...ownerPath, source: context?.storageSource ? context.sources.MOTE_STORAGE_SOURCE ?? 'environment' : 'derived' }),
         field('storageMount', moteText("容器挂载点"), storage.mountPath, moteText("例如 /data；原生部署无需容器挂载。"), 'MOTE_STORAGE_MOUNT', ownerPath),

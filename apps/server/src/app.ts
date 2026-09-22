@@ -1,12 +1,13 @@
 import {registerImportUploads} from './import-uploads.js';
 import {registerTodoRoutes} from './todos.js';
-import {contextIndex} from './context-index.js';
+import {EvidenceReader} from './evidence-reader.js';
+import {ContextQuery} from './context-query.js';
+import {registerContextRoutes} from './context-routes.js';
 import {monitorEventLoopDelay} from 'node:perf_hooks';
 import {MaintenanceWorker} from './maintenance.js';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {ConcurrencyGate} from './concurrency.js';
 import {ExecutionSettings} from './execution-settings.js';
-import {browseSourceCatalog} from './source-catalog.js';
 import {ProcessingRuntime} from './processing-runtime.js';
 import {reviewMemory} from './memory-review.js';
 import {Perception} from './perception.js';
@@ -42,7 +43,7 @@ import { serverConfiguration } from './configuration.js';
 import {FileEvidenceRequests} from './file-evidence.js';
 import { SourceStore } from './sources.js';
 import {registerConnectors} from './connectors/index.js';
-import { MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT } from './memory.js';
+import { MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT } from './memory.js';
 import {createUpdateService,registerUpdateRoutes} from './updates.js';
 import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
 import {registerCaptureBrowser} from './capture-browser.js';
@@ -101,8 +102,9 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   await diagnostics.init();
   const sources=new SourceStore(store),files=new FileStore(store,sources);const fileEvidence=new FileEvidenceRequests(sources);
   const indexer=new Indexer(store,config,diagnostics,files);
-  const allEvidence=(ids:string[])=>[...store.evidence(ids),...files.evidence(ids)];
-  const memories=new MemoryStore(store,allEvidence,id=>files.isCurrentEvidence(id)||store.isCurrentEvidence(id)),conversations=new Conversations(store);
+  const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence);
+  const allEvidence=(ids:string[])=>evidenceReader.evidence(ids);
+  const memories=evidenceReader.memories,conversations=new Conversations(store);
   const usageLedger=new UsageLedger(store),queryRuns=new QueryRuns(store);
   const archivedFiles=new ArchivedFileStore(store);
   const contentStorage=new ContentStorageService(store,files,archivedFiles);
@@ -110,23 +112,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const credential=(req:FastifyRequest)=>identities.get(req);
   const sourceOwner=(req:FastifyRequest,id:string)=>{const c=credential(req);if(c)connections.assertOwnSource(c,id);};
-  const context=(records:CaptureRecord[])=>records.map(record=>{
-    const nativeFile=store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(record.id,record.id);
-    const current=nativeFile?files.isCurrentEvidence(record.id)||Boolean(store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance&&sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id;
-    return {...record,sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{})};
-  });
-  const reader:ContextReader={
-      catalog:async args=>contextIndex(store,memories,sources,args),
-      readImage:async ({id})=>{if(!perception.settings().allowQueryImages)throw new StoreError('Query image disclosure is disabled',403);const image=store.image(id);return {mimeType:image.mime,data:image.bytes.toString('base64')};},
-      readFileEvidence:async args=>{const parent=store.evidence([args.id])[0];if(!parent||(args.deviceId&&parent.deviceId!==args.deviceId))return {status:'unavailable'};const result=await fileEvidence.read(args.id,args.offset,args.length);return result.record?{status:'ready',record:context([result.record])[0]}:result;},
-      fileChunks:async args=>{const v=files.version(args.id),record=store.evidence([v.capture_id])[0];if(!record||(args.deviceId&&record.deviceId!==args.deviceId)||(args.after&&Date.parse(sourceContentTime(record))<Date.parse(args.after))||(args.before&&Date.parse(sourceContentTime(record))>=Date.parse(args.before)))return [];return context(files.chunks(args.id,args.offset??0,30));},
-      mediaActivity:async args=>diagnostics.measure('source','activity',()=>store.mediaActivity(args),result=>({count:result.observations})),
-      sourceHistory:async args=>{const record=store.evidence([args.id])[0];if(!record?.provenance)return [];return context(store.evidence(sources.history(record.provenance.sourceId,record.provenance.externalId).filter(i=>{const at=sourceContentTime({capturedAt:i.observedAt,provenance:{document:i.document}});return (!args.after||Date.parse(i.calendar?.end??at)>=Date.parse(args.after))&&(!args.before||Date.parse(i.calendar?.start??at)<Date.parse(args.before));}).map(i=>i.captureId)).filter(r=>!args.deviceId||r.deviceId===args.deviceId));},
-      sources:async args=>sources.listSources().filter(s=>!args.deviceId||s.deviceId===args.deviceId).map(s=>({id:s.id,name:s.name,kind:s.kind,retention:s.retention,enabled:s.enabled,status:s.status})),
-      sourceItems:async args=>{const page=sources.listItems(args);return {...page,items:context(store.evidence(page.items.map(i=>i.captureId)))};},
-      segments:async args=>store.archive.page(args) as any,
-      memories:async args=>{const page=memories.page({...args,level:args.id?'detail':'overview'});return {...page,references:args.id?page.items.flatMap((m:any)=>(m.evidence??[]).map((e:any)=>({id:e.id,capturedAt:e.capturedAt,characters:e.length??0}))):[]};},
-      search:async args=>diagnostics.measure('source','search',async()=>{const results=await indexer.search(args);return Object.assign(context(results),{retrieval:results.retrieval});},rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=store.list({...args,includeTotal:false});return {...page,items:context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>allEvidence(args.ids),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
+  const context=(records:CaptureRecord[])=>evidenceReader.context(records);
+  const reader=evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages});
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const codex={executable:config.codexBin,home:config.codexHome};
   const wrapAgent=(inner:QueryAgent):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:input=>{
@@ -241,7 +228,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   });
   const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured);
   registerActions(app,actions,connections,credential);
-  const connectors=await registerConnectors(app,{files,sources,store,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
+  const connectors=await registerConnectors(app,{files,sources,store,evidenceReader,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
   const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
   app.post('/api/connections/invitations',{bodyLimit:8192,config:connectionRate},async req=>connections.invite(req.body));
   app.post('/api/connections/invitations/revoke',{bodyLimit:8192,config:connectionRate},async req=>connections.cancelInvitation(req.body));
@@ -294,9 +281,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.get('/api/memories',async req=>{const q=z.object({after:z.string().datetime({offset:true}).optional(),before:z.string().datetime({offset:true}).optional(),deviceId:z.string().max(128).optional(),level:z.enum(['overview','detail']).default('overview'),query:z.string().max(500).optional(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),status:z.enum(['proposed','published','stale']).optional(),layer:z.enum(['observation','memory','legacy']).optional(),cursor:z.string().max(1000).optional(),includeStale:z.enum(['true','false']).optional(),limit:z.coerce.number().int().min(1).max(100).default(30)}).strict().parse(req.query);return memories.page({...q,includeStale:q.includeStale==='true'});});
   app.get('/api/memories/:id',async req=>memories.get((req.params as {id:string}).id));
   app.get('/api/memories/:id/text',async(req,reply)=>reply.type('text/markdown; charset=utf-8').header('Content-Disposition','attachment; filename=memory.md').send(memories.text(z.string().uuid().parse((req.params as {id:string}).id))));
-  app.get('/api/sources/:id/catalog',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);sources.getSource(id);return browseSourceCatalog(store.db,id,z.object({parent:z.string().optional(),cursor:z.string().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query));});
-  app.get('/api/context/segments',async req=>store.archive.page(z.object({id:z.string().max(128).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),deviceId:z.string().max(128).optional(),after:z.string().datetime().optional(),before:z.string().datetime().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query)));
-  app.get('/api/context-index',async req=>contextIndex(store,memories,sources,z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),after:scopeFields.after,before:scopeFields.before,deviceId:scopeFields.deviceId}).parse(req.query)));
+  app.get('/api/sources/:id/catalog',async req=>{const id=(req.params as {id:string}).id;sourceOwner(req,id);sources.getSource(id);return evidenceReader.fileCatalog(id,z.object({parent:z.string().optional(),cursor:z.string().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query));});
+  app.get('/api/context/segments',async req=>evidenceReader.segments(z.object({id:z.string().max(128).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),deviceId:z.string().max(128).optional(),after:z.string().datetime().optional(),before:z.string().datetime().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).parse(req.query)));
+  app.get('/api/context-index',async req=>evidenceReader.catalog(z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),after:scopeFields.after,before:scopeFields.before,deviceId:scopeFields.deviceId}).parse(req.query)));
+  registerContextRoutes(app,new ContextQuery(store,sources,files,evidenceReader));
   registerTodoRoutes(app,store);
   app.get('/api/processing',async req=>{const q=z.object({state:z.enum(['waiting','running','blocked','failed','cancelled','succeeded','stale']).optional(),cursor:z.coerce.number().int().positive().optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);return {archive:store.archive.stats(),...workflows.view(q)};});
   app.put('/api/processing/settings',async req=>workflows.configure(req.body));

@@ -385,12 +385,14 @@
       "title": "共享检索服务",
       "change": "Web、MCP、Agent 共用召回与 EvidenceReader；协议适配器不各写 SQL",
       "acceptance": "相同范围返回等价 ref；请求热路径不执行索引迁移；共享实例不残留上次授权",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
-        "apps/server/src/context-query.ts",
-        "apps/server/src/connectors/mcp.ts"
+        "apps/server/src/evidence-reader.ts",
+        "apps/server/src/context-routes.ts",
+        "apps/server/src/connectors/mcp.ts",
+        "apps/server/test/evidence-reader.test.ts"
       ],
-      "remaining": "Web/MCP 使用 ContextQuery；仍存在协议侧直接读 Store/FileStore，未统一全部 EvidenceReader。"
+      "remaining": ""
     },
     {
       "id": "RET-04",

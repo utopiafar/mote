@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
 import {sourceContentTime,type CaptureRecord,type SourceConnection} from '@mote/shared';
 import type {FileStore} from './files.js';
-import {MemoryStore,type Memory} from './memory.js';
+import {type MemoryStore,type Memory} from './memory.js';
+import {EvidenceReader,parseEvidenceRef} from './evidence-reader.js';
 import type {SourceStore} from './sources.js';
 import type {Store} from './store.js';
 import {StoreError,type Range} from './store.js';
@@ -185,15 +186,11 @@ function pageCoverage(records:number,items:number,memories:number,sources:Source
 
 export class ContextQuery {
   readonly memories:MemoryStore;
-  constructor(private readonly store:Store,private readonly sources:SourceStore,private readonly files?:FileStore){this.memories=new MemoryStore(store,id=>this.evidence(id));}
+  readonly reader:EvidenceReader;
+  constructor(private readonly store:Store,private readonly sources:SourceStore,private readonly files?:FileStore,reader?:EvidenceReader){this.reader=reader??new EvidenceReader(store,sources,files);this.memories=this.reader.memories;}
 
-  private evidence(ids:string[]){return [...this.store.evidence(ids),...(this.files?.evidence(ids)??[])];}
   private records(args:ContextQueryInput,queryRequired=false,innerCursor?:string|null,scanLimit=MAX_SCAN){
-    const range={...args,limit:Math.min(MAX_SCAN,scanLimit),includeTotal:false,cursor:innerCursor??undefined};
-    const base=args.query&&queryRequired?this.store.searchPage({...range,query:args.query}):this.store.list(range);
-    const chunks=args.query&&queryRequired?this.files?.searchPage({...range,query:args.query}):undefined;
-    const items=[...base.items,...(chunks?.items??[])].sort((a,b)=>sourceContentTime(b).localeCompare(sourceContentTime(a))||b.id.localeCompare(a.id));
-    return {items,more:Boolean(base.nextCursor||chunks?.nextCursor),scanned:items.length};
+    return this.reader.records({...args,limit:Math.min(MAX_SCAN,scanLimit),cursor:innerCursor??undefined},queryRequired);
   }
 
   private page(raw:ContextQueryInput,mode:'browse'|'search'):ContextPage {
@@ -230,17 +227,30 @@ export class ContextQuery {
   browse(raw:ContextQueryInput):ContextPage {return this.page(raw,'browse');}
   search(raw:ContextQueryInput):ContextPage {return this.page(raw,'search');}
 
-  read(refs:string[],offset=0,length=4000):ContextReadPage {
+  /** Ranked retrieval shares the Agent's optional-vector/lexical fallback path. */
+  async retrieve(raw:ContextQueryInput){
+    if(raw.cursor)throw new StoreError('Ranked retrieval does not accept pagination cursors');
+    const rows=await this.reader.search({...raw,limit:boundLimit(raw.limit)}),max=Math.max(1000,Math.min(raw.maxCharacters??MAX_RESPONSE_CHARACTERS,MAX_RESPONSE_CHARACTERS));
+    const page={items:[] as ContextCard[],retrieval:rows.retrieval,truncated:rows.length>=boundLimit(raw.limit)};
+    for(const row of rows){
+      page.items.push(card(row,raw.query));
+      if(JSON.stringify(page).length>max||Buffer.byteLength(JSON.stringify(page))>65536){page.items.pop();page.truncated=true;break;}
+    }
+    if(rows.length&&!page.items.length)throw new StoreError('Context response budget too small for one card',413);
+    return page;
+  }
+
+  read(refs:string[],offset=0,length=4000,scope:Range={}):ContextReadPage {
     const result:ContextReadItem[]=[];const missing:string[]=[];
     let remaining=12000;
     offset=Math.max(0,Math.floor(offset));length=Math.max(1,Math.min(4000,Math.floor(length)));
     for(const ref of refs.slice(0,5)){
       const take=Math.min(length,Math.floor(remaining/(Math.min(refs.length,5)-result.length-missing.length)));
-      const raw=ref.startsWith('capture:')?ref.slice(8):ref.startsWith('memory:')?ref.slice(7):ref;
+      const parsed=parseEvidenceRef(ref);if(!parsed){missing.push(ref);continue;}const raw=parsed.id;
       if(ref.startsWith('memory:')){
-        try {const memory=this.memories.get(raw);const text=`${memory.title}\n\n${memory.statement}\n\nUncertainty: ${memory.uncertainty}`;const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref,id:memory.id,kind:'memory',text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:memory.title,evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope});} catch {missing.push(ref);}continue;
+        try {const memory=this.reader.memory(ref,scope);if(!memory){missing.push(ref);continue;}const text=`${memory.title}\n\n${memory.statement}\n\nUncertainty: ${memory.uncertainty}`;const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref,id:memory.id,kind:'memory',text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:memory.title,evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope});} catch {missing.push(ref);}continue;
       }
-      const record=this.evidence([raw])[0];if(!record){missing.push(ref);continue;}
+      const record=this.reader.evidence([raw],scope)[0];if(!record){missing.push(ref);continue;}
       const text=record.ocrText||record.windowTitle||'';const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref:`capture:${record.id}`,id:record.id,kind:kind(record),text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:record.windowTitle||record.appName,origin:recordOrigin(record),evidenceRefs:[record.id]});
     }
     const page={items:result,missingRefs:missing,truncated:refs.length>5};

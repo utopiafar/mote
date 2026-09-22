@@ -74,3 +74,12 @@ node_modules/.bin/electron scripts/benchmark-web-startup.cjs --comparison /tmp/m
 资产存储补充：原件写入已统一为 AssetStore，观察和版本由 EvidenceStore 保存。400 条跨 400 天观察（200 条批量、200 条逐条）与导入、目录原件共享字节，逐类删除不误删其他引用。64 MiB/16 分片提交的 Buffer.concat 最大分配不超过 4 MiB + 128 字节；这只是提交路径分配界限测试，不是全服务 RSS 测量。独立数据库连接的 GC/pin、旧格式、加密切换和备份恢复通过。实现与迁移边界见 [资产存储](asset-storage.md)。
 
 资产改动后的全量工作区回归：server 413、desktop 271、web 60、agent 101 + 1 可选跳过、diagnostics 5、local-inference 13、shared 53，通过；另外配置 4 项、计量/归档 32 项定向回归、类型检查和 5195 条双语检查通过。真实浏览器 Todo/8 文件导入/Gmail 夹具、桌面 Shadow 回源、采集端到端、媒体端到端及隐私脚本再次通过。未改变真实设备与真实邮箱的未验证状态。
+
+
+### Shared evidence retrieval follow-up (2026-09-22)
+
+- `EvidenceReader` is constructed once with the server and passed to MCP. Agent adaptation, current/historical version decoration, original expansion, file chunk scope and source history now live in that service rather than `app.ts`/MCP SQL. The service stores no credentials or per-request scope.
+- Web `/api/context/{browse,search,bundle,read,retrieve}` and MCP share `ContextQuery`. Ranked retrieval (`retrieve`/`mote_retrieve`) uses the Agent's optional-vector/lexical-fallback path; literal `search` remains the exhaustive, keyset-paged path. Ranked results do not pretend to have exhaustive pagination.
+- Canonical capture/memory references reject unknown nested prefixes. Original and Memory expansions apply device, source, coding identity and time filters again. Immutable IDs continue to read their original version; deleting an observation removes it from all three entry points. Authorization remains at each protocol boundary, and collectors cannot use these owner APIs.
+- Generated test: 400 records over 400 days, 200 individual writes plus two 100-item source batches, with equivalent ranked references and text across Web, a real MCP SDK client and the Agent reader. Includes alternating scopes, old/new versions and deletion. Eight focused tests pass; server suite **415/415** and all-workspace TypeScript checks pass. These are fixture tests, no live model or personal content.
+- CI for `8ab6399` failed due to optional `storage.assetDir` passed to a required configuration value. The follow-up supplies the canonical directory fallback; local type checks now pass. Fresh CI must still be checked before release.

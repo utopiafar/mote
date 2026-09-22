@@ -69,6 +69,10 @@ test('memory references expand and strict device/time/coding scope applies befor
   const id=randomUUID();store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,captured(2),JSON.stringify({id,title:'Generated memory',statement:'Supported fixture',uncertainty:'fixture',status:'published',createdAt:captured(2),evidenceIds:[evidence],evidence:[{id:evidence,deviceId:'device-b',capturedAt:captured(1)}],admission:{layer:'memory'},scopeRefs:[{provider:'codex',projectKey:'github:fixture/mote',sessionId:'same'}]}));
   store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,evidence);
   assert.equal(query.read(['memory:'+id]).items[0].id,id);
+  assert.equal(query.read(['memory:'+id],0,4000,{deviceId:'device-a'}).items.length,0);
+  assert.equal(query.read(['memory:'+id],0,4000,{sourceId:'other'}).items.length,0);
+  assert.equal(query.read(['memory:'+id],0,4000,{deviceId:'device-b',sourceId:'coding'}).items[0].id,id);
+  assert.equal(query.read(['memory:'+id],0,4000,{after:captured(5)}).items.length,0);
   assert.equal(query.context({sourceId:'other'}).stableMemories.length,0);
   assert.equal(query.context({sourceId:'coding'}).stableMemories.length,1);
   assert.equal(query.context({deviceId:'device-a'}).stableMemories.length,0);
