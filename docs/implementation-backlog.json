@@ -297,9 +297,13 @@
         "apps/server/test/execution-engine.test.ts",
         "apps/server/test/perception.test.ts",
         "apps/server/src/processing-runtime.ts",
-        "apps/server/test/architecture-upgrade.test.ts"
+        "apps/server/test/architecture-upgrade.test.ts",
+        "apps/server/src/file-processing.ts",
+        "apps/server/src/memory-pipeline.ts",
+        "apps/server/test/file-processing.test.ts",
+        "apps/server/test/memory-pipeline.test.ts"
       ],
-      "remaining": "截图 OCR/语义、Context DAG、文件处理及其产物步骤已共用公共引擎，旧领取/重试/取消循环退役；MemoryPipeline 仍待迁入，尚未全局单一执行。"
+      "remaining": "四套执行循环已迁入公共引擎；跨导入、来源发现和模型请求的端到端 Operation 关联与历史任务迁移仍需补齐。"
     },
     {
       "id": "JOB-02",

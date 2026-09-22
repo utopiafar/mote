@@ -56,3 +56,17 @@ test('two database connections respect pool capacity, durable leases and fenced 
  store.db.prepare('UPDATE execution_steps SET lease_until=0 WHERE id=?').run(a);await second.drain([a,b]);assert.equal(calls,3);assert.equal(second.get(a)!.state,'succeeded');
  release();await run;assert.equal(engine.get(a)!.state,'succeeded');assert.equal(engine.get(a)!.attempts,2);
 });
+
+
+test('resource claims serialize shared evidence across connections without blocking independent work',async t=>{
+ const {dir,engine}=await fixture(t),other=new Store(dir),second=new ExecutionEngine(other);let release!:()=>void,enter!:()=>void;
+ const held=new Promise<void>(r=>release=r),entered=new Promise<void>(r=>enter=r),calls:string[]=[];
+ const handler={...base,concurrency:()=>3,resourceKeys:(step:any)=>[step.input.evidence]};
+ engine.register({...handler,execute:async step=>{calls.push(step.operationId);enter();await held;return null;}});
+ second.register({...handler,execute:async step=>{calls.push(step.operationId);return null;}});
+ const a=engine.enqueue('held','fixture',{evidence:'shared'}),run=engine.drain([a]);await entered;
+ const b=second.enqueue('same','fixture',{evidence:'shared'}),c=second.enqueue('independent','fixture',{evidence:'other'});
+ await second.drain([b,c]);assert.deepEqual(calls,['held','independent']);assert.equal(second.get(b)!.attempts,0);
+ release();await run;await engine.drain([b]);await second.drain([b]);assert.equal(second.get(b)!.state,'succeeded');assert.equal(calls.filter(id=>id==='same').length,1);
+ await second.close();other.close();
+});

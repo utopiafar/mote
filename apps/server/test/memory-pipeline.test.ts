@@ -7,6 +7,7 @@ import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {MemoryStore,MemoryOutputValidationError,memoryEvidenceFingerprint} from '../src/memory.js';
+import {ExecutionEngine} from '../src/execution-engine.js';
 import {MemoryPipeline,type MemoryPipelineQuery} from '../src/memory-pipeline.js';
 
 function fixture(t:TestContext){
@@ -244,4 +245,43 @@ test('closing a memory pipeline releases an uncooperative model and restart can 
  await running;await new Promise(r=>setImmediate(r));assert.equal(memories.list().length,0);
  const restarted=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>result(a.id)});t.after(()=>restarted.close());
  assert.equal((await restarted.run(job.id)).status,'completed');assert.equal(memories.list().length,1);
+});
+
+
+test('400 generated days imported individually and in batches share one durable memory executor',async t=>{
+ const {store,sources,memories}=fixture(t),ids:string[]=[];
+ const inputs=Array.from({length:400},(_,i)=>item('engine-day-'+i,'Synthetic bounded source '+i+' '+'.'.repeat(256),'1',new Date(Date.UTC(2024,0,1+i)).toISOString()));
+ for(const input of inputs.slice(0,200))ids.push((await sources.upsert('generated',input)).id);
+ for(let offset=200;offset<400;offset+=100){await sources.upsertBatch('generated',inputs.slice(offset,offset+100));for(const input of inputs.slice(offset,offset+100))ids.push(sources.getItem('generated',input.externalId)!.captureId);}
+ const engine=new ExecutionEngine(store),calls:string[]=[];let peak=0,active=0;
+ const pipeline=new MemoryPipeline({executor:engine,store,memories,batchCharacters:256,concurrency:()=>3,model:()=> 'fixture',configured:()=>true,query:async input=>{calls.push(input.traceContext!.jobId!);active++;peak=Math.max(peak,active);await new Promise(r=>setImmediate(r));active--;return empty();}});
+ const a=pipeline.create({evidenceIds:ids.slice(0,200)}),b=pipeline.create({evidenceIds:ids.slice(200)});
+ const completed=await Promise.all([pipeline.run(a.id),pipeline.run(b.id)]);assert.ok(completed.every(job=>job.status==='completed'));
+ assert.equal(calls.length,800);assert.equal(peak,3);assert.ok(calls.slice(0,6).includes(a.id)&&calls.slice(0,6).includes(b.id));
+ assert.equal(store.db.prepare("SELECT count(*) n FROM execution_steps WHERE kind='memory.batch' AND state='succeeded'").get()!.n,800);
+ assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,800);
+ assert.equal(pipeline.create({evidenceIds:ids}).totalBatches,0);
+ await engine.close();await pipeline.close();
+});
+
+test('memory, checkpoint and engine success commit roll back together when the host commit fails',async t=>{
+ const {store,sources,memories}=fixture(t),ack=await sources.upsert('generated',item('commit-rollback'));
+ const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>result(ack.id)});t.after(()=>pipeline.close());
+ store.db.exec("CREATE TRIGGER generated_checkpoint_failure BEFORE INSERT ON memory_checkpoints BEGIN SELECT RAISE(ABORT,'generated checkpoint failure'); END");
+ const job=pipeline.create({evidenceIds:[ack.id]}),failed=await pipeline.run(job.id);
+ assert.equal(failed.status,'failed');assert.equal(memories.list().length,0);assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+ assert.equal(pipeline.engine.get(job.batches[0].id)!.state,'failed');assert.equal(failed.batches[0].memoryIds.length,0);
+ store.db.exec('DROP TRIGGER generated_checkpoint_failure');assert.equal((await pipeline.retry(job.id)).status,'completed');assert.equal(memories.list().length,1);
+});
+
+
+test('shared engine cannot bypass explicit lifecycle activation after recovery',async t=>{
+ const {store,sources,memories}=fixture(t),ack=await sources.upsert('generated',item('activation'));
+ const options={store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>empty()};
+ const initial=new MemoryPipeline(options),job=initial.create({evidenceIds:[ack.id]});await initial.close();
+ const engine=new ExecutionEngine(store),pipeline=new MemoryPipeline({...options,executor:engine});
+ const batchId=job.batches[0].id;
+ engine.enqueue('memory:'+job.id,'memory.batch',{jobId:job.id,batchId,evidenceIds:[ack.id]},{id:batchId});
+ await engine.tick();assert.equal(engine.get(batchId)!.error,'awaiting_activation');assert.equal(engine.get(batchId)!.attempts,0);assert.equal(pipeline.get(job.id).completedBatches,0);
+ assert.equal((await pipeline.run(job.id)).status,'completed');await engine.close();await pipeline.close();
 });

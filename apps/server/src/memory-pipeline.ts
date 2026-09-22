@@ -1,3 +1,4 @@
+import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {requestLocale} from './i18n.js';
 import {AgentResponseError,type QueryInput} from '@mote/agent';
@@ -20,49 +21,32 @@ type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks
 export type MemoryJob={artifactRefs?:{id:string;revision:string}[];language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
-export type MemoryPipelineOptions={concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
+export type MemoryPipelineOptions={executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
+
+type BatchOutput={result:QueryResult;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
 
 /** Durable work references original evidence; jobs never persist extra copies of private text. */
 export class MemoryPipeline {
   private active=new Map<string,Promise<MemoryJobDetail>>();
-  private aborts=new Map<string,AbortController>();
+  readonly engine:ExecutionEngine;
+  private owned:boolean;
   private completions=new Map<string,{resolve:(job:MemoryJobDetail)=>void;reject:(error:unknown)=>void}>();
-  private ready:string[]=[];
-  private running=new Map<string,{jobId:string;keys:string[]}>();
-  private workers=new Set<Promise<unknown>>();
   private scheduled=false;
-  wake(){if(this.scheduled)return;this.scheduled=true;queueMicrotask(()=>{this.scheduled=false;this.dispatch();});}
-  private dispatch(){
-    for(const id of [...this.ready]){
-      if([...this.running.values()].some(run=>run.jobId===id))continue;
-      const job=this.storedJob(id),counts=this.counts(id);
-      if(this.closed||['paused','pausing','cancelled','waiting_for_model','completed'].includes(job.status)||Number(counts.pending)===0){
-        if(job.status==='pausing'){const value=this.storedJob(id);value.status='paused';this.saveJob(value);}
-        this.ready=this.ready.filter(value=>value!==id);this.active.delete(id);this.aborts.delete(id);const done=this.completions.get(id);this.completions.delete(id);done?.resolve(this.get(id));
+  /** Notify completion observers and ask the shared engine to fill available slots. */
+  wake(){if(this.scheduled)return;this.scheduled=true;queueMicrotask(()=>{this.scheduled=false;this.settle();if(!this.closed)void this.engine.tick().catch(error=>{for(const done of this.completions.values())done.reject(error);this.completions.clear();this.active.clear();});});}
+  private settle(){
+    for(const id of this.active.keys()){
+      this.refreshJob(id);const job=this.storedJob(id),counts=this.counts(id);
+      if(Number(counts.running)===0&&(this.closed||['paused','cancelled','waiting_for_model','completed','failed'].includes(job.status)||Number(counts.pending)===0)){
+        const done=this.completions.get(id);this.completions.delete(id);this.active.delete(id);done?.resolve(this.get(id));
       }
-    }
-    if(this.closed)return;
-    const limit=this.options.concurrency?.()??1;
-    while(this.running.size<limit){
-      const locked=new Set([...this.running.values()].flatMap(run=>run.keys));
-      let selected:{id:string;batch:StoredBatch}|undefined;
-      for(const id of this.ready){
-        if(['paused','pausing','cancelled','waiting_for_model','completed'].includes(this.storedJob(id).status))continue;
-        const row=this.store.db.prepare("SELECT json FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status')='pending' AND NOT EXISTS(SELECT 1 FROM json_each(memory_batches.json,'$.chunks') c WHERE json_extract(c.value,'$.id') IN (SELECT value FROM json_each(?))) ORDER BY idx LIMIT 1").get(id,JSON.stringify([...locked]));
-        const batch=row?JSON.parse(String(row.json)) as StoredBatch:undefined;
-        if(batch){selected={id,batch};break;}
-      }
-      if(!selected)break;
-      const {id,batch}=selected;
-      this.ready=this.ready.filter(value=>value!==id);this.ready.push(id);
-      this.running.set(batch.id,{jobId:id,keys:batch.chunks.map(c=>c.id)});
-      const worker=this.execute(id,batch.id).catch(error=>{this.completions.get(id)?.reject(error);this.completions.delete(id);this.active.delete(id);this.ready=this.ready.filter(value=>value!==id);}).finally(()=>{this.running.delete(batch.id);this.workers.delete(worker);this.wake();});
-      this.workers.add(worker);
     }
   }
-  pause(id:string){const job=this.storedJob(id);if(['queued','running'].includes(job.status)){job.status=[...this.running.values()].some(r=>r.jobId===id)?'pausing':'paused';this.saveJob(job);this.wake();}return this.get(id);}
-  resume(id:string){const job=this.storedJob(id);if(!['paused','pausing'].includes(job.status))return;job.status='queued';this.saveJob(job);void this.run(id).catch(()=>{});this.wake();}
-  cancel(id:string){const job=this.storedJob(id);if(!['completed','cancelled'].includes(job.status)){job.status='cancelled';this.saveJob(job);this.aborts.get(id)?.abort();this.wake();}return this.get(id);}
+  private queuePosition(id:string){const row=this.store.db.prepare("SELECT count(*) n FROM memory_jobs WHERE json_extract(json,'$.status') IN ('queued','running') AND rowid<=(SELECT rowid FROM memory_jobs WHERE id=?)").get(id);return Number(row?.n)||undefined;}
+  private steps(id:string){return this.store.db.prepare("SELECT id FROM execution_steps WHERE operation_id=? AND kind='memory.batch'").all('memory:'+id).map(row=>String(row.id));}
+  pause(id:string){const job=this.storedJob(id);if(['queued','running'].includes(job.status)){job.status=Number(this.counts(id).running)>0?'pausing':'paused';this.saveJob(job);this.wake();}return this.get(id);}
+  resume(id:string){const job=this.storedJob(id);if(!['paused','pausing'].includes(job.status))return;job.status='queued';this.saveJob(job);this.prepare(id);void this.run(id).catch(()=>{});this.wake();}
+  cancel(id:string){const job=this.storedJob(id);if(!['completed','cancelled'].includes(job.status)){job.status='cancelled';this.saveJob(job);for(const step of this.steps(id))this.engine.cancel(step);this.wake();}return this.get(id);}
 
   private closed=false;
   private budget:number;
@@ -70,7 +54,22 @@ export class MemoryPipeline {
     this.budget=options.batchCharacters??12000;
     if(!Number.isSafeInteger(this.budget)||this.budget<256||this.budget>12000)throw new StoreError('Memory batch budget must be 256–12000 characters');
     this.initializeCounts();
+    this.engine=options.executor??new ExecutionEngine(this.store);this.owned=!options.executor;
     this.recover();
+    this.engine.register({kind:'memory.batch',pool:'memory.batch',concurrency:()=>this.options.concurrency?.()??1,maxAttempts:1,timeoutMs:3600000,
+      resourceKeys:step=>(step.input.evidenceIds as string[]).map(id=>'memory-evidence:'+id),
+      validate:step=>this.validateStep(step),admit:step=>{
+        const job=this.storedJob(String(step.input.jobId));
+        if(['paused','pausing'].includes(job.status))return new ExecutionFailure('blocked','paused');
+        if(job.status==='cancelled'||this.closed)return new ExecutionFailure('blocked','cancelled');
+        // Lifecycle recovery must still honor its saved retry window and enablement.
+        if(!this.active.has(job.id))return new ExecutionFailure('blocked','awaiting_activation');
+        if(!this.options.configured(job.modelProfileId))return new ExecutionFailure('blocked','model_unconfigured');
+      },
+      execute:(step,signal)=>this.execute(String(step.input.jobId),String(step.input.batchId),signal),
+      commit:(step,output)=>this.commitBatch(step,output as BatchOutput|undefined),
+      project:step=>this.projectStep(step),
+    });
   }
   private counts(id:string){return this.store.db.prepare('SELECT * FROM memory_job_counts WHERE job_id=?').get(id)??{total:0,completed:0,failed:0,running:0,pending:0,attempts:0};}
   private initializeCounts(){
@@ -98,14 +97,14 @@ export class MemoryPipeline {
     const job=this.storedJob(id),batches=this.batches(id),failedBatches=batches.filter(b=>b.status==='failed'||b.status==='invalidated').length;
     const memoryIds=[...new Set(batches.flatMap(b=>b.memoryIds))].filter(memoryId=>this.store.db.prepare('SELECT id FROM memories WHERE id=?').get(memoryId));
     const status=job.status==='completed'&&failedBatches?'failed':job.status==='queued'&&batches.some(b=>b.status==='running')?'running':job.status,attempts=batches.reduce((sum,b)=>sum+b.attempts,0);
-    return {...job,status,queuePosition:this.ready.includes(id)?this.ready.indexOf(id)+1:undefined,runningBatches:batches.filter(b=>b.status==='running').length,pendingBatches:batches.filter(b=>b.status==='pending').length,lastSavedAt:(this.store.db.prepare("SELECT max(created_at) AS at FROM memories WHERE id IN (SELECT value FROM json_each(?))").get(JSON.stringify(memoryIds)) as {at?:string})?.at??undefined,totalBatches:batches.length,completedBatches:batches.filter(b=>b.status==='completed').length,failedBatches,memoryIds,
+    return {...job,status,queuePosition:this.queuePosition(id),runningBatches:batches.filter(b=>b.status==='running').length,pendingBatches:batches.filter(b=>b.status==='pending').length,lastSavedAt:(this.store.db.prepare("SELECT max(created_at) AS at FROM memories WHERE id IN (SELECT value FROM json_each(?))").get(JSON.stringify(memoryIds)) as {at?:string})?.at??undefined,totalBatches:batches.length,completedBatches:batches.filter(b=>b.status==='completed').length,failedBatches,memoryIds,
       execution:executionEnvelope({status:status==='paused'?'waiting':status==='pausing'?'running':status,attempts,errorCode:job.errorCode??batches.find(b=>b.errorCode)?.errorCode,updatedAt:job.updatedAt}),
       batches:batches.map(({chunks:_chunks,...batch})=>({...batch,execution:executionEnvelope({status:batch.status==='pending'?'queued':batch.status==='completed'?'succeeded':batch.status==='invalidated'?'skipped':batch.status,attempts:batch.attempts,errorCode:batch.errorCode})}))};
   }
   list(limit=30):MemoryJob[]{return this.store.db.prepare("SELECT json_remove(json,'$.evidenceIds','$.memoryIds','$.artifactRefs') json FROM memory_jobs ORDER BY created_at DESC,id DESC LIMIT ?").all(Math.max(1,Math.min(limit,100))).map(row=>{
     const job=JSON.parse(String(row.json)) as MemoryJob;
     const counts=this.counts(job.id);
-    return {...job,status:job.status==='completed'&&Number(counts.failed)>0?'failed':job.status,evidenceIds:[],memoryIds:[],totalBatches:Number(counts.total),completedBatches:Number(counts.completed??0),failedBatches:Number(counts.failed??0),runningBatches:Number(counts.running??0),pendingBatches:Number(counts.pending??0),queuePosition:this.ready.includes(job.id)?this.ready.indexOf(job.id)+1:undefined,execution:executionEnvelope({status:job.status==='paused'?'waiting':job.status==='pausing'?'running':job.status,attempts:Number(counts.attempts??0),errorCode:job.errorCode,updatedAt:job.updatedAt})};
+    return {...job,status:job.status==='completed'&&Number(counts.failed)>0?'failed':job.status,evidenceIds:[],memoryIds:[],totalBatches:Number(counts.total),completedBatches:Number(counts.completed??0),failedBatches:Number(counts.failed??0),runningBatches:Number(counts.running??0),pendingBatches:Number(counts.pending??0),queuePosition:this.queuePosition(job.id),execution:executionEnvelope({status:job.status==='paused'?'waiting':job.status==='pausing'?'running':job.status,attempts:Number(counts.attempts??0),errorCode:job.errorCode,updatedAt:job.updatedAt})};
   });}
   createFromArtifacts(artifactIds:string[],importJobId:string,batchCharacters=12000){
     const artifacts=artifactIds.map(id=>this.store.archive.get(id)).filter(a=>a?.kind==='semantic');
@@ -158,17 +157,27 @@ export class MemoryPipeline {
   }
   recover():void {
     if(this.active.size)return;
-    this.store.db.exec("UPDATE memory_batches SET json=json_set(json,'$.status','pending','$.errorCode','interrupted') WHERE json_extract(json,'$.status')='running'; UPDATE memory_jobs SET json=json_set(json,'$.status','queued','$.errorCode','interrupted') WHERE json_extract(json,'$.status')='running'; UPDATE memory_jobs SET json=json_set(json,'$.status','paused') WHERE json_extract(json,'$.status')='pausing'");
+    // Legacy running projections without an execution record are restartable intake.
+    this.store.db.exec("UPDATE memory_batches SET json=json_set(json,'$.status','pending','$.errorCode','interrupted') WHERE json_extract(json,'$.status')='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE kind='memory.batch' AND json_extract(input,'$.batchId')=memory_batches.id); UPDATE memory_jobs SET json=json_set(json,'$.status','queued','$.errorCode','interrupted') WHERE json_extract(json,'$.status')='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE kind='memory.batch' AND json_extract(input,'$.jobId')=memory_jobs.id); UPDATE memory_jobs SET json=json_set(json,'$.status','paused') WHERE json_extract(json,'$.status')='pausing'");
+  }
+  private prepare(id:string){
+    const job=this.storedJob(id);if(['paused','pausing','cancelled','completed'].includes(job.status))return;
+    for(const batch of this.batches(id)){
+      if(!['pending','running'].includes(batch.status))continue;
+      const stepId=this.engine.enqueue('memory:'+id,'memory.batch',{jobId:id,batchId:batch.id,evidenceIds:[...new Set(batch.chunks.map(c=>c.id))]},{id:batch.id,initial:{state:batch.status==='running'?'running':'waiting',attempts:0,availableAt:0}});
+      const state=this.engine.get(stepId)!.state;if(['failed','blocked','cancelled'].includes(state))this.engine.retry(stepId);
+    }
   }
   run(id:string):Promise<MemoryJobDetail> {
     if(this.closed)return Promise.reject(new StoreError('Memory pipeline is closed',503));
     const existing=this.active.get(id);if(existing)return existing;
-    this.storedJob(id);
+    const job=this.storedJob(id);if(job.status==='waiting_for_model'){job.status='queued';delete job.errorCode;this.saveJob(job);}
     let resolve!:(job:MemoryJobDetail)=>void,reject!:(error:unknown)=>void;
     const task=new Promise<MemoryJobDetail>((yes,no)=>{resolve=yes;reject=no;});
-    this.aborts.set(id,new AbortController());this.completions.set(id,{resolve,reject});this.active.set(id,task);this.ready.push(id);this.wake();return task;
+    this.completions.set(id,{resolve,reject});this.active.set(id,task);
+    try{this.prepare(id);}catch(error){this.completions.delete(id);this.active.delete(id);reject(error);}
+    this.wake();return task;
   }
-
   async retry(id:string):Promise<MemoryJobDetail> {
     if(this.active.has(id))return this.active.get(id)!;
     const job=this.storedJob(id);
@@ -176,33 +185,49 @@ export class MemoryPipeline {
     for(const batch of this.batches(id))if(batch.status==='failed'){batch.status='pending';delete batch.errorCode;this.saveBatch(batch);}
     job.status='queued';delete job.errorCode;this.saveJob(job);return this.run(id);
   }
+  private validateStep(step:ExecutionStep){
+    const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(String(step.input.batchId));if(!row)return false;
+    const batch=JSON.parse(String(row.json)) as StoredBatch;
+    return batch.status!=='invalidated'&&batch.chunks.every(chunk=>this.valid(chunk))&&(batch.artifactRefs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision);
+  }
+  private projectStep(step:ExecutionStep){
+    const id=String(step.input.jobId),batchId=String(step.input.batchId);
+    if(!this.store.db.prepare('SELECT 1 FROM memory_batches WHERE id=?').get(batchId))return;
+    const batch=this.batch(batchId),job=this.storedJob(id);
+    if(batch.status!=='invalidated'){
+      batch.status=step.state==='succeeded'?'completed':step.state==='running'?'running':step.state==='failed'?'failed':step.state==='stale'?'invalidated':'pending';
+      batch.errorCode=step.error==='input_changed'?'evidence_changed':step.error;
+      if(step.state==='running'){batch.phase='extract';batch.stage='starting';batch.startedAt=new Date().toISOString();batch.lastActivityAt=batch.startedAt;}
+      this.saveBatch(batch);
+    }
+    if(step.state==='blocked'&&step.error==='model_unconfigured'&&!this.options.configured(job.modelProfileId)&&!['cancelled','paused','pausing'].includes(job.status)){job.status='waiting_for_model';job.errorCode='model_unconfigured';this.saveJob(job);}
+    this.refreshJob(id);this.wake();
+  }
+  private refreshJob(id:string){
+    const job=this.storedJob(id),counts=this.counts(id);
+    if(job.status==='pausing'&&Number(counts.running)===0)job.status='paused';
+    if(!['cancelled','paused','pausing','waiting_for_model'].includes(job.status))job.status=Number(counts.running)>0?'running':Number(counts.pending)>0?'queued':Number(counts.failed)>0?'failed':'completed';
+    if(job.status!=='waiting_for_model')job.errorCode=String(this.store.db.prepare("SELECT json_extract(json,'$.errorCode') error FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','invalidated') LIMIT 1").get(id)?.error??'')||undefined;
+    job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);this.saveJob(job);
+  }
+  private commitBatch(step:ExecutionStep,output:BatchOutput|undefined){
+    if(!output)return;
+    const batch=this.batch(String(step.input.batchId)),{result,model,profile,skillVersion,ranges,chunks}=output;
+    this.options.memories.extract(result,model,{profile,requireAdmission:this.options.requireAdmission,reviewRunId:this.options.review?result.runId:undefined,skillVersion,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),onSaved:items=>{
+      for(const item of items)for(const ref of batch.artifactRefs??[])this.store.db.prepare('INSERT INTO memory_artifact_dependencies VALUES(?,?)').run(item.id,ref.id);
+      batch.memoryIds=items.map(m=>m.id);this.saveBatch(batch);
+      for(const chunk of chunks)this.store.db.prepare('INSERT OR IGNORE INTO memory_checkpoints(key,evidence_id,completed_at) VALUES(?,?,?)').run(chunk.key,chunk.id,new Date().toISOString());
+    }});
+  }
   private valid(chunk:Chunk):boolean {const record=this.options.memories.readEvidence([chunk.id])[0];return Boolean(record&&this.options.memories.isCurrentEvidence(chunk.id)&&memoryEvidenceFingerprint(record)===chunk.fingerprint);}
-  private async execute(id:string,batchId:string):Promise<void> {
-    const signal=this.aborts.get(id)!.signal;
-    let job=this.storedJob(id);
-    if(job.status==='completed'||['cancelled','paused','pausing'].includes(job.status)||this.closed)return;
-    if(!this.options.configured(job.modelProfileId)){job.status='waiting_for_model';job.errorCode='model_unconfigured';this.saveJob(job);return;}
-    job.status='running';delete job.errorCode;this.saveJob(job);
-    for(const original of [this.batch(batchId)]){
-      if(this.closed)break;
-      // Re-read after each await: source edits/deletions may invalidate queued batches.
-      const batch=this.batch(original.id);
-      if(batch.status!=='pending')continue;
-      const currentSkill=this.options.skillVersion??MEMORY_SKILL_VERSION;
-      if(batch.chunks.every(c=>c.profile!=='coding')&&job.skillVersion!==currentSkill){
-        batch.skillVersion=currentSkill;
-        batch.chunks=batch.chunks.map(c=>({...c,key:sha256(JSON.stringify([c.id,c.fingerprint,c.offset,c.length,currentSkill]))}));
-        this.saveBatch(batch);
-      }
-      if(batch.chunks.some(chunk=>{const record=this.options.memories.readEvidence([chunk.id])[0];return record&&chunk.profile==='coding'&&chunk.profileVersion&&chunk.profileVersion!==memoryProfile(record).version;})){batch.status='invalidated';batch.errorCode='skill_changed';this.saveBatch(batch);continue;}
-      if(!batch.chunks.every(chunk=>this.valid(chunk))){batch.status='invalidated';batch.errorCode='evidence_changed';this.saveBatch(batch);continue;}
-      const chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));
-      job=this.storedJob(id);job.skippedChunks+=batch.chunks.length-chunks.length;this.saveJob(job);
-      if(!chunks.length){batch.status='completed';delete batch.errorCode;this.saveBatch(batch);continue;}
-      if(!this.options.configured(job.modelProfileId)){job.status='waiting_for_model';job.errorCode='model_unconfigured';this.saveJob(job);return;}
-      batch.status='running';batch.phase='extract';batch.stage='starting';batch.startedAt=new Date().toISOString();batch.lastActivityAt=batch.startedAt;delete batch.errorCode;this.saveBatch(batch);
-      const ranges=chunks.map(({id,offset,length})=>({id,offset,length}));
-      try{
+  private async execute(id:string,batchId:string,signal:AbortSignal):Promise<BatchOutput|undefined> {
+    const job=this.storedJob(id),batch=this.batch(batchId),currentSkill=this.options.skillVersion??MEMORY_SKILL_VERSION;
+    if(batch.chunks.every(c=>c.profile!=='coding')&&job.skillVersion!==currentSkill){batch.skillVersion=currentSkill;batch.chunks=batch.chunks.map(c=>({...c,key:sha256(JSON.stringify([c.id,c.fingerprint,c.offset,c.length,currentSkill]))}));this.saveBatch(batch);}
+    if(batch.chunks.some(chunk=>{const record=this.options.memories.readEvidence([chunk.id])[0];return record&&chunk.profile==='coding'&&chunk.profileVersion&&chunk.profileVersion!==memoryProfile(record).version;}))throw new ExecutionFailure('stale','skill_changed');
+    const chunks=batch.chunks.filter(chunk=>!this.checkpoint(chunk));job.skippedChunks+=batch.chunks.length-chunks.length;this.saveJob(job);
+    if(!chunks.length)return;
+    const ranges=chunks.map(({id,offset,length})=>({id,offset,length}));
+    try{
         const model=job.modelOverride??this.options.model(job.modelProfileId);
         let feedback:MemoryOutputValidationError|undefined;
         for(let generation=0;generation<2;generation++){
@@ -230,40 +255,28 @@ export class MemoryPipeline {
           };
           const input:MemoryPipelineQuery={signal,validateOutput,onProgress:event=>observe(event.message??event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(chunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
           let result=await withExecutionCancellation(signal,()=>this.options.query(input));
-          if(this.closed){batch.status='pending';batch.errorCode='interrupted';this.saveBatch(batch);break;}
+          signal.throwIfAborted();
           try{
             validateArtifacts();
             if(this.options.review){
               this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
               phase='review';batch.phase='review';observe('model');result=await withExecutionCancellation(signal,()=>this.options.review!(input,result));
-              if(this.closed){batch.status='pending';batch.errorCode='interrupted';this.saveBatch(batch);break;}
+              signal.throwIfAborted();
             }
             validateArtifacts();
-            this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.requireAdmission,reviewRunId:this.options.review?result.runId:undefined,skillVersion:profile.id==='coding'?profile.version:batch.skillVersion??job.skillVersion,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),onSaved:items=>{
-              for(const item of items)for(const ref of batch.artifactRefs??[])this.store.db.prepare('INSERT INTO memory_artifact_dependencies VALUES(?,?)').run(item.id,ref.id);
-              batch.status='completed';batch.memoryIds=items.map(m=>m.id);delete batch.errorCode;
-              this.saveBatch(batch);
-              for(const chunk of chunks)this.store.db.prepare('INSERT OR IGNORE INTO memory_checkpoints(key,evidence_id,completed_at) VALUES(?,?,?)').run(chunk.key,chunk.id,new Date().toISOString());
-            }});
-            break;
+            this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
+            return {result,model,profile:profile.id,skillVersion:profile.id==='coding'?profile.version:batch.skillVersion??job.skillVersion,ranges,chunks};
           }catch(error){if(error instanceof MemoryOutputValidationError){
               recordFailure(error,result);
             }if(generation===0&&error instanceof MemoryOutputValidationError){feedback=error;continue;}throw error;}
         }
-      }catch(error){
-        const current=this.batch(batch.id);
-        if(current.status!=='invalidated'){
-          batch.status=this.closed||signal.aborted?'pending':error instanceof StoreError&&error.statusCode===409?'invalidated':'failed';
-          batch.errorCode=this.closed?'interrupted':signal.aborted?'cancelled':error instanceof StoreError&&error.statusCode===409?'evidence_changed':error instanceof StoreError&&error.statusCode===507?'storage_full':(error instanceof StoreError&&error.statusCode===502)||error instanceof AgentResponseError?'invalid_model_output':'model_failed';
-          this.saveBatch(batch);
-        }
-      }
+    }catch(error){
+      throw error instanceof ExecutionFailure?error:new ExecutionFailure(error instanceof StoreError&&error.statusCode===409?'stale':'permanent',signal.aborted?'cancelled':error instanceof StoreError&&error.statusCode===409?'evidence_changed':error instanceof StoreError&&error.statusCode===507?'storage_full':(error instanceof StoreError&&error.statusCode===502)||error instanceof AgentResponseError?'invalid_model_output':'model_failed');
     }
-    const counts=this.counts(id);job=this.storedJob(id);
-    if(!['cancelled','paused','pausing','waiting_for_model'].includes(job.status))job.status=this.closed?'queued':Number(counts.pending)+Number(counts.running)>0?'queued':Number(counts.failed)>0?'failed':'completed';
-    job.errorCode=String(this.store.db.prepare("SELECT json_extract(json,'$.errorCode') error FROM memory_batches WHERE job_id=? AND json_extract(json,'$.status') IN ('failed','invalidated') LIMIT 1").get(id)?.error??'')||undefined;
-    job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);
-    this.saveJob(job);return;
   }
-  async close(){this.closed=true;for(const abort of this.aborts.values())abort.abort();this.wake();await Promise.allSettled([...this.active.values(),...this.workers]);}
+  async close(){
+    this.closed=true;
+    if(this.owned)await this.engine.close();else if(!this.engine.closed){for(const id of this.active.keys())for(const step of this.steps(id))this.engine.cancel(step);}
+    this.settle();await Promise.allSettled([...this.active.values()]);
+  }
 }

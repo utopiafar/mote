@@ -116,7 +116,7 @@ export class MemoryStore {
     const allowed=new Set(result.citations.map(c=>c.id)),now=new Date().toISOString(),items:Memory[]=[];
     if(parsed.data.citationIds){const repeated=new Set(parsed.data.citationIds);if(repeated.size!==allowed.size||[...repeated].some(id=>!allowed.has(id)))throw new MemoryOutputValidationError('citations','Repeated memory citation envelope does not match verified evidence');}
 
-    this.store.db.exec('BEGIN IMMEDIATE');
+    const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{
       // Validate all batch inputs after model completion, including zero-candidate batches.
       for(const [id,expected] of Object.entries(options.expectedFingerprints??{})){
@@ -175,7 +175,7 @@ export class MemoryStore {
         return {...m,evidenceIds:ids,evidence,domain:options.profile??'personal',...(scopeRefs.length?{scopeRefs}:{})};
       });
       for(const id of options.relatedMemoryIds??[])this.get(id);
-      if(options.validateOnly){this.store.db.exec('ROLLBACK');return {items:[] as Memory[],runId:result.runId};}
+      if(options.validateOnly){if(own)this.store.db.exec('ROLLBACK');return {items:[] as Memory[],runId:result.runId};}
       for(const m of claims){
         const parents=m.relatedMemoryIds??[];
         if(options.requireAdmission&&options.tier==='consolidated'){
@@ -193,8 +193,8 @@ export class MemoryStore {
         items.push(value);
       }
       options.onSaved?.(items);
-      this.store.db.exec('COMMIT');return {items,runId:result.runId};
-    }catch(error){this.store.db.exec('ROLLBACK');throw error;}
+      if(own)this.store.db.exec('COMMIT');return {items,runId:result.runId};
+    }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}
   }
   publish(id:string){const m=this.get(id);if(m.status==='stale'||m.evidenceIds.some(e=>!this.isCurrentEvidence(e)))throw new StoreError('Evidence has changed; extract again before publishing',409);m.status='published';m.updatedAt=new Date().toISOString();this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(m),id);return m;}
   delete(id:string){return {deleted:Number(this.store.db.prepare('DELETE FROM memories WHERE id=?').run(id).changes)};}

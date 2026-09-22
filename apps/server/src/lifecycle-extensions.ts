@@ -80,7 +80,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
 /** Active windows own their retry schedule; only detached queued jobs need recovery. */
 export function recoverableMemoryJobs(store:Store,lifecycle:MemoryLifecycle):string[]{
   const state=lifecycle.view(),active=state.extensions.find(e=>e.id==='extraction')?.active?.checkpoint;
-  return (store.db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string;json:string}[]).filter(row=>{
+  return (store.db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.status') IN ('queued','running')").all() as {id:string;json:string}[]).filter(row=>{
     const job=JSON.parse(row.json) as {importJobId?:string};
     return !job.importJobId?.startsWith('lifecycle:')||(state.settings.extraction.enabled&&row.id!==active);
   }).map(row=>row.id);
