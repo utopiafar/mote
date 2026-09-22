@@ -1,3 +1,4 @@
+import {withExecutionCancellation} from './execution-cancellation.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import {fileProcessingSchema,transcriptSchema} from '@mote/shared';
@@ -69,7 +70,7 @@ export class Perception {
           if(!task){
             const image=this.store.image(id),executionSignal=AbortSignal.any([signal,AbortSignal.timeout(120000)]);
             // Plugins receive cancellation, but a non-cooperative plugin must not hold a slot or shutdown open.
-            task=withCancellation(executionSignal,()=>processor.process({file:{id,title:'Screenshot',mimeType:image.mime,sizeBytes:image.bytes.length},settings:fileProcessingSchema.parse({imageEndpoint:url}),maxAudioMs:0,signal:executionSignal,readOriginal:async function*(){yield image.bytes;}}));
+            task=withExecutionCancellation(executionSignal,()=>processor.process({file:{id,title:'Screenshot',mimeType:image.mime,sizeBytes:image.bytes.length},settings:fileProcessingSchema.parse({imageEndpoint:url}),maxAudioMs:0,signal:executionSignal,readOriginal:async function*(){yield image.bytes;}}));
             inFlight.set(fingerprint,task);
           }
           result=await task;
@@ -91,12 +92,4 @@ export class Perception {
     }));
   }
   async close(){this.closed=true;for(const controller of Object.values(this.aborts))controller.abort();await Promise.allSettled([...this.pending.values()]);}
-}
-
-async function withCancellation<T>(signal:AbortSignal,run:()=>Promise<T>):Promise<T>{
-  signal.throwIfAborted();
-  let abort:()=>void=()=>{};
-  const cancelled=new Promise<never>((_,reject)=>{abort=()=>reject(signal.reason);signal.addEventListener('abort',abort,{once:true});});
-  try{return await Promise.race([Promise.resolve().then(run),cancelled]);}
-  finally{signal.removeEventListener('abort',abort);}
 }

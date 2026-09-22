@@ -1,6 +1,6 @@
 # 0.0.61 验证记录（发布前工作记录）
 
-本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 25 项通过所列验收、28 项部分实现、2 项待迁移；尚未发布版本。
+本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 26 项通过所列验收、27 项部分实现、2 项待迁移；尚未发布版本。
 
 ## 生成数据与规模
 
@@ -83,3 +83,8 @@ node_modules/.bin/electron scripts/benchmark-web-startup.cjs --comparison /tmp/m
 - Canonical capture/memory references reject unknown nested prefixes. Original and Memory expansions apply device, source, coding identity and time filters again. Immutable IDs continue to read their original version; deleting an observation removes it from all three entry points. Authorization remains at each protocol boundary, and collectors cannot use these owner APIs.
 - Generated test: 400 records over 400 days, 200 individual writes plus two 100-item source batches, with equivalent ranked references and text across Web, a real MCP SDK client and the Agent reader. Includes alternating scopes, old/new versions and deletion. Eight focused tests pass; server suite **415/415** and all-workspace TypeScript checks pass. These are fixture tests, no live model or personal content.
 - CI for `8ab6399` failed due to optional `storage.assetDir` passed to a required configuration value. The follow-up supplies the canonical directory fallback; local type checks now pass. Fresh CI must still be checked before release.
+
+
+### Memory cancellation regression (2026-09-22)
+
+A new regression first reproduced a cancelled extraction saving a late candidate. Memory runs now propagate cancellation to extraction/review, race uncooperative providers, and check cancellation again before validation and commit. Closing returns promptly and leaves the interrupted batch recoverable. The late-response tests assert zero memories and zero checkpoints after cancellation, and a clean restart completes the interrupted batch. All 30 Memory-pipeline/perception tests and server type checks pass. This is a commit-fencing fix; it does not claim the remaining executors are unified.

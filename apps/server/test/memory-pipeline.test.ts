@@ -216,3 +216,32 @@ test('host quote feedback is delivered before query session closes and successfu
    const fixed=empty();assert.equal(await input.validateOutput!(fixed),undefined);return fixed;
  }});t.after(()=>pipeline.close());const job=await pipeline.run(pipeline.create({evidenceIds:[a.id]}).id);assert.equal(calls,1);assert.equal(job.status,'completed');assert.equal(job.batches[0].attempts,1);assert.equal(failures.length,1);
 });
+
+test('cancelling extraction or review fences late models and saves no memory or checkpoint',async t=>{
+ for(const phase of ['extract','review'] as const){
+  const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('cancel-'+phase));
+  let enter!:()=>void,release!:(value:ReturnType<typeof result>)=>void,signal:AbortSignal|undefined;
+  const entered=new Promise<void>(r=>{enter=r;}),held=new Promise<ReturnType<typeof result>>(r=>{release=r;});
+  const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,
+   query:async input=>{signal=input.signal;if(phase==='extract'){enter();return held;}const draft=result(a.id,{offset:0,quote:item().text}),value=JSON.parse(draft.answer);value.memories[0].admission={layer:'memory',reason:'Explicit fixture instruction',scope:'Fixture only',attribution:'user'};return {...draft,answer:JSON.stringify(value)};},
+   ...(phase==='review'?{review:async()=>{enter();return held;}}:{})});
+  const job=pipeline.create({evidenceIds:[a.id]}),running=pipeline.run(job.id);await entered;
+  pipeline.cancel(job.id);release(result(a.id));const done=await running;
+  assert.equal(done.status,'cancelled');assert.equal(memories.list().length,0,phase+' saved a late candidate');
+  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+  assert.equal(signal?.aborted,true);await pipeline.close();
+ }
+});
+
+test('closing a memory pipeline releases an uncooperative model and restart can recover the batch',async t=>{
+ const {store,sources,memories}=fixture(t),a=await sources.upsert('generated',item('uncooperative'));
+ let enter!:()=>void,release!:(value:ReturnType<typeof result>)=>void;
+ const entered=new Promise<void>(r=>{enter=r;}),held=new Promise<ReturnType<typeof result>>(r=>{release=r;});
+ const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>{enter();return held;}});
+ const job=pipeline.create({evidenceIds:[a.id]}),running=pipeline.run(job.id);await entered;
+ try{await Promise.race([pipeline.close(),new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Shutdown waited on an uncooperative model')),1000);timer.unref();})]);}
+ finally{release(result(a.id));}
+ await running;await new Promise(r=>setImmediate(r));assert.equal(memories.list().length,0);
+ const restarted=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>result(a.id)});t.after(()=>restarted.close());
+ assert.equal((await restarted.run(job.id)).status,'completed');assert.equal(memories.list().length,1);
+});

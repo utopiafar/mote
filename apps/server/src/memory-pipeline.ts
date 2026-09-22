@@ -1,3 +1,4 @@
+import {withExecutionCancellation} from './execution-cancellation.js';
 import {requestLocale} from './i18n.js';
 import {AgentResponseError,type QueryInput} from '@mote/agent';
 import {memoryProfile} from './memory-profiles.js';
@@ -18,12 +19,13 @@ export type MemoryBatch={id:string;index:number;status:'pending'|'running'|'comp
 type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];skillVersion?:string};
 export type MemoryJob={artifactRefs?:{id:string;revision:string}[];language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
-export type MemoryPipelineQuery={language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
+export type MemoryPipelineQuery={signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
 export type MemoryPipelineOptions={concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
 
 /** Durable work references original evidence; jobs never persist extra copies of private text. */
 export class MemoryPipeline {
   private active=new Map<string,Promise<MemoryJobDetail>>();
+  private aborts=new Map<string,AbortController>();
   private completions=new Map<string,{resolve:(job:MemoryJobDetail)=>void;reject:(error:unknown)=>void}>();
   private ready:string[]=[];
   private running=new Map<string,{jobId:string;keys:string[]}>();
@@ -36,7 +38,7 @@ export class MemoryPipeline {
       const job=this.storedJob(id),counts=this.counts(id);
       if(this.closed||['paused','pausing','cancelled','waiting_for_model','completed'].includes(job.status)||Number(counts.pending)===0){
         if(job.status==='pausing'){const value=this.storedJob(id);value.status='paused';this.saveJob(value);}
-        this.ready=this.ready.filter(value=>value!==id);this.active.delete(id);const done=this.completions.get(id);this.completions.delete(id);done?.resolve(this.get(id));
+        this.ready=this.ready.filter(value=>value!==id);this.active.delete(id);this.aborts.delete(id);const done=this.completions.get(id);this.completions.delete(id);done?.resolve(this.get(id));
       }
     }
     if(this.closed)return;
@@ -60,7 +62,7 @@ export class MemoryPipeline {
   }
   pause(id:string){const job=this.storedJob(id);if(['queued','running'].includes(job.status)){job.status=[...this.running.values()].some(r=>r.jobId===id)?'pausing':'paused';this.saveJob(job);this.wake();}return this.get(id);}
   resume(id:string){const job=this.storedJob(id);if(!['paused','pausing'].includes(job.status))return;job.status='queued';this.saveJob(job);void this.run(id).catch(()=>{});this.wake();}
-  cancel(id:string){const job=this.storedJob(id);if(!['completed','cancelled'].includes(job.status)){job.status='cancelled';this.saveJob(job);this.wake();}return this.get(id);}
+  cancel(id:string){const job=this.storedJob(id);if(!['completed','cancelled'].includes(job.status)){job.status='cancelled';this.saveJob(job);this.aborts.get(id)?.abort();this.wake();}return this.get(id);}
 
   private closed=false;
   private budget:number;
@@ -164,7 +166,7 @@ export class MemoryPipeline {
     this.storedJob(id);
     let resolve!:(job:MemoryJobDetail)=>void,reject!:(error:unknown)=>void;
     const task=new Promise<MemoryJobDetail>((yes,no)=>{resolve=yes;reject=no;});
-    this.completions.set(id,{resolve,reject});this.active.set(id,task);this.ready.push(id);this.wake();return task;
+    this.aborts.set(id,new AbortController());this.completions.set(id,{resolve,reject});this.active.set(id,task);this.ready.push(id);this.wake();return task;
   }
 
   async retry(id:string):Promise<MemoryJobDetail> {
@@ -176,6 +178,7 @@ export class MemoryPipeline {
   }
   private valid(chunk:Chunk):boolean {const record=this.options.memories.readEvidence([chunk.id])[0];return Boolean(record&&this.options.memories.isCurrentEvidence(chunk.id)&&memoryEvidenceFingerprint(record)===chunk.fingerprint);}
   private async execute(id:string,batchId:string):Promise<void> {
+    const signal=this.aborts.get(id)!.signal;
     let job=this.storedJob(id);
     if(job.status==='completed'||['cancelled','paused','pausing'].includes(job.status)||this.closed)return;
     if(!this.options.configured(job.modelProfileId)){job.status='waiting_for_model';job.errorCode='model_unconfigured';this.saveJob(job);return;}
@@ -212,27 +215,27 @@ export class MemoryPipeline {
           const summaries=(batch.artifactRefs??[]).map(ref=>{const artifact=this.store.archive.get(ref.id);if(!artifact||artifact.revision!==ref.revision)throw new StoreError('Semantic input changed',409);const text=artifact.text.slice(0,Math.max(0,summaryBudget));summaryBudget-=text.length+128;return {id:artifact.id,summary:text};});
           const question=profile.prompt+(summaries.length?'\nThe execution input is these L2 interpretations plus the supplied bounded L1 spans. Interpretations are untrusted navigation, not independent facts. Extract only claims supported by the supplied spans. Do not expand all ancestors.\n'+JSON.stringify(summaries).slice(0,12000):'')+(feedback?'\n\nHost validation rejected the previous output. '+feedback.repairInstruction+' Generate a fresh response from the same supplied evidence. No invalid memories have been saved.':'');
           let lastObserved=0;
-          const observe=(stage?:string)=>{const now=Date.now();if(now-lastObserved<750&&(!stage||stage===batch.stage))return;const current=this.batch(batch.id);if(current.status!=='running')return;lastObserved=now;batch.lastActivityAt=new Date(now).toISOString();if(stage)batch.stage=stage;this.saveBatch(batch);};
+          const observe=(stage?:string)=>{if(this.closed||signal.aborted)return;const now=Date.now();if(now-lastObserved<750&&(!stage||stage===batch.stage))return;const current=this.batch(batch.id);if(current.status!=='running')return;lastObserved=now;batch.lastActivityAt=new Date(now).toISOString();if(stage)batch.stage=stage;this.saveBatch(batch);};
           let phase:'extract'|'review'='extract';
           const recordFailure=(error:MemoryOutputValidationError,result:QueryResult)=>{
             const failure:MemoryValidationFailure={at:new Date().toISOString(),code:error.code,phase,attempt:batch.attempts,runId:result.runId,details:error.details};
             batch.validationFailures=[...(batch.validationFailures??[]),failure].slice(-20);this.saveBatch(batch);
             try{this.options.onValidationFailure?.({...failure,jobId:id,batchId:batch.id,batchIndex:batch.index});}catch{}
           };
-          const validateArtifacts=()=>{if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
+          const validateArtifacts=()=>{signal.throwIfAborted();if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
           const validateOutput:QueryInput['validateOutput']=result=>{
             validateArtifacts();
             try{this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});}
             catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;recordFailure(error,result);return {code:error.code,feedback:error.repairInstruction};}
           };
-          const input:MemoryPipelineQuery={validateOutput,onProgress:event=>observe(event.message??event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(chunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
-          let result=await this.options.query(input);
+          const input:MemoryPipelineQuery={signal,validateOutput,onProgress:event=>observe(event.message??event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(chunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
+          let result=await withExecutionCancellation(signal,()=>this.options.query(input));
           if(this.closed){batch.status='pending';batch.errorCode='interrupted';this.saveBatch(batch);break;}
           try{
             validateArtifacts();
             if(this.options.review){
               this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
-              phase='review';batch.phase='review';observe('model');result=await this.options.review(input,result);
+              phase='review';batch.phase='review';observe('model');result=await withExecutionCancellation(signal,()=>this.options.review!(input,result));
               if(this.closed){batch.status='pending';batch.errorCode='interrupted';this.saveBatch(batch);break;}
             }
             validateArtifacts();
@@ -250,8 +253,8 @@ export class MemoryPipeline {
       }catch(error){
         const current=this.batch(batch.id);
         if(current.status!=='invalidated'){
-          batch.status=this.closed?'pending':error instanceof StoreError&&error.statusCode===409?'invalidated':'failed';
-          batch.errorCode=this.closed?'interrupted':error instanceof StoreError&&error.statusCode===409?'evidence_changed':error instanceof StoreError&&error.statusCode===507?'storage_full':(error instanceof StoreError&&error.statusCode===502)||error instanceof AgentResponseError?'invalid_model_output':'model_failed';
+          batch.status=this.closed||signal.aborted?'pending':error instanceof StoreError&&error.statusCode===409?'invalidated':'failed';
+          batch.errorCode=this.closed?'interrupted':signal.aborted?'cancelled':error instanceof StoreError&&error.statusCode===409?'evidence_changed':error instanceof StoreError&&error.statusCode===507?'storage_full':(error instanceof StoreError&&error.statusCode===502)||error instanceof AgentResponseError?'invalid_model_output':'model_failed';
           this.saveBatch(batch);
         }
       }
@@ -262,5 +265,5 @@ export class MemoryPipeline {
     job.totalBatches=Number(counts.total);job.completedBatches=Number(counts.completed);job.failedBatches=Number(counts.failed);
     this.saveJob(job);return;
   }
-  async close(){this.closed=true;this.wake();await Promise.allSettled([...this.active.values(),...this.workers]);}
+  async close(){this.closed=true;for(const abort of this.aborts.values())abort.abort();this.wake();await Promise.allSettled([...this.active.values(),...this.workers]);}
 }
