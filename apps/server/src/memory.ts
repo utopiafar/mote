@@ -3,7 +3,7 @@ import {z} from 'zod';
 import {validateInlineCitations} from '@mote/agent';
 import {fileEvidenceSchema,sourceContentTime,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
-import {codingMemorySchema,memoryAdmissionSchema,type Memory,type MemoryEvidence,type EvidenceRange} from './memory-schema.js';
+import {codingMemorySchema,memoryAdmissionSchema,type Memory,type MemoryEvidence,type EvidenceRange,type MemoryReviewReceipt} from './memory-schema.js';
 export type {Memory,MemoryEvidence,EvidenceRange} from './memory-schema.js';
 
 const spanSchema=z.object({id:z.string().uuid(),offset:z.number().int().min(0).max(100000).optional(),length:z.number().int().min(1).max(12000).optional(),quote:z.string().min(1).max(12000)}).strict();
@@ -31,7 +31,7 @@ function reference(record:MemoryRecord,span?:{offset:number;length:number;quote?
     ...(record.fileEvidence?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...(d?.fileIndex?{fileIndex:d.fileIndex}:{}),...span,contentHash:memoryEvidenceFingerprint(record)};
 }
-export type MemoryExtractOptions={requireAdmission?:boolean;reviewRunId?:string;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
+export type MemoryExtractOptions={requireAdmission?:boolean;reviewRunId?:string;reviewReceipt?:MemoryReviewReceipt;validateOnly?:boolean;profile?:'personal'|'coding';tier?:Memory['tier'];relatedMemoryIds?:string[];skillVersion?:string;evidenceRanges?:EvidenceRange[];expectedFingerprints?:Record<string,string>;onSaved?:(items:Memory[])=>void};
 const initializedStores=new WeakSet<Store>();
 export class MemoryStore {
   constructor(public store:Store,public readEvidence:(ids:string[])=>MemoryRecord[]=ids=>store.evidence(ids),private currentEvidence:(id:string)=>boolean=id=>store.isCurrentEvidence(id)){if(!initializedStores.has(store)){this.ensureIndex();this.ensureCatalog();initializedStores.add(store);}}
@@ -185,7 +185,7 @@ export class MemoryStore {
         const fingerprint=sha256(JSON.stringify([options.tier??'episode',m.admission??null,m.coding??null,m.statement,[...m.evidenceIds].sort(),m.evidence.map(e=>[e.id,e.contentHash,e.offset,e.length])]));
         const duplicate=this.store.db.prepare("SELECT json FROM memories WHERE json_extract(json,'$.fingerprint')=? AND json_extract(json,'$.status')!='stale'").get(fingerprint) as {json:string}|undefined;
         if(duplicate){items.push(JSON.parse(duplicate.json));continue;}
-        const value:Memory={...m,id:randomUUID(),tier:options.tier??'episode',kind:m.kind??'episodic',relatedMemoryIds:m.relatedMemoryIds,reviewRunId:options.reviewRunId,createdAt:now,status:'proposed',model:result.usage?.model??model,runId:result.runId,skillVersion:options.skillVersion??MEMORY_SKILL_VERSION,fingerprint};
+        const value:Memory={...m,id:randomUUID(),tier:options.tier??'episode',kind:m.kind??'episodic',relatedMemoryIds:m.relatedMemoryIds,reviewRunId:options.reviewRunId,reviewReceipt:options.reviewReceipt,createdAt:now,status:'proposed',model:options.reviewReceipt?.model??result.usage?.model??model,runId:result.runId,skillVersion:options.skillVersion??MEMORY_SKILL_VERSION,fingerprint};
         if(Number((this.store.db.prepare('SELECT COUNT(*) AS n FROM memories').get() as {n:number}).n)>=100000)throw new StoreError('Memory limit reached; remove unused memories before extracting more',507);
         this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));
         this.store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(value.id,now,JSON.stringify(value));

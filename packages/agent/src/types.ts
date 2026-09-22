@@ -84,6 +84,8 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Host-owned temporal snapshot for a durable task; retries use the same clock. */
+  contextTime?:string;
   executionLane?:'interactive'|'background';
   /** Pure host validation before the session closes. Return only trusted repair guidance; never commit output here. */
   validateOutput?: (answer: AgentAnswer) => Promise<{code:string;feedback:string}|undefined> | {code:string;feedback:string}|undefined;

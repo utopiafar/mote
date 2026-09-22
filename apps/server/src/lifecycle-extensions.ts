@@ -1,4 +1,4 @@
-import {reviewMemory} from './memory-review.js';
+import {reviewMemory,memoryReviewReceipt} from './memory-review.js';
 import { moteText } from './i18n.js';
 import type {QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
@@ -62,7 +62,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     memories.extract(draft,generationModel,{...validation,validateOnly:true});
     const result=await reviewMemory(input,draft,next=>query(next,'memories'));
     for(const [id,hash] of snapshots)if(sha256(JSON.stringify(memories.get(id)))!==hash)throw new StoreError('Input memories changed during consolidation',409);
-    memories.extract(result,generationModel,{...validation,reviewRunId:result.runId,skillVersion:'memory-consolidation@2.0.0',expectedFingerprints:expected,onSaved:()=>{checkpoint(JSON.stringify([...completed,profile]));completed.add(profile);}});
+    memories.extract(result,generationModel,{...validation,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result),skillVersion:'memory-consolidation@2.0.0',expectedFingerprints:expected,onSaved:()=>{checkpoint(JSON.stringify([...completed,profile]));completed.add(profile);}});
     }
     checkpoint('completed');
   }});

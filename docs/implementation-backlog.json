@@ -526,12 +526,17 @@
       "title": "校验与审核策略",
       "change": "精确引文、范围、版本校验必保留；独立模型审核按风险策略；机器校验与用户确认分开",
       "acceptance": "第三方不是用户事实，计划不是完成；降低审核调用后通过同一质量集；每条记忆可追溯",
-      "status": "partial",
+      "status": "verified",
       "evidence": [
         "apps/server/test/memory-admission.test.ts",
-        "docs/testing-0.0.61.md"
+        "docs/testing-0.0.61.md",
+        "apps/server/src/memory-review.ts",
+        "apps/server/src/memory-review-cache.ts",
+        "apps/server/test/memory-review.test.ts",
+        "docs/memory-review-policy.md",
+        "docs/validation/0.0.61/memory-review-policy.json"
       ],
-      "remaining": "引文/归属已验证；独立模型审核仍未按风险策略分层并完成同质量对照。"
+      "remaining": ""
     },
     {
       "id": "MEM-03",

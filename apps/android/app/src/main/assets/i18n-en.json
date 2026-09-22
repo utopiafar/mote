@@ -5233,5 +5233,9 @@
   "无法连接处理服务，请检查网络与服务地址。": "Cannot connect to the processing service. Check the network and endpoint.",
   "处理服务拒绝了内容大小，请缩小本次处理范围。": "The processing service rejected the content size. Reduce the processing scope.",
   "处理服务不支持此内容格式。": "The processing service does not support this content format.",
-  "处理服务拒绝了请求参数，请检查处理配置。": "The processing service rejected the request parameters. Check the processing configuration."
+  "处理服务拒绝了请求参数，请检查处理配置。": "The processing service rejected the request parameters. Check the processing configuration.",
+  "审核记录": "Review history",
+  "复用了相同候选与证据版本的独立审核结果，并重新校验了引用和范围。": "Reused an independent review of the identical candidate and evidence versions, then revalidated citations and scope.",
+  "候选已经过独立模型审核和引用校验；用户确认单独记录。": "The candidate received an independent model review and citation checks. User confirmation is recorded separately.",
+  "审核编号": "Review ID"
 }

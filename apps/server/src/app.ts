@@ -13,7 +13,8 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 import {ConcurrencyGate} from './concurrency.js';
 import {ExecutionSettings} from './execution-settings.js';
 import {ProcessingRuntime} from './processing-runtime.js';
-import {reviewMemory} from './memory-review.js';
+import {reviewMemory,memoryReviewReceipt} from './memory-review.js';
+import {MemoryReviewCache} from './memory-review-cache.js';
 import {Perception} from './perception.js';
 import { requestLocale } from './i18n.js';
 import { negotiateLocale } from '@mote/shared/i18n';
@@ -39,7 +40,7 @@ import { AgentNotConfiguredError,createImportAgent,skillCatalog,type ContextRead
 import { DEFAULT_MODEL_MAX_TOKENS, modelProvider } from '@mote/shared/models';
 import { ModelSettingsStore,ModelSettingsError,modelProfileIdSchema } from './model-settings.js';
 import { ReloadableAgent,createModelRegistry,modelSettingsFromConfig,applyModelSettings,createModelAgent,testModelConnection,type ModelAgentFactory } from './model-agent.js';
-import { Store,StoreError } from './store.js';
+import { Store,StoreError,sha256 } from './store.js';
 import { Indexer } from './indexer.js';
 import { repositoryRoot,type Config } from './config.js';
 import { ServerDiagnostics,safeError,diagnosticStageFilters,type AgentTraceContext } from './diagnostics.js';
@@ -394,7 +395,17 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     }).catch(error=>{meter.finish('failed');trace({type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
     activeQueries.add(promise);void promise.finally(()=>{clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
-  const memoryPipeline=new MemoryPipeline({executor,store,memories,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:(input,result)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories')),query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryReviews=new MemoryReviewCache();
+  const reviewExtraction=(input:QueryInput,result:QueryResult)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
+    cache:memoryReviews,snapshot:()=>{
+      const ids=input.evidenceIds??[];
+      if(ids.some(id=>!memories.isCurrentEvidence(id)))throw new StoreError('Memory evidence changed during review',409);
+      // Include full original metadata (speaker, source, device, dates, version),
+      // not just quote text. Credentials/config are hashed, never retained.
+      return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
+    },
+  });
+  const memoryPipeline=new MemoryPipeline({executor,store,memories,concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours),working=new WorkingMemory(store,conversations);
   registerMemoryExtensions({semanticArtifacts,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
@@ -477,8 +488,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     input.validateOutput=result=>{try{memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const draft=await queryAgent(input,'query','memories');
     memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true});
-    const result=await reviewMemory(input,draft,next=>queryAgent(next,'query','memories'));
-    return memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:result.runId});
+    const result=await reviewExtraction(input,draft);
+    return memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)});
   });
   app.get('/api/conversations',async req=>conversations.list(z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1000).optional()}).strict().parse(req.query)));
   app.get('/api/conversations/:id',async req=>conversations.page(z.object({id:z.string().uuid()}).parse(req.params).id,z.object({limit:z.coerce.number().int().min(1).max(50).default(20),cursor:z.string().optional()}).parse(req.query)));
@@ -608,6 +619,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     await contentStorage.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
     await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose,actionClose]);await lifecycleClose;await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
+    memoryReviews.clear();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
   return {app,executor,workflows,perception,actions,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};

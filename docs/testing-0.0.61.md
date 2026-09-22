@@ -1,6 +1,6 @@
 # 0.0.61 验证记录（发布前工作记录）
 
-本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 26 项通过所列验收、28 项部分实现、1 项待迁移；尚未发布版本。
+本记录仅描述实际执行的验证。共享对话的 55 项需求在 [逐项清单](implementation-backlog.json) 中分别记录证据和未完成部分，不能把本次回归通过等同于 55 项架构工作全部完成。当前清单有 27 项通过所列验收、28 项部分实现、0 项待迁移；尚未发布版本。
 
 ## 生成数据与规模
 
@@ -49,7 +49,7 @@ python3 apps/android/scripts/run-complex-fixtures.py --connection /private/fixtu
 
 - GitHub Checks 两轮通过，包含 Docker 容器、Compose 备份/回滚、隧道与协议/工作区全量测试：[push](https://github.com/utopiafar/mote/actions/runs/35616437562)、[PR](https://github.com/utopiafar/mote/actions/runs/35616502313)。这是提交 f67e70a 的 CI 结果，后续提交仍需重新核验。本机没有 Docker。
 - 最终提交的 Release workflow、Mac/Android 安装包下载、版本与签名核验。
-- 清单中剩余架构工作，包括单一执行引擎、统一资产存储、跨调用预算预留和旧逻辑退役；不能仅凭现有测试通过宣布这些项目完成。
+- 清单中剩余架构工作，包括导入/问答的执行链关联、跨调用预算预留、原生状态适配和兼容逻辑退役；不能仅凭现有测试通过宣布这些项目完成。
 - npm audit 仍有 ExcelJS 间接依赖 uuid 8 的两项 moderate 报告（uuid v3/v5 越界问题；ExcelJS 调用 v4）。未通过强制降级或删除依赖掩盖报告。
 
 ## 后续补充验证
@@ -117,3 +117,10 @@ Operation projection validation (2026-09-22): shared execution now maintains cur
 Provider failure validation (2026-09-22): real Harness with generated local HTTP fixtures preserves 401/429/503 recovery facts under OpenAI Completions and DeepSeek, plus a rate-limited import, with exactly one outbound request per case. File/image execution, Memory credential repair, premature manual retry rejection and restarted lifecycle Retry-After tests pass. Owner API diagnostics expose fixed recovery messages without leaking private fixture error text. Final regression: server 446, Web 63, shared 55; Agent 103 passes with one optional skip. The first combined workspace run hit a catalog synchronization mismatch while translations were being updated; a full rebuild and fresh shared/server/Web runs pass. Full build, all-workspace type checks and 5235-message bilingual validation pass. No additional live-model, physical-device or real-Gmail validation was performed. CI for `eb88e8d` passed both protocol/app and Docker jobs in both runs. Details and limits: [provider failures](provider-failures.md).
 
 Shared provider admission follow-up: model features now share durable cooldown by service/credential identity. Tests cover separate database connections, restart, queued work, independent credentials/endpoints and a late success racing a failure. A host admission failure retains its typed reason through Harness query/import adapters. Background query/insight receipt reads preserve their validated attempt counts and absolute retry deadline, while stale running receipts still normalize to an interrupted failure. Owner-route tests confirm a cooled provider is not invoked again. Final server suite **450/450**, Agent **104 + 1 optional skip**, all-workspace type checks and server build pass. The initial new background-receipt test referenced a helper not exported by buildApp; it now uses the actual HTTP polling path, and the complete server suite was rerun successfully. No live-provider quota or monetary-budget validation is claimed.
+
+
+Memory review policy follow-up (2026-09-22): `bounded-exact-review@1` independently reviews every novel candidate and permits reuse only for an identical, previously reviewed bounded request with frozen task time, original metadata/versions, scope and model configuration. Exact host checks still run on both draft and verdict; user publication is separate. A SQLite commit failure rolls back candidates/checkpoints, and retry reuses the actual review receipt without another review call. Cross-midnight task context, invalidation, cancellation, archive isolation and cache bounds pass. Final server suite **457/457**, Agent **105 + 1 optional skip**, Web **63**, shared **55**, all-workspace types, full build and **5239** bilingual messages pass. The real Electron navigation/settings/configuration journey passes again.
+
+The final generated LUNA comparison made **13 calls**: six independent reviews per policy and one separate rubric evaluation. Both policies passed all six supplied attribution/time/scope cases, and the optimized policy's six identical repeats made **zero additional model calls**, with byte-identical answers and fresh host validation. An earlier 13-call run preceded the frozen-clock correction; the final comparison was rerun after that fix. This tests duplicate review avoidance, not lower review cost for new candidates or universal quality. Codex currently does not emit usage through this adapter; token usage and price remain unknown. Full generated outputs and receipts: [review comparison](validation/0.0.61/memory-review-policy.json); design limits: [review policy](memory-review-policy.md). No real Gmail, physical device or personal data was used.
+
+CI for `0b6f95e` passed protocol/app and Docker integration in both [push](https://github.com/utopiafar/mote/actions/runs/35722655046) and [PR](https://github.com/utopiafar/mote/actions/runs/35722658792) runs. Later commits still require their own checks before release.

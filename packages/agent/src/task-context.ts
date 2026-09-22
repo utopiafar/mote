@@ -28,6 +28,7 @@ export const WORKING_SYSTEM_PROMPT='You compact only the host-supplied dialogue 
 
 /** Both runtime adapters receive exactly the same host context contract. */
 export function buildContextEnvelope(input:QueryInput,seedEvidence:ContextRecord[],now=new Date().toISOString()){
+  now=input.contextTime??now;
   if(input.taskContext&&JSON.stringify(input.taskContext).length>HOST_CONTEXT_LIMITS.taskCharacters)throw new Error('Task context exceeds 80000 characters');
   const profile=taskProfile(input);
   return {

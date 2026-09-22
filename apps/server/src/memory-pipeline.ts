@@ -11,6 +11,8 @@ import {Store,StoreError,sha256} from './store.js';
 import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION,memoryEvidenceFingerprint,type EvidenceRange} from './memory.js';
 
 import type {MemoryValidationDetails} from './memory-validation.js';
+import {memoryReviewReceipt} from './memory-review.js';
+import type {MemoryReviewReceipt} from './memory-schema.js';
 
 export type MemoryValidationFailure={at:string;code:string;phase:'extract'|'review';attempt?:number;runId?:string;details?:MemoryValidationDetails};
 export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;batchId:string;batchIndex:number};
@@ -20,10 +22,10 @@ export type MemoryBatch={id:string;index:number;status:'pending'|'running'|'comp
 type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];skillVersion?:string};
 export type MemoryJob={artifactRefs?:{id:string;revision:string}[];language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
-export type MemoryPipelineQuery={signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
+export type MemoryPipelineQuery={contextTime?:string;signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
 export type MemoryPipelineOptions={executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
 
-type BatchOutput={result:QueryResult;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
+type BatchOutput={result:QueryResult;reviewReceipt?:MemoryReviewReceipt;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
 
 /** Durable work references original evidence; jobs never persist extra copies of private text. */
 export class MemoryPipeline {
@@ -217,7 +219,7 @@ export class MemoryPipeline {
   private commitBatch(step:ExecutionStep,output:BatchOutput|undefined){
     if(!output)return;
     const batch=this.batch(String(step.input.batchId)),{result,model,profile,skillVersion,ranges,chunks}=output;
-    this.options.memories.extract(result,model,{profile,requireAdmission:this.options.requireAdmission,reviewRunId:this.options.review?result.runId:undefined,skillVersion,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),onSaved:items=>{
+    this.options.memories.extract(result,model,{profile,requireAdmission:this.options.requireAdmission,reviewReceipt:output.reviewReceipt,reviewRunId:output.reviewReceipt?output.reviewReceipt.reviewRunId:this.options.review?result.runId:undefined,skillVersion,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),onSaved:items=>{
       for(const item of items)for(const ref of batch.artifactRefs??[])this.store.db.prepare('INSERT INTO memory_artifact_dependencies VALUES(?,?)').run(item.id,ref.id);
       batch.memoryIds=items.map(m=>m.id);this.saveBatch(batch);
       for(const chunk of chunks)this.store.db.prepare('INSERT OR IGNORE INTO memory_checkpoints(key,evidence_id,completed_at) VALUES(?,?,?)').run(chunk.key,chunk.id,new Date().toISOString());
@@ -257,7 +259,7 @@ export class MemoryPipeline {
             try{this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});}
             catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;recordFailure(error,result);return {code:error.code,feedback:error.repairInstruction};}
           };
-          const input:MemoryPipelineQuery={signal,validateOutput,onProgress:event=>observe(event.message??event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(chunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
+          const input:MemoryPipelineQuery={contextTime:job.createdAt,signal,validateOutput,onProgress:event=>observe(event.message??event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(chunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
           let result=await withExecutionCancellation(signal,()=>this.options.query(input));
           signal.throwIfAborted();
           try{
@@ -269,7 +271,7 @@ export class MemoryPipeline {
             }
             validateArtifacts();
             this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
-            return {result,model,profile:profile.id,skillVersion:profile.id==='coding'?profile.version:batch.skillVersion??job.skillVersion,ranges,chunks};
+            return {result,reviewReceipt:memoryReviewReceipt(result),model,profile:profile.id,skillVersion:profile.id==='coding'?profile.version:batch.skillVersion??job.skillVersion,ranges,chunks};
           }catch(error){if(error instanceof MemoryOutputValidationError){
               recordFailure(error,result);
             }if(generation===0&&error instanceof MemoryOutputValidationError){feedback=error;continue;}throw error;}
