@@ -29,6 +29,7 @@ import {ProcessingRuntime} from './processing-runtime.js';
 import {reviewMemory,memoryReviewReceipt} from './memory-review.js';
 import {MemoryReviewCache} from './memory-review-cache.js';
 import {Perception} from './perception.js';
+import {MediaAssets} from './media-assets.js';
 import { requestLocale } from './i18n.js';
 import { negotiateLocale } from '@mote/shared/i18n';
 import { moteText } from './i18n.js';
@@ -119,6 +120,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
   const sources=new SourceStore(store),files=new FileStore(store,sources);const fileEvidence=new FileEvidenceRequests(sources);
+  const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));
   const usageLedger=new UsageLedger(store);
   const executor=new ExecutionEngine(store);
   const indexer=new Indexer(store,config,diagnostics,files,input=>{
@@ -184,10 +186,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const queryRuns=new QueryRuns(store,{executor,concurrency:()=>runtimeSettings.execution().interactiveConcurrency});
   const insightRuns=new InsightRuns(store,{executor});
   const workflows=new ProcessingRuntime(store,[],{},Date.now,executor);
-  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:config.fileProcessorModules,analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry});
+  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:config.fileProcessorModules,analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,mediaAssets});
   try{await processing.runtime.ready;}catch(error){await processing.close();await workflows.close();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
-  const perception=new Perception(store,processing.runtime,executor);
+  const perception=new Perception(store,processing.runtime,executor,mediaAssets);
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return agent.query({...input,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}});},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
   const semanticArtifacts=async(ids:string[],operationId?:string)=>{
@@ -274,7 +276,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   registerContextRoutes(app,new ContextQuery(store,sources,files,evidenceReader));
   registerTodoRoutes(app,store);
   registerOperations(app,new Operations(store),req=>Boolean(credential(req)));
-  registerProcessingRoutes(app,{store,workflows,perception,semanticFingerprint:()=>semanticSelection().fingerprint});
+  registerProcessingRoutes(app,{store,workflows,perception,mediaAssets,semanticFingerprint:()=>semanticSelection().fingerprint});
   app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);assertExternalCaptures([input]);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));store.captureReceived(input.deviceId);return reply.code(result.duplicate?200:201).send(result);});
   app.post('/api/captures/bundle',{bodyLimit:12*1024*1024},async req=>{
     const captures=parseCaptureBundle(req.body);assertExternalCaptures(captures);

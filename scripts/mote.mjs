@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Explicit profiles only. Ambient MOTE_* variables never choose a target or supply credentials.
 import { parseArgs } from 'node:util';
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { writeFile,readFile,mkdir,stat } from 'node:fs/promises';
+import { join,resolve } from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
 import { profilePaths, initialize, loadProfile, isolatedEnvironment, withProfileLock, startNative, nativeIdentity, health, compose, execute, backupProfile, restoreProfile, atomicJson, launchdXml, effectiveConfiguration, setPublicUrl } from './profile-lib.mjs';
 import { configureTunnel, runNativeTunnel, nativeTunnelArgs, nativeTunnelIdentity, stopNativeTunnel } from './tunnel-lib.mjs';
 import { startProfile as start, stopProfile as stop, changeProfileDeployment } from './update-deploy.mjs';
@@ -15,6 +17,8 @@ const help = `Mote central profiles (Node 24+, default: dev; prod requires --pro
   backup [--profile NAME] [--home PATH] [--out NEW_DIRECTORY]
   restore --from BACKUP [--profile NAME] [--home PATH]
   launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
+  media-runtime [--profile NAME] [--home PATH] [--python PYTHON_BINARY] (Native profile, stopped)
+  media-import --role ocr|dialogue --from DIRECTORY [--profile NAME] [--home PATH] (verified offline model bundle)
   tunnel --enable --token-file PRIVATE_FILE [--public-url HTTPS_ORIGIN] [--protocol auto|http2|quic] [--binary ABSOLUTE_CLOUDFLARED]
   tunnel --disable [--profile NAME] [--home PATH]
   tunnel-run|tunnel-launchd [--profile NAME] [--home PATH] [--node ABSOLUTE_NODE]
@@ -36,7 +40,7 @@ let values, positionals;
 try { ({ values, positionals } = parseArgs({ args: raw, allowPositionals: true, options: {
   profile: { type: 'string', default: 'dev' }, home: { type: 'string' }, runtime: { type: 'string' }, port: { type: 'string' }, image: { type: 'string' }, release: { type: 'string' }, version: { type: 'string' },
   'data-dir': { type: 'string' }, volume: { type: 'string' }, 'token-file': { type: 'string' }, 'public-url': { type: 'string' }, protocol: { type: 'string' }, binary: { type: 'string' },
-  out: { type: 'string' }, from: { type: 'string' }, node: { type: 'string' }, enable: { type: 'boolean' }, disable: { type: 'boolean' }, 'restore-data': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
+  out: { type: 'string' }, from: { type: 'string' }, role:{type:'string'}, node: { type: 'string' }, python: {type:'string'}, enable: { type: 'boolean' }, disable: { type: 'boolean' }, 'restore-data': { type: 'boolean' }, help: { type: 'boolean', short: 'h' },
 } })); } catch { console.error('Mote: Invalid arguments; use --help. Credentials are never accepted as argument values.'); process.exit(1); }
 const command = positionals[0] ?? 'help';
 const print = value => console.info(JSON.stringify(value));
@@ -81,6 +85,33 @@ async function main() {
     return;
   }
   if (command === 'config') { print(effectiveConfiguration(p)); return; }
+  if (command === 'media-runtime') {
+    if (p.meta.runtime !== 'native') throw Error('Docker bundles the media runtime in its image');
+    const result=await withProfileLock(p,async()=>{
+      if((await nativeIdentity(p)).running)throw Error('Stop this profile before installing the Native media runtime');
+      const requirements=['requirements-audio.txt','requirements-ocr.txt'].map(name=>fileURLToPath(new URL(name,import.meta.url)));
+      const hash=createHash('sha256');for(const path of requirements)hash.update(await readFile(path));const version=hash.digest('hex');
+      const root=join(p.directory,'media-venv'),marker=join(root,'mote-requirements.sha256');
+      if(await readFile(marker,'utf8').catch(()=>null)===version)return {profile:p.profile,installed:true,changed:false,python:join(root,'bin/python')};
+      await mkdir(p.directory,{recursive:true,mode:0o700});
+      await execute(values.python||'python3',['-m','venv',root],{env:isolatedEnvironment(p),timeoutMs:120000});
+      await execute(join(root,'bin/python'),['-m','pip','install','--disable-pip-version-check','--no-cache-dir',...requirements.flatMap(path=>['-r',path])],{env:isolatedEnvironment(p),timeoutMs:30*60*1000});
+      await writeFile(marker,version,{mode:0o600});return {profile:p.profile,installed:true,changed:true,python:join(root,'bin/python')};
+    });print(result);return;
+  }
+  if (command === 'media-import') {
+    if(!['ocr','dialogue'].includes(values.role)||!values.from)throw Error('media-import requires --role ocr|dialogue and --from DIRECTORY');
+    const source=resolve(values.from),info=await stat(source);if(!info.isDirectory())throw Error('Model source must be a directory');
+    await withProfileLock(p,async()=>{
+      if(p.meta.runtime==='native'){
+        const script=fileURLToPath(new URL('media-import.mjs',import.meta.url));
+        await execute(process.execPath,[script,join(p.directory,'models'),values.role,source],{env:isolatedEnvironment(p),timeoutMs:10*60*1000});
+      }else{
+        if(/[,:]/.test(source))throw Error('Docker model import source path cannot contain comma or colon');
+        await execute('docker',['run','--rm','--network','none','--mount',`type=volume,source=${p.meta.volume}-models,target=/models`,'--mount',`type=bind,source=${source},target=/import,readonly`,p.meta.image,'node','scripts/media-import.mjs','/models',values.role,'/import'],{env:isolatedEnvironment(p),timeoutMs:10*60*1000});
+      }
+    });return;
+  }
   if (command === 'check-update') {
     const { checkProfileUpdate } = await import('./update-release.mjs');
     const checked = await checkProfileUpdate(p, { version: values.version });

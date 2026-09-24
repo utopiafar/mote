@@ -17,6 +17,7 @@ services:
       MOTE_LOG_DIR: /data/logs
     volumes:
       - mote-data:/data
+      - mote-models:/models
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -27,6 +28,44 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+  ocr-worker:
+    image: ${MOTE_IMAGE:?Profile image is required}
+    restart: unless-stopped
+    network_mode: "service:mote"
+    depends_on:
+      mote:
+        condition: service_started
+    env_file:
+      - path: ${MOTE_MEDIA_DOCKER_ENV_FILE:?Generated media environment is required}
+        format: raw
+    volumes:
+      - mote-models:/models:ro
+    command: ["/opt/mote-media-venv/bin/python", "scripts/ocr-server.py", "--model-root", "/models/ocr", "--port", "9010"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
+  asr-worker:
+    image: ${MOTE_IMAGE:?Profile image is required}
+    restart: unless-stopped
+    network_mode: "service:mote"
+    depends_on:
+      mote:
+        condition: service_started
+    env_file:
+      - path: ${MOTE_MEDIA_DOCKER_ENV_FILE:?Generated media environment is required}
+        format: raw
+    volumes:
+      - mote-models:/models:ro
+    command: ["/opt/mote-media-venv/bin/python", "scripts/transcription-server.py", "--model", "/models/dialogue", "--segmentation-model", "/models/dialogue/segmentation.onnx", "--speaker-model", "/models/dialogue/speaker.onnx", "--port", "9009"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
 volumes:
   mote-data:
     name: ${MOTE_VOLUME:?Profile-specific volume is required}
+  mote-models:
+    name: ${MOTE_MODELS_VOLUME:?Profile-specific models volume is required}

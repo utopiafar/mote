@@ -29,7 +29,7 @@ export function fileConfiguration(saved:FileConfiguration,sourceId:string,mime:s
  const keys=builtinKeys[processorId]??Object.keys(settings).sort() as (keyof FileProcessingSettings)[];
  // Fingerprints may include credentials, but only the digest is durable/public. Global UI revision and labels are not execution inputs.
  const serviceIds=applied?[applied.profile.serviceId,applied.profile.modelServiceId].filter(Boolean):[];
- const value={enabled:base.enabled,timeoutMs:base.timeoutMs,...(mime.startsWith('audio/')?{dailyAudioMinutes:base.dailyAudioMinutes}:{}),processorId,version:processor?.version??'unavailable',unavailable,
+ const value={enabled:base.enabled,timeoutMs:base.timeoutMs,...(mime.startsWith('audio/')?{maxAudioMinutes:base.maxAudioMinutes}:{}),processorId,version:processor?.version??'unavailable',unavailable,
   settings:Object.fromEntries(keys.map(key=>[key,settings[key]])),summarize:settings.summarize,
   ...(applied?{parameters:applied.profile.parameters,diarizationProcessor:applied.profile.diarizationProcessor,services:serviceIds.map(id=>{const s=policy.services.find(s=>s.id===id);return s?{id:s.id,kind:s.kind,execution:s.execution,endpoint:s.endpoint,model:s.model,apiKey:s.apiKey}:null;}),boundServices:applied.services.map(({name,...s})=>s)}:{}),
  };

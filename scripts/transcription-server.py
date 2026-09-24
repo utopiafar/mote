@@ -51,12 +51,9 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.threads <= 32 or not 1 <= args.timeout <= 3600 or not 1 <= args.port <= 65535:
         parser.error('Invalid threads, timeout or port')
-    if not Path(args.model).is_dir():
-        parser.error('Download/import the ASR model before starting this offline service')
-    if not shutil.which('ffmpeg') or any(importlib.util.find_spec(name) is None for name in ('faster_whisper', 'sherpa_onnx')):
-        parser.error('Install ffmpeg and scripts/requirements-audio.txt first')
+    # The control endpoint stays available while models are being installed.
     settings = vars(args)
-    secret = os.environ.get('MOTE_TRANSCRIPTION_TOKEN', '')
+    secret = os.environ.get('MOTE_MEDIA_WORKER_TOKEN') or os.environ.get('MOTE_TRANSCRIPTION_TOKEN', '')
     mp = multiprocessing.get_context('spawn')
     busy = threading.BoundedSemaphore(1)
 
@@ -80,8 +77,9 @@ def main():
             if not self.authorized():
                 self.send_error(401)
             elif self.path == '/health':
-                self.json_response({'version': 2, 'execution': 'local', 'asr': True,
-                                    'diarization': bool(args.segmentation_model and args.speaker_model and
+                runtime = bool(shutil.which('ffmpeg') and importlib.util.find_spec('faster_whisper'))
+                self.json_response({'version': 2, 'execution': 'local', 'asr': bool(runtime and Path(args.model).is_dir() and Path(args.model, 'model.bin').is_file()),
+                                    'diarization': bool(runtime and importlib.util.find_spec('sherpa_onnx') and args.segmentation_model and args.speaker_model and
                                                         Path(args.segmentation_model).is_file() and Path(args.speaker_model).is_file())})
             else:
                 self.send_error(404)
@@ -92,6 +90,12 @@ def main():
                 return
             if not self.authorized():
                 self.send_error(401)
+                return
+            if not Path(args.model, 'model.bin').is_file() or not shutil.which('ffmpeg') or importlib.util.find_spec('faster_whisper') is None:
+                self.send_error(503, 'Local ASR model or runtime unavailable')
+                return
+            if self.path == '/diarize' and (not Path(args.segmentation_model).is_file() or not Path(args.speaker_model).is_file() or importlib.util.find_spec('sherpa_onnx') is None):
+                self.send_error(503, 'Local diarization model unavailable')
                 return
             if not busy.acquire(blocking=False):
                 self.send_error(429, 'Local worker busy')

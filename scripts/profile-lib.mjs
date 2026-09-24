@@ -115,7 +115,14 @@ export async function loadProfile(paths) {
 }
 export function deploymentEnvironment(p) {
   const tunnel = validateTunnel(p.meta.tunnel), docker = p.meta.runtime === 'docker';
+  const profilePort=(role,base)=>base+parseInt(createHash('sha256').update(`${p.project}:media:${role}`).digest('hex').slice(0,8),16)%20000;
+  const asrPort=docker?9009:profilePort('asr',20000),ocrPort=docker?9010:profilePort('ocr',40000);
   return { MOTE_RUNTIME: p.meta.runtime, MOTE_CONFIG_FILE: p.envFile, MOTE_STORAGE_KIND: docker ? 'docker-volume' : 'local-directory', MOTE_STORAGE_SOURCE: docker ? p.meta.volume : p.dataDir, MOTE_STORAGE_MOUNT: docker ? '/data' : '',
+    MOTE_MEDIA_MODEL_DIR: docker ? '/models' : join(p.directory, 'models'),
+    MOTE_MEDIA_PYTHON: docker ? '/opt/mote-media-venv/bin/python' : join(p.directory, 'media-venv/bin/python'),
+    MOTE_MEDIA_ASR_PORT:String(asrPort),MOTE_MEDIA_OCR_PORT:String(ocrPort),
+    MOTE_MEDIA_ASR_ENDPOINT:`http://127.0.0.1:${asrPort}/transcribe`,MOTE_MEDIA_OCR_ENDPOINT:`http://127.0.0.1:${ocrPort}/ocr`,
+    MOTE_MEDIA_WORKER_TOKEN: createHash('sha256').update('mote-media-worker:').update(p.env.MOTE_TOKEN).digest('hex'),
     MOTE_PUBLIC_URL: p.env.MOTE_PUBLIC_URL || '',
     MOTE_TUNNEL_ENABLED: tunnel.enabled ? '1' : '0', MOTE_TUNNEL_PROVIDER: tunnel.enabled ? 'cloudflare' : '', MOTE_TUNNEL_PROTOCOL: tunnel.enabled ? tunnel.protocol : '' };
 }
@@ -256,7 +263,7 @@ export async function stopNative(p, expectedMarker) {
   return { stopped: true };
 }
 export function composeEnvironment(p) {
-  return isolatedEnvironment(p, { MOTE_COMPOSE_PROJECT: p.project, MOTE_IMAGE: p.meta.image, MOTE_VOLUME: p.meta.volume, MOTE_DOCKER_ENV_FILE: join(p.directory, 'generated/docker.env'), MOTE_BIND_ADDRESS: '127.0.0.1', MOTE_TUNNEL_IMAGE: validateTunnel(p.meta.tunnel).image, MOTE_TUNNEL_TOKEN_FILE: tunnelTokenPath(p), MOTE_TUNNEL_USER: p.tunnelUser || `${process.getuid?.() ?? 65532}:${process.getgid?.() ?? 65532}` });
+  return isolatedEnvironment(p, { MOTE_COMPOSE_PROJECT: p.project, MOTE_IMAGE: p.meta.image, MOTE_VOLUME: p.meta.volume, MOTE_MODELS_VOLUME: p.meta.volume+'-models', MOTE_DOCKER_ENV_FILE: join(p.directory, 'generated/docker.env'), MOTE_MEDIA_DOCKER_ENV_FILE: join(p.directory,'generated/media.env'), MOTE_BIND_ADDRESS: '127.0.0.1', MOTE_TUNNEL_IMAGE: validateTunnel(p.meta.tunnel).image, MOTE_TUNNEL_TOKEN_FILE: tunnelTokenPath(p), MOTE_TUNNEL_USER: p.tunnelUser || `${process.getuid?.() ?? 65532}:${process.getgid?.() ?? 65532}` });
 }
 export function composeArgs(p, args) {
   return ['compose', '--project-name', p.project, '--project-directory', repository, '--env-file', join(repository, 'deploy/empty.env'), '-f', join(repository, 'compose.yaml'), ...(p.meta.tls ? ['-f', join(repository, 'compose.tls.yaml')] : []), ...(validateTunnel(p.meta.tunnel).enabled ? ['-f', join(repository, 'compose.tunnel.yaml')] : []), ...args];
@@ -270,6 +277,9 @@ export async function compose(p, args, options = {}) {
   const file = join(p.directory, 'generated/docker.env'), temp = `${file}.${randomUUID()}.tmp`;
   try { await writeFile(temp, lines.join('\n') + '\n', { flag: 'wx', mode: 0o600 }); await rename(temp, file); }
   finally { await rm(temp, { force: true }); }
+  const mediaEnv=join(p.directory,'generated/media.env'),mediaTemp=`${mediaEnv}.${randomUUID()}.tmp`;
+  try{await writeFile(mediaTemp,`MOTE_MEDIA_WORKER_TOKEN=${deploymentEnvironment(p).MOTE_MEDIA_WORKER_TOKEN}\nMOTE_MEDIA_MODEL_DIR=/models\n`,{flag:'wx',mode:0o600});await rename(mediaTemp,mediaEnv);}
+  finally{await rm(mediaTemp,{force:true});}
   return execute('docker', composeArgs(p, args), { env: composeEnvironment(p), ...options });
 }
 export async function dockerContainer(p) {

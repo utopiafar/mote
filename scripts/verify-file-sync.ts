@@ -36,8 +36,8 @@ if(process.argv.includes('--live-model')){
  if(process.argv.includes('--policy')){
    const policy=settings.policy;const service=policy.services.find((s:any)=>s.id==='asr-api');service.endpoint=process.env.MOTE_FILE_TEST_ASR??'http://127.0.0.1:59019/transcribe';service.execution='local';service.apiKey=null;
    for(const processorId of ['audio.http','text.utf8']){const profile=policy.profiles.find((p:any)=>p.processorId===processorId);profile.summarize=true;}
-   await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,dailyAudioMinutes:10},policy},'PUT');
- }else await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',summarize:true,endpoint:process.env.MOTE_FILE_TEST_ASR??'http://127.0.0.1:59019/transcribe',dailyAudioMinutes:10}},'PUT');
+   await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,maxAudioMinutes:10},policy},'PUT');
+ }else await request('/api/file-processing',{revision:settings.revision,settings:{...settings.settings,enabled:true,audioProcessor:'audio.http',summarize:true,endpoint:process.env.MOTE_FILE_TEST_ASR??'http://127.0.0.1:59019/transcribe',maxAudioMinutes:10}},'PUT');
  const audio=android.initialFiles.find((f:any)=>f.item.mimeType==='audio/wav');assert.ok(audio);
  const targets=android.initialFiles.filter((f:any)=>/^(audio|text)\//.test(f.item.mimeType));
  const deadline=Date.now()+240000;let details:any[]=[];

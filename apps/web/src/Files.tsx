@@ -9,7 +9,7 @@ import {FileReview} from './FileReview';
 import {AnswerMarkdown} from './AnswerMarkdown';
 
 type FileRow={processingPolicy?:{applied:any;current:any;legacyRevision:string|null};captureId:string;sourceId:string;sizeBytes:number;hasOriginal:boolean;originMissing:boolean;item:{document?:{fileIndex?:import('@mote/shared').FileIndex};text?:string;title:string;layer:string;observedAt:string;mimeType?:string};job:null|{state:string;error?:string;summary_state:string;local_only?:number;execution?:import('@mote/shared').ExecutionEnvelope};steps?:{step:string;state:string;attempts:number;execution?:import('@mote/shared').ExecutionEnvelope}[];artifacts:{id:string;kind:string;complete?:boolean;sections?:{answer:string;citationIds:string[]}[]}[]};
-const errors:Record<string,string>={archive_only:moteText("仅归档原件"),processor_not_configured:moteText("处理插件或本地模型尚未配置"),not_configured:moteText("请配置中央处理服务"),unsupported_format:moteText("此格式仅归档原件"),provider_failed:moteText("转写服务未完成，请检查服务后重试"),processing_limit:moteText("超过处理大小或时长预算"),daily_budget:moteText("等待次日音频预算"),summary_failed:moteText("摘要生成失败，可单独重试")};
+const errors:Record<string,string>={archive_only:moteText("仅归档原件"),model_missing:moteText("等待安装本地模型"),processor_not_configured:moteText("处理插件或本地模型尚未配置"),not_configured:moteText("请配置中央处理服务"),unsupported_format:moteText("此格式仅归档原件"),provider_failed:moteText("转写服务未完成，请检查服务后重试"),processing_limit:moteText("超过处理大小或单文件时长限制"),summary_failed:moteText("摘要生成失败，可单独重试")};
 const states:Record<string,string>={waiting:moteText("等待处理"),running:moteText("处理中"),succeeded:moteText("已完成"),blocked:moteText("等待配置或格式支持"),failed:moteText("处理失败")};
 
 export function Files({api,onOpen}:{api:Api;onOpen:(id:string)=>void}){
