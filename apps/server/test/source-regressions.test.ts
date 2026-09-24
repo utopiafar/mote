@@ -96,7 +96,7 @@ test('each memory must declare its own inline evidence, even when another claim 
  assert.deepEqual(saved.items[1].evidenceIds,[b.id]);
 });
 
-test('merging an archive with a newer current version invalidates previous derived conclusions',async t=>{
+test('merging a newer source version invalidates old memories and retains as-of insights',async t=>{
  const {store:destination,sources:local}=fixture(t),{store:origin,sources:remote}=fixture(t);
  const first=item(),ack=await local.upsert('generated-source',first);await remote.upsert('generated-source',first);
  const memories=new MemoryStore(destination),memory=memories.extract({answer:JSON.stringify({memories:[{title:'合成旧结论',statement:`旧版本的陈述 [${ack.id}]`,uncertainty:'仅供回归验证',evidenceIds:[ack.id]}]}),citations:[{id:ack.id,capturedAt:first.observedAt,appName:'generated',excerpt:'generated'}],trace:[],runId:'generated-import-memory'},'fixture-model').items[0];
@@ -106,7 +106,7 @@ test('merging an archive with a newer current version invalidates previous deriv
  const archive=origin.exportArchive(1_000_000);await destination.importArchive(archive);
  assert.equal(local.getItem('generated-source',first.externalId)?.revision,'r2');
  assert.equal(memories.get(memory.id).status,'stale');
- assert.equal(destination.insights().length,0);
+ assert.equal(destination.insights().length,1,'a superseded source keeps its historical insight version');
  assert.ok(destination.deletionRevision()>before,'active readers must see the superseded evidence revision');
  const revision=destination.deletionRevision();await destination.importArchive(archive);
  assert.equal(destination.deletionRevision(),revision,'an identical archive retry must not create another supersession');

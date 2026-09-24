@@ -56,6 +56,22 @@ test('failed background queries retain a retryable conversation history entry',a
   assert.equal(conversation.status,'failed');assert.equal(conversation.turns[0].status,'failed');assert.equal(conversation.turns[0].question,'Generated failed question');assert.equal(conversation.turns[0].error.message,'模型服务请求未完成，请检查地址、凭据和模型配置。');
 });
 
+test('unrelated archive deletion does not fail a query, but deleting used evidence does',async t=>{
+  for(const deleteUsed of [false,true])await t.test(deleteUsed?'used evidence':'unrelated evidence',async sub=>{
+    const dir=mkdtempSync(join(tmpdir(),'mote-query-deletion-'));
+    let entered!:()=>void,release!:()=>void;
+    const running=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
+    const {app,store}=await buildApp(config(dir),{agent:{configured:true,close:async()=>release(),query:async()=>{entered();await gate;return {answer:'Generated answer',citations:[],trace:[],runId:randomUUID(),evidenceDependencies:{version:1,complete:true,ids:[used.id]}};}}});
+    sub.after(async()=>{release();await app.close();rmSync(dir,{recursive:true,force:true});});
+    const capture=()=>({id:randomUUID(),deviceId:'fixture',deviceName:'Generated device',platform:'macos',source:'activity' as const,appId:'fixture.app',appName:'Generated activity',capturedAt:'2026-09-20T00:00:30.000Z',durationMs:30000,privacy:{excluded:false,redacted:false,mode:'none' as const,collection:'activity' as const}});
+    const used=capture(),other=capture();await store.ingest(used);await store.ingest(other);
+    const pending=app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Generated question'}});
+    await running;store.delete(deleteUsed?used.id:other.id);release();
+    const response=await pending;
+    assert.equal(response.statusCode,deleteUsed?409:200,response.body);
+  });
+});
+
 test('interrupted runs recover as failures, and deleted evidence clears public status messages',async t=>{
   const {Store}=await import('../src/store.js');const {QueryRuns}=await import('../src/query-runs.js');
   const dir=mkdtempSync(join(tmpdir(),'mote-query-progress-')),store=new Store(dir),runs=new QueryRuns(store);

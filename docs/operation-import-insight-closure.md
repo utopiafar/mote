@@ -29,7 +29,7 @@ Insights retain a fixed scope, creation time, source-watermark receipt, derived-
 ## Focused evidence
 
 - `operation-runs.test.ts`: queue deadlines, cancellation, historical receipt migration, parent membership propagation/rollback, shutdown, and two live database owners.
-- `insight-snapshots.test.ts`: overlapping-device time, late evidence versions, preserved prior reports, scoped concurrent-change rejection, and atomic commit fencing.
+- `insight-snapshots.test.ts`: overlapping-device time, late evidence versions, preserved prior reports, and in-flight reviews completing while the archive grows.
 - `import-manifest-worker.test.ts`: bad later records, changed originals, changed reviewed manifests, and cancellation without worker-slot loss.
 - `document-ingestion.test.ts`: the same generated PDF, DOCX, and XLSX through Desktop extraction, automatic import, and central file processing; missing text layers preserve originals without inventing content.
 - `evidence-dependencies.test.ts`: changing one of two segments preserves the other identity and Memory, invalidates the changed descendant, keeps historical artifact text/reports, and includes published file-backed Memory in insight snapshots.
@@ -40,6 +40,8 @@ The latest combined file/document/dependency regression passed 17 tests. The ear
 ## Lifecycle and server assembly closure
 
 Automatic insight generation now uses `InsightRuns`, including the immutable scope/coverage snapshot and atomic versioned report commit. A lifecycle window has a real `workflow:lifecycle:<window>` operation and a fenced engine step. Extraction jobs, semantic workflows and insight runs link their execution membership to the window. Consolidation and working-memory writes check the current grant in the same transaction as their write. An insight child also checks its parent's grant inside the child's final commit, so another host cancelling the parent cannot publish a late report before the local abort notification arrives.
+
+The scope/coverage snapshot records the review's starting state. Routine source arrivals, memory updates, and derived segment generation no longer reject a completed insight. A later report has its own version and coverage receipt. An explicit deletion still removes saved reports conservatively; a superseded source preserves the historical original and its as-of report.
 
 Normal shutdown preserves replayable window checkpoints. Explicit cancellation remains terminal. A second host cannot replay a live window or replace its checkpoint. Semantic model usage and trace metadata use the actual workflow operation and job IDs supplied by the executing host.
 

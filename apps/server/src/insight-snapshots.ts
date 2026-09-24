@@ -1,11 +1,11 @@
 import {createHash} from 'node:crypto';
 import type {InsightSnapshot} from '@mote/shared';
-import {StoreError,type Store} from './store.js';
+import type {Store} from './store.js';
 type Scope={after?:string;before?:string;deviceId?:string;timeZone?:string};
 const current="(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=c.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=c.id AND h.deleted=0) OR c.id IN (SELECT capture_id FROM file_heads))";
 function selection(scope:Scope){return {where:current+(scope.after?' AND c.context_end>=?':'')+(scope.before?" AND (c.context_at<? OR (json_extract(c.json,'$.source') IN ('screen','activity') AND (unixepoch(c.captured_at,'subsec')*1000-json_extract(c.json,'$.durationMs')<? OR EXISTS(SELECT 1 FROM json_each(c.json,'$.stateSeries.samples') sample WHERE unixepoch(json_extract(sample.value,'$.at'),'subsec')*1000-json_extract(sample.value,'$.durationMs')<?))))":'')+(scope.deviceId?' AND c.device_id=?':''),args:[...(scope.after?[scope.after]:[]),...(scope.before?[scope.before,Date.parse(scope.before),Date.parse(scope.before)]:[]),...(scope.deviceId?[scope.deviceId]:[])]};}
-/** Incremental hash of scoped host identities and revisions. No original prose,
- * screenshots, credentials or inferred semantic categories enter this receipt. */
+/** Start-of-run provenance for later report versions, never a commit fence.
+ * No original prose, screenshots, credentials or inferred categories enter it. */
 function evidenceFingerprint(store:Store,scope:Scope){
  const {where,args}=selection(scope),hash=createHash('sha256');let records=0,referenceOnlyRecords=0,pendingProcessing=0;
  for(const row of store.db.prepare(`SELECT c.id,c.fingerprint,c.context_at,c.context_end,json_extract(c.json,'$.stateSeries.samples') samples,CASE WHEN json_type(c.json,'$.stateSeries') IS NOT NULL THEN json_remove(c.json,'$.stateSeries') END state,json_extract(c.json,'$.provenance.layer') layer,
@@ -48,5 +48,3 @@ export function createInsightSnapshot(store:Store,id:string,input:Scope&{prompt?
  const limitations=['observed_samples_do_not_establish_work_time','source_registration_does_not_establish_complete_coverage',...(counts.records?[]:['no_records_in_scope']),...(counts.referenceOnlyRecords?['reference_content_unavailable']:[]),...(counts.pendingProcessing?['processing_incomplete']:[]),...(measured.unobservedDurationMs===null?['sampling_extent_unknown']:measured.unobservedDurationMs>0?['unobserved_sampling_intervals']:[])];
  return {schemaVersion:1,id,seriesId,version:previous?Number(previous.version)+1:1,...(previous?{previousRunId:String(previous.id)}:{}),asOf,scope,watermark:Number(store.db.prepare('SELECT coalesce(max(seq),0) n FROM changes').get()!.n),scopeFingerprint,coverage:{...counts,sourceStates,measured,limitations}};
 }
-export class InsightSnapshotChanged extends StoreError {readonly reason='snapshot_changed';constructor(){super('Evidence in this review window changed. Generate a new review version to include the latest records.',409);}}
-export function assertInsightSnapshot(store:Store,snapshot:InsightSnapshot){if(evidenceFingerprint(store,snapshot.scope).scopeFingerprint!==snapshot.scopeFingerprint)throw new InsightSnapshotChanged();}

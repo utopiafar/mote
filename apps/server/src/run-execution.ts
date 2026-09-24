@@ -32,7 +32,7 @@ export class RunExecution {
     catch(error){if(!signal.aborted){try{commit(()=>this.callbacks.failure(id,error));}catch{/* A revoked/deleted run cannot write failure history. */}}throw error;}
    },
    commit:(step,result)=>this.callbacks.commit(String(step.input.runId),result),
-   classify:error=>error&&typeof error==='object'&&(error as {reason?:string}).reason==='snapshot_changed'?new ExecutionFailure('stale','snapshot_changed'):new ExecutionFailure('permanent',error instanceof ExecutionFailure?error.code:'run_failed'),
+   classify:error=>new ExecutionFailure('permanent',error instanceof ExecutionFailure?error.code:'run_failed'),
    project:step=>{const id=String(step.input.runId);if(this.engine.closed&&step.state==='waiting'){this.engine.fail(step.id,'interrupted');return;}this.callbacks.project(id,step);if(!['waiting','running'].includes(step.state))this.finish(id);},
   });
  }

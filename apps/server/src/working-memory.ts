@@ -69,7 +69,7 @@ export class WorkingMemory {
       }
       prefix.push(entry);characters+=text.length+1;count++;
     }
-    const fingerprint=this.fingerprint(conversation,count),revision=this.store.deletionRevision();
+    const fingerprint=this.fingerprint(conversation,count);
     if(prefix.length)batches.push(prefix);
     let summaryText=previous?.text??'';
     for(const turns of batches){
@@ -78,7 +78,7 @@ export class WorkingMemory {
       summaryText=result.answer;
     }
     const commit=()=>{
-    if(this.store.deletionRevision()!==revision||!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)||this.fingerprint(this.conversations.get(id),count)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
+    if(!this.store.db.prepare('SELECT id FROM conversations WHERE id=?').get(id)||this.fingerprint(this.conversations.get(id),count)!==fingerprint)throw new StoreError('Conversation changed while compacting',409);
     const evidenceDependencies=combineDependencies(conversation.turns.slice(0,count).filter(turn=>turn.result).map(turn=>turn.evidenceDeleted?{version:1,complete:true,ids:[]}:turn.result!.evidenceDependencies));
     const json=JSON.stringify({text:summaryText,coveredTurns:count,generatedAt:new Date().toISOString(),fingerprint,...(evidenceDependencies?{evidenceDependencies}:{})});
     this.store.reserveMetadata(Buffer.byteLength(json));
