@@ -143,7 +143,9 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
         accepted=await api.request<QueryRun>('/api/query-runs',{method:'POST',signal:controller.signal,body});
       }
       if(controller.signal.aborted)return;
-      setRun(accepted);setPollError('');setQuestion('');
+      // Keep the submitted draft while the composer is disabled. A failed turn
+      // can appear from conversation refresh before the run poll completes.
+      setRun(accepted);setPollError('');
     } catch (e) {
       if (!controller.signal.aborted) {setBusy(false);setQuestion(text); setPendingQuestion(''); setError(moteText("{0} 可刷新历史检查结果后再重试。", errorMessage(e)));}
     } finally {if (!controller.signal.aborted) {operation.current = null;}}

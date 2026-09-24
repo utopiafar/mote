@@ -71,6 +71,7 @@ async function run() {
   await click('今天'); await click('问一问'); await until(() => js(`document.querySelectorAll('.conversation-item').length===2`), 'history after navigation');
   await js(`Array.from(document.querySelectorAll('.conversation-item')).find(b=>b.textContent.includes('合成计划')).click()`); await readyTurns(2);
   await input('fixture-failure'); await click('发送问题'); await until(() => js(`document.querySelector('.conversation-content [role=alert]')`), 'model failure');
+  await until(() => js(`!document.querySelector('[aria-label="向 Mote 提问"]').disabled`), 'failed answer unlocks composer');
   const failedConversation = await (await request('/api/conversations/' + id)).json();
   assert.equal(failedConversation.turnCount, 3, 'failure remains visible as a saved turn');
   assert.equal(failedConversation.turns.at(-1).status, 'failed', 'failed turn is marked failed');
@@ -94,6 +95,7 @@ async function run() {
   await js(`Array.from(document.querySelectorAll('.conversation-item')).find(b=>b.textContent.includes('fixture-delayed-navigation')).click()`); await readyTurns(1);
   await click('新对话');await input('fixture-cancel');await click('发送问题');
   await until(()=>js(`Array.from(document.querySelectorAll('button')).some(b=>b.textContent.includes('停止生成'))`),'stop button');
+  assert.equal(await js(`document.querySelector('[aria-label="向 Mote 提问"]').value`), 'fixture-cancel', 'submitted question stays in the disabled composer until success');
   await click('停止生成');await until(async()=> (await (await request('/api/query-runs')).json()).items.some(r=>r.status==='cancelled'),'cancel acknowledged');
   await until(()=>js(`!document.querySelector('textarea[aria-label="向 Mote 提问"]').disabled`),'cancel unlocks composer');
   assert(!(await (await request('/api/conversations')).json()).items.some(c=>c.title==='fixture-cancel'));
