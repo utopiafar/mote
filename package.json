@@ -1,6 +1,6 @@
 {
   "name": "mote",
-  "version": "0.0.63",
+  "version": "0.0.64",
   "private": true,
   "type": "module",
   "workspaces": [

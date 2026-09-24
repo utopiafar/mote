@@ -173,7 +173,7 @@ export class LocalSourceManager {
       this.forceRequested = false; this.task = undefined; this.taskForced = false;
       if (this.controller === controller) this.controller = undefined;
       if (forceNext) { this.rerunRequested = false; await this.sync(true); }
-      else if (this.rerunRequested && !this.stopped) { this.rerunRequested = false; void this.sync(false); }
+      else if (this.rerunRequested && !this.stopped) { this.rerunRequested = false; await this.sync(false); }
     });
     return this.task;
   }
@@ -282,6 +282,9 @@ export class LocalSourceManager {
         const again:LocalSource[]=[];
         for (const source of pending) {
           combined.throwIfAborted();
+          // A watcher may start a fresh scan after the initial task await. Do
+          // not mistake its temporary unreadable state for a held source.
+          while (this.task) { await this.task; combined.throwIfAborted(); }
           if (!source.enabled || !this.readable.has(source.id) || this.states.get(source.id)?.state === 'paused') continue;
           const engine = this.engines.get(source.id)!;
           if (!engine.status().pending && !this.metadataDirty.has(source.id)) continue;

@@ -81,7 +81,12 @@ app.on('browser-window-created', (_event, window) => {
       await pause(2200); assert.equal(requests.length, 0, 'First binding in manual mode must not auto-upload or heartbeat');
       assert.deepEqual(sourcePending(origin, token, source.id), [originalSource]);
       await invoke('retry');
-      const synced = await invoke('status'); assert.equal(synced.queueDepth, 0); assert.equal(synced.sync.pendingRecords, 0); assert.equal((await invoke('sources'))[0].pending, 0);
+      const synced = await invoke('status');
+      const syncedSources = await invoke('sources');
+      if (synced.sync.pendingRecords !== 0) process.stderr.write('Offline sync pending diagnostics: ' + JSON.stringify({ queueDepth: synced.queueDepth, sync: synced.sync, sources: syncedSources.map(row => ({ state: row.state, pending: row.pending, blocked: row.blocked, message: row.message })), requests }) + '\n');
+      assert.equal(synced.queueDepth, 0);
+      assert.equal(synced.sync.pendingRecords, 0);
+      assert.equal(syncedSources[0].pending, 0);
       assert.ok(requests.some(request => request.path === '/api/captures/batch'), 'Default packed uploads use the batch endpoint');
       assert.deepEqual(captureBodies, [originalNote]); assert.deepEqual(sourceBodies, [originalSource]);
       assert.equal(requests.filter(request => request.path.includes('heartbeat')).length, 1, 'Manual sync sends one final explicit heartbeat');
