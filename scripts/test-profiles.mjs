@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { repository, profilePaths, loadProfile, nativeIdentity, stopNative, atomicJson } from './profile-lib.mjs';
+import { repository, profilePaths, loadProfile, deploymentEnvironment, nativeIdentity, stopNative, atomicJson } from './profile-lib.mjs';
 import { command, cli, updateEnvironment, initializeFixture, request, note, capture, image } from './profile-fixtures.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'mote-profiles-fixture-'));
@@ -15,6 +15,11 @@ const profiles = [];
 try {
   let dev = await initializeFixture(home, 'dev'), test = await initializeFixture(home, 'test'); profiles.push(dev, test);
   assert.notEqual(dev.env.MOTE_TOKEN, test.env.MOTE_TOKEN); assert.notEqual(dev.dataDir, test.dataDir); assert.notEqual(dev.project, test.project);
+  const devMedia = deploymentEnvironment(dev), testMedia = deploymentEnvironment(test);
+  assert.notEqual(devMedia.MOTE_MEDIA_ASR_ENDPOINT, testMedia.MOTE_MEDIA_ASR_ENDPOINT);
+  assert.notEqual(devMedia.MOTE_MEDIA_OCR_ENDPOINT, testMedia.MOTE_MEDIA_OCR_ENDPOINT);
+  assert.equal(devMedia.MOTE_MEDIA_ASR_ENDPOINT, `http://127.0.0.1:${devMedia.MOTE_MEDIA_ASR_PORT}/transcribe`);
+  assert.equal(devMedia.MOTE_MEDIA_OCR_ENDPOINT, `http://127.0.0.1:${devMedia.MOTE_MEDIA_OCR_PORT}/ocr`);
   assert.equal((await stat(dev.envFile)).mode & 0o777, 0o600);
   assert.equal(dev.env.MOTE_LOG_DIR, './logs'); assert.equal(dev.env.MOTE_LOG_MAX_ENTRIES, '2000'); assert.equal(dev.env.MOTE_AGENT_TRACE_ENABLED, '1'); assert.equal(test.env.MOTE_AGENT_TRACE_ENABLED, '0');
   const hostile = { MOTE_PROFILE: 'prod', MOTE_ENV_FILE: '/missing/formal.env', MOTE_DATA_DIR: '/missing/formal-data', MOTE_TOKEN: 'synthetic-hostile-ambient-token', MOTE_MODEL: 'ambient-model-must-not-load', MOTE_MODEL_API_KEY: 'synthetic-ambient-key', MOTE_DEBUG: '1' };

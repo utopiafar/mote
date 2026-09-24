@@ -136,13 +136,15 @@ test('shared engine shutdown fences an uncooperative file provider and resumes t
  release({...raw,segments:[{startMs:0,endMs:1000,text:'Late synthetic result must not replace committed output'}]});await new Promise(r=>setImmediate(r));
  assert.equal(calls,2);assert.equal(f.files.detail(f.id).artifacts.filter((a:any)=>a.kind==='transcript').length,1);assert.ok(!JSON.stringify(f.files.chunks(f.id)).includes('Late synthetic'));
  const steps=resumed.engine.list({operationId:'file:'+f.id,limit:100}).items;assert.equal(steps.find(s=>s.kind==='files.pipeline')!.state,'succeeded');assert.equal(steps.filter(s=>s.kind.startsWith('file-step.')).length,3);
- assert.equal(f.store.db.prepare('SELECT audio_ms FROM file_usage').get()!.audio_ms,3000);
+ assert.equal(f.store.db.prepare('SELECT COUNT(*) AS n FROM file_usage').get()!.n,0);
 });
 
-test('daily quota admission defers file execution without consuming a provider attempt',async t=>{
+test('old daily usage does not limit new audio processing',async t=>{
  const f=await fixture(t),day=new Date().toISOString().slice(0,10);
- f.store.db.prepare('INSERT INTO file_usage VALUES(?,?)').run(day,f.processing.currentSettings().dailyAudioMinutes*60000);
- await f.processing.tick();const step=f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items[0];
- assert.equal(step.state,'waiting');assert.equal(step.error,'daily_budget');assert.equal(step.attempts,0);assert.equal(f.counts().asrCalls,0);
- assert.ok(step.availableAt>=Date.parse(day)+86400000);assert.equal(f.files.detail(f.id).job.attempts,0);
+ f.store.db.prepare('INSERT INTO file_usage VALUES(?,?)').run(day,24*60*60000);
+ await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.counts().asrCalls,1);
+});
+test('configurable per-file audio limit rejects incomplete long results',async t=>{
+ const f=await fixture(t,{settings:{maxAudioMinutes:1},transcribe:()=>({...raw,durationMs:61000})});
+ await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'failed');assert.equal(f.files.detail(f.id).job.error,'processing_limit');assert.equal(f.counts().asrCalls,1);assert.equal(f.counts().diaryCalls,0);
 });

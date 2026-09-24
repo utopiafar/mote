@@ -5,6 +5,9 @@ import { moteText } from './i18n.js';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import {pathToFileURL} from 'node:url';
 import {isAbsolute} from 'node:path';
+import {request as httpRequest} from 'node:http';
+import {request as httpsRequest} from 'node:https';
+import {once} from 'node:events';
 import {transcriptSchema,diarizationSchema,type Transcript,type FileProcessingSettings,processorParameterSchema,type ProcessorParameter} from '@mote/shared';
 import {StoreError} from './store.js';
 
@@ -20,11 +23,29 @@ export async function readProcessorJson(response:Response,limit=32*1024*1024){
   finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
   return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
 }
+async function postLocalProcessor(endpoint:string,headers:Record<string,string>,body:AsyncIterable<Buffer>,signal:AbortSignal,limit=32*1024*1024){
+  const url=new URL(endpoint),request=url.protocol==='https:'?httpsRequest:httpRequest;
+  return new Promise<unknown>((resolve,reject)=>{
+    const outgoing=request(url,{method:'POST',headers,signal},async incoming=>{
+      try{
+        if((incoming.statusCode??0)<200||(incoming.statusCode??0)>=300){incoming.resume();throw new ProviderFailure(providerHttpFailure(incoming.statusCode??502,String(incoming.headers['retry-after']??'')));}
+        if(incoming.headers['x-mote-execution']!=='local'){incoming.resume();throw new StoreError('Local worker did not confirm offline execution',502);}
+        const chunks:Buffer[]=[];let length=0;
+        for await(const chunk of incoming){length+=chunk.length;if(length>limit)throw new StoreError('Processing response exceeds limit',502);chunks.push(chunk);}
+        resolve(JSON.parse(Buffer.concat(chunks,length).toString('utf8')));
+      }catch(error){reject(error);}
+    });
+    outgoing.on('error',reject);
+    void (async()=>{let sent=0;for await(const chunk of body){signal.throwIfAborted();sent+=chunk.length;if(!outgoing.write(chunk))await once(outgoing,'drain',{signal});}if(sent!==Number(headers['Content-Length']))throw new StoreError('Local upload size changed',409);outgoing.end();})().catch(error=>{outgoing.destroy();reject(error);});
+  });
+}
 export class HttpTranscriptionProvider implements TranscriptionProvider {
   async transcribe(input:Parameters<TranscriptionProvider['transcribe']>[0]){
     const {settings,signal}=input,localOnly=settings.audioProcessor==='audio.local-dialogue';
     if(localOnly&&!isLoopback(settings.endpoint))throw new StoreError('Local dialogue requires a loopback worker',409);
-    const response=await fetch(settings.endpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.sizeBytes),'X-Mote-Max-Audio-Ms':String(input.maxAudioMs),...(localOnly?{'X-Mote-Offline':'1'}:{}),...(settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{})},body:input.body as unknown as BodyInit,duplex:'half',redirect:'error',signal} as RequestInit);
+    const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.sizeBytes),'X-Mote-Max-Audio-Ms':String(input.maxAudioMs),...(localOnly?{'X-Mote-Offline':'1'}:{}),...(settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{})};
+    if(localOnly)return transcriptSchema.parse(await postLocalProcessor(settings.endpoint,headers,input.body,signal));
+    const response=await fetch(settings.endpoint,{method:'POST',headers,body:input.body as unknown as BodyInit,duplex:'half',redirect:'error',signal} as RequestInit);
     if(response.ok&&localOnly&&response.headers.get('x-mote-execution')!=='local'){await response.body?.cancel();throw new StoreError('Local worker did not confirm offline execution',502);}
     return transcriptSchema.parse(await readProcessorJson(response));
   }
@@ -76,9 +97,8 @@ export class FileProcessorRuntime {
           if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);
           const endpoint=new URL(input.settings.endpoint);endpoint.pathname=endpoint.pathname.replace(/\/transcribe\/?$/,'/diarize');
           if(!endpoint.pathname.endsWith('/diarize'))throw new StoreError('Local worker URL must end with /transcribe',409);
-          const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Offline':'1','X-Mote-Max-Audio-Ms':String(input.maxAudioMs),'X-Mote-Speaker-Count':String(input.settings.speakerCount??0),...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
-          if(response.ok&&response.headers.get('x-mote-execution')!=='local'){await response.body?.cancel();throw new StoreError('Worker did not confirm offline execution',502);}
-          return diarizationSchema.parse(await readProcessorJson(response));
+          const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Offline':'1','X-Mote-Max-Audio-Ms':String(input.maxAudioMs),'X-Mote-Speaker-Count':String(input.settings.speakerCount??0),...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
+          return diarizationSchema.parse(await postLocalProcessor(endpoint.toString(),headers,input.readOriginal(),input.signal));
         }}));
         for(const plugin of plugins)await this.context.plugin(plugin);
         for(const specifier of modules){

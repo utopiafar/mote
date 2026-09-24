@@ -97,6 +97,10 @@ export class EvidenceStore {
       CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
       PRAGMA user_version=1;`);
+    // Existing screenshot jobs predate managed OCR. They remain available for explicit retry,
+    // but model installation must not silently process an old archive.
+    const perceptionColumns=new Set((this.db.prepare('PRAGMA table_info(perception_jobs)').all() as {name:string}[]).map(row=>row.name));
+    if(!perceptionColumns.has('auto_eligible'))this.db.exec('BEGIN IMMEDIATE; ALTER TABLE perception_jobs ADD COLUMN auto_eligible INTEGER NOT NULL DEFAULT 1; UPDATE perception_jobs SET auto_eligible=0; COMMIT');
     fileSchema(this.db);
     // Materialized browsing projection: album navigation never reads OCR/metadata JSON or blobs.
     this.db.exec(`

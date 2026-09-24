@@ -37,7 +37,7 @@ test('migration preserves legacy services and credentials, persists atomically, 
  f.save();await f.restart();assert.equal(f.processing.view().policyConfigured,true);assert.equal(f.processing.match({sourceId:'phone',mimeType:'audio/wav'}).profile.parameters.speakerCount,4);
  assert.ok(readFileSync(join(f.dir,'file-processing.json'),'utf8').includes('generated-worker-secret'));
  const current=f.processing.view();assert.throws(()=>f.processing.update({revision:current.revision,settings:{...current.settings,speakerCount:8}}),{statusCode:409});
- f.processing.update({revision:current.revision,settings:{...current.settings,dailyAudioMinutes:300}});assert.equal(f.processing.view().settings.dailyAudioMinutes,300);
+ f.processing.update({revision:current.revision,settings:{...current.settings,maxAudioMinutes:300}});assert.equal(f.processing.view().settings.maxAudioMinutes,300);
 });
 
 test('mixed-source routing respects exact MIME, source overrides, global families and archive fallback',async t=>{

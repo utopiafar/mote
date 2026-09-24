@@ -17,7 +17,8 @@ async function fixture(t:any,options:ConstructorParameters<typeof FileProcessing
  let begin!:()=>void,finish!:()=>void;const started=new Promise<void>(r=>begin=r),gate=new Promise<void>(r=>finish=r),calls:Parameters<TranscriptionProvider['transcribe']>[0][]=[];
  const provider:TranscriptionProvider={transcribe:async input=>{calls.push(input);begin();await gate;return {durationMs:segmentCount*1000,segments:Array.from({length:segmentCount},(_,i)=>({startMs:i*1000,endMs:(i+1)*1000,text:'Generated immutable transcript '+i}))};}};let processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;
  t.after(async()=>{finish();await processing.close();store.close();rmSync(dir,{recursive:true,force:true});});
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true}});
+ // These snapshot tests exercise the legacy HTTP ASR path; the product default now includes diarization.
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'}});
  const bytes=Buffer.from('generated audio fixture'),manifest={sourceId:'audio',previousRevision:null,item:{externalId:'generated.wav',revision:'1',observedAt:'2024-01-01T00:00:00.000Z',title:'Generated audio',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},relativePath:'generated.wav',sizeBytes:bytes.length,sha256:sha256(bytes)};
  const session=files.begin(manifest,()=>{});files.part(session.uploadId,0,bytes,()=>{});const id=(await files.commit(session.uploadId,()=>{})).id;
  return {dir,store,files,get processing(){return processing;},id,calls,started,finish,async restart(){await processing.close();processing=new FileProcessing(files,provider,undefined,options);await processing.runtime.ready;}};
@@ -80,7 +81,7 @@ test('restart reconciles a persisted relevant config change before resuming inte
  await f.restart();f.finish();await running;
  for(const until=Date.now()+5000;Date.now()<until&&f.files.detail(f.id).job.state!=='succeeded';){await f.processing.tick();if(f.files.detail(f.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.calls.length,2);assert.equal(f.calls[1].settings.endpoint,saved.settings.endpoint);
- assert.equal(f.files.chunks(f.id).length,1);assert.equal(f.store.db.prepare('SELECT audio_ms FROM file_usage').get()!.audio_ms,1000);
+ assert.equal(f.files.chunks(f.id).length,1);
 });
 
 const generatedModel=(model:string):ModelSettings=>({provider:'custom',protocol:'openai-completions',baseUrl:'http://127.0.0.1:9080',model,reasoningEffort:'auto',maxTokens:1000,modelRequestTimeoutMs:30000,agentTimeoutMs:60000,allowUnauthenticatedLocal:true,apiKey:'generated-model-secret',headers:{},extraBody:{}});

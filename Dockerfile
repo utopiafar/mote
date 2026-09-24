@@ -15,6 +15,9 @@ RUN npm run build:libs && npm run build -w @mote/server && npm run build -w @mot
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production MOTE_ENV_FILE=/app/deploy/empty.env MOTE_HOST=0.0.0.0 MOTE_PORT=47832 MOTE_DATA_DIR=/data ELECTRON_SKIP_BINARY_DOWNLOAD=1
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ffmpeg && rm -rf /var/lib/apt/lists/*
+COPY scripts/requirements-audio.txt scripts/requirements-ocr.txt ./scripts/
+RUN python3 -m venv /opt/mote-media-venv && /opt/mote-media-venv/bin/pip install --no-cache-dir -r scripts/requirements-audio.txt -r scripts/requirements-ocr.txt
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/agent/package.json ./packages/agent/package.json
@@ -28,7 +31,9 @@ COPY --from=build /app/apps/web/dist ./apps/web/dist
 RUN test -x /bin/bash && node --input-type=module -e "import {accessSync} from 'node:fs'; import {createRequire} from 'node:module'; import {bundledSkills} from './packages/agent/dist/skills.js'; accessSync('./apps/server/dist/import-parser.mjs'); if(!['personal-insight','memory-extraction','memory-consolidation','working-memory','document-import','calendar-extraction','coding-memory'].every(id=>bundledSkills.some(s=>s.id===id && s.content.length>0)) || typeof createRequire(import.meta.url)('node-pty').spawn!=='function') throw Error('Import runtime is incomplete');"
 COPY deploy/empty.env ./deploy/empty.env
 COPY scripts/backup.ts ./scripts/backup.ts
-RUN mkdir -p /data && chown node:node /data
+COPY scripts/transcription-server.py scripts/mote_audio.py scripts/ocr-server.py ./scripts/
+COPY scripts/media-import.mjs ./scripts/media-import.mjs
+RUN mkdir -p /data /models && chown node:node /data /models
 USER node
 VOLUME ["/data"]
 EXPOSE 47832

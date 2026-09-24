@@ -42,14 +42,14 @@ export const diarizationSchema=z.object({
 export type Diarization=z.infer<typeof diarizationSchema>;
 export const fileEvidenceSchema=z.object({documentLocation:documentLocationSchema.optional(),captureId:z.string().uuid(),revision:z.string().max(200),artifactId:z.string().uuid(),chunkId:z.string().uuid(),startMs:z.number().nonnegative().optional(),endMs:z.number().nonnegative().optional(),speaker:z.string().max(100).optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional()}).strict();
 export const fileProcessingSchema=z.object({
-  enabled:z.boolean().default(false),
+  enabled:z.boolean().default(true),
   endpoint:z.string().max(2000).default('http://127.0.0.1:9009/transcribe'),
   allowRemote:z.boolean().default(false),
   apiKey:z.string().max(4096).optional(),
   summarize:z.boolean().default(false),
-  audioProcessor:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).default('audio.http'),
+  audioProcessor:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).default('audio.local-dialogue'),
   diarizationProcessor:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).default('audio.diarize'),
-  imageProcessor:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).default('image.http'),
+  imageProcessor:z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/).default('archive'),
   imageEndpoint:z.string().max(2000).default(''),
   localEndpoint:z.string().max(2000).default('http://127.0.0.1:9009/transcribe'),
   localWorkerApiKey:z.string().max(4096).optional(),
@@ -60,7 +60,7 @@ export const fileProcessingSchema=z.object({
   localModelApiKey:z.string().max(4096).optional(),
   sourceProfiles:z.record(sourceIdSchema,z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/)).default({}),
   typeProfiles:z.record(z.string().regex(/^[a-z0-9.+-]+\/(?:[a-z0-9.+-]+|\*)$/),z.string().regex(/^[a-z][a-z0-9.-]{0,99}$/)).default({}),
-  dailyAudioMinutes:z.number().int().min(1).max(100000).default(240),
+  maxAudioMinutes:z.number().int().min(1).max(1440).default(120),
   timeoutMs:z.number().int().min(1000).max(3600000).default(600000),
 }).strict().superRefine((v,c)=>{
   for(const endpoint of [v.endpoint,v.imageEndpoint].filter(Boolean))try{const u=new URL(endpoint);if(u.username||u.password||u.hash||u.search||!['http:','https:'].includes(u.protocol))throw Error();const local=['127.0.0.1','localhost','[::1]'].includes(u.hostname);if(!local&&(!v.allowRemote||u.protocol!=='https:'))throw Error();}catch{c.addIssue({code:'custom',message:'Use a local endpoint or explicitly allow an HTTPS remote endpoint'});}

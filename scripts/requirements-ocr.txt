@@ -1,0 +1,4 @@
+paddleocr==3.5.0
+paddlex[ocr-core]==3.5.2
+onnxruntime==1.19.2
+Pillow==11.3.0

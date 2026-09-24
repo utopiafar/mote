@@ -59,7 +59,7 @@ test('model selectors share configuration reads and fence late provider catalogs
 });
 test('file processing settings preserve edited drafts on refresh, show source errors and clear revoked data',async t=>{
  const {FileProcessingSettings}=await import('../src/FileProcessingSettings.js'),{resources}=await import('../src/resource-cache.js');const {root,document:d}=await fixture(t);let forbidden=false,revision=1;
- const api={request:async(path:string)=>{if(path==='/api/sources')throw new ApiError('generated source unavailable',503);if(forbidden)throw new ApiError('generated permission revoked',403);return {revision,settings:{enabled:true,dailyAudioMinutes:60,timeoutMs:1000},policy:{profiles:[],rules:[],services:[]},processors:[]};},setAgentTimeout:()=>{}} as Api;
+ const api={request:async(path:string)=>{if(path==='/api/sources')throw new ApiError('generated source unavailable',503);if(forbidden)throw new ApiError('generated permission revoked',403);return {revision,settings:{enabled:true,maxAudioMinutes:60,timeoutMs:1000},policy:{profiles:[],rules:[],services:[]},processors:[]};},setAgentTimeout:()=>{}} as Api;
  await act(async()=>root.render(React.createElement(FileProcessingSettings,{api})));assert.match(d.body.textContent!,/generated source unavailable/);
  const checkbox=d.querySelector<HTMLInputElement>('input[type=checkbox]')!;await act(async()=>checkbox.click());assert.equal(checkbox.checked,false);
  revision++;await act(async()=>resources(api).invalidate(key=>key==='/api/file-processing'));assert.equal(d.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked,false);assert.match(d.body.textContent!,/有未保存修改/);
