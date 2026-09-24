@@ -20,6 +20,32 @@ On Android 11+, system-bar identification uses platform window metrics and syste
 
 Old `EXCLUDED` rows combine multiple causes and cannot retrospectively establish which window blocked a sample. A successful screenshot only proves that one sample reached the API, queue and upload paths, not that every foreground app was eligible.
 
+### Physical-device follow-up: Xiaomi navigation surface (2026-09-24)
+
+Read-only ADB inspection after the user installed 0.0.66 confirmed successful queue uploads, but a separate `APP_RULE` pause remained. The decision reported three windows, one recognized system bar, one restricted package, reliable identity, and an unprotected foreground. Bilibili had no app override and inherited content collection; the launcher had an explicit activity-only rule.
+
+WindowManager exposed a launcher-owned `GestureStubHome` navigation panel at `[0,2534][1200,2608]`, while the actual launcher Activity was hidden. Accessibility exposed an inactive, unfocused system window at the same bounds. Standard navigation insets covered only `[0,2560][1200,2608]`. The current recognizer therefore misses both the OEM owner and the extra panel height: merely allowing the launcher package inside standard insets would still fail.
+
+Source history explains why earlier configurations could work:
+
+- Before `66fb100` (0.7.0, September 14), only application windows contributed package rules; inactive system navigation windows did not contribute the launcher package.
+- `66fb100` introduced graded collection and included keyboard/system window packages in the rule decision. A launcher-owned navigation window can consequently veto another foreground app when the launcher is activity-only or excluded.
+- `9abe00a` (0.0.23, September 16) changed fresh-install rules from content to activity-only, retaining content defaults for legacy settings. Resetting data and configuring rules again can expose the pre-existing window limitation. The currently inspected configuration explicitly defaults to content, so the fresh-install default is not itself the present blocker.
+- `bb8a102` (0.0.59) exempted standard System UI bars by title/geometry. 0.0.66 replaced the Android 11+ title check with platform insets, but retained the System UI package restriction. Neither handles this Xiaomi panel.
+- The 0.0.63 queue regression is independent and was fixed in 0.0.66.
+
+The remaining fix should identify OEM navigation surfaces separately from application content, using verified system ownership and navigation-window evidence, while retaining rules for the real launcher Activity, split-screen apps, keyboards and content overlays. Do not solve this by granting content collection to the launcher or ignoring every inactive system window. Regression coverage must include the 74-pixel OEM panel versus 48-pixel platform inset, plus negative cases for launcher content and overlays. Physical verification should first inspect the resulting window decision without taking a personal screenshot; end-to-end capture should use generated content.
+
+This follow-up establishes source history and live window/configuration evidence, not an APK downgrade comparison. The user's pre-reset settings are unavailable, so their precise last working configuration cannot be reconstructed.
+
+### Local OEM-navigation fix and physical verification
+
+The local patch adds a narrow HyperOS compatibility rule: `com.miui.home` must be a system application; the window must be a system window, inactive and unfocused, span the entire display width, touch the display bottom, overlap a visible platform navigation inset, and be no more than 32dp tall. This explicit OEM bound accommodates the observed 74px navigation panel at density 3 without exempting launcher Activities or larger content panels. Unsupported geometries continue through normal privacy rules. Standard System UI handling is unchanged.
+
+207 Android JVM tests passed, including the 74px/48px mismatch, real launcher activity, larger overlays, non-system owners, active/focused windows, missing navigation insets and unrelated packages. The development APK and instrumentation APK built locally. A manually opted-in metadata-only instrumentation check confirmed the physical window owner and bounds without reading node text or taking screenshots.
+
+The local APK uses the same signing certificate as the installed release and was installed over 0.0.66 without clearing data or changing app rules. With a generated external fixture Activity in the foreground, physical-device logs at 17:25:10–17:25:11 (Asia/Shanghai) showed `systemBars=2 restricted=0 mode=content`, followed by `CAPTURE_REQUESTED`, `FRAME_RECEIVED` and `SCREEN_QUEUED`. Personal Bilibili content was not captured as a test; live-model behavior was not tested. This is a local 0.0.66 patch, not a new published GitHub release.
+
 ## Shared central UI
 
 Ask opens the central web conversation page directly. Archive, workbench and Ask reuse one WebView browsing context within the application process, including its window-scoped session storage. Native navigation detaches the view and releases its Activity references without discarding that document. Changing central origins destroys the old view, and the central site's logout operates on the shared session.

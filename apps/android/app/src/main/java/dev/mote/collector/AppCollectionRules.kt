@@ -52,6 +52,19 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
 internal data class CollectionWindow(val type: Int, val packageName: String?, val systemBar: Boolean = false)
 internal data class CaptureBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
 internal object SystemBarRegion {
+    const val MIUI_HOME = "com.miui.home"
+    /** HyperOS exposes GestureStubHome outside the standard navigation inset (74px vs 48px).
+     * This OEM exception only covers an inactive system-owned, full-width bottom navigation strip.
+     * Never apply it to launcher Activities, side overlays, floating panels or hidden navigation.
+     */
+    fun miuiNavigation(window: CaptureBounds, display: CaptureBounds, navigationBottom: Int,
+        density: Float, packageName: String?, systemOwner: Boolean, type: Int, active: Boolean, focused: Boolean): Boolean {
+        if (packageName != MIUI_HOME || !systemOwner || type != 3 || active || focused || navigationBottom <= 0 ||
+            !density.isFinite() || density <= 0) return false
+        val height = window.bottom - window.top
+        return window.left == display.left && window.right == display.right && window.bottom == display.bottom &&
+            window.top >= display.top && height >= navigationBottom && height <= (32 * density).toInt()
+    }
     /** Use OS-provided insets, not localized window titles or a guessed bar height. */
     fun contains(window: CaptureBounds, display: CaptureBounds, insets: CaptureBounds): Boolean {
         if (window.right <= window.left || window.bottom <= window.top ||
@@ -64,7 +77,7 @@ internal object SystemBarRegion {
 }
 internal object CollectionWindows {
     fun snapshot(windows: List<CollectionWindow>, foreground: String?): WindowSnapshot {
-        val contentWindows = windows.filterNot { it.type == 3 && it.packageName == "com.android.systemui" && it.systemBar }
+        val contentWindows = windows.filterNot { it.type == 3 && it.packageName in setOf("com.android.systemui", SystemBarRegion.MIUI_HOME) && it.systemBar }
         val packages = contentWindows.mapNotNull { it.packageName }.toSet()
         val trustworthy = contentWindows.isNotEmpty() && contentWindows.all { it.type in 1..3 && !it.packageName.isNullOrBlank() } &&
             (foreground.isNullOrBlank() || foreground in packages)

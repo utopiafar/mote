@@ -8,6 +8,33 @@ import java.nio.file.Files
 import java.util.UUID
 
 class AppPolicyAndActivityTest {
+    @Test fun miuiNavigationOutsidePlatformInsetDoesNotApplyLauncherPrivacyToOtherApps() {
+        val display = CaptureBounds(0, 0, 1200, 2608)
+        val strip = CaptureBounds(0, 2534, 1200, 2608)
+        fun match(bounds: CaptureBounds = strip, owner: String = SystemBarRegion.MIUI_HOME, system: Boolean = true,
+            type: Int = 3, active: Boolean = false, focused: Boolean = false, inset: Int = 48) =
+            SystemBarRegion.miuiNavigation(bounds, display, inset, 3f, owner, system, type, active, focused)
+        assertFalse(SystemBarRegion.contains(strip, display, CaptureBounds(0, 144, 0, 48)))
+        assertTrue(match())
+        assertFalse(match(type = 1)); assertFalse(match(active = true)); assertFalse(match(focused = true))
+        assertFalse(match(system = false)); assertFalse(match(owner = "fixture.overlay")); assertFalse(match(inset = 0))
+        assertFalse(match(bounds = display))
+        assertFalse(match(bounds = CaptureBounds(0, 2511, 1200, 2608)))
+        assertFalse(match(bounds = CaptureBounds(1, 2534, 1200, 2608)))
+        assertFalse(match(bounds = CaptureBounds(0, 0, 1200, 74)))
+        val app = CollectionWindow(1, "fixture.video")
+        val bar = CollectionWindow(3, SystemBarRegion.MIUI_HOME, match())
+        val rules = AppCollectionRules.fromLines(AppCollectionMode.CONTENT, "com.miui.home=activity")
+        val snapshot = CollectionWindows.snapshot(listOf(app, bar, CollectionWindow(3, "com.android.systemui", true)), app.packageName)
+        assertEquals(AppCollectionMode.CONTENT, rules.decide(snapshot, emptySet()))
+        assertEquals(AppCollectionMode.ACTIVITY, rules.decide(CollectionWindows.snapshot(
+            listOf(CollectionWindow(1, SystemBarRegion.MIUI_HOME), bar), SystemBarRegion.MIUI_HOME), emptySet()))
+        assertEquals(AppCollectionMode.OFF, rules.decide(CollectionWindows.snapshot(
+            listOf(app, CollectionWindow(3, SystemBarRegion.MIUI_HOME)), app.packageName), emptySet()))
+        assertEquals(AppCollectionMode.OFF, rules.decide(CollectionWindows.snapshot(
+            listOf(app, CollectionWindow(1, SystemBarRegion.MIUI_HOME)), app.packageName), emptySet()))
+    }
+
     @Test fun systemBarsUsePlatformInsetsAndNeverHideOverlaysOutsideThem() {
         val display = CaptureBounds(0, 0, 1200, 2608)
         val insets = CaptureBounds(0, 144, 0, 74)

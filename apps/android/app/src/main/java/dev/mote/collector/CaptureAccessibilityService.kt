@@ -77,6 +77,12 @@ class CaptureAccessibilityService : AccessibilityService() {
             val all = windows
             val metrics = if (Build.VERSION.SDK_INT >= 30) runCatching { getSystemService(android.view.WindowManager::class.java).maximumWindowMetrics }.getOrNull() else null
             val barInsets = metrics?.windowInsets?.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars())
+            val navigationBottom = metrics?.windowInsets?.getInsets(android.view.WindowInsets.Type.navigationBars())?.bottom ?: 0
+            val miuiSystemOwner = runCatching {
+                @Suppress("DEPRECATION")
+                val info = packageManager.getApplicationInfo(SystemBarRegion.MIUI_HOME, 0)
+                info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
+            }.getOrDefault(false)
             val observed = all.map { window ->
                 val root = window.root
                 val name = root?.packageName?.toString()
@@ -93,7 +99,12 @@ class CaptureAccessibilityService : AccessibilityService() {
                             (bounds.width() >= display.widthPixels * .9 && bounds.height() <= limit && (bounds.top <= 0 || bounds.bottom >= display.heightPixels) ||
                              bounds.height() >= display.heightPixels * .9 && bounds.width() <= limit && (bounds.left <= 0 || bounds.right >= display.widthPixels))
                     }
-                val chrome = window.type == 3 && name == "com.android.systemui" && !window.isActive && !window.isFocused && inBar
+                val miuiBar = metrics != null && SystemBarRegion.miuiNavigation(
+                    CaptureBounds(bounds.left, bounds.top, bounds.right, bounds.bottom),
+                    metrics.bounds.let { CaptureBounds(it.left, it.top, it.right, it.bottom) },
+                    navigationBottom, resources.displayMetrics.density, name, miuiSystemOwner,
+                    window.type, window.isActive, window.isFocused)
+                val chrome = (window.type == 3 && name == "com.android.systemui" && !window.isActive && !window.isFocused && inBar) || miuiBar
                 CollectionWindow(window.type, name, chrome)
             }
             windowCounts = Triple(observed.size, observed.count { it.packageName.isNullOrBlank() || it.type !in 1..3 }, observed.count { it.systemBar })
