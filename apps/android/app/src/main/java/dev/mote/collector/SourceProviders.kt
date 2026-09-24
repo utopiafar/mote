@@ -13,7 +13,12 @@ import java.io.File
 import java.time.Instant
 import org.json.JSONObject
 
-fun Context.localSources() = LocalSourceStore(File(noBackupFilesDir, "local-sources"), localContentCipher()).apply { onMutation = { LocalStateChanges.changed() } }
+fun Context.localSources(): LocalSourceStore {
+    IngressV2Migration.ensure(this)
+    return LocalSourceStore(File(noBackupFilesDir, "local-sources"), localContentCipher()).apply {
+        onMutation = { LocalStateChanges.changed() }
+    }
+}
 
 object SourceAccess {
     fun available(context: Context, source: LocalSource): Boolean = SourceAdapters.default.forKind(source.kind).available(context, source)

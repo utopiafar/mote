@@ -13,6 +13,12 @@ import java.util.UUID
 class FileArchiveQueue(private val directory: File, private val cipher: ByteCipher) {
     companion object { const val PART_BYTES = 4 * 1024 * 1024; const val MAX_BYTES = 512L * 1024 * 1024; private val lock = Any() }
     init { directory.mkdirs() }
+    /** Source definitions live elsewhere; these directories contain only sync state and spool bytes. */
+    fun resetForProtocolUpgrade() = synchronized(lock) {
+        directory.listFiles()?.forEach { file ->
+            check(file.deleteRecursively()) { "Unable to discard legacy file archive checkpoint" }
+        }
+    }
     fun migrateLegacyContent(shouldStop: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
         val files = synchronized(lock) { directory.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }
             .filter { it.isFile && (it.extension == "enc" || it.parentFile?.name == "spool" && it.name.toIntOrNull() != null) }.toList() }
@@ -163,7 +169,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     fun part(id: String, part: Int): ByteArray = synchronized(lock) { require(part >= 0); cipher.open(File(File(root(id), "spool"), part.toString()).readBytes()) }
     fun acknowledge(id: String, row: JSONObject, ack: JSONObject) = synchronized(lock) {
         val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
-        check(SourceRules.validAck(id, item, ack)) { MoteI18n.text("中央归档确认不匹配") }
+        check(IngressV2Protocol.validFile(id, item, ack)) { MoteI18n.text("中央归档确认不匹配") }
         if (manifest.has("sha256")) check(ack.optString("sha256") == manifest.getString("sha256") && ack.optLong("sizeBytes", -1) == manifest.getLong("sizeBytes")) { MoteI18n.text("中央原件校验确认不匹配") }
         val current = read(itemFile(id, item.getString("externalId")))
         check(current.optJSONObject("pending")?.getJSONObject("manifest")?.getJSONObject("item")?.getString("revision") == item.getString("revision"))

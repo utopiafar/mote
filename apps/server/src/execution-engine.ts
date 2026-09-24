@@ -7,6 +7,11 @@ import {withExecutionCancellation} from './execution-cancellation.js';
 
 export type ExecutionState='waiting'|'running'|'blocked'|'succeeded'|'failed'|'cancelled'|'stale';
 export type ExecutionStep={id:string;operationId:string;kind:string;pool:string;input:Record<string,unknown>;state:ExecutionState;attempts:number;availableAt:number;error?:string};
+/** A running handler can publish incremental progress only through its current lease. */
+export interface ExecutionGrant {
+ assert():void;
+ commit<T>(write:()=>T):T;
+}
 export class ExecutionFailure extends Error {
  constructor(readonly category:'transient'|'permanent'|'blocked'|'stale'|'waiting',readonly code:string,readonly retryAfterMs?:number){super(code);}
 }
@@ -15,7 +20,7 @@ export interface ExecutionHandler {
  validate:(step:ExecutionStep)=>boolean;
  resourceKeys?:(step:ExecutionStep)=>string[];
  admit?:(step:ExecutionStep)=>ExecutionFailure|undefined;
- execute:(step:ExecutionStep,signal:AbortSignal)=>Promise<unknown>;
+ execute:(step:ExecutionStep,signal:AbortSignal,grant:ExecutionGrant)=>Promise<unknown>;
  /** Host-only, synchronous commit runs in the engine's fenced transaction. */
  commit:(step:ExecutionStep,result:unknown)=>void;
  /** Compatibility views are projections, never used to claim a running step. */
@@ -167,7 +172,18 @@ export class ExecutionEngine {
   const deadline=setTimeout(()=>controller.abort(new DOMException('The operation was aborted due to timeout','TimeoutError')),timeout);deadline.unref();
   const renewal=setInterval(()=>{if(this.stopping)return;try{const at=this.now();if(!db.prepare("UPDATE execution_steps SET lease_until=? WHERE id=? AND state='running' AND fence=? AND lease_until>?").run(at+30000,row.id,fence,at).changes)controller.abort();}catch{controller.abort();}},10000);renewal.unref();
   try{
-   const result=await withExecutionCancellation(signal,()=>handler.execute(step,signal));
+   const assertGrant=()=>{
+    if(signal.aborted)throw new ExecutionFailure('stale','grant_revoked');
+    if(!this.isCurrentGrant(row.id,fence))throw new ExecutionFailure('stale','grant_revoked');
+    if(!handler.validate(step))throw new ExecutionFailure('stale','input_changed');
+   };
+   const grant:ExecutionGrant=Object.freeze({assert:assertGrant,commit:<T>(write:()=>T):T=>{
+    if(db.isTransaction)throw new Error('Execution grant commit requires its own transaction');
+    db.exec('BEGIN IMMEDIATE');
+    try{assertGrant();const result=write();assertGrant();db.exec('COMMIT');return result;}
+    catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
+   }});
+   const result=await withExecutionCancellation(signal,()=>handler.execute(step,signal,grant));
    signal.throwIfAborted();
    db.exec('BEGIN IMMEDIATE');
    try{

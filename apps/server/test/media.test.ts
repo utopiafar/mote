@@ -122,7 +122,7 @@ test('media API scopes collector reads and writes to its device and exposes a re
   const owner={authorization:`Bearer ${token}`};
   const invitation=(await app.inject({method:'POST',url:'/api/connections/invitations',headers:owner,payload:{serverUrl:'https://fixture.invalid',label:'Generated phone'}})).json();
   const paired=(await app.inject({method:'POST',url:'/api/connections/redeem',payload:{code:invitation.invitation.code,deviceId:'phone',deviceName:'Generated phone',platform:'android'}})).json();
-  const collector={authorization:`Bearer ${paired.token}`},own=record(),foreign=record({deviceId:'another-phone'});
+  const collector={authorization:`Bearer ${paired.token}`,'x-mote-ingress-version':'2'},own=record(),foreign=record({deviceId:'another-phone'});
   assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:collector,payload:own})).statusCode,201);
   assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:collector,payload:foreign})).statusCode,403);
   assert.equal((await app.inject({method:'POST',url:'/api/captures',headers:owner,payload:foreign})).statusCode,201);

@@ -16,6 +16,17 @@ test('generic originals preserve bytes, names and MIME with content-addressed de
   assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM file_blobs').get()?.n,1);
   assert.throws(()=>files.put({name:'../escape',bytes}),/traverse/);assert.throws(()=>files.put({name:'/escape',bytes}),/Invalid/);
 });
+test('revoked archive authorization leaves no asset or original row',t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-files-fence-')),store=new Store(directory),files=new ArchivedFileStore(store);
+  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  const bytes=Buffer.from('Generated ZIP expansion child');let checks=0;
+  assert.throws(()=>files.putParts({name:'archive.contents/child.txt'},[bytes],bytes.length,()=>{
+    if(++checks===4)throw Error('generated grant revoked');
+  }),/grant revoked/);
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM assets').get()?.n,0);
+  assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM archived_files').get()?.n,0);
+  assert.deepEqual(readdirSync(store.assets.directory),[]);
+});
 test('originals honor vault blob encryption and detect corrupted content',t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-files-')),store=new Store(directory,{dataKey:'ab'.repeat(32),contentEncryptionEnabled:true}),files=new ArchivedFileStore(store);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   const bytes=Buffer.from('synthetic original'),file=files.put({name:'fixture.bin',bytes});

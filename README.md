@@ -1,6 +1,6 @@
 # Mote
 
-> 当前源码版本 **0.0.66**。开发阶段发布 Mac DEV / Android DEV 两个安装包，手动下载更新；见 [发布策略](docs/ui-slate.md)。当前能力、专题指南及历史验收的入口见 [文档索引](docs/README.md)。
+> 当前源码版本 **0.0.67**。开发阶段发布 Mac DEV / Android DEV 两个安装包，手动下载更新；见 [发布策略](docs/ui-slate.md)。当前能力、专题指南及历史验收的入口见 [文档索引](docs/README.md)。
 
 > 截图采用端侧文字规则审查与中央 OCR；端侧 Qwen/VLM 暂停执行，下载模型不是采集前提。中央本地 OCR、录音转写和说话人分离的安装与边界见 [部署说明](docs/ocr-asr-implementation-plan.md)。
 

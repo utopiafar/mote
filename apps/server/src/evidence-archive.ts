@@ -101,7 +101,7 @@ export class EvidenceArchive {
     for(const group of groups){
       // A 5-minute bucket may contain a replay burst: page on identity, bound every artifact.
       const ids=db.prepare('SELECT o.id FROM context_observations o JOIN captures c ON c.id=o.id WHERE o.group_key=? ORDER BY c.captured_at,o.id LIMIT 1001').all(group.group_key);
-      if(ids.length>1000){db.prepare("UPDATE context_dirty SET error='group_member_limit' WHERE group_key=?").run(group.group_key);continue;}
+      if(ids.length>1000){db.prepare("UPDATE context_dirty SET error='group_member_limit' WHERE group_key=? AND generation=?").run(group.group_key,group.generation);continue;}
       const parts:CaptureRecord[][]=[];let part:CaptureRecord[]=[],characters=0;const texts=new Set<string>();
       for(const row of ids){
         if(!this.store.isCurrentEvidence(String(row.id)))continue;
@@ -115,6 +115,15 @@ export class EvidenceArchive {
       if(part.length)parts.push(part);
       db.exec('BEGIN IMMEDIATE');
       try{
+        // The member snapshot was assembled outside the write transaction. A
+        // concurrent intake, correction or deletion must keep this group dirty
+        // instead of publishing a stale subset (and waking downstream models).
+        const current=db.prepare('SELECT generation,error FROM context_dirty WHERE group_key=?').get(group.group_key);
+        const currentIds=db.prepare('SELECT o.id FROM context_observations o JOIN captures c ON c.id=o.id WHERE o.group_key=? ORDER BY c.captured_at,o.id LIMIT 1001').all(group.group_key);
+        if(!current||current.generation!==group.generation||current.error!==null||
+          ids.length!==currentIds.length||ids.some((row,index)=>row.id!==currentIds[index].id)){
+          db.exec('ROLLBACK');continue;
+        }
         const retained=new Set<string>();
         for(const records of parts){
           records.sort((a,b)=>a.capturedAt.localeCompare(b.capturedAt)||a.id.localeCompare(b.id));

@@ -141,8 +141,9 @@ HTML 布局由模型生成，展示失败时仍可查看文字和引用。引用
 
 | 接口 | 用途 |
 |---|---|
-| `POST /api/imports` | `{name?, instruction?, files:[{name,mimeType?,dataBase64}]}` 或 `{name?,instruction?,directory}`；二选一；返回 202 和任务，后台准备预览 |
-| `GET /api/imports`、`GET /api/imports/:id` | 导入历史、预览、文件处置、进度、错误及关联 `memoryJobId` |
+| `POST /api/imports` | `{name?, processing?: "automatic"|"preview", sourcePackId?, instruction?, files:[{name,mimeType?,dataBase64}]}` 或目录导入；返回 202 和任务。指定 Source Pack 时不能同时传自由文本指令 |
+| `GET /api/import-source-packs` | 列出部署节点已安装的受信 Python Source Pack 的 `id`、`version`、`description`；不返回本机脚本路径或哈希 |
+| `GET /api/imports`、`GET /api/imports/:id` | 导入历史、预览、文件处置、`reviewDecision` 与宿主 `reviewGate`、进度、错误及关联 `memoryJobId` |
 | `POST /api/imports/:id/prepare` | 可带 `{instruction}`；确认前重新理解资料 |
 | `POST /api/imports/:id/confirm` | 确认预览并后台保存记录，返回 202 |
 | `POST /api/imports/:id/retry` | 重试解析，或继续已经确认的记录保存 |

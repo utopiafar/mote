@@ -10,6 +10,7 @@ import {request as httpsRequest} from 'node:https';
 import {once} from 'node:events';
 import {transcriptSchema,diarizationSchema,type Transcript,type FileProcessingSettings,processorParameterSchema,type ProcessorParameter} from '@mote/shared';
 import {StoreError} from './store.js';
+import {BackendPluginScope} from './backend-plugin-scope.js';
 
 export interface TranscriptionProvider {
   transcribe(input:{body:AsyncIterable<Buffer>;sizeBytes:number;mimeType:string;settings:FileProcessingSettings;maxAudioMs:number;signal:AbortSignal}):Promise<Transcript>;
@@ -74,42 +75,44 @@ declare module '@deepseek-ai/cordis' {interface Context {moteFileProcessors:Proc
 function builtin(processor:FileProcessor):Plugin {
   return {name:'mote-'+processor.id,inject:['moteFileProcessors'],apply(ctx:Context){ctx.effect(()=>ctx.moteFileProcessors.register(processor));}};
 }
-/** A persistent Cordis context, independent from short-lived query-agent runtimes. */
+/** File processing plugins live in the shared backend context when mounted by the server. */
 export class FileProcessorRuntime {
-  readonly context=new Context();readonly registry=new ProcessorRegistry();readonly ready:Promise<void>;
-  constructor(provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry){
-    this.context.provide('moteFileProcessors',this.registry);
-    if(contextProcessors)this.context.provide('moteContextProcessors',contextProcessors);
+  readonly context:Context;readonly registry=new ProcessorRegistry();readonly ready:Promise<void>;private readonly pluginScope:BackendPluginScope;
+  constructor(provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,root?:Context){
+    this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
+    this.pluginScope.provide('moteFileProcessors',this.registry);
+    if(contextProcessors&&!root)this.pluginScope.provide('moteContextProcessors',contextProcessors);
     const audio=(id:string,localOnly=false)=>builtin({id,version:'1',name:localOnly?moteText("本地多人录音"):moteText("转写接口"),stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',parameters:localOnly?[{key:'speakerCount',label:moteText("预期说话人数"),type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:moteText("留空由模型自动识别")},{key:'semanticTurns',label:moteText("使用本地语言模型合并自然发言轮次"),type:'boolean',default:false}]:[],
       process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,maxAudioMs:input.maxAudioMs,signal:input.signal})});
+    const pluginScope=this.pluginScope;
     this.ready=(async()=>{
       try{
-        await this.context.plugin(audio('audio.http'));
-        await this.context.plugin(audio('audio.local-dialogue',true));
-        await this.context.plugin(builtin({id:'text.utf8',version:'3',name:moteText("UTF-8 文字提取"),stage:'extract',mediaTypes:['text/'],localOnly:true,process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
-        await this.context.plugin(builtin({id:'document.generic',version:'1',name:moteText("文档文字提取"),stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
-        await this.context.plugin(builtin({id:'image.http',version:'1',name:moteText("图片文字提取接口"),stage:'extract',mediaTypes:['image/'],serviceKind:'image',async process(input){
+        await pluginScope.install(audio('audio.http'));
+        await pluginScope.install(audio('audio.local-dialogue',true));
+        await pluginScope.install(builtin({id:'text.utf8',version:'3',name:moteText("UTF-8 文字提取"),stage:'extract',mediaTypes:['text/'],localOnly:true,process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
+        await pluginScope.install(builtin({id:'document.generic',version:'1',name:moteText("文档文字提取"),stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
+        await pluginScope.install(builtin({id:'image.http',version:'1',name:moteText("图片文字提取接口"),stage:'extract',mediaTypes:['image/'],serviceKind:'image',async process(input){
           if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
           const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
           const transcript=transcriptSchema.parse(await readProcessorJson(response));if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
         }}));
-        await this.context.plugin(builtin({id:'audio.diarize',version:'1',name:moteText("本地说话人分离"),stage:'diarize',mediaTypes:['audio/'],localOnly:true,async process(input){
+        await pluginScope.install(builtin({id:'audio.diarize',version:'1',name:moteText("本地说话人分离"),stage:'diarize',mediaTypes:['audio/'],localOnly:true,async process(input){
           if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);
           const endpoint=new URL(input.settings.endpoint);endpoint.pathname=endpoint.pathname.replace(/\/transcribe\/?$/,'/diarize');
           if(!endpoint.pathname.endsWith('/diarize'))throw new StoreError('Local worker URL must end with /transcribe',409);
           const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Offline':'1','X-Mote-Max-Audio-Ms':String(input.maxAudioMs),'X-Mote-Speaker-Count':String(input.settings.speakerCount??0),...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})};
           return diarizationSchema.parse(await postLocalProcessor(endpoint.toString(),headers,input.readOriginal(),input.signal));
         }}));
-        for(const plugin of plugins)await this.context.plugin(plugin);
+        for(const plugin of plugins)await pluginScope.install(plugin);
         for(const specifier of modules){
           // Only deployment configuration selects executable plugin modules. HTTP callers cannot install code.
           const loaded=await import(isAbsolute(specifier)?pathToFileURL(specifier).href:specifier);
-          await this.context.plugin(loaded.default??loaded);
+          await pluginScope.install(loaded.default??loaded);
         }
-      }catch(error){await this.context.fiber.dispose();throw error;}
+      }catch(error){await pluginScope.close();throw error;}
     })();
     // Initialization is explicitly awaited by the central app and by tick().
     void this.ready.catch(()=>{});
   }
-  async close(){await this.ready.catch(()=>{});await this.context.fiber.dispose();}
+  async close(){await this.ready.catch(()=>{});await this.pluginScope.close();}
 }

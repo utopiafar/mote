@@ -13,6 +13,8 @@ object BatchUpload {
             val id = item.getString("id")
             val status = item.get("status")
             require(id in expected && id !in result && status is Int && (status in setOf(200, 201) || status in 400..599))
+            if (status in setOf(200, 201)) require(IngressV2Protocol.validCapture(id, item))
+            else require(!item.has("receipt"))
             result[id] = status
         }
         return result

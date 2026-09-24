@@ -1,11 +1,20 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { resolve, join } from 'node:path';
+import { resolve, join, isAbsolute } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { loadEnvironment } from '@mote/shared/environment';
 import type { ConfigurationSource, ServerConfiguration } from '@mote/shared';
 import { DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUEST_TIMEOUT_MS, MAX_AGENT_TIMEOUT_MS, MAX_MODEL_REQUEST_TIMEOUT_MS, MODEL_PROTOCOLS, MODEL_REASONING_EFFORTS, modelProvider } from '@mote/shared/models';
 import { validateModelOptions } from '@mote/agent';
+import {z} from 'zod';
+
+const importPythonPackSchema=z.object({
+  id:z.string().regex(/^[a-z][a-z0-9.-]{2,127}$/),version:z.string().min(1).max(64),description:z.string().trim().min(1).max(200).optional(),
+  packRoot:z.string().min(1).max(2000).refine(isAbsolute),script:z.string().min(1).max(500).refine(value=>!isAbsolute(value)&&!value.split(/[\\/]/).some(part=>!part||part==='.'||part==='..')),
+  scriptSha256:z.string().regex(/^[a-f0-9]{64}$/),pythonExecutable:z.string().min(1).max(2000).refine(isAbsolute),
+  timeoutMs:z.number().int().min(1).max(120000).optional(),maxInputBytes:z.number().int().min(1).max(32*1024*1024).optional(),maxOutputBytes:z.number().int().min(1).max(1024*1024).optional(),
+}).strict();
+export type ImportPythonPackConfig=z.infer<typeof importPythonPackSchema>;
 
 export interface ConfigurationContext {
   envFile: string | null;
@@ -75,8 +84,11 @@ export function configFromEnv() {
   try{fileProcessorModules=JSON.parse(env.MOTE_FILE_PROCESSOR_PLUGINS??'[]');if(!Array.isArray(fileProcessorModules)||fileProcessorModules.length>30||fileProcessorModules.some(s=>typeof s!=='string'||s.length>2000))throw Error();}catch{throw new ConfigError('MOTE_FILE_PROCESSOR_PLUGINS','Use a JSON array of trusted installed plugin modules');}
   let connectorModules:string[]=[];
   try{connectorModules=JSON.parse(env.MOTE_CONNECTOR_PLUGINS??'[]');if(!Array.isArray(connectorModules)||connectorModules.length>30||connectorModules.some(s=>typeof s!=='string'||!s||s.length>2000||/[\r\n\0]/.test(s)||/^[a-z][a-z0-9+.-]*:/i.test(s)&&!s.startsWith('file:')))throw Error();}catch{throw new ConfigError('MOTE_CONNECTOR_PLUGINS','Use a JSON array of trusted installed connector module specifiers');}
+  let importPythonPacks:ImportPythonPackConfig[];
+  try{importPythonPacks=z.array(importPythonPackSchema).max(16).parse(JSON.parse(env.MOTE_IMPORT_PYTHON_PACKS??'[]'));if(new Set(importPythonPacks.map(pack=>pack.id)).size!==importPythonPacks.length)throw Error();}
+  catch{throw new ConfigError('MOTE_IMPORT_PYTHON_PACKS','Use a JSON array of unique, trusted Python packs with absolute paths and a fixed script SHA-256');}
   const config={
-    fileProcessorModules,
+    fileProcessorModules,importPythonPacks,
     host:env.MOTE_HOST||'127.0.0.1',port:number('MOTE_PORT',47832,1,65535,true),dataDir,
     profile,tokenFromEnvironment:Boolean(env.MOTE_TOKEN?.trim()),
     updateRepository:text('MOTE_UPDATE_REPOSITORY','utopiafar/mote'),updateChannel:choice('MOTE_UPDATE_CHANNEL',['stable','preview'] as const,'stable'),
@@ -140,5 +152,5 @@ export function configFromEnv() {
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='agentConcurrency'|'llmConcurrency'|'memoryConcurrency'|'codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelRequestTimeoutMs'|'agentTimeoutMs'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'agentTraceEnabled'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='agentConcurrency'|'llmConcurrency'|'memoryConcurrency'|'codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'importPythonPacks'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelRequestTimeoutMs'|'agentTimeoutMs'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'agentTraceEnabled'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

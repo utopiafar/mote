@@ -22,7 +22,7 @@ test('material catalog discloses only metadata and pins exact returned revisions
   const catalog=await call('material_catalog',{});assert.equal(catalog.status,200);
   assert.equal(catalog.body.data.items.length,1);
   assert.equal(catalog.body.data.items[0].ref,ref);
-  for(const sensitive of ['PRIVATE BODY','privatePath','private coverage detail','private limitation',original.id,'/private/source-path'])assert.equal(JSON.stringify(catalog.body).includes(sensitive),false);
+  for(const sensitive of ['PRIVATE BODY','privatePath','private coverage detail','private limitation',original.id,'/private/source-path'])assert.equal(JSON.stringify(catalog.body).includes(sensitive),false,sensitive);
   assert.equal((await call('evidence',{ids:[original.id]})).status,400);
   assert.equal((await call('material_read',{ref:ref.replace('@','@'+ 'c')})).status,400);
   const read=await call('material_read',{ref});assert.equal(read.status,200);

@@ -45,7 +45,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
     override fun doWork(): Result = ConnectionGuard.sync { work() } ?: Result.retry()
     private fun work(): Result {
         val store = applicationContext.localSources(); val settings = Settings(applicationContext)
-        var failed = false; var more = false; var delayedFiles = false
+        var failed = false; var blocked = false; var more = false; var delayedFiles = false
         val manualOnly = settings.read().syncMode == "manual" && inputData.getBoolean("manual", false)
         fun failure(): Result {
             settings.syncStatus("error", MoteI18n.text("部分来源尚未同步，记录保留在本机；{0}", if (manualOnly) MoteI18n.text("请再次点击立即同步") else MoteI18n.text("稍后自动重试")))
@@ -98,7 +98,16 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         val body = store.next(source.id, target) ?: break
                         if (!slice.admit(body.toString().toByteArray(Charsets.UTF_8).size)) break
                         val (code, ack) = HttpJson.request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.token)
-                        if (code == 409) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = code); store.status(source.id, "paused"); break }
+                        if (code == 409 || code == 410) {
+                            Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = code)
+                            val paused = code == 409 && runCatching {
+                                val (lookupCode, listing) = HttpJson.get("${config.server}/api/sources", config.token)
+                                lookupCode == 200 && IngressV2Protocol.sourcePaused(source.id, listing)
+                            }.getOrDefault(false)
+                            store.status(source.id, if (paused) "paused" else "ack")
+                            if (!paused) blocked = true
+                            break
+                        }
                         if (code !in 200..299 || !SourceRules.validAck(source.id, body, ack)) {
                             store.status(source.id, "ack"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(code), httpStatus = code); SupportEvents.record(applicationContext, EventStage.SOURCE, EventJournal.httpFailure(code), httpStatus = code); failed = true; break
                         }
@@ -109,10 +118,21 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     }
                     if (store.next(source.id, target) == null) store.status(source.id, "synced")
                     else if (submitted >= 20 || slice.exhausted) more = true
+                } catch (error: FileIngressRejection) {
+                    Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = error.httpStatus)
+                    val paused = error.httpStatus == 409 && runCatching {
+                        val (lookupCode, listing) = HttpJson.get("${config.server}/api/sources", config.token)
+                        lookupCode == 200 && IngressV2Protocol.sourcePaused(source.id, listing)
+                    }.getOrDefault(false)
+                    store.status(source.id, if (paused) "paused" else "ack")
+                    if (!paused) blocked = true
                 } catch (_: Exception) { store.status(source.id, "offline"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.NETWORK); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.NETWORK); failed = true }
                 finally { dispatch.record(slice.bytes, slice.requests) }
             }
-            if (failed) failure()
+            if (blocked) {
+                settings.syncStatus("error", MoteI18n.text("部分来源尚未同步，记录保留在本机；{0}", MoteI18n.text("请再次点击立即同步")))
+                Result.failure()
+            } else if (failed) failure()
             else if (more) { SourceWork.enqueueUpload(applicationContext, settings.read(), inputData.getBoolean("manual", false), continuation = true, delaySeconds = if (delayedFiles) 60 else 0); Result.success() }
             else {
                 SyncHealth.finish(applicationContext)

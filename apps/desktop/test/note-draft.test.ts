@@ -64,3 +64,20 @@ it('keeps a prepared local note local across restart, then binds it only through
   await store.bindPreparedOrigin(target.serverUrl);
   await expect(store.submit(input, target, 'macos', { enqueue: async () => true })).resolves.toMatchObject({ id: input.id });
 });
+
+it('keeps note text but revokes a prepared v1 submission ID exactly once',async()=>{
+  let store=new NoteDraftStore(directory);await store.initialize();
+  const input={...store.get(),text:'generated note retained as draft',mood:'calm',revision:1};
+  await expect(store.submit(input,config,'macos',{enqueue:async()=>{throw Error('synthetic pending write');}})).rejects.toThrow('synthetic pending write');
+  expect(store.get().prepared).toBe(true);
+  await store.clearPreparedForProtocolUpgrade();
+  const migrated=store.get();
+  expect(migrated).toMatchObject({text:input.text,mood:input.mood,prepared:false});
+  expect(migrated.id).not.toBe(input.id);
+  store=new NoteDraftStore(directory);await store.initialize();await store.clearPreparedForProtocolUpgrade();
+  expect(store.get()).toEqual(migrated);
+  const prepared={...migrated,revision:1};
+  await expect(store.submit(prepared,config,'macos',{enqueue:async()=>{throw Error('synthetic v2 pending write');}})).rejects.toThrow('synthetic v2 pending write');
+  await store.clearPreparedForProtocolUpgrade();
+  expect(store.get().prepared).toBe(true);
+});

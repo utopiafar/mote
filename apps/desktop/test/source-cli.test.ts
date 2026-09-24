@@ -4,6 +4,7 @@ import { createServer, type Server } from 'node:http';
 import { mkdtemp, mkdir, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { sourceAck } from './fixtures';
 let root: string; let server: Server; let url: string; let items: Record<string, unknown>[]; let fail: boolean;
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-cli-'))); items = []; fail = false;
@@ -13,7 +14,7 @@ beforeEach(async () => {
     const manifest = JSON.parse(Buffer.concat(buffers).toString()); const body = manifest.item ?? manifest; res.setHeader('Content-Type', 'application/json');
     if (req.method === 'POST') res.end(JSON.stringify(body));
     else if (req.method === 'PATCH') res.end(JSON.stringify({ ...body, id: req.url!.split('/').at(-1) }));
-    else { items.push(body); if (fail) { res.destroy(); return; } res.end(JSON.stringify({ id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: manifest.sourceId??req.url!.split('/')[3], externalId: body.externalId, revision: body.revision, duplicate: false })); }
+    else { items.push(body); if (fail) { res.destroy(); return; } res.end(JSON.stringify(sourceAck(manifest.sourceId??req.url!.split('/')[3],body,body.kind==='file'?'file-revision':'source-item'))); }
   });
   await new Promise<void>((done, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', done); });
   url = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
@@ -29,7 +30,7 @@ async function run(profile: string, args: string[] = [], token = 'synthetic-cli-
 }
 it('CLI independently syncs the same source for two profiles, then skips acknowledged unchanged versions', async () => {
   await mkdir(join(root, 'selected')); await writeFile(join(root, 'selected', 'a.md'), '合成 CLI 🧑🏽‍💻');
-  for (const profile of ['dev', 'test']) { expect((await run(profile)).output).toContain('Imported 1 changed'); expect((await run(profile)).output).toContain('Imported 0 changed'); }
+  for (const profile of ['dev', 'test']) { expect((await run(profile)).output).toContain('Received 1 changed'); expect((await run(profile)).output).toContain('Received 0 changed'); }
   expect(items).toHaveLength(2); expect(items[0].text).toBe('合成 CLI 🧑🏽‍💻');
 }, 15000);
 it('CLI restores an unacknowledged revision after failed process, then tracks explicit deletion and restoration', async () => {
@@ -46,7 +47,7 @@ it('CLI recovers a lock whose former process has exited, while preserving acknow
   const stateDir = join(imported.directory, 'file-sync'); const stateFile = (await readdir(stateDir)).find(file => file.endsWith('.json.sqlite'))!.replace(/\.sqlite$/,'');
   const child = spawn(process.execPath, ['-e', 'process.exit(0)']); await new Promise(done => child.once('exit', done));
   await writeFile(join(stateDir, stateFile + '.lock'), String(child.pid));
-  expect((await run('dev')).output).toContain('Imported 0 changed'); expect(items).toHaveLength(1);
+  expect((await run('dev')).output).toContain('Received 0 changed'); expect(items).toHaveLength(1);
 }, 15000);
 it('CLI credential change at the same URL isolates old pending text and submits only the current scan', async () => {
   await mkdir(join(root, 'selected')); const file = join(root, 'selected', 'a.md'); await writeFile(file, 'old synthetic private text');

@@ -16,7 +16,7 @@ import {SourceStore} from '../src/sources.js';
 
 const inactive:QueryAgent={configured:false,query:async()=>{throw Error('No model calls belong in connection tests');},close:async()=>{}};
 const owner='synthetic-owner-for-connection-tests';
-const headers=(token=owner)=>({authorization:`Bearer ${token}`});
+const headers=(token=owner)=>({authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'});
 function config(directory:string):Config{return {dataDir:directory,token:owner,tokenPath:join(directory,'owner-token'),host:'127.0.0.1',port:0,profile:'test',tokenFromEnvironment:true,maxStorageBytes:30*1024*1024,maxExportBytes:4*1024*1024,retentionDays:0,insightIntervalHours:0,allowedOrigins:['https://synthetic.invalid'],model:'',modelBaseUrl:'https://api.deepseek.com',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:true};}
 async function fixture(t:TestContext,options:{clock?:()=>number;mcp?:boolean;maxStorageBytes?:number}={}){
   const directory=await mkdtemp(join(tmpdir(),'mote-connections-')),cfg=config(directory),store=new Store(directory,{maxStorageBytes:options.maxStorageBytes}),sources=new SourceStore(store);

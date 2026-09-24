@@ -1,6 +1,6 @@
 {
   "name": "mote",
-  "version": "0.0.66",
+  "version": "0.0.67",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -19,12 +19,13 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:local": "npm run check:i18n && npm run build:libs && npm run typecheck && npm test",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
-    "test": "npm run test --workspaces --if-present && node --test scripts/media-workers.test.mjs && node scripts/test-central-runner.mjs",
+    "test": "npm run test --workspaces --if-present && node --test scripts/media-workers.test.mjs scripts/reset-backend-v2.test.mjs && node --import tsx --test scripts/client.test.ts && node scripts/test-central-runner.mjs",
     "test:e2e": "node --import tsx scripts/e2e.ts",
     "test:media-e2e": "node --import tsx scripts/media-e2e.ts",
     "test:container": "node scripts/test-container.mjs",
     "demo": "node --import tsx scripts/seed-demo.ts",
     "import:files": "node --import tsx scripts/import-files.ts",
+    "reset:mvp-vault": "node scripts/reset-backend-v2.mjs",
     "backup": "node --import tsx scripts/backup.ts",
     "privacy": "node --import tsx scripts/privacy-gateway.ts",
     "test:privacy": "node --import tsx scripts/test-privacy.ts",

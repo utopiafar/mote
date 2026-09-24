@@ -7,6 +7,7 @@ import { setImmediate as yieldTurn } from 'node:timers/promises';
 import type { LocalFileCheckpoint, SourceCheckpoint, SourceDefinition, SourceItem, SourceRequest, SourceScan, ScannedItem } from './source-types';
 import { PriorityScheduler } from './priority-scheduler';
 import {UploadSlice,UploadSliceYield,requestBytes} from './upload-slice';
+import {requireIngressReceipt} from './ingress-protocol';
 
 export const sourceHash = (value: string | Buffer): string => createHash('sha256').update(value).digest('hex');
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
@@ -20,6 +21,8 @@ interface RejectedItem { item: SourceItem; status: number }
 interface BatchResult { acks: Record<string, unknown>[]; rejected?: RejectedItem[] }
 interface State {
   version: 2;
+  /** Distinct from the local outbox schema version; old server receipts cannot be replayed. */
+  ingressVersion: 2;
   predecessors?: Record<string, string | null>;
   delivered?: Record<string, string>;
   quarantined?: Record<string, RejectedItem>;
@@ -45,9 +48,8 @@ export class SourceSync {
   private mutate<T>(operation:()=>Promise<T>):Promise<T>{const next=this.writes.then(operation,operation);this.writes=next.catch(()=>undefined);return next;}
   private scheduler=new PriorityScheduler(16*1024*1024);
   private manifestBatch?:boolean;
-  private sourceBatch?:boolean;
   private knownItems=0;
-  private data: State = { version: 2, known: {}, pendingRealtime: [], pendingHistory: [] };
+  private data: State = { version: 2, ingressVersion:2, known: {}, pendingRealtime: [], pendingHistory: [] };
   private readonly limits: { maxEvents: number; maxBytes: number; batchSize: number; concurrency: number };
   constructor(private readonly path: string, limits?: Partial<{ maxEvents: number; maxBytes: number; batchSize: number; concurrency: number }>) { this.limits = { maxEvents: 4000, maxBytes: 32 * 1024 * 1024, batchSize: 100, concurrency: 4, ...limits }; }
 
@@ -55,12 +57,11 @@ export class SourceSync {
     try {
       const value = await sourceWork.run<Record<string, unknown> | undefined>({ kind: 'source-state', path: this.path });
       if (value === undefined) {await sourceWork.run({kind:'source-state',path:this.path,patches:sourceStatePatch({},this.data as unknown as Record<string,unknown>)});return;}
-      if (value.version === 1) {
-        const old = value as unknown as { known?: Record<string, Known>; pending?: SourceItem[]; [key: string]: unknown };
-        if (!Array.isArray(old.pending) || old.pending.length > this.limits.maxEvents) throw new Error(moteText("来源同步状态超过本地队列上限，请恢复网络后重试"));
-        this.data = { ...old, version: 2, known: old.known ?? {}, pendingRealtime: old.pending ?? [], pendingHistory: [] } as State;
-        delete (this.data as State & { pending?: SourceItem[] }).pending;
-        this.knownItems=Object.values(this.data.known).filter(value=>!value.item.deleted).length;
+      if(value.ingressVersion!==2){
+        // Explicit MVP protocol break: old receipts, dedupe heads and cursors
+        // cannot be interpreted as accepted by the v2 node. Rescan from zero.
+        await sourceWork.run({kind:'source-state',path:this.path,patches:sourceStatePatch(value,this.data as unknown as Record<string,unknown>)});
+        await rm(this.path+'.pre-sqlite',{force:true});
         return;
       }
       const next = value as unknown as State;
@@ -230,7 +231,7 @@ export class SourceSync {
     const first = batch[0]!;
     if (first.kind === 'file' && first.document?.fileIndex) {
       if(first.localOriginalBase64||first.localOriginal)return {acks:[await this.sendFile(source,first,request,signal)]};
-      if(this.manifestBatch===undefined){try{const cap=await request('/api/file-sync/v1/capabilities',undefined,'GET',signal) as {manifestBatch?:number};this.manifestBatch=typeof cap.manifestBatch==='number'&&cap.manifestBatch>=this.limits.batchSize;}catch(error){const status=(error as {httpStatus?:number;statusCode?:number}).httpStatus??(error as {statusCode?:number}).statusCode;if(status!==404&&status!==405)throw error;this.manifestBatch=false;}}
+      if(this.manifestBatch===undefined){const cap=await request('/api/file-sync/v1/capabilities',undefined,'GET',signal) as {manifestBatch?:number};this.manifestBatch=typeof cap.manifestBatch==='number'&&cap.manifestBatch>=this.limits.batchSize;}
       if(!this.manifestBatch){const acks=[];for(const item of batch)acks.push(await this.sendFile(source,item,request,signal));return {acks};}
       const manifests=batch.map(({localOriginalBase64:_,localOriginal:__,...item})=>({sourceId:source.id,item,sizeBytes:item.metadata?.file?.sizeBytes??0,...(this.data.delivered?.[sourceHash(item.externalId)]?{previousRevision:this.data.delivered[sourceHash(item.externalId)]}: {})}));
       const response=await request('/api/file-sync/v1/manifests',{items:manifests},'POST',signal) as {results?:{externalId:string;revision:string;state?:string;status?:number;ack?:unknown}[]};
@@ -253,27 +254,10 @@ export class SourceSync {
       return {acks,rejected};
     }
     const wire = batch.map(({ localOriginalBase64: _, localOriginal:__, ...item }) => item);
-    // Keep the single-item route as a compatibility path for older central
-    // nodes; only a real multi-item batch requires the new endpoint.
+    // A single item uses the dedicated v2 endpoint; multi-item writes require
+    // the v2 batch endpoint and never retry through an older route.
     if (wire.length === 1) return {acks:[this.validateAck(source, await request(`/api/sources/${encodeURIComponent(source.id)}/items`, wire[0], 'PUT', signal), wire[0])]};
-    let result: { receipts?: unknown } | undefined;
-    if (this.sourceBatch !== false) {
-      try {
-        result = await request(`/api/sources/${encodeURIComponent(source.id)}/items/batch`, { items: wire }, 'POST', signal) as { receipts?: unknown };
-        this.sourceBatch = true;
-      } catch (error) {
-        const status = (error as { httpStatus?: number; statusCode?: number }).httpStatus ?? (error as { statusCode?: number }).statusCode;
-        if (status !== 404 && status !== 405) throw error;
-        this.sourceBatch = false;
-      }
-    }
-    if (this.sourceBatch === false) {
-      // Only explicit route absence permits the older single-item protocol.
-      // A malformed ACK, authorization failure or lost response is not an ACK.
-      const receipts: Record<string, unknown>[] = [];
-      for (const item of wire) receipts.push(this.validateAck(source, await request(`/api/sources/${encodeURIComponent(source.id)}/items`, item, 'PUT', signal), item));
-      return {acks:receipts};
-    }
+    const result=await request(`/api/sources/${encodeURIComponent(source.id)}/items/batch`, { items: wire }, 'POST', signal) as { receipts?: unknown };
     if (!result || !Array.isArray(result.receipts) || result.receipts.length !== batch.length) throw new Error(moteText("中央批量来源确认不完整，已保留待重试版本"));
     return {acks:result.receipts.map((receipt, index) => this.validateAck(source, receipt, wire[index]))};
   }
@@ -293,10 +277,12 @@ export class SourceSync {
     return this.validateAck(source, ack, item);
   }
 
-  private validateAck(source: SourceDefinition, ack: unknown, expected?: Pick<SourceItem, 'externalId' | 'revision'>): Record<string, unknown> {
+  private validateAck(source: SourceDefinition, ack: unknown, expected: SourceItem): Record<string, unknown> {
     if (!ack || typeof ack !== 'object') throw new Error(moteText("中央来源条目确认不匹配，已保留待重试版本"));
     const value = ack as Record<string, unknown>;
-    if (value.sourceId !== source.id || typeof value.externalId !== 'string' || typeof value.revision !== 'string' || typeof value.duplicate !== 'boolean' || typeof value.id !== 'string' || !receiptId.test(value.id) || expected && (value.externalId !== expected.externalId || value.revision !== expected.revision)) throw new Error(moteText("中央来源条目确认不匹配，已保留待重试版本"));
+    if (value.sourceId !== source.id || typeof value.externalId !== 'string' || typeof value.revision !== 'string' || typeof value.duplicate !== 'boolean' || typeof value.id !== 'string' || !receiptId.test(value.id) || value.externalId !== expected.externalId || value.revision !== expected.revision) throw new Error(moteText("中央来源条目确认不匹配，已保留待重试版本"));
+    try{requireIngressReceipt(value,{kind:expected.kind==='file'&&expected.document?.fileIndex?'file-revision':'source-item',sourceId:source.id,externalId:expected.externalId,revision:expected.revision});}
+    catch{throw new Error(moteText("中央来源条目确认不匹配，已保留待重试版本"));}
     return value;
   }
 

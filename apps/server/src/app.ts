@@ -3,6 +3,9 @@ import {codingSourcePlugin} from './coding-source-plugin.js';
 import {linkOperationParent} from './operation-projection.js';
 import {assertExternalCaptures} from './capture-admission.js';
 import {registerSourceRoutes} from './source-routes.js';
+import {IngressService,INGRESS_PROTOCOL_VERSION,collectorIngressWrite} from './ingress.js';
+import {FileRawReader,fileOriginalRawRef} from './file-raw-reader.js';
+import {MAX_RAW_READ_BYTES} from './raw-reader.js';
 import {registerProcessingRoutes} from './processing-routes.js';
 import {registerMemoryRoutes} from './memory-routes.js';
 import {registerModelSettingsRoutes} from './model-settings-routes.js';
@@ -11,6 +14,7 @@ import {scopeFields,validRange,type QueryScope} from './query-scope.js';
 import {semanticProcessor} from './semantic-extraction.js';
 import {registerEvidenceRoutes} from './evidence-routes.js';
 import {MaterialStore} from './materials.js';
+import {MaterialMemoryWork} from './material-memory-work.js';
 import {registerMaterialRoutes} from './material-routes.js';
 import {MaterialOrganizerRuntime} from './material-organizers.js';
 import {navigationScopeSchema} from './context-navigation.js';
@@ -76,6 +80,7 @@ import {Conversations} from './conversations.js';
 import {ArchivedFileStore} from './archived-files.js';
 import {ImportStore,type ImportPreparation,type ImportPreparationResult} from './imports.js';
 import {prepareImportInput} from './import-runtime.js';
+import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput} from './python-source-pack-executor.js';
 import {MemoryLifecycle,type LifecycleExtension} from './memory-lifecycle.js';
 import {registerMemoryExtensions,recoverableMemoryJobs} from './lifecycle-extensions.js';
 import {WorkingMemory} from './working-memory.js';
@@ -83,9 +88,11 @@ import {modelConfiguration} from './model-configuration.js';
 import {MemoryPipeline} from './memory-pipeline.js';
 import {ContentStorageService,registerContentStorage} from './content-storage.js';
 import {insightResult,validateInsightOutput} from './insights.js';
+import {Context} from '@deepseek-ai/cordis';
 
 export interface QueryAgent {configured:boolean;configuredFor?(id:string):boolean;query(args:QueryInput):Promise<QueryResult>;close():Promise<void>}
 const querySchema=z.object({modelProfileId:modelProfileIdSchema.optional(),modelOverride:z.string().trim().min(1).max(512).refine(v=>!/[\u0000-\u001f\u007f]/.test(v)).optional(),question:z.string().trim().min(1).max(8000),conversationId:z.string().uuid().optional(),after:scopeFields.after.nullable(),before:scopeFields.before.nullable(),deviceId:scopeFields.deviceId.nullable(),timeZone:scopeFields.timeZone.nullable()}).strict();
+const queryWithAttachmentsSchema=querySchema.extend({attachmentIds:z.array(z.string().uuid()).max(4).refine(ids=>new Set(ids).size===ids.length).optional()});
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
 const insightRequestSchema=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional()}).strict().refine(validRange,{message:'Invalid time range'});
 const CAPTURE_BUNDLE_MAX_INFLATED_BYTES=32*1024*1024;
@@ -112,6 +119,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   // MVP cut-over is explicit: never silently keep the old Coding event indexes live.
   if(store.db.prepare("SELECT 1 FROM captures WHERE json_extract(json,'$.provenance.document.coding') IS NOT NULL LIMIT 1").get()){eventLoop.disable();if(!dependencies?.store)store.close();throw new Error('Legacy Coding event vault: back up and use a fresh data directory for the source-pipeline architecture. No automatic migration is performed.');}
   const materials=new MaterialStore(store);
+  // One service tree owns backend plugins. Each runtime installs into its own
+  // managed scope below this root, so closing one cannot dispose a sibling.
+  const backendContext=new Context();
+  backendContext.provide('moteMaterials',materials);
   const runtimeSettings=new ExecutionSettings(store,config),execution=runtimeSettings.execution(),providerAdmission=new ProviderAdmission(store),modelBudgets=new ModelBudgets(store);
   const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
   const interactiveGate=new ConcurrencyGate(execution.interactiveConcurrency),interactiveModelGate=new ConcurrencyGate(execution.interactiveConcurrency);
@@ -126,29 +137,61 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   };
   const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
-  const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await sourcePipelines.ready;
-  const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources);const fileEvidence=new FileEvidenceRequests(sources);
+  const executor=new ExecutionEngine(store);
+  backendContext.provide('moteExecution',executor);
+  const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor);await sourcePipelines.ready;
+  const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources),ingress=new IngressService(store,sources,files);const fileEvidence=new FileEvidenceRequests(sources);
   const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));
   const usageLedger=new UsageLedger(store);
-  const executor=new ExecutionEngine(store);
   const indexer=new Indexer(store,config,diagnostics,files,input=>{
     const id=randomUUID(),operationId=input.operationId??modelContext.getStore()?.traceContext?.operationId??'embedding:'+id,provider='embedding',model=config.embeddingModel,price=usageLedger.prices().find(p=>p.provider===provider&&p.model===model);
     modelBudgets.reserve({id,operationId,provider,model,inputTokens:input.bytes,outputTokens:0,price});
     const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
     return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');modelBudgets.finish(id,usage,price);}};
   },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId});
-  const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials);
+  const materialMemoryWork=new MaterialMemoryWork(store,materials);
+  const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
+  const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials,sourcePipelines,materialOrganizer.sourceItemRecipes,
+    ref=>materialMemoryWork.readyForMemory(ref));
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids);
   const memories=evidenceReader.memories,conversations=new Conversations(store);
   const archivedFiles=new ArchivedFileStore(store);
-  const materialOrganizer=new MaterialOrganizerRuntime(store,materials);
   const contentStorage=new ContentStorageService(store,files,archivedFiles);
   const connections=dependencies?.connections??new Connections(store,sources);await connections.init();
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
   const credential=(req:FastifyRequest)=>identities.get(req);
   const sourceOwner=(req:FastifyRequest,id:string)=>{const c=credential(req);if(c)connections.assertOwnSource(c,id);};
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
-  const reader=evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages});
+  const archiveReader=evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
+    currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
+    currentGrantContext:()=>modelContext.getStore()});
+  const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
+  const fileRawReader=new FileRawReader(store,files,archivedFiles,{
+    mayReadFileVersion:(_sourceId,id)=>Boolean(directImage(id)),mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
+  });
+  const reader:ContextReader={...archiveReader,
+    evidence:async args=>{
+      const direct=args.ids.flatMap(id=>{const image=directImage(id);return image?[{id,capturedAt:modelContext.getStore()?.contextTime??new Date().toISOString(),appName:image.name,ocrText:'',sourceType:'user_attachment',summary:'User attached image',metadata:{mimeType:image.mimeType}}]:[];});
+      const regular=args.ids.filter(id=>!directImage(id));
+      return [...direct,...(regular.length?await archiveReader.evidence({...args,ids:regular}):[])];
+    },
+    readImage:async({id})=>{
+      const direct=directImage(id);
+      if(!direct)return archiveReader.readImage!({id});
+      const ref=fileOriginalRawRef(id,direct.hash),parts:Buffer[]=[];
+      for(let offset=0;offset<direct.sizeBytes;){
+        const page=await fileRawReader.read(ref,{offset,length:Math.min(MAX_RAW_READ_BYTES,direct.sizeBytes-offset)});
+        if(page.status!=='available'||page.totalBytes!==direct.sizeBytes||page.mediaType!==direct.mimeType||page.bytes.length===0)throw new StoreError('Attached image is unavailable',404);
+        parts.push(Buffer.from(page.bytes));offset+=page.bytes.length;
+      }
+      return {mimeType:direct.mimeType,data:Buffer.concat(parts).toString('base64')};
+    },
+  };
+  const queryImages=(ids:string[])=>ids.map(id=>{
+    const detail=files.detail(id),version=files.version(id),mimeType=detail.item.mimeType;
+    if(!detail.hasOriginal||!version.object_hash||!['image/png','image/jpeg','image/webp'].includes(mimeType??'')||detail.sizeBytes<1||detail.sizeBytes>8*1024*1024)throw new StoreError('Query attachment must be an archived image up to 8 MiB',400);
+    return {id,name:detail.item.title||'Attached image',mimeType:mimeType!,hash:version.object_hash,sizeBytes:detail.sizeBytes};
+  });
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const codex={executable:config.codexBin,home:config.codexHome};
   const wrapAgent=(inner:QueryAgent,settings:import('@mote/shared/models').ModelSettings):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:async input=>{
@@ -170,7 +213,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     },
     probe:settings=>testModelConnection(settings,factory),
   });
-  try{await modelSettings.initialize();}catch(error){await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
+  try{await modelSettings.initialize();}catch(error){await agent.close();await connections.close();await indexer.close();await sourcePipelines.close();await executor.close();await backendContext.fiber.dispose();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
   // Fastify/Pino request and Error serializers may contain raw URLs, bodies or SDK text.
   // Emit only our fixed-schema events, never serialize arbitrary request/error objects.
   const resolveFileModel=(settings:Parameters<FileAnalysis>[2],localOnly:boolean)=>{
@@ -194,9 +237,9 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   };
   const queryRuns=new QueryRuns(store,{executor,concurrency:()=>runtimeSettings.execution().interactiveConcurrency});
   const insightRuns=new InsightRuns(store,{executor});
-  const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials);
-  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:config.fileProcessorModules,analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,mediaAssets});
-  try{await processing.runtime.ready;}catch(error){await processing.close();await workflows.close();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
+  const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials,backendContext);
+  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:config.fileProcessorModules,analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
+  try{await processing.runtime.ready;}catch(error){await processing.close();await workflows.close();await sourcePipelines.close();await executor.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
   const perception=new Perception(store,processing.runtime,executor,mediaAssets);
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
@@ -244,6 +287,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     const c=connections.authenticate(req.headers.authorization);
     if(!c)return reply.code(401).send({error:'unauthorized',message:moteText("请提供有效访问令牌；管理网页请重新登录"),requestId:req.id});
     identities.set(req,c);connections.assertCollectorRoute(c,req.method,req.routeOptions.url??'');
+    if(collectorIngressWrite(req.method,req.routeOptions.url??'')&&req.headers['x-mote-ingress-version']!==INGRESS_PROTOCOL_VERSION)
+      return reply.code(426).send({error:'ingress_protocol_upgrade_required',requiredVersion:INGRESS_PROTOCOL_VERSION,requestId:req.id});
   });
   app.setErrorHandler((error,req,reply)=>{
     const failure=safeError(error);
@@ -267,7 +312,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.get('/api/connections/self',async req=>{
     const c=credential(req);if(c)connections.assertActive(c);
     const owner=!c,collector=c?.scope==='collector';
-    return {credential:c?{id:c.id,scope:c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'legacy'},capabilities:{ingest:owner||collector,ownSources:owner||collector,archiveRead:owner||c?.scope==='mcp-read'}};
+    return {credential:c?{id:c.id,scope:c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'legacy'},capabilities:{ingest:owner||collector,ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||collector,archiveRead:owner||c?.scope==='mcp-read'}};
   });
   const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
   registerUpdateRoutes(app,softwareUpdate);
@@ -279,8 +324,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.get('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.options(sourceId);});
   app.delete('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.forget(sourceId);});
   app.put('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.configure(sourceId,req.body);});
-  registerSourceRoutes(app,{store,sources,fileEvidence,evidenceReader,connections,credential,sourceOwner});
-  playbackAuthorization=registerFileRoutes(app,files,processing,sourceOwner,req=>credential(req)?.deviceId,evidenceReader,diagnostics);
+  registerSourceRoutes(app,{store,sources,fileEvidence,evidenceReader,ingress,connections,credential,sourceOwner});
+  playbackAuthorization=registerFileRoutes(app,files,processing,ingress,sourceOwner,req=>credential(req)?.deviceId,evidenceReader,diagnostics);
   registerModelSettingsRoutes(app,modelSettings,codex);
   app.get('/api/health',async()=>({ok:true,version:serverVersion}));
   app.get('/api/status',async()=>{const profiles=modelSettings.profiles(),current=modelSettings.current(),unbounded=profiles.some(p=>p.settings.agentTimeoutMs===null),agentTimeouts=profiles.map(p=>p.settings.agentTimeoutMs).filter((value):value is number=>value!==null);return {runtime:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,maintenance:maintenanceWorker?.snapshot()??null},profile:config.profile??'legacy',agent:{configured:agent.configured,provider:modelProvider(config.modelProvider??'deepseek')?.name??config.modelProvider,runtime:config.modelProtocol==='codex-app-server'?'Codex App Server':'DeepSeek Harness',protocol:config.modelProtocol,model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??DEFAULT_MODEL_MAX_TOKENS,modelRequestTimeoutMs:current.modelRequestTimeoutMs,agentTimeoutMs:unbounded?null:agentTimeouts.length?Math.max(...agentTimeouts):null},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:lifecycle.settings().insights.enabled?lifecycle.settings().insights.intervalHours:0,serverTime:new Date().toISOString()};});
@@ -291,13 +336,13 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   registerTodoRoutes(app,store);
   registerOperations(app,new Operations(store),req=>Boolean(credential(req)));
   registerProcessingRoutes(app,{store,workflows,perception,mediaAssets,semanticFingerprint:()=>semanticSelection().fingerprint});
-  app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);assertExternalCaptures([input]);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));store.captureReceived(input.deviceId);return reply.code(result.duplicate?200:201).send(result);});
+  app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);assertExternalCaptures([input]);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>ingress.capture(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
   app.post('/api/captures/bundle',{bodyLimit:12*1024*1024},async req=>{
     const captures=parseCaptureBundle(req.body);assertExternalCaptures(captures);
     if(new Set(captures.map(c=>c.id)).size!==captures.length)throw new StoreError('Duplicate IDs in bundle');
     const c=credential(req);
     if(c)for(const input of captures)connections.assertCapture(c,input);
-    const committed=await store.ingestSettled(captures,c?()=>{for(const input of captures)connections.assertCapture(c,input);}:undefined);
+    const committed=await ingress.captureSettled(captures,c?()=>{for(const input of captures)connections.assertCapture(c,input);}:undefined);
     return {results:committed.map(item=>{if(item.result)return {...item.result,status:item.result.duplicate?200:201};const failure=safeError(item.error);return {id:item.id,status:failure.status,error:failure.category};})};
   });
   // Bounded transport batch with independent durable acknowledgements. Validate the
@@ -307,7 +352,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     if(new Set(captures.map(c=>c.id)).size!==captures.length)throw new StoreError('Duplicate IDs in batch');
     const c=credential(req);
     if(c)for(const input of captures)connections.assertCapture(c,input);
-    const committed=await store.ingestSettled(captures,c?()=>{for(const input of captures)connections.assertCapture(c,input);}:undefined);
+    const committed=await ingress.captureSettled(captures,c?()=>{for(const input of captures)connections.assertCapture(c,input);}:undefined);
     return {results:committed.map(item=>{if(item.result)return {...item.result,status:item.result.duplicate?200:201};const failure=safeError(item.error);return {id:item.id,status:failure.status,error:failure.category};})};
   });
   app.get('/api/captures',async req=>{
@@ -317,7 +362,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.delete('/api/captures/:id',async req=>{const id=(req.params as {id:string}).id;const file=store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(id,id) as {capture_id:string}|undefined;return file?files.forget(file.capture_id):store.delete(id);});
   // Notes share capture IDs, indexing, archive export and deletion tombstones.
   // The convenience route does not rewrite the author's text or infer their mood.
-  app.post('/api/notes',async(req,reply)=>{const input=noteCapture(noteSchema.parse(req.body)),c=credential(req);assertExternalCaptures([input]);if(c)connections.assertCapture(c,input);for(const id of input.metadata?.attachments??[]){const attachment=files.detail(id);if(c&&sources.getSource(attachment.sourceId).deviceId!==c.deviceId)throw new StoreError('Attachment belongs to another device',403);}const result=await diagnostics.measure('ingest','note',()=>store.ingest(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
+  app.post('/api/notes',async(req,reply)=>{const input=noteCapture(noteSchema.parse(req.body)),c=credential(req);assertExternalCaptures([input]);if(c)connections.assertCapture(c,input);for(const id of input.metadata?.attachments??[]){const attachment=files.detail(id);if(c&&sources.getSource(attachment.sourceId).deviceId!==c.deviceId)throw new StoreError('Attachment belongs to another device',403);}const result=await diagnostics.measure('ingest','note',()=>ingress.capture(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
   app.get('/api/notes',async req=>{
     const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
     return diagnostics.measure('source','timeline',()=>store.list({...args,source:'note',cursor:raw.cursor}),page=>({count:page.items.length}));
@@ -394,14 +439,19 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
     },
   });
-  const memoryPipeline=new MemoryPipeline({executor,store,memories,configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({executor,store,memories,materialAllowedForMemory:ref=>evidenceReader.materialAllowedForMemory(ref),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor),working=new WorkingMemory(store,conversations);
   registerMemoryExtensions({semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
   registerExecutionSettingsRoutes(app,{modelBudgets,runtimeSettings,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,providerAdmission,maintenanceSnapshot:()=>maintenanceWorker?.snapshot()??null,wakeMemory:()=>memoryPipeline.wake()});
   registerMemoryRoutes(app,{store,files,memories,memoryPipeline,lifecycle,modelSettings,query:input=>queryAgent(input,'query','memories'),reviewExtraction});
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
+  const sourcePacks=new Map((config.importPythonPacks??[]).map(spec=>{
+    const executor=new PythonSourcePackExecutor<PythonImportOutput>({...spec,outputSchema:pythonImportOutputSchema});
+    return [spec.id,{revision:sha256(JSON.stringify(spec)),prepare:pythonImportPreparation(executor)}] as const;
+  }));
   const imports=new ImportStore(store,archivedFiles,sources,{executor,
+    sourcePacks,
     prepare:dependencies?.prepareImport??(async input=>{
       if(!agent.configured)throw new AgentNotConfiguredError();
       const selected=modelSettings.select('import');if(!agent.configuredFor(selected.id))throw new AgentNotConfiguredError();
@@ -427,6 +477,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.get('/api/skills',async()=>({items:skillCatalog()}));
   registerImportUploads(app,store,archivedFiles);
   app.get('/api/imports',async()=>({items:imports.list()}));
+  app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
   app.post('/api/imports',{bodyLimit:360*1024*1024,config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{const job=await imports.create(req.body);if(job.status==='queued')launchImport(job.id,()=>imports.prepare(job.id));return reply.code(202).send(imports.get(job.id));});
   app.get('/api/imports/:id',async req=>imports.get(jobId(req.params)));
   app.delete('/api/imports/:id',async req=>{const id=jobId(req.params);if(importTasks.has(id))throw new StoreError('Import is already processing',409);return imports.delete(id);});
@@ -445,7 +496,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     // Preserve the established configuration gate before strict body validation.
     // Once a configured query starts, provider/runtime failures are journaled below.
     if(!agent.configured)throw new AgentNotConfiguredError();
-    const {conversationId,question,modelProfileId,modelOverride,...selected}=querySchema.parse(body);
+    const {conversationId,question,modelProfileId,modelOverride,attachmentIds=[],...selected}=queryWithAttachmentsSchema.parse(body);
     if(conversationId&&runningConversations.has(conversationId))throw new StoreError('An answer is already running in this conversation',409);
     const previous=conversationId?conversations.get(conversationId):undefined;
     if(previous&&previous.turnCount>=200)throw new StoreError('Conversation has reached its turn limit; start a new conversation',409);
@@ -460,9 +511,12 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       const selectedProfile=modelSettings.select('chat',modelProfileId),timeout=selectedProfile.settings.agentTimeoutMs;
       signal=timeout===null?signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(timeout)]);
       signal?.throwIfAborted();
-      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,modelProfileId,modelOverride,onProgress,signal,...(previous?{conversation:await working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution)}:{})});
+      const previousIds=previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[];
+      const previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
+      const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
+      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,modelProfileId,modelOverride,onProgress,signal,directImages,...(previous?{conversation:await working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution)}:{})});
       signal?.throwIfAborted();
-      return ()=>({...result,...conversations.append(previous,{question,...scope},result)});
+      return ()=>({...result,...conversations.append(previous,{question,...scope,attachments:directImages.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result)});
     } catch(error) {
       // Keep the user's question visible even when no assistant answer was produced.
       // Persist only the fixed public error projection; provider details never enter the vault.
@@ -477,12 +531,12 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       throw error;
     }finally{if(conversationId)runningConversations.delete(conversationId);}
   }
-  app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const id=randomUUID(),input=querySchema.parse(req.body);return queryRuns.perform(id,input,(observe,signal,execution)=>runQuery(input,observe,signal,'query:'+id,execution),{timeoutMs:modelSettings.select('chat',input.modelProfileId).settings.agentTimeoutMs});});
+  app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const id=randomUUID(),input=queryWithAttachmentsSchema.parse(req.body);return queryRuns.perform(id,input,(observe,signal,execution)=>runQuery(input,observe,signal,'query:'+id,execution),{timeoutMs:modelSettings.select('chat',input.modelProfileId).settings.agentTimeoutMs});});
   app.post('/api/query-runs/:id/cancel',async req=>queryRuns.cancel(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.get('/api/query-runs',async()=>({items:queryRuns.list()}));
   app.get('/api/query-runs/:id',async req=>queryRuns.get(z.object({id:z.string().uuid()}).parse(req.params).id));
   app.post('/api/query-runs',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
-    const {id,input}=z.object({id:z.string().uuid(),input:querySchema}).strict().parse(req.body);
+    const {id,input}=z.object({id:z.string().uuid(),input:queryWithAttachmentsSchema}).strict().parse(req.body);
     if(!agent.configured)throw new AgentNotConfiguredError();
     return reply.code(202).send(queryRuns.start(id,input,(observe,signal,execution)=>runQuery(input,observe,signal,'query:'+id,execution),{timeoutMs:modelSettings.select('chat',input.modelProfileId).settings.agentTimeoutMs}));
   });
@@ -546,13 +600,19 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const perceptionTimer=setInterval(()=>{try{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);}catch{diagnostics.record('request.failed',{category:'internal'},'error');}try{perception.prepare();void executor.tick().catch(()=>{});}catch{diagnostics.record('request.failed',{category:'internal'},'error');}},5000);perceptionTimer.unref();
   const fileTimer=setInterval(()=>{try{processing.prepare();void executor.tick().catch(()=>diagnostics.record('file.failed',{category:'internal'},'error'));}catch{diagnostics.record('file.failed',{category:'internal'},'error');}},5000);fileTimer.unref();
   const indexTimer=setInterval(()=>void indexer.tick().catch(()=>{diagnostics.record('index.failed',{category:'internal'},'error');}),5000);indexTimer.unref();
-  const sourcePipelineTimer=setInterval(()=>{try{sourcePipelines.tick();sourcePipelines.drainMemory(memoryPipeline,agent.configured&&lifecycle.settings().extraction.enabled);}catch{diagnostics.record('request.failed',{category:'internal'},'error');}},5000);sourcePipelineTimer.unref();
+  const sourcePipelineTimer=setInterval(()=>{try{
+    void sourcePipelines.tick().catch(()=>diagnostics.record('request.failed',{category:'internal'},'error'));
+    const enabled=agent.configured&&lifecycle.settings().extraction.enabled;
+    sourcePipelines.drainMemory(memoryPipeline,enabled);
+    materialMemoryWork.drain(memoryPipeline,enabled,1);
+  }catch{diagnostics.record('request.failed',{category:'internal'},'error');}},5000);sourcePipelineTimer.unref();
   const materialTimer=setInterval(()=>void materialOrganizer.tick(200).catch(()=>diagnostics.record('request.failed',{category:'internal'},'error')),5000);materialTimer.unref();
   const maintenance=()=>{files.sweep();if(config.retentionDays>0)void diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted}))).catch(()=>{});};
   maintenance();const retentionTimer=setInterval(maintenance,3600000);retentionTimer.unref();
   const lifecycleTimer=setInterval(()=>{if(!closing)void lifecycle.tick().catch(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));},60000);lifecycleTimer.unref();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
+    void sourcePipelines.tick().catch(()=>diagnostics.record('request.failed',{category:'internal'},'error'));
     void materialOrganizer.tick(200).catch(()=>diagnostics.record('request.failed',{category:'internal'},'error'));
     for(const id of recoverableMemoryJobs(store,lifecycle))void memoryPipeline.run(id).catch(()=>{});
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
@@ -562,6 +622,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     closing=true;eventLoop.disable();await files.close();await maintenanceWorker?.close();agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();clearInterval(perceptionTimer);await executor.close();const memoryClose=memoryPipeline.close();await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(materialTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
     clearInterval(actionTimer);const actionClose=actions.close();
     await workflows.close();
+    await backendContext.fiber.dispose();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
     await contentStorage.close();
@@ -570,5 +631,5 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     memoryReviews.clear();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

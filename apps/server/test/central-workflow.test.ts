@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../src/app.js';
+import {materialId} from '../src/materials.js';
 import {staticReportHtml} from '../src/insights.js';
 import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
@@ -24,8 +25,9 @@ test('central UI APIs complete original import → exact Memory → cited static
     queries.push(input);
     if(input.skill==='memory-extraction'){
       if(failMemory){failMemory=false;throw Error('Synthetic transient failure');}
-      evidenceId=input.evidenceIds![0];assert.deepEqual(input.evidenceRanges,[{id:evidenceId,offset:0,length:original.length}]);
-      return {answer:JSON.stringify({memories:[{admission:{layer:'memory',reason:'Explicit future observation plan',scope:'This observation project',attribution:'user'},title:'计划验证观测方案',statement:`作者计划下周验证观测方案。[${evidenceId}]`,uncertainty:'是否完成未知。',evidenceIds:[evidenceId],evidence:[{id:evidenceId,offset:0,quote:original}]}]}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};
+      evidenceId=input.evidenceIds![0];const materialText=node.memories.readEvidence([evidenceId])[0].ocrText,offset=materialText.indexOf(original);
+      assert.ok(offset>=0);assert.deepEqual(input.evidenceRanges,[{id:evidenceId,offset:0,length:materialText.length}]);
+      return {answer:JSON.stringify({memories:[{admission:{layer:'memory',reason:'Explicit future observation plan',scope:'This observation project',attribution:'user'},title:'计划验证观测方案',statement:`作者计划下周验证观测方案。[${evidenceId}]`,uncertainty:'是否完成未知。',evidenceIds:[evidenceId],evidence:[{id:evidenceId,offset,quote:original}]}]}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};
     }
     assert.equal(input.skill,'personal-insight');assert.equal(input.question,'回顾我的观测计划');
     return {answer:JSON.stringify({title:'观测计划回顾',markdown:`有一条计划记录，完成情况未知。[${evidenceId}]`,html:`<!doctype html><html><head><style>body{color:#234;font-family:system-ui}.card{padding:24px}</style></head><body><section class="card"><h1>观测计划</h1><p>完成情况未知。[${evidenceId}]</p></section><script>top.fixtureUnsafe=true</script><img src="https://untrusted.invalid/tracker"><a href="https://untrusted.invalid">bad link</a><meta http-equiv="refresh" content="0;url=https://untrusted.invalid"></body></html>`}),citations:[{id:evidenceId,capturedAt:'2026-09-16T00:00:00Z',appName:'合成导入',excerpt:original}],trace:[],runId:randomUUID()};
@@ -42,15 +44,22 @@ test('central UI APIs complete original import → exact Memory → cited static
   const imported=await until(async()=>(await request('GET',`/api/imports/${id}`)).json(),job=>job.status==='completed');
   assert.equal(imported.progress.imported,1);assert.equal(imported.captureIds.length,1);
   assert.equal(imported.memoryJobId,undefined);assert.equal(queries.length,0,'Imports only queue increments');
-  const manual=(await request('POST','/api/memory-jobs',{evidenceIds:imported.captureIds})).json();
+  await node.materialOrganizer.tick();
+  assert.equal((await request('POST','/api/memory-jobs',{evidenceIds:imported.captureIds})).statusCode,409);
+  const material=node.materials.get(materialId(imported.sourceId,'journal:42'))!;
+  assert.equal(node.materialMemoryWork.readyForMemory(material.ref),true,JSON.stringify({coverage:material.coverage,artifacts:material.artifacts,request:node.store.db.prepare('SELECT * FROM material_memory_requests WHERE material_id=?').get(material.id)}));
+  const manualResponse=await request('POST','/api/memory-jobs',{evidenceIds:node.materials.evidenceIds(material.ref)});
+  assert.equal(manualResponse.statusCode,202,manualResponse.body);
+  const manual=manualResponse.json();
   const memory=await until(async()=>(await request('GET',`/api/memory-jobs/${manual.id}`)).json(),job=>job.status==='failed');
   assert.equal(memory.failedBatches,1);assert.equal(node.store.list().items.length,1);
   assert.equal((await request('POST',`/api/memory-jobs/${memory.id}/retry`)).statusCode,202);
   const completed=await until(async()=>(await request('GET',`/api/memory-jobs/${memory.id}`)).json(),job=>job.status==='completed');
   assert.equal(completed.memoryIds.length,1);assert.equal(node.store.list().items.length,1);
   const detail=(await request('GET',`/api/memories/${completed.memoryIds[0]}`)).json();
-  assert.equal(detail.status,'proposed');assert.equal(detail.evidence[0].quote,original);assert.equal(detail.evidence[0].recordedAt,'2020-02-03T04:05:00Z');assert.equal(detail.evidence[0].fileId,imported.files[0].id);
-  const download=await request('GET',`/api/archived-files/${detail.evidence[0].fileId}/content`);assert.equal(download.body,original);assert.match(download.headers['content-disposition'] as string,/attachment/);
+  assert.equal(detail.status,'proposed');assert.equal(detail.evidence[0].quote,original);assert.equal(detail.evidence[0].recordedAt,'2020-02-03T04:05:00.000Z');
+  assert.equal(detail.evidence[0].id,evidenceId);
+  const download=await request('GET',`/api/archived-files/${imported.files[0].id}/content`);assert.equal(download.body,original);assert.match(download.headers['content-disposition'] as string,/attachment/);
   assert.equal(node.store.list({after:'2020-02-01T00:00:00Z',before:'2020-03-01T00:00:00Z'}).items.length,1);
   const generated=await request('POST','/api/insights',{prompt:'回顾我的观测计划',timeZone:'Asia/Shanghai'});assert.equal(generated.statusCode,200,generated.body);
   const report=generated.json();assert.equal(report.artifact.skillId,'personal-insight');assert.equal(report.artifact.title,'观测计划回顾');assert.match(report.answer,/完成情况未知/);
@@ -82,5 +91,13 @@ test('an import with historical revisions completes and extracts only the newly 
   node.store.db.prepare("UPDATE memory_lifecycle_state SET json=json_set(json,'$.lastSuccess',0) WHERE id='extraction'").run();
   node.store.archive.aggregate(100);
   await node.lifecycle.tick();
-  assert.equal(seen.length,1);assert.deepEqual(seen[0].evidenceIds,[imported.captureIds[1]]);
+  assert.equal(seen.length,0,'legacy artifact extraction does not interpret source-item raw captures');
+  await node.materialOrganizer.tick();
+  const material=node.materials.get(materialId(imported.sourceId,'same-object'))!;
+  assert.equal(node.materialMemoryWork.readyForMemory(material.ref),true,JSON.stringify({coverage:material.coverage,artifacts:material.artifacts,request:node.store.db.prepare('SELECT * FROM material_memory_requests WHERE material_id=?').get(material.id)}));
+  assert.equal(material.memberCount,1);
+  const anchors=node.materials.evidenceIds(material.ref);assert.equal(anchors.length,1);
+  node.materialMemoryWork.drain(node.memoryPipeline,true);
+  await until(async()=>seen.length,count=>count>0);
+  assert.deepEqual(seen[0].evidenceIds,anchors);
 });

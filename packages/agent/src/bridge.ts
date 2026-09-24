@@ -202,6 +202,12 @@ function materialMetadata(value: unknown, scope: ContextRange): Record<string, u
     ...(Number.isSafeInteger(row.blockCount)?{blockCount:row.blockCount}:{}),
     ...(Number.isSafeInteger(row.assetCount)?{assetCount:row.assetCount}:{}),
     coverage:{state:['complete','partial','pending'].includes(String((row.coverage as Record<string,unknown>|undefined)?.state))?(row.coverage as Record<string,unknown>).state:'unknown'},
+    artifacts:(Array.isArray(row.artifacts)?row.artifacts:[]).slice(0,32).flatMap(value=>{
+      if(!value||typeof value!=='object'||Array.isArray(value))return [];
+      const artifact=value as Record<string,unknown>;
+      if(typeof artifact.key!=='string'||!/^[a-z0-9][a-z0-9._/-]{0,127}$/.test(artifact.key)||!['ready','pending','failed','unavailable'].includes(String(artifact.state)))return [];
+      return [{key:artifact.key,state:artifact.state}];
+    }),
     fidelity:{state:['lossless','derived','summary-only'].includes(String((row.fidelity as Record<string,unknown>|undefined)?.state))?(row.fidelity as Record<string,unknown>).state:'unknown'},
     retention:{original:['retained','unavailable'].includes(String((row.retention as Record<string,unknown>|undefined)?.original))?(row.retention as Record<string,unknown>).original:'unknown'}};
 }
@@ -241,10 +247,20 @@ export async function startBridge(
   const seedEvidence=ranges.flatMap(r=>{const record=permitted.get(r.id);return record?[project(record,r.offset,r.length,bounds.timeZone)]:[];});
   if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw hostError('Extraction evidence exceeds the byte budget');
   for(const record of seedEvidence){rememberEvidence(records,record);disclosedIds.add(record.id);}
+  const directImages=bounds.directImages??[];
+  if(directImages.length>8||new Set(directImages.map(image=>image.id)).size!==directImages.length||directImages.some(image=>
+    !/^[0-9a-f-]{36}$/i.test(image.id)||!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||
+    !/^[a-f0-9]{64}$/.test(image.hash)||!Number.isSafeInteger(image.sizeBytes)||image.sizeBytes<1||image.sizeBytes>8*1024*1024||image.name.length>500))throw hostError('Invalid direct image attachments');
+  if(restricted&&directImages.length)throw hostError('Extraction sessions cannot receive dialogue images');
+  for(const image of directImages){
+    const record:ContextRecord={id:image.id,capturedAt:bounds.contextTime??new Date().toISOString(),appName:image.name,ocrText:'',sourceType:'user_attachment',summary:'User attached image',metadata:{mimeType:image.mimeType}};
+    rememberEvidence(records,record);disclosedIds.add(image.id);
+  }
   const discovered=new Set(records.keys());
   const pinnedMaterials=new Set<string>();
   let deliveredCharacters=JSON.stringify(seedEvidence).length;
   const expanded=new Set<string>();
+  for(const image of directImages)expanded.add(image.id);
   let imageCalls=0;
   let calls = 0;
   let progressMessages=0;
@@ -399,8 +415,9 @@ export async function startBridge(
       if(tool==='read_image'){
         if(typeof args.id!=='string'||!expanded.has(args.id)||!reader.readImage)throw hostError('Expand derived evidence before reading an authorized image');
         if(++imageCalls>4)throw hostError('Image disclosure budget exceeded');
-        const record=(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
-        if(!record||(scope.deviceId&&record.deviceId!==scope.deviceId)||(scope.after&&Date.parse(record.capturedAt)<Date.parse(scope.after))||(scope.before&&Date.parse(record.capturedAt)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
+        const direct=directImages.some(image=>image.id===args.id);
+        const record=direct?records.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
+        if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(record.capturedAt)<Date.parse(scope.after)||scope.before&&Date.parse(record.capturedAt)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
         const image=await reader.readImage({id:args.id});
         if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||image.data.length>12*1024*1024)throw hostError('Invalid image output');
         trace.push({tool,arguments:{id:args.id},count:1});

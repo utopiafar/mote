@@ -34,6 +34,7 @@ object HttpJson {
             connection.doOutput = body != null
             if (body != null) connection.setRequestProperty("Content-Type", contentType)
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
+            if (IngressV2Protocol.uploadWrite(method, url)) connection.setRequestProperty(IngressV2Protocol.HEADER, IngressV2Protocol.VERSION)
             token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) {
                 connection.setFixedLengthStreamingMode(body.size)
@@ -191,7 +192,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 retainTurn()
                 Diagnostics(applicationContext).add("uploadBytes", wireBytes)
                 val receipts = if (individual) {
-                    if (response.first in setOf(200, 201) && response.second?.optString("id") != pendingRecordId) return failed(MoteI18n.text("上传确认 ID 不匹配"))
+                    if (response.first in setOf(200, 201) && !IngressV2Protocol.validCapture(pendingRecordId!!, response.second)) return failed(MoteI18n.text("上传确认 ID 不匹配"))
                     mapOf(pendingRecordId!! to response.first)
                 } else {
                     if (response.first != 200) return failed(MoteI18n.text("批量上传未确认（HTTP {0}）", response.first), response.first !in setOf(400, 401, 403, 413))
@@ -213,7 +214,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                         }
                         409 -> queue.uploadConflict(id)
                         410 -> queue.archiveMissing(id)
-                        else -> { retry = true; if (code in setOf(400, 401, 403, 413)) permanent = true }
+                        else -> { retry = true; if (code in setOf(400, 401, 403, 413, 426)) permanent = true }
                     }
                 }
                 if (!individual && acknowledged > 0) SupportEvents.record(applicationContext, EventStage.UPLOAD, EventCode.OK, httpStatus = response.first)

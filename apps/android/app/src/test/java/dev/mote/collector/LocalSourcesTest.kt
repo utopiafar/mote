@@ -96,12 +96,16 @@ class LocalSourcesTest {
     }
     @Test fun `only complete matching protocol acknowledgement releases queued revision`() {
         val item = body().put("revision", "revision-a")
-        val ack = JSONObject().put("id", java.util.UUID.randomUUID().toString()).put("sourceId", "source-a").put("externalId", item.getString("externalId")).put("revision", "revision-a").put("duplicate", false)
+        val id = java.util.UUID.randomUUID().toString()
+        val ack = JSONObject().put("id", id).put("sourceId", "source-a").put("externalId", item.getString("externalId")).put("revision", "revision-a").put("duplicate", false)
+            .put("receipt", JSONObject().put("version", 2).put("id", id).put("kind", "source-item").put("state", "received")
+                .put("duplicate", false).put("sourceId", "source-a").put("externalId", item.getString("externalId")).put("revision", "revision-a"))
         assertTrue(SourceRules.validAck("source-a", item, ack))
         assertFalse(SourceRules.validAck("source-b", item, ack))
         assertFalse(SourceRules.validAck("source-a", item, JSONObject(ack.toString()).put("revision", "revision-b")))
         assertFalse(SourceRules.validAck("source-a", item, JSONObject(ack.toString()).put("id", "not-a-uuid")))
-        assertFalse(SourceRules.validAck("source-a", item, JSONObject(ack.toString()).apply { remove("duplicate") }))
+        assertFalse(SourceRules.validAck("source-a", item, JSONObject(ack.toString()).apply { getJSONObject("receipt").remove("duplicate") }))
+        assertFalse(SourceRules.validAck("source-a", item, JSONObject(ack.toString()).apply { remove("receipt") }))
         assertFalse(SourceRules.validAck("source-a", item, null))
     }
 

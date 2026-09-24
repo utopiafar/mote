@@ -24,7 +24,7 @@ test('480 long-horizon events aggregate into four conversations per source: HTTP
   else for(const item of rows)receipts.push(await request('PUT',`/api/sources/${sourceId}/items`,item));
   assert.equal(receipts.length,480);assert.equal(new Set(receipts.map(r=>r.id)).size,480);captures[mode]=receipts.map(r=>r.id);
   const replay=await request('POST',`/api/sources/${sourceId}/items/batch`,{items:rows.slice(0,60)});assert.ok(replay.receipts.every((r:any,i:number)=>r.duplicate&&r.id===receipts[i].id));
-  node.sourcePipelines.tick();
+  await node.sourcePipelines.tick();
   const reader=new EvidenceReader(node.store,node.sources,node.files,undefined,undefined,node.materials);
   let cursor:string|undefined;const found:string[]=[];
   do{const page=reader.materialCatalog({query:'LONG_HORIZON',deviceId:'device-'+mode,limit:2,cursor});found.push(...page.items.map(x=>x.id));cursor=page.nextCursor??undefined;}while(cursor);
@@ -32,7 +32,7 @@ test('480 long-horizon events aggregate into four conversations per source: HTTP
   assert.equal(reader.materialCatalog({query:'LONG_HORIZON',deviceId:'device-'+mode,after:'2026-03-01T00:00:00Z',before:'2026-09-01T00:00:00Z'}).items.length,4);
   const before=node.materials.list({sourceId}).items.find(m=>m.origin.projectKey==='fixture-project-0')!;
   const updated=await request('PUT',`/api/sources/${sourceId}/items`,{...rows[0],revision:'v2',observedAt:'2026-09-02T00:00:00Z',text:'Corrected fixture; earlier decision was scoped.'});
-  assert.notEqual(updated.id,receipts[0].id);node.sourcePipelines.tick();
+  assert.notEqual(updated.id,receipts[0].id);await node.sourcePipelines.tick();
   assert.ok(node.materials.read(before.ref).text.includes('March decision: use SQLite.'));
   assert.ok(node.materials.read(node.materials.get(before.id)!.ref).text.includes('Corrected fixture'));
 

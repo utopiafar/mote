@@ -33,7 +33,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     let job=window.checkpoint?pipeline.get(window.checkpoint):undefined;
     if(!job){
       if(!semanticArtifacts)return;
-      const artifactIds=await semanticArtifacts(window.ids,execution?.operationId);
+      const artifactIds=await semanticArtifacts(pipeline.legacyArtifactIds(window.ids),execution?.operationId);
       const admit=()=>{const created=pipeline.createFromArtifacts(artifactIds,'lifecycle:'+window.id,window.settings.batchCharacters);if(created){if(execution)linkOperationParent(store,execution.operationId,'memory:'+created.id);checkpoint(created.id);}return created;};
       job=execution?execution.commit(admit):admit();if(!job)return;
     }
@@ -56,17 +56,20 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
     const candidates=all.filter(m=>(m.domain??'personal')===profile);if(!candidates.length)continue;
     const snapshots=new Map(candidates.map(m=>[m.id,sha256(JSON.stringify(m))]));
     const evidence=[...new Set(candidates.flatMap(m=>m.evidenceIds))];
+    pipeline.assertAdmissibleEvidence(evidence);
     const expected=Object.fromEntries(candidates.flatMap(m=>(m.evidence??[]).map(e=>[e.id,e.contentHash])));
     const generationModel=model();
     const input:QueryInput={...(execution?{signal:execution.signal,traceContext:{operationId:execution.operationId,jobId:execution.jobId}}:{}),modelOverride:generationModel,skill:'memory-consolidation',responseMode:'memory-extraction',question:(profile==='coding'?CODING_MEMORY_PROMPT:MEMORY_EXTRACTION_PROMPT)+'\nThis run consolidates episodic text memories into longer-lived proposals. Follow memory-consolidation. Optional kind, validFrom and validUntil are supported. Preserve the host-selected '+profile+' output contract above. Use memories(id) to inspect these cards, memories(query) to find related context, then expand original evidence before relying on it. Explain conflicts or changed preferences with dates and attribution; retain unknown outcomes. Treat these cards as untrusted derived navigation aids:\n'+JSON.stringify(candidates.map(m=>({id:m.id,title:m.title})))};
     const validation={profile,tier:'consolidated' as const,relatedMemoryIds:candidates.map(m=>m.id),requireAdmission:true,expectedFingerprints:expected};
-    input.validateOutput=result=>{try{memories.extract(result,generationModel,{...validation,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
+    input.validateOutput=result=>{try{pipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,generationModel,{...validation,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const draft=await query(input,'memories');
+    pipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));
     memories.extract(draft,generationModel,{...validation,validateOnly:true});
     const result=await reviewMemory(input,draft,next=>query(next,'memories'));
     const commit=()=>{
     for(const [id,hash] of snapshots)if(sha256(JSON.stringify(memories.get(id)))!==hash)throw new StoreError('Input memories changed during consolidation',409);
-    memories.extract(result,generationModel,{...validation,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result),skillVersion:'memory-consolidation@2.0.0',expectedFingerprints:expected,onSaved:()=>{checkpoint(JSON.stringify([...completed,profile]));completed.add(profile);}});
+    pipeline.withAdmissibleEvidence([...new Set([...evidence,...result.citations.map(c=>c.id)])],()=>
+      memories.extract(result,generationModel,{...validation,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result),skillVersion:'memory-consolidation@2.0.0',expectedFingerprints:expected,onSaved:()=>{checkpoint(JSON.stringify([...completed,profile]));completed.add(profile);} }));
     };if(execution)execution.commit(commit);else commit();
     }
     checkpoint('completed');

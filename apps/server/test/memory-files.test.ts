@@ -99,7 +99,7 @@ test('source disappearance retains transcript evidence while a new predecessor r
   const nextChunk=artifact(store,next.id);assert.equal(files.isCurrentEvidence(nextChunk.chunkId),true);
 });
 
-test('Memory API expands all preferred file chunks, validates chunk scope, and deleting a cited chunk forgets its parent',async t=>{
+test('Memory API rejects raw source-item chunks while file evidence and deletion remain traceable',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-file-api-generated-'));
   const config:Config={dataDir:directory,token:'synthetic-memory-file-api-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
   let reader!:ContextReader;
@@ -114,11 +114,9 @@ test('Memory API expands all preferred file chunks, validates chunk scope, and d
   const headers={authorization:`Bearer ${config.token}`};
   for(const payload of [{evidenceIds:[ids[0]],deviceId:'other'},{evidenceIds:[ids[0]],before:'2020-01-01T00:00:00Z'},{evidenceIds:[randomUUID()]}])assert.equal((await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload})).statusCode,409);
   const explicit=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:[parent.id]}});
-  assert.equal(explicit.statusCode,202,explicit.body);assert.deepEqual(new Set(explicit.json().evidenceIds),new Set(ids));
-  assert.equal((await node.memoryPipeline.run(explicit.json().id)).status,'completed');
+  assert.equal(explicit.statusCode,409,explicit.body);
   const automatic=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{deviceId:'fixture-phone'}});
-  assert.equal(automatic.statusCode,202,automatic.body);assert.deepEqual(new Set(automatic.json().evidenceIds),new Set(ids));
-  assert.equal(automatic.json().skippedChunks,205);
+  assert.equal(automatic.statusCode,409,automatic.body);
   const current=await reader.fileChunks!({id:parent.id,offset:0});assert.equal(current[0].revisionState,'current');
   const citation=await node.app.inject({url:'/api/captures/'+ids[0],headers});assert.equal(citation.json().fileEvidence.captureId,parent.id);
   const memory=node.memories.extract(result(ids[0]),'fixture').items[0];
@@ -126,7 +124,7 @@ test('Memory API expands all preferred file chunks, validates chunk scope, and d
   assert.equal(node.files.evidence(ids).length,0);assert.throws(()=>node.files.version(parent.id),{statusCode:404});assert.throws(()=>node.memories.get(memory.id),{statusCode:404});
 });
 
-test('full local indexes enter memory batches without archived originals; lightweight indexes wait for evidence',async t=>{
+test('full local indexes remain exact evidence, while manual raw Memory waits for Material admission',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-local-index-api-'));
  const config:Config={dataDir:directory,token:'generated-index-memory-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
  const node=await buildApp(config,{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()})})});t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
@@ -134,8 +132,8 @@ test('full local indexes enter memory batches without archived originals; lightw
  node.sources.register({id:'indexes',deviceId:'generated-device',name:'Generated indexes',kind:'local-files',platform:'macos',retention:'snapshot'});
  const text='Generated complete original evidence',descriptor={version:1,fileId:'generated-file',contentVersion:'a'.repeat(64),mode:'index',coverage:'full',parser:'utf8',status:'ready',totalCharacters:text.length,offset:0,length:text.length,allowRead:true};
  const full=await node.files.revision({sourceId:'indexes',item:{externalId:'full',revision:'v1',observedAt:new Date().toISOString(),title:'full.txt',kind:'file',layer:'snapshot',text,document:{fileIndex:descriptor}},sizeBytes:100},()=>{});
- const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token,'accept-language':'en'},payload:{evidenceIds:[full.id]}});assert.equal(response.statusCode,202,response.body);assert.deepEqual(response.json().evidenceIds,[full.id]);assert.equal(response.json().language,'en');assert.equal(response.json().totalBatches,1);await node.memoryPipeline.run(response.json().id);
+ const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+config.token,'accept-language':'en'},payload:{evidenceIds:[full.id]}});assert.equal(response.statusCode,409,response.body);
  const light=await node.files.revision({sourceId:'indexes',item:{externalId:'light',revision:'v1',observedAt:new Date().toISOString(),title:'light.txt',kind:'file',layer:'snapshot',text,document:{fileIndex:{...descriptor,coverage:'lightweight',totalCharacters:500}}},sizeBytes:500},()=>{});
- assert.equal(node.memoryPipeline.create({evidenceIds:[light.id]}).totalBatches,0);assert.throws(()=>node.memories.extract(result(light.id,text),'fixture'),/Lightweight/);
+ assert.throws(()=>node.memoryPipeline.create({evidenceIds:[light.id]}),{statusCode:409});assert.throws(()=>node.memories.extract(result(light.id,text),'fixture'),/Lightweight/);
  const saved=node.memories.extract(result(full.id,text),'fixture').items[0];assert.equal(saved.evidence![0].fileIndex?.contentVersion,descriptor.contentVersion);assert.equal(saved.evidence![0].quote,text);
 });

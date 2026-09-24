@@ -12,7 +12,7 @@ import {join} from 'node:path';
 import {z} from 'zod';
 import {fileProcessingSchema,transcriptSchema,diarizationSchema,type FileProcessingSettings,type Transcript,type Diarization,filePolicySchema,fileTypePattern,type FilePolicy,type ProcessingService} from '@mote/shared';
 import type {ContextRecord} from '@mote/agent';
-import type {Plugin} from '@deepseek-ai/cordis';
+import type {Context,Plugin} from '@deepseek-ai/cordis';
 import {FileStore} from './files.js';
 import {StoreError,sha256} from './store.js';
 import {FileProcessorRuntime,isLoopback,type TranscriptionProvider,type ProcessorInput} from './file-processors.js';
@@ -32,7 +32,7 @@ export class FileProcessing {
   private saved:Saved;private path:string;readonly engine:ExecutionEngine;private owned:boolean;private execution=new AsyncLocalStorage<{step:ExecutionStep;signal:AbortSignal}>();private abort=new AbortController();private stopping=false;
   private rememberedRevision?:string;private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
   readonly runtime:FileProcessorRuntime;
-  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;plugins?:Plugin[];modules?:string[];analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2],localOnly:boolean)=>ModelSettings;analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets}={}){
+  constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginContext?:Context;plugins?:Plugin[];modules?:string[];analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2],localOnly:boolean)=>ModelSettings;analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets}={}){
     installEvidenceDependencies(files.store);
     this.path=join(files.store.directory,'file-processing.json');
     const prior=existsSync(this.path)?JSON.parse(readFileSync(this.path,'utf8')):undefined;
@@ -40,7 +40,7 @@ export class FileProcessing {
       for(const service of prior.policy?.services??[])if(service.id==='asr-local'&&service.endpoint==='http://127.0.0.1:9009/transcribe'&&!service.apiKey)service.endpoint=managedAsrEndpoint();}
     this.saved=prior?z.object({revision:z.string(),settings:fileProcessingSchema,policy:filePolicySchema.optional()}).parse(prior):{revision:'initial',settings:fileProcessingSchema.parse({localEndpoint:managedAsrEndpoint(),endpoint:managedAsrEndpoint()})};
     files.store.db.exec("CREATE TABLE IF NOT EXISTS file_configuration_aliases(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,phase TEXT NOT NULL,revision TEXT NOT NULL,fingerprint TEXT NOT NULL,PRIMARY KEY(capture_id,phase,revision)); CREATE TABLE IF NOT EXISTS file_configuration_snapshots(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,fingerprint TEXT NOT NULL,receipt TEXT NOT NULL,PRIMARY KEY(capture_id,fingerprint))");
-    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors);
+    this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,options.pluginContext);
     this.engine=options.executor??new ExecutionEngine(files.store);this.owned=!options.executor;
     files.store.db.exec("UPDATE file_jobs SET state='waiting' WHERE state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_jobs.capture_id AND kind='files.pipeline'); UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_jobs.capture_id AND kind='files.summary'); UPDATE file_steps SET state='waiting' WHERE state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_steps.capture_id)");
     for(const phase of ['pipeline','summary'] as const)this.engine.register({kind:'files.'+phase,pool:'files.'+phase,concurrency:()=>1,timeoutMs:()=>this.saved.settings.timeoutMs,

@@ -52,7 +52,7 @@ export default {
       id:'synthetic.note-bundle',version:'1',slot:'source-item',priority:10,
       select:record=>record.provenance?.sourceId==='synthetic-notes'?{sourceId:record.provenance.sourceId,externalId:record.provenance.externalId}:undefined,
       identity:group=>materialId(group.sourceId,group.externalId),
-      build(store,group){const head=store.db.prepare('SELECT capture_id,deleted FROM source_heads WHERE source_id=? AND external_id=?').get(group.sourceId,group.externalId);if(!head||head.deleted)return;const record=store.evidence([head.capture_id])[0];if(!record)return;
+      build(reader,group){const record=reader.sourceHead();if(!record)return;
         return {id:materialId(group.sourceId,group.externalId),kind:'synthetic.note-bundle',schemaVersion:1,title:record.windowTitle||'Synthetic',origin:{...group,deviceId:record.deviceId,firstAt:record.capturedAt,lastAt:record.capturedAt},
           blocks:[{id:'body',kind:'text',format:'plain',text:record.ocrText,memberIds:[record.id]}],members:[{id:record.id,kind:'capture',ref:'capture:'+record.id}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};}
     });ctx.sources.register({id:'synthetic-notes',name:'Synthetic notes',kind:'synthetic.notes',deviceId:'synthetic-notes',platform:'import'});events.push('init');},
@@ -123,10 +123,32 @@ test('MCP rejects unauthorized bodies before parsing and preserves authenticated
   assert.equal(next.statusCode,200);assert.ok(next.json().result.tools.length);
 });
 
-test('MCP material tools expose bounded formal revisions only to read credentials',async t=>{
-  const {ctx,store}=await fixture(t),materials=new MaterialStore(store);ctx.materials=materials;
+test('MCP context continues visible records with its scoped cursor',async t=>{
+  const {ctx,sources}=await fixture(t),app=Fastify(),connector=registerMcp(app,ctx);
+  t.after(async()=>{await connector.close();await app.close();});
+  for(let i=0;i<3;i++)await sources.upsert('allowed',{...item(`Generated page ${i}`),externalId:`page-${i}`,
+    observedAt:`2026-09-20T00:00:0${i}.000Z`});
+  let cursor:string|null=null;const ids:string[]=[];
+  for(let pageNumber=0;pageNumber<10;pageNumber++){
+    const response=await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${readToken}`,
+      'content-type':'application/json',accept:'application/json, text/event-stream'},payload:{jsonrpc:'2.0',id:pageNumber+1,
+      method:'tools/call',params:{name:'mote_context',arguments:{limit:1,...(cursor?{cursor}:{})}}}});
+    assert.equal(response.statusCode,200);
+    const page=jsonResult(response.json().result);
+    assert.ok(page.recentRecords.length<=1);ids.push(...page.recentRecords.map((record:{id:string})=>record.id));
+    cursor=page.nextCursor;
+    if(!cursor)break;
+  }
+  assert.equal(ids.length,3);
+  assert.equal(new Set(ids).size,3);
+  assert.equal(cursor,null);
+});
+
+test('MCP material tools expose bounded formal revisions without original member IDs',async t=>{
+  const {ctx,store,sources}=await fixture(t),materials=new MaterialStore(store);ctx.materials=materials;
+  const original=await sources.upsert('allowed',{...item('Generated evidence body'),externalId:'synthetic-material'});
   const id=materialId('allowed','synthetic-material');
-  const saved=materials.publish({id,kind:'document',schemaVersion:1,title:'Generated note',origin:{sourceId:'allowed',externalId:'synthetic-material'},blocks:[{id:'body',kind:'text',format:'plain',text:'Generated evidence body',memberIds:['member-1']}],members:[{id:'member-1',kind:'source-item',ref:'allowed:synthetic-material',locator:{line:1}}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'unavailable',policy:'keep'}});
+  const saved=materials.publish({id,kind:'document',schemaVersion:1,title:'Generated note',origin:{sourceId:'allowed',externalId:'synthetic-material'},blocks:[{id:'body',kind:'text',format:'plain',text:'Generated evidence body',memberIds:[original.id]}],members:[{id:original.id,kind:'capture',ref:`capture:${original.id}`,locator:{line:1}}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
   const app=Fastify(),connector=registerMcp(app,ctx);t.after(async()=>{await connector.close();await app.close();});
   const call=async(token:string,id:number,method:string,params:Record<string,unknown>={})=>{
     const result=await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${token}`,'content-type':'application/json',accept:'application/json, text/event-stream'},payload:{jsonrpc:'2.0',id,method,params}});
@@ -134,13 +156,122 @@ test('MCP material tools expose bounded formal revisions only to read credential
   };
   const readerTools=(await call(readToken,1,'tools/list')).tools.map((tool:{name:string})=>tool.name);
   assert.ok(readerTools.includes('mote_materials'));assert.ok(readerTools.includes('mote_material_read'));
+  assert.ok(!readerTools.includes('mote_material_members'));assert.ok(!readerTools.includes('mote_updates'));
   assert.deepEqual((await call(writeToken,2,'tools/list')).tools.map((tool:{name:string})=>tool.name),['mote_put_item']);
   const catalog=jsonResult(await call(readToken,3,'tools/call',{name:'mote_materials',arguments:{sourceId:'allowed'}}));
   assert.equal(catalog.items[0].ref,saved.ref);assert.equal(catalog.items[0].textLength,'Generated evidence body\n'.length);
   const read=jsonResult(await call(readToken,4,'tools/call',{name:'mote_material_read',arguments:{ref:saved.ref,offset:0,length:9}}));
-  assert.equal(read.text,'Generated');assert.equal(read.spans[0].memberIds[0],'member-1');
-  const members=jsonResult(await call(readToken,5,'tools/call',{name:'mote_material_members',arguments:{ref:saved.ref}}));
-  assert.deepEqual(members.items[0].locator,{line:1});
+  assert.equal(read.text,'Generated');assert.ok(!JSON.stringify(read).includes(original.id));
+  const oldAnchor=materials.evidenceIds(saved.ref)[0];
+  const revised=materials.publish({id,kind:'document',schemaVersion:1,title:'Generated corrected note',origin:{sourceId:'allowed',externalId:'synthetic-material'},
+    blocks:[{id:'body',kind:'text',format:'plain',text:'Generated corrected body',memberIds:[original.id]}],
+    members:[{id:original.id,kind:'capture',ref:`capture:${original.id}`}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}},
+    {expectedRevision:saved.revision});
+  assert.equal((await call(readToken,6,'tools/call',{name:'mote_material_read',arguments:{ref:saved.ref}})).isError,true);
+  assert.equal((await call(readToken,7,'tools/call',{name:'mote_material',arguments:{ref:saved.ref}})).isError,true);
+  assert.deepEqual(jsonResult(await call(readToken,8,'tools/call',{name:'mote_evidence',arguments:{ids:[oldAnchor]}})),[]);
+  assert.deepEqual(jsonResult(await call(readToken,9,'tools/call',{name:'mote_read',arguments:{refs:[`capture:${oldAnchor}`]}})).items,[]);
+  assert.match(jsonResult(await call(readToken,10,'tools/call',{name:'mote_material_read',arguments:{ref:revised.ref}})).text,/corrected body/);
+});
+
+test('MCP model reads cannot discover or expand generated screen and Coding originals',async t=>{
+  const {ctx,store,sources}=await fixture(t),materials=new MaterialStore(store);ctx.materials=materials;
+  const screenId=randomUUID(),at='2026-09-20T01:00:00.000Z';
+  await store.ingest({id:screenId,deviceId:'generated-screen',deviceName:'Generated screen',platform:'macos',source:'screen',
+    capturedAt:at,durationMs:5000,appId:'generated.app',appName:'Generated App',ocrText:'MCP_SCREEN_RAW_SECRET'});
+  const screen=materials.publish({id:materialId('screen:generated','group'),kind:'mote.screen-segment',schemaVersion:1,title:'Generated screen summary',
+    origin:{sourceId:'screen:generated',externalId:'group',deviceId:'generated-screen',firstAt:at,lastAt:at},
+    blocks:[{id:'summary',kind:'text',format:'plain',text:'Generated screen summary',memberIds:[screenId]}],
+    members:[{id:screenId,kind:'capture',ref:`capture:${screenId}`}],coverage:{state:'partial'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+  sources.register({id:'generated-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'generated-coding',platform:'import'});
+  const coding=await sources.upsert('generated-coding',{externalId:'event-1',revision:'1',observedAt:at,title:'Generated Coding event',
+    text:'MCP_CODING_RAW_SECRET',kind:'message',layer:'original',document:{coding:{version:1,provider:'codex',projectKey:'generated-project',sessionId:'generated-session',eventId:'event-1',role:'user',part:0,parts:1}}});
+  const segment=store.archive.save('generated-screen-segment','generated-screen-segment','1',
+    {kind:'segment',text:'Generated processed screen segment',metadata:{complete:true,citations:[screenId]}},
+    [{id:screenId,fingerprint:store.archive.fingerprint(screenId)!}],'fixture','1','fixture');
+  const app=Fastify(),connector=registerMcp(app,ctx);t.after(async()=>{await connector.close();await app.close();});
+  let sequence=0;
+  const call=async(name:string,args:Record<string,unknown>={})=>{
+    const response=await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${readToken}`,'content-type':'application/json',accept:'application/json, text/event-stream'},
+      payload:{jsonrpc:'2.0',id:++sequence,method:'tools/call',params:{name,arguments:args}}});
+    assert.equal(response.statusCode,200);return response.json().result;
+  };
+  const tools=(await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${readToken}`,'content-type':'application/json',accept:'application/json, text/event-stream'},
+    payload:{jsonrpc:'2.0',id:100,method:'tools/list',params:{}}})).json().result.tools.map((tool:{name:string})=>tool.name);
+  assert.ok(!tools.includes('mote_material_members'));assert.ok(!tools.includes('mote_updates'));
+  for(const name of ['mote_search','mote_retrieve','mote_browse','mote_context','mote_timeline','mote_items']){
+    const result=jsonResult(await call(name,name==='mote_items'?{}:name==='mote_timeline'?{}:{query:'MCP_SCREEN_RAW_SECRET'}));
+    assert.ok(!JSON.stringify(result).includes(screenId),`${name} disclosed screen ID`);
+    assert.ok(!JSON.stringify(result).includes(coding.id),`${name} disclosed Coding ID`);
+  }
+  assert.deepEqual(jsonResult(await call('mote_evidence',{ids:[screenId,coding.id]})),[]);
+  const rawRead=jsonResult(await call('mote_read',{refs:[`capture:${screenId}`,`capture:${coding.id}`]}));
+  assert.deepEqual(rawRead.items,[]);
+  assert.deepEqual(jsonResult(await call('mote_history',{sourceId:'generated-coding',externalId:'event-1'})),[]);
+  assert.equal((await call('mote_file_catalog',{sourceId:'generated-coding'})).isError,true);
+  assert.deepEqual(jsonResult(await call('mote_file_chunks',{id:coding.id})).items,[]);
+  const catalog=jsonResult(await call('mote_materials',{}));assert.ok(catalog.items.some((value:any)=>value.ref===screen.ref));
+  const metadata=jsonResult(await call('mote_material',{ref:screen.ref}));assert.ok(!JSON.stringify(metadata).includes(screenId));
+  const materialRead=jsonResult(await call('mote_material_read',{ref:screen.ref}));assert.match(materialRead.text,/Generated screen summary/);
+  assert.ok(!JSON.stringify(materialRead).includes(screenId));
+  const segments=jsonResult(await call('mote_segments',{id:segment.id}));assert.equal(segments.items[0].id,segment.id);
+  assert.ok(!JSON.stringify(segments).includes(screenId));
+  const artifactRead=jsonResult(await call('mote_read',{refs:[segments.items[0].ref]}));assert.ok(!JSON.stringify(artifactRead).includes(screenId));
+  assert.deepEqual(jsonResult(await call('mote_evidence',{ids:[screenId]})),[],'MCP material expansion never creates a cross-request raw grant');
+});
+
+test('MCP pages ordinary, screen and Coding Materials with one raw pending fallback',async t=>{
+  const {ctx,store,sources}=await fixture(t),materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);
+  ctx.materials=materials;ctx.materialOrganizers=organizers;
+  const at='2026-09-20T01:00:00.000Z',expected=new Set<string>();
+  for(let n=0;n<3;n++){
+    const externalId=`page-item-${n}`,receipt=await sources.upsert('allowed',{externalId,revision:'1',observedAt:at,
+      title:`Generated ${n}`,text:`PAGE_TOKEN original ${n}`,kind:'message',layer:'original'});
+    if(n===2){expected.add(receipt.id);continue;}
+    const id=materialId('allowed',externalId),material=materials.publish({id,kind:'mote.message',schemaVersion:1,title:`Generated material ${n}`,
+      origin:{sourceId:'allowed',externalId,deviceId:'synthetic-device',firstAt:at,lastAt:at},
+      blocks:[{id:'body',kind:'text',format:'plain',text:`PAGE_TOKEN processed ${n}`,memberIds:[receipt.id]}],
+      members:[{id:receipt.id,kind:'capture',ref:`capture:${receipt.id}`}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+    materials.setSearchable(id,true);expected.add(materials.evidenceIds(material.ref)[0]);
+  }
+  const screenId=randomUUID();await store.ingest({id:screenId,deviceId:'generated-screen',deviceName:'Generated screen',platform:'macos',source:'screen',
+    capturedAt:at,durationMs:5000,appId:'generated.app',appName:'Generated App',ocrText:'PAGE_TOKEN raw screen'});
+  const screenIdMaterial=materialId('screen:generated','page-screen'),screen=materials.publish({id:screenIdMaterial,kind:'mote.screen-segment',schemaVersion:1,title:'Generated compressed screen',
+    origin:{sourceId:'screen:generated',externalId:'page-screen',deviceId:'generated-screen',firstAt:at,lastAt:at},
+    blocks:[{id:'summary',kind:'text',format:'plain',text:'PAGE_TOKEN compressed screen summary',memberIds:[screenId]}],
+    members:[{id:screenId,kind:'capture',ref:`capture:${screenId}`}],coverage:{state:'partial'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+  materials.setSearchable(screen.id,true);expected.add(materials.evidenceIds(screen.ref)[0]);
+  sources.register({id:'page-coding',name:'Generated Coding',kind:'coding-agent',deviceId:'coding-device',platform:'import'});
+  const codingRaw=await sources.upsert('page-coding',{externalId:'event-1',revision:'1',observedAt:at,title:'Generated Coding raw',
+    text:'PAGE_TOKEN Coding raw',kind:'message',layer:'original',document:{coding:{version:1,provider:'codex',projectKey:'page-project',sessionId:'page-session',eventId:'event-1',role:'user',part:0,parts:1}}});
+  const codingId=materialId('page-coding','page-session'),coding=materials.publish({id:codingId,kind:'mote.coding-session',schemaVersion:1,title:'Generated Coding session',
+    origin:{sourceId:'page-coding',externalId:'page-session',deviceId:'coding-device',firstAt:at,lastAt:at,provider:'codex',projectKey:'page-project',sessionId:'page-session'},
+    blocks:[{id:'session',kind:'text',format:'markdown-fragment',text:'PAGE_TOKEN whole Coding session',memberIds:['archive-member']}],
+    members:[{id:'archive-member',kind:'archive',ref:'archive:page-coding/page-session'}],coverage:{state:'partial'},
+    fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}});
+  materials.setSearchable(coding.id,true);expected.add(materials.evidenceIds(coding.ref)[0]);
+  const app=Fastify(),connector=registerMcp(app,ctx);t.after(async()=>{await connector.close();await app.close();});
+  let sequence=0;
+  const call=async(name:string,args:Record<string,unknown>)=>{
+    const response=await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${readToken}`,'content-type':'application/json',accept:'application/json, text/event-stream'},
+      payload:{jsonrpc:'2.0',id:++sequence,method:'tools/call',params:{name,arguments:args}}});
+    assert.equal(response.statusCode,200);const result=response.json().result;assert.ok(!result.isError,JSON.stringify(result));return jsonResult(result);
+  };
+  for(const name of ['mote_search','mote_retrieve','mote_browse']){
+    const ids:string[]=[];let cursor:string|null=null;
+    for(let i=0;i<10;i++){
+      const page=await call(name,{...(name==='mote_browse'?{}:{query:'PAGE_TOKEN'}),limit:2,...(cursor?{cursor}:{})});
+      ids.push(...page.items.map((value:any)=>value.id));cursor=page.nextCursor;if(!cursor)break;
+    }
+    assert.deepEqual(new Set(ids),expected,`${name} should include each authoritative Material and one pending raw record`);
+    assert.equal(ids.length,expected.size,`${name} must not duplicate Material at the raw phase boundary`);
+    assert.ok(!ids.includes(screenId));assert.ok(!ids.includes(codingRaw.id));
+  }
+  const codingResults=await call('mote_search',{query:'whole Coding session',limit:2});
+  assert.ok(codingResults.items.some((value:any)=>value.id===materials.evidenceIds(coding.ref)[0]));
+  const materialRead=await call('mote_material_read',{ref:coding.ref});assert.match(materialRead.text,/whole Coding session/);
+  const anchorRead=await call('mote_read',{refs:[`capture:${materials.evidenceIds(coding.ref)[0]}`]});
+  assert.match(anchorRead.items[0].text,/whole Coding session/);assert.ok(!JSON.stringify(anchorRead).includes(codingRaw.id));
 });
 
 test('MCP real SDK isolates read/write credentials, scopes writes and exposes bounded complete archive reads',async t=>{
@@ -175,23 +306,26 @@ test('MCP real SDK isolates read/write credentials, scopes writes and exposes bo
   assert.equal(jsonResult(await reader.callTool({name:'mote_items',arguments:{deviceId:'synthetic-other'}})).items.length,0);
   await writer.callTool({name:'mote_put_item',arguments:{sourceId:'allowed',item:{...revised,revision:randomUUID(),observedAt:new Date(Date.now()+2000).toISOString(),deleted:true,text:''}}});
   assert.equal(jsonResult(await reader.callTool({name:'mote_items',arguments:{}})).items.length,0);
-  assert.equal(jsonResult(await reader.callTool({name:'mote_items',arguments:{includeDeleted:true}})).items[0].deleted,true);
-  const updates=jsonResult(await reader.callTool({name:'mote_updates',arguments:{cursor:0}}));assert.ok(updates.items.every((e:any)=>!('record'in e)&&!('text'in e)));
+  assert.equal(jsonResult(await reader.callTool({name:'mote_items',arguments:{includeDeleted:true}})).items.length,0,
+    'a model read credential cannot expand a tombstoned source item');
+  assert.deepEqual(jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:[revision.id]}})),[],
+    'the tombstone also revokes exact expansion of prior raw revisions');
+  assert.ok(!names.includes('mote_updates'));
   const noteId=randomUUID();await store.ingest({id:noteId,deviceId:'synthetic-notes',deviceName:'Synthetic notes',platform:'import',capturedAt:new Date().toISOString(),durationMs:0,appId:'notes',appName:'Notes',source:'note',ocrText:'Authored synthetic diary'});
   const timeline=jsonResult(await reader.callTool({name:'mote_timeline',arguments:{}}));assert.ok(timeline.items.some((e:any)=>e.id===noteId));assert.ok(timeline.items.every((e:any)=>e.text.length<=2000));
-  const found=jsonResult(await reader.callTool({name:'mote_search',arguments:{query:'Authored'}}));assert.equal(found[0].id,noteId);
+  const found=jsonResult(await reader.callTool({name:'mote_search',arguments:{query:'Authored'}}));assert.equal(found.items[0].id,noteId);
   const activityId=randomUUID(),metadata={version:1,observedAt:new Date(Date.now()-1000).toISOString(),state:{batteryPercent:35}};
   await store.ingest({id:activityId,deviceId:'synthetic-activity',deviceName:'Synthetic activity',platform:'android',capturedAt:new Date().toISOString(),durationMs:15000,appId:'synthetic.activity',appName:'Synthetic activity',source:'activity',ocrText:'',privacy:{collection:'activity'},metadata});
   const scoped=jsonResult(await reader.callTool({name:'mote_timeline',arguments:{appId:'synthetic.activity',source:'activity',collection:'activity'}}));
-  assert.equal(scoped.totalCount,1);assert.equal(scoped.items[0].id,activityId);assert.equal(scoped.items[0].text,'');assert.equal(scoped.items[0].durationMs,15000);assert.deepEqual(scoped.items[0].metadata,metadata);
-  assert.equal(jsonResult(await reader.callTool({name:'mote_search',arguments:{query:'Synthetic',collection:'activity',appId:'synthetic.activity'}})).length,1);
+  assert.equal(scoped.items.length,1);assert.equal(scoped.items[0].id,activityId);assert.equal(scoped.items[0].text,'');assert.equal(scoped.items[0].durationMs,15000);assert.deepEqual(scoped.items[0].metadata,metadata);
+  assert.equal(jsonResult(await reader.callTool({name:'mote_search',arguments:{query:'Synthetic',collection:'activity',appId:'synthetic.activity'}})).items.length,1);
   const activity=jsonResult(await reader.callTool({name:'mote_activity',arguments:{collection:'activity',appId:'synthetic.activity'}}));assert.equal(activity.totalDurationMs,15000);assert.equal(activity.activityEvents,1);assert.equal(activity.contentCaptures,0);
   const mediaId=randomUUID(),media={status:'available',sessions:[{sessionId:'generated-session',appId:'generated.player',appName:'Generated player',playbackState:'playing',appVisibility:'background',playbackType:'local',title:'Generated audiobook chapter'}]};
   await store.ingest({id:mediaId,deviceId:'synthetic-media',deviceName:'Generated phone',platform:'android',capturedAt:new Date().toISOString(),durationMs:15000,appId:'generated.player',appName:'Generated player',source:'media',metadata:{version:1,observedAt:new Date().toISOString(),state:{screenLocked:true},media}});
   const mediaTotals=jsonResult(await reader.callTool({name:'mote_media_activity',arguments:{deviceId:'synthetic-media',screenLocked:true,appVisibility:'background'}}));
   assert.equal(mediaTotals.totalDurationMs,15000);assert.equal(mediaTotals.screenLock.locked,15000);assert.deepEqual(mediaTotals.evidenceIds,[mediaId]);
   const mediaEvidence=jsonResult(await reader.callTool({name:'mote_evidence',arguments:{ids:[mediaId]}}))[0];assert.deepEqual(mediaEvidence.metadata.media,media);assert.equal(mediaEvidence.text,'');
-  assert.equal(jsonResult(await reader.callTool({name:'mote_search',arguments:{source:'media',query:'audiobook'}}))[0].id,mediaId);
+  assert.equal(jsonResult(await reader.callTool({name:'mote_search',arguments:{source:'media',query:'audiobook'}})).items[0].id,mediaId);
   assert.equal(jsonResult(await reader.callTool({name:'mote_activity',arguments:{deviceId:'synthetic-media'}})).totalDurationMs,0);
   assert.equal((await reader.callTool({name:'mote_media_activity',arguments:{source:'screen'}})).isError,true);
   assert.equal((await writer.callTool({name:'mote_media_activity',arguments:{}})).isError,true,'Write-only MCP credentials cannot read private media');

@@ -3689,6 +3689,15 @@ h1 { font-family:inherit;font-weight:600;letter-spacing:-.8px; }
 .conversation-content .ask-form textarea { min-height: 72px; max-height: 220px; padding: 2px 1px; font-size: 14px; line-height: 1.75; }
 .conversation-content .ask-form > div { gap: 12px; margin-top: 9px; }
 .conversation-content .ask-form > div > span:first-child { color: #849987; }
+.conversation-content .ask-form .chat-attachment-list { display: flex; flex-wrap: wrap; gap: 7px; margin: 4px 0 10px; }
+.chat-attachment { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 6px 4px 8px; border: 1px solid #cedfcf; border-radius: 8px; background: #f1f7ef; color: #496751; font-size: 11px; }
+.chat-attachment > span { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-attachment button, .chat-image-button { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: #64856a; cursor: pointer; }
+.chat-attachment button:disabled, .chat-image-button:disabled { opacity: .45; cursor: default; }
+.chat-image-button { width: 30px; height: 30px; border-radius: 8px; }
+.chat-image-button:hover:not(:disabled) { background: #e6f1e4; }
+.chat-attached-images { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.chat-attached-images > span { display: inline-flex; align-items: center; gap: 4px; max-width: 200px; padding: 2px 6px; border: 1px solid #c8d9c7; border-radius: 6px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .composer-hint { margin-left: auto; color: #a1aa9f !important; font-size: 10px !important; }
 .conversation-content .send-button { width: 36px; height: 36px; border-radius: 11px; box-shadow: 0 5px 14px #315e4b28; }
 .conversation-content .suggestions { margin-bottom: 30px; }

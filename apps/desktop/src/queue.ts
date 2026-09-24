@@ -32,6 +32,8 @@ export interface QueueRecord {
   ocrRetryAt?: number;
   syncBlocked?: boolean;
   syncError?: string;
+  /** Acknowledged v1 original retained for local browse, outside the v2 upload backlog. */
+  localArchiveOnly?: boolean;
 }
 export interface QueueLimits { maxQueueBytes: number; maxQueueEvents: number }
 export interface QueueStats { archiveAcknowledgment?:{at:string;origin:string}; depth: number; bytes: number; nextRetryAt?: string; oldestPendingAt?: string; lastUploadAt?: string; eligibleDepth: number; waitingOcr: number; blocked: number }
@@ -60,7 +62,12 @@ export const OCR_RESULT_RESERVE_BYTES = 600128;
 // cannot exceed the quota merely because the user enabled content encryption.
 const CONTENT_FILE_ALLOWANCE = 64;
 function recordBytes(record: QueueRecord): number {
-  return Buffer.byteLength(JSON.stringify(record)) + CONTENT_FILE_ALLOWANCE + (record.event.ocr?.status === 'pending' && record.ocrResult === undefined ? OCR_RESULT_RESERVE_BYTES : 0);
+  return Buffer.byteLength(JSON.stringify(record)) + CONTENT_FILE_ALLOWANCE + (!record.localArchiveOnly && record.event.ocr?.status === 'pending' && record.ocrResult === undefined ? OCR_RESULT_RESERVE_BYTES : 0);
+}
+function activeUsage(records:Iterable<QueueRecord>):{depth:number;bytes:number}{
+  const blobs=new Map<string,number>();let depth=0,bytes=0;
+  for(const record of records){if(record.localArchiveOnly)continue;depth++;bytes+=recordBytes(record);if(record.blobHash)blobs.set(record.blobHash,record.blobBytes+CONTENT_FILE_ALLOWANCE);}
+  return {depth,bytes:bytes+[...blobs.values()].reduce((sum,value)=>sum+value,0)};
 }
 
 function validateEvent(value: unknown): CaptureEvent {
@@ -104,7 +111,8 @@ export function validateRecord(value: unknown): QueueRecord {
   if ((event.source === 'screen' ? (!v.blobHash || !HASH.test(v.blobHash) || !Number.isInteger(v.blobBytes) || v.blobBytes < 4 || v.blobBytes > MAX_IMAGE_BYTES) : (v.blobHash !== undefined || v.blobBytes !== 0)) || !Number.isInteger(v.attempts) || v.attempts < 0 || !Number.isFinite(v.nextAttemptAt) || v.nextAttemptAt < 0) throw new Error(moteText("队列记录无效"));
   if ((v.uploaded !== undefined && typeof v.uploaded !== 'boolean') || (v.ocrResult !== undefined && (typeof v.ocrResult !== 'string' || v.ocrResult.length > 100000)) || (v.ocrRetryAt !== undefined && (!Number.isFinite(v.ocrRetryAt) || v.ocrRetryAt < 0)) || ((v.uploaded || v.ocrResult !== undefined) && event.ocr?.status !== 'pending')) throw new Error(moteText("OCR 补做队列状态无效"));
   if ((v.syncBlocked !== undefined && typeof v.syncBlocked !== 'boolean') || (v.syncError !== undefined && (typeof v.syncError !== 'string' || v.syncError.length > 300))) throw new Error(moteText("同步失败状态无效"));
-  return { event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt, ...(v.uploaded ? { uploaded: true } : {}), ...(v.ocrResult !== undefined ? { ocrResult: v.ocrResult } : {}), ...(v.ocrRetryAt ? { ocrRetryAt: v.ocrRetryAt } : {}), ...(v.syncBlocked ? { syncBlocked: true, syncError: v.syncError } : {}) };
+  if(v.localArchiveOnly!==undefined&&(v.localArchiveOnly!==true||!v.uploaded||!v.syncBlocked||v.syncError!=='legacy_ingress_archive'))throw new Error(moteText("队列记录无效"));
+  return { event, blobHash: v.blobHash, blobBytes: v.blobBytes, attempts: v.attempts, nextAttemptAt: v.nextAttemptAt, ...(v.uploaded ? { uploaded: true } : {}), ...(v.ocrResult !== undefined ? { ocrResult: v.ocrResult } : {}), ...(v.ocrRetryAt ? { ocrRetryAt: v.ocrRetryAt } : {}), ...(v.syncBlocked ? { syncBlocked: true, syncError: v.syncError } : {}),...(v.localArchiveOnly?{localArchiveOnly:true}:{}) };
 }
 export function validateImage(image: Buffer, hash?: string): void {
   if (image.length < 4 || image.length > MAX_IMAGE_BYTES || image[0] !== 0xff || image[1] !== 0xd8 || image.at(-2) !== 0xff || image.at(-1) !== 0xd9 || (hash && imageHash(image) !== hash)) throw new Error(moteText("队列图片格式、大小或校验和不正确"));
@@ -153,7 +161,7 @@ export class DurableQueue {
         await readFile(join(target, 'connection-binding.json'));
         const binding = new ConnectionBindingStore(join(target, 'connection-binding.json'), async (path, value) => { await this.storageGuard?.(); await atomicWrite(path, JSON.stringify(value)); });
         const config = this.limits as QueueLimits & Partial<Config>;
-        await binding.initialize({ serverUrl: config.serverUrl ?? '', token: config.token }, this.records.size > 0);
+        await binding.initialize({ serverUrl: config.serverUrl ?? '', token: config.token }, activeUsage(this.records.values()).depth > 0);
         await commitConfig();
         // No fallible operation after the durable pointer commit and before activation.
         this.storageDirectory = target; this.storageBinding = binding;
@@ -171,6 +179,37 @@ export class DurableQueue {
   private stageCheckpointPath(): string { return join(this.directory, 'capture-stage-checkpoint.json'); }
   private stageJournalPath(): string { return join(this.directory, 'capture-stage-journal.json'); }
   private inputJournalPath(): string { return join(this.directory, 'capture-input-journal.json'); }
+  private async clearLegacyIngressState():Promise<void>{
+    const marker=join(this.directory,'capture-ingress-v2.json');
+    try{const value=JSON.parse(await readFile(marker,'utf8')) as {version?:unknown};
+      if(value.version===2)return;
+      throw Error('Invalid capture ingress migration marker');
+    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+    // A previously acknowledged capture can be the only remaining local
+    // original after the central MVP vault is reset. Keep it for local browse,
+    // but revoke its old OCR upload state: the old central capture no longer
+    // exists. Only unacknowledged protocol work is cleared.
+    const retainedBlobs=new Set<string>();
+    const events=join(this.directory,'events');
+    for(const name of await readdir(events)){
+      const path=join(events,name);
+      if(!name.endsWith('.json')){if(name.endsWith('.tmp'))await unlink(path);continue;}
+      const record=validateRecord(JSON.parse(await readFile(path,'utf8')));
+      if(name!==`${record.event.id}.json`)throw Error(moteText("队列文件名与事件 ID 不匹配"));
+      if(!record.uploaded){await unlink(path);continue;}
+      if(record.blobHash)retainedBlobs.add(record.blobHash);
+      await atomicWrite(path,JSON.stringify({...record,syncBlocked:true,syncError:'legacy_ingress_archive',localArchiveOnly:true}));
+    }
+    await syncDirectory(events);
+    const blobs=join(this.directory,'blobs');
+    for(const name of await readdir(blobs)){
+      if(name.endsWith('.tmp')||name.endsWith('.jpg')&&HASH.test(name.slice(0,-4))&&!retainedBlobs.has(name.slice(0,-4)))await unlink(join(blobs,name));
+    }
+    await syncDirectory(blobs);
+    for(const path of [this.stageCheckpointPath(),this.stageJournalPath(),this.inputJournalPath(),join(this.directory,'sync-checkpoint.json')])await rm(path,{force:true});
+    await syncDirectory(this.directory);
+    await atomicWrite(marker,JSON.stringify({version:2}));
+  }
   private async replayStageJournal(updateMemory: boolean): Promise<void> {
     let journal: CaptureStageJournal;
     try { journal = JSON.parse(await readFile(this.stageJournalPath(), 'utf8')) as CaptureStageJournal; }
@@ -204,6 +243,7 @@ export class DurableQueue {
         } else await mkdir(path, { recursive: true, mode: 0o700 });
         await chmod(path, 0o700);
       }
+      await this.clearLegacyIngressState();
       await this.replayStageJournal(false);
       const restored = new Map<string, QueueRecord>();
       const checked = new Map<string, number>();
@@ -235,7 +275,7 @@ export class DurableQueue {
         if (name.endsWith('.tmp') || (name.endsWith('.jpg') && HASH.test(name.slice(0, -4)) && !checked.has(name.slice(0, -4)))) await unlink(join(this.directory, 'blobs', name));
       }
       const config = this.limits as QueueLimits & Partial<Config>;
-      await this.binding.initialize({ serverUrl: config.serverUrl ?? '', token: config.token }, restored.size > 0);
+      await this.binding.initialize({ serverUrl: config.serverUrl ?? '', token: config.token }, activeUsage(restored.values()).depth > 0);
       try { const checkpoint = JSON.parse(await readFile(join(this.directory, 'sync-checkpoint.json'), 'utf8')); this.lastUploadAt = checkpoint.lastUploadAt; this.sourceRetryAt = checkpoint.nextRetryAt; this.archiveAcknowledgment = checkpoint.archiveAcknowledgment; } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
       this.initialized = true;
     });
@@ -287,7 +327,7 @@ export class DurableQueue {
   async saveOcr(id: string, text: string): Promise<void> {
     if (typeof text !== 'string' || text.length > 100000) throw new Error(moteText("OCR 文本超出限制"));
     await this.exclusive(async () => {
-      const prior = this.records.get(id); if (!prior || prior.event.ocr?.status !== 'pending') return;
+      const prior = this.records.get(id); if (!prior || prior.localArchiveOnly || prior.event.ocr?.status !== 'pending') return;
       const record = { ...prior, ocrResult: text, ocrRetryAt: 0, nextAttemptAt: 0 };
       // This consumes the record's pre-reserved budget, even if the user since lowered the limit.
       await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
@@ -295,14 +335,14 @@ export class DurableQueue {
   }
   async deferOcr(id: string): Promise<void> {
     await this.exclusive(async () => {
-      const prior = this.records.get(id); if (!prior) return;
+      const prior = this.records.get(id); if (!prior || prior.localArchiveOnly) return;
       const record = { ...prior, ocrRetryAt: Date.now() + 60000 };
       await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
     });
   }
   async blockSync(id: string, message: string): Promise<void> {
     await this.exclusive(async () => {
-      const prior = this.records.get(id); if (!prior) return;
+      const prior = this.records.get(id); if (!prior || prior.localArchiveOnly) return;
       const record = { ...prior, syncBlocked: true, syncError: message.slice(0, 300), nextAttemptAt: 0 };
       await atomicWrite(this.eventsPath(id), JSON.stringify(record)); this.cachedStats = undefined; this.records.set(id, record);
     });
@@ -315,21 +355,23 @@ export class DurableQueue {
     let nextRetry: number | undefined = this.sourceRetryAt ? Date.parse(this.sourceRetryAt) : undefined;
     let oldestPendingAt: string | undefined;
     for (const record of this.records.values()) {
+      if(record.localArchiveOnly){if(record.blobHash)blobs.set(record.blobHash,record.blobBytes+CONTENT_FILE_ALLOWANCE);metadataBytes+=this.sizeOf(record);continue;}
       if (!oldestPendingAt || record.event.capturedAt < oldestPendingAt) oldestPendingAt = record.event.capturedAt;
       if (record.blobHash) blobs.set(record.blobHash, record.blobBytes + CONTENT_FILE_ALLOWANCE);
       metadataBytes += this.sizeOf(record);
       if (!record.syncBlocked && record.nextAttemptAt > 0) nextRetry = Math.min(nextRetry ?? Infinity, record.nextAttemptAt);
     }
     const values = [...this.records.values()];
-    this.cachedStats = { ...(this.archiveAcknowledgment?{archiveAcknowledgment:{...this.archiveAcknowledgment}}:{}), depth: this.records.size, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt,
-      eligibleDepth: values.filter(r => !r.syncBlocked && (!r.uploaded || r.ocrResult !== undefined)).length,
-      waitingOcr: values.filter(r => r.uploaded && r.ocrResult === undefined).length, blocked: values.filter(r => r.syncBlocked).length };
+    const active=values.filter(record=>!record.localArchiveOnly);
+    this.cachedStats = { ...(this.archiveAcknowledgment?{archiveAcknowledgment:{...this.archiveAcknowledgment}}:{}), depth: active.length, bytes: [...blobs.values()].reduce((a, b) => a + b, metadataBytes), nextRetryAt: nextRetry ? new Date(nextRetry).toISOString() : undefined, oldestPendingAt, lastUploadAt: this.lastUploadAt,
+      eligibleDepth: active.filter(r => !r.syncBlocked && (!r.uploaded || r.ocrResult !== undefined)).length,
+      waitingOcr: active.filter(r => r.uploaded && r.ocrResult === undefined).length, blocked: active.filter(r => r.syncBlocked).length };
     return { ...this.cachedStats };
   }
   async syncCheckpoint(lastUploadAt = this.lastUploadAt, nextRetryAt?: string, archiveAcknowledgment=this.archiveAcknowledgment): Promise<void> {
     await this.exclusive(async () => { await atomicWrite(join(this.directory, 'sync-checkpoint.json'), JSON.stringify({ lastUploadAt, nextRetryAt, archiveAcknowledgment })); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; this.archiveAcknowledgment=archiveAcknowledgment; this.cachedStats=undefined; });
   }
-  atCapacity(): boolean { const stats = this.stats(); return stats.depth >= this.limits.maxQueueEvents || stats.bytes >= this.limits.maxQueueBytes; }
+  atCapacity(): boolean { const usage=activeUsage(this.records.values());return usage.depth>=this.limits.maxQueueEvents||usage.bytes>=this.limits.maxQueueBytes; }
   async enqueue(event: CaptureEvent, image?: Buffer, reviewHeld = false): Promise<boolean> {
     return this.exclusive(async () => {
       this.assertReady();
@@ -393,13 +435,8 @@ export class DurableQueue {
     }
     if(!updates.length&&JSON.stringify(result.checkpoint)===JSON.stringify(this.captureCheckpoint))return 0;
     const projected=new Map(this.records);for(const record of updates)projected.set(record.event.id,record);
-    const blobs=new Map<string,number>();let total=0;
-    for(const record of projected.values()){
-      total+=recordBytes(record);
-      if(record.blobHash)blobs.set(record.blobHash,record.blobBytes+CONTENT_FILE_ALLOWANCE);
-    }
-    total+=[...blobs.values()].reduce((sum,value)=>sum+value,0);
-    if(projected.size>this.limits.maxQueueEvents||total>this.limits.maxQueueBytes)throw new QueueFullError();
+    const usage=activeUsage(projected.values());
+    if(usage.depth>this.limits.maxQueueEvents||usage.bytes>this.limits.maxQueueBytes)throw new QueueFullError();
     for(const [hash,bytes] of images)if(![...this.records.values()].some(record=>record.blobHash===hash))await atomicWrite(this.blobPath(hash),bytes);
     const journal:CaptureStageJournal={version:1,outputs:updates,checkpoint:result.checkpoint};
     this.stageJournalPending=true;await atomicWrite(this.stageJournalPath(),JSON.stringify(journal));
@@ -409,8 +446,8 @@ export class DurableQueue {
   }
   private async insertRecord(record: QueueRecord, image?: Buffer): Promise<void> {
     const hasBlob = [...this.records.values()].some(r => r.blobHash === record.blobHash);
-    const size = this.stats();
-    if (size.depth + 1 > this.limits.maxQueueEvents || size.bytes + (hasBlob || !image ? 0 : image.length + CONTENT_FILE_ALLOWANCE) + recordBytes(record) > this.limits.maxQueueBytes) throw new QueueFullError();
+    const usage=activeUsage([...this.records.values(),record]);
+    if (usage.depth>this.limits.maxQueueEvents||usage.bytes>this.limits.maxQueueBytes) throw new QueueFullError();
     if (image && record.blobHash && !hasBlob) await atomicWrite(this.blobPath(record.blobHash), image);
     await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
     this.cachedStats = undefined; this.records.set(record.event.id, record);
@@ -467,7 +504,7 @@ export class DurableQueue {
     await this.syncCheckpoint();
     return this.exclusive(async () => {
       for (const prior of this.records.values()) {
-        if (prior.syncError === 'upload_review_pending') continue;
+        if (prior.syncError === 'upload_review_pending' || prior.localArchiveOnly) continue;
         const record = { ...prior, nextAttemptAt: 0, syncBlocked: false, syncError: undefined };
         await atomicWrite(this.eventsPath(record.event.id), JSON.stringify(record));
         this.cachedStats = undefined; this.records.set(record.event.id, record);
@@ -479,7 +516,7 @@ export class DurableQueue {
     return this.exclusive(async () => {
       this.assertReady();
       if(Object.values(this.captureCheckpoint?.stages??{}).some(stage=>stage.held))throw new Error('Flush held capture stage inputs before exporting the queue');
-      const reservation = [...this.records.values()].filter(r => r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
+      const reservation = [...this.records.values()].filter(r => !r.localArchiveOnly && r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
       if (this.stats().bytes - reservation > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
       await archiveWork.run({ kind: 'archive-export', directory: this.directory, path }, progress);
     });
@@ -493,8 +530,6 @@ export class DurableQueue {
         await archiveWork.run({ kind: 'archive-prepare', path, staging }, progress);
         const names = await readdir(join(staging, 'events'));
         const unique: QueueRecord[] = [];
-        const knownBlobs = new Set([...this.records.values()].map(r => r.blobHash));
-        let extraBytes = 0;
         for (const name of names) {
           const record = validateRecord(JSON.parse(await readFile(join(staging, 'events', name), 'utf8')));
           const existing = this.records.get(record.event.id);
@@ -502,11 +537,10 @@ export class DurableQueue {
             if (existing.blobHash !== record.blobHash || JSON.stringify(existing.event) !== JSON.stringify(record.event)) throw new Error(moteText("备份包含冲突的事件 ID"));
             continue;
           }
-          unique.push(record); extraBytes += this.sizeOf(record);
-          if (record.blobHash && !knownBlobs.has(record.blobHash)) { extraBytes += record.blobBytes + CONTENT_FILE_ALLOWANCE; knownBlobs.add(record.blobHash); }
+          unique.push(record);
         }
-        const stats = this.stats();
-        if (stats.depth + unique.length > this.limits.maxQueueEvents || stats.bytes + extraBytes > this.limits.maxQueueBytes) throw new QueueFullError();
+        const usage=activeUsage([...this.records.values(),...unique]);
+        if(usage.depth>this.limits.maxQueueEvents||usage.bytes>this.limits.maxQueueBytes)throw new QueueFullError();
         // Validate the entire backup, conflicts and capacity before the first queue mutation.
         const writtenBlobs = new Set([...this.records.values()].map(r => r.blobHash));
         let completed = 0;
@@ -526,7 +560,7 @@ export class DurableQueue {
   async exportArchive(): Promise<QueueArchive> {
     return this.exclusive(async () => {
       this.assertReady();
-      const reservation = [...this.records.values()].filter(r => r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
+      const reservation = [...this.records.values()].filter(r => !r.localArchiveOnly && r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
       if (this.stats().bytes - reservation > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
       const blobs: Record<string, string> = {};
       for (const record of this.records.values()) if (record.blobHash && !blobs[record.blobHash]) blobs[record.blobHash] = (await readFile(this.blobPath(record.blobHash))).toString('base64');
@@ -553,16 +587,12 @@ export class DurableQueue {
         const existing = this.records.get(record.event.id) ?? unique.get(record.event.id);
         if (existing && (existing.blobHash !== record.blobHash || JSON.stringify(existing.event) !== JSON.stringify(record.event))) throw new Error(moteText("备份包含冲突的事件 ID"));
         // A restored archive may target a new node: re-ACK the immutable original before OCR patching.
-        if (!existing) unique.set(record.event.id, { ...record, uploaded: false, attempts: 0, nextAttemptAt: 0 });
+        if (!existing) unique.set(record.event.id, record.localArchiveOnly?
+          {...record,uploaded:false,attempts:0,nextAttemptAt:0,syncBlocked:undefined,syncError:undefined,localArchiveOnly:undefined}:
+          { ...record, uploaded: false, attempts: 0, nextAttemptAt: 0 });
       }
-      const knownBlobs = new Set([...this.records.values()].map(r => r.blobHash));
-      const stats = this.stats();
-      let extraBytes = 0;
-      for (const record of unique.values()) {
-        extraBytes += recordBytes(record);
-        if (record.blobHash && !knownBlobs.has(record.blobHash)) { extraBytes += record.blobBytes + CONTENT_FILE_ALLOWANCE; knownBlobs.add(record.blobHash); }
-      }
-      if (stats.depth + unique.size > this.limits.maxQueueEvents || stats.bytes + extraBytes > this.limits.maxQueueBytes) throw new QueueFullError();
+      const usage=activeUsage([...this.records.values(),...unique.values()]);
+      if(usage.depth>this.limits.maxQueueEvents||usage.bytes>this.limits.maxQueueBytes)throw new QueueFullError();
       for (const record of unique.values()) await this.insertRecord(record, record.blobHash ? images.get(record.blobHash)! : undefined);
       return unique.size;
     });

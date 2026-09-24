@@ -11,6 +11,7 @@ import {FileStore} from '../src/files.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime,type MaterialOrganizer} from '../src/material-organizers.js';
+import {MaterialMemoryWork} from '../src/material-memory-work.js';
 
 function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-material-organizers-'));
@@ -32,6 +33,7 @@ test('source items gain scoped formal revisions, retire on tombstone and return 
   assert.equal(first.origin.firstAt,at(0));
   assert.equal(materials.list({deviceId:'fixture-device',after:at(0),before:at(1)}).items[0]?.id,id);
   assert.match(materials.read(first.ref).text,/Generated body/);
+  assert.equal(materials.list({query:'Generated body'}).items[0]?.id,id,'published ordinary materials join material search');
   assert.equal(await organizers.tick(),0);
   assert.equal(materials.get(id)?.revision,first.revision);
   await sources.upsert('fixture-source',{...item,revision:'v2',observedAt:at(1),title:'',text:'',deleted:true});
@@ -42,6 +44,52 @@ test('source items gain scoped formal revisions, retire on tombstone and return 
   await organizers.tick(20);
   assert.match(materials.read(id).text,/Generated restored body/);
   assert.equal(materials.get(id)?.origin.firstAt,at(2));
+});
+
+test('ordinary source-item work pins a declared recipe and fails closed without its raw reader',async t=>{
+  const {sources,materials,organizers,store}=fixture(t);
+  sources.register({id:'fixture-recipe',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
+  await sources.upsert('fixture-recipe',{externalId:'doc-1',revision:'v1',observedAt:at(0),text:'Generated declared recipe body',kind:'message',layer:'original'});
+  organizers.sourceItemRecipes.registry.uninstallComponent('mote.capture-raw-reader');
+  await assert.rejects(organizers.tick(),/recipe|component/i);
+  assert.equal(organizers.status().cursor,0,'failed recipe resolution cannot advance discovery');
+  assert.equal(materials.list().items.length,0);
+  organizers.sourceItemRecipes.registry.installComponent({id:'mote.capture-raw-reader',version:'1',kind:'raw-reader'});
+  await organizers.tick();
+  const input=JSON.parse(String(store.db.prepare("SELECT input FROM execution_steps WHERE kind='material.organizer' AND json_extract(input,'$.organizerId')='mote.source-item'").get()?.input));
+  const pin=organizers.sourceItemRecipes.resolveForSourceId('fixture-recipe');
+  assert.equal(input.recipe.recipeId,pin.recipeId);
+  assert.equal(input.recipe.configFingerprint,pin.configFingerprint);
+  assert.match(materials.read(materialId('fixture-recipe','doc-1')).text,/Generated declared recipe body/);
+});
+
+test('ordinary material revisions and retirement update the fenced Memory request',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-material-memory-organizer-'));
+  const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
+  const memoryWork=new MaterialMemoryWork(store,materials);
+  const organizers=new MaterialOrganizerRuntime(store,materials,[],undefined,memoryWork);
+  t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
+  sources.register({id:'fixture-memory-source',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
+  const item={externalId:'doc-1',revision:'v1',observedAt:at(0),text:'Generated body',kind:'message' as const,layer:'original' as const};
+  await sources.upsert('fixture-memory-source',item);
+  await organizers.tick();
+  const id=materialId('fixture-memory-source','doc-1'),first=materials.get(id)!;
+  const request=()=>store.db.prepare('SELECT revision,required_json,job_id FROM material_memory_requests WHERE material_id=?').get(id) as
+    {revision:string;required_json:string;job_id:string|null}|undefined;
+  assert.equal(request()?.revision,first.revision);
+  assert.deepEqual(JSON.parse(request()!.required_json),['source-body']);
+  store.db.prepare('UPDATE material_memory_requests SET job_id=? WHERE material_id=?').run('generated-old-job',id);
+  await sources.upsert('fixture-memory-source',{...item,revision:'v2',observedAt:at(1),text:'Generated revised body'});
+  await organizers.tick();
+  const second=materials.get(id)!;
+  assert.notEqual(second.revision,first.revision);
+  assert.equal(request()?.revision,second.revision);
+  assert.equal(request()?.job_id,null);
+  assert.equal(store.db.prepare('SELECT job_id FROM material_memory_revocations WHERE job_id=?').get('generated-old-job')?.job_id,'generated-old-job');
+  await sources.upsert('fixture-memory-source',{...item,revision:'v3',observedAt:at(2),deleted:true,text:''});
+  await organizers.tick();
+  assert.equal(materials.get(id),undefined);
+  assert.equal(request(),undefined);
 });
 
 test('real FileStore original stays pinned while processing and late attachment changes rebuild its material',async t=>{
@@ -90,7 +138,7 @@ test('coding session keeps the newest 2000 complete JSON events and declares old
     });
     const receipts=await sources.upsertBatch('fixture-coding',batch);ids.push(...receipts.receipts.map(r=>r.id));
   }
-  await organizers.tick(1);
+  while(organizers.status().pendingChanges>0)await organizers.tick(500);
   const externalId=JSON.stringify(['codex','fixture-project','fixture-session']),record=materials.get(materialId('fixture-coding',externalId))!;
   assert.equal(record.coverage.state,'partial');
   assert.equal(record.memberCount,2000);
@@ -107,7 +155,7 @@ test('screen group and state interval observe capture changes, then clear delete
   await store.ingest(screen);
   await organizers.tick(20);
   const segment=materials.list({kind:'mote.screen-segment'}).items[0]!;
-  assert.equal(segment.origin.deviceId,'fixture-screen');assert.equal(segment.assetCount,1);
+  assert.equal(segment.origin.deviceId,'fixture-screen');assert.equal(segment.assetCount,0);
   assert.equal(segment.origin.firstAt,at(0));
   const activity={id:randomUUID(),deviceId:'fixture-screen',deviceName:'Generated device',platform:'macos',source:'activity',appId:'fixture.app',appName:'Generated app',capturedAt:at(5),durationMs:1000,
     privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'},stateSeries:{version:1,samples:[{at:at(5),durationMs:1000}]}};
@@ -122,19 +170,78 @@ test('screen group and state interval observe capture changes, then clear delete
   assert.equal(materials.get(segment.id),undefined);
 });
 
-test('failed organizer publish does not advance mapping or change cursor; restart retries once',async t=>{
+test('high-frequency screen material compresses OCR and exposes only three selected frame refs',async t=>{
+  const {store,materials,organizers}=fixture(t);
+  const png=await sharp({create:{width:8,height:8,channels:3,background:'#335577'}}).png().toBuffer();
+  const ids:string[]=[];
+  for(let index=0;index<40;index++){
+    const id=randomUUID();ids.push(id);
+    await store.ingest({id,deviceId:'fixture-screen',deviceName:'Generated device',platform:'macos',source:'screen',appId:'fixture.app',appName:'Generated App',
+      capturedAt:at(index*5),durationMs:5000,ocrText:index<10?'Generated repeated OCR':'Generated changed OCR',imageMime:'image/png',imageBase64:png.toString('base64')});
+  }
+  await organizers.tick(100);
+  const segment=materials.list({kind:'mote.screen-segment'}).items[0]!;
+  assert.equal(materials.list({kind:'mote.screen-segment'}).items.length,1);
+  assert.equal(segment.memberCount,40,'all originals remain traceable in the material');
+  assert.equal(segment.assetCount,0,'query material pages never embed per-screenshot image assets');
+  const page=materials.read(segment.ref,{length:12000});
+  const exposed=[...new Set(page.spans.flatMap(span=>span.memberIds))];
+  assert.deepEqual(exposed,[ids[0],ids[19],ids[39]]);
+  assert.match(page.text,/"sampleCount":40/);
+  assert.match(page.text,/"distinctOcrCount":2/);
+  assert.equal((page.text.match(/Generated repeated OCR/g)??[]).length,2,'a repeated OCR state appears once in the distinct list and once as a keyframe');
+  assert.ok(!page.text.includes(ids[17]),'unsampled capture IDs are absent from the Agent-facing text');
+});
+
+test('a partially discovered change backlog cannot publish an older group checkpoint',async t=>{
+  const {sources,materials,organizers}=fixture(t);
+  sources.register({id:'fixture-backlog',name:'Generated Coding',kind:'coding-agent',deviceId:'fixture-device',platform:'import',retention:'archive'});
+  const event=(part:number)=>({externalId:`event-${part}`,revision:'v1',observedAt:at(part),text:`Generated part ${part}`,kind:'message' as const,layer:'original' as const,
+    document:{coding:{version:1 as const,provider:'codex' as const,projectKey:'fixture-project',sessionId:'fixture-session',eventId:`event-${part}`,role:'assistant' as const,part:0,parts:1}}});
+  await sources.upsert('fixture-backlog',event(0));await sources.upsert('fixture-backlog',event(1));
+  const id=materialId('fixture-backlog',JSON.stringify(['codex','fixture-project','fixture-session']));
+  assert.equal(await organizers.tick(1),1);
+  assert.equal(materials.get(id),undefined,'the first change cannot publish while a related second change remains undiscovered');
+  assert.equal(await organizers.tick(1),1);
+  assert.equal(materials.get(id)?.memberCount,2);
+});
+
+test('a source deletion during build revokes the old worker before publication',async t=>{
+  const {store,materials,organizers}=fixture(t),captureId=randomUUID(),materialKey=materialId('fixture-revoked',captureId);
+  let deleted=false;
+  organizers.registry.register({id:'fixture.revoked',version:'1',exclusive:true,
+    select:r=>r.id===captureId?{captureId:r.id}:undefined,identity:()=>materialKey,
+    build(reader){const record=reader.capture();if(!record)return;
+      if(!deleted){deleted=true;store.delete(captureId);}
+      return {id:materialKey,kind:'fixture.revoked',schemaVersion:1,title:'Generated old input',
+        origin:{sourceId:'fixture-revoked',externalId:captureId,deviceId:record.deviceId},
+        blocks:[{id:'body',kind:'text',format:'plain',text:record.ocrText,memberIds:[captureId]}],
+        members:[{id:captureId,kind:'capture',ref:`capture:${captureId}`}],coverage:{state:'complete'},
+        fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};},
+  });
+  await store.ingest({id:captureId,deviceId:'fixture-device',deviceName:'Generated',platform:'import',source:'note',capturedAt:at(0),durationMs:0,ocrText:'Generated original'});
+  await organizers.tick();
+  assert.equal(materials.get(materialKey),undefined);
+  assert.equal(store.db.prepare("SELECT state FROM execution_steps WHERE kind='material.organizer' AND json_extract(input,'$.organizerId')='fixture.revoked'").get()?.state,'stale');
+  await organizers.tick();
+  assert.equal(materials.get(materialKey),undefined);
+});
+
+test('failed organizer keeps discovered work durable and restart retries the fenced step',async t=>{
   const {store,materials}=fixture(t),id=randomUUID();
   const custom:MaterialOrganizer={id:'fixture.probe',version:'1',select:r=>r.id===id?{captureId:r.id}:undefined,
     identity:g=>materialId('fixture-probe',g.captureId),build:()=>{throw Error('generated organizer failure');}};
   const runtime=new MaterialOrganizerRuntime(store,materials,[custom]);
   await store.ingest({id,deviceId:'fixture-device',deviceName:'Generated',platform:'import',source:'note',capturedAt:at(0),durationMs:0,ocrText:'Generated note'});
   await assert.rejects(runtime.tick(),/generated organizer failure/);
-  assert.equal(store.db.prepare("SELECT value FROM settings WHERE key='material-organizer-cursor'").get(),undefined);
-  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM material_organizer_inputs').get()!.n,0);
+  assert.equal(runtime.status().cursor,1,'the cursor records durable discovery even when execution fails');
+  assert.equal(store.db.prepare("SELECT COUNT(*) n FROM material_organizer_inputs WHERE organizer_id='fixture.probe'").get()!.n,1);
+  assert.equal(runtime.status().pendingSteps,1);
   const succeeding:MaterialOrganizer={...custom,build:()=>undefined};
   const restarted=new MaterialOrganizerRuntime(store,materials,[succeeding]);
-  assert.ok(await restarted.tick()>0);
+  assert.equal(await restarted.tick(),0,'recovery consumes the persisted step without rediscovering the capture');
   assert.equal(store.db.prepare("SELECT COUNT(*) n FROM material_organizer_inputs WHERE organizer_id='fixture.probe'").get()!.n,1);
+  assert.equal(restarted.status().pendingSteps,0);
 });
 
 test('failed replacement with a different identity rolls back retirement and cursor',async t=>{
@@ -156,6 +263,7 @@ test('failed replacement with a different identity rolls back retirement and cur
   await assert.rejects(organizers.tick(),/unavailable/i);
   assert.equal(materials.get(previous.ref)?.revision,previous.revision);
   assert.equal(materials.get(previous.id)?.revision,previous.revision);
+  assert.equal(materials.list({query:'Generated retained note'}).items[0]?.id,previous.id,'failed replacement keeps the old searchable head');
   assert.equal(materials.get(replacementId),undefined);
   assert.equal(organizers.status().cursor,cursor);
 });
@@ -171,28 +279,27 @@ test('new higher priority organizer backfills old captures and replaces the fall
   const plugin:MaterialOrganizer={id:'fixture.document',version:'1',slot:'source-item',priority:10,
     select:r=>r.provenance?.sourceId==='fixture-extensible'?{externalId:r.provenance.externalId,sourceId:r.provenance.sourceId}:undefined,
     identity:g=>materialId(g.sourceId,g.externalId),
-    build(_store,g){
-      const head=_store.db.prepare('SELECT capture_id FROM source_heads WHERE source_id=? AND external_id=? AND deleted=0').get(g.sourceId,g.externalId) as {capture_id:string}|undefined;
-      if(!head)return;
+    build(reader,g){
+      const head=reader.sourceHead();if(!head)return;
       return {id:materialId(g.sourceId,g.externalId),kind:'fixture.document',schemaVersion:1,title:'Generated plugin document',
         origin:{sourceId:g.sourceId,externalId:g.externalId,deviceId:'fixture-device',firstAt:at(0),lastAt:at(0)},
-        blocks:[{id:'text',kind:'text',format:'plain',text:'Generated plugin body',memberIds:[head.capture_id]}],
-        members:[{id:head.capture_id,kind:'capture',ref:`capture:${head.capture_id}`}],coverage:{state:'complete'},
+        blocks:[{id:'text',kind:'text',format:'plain',text:'Generated plugin body',memberIds:[head.id]}],
+        members:[{id:head.id,kind:'capture',ref:`capture:${head.id}`}],coverage:{state:'complete'},
         fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};
     }};
-  const failing:MaterialOrganizer={...plugin,build(_store,g){
-    const draft=plugin.build(_store,g)!;
+  const failing:MaterialOrganizer={...plugin,build(reader,g){
+    const draft=plugin.build(reader,g)!;
     return {...draft,blocks:[{id:'missing-original',kind:'asset',hash:'0'.repeat(64),mimeType:'application/octet-stream',memberIds:[]}]};
   }};
   const unregister=organizers.registry.register(failing);
   await assert.rejects(organizers.tick(),/unavailable|not found|missing/i);
   assert.equal(materials.get(id)?.revision,fallback.revision);
   assert.match(materials.read(fallback.ref).text,/Generated body/);
-  assert.equal(organizers.status().backfills.find(row=>row.id===plugin.id)?.complete,false);
+  assert.equal(organizers.status().backfills.find(row=>row.id===plugin.id)?.complete,true,'the scan completed, while its execution remains failed');
+  assert.ok(organizers.status().pendingSteps>0);
   unregister();
   organizers.registry.register(plugin);
-  assert.equal(organizers.status().backfills.find(row=>row.id===plugin.id)?.complete,false);
-  assert.equal(await organizers.tick(),1);
+  assert.equal(await organizers.tick(),0,'the corrected pinned component retries its durable step');
   const replacement=materials.get(id)!;
   assert.equal(replacement.kind,'fixture.document');
   assert.match(materials.read(id).text,/Generated plugin body/);
@@ -203,6 +310,42 @@ test('new higher priority organizer backfills old captures and replaces the fall
   assert.equal(await organizers.tick(),0);
   assert.equal(materials.get(id)?.revision,replacement.revision);
   assert.equal(store.db.prepare('SELECT organizer_id FROM material_organizer_inputs LIMIT 1').get()?.organizer_id,plugin.id);
+});
+
+test('organizer plugins build from a bounded group reader without a Store handle',async t=>{
+  const {store,sources,materials,organizers}=fixture(t);
+  sources.register({id:'fixture-reader',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
+  const first=await sources.upsert('fixture-reader',{externalId:'allowed',revision:'v1',observedAt:at(0),text:'Generated allowed evidence',kind:'message',layer:'original'});
+  const other=await sources.upsert('fixture-reader',{externalId:'other',revision:'v1',observedAt:at(1),text:'Generated other evidence',kind:'message',layer:'original'});
+  let builds=0;
+  organizers.registry.register({id:'fixture.scoped-reader',version:'1',slot:'source-item',priority:10,
+    select:r=>r.provenance?.sourceId==='fixture-reader'&&r.provenance.externalId==='allowed'?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
+    identity:g=>materialId(g.sourceId,g.externalId),
+    build(reader,g){
+      builds++;
+      assert.deepEqual(Object.keys(reader).sort(),['capture','codingSession','file','screenGroup','sourceHead'].sort());
+      assert.equal(Object.isFrozen(reader),true);
+      assert.equal('db' in reader,false);
+      assert.equal('store' in reader,false);
+      assert.equal('ingest' in reader,false);
+      assert.equal(reader.capture(),undefined);
+      assert.deepEqual(reader.codingSession(),{records:[],truncated:false});
+      assert.deepEqual(reader.screenGroup(),{records:[],truncated:false});
+      assert.equal(reader.file(other.id),undefined);
+      const record=reader.sourceHead();assert.equal(record?.id,first.id);
+      assert.equal(reader.file(other.id),undefined);
+      assert.deepEqual(reader.file(first.id)?.attachments,[]);
+      return {id:materialId(g.sourceId,g.externalId),kind:'fixture.scoped-reader',schemaVersion:1,title:'Generated scoped material',
+        origin:{sourceId:g.sourceId,externalId:g.externalId,deviceId:record!.deviceId},
+        blocks:[{id:'body',kind:'text',format:'plain',text:record!.ocrText??'',memberIds:[record!.id]}],
+        members:[{id:record!.id,kind:'capture',ref:`capture:${record!.id}`}],coverage:{state:'complete'},
+        fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};
+    },
+  });
+  await organizers.tick(20);
+  assert.ok(builds>0);
+  assert.match(materials.read(materialId('fixture-reader','allowed')).text,/Generated allowed evidence/);
+  assert.equal(store.evidence([other.id])[0]?.id,other.id);
 });
 
 test('paged backfill replaces a multi-member coding group before all old mappings are rescanned',async t=>{
@@ -219,14 +362,14 @@ test('paged backfill replaces a multi-member coding group before all old mapping
     select:r=>{const coding=r.provenance?.document?.coding;return coding&&r.provenance?.sourceId==='fixture-session-source'?{
       sourceId:r.provenance.sourceId,provider:coding.provider,projectKey:coding.projectKey,sessionId:coding.sessionId}:undefined;},
     identity:g=>materialId(g.sourceId,JSON.stringify([g.provider,g.projectKey,g.sessionId])),
-    build(_store,g){
-      const first=_store.db.prepare("SELECT capture_id FROM source_heads WHERE source_id=? AND deleted=0 ORDER BY external_id LIMIT 1").get(g.sourceId) as {capture_id:string}|undefined;
+    build(reader,g){
+      const first=reader.codingSession().records[0];
       if(!first)return;
       const sourceExternalId=JSON.stringify([g.provider,g.projectKey,g.sessionId]);
       return {id:materialId(g.sourceId,sourceExternalId),kind:'fixture.coding-session',schemaVersion:1,title:'Generated plugin session',
         origin:{sourceId:g.sourceId,externalId:sourceExternalId,deviceId:'fixture-device',firstAt:at(0),lastAt:at(1),provider:g.provider,projectKey:g.projectKey,sessionId:g.sessionId},
-        blocks:[{id:'text',kind:'text',format:'plain',text:'Generated plugin session body',memberIds:[first.capture_id]}],
-        members:[{id:first.capture_id,kind:'capture',ref:`capture:${first.capture_id}`}],coverage:{state:'complete'},
+        blocks:[{id:'text',kind:'text',format:'plain',text:'Generated plugin session body',memberIds:[first.id]}],
+        members:[{id:first.id,kind:'capture',ref:`capture:${first.id}`}],coverage:{state:'complete'},
         fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};
     }};
   organizers.registry.register(plugin);

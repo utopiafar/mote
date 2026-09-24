@@ -114,7 +114,9 @@ async function execute(request: BackgroundRequest, progress: (value: WorkProgres
         if (prior && (prior.blobHash !== record.blobHash || JSON.stringify(prior.event) !== JSON.stringify(record.event))) throw new Error(moteText("备份包含冲突的事件 ID"));
         if (!prior) {
           unique.set(record.event.id, record);
-          await writeFile(join(request.staging, 'events', record.event.id + '.json'), JSON.stringify({ ...record, uploaded: false, attempts: 0, nextAttemptAt: 0 }), { mode: 0o600 });
+          await writeFile(join(request.staging, 'events', record.event.id + '.json'), JSON.stringify(record.localArchiveOnly?
+            {...record,uploaded:false,attempts:0,nextAttemptAt:0,syncBlocked:undefined,syncError:undefined,localArchiveOnly:undefined}:
+            { ...record, uploaded: false, attempts: 0, nextAttemptAt: 0 }), { mode: 0o600 });
         }
         if (i % 100 === 0 || i + 1 === archive.records.length) progress({ message: moteText("正在校验备份"), completed: i + 1, total: archive.records.length });
       }

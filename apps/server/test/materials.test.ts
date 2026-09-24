@@ -85,6 +85,24 @@ test('deleting source capture purges derived material text and pinned revisions'
   assert.equal(store.db.prepare('SELECT COUNT(*) n FROM material_block_payloads').get()!.n,0);
 });
 
+test('capture member text has revision-bound synthetic Memory evidence',async t=>{
+  const {store,materials}=fixture(t),captureId=randomUUID();
+  await store.ingest({id:captureId,deviceId:'fixture-device',deviceName:'Generated device',platform:'import',source:'note',
+    capturedAt:'2026-09-24T01:00:00.000Z',durationMs:0,ocrText:'Generated capture original'});
+  const first=draft('fixture-source','capture-evidence');
+  first.members=[{id:'capture',kind:'capture',ref:`capture:${captureId}`}];
+  first.blocks=[{id:'body',kind:'text',format:'plain',text:'Generated derived capture text',memberIds:['capture']}];
+  const published=materials.publish(first),anchor=materials.evidenceIds(published.ref)[0]!;
+  assert.ok(anchor);assert.equal(materials.isCurrentEvidence(anchor),true);
+  assert.equal(materials.evidence([anchor])[0]?.ocrText,'Generated derived capture text');
+  const next=materials.publish({...first,blocks:[{id:'body',kind:'text',format:'plain',text:'Revised derived capture text',memberIds:['capture']}]},
+    {expectedRevision:published.revision});
+  const nextAnchor=materials.evidenceIds(next.ref)[0]!;
+  assert.notEqual(nextAnchor,anchor);assert.equal(materials.isCurrentEvidence(anchor),false);
+  assert.equal(materials.isCurrentEvidence(nextAnchor),true);
+  assert.equal(materials.read(published.ref).text,'Generated derived capture text\n');
+});
+
 test('owner material API requires owner credential and serves only bounded reads',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-material-api-'));
   const config:Config={dataDir:directory,token:'generated-fixture-token',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,

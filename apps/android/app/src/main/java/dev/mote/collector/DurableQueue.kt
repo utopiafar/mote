@@ -165,6 +165,24 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     fun pendingSync(): PendingSync = stats().pendingSync
     fun depth(): Int = guarded { dir.listFiles()?.count { it.extension == "event" } ?: 0 }
+    /** A protocol break discards every unacknowledged event, including OCR and conflict work. */
+    fun discardLegacyOutbox(): Int = withDeferredIndexWrites {
+        guarded {
+            var removed = 0
+            for (file in records()) {
+                val event = read(file)
+                val pendingOcr = (event.optJSONObject("ocr")?.optString("status") == "pending" || event.has("_ocrResult")) && !event.optBoolean("_ocrUploaded")
+                if (!event.optBoolean("_uploaded") || pendingOcr || syncFailed(event)) {
+                    remove(file, event)
+                    removed++
+                }
+            }
+            listOf(stageCheckpoint, stageJournal, stageInbox).forEach { stage ->
+                check(!stage.exists() || stage.delete()) { "Unable to discard legacy capture stage checkpoint" }
+            }
+            removed
+        }
+    }
     fun diskBytes(): Long = guarded { dir.listFiles()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L }
     fun reservedOcrBytes(): Long = stats().reservedOcrBytes
     fun bytes(): Long = stats().bytes

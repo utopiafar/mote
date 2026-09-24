@@ -11,8 +11,9 @@ import {fileExportEntries,exportTar} from './file-export.js';
 import {isLoopback,readProcessorJson} from './file-processors.js';
 import {FileProcessing} from './file-processing.js';
 import {StoreError} from './store.js';
+import type {IngressService} from './ingress.js';
 
-export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:EvidenceReader,diagnostics?:ServerDiagnostics){
+export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:EvidenceReader,diagnostics?:ServerDiagnostics){
   const measure=<T>(operation:Operation,task:()=>T|Promise<T>)=>diagnostics?diagnostics.measure('file',operation,task):Promise.resolve().then(task);
   const reviews=new FileReviews(files,processing);
   const grants=new Map<string,{id:string;until:number;check:()=>void}>();
@@ -28,17 +29,17 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
   app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:FILE_PART_BYTES},(_req,body,done)=>done(null,body));
   app.get('/api/file-sync/v1/capabilities',async()=>files.capabilities());
   app.get('/api/file-sync/v1/head',{config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>{const q=z.object({sourceId:z.string().min(1).max(128),externalId:z.string().min(1).max(1000)}).strict().parse(req.query);authorize(req,q.sourceId);return {revision:files.sources.getItem(q.sourceId,q.externalId)?.revision??null,forgotten:!!files.store.db.prepare('SELECT 1 FROM file_forgotten WHERE source_id=? AND external_id=?').get(q.sourceId,q.externalId)};});
-  app.post('/api/file-sync/v1/manifests',{bodyLimit:8*1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>files.manifestBatch(req.body,check(req))));
-  app.post('/api/file-sync/v1/uploads',{bodyLimit:32768},async req=>measure('file_upload',()=>files.begin(req.body,check(req))));
-  app.get('/api/file-sync/v1/uploads/:id',async req=>files.upload(id(req),check(req)));
+  app.post('/api/file-sync/v1/manifests',{bodyLimit:8*1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>ingress.fileManifests(req.body,check(req))));
+  app.post('/api/file-sync/v1/uploads',{bodyLimit:32768},async req=>measure('file_upload',()=>ingress.fileBegin(req.body,check(req))));
+  app.get('/api/file-sync/v1/uploads/:id',async req=>ingress.fileUpload(id(req),check(req)));
   app.put('/api/file-sync/v1/uploads/:id/parts/:part',{bodyLimit:FILE_PART_BYTES},async req=>{if(!Buffer.isBuffer(req.body))throw new StoreError('Binary part required');return measure('file_part',()=>files.part(id(req),Number((req.params as {part:string}).part),req.body as Buffer,check(req)));});
   app.post('/api/file-sync/v1/uploads/:id/commit',async(req,reply)=>{
     const controller=new AbortController(),abort=()=>{if(!reply.raw.writableEnded)controller.abort();};
     req.raw.once('aborted',abort);reply.raw.once('close',abort);
-    try{return await measure('file_commit',()=>files.commit(id(req),check(req),controller.signal));}
+    try{return await measure('file_commit',()=>ingress.fileCommit(id(req),check(req),controller.signal));}
     finally{req.raw.off('aborted',abort);reply.raw.off('close',abort);}
   });
-  app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>files.revision(req.body,check(req))));
+  app.put('/api/file-sync/v1/revisions',{bodyLimit:1024*1024,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>measure('file_revision',()=>ingress.fileRevision(req.body,check(req))));
   app.get('/api/files',async req=>{const q=z.object({sourceId:z.string().max(128).optional(),mimePrefix:z.enum(['audio/','text/','image/']).optional(),query:z.string().max(2000).optional(),cursor:z.string().max(20).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query);if(q.sourceId)authorize(req,q.sourceId);return files.list({...q,deviceId:device(req)});});
   app.get('/api/files/:id',async req=>({...file(req),processingPolicy:processing.explain(fileId(req))}));
   app.get('/api/files/:id/chunks',async req=>{file(req);const q=z.object({...navigationScopeSchema.shape,offset:z.coerce.number().int().min(0).default(0)}).strict().parse(req.query);const items=files.chunks(fileId(req),q.offset);return {items,nextOffset:items.length===100?q.offset+100:null};});

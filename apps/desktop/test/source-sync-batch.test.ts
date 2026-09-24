@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SourceSync } from '../src/source-sync';
 import type { ScannedItem, SourceDefinition } from '../src/source-types';
+import {sourceAck} from './fixtures';
 
 let root: string;
 beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'mote-source-batch-')); });
@@ -11,7 +12,7 @@ afterEach(async () => { await rm(root, { recursive: true, force: true }); });
 
 const source: SourceDefinition = { id: 'fixture', name: 'fixture', kind: 'coding-agent', deviceId: 'device', platform: 'macos', retention: 'snapshot', enabled: true };
 const item = (index: number, syncQueue: 'realtime' | 'history'): ScannedItem => ({ externalId: `event-${index}`, title: `event ${index}`, text: `generated ${index}`, kind: 'message', layer: 'snapshot', syncQueue });
-const receipt = (value: ScannedItem & { revision: string }) => ({ id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: source.id, externalId: value.externalId, revision: value.revision, duplicate: false });
+const receipt = (value: ScannedItem & { revision: string }) => sourceAck(source.id,value,value.kind==='file'?'file-revision':'source-item');
 const indexedFile=(index:number):ScannedItem=>({...item(index,'realtime'),kind:'file',layer:'reference',text:'',document:{fileIndex:{version:1,fileId:'file-'+index,contentVersion:'generated',mode:'catalog',coverage:'none',parser:'none',status:'ready',totalCharacters:0,offset:0,length:0,allowRead:false}}});
 
 it('schedules ordinary source records by admitted bytes and checkpoints per batch', async () => {
@@ -45,7 +46,7 @@ it('does not remove a batch when the central acknowledgement has the wrong ident
   expect(engine.status().pending).toBe(2);
 });
 
-it.each([404, 405])('falls back to verified individual receipts only when source batching is absent (%s)', async status => {
+it.each([404, 405])('retains source batches when the v2 batch endpoint is absent (%s)', async status => {
   const engine = new SourceSync(join(root, 'state.json'), { concurrency: 1 });
   await engine.initialize();
   const calls: string[] = [];
@@ -55,16 +56,14 @@ it.each([404, 405])('falls back to verified individual receipts only when source
     if (path.endsWith('/batch')) throw Object.assign(new Error('Route unavailable'), { httpStatus: status });
     return receipt(body as ScannedItem & { revision: string });
   };
-  for (let offset = 0; offset < 4; offset += 2) {
-    await engine.stage({ items: [item(offset, 'realtime'), item(offset + 1, 'realtime')], seen: [], complete: false, skipped: 0 }, false);
-    await engine.flush(source, request);
-  }
+  await engine.stage({ items: [item(0, 'realtime'), item(1, 'realtime')], seen: [], complete: false, skipped: 0 }, false);
+  await expect(engine.flush(source, request)).rejects.toMatchObject({httpStatus:status});
   expect(calls.filter(path => path.endsWith('/batch'))).toHaveLength(1);
-  expect(calls.filter(path => path.endsWith('/items'))).toHaveLength(4);
-  expect(engine.status().pending).toBe(0);
+  expect(calls.filter(path => path.endsWith('/items'))).toHaveLength(0);
+  expect(engine.status().pending).toBe(2);
   const restored = new SourceSync(join(root, 'state.json'));
   await restored.initialize();
-  expect(restored.status().pending).toBe(0);
+  expect(restored.status().pending).toBe(2);
 });
 
 it.each([401, 403, 413, 429, 500])('retains source batches after HTTP %s without changing endpoints', async status => {

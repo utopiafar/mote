@@ -5,8 +5,9 @@ import {failureMessage} from './failure-message';
 import {ModelSelector} from './ModelSelector';
 import { moteText } from '@mote/shared/i18n';
 import {QueryProgress,type QueryRun} from './QueryProgress';
-import {useEffect, useRef, useState, type ReactNode} from 'react';
-import {AlertCircle, ArrowRight, ArrowUp, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2} from 'lucide-react';
+import {uploadChatImage} from './note-attachments';
+import React,{useEffect, useRef, useState, type ReactNode} from 'react';
+import {AlertCircle, ArrowRight, ArrowUp, ImagePlus, LoaderCircle, MessageSquare, Monitor, Plus, RefreshCw, RotateCcw, ShieldCheck, Sparkles, Trash2, X} from 'lucide-react';
 import {ApiError,dateTime, errorMessage, type Answer, type Api, type Device, type Range} from './api';
 
 interface ConversationSummary {
@@ -26,6 +27,7 @@ interface ConversationTurn {
   error?: {code: string; message: string};
   createdAt: string;
   evidenceDeleted?: boolean;
+  attachments?: {id:string;name:string;mimeType:string}[];
 }
 interface Conversation extends ConversationSummary {turns: ConversationTurn[];nextCursor?:string|null}
 interface HistoryPage {items: ConversationSummary[]; nextCursor?: string | null}
@@ -43,6 +45,9 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
   const detail=useResource<Conversation>(api,selectedId?`/api/conversations/${encodeURIComponent(selectedId)}`:null);
   const conversation=detail.data?{...detail.data,turns:[...olderTurns.filter(turn=>!detail.data!.turns.some(next=>next.id===turn.id)),...detail.data.turns],...(olderCursor!==undefined?{nextCursor:olderCursor}:{})}:null;
   const [question, setQuestion] = useState('');
+  const [attachments,setAttachments]=useState<{id:string;name:string;mimeType:string}[]>([]);
+  const [uploading,setUploading]=useState(false);
+  const attachmentInput=useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false), [loadingOlder,setLoadingOlder]=useState(false), [loadingPage,setLoadingPage] = useState(false);
   const [error, setError] = useState(''), [historyError, setHistoryError] = useState('');
   const [pendingQuestion, setPendingQuestion] = useState(''), [confirmDelete, setConfirmDelete] = useState(false);
@@ -67,7 +72,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     } catch (e) { if (!controller.signal.aborted) setHistoryError(errorMessage(e)); }
     finally { if (!controller.signal.aborted) setLoadingPage(false); }
   }
-  useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
+  useEffect(()=>{selectionMade.current=false;setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setItems([]);setCursor(null);setRun(null);setBusy(false);setQuestion('');setAttachments([]);setUploading(false);setPendingQuestion('');setError('');setHistoryError('');setLoadingOlder(false);setLoadingPage(false);
     return()=>{operation.current?.abort();historyRequest.current?.abort();olderRequest.current?.abort();};},[api]);
   useEffect(()=>{if(history.data){setItems(history.data.items);setCursor(history.data.nextCursor??null);}else if(history.error){setItems([]);setCursor(null);}},[history.data,history.error]);
   useEffect(()=>{if(!recentRuns.data||selectionMade.current)return;selectionMade.current=true;
@@ -88,7 +93,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
         if((current.status==='completed'||current.status==='failed')&&current.conversationId){
           setSelectedId(current.conversationId);
           resources(api).invalidate(key=>key.startsWith('/api/conversations'));
-          if(current.status==='completed')setQuestion('');
+          if(current.status==='completed'){setQuestion('');setAttachments([]);}
           else if(pendingQuestion)setQuestion(pendingQuestion);
           void loadHistory();
         }
@@ -106,7 +111,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
   function open(id: string) {
     if (busy) return;
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
-    setRun(null);setPollError('');setError('');setConfirmDelete(false);setQuestion('');setPendingQuestion('');
+    setRun(null);setPollError('');setError('');setConfirmDelete(false);setQuestion('');setAttachments([]);setPendingQuestion('');
     setOlderTurns([]);setOlderCursor(undefined);setSelectedId(id);
   }
   async function loadOlderTurns(){
@@ -119,7 +124,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
   function startNew() {
     if (busy) return;
     selectionMade.current=true;operation.current?.abort();operation.current=null;olderRequest.current?.abort();setLoadingOlder(false);
-    setRun(null);setPollError('');setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setQuestion('');setPendingQuestion('');setError('');setConfirmDelete(false);
+    setRun(null);setPollError('');setSelectedId(null);setOlderTurns([]);setOlderCursor(undefined);setQuestion('');setAttachments([]);setPendingQuestion('');setError('');setConfirmDelete(false);
   }
   function retry(question: string) {
     if (busy || opening) return;
@@ -128,13 +133,13 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
   async function submit(event?: {preventDefault(): void}, sample?: string) {
     event?.preventDefault();
     const text = (sample ?? question).trim();
-    if (!text || busy || opening || operation.current || !configured) return;
+    if (!text || busy || uploading || opening || operation.current || !configured) return;
     selectionMade.current=true;
     const controller = new AbortController(); operation.current = controller;
     setRun(null);setBusy(true); setError(''); setConfirmDelete(false); setPendingQuestion(text);
     try {
       const id=crypto.randomUUID();
-      const body=JSON.stringify({id,input:{question:text,modelProfileId:modelProfileId||undefined,modelOverride:modelOverride||undefined,...(conversation?{conversationId:conversation.id}:{}),after:range.after??null,before:range.before??null,deviceId:null,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
+      const body=JSON.stringify({id,input:{question:text,modelProfileId:modelProfileId||undefined,modelOverride:modelOverride||undefined,...(conversation?{conversationId:conversation.id}:{}),attachmentIds:attachments.map(attachment=>attachment.id),after:range.after??null,before:range.before??null,deviceId:null,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
       let accepted:QueryRun;
       try{accepted=await api.request<QueryRun>('/api/query-runs',{method:'POST',signal:controller.signal,body});}
       catch(e){
@@ -149,6 +154,24 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     } catch (e) {
       if (!controller.signal.aborted) {setBusy(false);setQuestion(text); setPendingQuestion(''); setError(moteText("{0} 可刷新历史检查结果后再重试。", errorMessage(e)));}
     } finally {if (!controller.signal.aborted) {operation.current = null;}}
+  }
+  async function addImages(files:FileList|null){
+    if(!files?.length||uploading||busy||opening)return;
+    if(attachments.length+files.length>4){setError(moteText("最多添加 4 张图片"));return;}
+    const selected=Array.from(files);
+    if(selected.some(file=>!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024||file.size===0)){
+      setError(moteText("聊天图片仅支持 PNG、JPEG、WebP，每张不超过 8 MiB。"));return;
+    }
+    setUploading(true);setError('');
+    try{
+      let deviceId=localStorage.getItem('mote.chat.device.v1');
+      if(!deviceId){deviceId=`web:${crypto.randomUUID()}`;localStorage.setItem('mote.chat.device.v1',deviceId);}
+      for(const file of selected){
+        const id=await uploadChatImage(api,file,deviceId);
+        setAttachments(current=>current.some(item=>item.id===id)?current:[...current,{id,name:file.name,mimeType:file.type}]);
+      }
+    }catch(e){setError(errorMessage(e));}
+    finally{setUploading(false);if(attachmentInput.current)attachmentInput.current.value='';}
   }
   async function remove() {
     if (!conversation || operation.current) return;
@@ -180,7 +203,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
       <div className="conversation-messages">
       {conversation?.nextCursor&&<button className="text-button" disabled={opening} onClick={()=>void loadOlderTurns()}>{moteText("加载更早的对话")}</button>}
       {conversation?.turns.map(turn => <article className={`answer-panel conversation-turn ${turn.status === 'failed' ? 'failed' : ''}`} key={turn.id}>
-        <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}</span></div>
+        <div className="asked-question"><MessageSquare size={16}/><span>{turn.question}{Boolean(turn.attachments?.length)&&<span className="chat-attached-images">{turn.attachments?.map(attachment=><span key={attachment.id}><ImagePlus size={13}/>{attachment.name}</span>)}</span>}</span></div>
         {turn.status === 'failed' || !turn.result ? <div className="failed-answer" role="alert"><div className="failed-answer-icon"><AlertCircle size={18}/></div><div><strong>{moteText("这次回答没有完成")}</strong><p>{failureMessage(turn.error)}</p><button className="text-button" disabled={busy || opening} onClick={() => retry(turn.question)}><RotateCcw size={14}/>{moteText("再次提问")}</button></div></div> : <>{turn.result.modelSelection&&<small className="model-used">{turn.result.modelSelection.profileName} · {turn.result.modelSelection.model}</small>}{turn.evidenceDeleted ? <p className="notice">{moteText("相关证据已删除，这条历史回答已清除。可以继续提问查阅现有记录。")}</p> : renderAnswer(turn.result)}</>}
       </article>)}
       {pendingQuestion && <div className="asked-question"><MessageSquare size={16}/><span>{pendingQuestion}</span></div>}
@@ -192,7 +215,8 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
       <div className="filter-bar"><ModelSelector api={api} feature="chat" value={modelProfileId} onChange={setModelProfileId} model={modelOverride} onModelChange={setModelOverride} disabled={busy||opening}/></div>
       <form className="ask-form" onSubmit={event => void submit(event)}>
         <textarea aria-label={moteText("向 Mote 提问")} aria-describedby="composer-hint" placeholder={conversation ? moteText("接着问，Mote 会结合前面的对话。") : moteText("比如，我最近都在忙什么？")} value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => {if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {event.preventDefault();void submit(event);}}} disabled={busy || opening} maxLength={8000} rows={3}/>
-        <div><span><ShieldCheck size={14}/>{moteText("只读查询 · 回答附带原始证据")}</span><span id="composer-hint" className="composer-hint">{moteText("Enter 发送 · Shift+Enter 换行")}</span><button className="send-button" type="submit" disabled={busy || opening || !question.trim() || !configured} aria-label={moteText("发送问题")}>{busy ? <LoaderCircle className="spin" size={19}/> : <ArrowUp size={19}/>}</button></div>
+        {Boolean(attachments.length)&&<div className="chat-attachment-list">{attachments.map(attachment=><span key={attachment.id} className="chat-attachment"><ImagePlus size={14}/><span>{attachment.name}</span><button type="button" disabled={busy||uploading} aria-label={moteText("移除图片 {0}",attachment.name)} onClick={()=>setAttachments(current=>current.filter(item=>item.id!==attachment.id))}><X size={13}/></button></span>)}</div>}
+        <div><span><ShieldCheck size={14}/>{moteText("只读查询 · 回答附带原始证据")}</span><input ref={attachmentInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={event=>void addImages(event.target.files)}/><button className="chat-image-button" type="button" aria-label={moteText("添加图片")} title={moteText("聊天图片最多 4 张，每张不超过 8 MiB，支持 PNG、JPEG、WebP。") } disabled={busy||uploading||opening||attachments.length>=4} onClick={()=>attachmentInput.current?.click()}>{uploading?<LoaderCircle className="spin" size={17}/>:<ImagePlus size={17}/>}</button><span id="composer-hint" className="composer-hint">{moteText("Enter 发送 · Shift+Enter 换行")}</span><button className="send-button" type="submit" disabled={busy || uploading || opening || !question.trim() || !configured} aria-label={moteText("发送问题")}>{busy ? <LoaderCircle className="spin" size={19}/> : <ArrowUp size={19}/>}</button></div>
       </form>
       {!conversation && !busy && !opening && <div className="suggestions"><span>{moteText("从一个小问题开始")}</span>{[moteText("我最近都做了些什么？"), moteText("这周的时间主要花在了哪里？"), moteText("最近有哪些值得接着做的事情？")].map(sample => <button key={sample} disabled={!configured} onClick={() => void submit(undefined, sample)}>{sample}<ArrowRight size={14}/></button>)}</div>}
     </section>

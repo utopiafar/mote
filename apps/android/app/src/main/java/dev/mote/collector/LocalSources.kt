@@ -81,10 +81,7 @@ object SourceRules {
         is String -> JSONObject.quote(value)
         else -> value.toString()
     }
-    fun validAck(sourceId: String, body: JSONObject, ack: JSONObject?): Boolean = ack != null &&
-        ack.optString("sourceId") == sourceId && ack.optString("externalId") == body.optString("externalId") &&
-        ack.optString("revision") == body.optString("revision") && ack.opt("duplicate") is Boolean &&
-        runCatching { UUID.fromString(ack.getString("id")) }.isSuccess
+    fun validAck(sourceId: String, body: JSONObject, ack: JSONObject?): Boolean = IngressV2Protocol.validSource(sourceId, body, ack)
     fun contentHash(body: JSONObject): String = hash(canonical(JSONObject(body.toString()).apply { remove("observedAt"); remove("revision") }))
     fun withinWindow(body: JSONObject, from: Long?, until: Long?): Boolean {
         if (from == null || until == null) return true
@@ -99,6 +96,13 @@ data class SourceScan(val items: List<JSONObject>, val complete: Boolean, val ob
 class LocalSourceStore(private val directory: File, private val cipher: ByteCipher) {
     internal var onMutation: (() -> Unit)? = null
     init { directory.mkdirs() }
+    /** Keep source definitions, but force every source to start with a new v2 scan. */
+    fun resetForProtocolUpgrade() = synchronized(lock) {
+        directory.listFiles()?.filter { it.name != "config.enc" }?.forEach { file ->
+            check(file.deleteRecursively()) { "Unable to discard legacy source checkpoint" }
+        }
+        onMutation?.invoke()
+    }
     fun migrateLegacyContent(shouldStop: () -> Boolean = { false }, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int {
         val files = synchronized(lock) { directory.listFiles()?.filter { it.extension == "enc" }.orEmpty() }
         var changed = 0

@@ -9,7 +9,7 @@ import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 
 const owner='synthetic-owner-token-for-browser-tests';
-const auth=(token=owner)=>({authorization:`Bearer ${token}`});
+const auth=(token=owner)=>({authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'});
 async function fixture(t:TestContext){
   const dir=await mkdtemp(join(tmpdir(),'mote-capture-browser-'));
   const config:Config={dataDir:dir,token:owner,tokenPath:join(dir,'token'),host:'127.0.0.1',port:0,
