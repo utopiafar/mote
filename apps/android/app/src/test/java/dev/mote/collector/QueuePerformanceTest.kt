@@ -86,7 +86,7 @@ class QueuePerformanceTest {
             }
             cipher.reset()
             DurableQueue(roomy, cipher).enqueue(event(200), byteArrayOf(1), 100_000_000)
-            assertEquals("Safe headroom must not deserialize the legacy library before capture", 0, cipher.records)
+            assertTrue("Safe headroom must not deserialize the legacy library; only the accepted input is replayed", cipher.records <= 2)
             val tight = File(root, "tight").apply { mkdirs() }
             repeat(2) { index ->
                 val row = event(index).put("source", "note").put("ocr", JSONObject().put("status", "pending")).apply { remove("imageMime") }

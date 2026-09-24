@@ -126,3 +126,16 @@ it('serializes new scan commits with in-flight ACKs without replaying old revisi
  const newlyObserved=Array.from({length:400},(_,i)=>({...item,externalId:'new:'+i,text:'Generated '+i}));const stage=engine.stage(scan(newlyObserved,false),false);release();await Promise.all([upload,stage]);
  expect(saved).toHaveLength(401);expect(new Set(saved.map(row=>row.externalId)).size).toBe(401);expect(engine.status().pending).toBe(0);expect((await create()).status().pending).toBe(0);
 });
+
+it('adapter version changes reset only the scan checkpoint and preserve offline revisions',async()=>{
+ let engine=await create();await engine.ensurePolicy('same-privacy-policy');await engine.ensureAdapterVersion(1);
+ await engine.stage({...scan([item]),checkpoint:{version:1,cursor:'old-adapter'}},false,'2026-09-14T01:00:00Z');
+ expect(engine.status().pending).toBe(1);expect(engine.checkpoint()).toEqual({version:1,cursor:'old-adapter'});
+ engine=await create();await engine.ensurePolicy('same-privacy-policy');await engine.ensureAdapterVersion(2);
+ expect(engine.checkpoint()).toBeUndefined();expect(engine.status().pending).toBe(1);
+ await engine.stage({...scan([{...item,text:'Generated after adapter upgrade'}]),checkpoint:{version:2,cursor:'new-adapter'}},false,'2026-09-14T02:00:00Z');
+ engine=await create();expect(engine.status().pending).toBe(2);
+ const sent:SourceItem[]=[];await engine.flush(source,transport(sent));
+ expect(sent.map(value=>value.text)).toEqual([item.text,'Generated after adapter upgrade']);
+ expect(engine.status().pending).toBe(0);
+});

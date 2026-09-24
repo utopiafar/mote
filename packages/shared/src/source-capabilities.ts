@@ -12,13 +12,16 @@ export type SourceCapabilities={
   externalWrite:false;
   initialBody:'metadata-only'|'snapshot';
 };
-type Descriptor=Omit<SourceCapabilities,'version'|'initialBody'>;
+export type SourceCapabilityDescriptor=Omit<SourceCapabilities,'version'|'initialBody'>;
 export class SourceCapabilityRegistry {
-  private adapters=new Map<SourceConnection['kind'],Readonly<Descriptor>>();
-  register(kind:SourceConnection['kind'],descriptor:Descriptor){
+  private adapters=new Map<SourceConnection['kind'],Readonly<SourceCapabilityDescriptor>>();
+  register(kind:SourceConnection['kind'],descriptor:SourceCapabilityDescriptor){
     if(this.adapters.has(kind))throw Error('Source adapter is already registered');
     this.adapters.set(kind,Object.freeze({...descriptor}));
   }
+  has(kind:SourceConnection['kind']){return this.adapters.has(kind);}
+  unregister(kind:SourceConnection['kind']){this.adapters.delete(kind);}
+  clone(){const registry=new SourceCapabilityRegistry();for(const [kind,descriptor] of this.adapters)registry.register(kind,descriptor);return registry;}
   describe(source:Pick<SourceConnection,'kind'|'platform'|'retention'>):SourceCapabilities {
     const adapter=this.adapters.get(source.kind);
     if(!adapter)throw Error('Source adapter is not registered');
@@ -31,8 +34,8 @@ export class SourceCapabilityRegistry {
   }
 }
 export const sourceCapabilities=new SourceCapabilityRegistry();
-const local:Descriptor={lifecycle:'continuous',discovery:'local-selection',listening:'polling',readOriginal:'none',synchronization:'revisions',externalWrite:false};
-const provider:Descriptor={...local,discovery:'provider-list',readOriginal:'explicit-provider-read'};
+const local:SourceCapabilityDescriptor={lifecycle:'continuous',discovery:'local-selection',listening:'polling',readOriginal:'none',synchronization:'revisions',externalWrite:false};
+const provider:SourceCapabilityDescriptor={...local,discovery:'provider-list',readOriginal:'explicit-provider-read'};
 sourceCapabilities.register('local-files',{...local,listening:'filesystem',readOriginal:'collector-request'});
 sourceCapabilities.register('coding-agent',{...local,listening:'filesystem'});
 sourceCapabilities.register('local-calendar',local);

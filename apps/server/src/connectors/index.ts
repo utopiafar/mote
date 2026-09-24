@@ -1,53 +1,90 @@
-import { moteText } from '../i18n.js';
 import {join} from 'node:path';
-import type {FastifyInstance,FastifyReply,FastifyRequest} from 'fastify';
-import {z} from 'zod';
-import {ConnectorError,type ConnectorContext} from './types.js';
-import {equalToken,registerMcp,RemoteMcp} from './mcp.js';
+import {moteText} from '../i18n.js';
+import {ConnectorRegistry,type ConnectorManifest,type OwnerRoute} from './registry.js';
+import {registerMcp,RemoteMcp} from './mcp.js';
 import {GoogleCalendarConnector,type GoogleDependencies} from './google.js';
 import {GmailConnector} from './gmail.js';
 import {LarkConnector} from './lark.js';
 import type {LarkRunner} from './lark-cli.js';
-export type {ConnectorConfig,ConnectorContext} from './types.js';
+import type {ConnectorContext} from './types.js';
+import type {FastifyInstance} from 'fastify';
 
-export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:{google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner}) {
+export type {ConnectorConfig,ConnectorContext} from './types.js';
+export type {ConnectorManifest,ConnectorInstance,ConnectorHost,OwnerRoute,OAuthCallback} from './registry.js';
+
+type TestDependencies={google?:GoogleDependencies;gmail?:GoogleDependencies;lark?:LarkRunner};
+const larkRate={max:60,timeWindow:'1 minute'};
+
+function builtins(testing?:TestDependencies):ConnectorManifest[]{return [
+  {apiVersion:1,id:'mcp',sourceKinds:['mcp'],statusKey:'mcp',create:ctx=>{
+    const remote=new RemoteMcp(ctx);let inbound:ReturnType<typeof registerMcp>|undefined;
+    return {
+      status:()=>({enabled:Boolean(ctx.config.connectors?.mcpEnabled),readConfigured:Boolean(ctx.config.connectors?.mcpReadToken),writeEnabled:Boolean(ctx.config.connectors?.mcpWriteEnabled&&ctx.config.connectors?.mcpWriteToken&&ctx.config.connectors?.mcpWriteSourceIds?.length),writeSourceIds:ctx.config.connectors?.mcpWriteSourceIds??[],endpoint:'/mcp'}),
+      configure:host=>{
+        host.ownerRoute({method:'POST',path:'/api/connectors/mcp/discover',handler:req=>remote.discover(req.body)});
+        host.ownerRoute({method:'POST',path:'/api/connectors/mcp/import',handler:req=>remote.import(req.body)});
+      },
+      mountTransport:app=>{inbound=registerMcp(app,ctx);},
+      close:async()=>{await Promise.all([remote.close(),inbound?.close()]);},
+    };
+  }},
+  {apiVersion:1,id:'google-calendar',sourceKinds:['google-calendar'],statusKey:'google',create:ctx=>{
+    const google=new GoogleCalendarConnector(ctx,testing?.google);
+    return {
+      init:()=>google.init(),status:()=>google.status(),
+      configure:host=>{
+        host.ownerRoute({method:'POST',path:'/api/connectors/google/start',handler:()=>google.start()});
+        host.ownerRoute({method:'GET',path:'/api/connectors/google/calendars',handler:()=>google.calendars()});
+        host.ownerRoute({method:'PUT',path:'/api/connectors/google/calendars',handler:req=>google.select(req.body)});
+        host.ownerRoute({method:'POST',path:'/api/connectors/google/sync',handler:()=>google.sync()});
+        host.ownerRoute({method:'DELETE',path:'/api/connectors/google',handler:()=>google.disconnect()});
+        host.oauthCallback({path:'/oauth/google/callback',complete:(state,code)=>google.callback(state,code),successMessage:moteText('Google 日历已连接。请返回 Mote 选择需要同步的日历。'),failureMessage:moteText('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。')});
+      },
+      close:()=>google.close(),
+    };
+  }},
+  {apiVersion:1,id:'gmail',sourceKinds:['gmail'],statusKey:'gmail',create:ctx=>{
+    const gmail=new GmailConnector(ctx,testing?.gmail);
+    return {
+      init:()=>gmail.init(),status:()=>gmail.status(),
+      configure:host=>{
+        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/start',rateLimit:larkRate,bodyLimit:16384,handler:()=>gmail.start()});
+        host.ownerRoute({method:'POST',path:'/api/connectors/gmail/sync',rateLimit:larkRate,bodyLimit:16384,handler:()=>gmail.sync()});
+        host.ownerRoute({method:'DELETE',path:'/api/connectors/gmail',rateLimit:larkRate,bodyLimit:16384,handler:()=>gmail.disconnect()});
+        host.oauthCallback({path:'/oauth/google/callback',statePrefix:'gmail.',complete:(state,code)=>gmail.callback(state,code),successMessage:moteText('Gmail 已连接。请返回 Mote 同步邮件。'),failureMessage:moteText('授权未完成或已过期。请返回 Mote 重新连接 Google 日历。')});
+      },
+      close:()=>gmail.close(),
+    };
+  }},
+  {apiVersion:1,id:'lark',sourceKinds:['lark-docs','lark-calendar'],create:ctx=>{
+    const lark=new LarkConnector(ctx,testing?.lark);
+    return {
+      init:()=>lark.init(),
+      configure:host=>{
+        const route=(method:'GET'|'POST'|'PUT'|'DELETE',path:`/api/connectors/${string}`,handler:OwnerRoute['handler'])=>host.ownerRoute({method,path,rateLimit:larkRate,bodyLimit:16384,handler});
+        route('GET','/api/connectors/lark',()=>lark.status());
+        route('POST','/api/connectors/lark/check',()=>lark.refresh());
+        route('POST','/api/connectors/lark/install',()=>lark.startInstall());
+        route('POST','/api/connectors/lark/setup',()=>lark.startSetup());
+        route('POST','/api/connectors/lark/configure',req=>lark.configure(req.body));
+        route('POST','/api/connectors/lark/login',()=>lark.login());
+        route('POST','/api/connectors/lark/cancel',()=>lark.cancel());
+        route('GET','/api/connectors/lark/calendars',()=>lark.calendars());
+        route('PUT','/api/connectors/lark/selection',req=>lark.select(req.body));
+        route('POST','/api/connectors/lark/sync',()=>lark.startSync());
+        route('DELETE','/api/connectors/lark',()=>lark.disconnect());
+      },
+      close:()=>lark.close(),
+    };
+  }},
+];}
+
+/** Register built-ins plus trusted deployment modules before any route is mounted. */
+export async function registerConnectors(app:FastifyInstance,context:ConnectorContext,testing?:TestDependencies,additionalManifests:readonly ConnectorManifest[]=[]){
   const ctx={...context,config:{...context.config,connectors:{directory:join(context.config.dataDir,'connectors'),...context.config.connectors}}};
-  const google=new GoogleCalendarConnector(ctx,testing?.google),remote=new RemoteMcp(ctx),mcp=registerMcp(app,ctx);
-  await google.init();
-  const gmail=new GmailConnector(ctx,testing?.gmail);await gmail.init();
-  const lark=new LarkConnector(ctx,testing?.lark);await lark.init();
-  const owner=async(req:FastifyRequest,reply:FastifyReply)=>{if(!equalToken(req.headers.authorization,ctx.config.token))return reply.code(401).send({error:'unauthorized'});reply.header('Cache-Control','no-store');};
-  const action=(fn:(req:FastifyRequest)=>unknown)=>async(req:FastifyRequest,reply:FastifyReply)=>{
-    try{return await fn(req);}catch(error){const known=error instanceof ConnectorError;return reply.code(known?error.statusCode:error instanceof z.ZodError?400:502).send({error:known?error.code:error instanceof z.ZodError?'connector_input_invalid':'connector_operation_failed',requestId:req.id});}
-  };
-  app.get('/api/connectors/status',{preHandler:owner},()=>({mcp:{enabled:Boolean(ctx.config.connectors.mcpEnabled),readConfigured:Boolean(ctx.config.connectors.mcpReadToken),writeEnabled:Boolean(ctx.config.connectors.mcpWriteEnabled&&ctx.config.connectors.mcpWriteToken&&ctx.config.connectors.mcpWriteSourceIds?.length),writeSourceIds:ctx.config.connectors.mcpWriteSourceIds??[],endpoint:'/mcp'},google:google.status(),gmail:gmail.status()}));
-  const larkOptions={onRequest:owner,bodyLimit:16384,config:{rateLimit:{max:60,timeWindow:'1 minute'}}};
-  app.get('/api/connectors/lark',larkOptions,action(()=>lark.status()));
-  app.post('/api/connectors/lark/check',larkOptions,action(()=>lark.refresh()));
-  app.post('/api/connectors/lark/install',larkOptions,action(()=>lark.startInstall()));
-  app.post('/api/connectors/lark/setup',larkOptions,action(()=>lark.startSetup()));
-  app.post('/api/connectors/lark/configure',larkOptions,action(req=>lark.configure(req.body)));
-  app.post('/api/connectors/lark/login',larkOptions,action(()=>lark.login()));
-  app.post('/api/connectors/lark/cancel',larkOptions,action(()=>lark.cancel()));
-  app.get('/api/connectors/lark/calendars',larkOptions,action(()=>lark.calendars()));
-  app.put('/api/connectors/lark/selection',larkOptions,action(req=>lark.select(req.body)));
-  app.post('/api/connectors/lark/sync',larkOptions,action(()=>lark.startSync()));
-  app.delete('/api/connectors/lark',larkOptions,action(()=>lark.disconnect()));
-  app.post('/api/connectors/mcp/discover',{preHandler:owner},action(req=>remote.discover(req.body)));
-  app.post('/api/connectors/mcp/import',{preHandler:owner},action(req=>remote.import(req.body)));
-  app.post('/api/connectors/gmail/start',larkOptions,action(()=>gmail.start()));
-  app.post('/api/connectors/gmail/sync',larkOptions,action(()=>gmail.sync()));
-  app.delete('/api/connectors/gmail',larkOptions,action(()=>gmail.disconnect()));
-  app.post('/api/connectors/google/start',{preHandler:owner},action(()=>google.start()));
-  app.get('/api/connectors/google/calendars',{preHandler:owner},action(()=>google.calendars()));
-  app.put('/api/connectors/google/calendars',{preHandler:owner},action(req=>google.select(req.body)));
-  app.post('/api/connectors/google/sync',{preHandler:owner},action(()=>google.sync()));
-  app.delete('/api/connectors/google',{preHandler:owner},action(()=>google.disconnect()));
-  app.get('/oauth/google/callback',async(req,reply)=>{
-    reply.header('Cache-Control','no-store').header('Referrer-Policy','no-referrer').header('Content-Security-Policy',"default-src 'none'; style-src 'none'");
-    try{const input=z.object({state:z.string().min(20).max(200),code:z.string().min(1).max(4096)}).passthrough().parse(req.query);if(input.state.startsWith('gmail.')){await gmail.callback(input.state,input.code);return reply.type('text/plain; charset=utf-8').send(moteText("Gmail 已连接。请返回 Mote 同步邮件。"));}await google.callback(input.state,input.code);return reply.type('text/plain; charset=utf-8').send(moteText("Google 日历已连接。请返回 Mote 选择需要同步的日历。"));}
-    catch{return reply.code(400).type('text/plain; charset=utf-8').send(moteText("授权未完成或已过期。请返回 Mote 重新连接 Google 日历。"));}
-  });
-  let closed=false;
-  return {close:async()=>{if(closed)return;closed=true;await Promise.all([google.close(),gmail.close(),lark.close(),remote.close(),mcp.close()]);}};
+  const registry=new ConnectorRegistry(app,ctx);
+  for(const manifest of builtins(testing))registry.register(manifest);
+  await registry.loadModules(ctx.config.connectors.modules??[]);
+  for(const manifest of additionalManifests)registry.register(manifest);
+  return registry.start();
 }

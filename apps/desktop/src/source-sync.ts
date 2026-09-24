@@ -12,6 +12,9 @@ export const sourceHash = (value: string | Buffer): string => createHash('sha256
 export async function atomicSourceJson(path: string, value: unknown): Promise<void> { await sourceWork.run({ kind: 'json-write', path, value }); }
 
 type QueueName = 'realtime' | 'history';
+function isFileCheckpoint(value: SourceCheckpoint | undefined): value is LocalFileCheckpoint {
+  return Boolean(value && value.version === 1 && typeof (value as LocalFileCheckpoint).root === 'string');
+}
 interface Known { contentHash: string; revision: string; item: ScannedItem }
 interface RejectedItem { item: SourceItem; status: number }
 interface BatchResult { acks: Record<string, unknown>[]; rejected?: RejectedItem[] }
@@ -25,6 +28,7 @@ interface State {
   initialized?: boolean;
   baseline?: string[];
   policy?: string;
+  adapterVersion?: number;
   known: Record<string, Known>;
   pendingRealtime: SourceItem[];
   pendingHistory: SourceItem[];
@@ -71,7 +75,7 @@ export class SourceSync {
   /** Scanner borrows immutable catalog rows and records changes in its own draft. */
   fileCheckpoint(): LocalFileCheckpoint | undefined {
     const checkpoint=this.data.checkpoint;
-    return checkpoint&&'root' in checkpoint?{...structuredClone({...checkpoint,catalog:undefined}),catalog:checkpoint.catalog}:undefined;
+    return isFileCheckpoint(checkpoint)?{...structuredClone({...checkpoint,catalog:undefined}),catalog:checkpoint.catalog}:undefined;
   }
   initialized() { return Boolean(this.data.initialized); }
   private pendingItems(): SourceItem[] { return [...this.data.pendingRealtime, ...this.data.pendingHistory]; }
@@ -89,6 +93,19 @@ export class SourceSync {
     const retired = [...this.pendingItems(),...Object.values(this.data.quarantined??{}).map(value=>value.item)];
     await this.commit(next);
     await this.discardUnqueuedOriginals(retired);
+  }
+
+  /** Adapter upgrades rescan from a fresh checkpoint while retaining every
+   * unacknowledged revision and its local original until the server ACKs it. */
+  async ensureAdapterVersion(version:number):Promise<void>{
+    if(!Number.isSafeInteger(version)||version<1)throw Error('Invalid source adapter version');
+    return this.mutate(async()=>{
+      if((this.data.adapterVersion??1)===version){
+        if(this.data.adapterVersion===undefined)await this.commit({...this.data,adapterVersion:version});
+        return;
+      }
+      await this.commit({...this.data,adapterVersion:version,checkpoint:undefined});
+    });
   }
 
   async stage(scan: SourceScan, trackDeletions: boolean, observedAt = new Date().toISOString(), initialSync: 'all' | 'new_only' = 'all', defaultQueue: QueueName = scan.queue ?? 'realtime'): Promise<number> {
@@ -136,11 +153,12 @@ export class SourceSync {
       }
     }
     if (next.pendingRealtime.length + next.pendingHistory.length + Object.keys(next.quarantined??{}).length > this.limits.maxEvents) throw new Error(moteText("来源待同步队列已满（4000 项 / 32 MiB），请恢复网络后重试"));
-    if (scan.checkpoint) { next.checkpoint = scan.catalogChanges&&'root' in scan.checkpoint?{...scan.checkpoint,catalog:this.data.checkpoint&&'root' in this.data.checkpoint?this.data.checkpoint.catalog:{}}:scan.checkpoint; next.collectedItems = (next.collectedItems ?? 0) + changes; }
+    if (scan.catalogChanges && !isFileCheckpoint(scan.checkpoint)) throw new Error('File catalog changes require a file checkpoint');
+    if (scan.checkpoint) { next.checkpoint = scan.catalogChanges&&isFileCheckpoint(scan.checkpoint)?{...scan.checkpoint,catalog:isFileCheckpoint(this.data.checkpoint)?this.data.checkpoint.catalog:{}}:scan.checkpoint; next.collectedItems = (next.collectedItems ?? 0) + changes; }
     if([...next.pendingRealtime,...next.pendingHistory].reduce((n,item)=>n+(item.localOriginal?.sizeBytes??(item.localOriginalBase64?Math.floor(item.localOriginalBase64.length*3/4):0)),0)>512*1024*1024)throw Error('Original outbox exceeds 512 MiB; upload pending files before scanning more');
     await this.commit(next, this.limits.maxBytes,[...sourceStatePatch(this.data as unknown as Record<string,unknown>,next as unknown as Record<string,unknown>),...Array.from(knownChanges,([key,value])=>({section:'known',key,value})),...(scan.catalogChanges??[]).map(change=>({section:'catalog',...change}))]);
     for(const [key,value] of knownChanges){const previous=this.data.known[key];this.knownItems+=Number(!value.item.deleted)-Number(Boolean(previous&&!previous.item.deleted));this.data.known[key]=value;}
-    if(scan.catalogChanges&&this.data.checkpoint&&'root' in this.data.checkpoint)for(const {key,value} of scan.catalogChanges){if(value)this.data.checkpoint.catalog[key]=value;else delete this.data.checkpoint.catalog[key];}
+    if(scan.catalogChanges&&isFileCheckpoint(this.data.checkpoint))for(const {key,value} of scan.catalogChanges){if(value)this.data.checkpoint.catalog[key]=value;else delete this.data.checkpoint.catalog[key];}
     return changes;
   }
 

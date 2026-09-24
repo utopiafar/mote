@@ -46,9 +46,14 @@ export function sourceContentTime(record:{capturedAt:string;provenance?:{documen
   return document?.recordedAt??record.capturedAt;
 }
 export const sourceIdSchema=z.string().min(1).max(128).regex(/^[a-zA-Z0-9_.:-]+$/);
+/** Built-in source kinds remain stable; deployment plugins use a bounded dotted namespace. */
+export const sourceKindSchema=z.union([
+  z.enum(['local-calendar','local-files','coding-agent','google-calendar','gmail','lark-docs','lark-calendar','mcp','upload','custom']),
+  z.string().min(3).max(128).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.[a-z][a-z0-9]*(?:-[a-z0-9]+)*)+$/),
+]);
 export const sourceConnectionSchema=z.object({
   id:sourceIdSchema,name:z.string().trim().min(1).max(200),
-  kind:z.enum(['local-calendar','local-files','coding-agent','google-calendar','gmail','lark-docs','lark-calendar','mcp','upload','custom']),
+  kind:sourceKindSchema,
   deviceId:sourceIdSchema,platform:z.enum(['macos','windows','linux','android','import']),
   initialSync:z.enum(['all','new_only']).optional(),retention:z.enum(['snapshot','reference','archive']).default('snapshot'),enabled:z.boolean().default(true),
 }).strict();

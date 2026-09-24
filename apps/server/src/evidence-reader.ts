@@ -8,6 +8,7 @@ import type {FileStore} from './files.js';
 import type {Indexer} from './indexer.js';
 import type {FileEvidenceRequests} from './file-evidence.js';
 import type {ServerDiagnostics} from './diagnostics.js';
+import type {MaterialStore,MaterialMember,MaterialRecord} from './materials.js';
 import {contextIndex} from './context-index.js';
 import {browseSourceCatalog} from './source-catalog.js';
 
@@ -26,7 +27,7 @@ export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
 /** Long-lived read-only service. Never stores credentials or a previous request's scope. */
 export class EvidenceReader {
   readonly memories:MemoryStore;
-  constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidenceRequests){
+  constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidenceRequests,private readonly materials?:MaterialStore){
     this.memories=new MemoryStore(store,ids=>this.evidence(ids),id=>Boolean(files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
   }
   imageReference(ref:string,scope:Range={}){
@@ -73,20 +74,36 @@ export class EvidenceReader {
   catalog(args:Range&{path?:string;query?:string}={}){return contextIndex(this.store,{page:args=>this.memoryPage(args)},this.sources,args,args=>this.segments(args));}
   fileCatalog(sourceId:string,args:Parameters<typeof browseSourceCatalog>[2]){this.sources.getSource(sourceId);return browseSourceCatalog(this.store.db,sourceId,args);}
   private artifactMembers(id:string,revision:string,scope:Range={}){
-    const pending=[{id,revision}],seen=new Set<string>(),members=new Set<string>();
+    const pending=[{id,revision}],seen=new Set<string>(),directMembers=new Set<string>(),materialRefs=new Set<string>();
     while(pending.length){
       const ref=pending.pop()!,key=JSON.stringify(ref);if(seen.has(key))continue;seen.add(key);
       if(seen.size>1000)return;
       const row=this.store.db.prepare('SELECT revision,json FROM context_artifacts WHERE id=?').get(ref.id);
       if(!row||row.revision!==ref.revision)return;
-      const value=JSON.parse(String(row.json)) as {members:string[];parents?:{id:string;revision:string}[]};
-      for(const member of value.members){members.add(member);if(members.size>1000)return;}
+      const value=JSON.parse(String(row.json)) as {members:string[];parents?:{id:string;revision:string}[];materialInputs?:{ref:string}[]};
+      for(const member of value.members){directMembers.add(member);if(directMembers.size>1000)return;}
+      for(const input of value.materialInputs??[]){materialRefs.add(input.ref);if(materialRefs.size>1000)return;}
       pending.push(...value.parents??[]);if(pending.length>1000)return;
     }
-    if(!members.size)return;
+    if(!directMembers.size&&!materialRefs.size)return;
+    // A material-only artifact still has original captures. The material source
+    // ID can be logical (screen/state groups), so its members use the same
+    // source-scope rule as material_read rather than the direct-capture rule.
+    const members=new Set(directMembers);
+    for(const ref of materialRefs){
+      if(!this.materials)return;
+      let material:MaterialRecord|undefined;
+      try{material=this.materials.get(ref);}catch{return;}
+      if(!material||material.ref!==ref||this.materials.get(material.id)?.revision!==material.revision||members.size+material.memberCount>1000)return;
+      const scoped=this.scopedMaterial(ref,scope);if(!scoped)return;
+      for(const member of scoped.members){
+        const captureId=evidenceRefId(member.ref,'capture');if(!captureId)return;
+        members.add(captureId);if(members.size>1000)return;
+      }
+    }
     let firstAt:string|undefined,lastAt:string|undefined;
     for(const member of members){
-      const record=scopeRecord(this.store,member);if(!record||!withinEvidenceScope(record,scope))return;
+      const record=scopeRecord(this.store,member);if(!record||directMembers.has(member)&&!withinEvidenceScope(record,scope))return;
       const start=sourceContentTime(record),end=record.stateSeries?.samples.at(-1)?.at??start;
       if(scope.after&&Date.parse(start)<Date.parse(scope.after)||scope.before&&Date.parse(end)>=Date.parse(scope.before))return;
       if(!firstAt||Date.parse(start)<Date.parse(firstAt))firstAt=start;
@@ -129,10 +146,46 @@ export class EvidenceReader {
     const p=this.evidence([args.id],args)[0]?.provenance;if(!p)return [];
     return this.context(this.evidence(this.sources.history(p.sourceId,p.externalId).map(i=>i.captureId),args));
   }
+  /** A formal material is visible only when every original member remains in scope. */
+  private scopedMaterial(ref:string,scope:Range):{material:MaterialRecord;members:MaterialMember[]}|undefined {
+    const material=this.materials?.get(ref);if(!material)return;
+    if(scope.sourceId&&material.origin.sourceId!==scope.sourceId)return;
+    // Material source IDs are logical identities. Screen/state/authored records
+    // need not carry the same ID in capture provenance.
+    const memberScope={...scope,sourceId:undefined};
+    const members:MaterialMember[]=[];
+    for(let offset=0;offset<material.memberCount;offset+=200){
+      const page=this.materials!.members(material.ref,{offset,limit:200});
+      for(const member of page.items){
+        if(member.kind!=='capture')return;
+        const id=evidenceRefId(member.ref,'capture');if(!id)return;
+        const record=scopeRecord(this.store,id);
+        if(!record||!withinEvidenceScope(record,memberScope))return;
+        const first=sourceContentTime(record),last=record.stateSeries?.samples.at(-1)?.at??first;
+        if(scope.after&&Date.parse(first)<Date.parse(scope.after)||scope.before&&Date.parse(last)>=Date.parse(scope.before))return;
+        members.push(member);
+      }
+    }
+    return members.length?{material,members}:undefined;
+  }
+  materialCatalog(args:Range&{sourceId?:string;kind?:string}={}){
+    if(!this.materials)return {items:[],nextCursor:null};
+    const page=this.materials.list({sourceId:args.sourceId,kind:args.kind,deviceId:args.deviceId,after:args.after,before:args.before,limit:args.limit,cursor:args.cursor});
+    return {...page,items:page.items.filter(item=>Boolean(this.scopedMaterial(item.ref,args)))};
+  }
+  materialRead(args:Range&{ref:string;offset?:number;length?:number}){
+    const scoped=this.scopedMaterial(args.ref,args);if(!scoped||!this.materials)throw new StoreError('Material not found in selected scope',404);
+    const page=this.materials.read(scoped.material.ref,{offset:args.offset,length:args.length});
+    const relevant=new Set(page.spans.flatMap(span=>span.memberIds));
+    const originals=scoped.members.filter(member=>relevant.has(member.id)).map(member=>evidenceRefId(member.ref,'capture')).filter((id):id is string=>Boolean(id));
+    return {...page,originalRefs:originals.slice(0,30),originalRefsTotal:originals.length,originalRefsTruncated:originals.length>30};
+  }
   agent(options:{diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean}):ContextReader {
     const {store,sources}=this,{diagnostics}=options;
     return {
       catalog:async args=>this.catalog(args),
+      materialCatalog:async args=>this.materialCatalog(args),
+      materialRead:async args=>this.materialRead(args),
       readImage:async ({id})=>{if(!options.allowQueryImages?.())throw new StoreError('Query image disclosure is disabled',403);const captureId=evidenceRefId(id,'capture');if(!captureId)throw new StoreError('Invalid capture reference');const image=store.image(captureId);return {mimeType:image.mime,data:image.bytes.toString('base64')};},
       readFileEvidence:async args=>this.readFileEvidence(args),
       fileChunks:async args=>this.chunks(args),

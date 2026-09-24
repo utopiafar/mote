@@ -4,16 +4,18 @@ import {createHash} from 'node:crypto';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import {z} from 'zod';
 import {artifactOutput,type ArtifactOutput} from './evidence-archive.js';
+import {parseMaterialRef,type MaterialReadPage,type MaterialStore} from './materials.js';
 import {StoreError,type Store} from './store.js';
 
 const fingerprint=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const canonical=(value:unknown):unknown=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
 export type ProcessingLane='extract'|'aggregate'|'semantic'|'memory';
 export type ProcessingInput={id:string;fingerprint:string};
+export type ProcessingMaterialInput={ref:string;offset:number;length:number};
 export interface ContextProcessor {
   id:string;version:string;lane:ProcessingLane;
   /** All inputs are untrusted evidence. No Store or mutation capability is passed. */
-  process(input:{observations:ReturnType<Store['evidence']>;artifacts:{id:string;outputs:NonNullable<ReturnType<Store['archive']['get']>>[]}[];config:Record<string,unknown>;signal:AbortSignal;execution?:{operationId:string;jobId:string;stepId:string}}):Promise<ArtifactOutput[]>;
+  process(input:{observations:ReturnType<Store['evidence']>;materials:MaterialReadPage[];artifacts:{id:string;outputs:NonNullable<ReturnType<Store['archive']['get']>>[]}[];config:Record<string,unknown>;signal:AbortSignal;execution?:{operationId:string;jobId:string;stepId:string}}):Promise<ArtifactOutput[]>;
 }
 export class ContextProcessorRegistry {
   private processors=new Map<string,ContextProcessor>();
@@ -26,24 +28,26 @@ export class ContextProcessorRegistry {
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteContextProcessors:ContextProcessorRegistry;}}
 export class ProcessingFailure extends Error {constructor(readonly category:'transient'|'permanent'|'blocked',message:string=category){super(message);}}
-const stepSchema=z.object({name:z.string().regex(/^[\w.-]{1,80}$/),processor:z.string().max(100),inputs:z.array(z.string().uuid()).max(100).default([]),dependsOn:z.array(z.string().max(80)).max(32).default([]),artifactInputs:z.array(z.object({id:z.string().length(64),revision:z.string().length(64)}).strict()).max(32).default([]),config:z.record(z.unknown()).default({})}).strict();
+const materialInputSchema=z.object({ref:z.string().regex(/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/),offset:z.number().int().min(0).default(0),length:z.number().int().min(1).max(12000).default(4000)}).strict();
+const stepSchema=z.object({name:z.string().regex(/^[\w.-]{1,80}$/),processor:z.string().max(100),inputs:z.array(z.string().uuid()).max(100).default([]),materialInputs:z.array(materialInputSchema).max(32).default([]),dependsOn:z.array(z.string().max(80)).max(32).default([]),artifactInputs:z.array(z.object({id:z.string().length(64),revision:z.string().length(64)}).strict()).max(32).default([]),config:z.record(z.unknown()).default({})}).strict();
 export type ProcessingStep=z.input<typeof stepSchema>;
 const lanePolicy=z.object({concurrency:z.number().int().min(1).max(8),dailyCalls:z.number().int().min(0).max(100000),dailyInputCharacters:z.number().int().min(0).max(1000000000).default(1200000)}).strict();
 const policies=z.object({extract:lanePolicy,aggregate:lanePolicy,semantic:lanePolicy,memory:lanePolicy}).strict();
-type Job={id:string;processor:string;version:string;lane:ProcessingLane;inputs:ProcessingInput[];config:Record<string,unknown>;dependencies:string[];artifactInputs:{id:string;revision:string}[];outputs:string[]};
+type Job={id:string;processor:string;version:string;lane:ProcessingLane;inputs:ProcessingInput[];materialInputs:ProcessingMaterialInput[];config:Record<string,unknown>;dependencies:string[];artifactInputs:{id:string;revision:string}[];outputs:string[]};
 const lanes:ProcessingLane[]=['extract','aggregate','semantic','memory'];
 /** Durable DAG with fenced commits and per-lane admission. Cordis owns plugin life;
  * this host owns retries, budgets, lineage, cancellation and transaction boundaries. */
 export class ProcessingRuntime {
   readonly registry=new ContextProcessorRegistry();readonly context=new Context();
   readonly ready:Promise<void>;readonly engine:ExecutionEngine;private owned:boolean;private stopping=false;
-  constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;dailyCalls:number;dailyInputCharacters?:number}>>={},private now=Date.now,engine?:ExecutionEngine){
+  constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;dailyCalls:number;dailyInputCharacters?:number}>>={},private now=Date.now,engine?:ExecutionEngine,private materials?:MaterialStore){
     this.context.provide('moteContextProcessors',this.registry);
     store.db.exec(`CREATE TABLE IF NOT EXISTS processing_jobs(id TEXT PRIMARY KEY,lane TEXT NOT NULL,state TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,lease_until INTEGER NOT NULL DEFAULT 0,fence TEXT,error TEXT,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS processing_ready ON processing_jobs(lane,state,available_at);
       CREATE TABLE IF NOT EXISTS processing_dependencies(job_id TEXT NOT NULL REFERENCES processing_jobs(id) ON DELETE CASCADE,dependency_id TEXT NOT NULL REFERENCES processing_jobs(id),PRIMARY KEY(job_id,dependency_id));
       CREATE TABLE IF NOT EXISTS processing_usage(day TEXT NOT NULL,lane TEXT NOT NULL,calls INTEGER NOT NULL,input_characters INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(day,lane));`);
     if(!store.db.prepare('PRAGMA table_info(processing_usage)').all().some(r=>r.name==='input_characters'))store.db.exec('ALTER TABLE processing_usage ADD COLUMN input_characters INTEGER NOT NULL DEFAULT 0');
+    if(materials)store.archive.enableMaterialLineage();
     this.engine=engine??new ExecutionEngine(store,now);this.owned=!engine;
     for(const lane of lanes)this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,
       validate:step=>this.valid(this.job(step.id)),admit:step=>this.admit(this.job(step.id)),execute:(step,signal)=>this.process(this.job(step.id),signal,step),commit:(step,result)=>this.commit(this.job(step.id),result),project:step=>this.project(step),
@@ -62,11 +66,13 @@ export class ProcessingRuntime {
       const processor=this.registry.get(step.processor);if(!processor)throw new StoreError('Processor unavailable',409);
       if(JSON.stringify(step.config).length>16000)throw new StoreError('Processor configuration too large',413);
       for(const ref of step.artifactInputs)if(this.store.archive.revision(ref.id)!==ref.revision)throw new StoreError('Input artifact changed',409);
-      if(!step.inputs.length&&!step.artifactInputs.length&&!step.dependsOn.length)throw new StoreError('Workflow needs execution inputs',400);
+      if(step.materialInputs.length&&!this.materials)throw new StoreError('Material processor is unavailable',409);
+      for(const ref of step.materialInputs){const {id,revision}=parseMaterialRef(ref.ref);if(this.materials?.get(id)?.revision!==revision)throw new StoreError('Input material changed',409);this.materials!.read(ref.ref,{offset:ref.offset,length:ref.length});}
+      if(!step.inputs.length&&!step.materialInputs.length&&!step.artifactInputs.length&&!step.dependsOn.length)throw new StoreError('Workflow needs execution inputs',400);
       const inputs=[...new Set(step.inputs)].sort().map(id=>{const version=this.store.archive.fingerprint(id);if(!version)throw new StoreError('Workflow evidence unavailable',409);return {id,fingerprint:version};});
       const config=canonical(step.config) as Record<string,unknown>,dependencies=step.dependsOn.map(n=>ids.get(n)!).sort();
-      const id=fingerprint([processor.id,processor.version,inputs,config,dependencies,step.artifactInputs]);ids.set(step.name,id);
-      jobs.push({id,processor:processor.id,version:processor.version,lane:processor.lane,inputs,config,dependencies,artifactInputs:step.artifactInputs,outputs:[]});
+      const id=fingerprint([processor.id,processor.version,inputs,step.materialInputs,config,dependencies,step.artifactInputs]);ids.set(step.name,id);
+      jobs.push({id,processor:processor.id,version:processor.version,lane:processor.lane,inputs,materialInputs:step.materialInputs,config,dependencies,artifactInputs:step.artifactInputs,outputs:[]});
     }
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');try{
       this.store.reserveMetadata(jobs.reduce((n,j)=>n+Buffer.byteLength(JSON.stringify(j))+1024,0));
@@ -111,18 +117,19 @@ export class ProcessingRuntime {
   /** All execution ownership is in the shared engine, including dependency admission. */
   async tick(){if(this.stopping)return;await this.ready;const ids=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind LIKE 'context-dag.%' AND (state='waiting' OR (state='running' AND lease_until<=?)) ORDER BY rowid LIMIT 1000").all(this.now()).map(row=>String(row.id));await this.engine.drain(ids);}
   private valid(job:Job){
-    return !this.stopping&&(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
+    return !this.stopping&&(job.artifactInputs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision)&&(job.materialInputs??[]).every(ref=>{const {id,revision}=parseMaterialRef(ref.ref);return this.materials?.get(id)?.revision===revision;})&&job.inputs.every(i=>this.store.archive.fingerprint(i.id)===i.fingerprint)&&job.dependencies.every(dep=>{
       const parent=this.engine.get(dep);return parent?.state!=='succeeded'||this.job(dep).outputs.every(out=>this.store.archive.get(out));
     });
   }
   private inputs(job:Job){
     const artifacts=job.dependencies.map(dep=>this.job(dep)).map(parent=>({id:parent.id,outputs:parent.outputs.map(id=>this.store.archive.get(id)!)})).concat((job.artifactInputs??[]).map(ref=>({id:ref.id,outputs:[this.store.archive.get(ref.id)!]})));
-    return {observations:this.store.evidence(job.inputs.map(i=>i.id)),artifacts};
+    const materials=(job.materialInputs??[]).map(ref=>this.materials!.read(ref.ref,{offset:ref.offset,length:ref.length}));
+    return {observations:this.store.evidence(job.inputs.map(i=>i.id)),materials,artifacts};
   }
   private admit(job:Job){
     const processor=this.registry.get(job.processor);
     if(!processor||processor.version!==job.version)return new ExecutionFailure('blocked','processor_version_unavailable');
-    const {observations,artifacts}=this.inputs(job),characters=observations.reduce((n,r)=>n+r.ocrText.length,0)+artifacts.reduce((n,a)=>n+a.outputs.reduce((m,o)=>m+o.text.length,0),0);
+    const {observations,materials,artifacts}=this.inputs(job),characters=observations.reduce((n,r)=>n+r.ocrText.length,0)+materials.reduce((n,page)=>n+page.text.length,0)+artifacts.reduce((n,a)=>n+a.outputs.reduce((m,o)=>m+o.text.length,0),0);
     const day=new Date(this.now()).toISOString().slice(0,10),policy=this.settings()[job.lane],db=this.store.db;
     const usage=db.prepare('SELECT calls,input_characters FROM processing_usage WHERE day=? AND lane=?').get(day,job.lane);
     if(characters>policy.dailyInputCharacters)return new ExecutionFailure('blocked','input_budget');
@@ -135,7 +142,7 @@ export class ProcessingRuntime {
     if(this.registry.get(job.processor)?.version!==job.version)throw new ExecutionFailure('blocked','processor_version_unavailable');
     const outputs=z.array(artifactOutput).min(1).max(16).parse(result);if(JSON.stringify(outputs).length>200000)throw new ProcessingFailure('permanent','output_limit');
     const {artifacts}=this.inputs(job);
-    job.outputs=outputs.map((output,index)=>{const artifactId=fingerprint([job.id,index]);this.store.archive.save(artifactId,job.id,job.id,output,job.inputs,job.processor,job.version,fingerprint(job.config),job.inputs.map(i=>i.id),artifacts.flatMap(a=>a.outputs.map(o=>({id:o.id,revision:o.revision}))));return artifactId;});
+    job.outputs=outputs.map((output,index)=>{const artifactId=fingerprint([job.id,index]);this.store.archive.save(artifactId,job.id,job.id,output,job.inputs,job.processor,job.version,fingerprint(job.config),job.inputs.map(i=>i.id),artifacts.flatMap(a=>a.outputs.map(o=>({id:o.id,revision:o.revision}))),job.materialInputs??[]);return artifactId;});
     this.store.db.prepare('UPDATE processing_jobs SET json=? WHERE id=?').run(JSON.stringify(job),job.id);
   }
   async close(){if(this.owned)await this.engine.close();this.stopping=true;await this.ready.catch(()=>{});await this.context.fiber.dispose();}

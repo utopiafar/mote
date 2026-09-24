@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,readFile,stat} from 'node:fs/promises';
+import {mkdtemp,rm,readFile,stat,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {randomUUID,createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import type {AddressInfo} from 'node:net';
@@ -13,8 +14,11 @@ import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {StreamableHTTPServerTransport} from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {OAuth2Client} from 'google-auth-library';
 import {Store} from '../src/store.js';
+import {MaterialStore,materialId} from '../src/materials.js';
+import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {SourceStore} from '../src/sources.js';
 import {registerConnectors} from '../src/connectors/index.js';
+import {ConnectorRegistry,type ConnectorManifest} from '../src/connectors/registry.js';
 import {RemoteMcp,registerMcp} from '../src/connectors/mcp.js';
 import {GoogleCalendarConnector,calendarBoundary,googleItem,type GoogleDependencies} from '../src/connectors/google.js';
 import {publicAddress,remoteUrl,restrictedFetch} from '../src/connectors/network.js';
@@ -33,6 +37,73 @@ async function fixture(t:any){
 }
 const item=(text='Synthetic evidence')=>({externalId:'synthetic-item',revision:randomUUID(),observedAt:new Date().toISOString(),title:'Synthetic item',text,kind:'file',layer:'original'});
 
+test('trusted deployment connector modules register new source kinds and owner routes without core edits',async t=>{
+  const {ctx,directory,sources,store}=await fixture(t),modulePath=join(directory,'synthetic-connector.mjs');
+  const materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);ctx.materials=materials;ctx.materialOrganizers=organizers;
+  await assert.rejects(Promise.resolve().then(()=>sources.register({id:'synthetic-notes',name:'Synthetic notes',kind:'synthetic.notes',deviceId:'synthetic-notes',platform:'import'})),/Source adapter is not installed/);
+  await writeFile(modulePath,`import {createHash} from 'node:crypto';
+export const events=[];
+const materialId=(sourceId,externalId)=>'mat_'+createHash('sha256').update(JSON.stringify([sourceId,externalId])).digest('hex');
+export default {
+  apiVersion:1,id:'synthetic',statusKey:'synthetic',
+  sourceKinds:[{kind:'synthetic.notes',capabilities:{lifecycle:'one-shot',discovery:'explicit-selection',listening:'none',readOriginal:'none',synchronization:'import-only',externalWrite:false}}],
+  create(ctx){events.push('create');let unregisterOrganizer;return {
+    async init(){unregisterOrganizer=ctx.materialOrganizers.registry.register({
+      id:'synthetic.note-bundle',version:'1',slot:'source-item',priority:10,
+      select:record=>record.provenance?.sourceId==='synthetic-notes'?{sourceId:record.provenance.sourceId,externalId:record.provenance.externalId}:undefined,
+      identity:group=>materialId(group.sourceId,group.externalId),
+      build(store,group){const head=store.db.prepare('SELECT capture_id,deleted FROM source_heads WHERE source_id=? AND external_id=?').get(group.sourceId,group.externalId);if(!head||head.deleted)return;const record=store.evidence([head.capture_id])[0];if(!record)return;
+        return {id:materialId(group.sourceId,group.externalId),kind:'synthetic.note-bundle',schemaVersion:1,title:record.windowTitle||'Synthetic',origin:{...group,deviceId:record.deviceId,firstAt:record.capturedAt,lastAt:record.capturedAt},
+          blocks:[{id:'body',kind:'text',format:'plain',text:record.ocrText,memberIds:[record.id]}],members:[{id:record.id,kind:'capture',ref:'capture:'+record.id}],coverage:{state:'complete'},fidelity:{state:'lossless'},retention:{original:'retained',policy:'keep'}};}
+    });ctx.sources.register({id:'synthetic-notes',name:'Synthetic notes',kind:'synthetic.notes',deviceId:'synthetic-notes',platform:'import'});events.push('init');},
+    status(){return {ready:true};},
+    configure(host){host.ownerRoute({method:'POST',path:'/api/connectors/synthetic/sync',handler:request=>ctx.sources.upsert('synthetic-notes',{externalId:'note-1',revision:'v1',observedAt:'2026-09-01T00:00:00Z',title:'Synthetic',text:String(request.body.text),kind:'file',layer:'original'})});host.oauthCallback({path:'/oauth/synthetic/callback',complete:async(state,code)=>{if(!state.startsWith('synthetic.')||code!=='valid')throw Error('invalid');events.push('callback');},successMessage:'Connected',failureMessage:'Invalid callback'});},
+    close(){unregisterOrganizer?.();events.push('close');}
+  };}
+};`);
+  ctx.config.connectors!.modules=[pathToFileURL(modulePath).href];
+  const app=Fastify(),connectors=await registerConnectors(app,ctx);
+  t.after(async()=>{await connectors.close();await app.close();});
+  assert.ok(organizers.registry.list().some(value=>value.id==='synthetic.note-bundle'));
+  const route='/api/connectors/synthetic/sync';
+  assert.equal((await app.inject({method:'POST',url:route,headers:{'content-type':'application/json'},payload:'{"'})).statusCode,401);
+  assert.equal((await app.inject({url:'/api/connectors/status',headers:{authorization:`Bearer ${owner}`}})).json().synthetic.ready,true);
+  const synced=await app.inject({method:'POST',url:route,headers:{authorization:`Bearer ${owner}`},payload:{text:'Generated fixture note'}});
+  assert.equal(synced.statusCode,200);assert.equal(sources.getItem('synthetic-notes','note-1')?.text,'Generated fixture note');
+  await organizers.tick();const organized=materials.list({sourceId:'synthetic-notes'}).items;
+  assert.equal(organized.length,1);assert.equal(organized[0].kind,'synthetic.note-bundle');
+  assert.equal(materials.read(organized[0].ref).text,'Generated fixture note\n');
+  const invalid=await app.inject({url:'/oauth/synthetic/callback?state=short&code=valid'});assert.equal(invalid.statusCode,400);assert.equal(invalid.headers['content-security-policy'],"default-src 'none'; style-src 'none'");
+  const callback=await app.inject({url:`/oauth/synthetic/callback?state=synthetic.${'a'.repeat(32)}&code=valid`});assert.equal(callback.statusCode,200);assert.equal(callback.body,'Connected');
+  const module=await import(pathToFileURL(modulePath).href) as {events:string[]};assert.deepEqual(module.events,['create','init','callback']);
+  await connectors.close();assert.deepEqual(module.events,['create','init','callback','close']);
+  assert.ok(!organizers.registry.list().some(value=>value.id==='synthetic.note-bundle'));
+  assert.equal(sources.getSource('synthetic-notes').enabled,false);assert.equal(sources.getSource('synthetic-notes').status?.code,'source_adapter_unavailable');
+  await assert.rejects(sources.upsert('synthetic-notes',item()),/Source is paused/);
+});
+
+test('connector registry rejects duplicate manifests and disposes a failed initializer',async t=>{
+  const {ctx}=await fixture(t),app=Fastify();t.after(()=>app.close());
+  const registry=new ConnectorRegistry(app,ctx),events:string[]=[];
+  const manifest:ConnectorManifest={apiVersion:1,id:'synthetic-failure',sourceKinds:[{kind:'synthetic.failure',capabilities:{lifecycle:'one-shot',discovery:'explicit-selection',listening:'none',readOriginal:'none',synchronization:'import-only',externalWrite:false}}],create:()=>({init:async()=>{events.push('init');throw Error('Synthetic initialization failure');},close:()=>{events.push('close');}})};
+  registry.register(manifest);
+  assert.throws(()=>registry.register(manifest),/already registered/);
+  await assert.rejects(registry.start(),/Synthetic initialization failure/);
+  assert.deepEqual(events,['init','close']);assert.equal(ctx.sources.capabilities.has('synthetic.failure'),false);
+});
+
+test('shared OAuth callback paths dispatch declared state prefixes and keep callback responses restrictive',async t=>{
+  const {ctx}=await fixture(t),app=Fastify(),registry=new ConnectorRegistry(app,ctx),seen:string[]=[];
+  t.after(async()=>{await registry.close();await app.close();});
+  registry.register({apiVersion:1,id:'default-oauth',sourceKinds:[],create:()=>({configure:host=>host.oauthCallback({path:'/oauth/shared/callback',complete:async()=>{seen.push('default');},successMessage:'Default connected',failureMessage:'Default rejected'})})});
+  registry.register({apiVersion:1,id:'prefixed-oauth',sourceKinds:[],create:()=>({configure:host=>host.oauthCallback({path:'/oauth/shared/callback',statePrefix:'mail.',complete:async()=>{seen.push('mail');},successMessage:'Mail connected',failureMessage:'Mail rejected'})})});
+  await registry.start();
+  const mail=await app.inject({url:`/oauth/shared/callback?state=mail.${'a'.repeat(32)}&code=fixture`});
+  assert.equal(mail.statusCode,200);assert.equal(mail.body,'Mail connected');assert.equal(mail.headers['cache-control'],'no-store');assert.equal(mail.headers['content-security-policy'],"default-src 'none'; style-src 'none'");
+  const general=await app.inject({url:`/oauth/shared/callback?state=${'b'.repeat(32)}&code=fixture`});
+  assert.equal(general.statusCode,200);assert.equal(general.body,'Default connected');assert.deepEqual(seen,['mail','default']);
+});
+
 test('MCP rejects unauthorized bodies before parsing and preserves authenticated requests',async t=>{
   const {ctx}=await fixture(t),app=Fastify({bodyLimit:12*1024*1024});let parsed=0;
   app.addHook('preParsing',async(_req,_reply,payload)=>{parsed++;return payload;});
@@ -50,6 +121,26 @@ test('MCP rejects unauthorized bodies before parsing and preserves authenticated
   assert.equal(parsed,1,'Only authorized requests may enter the body parser');
   const next=await app.inject({method:'POST',url:'/mcp',headers,payload:{jsonrpc:'2.0',id:1,method:'tools/list',params:{}}});
   assert.equal(next.statusCode,200);assert.ok(next.json().result.tools.length);
+});
+
+test('MCP material tools expose bounded formal revisions only to read credentials',async t=>{
+  const {ctx,store}=await fixture(t),materials=new MaterialStore(store);ctx.materials=materials;
+  const id=materialId('allowed','synthetic-material');
+  const saved=materials.publish({id,kind:'document',schemaVersion:1,title:'Generated note',origin:{sourceId:'allowed',externalId:'synthetic-material'},blocks:[{id:'body',kind:'text',format:'plain',text:'Generated evidence body',memberIds:['member-1']}],members:[{id:'member-1',kind:'source-item',ref:'allowed:synthetic-material',locator:{line:1}}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'unavailable',policy:'keep'}});
+  const app=Fastify(),connector=registerMcp(app,ctx);t.after(async()=>{await connector.close();await app.close();});
+  const call=async(token:string,id:number,method:string,params:Record<string,unknown>={})=>{
+    const result=await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${token}`,'content-type':'application/json',accept:'application/json, text/event-stream'},payload:{jsonrpc:'2.0',id,method,params}});
+    assert.equal(result.statusCode,200);return result.json().result;
+  };
+  const readerTools=(await call(readToken,1,'tools/list')).tools.map((tool:{name:string})=>tool.name);
+  assert.ok(readerTools.includes('mote_materials'));assert.ok(readerTools.includes('mote_material_read'));
+  assert.deepEqual((await call(writeToken,2,'tools/list')).tools.map((tool:{name:string})=>tool.name),['mote_put_item']);
+  const catalog=jsonResult(await call(readToken,3,'tools/call',{name:'mote_materials',arguments:{sourceId:'allowed'}}));
+  assert.equal(catalog.items[0].ref,saved.ref);assert.equal(catalog.items[0].textLength,'Generated evidence body\n'.length);
+  const read=jsonResult(await call(readToken,4,'tools/call',{name:'mote_material_read',arguments:{ref:saved.ref,offset:0,length:9}}));
+  assert.equal(read.text,'Generated');assert.equal(read.spans[0].memberIds[0],'member-1');
+  const members=jsonResult(await call(readToken,5,'tools/call',{name:'mote_material_members',arguments:{ref:saved.ref}}));
+  assert.deepEqual(members.items[0].locator,{line:1});
 });
 
 test('MCP real SDK isolates read/write credentials, scopes writes and exposes bounded complete archive reads',async t=>{

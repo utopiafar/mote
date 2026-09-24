@@ -3,6 +3,8 @@ import type {Store} from '../store.js';
 
 export interface ConnectorConfig {
   directory: string;
+  /** Trusted installed modules exporting a versioned ConnectorManifest. */
+  modules?: string[];
   mcpEnabled?: boolean;
   mcpReadToken?: string;
   mcpWriteEnabled?: boolean;
@@ -17,6 +19,9 @@ export interface ConnectorConfig {
 export interface ConnectorContext {
   evidenceReader?: import('../evidence-reader.js').EvidenceReader;
   contextQuery?: import('../context-query.js').ContextQuery;
+  materials?: import('../materials.js').MaterialStore;
+  materialOrganizers?: import('../material-organizers.js').MaterialOrganizerRuntime;
+  processing?: import('../processing-runtime.js').ProcessingRuntime;
   files?: import('../files.js').FileStore;
   sources: SourceStore;
   store: Store;

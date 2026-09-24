@@ -1,6 +1,10 @@
 # 中央连接器
 
-连接器把用户选择的外部资料写入统一信源版本链。文件、日历和 MCP 内容始终是原始证据或明确标记的引用；Agent 负责理解，程序不按关键词分类意图。修改产生新 revision，重试同一 revision 不重复保存，旧版本保留供追溯。日历的计划时间独立于采集时间，也不会计入屏幕采样时长。
+连接器把用户选择的外部资料写入统一信源版本链。文件、日历和 MCP 内容始终是原始证据或明确标记的引用；Agent 负责理解，程序不按关键词分类意图。修改产生新 revision，重试同一 revision 不重复保存，旧版本保留供追溯。日历的计划时间独立于采集时间，也不会计入屏幕采样时长。新增来源、资料组织器和模型读取层的完整流程见[接入与正式资料架构](material-architecture.md)。
+
+## 可扩展连接器
+
+中央内置 Google 日历、Gmail、飞书和 MCP 使用版本化 connector manifest。可信部署模块可通过 `MOTE_CONNECTOR_PLUGINS` 的 JSON 模块列表装入，例如 `MOTE_CONNECTOR_PLUGINS='["file:///srv/mote/plugins/acme-notes.mjs"]'`。模块声明来源种类与能力，启动时注册 owner 路由、OAuth 回调及状态，关闭时释放后台任务；新增有界点分命名空间种类必须提供能力声明。未安装适配器的已有来源可读，但不可继续同步。manifest 示例、资料身份、处理与安全边界见[接入与正式资料架构](material-architecture.md)。
 
 ## Google 日历
 
@@ -59,10 +63,13 @@ MCP 凭据必须与中央 owner 令牌分开。把 `/mcp` 的 HTTPS URL 与只�
 | `mote_context` | 在预算内组合已发布记忆、最近会话和原始记录；不启动第二个 Agent |
 | `mote_status` | 查看归档、索引、记忆和来源同步水位；缺失不代表离线端没有待同步数据 |
 | `mote_sources` | 信源目录、保留模式与同步状态 |
+| `mote_materials` | 浏览正式资料目录、当前修订、覆盖和保真状态 |
+| `mote_material` | 读取一份正式资料的出处与修订元数据 |
+| `mote_material_read` | 按固定修订及偏移读取有界正文与块定位 |
+| `mote_material_members` | 分页读取正式资料的原始成员与定位 |
 | `mote_items` | 当前信源条目；日历按计划时间筛选，正文先给片段 |
 | `mote_history` | 比较某来源条目的历史版本与移除状态 |
 | `mote_timeline` | 当前归档时间线，包含截图、随手记与信源 |
-| `mote_search` | 通用文本检索，由调用方 Agent 选择查询内容 |
 | `mote_activity` | 实测屏幕采样区间汇总 |
 | `mote_memories` | 先读取概要，传入 id 展开派生记忆与 evidenceIds |
 | `mote_evidence` | 按 id、offset、length 展开原文；每段最多 12,000 UTF-16 单元 |

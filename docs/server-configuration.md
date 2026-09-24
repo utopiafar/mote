@@ -147,6 +147,7 @@ Caddy 使用 profile 文件中的 `MOTE_TLS_DOMAIN`、`MOTE_TLS_HTTP_PORT`（80�
 | `MOTE_GOOGLE_CLIENT_SECRET` | 空 | OAuth 客户端密钥；仅保存于私有配置 |
 | `MOTE_GOOGLE_REDIRECT_URI` | 空 | 完整 `/oauth/google/callback` 地址，必须与 Google 登记一致；非回环地址要求 HTTPS |
 | `MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS` | `900` | 已授权来源自动同步间隔，范围 60–86400 秒 |
+| `MOTE_CONNECTOR_PLUGINS` | `[]` | 最多 30 个可信已安装连接器模块的 JSON 列表；支持包名或 `file:` URL，在中央进程内执行；详见[接入与正式资料架构](material-architecture.md) |
 
 Google 三项配置需要一起填写，然后在“来源”页完成账户授权并选择日历。令牌保存在 `MOTE_DATA_DIR/connectors/` 的私有文件中，不进入 HTTP 资料导出或诊断包；迁移外部授权时请按[连接器说明](connectors.md)操作。修改环境文件后重启中央节点。
 

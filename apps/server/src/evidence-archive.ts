@@ -6,7 +6,8 @@ import type {Store,Range} from './store.js';
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const artifactOutput=z.object({kind:z.string().min(1).max(80),text:z.string().max(12000),metadata:z.record(z.unknown()).default({})}).strict();
 export type ArtifactOutput=z.infer<typeof artifactOutput>;
-export type Artifact={id:string;revision:string;kind:string;processor:string;processorVersion:string;configFingerprint:string;generatedAt:string;firstAt:string;lastAt:string;deviceId:string;appId:string;source:string;members:string[];representatives:string[];contentHash:string;metadata:Record<string,unknown>;parents?:{id:string;revision:string}[]};
+export type ArtifactMaterialInput={ref:string;offset:number;length:number};
+export type Artifact={id:string;revision:string;kind:string;processor:string;processorVersion:string;configFingerprint:string;generatedAt:string;firstAt:string;lastAt:string;deviceId:string;appId:string;source:string;members:string[];representatives:string[];contentHash:string;metadata:Record<string,unknown>;parents?:{id:string;revision:string}[];materialInputs?:ArtifactMaterialInput[]};
 export function observationKey(record:{id:string;deviceId:string;capturedAt:string;source:string;appId?:string;windowTitle?:string;provenance?:CaptureRecord['provenance']}){
   // Mechanical boundaries, not an assertion that an app/window is one human task.
   // Only screen/UI samples can coalesce. Authored records keep their own identity.
@@ -75,6 +76,24 @@ export class EvidenceArchive {
       INSERT INTO settings VALUES('evidence-archive-v1','1'); COMMIT;`);
   }
   revision(id:string){return this.store.db.prepare('SELECT revision FROM context_artifacts WHERE id=?').get(id)?.revision;}
+  /** Installed after MaterialStore creates its tables. Revision changes invalidate
+   * derived artifacts and their descendants through the existing archive graph. */
+  enableMaterialLineage(){this.store.db.exec(`
+    CREATE TABLE IF NOT EXISTS artifact_material_inputs(
+      artifact_id TEXT NOT NULL REFERENCES context_artifacts(id) ON DELETE CASCADE,
+      material_id TEXT NOT NULL REFERENCES material_heads(id) ON DELETE CASCADE,
+      revision TEXT NOT NULL,PRIMARY KEY(artifact_id,material_id));
+    CREATE INDEX IF NOT EXISTS artifact_material_parent ON artifact_material_inputs(material_id);
+    CREATE TRIGGER IF NOT EXISTS artifact_material_revision_change AFTER UPDATE OF revision,retired ON material_heads
+      WHEN new.revision!=old.revision OR new.retired!=old.retired BEGIN
+      DELETE FROM context_artifacts WHERE id IN
+        (SELECT artifact_id FROM artifact_material_inputs WHERE material_id=new.id AND revision!=new.revision);
+    END;
+    CREATE TRIGGER IF NOT EXISTS artifact_material_removed BEFORE DELETE ON material_heads BEGIN
+      DELETE FROM context_artifacts WHERE id IN
+        (SELECT artifact_id FROM artifact_material_inputs WHERE material_id=old.id);
+    END;
+  `);}
   fingerprint(id:string){const row=this.store.db.prepare('SELECT fingerprint FROM captures WHERE id=?').get(id);if(!row||!this.store.isCurrentEvidence(id))return null;return hash([row.fingerprint,this.store.db.prepare("SELECT kind,json_extract(json,'$.text') AS text FROM perception_results WHERE capture_id=? AND current=1 ORDER BY kind").all(id)]);}
   /** Incremental, deterministic exact-text reduction. No semantic inference or model calls. */
   aggregate(limit=32,settledBefore?:number){
@@ -121,17 +140,35 @@ export class EvidenceArchive {
     }
     return groups.length;
   }
-  save(id:string,group:string,revision:string,output:ArtifactOutput,inputs:{id:string;fingerprint:string}[],processor:string,version:string,configFingerprint:string,representatives=inputs.map(i=>i.id),parents:{id:string;revision:string}[]=[]){
+  save(id:string,group:string,revision:string,output:ArtifactOutput,inputs:{id:string;fingerprint:string}[],processor:string,version:string,configFingerprint:string,representatives=inputs.map(i=>i.id),parents:{id:string;revision:string}[]=[],materialInputs:ArtifactMaterialInput[]=[]){
     const db=this.store.db,records=inputs.map(i=>db.prepare("SELECT captured_at AS capturedAt,device_id AS deviceId,json_extract(json,'$.appId') AS appId,json_extract(json,'$.source') AS source FROM captures WHERE id=?").get(i.id)).filter(Boolean) as {capturedAt:string;deviceId:string;appId:string;source:string}[],upstream=parents.map(ref=>this.get(ref.id));
-    if((!records.length&&!parents.length)||parents.some((ref,i)=>upstream[i]?.revision!==ref.revision)||inputs.some(i=>this.fingerprint(i.id)!==i.fingerprint))throw new Error('evidence_changed');
-    const scopeRecords=[...records,...upstream.flatMap(a=>a?[{capturedAt:a.firstAt,deviceId:a.deviceId,appId:a.appId,source:a.source},{capturedAt:a.lastAt,deviceId:a.deviceId,appId:a.appId,source:a.source}]:[])],times=scopeRecords.map(r=>r.capturedAt).sort(),contentHash=hash(output.text);
-    const artifact:Artifact={id,revision,kind:output.kind,processor,processorVersion:version,configFingerprint,generatedAt:new Date().toISOString(),firstAt:times[0],lastAt:times.at(-1)!,deviceId:scopeRecords.every(r=>r.deviceId===scopeRecords[0].deviceId)?scopeRecords[0].deviceId:'',appId:scopeRecords.every(r=>r.appId===scopeRecords[0].appId)?scopeRecords[0].appId:'',source:scopeRecords.every(r=>r.source===scopeRecords[0].source)?scopeRecords[0].source:'',members:inputs.map(i=>i.id),representatives,contentHash,metadata:output.metadata,parents};
+    if(materialInputs.length>32)throw new Error('material_input_limit');
+    const materialHeads=materialInputs.map(ref=>{const match=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/.exec(ref.ref);if(!match||!Number.isSafeInteger(ref.offset)||ref.offset<0||!Number.isSafeInteger(ref.length)||ref.length<1||ref.length>12000)throw new Error('evidence_changed');
+      const head=db.prepare('SELECT id,first_at,last_at,created_at FROM material_heads WHERE id=? AND revision=? AND retired=0').get(match[1],match[2]) as {id:string;first_at:string|null;last_at:string|null;created_at:string}|undefined;
+      if(!head)throw new Error('evidence_changed');
+      // Query indexes describe original captures, not the connector's logical
+      // source ID. A material with unverifiable members remains unscoped here
+      // and is rejected by EvidenceReader before model disclosure.
+      const summary=db.prepare(`SELECT COUNT(*) AS members,
+        SUM(CASE WHEN m.kind='capture' AND c.id IS NOT NULL THEN 1 ELSE 0 END) AS captures,
+        MIN(c.device_id) AS min_device,MAX(c.device_id) AS max_device,
+        MIN(COALESCE(json_extract(c.json,'$.appId'),'')) AS min_app,MAX(COALESCE(json_extract(c.json,'$.appId'),'')) AS max_app,
+        MIN(COALESCE(json_extract(c.json,'$.source'),'')) AS min_source,MAX(COALESCE(json_extract(c.json,'$.source'),'')) AS max_source
+        FROM material_members m LEFT JOIN captures c ON c.id=CASE WHEN m.kind='capture' AND substr(m.ref,1,8)='capture:' THEN substr(m.ref,9) WHEN m.kind='capture' THEN m.ref END
+        WHERE m.material_id=? AND m.revision=?`).get(head.id,match[2]) as {members:number;captures:number|null;min_device:string|null;max_device:string|null;min_app:string|null;max_app:string|null;min_source:string|null;max_source:string|null};
+      const verified=summary.members>0&&summary.members===summary.captures;
+      const only=(min:string|null,max:string|null)=>verified&&min!==null&&min===max?min:'';
+      return {head,revision:match[2],scope:{deviceId:only(summary.min_device,summary.max_device),appId:only(summary.min_app,summary.max_app),source:only(summary.min_source,summary.max_source)}};});
+    if((!records.length&&!parents.length&&!materialHeads.length)||parents.some((ref,i)=>upstream[i]?.revision!==ref.revision)||inputs.some(i=>this.fingerprint(i.id)!==i.fingerprint))throw new Error('evidence_changed');
+    const scopeRecords=[...records,...upstream.flatMap(a=>a?[{capturedAt:a.firstAt,deviceId:a.deviceId,appId:a.appId,source:a.source},{capturedAt:a.lastAt,deviceId:a.deviceId,appId:a.appId,source:a.source}]:[]),...materialHeads.flatMap(({head,scope})=>[{capturedAt:head.first_at??head.created_at,...scope},{capturedAt:head.last_at??head.created_at,...scope}])],times=scopeRecords.map(r=>r.capturedAt).sort(),contentHash=hash(output.text);
+    const artifact:Artifact={id,revision,kind:output.kind,processor,processorVersion:version,configFingerprint,generatedAt:new Date().toISOString(),firstAt:times[0],lastAt:times.at(-1)!,deviceId:scopeRecords.every(r=>r.deviceId===scopeRecords[0].deviceId)?scopeRecords[0].deviceId:'',appId:scopeRecords.every(r=>r.appId===scopeRecords[0].appId)?scopeRecords[0].appId:'',source:scopeRecords.every(r=>r.source===scopeRecords[0].source)?scopeRecords[0].source:'',members:inputs.map(i=>i.id),representatives,contentHash,metadata:output.metadata,parents,...(materialInputs.length?{materialInputs}:{} )};
     this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(artifact))+Buffer.byteLength(output.text)+4096);
     db.prepare('INSERT OR IGNORE INTO context_contents VALUES(?,?)').run(contentHash,JSON.stringify({text:output.text}));
     db.prepare('DELETE FROM context_artifacts WHERE id=?').run(id);
     db.prepare('INSERT INTO context_artifacts VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,group,revision,output.kind,artifact.firstAt,artifact.lastAt,artifact.deviceId,artifact.appId,artifact.source,contentHash,JSON.stringify(artifact));
     const insert=db.prepare('INSERT INTO artifact_inputs VALUES(?,?,?)');for(const input of inputs)insert.run(id,input.id,input.fingerprint);
     for(const parent of parents)db.prepare('INSERT INTO artifact_dependencies VALUES(?,?,?)').run(id,parent.id,parent.revision);
+    for(const {head,revision:materialRevision} of materialHeads)db.prepare('INSERT OR IGNORE INTO artifact_material_inputs VALUES(?,?,?)').run(id,head.id,materialRevision);
     db.prepare("INSERT INTO artifact_events(entity,operation) VALUES(?,'ready')").run(id);
     return artifact;
   }
@@ -141,7 +178,9 @@ export class EvidenceArchive {
     for(const [key,column] of [['deviceId','device_id'],['appId','app_id'],['source','source'],['id','id']] as const)if(args[key]){where.push(`a.${column}=?`);values.push(args[key]!);}
     // Only fully contained segments are disclosed under a narrowed query scope.
     if(!args.originalTimeScope){if(args.after){where.push('a.first_at>=?');values.push(args.after);}if(args.before){where.push('a.last_at<?');values.push(args.before);}}
-    if(args.collection==='activity')where.push("a.source='activity'");else if(args.collection==='content')where.push("a.source!='activity'");
+    // Model reads validate every original member after this page. A derived
+    // material may be activity-only media even when its source is `media`.
+    if(!args.originalTimeScope){if(args.collection==='activity')where.push("a.source='activity'");else if(args.collection==='content')where.push("a.source!='activity'");}
     if(args.query)for(const term of args.query.trim().split(/\s+/u).slice(0,12)){if(Array.from(term).length>=3){where.push('a.id IN (SELECT id FROM artifacts_fts WHERE artifacts_fts MATCH ?)');values.push('\"'+term.replaceAll('\"','\"\"')+'\"');}else{where.push("instr(lower(json_extract(c.json,'$.text')),lower(?))>0");values.push(term);}}
     const scopeHash=hash({...args,cursor:undefined});let cursor:{at:string;id:string;scope:string}|undefined;
     if(args.cursor){cursor=z.object({at:z.string(),id:z.string(),scope:z.literal(scopeHash)}).parse(JSON.parse(Buffer.from(args.cursor,'base64url').toString()));where.push('(a.last_at<? OR (a.last_at=? AND a.id>?))');values.push(cursor.at,cursor.at,cursor.id);}

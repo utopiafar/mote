@@ -2,7 +2,7 @@ import { moteText } from '@mote/shared/i18n';
 export type SourceRetention = 'snapshot' | 'reference' | 'archive';
 export interface SourceDefinition {
   initialSync?: 'all' | 'new_only';
-  id: string; name: string; kind: 'local-calendar' | 'local-files' | 'coding-agent'; deviceId: string;
+  id: string; name: string; kind: string; deviceId: string;
   platform: 'macos' | 'import'; retention: SourceRetention; enabled: boolean;
 }
 export interface SourceItem {
@@ -24,7 +24,8 @@ export interface LocalFileCheckpoint {
   inProgress: boolean; scanFaulted?: boolean; pendingDirectories: string[]; activeDirectory?: { path: string; after?: string };
   nextFile?: string; catalog: Record<string, FileCatalogEntry>;
 }
-export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint;
+/** A registered adapter owns its versioned checkpoint shape; SourceSync persists it atomically with the outbox. */
+export type SourceCheckpoint = LocalFileCheckpoint | import('./coding-agents').CodingCheckpoint | { version: number; [key: string]: unknown };
 export type ScannedItem = Omit<SourceItem, 'revision' | 'observedAt'> & {
   /** Client-only routing hint; SourceSync strips it before persistence and upload. */
   syncQueue?: 'realtime' | 'history';

@@ -18,7 +18,7 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 
 客户端设置保存后自动应用，保留当前采集开停状态；图片保存位置可在“采集与存储”中查看和更改，已有队列随之迁移。见 [设置生效与图片位置](docs/client-settings-and-storage.md)。
 
-[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [中央记忆系统](docs/central-memory.md) · [资料分层](docs/context-layers.md) · [来源与 MCP](docs/connectors.md) · [排查问题](docs/troubleshooting.md)
+[开始使用](#开始使用) · [架构](#架构) · [部署与迁移](docs/deployment.md) · [服务端配置](docs/server-configuration.md) · [Cloudflare Tunnel](docs/cloudflare-tunnel.md) · [中央记忆系统](docs/central-memory.md) · [资料分层](docs/context-layers.md) · [接入与正式资料](docs/material-architecture.md) · [来源与 MCP](docs/connectors.md) · [排查问题](docs/troubleshooting.md)
 
 [下载安装包](https://github.com/utopiafar/mote/releases) · [扫码与 JSON 连接](docs/connections.md) · [保留设置地更新](docs/updating.md) · [发布与签名流程](docs/releasing.md)
 

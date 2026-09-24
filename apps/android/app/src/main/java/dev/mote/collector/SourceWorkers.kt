@@ -18,18 +18,18 @@ class SourceScanWorker(context: Context, params: WorkerParameters) : Worker(cont
             settings.ensureDataOrigin(settings.read())
             for (source in store.sources().filter { it.enabled && (inputData.getString("sourceId") == null || it.id == inputData.getString("sourceId")) }) {
                 if (isStopped) return Result.retry()
+                val adapter = SourceAdapters.default.forKind(source.kind)
                 if (!SourceAccess.available(applicationContext, source)) { store.status(source.id, "permission"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.CONFIGURATION); continue }
-                val last = (if (source.binaryFiles()) applicationContext.fileArchives().state(source.id) else store.state(source.id)).optString("lastScan")
+                val last = adapter.lastScan(applicationContext, source)
                 if (!inputData.getBoolean("manual", false) && last.isNotEmpty() && Instant.parse(last).plusSeconds(source.intervalMinutes * 60L).isAfter(Instant.now())) continue
                 try {
-                    if (source.binaryFiles()) {
-                        val complete = FileSources(applicationContext, cancellation).scan(source)
-                        store.status(source.id, if (complete) "scanned" else "partial")
-                        if (!complete) SourceWork.continueScan(applicationContext, source.id, inputData.getBoolean("syncExplicit", false))
-                        continue
+                    when (val emission = SourceAdapters.default.scan(applicationContext, source, cancellation)) {
+                        is SourceEmission.Archived -> {
+                            store.status(source.id, if (emission.complete) "scanned" else "partial")
+                            if (!emission.complete) SourceWork.continueScan(applicationContext, source.id, inputData.getBoolean("syncExplicit", false))
+                        }
+                        is SourceEmission.Indexed -> store.scan(source, emission.scan, minOf(64L, settings.read().maxQueueMiB.toLong()) * 1024 * 1024)
                     }
-                    val scan = SourceProviders(applicationContext.contentResolver, cancellation).scan(source)
-                    store.scan(source, scan, minOf(64L, settings.read().maxQueueMiB.toLong()) * 1024 * 1024)
                     SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.OK)
                 } catch (_: SecurityException) { store.status(source.id, "permission"); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.PERMISSION) }
                 catch (_: android.os.OperationCanceledException) { return Result.retry() }
@@ -85,7 +85,7 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         if (patchCode !in 200..299 || updated?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(patchCode), httpStatus = patchCode); store.status(source.id, "http"); failed = true; continue }
                         store.registered(source.id, target)
                     }
-                    if (source.binaryFiles()) {
+                    if (SourceAdapters.default.forKind(source.kind).queueKind == SourceQueueKind.FILE_ARCHIVE) {
                         val finished = FileUpload.sync(applicationContext, source, config, slice, ::stillSelected)
                         if (!finished) { more = true; if (applicationContext.fileArchives().next(source.id) == null) delayedFiles = true }
                         store.status(source.id, if (finished) "synced" else "scanned")

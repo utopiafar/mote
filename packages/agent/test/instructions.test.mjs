@@ -10,4 +10,8 @@ test('only host source metadata selects bounded source rules; security and attri
  assert.equal(systemInstructions(scoped,[{...record,sourceType:'unknown'}]),SYSTEM_PROMPT);
  assert.match(systemInstructions(scoped,[{...record,metadata:{media:{status:'unavailable'}}}]),/Media records \(sourceType=media\)/);
  assert.match(systemInstructions(scoped,[{...record,sourceType:'notification'}]),/System events/);
+ assert.match(SYSTEM_PROMPT,/material_catalog.*material_read/s);
+ assert.match(SYSTEM_PROMPT,/source tags.*untrusted/);
+ assert.match(SYSTEM_PROMPT,/call evidence on relevant originals before citing/);
+ assert.match(reduced,/Restricted extraction sessions use only the evidence supplied by the host/);
 });

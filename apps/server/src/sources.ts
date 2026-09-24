@@ -8,23 +8,26 @@ type Head={capture_id:string;observed_at:string;deleted:number};
 type Version={capture_id:string;hash:string};
 export class SourceStore {
   private pending=new Map<string,Promise<unknown>>();
+  readonly capabilities=sourceCapabilities.clone();
   constructor(public store:Store){}
   listSources():SourceConnection[]{return (this.store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>this.present(JSON.parse(r.json)));}
   getSource(id:string):SourceConnection {const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Source not found',404);return this.present(JSON.parse(row.json));}
   register(raw:unknown):SourceConnection {
     const input=sourceConnectionSchema.parse(raw),existing=this.listSources().find(s=>s.id===input.id);
+    if(!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     if(existing){if(existing.kind!==input.kind||existing.deviceId!==input.deviceId||existing.platform!==input.platform)throw new StoreError('Source identity cannot be changed',409);return existing;}
     if(this.listSources().length>=500)throw new StoreError('Maximum 500 sources',413);
     const now=new Date().toISOString(),value={...input,createdAt:now,updatedAt:now};this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.save(value);return this.present(value);
   }
   update(id:string,patch:{name?:string;enabled?:boolean;retention?:SourceConnection['retention'];initialSync?:'all'|'new_only'}):SourceConnection {
     const existing=this.getSource(id),{createdAt:_,updatedAt:__,status:___,capabilities:____,...fields}=existing,input=sourceConnectionSchema.parse({...fields,...patch});
+    if(input.enabled&&!this.capabilities.has(input.kind))throw new StoreError('Source adapter is not installed',409);
     const value={...existing,...input,updatedAt:new Date().toISOString()};
     const growth=Buffer.byteLength(JSON.stringify(value))-Buffer.byteLength(JSON.stringify(existing));
     if(growth>0)this.store.reserveMetadata(growth);
     this.save(value);return this.present(value);
   }
-  private present(value:SourceConnection):SourceConnection{return {...value,capabilities:sourceCapabilities.describe(value)};}
+  private present(value:SourceConnection):SourceConnection{return this.capabilities.has(value.kind)?{...value,capabilities:this.capabilities.describe(value)}:{...value,enabled:false,status:{...value.status,state:'error',code:'source_adapter_unavailable'}};}
   private save(value:SourceConnection){const {capabilities,...persisted}=value;this.store.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(value.id,JSON.stringify(persisted));}
   reportStatus(id:string,status:NonNullable<SourceConnection['status']>){const value=this.getSource(id);this.save({...value,status,updatedAt:new Date().toISOString()});}
   private item(c:CaptureRecord,current:boolean):SourceItemRecord {
