@@ -364,7 +364,9 @@ export class EvidenceStore {
     this.db.prepare('DELETE FROM file_evidence_links WHERE parent_id=?').run(id);
     for(const excerpt of excerpts){this.invalidateMemoryEvidence(excerpt.capture_id,deleted);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(excerpt.capture_id);if(deleted){this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(excerpt.capture_id);this.db.prepare('DELETE FROM captures WHERE id=?').run(excerpt.capture_id);}}
 
-    this.db.exec('DELETE FROM insights');
+    // A revision preserves its previous original for as-of reports. Explicit
+    // deletion removes reports conservatively because their lineage may be incomplete.
+    if(deleted)this.db.exec('DELETE FROM insights');
     this.invalidateConversationAnswers([id]);
     if(deleted)this.db.prepare('DELETE FROM memories WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)').run(id);
     else this.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale','$.staleReason','evidence_changed','$.updatedAt',?) WHERE id IN (SELECT memory_id FROM memory_dependencies WHERE evidence_id=?)").run(new Date().toISOString(),id);

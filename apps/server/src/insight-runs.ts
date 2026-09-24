@@ -2,7 +2,7 @@ import {ProviderFailure} from '@mote/shared';
 import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
 import type {AgentProgress} from '@mote/agent';
-import {createInsightSnapshot,assertInsightSnapshot} from './insight-snapshots.js';
+import {createInsightSnapshot} from './insight-snapshots.js';
 import type {InsightSnapshot,QueryResult} from '@mote/shared';
 import {Store,StoreError} from './store.js';
 import {normalizeRun} from './execution.js';
@@ -27,7 +27,7 @@ export class InsightRuns {
     this.execution=new RunExecution(store,'insight',{
       exists:id=>Boolean(store.db.prepare('SELECT 1 FROM insight_runs WHERE id=?').get(id)),
       project:(id,step)=>this.project(id,step),
-      commit:(id,result)=>{this.commitGuards.get(id)?.();const run=this.raw(id);if(run.snapshot)this.assertSnapshot(run.snapshot);const output=result as QueryResult;if(!this.store.db.prepare('SELECT 1 FROM insights WHERE id=?').get(output.runId))this.store.saveInsight({...output,...(run.snapshot?{snapshot:run.snapshot}:{})},output.runId);run.resultRunId=output.runId;this.save(run);},
+      commit:(id,result)=>{this.commitGuards.get(id)?.();const run=this.raw(id),output=result as QueryResult;if(!this.store.db.prepare('SELECT 1 FROM insights WHERE id=?').get(output.runId))this.store.saveInsight({...output,...(run.snapshot?{snapshot:run.snapshot}:{})},output.runId);run.resultRunId=output.runId;this.save(run);},
       failure:(id,error)=>{const run=this.raw(id),safe=safeError(error);run.error={code:error instanceof ProviderFailure?safe.reason??safe.category:safe.category,message:safe.message};run.availableAt=error instanceof ProviderFailure&&error.details.retryAfterMs!==undefined?Date.now()+error.details.retryAfterMs:undefined;this.save(run);},
     },options);
     for(const row of store.db.prepare('SELECT json FROM insight_runs').all() as {json:string}[]){const run=JSON.parse(row.json) as InsightRun;this.execution.restore(run.id,{state:run.status==='completed'?'succeeded':run.status,attempts:run.execution?.attempts,createdAt:run.createdAt,updatedAt:run.updatedAt,error:run.error?.code,availableAt:run.availableAt});}
@@ -38,7 +38,6 @@ export class InsightRuns {
     if(!this.store.db.prepare('SELECT 1 FROM insight_runs WHERE id=?').get(id))return;
     const run=this.raw(id),before=JSON.stringify(run);run.operationId=`insight:${id}`;run.status=step.state==='succeeded'?'completed':step.state==='cancelled'?'cancelled':['waiting','running'].includes(step.state)?'running':'failed';
     if(step.error==='interrupted')run.error={code:'interrupted',message:moteText('中央节点重启中断了此次回顾，请重试。')};
-    else if(step.error==='snapshot_changed')run.error={code:'snapshot_changed',message:moteText('所选范围的资料已变化，请生成新的洞察版本。')};
     else if(step.error==='timeout')run.error={code:'timeout',message:moteText('模型执行超时，请重试。')};
     run.execution=runEnvelope({...step,error:run.error?.code??step.error,availableAt:run.availableAt??step.availableAt});run.updatedAt=new Date(Math.max(Date.parse(run.updatedAt),Number(this.store.db.prepare('SELECT updated_at FROM execution_steps WHERE id=?').get(step.id)!.updated_at))).toISOString();if(JSON.stringify(run)!==before)this.save(run);
   }
@@ -69,6 +68,5 @@ export class InsightRuns {
     await this.execution.wait(id);if(this.get(id).status==='completed'&&result)return result;throw error??new StoreError(this.get(id).error?.message??'Review did not complete',this.get(id).error?.code==='timeout'?504:409);
     }finally{this.commitGuards.delete(id);}
   }
-  assertSnapshot(snapshot:InsightSnapshot){assertInsightSnapshot(this.store,snapshot);}
   async close(){await this.execution.close();}
 }

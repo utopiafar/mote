@@ -1,6 +1,5 @@
 import {SourcePipelineRuntime} from './source-pipelines.js';
 import {codingSourcePlugin} from './coding-source-plugin.js';
-import {assertInsightSnapshot} from './insight-snapshots.js';
 import {linkOperationParent} from './operation-projection.js';
 import {assertExternalCaptures} from './capture-admission.js';
 import {registerSourceRoutes} from './source-routes.js';
@@ -371,7 +370,15 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
       taskSignal?.throwIfAborted();
-      if(input.insightSnapshot)assertInsightSnapshot(store,input.insightSnapshot);else if(store.deletionRevision()!==revision)throw new StoreError('Evidence was deleted during this run; retry against the updated archive',409);
+      // A long-running review may overlap routine imports and derived-layer updates.
+      // Only an original actually disclosed to this run being deleted can make
+      // its answer unsafe to publish; other archive changes belong to later runs.
+      if(store.deletionRevision()!==revision){
+        const used=new Set([...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
+        for(const row of store.db.prepare("SELECT id FROM changes WHERE seq>? AND operation='delete'").iterate(revision)){
+          if(used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
+        }
+      }
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       return {...result,configuration,usage:meter.finish('completed')};
     }).catch(error=>{meter.finish('failed');trace({type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
@@ -489,7 +496,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     if(!agent.configured)throw new AgentNotConfiguredError();
     const {prompt,...scope}=range;
     const result=insightResult(await queryAgent({question:prompt||moteText("请回顾这段时间的个人上下文，选择有证据支撑的发现。区分事实、推断与信息缺口，保留来源引用，用 personal-insight Skill 生成完整文字报告和静态 HTML 展示。"),skill:'personal-insight',...scope,...(snapshot?{...snapshot.scope,contextTime:snapshot.asOf,insightSnapshot:snapshot}:{}),onProgress,signal,traceContext:{operationId}},'insight','insights'));
-    signal?.throwIfAborted();if(snapshot)insightRuns.assertSnapshot(snapshot);return {...result,...(snapshot?{snapshot}:{})};
+    signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
   }
   app.post('/api/insight-runs',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
     const body=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional(),requestId:z.string().uuid()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body);

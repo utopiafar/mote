@@ -10,7 +10,7 @@ import {FileStore} from '../src/files.js';
 import {FileProcessing} from '../src/file-processing.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {InsightRuns} from '../src/insight-runs.js';
-import {createInsightSnapshot,assertInsightSnapshot} from '../src/insight-snapshots.js';
+import {createInsightSnapshot} from '../src/insight-snapshots.js';
 import {evidenceDependents} from '../src/evidence-dependencies.js';
 
 test('one changed segment invalidates only its descendants; unchanged chunks and old reports survive container replacement',async t=>{
@@ -23,8 +23,8 @@ test('one changed segment invalidates only its descendants; unchanged chunks and
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true}});await processing.tick();
  const before=files.chunks(original.id),oldArtifact=before[0].fileEvidence!.artifactId,stableFingerprint=memoryEvidenceFingerprint(before[0]),memories=new MemoryStore(store,ids=>files.evidence(ids),id=>files.isCurrentEvidence(id));
  const save=(index:number)=>{const record=before[index];return memories.extract({answer:JSON.stringify({memories:[{title:'Generated '+index,statement:`Generated statement [${record.id}]`,uncertainty:'Fixture only',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()},'fixture').items[0];};
- const proposal=save(0),snapshot=createInsightSnapshot(store,randomUUID(),{after:'2025-01-01T00:00:00Z',before:'2025-01-02T00:00:00Z',deviceId:'fixture'});assert.doesNotThrow(()=>assertInsightSnapshot(store,snapshot));
- const stable=memories.publish(proposal.id),changed=memories.publish(save(1).id),reportId=randomUUID();assert.throws(()=>assertInsightSnapshot(store,snapshot),{statusCode:409});store.saveInsight({runId:reportId,answer:'Historical generated report'},reportId);
+ const proposal=save(0),scope={after:'2025-01-01T00:00:00Z',before:'2025-01-02T00:00:00Z',deviceId:'fixture'},snapshot=createInsightSnapshot(store,randomUUID(),scope);
+ const stable=memories.publish(proposal.id),changed=memories.publish(save(1).id),reportId=randomUUID();assert.notEqual(createInsightSnapshot(store,randomUUID(),scope).scopeFingerprint,snapshot.scopeFingerprint);store.saveInsight({runId:reportId,answer:'Historical generated report'},reportId);
  assert.ok(evidenceDependents(store,{kind:'file_chunk',id:before[0].id}).some(node=>node.kind==='memory'&&node.id===stable.id));
  revision++;processing.retry(original.id);await processing.tick();const after=files.chunks(original.id);
  assert.equal(after[0].id,before[0].id);assert.notEqual(after[1].id,before[1].id);assert.notEqual(after[0].fileEvidence!.artifactId,oldArtifact);assert.equal(memoryEvidenceFingerprint(after[0]),stableFingerprint);

@@ -29,6 +29,17 @@ test('review launch acknowledges immediately, survives reconnect, reports real t
   const completed=(await app.inject({url:'/api/insight-runs/'+payload.requestId,headers})).json();assert.equal(completed.status,'completed');assert.equal(completed.result.answer,result.answer);
   store.db.exec('DELETE FROM insights');assert.equal(insightRuns.detail(payload.requestId).result,undefined,'deleted reports are never revived by job polling');
 });
+test('a review publishes when another original arrives during model generation',async t=>{
+  let entered!:()=>void,release!:()=>void;
+  const running=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);
+  const {app,insightRuns,store}=await fixture(t,{configured:true,query:async()=>{entered();await gate;return {answer:'Generated report',citations:[],trace:[],runId:randomUUID()};},close:async()=>release()});
+  const id=randomUUID(),response=await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{requestId:id}});
+  assert.equal(response.statusCode,202);await running;
+  await store.ingest({id:randomUUID(),deviceId:'generated-device',deviceName:'Generated device',platform:'macos',source:'activity',appId:'fixture.app',appName:'Generated activity',capturedAt:new Date(Date.now()-60000).toISOString(),durationMs:30000,privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
+  release();await insightRuns.close();
+  assert.equal(insightRuns.get(id).status,'completed');
+  assert.equal(store.insights().length,1);
+});
 test('failures and interrupted runs are visible without provider secrets; run endpoints require ownership',async t=>{
   const {app,store,insightRuns}=await fixture(t,{configured:true,query:async()=>{throw new AgentProviderError();},close:async()=>{}});
   assert.equal((await app.inject('/api/insight-runs')).statusCode,401);
