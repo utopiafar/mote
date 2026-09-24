@@ -50,6 +50,9 @@ describe('native source lifecycle with local HTTP fixtures', () => {
   it('turning off deletion tracking drops a previously queued tombstone instead of replaying it', async () => {
     const server = await endpoint(); const folder = join(directory, 'selected'); await mkdir(folder); const file = join(folder, 'a.md'); await writeFile(file, 'synthetic');
     const app = await manager(server.url); await app.addFiles(folder, { ...DEFAULT_SOURCE_OPTIONS, trackDeletions: true }); await app.sync();
+    // This case controls scans explicitly; a live file watcher can otherwise
+    // immediately retry the deliberately lost ACK before the policy edit.
+    (app as any).watcher.close();
     server.loseNextAck(); await rm(file); await app.sync(); expect(app.status()[0].pending).toBe(1);
     const received = server.items.length; const source = app.status()[0].source;
     await app.update(source.id, { ...source, trackDeletions: false, enabled: true }); await app.sync();
@@ -99,4 +102,41 @@ it('a manual sync overlapping an automatic scan waits for one coalesced forced f
   const first = app.sync(true), second = app.sync(true);
   release(); await Promise.all([background, first, second]);
   expect(modes).toEqual([false, true]);
+});
+
+it('waits for a watcher scan rerun before flushing a durable pending source item', async () => {
+  const server = await endpoint(true), file = join(directory, 'watcher-rerun.md');
+  await writeFile(file, 'Generated pending source body');
+  const app = await manager(server.url);
+  await app.addFiles(file, DEFAULT_SOURCE_OPTIONS);
+  await app.sync(true);
+  expect(app.pendingStats().pendingRecords).toBe(1);
+  const sourceId = app.status()[0]!.source.id;
+
+  let releaseFirst!: () => void, releaseSecond!: () => void;
+  let firstStarted!: () => void, secondStarted!: () => void;
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve; });
+  const secondGate = new Promise<void>(resolve => { releaseSecond = resolve; });
+  const firstScan = new Promise<void>(resolve => { firstStarted = resolve; });
+  const secondScan = new Promise<void>(resolve => { secondStarted = resolve; });
+  let scans = 0;
+  vi.spyOn(app as any, 'run').mockImplementation(async () => {
+    if (++scans === 1) { firstStarted(); await firstGate; }
+    else { (app as any).readable.delete(sourceId); secondStarted(); await secondGate; (app as any).readable.add(sourceId); }
+  });
+
+  const initial = app.sync(false); await firstScan;
+  (app as any).onFileWatchEvent({ sourceId, root: directory, path: file });
+  let flushed = false;
+  const flush = app.flushPending(new AbortController().signal).then(() => { flushed = true; });
+  releaseFirst(); await secondScan;
+  await new Promise(resolve => setTimeout(resolve, 30));
+  const flushedDuringScan = flushed;
+  const pendingDuringScan = app.pendingStats().pendingRecords;
+  releaseSecond(); await Promise.all([initial, flush]);
+  expect(flushedDuringScan).toBe(false);
+  expect(pendingDuringScan).toBe(1);
+  expect(scans).toBe(2);
+  expect(app.pendingStats().pendingRecords).toBe(0);
+  expect(server.items).toHaveLength(2);
 });
