@@ -16,6 +16,8 @@
     "build": "npm run build:libs && npm run build -w @mote/server && npm run build -w @mote/web && npm run build -w @mote/desktop",
     "start": "npm run start -w @mote/server",
     "desktop": "npm run start -w @mote/desktop",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "check:local": "npm run check:i18n && npm run build:libs && npm run typecheck && npm test",
     "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.scripts.json",
     "test": "npm run test --workspaces --if-present",
     "test:e2e": "node --import tsx scripts/e2e.ts",
