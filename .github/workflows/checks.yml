@@ -19,7 +19,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run build:libs
-      - run: node scripts/check-i18n.mjs
+      - run: npm run check:i18n
       - run: node --test scripts/release/dev-assets.test.mjs
       - run: npm run typecheck
       - run: npm run build -w @mote/server -w @mote/web

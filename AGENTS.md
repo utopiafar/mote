@@ -8,3 +8,4 @@
 - Keep tokens and personal data out of source control. Defaults bind to loopback; remote deployments require TLS and a strong access token.
 - Use npm workspaces for TypeScript. Android uses Kotlin for platform capture APIs.
 - Report physical device and live-model checks separately from fixture tests; never claim unperformed validation.
+- Before opening or updating a PR, run `npm run check:local`. Add English translations for new `moteText` keys and keep the Android English catalog synchronized.
