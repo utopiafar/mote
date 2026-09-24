@@ -28,7 +28,7 @@ export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
 export class EvidenceReader {
   readonly memories:MemoryStore;
   constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidenceRequests,private readonly materials?:MaterialStore){
-    this.memories=new MemoryStore(store,ids=>this.evidence(ids),id=>Boolean(files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
+    this.memories=new MemoryStore(store,ids=>this.evidence(ids),id=>Boolean(materials?.isCurrentEvidence(id)||files?.isCurrentEvidence(id)||store.isCurrentEvidence(id)));
   }
   imageReference(ref:string,scope:Range={}){
     const id=evidenceRefId(ref,'capture');if(!id)return;
@@ -37,7 +37,7 @@ export class EvidenceReader {
   }
   evidence(refs:string[],scope:Range={}){
     const ids=[...new Set(refs.map(ref=>parseEvidenceRef(ref)).filter(ref=>ref?.kind==='capture').map(ref=>ref!.id))];
-    return [...this.store.evidence(ids),...(this.files?.evidence(ids)??[])].filter(record=>withinEvidenceScope(record,scope));
+    return [...this.store.evidence(ids),...(this.materials?.evidence(ids)??[]).filter(record=>Boolean(this.scopedMaterial(record.provenance!.uri!.split('#')[0],scope))),...(this.files?.evidence(ids)??[])].filter(record=>withinEvidenceScope(record,scope));
   }
   memory(ref:string,scope:Range={}){
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
@@ -57,7 +57,7 @@ export class EvidenceReader {
   }
   context(records:CaptureRecord[]){return records.map(record=>{
     const nativeFile=this.files&&this.store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(record.id,record.id);
-    const current=nativeFile?this.files!.isCurrentEvidence(record.id)||Boolean(this.store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance&&this.sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id;
+    const current=this.materials?.isCurrentEvidence(record.id)|| (nativeFile?this.files!.isCurrentEvidence(record.id)||Boolean(this.store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance&&this.sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id);
     return {...record,ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{})};
   });}
   records(args:Range&{query?:string},search=false){
@@ -96,6 +96,7 @@ export class EvidenceReader {
       try{material=this.materials.get(ref);}catch{return;}
       if(!material||material.ref!==ref||this.materials.get(material.id)?.revision!==material.revision||members.size+material.memberCount>1000)return;
       const scoped=this.scopedMaterial(ref,scope);if(!scoped)return;
+      if(scoped.members[0]?.kind==='archive'){for(const id of this.materials.evidenceIds(ref))members.add(id);continue;}
       for(const member of scoped.members){
         const captureId=evidenceRefId(member.ref,'capture');if(!captureId)return;
         members.add(captureId);if(members.size>1000)return;
@@ -103,7 +104,7 @@ export class EvidenceReader {
     }
     let firstAt:string|undefined,lastAt:string|undefined;
     for(const member of members){
-      const record=scopeRecord(this.store,member);if(!record||directMembers.has(member)&&!withinEvidenceScope(record,scope))return;
+      const record=scopeRecord(this.store,member)??this.materials?.evidence([member])[0];if(!record||directMembers.has(member)&&!withinEvidenceScope(record,scope))return;
       const start=sourceContentTime(record),end=record.stateSeries?.samples.at(-1)?.at??start;
       if(scope.after&&Date.parse(start)<Date.parse(scope.after)||scope.before&&Date.parse(end)>=Date.parse(scope.before))return;
       if(!firstAt||Date.parse(start)<Date.parse(firstAt))firstAt=start;
@@ -152,6 +153,13 @@ export class EvidenceReader {
     if(scope.sourceId&&material.origin.sourceId!==scope.sourceId)return;
     // Material source IDs are logical identities. Screen/state/authored records
     // need not carry the same ID in capture provenance.
+    const archiveMember=this.materials!.members(material.ref,{limit:1}).items[0];
+    if(material.memberCount===1&&archiveMember?.kind==='archive'){
+      if(scope.deviceId&&scope.deviceId!==material.origin.deviceId||scope.after&&(!material.origin.firstAt||Date.parse(material.origin.firstAt)<Date.parse(scope.after))||scope.before&&(!material.origin.lastAt||Date.parse(material.origin.lastAt)>=Date.parse(scope.before))||scope.collection==='activity'||scope.appId&&scope.appId!=='mote.material'||scope.source&&scope.source!=='message'||scope.ocrStatus)return;
+      for(const key of ['provider','projectKey','sessionId'] as const)if(scope[key]&&material.origin[key]!==scope[key])return;
+      if(scope.repositoryKey)return;
+      return {material,members:[archiveMember]};
+    }
     const memberScope={...scope,sourceId:undefined};
     const members:MaterialMember[]=[];
     for(let offset=0;offset<material.memberCount;offset+=200){
@@ -168,15 +176,16 @@ export class EvidenceReader {
     }
     return members.length?{material,members}:undefined;
   }
-  materialCatalog(args:Range&{sourceId?:string;kind?:string}={}){
+  materialCatalog(args:Range&{sourceId?:string;kind?:string;query?:string}={}){
     if(!this.materials)return {items:[],nextCursor:null};
-    const page=this.materials.list({sourceId:args.sourceId,kind:args.kind,deviceId:args.deviceId,after:args.after,before:args.before,limit:args.limit,cursor:args.cursor});
+    const page=this.materials.list({query:args.query,sourceId:args.sourceId,kind:args.kind,deviceId:args.deviceId,after:args.after,before:args.before,limit:args.limit,cursor:args.cursor});
     return {...page,items:page.items.filter(item=>Boolean(this.scopedMaterial(item.ref,args)))};
   }
   materialRead(args:Range&{ref:string;offset?:number;length?:number}){
     const scoped=this.scopedMaterial(args.ref,args);if(!scoped||!this.materials)throw new StoreError('Material not found in selected scope',404);
     const page=this.materials.read(scoped.material.ref,{offset:args.offset,length:args.length});
     const relevant=new Set(page.spans.flatMap(span=>span.memberIds));
+    if(scoped.members[0]?.kind==='archive'){const blocks=new Set(page.spans.map(span=>span.blockId));const ids=this.store.db.prepare('SELECT id,block_id FROM material_evidence WHERE material_id=? AND revision=?').all(page.material.id,page.material.revision).filter(row=>blocks.has(String(row.block_id))).map(row=>String(row.id));return {...page,originalRefs:ids.slice(0,30),originalRefsTotal:ids.length,originalRefsTruncated:ids.length>30};}
     const originals=scoped.members.filter(member=>relevant.has(member.id)).map(member=>evidenceRefId(member.ref,'capture')).filter((id):id is string=>Boolean(id));
     return {...page,originalRefs:originals.slice(0,30),originalRefsTotal:originals.length,originalRefsTruncated:originals.length>30};
   }

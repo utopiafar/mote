@@ -330,9 +330,9 @@ export async function startBridge(
         deliveredCharacters+=serialized.length;trace.push({tool,arguments:args,count:value.items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:value.items.length});res.end(serialized);return;
       }
       if(tool==='material_catalog'){
-        if(Object.keys(args).some(key=>!['after','before','deviceId','limit','cursor','sourceId','kind'].includes(key)))throw hostError('Invalid material catalog filter');
-        for(const key of ['sourceId','kind'])if(args[key]!==undefined&&(typeof args[key]!=='string'||!args[key]||String(args[key]).length>128))throw hostError(`Invalid ${key}`);
-        const scope=range(args,bounds),effective={...scope,sourceId:args.sourceId as string|undefined,kind:args.kind as string|undefined};
+        if(Object.keys(args).some(key=>!['after','before','deviceId','limit','cursor','sourceId','kind','query'].includes(key)))throw hostError('Invalid material catalog filter');
+        for(const key of ['sourceId','kind','query'])if(args[key]!==undefined&&(typeof args[key]!=='string'||!args[key]||String(args[key]).length>128))throw hostError(`Invalid ${key}`);
+        const scope=range(args,bounds),effective={...scope,sourceId:args.sourceId as string|undefined,kind:args.kind as string|undefined,query:args.query as string|undefined};
         const page=await reader.materialCatalog?.(effective)??{items:[],nextCursor:null};
         if(!page||!Array.isArray(page.items)||(page.nextCursor!==null&&(typeof page.nextCursor!=='string'||page.nextCursor.length>4096)))throw hostError('Invalid material catalog page');
         const items=page.items.slice(0,scope.limit).map(item=>materialMetadata(item,scope)).filter((item):item is Record<string,unknown>=>Boolean(item));

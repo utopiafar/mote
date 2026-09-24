@@ -606,13 +606,14 @@ export class EvidenceStore {
   /** Run only in the maintenance worker, never from an HTTP request. */
   measurePhysicalStorage(){
     let bytes=0;const visit=(path:string)=>{if(!existsSync(path))return;for(const entry of readdirSync(path,{withFileTypes:true})){const child=join(path,entry.name);if(entry.isDirectory())visit(child);else if(entry.isFile())try{bytes+=statSync(child).size;}catch{/* concurrent retention */}}};
-    visit(join(this.directory,'files'));visit(this.blobsDir);
+    visit(join(this.directory,'files'));visit(join(this.directory,'source-archive'));visit(this.blobsDir);
     for(const name of ['mote.sqlite','mote.sqlite-wal'])try{bytes+=statSync(join(this.directory,name)).size;}catch{}
     const snapshot={bytes,asOf:new Date().toISOString()};
     this.db.prepare("INSERT INTO settings VALUES('physical-storage-snapshot',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(snapshot));return snapshot;
   }
   exportArchive(maxBytes:number) {
     if(this.db.prepare('SELECT 1 FROM file_versions LIMIT 1').get())throw new StoreError(moteText("文件归档请使用 npm run backup 完整备份；JSON 导出不包含文件原件和转写。"),409);
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='source_pipeline_bindings'").get()&&this.db.prepare('SELECT 1 FROM source_pipeline_bindings LIMIT 1').get())throw new StoreError('Source archives require a complete backup; portable JSON excludes them',409);
     const stats=this.stats() as {logicalBytes:number;captures:number};
     const archivedFiles=new ArchivedFileStore(this);
     // Portable v1 embeds a blob for EACH observation. Account for expanded repetitions before allocation.

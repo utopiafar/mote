@@ -1,3 +1,5 @@
+import {SourcePipelineRuntime} from './source-pipelines.js';
+import {codingSourcePlugin} from './coding-source-plugin.js';
 import {assertInsightSnapshot} from './insight-snapshots.js';
 import {linkOperationParent} from './operation-projection.js';
 import {assertExternalCaptures} from './capture-admission.js';
@@ -108,6 +110,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   // the background worker is enabled, let that worker perform maintenance after
   // the HTTP service is available instead of making startup scan the whole vault.
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(dependencies?.backgroundWorker)});
+  // MVP cut-over is explicit: never silently keep the old Coding event indexes live.
+  if(store.db.prepare("SELECT 1 FROM captures WHERE json_extract(json,'$.provenance.document.coding') IS NOT NULL LIMIT 1").get()){eventLoop.disable();if(!dependencies?.store)store.close();throw new Error('Legacy Coding event vault: back up and use a fresh data directory for the source-pipeline architecture. No automatic migration is performed.');}
   const materials=new MaterialStore(store);
   const runtimeSettings=new ExecutionSettings(store,config),execution=runtimeSettings.execution(),providerAdmission=new ProviderAdmission(store),modelBudgets=new ModelBudgets(store);
   const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
@@ -123,7 +127,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   };
   const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
-  const sources=new SourceStore(store),files=new FileStore(store,sources);const fileEvidence=new FileEvidenceRequests(sources);
+  const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await sourcePipelines.ready;
+  const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources);const fileEvidence=new FileEvidenceRequests(sources);
   const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));
   const usageLedger=new UsageLedger(store);
   const executor=new ExecutionEngine(store);
@@ -252,7 +257,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   });
   const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured,{semanticArtifacts,executor});
   registerActions(app,actions,connections,credential);
-  const connectors=await registerConnectors(app,{files,sources,store,evidenceReader,materials,materialOrganizers:materialOrganizer,processing:workflows,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
+  const connectors=await registerConnectors(app,{files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
   const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
   app.post('/api/connections/invitations',{bodyLimit:8192,config:connectionRate},async req=>connections.invite(req.body));
   app.post('/api/connections/invitations/revoke',{bodyLimit:8192,config:connectionRate},async req=>connections.cancelInvitation(req.body));
@@ -271,6 +276,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   registerCaptureBrowser(app,{store,connections,credential,evidenceReader});
   registerEvidenceRoutes(app,evidenceReader);
   registerMaterialRoutes(app,materials,materialOrganizer);
+  app.get('/api/source-pipelines',async()=>sourcePipelines.status());
+  app.get('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.options(sourceId);});
+  app.delete('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.forget(sourceId);});
+  app.put('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.configure(sourceId,req.body);});
   registerSourceRoutes(app,{store,sources,fileEvidence,evidenceReader,connections,credential,sourceOwner});
   playbackAuthorization=registerFileRoutes(app,files,processing,sourceOwner,req=>credential(req)?.deviceId,evidenceReader,diagnostics);
   registerModelSettingsRoutes(app,modelSettings,codex);
@@ -530,6 +539,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const perceptionTimer=setInterval(()=>{try{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);}catch{diagnostics.record('request.failed',{category:'internal'},'error');}try{perception.prepare();void executor.tick().catch(()=>{});}catch{diagnostics.record('request.failed',{category:'internal'},'error');}},5000);perceptionTimer.unref();
   const fileTimer=setInterval(()=>{try{processing.prepare();void executor.tick().catch(()=>diagnostics.record('file.failed',{category:'internal'},'error'));}catch{diagnostics.record('file.failed',{category:'internal'},'error');}},5000);fileTimer.unref();
   const indexTimer=setInterval(()=>void indexer.tick().catch(()=>{diagnostics.record('index.failed',{category:'internal'},'error');}),5000);indexTimer.unref();
+  const sourcePipelineTimer=setInterval(()=>{try{sourcePipelines.tick();sourcePipelines.drainMemory(memoryPipeline,agent.configured&&lifecycle.settings().extraction.enabled);}catch{diagnostics.record('request.failed',{category:'internal'},'error');}},5000);sourcePipelineTimer.unref();
   const materialTimer=setInterval(()=>void materialOrganizer.tick(200).catch(()=>diagnostics.record('request.failed',{category:'internal'},'error')),5000);materialTimer.unref();
   const maintenance=()=>{files.sweep();if(config.retentionDays>0)void diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted}))).catch(()=>{});};
   maintenance();const retentionTimer=setInterval(maintenance,3600000);retentionTimer.unref();
@@ -541,6 +551,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('onClose',async()=>{
+    clearInterval(sourcePipelineTimer);await sourcePipelines.close();
     closing=true;eventLoop.disable();await files.close();await maintenanceWorker?.close();agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();clearInterval(perceptionTimer);await executor.close();const memoryClose=memoryPipeline.close();await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(materialTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
     clearInterval(actionTimer);const actionClose=actions.close();
     await workflows.close();
@@ -552,5 +563,5 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     memoryReviews.clear();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,executor,workflows,perception,actions,store,sources,files,processing,materials,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

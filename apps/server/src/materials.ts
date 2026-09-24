@@ -1,3 +1,4 @@
+import type {CaptureRecord} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
@@ -25,7 +26,7 @@ const draftSchema=z.object({
     deviceId:z.string().min(1).max(128).optional(),firstAt:z.string().datetime({offset:true}).optional(),
     lastAt:z.string().datetime({offset:true}).optional(),provider:z.string().min(1).max(128).optional(),
     projectKey:z.string().min(1).max(512).optional(),sessionId:z.string().min(1).max(512).optional()}).strict(),
-  blocks:z.array(blockSchema).max(2000),members:z.array(memberSchema).max(2000),
+  blocks:z.array(blockSchema),members:z.array(memberSchema),
   coverage:z.object({state:z.enum(['complete','partial','pending']),reason:z.string().max(500).optional()}).strict(),
   fidelity:z.object({state:z.enum(['lossless','derived','summary-only']),limitations:z.array(z.string().max(500)).max(20).optional()}).strict(),
   retention:z.object({original:z.enum(['retained','unavailable']),policy:z.enum(['keep','allow-expiry'])}).strict(),
@@ -69,10 +70,15 @@ export function parseMaterialRef(value:string):{id:string;revision?:string} {
 export class MaterialStore {
   constructor(readonly store:Store){
     store.db.exec(`
+      CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
+      CREATE TABLE IF NOT EXISTS material_evidence(id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL,block_id TEXT NOT NULL,FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
+      CREATE INDEX IF NOT EXISTS material_evidence_parent ON material_evidence(material_id,revision);
+      CREATE VIRTUAL TABLE IF NOT EXISTS material_fts USING fts5(material_id UNINDEXED,text,content='',tokenize='trigram',contentless_delete=1);
       CREATE TABLE IF NOT EXISTS material_heads(
         id TEXT PRIMARY KEY,source_id TEXT NOT NULL,external_id TEXT NOT NULL,kind TEXT NOT NULL,
         revision TEXT NOT NULL,sequence INTEGER NOT NULL,retired INTEGER NOT NULL DEFAULT 0,
         device_id TEXT,first_at TEXT,last_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS material_search_delete BEFORE DELETE ON material_heads BEGIN DELETE FROM material_fts WHERE rowid=old.rowid; END;
       CREATE INDEX IF NOT EXISTS material_heads_source ON material_heads(source_id,updated_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS material_heads_recent ON material_heads(retired,updated_at DESC,id DESC);
       CREATE TABLE IF NOT EXISTS material_revisions(
@@ -116,6 +122,23 @@ export class MaterialStore {
     `);
   }
 
+  setSearchable(id:string,enabled:boolean){
+    const row=this.store.db.prepare('SELECT rowid,revision FROM material_heads WHERE id=?').get(id);if(!row)return;
+    this.store.db.prepare('DELETE FROM material_fts WHERE rowid=?').run(row.rowid);
+    if(!enabled){this.store.db.prepare('DELETE FROM material_searchable WHERE material_id=?').run(id);return;}
+    this.store.db.prepare('INSERT OR IGNORE INTO material_searchable VALUES(?)').run(id);
+    const text=this.store.db.prepare('SELECT p.text,b.format FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? ORDER BY b.idx').all(id,row.revision).map(r=>String(r.text)+(r.format==='markdown-fragment'?'':'\n')).join('');
+    this.store.db.prepare('INSERT INTO material_fts(rowid,material_id,text) VALUES(?,?,?)').run(row.rowid,id,text);
+  }
+  evidenceIds(ref:string){const material=this.get(ref);return material?this.store.db.prepare('SELECT id FROM material_evidence WHERE material_id=? AND revision=? ORDER BY rowid').all(material.id,material.revision).map(r=>String(r.id)):[];}
+  evidence(ids:string[]):CaptureRecord[]{return ids.flatMap(id=>{
+    const anchor=this.store.db.prepare('SELECT * FROM material_evidence WHERE id=?').get(id);if(!anchor)return [];
+    const material=this.get(formatMaterialRef(String(anchor.material_id),String(anchor.revision)));if(!material)return [];
+    const block=this.store.db.prepare('SELECT p.text,b.start_offset FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? AND b.block_id=?').get(material.id,material.revision,anchor.block_id);if(!block)return [];
+    const at=material.origin.firstAt??material.createdAt;
+    return [{id,deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{recordedAt:at,timeBasis:'recorded',contentRole:'transcript',...(material.origin.provider&&material.origin.projectKey&&material.origin.sessionId?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
+  });}
+  isCurrentEvidence(id:string){const row=this.store.db.prepare('SELECT 1 FROM material_evidence e JOIN material_heads h ON h.id=e.material_id AND h.revision=e.revision WHERE e.id=? AND h.retired=0').get(id);return Boolean(row);}
   private head(id:string):HeadRow|undefined{return this.store.db.prepare('SELECT * FROM material_heads WHERE id=?').get(id) as HeadRow|undefined;}
   private version(id:string,revision:string):RevisionRow|undefined{return this.store.db.prepare('SELECT revision,sequence,manifest,created_at AS version_created_at,text_length,block_count,member_count,asset_count FROM material_revisions WHERE material_id=? AND revision=?').get(id,revision) as RevisionRow|undefined;}
   private record(head:HeadRow,row:RevisionRow):MaterialRecord {
@@ -138,7 +161,7 @@ export class MaterialStore {
     const memberIds=new Set(draft.members.map(member=>member.id));
     if(draft.blocks.some(block=>block.memberIds.some(id=>!memberIds.has(id))))throw new StoreError('Material block has an unknown member');
     const totalCharacters=draft.blocks.reduce((n,block)=>n+(block.kind==='text'?block.text.length:0),0);
-    if(totalCharacters>4_000_000)throw new StoreError('Material text exceeds 4,000,000 characters',413);
+    if(!Number.isSafeInteger(totalCharacters))throw new StoreError('Material text size is invalid',413);
     const revision=hash(JSON.stringify(draft));
     const original=this.head(id);
     if(original&&!original.retired&&original.revision===revision)return {...this.record(original,this.version(id,revision)!),changed:false};
@@ -180,7 +203,7 @@ export class MaterialStore {
         for(const [index,block] of draft.blocks.entries()){
           const display=block.kind==='text'?block.text:`[asset ${block.id} ${block.mimeType} ${block.hash}]`;
           const payloadHash=hash(display);insertPayload.run(payloadHash,display);
-          const end=offset+display.length+1;
+          const end=offset+display.length+(block.kind==='text'&&block.format==='markdown-fragment'?0:1);
           insertBlock.run(id,revision,index,block.id,block.kind,block.kind==='text'?block.format:null,payloadHash,
             block.kind==='asset'?block.hash:null,block.kind==='asset'?block.mimeType:null,
             JSON.stringify(block.memberIds),block.locator?JSON.stringify(block.locator):null,offset,end);
@@ -189,16 +212,20 @@ export class MaterialStore {
         const insertMember=db.prepare('INSERT INTO material_members VALUES(?,?,?,?,?,?,?,?)');
         for(const [index,member] of draft.members.entries())insertMember.run(id,revision,index,member.id,member.kind,member.ref,member.revision??null,member.locator?JSON.stringify(member.locator):null);
         db.prepare('UPDATE material_revisions SET text_length=?,asset_count=? WHERE material_id=? AND revision=?').run(offset,assetCount,id,revision);
+        for(const anchor of db.prepare('SELECT id FROM material_evidence WHERE material_id=?').all(id))this.store.invalidateMemoryEvidence(String(anchor.id));
         db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?').run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,id);
+        for(const block of draft.blocks)if(block.kind==='text'&&draft.members.some(m=>m.kind==='archive')){const h=hash(JSON.stringify([id,revision,block.id]));const anchor=`${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;db.prepare('INSERT INTO material_evidence VALUES(?,?,?,?)').run(anchor,id,revision,block.id);}
+        if(db.prepare('SELECT 1 FROM material_searchable WHERE material_id=?').get(id))this.setSearchable(id,true);
         if(ownTransaction)db.exec('COMMIT');
         return {...this.get(formatMaterialRef(id,revision))!,changed:true};
       }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
     }finally{for(const release of releases)release();}
   }
 
-  list(args:{sourceId?:string;kind?:string;deviceId?:string;after?:string;before?:string;limit?:number;cursor?:string}={}):MaterialPage {
+  list(args:{sourceId?:string;kind?:string;deviceId?:string;after?:string;before?:string;limit?:number;cursor?:string;query?:string}={}):MaterialPage {
     const limit=args.limit??30;if(!Number.isInteger(limit)||limit<1||limit>100)throw new StoreError('Invalid material page size');
     const clauses=['h.retired=0'],values:(string|number)[]=[];
+    if(args.query){const terms=args.query.trim().split(/\s+/).filter(Boolean);for(const term of terms){if([...term].length>=3){clauses.push('h.rowid IN (SELECT rowid FROM material_fts WHERE material_fts MATCH ?)');values.push('"'+term.replaceAll('"','""')+'"');}else{clauses.push('EXISTS(SELECT 1 FROM material_searchable s JOIN material_blocks b ON b.material_id=s.material_id JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE s.material_id=h.id AND b.revision=h.revision AND instr(p.text,?)>0)');values.push(term);}}}
     for(const [key,column] of [['sourceId','source_id'],['kind','kind'],['deviceId','device_id']] as const)if(args[key]){clauses.push(`h.${column}=?`);values.push(args[key]!);}
     if(args.after){const after=new Date(args.after).toISOString();clauses.push('h.last_at>=?');values.push(after);}
     if(args.before){const before=new Date(args.before).toISOString();clauses.push('h.first_at<?');values.push(before);}
@@ -227,7 +254,7 @@ export class MaterialStore {
     for(const row of selected){
       const start=Math.max(offset,row.start_offset),stop=Math.min(pageEnd,row.end_offset);
       if(stop<=start)continue;
-      const rendered=row.payload+'\n';
+      const rendered=row.payload+(row.format==='markdown-fragment'?'':'\n');
       const slice=rendered.slice(start-row.start_offset,stop-row.start_offset);
       const pageStart=text.length;text+=slice;cursor=stop;
       spans.push({blockId:row.block_id,kind:row.kind,...(row.format?{format:row.format}:{}),
@@ -257,6 +284,7 @@ export class MaterialStore {
       const head=this.head(id);if(!head)throw new StoreError('Material not found',404);
       if(head.retired){if(ownTransaction)db.exec('COMMIT');return {id,revision:head.revision,retired:true};}
       if(head.revision!==options.expectedRevision)throw new StoreError('Material revision changed; refresh and retry',409);
+      this.setSearchable(id,false);for(const anchor of this.evidenceIds(id))this.store.invalidateMemoryEvidence(anchor);
       const now=new Date().toISOString(),revision=hash(JSON.stringify(['retire',id,head.revision])),sequence=head.sequence+1;
       db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?)').run(id,revision,sequence,JSON.stringify({id,kind:head.kind,retired:true}),now,0,0,0,0);
       db.prepare('UPDATE material_heads SET revision=?,sequence=?,retired=1,updated_at=? WHERE id=?').run(revision,sequence,now,id);
@@ -264,5 +292,5 @@ export class MaterialStore {
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   /** Explicit privacy erasure removes all revisions, payloads unique to them and asset refs. */
-  forget(id:string):boolean {parseId(id);const result=this.store.db.prepare('DELETE FROM material_heads WHERE id=?').run(id);return result.changes>0;}
+  forget(id:string):boolean {parseId(id);this.setSearchable(id,false);for(const anchor of this.store.db.prepare('SELECT id FROM material_evidence WHERE material_id=?').all(id))this.store.invalidateMemoryEvidence(String(anchor.id),true);const result=this.store.db.prepare('DELETE FROM material_heads WHERE id=?').run(id);return result.changes>0;}
 }

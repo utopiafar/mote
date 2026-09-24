@@ -1,6 +1,6 @@
 import { DatabaseSync, backup } from 'node:sqlite';
 import { constants, createReadStream } from 'node:fs';
-import { mkdir, readFile, writeFile, copyFile, rm, realpath, lstat, chmod } from 'node:fs/promises';
+import { mkdir, readdir, readFile, writeFile, copyFile, rm, realpath, lstat, chmod } from 'node:fs/promises';
 import { resolve, join, relative, dirname, basename, isAbsolute, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 
@@ -98,6 +98,7 @@ try {
       if(unified.has(object.hash))continue;
       for(let part=0;part<object.parts;part++)paths.push(await selectedContentPath(`files/objects/${object.hash}/${part}`));
     }
+    try{for(const folder of await readdir(join(source,'source-archive'))){if(!/^[a-f0-9]{64}$/.test(folder))throw new Error('Invalid archive directory');for(const name of await readdir(join(source,'source-archive',folder))){if(!/^(manifest|[a-f0-9]{64})(\.plain|\.aes)$/.test(name))throw new Error('Invalid archive file');paths.push('source-archive/'+folder+'/'+name);}}}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
     for(const path of paths)await ordinarySource(join(source,path));
     await backup(db, join(out, 'mote.sqlite'));
     await chmod(join(out, 'mote.sqlite'), 0o600);

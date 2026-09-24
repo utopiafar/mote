@@ -17,6 +17,7 @@ export interface ConnectorConfig {
   syncIntervalMs?: number;
 }
 export interface ConnectorContext {
+  sourcePipelines?: import('../source-pipelines.js').SourcePipelineRuntime;
   evidenceReader?: import('../evidence-reader.js').EvidenceReader;
   contextQuery?: import('../context-query.js').ContextQuery;
   materials?: import('../materials.js').MaterialStore;

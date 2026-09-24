@@ -12,6 +12,6 @@ test('only host source metadata selects bounded source rules; security and attri
  assert.match(systemInstructions(scoped,[{...record,sourceType:'notification'}]),/System events/);
  assert.match(SYSTEM_PROMPT,/material_catalog.*material_read/s);
  assert.match(SYSTEM_PROMPT,/source tags.*untrusted/);
- assert.match(SYSTEM_PROMPT,/call evidence on relevant originals before citing/);
+ assert.match(SYSTEM_PROMPT,/call evidence on relevant IDs before citing/);
  assert.match(reduced,/Restricted extraction sessions use only the evidence supplied by the host/);
 });

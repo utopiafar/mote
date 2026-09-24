@@ -1,3 +1,4 @@
+import type {SourcePipelineRuntime} from './source-pipelines.js';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {sourceCapabilities,sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
@@ -9,7 +10,7 @@ type Version={capture_id:string;hash:string};
 export class SourceStore {
   private pending=new Map<string,Promise<unknown>>();
   readonly capabilities=sourceCapabilities.clone();
-  constructor(public store:Store){}
+  constructor(public store:Store,public pipelines?:SourcePipelineRuntime){}
   listSources():SourceConnection[]{return (this.store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>this.present(JSON.parse(r.json)));}
   getSource(id:string):SourceConnection {const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Source not found',404);return this.present(JSON.parse(row.json));}
   register(raw:unknown):SourceConnection {
@@ -62,6 +63,13 @@ export class SourceStore {
       if(Date.parse(item.observedAt)>Date.now()+86400000)throw new StoreError('Observation cannot be in the future');
       if(current.retention==='reference'&&item.layer!=='reference')throw new StoreError('This source accepts references only',409);
     }};validate();
+    if(this.pipelines){
+      const selected=this.pipelines.select(source);
+      if(selected?.storage==='archive'){
+        if(transaction)throw new StoreError('Record transaction callbacks are unavailable for archive sources',409);
+        return this.pipelines.receive(source,items,validate)!;
+      }
+    }
     const plans=items.map(item=>{
       const {observedAt,...semantic}=item,hash=sha256(JSON.stringify(semantic));
       const prior=this.store.db.prepare('SELECT capture_id,hash FROM source_versions WHERE source_id=? AND external_id=? AND revision=?').get(sourceId,item.externalId,item.revision) as Version|undefined;

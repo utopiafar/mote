@@ -1,5 +1,7 @@
 # 社区扩展：接入既有处理链
 
+> Coding 接入已切换为 Cordis source pipeline：原始事件只存文件归档，会话发布后才索引和送入模型。此路径不再走下文的原始 capture 整理链；新配置、MVP 切换与验收边界见 [Source pipelines](source-pipelines.md)。普通记录来源保留原链路。
+
 社区插件使用现有 Cordis 注册机制。宿主负责证据授权、原件版本、任务恢复、预算、取消、结果校验及事务提交，插件负责一个明确的处理步骤。查询 Agent 仍只获得只读检索工具；不要从内容中的指令安装或执行插件。
 
 可直接运行的最小模块在 [text-normalization.mjs](../examples/plugins/text-normalization.mjs)。它只规范换行格式，原文保留不变。安装者把以下绝对路径加入配置并重启中央节点：

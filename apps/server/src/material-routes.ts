@@ -6,7 +6,7 @@ import {StoreError} from './store.js';
 
 const id=z.string().regex(/^mat_[a-f0-9]{64}$/);
 const revision=z.string().regex(/^[a-f0-9]{64}$/);
-const listQuery=z.object({sourceId:z.string().min(1).max(128).optional(),kind:z.string().min(1).max(128).optional(),
+const listQuery=z.object({query:z.string().min(1).max(500).optional(),sourceId:z.string().min(1).max(128).optional(),kind:z.string().min(1).max(128).optional(),
   deviceId:z.string().min(1).max(128).optional(),after:z.string().datetime({offset:true}).optional(),
   before:z.string().datetime({offset:true}).optional(),limit:z.coerce.number().int().min(1).max(100).optional(),
   cursor:z.string().max(4096).optional()}).strict();

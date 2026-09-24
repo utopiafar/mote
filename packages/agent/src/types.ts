@@ -40,7 +40,7 @@ export interface MediaContextRange extends ContextRange {
 
 export interface ContextReader {
   catalog?(args:ContextRange&{path?:string;query?:string}):Promise<unknown>;
-  materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null}>;
+  materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null}>;
   materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean}>;
   segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
   readImage?(args:{id:string}):Promise<{mimeType:string;data:string}>;

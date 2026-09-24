@@ -84,7 +84,10 @@ export class MemoryStore {
     if(!args.includeHistory){const at=args.asOf??new Date().toISOString();conditions.push("(json_extract(json,'$.supersededBy') IS NULL OR julianday(json_extract(json,'$.supersededAt'))>julianday(?))");values.push(at);conditions.push("(json_extract(json,'$.validFrom') IS NULL OR julianday(json_extract(json,'$.validFrom'))<=julianday(?)) AND (json_extract(json,'$.validUntil') IS NULL OR julianday(json_extract(json,'$.validUntil'))>julianday(?))");values.push(at,at);}
     for(const key of ['tier','kind','status','layer','id'] as const)if(args[key]){conditions.push(`${key}=?`);values.push(args[key]!);}
     if(args.sourceId){
-      conditions.push("EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN captures c ON c.id=d.evidence_id WHERE d.memory_id=memory_catalog.id AND coalesce(json_extract(c.json,'$.provenance.sourceId'),'')!=?)");values.push(args.sourceId);
+      const materialTables=Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get());
+      const materialJoin=materialTables?' LEFT JOIN material_evidence e ON e.id=d.evidence_id LEFT JOIN material_heads h ON h.id=e.material_id ':'';
+      const source=materialTables?"coalesce(json_extract(c.json,'$.provenance.sourceId'),h.source_id,'')":"coalesce(json_extract(c.json,'$.provenance.sourceId'),'')";
+      conditions.push(`EXISTS(SELECT 1 FROM memory_dependencies d WHERE d.memory_id=memory_catalog.id) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN captures c ON c.id=d.evidence_id ${materialJoin} WHERE d.memory_id=memory_catalog.id AND ${source}!=?)`);values.push(args.sourceId);
     }
     if(args.query?.trim()){
       const terms=args.query.trim().split(/\s+/u).slice(0,12),long=terms.filter(t=>Array.from(t).length>=3);

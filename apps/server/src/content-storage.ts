@@ -85,6 +85,15 @@ export class ContentStorageService {
         }catch(error){steps.set(parent,()=>{throw error;});}
       }
     }
+    const rawRoot=join(this.store.directory,'source-archive');directory(rawRoot);
+    for(const source of readdirSync(rawRoot)){
+      if(!hashName.test(source))throw Error('Invalid source archive directory');
+      const parent=join(rawRoot,source);directory(rawRoot,parent);
+      for(const name of readdirSync(parent)){
+        const match=/^(manifest|[a-f0-9]{64})(?:\.plain|\.aes)$/.exec(name);if(!match)continue;
+        const path=join(parent,match[1]);steps.set(path,()=>{directory(rawRoot,parent);return this.store.contentEncryption.decrypt(path,bytes=>{JSON.parse(bytes.toString());});});
+      }
+    }
     this.progress.total=steps.size;
     for(const step of steps.values()){
       await setImmediate();if(this.stopped){this.progress.state='cancelled';return;}
