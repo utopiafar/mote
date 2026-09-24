@@ -57,7 +57,7 @@ Mac 0.4.0 最终打包后，ad-hoc 签名验证通过；包内 Qwen 原生运行
 
 ## Android 最终安装包与模拟器
 
-0.4.0 / versionCode 5 的日常 debug 和开发版 APK 已构建，开发版显示为 `0.4.0-dev`。36 项 JVM 测试通过；两种构建的 lint 均为 0 error / 48 warning；两种 APK 均通过 16 KiB ZIP 对齐。最终文件位置、大小和 SHA-256 见 [Android 产物记录](android.md#040-来源同步验证与产物)。
+0.4.0 / versionCode 5 的日常 debug 和开发版 APK 已构建，开发版显示为 `0.4.0-dev`。36 项 JVM 测试通过；两种构建的 lint 均为 0 error / 48 warning；两种 APK 均通过 16 KiB ZIP 对齐。最终文件位置、大小和 SHA-256 见 [Android 产物记录](android.md#历史-040-来源同步验证与产物)。
 
 最终开发 APK 在任务专用 `mote_fixture_api35`、API35 / Android 15 模拟器中运行 `LocalSourcesInstrumentedTest` 的 3 项仪器测试，全部通过且无跳过，耗时 1.338 秒：
 

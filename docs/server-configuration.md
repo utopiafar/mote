@@ -1,8 +1,10 @@
 # 服务端配置参考
 
-中央界面的日常入口是总览、时间线、随手记、问一问与资料库；设备和来源单独管理。底部 **设置** 按「问答与回顾」「保留与容量」「检索索引」「来源与外部应用」分组，数据导入导出放在「数据与备份」，邀请和 Chatbot 凭据在「连接授权」，软件更新在「关于 Mote」。运行诊断和部署详情收在 **设置 → 开发者选项**。
+中央受管理 OCR/ASR 的 profile 运行时、模型目录与内部 Worker 配置另见 [中央 OCR 与录音转写](ocr-asr-implementation-plan.md)。
 
-每类设置将 **配置草稿** 与 **当前生效值** 分开显示。**问答与回顾 → 模型服务** 提供厂商和本机服务预设、模型 ID、协议及只写 API key；点击“保存并应用”立即用于后续模型请求，重启后仍保留。预设本身不会发请求；手动“测试连接”只发送合成内容，可能产生模型费用。详见[模型服务配置](model-providers.md)。保留周期、容量和同步间隔仍提供配置草稿；外部应用的可写来源可从已注册来源中勾选。
+中央当前一级入口为今天、资料库、问一问、行动、连接。系统管理包含模型、费用、处理任务、存储和诊断，用户设置管理会话与语言；模型入口为 `#/system/models`，诊断为 `#/system/diagnostics`。旧页面 hash 保留映射，当前导航见 [Slate UI](ui-slate.md)。
+
+每类设置将 **配置草稿** 与 **当前生效值** 分开显示。**系统管理 → 模型** 提供厂商和本机服务预设、模型 ID、协议及只写 API key；点击“保存并应用”立即用于后续模型请求，重启后仍保留。预设本身不会发请求；手动“测试连接”只发送合成内容，可能产生模型费用。详见[模型服务配置](model-providers.md)。保留周期、容量和同步间隔仍提供配置草稿；外部应用的可写来源可从已注册来源中勾选。
 
 其他部署设置选择「检查配置草稿」后，可以下载 `mote-config-changes.env`。文件仅包含本次修改的非敏感环境变量，不包含已配置的令牌或密钥，也不会直接写入节点或热更新。将这些变量合并到原部署配置，保留令牌、密钥与目录等其余设置，再重启节点并刷新生效配置。**不要用变更片段覆盖整个配置文件，也不要用 shell 的 `source` 执行它。** 草稿仅在当前设置子页面内保留；返回上级菜单、切换页面、刷新或断开连接后会丢弃。
 
@@ -30,7 +32,7 @@
 | 内容 | 原生进程 | Docker |
 |---|---|---|
 | 日记、OCR、时间线、设备信息、索引、已保存的洞察 | `<MOTE_DATA_DIR>/mote.sqlite`，运行时有 WAL 辅助文件 | `/data/mote.sqlite`，持久化到所选命名卷 |
-| 去重后的图片 | `<MOTE_DATA_DIR>/blobs/<hash>` | `/data/blobs/<hash>`，同一卷 |
+| 截图与文件原件资产 | `<MOTE_DATA_DIR>/files/objects/<sha256>/<part>.plain\|.aes`，每片最多 4 MiB；兼容旧 `blobs/` 与 `files/<hash>` | `/data/files/objects/`，同一卷；格式以资产目录为准 |
 | 结构化运行日志 | `MOTE_LOG_DIR`；为空时为数据目录下 `logs/` | `/data/logs`，同一卷 |
 | 原生进程监督日志 | profile 的 `logs/central.log` 及轮转文件 | Docker logging driver，独立于 `/data/logs` |
 | CLI 离线备份 | 默认 `<profile>/backups/`；`backup --out` 可指定其它目录 | 备份仍写入宿主机选定位置，不在数据卷内 |
@@ -39,7 +41,7 @@
 | Tunnel 凭据 | profile 的 `secrets/cloudflared-token` | 只挂载给 cloudflared，中央容器不读取此文件 |
 | 客户端截图队列、草稿、Qwen 权重 | 分别在 Mac / Android App 本地目录 | 不属于中央节点配置或中央备份 |
 
-普通问答结果即时返回给客户端，不自动保存到 SQLite；主动生成或定时生成的个人回顾保存为洞察。
+普通问答的完成回答和失败轮次保存在中央 SQLite 对话历史中；网页通过持久化 query run 展示进度并恢复结果。洞察独立保存版本化报告。完整离线备份包含对话，旧 HTTP JSON 导出不包含对话，见 [对话历史](conversations.md)。
 
 **Docker 的宿主机 profile 下 `data/` 不是容器资料库。** 数据保存在界面或 `config` 输出标出的命名卷里。Linux Docker Engine 可用 `docker volume inspect <卷名> --format '{{.Mountpoint}}'` 查询 Docker 管理的位置；Docker Desktop 的卷位于其 Linux 虚拟机，不能把虚拟机里的路径当作 macOS Finder 目录。修改 Docker profile 的 `MOTE_DATA_DIR` 不会改变 `/data` 的挂载。
 
@@ -92,7 +94,7 @@
 | `MOTE_AGENT_TIMEOUT_MS` | `600000` | 一次 Agent 从开始到完成的总期限，5000–3600000 毫秒整数；包含多次模型请求、工具调用和校验。Codex Server 可留空，留空表示不设置 Mote 的总期限。旧 `MOTE_MODEL_TIMEOUT_MS` 仅作为兼容回退 |
 | `MOTE_CODEX_BIN` | `codex`（PATH） | 可信的本机 Codex CLI 可执行路径；网页不能设置此值 |
 | `MOTE_CODEX_HOME` | `CODEX_HOME` 或 `~/.codex` | 服务端系统用户的 Codex 文件登录目录；仅链接 `auth.json`，不加载该目录的其他设置，见[本机 Codex](model-providers.md#本机-codex) |
-| `MOTE_INSIGHT_INTERVAL_HOURS` | `0` | 0–168 小时；0 关闭定时回顾，非零会调用已配置 Agent 并产生模型用量 |
+| `MOTE_INSIGHT_INTERVAL_HOURS` | `0` | 0–168 小时；只在首次建立生命周期策略时以正数初始化洞察 intervalHours；0 不会关闭现行默认自动工作流。后续以数据库中的 enabled、minChanges、maxWaitHours 为准，见 [调度规则](memory-lifecycle.md) |
 | `MOTE_EMBEDDING_MODEL` | 空 | 可选 embedding 模型；未配置时使用本地文本索引 |
 | `MOTE_EMBEDDING_BASE_URL` | 空 | 启用 embedding 必填，模型请求可达的服务基址 |
 | `MOTE_EMBEDDING_API_KEY` | 空 | embedding 服务凭据，独立于 Agent key |
@@ -121,6 +123,8 @@ Caddy 使用 profile 文件中的 `MOTE_TLS_DOMAIN`、`MOTE_TLS_HTTP_PORT`（80�
 `MOTE_CONFIG_FILE` 由 CLI 注入，标记宿主机可编辑的环境文件；`MOTE_ENV_FILE` 是进程实际加载的文件，两者在 Docker 内可能不同。`MOTE_RUNTIME`、`MOTE_STORAGE_KIND`、`MOTE_STORAGE_SOURCE`、`MOTE_STORAGE_MOUNT` 等由 CLI 注入的字段用于说明部署映射；修改这些说明字段不会挂载磁盘。实际目录/卷必须通过部署配置设置。容器映射、备份目录和客户端本地目录不是通过网页远程修改的选项。
 
 ## 发行版本与更新
+
+当前 DEV 发布只有客户端安装包，手动下载覆盖安装；中央自行从源码构建并使用 `upgrade`。以下变量/API 描述保留的历史签名更新通道，当前 DEV 不提供该通道需要的 manifest、服务端包或镜像，见 [更新指南](updating.md)。
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|

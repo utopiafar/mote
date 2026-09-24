@@ -1,12 +1,8 @@
 # Mote
 
-> **0.0.58 DEV** 重构中央、Mac 与 Android 导航及 Slate 界面。开发阶段仅发布 Mac DEV / Android DEV 两个安装包，手动下载更新；见 [界面与发布策略](docs/ui-slate.md)。
+> 当前源码版本 **0.0.66**。开发阶段发布 Mac DEV / Android DEV 两个安装包，手动下载更新；见 [发布策略](docs/ui-slate.md)。当前能力、专题指南及历史验收的入口见 [文档索引](docs/README.md)。
 
-> 0.0.56 将主链路升级为通用观察、内容对象、加工产物和增量记忆；新增可插拔持久 DAG、有界片段、分层检索与低成本目录索引。见 [架构升级](docs/context-architecture.md) 和 [测试报告](docs/context-architecture-validation.md)。
-
-> 0.0.53 新增可配置的页面内容采集，支持 Android / macOS 独立文字上报。默认关闭，内置规则为实验适配。见 [使用与贡献](docs/ui-page-capture.md) 和 [项目实践调研](docs/ui-page-research.md)。
-
-> 0.0.42：端侧上传审查、中央 OCR／语义处理与按需原图披露，请先阅读 [配置与升级说明](docs/central-perception.md)。下文涉及旧版本机 OCR／VLM 的说明以此文为准。
+> 截图采用端侧文字规则审查与中央 OCR；端侧 Qwen/VLM 暂停执行，下载模型不是采集前提。中央本地 OCR、录音转写和说话人分离的安装与边界见 [部署说明](docs/ocr-asr-implementation-plan.md)。
 
 **自己的上下文，自己的资料库。**
 
@@ -24,20 +20,20 @@ Mote 把电脑与手机上的屏幕采样、主动写下的日记、选定文件
 
 ## 能做什么
 
-- **收集与回看**：显式开启屏幕采样，按设备和时间浏览；截图相同也保留每次观察，图片去重存储。
-- **采集记录预览**：手机、Mac 和中央网页按天加载缩略图，展开原图与 OCR 文字；客户端可分别查看本机积存和自己的中央归档。可选仅充电时 OCR，先存图、接电后自动补识别。
-- **按应用分级采集**：选择“采集内容、仅应用活动、不记录”；纯活动不读画面和正文，内容采样支持固定遮挡区域、端上 Qwen 视觉审查与本地 OCR，审查失败跳过该帧。见 [分级设置](docs/privacy-and-metadata.md)。
+- **收集与回看**：显式开启屏幕采样，按设备和时间浏览；已上报的独立观察保留各自时间，相同字节去重存储；端侧启用图片去重时会跳过重复图片。
+- **采集记录预览**：手机、Mac 和中央网页按天加载缩略图，展开原图与 OCR 文字；客户端可分别查看本机积存和自己的中央归档。新截图上传后由中央生成 OCR；旧版本机补识别队列仅保留兼容处理。
+- **按应用分级采集**：选择“采集内容、仅应用活动、不记录”；纯活动不读画面和正文，内容采样支持固定遮挡区域和用户指定的文字规则审查；明确命中则丢弃，识别异常默认隔离待复核，可配置失败策略。见 [分级设置](docs/privacy-and-metadata.md)。
 - **锁屏与后台媒体**：Android 可独立采集播放应用、状态及系统提供的曲目／章节信息，锁屏不截图也能入库；按应用、锁屏与前后台查看播放采样时间，并交给 Agent 结合证据分析。见 [媒体采集设计](docs/media-context.md)。
 - **保留有用的元数据**：按开关上报设备与采样状态，文件和日历保留可得的大小、创建/修改/访问及删除观察时间；来源版本与证据可展开查看，未知字段不伪造。
 - **随手记录**：在采集 App 中写日记、杂事、心情；草稿与待同步笔记保存在本机，恢复网络后补传。中央界面也提供记录入口。
-- **来源接入**：Mac 本地日历与目录、Android 系统日历与文件选择器、中央 Google Calendar 只读同步；显式导入 MCP 资源，或通过 MCP 将其他 Chatbot 的可见资料写回指定来源。
+- **来源接入**：Mac 本地日历与目录、Android 系统日历与文件原件/引用同步、中央 Google Calendar、Gmail 与飞书只读接入；显式导入 MCP 资源，或通过 MCP 将其他 Chatbot 的可见资料写回指定来源。
 - **编码 Agent 对话**：Mac 可连接本机 Claude Code、Codex、Kimi Code，增量归档可读对话与工具记录，中央自动提炼有证据、适用范围和验证状态的编码经验，在现有 Chat 与洞察中使用。见[详细设计与调研](docs/coding-agent-memory.md)。
 - **通用导入与洞察**：提交文件、ZIP 或服务器目录，用自然语言说明资料；先保留原件，再预览确认、写入记录并分批提取记忆。独立洞察页展示带证据的 HTML 报告和文字版，见[中央记忆系统](docs/central-memory.md)。
 - **分层记忆**：保留原始输入、不可变快照与外部引用；默认检索当前版本，按需展开历史。模型记忆按“概要 → 内容 → 原始证据”逐层披露。
 - **问答与回顾**：Agent 自主选择只读工具、查找材料、解释证据；答案附可点击的原始记录。对话历史保存在中央节点，刷新或重启后可选择旧对话继续，见[对话说明](docs/conversations.md)。可手动或按配置周期生成回顾。
 - **离线可用、资料可迁移**：持久上传队列、幂等确认、JSON 导入导出、离线完整备份与保留期限。服务端与客户端内容加密均可选、默认关闭，开发者页面可一次性批量解密旧内容；连接凭据仍使用系统加密存储。
 - **便捷连接**：中央生成一次性二维码或 JSON 邀请，采集端确认后获得独立凭据；Chatbot 可导入专用 MCP JSON。按连接撤销，不必给每个端点分发中央管理令牌。
-- **版本更新**：客户端检查和验证 Release 安装包，服务端按命名环境备份、升级与回退；配置、队列、模型和资料保存在原位置。
+- **版本更新**：当前 DEV 客户端从 Release 手动覆盖安装，服务端从源码构建并按命名环境备份、升级与回退；配置、队列、模型和资料保存在原位置。
 - **可观测与可调节**：查看同步、索引、存储和请求状态；按需记录客户端资源样本，调整采样频率、图片尺寸、质量、推理线程和低电量策略。
 
 “采样时间”是根据实际观察计算的覆盖时间，包含采样空缺的限制，不能当作连续专注时长或 App 独占耗电。Mote 不会用应用名称或关键词硬编码“工作”“娱乐”“待办”等语义判断。
@@ -51,7 +47,7 @@ flowchart LR
     Android[Android App]
     Files[选定本地或 NAS 文本目录]
     Policy[按应用选择级别]
-    Privacy[内容：遮挡 · 本地 Qwen · OCR]
+    Privacy[内容：遮挡 · 可选文字规则审查]
     Activity[仅活动：应用 · 采样区间 · 设备状态]
     Queue[本地持久队列]
     Mac --> Policy
@@ -77,11 +73,13 @@ flowchart LR
     MCP --> API
     Cloud --> API
     Blobs[内容寻址图片库]
-    Agent[DeepSeek Harness Agent]
+    Agent[只读 Agent：Harness / Codex App Server]
     Tools[只读检索与证据工具]
     UI[管理界面]
     API --> Store
     API --> Blobs
+    Blobs --> Perception[中央 OCR / 可选语义处理]
+    Perception --> Index
     UI --> API
     API --> Agent
     Agent --> Tools
@@ -96,12 +94,12 @@ flowchart LR
 |---|---|---|
 | macOS 采集器 | 屏幕采样、隐私策略、随手记、本地日历与文件、离线同步 | Electron / TypeScript；Swift 系统助手；独立窗口与本地存储 |
 | Android 采集器 | 无障碍截图或 MediaProjection、日历与 SAF 文件、后台队列 | Kotlin；WorkManager；Keystore；HyperOS 配置入口 |
-| 本地推理 | 上传前的 NSFW 过滤及可配置视觉前置任务 | Qwen3.5-0.8B、llama.cpp CPU；断点下载、国内来源、哈希校验、离线导入 |
+| 端侧审查 / 中央感知 | 端侧按用户文字规则过滤；中央 OCR、转写与说话人分离 | 端侧 Apple Vision / ML Kit 按需审查；中央 PP-OCRv5、faster-whisper、sherpa-onnx；模型单独安装 |
 | 中央节点 | 认证、摄取、版本与分层归档、Memory、索引、连接器与调度 | Node.js 24 / Fastify；SQLite；单实例、单所有者 |
-| 查询 Agent | 选择检索工具、理解上下文、关联证据 | 官方 DeepSeek Harness；只暴露经验证的只读工具，无 shell 和写入工具 |
+| 查询 Agent | 选择检索工具、理解上下文、关联证据 | DeepSeek Harness 或本机 Codex App Server；查询仅开放受控只读工具，无 shell 和写入工具 |
 | 中央界面 | 来源、记忆、时间线、随手记、问答、导入导出与诊断 | React；随中央节点部署，也可在 Mac App 内使用 |
 
-截图先在端点通过隐私策略，再执行 OCR、编码和本地持久化；开启仅充电时 OCR 后可先存图、后补文字。上传成功必须收到匹配事件 ID 的确认，客户端才清理队列；待 OCR 的图像会保留到文字补写也得到确认。网络中断、节点停机或容量不足不会被当作同步成功。相同图片按内容哈希共享一个对象，观察事件独立保存。
+截图在端点应用遮挡与文字规则，获准上传的记录进入持久队列；审查异常默认隔离，等待用户复核。新截图不上传本机 OCR 文字，也不创建本机补识别任务。上传须收到匹配事件 ID 的确认，才移出待传队列；本机副本按客户端保留策略管理。中央 OCR 独立生成派生文字，模型缺失或识别失败不影响已归档原件。相同图片按内容哈希复用字节；启用端侧近似去重会减少保存的图片，不能保证保留每帧图像。
 
 笔记与屏幕记录使用同一归档协议。同步采用带认证的版本化 HTTP API；Agent 通过只读上下文工具消费这些记录。NAS 和其他硬件可接入同一 [协议](docs/protocol.md)，不必绑定某个采集 App。
 
@@ -153,8 +151,8 @@ node scripts/mote.mjs start --profile dev
 
 | 客户端 | 安装与首次设置 |
 |---|---|
-| macOS | 从 [Releases](https://github.com/utopiafar/mote/releases/latest) 下载对应架构的 ZIP，解压并将 App 移到应用目录后打开。导入邀请 JSON、链接或二维码图片，核对节点后连接；再配置隐私过滤、模型与系统权限。首次打开与源码构建见 [电脑端说明](docs/desktop.md)。 |
-| Android | 从 [Releases](https://github.com/utopiafar/mote/releases/latest) 下载日常版 APK；需要与日常环境并存时选择文件名含 `dev` 的开发版。在「连接中央节点」扫码或导入 JSON，配置模型与采集权限；小米后台设置见 [Android 说明](docs/android.md)。 |
+| macOS | 从 [Releases](https://github.com/utopiafar/mote/releases) 下载 Mac DEV ZIP，解压并将 App 移到应用目录后打开。导入邀请 JSON、链接或二维码图片，核对节点后连接；再配置隐私过滤与系统权限。首次打开与源码构建见 [电脑端说明](docs/desktop.md)。 |
+| Android | 从 [Releases](https://github.com/utopiafar/mote/releases) 下载 Android DEV APK，使用独立开发包名；当前不发布日常版 APK。在「连接中央节点」扫码或导入 JSON，配置隐私规则与采集权限；小米后台设置见 [Android 说明](docs/android.md)。 |
 
 在中央界面「设备 → 扫码连接设备」填写设备可访问的 HTTPS 地址，生成 10 分钟有效的一次性邀请。旧设备重新授权时选择原设备身份；新设备保持默认。采集凭据仅用于自身数据同步，Mac 内浏览完整中央资料时可以临时输入所有者令牌，采集配置不改变。MCP 的读取与指定来源写入使用另外的独立凭据，详见 [连接指南](docs/connections.md)。
 
@@ -162,7 +160,7 @@ Android 的「采集与存储详情」显示本周期已保存截图／笔记、
 
 Android 0.0.25 将采集启动与资料库整理分开：连接本机存储后即可开始采集，索引升级和清理在后台继续；采集记录按页显示并逐步加载缩略图。批量相似图片删除复用文件引用索引，避免每删除一条都重新读取整个资料库。服务端与各客户端默认明文写入，兼容读取旧密文；开发者页面提供手动启动的一次性批量解密，支持进度和取消。实现及生成图片测试范围见 [Android 大资料库性能](docs/android-library-performance.md)。
 
-在两端配置页下载或导入 Qwen 语言模型与视觉投影器，合计约 **703 MiB**。可选 ModelScope 优先、Hugging Face 回退，或离线导入已校验的文件。默认 CPU 2 线程、60 秒审查超时、输入最长边 512 像素。配置、误判边界与自定义前置任务见 [端上推理](docs/local-inference.md)。
+端侧截图不要求下载 Qwen 权重。本机 OCR 只在文字审查已开启且规则非空时运行，结果不作为新截图正文上传。中央新截图默认安排本地 OCR，新录音默认安排本地转写和说话人分离；Native 启动时自动准备中央 Worker 运行时，Docker 镜像包含依赖；模型在设置页显式安装。模型未就绪时保留原件并等待，详见 [中央 OCR 与录音转写](docs/ocr-asr-implementation-plan.md)。
 
 手机上的 `127.0.0.1` 指手机自己。USB 开发验证可将手机端口转发到电脑开发节点：
 
@@ -176,11 +174,11 @@ adb reverse tcp:47842 tcp:47842
 
 ### 3. 配置 AI 并使用
 
-在中央网页打开 **设置 → 问答与回顾 → 模型服务**，选择厂商或本机服务，填写支持工具调用的模型 ID 和 API key，点击 **保存并应用**。新请求立即使用新配置，正在执行的问答继续完成；密钥保存后只显示配置状态。
+在中央网页打开 **系统管理 → 模型**（`#/system/models`），选择厂商或本机服务，填写支持工具调用的模型 ID 和 API key，点击 **保存并应用**。新请求立即使用新配置，正在执行的问答继续完成；密钥保存后只显示配置状态。
 
 当前提供 DeepSeek、Qwen、豆包、GLM、Kimi、MiniMax、千帆、腾讯、SiliconFlow、OpenAI、Claude、Gemini 等预设，以及 Ollama、LM Studio 和自定义接口。预设可修改地址与协议，模型能力仍以厂商说明为准。“测试连接”只使用合成内容，不读取资料库，可能产生少量模型费用。
 
-没有模型配置时，采集、笔记、同步和时间线仍可使用，AI 页面会显示待配置。环境变量、五种协议和凭据迁移规则见 [模型服务配置](docs/model-providers.md)，运行时权限见 [Agent 文档](docs/agent.md)。
+没有模型配置时，采集、笔记、同步和时间线仍可使用，AI 页面会显示待配置。环境变量、模型协议和凭据迁移规则见 [模型服务配置](docs/model-providers.md)，运行时权限见 [Agent 文档](docs/agent.md)。
 
 开始采集后，在时间线查看记录，在随手记写下主动输入，在“问一问”选择时间与设备范围并提问，例如“这周我主要在推进什么，哪些事情还没完成？”点击答案引用可以展开原文。默认只向中央模型发送检索到的文本证据，不发送原始截图；启用 embedding 后，文本还会发送至你配置的 embedding 服务。
 
@@ -220,13 +218,13 @@ SQLite 数据目录放在主机本地磁盘或 Docker 本地卷；NAS 可以运�
 | 配置 / 功能 | 默认行为 |
 |---|---|
 | 开始采集 | 需要用户显式开启；启动中央节点不会开始截图 |
-| 应用过滤与本地视觉审查 | 客户端配置；审查未完成或失败时不保存、不上传该帧 |
+| 应用过滤与文字规则审查 | 客户端配置；规则命中不保存，OCR 异常默认隔离待复核，可显式选丢弃或放行 |
 | `MOTE_MAX_STORAGE_MB` | 中央配额 10240 MiB；满额拒绝新数据，端点保留未确认队列 |
 | `MOTE_RETENTION_DAYS` | `0`，持续保留；设为正数后会删除过期记录与无引用图片 |
 | `MOTE_CONTENT_ENCRYPTION` | 内容加密初始开关，默认 `0`；开发者页面保存的选择优先，配置密钥本身不会开启加密 |
 | `MOTE_DATA_KEY` | 可选 64 位十六进制 AES-256-GCM 内容密钥；未配置时显式开启会在资料库生成私有密钥文件，SQLite 元数据保持明文 |
 | `MOTE_EMBEDDING_*` | 默认关闭；配置后向指定服务发送文本建立向量索引 |
-| `MOTE_INSIGHT_INTERVAL_HOURS` | `0`，仅手动回顾；非零启用周期查询 |
+| 记忆与洞察调度 | 持久化生命周期策略控制自动运行；默认洞察有增量且达到 100 条或最长等待 1 小时即可启动，可关闭。`MOTE_INSIGHT_INTERVAL_HOURS` 仅用于初始策略，见 [记忆生命周期](docs/memory-lifecycle.md) |
 | 中央日志 | 固定事件与数量、耗时；默认轮转保留 3 个文件，每个最多 2 MiB |
 | 客户端资源诊断 | 默认关闭，按需记录进程、队列、模型、存储与电量样本 |
 
@@ -267,7 +265,7 @@ MOTE_ENV_FILE=/absolute/path/to/mote.env npm run import:files -- --root /path/to
 | [部署与诊断验证](docs/operations-validation.md) / [真实模型验证](docs/live-validation.md) | 自动化、模拟器、真实模型与真机的范围和限制 |
 | [第三方组件](THIRD_PARTY_NOTICES.md) | 实际依赖与模型许可说明 |
 
-目前优先支持 macOS 采集与 Android，Windows/Linux 采集适配尚未完成。桌面分发仅采用 ad-hoc 签名，尚未完成 Developer ID 签名与公证；K90 Pro Max / HyperOS 的实际后台稳定性和耗电需要真机验收。自动化 fixture、模拟器、真实模型和真机测试分别记录，不能互相替代。
+目前优先支持 macOS 采集与 Android，Windows/Linux 采集适配尚未完成。桌面分发仅采用 ad-hoc 签名，尚未完成 Developer ID 签名与公证；已有一次 Xiaomi / HyperOS 导航窗口修复的生成画面真机检查；后台稳定性、耗电与更广机型仍需单独验收，见 [采集恢复记录](docs/android-capture-recovery.md)。自动化 fixture、模拟器、真实模型和真机测试分别记录，不能互相替代。
 
 来源与分层记忆的测试范围、真实模型复测与目标环境限制见 [0.4.0 验收记录](docs/sources-validation.md)；发布和升级的验证见 [0.5.1 验收记录](docs/update-validation.md)。本轮修复与验证见 [2026-09-23 项目复查](docs/review-2026-09-23.md)，包含上传/同步、性能、真实模型 Persona 和 [社区插件接入](docs/community-extensions.md)。
 

@@ -1,5 +1,7 @@
 # Third-party sources and notices
 
+The Qwen runtime and notices are retained, but production screenshot collection currently bypasses that VLM. Current central OCR/ASR dependencies are pinned in `scripts/requirements-ocr.txt` and `scripts/requirements-audio.txt`, and model artifacts in `apps/server/src/media-assets.ts`; their installation and execution boundaries are documented in [central media processing](docs/ocr-asr-implementation-plan.md).
+
 This file identifies major runtime and model sources used by Mote. Exact JavaScript dependencies are recorded in `package-lock.json`; Android dependencies are declared in `apps/android/app/build.gradle.kts`. Preserve the licenses and notices shipped by those dependencies in redistributed binaries. This document is not a replacement for their complete license texts or transitive dependency notices.
 
 ## Local Qwen vision-language model

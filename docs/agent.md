@@ -1,10 +1,10 @@
 # Agent 配置与权限
 
-Mote 的查询和洞察由官方 DeepSeek Harness 执行，通用模型协议通过其 pi-ai 适配层接入。程序提供读取资料的能力，模型决定读什么、如何继续查询、如何解释证据。自然语言问题原样进入 Agent，不按“待办”“工作”“娱乐”等关键词分发。通用导入使用另一个具有原生文件与 shell 工具的 Harness 会话；完整流程与边界见[中央导入、记忆与洞察](central-memory.md)。
+Mote 的查询和洞察可由 DeepSeek Harness 或本机 Codex App Server 执行，二者共用任务上下文与只读证据授权；Harness 的通用模型协议通过 pi-ai 适配层接入。程序提供读取资料的能力，模型决定读什么、如何继续查询、如何解释证据。自然语言问题原样进入 Agent，不按“待办”“工作”“娱乐”等关键词分发。通用导入使用另一个具有原生文件与 shell 工具的 Harness 会话；完整流程与边界见[中央导入、记忆与洞察](central-memory.md)。
 
 ## 配置模型
 
-在中央网页 **设置 → 问答与回顾 → 模型服务** 选择服务，填写模型 ID 和 API key，保存后立即用于后续问答、回顾和记忆提取；正在执行的请求继续使用原配置。预设、协议、只写凭据和合成连接测试见[模型服务配置](model-providers.md)。
+在中央网页 **系统管理 → 模型**（`#/system/models`） 选择服务，填写模型 ID 和 API key，保存后立即用于后续问答、回顾和记忆提取；正在执行的请求继续使用原配置。预设、协议、只写凭据和合成连接测试见[模型服务配置](model-providers.md)。
 
 也可以在所选私有 `mote.env` 中提供启动默认值；修改文件需要重启，页面已保存的模型覆盖值仍优先：
 
@@ -24,11 +24,11 @@ MOTE_AGENT_TIMEOUT_MS=600000
 
 使用 `MOTE_ENV_FILE` 选择独立配置文件，或通过 [环境 CLI](deployment.md) 启动。没有模型或凭据时 `/api/status` 返回 `agent.configured=false`，问答返回 503；采集、笔记、存档与时间线仍可使用。
 
-模型服务需要支持所选协议的流式输出和工具调用，不能把“兼容 OpenAI”理解成支持每个模型及参数。可选 DeepSeek、Chat Completions、Responses、Anthropic Messages、Google 原生 Gemini 五种协议。推理强度通常用 `auto` 交给模型决定；DeepSeek 预设保留既有的 `high` 默认，也可改成 `auto`。其余 `off`、`low`、`high`、`max` 需模型支持。输出预算默认 65,536 token，范围 1–128000，实际不得超过所选模型限制；提高预算可能增加耗时和费用。
+模型服务需要支持所选协议的流式输出和工具调用，不能把“兼容 OpenAI”理解成支持每个模型及参数。可选 DeepSeek、Chat Completions、Responses、Anthropic Messages、Google 原生 Gemini 五种 HTTP 协议，另支持 `codex-app-server` 本机协议。推理强度通常用 `auto` 交给模型决定；DeepSeek 预设保留既有的 `high` 默认，也可改成 `auto`。其余 `off`、`low`、`high`、`max` 需模型支持。输出预算默认 65,536 token，范围 1–128000，实际不得超过所选模型限制；提高预算可能增加耗时和费用。
 
 显式设置 `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=1` 可使用无需凭据的 loopback 模型服务。它不允许远端免密地址；容器内的 loopback 指容器自身。
 
-可选 `MOTE_EMBEDDING_MODEL`、`MOTE_EMBEDDING_BASE_URL`、`MOTE_EMBEDDING_API_KEY` 在中央节点启用向量索引。未启用时仍有本地全文/文本检索。问答向所选模型发送检索到的文本证据；embedding 则向其独立配置的服务发送待索引文本。原始截图不在只读 Agent 工具的返回内容中。
+可选 `MOTE_EMBEDDING_MODEL`、`MOTE_EMBEDDING_BASE_URL`、`MOTE_EMBEDDING_API_KEY` 在中央节点启用向量索引。未启用时仍有本地全文/文本检索。问答向所选模型发送检索到的文本证据；embedding 则向其独立配置的服务发送待索引文本。普通文本工具不返回原图；模型可通过受控图片工具按需请求，只有开启 `allowQueryImages` 后才披露，见 [中央感知](central-perception.md)。
 
 ## 检索与证据
 
@@ -62,15 +62,15 @@ MOTE_AGENT_TIMEOUT_MS=600000
 
 网页通过 `POST /api/insight-runs` 启动回顾并立即取得 HTTP 202 和运行编号；请求包含 UUID `requestId`、可选 `prompt` 及上述时间/设备范围。同一编号同一请求可安全重试，不会重复调用模型。`GET /api/insight-runs` 返回最近的运行，`GET /api/insight-runs/:id` 返回阶段、结果或错误。界面展示启动、模型处理、实际只读工具及返回数量、结果校验、完成/失败状态；这些是执行进度，不是模型的私有思维链。刷新或离开页面后仍可恢复运行状态；网络断开自动重连，节点重启造成的中断明确标为失败。旧的同步 `POST /api/insights` 继续兼容。运行记录只保留固定阶段与计数，不复制提示词、模型对话或报告正文；报告仍受原始证据删除失效规则约束。
 
-`MOTE_INSIGHT_INTERVAL_HOURS=0` 默认关闭周期回顾；设为非零后由中央节点调度，使用已配置模型。主题、习惯和待办判断属于模型推理，不是检索关键词的固定映射。
+自动回顾由持久化 [记忆生命周期](memory-lifecycle.md) 策略调度；默认已启用，有增量且数量达标或最长等待到达时使用配置的模型。`MOTE_INSIGHT_INTERVAL_HOURS` 仅在初始化时以正数设置旧 intervalHours 字段，设为 0 不会关闭现行自动工作流；应修改洞察策略的 enabled。主题、习惯和待办判断属于模型推理，不是检索关键词的固定映射。
 
 遇到问题可在 [运行诊断](troubleshooting.md) 用 HTTP 请求编号检查 Agent 开始、完成、耗时与错误类别。诊断日志不保存模型对话或工具参数；界面中的“检索过程”属于有访问权限的回答详情。
 
 ## 隔离与能力边界
 
-每次查询创建独立临时目录、Harness home 和会话，通过带随机 256-bit secret 的 loopback bridge 读取中央资料。子进程环境只包含显式提供的模型配置和运行必需字段，不继承其他模型密钥或已有 Harness home。
+Harness 查询创建独立临时目录、Harness home 和会话，通过带随机 256-bit secret 的 loopback bridge 读取中央资料。子进程环境只包含显式提供的模型配置和运行必需字段，不继承其他模型密钥或已有 Harness home。
 
-查询运行时使用 `sdk-minimal`，启动前禁用 shell 工具和 shell 进程提供者，并核对工具表只包含本文列出的 Mote 只读能力及原生 `skill`。插件守卫拒绝其他工具。模型没有归档写入、删除、文件系统、shell、对外发消息或任意 URL 请求能力。这是工具权限和会话环境隔离，不等同完整操作系统沙箱。
+查询运行时使用 `sdk-minimal`，启动前禁用 shell 工具和 shell 进程提供者，并核对工具表只包含已注册的 Mote 只读能力及原生 `skill`。上表是基础入口，完整工具表还包含文件片段、正式资料、上下文目录/产物及按授权读取图片等入口；以 `packages/agent/src/context-tools.ts` 为准。插件守卫拒绝其他工具。模型没有归档写入、删除、文件系统、shell、对外发消息或任意 URL 请求能力。这是工具权限和会话环境隔离，不等同完整操作系统沙箱。
 
 捕获内容带 `untrusted_personal_context` 来源标记，通过工具结果提供，始终作为证据。该安排不能保证模型绝不受提示注入误导，但其工具权限不能因此扩大。
 

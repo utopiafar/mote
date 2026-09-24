@@ -31,7 +31,7 @@ npm run build -w @mote/server -w @mote/web
 node scripts/mote.mjs init --profile prod --home "$HOME/Library/Application Support/MoteCentral/profiles"
 ```
 
-编辑该环境的 `mote.env` 设置部署参数，然后启动。模型服务也可以启动后在 Web“设置 → 问答与回顾”中保存并立即应用，见[模型服务配置](model-providers.md)：
+编辑该环境的 `mote.env` 设置部署参数，然后启动。模型服务也可以启动后在 Web“系统管理 → 模型”中保存并立即应用，见[模型服务配置](model-providers.md)：
 
 ```sh
 node scripts/mote.mjs start --profile prod --home "$HOME/Library/Application Support/MoteCentral/profiles"
@@ -103,7 +103,9 @@ TLS overlay 使用固定 Caddy 2.11.4 Alpine 镜像；与中央在独立 Compose
 
 升级和回退会短暂停机，采集端保留未确认的本地队列。先确认新的 release 已构建或镜像已拉取，使用版本目录/不可变镜像，不要在旧 release 中直接覆盖代码。
 
-### 从签名发行版更新
+### 历史签名发行版更新机制
+
+当前 DEV 发布不提供签名清单、服务端源码包或 GHCR 镜像；本节保留旧实现契约，不能用于获取当前 DEV 版本。当前升级请使用下节的手动源码构建或自行构建 Docker 镜像，再运行 `upgrade`。
 
 0.5.0 起，已初始化的独立 profile 可检查并安装 GitHub Release。中央「服务端配置」页面也可检查最新版本并给出当前环境的操作命令；HTTP 接口不会启动 shell、选择本机路径或直接安装。检查是手动触发，同一分钟内共享同一次结果，不在中央启动时自动联网。旧的 `legacy` 根目录安装只显示发行信息，需要先按本文建立独立部署后再使用更新命令。
 
@@ -165,7 +167,7 @@ node scripts/mote.mjs stop --profile prod --home /srv/mote/profiles
 node scripts/mote.mjs backup --profile prod --home /srv/mote/profiles --out /srv/mote-backups/mote-2026-09-13
 ```
 
-CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，复制 `blobs/` 图片与 `files/` 原件，写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
+CLI 复用 `scripts/backup.ts`：SQLite backup API 生成一致数据库，按资产目录复制当前格式的截图与文件原件（新资产为 `files/objects/` 分片，旧格式兼容读取），写 SHA-256 manifest。不复制导入脚本和临时工作目录；未完成的导入在备份中标记为需要重新分析，保留已经入库的证据 ID。恢复到新目录后按新仓库位置重建输入路径，重新生成预览并确认；已保存的记录去重，Memory 仍按实际新增证据处理。原生 `server.pid` 活跃时拒绝备份；Docker 必须已停止，先复制该环境卷到私有临时目录再备份，因此需预留约两份仓库的临时/备份磁盘空间。临时复制会在结束后清理。
 
 在另一台机器初始化新的空环境，然后恢复：
 

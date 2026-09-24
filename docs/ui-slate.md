@@ -8,7 +8,7 @@ Mac 本机窗口保留本机采集、记录、来源和独立的隐私/连接设
 
 共享配色源在 `packages/shared/design-tokens.json`。运行 `node scripts/generate-design-tokens.mjs` 生成 Web/Electron CSS 与 Kotlin token。平台导航、系统权限与文件选择器仍用原生实现。
 
-处理任务页读取真实 `/api/processing`：最多 100 个最近步骤，不返回原始输入正文或处理器配置；支持的操作由服务端状态确定。文件、导入、记忆、问答和日程仍保留各自的进度与操作入口，未声称已将旧队列迁入 DAG。结果不明的日程仍走原有核实流程。
+处理任务页使用 owner-only `/api/operations` 分页读取 Operation 及步骤状态；原 `/api/processing` 上下文任务入口仍保留。截图感知、文件、Memory、导入、问答、洞察、生命周期、日程分析和 embedding 已接入共享执行器，各领域保留自己的配置与进度入口。支持的操作由服务端状态确定，不返回私人步骤输入，见 [Operations](operations.md)。结果不明的日程仍走原有核实流程。
 
 开发期发布策略：一条 DEV prerelease，只附 Mac DEV ZIP 和 Android DEV APK。CI 校验包身份、签名/证书、平台兼容性与上传完整性；`.asset.json` 等构建元数据不对外发布。已发布版本不可覆盖，失败时仅重试草稿发布。历史签名更新实现仍保留，不允许降级绕过校验。DEV 客户端使用 GitHub 手动安装入口。
 

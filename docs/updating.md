@@ -1,63 +1,39 @@
 # 保留设置地更新 Mote
 
-> **当前开发阶段（0.0.57 起）**：GitHub 每条发布是 DEV prerelease，仅附 Mac DEV ZIP 和 Android DEV APK。不发布正式客户端、服务端包或哈希/签名附件。DEV 客户端手动下载并安装；中央从源码部署并在升级前备份。CI 仍验证包身份、平台签名及内容完整性。当前 0.0.56 的附件已同样收敛为两个 DEV 包。下面涉及签名清单与自动更新的内容保留为历史机制说明，当前 DEV 发布不使用该通道。见 [当前策略](ui-slate.md)。
-
-
-所有组件从 [GitHub Releases](https://github.com/utopiafar/mote/releases) 获取版本信息。检查更新只发送普通公开 HTTP 请求，不发送中央令牌、日记、截图、日历或模型 API key。发布清单通过内置公钥验证，资产另校验大小和 SHA-256；验证失败保留当前版本。
-
-0.5.1 是首个带应用内更新入口的版本。旧客户端需先下载本版安装包覆盖安装一次，保留原应用数据；以后可使用应用内入口。不要通过卸载旧版或删除配置目录完成这一步。
+当前开发阶段只发布 **Mac DEV ZIP 和 Android DEV APK**，发布类型为 DEV prerelease。请打开 [GitHub Releases](https://github.com/utopiafar/mote/releases) 选择版本；`releases/latest` 不保证指向最新 prerelease。当前没有 `mote-release.json`、服务端源码包或新 GHCR 镜像附件，保留的签名更新器不能用于获取当前 DEV 版本。
 
 ## Mac App
 
-在采集器的更新入口检查版本，下载后选择安装并重启。更新只替换 App bundle；设备身份、各 profile 设置、Keychain 中的加密凭据、草稿、上传队列和本地模型仍保存在原来的用户目录。更新前会等待已经接受的写入完成，不会使用新默认设置覆盖旧配置。
-
-从 0.6.1 开始，Mac 的更新检查和下载使用 Electron 网络传输，遵循系统代理设置，且不携带登录 Cookie。如果旧版在依赖代理的网络下超时，请从 Releases 用浏览器下载 0.6.1 或更新版，再通过 Finder 替换 App。
-
-同一个 App 的多个 profile 共用程序文件。安装需要使用该 App bundle 的实例全部退出；更新器不会强制终止其他环境。只读 DMG、系统 App Translocation 或无目录写权限时，界面会说明手动安装要求，不会自动提权。旧程序保留用于失败恢复。
-
-本期 Mac 使用 adhoc 签名，更新后 macOS 可能再次要求允许应用运行、访问 Keychain 或读取日历/屏幕。原设置仍保留；重新授权与重置资料是两件事。正式 Developer ID 签名和公证流程已经预留，配置见 [发布说明](releasing.md)。
+保存输入，退出使用同一个 App bundle 的全部 Mote 实例，解压下载的 Mac DEV ZIP，用其中的 App 覆盖原 DEV App 后启动。设备身份、配置、凭据、草稿、队列和模型在应用包之外；不要删除用户资料目录，也不要把换 profile 当作更新。当前使用 ad-hoc 签名时，系统可能再次要求运行、Keychain、屏幕或日历授权。
 
 ## Android App
 
-在「设置 → 关于与更新 → 应用更新」使用一个随状态变化的主按钮完成「检查更新 → 下载更新 → 安装更新」。下载期间显示字节进度，可取消并保留断点；等待网络、等待非计费网络、系统调度失败有单独提示。返回页面时核对后台任务，已结束但状态滞留的任务允许重试。仓库、渠道和网络条件收在「更新设置」中，非计费条件与系统后台任务约束一致。完整且已校验的缓存可直接安装，损坏的下载缓存允许重新获取。系统可能要求允许 Mote 安装应用，随后显示系统安装确认；Mote 不会自动授权这个权限，也不能绕过系统确认。取消安装、网络失败或校验失败不改变旧设置。
+下载 Android DEV APK，同包覆盖安装。必须保持包名 `dev.mote.collector.dev`、签名证书一致且 versionCode 不降低；DEV 与日常包不是同一个安装身份。系统可能要求允许安装应用并确认更新。不要先卸载或清除数据，避免丢失本机内容和 Keystore。更新可能中断投屏，会话恢复仍由 Android 权限与后台规则控制。
 
-安装前同时验证发布签名、文件散列、实际 APK 签名、包名与更高的 `versionCode`。日常版与开发版按包名选择不同资产，不互相覆盖。升级保留应用数据、Keystore、草稿、队列、模型和已持久化来源配置；系统权限是否继续有效仍由 Android/HyperOS 决定。升级不自动开始截图，按需重新开启系统采集授权。
+## 中央节点
 
-不同人重新签名的同名 App 无法直接覆盖。更新器会拒绝这种包，绝不通过卸载旧应用清空数据来解决签名不匹配。已经卸载应用后，Android 通常也会删除其私有资料，因此不要为升级而先卸载。
-
-## 中央节点与中央前端
-
-中央管理界面「服务端配置 → 软件版本与更新」可查看当前版本、渠道和经过验证的新版本。它不会通过 HTTP 执行 shell 或修改部署机文件。安装在部署机完成，中央前端随中央版本一同更新。
-
-命名环境可运行：
+当前从源码部署。先在独立检出目录安装依赖并构建中央与 Web：
 
 ```sh
-node scripts/mote.mjs check-update --profile prod
-node scripts/mote.mjs update --profile prod
-# 明确指定一个经过验证的较新版本：
-node scripts/mote.mjs update --profile prod --version 0.6.1
+npm ci
+npm run build:libs
+npm run build -w @mote/server -w @mote/web
 ```
 
-自定义部署根目录使用原来的 `--home /absolute/profile-root`。各环境从自己的 `mote.env` 读取 `MOTE_UPDATE_REPOSITORY` 和 `MOTE_UPDATE_CHANNEL`；改变渠道不改变数据目录或任何中央凭据。默认 `utopiafar/mote` 与 `stable`，也可选择 `preview`。首次通过旧版本安装的部署工具需要先使用本版源码构建工具，再指向原来的 profile 根目录。
-
-命令行使用 Node 网络传输。若部署机已配置 `HTTP_PROXY`／`HTTPS_PROXY` 环境变量，可用 Node 24 的环境代理开关，例如 `node --use-env-proxy scripts/mote.mjs check-update --profile prod`；`update` 命令同样可加该开关。App 的系统代理与 CLI 的环境代理是分别配置的。
-
-原生部署先下载和验证源码包，在独立 release 目录安装依赖并构建中央及 Web，成功后才停止旧服务、备份并切换。Docker 使用签名清单中的不可变 digest 拉取镜像，继续使用原来的持久卷、环境文件和 Tunnel 配置。更新不修改模型选择、服务地址、访问令牌、图片加密密钥、存储位置或外部账户授权。
-
-切换后检查真实服务版本与健康状态。新程序可能已经迁移数据库，因此启动失败时保留升级前快照与部署选择，使用下方显式回退命令恢复，不直接让旧程序读取已迁移的数据。更新期间客户端继续在自己的本地队列积压，中央恢复后重试。`legacy` 直接运行方式不受命名部署管理，更新工具不会自动接管或重启它；迁移方式见 [部署说明](deployment.md)。
-
-需要回退时：
+受管理的 profile 用 `upgrade --release /absolute/built-checkout` 切换；Docker 先自行构建镜像，再用 `upgrade --image <image>`。沿用原 profile、`--home`、配置、数据目录/卷及密钥。CLI 会停止目标环境并创建一致性备份后切换；直接 `legacy` 部署需自行停止和备份，不能假定 CLI 已接管它。
 
 ```sh
-node scripts/mote.mjs rollback --profile prod --restore-data
+node scripts/mote.mjs upgrade --profile prod --home /srv/mote/profiles --release /srv/mote/releases/next
+# 仅在需要恢复升级前数据时使用：
+node scripts/mote.mjs rollback --profile prod --home /srv/mote/profiles --restore-data
 ```
 
-回退恢复升级前的数据快照，升级之后的数据另行保留，不能当作自动合并。当前连接授权与选择会保留，并清空 Google 的前进游标以重新同步，避免数据回退后漏收事件。普通 HTTP 归档导出和离线备份不会额外暴露这些授权凭据。
+详细步骤见 [部署与迁移](deployment.md#升级与回退)。新版本可能迁移数据库；回退使用升级前快照，不能让旧程序直接读取新格式数据库。备份不包含私钥和外部授权，存在密文时须单独保留原内容密钥。OCR/ASR 模型和运行时的安装、升级另见 [中央媒体运行时](ocr-asr-implementation-plan.md)。
 
-0.6.0 的设备邀请接口需要先升级中央，再升级客户端。已配对凭据保存在独立的私有连接文件中；升级与回滚保留当前撤销状态，不会让已撤销的设备重新获得访问权。Android 的本机采集统计从本版首次记录开始，旧版的历史累计数不补算；原队列仍直接读取并继续同步。
+## 历史签名更新机制
 
-## 验证和排查
+代码仍保留客户端签名清单下载与安装、中央 `check-update` / `update`、独立更新助手及失败回退。它们要求受内置公钥信任的 manifest 和对应资产；切换仓库不会更换信任根，不能跳过签名、证书或版本校验。当前 DEV 发布不使用该通道。历史验证见 [0.5.1 更新验收](update-validation.md)，当前产物与流程见 [发布说明](releasing.md)。
 
-“检查成功”只代表发布签名与元数据有效；“已下载”不等于系统已安装。客户端重新启动后读取实际程序版本，Android 最终结果以系统已安装版本为准。签名错误、下载中断、无磁盘空间、无写权限或系统拒绝安装时，优先查看更新页面的错误和原有诊断入口。
+## 验证边界
 
-自动化使用生成的配置、文件与测试包覆盖篡改下载拒绝、版本/签名不匹配、安装失败回退和状态保持。实际安装仍应分别验收目标 Mac、Android/HyperOS 和服务器环境；不能用模拟器结果替代 K90 真机后台行为。
+下载完成不代表已安装；重新启动后核对实际程序版本、原有配置与待同步数据。Fixture、模拟器、物理设备和真实模型检查分别记录，历史通过不代表本次升级已实测。

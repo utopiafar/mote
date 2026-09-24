@@ -11,7 +11,7 @@ Mote 的客户端、中央节点和中央前端使用同一个产品版本。发
 
 此前 Mac 和中央节点的自动更新按语义版本比较，因此不会将 0.0.1 当作更新；切换时应手动更新中央部署、退出并覆盖替换 Mac App，保留配置、凭据、模型与数据目录。Android 按内部版本码比较，原有更新流程仍可识别 code 12。不要绕过签名校验、复用较低 Android 版本码或卸载应用来完成切换。项目仍处于开发早期，当前版本不承诺功能和协议稳定。
 
-## 发布产物
+## 历史完整发布产物（当前 DEV 不发布）
 
 | 产物 | 用途 |
 | --- | --- |
@@ -25,7 +25,7 @@ Mote 的客户端、中央节点和中央前端使用同一个产品版本。发
 
 模型权重由模型管理器另行下载或离线导入；更新安装包不会重复分发或清理已下载模型。源码包仅从 Git 标签归档，忽略目录、个人配置和签名材料不在其中。
 
-## GitHub Secrets
+## 签名配置与历史清单密钥
 
 签名材料保存在 GitHub 仓库的 **release Environment Secrets**。该环境只允许 `v*` 标签的部署。普通分支和 Pull Request 的测试无需签名私钥。Workflow 只写 Secret 名称，通过环境变量或临时文件使用值；临时签名文件在构建结束后清理，不作为 artifact 上传。不要把私钥粘贴到 YAML 或 Release 附件。
 
@@ -42,7 +42,7 @@ Mote 的客户端、中央节点和中央前端使用同一个产品版本。发
 | `MOTE_APPLE_TEAM_ID`（Variable） | Apple 团队标识 |
 | `MOTE_APPLE_API_KEY_P8` / `MOTE_APPLE_API_KEY_ID` / `MOTE_APPLE_API_ISSUER`（Secrets） | Apple 公证 API 凭据 |
 
-GitHub 的 `GITHUB_TOKEN` 由工作流自动取得，用于当前仓库的 Release 和 GHCR 发布，不另存一个个人 PAT。镜像首次发布后需确认包可见性满足部署需求；如果 GHCR 包保持私有，部署机需要自己的只读 registry 凭据，不能将发布 token 写入客户端。
+GitHub 的 `GITHUB_TOKEN` 由工作流自动取得，当前用于仓库 Release 发布；旧完整发行流程还曾用于 GHCR 发布，不另存一个个人 PAT。镜像首次发布后需确认包可见性满足部署需求；如果 GHCR 包保持私有，部署机需要自己的只读 registry 凭据，不能将发布 token 写入客户端。
 
 本仓库的 `ghcr.io/utopiafar/mote:0.5.1` 已验证可匿名读取 amd64/arm64 镜像清单。实际安装与升级使用发布签名中的 digest；fork 或新软件包仍需单独检查其可见性。
 
@@ -52,15 +52,15 @@ Android 0.5.1 延续本项目 0.4.0 包的原有签名密钥，转换为强密�
 
 Mac 默认 adhoc 只提供本期可构建的分发方式，不代表 Apple 认可的正式签名。选择 `developer-id` 后，缺少证书或公证凭据会使构建失败，不会静默降级为 adhoc；构建验证签名、公证票据和 Gatekeeper。Apple 账户、证书费用与公证服务由应用维护者配置，流程不会代为创建这些账户。[electron-builder v26 签名说明](https://www.electron.build/v26/docs/code-signing)。
 
-## 一次发布
+## 当前 DEV 发布流程
 
-1. 更新根目录、Mac、中央和 Web 的 package 版本，以及 Android `versionName`；每次 Android 发布都增加 `versionCode`，同一身份不能复用更低版本码。
-2. 更新 lockfile 和 `release/notes/X.Y.Z.md`。运行 `node scripts/release/verify-version.mjs`、类型检查与相关回归。
-3. 提交并推送代码，然后创建不可变版本标签，例如 `git tag vX.Y.Z` 与 `git push origin vX.Y.Z`。
-4. Release workflow 运行完整检查，并行构建 Mac、Android、源码包和双架构镜像。所有必要作业成功后才签署清单、上传资产并发布 Release。
-5. 实际从 GitHub 下载清单，验证内置发布公钥；检查各包的 SHA-256、Android 证书和 Mac 包版本，再在隔离环境验证升级保留状态。
+1. 同步工作区版本、lockfile、Android versionName/versionCode 与 `release/notes/X.Y.Z.md`。
+2. 运行 `npm run check:local` 和 `node scripts/release/verify-version.mjs`，按改动补做 Android/平台检查。文档修改本身不要求发布新安装包。
+3. 提交代码并推送不可变的 `vX.Y.Z` 标签。Release workflow 核对版本，分别构建 Mac DEV 和 Android development 包。
+4. Mac 使用 `MOTE_MAC_DEVELOPMENT=1` 打包，Android 使用持续维护的签名证书；脚本核验身份、版本、证书/签名及产物完整性。
+5. `scripts/release/publish.mjs` 只上传 Mac DEV ZIP 和 Android DEV APK，并创建 DEV prerelease；构建用 `.asset.json` 不作为公开附件。当前工作流不生成服务端包、签名清单或 GHCR 镜像。
 
-Workflow 可从已有版本标签手动重跑。失败可重试尚未发布的草稿；已发布版本禁止覆盖资产，修复应使用新版本和新标签。预览版本使用 `X.Y.Z-rc.N` 等后缀，对应 `preview` 渠道；正式渠道不自动切换到预览。
+完整测试是提交/PR 检查与发布前验证的职责；当前 Release workflow 的作业为 version、mac、android、publish，不能把构建成功描述为在该工作流执行过所有测试。已发布版本不可覆盖；草稿失败可重试。当前客户端手动下载覆盖安装，中央从源码构建更新，见 [更新指南](updating.md)。
 
 ## 信任与密钥轮换
 

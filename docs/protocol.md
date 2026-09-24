@@ -1,6 +1,8 @@
 # Mote protocol v1
 
-All `/api/*` routes require Bearer authentication except public `/api/health` and the one-use invitation exchange `POST /api/connections/redeem`. `MOTE_TOKEN` remains the node owner credential. Since 0.6.0, clients can pair using a QR/JSON invitation and receive a separate revocable collector credential, restricted to their device's ingestion and sources; MCP credentials are separate read or source-scoped write capabilities. See [connection protocol](connections.md) for the invitation, identity check, permission matrix and revocation behavior. Health contains no private data. Server default port is 47832, bound to 127.0.0.1. Remote clients require HTTPS; only loopback is allowed for HTTP invitations. `localhost` on a phone means the phone.
+Current collectors send empty screenshot `ocrText` and `ocr.status=disabled`; local text review is not archived. Central OCR results are separate derived evidence. Legacy OCR updates remain compatible. Batch/bundle capture transport is described in [upload protocol](android-power-optimization.md#同步协议), and binary files use the separate [file-sync protocol](files.md#协议与存储扩展).
+
+All `/api/*` routes require authentication except public `/api/health`, the one-use invitation exchange `POST /api/connections/redeem`, and CORS OPTIONS requests. Bearer is the normal API credential; authorized file playback also supports a short-lived, file-scoped HttpOnly credential. `MOTE_TOKEN` remains the node owner credential. Since 0.6.0, clients can pair using a QR/JSON invitation and receive a separate revocable collector credential, restricted to their device's ingestion and sources; MCP credentials are separate read or source-scoped write capabilities. See [connection protocol](connections.md) for the invitation, identity check, permission matrix and revocation behavior. Health contains no private data. Server default port is 47832, bound to 127.0.0.1. Remote clients require HTTPS; only loopback is allowed for HTTP invitations. `localhost` on a phone means the phone.
 
 ## Capture upload
 
@@ -19,7 +21,8 @@ All `/api/*` routes require Bearer authentication except public `/api/health` an
   "windowTitle": "Optional, omit under strict privacy",
   "imageBase64": "base64 JPEG/PNG/WebP, no data URL prefix",
   "imageMime": "image/jpeg",
-  "ocrText": "optional locally extracted and sanitized text",
+  "ocrText": "",
+  "ocr": {"status": "disabled"},
   "source": "screen",
   "privacy": { "excluded": false, "redacted": true, "mode": "local", "reason": "configured masks applied" }
 }
@@ -133,7 +136,7 @@ Query `after` is inclusive and `before` exclusive. An explicit `deviceId` cannot
 
 Final answers must have a string body and declared retrieved citation IDs. Only successful tool responses authorize citations. Prose inline UUID citations must match the retrieved and declared IDs; code and authored Markdown links remain opaque. The UI presents verified inline sources as buttons opening the original record. Model-emitted literal JSON control characters are losslessly escaped; other malformed responses get at most one model-authored correction in the same read-only evidence session and original time budget. No semantic classifier or template fallback is used.
 
-`MOTE_MODEL_REASONING_EFFORT` is `off|low|high|max` (default `high`); `MOTE_MODEL_MAX_TOKENS` defaults to 8192 and is bounded to 256–32768. Reasoning is performed by the configured model through the Harness; no reasoning transcript is exposed as a user-facing answer. [DeepSeek's official thinking-mode documentation](https://api-docs.deepseek.com/guides/thinking_mode/) describes the provider controls and multi-round tool support. Higher effort can increase latency and usage.
+`MOTE_MODEL_REASONING_EFFORT` is `auto|off|low|high|max` (DeepSeek defaults to `high`, other protocols to `auto`); `MOTE_MODEL_MAX_TOKENS` defaults to 65536 and is bounded to 1–128000. Codex manages its own output budget. See [model configuration](model-providers.md). Reasoning is performed by the configured model through the Harness; no reasoning transcript is exposed as a user-facing answer. [DeepSeek's official thinking-mode documentation](https://api-docs.deepseek.com/guides/thinking_mode/) describes the provider controls and multi-round tool support. Higher effort can increase latency and usage.
 
 ## 版本化外部来源
 

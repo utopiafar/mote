@@ -71,7 +71,7 @@ debug 开关只增加固定事件，不记录请求正文、模型输入输出�
 | `timeout` | HTTP 504；明确达到 Agent 本地 deadline、SDK 请求超时，或操作取消；用请求编号定位最后成功的阶段 |
 | `internal` | 未归入上述类别的失败；用请求编号定位最后成功的阶段 |
 
-模型超时分为两层：`MOTE_MODEL_REQUEST_TIMEOUT_MS` 是单次 HTTP Provider 请求期限（5000–600000 毫秒），`MOTE_AGENT_TIMEOUT_MS` 是整个 Agent 运行期限（5000–3600000 毫秒）。可在“设置 → 问答与回顾 → 模型服务”修改并保存后立即生效，或修改环境文件后重启；页面已保存的模型设置优先于环境文件。在节点设置或 `/api/status.agent.agentTimeoutMs` 核对生效值。Codex Server 的单次模型请求不由 Mote 暴露，Agent 总运行期限可以留空；没有总期限时仍可能受到入口代理、工具或 Codex 自身限制。达到本机期限或 SDK 明确抛出请求超时类时，返回 `timeout`，不会再混入回答格式错误 `agent_response`。这个分类只证明发生了超时，不能单独确定原因是模型推理、网络还是工具等待。错误响应和诊断不引用模型、SDK stderr 或请求正文；清理失败也不会覆盖已确定的原始查询错误。
+模型超时分为两层：`MOTE_MODEL_REQUEST_TIMEOUT_MS` 是单次 HTTP Provider 请求期限（5000–600000 毫秒），`MOTE_AGENT_TIMEOUT_MS` 是整个 Agent 运行期限（5000–3600000 毫秒）。可在“系统管理 → 模型”修改并保存后立即生效，或修改环境文件后重启；页面已保存的模型设置优先于环境文件。在节点设置或 `/api/status.agent.agentTimeoutMs` 核对生效值。Codex Server 的单次模型请求不由 Mote 暴露，Agent 总运行期限可以留空；没有总期限时仍可能受到入口代理、工具或 Codex 自身限制。达到本机期限或 SDK 明确抛出请求超时类时，返回 `timeout`，不会再混入回答格式错误 `agent_response`。这个分类只证明发生了超时，不能单独确定原因是模型推理、网络还是工具等待。错误响应和诊断不引用模型、SDK stderr 或请求正文；清理失败也不会覆盖已确定的原始查询错误。
 
 当设备显示离线时，先区分“最近一次客户端上报”与“中央已经保存的资料”。离线状态或旧的 `lastCaptureAt` 不能证明之后没有归档。客户端上报的队列量也可能过时。中央 `queue.index` 给出当前索引状态；`textReady` 表示文本原文已可检索，未配置 embedding 并不妨碍文本归档。
 

@@ -23,10 +23,10 @@ The new album/grid path reads a separate minimal projection. It neither deserial
 ## Local storage
 
 - Authoritative `.event` and content-addressed `.blob` files keep their existing formats.
-- Sixteen `.browse-v1-*` encrypted shards contain only record ID, source, timestamp, app identity, image availability/blob reference and file size/mtime. New writes update their shard; reads use a bounded directory cache across queue handles.
+- Sixteen `.browse-v1-*` shards (plaintext by default, optional content encryption) contain only record ID, source, timestamp, app identity, image availability/blob reference and file size/mtime. New writes update their shard; reads use a bounded directory cache across queue handles.
 - A shard is invalidated on disk before its authoritative event changes. After a crash, missing or stale entries are reconstructed from events. A broken derived index can be rebuilt; unreadable authoritative events are preserved and surfaced as errors.
-- Older queues build the projection on first recovery/browse. This first migration still needs to read old event metadata; later launches read the compact encrypted index. Explicit integrity checks still open and verify all authoritative records/blobs.
-- `.thumb` files are encrypted derivatives, generated from the final privacy-processed bitmap. Older images generate a thumbnail when first opened in the grid. Derivatives share their parent's blob identity, follow queue retention/migration/orphan cleanup, and count toward storage usage. Thumbnail writes are optional when the configured storage limit leaves no room. Plaintext bitmaps remain only in the existing bounded memory cache.
+- Older queues build the projection on first recovery/browse. This first migration still needs to read old event metadata; later launches read the compact index. Explicit integrity checks still open and verify all authoritative records/blobs.
+- `.thumb` files are derivatives using the selected content-encryption policy, generated from the final privacy-processed bitmap. Older images generate a thumbnail when first opened in the grid. Derivatives share their parent's blob identity, follow queue retention/migration/orphan cleanup, and count toward storage usage. Thumbnail writes are optional when the configured storage limit leaves no room. Decoded display bitmaps use a bounded memory cache; on-disk derivatives are plaintext unless content encryption is enabled. See [content storage](content-storage.md).
 
 The central server maintains its own SQLite `capture_gallery` projection, backfills it once, and cascades deletes with parent captures. Image authorization now reads only the owner device and blob reference. See [protocol](protocol.md#screenshot-albums).
 

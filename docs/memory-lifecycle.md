@@ -1,25 +1,25 @@
-> 0.0.44 更新：新产物须经过 admission 分层与独立审核；自动提取采用有上限的连续窗口轮次。旧版候选不自动进入整合。当前规则与迁移行为见 [记忆准入设计](memory-admission.md)。
-
 # Memory lifecycle
+
+> 0.0.44 更新：新产物须经过 admission 分层与独立审核；自动提取采用有上限的连续窗口轮次。旧版候选不自动进入整合。当前规则与迁移行为见 [记忆准入设计](memory-admission.md)。
 
 The central node stores readable text, provenance, status and version metadata in SQLite. Memory statements and conversation summaries are text, not vectors. Each memory has a Markdown download; FTS5 is a disposable index over the text. This implementation does not create a second independent directory of editable Markdown files.
 
 ## Admission and defaults
 
-All four automatic workflows require **elapsed interval AND new changes**. A one-minute timer only checks admission; upload and import completion do not call a model. A first deployment starts its interval clock at registration and retains the existing journal as pending work. Manual extraction/review runs immediately. A process restart retains clocks, windows and cursors. A configured model is required.
+All four automatic workflows require **pending changes AND (the count threshold OR the maximum wait)**. The implementation uses `maxWaitHours` when set, otherwise `min(intervalHours, 1)` hours, measured from the last successful window (or initial registration). `intervalHours` is a retained configuration field, not an additional mandatory delay once the count threshold is reached. A one-minute timer only checks admission; upload and import completion do not call a model. A first deployment starts its interval clock at registration and retains the existing journal as pending work. Manual extraction/review runs immediately. A process restart retains clocks, windows and cursors. A configured model is required.
 
-| Workflow | Interval | Minimum increments | Maximum journal entries per window |
+| Workflow | Stored intervalHours | Count threshold | Maximum journal entries per window |
 | --- | --- | --- | --- |
 | Evidence extraction | 6 hours | 25 | 100 |
 | Long-term consolidation | 24 hours | 20 | 30 |
 | Insight review | 24 hours | 100 | 1,000 |
 | Conversation working memory | 1 hour | 8 turns | 20 |
 
-Settings → 问答与回顾 → 记忆与洞察 persists these settings immediately through `/api/memory-settings`. Each workflow can be disabled separately. The old environment insight interval only seeds the initial persisted interval; subsequent policy edits live in the database. Explicit zero previously meant manual-only; installations upgrading to this lifecycle receive the new documented defaults. Every gate remains AND: a small remaining backlog waits for further increments or an explicit manual run.
+System management → model settings → 记忆与洞察 persists these settings immediately through `/api/memory-settings`. Each workflow can be disabled separately. The old environment insight interval only seeds the initial persisted interval; subsequent policy edits live in the database. Explicit zero previously meant manual-only; installations upgrading to this lifecycle receive the new documented defaults. With the default settings above, all four workflows have an effective maximum wait of one hour. A small backlog can therefore run without reaching the count threshold; an empty journal does not call a model. Set each workflow’s `enabled=false` to make it manual-only.
 
 A bounded snapshot consumes a contiguous prefix of an arrival journal, not an occurrence-time window. Late uploads therefore remain eligible even when their authored dates are months old. Duplicate uploads do not create new increments. Updates and deletions are increments; invalidated originals are skipped. File processing completion writes another increment, so files that were not ready at the earlier check are revisited. New arrivals during a run remain after its watermark.
 
-A successful run advances its watermark and clock. Failures preserve the exact window and its settings, retain the durable extraction job, and retry with exponential backoff (up to six hours). Overlapping ticks share one promise. Extraction checkpoints include original content fingerprints, ranges and skill versions. A completed empty extraction is a checkpoint too. Automatic work is serialized; manual queries retain the existing query concurrency limit. Disabling a workflow pauses future admission/retries; it does not cancel a model call already running.
+A successful run advances its watermark and clock. Failures preserve the exact window and its settings, retain the durable extraction job, and retry with exponential backoff (up to six hours). Overlapping ticks share one promise. Extraction checkpoints include original content fingerprints, ranges and skill versions. A completed empty extraction is a checkpoint too. Each extension admits at most one active window; the shared executor and configured resource pools bound concurrency across extensions and model work. Interactive queries retain a separate admission pool. Disabling a workflow pauses future admission/retries; it does not cancel a model call already running.
 
 ## Layers and trust
 
@@ -40,7 +40,7 @@ The model procedures are native DeepSeek Harness Skills registered by the existi
 
 ## Verification
 
-`memory-lifecycle.test.ts` replays 480 fictional originals over 180 days, four devices, three speakers and four projects, with 24 revisions, 12 duplicate uploads and eight privacy deletions. The 472 current originals are fully processed by fixture-model batches. It also verifies AND gating, restart/retry, concurrent arrivals, old Chinese/English search, pagination, summary invalidation and exact provenance. This is deterministic fixture coverage, not a live semantic judgment of all records.
+`memory-lifecycle.test.ts` replays 480 fictional originals over 180 days, four devices, three speakers and four projects, with 24 revisions, 12 duplicate uploads and eight privacy deletions. The 472 current originals are fully processed by fixture-model batches. The original 0.0.31 validation covered the then-current AND gate; current scheduling tests cover count-or-wait admission, restart/retry, concurrent arrivals, old Chinese/English search, pagination, summary invalidation and exact provenance. This is deterministic fixture coverage, not a live semantic judgment of all records.
 
 `node --import tsx scripts/memory-live-eval.mjs` uses an isolated local Codex App Server with **gpt-5.6-luna / max**, through a loopback test adapter. DeepSeek Harness still chooses and executes its own declared read-only tools; Codex supplies inference. It reuses existing login authentication only, isolates configuration and plugins, and rejects native tool requests. The run caps provider attempts at 20 and uses only generated content. The live subset exercises extraction, consolidation, cross-month FTS retrieval, working summaries and incremental insights. Reports go to `/private/tmp/mote-memory-live-report.json` unless explicitly overridden. This adapter is a test utility, not a new production provider.
 
