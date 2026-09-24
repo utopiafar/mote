@@ -23,6 +23,17 @@ class StateSeriesTest {
             assertNotNull(restored.peek())
         } finally { dir.deleteRecursively() }
     }
+    @Test fun stateSeriesDoesNotMergeDifferentPrivacyOrSourceContracts() {
+        val first = StateSeries.extend(null, event("2026-09-17T00:00:00Z"))
+        val changed = event("2026-09-17T00:00:05Z").apply { getJSONObject("privacy").put("redacted", true) }
+        val next = StateSeries.extend(first, changed)
+        assertEquals(changed.getString("id"), next.getString("id"))
+        assertTrue(next.getJSONObject("privacy").getBoolean("redacted"))
+        assertEquals(1, next.getJSONObject("stateSeries").getJSONArray("samples").length())
+        val media = JSONObject(changed.toString()).put("source", "media")
+        assertEquals(media.toString(), StateSeries.extend(first, media).toString())
+    }
+
     @Test fun textAndDocxAreParsedLocally() {
         assertEquals("Generated text", LocalFileIndex.extract("Generated text".toByteArray(), "text/plain", "a.txt").text)
         val bytes = java.io.ByteArrayOutputStream()

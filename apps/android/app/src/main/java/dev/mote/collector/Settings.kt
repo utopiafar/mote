@@ -233,6 +233,8 @@ class Settings(private val context: Context) {
     fun statusAt(): Long = prefs.getLong("statusAt", 0)
     fun captured(at: String) { prefs.edit().putString("lastCapture", at).apply() }
     fun lastCapture(): String? = prefs.getString("lastCapture", null)
+    fun screenStatus(message: String) { if (prefs.getString("screenMessage", null) != message) prefs.edit().putString("screenMessage", message).apply() }
+    fun screenStatus(): String = prefs.getString("screenMessage", MoteI18n.text("尚未开始采集"))!!
     fun uploadStatus(message: String) { prefs.edit().putString("uploadStatus", message).apply() }
     fun uploadStatus(): String = prefs.getString("uploadStatus", MoteI18n.text("尚未上传"))!!
 }

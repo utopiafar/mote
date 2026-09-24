@@ -50,6 +50,18 @@ data class AppCollectionRules(val defaultMode: AppCollectionMode, val apps: Map<
 
 /** All identified visible windows participate, including launchers, keyboards and system surfaces. */
 internal data class CollectionWindow(val type: Int, val packageName: String?, val systemBar: Boolean = false)
+internal data class CaptureBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
+internal object SystemBarRegion {
+    /** Use OS-provided insets, not localized window titles or a guessed bar height. */
+    fun contains(window: CaptureBounds, display: CaptureBounds, insets: CaptureBounds): Boolean {
+        if (window.right <= window.left || window.bottom <= window.top ||
+            window.left < display.left || window.top < display.top || window.right > display.right || window.bottom > display.bottom) return false
+        return insets.top > 0 && window.bottom <= display.top + insets.top ||
+            insets.bottom > 0 && window.top >= display.bottom - insets.bottom ||
+            insets.left > 0 && window.right <= display.left + insets.left ||
+            insets.right > 0 && window.left >= display.right - insets.right
+    }
+}
 internal object CollectionWindows {
     fun snapshot(windows: List<CollectionWindow>, foreground: String?): WindowSnapshot {
         val contentWindows = windows.filterNot { it.type == 3 && it.packageName == "com.android.systemui" && it.systemBar }

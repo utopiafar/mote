@@ -214,6 +214,10 @@ class ActivityStatsActivity : MoteActivity() {
             OperationReason.WIFI -> MoteI18n.text("等待非计费 Wi-Fi"); OperationReason.AUTH -> MoteI18n.text("凭据被拒绝"); OperationReason.HTTP -> MoteI18n.text("服务器 HTTP 失败")
             OperationReason.ACK -> MoteI18n.text("节点确认内容不匹配"); OperationReason.CANCELLED -> MoteI18n.text("已取消"); OperationReason.RESPONSE -> MoteI18n.text("响应不符合协议")
             OperationReason.CONFIGURATION -> MoteI18n.text("配置无效"); OperationReason.TIMEOUT -> MoteI18n.text("操作超时")
+            OperationReason.PROTECTED_APP -> MoteI18n.text("Mote 页面受系统防截屏保护，已跳过；离开后自动恢复")
+            OperationReason.APP_RULE -> MoteI18n.text("当前可见窗口的应用规则不允许本次采样")
+            OperationReason.WINDOW_CHANGED -> MoteI18n.text("采集或窗口状态变化")
+            OperationReason.PIXEL_COPY -> MoteI18n.text("截图像素读取失败")
         }
         private fun detail(event: JSONObject) = MoteI18n.text("{0}\n{1}\n记录 ID：{2}\n原因：{3}\n记录字节：{4}\nHTTP：{5}\n耗时：{6}\n不保存内容预览；待上传记录只有匹配节点 ACK 后删除。", Instant.ofEpochMilli(event.getLong("atMs")), kind(OperationKind.valueOf(event.getString("kind"))), event.optString("recordId", MoteI18n.text("无关联记录")), reason(OperationReason.valueOf(event.getString("reason"))), event.getLong("bytes"), event.opt("httpStatus") ?: MoteI18n.text("无"), event.opt("elapsedMs") ?: MoteI18n.text("未测量"))
     }

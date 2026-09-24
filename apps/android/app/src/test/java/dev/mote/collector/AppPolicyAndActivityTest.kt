@@ -8,6 +8,27 @@ import java.nio.file.Files
 import java.util.UUID
 
 class AppPolicyAndActivityTest {
+    @Test fun systemBarsUsePlatformInsetsAndNeverHideOverlaysOutsideThem() {
+        val display = CaptureBounds(0, 0, 1200, 2608)
+        val insets = CaptureBounds(0, 144, 0, 74)
+        assertTrue(SystemBarRegion.contains(CaptureBounds(0, 0, 1200, 144), display, insets))
+        assertTrue(SystemBarRegion.contains(CaptureBounds(0, 2534, 1200, 2608), display, insets))
+        assertFalse(SystemBarRegion.contains(CaptureBounds(0, 0, 1200, 600), display, insets))
+        assertFalse(SystemBarRegion.contains(CaptureBounds(0, 2533, 1200, 2608), display, insets))
+        assertFalse(SystemBarRegion.contains(CaptureBounds(0, 0, 1200, 144), display, CaptureBounds(0, 0, 0, 0)))
+        assertFalse(SystemBarRegion.contains(CaptureBounds(-1, 0, 1200, 144), display, insets))
+        val landscape = CaptureBounds(0, 0, 2608, 1200)
+        assertTrue(SystemBarRegion.contains(CaptureBounds(2534, 0, 2608, 1200), landscape, CaptureBounds(0, 0, 74, 0)))
+    }
+
+    @Test fun freshAndLegacyDefaultsDifferButAnExplicitContentRuleIsPreserved() {
+        assertEquals(AppCollectionMode.ACTIVITY, AppCollectionRules.parse(AppCollectionRules.DEFAULT).defaultMode)
+        assertEquals(AppCollectionMode.CONTENT, AppCollectionRules.parse(AppCollectionRules.LEGACY_DEFAULT).defaultMode)
+        val configured = AppCollectionRules.fromLines(AppCollectionMode.CONTENT, "fixture.private=activity")
+        assertEquals(AppCollectionMode.CONTENT, configured.decide(WindowSnapshot(setOf("fixture.editor"), "fixture.editor", true), emptySet()))
+        assertEquals(AppCollectionMode.OFF, configured.decide(WindowSnapshot(setOf("fixture.editor"), "fixture.editor", false), emptySet()))
+    }
+
     @Test fun normalSystemBarsDoNotBlockContentButRealOverlaysStillDo() {
         val rules = AppCollectionRules.fromLines(AppCollectionMode.ACTIVITY, "com.example.page=content")
         val app = CollectionWindow(1, "com.example.page")

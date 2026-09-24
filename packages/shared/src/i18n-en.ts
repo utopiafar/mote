@@ -5425,5 +5425,9 @@ export const english: Readonly<Record<string, string>> = {
   "预览待补识别截图": "Preview screenshots awaiting OCR backfill",
   "本批 {0} 张{1}": "This batch: {0} screenshots{1}",
   "；还有更多可在本批完成后预览": "; more can be previewed after this batch completes",
-  "确认安排本批 OCR": "Confirm scheduling OCR for this batch"
+  "确认安排本批 OCR": "Confirm scheduling OCR for this batch",
+  "Mote 页面受系统防截屏保护，已跳过；离开后自动恢复": "Mote pages are protected from screenshots. Collection resumes after leaving.",
+  "屏幕采集：{0}": "Screen collection: {0}",
+  "与中央资料库共用登录，回答和历史对话自动保存。": "Shares your central archive login. Answers and conversation history are saved automatically.",
+  "截图像素读取失败": "Unable to read screenshot pixels"
 };

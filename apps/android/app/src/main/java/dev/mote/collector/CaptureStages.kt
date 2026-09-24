@@ -18,6 +18,9 @@ data class StageResult(
 )
 
 interface CaptureStage {
+    // Stages own the semantics of their transformations, including preservation of
+    // privacy metadata. The queue validates each output's source-specific wire shape;
+    // it must not apply one input's collection level to unrelated outputs in a batch.
     val id: String
     val version: Int
     /** Canonical configuration is part of the durable stage identity. */

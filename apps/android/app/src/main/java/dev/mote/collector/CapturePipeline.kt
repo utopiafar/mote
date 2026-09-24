@@ -45,12 +45,18 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
         if (lastPause != category) { Operations.record(context, OperationKind.CAPTURE_PAUSED, category); lastPause = category }
         previousTime = null; previousApp = null; previousMode = null; dedupeSignature = null; dedupeReference = null; earlySignature = null
         settings.status("paused", reason)
+        settings.screenStatus(reason)
     }
     fun canCapture(config: CollectorConfig, windows: WindowSnapshot) = canCollect(config, windows, AppCollectionMode.CONTENT)
     fun canCollect(config: CollectorConfig, windows: WindowSnapshot, expected: AppCollectionMode): Boolean {
         if (closed || !config.screenCollectionEnabled || ConnectionGuard.changing() || !settings.enabled || busy.get()) return false
         val selected = policy(config, windows)
-        if (selected == AppCollectionMode.OFF) { pause(if (protectedWindow(windows)) "Mote 页面受系统防截屏保护，已跳过；离开后自动恢复" else if (!windows.trustworthy) MoteI18n.text("当前应用规则要求完整窗口信息，暂停本次采样") else MoteI18n.text("当前可见窗口的应用规则不允许本次采样"), if (windows.trustworthy) OperationReason.EXCLUDED else OperationReason.WINDOW_UNKNOWN); return false }
+        if (selected == AppCollectionMode.OFF) {
+            val protected = protectedWindow(windows)
+            pause(if (protected) MoteI18n.text("Mote 页面受系统防截屏保护，已跳过；离开后自动恢复") else if (!windows.trustworthy) MoteI18n.text("当前应用规则要求完整窗口信息，暂停本次采样") else MoteI18n.text("当前可见窗口的应用规则不允许本次采样"),
+                if (protected) OperationReason.PROTECTED_APP else if (!windows.trustworthy) OperationReason.WINDOW_UNKNOWN else OperationReason.APP_RULE)
+            return false
+        }
         if (selected != expected) return false
         if (!unlocked(context)) { pause(MoteI18n.text("锁屏或熄屏，暂停采集"), OperationReason.LOCKED); return false }
         val battery = Diagnostics.battery(context)
@@ -87,7 +93,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 SupportEvents.record(context, EventStage.QUEUE, EventCode.OK)
                 dedupeSignature = null; dedupeReference = null
                 previousTime = now; previousApp = appId; previousMode = AppCollectionMode.ACTIVITY; lastPause = null
-                settings.captured(capturedAt); settings.status("capturing", MoteI18n.text("仅应用活动已保存；未请求截图、OCR或模型"))
+                settings.captured(capturedAt); settings.status("capturing", MoteI18n.text("仅应用活动已保存；未请求截图、OCR或模型")); settings.screenStatus(settings.message())
                 scheduleUpload(config)
             } catch (error: QueueFull) { Operations.record(context, OperationKind.ACTIVITY_FAILED, OperationReason.QUEUE_FULL); pause(error.message ?: MoteI18n.text("队列已满"), OperationReason.QUEUE_FULL) }
             catch (error: Exception) { Operations.record(context, OperationKind.ACTIVITY_FAILED, Operations.failure(error, EventStage.QUEUE)); pause(MoteI18n.text("应用活动未保存，请检查本机队列；未采集内容")) }
@@ -97,7 +103,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
     private fun duration(now: Long, appId: String?, mode: AppCollectionMode, intervalSeconds: Int): Long =
         if (previousApp == appId && previousMode == mode && previousTime != null) SamplingTime.interval(previousTime!!, now, intervalSeconds * 1000L) else 0L
     fun submit(bitmap: Bitmap, windows: WindowSnapshot, config: CollectorConfig, capturedAt: String = Instant.now().toString(), observedAtMs: Long = SystemClock.elapsedRealtime()) {
-        if (closed || !busy.compareAndSet(false, true)) { bitmap.recycle(); return }
+        if (closed || !busy.compareAndSet(false, true)) { bitmap.recycle(); Operations.record(context, OperationKind.FRAME_BLOCKED, OperationReason.STATE_CHANGED); return }
         ConnectionGuard.processing.incrementAndGet()
         try { executor.execute {
             val pipelineStart = SystemClock.elapsedRealtime()
@@ -131,7 +137,7 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                     context.queue().enqueue(event, null, config.maxQueueMiB * 1024L * 1024L)
                     diagnostics.add("earlySkippedFrames")
                     previousTime = observedAtMs; previousApp = appId; previousMode = AppCollectionMode.CONTENT
-                    settings.captured(capturedAt); settings.status("capturing", MoteI18n.text("重复画面已丢弃，仅保存应用活动；未执行审查与 OCR"))
+                    settings.captured(capturedAt); settings.status("capturing", MoteI18n.text("重复画面已丢弃，仅保存应用活动；未执行审查与 OCR")); settings.screenStatus(settings.message())
                     scheduleUpload(config)
                     return@execute
                 }
@@ -221,7 +227,9 @@ class CapturePipeline(private val context: Context, private val scheduleUpload: 
                 lastPause = null
                 previousTime = now; previousApp = windows.foreground; previousMode = AppCollectionMode.CONTENT
                 settings.captured(capturedAt)
+                lastPause = null
                 settings.status("capturing", MoteI18n.text("采集中 · {0}", if (duplicate) MoteI18n.text("图片去重命中，仅元数据已保存") else if (runOcr) MoteI18n.text("本地遮罩/OCR 已完成") else if (gate == "hold") MoteI18n.text("审查未完成，已隔离暂存待复核") else MoteI18n.text("图片已保存，上传后由中央识别")))
+                settings.screenStatus(settings.message())
                 scheduleUpload(config)
             } catch (error: NsfwUnavailable) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.MODEL); SupportEvents.record(context, EventStage.MODEL, EventCode.MODEL_UNAVAILABLE); diagnostics.add("failedCount"); pause(error.message ?: MoteI18n.text("本机 NSFW 不可用，当前帧已跳过")) }
             catch (error: QueueFull) { Operations.record(context, OperationKind.CAPTURE_FAILED, OperationReason.QUEUE_FULL); SupportEvents.record(context, EventStage.QUEUE, EventCode.STORAGE); pause(error.message ?: MoteI18n.text("队列已满")) }

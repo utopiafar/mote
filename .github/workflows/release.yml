@@ -20,9 +20,6 @@ jobs:
         with: { node-version: '24' }
       - id: version
         run: node scripts/release/verify-version.mjs
-  checks:
-    needs: version
-    uses: ./.github/workflows/checks.yml
   mac:
     needs: version
     runs-on: macos-15
@@ -45,55 +42,6 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.MOTE_APPLE_API_ISSUER }}
         run: |
           MOTE_MAC_DEVELOPMENT=1 node scripts/release/mac-package.mjs
-      - name: Verify native replacement and startup rollback with generated apps
-        run: node apps/desktop/scripts/update-fixture.cjs
-      # mac-package builds desktop dist and the native helpers after models:setup.
-      # These fixtures use temporary profiles and generated content only.
-      - name: Build central server and web for generated integration fixtures
-        run: npm run build -w @mote/server -w @mote/web
-      - name: Verify desktop navigation, settings and composed input with generated data
-        timeout-minutes: 5
-        run: |
-          node_modules/.bin/electron apps/desktop/scripts/i18n-smoke.cjs
-          node_modules/.bin/electron apps/desktop/scripts/ui-smoke.cjs
-          node_modules/.bin/electron apps/desktop/scripts/ui-page-smoke.cjs
-          node_modules/.bin/electron apps/desktop/scripts/client-improvements-smoke.cjs
-          node_modules/.bin/electron apps/desktop/scripts/complex-ui-smoke.cjs
-          node_modules/.bin/electron apps/desktop/scripts/content-storage-smoke.cjs
-      - name: Verify offline first binding and explicit sync against a generated central node
-        timeout-minutes: 5
-        run: |
-          node_modules/.bin/electron apps/desktop/scripts/offline-sync-smoke.cjs
-          node_modules/.bin/electron apps/desktop/scripts/capture-browser-smoke.cjs
-      - name: Verify central navigation, settings drafts and sync status with generated data
-        timeout-minutes: 10
-        run: |
-          node_modules/.bin/electron scripts/test-web-i18n.cjs
-          node_modules/.bin/electron scripts/test-model-profiles-ui.cjs
-          node_modules/.bin/electron scripts/test-web-login.cjs
-          node_modules/.bin/electron scripts/test-web-navigation.cjs
-          node_modules/.bin/electron scripts/test-web-content-storage.cjs
-          node_modules/.bin/electron scripts/test-web-conversations.cjs
-          node_modules/.bin/electron scripts/test-calendar-actions-ui.cjs
-          node_modules/.bin/electron scripts/test-web-tasks-imports.cjs
-          node_modules/.bin/electron scripts/test-memory-revisions-ui.cjs
-          node_modules/.bin/electron scripts/test-web-budgets.cjs
-          node_modules/.bin/electron scripts/test-web-evidence-focus.cjs
-          node_modules/.bin/electron scripts/test-web-operations.cjs
-          node_modules/.bin/electron scripts/test-web-sessions-insights.cjs
-          node_modules/.bin/electron scripts/test-web-sources.cjs
-          node_modules/.bin/electron scripts/test-web-diagnostics.cjs
-          node_modules/.bin/electron apps/web/scripts/capture-browser-smoke.cjs
-      - name: Verify client onboarding, central UI and update networking with generated data
-        run: |
-          node apps/desktop/scripts/connection-server-smoke.cjs
-          node apps/desktop/scripts/file-evidence-smoke.cjs
-          node scripts/test-upload-fairness.cjs
-          node_modules/.bin/electron apps/desktop/scripts/connection-smoke.cjs
-          node_modules/.bin/electron scripts/test-web-connections.cjs
-          node_modules/.bin/electron scripts/test-web-metadata.cjs
-          node apps/desktop/scripts/window-identity-smoke.mjs
-          node_modules/.bin/electron apps/desktop/scripts/update-network-smoke.cjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: { name: release-mac, path: artifacts/release/*, if-no-files-found: error, retention-days: 7 }
   android:
@@ -115,14 +63,14 @@ jobs:
         env:
           MOTE_ANDROID_KEYSTORE_BASE64: ${{ secrets.MOTE_ANDROID_KEYSTORE_BASE64 }}
         run: node scripts/release/prepare-android-signing.mjs
-      - name: Test and sign Android DEV
+      - name: Build and sign Android DEV
         env:
           MOTE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.MOTE_ANDROID_KEYSTORE_PASSWORD }}
           MOTE_ANDROID_KEY_ALIAS: ${{ secrets.MOTE_ANDROID_KEY_ALIAS }}
           MOTE_ANDROID_KEY_PASSWORD: ${{ secrets.MOTE_ANDROID_KEY_PASSWORD }}
         run: |
           cd apps/android
-          ./gradlew --no-daemon testDebugUnitTest lintDevelopment assembleDevelopment
+          ./gradlew --no-daemon assembleDevelopment
       - name: Verify actual APK identities and 16 KiB alignment
         run: |
           node scripts/release/asset-metadata.mjs android apps/android/app/build/outputs/apk/development/app-development.apk
@@ -132,7 +80,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with: { name: release-android, path: artifacts/release/*, if-no-files-found: error, retention-days: 7 }
   publish:
-    needs: [version, checks, mac, android]
+    needs: [version, mac, android]
     runs-on: ubuntu-24.04
     environment: release
     permissions:

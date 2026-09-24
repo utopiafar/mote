@@ -45,9 +45,15 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     private val stageCheckpoint = File(dir, ".capture-stages.checkpoint")
     private val stageJournal = File(dir, ".capture-stages.journal")
     private val stageInbox = File(dir, ".capture-stages.inbox")
+    /** Pending stage work must not hide already committed records. Writers still retry it. */
+    var pendingStageFailure: Exception? = null
+        private set
     init {
         check(dir.isDirectory || createMissing && dir.mkdirs()) { MoteI18n.text("本机存储目录不可用") }
-        synchronized(lock) { replayStageJournal(); try { processStageInbox() } catch (_: QueueFull) { /* Keep the encrypted input; upload/cleanup can free space. */ } }
+        synchronized(lock) {
+            replayStageJournal() // A committed transaction must still be recovered completely.
+            try { processStageInbox() } catch (error: Exception) { pendingStageFailure = error }
+        }
     }
     private fun browseFiles() = dir.listFiles()?.filter { it.extension == "event" } ?: error(MoteI18n.text("无法读取本机存储目录"))
     private fun browseIndex() = browseIndexes.getOrPut(dir.absolutePath) { QueueBrowseIndex(dir, cipher) }
@@ -269,10 +275,10 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         }
         val result = captureStages.run(input?.let(::listOf) ?: emptyList(), pendingStageCheckpoint(committed), flush = inbox.optBoolean("flush"))
         val priorFloor = committed?.optJSONObject("privacyFloor")
-        val inputPrivacy = input?.event?.optJSONObject("privacy")
-        val floor = JSONObject().put("activity", priorFloor?.optBoolean("activity") == true || inputPrivacy?.optString("collection") == "activity")
-            .put("redacted", priorFloor?.optBoolean("redacted") == true || inputPrivacy?.optBoolean("redacted") == true)
-            .put("reviewHeld", priorFloor?.optBoolean("reviewHeld") == true || inbox.optBoolean("reviewHeld"))
+        // Review holds control upload authorization. Content shape is validated per source,
+        // not inferred from the most restrictive unrelated input in a stage batch.
+        // Keep the checkpoint key for compatibility with existing pending captures.
+        val floor = JSONObject().put("reviewHeld", priorFloor?.optBoolean("reviewHeld") == true || inbox.optBoolean("reviewHeld"))
         if (result.heldCount > 0) result.checkpoint.put("privacyFloor", floor)
         val returnedIds = result.outputs.map { it.event.getString("id") }
         val returned = returnedIds.firstOrNull() ?: id
@@ -281,6 +287,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         else committed?.optJSONObject("lastInput")?.let { result.checkpoint.put("lastInput", it) }
         commitStageBatch(result, inbox.getLong("maxBytes"), floor)
         check(stageInbox.delete()) { "Unable to finish capture stage input" }
+        pendingStageFailure = null
         return returnedIds
     }
 
@@ -349,25 +356,18 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
 
     private fun commitStageBatch(result: CapturePipelineResult, maxBytes: Long, privacyFloor: JSONObject): List<String> {
-        fun validateFloor(event: JSONObject) {
-            val privacy = event.getJSONObject("privacy")
-            check(!privacyFloor.optBoolean("activity") || event.optString("source") == "activity" && privacy.optString("collection") == "activity") { "Capture stage weakened activity-only privacy" }
-            check(!privacyFloor.optBoolean("redacted") || privacy.optBoolean("redacted")) { "Capture stage weakened redaction privacy" }
-        }
         result.checkpoint.optJSONArray("stages")?.let { stages ->
             for (index in 0 until stages.length()) {
                 val held = stages.getJSONObject(index).optJSONArray("held") ?: continue
                 for (position in 0 until held.length()) {
                     val capture = decodeStageInput(held.getJSONObject(position))
                     validateStageCapture(capture)
-                    validateFloor(capture.event)
                 }
             }
         }
         val outputIds = mutableSetOf<String>()
         val outputs = result.outputs.mapNotNull { capture ->
             val stored = validateStageCapture(capture)
-            validateFloor(stored)
             val id = UUID.fromString(stored.getString("id")).toString()
             check(outputIds.add(id)) { "Duplicate capture stage output ID" }
             val existing = File(dir, "$id.event").takeIf(File::exists)?.let(::read)

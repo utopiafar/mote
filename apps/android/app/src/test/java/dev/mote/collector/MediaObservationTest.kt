@@ -107,6 +107,25 @@ class MediaObservationTest {
             assertEquals(0, queue.peek()!!.getJSONObject("metadata").getJSONObject("media").getJSONArray("sessions").length())
         } finally { directory.deleteRecursively() }
     }
+    @Test fun activityOnlyMediaCanCommitAndReplayAnOldBlockedInbox() {
+        val dir = Files.createTempDirectory("mote-activity-media").toFile()
+        val cipher = object : ByteCipher { override fun seal(bytes: ByteArray) = bytes; override fun open(bytes: ByteArray) = bytes }
+        try {
+            val media = event(listOf(session().apply { MediaPrivacy.contentKeys.forEach(::remove) }), collection = "activity")
+            // Same inbox shape persisted by 0.0.63–0.0.65 before the erroneous floor check.
+            dir.resolve(".capture-stages.inbox").writeText(JSONObject().put("operation", UUID.randomUUID().toString())
+                .put("input", JSONObject().put("event", media).put("image", JSONObject.NULL))
+                .put("maxBytes", 1_000_000).put("reviewHeld", false).put("flush", false).toString())
+            val restored = DurableQueue(dir, cipher)
+            assertNull(restored.pendingStageFailure)
+            assertFalse(dir.resolve(".capture-stages.inbox").exists())
+            assertEquals("activity", restored.peek()!!.getJSONObject("privacy").getString("collection"))
+            assertEquals("media", restored.peek()!!.getString("source"))
+            restored.enqueue(event(listOf(session())), null, 1_000_000)
+            assertEquals(2, DurableQueue(dir, cipher).depth())
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun availabilitySnapshotsClearSessionsAndOldOperationLedgersKeepTheirEpoch() {
         for (status in listOf("disabled", "permission_required", "unavailable"))
             assertEquals(0, MediaPrivacy.snapshot(status, listOf(session())).getJSONArray("sessions").length())

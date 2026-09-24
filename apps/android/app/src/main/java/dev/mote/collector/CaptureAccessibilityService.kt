@@ -25,11 +25,18 @@ class CaptureAccessibilityService : AccessibilityService() {
     }
     private var inFlight = false
     private var nextCapture = 0L
+    private var windowCounts = Triple(0, 0, 0)
+    private var lastDecision = ""
+    private var lastDecisionAt = 0L
     @Volatile private var configurationGeneration = 0L
     private val tick = object : Runnable {
         override fun run() {
             try { collectIfEnabled() }
-            catch (_: Exception) { inFlight = false; settings.status("paused", MoteI18n.text("无障碍采集暂不可用，下一周期重试")) }
+            catch (error: Exception) {
+                inFlight = false
+                Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, Operations.failure(error, EventStage.CAPTURE))
+                settings.status("paused", MoteI18n.text("无障碍采集暂不可用，下一周期重试"))
+            }
             if (shouldSchedule()) handler.postDelayed(this, (nextCapture - android.os.SystemClock.elapsedRealtime()).coerceIn(1000L, 300_000L))
         }
     }
@@ -68,24 +75,34 @@ class CaptureAccessibilityService : AccessibilityService() {
     fun windowSnapshot(): WindowSnapshot {
         return try {
             val all = windows
+            val metrics = if (Build.VERSION.SDK_INT >= 30) runCatching { getSystemService(android.view.WindowManager::class.java).maximumWindowMetrics }.getOrNull() else null
+            val barInsets = metrics?.windowInsets?.getInsetsIgnoringVisibility(android.view.WindowInsets.Type.systemBars())
             val observed = all.map { window ->
                 val root = window.root
                 val name = root?.packageName?.toString()
                 @Suppress("DEPRECATION") root?.recycle()
                 val bounds = android.graphics.Rect(); window.getBoundsInScreen(bounds)
-                val metrics = resources.displayMetrics
-                val barLimit = (96 * metrics.density).toInt()
-                val horizontalBar = bounds.width() >= metrics.widthPixels * 0.9 && bounds.height() <= barLimit && (bounds.top <= 0 || bounds.bottom >= metrics.heightPixels)
-                val verticalBar = bounds.height() >= metrics.heightPixels * 0.9 && bounds.width() <= barLimit && (bounds.left <= 0 || bounds.right >= metrics.widthPixels)
-                val chrome = window.title?.toString() in setOf("StatusBar", "NavigationBar") && !window.isActive && !window.isFocused && (horizontalBar || verticalBar)
+                val inBar = if (metrics != null && barInsets != null) SystemBarRegion.contains(
+                        CaptureBounds(bounds.left, bounds.top, bounds.right, bounds.bottom),
+                        metrics.bounds.let { CaptureBounds(it.left, it.top, it.right, it.bottom) },
+                        CaptureBounds(barInsets.left, barInsets.top, barInsets.right, barInsets.bottom))
+                    else {
+                        // Android 10 projection mode has no WindowMetrics API.
+                        val display = resources.displayMetrics; val limit = (96 * display.density).toInt()
+                        window.title?.toString() in setOf("StatusBar", "NavigationBar") &&
+                            (bounds.width() >= display.widthPixels * .9 && bounds.height() <= limit && (bounds.top <= 0 || bounds.bottom >= display.heightPixels) ||
+                             bounds.height() >= display.heightPixels * .9 && bounds.width() <= limit && (bounds.left <= 0 || bounds.right >= display.widthPixels))
+                    }
+                val chrome = window.type == 3 && name == "com.android.systemui" && !window.isActive && !window.isFocused && inBar
                 CollectionWindow(window.type, name, chrome)
             }
+            windowCounts = Triple(observed.size, observed.count { it.packageName.isNullOrBlank() || it.type !in 1..3 }, observed.count { it.systemBar })
             val root = rootInActiveWindow
             val foreground = root?.packageName?.toString()
             @Suppress("DEPRECATION") root?.recycle()
             // Keyboards and system/other overlays may contain private content even when inactive.
             CollectionWindows.snapshot(observed, foreground)
-        } catch (_: Exception) { WindowSnapshot(emptySet(), null, false) }
+        } catch (_: Exception) { windowCounts = Triple(0, 0, 0); WindowSnapshot(emptySet(), null, false) }
     }
     private fun collectIfEnabled() {
         if (ConnectionGuard.reconfiguring()) return
@@ -103,6 +120,14 @@ class CaptureAccessibilityService : AccessibilityService() {
         nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
         val snapshot = windowSnapshot()
         val mode = CapturePipeline.policy(config, snapshot)
+        val restricted = snapshot.packages.count { it in PrivacyRules.exclusions(config.excludedPackages) || (config.collectionRules.apps[it] ?: config.collectionRules.defaultMode) != AppCollectionMode.CONTENT }
+        val protected = CapturePipeline.protectedWindow(snapshot)
+        val decision = "$windowCounts:$restricted:${snapshot.trustworthy}:${snapshot.foreground != null}:$protected:$mode"
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (decision != lastDecision || now - lastDecisionAt >= 60_000) {
+            runCatching { SupportEvents.runtime(this).captureDecision(windowCounts.first, windowCounts.second, windowCounts.third, restricted, snapshot.trustworthy, snapshot.foreground != null, protected, mode) }
+            lastDecision = decision; lastDecisionAt = now
+        }
         if (mode == AppCollectionMode.ACTIVITY) {
             if (pipeline!!.canCollect(config, snapshot, mode)) {
                 nextCapture = android.os.SystemClock.elapsedRealtime() + config.intervalSeconds * 1000L
@@ -117,7 +142,10 @@ class CaptureAccessibilityService : AccessibilityService() {
         captureScreen(snapshot,config)
     }
     private fun captureScreen(snapshot: WindowSnapshot, config: CollectorConfig) {
-        if (destroyed || settings.read()!=config || !settings.enabled || windowSnapshot()!=snapshot || !CapturePipeline.unlocked(this)) return
+        if (destroyed || settings.read()!=config || !settings.enabled || windowSnapshot()!=snapshot || !CapturePipeline.unlocked(this)) {
+            Operations.record(this, OperationKind.FRAME_BLOCKED, OperationReason.WINDOW_CHANGED)
+            return
+        }
         if (Build.VERSION.SDK_INT < 30) { settings.status("permission_required", MoteI18n.text("此系统需投屏模式采集内容；仅应用活动无需截图API")); return }
         val capturePipeline = pipeline!!
         val generation = configurationGeneration
@@ -131,7 +159,11 @@ class CaptureAccessibilityService : AccessibilityService() {
             override fun onSuccess(result: ScreenshotResult) {
                 try {
                     val current = windowSnapshot()
-                    if (generation != configurationGeneration || ConnectionGuard.reconfiguring() || !settings.enabled || current != snapshot || CapturePipeline.policy(settings.read(), current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) { result.hardwareBuffer.close(); if (generation == configurationGeneration) inFlight = false; return }
+                    if (generation != configurationGeneration || ConnectionGuard.reconfiguring() || !settings.enabled || current != snapshot || CapturePipeline.policy(settings.read(), current) != AppCollectionMode.CONTENT || !CapturePipeline.unlocked(this@CaptureAccessibilityService)) {
+                        result.hardwareBuffer.close(); if (generation == configurationGeneration) inFlight = false
+                        Operations.record(this@CaptureAccessibilityService, OperationKind.FRAME_BLOCKED, OperationReason.WINDOW_CHANGED)
+                        return
+                    }
                     // Transfer ownership to a worker; no full-size pixel copy on the main looper.
                     pixels.execute {
                         val bitmap = try {
@@ -143,8 +175,8 @@ class CaptureAccessibilityService : AccessibilityService() {
                             if (bitmap != null) {
                                 if (!destroyed && generation == configurationGeneration && settings.enabled && settings.read() == config && windowSnapshot() == snapshot && CapturePipeline.unlocked(this@CaptureAccessibilityService))
                                     capturePipeline.submit(bitmap, snapshot, config, at, observedAtMs)
-                                else bitmap.recycle()
-                            }
+                                else { bitmap.recycle(); Operations.record(this@CaptureAccessibilityService, OperationKind.FRAME_BLOCKED, OperationReason.WINDOW_CHANGED) }
+                            } else Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.PIXEL_COPY)
                         }
                     }
                     return
@@ -156,6 +188,7 @@ class CaptureAccessibilityService : AccessibilityService() {
                 if (generation != configurationGeneration) return
                 inFlight = false
                 Operations.record(this@CaptureAccessibilityService, OperationKind.CAPTURE_FAILED, OperationReason.SYSTEM)
+                runCatching { SupportEvents.runtime(this@CaptureAccessibilityService).screenshotFailure(errorCode) }
                 pipeline?.pause(MoteI18n.text("系统未提供截图（代码 {0}），可能是安全窗口或权限变化；未保存内容", errorCode))
             }
         })

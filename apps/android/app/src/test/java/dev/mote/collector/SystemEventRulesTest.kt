@@ -25,6 +25,22 @@ class SystemEventRulesTest {
         val removal = event().apply { getJSONObject("metadata").getJSONObject("notification").put("action", "removed") }
         assertThrows(IllegalArgumentException::class.java) { SystemEventRules.validate(removal) }
     }
+    @Test fun activityOnlyNotificationCanBeQueuedAndReadAfterRestart() {
+        val dir = Files.createTempDirectory("mote-activity-notification").toFile()
+        val cipher = object : ByteCipher { override fun seal(bytes: ByteArray) = bytes; override fun open(bytes: ByteArray) = bytes }
+        try {
+            val input = event().apply {
+                getJSONObject("privacy").put("collection", "activity")
+                getJSONObject("metadata").getJSONObject("notification").remove("title")
+            }
+            DurableQueue(dir, cipher).enqueue(input, null, 1_000_000)
+            val restored = DurableQueue(dir, cipher)
+            assertEquals(input.getString("id"), restored.peek()!!.getString("id"))
+            assertEquals(1, restored.inventory().records)
+            assertEquals(0, restored.inventory().images)
+        } finally { dir.deleteRecursively() }
+    }
+
     @Test fun encryptedSystemEventsRoundTripAndAcknowledgeWithoutImages() {
         val dir = Files.createTempDirectory("mote-system-fixture").toFile()
         val cipher = object : ByteCipher {
