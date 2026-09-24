@@ -1,10 +1,8 @@
 package dev.mote.collector
 
-import android.Manifest
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
-import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.CancellationSignal
@@ -18,9 +16,7 @@ import org.json.JSONObject
 fun Context.localSources() = LocalSourceStore(File(noBackupFilesDir, "local-sources"), localContentCipher()).apply { onMutation = { LocalStateChanges.changed() } }
 
 object SourceAccess {
-    fun available(context: Context, source: LocalSource): Boolean = if (source.kind == "local-calendar")
-        context.checkSelfPermission(Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-    else context.contentResolver.persistedUriPermissions.any { it.isReadPermission && it.uri.toString() == source.uri }
+    fun available(context: Context, source: LocalSource): Boolean = SourceAdapters.default.forKind(source.kind).available(context, source)
 }
 
 data class CalendarChoice(val id: Long, val name: String, val visible: Boolean)

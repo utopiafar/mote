@@ -12,7 +12,7 @@ import java.net.URL
 import java.time.Instant
 
 fun Context.fileArchives() = FileArchiveQueue(File(noBackupFilesDir, "file-archives"), localContentCipher())
-fun LocalSource.binaryFiles() = kind == "local-files"
+fun LocalSource.binaryFiles() = SourceAdapters.default.forKind(kind).queueKind == SourceQueueKind.FILE_ARCHIVE
 
 /** Persistent traversal checkpoints; every directory is eventually reached within bounded slices. */
 class FileSources(private val context: Context, private val cancel: CancellationSignal = CancellationSignal()) {

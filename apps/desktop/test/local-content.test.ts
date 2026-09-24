@@ -61,7 +61,7 @@ it('encrypts queue records/images, drafts and source indexes, then decrypts mixe
   const sourcePath = join(directory, 'sources', 'state.json');
   const sources = new SourceSync(sourcePath); await sources.initialize();
   await sources.stage({ items: [{ externalId: 'fixture', title: 'source title', text: 'source body', kind: 'file', layer: 'snapshot', deleted: false }], seen: ['fixture'], skipped: 0, complete: true }, false);
-  const paths = [join(directory, 'queue', 'events', second.id + '.json'), join(directory, 'queue', 'blobs', imageHash(secondImage) + '.jpg'), join(directory, 'queue', 'sync-checkpoint.json'), join(directory, 'notes', 'draft.json'), sourcePath+'.sqlite'];
+  const paths = [join(directory, 'queue', 'events', second.id + '.json'), join(directory, 'queue', 'blobs', imageHash(secondImage) + '.jpg'), join(directory, 'queue', 'capture-stage-checkpoint.json'), join(directory, 'queue', 'sync-checkpoint.json'), join(directory, 'notes', 'draft.json'), sourcePath+'.sqlite'];
   for (const path of paths.slice(0,-1)) expect(isEncryptedContent(await readFile(path))).toBe(true);
   expect((await readFile(sourcePath+'.sqlite')).includes(Buffer.from('source body'))).toBe(false);
   const reopened = new DurableQueue(join(directory, 'queue'), config); await reopened.initialize();
@@ -75,7 +75,7 @@ it('encrypts queue records/images, drafts and source indexes, then decrypts mixe
   expect(isEncryptedContent(await readFile(join(directory, 'imported', 'events', second.id + '.json')))).toBe(true);
   configureLocalContent({ enabled: false, key });
   const result = await decryptLocalContent([join(directory, 'queue'), join(directory, 'notes'), join(directory, 'sources')], new AbortController().signal, () => {});
-  expect(result).toMatchObject({ state: 'completed', decrypted: 5, failed: 0 });
+  expect(result).toMatchObject({ state: 'completed', decrypted: 6, failed: 0 });
   for (const path of paths) expect(isEncryptedContent(await readFile(path))).toBe(false);
   expect(JSON.parse(await readFile(paths[0], 'utf8')).event).toEqual(second);
   expect(await readFile(paths[1])).toEqual(secondImage);

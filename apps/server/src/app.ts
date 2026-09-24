@@ -9,6 +9,9 @@ import {registerExecutionSettingsRoutes} from './execution-settings-routes.js';
 import {scopeFields,validRange,type QueryScope} from './query-scope.js';
 import {semanticProcessor} from './semantic-extraction.js';
 import {registerEvidenceRoutes} from './evidence-routes.js';
+import {MaterialStore} from './materials.js';
+import {registerMaterialRoutes} from './material-routes.js';
+import {MaterialOrganizerRuntime} from './material-organizers.js';
 import {navigationScopeSchema} from './context-navigation.js';
 import {ModelBudgets,MINIMUM_MODEL_INPUT_RESERVATION_TOKENS} from './model-budgets.js';
 import {ProviderAdmission} from './provider-admission.js';
@@ -105,6 +108,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   // the background worker is enabled, let that worker perform maintenance after
   // the HTTP service is available instead of making startup scan the whole vault.
   const store=dependencies?.store??new Store(config.dataDir,{dataKey:config.dataKey,contentEncryptionEnabled:config.contentEncryptionEnabled,maxStorageBytes:config.maxStorageBytes,embeddingEnabled:Boolean(config.embeddingModel),maintenance:Boolean(dependencies?.backgroundWorker)});
+  const materials=new MaterialStore(store);
   const runtimeSettings=new ExecutionSettings(store,config),execution=runtimeSettings.execution(),providerAdmission=new ProviderAdmission(store),modelBudgets=new ModelBudgets(store);
   const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
   const interactiveGate=new ConcurrencyGate(execution.interactiveConcurrency),interactiveModelGate=new ConcurrencyGate(execution.interactiveConcurrency);
@@ -129,10 +133,11 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
     return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');modelBudgets.finish(id,usage,price);}};
   },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId});
-  const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence);
+  const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials);
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids);
   const memories=evidenceReader.memories,conversations=new Conversations(store);
   const archivedFiles=new ArchivedFileStore(store);
+  const materialOrganizer=new MaterialOrganizerRuntime(store,materials);
   const contentStorage=new ContentStorageService(store,files,archivedFiles);
   const connections=dependencies?.connections??new Connections(store,sources);await connections.init();
   const identities=new WeakMap<FastifyRequest,ConnectionCredential>();
@@ -185,7 +190,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   };
   const queryRuns=new QueryRuns(store,{executor,concurrency:()=>runtimeSettings.execution().interactiveConcurrency});
   const insightRuns=new InsightRuns(store,{executor});
-  const workflows=new ProcessingRuntime(store,[],{},Date.now,executor);
+  const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials);
   const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:config.fileProcessorModules,analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,mediaAssets});
   try{await processing.runtime.ready;}catch(error){await processing.close();await workflows.close();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
@@ -212,7 +217,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   app.addContentTypeParser(['application/gzip','application/x-ndjson+gzip'],{parseAs:'buffer'},(_req,body,done)=>done(null,body));
   const routeName=(url:string|undefined)=>{
     if(!url)return 'unknown';if(!url.startsWith('/api/'))return 'web';if(url.endsWith('/image'))return 'image';
-    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration','execution-settings':'configuration','diagnostics-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',memories:'memories','memory-jobs':'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query','query-runs':'query',usage:'configuration',conversations:'conversations',files:'files','archived-files':'files','file-sync':'file-sync','file-processing':'file-processing',insights:'insights','insight-runs':'insights',index:'index',export:'export',import:'import',imports:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
+    const root=url.split('/')[2];return ({health:'health',status:'status',configuration:'configuration','model-settings':'configuration','execution-settings':'configuration','diagnostics-settings':'configuration',captures:'captures',notes:'notes',devices:'devices',connections:'connections',sources:'sources',materials:'materials',memories:'memories','memory-jobs':'memories',layers:'layers',connectors:'connectors',updates:'updates',activity:'activity',query:'query','query-runs':'query',usage:'configuration',conversations:'conversations',files:'files','archived-files':'files','file-sync':'file-sync','file-processing':'file-processing',insights:'insights','insight-runs':'insights',index:'index',export:'export',import:'import',imports:'import',diagnostics:'diagnostics','support-bundle':'support'} as Record<string,string>)[root]??'unknown';
   };
   app.addHook('onRequest', (req, reply, done) => {
     const locale = negotiateLocale(req.headers['accept-language'], 'zh-CN');
@@ -247,7 +252,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   });
   const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured,{semanticArtifacts,executor});
   registerActions(app,actions,connections,credential);
-  const connectors=await registerConnectors(app,{files,sources,store,evidenceReader,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
+  const connectors=await registerConnectors(app,{files,sources,store,evidenceReader,materials,materialOrganizers:materialOrganizer,processing:workflows,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
   const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
   app.post('/api/connections/invitations',{bodyLimit:8192,config:connectionRate},async req=>connections.invite(req.body));
   app.post('/api/connections/invitations/revoke',{bodyLimit:8192,config:connectionRate},async req=>connections.cancelInvitation(req.body));
@@ -265,6 +270,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   registerContentStorage(app,contentStorage);
   registerCaptureBrowser(app,{store,connections,credential,evidenceReader});
   registerEvidenceRoutes(app,evidenceReader);
+  registerMaterialRoutes(app,materials,materialOrganizer);
   registerSourceRoutes(app,{store,sources,fileEvidence,evidenceReader,connections,credential,sourceOwner});
   playbackAuthorization=registerFileRoutes(app,files,processing,sourceOwner,req=>credential(req)?.deviceId,evidenceReader,diagnostics);
   registerModelSettingsRoutes(app,modelSettings,codex);
@@ -524,16 +530,18 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const perceptionTimer=setInterval(()=>{try{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);}catch{diagnostics.record('request.failed',{category:'internal'},'error');}try{perception.prepare();void executor.tick().catch(()=>{});}catch{diagnostics.record('request.failed',{category:'internal'},'error');}},5000);perceptionTimer.unref();
   const fileTimer=setInterval(()=>{try{processing.prepare();void executor.tick().catch(()=>diagnostics.record('file.failed',{category:'internal'},'error'));}catch{diagnostics.record('file.failed',{category:'internal'},'error');}},5000);fileTimer.unref();
   const indexTimer=setInterval(()=>void indexer.tick().catch(()=>{diagnostics.record('index.failed',{category:'internal'},'error');}),5000);indexTimer.unref();
+  const materialTimer=setInterval(()=>void materialOrganizer.tick(200).catch(()=>diagnostics.record('request.failed',{category:'internal'},'error')),5000);materialTimer.unref();
   const maintenance=()=>{files.sweep();if(config.retentionDays>0)void diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted}))).catch(()=>{});};
   maintenance();const retentionTimer=setInterval(maintenance,3600000);retentionTimer.unref();
   const lifecycleTimer=setInterval(()=>{if(!closing)void lifecycle.tick().catch(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));},60000);lifecycleTimer.unref();
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
+    void materialOrganizer.tick(200).catch(()=>diagnostics.record('request.failed',{category:'internal'},'error'));
     for(const id of recoverableMemoryJobs(store,lifecycle))void memoryPipeline.run(id).catch(()=>{});
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('onClose',async()=>{
-    closing=true;eventLoop.disable();await files.close();await maintenanceWorker?.close();agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();clearInterval(perceptionTimer);await executor.close();const memoryClose=memoryPipeline.close();await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
+    closing=true;eventLoop.disable();await files.close();await maintenanceWorker?.close();agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();clearInterval(perceptionTimer);await executor.close();const memoryClose=memoryPipeline.close();await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(materialTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
     clearInterval(actionTimer);const actionClose=actions.close();
     await workflows.close();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
@@ -544,5 +552,5 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     memoryReviews.clear();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,executor,workflows,perception,actions,store,sources,files,processing,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,executor,workflows,perception,actions,store,sources,files,processing,materials,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

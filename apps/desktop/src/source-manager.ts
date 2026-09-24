@@ -8,11 +8,9 @@ import { stat } from 'node:fs/promises';
 import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
 import { readLocalContent } from './local-content';
 import { codingRoot, codingProviders, type CodingProvider } from './coding-agents';
-import { sourceWork } from './background';
-import {readSourceEvidence} from './file-evidence';
-import { scanSourceFiles } from './source-files';
-import { calendarHelper, CalendarPermissionError, decodeCalendarChoices, decodeCalendarScan } from './source-calendar';
-import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest, type LocalFileCheckpoint } from './source-types';
+import { calendarHelper, CalendarPermissionError, decodeCalendarChoices } from './source-calendar';
+import { normalizeSourceOptions, redactSourceText, type SourceStatus, type LocalSource, type CalendarChoice, type SourceDefinition, type SourceOptions, type SourceRequest } from './source-types';
+import { builtInSourceAdapters, type SourceAdapterRegistry } from './source-adapters';
 import type { Config } from './contracts';
 import { readResponseText } from './response-body';
 import { ConnectionBindingStore } from './connection-binding';
@@ -51,15 +49,18 @@ export class LocalSourceManager {
   private binding: string;
   readonly nodeBinding: ConnectionBindingStore;
   private readable = new Set<string>();
-  constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false, private events?: EventJournal) { this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); this.watcher = new FileWatcher(event => this.onFileWatchEvent(event)); }
+  private readonly adapters: SourceAdapterRegistry;
+  constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false, private events?: EventJournal, adapters?: SourceAdapterRegistry) { this.adapters = adapters ?? builtInSourceAdapters(); this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); this.watcher = new FileWatcher(event => this.onFileWatchEvent(event)); }
   private connectionBinding(): string { return sourceHash(this.connection.serverUrl + ':' + (this.connection.token ?? '')); }
   async initialize(): Promise<void> {
     try {
       const saved = JSON.parse((await readLocalContent(join(this.directory, 'sources.json'))).toString('utf8')) as { version: number; sources: LocalSource[]; metadataDirty: string[]; metadataDirtyAt?: string };
       if (saved.version !== 1 || !Array.isArray(saved.sources) || saved.sources.length > 40) throw new Error(moteText("本地来源配置无效"));
       this.sources = saved.sources.map(s => {
-        if (!/^local-[a-f0-9-]{36}$/.test(s.id) || typeof s.name !== 'string' || s.name.length > 200 || typeof s.enabled !== 'boolean' || !['local-files', 'local-calendar', 'coding-agent'].includes(s.kind) || (s.kind === 'local-calendar' ? typeof s.calendarId !== 'string' : typeof s.path !== 'string') || (s.kind === 'coding-agent' && !['claude','codex','kimi'].includes(s.agent ?? ''))) throw new Error(moteText("本地来源配置无效"));
-        return { ...s, ...normalizeSourceOptions(s), deviceId: this.connection.deviceId };
+        if (!/^local-[a-f0-9-]{36}$/.test(s.id) || typeof s.name !== 'string' || s.name.length > 200 || typeof s.enabled !== 'boolean' || typeof s.kind !== 'string') throw new Error(moteText("本地来源配置无效"));
+        const normalized = { ...s, ...normalizeSourceOptions(s), deviceId: this.connection.deviceId };
+        this.adapters.get(normalized.kind).validateConfiguration(normalized);
+        return normalized;
       });
       this.metadataDirty = new Set(saved.metadataDirty || []);
       if (this.metadataDirty.size) this.metadataDirtyAt = saved.metadataDirtyAt ?? (await stat(join(this.directory, 'sources.json'))).mtime.toISOString();
@@ -120,19 +121,28 @@ export class LocalSourceManager {
     if (!Object.hasOwn(codingProviders, provider)) throw new Error(moteText("不支持的 Coding Agent"));
     await this.add({ path: codingRoot(provider), name: codingProviders[provider], kind: 'coding-agent', agent: provider }, { ...normalizeSourceOptions(input), trackDeletions: false });
   }
-  private async add(fields: Pick<LocalSource, 'name' | 'kind'> & Partial<LocalSource>, input: unknown): Promise<void> {
+  /** Platform integrations can add a registered source without changing the manager's dispatch. */
+  async addAdapterSource(fields: Pick<LocalSource, 'name' | 'kind'> & Partial<LocalSource>, input: unknown): Promise<string> { return this.add(fields, input); }
+  private async add(fields: Pick<LocalSource, 'name' | 'kind'> & Partial<LocalSource>, input: unknown): Promise<string> {
     const options = normalizeSourceOptions(input);
-    if(fields.kind!=='local-files'&&options.retention==='archive')options.retention='snapshot';
+    if(!this.adapters.get(fields.kind).allowsArchive&&options.retention==='archive')options.retention='snapshot';
     if (this.sources.length >= 40) throw new Error(moteText("本机最多连接 40 个本地来源"));
-    if (this.sources.some(s => s.kind === fields.kind && (fields.path ? s.path === fields.path : s.calendarId === fields.calendarId))) throw new Error(moteText("此来源已连接，请在列表中修改"));
+    // Existing built-ins have a concrete platform identity. An adapter with
+    // neither field may represent several separately configured accounts.
+    if (this.sources.some(s => s.kind === fields.kind && (
+      typeof fields.path === 'string' ? s.path === fields.path :
+      typeof fields.calendarId === 'string' ? s.calendarId === fields.calendarId : false
+    ))) throw new Error(moteText("此来源已连接，请在列表中修改"));
     await this.interrupt();
     const source: LocalSource = { ...fields, ...options, id: 'local-' + randomUUID(), deviceId: this.connection.deviceId, platform: 'macos', enabled: true } as LocalSource;
-    this.sources.push(source); this.markMetadataDirty(source.id); await this.persist(); await this.refreshWatchers(); void this.sync(true);
+    this.adapters.get(source.kind).validateConfiguration(source);
+    this.sources.push(source); this.markMetadataDirty(source.id); await this.persist(); await this.refreshWatchers(); void this.sync(true); return source.id;
   }
   async update(id: string, input: unknown): Promise<void> {
     const source = this.sources.find(s => s.id === id); if (!source) throw new Error(moteText("来源不存在"));
     const value = input as SourceOptions & { enabled: boolean };
-    const options = normalizeSourceOptions(value);if(source.kind!=='local-files'&&options.retention==='archive')options.retention='snapshot'; if (typeof value.enabled !== 'boolean') throw new Error(moteText("启停选项无效"));
+    const options = normalizeSourceOptions(value);if(!this.adapters.get(source.kind).allowsArchive&&options.retention==='archive')options.retention='snapshot'; if (typeof value.enabled !== 'boolean') throw new Error(moteText("启停选项无效"));
+    this.adapters.get(source.kind).validateConfiguration({ ...source, ...options, enabled: value.enabled });
     await this.interrupt();
     Object.assign(source, options, { enabled: value.enabled }); this.markMetadataDirty(id); this.states.delete(id);
     await this.persist(); await this.refreshWatchers(); void this.sync(true);
@@ -168,9 +178,9 @@ export class LocalSourceManager {
     return this.task;
   }
   private async run(force: boolean, signal: AbortSignal): Promise<void> {
-    if(this.connection.serverUrl&&this.connection.token&&this.nodeBinding.matches(this.connection))for(const source of this.sources.filter(s=>s.enabled&&s.kind==='local-files'&&s.allowRead&&s.retention==='snapshot')){
+    if(this.connection.serverUrl&&this.connection.token&&this.nodeBinding.matches(this.connection))for(const source of this.sources.filter(s=>s.enabled&&this.adapters.get(s.kind).readEvidence&&s.allowRead&&s.retention==='snapshot')){
       try{const request=this.request(signal),pending=await request('/api/sources/'+source.id+'/read-requests',undefined,'GET',signal) as {items:import('@mote/shared').FileReadRequest[]};
-        for(const read of pending.items){const result=await readSourceEvidence(source,read,this.fileLocations.get(source.id)??new Map(),signal);await request('/api/sources/'+source.id+'/read-requests/'+read.id,result,'PUT',signal);}
+        for(const read of pending.items){const result=await this.adapters.get(source.kind).readEvidence!(source,read,this.fileLocations.get(source.id)??new Map(),signal);await request('/api/sources/'+source.id+'/read-requests/'+read.id,result,'PUT',signal);}
       }catch{if(signal.aborted)return;}
     }
     for (const source of this.sources) {
@@ -187,27 +197,29 @@ export class LocalSourceManager {
       try {
         let engine = this.engines.get(source.id);
         if (!engine) { engine = new SourceSync(join(this.directory, 'nodes', this.binding, source.id + '.json')); await engine.initialize(); this.engines.set(source.id, engine); }
+        const adapter = this.adapters.get(source.kind);
         await engine.ensurePolicy(sourcePolicy(source));
+        await engine.ensureAdapterVersion(adapter.version);
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
-        if(source.kind==='local-files')this.fileLocations.set(source.id,new Map());
+        if(adapter.readEvidence)this.fileLocations.set(source.id,new Map());
         const priorityVersions = new Map(this.dirtyPathVersions.get(source.id) ?? []);
-        const scan = source.kind === 'coding-agent' ? await sourceWork.run<import('./source-types').SourceScan>({kind:'coding-scan', root:source.path!, provider:source.agent!, options:source, checkpoint:engine.checkpoint() as import('./coding-agents').CodingCheckpoint | undefined}) : source.kind === 'local-files' ? await scanSourceFiles(source.path!, source, signal, join(this.directory, 'access-markers', source.id + '.json'), this.fileLocations.get(source.id), engine.fileCheckpoint(), [...priorityVersions.keys()],true) : decodeCalendarScan(await calendarHelper(this.helperPath, 'calendar-scan', { calendarId: source.calendarId, ...scope, includeText: source.retention !== 'reference' }, signal), source, scope);
+        const scan = await this.adapters.scan({ source, signal, checkpoint: engine.checkpoint(), fileCheckpoint: engine.fileCheckpoint(), priorityPaths: [...priorityVersions.keys()], fileLocations: this.fileLocations.get(source.id) ?? new Map(), stateDirectory: this.directory, helperPath: this.helperPath, scope });
         unqueuedScan = scan;
         if (!scan.queue) scan.queue = source.initialSync === 'all' && !engine.initialized() ? 'history' : 'realtime';
         signal.throwIfAborted(); status.skipped = scan.skipped; status.scanComplete = scan.complete;
         if (source.kind === 'coding-agent' && scan.skipped) status.message = moteText("部分会话无法读取或格式不支持；保留游标，下次重试");
         this.readable.add(source.id);
         if (this.managedUploads) {
-          await engine.stage(scan, source.kind !== 'coding-agent' && source.trackDeletions,undefined,source.initialSync);
+          await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync);
           Object.assign(status, engine.status(), { state: 'idle', message: !this.connection.serverUrl || !this.connection.token ? moteText("已保存在本机；尚未配置中央同步") : moteText("已检查本地变化，按同步设置等待上传") });
         } else {
           const pending = this.pendingStats();
           const policy = decideSync({ ...this.connection, syncMode: this.connection.syncMode ?? 'realtime', syncIntervalMinutes: this.connection.syncIntervalMinutes ?? 15, syncBatchSize: this.connection.syncBatchSize ?? 20 }, pending, Date.now(), force);
-          if (!policy.ready) { await engine.stage(scan, source.kind !== 'coding-agent' && source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
+          if (!policy.ready) { await engine.stage(scan, adapter.tracksDeletions && source.trackDeletions,undefined,source.initialSync); Object.assign(status, engine.status(), { state: 'idle', message: policy.message }); }
           else {
             const request = this.request(signal);
-            const { state: ready } = await engine.syncScan(scan, source.kind !== 'coding-agent' && source.trackDeletions, sourceDefinition(source), request, signal, () => this.prepareSource(source, request, signal));
+            const { state: ready } = await engine.syncScan(scan, adapter.tracksDeletions && source.trackDeletions, sourceDefinition(source), request, signal, () => this.prepareSource(source, request, signal));
             Object.assign(status, engine.status(), { state: ready === 'paused' ? 'paused' : 'idle', message: ready === 'paused' ? moteText("中央已暂停该来源；待上传版本保留在本机") : scan.complete ? moteText("已同步；后台定时检查变化") : moteText("已同步可读取项；扫描不完整，未判断删除") });
           }
         }
@@ -250,7 +262,7 @@ export class LocalSourceManager {
     void this.sync(false);
   }
   private async refreshWatchers(): Promise<void> {
-    await this.watcher.setTargets(this.sources.filter(source => source.enabled && (source.kind === 'local-files' || source.kind === 'coding-agent') && source.path).map(source => ({ sourceId: source.id, path: source.path! })));
+    await this.watcher.setTargets(this.sources.filter(source => source.enabled && this.adapters.get(source.kind).watchesPath && source.path).map(source => ({ sourceId: source.id, path: source.path! })));
   }
   /** Managed by the collector's one sync decision across screenshots, notes and source versions. */
   async flushPending(signal: AbortSignal,betweenSlices?:()=>Promise<void>): Promise<void> {

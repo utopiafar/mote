@@ -73,6 +73,8 @@ export function configFromEnv() {
   const modelHeaders=jsonObject('MOTE_MODEL_HEADERS') as Record<string,string>,modelExtraBody=jsonObject('MOTE_MODEL_EXTRA_BODY');
   let fileProcessorModules:string[]=[];
   try{fileProcessorModules=JSON.parse(env.MOTE_FILE_PROCESSOR_PLUGINS??'[]');if(!Array.isArray(fileProcessorModules)||fileProcessorModules.length>30||fileProcessorModules.some(s=>typeof s!=='string'||s.length>2000))throw Error();}catch{throw new ConfigError('MOTE_FILE_PROCESSOR_PLUGINS','Use a JSON array of trusted installed plugin modules');}
+  let connectorModules:string[]=[];
+  try{connectorModules=JSON.parse(env.MOTE_CONNECTOR_PLUGINS??'[]');if(!Array.isArray(connectorModules)||connectorModules.length>30||connectorModules.some(s=>typeof s!=='string'||!s||s.length>2000||/[\r\n\0]/.test(s)||/^[a-z][a-z0-9+.-]*:/i.test(s)&&!s.startsWith('file:')))throw Error();}catch{throw new ConfigError('MOTE_CONNECTOR_PLUGINS','Use a JSON array of trusted installed connector module specifiers');}
   const config={
     fileProcessorModules,
     host:env.MOTE_HOST||'127.0.0.1',port:number('MOTE_PORT',47832,1,65535,true),dataDir,
@@ -91,7 +93,7 @@ export function configFromEnv() {
     allowedOrigins:(env.MOTE_ALLOWED_ORIGINS??'http://localhost:5173,http://127.0.0.1:5173').split(',').map(s=>s.trim()).filter(Boolean),
     model:text('MOTE_MODEL'),modelBaseUrl:endpoint('MOTE_MODEL_BASE_URL',preset.baseUrl),apiKey:text('MOTE_MODEL_API_KEY'),allowUnauthenticatedLocal:flag('MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL',preset.allowUnauthenticatedLocal??false),
     embeddingModel:text('MOTE_EMBEDDING_MODEL'),embeddingBaseUrl:endpoint('MOTE_EMBEDDING_BASE_URL'),embeddingApiKey:text('MOTE_EMBEDDING_API_KEY'),
-    connectors:{directory:join(dataDir,'connectors'),mcpEnabled:flag('MOTE_MCP_ENABLED',false),mcpReadToken:text('MOTE_MCP_READ_TOKEN'),mcpWriteEnabled:flag('MOTE_MCP_WRITE_ENABLED',false),mcpWriteToken:text('MOTE_MCP_WRITE_TOKEN'),mcpWriteSourceIds:text('MOTE_MCP_WRITE_SOURCE_IDS').split(',').map(s=>s.trim()).filter(Boolean),googleClientId:text('MOTE_GOOGLE_CLIENT_ID'),googleClientSecret:text('MOTE_GOOGLE_CLIENT_SECRET'),googleRedirectUri:endpoint('MOTE_GOOGLE_REDIRECT_URI'),syncIntervalMs:number('MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS',900,60,86400,true)*1000,allowLocalMcp:flag('MOTE_MCP_ALLOW_LOCAL',false)},
+    connectors:{directory:join(dataDir,'connectors'),modules:connectorModules,mcpEnabled:flag('MOTE_MCP_ENABLED',false),mcpReadToken:text('MOTE_MCP_READ_TOKEN'),mcpWriteEnabled:flag('MOTE_MCP_WRITE_ENABLED',false),mcpWriteToken:text('MOTE_MCP_WRITE_TOKEN'),mcpWriteSourceIds:text('MOTE_MCP_WRITE_SOURCE_IDS').split(',').map(s=>s.trim()).filter(Boolean),googleClientId:text('MOTE_GOOGLE_CLIENT_ID'),googleClientSecret:text('MOTE_GOOGLE_CLIENT_SECRET'),googleRedirectUri:endpoint('MOTE_GOOGLE_REDIRECT_URI'),syncIntervalMs:number('MOTE_CONNECTOR_SYNC_INTERVAL_SECONDS',900,60,86400,true)*1000,allowLocalMcp:flag('MOTE_MCP_ALLOW_LOCAL',false)},
     diagnosticsEnabled:flag('MOTE_DIAGNOSTICS_ENABLED',true),diagnosticsDebug:flag('MOTE_DEBUG',false),agentTraceEnabled:flag('MOTE_AGENT_TRACE_ENABLED',profile==='dev'),
     logLevel:logLevel as 'debug'|'info'|'warn'|'error'|'silent',
     logDirectory:env.MOTE_LOG_DIR?resolve(baseDir,env.MOTE_LOG_DIR):join(dataDir,'logs'),

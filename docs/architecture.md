@@ -1,6 +1,6 @@
 # Mote 架构
 
-0.0.54 的数据对象、处理流程、预算和验证以 [通用上下文架构](context-architecture.md) 为准。Mote 是 AI-native 的个人上下文采集与中央归档，截图是来源之一；所有派生结论都须回到可核验的原始证据。
+0.0.54 的数据对象、处理流程、预算和验证以 [通用上下文架构](context-architecture.md) 为准。来源扩展和正式资料的身份、组织、读取见[接入与正式资料架构](material-architecture.md)。Mote 是 AI-native 的个人上下文采集与中央归档，截图是来源之一；所有派生结论都须回到可核验的原始证据。
 
 ```mermaid
 flowchart LR

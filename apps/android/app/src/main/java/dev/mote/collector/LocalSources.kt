@@ -19,10 +19,9 @@ data class LocalSource(
 ) {
     fun validate() {
         require(id.matches(Regex("[A-Za-z0-9_.:-]{1,128}")) && name.isNotBlank() && name.length <= 200) { MoteI18n.text("检查来源名称") }
-        require(kind in setOf("local-calendar", "local-files") && retention in setOf("snapshot", "reference", "archive") && initialSync in setOf("all", "new_only") && (kind == "local-files" || retention != "archive"))
+        require(kind.matches(Regex("[a-z][a-z0-9-]{0,63}(?:\\.[a-z][a-z0-9-]{0,63})*")) && retention in setOf("snapshot", "reference", "archive") && initialSync in setOf("all", "new_only"))
         require(daysBefore in 0..365 && daysAfter in 1..365 && intervalMinutes in 15..1440) { MoteI18n.text("窗口为过去 0–365 天、未来 1–365 天，间隔 15–1440 分钟") }
-        if (kind == "local-calendar") require(calendarId != null && calendarId >= 0)
-        else require(uri != null && uri.startsWith("content://") && !uri.contains('?') && !uri.contains('#')) { MoteI18n.text("需要系统选择器提供的持久文件权限") }
+        SourceAdapters.default.forKind(kind).validateConfiguration(this)
         require(maxFileMiB in 1..512)
         SourceRules.extensions(extensions); SourceRules.patterns(excluded)
     }
@@ -190,6 +189,7 @@ class LocalSourceStore(private val directory: File, private val cipher: ByteCiph
     fun scan(source: LocalSource, result: SourceScan, maxBytes: Long = 64L * 1024 * 1024) = synchronized(lock) {
         val active = sources().find { it.id == source.id } ?: return@synchronized
         if (!active.enabled || active != source) return@synchronized
+        result.items.forEach { SourcePrivacyGate.validate(source, it) }
         val state = state(source.id); val current = state.optJSONObject("current") ?: JSONObject(); val pending = state.optJSONArray("pending") ?: JSONArray()
         val baseline = state.optJSONArray("baseline") ?: JSONArray()
         if (source.initialSync == "new_only" && !state.optBoolean("initialized") && current.length() == 0) {

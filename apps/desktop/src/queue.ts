@@ -1,5 +1,5 @@
 import {captureSchema} from '@mote/shared';
-import {extendState,stateSeriesSchema,stateOnly} from '@mote/shared/state-series';
+import {stateSeriesSchema,stateOnly,isStateExtension} from '@mote/shared/state-series';
 import { moteText } from '@mote/shared/i18n';
 import { recordMetadataSchema } from '@mote/shared/metadata';
 import { createHash, randomUUID } from 'node:crypto';
@@ -12,6 +12,7 @@ import { ConnectionBindingStore } from './connection-binding';
 import type { CaptureEvent, Config } from './contracts';
 import { MAX_IMAGE_BYTES } from './config';
 import { encodeLocalContent, readLocalContent } from './local-content';
+import { builtInCaptureStages, type CapturePacket, type CapturePipelineCheckpoint, type CaptureStageRegistry } from './capture-stages';
 
 function readFile(path: string): Promise<Buffer>;
 function readFile(path: string, encoding: 'utf8'): Promise<string>;
@@ -40,6 +41,8 @@ export interface QueueArchive {
   records: QueueRecord[];
   blobs: Record<string, string>;
 }
+interface CaptureStageJournal { version: 1; outputs: QueueRecord[]; checkpoint: CapturePipelineCheckpoint }
+interface CaptureInputJournal { version: 1; transactionId: string; event: CaptureEvent; blobHash?: string; blobBytes: number; reviewHeld: boolean }
 export class QueueFullError extends Error {
   constructor() { super(moteText("本地队列已达上限，采集已停止；上传后请手动重新开始")); }
 }
@@ -134,7 +137,11 @@ export class DurableQueue {
   private lastUploadAt?: string;
   private archiveAcknowledgment?:{at:string;origin:string};
   private sourceRetryAt?: string;
-  constructor(directory: string, private limits: QueueLimits) { this.storageDirectory = directory; this.storageBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json'), async (path, value) => { await this.storageGuard?.(); await atomicWrite(path, JSON.stringify(value)); }); }
+  private readonly captureStages: CaptureStageRegistry;
+  private captureCheckpoint?: CapturePipelineCheckpoint;
+  private stageJournalPending = false;
+  private inputJournalPending = false;
+  constructor(directory: string, private limits: QueueLimits, stages?: CaptureStageRegistry, private readonly afterStageJournal?: () => void, private readonly afterInputJournal?: () => void) { this.captureStages = stages ?? builtInCaptureStages(); this.storageDirectory = directory; this.storageBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json'), async (path, value) => { await this.storageGuard?.(); await atomicWrite(path, JSON.stringify(value)); }); }
   get directory(): string { return this.storageDirectory; }
   get binding(): ConnectionBindingStore { return this.storageBinding; }
   /** All file readers/writers queue behind this transaction; memory records keep the same IDs. */
@@ -154,13 +161,40 @@ export class DurableQueue {
     });
   }
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {
-    const result = this.chain.then(async () => { await this.storageGuard?.(); try { return await fn(); } finally { this.cachedStats = undefined; } });
+    const result = this.chain.then(async () => { await this.storageGuard?.(); if(this.initialized&&this.stageJournalPending)await this.replayStageJournal(true);if(this.initialized&&this.inputJournalPending)await this.recoverInputJournal(); try { return await fn(); } finally { this.cachedStats = undefined; } });
     this.chain = result.catch(() => undefined);
     return result;
   }
   withContentMaintenance<T>(work: () => Promise<T>): Promise<T> { return this.exclusive(work); }
   private eventsPath(id: string): string { return join(this.directory, 'events', `${id}.json`); }
   private blobPath(hash: string): string { return join(this.directory, 'blobs', `${hash}.jpg`); }
+  private stageCheckpointPath(): string { return join(this.directory, 'capture-stage-checkpoint.json'); }
+  private stageJournalPath(): string { return join(this.directory, 'capture-stage-journal.json'); }
+  private inputJournalPath(): string { return join(this.directory, 'capture-input-journal.json'); }
+  private async replayStageJournal(updateMemory: boolean): Promise<void> {
+    let journal: CaptureStageJournal;
+    try { journal = JSON.parse(await readFile(this.stageJournalPath(), 'utf8')) as CaptureStageJournal; }
+    catch (error) { if((error as NodeJS.ErrnoException).code==='ENOENT'){this.stageJournalPending=false;return;}throw error; }
+    if(journal.version!==1||!Array.isArray(journal.outputs)||journal.outputs.length>64||!journal.checkpoint||journal.checkpoint.version!==1)throw new Error('Invalid capture stage journal');
+    const outputs=journal.outputs.map(validateRecord);
+    for(const record of outputs)await atomicWrite(this.eventsPath(record.event.id),JSON.stringify(record));
+    await atomicWrite(this.stageCheckpointPath(),JSON.stringify(journal.checkpoint));
+    await unlink(this.stageJournalPath());await syncDirectory(this.directory);
+    if(updateMemory){for(const record of outputs)this.records.set(record.event.id,record);this.captureCheckpoint=journal.checkpoint;this.cachedStats=undefined;}
+    this.stageJournalPending=false;
+  }
+  private async recoverInputJournal(): Promise<void> {
+    let journal:CaptureInputJournal;
+    try { journal=JSON.parse(await readFile(this.inputJournalPath(),'utf8')) as CaptureInputJournal; }
+    catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT'){this.inputJournalPending=false;return;}throw error;}
+    if(journal.version!==1||!UUID.test(journal.transactionId)||!Number.isSafeInteger(journal.blobBytes)||journal.blobBytes<0||typeof journal.reviewHeld!=='boolean')throw new Error('Invalid capture input journal');
+    const event=validateEvent(journal.event);
+    const image=journal.blobHash?await readFile(this.blobPath(journal.blobHash)):undefined;
+    if(journal.blobHash){if(!HASH.test(journal.blobHash)||!image||image.length!==journal.blobBytes)throw new Error('Invalid capture input image');validateImage(image,journal.blobHash);}
+    else if(journal.blobBytes!==0)throw new Error('Invalid capture input image');
+    if(this.captureCheckpoint?.lastInputTransaction!==journal.transactionId)await this.commitCaptureStages([{event,image,reviewHeld:journal.reviewHeld}],false,journal.transactionId);
+    await unlink(this.inputJournalPath());await syncDirectory(this.directory);this.inputJournalPending=false;
+  }
   private assertReady(): void { if (!this.initialized) throw new Error(moteText("持久队列尚未初始化")); }
   async initialize(): Promise<void> {
     return this.exclusive(async () => {
@@ -170,6 +204,7 @@ export class DurableQueue {
         } else await mkdir(path, { recursive: true, mode: 0o700 });
         await chmod(path, 0o700);
       }
+      await this.replayStageJournal(false);
       const restored = new Map<string, QueueRecord>();
       const checked = new Map<string, number>();
       for (const name of await readdir(join(this.directory, 'events'))) {
@@ -187,6 +222,15 @@ export class DurableQueue {
         this.sizeOf(record); restored.set(record.event.id, record);
       }
       this.records = restored;
+      try { this.captureCheckpoint=JSON.parse(await readFile(this.stageCheckpointPath(),'utf8')) as CapturePipelineCheckpoint; }
+      catch (error) { if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error; }
+      await this.recoverInputJournal();
+      // Input replay may have added a screen event after the first record pass.
+      for(const record of this.records.values())if(record.blobHash&&!checked.has(record.blobHash)){
+        const data=await readFile(this.blobPath(record.blobHash));validateImage(data,record.blobHash);
+        if(data.length!==record.blobBytes)throw new Error(moteText('队列图片长度不匹配'));
+        checked.set(record.blobHash,data.length);
+      }
       for (const name of await readdir(join(this.directory, 'blobs'))) {
         if (name.endsWith('.tmp') || (name.endsWith('.jpg') && HASH.test(name.slice(0, -4)) && !checked.has(name.slice(0, -4)))) await unlink(join(this.directory, 'blobs', name));
       }
@@ -286,33 +330,82 @@ export class DurableQueue {
     await this.exclusive(async () => { await atomicWrite(join(this.directory, 'sync-checkpoint.json'), JSON.stringify({ lastUploadAt, nextRetryAt, archiveAcknowledgment })); this.lastUploadAt = lastUploadAt; this.sourceRetryAt = nextRetryAt; this.archiveAcknowledgment=archiveAcknowledgment; this.cachedStats=undefined; });
   }
   atCapacity(): boolean { const stats = this.stats(); return stats.depth >= this.limits.maxQueueEvents || stats.bytes >= this.limits.maxQueueBytes; }
-  private lastState?: CaptureEvent;
   async enqueue(event: CaptureEvent, image?: Buffer, reviewHeld = false): Promise<boolean> {
     return this.exclusive(async () => {
       this.assertReady();
       event = validateEvent(event);
       if (event.source === 'screen') { if (!image) throw new Error(moteText("截图缺少图像")); validateImage(image); }
       else if (image) throw new Error(moteText("随手记或仅活动记录不得包含图片"));
-      const originalId=event.id;
-      event=extendState(this.lastState,event);
-      if(event.id!==originalId){
-        const prior=this.records.get(event.id);
-        const updated:QueueRecord={event,blobBytes:0,attempts:0,nextAttemptAt:0};
-        if(this.stats().bytes+recordBytes(updated)-(prior?recordBytes(prior):0)>this.limits.maxQueueBytes)throw new QueueFullError();
-        if(prior){await atomicWrite(this.eventsPath(event.id),JSON.stringify(updated));this.records.set(event.id,updated);this.cachedStats=undefined;}
-        else await this.insertRecord(updated);
-        this.lastState=event;return false;
+      const transactionId=randomUUID(),blobHash=image?imageHash(image):undefined;
+      if(image&&blobHash)await atomicWrite(this.blobPath(blobHash),image);
+      const journal:CaptureInputJournal={version:1,transactionId,event,blobHash,blobBytes:image?.length??0,reviewHeld};
+      this.inputJournalPending=true;
+      await atomicWrite(this.inputJournalPath(),JSON.stringify(journal));
+      this.afterInputJournal?.();
+      try {
+        const changed=await this.consumeCaptureStages([{event,image,reviewHeld}],false,transactionId);
+        await unlink(this.inputJournalPath());await syncDirectory(this.directory);this.inputJournalPending=false;
+        return changed;
+      } catch(error) {
+        // A committed output journal is authoritative; leave both journals for replay.
+        if(!this.stageJournalPending){
+          await unlink(this.inputJournalPath()).catch(()=>{});await syncDirectory(this.directory);this.inputJournalPending=false;
+          if(blobHash&&![...this.records.values()].some(record=>record.blobHash===blobHash))await unlink(this.blobPath(blobHash)).catch(()=>{});
+        }
+        throw error;
       }
-      const hash = image ? await imageWork.run<string>({ kind: 'hash', bytes: image }) : undefined;
-      const existing = this.records.get(event.id);
-      if (existing) {
-        if (existing.blobHash !== hash || JSON.stringify(existing.event) !== JSON.stringify(event)) throw new Error(moteText("相同事件 ID 的内容发生变化"));
-        return false;
-      }
-      const record: QueueRecord = { ...(reviewHeld ? {syncBlocked:true, syncError:'upload_review_pending'} : {}), event, blobHash: hash, blobBytes: image?.length ?? 0, attempts: 0, nextAttemptAt: 0 };
-      await this.insertRecord(record, image);this.lastState=event;
-      return true;
     });
+  }
+  /** Explicitly release a stage's held input; a scheduler may call this at a time boundary. */
+  async flushCaptureStages(): Promise<number> { return this.exclusive(async()=>{this.assertReady();return this.commitCaptureStages([],true);}); }
+  private async consumeCaptureStages(inputs: CapturePacket[], flush: boolean, transactionId?: string): Promise<boolean> {
+    return (await this.commitCaptureStages(inputs,flush,transactionId))>0;
+  }
+  private async commitCaptureStages(inputs: CapturePacket[], flush: boolean, transactionId?: string): Promise<number> {
+    const checkpoint=this.captureCheckpoint?structuredClone(this.captureCheckpoint):undefined;
+    // An ACK can remove the old series head before the next capture. Never revise an ACKed ID.
+    const state=checkpoint?.stages?.['state-series'],head=(state?.value as {head?:CaptureEvent}|undefined)?.head;
+    if(head&&state){const current=this.records.get(head.id);if(!current||current.uploaded||current.syncBlocked||!isStateExtension(head,current.event)||!isStateExtension(current.event,head))state.value={};}
+    const result=this.captureStages.consume(inputs,checkpoint,flush);
+    const held=Object.values(result.checkpoint.stages).some(value=>value.held);
+    if(held&&inputs.some(packet=>packet.image))throw new Error('Capture stages cannot hold image inputs; emit them in this batch');
+    if(inputs.some(packet=>packet.reviewHeld)&&result.outputs.length===0)throw new Error('Review-held capture cannot be held by a stage');
+    const priorFloor=this.captureCheckpoint?.heldPrivacy;
+    const privacyFloor={activity:Boolean(priorFloor?.activity)||inputs.some(packet=>packet.event.privacy.collection==='activity'),redacted:Boolean(priorFloor?.redacted)||inputs.some(packet=>packet.event.privacy.redacted),reviewHeld:Boolean(priorFloor?.reviewHeld)||inputs.some(packet=>packet.reviewHeld)};
+    result.checkpoint.heldPrivacy=held?privacyFloor:undefined;
+    if(transactionId)result.checkpoint.lastInputTransaction=transactionId;
+    const updates:QueueRecord[]=[];const images=new Map<string,Buffer>();const ids=new Set<string>();
+    for(const packet of result.outputs){
+      if(!packet||!packet.event||ids.has(packet.event.id))throw new Error('Duplicate capture stage output ID');
+      ids.add(packet.event.id);
+      const output=validateEvent(packet.event),outputImage=packet.image;
+      if(privacyFloor.activity&&output.privacy.collection!=='activity'||privacyFloor.redacted&&!output.privacy.redacted)throw new Error('Capture stage weakened privacy');
+      if(flush&&outputImage)throw new Error('Capture stages cannot flush image bytes from a metadata checkpoint');
+      if(output.source==='screen'){if(!Buffer.isBuffer(outputImage))throw new Error(moteText('截图缺少图像'));validateImage(outputImage);}
+      else if(outputImage!==undefined)throw new Error(moteText('随手记或仅活动记录不得包含图片'));
+      const hash=outputImage?imageHash(outputImage):undefined,existing=this.records.get(output.id);
+      if(existing){
+        if(existing.blobHash===hash&&JSON.stringify(existing.event)===JSON.stringify(output))continue;
+        if(existing.blobHash!==hash||!isStateExtension(existing.event,output))throw new Error(moteText('相同事件 ID 的内容发生变化'));
+      }
+      if(hash&&outputImage)images.set(hash,outputImage);
+      updates.push({...(privacyFloor.reviewHeld||packet.reviewHeld?{syncBlocked:true,syncError:'upload_review_pending'}:{}),event:output,blobHash:hash,blobBytes:outputImage?.length??0,attempts:0,nextAttemptAt:0});
+    }
+    if(!updates.length&&JSON.stringify(result.checkpoint)===JSON.stringify(this.captureCheckpoint))return 0;
+    const projected=new Map(this.records);for(const record of updates)projected.set(record.event.id,record);
+    const blobs=new Map<string,number>();let total=0;
+    for(const record of projected.values()){
+      total+=recordBytes(record);
+      if(record.blobHash)blobs.set(record.blobHash,record.blobBytes+CONTENT_FILE_ALLOWANCE);
+    }
+    total+=[...blobs.values()].reduce((sum,value)=>sum+value,0);
+    if(projected.size>this.limits.maxQueueEvents||total>this.limits.maxQueueBytes)throw new QueueFullError();
+    for(const [hash,bytes] of images)if(![...this.records.values()].some(record=>record.blobHash===hash))await atomicWrite(this.blobPath(hash),bytes);
+    const journal:CaptureStageJournal={version:1,outputs:updates,checkpoint:result.checkpoint};
+    this.stageJournalPending=true;await atomicWrite(this.stageJournalPath(),JSON.stringify(journal));
+    this.afterStageJournal?.();
+    await this.replayStageJournal(true);
+    return updates.length;
   }
   private async insertRecord(record: QueueRecord, image?: Buffer): Promise<void> {
     const hasBlob = [...this.records.values()].some(r => r.blobHash === record.blobHash);
@@ -385,6 +478,7 @@ export class DurableQueue {
   async exportArchiveFile(path: string, progress?: (value: WorkProgress) => void): Promise<void> {
     return this.exclusive(async () => {
       this.assertReady();
+      if(Object.values(this.captureCheckpoint?.stages??{}).some(stage=>stage.held))throw new Error('Flush held capture stage inputs before exporting the queue');
       const reservation = [...this.records.values()].filter(r => r.event.ocr?.status === 'pending' && r.ocrResult === undefined).length * OCR_RESULT_RESERVE_BYTES;
       if (this.stats().bytes - reservation > 256 * 1024 * 1024) throw new Error(moteText("队列超过 256 MiB，请退出采集器后备份整个 queue 文件夹"));
       await archiveWork.run({ kind: 'archive-export', directory: this.directory, path }, progress);

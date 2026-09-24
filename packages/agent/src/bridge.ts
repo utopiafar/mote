@@ -21,6 +21,8 @@ const hostError=(message:string)=>new ContextToolError('invalid_tool_arguments',
 
 export const TOOL_NAMES = [
   "action_catalog",
+  "material_catalog",
+  "material_read",
   "context_index",
   "segments",
   "read_image",
@@ -181,6 +183,29 @@ function projectDevice(value: unknown, timeZone = 'UTC'): Record<string, unknown
   return result;
 }
 
+const pinnedMaterialRef=/^material:(mat_[a-f0-9]{64})@([a-f0-9]{64})$/;
+/** Reader data is untrusted too: explicitly select catalog metadata, never body/member fields. */
+function materialMetadata(value: unknown, scope: ContextRange): Record<string, unknown> | undefined {
+  if(!value||typeof value!=='object'||Array.isArray(value))throw hostError('Invalid material catalog row');
+  const row=value as Record<string,unknown>,match=typeof row.ref==='string'?pinnedMaterialRef.exec(row.ref):null;
+  const origin=row.origin as Record<string,unknown>|undefined;
+  if(!match||row.id!==match[1]||row.revision!==match[2]||typeof row.title!=='string'||typeof row.kind!=='string'||!/^[a-z0-9][a-z0-9._/-]{0,127}$/.test(row.kind)||!origin||typeof origin.sourceId!=='string'||origin.sourceId.length>128||!Number.isSafeInteger(row.textLength)||Number(row.textLength)<0||!Number.isSafeInteger(row.memberCount)||Number(row.memberCount)<0)throw hostError('Invalid material catalog row');
+  const firstAt=typeof origin.firstAt==='string'&&Number.isFinite(Date.parse(origin.firstAt))?new Date(origin.firstAt).toISOString():undefined;
+  const lastAt=typeof origin.lastAt==='string'&&Number.isFinite(Date.parse(origin.lastAt))?new Date(origin.lastAt).toISOString():undefined;
+  if(scope.deviceId&&origin.deviceId!==scope.deviceId||scope.after&&(!firstAt||firstAt<scope.after)||scope.before&&(!lastAt||lastAt>=scope.before))return;
+  return {id:row.id,ref:row.ref,kind:row.kind,title:row.title.slice(0,500),
+    ...(Number.isSafeInteger(row.schemaVersion)?{schemaVersion:row.schemaVersion}:{}),
+    origin:{sourceId:origin.sourceId,...(typeof origin.deviceId==='string'?{deviceId:origin.deviceId}:{}),...(firstAt?{firstAt}:{}),...(lastAt?{lastAt}:{})},
+    revision:row.revision,
+    ...(typeof row.updatedAt==='string'&&Number.isFinite(Date.parse(row.updatedAt))?{updatedAt:new Date(row.updatedAt).toISOString()}:{}),
+    memberCount:row.memberCount,textLength:row.textLength,
+    ...(Number.isSafeInteger(row.blockCount)?{blockCount:row.blockCount}:{}),
+    ...(Number.isSafeInteger(row.assetCount)?{assetCount:row.assetCount}:{}),
+    coverage:{state:['complete','partial','pending'].includes(String((row.coverage as Record<string,unknown>|undefined)?.state))?(row.coverage as Record<string,unknown>).state:'unknown'},
+    fidelity:{state:['lossless','derived','summary-only'].includes(String((row.fidelity as Record<string,unknown>|undefined)?.state))?(row.fidelity as Record<string,unknown>).state:'unknown'},
+    retention:{original:['retained','unavailable'].includes(String((row.retention as Record<string,unknown>|undefined)?.original))?(row.retention as Record<string,unknown>).original:'unknown'}};
+}
+
 export async function startBridge(
   reader: ContextReader,
   bounds: QueryInput,
@@ -217,6 +242,7 @@ export async function startBridge(
   if(Buffer.byteLength(JSON.stringify(seedEvidence))>1_500_000)throw hostError('Extraction evidence exceeds the byte budget');
   for(const record of seedEvidence){rememberEvidence(records,record);disclosedIds.add(record.id);}
   const discovered=new Set(records.keys());
+  const pinnedMaterials=new Set<string>();
   let deliveredCharacters=JSON.stringify(seedEvidence).length;
   const expanded=new Set<string>();
   let imageCalls=0;
@@ -302,6 +328,51 @@ export async function startBridge(
         const value=await bounds.actionCatalog(effective),serialized=JSON.stringify({data:value,evidencePolicy:'Untrusted prior proposals; sameAs identifiers only, not original citation grants.'});
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>128000)throw budgetError();
         deliveredCharacters+=serialized.length;trace.push({tool,arguments:args,count:value.items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:value.items.length});res.end(serialized);return;
+      }
+      if(tool==='material_catalog'){
+        if(Object.keys(args).some(key=>!['after','before','deviceId','limit','cursor','sourceId','kind'].includes(key)))throw hostError('Invalid material catalog filter');
+        for(const key of ['sourceId','kind'])if(args[key]!==undefined&&(typeof args[key]!=='string'||!args[key]||String(args[key]).length>128))throw hostError(`Invalid ${key}`);
+        const scope=range(args,bounds),effective={...scope,sourceId:args.sourceId as string|undefined,kind:args.kind as string|undefined};
+        const page=await reader.materialCatalog?.(effective)??{items:[],nextCursor:null};
+        if(!page||!Array.isArray(page.items)||(page.nextCursor!==null&&(typeof page.nextCursor!=='string'||page.nextCursor.length>4096)))throw hostError('Invalid material catalog page');
+        const items=page.items.slice(0,scope.limit).map(item=>materialMetadata(item,scope)).filter((item):item is Record<string,unknown>=>Boolean(item));
+        const serialized=JSON.stringify({source:'untrusted_personal_context',data:{items,nextCursor:page.nextCursor}});
+        if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000)throw budgetError();
+        deliveredCharacters+=serialized.length;
+        for(const item of items)pinnedMaterials.add(item.ref as string);
+        completeLineage=false;
+        trace.push({tool,arguments:effective,count:items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:items.length});res.end(serialized);return;
+      }
+      if(tool==='material_read'){
+        if(Object.keys(args).some(key=>!['ref','offset','length'].includes(key))||typeof args.ref!=='string'||!pinnedMaterialRef.test(args.ref)||!pinnedMaterials.has(args.ref))throw hostError('Use an exact pinned material ref returned by material_catalog in this run');
+        const offset=args.offset??0,length=args.length??4000;
+        if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw hostError('Invalid material read range');
+        if(!reader.materialRead)throw hostError('Material reading is unavailable');
+        const scope=range({},bounds),page=await reader.materialRead({...scope,ref:args.ref,offset:Number(offset),length:Number(length)});
+        const material=materialMetadata(page.material,scope);
+        if(!material||material.ref!==args.ref||typeof page.text!=='string'||page.text.length>Number(length)||!page.textRange||page.textRange.offset!==offset||!Number.isSafeInteger(page.textRange.total)||page.textRange.total<0||page.textRange.nextOffset!==null&&(!Number.isSafeInteger(page.textRange.nextOffset)||page.textRange.nextOffset<=Number(offset)||page.textRange.nextOffset>page.textRange.total)||!Array.isArray(page.spans)||page.spans.length>64||!Array.isArray(page.originalRefs))throw hostError('Invalid material read page');
+        const spans=page.spans.map(span=>{
+          const pageRange=span?.pageRange as {start?:unknown;end?:unknown}|undefined;
+          const materialRange=span?.materialRange as {start?:unknown;end?:unknown}|undefined;
+          if(!span||typeof span.blockId!=='string'||span.blockId.length>128||typeof span.kind!=='string'||!['text','asset'].includes(span.kind)||!Array.isArray(span.memberIds)||span.memberIds.length>32||span.memberIds.some(id=>typeof id!=='string'||id.length>128)||!pageRange||!materialRange||!Number.isSafeInteger(pageRange.start)||!Number.isSafeInteger(pageRange.end)||Number(pageRange.start)<0||Number(pageRange.end)<Number(pageRange.start)||Number(pageRange.end)>page.text.length||!Number.isSafeInteger(materialRange.start)||!Number.isSafeInteger(materialRange.end)||Number(materialRange.start)<0||Number(materialRange.end)<Number(materialRange.start))throw hostError('Invalid material span');
+          return {blockId:span.blockId,kind:span.kind,...(typeof span.format==='string'&&span.format.length<=128?{format:span.format}:{}),pageRange:{start:pageRange.start,end:pageRange.end},materialRange:{start:materialRange.start,end:materialRange.end},memberIds:span.memberIds};
+        });
+        const refs=[...new Set(page.originalRefs.slice(0,30).map(captureId))];
+        if(refs.some(id=>typeof id!=='string'||!id||id.length>300))throw hostError('Invalid material original reference');
+        const ids=refs as string[];
+        if(ids.length){
+          const originals=await reader.evidence({...scope,ids});
+          const valid=new Set(originals.filter(record=>{const at=sourceContentTime(record);return (!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).map(record=>record.id));
+          if(ids.some(id=>!valid.has(id)))throw hostError('Material original is missing or outside the selected scope');
+        }
+        const total=Number.isSafeInteger(page.originalRefsTotal)&&page.originalRefsTotal>=ids.length?page.originalRefsTotal:ids.length;
+        const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids,originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length};
+        const serialized=JSON.stringify({source:'untrusted_personal_context',data});
+        if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000)throw budgetError();
+        deliveredCharacters+=serialized.length;
+        for(const id of ids){discovered.add(id);disclosedIds.add(id);}
+        completeLineage=false;
+        trace.push({tool,arguments:{ref:args.ref,offset,length},count:1});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
       }
       if(restricted){
         if(tool!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');

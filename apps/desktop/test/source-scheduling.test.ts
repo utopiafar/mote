@@ -5,10 +5,46 @@ import { tmpdir } from 'node:os';
 import { LocalSourceManager } from '../src/source-manager';
 import { defaultConfig } from '../src/config';
 import { DEFAULT_SOURCE_OPTIONS } from '../src/source-types';
+import { SourceAdapterRegistry } from '../src/source-adapters';
 let directory: string, managers: LocalSourceManager[] = [];
 beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(), 'mote-managed-sources-'))); vi.stubGlobal('fetch', vi.fn()); });
 afterEach(async () => { for (const app of managers) await app.close(); managers = []; await rm(directory, { recursive: true, force: true }); vi.unstubAllGlobals(); });
 async function create(config: ReturnType<typeof defaultConfig>) { const app = new LocalSourceManager(join(directory, 'state'), config, '/never-real-calendar', true); managers.push(app); await app.initialize(); return app; }
+it('allows multiple instances of a registered source kind without path or calendar identity',async()=>{
+  const config={...defaultConfig(),serverUrl:'',token:undefined,syncMode:'manual' as const};
+  const adapters=new SourceAdapterRegistry().register({kind:'fixture.account',version:1,watchesPath:false,tracksDeletions:false,allowsArchive:false,
+    validateConfiguration(){},async scan(){return {version:1,scan:{items:[],seen:[],complete:true,skipped:0}};}});
+  const state=join(directory,'plugin-state');
+  let app=new LocalSourceManager(state,config,'/never-real-calendar',true,undefined,adapters);
+  managers.push(app);await app.initialize();
+  const first=await app.addAdapterSource({kind:'fixture.account',name:'Generated account A'},DEFAULT_SOURCE_OPTIONS);
+  const second=await app.addAdapterSource({kind:'fixture.account',name:'Generated account B'},DEFAULT_SOURCE_OPTIONS);
+  expect(first).not.toBe(second);expect(app.status().map(row=>row.source.name)).toEqual(['Generated account A','Generated account B']);
+  await app.close();
+  app=new LocalSourceManager(state,config,'/never-real-calendar',true,undefined,adapters);
+  managers.push(app);await app.initialize();
+  expect(app.status().map(row=>row.source.id)).toEqual([first,second]);
+  expect(fetch).not.toHaveBeenCalled();
+});
+it('keeps offline source bodies when a registered adapter version changes',async()=>{
+  const config={...defaultConfig(),serverUrl:'',token:undefined,syncMode:'manual' as const};
+  const state=join(directory,'upgrade-state');
+  const adapters=(version:number)=>new SourceAdapterRegistry().register({kind:'fixture.versioned',version,watchesPath:false,tracksDeletions:false,allowsArchive:false,
+    validateConfiguration(){},async scan(context){
+      if(version===2)expect(context.checkpoint).toBeUndefined();
+      return {version:1,scan:{items:[{externalId:'event-1',title:'Generated',text:`Generated version ${version}`,kind:'message' as const,layer:'snapshot' as const}],
+        seen:['event-1'],complete:true,skipped:0,checkpoint:{version,cursor:'complete'}}};
+    }});
+  let app=new LocalSourceManager(state,config,'/never-real-calendar',true,undefined,adapters(1));
+  managers.push(app);await app.initialize();
+  await app.addAdapterSource({kind:'fixture.versioned',name:'Generated adapter'},DEFAULT_SOURCE_OPTIONS);
+  await app.sync(true);expect(app.pendingStats().pendingRecords).toBe(1);
+  await app.close();
+  app=new LocalSourceManager(state,config,'/never-real-calendar',true,undefined,adapters(2));
+  managers.push(app);await app.initialize();await app.sync(true);
+  expect(app.pendingStats().pendingRecords).toBe(2);
+  expect(fetch).not.toHaveBeenCalled();
+});
 it('keeps scanning/staging files locally with no connection, restores them, and copies original versions only for confirmed first binding', async () => {
   const local = { ...defaultConfig(), serverUrl: '', token: undefined, syncMode: 'manual' as const };
   const file = join(directory, 'generated.md'); await writeFile(file, 'original generated offline version');

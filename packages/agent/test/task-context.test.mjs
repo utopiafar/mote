@@ -17,6 +17,8 @@ test('shared context separates long task input and retains incremental semantics
  const input={question:'Compact',skill:'working-memory',taskContext:{turns:[{turnId:'t1',answer:'x'.repeat(30000)}]},incrementalEvidenceIds:['one']};
  const envelope=buildContextEnvelope(input,[],'2026-09-18T00:00:00Z');
  assert.equal(envelope.request,'Compact');assert.equal(envelope.untrustedTaskContext.turns[0].answer.length,30000);assert.equal(envelope.incrementalContext.count,1);assert.deepEqual(taskTools(input),[]);assert.deepEqual(taskTools({question:'Extract',evidenceIds:['one']}),['evidence']);
+ assert.match(envelope.disclosurePolicy,/material_catalog.*material_read.*evidence before citing/);
+ assert.match(envelope.disclosurePolicy,/source tags.*untrusted/);
  assert.throws(()=>buildContextEnvelope({...input,taskContext:{turns:[{turnId:'t1',answer:'x'.repeat(80000)}]}},[]));
 });
 test('search localizes late match and separate reads retain both citation spans',async t=>{

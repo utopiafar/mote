@@ -73,6 +73,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     }
     fun signature(item: JSONObject) = SourceRules.hash(SourceRules.canonical(JSONObject(item.toString()).apply { remove("observedAt"); remove("revision") }))
     fun observe(source: LocalSource, item: JSONObject, generation: String, now: Long = System.currentTimeMillis()) = synchronized(lock) {
+        SourcePrivacyGate.validate(source, item)
         val path = itemFile(source.id, item.getString("externalId")); val row = read(path)
         if (!path.exists()) check((root(source.id).listFiles()?.count { it.name.startsWith("item-") } ?: 0) < 50000) { MoteI18n.text("文件清单达到 50000 项上限，请缩小目录") }
         if (row.optJSONObject("candidate")?.let { signature(it) } != signature(item)) row.put("stableSince", now)
@@ -122,7 +123,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
             if (!file.exists()) { marker.delete(); null } else read(file).also { if (!dirty(it)) marker.delete() }
         }.firstOrNull { dirty(it) && (source.retention == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || now - it.optLong("stableSince", now) >= 60000) } ?: return@synchronized null
         if (!row.has("revision") && anchor != null) anchor(row.getJSONObject("candidate").getString("externalId"))?.let { row.put("revision", it); saveRow(source.id, row) }
-        val candidate = row.getJSONObject("candidate"); val item = JSONObject(candidate.toString()).apply { remove("_relativePath") }; val spool = File(root(source.id), "spool")
+        val candidate = row.getJSONObject("candidate"); val item = JSONObject(candidate.toString()).apply { remove("_relativePath") }; SourcePrivacyGate.validate(source, item); val spool = File(root(source.id), "spool")
         spool.deleteRecursively(); spool.mkdirs()
         var size = candidate.optJSONObject("metadata")?.optJSONObject("file")?.optLong("sizeBytes", 0) ?: 0L
         var hash: String? = null
@@ -150,6 +151,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
                 if (row.optBoolean("indexPending") && item.getJSONObject("document").getJSONObject("fileIndex").optString("status") == "pending" && row.optString("signature") == signature(candidate)) return@synchronized null
             }
             if (item.optBoolean("deleted") && item.optString("layer") == "snapshot") item.put("layer", "reference")
+            SourcePrivacyGate.validate(source, item)
             val manifest = JSONObject().put("sourceId", source.id).put("previousRevision", row.optString("revision").takeIf { it.isNotBlank() } ?: JSONObject.NULL)
                 .put("item", item).put("relativePath", candidate.optString("_relativePath", item.optString("title"))).put("sizeBytes", size)
             hash?.let { manifest.put("sha256", it) }

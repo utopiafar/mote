@@ -1,6 +1,7 @@
 package dev.mote.collector
 
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -14,12 +15,11 @@ data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes:
 }
 
 /** Atomic events + content-addressed blobs. All callers share the process lock. */
-class DurableQueue(private val dir: File, private val cipher: ByteCipher, createMissing: Boolean = true, private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
+class DurableQueue(private val dir: File, private val cipher: ByteCipher, createMissing: Boolean = true,
+                   private val captureStages: CaptureStageRegistry = CaptureStages.default,
+                   private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
     companion object {
         private val lock = Any()
-        private val stateHeads = object : LinkedHashMap<String, JSONObject>(4, .75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, JSONObject>?) = size > 4
-        }
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
         // 100,000 UTF-16 code units can require six JSON bytes each, plus result fields.
         internal const val OCR_RESERVE_BYTES = 600_256L
@@ -40,8 +40,15 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     /** Nonblocking invalidation only; listeners must never read storage inside this callback. */
     internal var onMutation: ((Boolean) -> Unit)? = null
     internal var assertCurrent: (() -> Unit)? = null
+    internal var afterStageJournal: (() -> Unit)? = null
     private inline fun <T> guarded(action: () -> T): T = synchronized(lock) { assertCurrent?.invoke(); action() }
-    init { check(dir.isDirectory || createMissing && dir.mkdirs()) { MoteI18n.text("本机存储目录不可用") } }
+    private val stageCheckpoint = File(dir, ".capture-stages.checkpoint")
+    private val stageJournal = File(dir, ".capture-stages.journal")
+    private val stageInbox = File(dir, ".capture-stages.inbox")
+    init {
+        check(dir.isDirectory || createMissing && dir.mkdirs()) { MoteI18n.text("本机存储目录不可用") }
+        synchronized(lock) { replayStageJournal(); try { processStageInbox() } catch (_: QueueFull) { /* Keep the encrypted input; upload/cleanup can free space. */ } }
+    }
     private fun browseFiles() = dir.listFiles()?.filter { it.extension == "event" } ?: error(MoteI18n.text("无法读取本机存储目录"))
     private fun browseIndex() = browseIndexes.getOrPut(dir.absolutePath) { QueueBrowseIndex(dir, cipher) }
     private fun records(): List<File> = dir.listFiles()?.filter { it.extension == "event" }?.sortedWith(compareBy<File> { it.lastModified() }.thenBy { it.name }) ?: emptyList()
@@ -166,7 +173,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             check(temp.renameTo(file)) { MoteI18n.text("无法原子写入队列") }
             if (modifiedAt != null) file.setLastModified(modifiedAt)
             if (file.extension == "blob") validatedBlobs.remove(file.absolutePath)
-            onMutation?.invoke(file.extension == "event")
+            if (file != stageCheckpoint && file != stageJournal && file != stageInbox) onMutation?.invoke(file.extension == "event")
             // Atomic replacements may have the same length and timestamp on coarse filesystems.
             if (file.extension == "event") browseIndex().changed(file, JSONObject(String(bytes, Charsets.UTF_8)))
         } finally { temp.delete() }
@@ -179,14 +186,9 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             !event.has("imageMime") && !event.has("imageBase64")
     }
     private fun capacityUpperBound(): Long = diskBytes() + browseIndex().pendingDiskBytes() + browseIndex().reservationUpperBound(browseFiles())
-    fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long, reviewHeld: Boolean = false): String {
-        // Sufficient upper-bound headroom permits capture before a legacy index has finished
-        // rebuilding. Otherwise discover the exact reservation without monopolizing the lock.
-        val event = rawEvent
-        val maximumAddition = event.toString().toByteArray().size + 4096L + (image?.size ?: 0) + ocrReserve(event)
-        if (guarded { capacityUpperBound() > maxBytes - maximumAddition }) prepareIndex()
-        return guarded {
-        val event = StateSeries.extend(stateHeads[dir.absolutePath], rawEvent)
+    private fun validateStageCapture(capture: StageCapture): JSONObject {
+        val event = capture.event
+        val image = capture.image
         require(!event.getJSONObject("privacy").optBoolean("excluded")) { "Excluded captures must never be queued" }
         fun requireAppName(value: JSONObject) {
             if (value.optString("appId").isNotEmpty()) require(value.opt("appName") is String && value.getString("appName").isNotBlank() && value.getString("appName").length <= 200) { MoteI18n.text("应用标识必须同时包含应用名称") }
@@ -195,8 +197,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         event.optJSONObject("metadata")?.optJSONObject("media")?.optJSONArray("sessions")?.let { sessions ->
             for (i in 0 until sessions.length()) requireAppName(sessions.getJSONObject(i))
         }
-        val id = UUID.fromString(event.getString("id")).toString()
-        val file = File(dir, "$id.event")
+        UUID.fromString(event.getString("id"))
         val source = event.optString("source", "screen")
         if (image == null) require((source in setOf("note", "activity", "media", "notification", "device_event", "ui_page") || isDuplicate(event)) && !event.has("imageMime") && !event.has("imageBase64")) { "Only notes, activity or media can omit images" }
         if (source == "activity") {
@@ -211,22 +212,237 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             for (i in 0 until sessions.length()) require(MediaPrivacy.contentKeys.none(sessions.getJSONObject(i)::has))
         }
         val hash = image?.let { MessageDigest.getInstance("SHA-256").digest(it).joinToString("") { byte -> "%02x".format(byte) } }
-        val stored = JSONObject(event.toString()).put("_blob", hash)
-        if (file.exists() && SourceRules.canonical(read(file).apply { localFields.forEach(::remove) }) == SourceRules.canonical(stored)) return@guarded id
-        if (file.exists() && !event.has("stateSeries")) { check(read(file).apply { localFields.forEach(::remove) }.toString() == stored.toString()) { MoteI18n.text("相同记录 ID 的内容发生变化") }; return@guarded id }
-        val blob = hash?.let { File(dir, "$it.blob") }
-        if (reviewHeld) stored.put("_uploadConflict", true).put("_reviewHeld", true)
-        val body = stored.toString().toByteArray()
-        val added = body.size + 2048L + if (blob == null || blob.exists()) 0 else image!!.size + 64L
-        val required = added + ocrReserve(stored)
-        val upperBound = capacityUpperBound()
-        if (upperBound > maxBytes - required && bytes() + browseIndex().pendingDiskBytes() > maxBytes - required) throw QueueFull()
-        if (blob != null && !blob.exists()) atomic(blob, image!!)
-        atomic(file, body)
-        stateHeads[dir.absolutePath] = JSONObject(event.toString())
-        onChange?.invoke(when (source) { "ui_page" -> OperationKind.PAGE_QUEUED; "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, added, id)
-        id
+        return JSONObject(event.toString()).put("_blob", hash)
+    }
+
+    private fun isStateExtension(previous: JSONObject, next: JSONObject): Boolean {
+        val oldSeries = previous.optJSONObject("stateSeries") ?: return false
+        val newSeries = next.optJSONObject("stateSeries") ?: return false
+        val oldSamples = oldSeries.optJSONArray("samples") ?: return false
+        val newSamples = newSeries.optJSONArray("samples") ?: return false
+        if (newSamples.length() <= oldSamples.length()) return false
+        if ((0 until oldSamples.length()).any { SourceRules.canonical(oldSamples.get(it)) != SourceRules.canonical(newSamples.get(it)) }) return false
+        val a = JSONObject(previous.toString()).apply { remove("stateSeries"); localFields.forEach(::remove) }
+        val b = JSONObject(next.toString()).apply { remove("stateSeries"); localFields.forEach(::remove) }
+        return SourceRules.canonical(a) == SourceRules.canonical(b)
+    }
+
+    private fun readStageCheckpoint(): JSONObject? = if (stageCheckpoint.exists()) read(stageCheckpoint) else null
+
+    private fun encodeStageInput(input: StageCapture) = JSONObject().put("event", input.event)
+        .put("image", input.image?.let { Base64.getEncoder().encodeToString(it) } ?: JSONObject.NULL)
+    private fun decodeStageInput(row: JSONObject) = StageCapture(JSONObject(row.getJSONObject("event").toString()),
+        if (row.isNull("image")) null else Base64.getDecoder().decode(row.getString("image")))
+
+    /** Replay the accepted raw input even if the process dies while a stage is executing. */
+    private fun processStageInbox(): List<String> {
+        if (!stageInbox.exists()) return emptyList()
+        replayStageJournal()
+        val inbox = read(stageInbox)
+        val operation = inbox.getString("operation")
+        val committed = readStageCheckpoint()
+        if (committed?.optString("lastOperation") == operation) {
+            check(stageInbox.delete()) { "Unable to finish capture stage input" }
+            val ids = committed.optJSONArray("lastReturnIds") ?: JSONArray()
+            return (0 until ids.length()).map(ids::getString)
         }
+        val input = inbox.optJSONObject("input")?.let(::decodeStageInput)
+        if (input != null) validateStageCapture(input)
+        val id = input?.event?.getString("id")
+        if (input != null && id != null) {
+            val file = File(dir, "${UUID.fromString(id)}.event")
+            if (file.exists()) {
+                val existing = JSONObject(read(file).toString()).apply { localFields.forEach(::remove) }
+                if (SourceRules.canonical(existing) == SourceRules.canonical(validateStageCapture(input))) {
+                    check(stageInbox.delete()) { "Unable to finish duplicate capture input" }
+                    return listOf(id)
+                }
+            }
+        }
+        val fingerprint = input?.let { SourceRules.hash(SourceRules.canonical(it.event) + "\u0000" +
+            (it.image?.let { bytes -> SourceRules.hash(Base64.getEncoder().encodeToString(bytes)) } ?: "")) }
+        val previous = committed?.optJSONObject("lastInput")
+        if (id != null && previous?.optString("id") == id) {
+            check(previous.optString("fingerprint") == fingerprint) { MoteI18n.text("相同记录 ID 的内容发生变化") }
+            check(stageInbox.delete()) { "Unable to finish duplicate capture stage input" }
+            return listOf(previous.getString("returnId"))
+        }
+        val result = captureStages.run(input?.let(::listOf) ?: emptyList(), pendingStageCheckpoint(committed), flush = inbox.optBoolean("flush"))
+        val priorFloor = committed?.optJSONObject("privacyFloor")
+        val inputPrivacy = input?.event?.optJSONObject("privacy")
+        val floor = JSONObject().put("activity", priorFloor?.optBoolean("activity") == true || inputPrivacy?.optString("collection") == "activity")
+            .put("redacted", priorFloor?.optBoolean("redacted") == true || inputPrivacy?.optBoolean("redacted") == true)
+            .put("reviewHeld", priorFloor?.optBoolean("reviewHeld") == true || inbox.optBoolean("reviewHeld"))
+        if (result.heldCount > 0) result.checkpoint.put("privacyFloor", floor)
+        val returnedIds = result.outputs.map { it.event.getString("id") }
+        val returned = returnedIds.firstOrNull() ?: id
+        result.checkpoint.put("lastOperation", operation).put("lastReturnIds", JSONArray(returnedIds))
+        if (id != null) result.checkpoint.put("lastInput", JSONObject().put("id", id).put("fingerprint", fingerprint).put("returnId", returned))
+        else committed?.optJSONObject("lastInput")?.let { result.checkpoint.put("lastInput", it) }
+        commitStageBatch(result, inbox.getLong("maxBytes"), floor)
+        check(stageInbox.delete()) { "Unable to finish capture stage input" }
+        return returnedIds
+    }
+
+    /** A series may extend only while its current ID is still an unacknowledged outbox record. */
+    private fun pendingStageCheckpoint(committed: JSONObject?): JSONObject? {
+        if (committed == null) return null
+        val copy = JSONObject(committed.toString())
+        val stages = copy.optJSONArray("stages") ?: return copy
+        for (index in 0 until stages.length()) {
+            val row = stages.getJSONObject(index)
+            if (row.optString("id") != "state-series") continue
+            val value = row.optJSONObject("value") ?: continue
+            val previousId = value.optJSONObject("previous")?.optString("id") ?: continue
+            val file = File(dir, "${UUID.fromString(previousId)}.event")
+            if (!file.exists() || read(file).let { it.optBoolean("_uploaded") || syncFailed(it) || it.optBoolean("_reviewHeld") }) row.put("value", JSONObject.NULL)
+        }
+        return copy
+    }
+
+    private fun stageHeldCount(checkpoint: JSONObject): Int {
+        val stages = checkpoint.optJSONArray("stages") ?: return 0
+        return (0 until stages.length()).sumOf { stages.getJSONObject(it).optJSONArray("held")?.length() ?: 0 }
+    }
+
+    private fun releaseAcknowledgedStageHead(id: String) {
+        val committed = readStageCheckpoint() ?: return
+        if (browseFiles().isEmpty() && stageHeldCount(committed) == 0) {
+            stageCheckpoint.delete()
+            return
+        }
+        val next = JSONObject(committed.toString())
+        val rows = next.optJSONArray("stages") ?: return
+        var changed = false
+        for (index in 0 until rows.length()) {
+            val row = rows.getJSONObject(index)
+            if (row.optString("id") == "state-series" && row.optJSONObject("value")?.optJSONObject("previous")?.optString("id") == id) {
+                row.put("value", JSONObject.NULL)
+                changed = true
+            }
+        }
+        if (changed) atomic(stageCheckpoint, next.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    /** The encrypted journal is authoritative until every output and checkpoint has landed. */
+    private fun replayStageJournal() {
+        if (!stageJournal.exists()) return
+        val journal = read(stageJournal)
+        val rows = journal.getJSONArray("outputs")
+        for (index in 0 until rows.length()) {
+            val row = rows.getJSONObject(index)
+            val stored = row.getJSONObject("event")
+            val hash = stored.optString("_blob")
+            val image = if (row.isNull("image")) null else Base64.getDecoder().decode(row.getString("image"))
+            val blob = if (hash.isBlank()) null else File(dir, "$hash.blob")
+            if (blob != null) {
+                check(image != null && MessageDigest.getInstance("SHA-256").digest(image).joinToString("") { "%02x".format(it) } == hash)
+                if (!blob.exists()) atomic(blob, image)
+            }
+            val id = UUID.fromString(stored.getString("id")).toString()
+            val file = File(dir, "$id.event")
+            val body = stored.toString().toByteArray(Charsets.UTF_8)
+            if (!file.exists() || SourceRules.canonical(read(file)) != SourceRules.canonical(stored)) atomic(file, body)
+        }
+        atomic(stageCheckpoint, journal.getJSONObject("checkpoint").toString().toByteArray(Charsets.UTF_8))
+        check(stageJournal.delete()) { "Unable to finish capture stage transaction" }
+    }
+
+    private fun commitStageBatch(result: CapturePipelineResult, maxBytes: Long, privacyFloor: JSONObject): List<String> {
+        fun validateFloor(event: JSONObject) {
+            val privacy = event.getJSONObject("privacy")
+            check(!privacyFloor.optBoolean("activity") || event.optString("source") == "activity" && privacy.optString("collection") == "activity") { "Capture stage weakened activity-only privacy" }
+            check(!privacyFloor.optBoolean("redacted") || privacy.optBoolean("redacted")) { "Capture stage weakened redaction privacy" }
+        }
+        result.checkpoint.optJSONArray("stages")?.let { stages ->
+            for (index in 0 until stages.length()) {
+                val held = stages.getJSONObject(index).optJSONArray("held") ?: continue
+                for (position in 0 until held.length()) {
+                    val capture = decodeStageInput(held.getJSONObject(position))
+                    validateStageCapture(capture)
+                    validateFloor(capture.event)
+                }
+            }
+        }
+        val outputIds = mutableSetOf<String>()
+        val outputs = result.outputs.mapNotNull { capture ->
+            val stored = validateStageCapture(capture)
+            validateFloor(stored)
+            val id = UUID.fromString(stored.getString("id")).toString()
+            check(outputIds.add(id)) { "Duplicate capture stage output ID" }
+            val existing = File(dir, "$id.event").takeIf(File::exists)?.let(::read)
+            if (existing != null) {
+                val comparable = JSONObject(existing.toString()).apply { localFields.forEach(::remove) }
+                if (SourceRules.canonical(comparable) == SourceRules.canonical(stored)) return@mapNotNull null
+                check(!existing.optBoolean("_uploaded") && !syncFailed(existing) && !existing.optBoolean("_reviewHeld") && isStateExtension(existing, stored)) { MoteI18n.text("相同记录 ID 的内容发生变化") }
+            }
+            if (privacyFloor.optBoolean("reviewHeld")) stored.put("_uploadConflict", true).put("_reviewHeld", true)
+            Triple(stored, capture.image, existing)
+        }
+        val checkpoint = result.checkpoint
+        val rows = JSONArray(outputs.map { (event, image, _) ->
+            JSONObject().put("event", event).put("image", image?.let { Base64.getEncoder().encodeToString(it) } ?: JSONObject.NULL)
+        })
+        val journal = JSONObject().put("outputs", rows).put("checkpoint", checkpoint)
+        val journalBytes = journal.toString().toByteArray(Charsets.UTF_8)
+        val checkpointBytes = checkpoint.toString().toByteArray(Charsets.UTF_8)
+        val extra = outputs.sumOf { (stored, image, existing) ->
+            val hash = stored.optString("_blob")
+            (stored.toString().toByteArray(Charsets.UTF_8).size + 2048L + ocrReserve(stored) - (existing?.let { ocrReserve(it) + File(dir, "${it.getString("id")}.event").length() } ?: 0L) +
+                if (image != null && !File(dir, "$hash.blob").exists()) image.size + 64L else 0L).coerceAtLeast(0L)
+        } + journalBytes.size + checkpointBytes.size + 4096L
+        if (capacityUpperBound() > maxBytes - extra && bytes() + browseIndex().pendingDiskBytes() > maxBytes - extra) throw QueueFull()
+        atomic(stageJournal, journalBytes)
+        afterStageJournal?.invoke()
+        replayStageJournal()
+        outputs.forEach { (stored, image, existing) ->
+            if (existing == null) {
+                val id = stored.getString("id")
+                val source = stored.optString("source", "screen")
+                onChange?.invoke(when (source) { "ui_page" -> OperationKind.PAGE_QUEUED; "notification", "device_event" -> OperationKind.SYSTEM_EVENT_QUEUED; "media" -> OperationKind.MEDIA_QUEUED; "activity" -> OperationKind.ACTIVITY_QUEUED; "note" -> OperationKind.NOTE_QUEUED; else -> OperationKind.SCREEN_QUEUED }, stored.toString().toByteArray().size.toLong() + (image?.size ?: 0), id)
+            }
+        }
+        return outputs.map { it.first.getString("id") }
+    }
+
+    fun enqueue(rawEvent: JSONObject, image: ByteArray?, maxBytes: Long, reviewHeld: Boolean = false): String {
+        val maximumAddition = rawEvent.toString().toByteArray().size * 4L + 8192L + (image?.size ?: 0) * 4L + ocrReserve(rawEvent)
+        if (guarded { capacityUpperBound() > maxBytes - maximumAddition }) prepareIndex()
+        return guarded {
+            replayStageJournal()
+            if (stageInbox.exists()) {
+                val pending = read(stageInbox)
+                if (pending.getLong("maxBytes") < maxBytes) atomic(stageInbox, pending.put("maxBytes", maxBytes).toString().toByteArray(Charsets.UTF_8))
+            }
+            processStageInbox()
+            val input = StageCapture(JSONObject(rawEvent.toString()), image?.copyOf())
+            val rawStored = validateStageCapture(input)
+            val rawId = UUID.fromString(rawStored.getString("id")).toString()
+            val existing = File(dir, "$rawId.event")
+            if (existing.exists()) {
+                val comparable = JSONObject(read(existing).toString()).apply { localFields.forEach(::remove) }
+                if (SourceRules.canonical(comparable) == SourceRules.canonical(rawStored)) return@guarded rawId
+            }
+            val inbox = JSONObject().put("operation", UUID.randomUUID().toString()).put("input", encodeStageInput(input))
+                .put("maxBytes", maxBytes).put("reviewHeld", reviewHeld).put("flush", false)
+            val inboxBytes = inbox.toString().toByteArray(Charsets.UTF_8)
+            if (capacityUpperBound() > maxBytes - inboxBytes.size - 2048L && bytes() + browseIndex().pendingDiskBytes() > maxBytes - inboxBytes.size - 2048L) throw QueueFull()
+            atomic(stageInbox, inboxBytes)
+            processStageInbox().firstOrNull() ?: input.event.getString("id")
+        }
+    }
+
+    /** Releases stage-owned inputs on an explicit capture boundary. */
+    fun flushStages(maxBytes: Long): List<String> = guarded {
+        replayStageJournal()
+        if (stageInbox.exists()) {
+            val pending = read(stageInbox)
+            if (pending.getLong("maxBytes") < maxBytes) atomic(stageInbox, pending.put("maxBytes", maxBytes).toString().toByteArray(Charsets.UTF_8))
+        }
+        processStageInbox()
+        val inbox = JSONObject().put("operation", UUID.randomUUID().toString()).put("maxBytes", maxBytes).put("reviewHeld", false).put("flush", true)
+        atomic(stageInbox, inbox.toString().toByteArray(Charsets.UTF_8))
+        processStageInbox()
     }
     fun peek(): JSONObject? = peekBatch(1).firstOrNull()
     /** Bound both count and UTF-8 transport size; never acknowledges while selecting. */
@@ -272,6 +488,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (record.optBoolean("_uploaded")) return
         if (record.optJSONObject("ocr")?.optString("status") == "pending") atomic(file, record.put("_uploaded", true).toString().toByteArray())
         else retainOrRemove(file, record, retentionDays, now)
+        releaseAcknowledgedStageHead(id)
         onChange?.invoke(when (record.optString("source")) { "ui_page" -> OperationKind.PAGE_ACK; "notification", "device_event" -> OperationKind.SYSTEM_EVENT_ACK; "media" -> OperationKind.MEDIA_ACK; "activity" -> OperationKind.ACTIVITY_ACK; "note" -> OperationKind.NOTE_ACK; else -> OperationKind.SCREEN_ACK }, uploadedBytes, id)
     }
     private fun retainOrRemove(file: File, record: JSONObject, days: Int, now: Long) {
@@ -306,6 +523,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         if (lastReference) {
             File(dir, "$hash.blob").delete(); File(dir, "$hash.thumb").delete()
         }
+        releaseAcknowledgedStageHead(file.nameWithoutExtension)
     }
     fun pendingOcr(): JSONObject? {
         prepareIndex()
