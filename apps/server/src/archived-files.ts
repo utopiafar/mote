@@ -29,12 +29,12 @@ export class ArchivedFileStore {
   put(input:{name:string;mimeType?:string;bytes:Buffer;relativePath?:string}):ArchivedFile {
     return this.putParts(input,[input.bytes],input.bytes.length);
   }
-  putParts(input:{name:string;mimeType?:string;relativePath?:string},parts:Iterable<Buffer>,sizeBytes:number):ArchivedFile {
+  putParts(input:{name:string;mimeType?:string;relativePath?:string},parts:Iterable<Buffer>,sizeBytes:number,authorize?:()=>void):ArchivedFile {
     if(sizeBytes>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
     const relativePath=archiveRelativePath(input.relativePath??input.name),name=basename(relativePath),mimeType=input.mimeType?.trim()||'application/octet-stream';
     if(mimeType.length>200||/[\r\n\u0000]/.test(mimeType))throw new StoreError('Invalid file MIME type');
-    const asset=this.store.assets.putParts(parts,sizeBytes);
-    return this.savePrepared({relativePath,name,mimeType},sizeBytes,asset);
+    const asset=this.store.assets.putParts(parts,sizeBytes,undefined,authorize);
+    return this.savePrepared({relativePath,name,mimeType},sizeBytes,asset,authorize);
   }
   async putUpload(input:{name:string;mimeType?:string},directory:string,parts:{part:number;hash:string;bytes:number}[],sizeBytes:number,signal?:AbortSignal,validate?:()=>void):Promise<ArchivedFile>{
     if(sizeBytes>MAX_FILE_BYTES)throw new StoreError('A file exceeds the 64 MiB limit',413);
@@ -44,15 +44,16 @@ export class ArchivedFileStore {
     try{signal?.throwIfAborted();validate?.();}catch(error){asset.release();throw error;}
     return this.savePrepared({relativePath,name,mimeType},sizeBytes,asset);
   }
-  private savePrepared({relativePath,name,mimeType}:{relativePath:string;name:string;mimeType:string},sizeBytes:number,asset:Asset & {release:()=>void}):ArchivedFile{
+  private savePrepared({relativePath,name,mimeType}:{relativePath:string;name:string;mimeType:string},sizeBytes:number,asset:Asset & {release:()=>void},authorize?:()=>void):ArchivedFile{
     const hash=asset.hash;
     try{
+    authorize?.();
     const duplicate=this.store.db.prepare("SELECT json FROM archived_files WHERE hash=? AND json_extract(json,'$.relativePath')=? AND json_extract(json,'$.mimeType')=?").get(hash,relativePath,mimeType) as {json:string}|undefined;
     if(duplicate)return JSON.parse(duplicate.json);
     const value:ArchivedFile={id:randomUUID(),hash,name,relativePath,mimeType,sizeBytes,createdAt:new Date().toISOString()};
-    this.store.db.exec('BEGIN IMMEDIATE');
-    try{this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.store.db.prepare('INSERT OR IGNORE INTO file_blobs(hash,bytes) VALUES(?,?)').run(hash,sizeBytes);this.store.db.prepare('INSERT INTO archived_files(id,hash,json) VALUES(?,?,?)').run(value.id,hash,JSON.stringify(value));this.store.db.exec('COMMIT');}
-    catch(error){this.store.db.exec('ROLLBACK');this.sweepOrphans();throw error;}
+    const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
+    try{authorize?.();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(value)));this.store.db.prepare('INSERT OR IGNORE INTO file_blobs(hash,bytes) VALUES(?,?)').run(hash,sizeBytes);this.store.db.prepare('INSERT INTO archived_files(id,hash,json) VALUES(?,?,?)').run(value.id,hash,JSON.stringify(value));authorize?.();if(own)this.store.db.exec('COMMIT');}
+    catch(error){if(own){this.store.db.exec('ROLLBACK');this.sweepOrphans();}throw error;}
     return value;
     }finally{asset.release();}
   }

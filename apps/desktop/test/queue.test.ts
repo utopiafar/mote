@@ -13,6 +13,42 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-desktop-
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 describe('durable capture queue', () => {
+  it('clears only pending pre-v2 captures and keeps acknowledged local originals for browse', async () => {
+    const acknowledged={...event('f50650f0-fb31-4215-90cd-c96dc62d5e94'),ocr:{status:'pending' as const}};
+    await queue.enqueue(acknowledged,image);
+    await queue.acknowledge(acknowledged.id);
+    await queue.enqueue(event(), image);
+    await queue.syncCheckpoint('2026-09-22T01:00:00Z');
+    await writeFile(join(directory, 'capture-input-journal.json'), 'legacy pending input');
+    await writeFile(join(directory, 'capture-stage-journal.json'), 'legacy stage output');
+    await rm(join(directory, 'capture-ingress-v2.json'));
+    const upgraded = new DurableQueue(directory, limits);
+    await upgraded.initialize();
+    expect(upgraded.stats().depth).toBe(0);
+    expect(upgraded.stats().blocked).toBe(0);
+    expect(await readdir(join(directory, 'events'))).toEqual([`${acknowledged.id}.json`]);
+    expect(await readdir(join(directory, 'blobs'))).toEqual([`${imageHash(image)}.jpg`]);
+    expect(upgraded.recordForBrowser(acknowledged.id)?.syncError).toBe('legacy_ingress_archive');
+    expect(await upgraded.imageForBrowser(acknowledged.id)).toEqual(image);
+    expect(await upgraded.next()).toBeUndefined();
+    for (const name of ['capture-input-journal.json', 'capture-stage-journal.json', 'capture-stage-checkpoint.json', 'sync-checkpoint.json']) {
+      await expect(stat(join(directory, name))).rejects.toMatchObject({ code: 'ENOENT' });
+    }
+    await upgraded.resetRetries();
+    expect(await upgraded.next()).toBeUndefined();
+    const backup=await upgraded.exportArchive();
+    const restored=new DurableQueue(join(directory,'explicit-restore'),limits);
+    await restored.initialize();
+    await restored.importArchive(backup);
+    expect((await restored.next())?.record).toMatchObject({event:{id:acknowledged.id},uploaded:false});
+    expect(JSON.parse(await readFile(join(directory, 'capture-ingress-v2.json'), 'utf8'))).toEqual({ version: 2 });
+    const fresh = event('f50650f0-fb31-4215-90cd-c96dc62d5e93');
+    upgraded.setLimits({...limits,maxQueueEvents:1});
+    await upgraded.enqueue(fresh, image);
+    const reopened = new DurableQueue(directory, limits);
+    await reopened.initialize();
+    expect((await reopened.next())?.record.event.id).toBe(fresh.id);
+  });
   it('retains the archive ACK origin separately from retry and last-contact timestamps',async()=>{
     queue.stats();
     await queue.syncCheckpoint('2026-09-22T01:00:00Z','2026-09-22T01:01:00Z');

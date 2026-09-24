@@ -109,6 +109,19 @@ test('configuration sources track process overrides, selected file and defaults 
   assert.ok(!JSON.stringify(context).includes('synthetic-private-model-key'));assert.ok(!JSON.stringify(context).includes(config.token));
 });
 
+test('Python import packs default to none and require pinned absolute trusted configuration',t=>{
+  const root=mkdtempSync(join(tmpdir(),'mote-config-import-pack-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const file=join(root,'mote.env');writeFileSync(file,'MOTE_DATA_DIR=./vault\n');
+  const defaults=readConfig({MOTE_ENV_FILE:file});assert.equal(defaults.status,0,defaults.stderr);assert.deepEqual(JSON.parse(defaults.stdout).importPythonPacks,[]);
+  const pack={id:'fixture.pack',version:'1',packRoot:join(root,'pack'),script:'parse.py',scriptSha256:'a'.repeat(64),pythonExecutable:'/usr/bin/python3'};
+  const valid=readConfig({MOTE_ENV_FILE:file,MOTE_IMPORT_PYTHON_PACKS:JSON.stringify([pack])});assert.equal(valid.status,0,valid.stderr);assert.deepEqual(JSON.parse(valid.stdout).importPythonPacks,[pack]);
+  for(const invalid of [[{...pack,scriptSha256:'not-pinned'}],[{...pack,script:'../outside.py'}],[pack,pack]]){
+    const vault=join(root,'invalid-'+Math.random().toString(36).slice(2));
+    const result=readConfig({MOTE_ENV_FILE:file,MOTE_DATA_DIR:vault,MOTE_IMPORT_PYTHON_PACKS:JSON.stringify(invalid)});
+    assert.notEqual(result.status,0);assert.match(result.stderr,/MOTE_IMPORT_PYTHON_PACKS/);assert.equal(existsSync(vault),false);
+  }
+});
+
 test('model request and Agent deadlines have independent defaults and bounded overrides before creating storage', t => {
   const root=mkdtempSync(join(tmpdir(),'mote-config-timeout-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const file=join(root,'mote.env'),vault=join(root,'vault');

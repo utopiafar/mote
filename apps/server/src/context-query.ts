@@ -172,7 +172,7 @@ function kind(record:CaptureRecord){
   return record.source;
 }
 
-function card(record:CaptureRecord,query?:string,extra?:Partial<ContextCard>):ContextCard {
+export function contextCard(record:CaptureRecord,query?:string,extra?:Partial<ContextCard>):ContextCard {
   const scope=codingScope(record),body=record.ocrText||record.windowTitle||(record.metadata?.media?searchableText(record):record.appName);
   const match=snippet(body,query);
   const reasons:string[]=[];
@@ -210,7 +210,7 @@ export class ContextQuery {
       // Collection references are navigation objects, never unreadable evidence IDs.
       if(mode==='browse'&&groups.has(key)){consumed=record;continue;}
       if(items.length>=args.limit){stopped=true;break;}
-      const item=card(record,args.query);
+      const item=contextCard(record,args.query);
       if(mode==='browse'){
         Object.assign(item,{ref:`collection:${hashQuery([key,record.id])}`,kind:scope?'project-candidate':'source-collection',title:scope?.projectName??scope?.projectKey??record.provenance?.sourceId??record.source,snippet:'Related records; this is a query view, not a canonical project identity.',expansion:{kind:'search',scope:{...(scope?{sourceId:record.provenance?.sourceId,deviceId:record.deviceId,provider:scope.provider,projectKey:scope.projectKey}:record.provenance?.sourceId?{sourceId:record.provenance.sourceId}:{source:record.source}),...(raw.deviceId?{deviceId:raw.deviceId}:{}),...(raw.repositoryKey?{repositoryKey:raw.repositoryKey}:{}),...(raw.after?{after:raw.after}:{}),...(raw.before?{before:raw.before}:{})},refs:[item.ref]}});
       }
@@ -241,7 +241,7 @@ export class ContextQuery {
     const rows=await this.reader.search({...raw,limit:boundLimit(raw.limit)}),max=Math.max(1000,Math.min(raw.maxCharacters??MAX_RESPONSE_CHARACTERS,MAX_RESPONSE_CHARACTERS));
     const page={items:[] as ContextCard[],retrieval:rows.retrieval,truncated:rows.length>=boundLimit(raw.limit)};
     for(const row of rows){
-      page.items.push(card(row,raw.query));
+      page.items.push(contextCard(row,raw.query));
       if(JSON.stringify(page).length>max||Buffer.byteLength(JSON.stringify(page))>65536){page.items.pop();page.truncated=true;break;}
     }
     if(rows.length&&!page.items.length)throw new StoreError('Context response budget too small for one card',413);
@@ -329,7 +329,7 @@ export class ContextQuery {
   }
 }
 
-function cardFromMemory(memory:Memory):ContextCard {
+export function cardFromMemory(memory:Memory):ContextCard {
   const scope=memory.scopeRefs?.[0],capturedAt=memory.createdAt;
   return {ref:formatEvidenceRef('memory',memory.id),id:memory.id,kind:'memory',title:memory.title,snippet:memory.statement.slice(0,DEFAULT_SNIPPET),matchReasons:['published memory','evidence-linked'],origin:{source:'memory',deviceId:scope?.deviceId??'memory',appName:'Mote memory',capturedAt,receivedAt:capturedAt,...(scope??{})},evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope};
 }

@@ -8,6 +8,16 @@ import { buildApp } from '../src/app.js';
 import type { Config } from '../src/config.js';
 
 export const testConfig=(dataDir:string):Config=>({dataDir,token:'fixture-token-never-use-in-production',tokenPath:'fixture-only',host:'127.0.0.1',port:47832,dataKey:undefined,maxStorageBytes:10_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''});
+test('source pack catalog lists public metadata without exposing pinned code locations',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-pack-catalog-test-'));const config={...testConfig(dir),importPythonPacks:[{id:'fixture.pack',version:'1',description:'Fixture parser',packRoot:'/trusted/fixture',script:'parse.py',scriptSha256:'a'.repeat(64),pythonExecutable:'/usr/bin/python3'}]};
+  const {app}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('should not run');},close:async()=>{}}});
+  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+  assert.equal((await app.inject('/api/import-source-packs')).statusCode,401);
+  const response=await app.inject({url:'/api/import-source-packs',headers:{authorization:`Bearer ${config.token}`}});
+  assert.equal(response.statusCode,200);
+  assert.deepEqual(response.json(),{items:[{id:'fixture.pack',version:'1',description:'Fixture parser'}]});
+  assert.doesNotMatch(response.body,/trusted|parse\.py|aaaaaa/);
+});
 test('authenticated ingestion, source history, export/import and unavailable AI are honest',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mote-api-test-'));const config=testConfig(dir);
   const {app}=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('should not run');},close:async()=>{}}});

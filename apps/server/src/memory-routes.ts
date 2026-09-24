@@ -52,10 +52,12 @@ export function registerMemoryRoutes(app:FastifyInstance,{store,files,memories,m
   app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
     const input:QueryInput={...scope,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
-    input.validateOutput=result=>{try{memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
+    input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const draft=await query(input);
+    memoryPipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));
     memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true});
     const result=await reviewExtraction(input,draft);
-    return memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)});
+    return memoryPipeline.withAdmissibleEvidence(result.citations.map(c=>c.id),()=>
+      memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)}));
   });
 }

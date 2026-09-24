@@ -48,6 +48,17 @@ export class EvidenceStore {
     privateSqliteFile(join(directory,'mote.sqlite'),true);
     for(const suffix of ['-wal','-shm','-journal'])privateSqliteFile(join(directory,`mote.sqlite${suffix}`));
     this.db=new DatabaseSync(join(directory,'mote.sqlite'));
+    // MVP protocol v2 is a deliberate vault cutover. Never infer that an old
+    // populated schema has the new archive and visibility semantics.
+    const priorTable=this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get();
+    if(priorTable){
+      const settingsTable=this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='settings'").get();
+      const epoch=settingsTable?this.db.prepare("SELECT value FROM settings WHERE key='backend_epoch'").get()?.value:undefined;
+      if(epoch!=='2'){
+        this.db.close();
+        throw new StoreError('Legacy Mote vault cannot open with backend protocol v2. Stop the server and run the explicit MVP vault reset command.',409);
+      }
+    }
     ensureTodoSchema(this.db);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -96,7 +107,8 @@ export class EvidenceStore {
       CREATE TABLE IF NOT EXISTS conversations (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,json TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS conversations_updated ON conversations(updated_at DESC,id DESC);
       CREATE VIRTUAL TABLE IF NOT EXISTS captures_fts USING fts5(id UNINDEXED, text, tokenize='unicode61');
-      PRAGMA user_version=1;`);
+      PRAGMA user_version=2;`);
+    this.db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES('backend_epoch','2')").run();
     // Existing screenshot jobs predate managed OCR. They remain available for explicit retry,
     // but model installation must not silently process an old archive.
     const perceptionColumns=new Set((this.db.prepare('PRAGMA table_info(perception_jobs)').all() as {name:string}[]).map(row=>row.name));

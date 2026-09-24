@@ -88,6 +88,8 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Host-verified originals deliberately attached to this dialogue. Bytes remain in the vault. */
+  directImages?:{id:string;name:string;mimeType:string;hash:string;sizeBytes:number}[];
   /** Host-only bounded observation and coverage snapshot for one insight version. */
   insightSnapshot?: import('@mote/shared').InsightSnapshot;
   /** Host-only read grant for original action proposals. No mutation capability is exposed. */
@@ -129,7 +131,7 @@ export interface QueryInput {
   /** Server-owned dialogue context. Earlier model prose is not original evidence. */
   conversation?: {
     evidenceDependencies?:import('@mote/shared').EvidenceDependencies;
-    turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean}[];
+    turns: {question:string;answer:string;scope:{after?:string;before?:string;deviceId?:string;timeZone?:string};createdAt:string;answerTruncated?:boolean;evidenceDeleted?:boolean;attachments?:{id:string;name:string;mimeType:string}[]}[];
     omittedTurns:number;
     workingMemory?:{text:string;coveredTurns:number;generatedAt:string};
   };

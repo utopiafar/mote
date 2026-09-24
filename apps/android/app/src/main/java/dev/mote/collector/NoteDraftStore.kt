@@ -45,6 +45,11 @@ class NoteDraftStore(private val directory: File, private val cipher: ByteCipher
         draft.copy(prepared = create(draft), server = server).also { write(it) }
     }
     fun clear() = synchronized(lock) { write(NoteDraft()) }
+    /** Preserve editable text while dropping an old prepared capture ID. */
+    fun clearPreparedForProtocolUpgrade() = synchronized(lock) {
+        val draft = read()
+        if (draft.prepared != null || draft.server != null) write(NoteDraft(draft.text, draft.mood))
+    }
     private fun write(draft: NoteDraft) {
         val value = JSONObject().put("text", draft.text).put("mood", draft.mood).put("prepared", draft.prepared).put("server", draft.server)
         val temp = File(directory, "${UUID.randomUUID()}.tmp")

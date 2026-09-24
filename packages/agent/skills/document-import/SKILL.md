@@ -1,7 +1,7 @@
 ---
 name: document-import
 description: Convert arbitrary user-selected document exports into reviewable source records.
-version: 1.0.3
+version: 1.0.4
 ---
 
 # Generic document import
@@ -20,4 +20,4 @@ Preserve observedAt when the source explicitly supplies its actual observation t
 
 Do not turn application settings, secrets, tokens, or configuration files into searchable records. Mention excluded and unsupported items in the summary/warnings; originals remain archived. Attach related binary files using their supplied paths. Account for every input as parsed, attachment, container, excluded, or unsupported; write dispositions.json with {"items":[{"path":"inputs/path","status":"parsed|attachment|container|excluded|unsupported","reason":"short explanation"}]} for the host to verify. A valid zero-record result means unsupported/excluded, not successful searchable import.
 
-Validate your JSONL against the supplied schema using the helper's validateRecords function, repair errors, then return ONLY {"summary":"Chinese format interpretation, record counts, date assumptions, exclusions and ambiguities for the preview","recordsPath":"records.jsonl","warnings":["remaining limitations"]}. Do not ingest records or extract memories yourself. The host will show a preview, await confirmation, ingest immutable evidence, and start a separate memory-extraction Skill run.
+Validate your JSONL against the supplied schema using the helper's validateRecords function, repair errors, then return ONLY {"summary":"format interpretation, record counts, date assumptions, exclusions and ambiguities","recordsPath":"records.jsonl","warnings":["remaining limitations"],"reviewDecision":{"confidence":"unknown","ambiguous":false,"reason":"specific basis and limits"}}. The confidence value must be high, low, or unknown. Use high only when every selected record has an unambiguous source identity, revision, text role, and timestamp mapping supported by the input. Treat uncertain authorship, inferred event dates, conflicting versions, missing sections, unsupported files, or incomplete parsing as low or unknown; set ambiguous true when more than one plausible mapping remains. If you cannot assess this, return null for reviewDecision. The host independently validates the manifest and may publish an automatic import only when the user requested automatic processing and there are no warnings or unresolved files. Do not ingest records or extract memories yourself; a separate memory-extraction Skill owns that work.

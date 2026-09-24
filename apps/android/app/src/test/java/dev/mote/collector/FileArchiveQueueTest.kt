@@ -27,7 +27,14 @@ class FileArchiveQueueTest {
     private val cipher = object : ByteCipher { override fun seal(bytes: ByteArray) = bytes.map { (it.toInt() xor 91).toByte() }.toByteArray(); override fun open(bytes: ByteArray) = seal(bytes) }
     private fun source(mode: String = "archive", initial: String = "all") = LocalSource(id = "file-test", name = "Generated", kind = "local-files", retention = mode, uri = "content://fixture/tree/root", tree = true, extensions = "wav,txt", initialSync = initial)
     private fun item(id: String = "a", layer: String = "original", size: Long = 200000) = JSONObject().put("externalId", "content://fixture/$id").put("uri", "content://fixture/$id").put("title", "$id.wav").put("kind", "file").put("layer", layer).put("text", "").put("mimeType", "audio/wav").put("observedAt", "2026-09-15T00:00:00Z").put("metadata", JSONObject().put("version", 1).put("file", JSONObject().put("sizeBytes", size)))
-    private fun ack(pending: JSONObject): JSONObject { val m = pending.getJSONObject("pending").getJSONObject("manifest"); val i = m.getJSONObject("item"); return JSONObject().put("id", UUID.randomUUID().toString()).put("sourceId", m.getString("sourceId")).put("externalId", i.getString("externalId")).put("revision", i.getString("revision")).put("duplicate", false).put("sha256", m.optString("sha256")).put("sizeBytes", m.getLong("sizeBytes")) }
+    private fun ack(pending: JSONObject): JSONObject {
+        val m = pending.getJSONObject("pending").getJSONObject("manifest"); val i = m.getJSONObject("item")
+        val id = UUID.randomUUID().toString(); val sourceId = m.getString("sourceId"); val externalId = i.getString("externalId"); val revision = i.getString("revision")
+        return JSONObject().put("id", id).put("sourceId", sourceId).put("externalId", externalId).put("revision", revision)
+            .put("duplicate", false).put("sha256", m.optString("sha256")).put("sizeBytes", m.getLong("sizeBytes"))
+            .put("receipt", JSONObject().put("version", 2).put("id", id).put("kind", "file-revision").put("state", "received")
+                .put("duplicate", false).put("sourceId", sourceId).put("externalId", externalId).put("revision", revision))
+    }
 
     @Test fun immutablePartsSurviveRestartAndBadAckDoesNotReleaseThem() {
         val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher); val s = source(); val state = queue.configure(s)
@@ -41,6 +48,26 @@ class FileArchiveQueueTest {
         assertThrows(IllegalStateException::class.java) { restarted.acknowledge(s.id, pending, ack(pending).put("sha256", "wrong")) }
         assertNotNull(restarted.next(s.id)); restarted.acknowledge(s.id, pending, ack(pending)); assertEquals(0, restarted.pendingCount(s.id))
         assertFalse(java.io.File(dir, s.id + "/spool").exists())
+    }
+
+    @Test fun rejectedV2FileWriteAndForgottenHeadRetainTheImmutableManifestAndParts() {
+        val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher); val s = source()
+        val bytes = ByteArray(FileArchiveQueue.PART_BYTES + 7) { (it % 251).toByte() }
+        val generation = queue.configure(s).getString("generation")
+        queue.observe(s, item(size = bytes.size.toLong()), generation, 0)
+        val pending = queue.prepare(s, { ByteArrayInputStream(bytes) }, { true }, 61000)!!
+        for (status in listOf(409, 410, 426)) {
+            val rejection = assertThrows(FileIngressRejection::class.java) { FileUpload.requireAccepted(status) }
+            assertEquals(status, rejection.httpStatus)
+            val restarted = FileArchiveQueue(dir, cipher)
+            assertEquals(pending.toString(), restarted.next(s.id).toString())
+            assertArrayEquals(bytes.copyOfRange(0, FileArchiveQueue.PART_BYTES), restarted.part(s.id, 0))
+        }
+        val forgotten = assertThrows(FileIngressRejection::class.java) { FileUpload.requireCurrentHead(JSONObject().put("forgotten", true)) }
+        assertEquals(410, forgotten.httpStatus)
+        assertNotNull(FileArchiveQueue(dir, cipher).next(s.id))
+        FileUpload.requireCurrentHead(JSONObject().put("forgotten", false))
+        FileUpload.requireAccepted(200)
     }
 
     @Test fun newOnlyBaselineSpansPartialScansAndCanLaterBeBackfilled() {

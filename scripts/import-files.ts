@@ -5,8 +5,9 @@ import { apiClient, resolvedConnection } from './client.js';
 import { SourceSync, sourceHash } from '../apps/desktop/src/source-sync.js';
 import { scanSourceFiles } from '../apps/desktop/src/source-files.js';
 import { DEFAULT_SOURCE_OPTIONS, normalizeSourceOptions, redactSourceText, type SourceDefinition, type SourceRequest } from '../apps/desktop/src/source-types.js';
+import {initializeCliIngressState} from './cli-ingress-state.js';
 const args = process.argv.slice(2);
-const usage = 'Usage: npm run import:files -- --root /explicit/folder-or-file [--extensions .md,.txt,.json,.csv,.ics] [--retention snapshot|reference] [--initial-sync all|new_only] [--exclude relative/path,...] [--redact-literal exact-text] [--track-deletions] [--dry-run] [--watch]\nOnly explicitly selected UTF-8 files, max 100 KB each. No symlinks or hidden traversal. Reference sends metadata only. Deletion tracking is opt-in; historical versions remain. Select a node with MOTE_ENV_FILE or the profile CLI.';
+const usage = 'Usage: npm run import:files -- --root /explicit/folder-or-file [--extensions .md,.txt,.json,.csv,.ics] [--retention snapshot|reference|archive] [--initial-sync all|new_only] [--exclude relative/path,...] [--redact-literal exact-text] [--track-deletions] [--dry-run] [--watch]\nOnly explicitly selected files; no symlinks or hidden traversal. Reference sends metadata only, archive sends originals. Deletion tracking is opt-in; historical versions remain. Select a node with MOTE_ENV_FILE or the profile CLI.';
 if (args.includes('--help')) { console.info(usage); process.exit(0); }
 const values = new Map<string, string[]>();
 const flags = new Set(['--dry-run', '--watch', '--track-deletions']);
@@ -59,7 +60,10 @@ try {
       } finally { if (recovery) { await recovery.close(); await rm(lockPath + '.recovery', { force: true }); } }
     }
     await lock.writeFile(String(process.pid)); await lock.sync();
-    engine = new SourceSync(statePath); await engine.initialize(); await engine.ensurePolicy(policy);
+    engine = new SourceSync(statePath);
+    const ingress=await initializeCliIngressState(statePath,engine);
+    if(ingress.reset)console.info('Legacy source receipts and staged originals were reset for ingress v2; scanning this source again.');
+    await engine.ensurePolicy(policy);
   }
   async function scan(): Promise<void> {
     const result = await scanSourceFiles(root, options, controller.signal, request ? statePath + '.atime.json' : undefined);
@@ -72,11 +76,12 @@ try {
       const patched = await request('/api/sources/' + id, { retention: options.retention, initialSync:options.initialSync, name: source.name }, 'PATCH', controller.signal) as { id?: unknown };
       if (patched?.id !== id) throw new Error('Source configuration ACK mismatch');
       };
+      // SourceSync checks every v2 receipt before removing a pending revision.
       const synced = await engine.syncScan(result, options.trackDeletions, source, request, controller.signal, prepare);
       count = synced.changes; const state = synced.state;
       if (state === 'paused') { console.info('Central source is paused; pending revisions retained locally.'); return; }
     }
-    console.info(`${request ? 'Imported' : 'Would import'} ${count} changed UTF-8 text files; skipped ${result.skipped}; deletion scan ${result.complete && options.trackDeletions ? 'enabled' : 'not applied'}.`);
+    console.info(`${request ? 'Received' : 'Would send'} ${count} changed UTF-8 text files; skipped ${result.skipped}; deletion scan ${result.complete && options.trackDeletions ? 'enabled' : 'not applied'}.`);
   }
   do {
     try { await scan(); }

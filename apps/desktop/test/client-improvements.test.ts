@@ -4,7 +4,7 @@ import { UploadMeter, meteredBody } from '../src/upload-meter';
 import { uploadCaptureBatch } from '../src/transport';
 import { AskClient } from '../src/ask';
 import { defaultConfig } from '../src/config';
-import { event, image } from './fixtures';
+import { captureAck,event, image } from './fixtures';
 
 afterEach(() => vi.unstubAllGlobals());
 const pixels = (value: number) => { const data = Buffer.alloc(32 * 32 * 4, value); for (let i = 3; i < data.length; i += 4) data[i] = 255; return data; };
@@ -34,21 +34,20 @@ it('validates every batch receipt before returning partial acknowledgements', as
   const one = event(), two = {...event(), id: '00000000-0000-4000-8000-000000000099'};
   vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
     const body = await new Response(init.body).json(); expect(body.captures).toHaveLength(2);
-    return Response.json({results: [{id: one.id, status: 201}, {id: two.id, status: 503}]});
+    return Response.json({results: [{...captureAck(one.id), status: 201}, {id: two.id, status: 503}]});
   }));
   const receipts = await uploadCaptureBatch({...defaultConfig(), token:'fixture'}, [{event: one, image}, {event: two}]);
   expect(receipts.get(one.id)).toBe(201); expect(receipts.get(two.id)).toBe(503);
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({results: [{id: one.id, status: 201}, {id: 'unknown', status: 201}]})));
   await expect(uploadCaptureBatch({...defaultConfig(), token:'fixture'}, [{event: one}])).rejects.toThrow('Invalid batch receipts');
 });
-it('falls back to individual requests with identical IDs on old servers', async () => {
+it('keeps queued captures when a v2 batch route is unavailable', async () => {
   const capture = event(); const urls: string[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (url, init) => {
-    urls.push(String(url)); const body = await new Response(init.body).json();
-    return urls.length === 1 ? new Response('{}', {status:404}) : Response.json({id: body.id}, {status:201});
+  vi.stubGlobal('fetch', vi.fn(async url => {
+    urls.push(String(url)); return new Response('{}', {status:404});
   }));
-  expect((await uploadCaptureBatch({...defaultConfig(), token:'fixture'}, [{event: capture}])).get(capture.id)).toBe(201);
-  expect(urls.map(url => new URL(url).pathname)).toEqual(['/api/captures/batch', '/api/captures']);
+  await expect(uploadCaptureBatch({...defaultConfig(), token:'fixture'}, [{event: capture}])).rejects.toMatchObject({httpStatus:404});
+  expect(urls.map(url => new URL(url).pathname)).toEqual(['/api/captures/batch']);
 });
 it('keeps ask credentials scoped to one origin and blocks arbitrary endpoints', async () => {
   const client = new AskClient(), config = {...defaultConfig(), credentialScope:'collector' as const, token:'device'.repeat(8)};

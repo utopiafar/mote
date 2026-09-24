@@ -4,7 +4,7 @@ import { moteText, statusMessage } from '@mote/shared/i18n';
 import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
 import { randomUUID } from 'node:crypto';
 import { join, basename, isAbsolute } from 'node:path';
-import { stat } from 'node:fs/promises';
+import { stat,readdir,rm } from 'node:fs/promises';
 import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
 import { readLocalContent } from './local-content';
 import { codingRoot, codingProviders, type CodingProvider } from './coding-agents';
@@ -16,6 +16,7 @@ import { readResponseText } from './response-body';
 import { ConnectionBindingStore } from './connection-binding';
 import { decideSync } from './sync-policy';
 import { FileWatcher, type FileWatchEvent } from './file-watcher';
+import {INGRESS_VERSION_HEADERS} from './ingress-protocol';
 type SourceConnection = Pick<Config, 'serverUrl' | 'token' | 'deviceId'> & Partial<Pick<Config, 'syncMode' | 'syncIntervalMinutes' | 'syncBatchSize'>>;
 export function sourceDefinition(source: LocalSource): SourceDefinition {
   const { id, name, kind, deviceId, platform, retention, enabled, initialSync } = source;
@@ -52,6 +53,18 @@ export class LocalSourceManager {
   private readonly adapters: SourceAdapterRegistry;
   constructor(private directory: string, private connection: SourceConnection, private helperPath: string, private managedUploads = false, private events?: EventJournal, adapters?: SourceAdapterRegistry) { this.adapters = adapters ?? builtInSourceAdapters(); this.binding = this.connectionBinding(); this.nodeBinding = new ConnectionBindingStore(join(directory, 'connection-binding.json')); this.watcher = new FileWatcher(event => this.onFileWatchEvent(event)); }
   private connectionBinding(): string { return sourceHash(this.connection.serverUrl + ':' + (this.connection.token ?? '')); }
+  private async clearLegacyOriginalSpools():Promise<boolean>{
+    const marker=join(this.directory,'ingress-v2.json');
+    try{const value=JSON.parse((await readLocalContent(marker)).toString('utf8')) as {version?:unknown};
+      if(value.version===2)return false;
+      throw Error('Invalid desktop ingress migration marker');
+    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+    const root=join(this.directory,'access-markers');
+    let names:string[];
+    try{names=await readdir(root);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;names=[];}
+    for(const name of names)if(/^local-[a-f0-9-]{36}\.json\.originals$/.test(name))await rm(join(root,name),{recursive:true,force:true});
+    return true;
+  }
   async initialize(): Promise<void> {
     try {
       const saved = JSON.parse((await readLocalContent(join(this.directory, 'sources.json'))).toString('utf8')) as { version: number; sources: LocalSource[]; metadataDirty: string[]; metadataDirtyAt?: string };
@@ -66,8 +79,10 @@ export class LocalSourceManager {
       if (this.metadataDirty.size) this.metadataDirtyAt = saved.metadataDirtyAt ?? (await stat(join(this.directory, 'sources.json'))).mtime.toISOString();
     } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e; }
     await this.nodeBinding.initialize(this.connection, this.sources.length > 0);
+    const migrating=await this.clearLegacyOriginalSpools();
     // Include paused sources when guarding a node change: they can still own durable pending bodies.
     for (const source of this.sources) { const engine = new SourceSync(join(this.directory, 'nodes', this.binding, source.id + '.json')); await engine.initialize(); this.engines.set(source.id, engine); }
+    if(migrating)await atomicSourceJson(join(this.directory,'ingress-v2.json'),{version:2});
     await this.refreshWatchers();
     this.timer = setInterval(() => { void this.refreshWatchers(); void this.sync(false); }, 5000); this.timer.unref();
     void this.sync(false);
@@ -239,7 +254,7 @@ export class LocalSourceManager {
   private request(signal: AbortSignal): SourceRequest {
     return async (path, body, method, requestSignal) => {
       if (!this.connection.serverUrl || !this.connection.token || !this.nodeBinding.matches(this.connection)) throw new Error(moteText("本地来源没有匹配的中央连接"));
-      const response = await fetch(this.connection.serverUrl + path, { method, headers: { Authorization: 'Bearer ' + this.connection.token, 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:meteredBody(body instanceof Uint8Array?body:JSON.stringify(body)), ...({duplex:'half'} as object), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
+      const response = await fetch(this.connection.serverUrl + path, { method, headers: { ...INGRESS_VERSION_HEADERS,Authorization: 'Bearer ' + this.connection.token, 'Content-Type': body instanceof Uint8Array?'application/octet-stream':'application/json' }, body: method==='GET'?undefined:meteredBody(body instanceof Uint8Array?body:JSON.stringify(body)), ...({duplex:'half'} as object), signal: AbortSignal.any([requestSignal || signal, AbortSignal.timeout(20000)]), redirect: 'error' });
       if (!response.ok) { await response.body?.cancel().catch(() => undefined); throw new TransportFailure(response.status === 401 ? moteText("中央认证失败，请检查令牌") : response.status === 409 ? moteText("中央来源已暂停，请在中央来源页恢复") : moteText("中央同步失败，已保留本地版本，稍后重试"), httpFailure(response.status), response.status); }
       return JSON.parse(await readResponseText(response, 1024 * 1024));
     };

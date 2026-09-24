@@ -18,11 +18,12 @@ function* textParts(path:string,limit:number){const decoder=new TextDecoder('utf
 }
 function inspect(file:ArchivedFile,path:string){const hash=createHash('sha256');let total=0;for(const part of bytes(path)){hash.update(part);total+=part.length;}if(total!==file.sizeBytes||hash.digest('hex')!==file.hash)fail('original_changed');let characters=0;for(const part of textParts(path,24000))characters+=part.text.length;return characters;}
 async function plain(task:Extract<FormatTask,{kind:'plain'}>){
- privateFile(task.manifest,true);const fd=openSync(task.manifest,constants.O_WRONLY|constants.O_TRUNC|constants.O_NOFOLLOW),digest=createHash('sha256');let count=0,size=0;const warnings:string[]=[];const samples:{title:string;text:string;kind:string;attachmentCount:number}[]=[];
+ privateFile(task.manifest,true);const fd=openSync(task.manifest,constants.O_WRONLY|constants.O_TRUNC|constants.O_NOFOLLOW),digest=createHash('sha256');let count=0,size=0,partial=false;const warnings:string[]=[];const samples:{title:string;text:string;kind:string;attachmentCount:number}[]=[];
  try{for(const input of task.inputs){const file=input.file;
    if(/\.(pdf|docx|xlsx)$/i.test(file.name)){
     const raw=Buffer.concat(Array.from(bytes(input.path),part=>Buffer.from(part)));if(raw.length!==file.sizeBytes||createHash('sha256').update(raw).digest('hex')!==file.hash)fail('original_changed');
     const decoded=await decodeOriginal(raw,/\.pdf$/i.test(file.name)?'application/pdf':/\.xlsx$/i.test(file.name)?'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':'application/vnd.openxmlformats-officedocument.wordprocessingml.document');if(decoded.status!=='ready')fail('unsupported_format');
+    partial ||= decoded.coverage!=='full';
     warnings.push(...decoded.warnings.map(warning=>file.name+': '+warning).slice(0,Math.max(0,30-warnings.length)));
     let part=0;for(const {text,documentLocation} of documentChunks(decoded,24000)){
      const item=sourceItemSchema.parse({externalId:file.relativePath+':'+part++,revision:createHash('sha256').update(JSON.stringify([file.hash,'document-v1'])).digest('hex'),observedAt:task.createdAt,title:file.name,text,kind:'file',layer:'original',mimeType:file.mimeType,document:{fileId:file.id,path:file.relativePath,contentRole:'other',timeBasis:'unknown',originalMetadata:{decoder:'document-v1',...documentLocation,coverage:decoded.coverage,warnings:decoded.warnings}}});
@@ -37,7 +38,7 @@ async function plain(task:Extract<FormatTask,{kind:'plain'}>){
    }
    // Detect an edit between the inspection and decoding passes before publication.
    inspect(file,input.path);
-  }fsyncSync(fd);return {count,samples,hash:digest.digest('hex'),warnings};
+  }fsyncSync(fd);return {count,samples,hash:digest.digest('hex'),warnings,partial};
  }finally{closeSync(fd);}
 }
 function zip(task:Extract<FormatTask,{kind:'zip'}>){

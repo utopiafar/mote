@@ -98,8 +98,9 @@ export class AssetStore {
    retained=true;return {hash:actualHash,bytes:expectedBytes,parts:parts.length,format:'chunks',release};
   }finally{if(!retained)release();await rm(staging,{recursive:true,force:true});}
  }
- putParts(chunks:Iterable<Buffer>,expectedBytes:number,expectedHash?:string):Asset & {release:()=>void} {
+ putParts(chunks:Iterable<Buffer>,expectedBytes:number,expectedHash?:string,authorize?:()=>void):Asset & {release:()=>void} {
   if(!Number.isSafeInteger(expectedBytes)||expectedBytes<0||expectedBytes>FILE_MAX_BYTES||expectedHash!==undefined&&!/^[a-f0-9]{64}$/.test(expectedHash))throw new StoreError('Invalid asset size or hash',413);
+  authorize?.();
   this.directories();
   const staging=join(this.directory,(expectedHash??'0'.repeat(64))+'.'+randomUUID()+'.tmp');privateDirectory(staging);
   const digest=createHash('sha256');let size=0,part=0,pending=Buffer.alloc(0);const checksums:string[]=[];
@@ -114,17 +115,18 @@ export class AssetStore {
    }
    if(pending.length)write(pending);const hash=digest.digest('hex');
    if(size!==expectedBytes||expectedHash&&hash!==expectedHash)throw new StoreError('Asset checksum mismatch',409);
-   const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');let release:(()=>void)|undefined;
+   authorize?.();const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');let release:(()=>void)|undefined,installed=false;
    try{
+    authorize?.();
     const destination=join(this.directory,hash),old=db.prepare('SELECT * FROM assets WHERE hash=?').get(hash) as Asset|undefined;
     if(old&&old.bytes!==size)throw new StoreError('Asset size conflict',409);
     this.store.reserveMetadata(old?0:size);
     if(existsSync(destination))this.verify({hash,bytes:size,parts:part,format:'chunks'});
-    else {syncDirectory(staging);renameSync(staging,destination);syncDirectory(this.directory);}
+    else {syncDirectory(staging);renameSync(staging,destination);installed=true;syncDirectory(this.directory);}
     db.prepare("INSERT INTO assets VALUES(?,?,?,'chunks') ON CONFLICT(hash) DO UPDATE SET parts=excluded.parts,format='chunks'").run(hash,size,part);
     for(const [index,checksum] of checksums.entries())db.prepare('INSERT INTO asset_parts VALUES(?,?,?) ON CONFLICT(hash,part) DO UPDATE SET checksum=excluded.checksum').run(hash,index,checksum);
-    release=this.hold(hash);if(own)db.exec('COMMIT');
-   }catch(error){if(own)db.exec('ROLLBACK');throw error;}
+    release=this.hold(hash);authorize?.();if(own)db.exec('COMMIT');
+   }catch(error){if(own)db.exec('ROLLBACK');release?.();if(installed)rmSync(join(this.directory,hash),{recursive:true,force:true});throw error;}
    return {hash,bytes:size,parts:part,format:'chunks',release:release!};
   }finally{rmSync(staging,{recursive:true,force:true});}
  }

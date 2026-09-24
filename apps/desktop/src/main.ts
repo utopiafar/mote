@@ -163,7 +163,7 @@ else {
     await contentKeys.initialize(false);
     await store.save(settings); // Persist stable device identity before the first observation.
     void events.record('APP', 'STARTED');
-    const noteDrafts = new NoteDraftStore(join(dataDirectory, 'notes')); await noteDrafts.initialize();
+    const noteDrafts = new NoteDraftStore(join(dataDirectory, 'notes')); await noteDrafts.initialize();await noteDrafts.clearPreparedForProtocolUpgrade();
     const storage = new QueueStorage(dataDirectory, profile.name, settings.deviceId, [dataDirectory, ...await Promise.all([legacyDataDirectory, `${legacyDataDirectory}-profiles`].map(path => realpath(path).catch(() => resolve(path))))]);
     const queue = new DurableQueue(await storage.open(settings.captureStorageDirectory), settings);
     queue.setStorageGuard(async () => { if (recoveryRequired) throw new Error(recoveryRequired); await storage.assertOwned(queue.directory); });

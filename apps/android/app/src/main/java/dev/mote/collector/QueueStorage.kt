@@ -45,6 +45,7 @@ class QueueStorage(private val context: Context) {
     }
     fun openQueue(): DurableQueue {
         requireUiReady()
+        IngressV2Migration.ensure(context)
         return DurableQueue.exclusive {
         val state = store(); val location = state.current()
         DurableQueue(File(location.path), context.localContentCipher(), createMissing = false) { kind, bytes, id -> Operations.record(context, kind, bytes = bytes, recordId = id) }

@@ -11,7 +11,10 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
 
-fun Context.fileArchives() = FileArchiveQueue(File(noBackupFilesDir, "file-archives"), localContentCipher())
+fun Context.fileArchives(): FileArchiveQueue {
+    IngressV2Migration.ensure(this)
+    return FileArchiveQueue(File(noBackupFilesDir, "file-archives"), localContentCipher())
+}
 fun LocalSource.binaryFiles() = SourceAdapters.default.forKind(kind).queueKind == SourceQueueKind.FILE_ARCHIVE
 
 /** Persistent traversal checkpoints; every directory is eventually reached within bounded slices. */
@@ -84,7 +87,18 @@ class FileSources(private val context: Context, private val cancel: Cancellation
         unchanged = { old -> metadata(Uri.parse(old.getString("uri")), source)?.let { context.fileArchives().signature(it) == context.fileArchives().signature(JSONObject(old.toString()).apply { remove("_relativePath") }) } ?: false }) }
 }
 
+/** A current v2 file revision was rejected. Retrying the same immutable
+ * manifest immediately cannot resolve a conflict, deletion, or protocol gap. */
+internal class FileIngressRejection(val httpStatus: Int) : IllegalStateException("File ingress rejected: HTTP $httpStatus")
+
 object FileUpload {
+    internal fun requireAccepted(status: Int) {
+        if (status in setOf(409, 410, 426)) throw FileIngressRejection(status)
+        check(status in 200..299) { if (status == 404) MoteI18n.text("中央未支持文件同步，请先升级") else MoteI18n.text("中央未确认文件（HTTP {0}）", status) }
+    }
+    internal fun requireCurrentHead(head: JSONObject) {
+        if (head.optBoolean("forgotten")) throw FileIngressRejection(410)
+    }
     /** Bounded response decoding also works on Android 10–12 (no readNBytes API). */
     internal fun readResponse(input: java.io.InputStream): ByteArray {
         val limit = 1024 * 1024
@@ -108,9 +122,10 @@ object FileUpload {
             connection.instanceFollowRedirects = false; connection.requestMethod = method; connection.connectTimeout = 15000; connection.readTimeout = 30000
             connection.setRequestProperty("Accept-Language", MoteI18n.language())
             connection.setRequestProperty("Authorization", "Bearer ${config.token}")
+            if (IngressV2Protocol.uploadWrite(method, config.server.trimEnd('/') + path)) connection.setRequestProperty(IngressV2Protocol.HEADER, IngressV2Protocol.VERSION)
             if (body != null) { connection.doOutput = true; connection.setRequestProperty("Content-Type", if (binary) "application/octet-stream" else "application/json"); connection.setFixedLengthStreamingMode(body.size); connection.outputStream.use { out -> var offset = 0; while (offset < body.size) { val count = minOf(64 * 1024, body.size - offset); out.write(body, offset, count); offset += count; UploadMeter.add(count.toLong()) } } }
             status = connection.responseCode
-            check(status in 200..299) { if (connection.responseCode == 404) MoteI18n.text("中央未支持文件同步，请先升级") else MoteI18n.text("中央未确认文件（HTTP {0}）", connection.responseCode) }
+            requireAccepted(status)
             val bytes = connection.inputStream.use { readResponse(it) }
             return JSONObject(String(bytes, Charsets.UTF_8)).also { SupportEvents.record(context, stage, EventCode.OK, android.os.SystemClock.elapsedRealtime() - started, status) }
         } catch (error: Exception) { SupportEvents.record(context, stage, status?.takeIf { it !in 200..299 }?.let { EventJournal.httpFailure(it) } ?: EventJournal.failure(error, stage), android.os.SystemClock.elapsedRealtime() - started, status); throw error } finally { connection.disconnect() }
@@ -129,7 +144,7 @@ object FileUpload {
             check(stillSelected())
             val q = "sourceId=" + java.net.URLEncoder.encode(source.id, "UTF-8") + "&externalId=" + java.net.URLEncoder.encode(external, "UTF-8")
             val head = send(EventStage.FILE_UPLOAD, "/api/file-sync/v1/head?$q", "GET")
-            check(!head.optBoolean("forgotten")) { MoteI18n.text("中央已忘记此文件，需要在中央重新允许同步") }
+            requireCurrentHead(head)
             head.optString("revision").takeIf { head.has("revision") && !head.isNull("revision") && it.isNotEmpty() }
         } ?: return queue.pendingCount(source.id) == 0
         fun checkSelection() { check(stillSelected()); check(SyncSchedule.waitingReason(context, config) == null) }

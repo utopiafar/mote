@@ -13,6 +13,12 @@ import {ImportStore,type ImportRuntime} from '../src/imports.js';
 const entry=(name:string,text:string)=>({name,dataBase64:Buffer.from(text).toString('base64')});
 const item=(externalId='fixture-1')=>({externalId,revision:'v1',observedAt:'2026-09-15T12:00:00Z',kind:'file',layer:'original',title:'合成日记',text:'2020年的合成原文\n保留换行和引用。',document:{recordedAt:'2020-01-01T10:00:00Z',timeBasis:'recorded',contentRole:'authored'}});
 function fixture(t:any,runtime:ImportRuntime={}){const directory=mkdtempSync(join(tmpdir(),'mote-import-')),store=new Store(directory),files=new ArchivedFileStore(store),sources=new SourceStore(store),imports=new ImportStore(store,files,sources,runtime);t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});return {directory,store,files,sources,imports};}
+function deferred(){let resolve!:()=>void;const promise=new Promise<void>(done=>{resolve=done;});return {promise,resolve};}
+function runningStep(store:Store,kind:'imports.prepare'|'imports.commit',jobId:string){
+ const row=store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND json_extract(input,'$.jobId')=? AND state='running'").get(kind,jobId) as {id:string}|undefined;
+ assert.ok(row,`Expected running ${kind} step`);return row.id;
+}
+function revoke(imports:ImportStore,stepId:string){(imports as unknown as {executor:{cancel:(id:string)=>void}}).executor.cancel(stepId);}
 test('import creation survives lost responses and concurrent retries with one durable job',async t=>{
  const {imports,files,store,sources}=fixture(t),request={requestId:randomUUID(),files:[entry('first.txt','Generated first'),entry('second.txt','Generated second')]};
  const [first,concurrent]=await Promise.all([imports.create(request),imports.create(request)]);
@@ -49,6 +55,49 @@ test('generic model manifest previews, confirms, retains attachments and notifie
  assert.equal(store.evidence(saved.captureIds)[0].ocrText,item().text);assert.equal(store.evidence(saved.captureIds)[0].provenance?.document?.recordedAt,'2020-01-01T10:00:00Z');
  assert.equal(files.listForCapture(saved.captureIds[0]).length,2);assert.equal(store.search({query:'syntheticSecret'}).length,0);
  assert.equal((await imports.confirm(job.id)).status,'completed');assert.equal(notified.length,1);
+});
+test('automatic import publishes only a validated, unambiguous high-confidence result',async t=>{
+ let decision:any={confidence:'high',ambiguous:false,reason:'Generated mapping has one source identity and exact original text.'},warnings:string[]=[],includeDispositions=true;
+ const {imports,store}=fixture(t,{prepare:async({workspace,inputPaths})=>{
+   writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(randomUUID()),evidencePaths:[inputPaths[0]],attachments:[]})+'\n');
+   if(includeDispositions)writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:[{path:inputPaths[0],status:'parsed',reason:'Generated source text'}]}));
+   return {summary:'Generated parser assessment',warnings,reviewDecision:decision};
+ }});
+ const create=async(processing:'automatic'|'preview'='automatic')=>imports.create({files:[entry('generated.custom','Synthetic source')],processing});
+ let job=await create();let result=await imports.prepare(job.id);
+ assert.equal(result.status,'completed');assert.equal(result.reviewGate?.decision,'automatic');assert.equal(result.progress.imported,1);
+ decision={confidence:'low',ambiguous:true,reason:'The generated author field has two plausible meanings.'};job=await create();result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.equal(result.reviewGate?.decision,'confirmation');assert.match(result.reviewGate?.reason??'',/two plausible/);
+ decision={confidence:'high',ambiguous:false,reason:'Generated text roles are clear.'};warnings=['Generated source has an unresolved section'];job=await create();result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/warnings/);
+ warnings=[];imports.updateInstruction(job.id,'');result=await imports.prepare(job.id);
+ assert.equal(result.status,'completed');assert.equal(result.warnings.length,0);
+ includeDispositions=false;job=await create();result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/warnings/);
+ includeDispositions=true;decision=undefined;job=await create();result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/did not provide/);
+ decision={confidence:'high',ambiguous:false};job=await create();result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/did not explain/);
+ decision={confidence:'high',ambiguous:false};job=await create('preview');result=await imports.prepare(job.id);
+ assert.equal(result.status,'awaiting_confirmation');assert.match(result.reviewGate?.reason??'',/manual preview/);
+ assert.equal(store.list().items.length,2);
+});
+test('imports select only a configured pinned Python pack and do not fall back to model analysis',async t=>{
+ let packCalls=0,modelCalls=0;
+ const sourcePacks=new Map([['fixture.pack',{revision:'pinned-v1',prepare:async({workspace,inputPaths}:import('../src/imports.js').ImportPreparation)=>{
+   packCalls++;writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(),evidencePaths:[inputPaths[0]],attachments:[]})+'\n');
+   writeFileSync(join(workspace,'dispositions.json'),JSON.stringify({items:[{path:inputPaths[0],status:'parsed',reason:'Generated fixed parser'}]}));
+   return {summary:'Generated fixed pack',reviewDecision:{confidence:'high' as const,ambiguous:false,reason:'One exact mapping'}};
+ }}]]);
+ const {imports,store}=fixture(t,{sourcePacks,prepare:async()=>{modelCalls++;throw Error('Model must not receive pack input');}});
+ await assert.rejects(imports.create({sourcePackId:'missing.pack',files:[entry('input.custom','Generated')]}),{statusCode:409});
+ assert.equal(imports.list().length,0);
+ await assert.rejects(imports.create({sourcePackId:'fixture.pack',instruction:'reinterpret freely',files:[entry('input.custom','Generated')]}),{statusCode:409});
+ const job=await imports.create({sourcePackId:'fixture.pack',processing:'automatic',files:[entry('input.custom','Generated')]});
+ const done=await imports.prepare(job.id);assert.equal(done.status,'completed');assert.equal(done.sourcePackId,'fixture.pack');assert.equal(packCalls,1);assert.equal(modelCalls,0);assert.equal(store.list().items.length,1);
+ const pending=await imports.create({sourcePackId:'fixture.pack',files:[entry('other.custom','Generated other')]});
+ sourcePacks.set('fixture.pack',{revision:'changed-v2',prepare:sourcePacks.get('fixture.pack')!.prepare});
+ const blocked=await imports.prepare(pending.id);assert.equal(blocked.status,'needs_configuration');assert.match(blocked.error??'',/pinned Python Source Pack/);assert.equal(packCalls,1);assert.equal(modelCalls,0);
 });
 test('ZIP expands generic files and rejects traversal while retaining supplied original',async t=>{
  const {imports,files}=fixture(t);const zip=zipSync({'folder/note.txt':Buffer.from('synthetic note'),'assets/data.bin':Buffer.from([0,1,2])});
@@ -91,6 +140,56 @@ test('record, attachments and progress commit together; partial failures resume 
  const duplicate=await imports.create({files:[entry('two.txt','two synthetic records')]});await imports.prepare(duplicate.id);const again=await imports.confirm(duplicate.id);
  assert.equal(again.progress.duplicates,2);assert.deepEqual(again.captureIds,[]);assert.equal(batches.length,1);
 });
+test('revoked prepare worker cannot publish an old preview over a newer analysis',async t=>{
+ const started=deferred(),release=deferred(),finished=deferred();let oldWorkspace='';
+ const {imports,store,files,sources,directory}=fixture(t,{prepare:async({workspace,inputPaths})=>{
+   oldWorkspace=workspace;started.resolve();await release.promise;
+   writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:{...item('old'),text:'Generated obsolete evidence'},evidencePaths:[inputPaths[0]]})+'\n');
+   finished.resolve();return {summary:'Generated obsolete preview'};
+ }});
+ const job=await imports.create({files:[entry('generated.custom','Generated original')]});
+ const successor=new ImportStore(store,files,sources,{prepare:async({workspace,inputPaths})=>{
+   assert.notEqual(workspace,oldWorkspace);
+   writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:{...item('new'),text:'Generated current evidence'},evidencePaths:[inputPaths[0]]})+'\n');
+   return {summary:'Generated current preview'};
+ }});
+ const stale=imports.prepare(job.id);await started.promise;
+ revoke(imports,runningStep(store,'imports.prepare',job.id));await stale;
+ successor.updateInstruction(job.id,'Reanalyze generated source');
+ const current=await successor.prepare(job.id);assert.equal(current.status,'awaiting_confirmation');
+ assert.equal(current.summary,'Generated current preview');
+ release.resolve();await finished.promise;await new Promise<void>(resolve=>setImmediate(resolve));
+ assert.equal(successor.get(job.id).summary,'Generated current preview');
+ const saved=await successor.confirm(job.id);
+ assert.equal(saved.status,'completed');assert.equal(saved.captureIds.length,1);
+ assert.equal(store.evidence(saved.captureIds)[0]?.ocrText,'Generated current evidence');
+ assert.equal(store.search({query:'obsolete evidence'}).length,0);
+ assert.equal(existsSync(join(directory,'imports',job.id,'prepared.jsonl')),true);
+});
+
+test('revoked commit worker cannot insert or advance a record after a new lease takes over',async t=>{
+ const entered=deferred(),release=deferred();
+ const {imports,store,files,sources}=fixture(t,{prepare:async({workspace,inputPaths})=>{
+   writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item('fenced-record'),evidencePaths:[inputPaths[0]]})+'\n');
+   return {summary:'Generated fenced preview'};
+ }});
+ const job=await imports.create({files:[entry('generated.custom','Generated original')]});
+ await imports.prepare(job.id);
+ const successor=new ImportStore(store,files,sources);
+ const ingest=store.ingestBatch.bind(store);let paused=false;
+ store.ingestBatch=async (...args:Parameters<Store['ingestBatch']>)=>{
+   if(!paused){paused=true;entered.resolve();await release.promise;}
+   return ingest(...args);
+ };
+ const stale=imports.confirm(job.id);await entered.promise;
+ revoke(imports,runningStep(store,'imports.commit',job.id));await stale;
+ const current=successor.confirm(job.id);release.resolve();
+ const saved=await current;
+ assert.equal(saved.status,'completed');assert.equal(saved.progress.processed,1);
+ assert.equal(saved.progress.imported,1);assert.equal(saved.captureIds.length,1);
+ assert.equal(store.list().items.length,1);
+ assert.equal(files.listForCapture(saved.captureIds[0]!).length,1);
+});
 test('missing model runtime reports configuration state by error type and retains originals',async t=>{
  const {imports}=fixture(t,{prepare:async()=>{const error=new Error('Choose a model first');error.name='AgentNotConfiguredError';throw error;}});
  const job=await imports.create({files:[entry('fixture.txt','synthetic')]});const result=await imports.prepare(job.id);assert.equal(result.status,'needs_configuration');assert.equal(result.files.length,1);
@@ -113,6 +212,25 @@ test('ZIP checksum and truncation failures retain only the supplied original',as
  for(const [name,bytes] of [['crc.zip',corrupt],['truncated.zip',zip.subarray(0,zip.length-10)]] as const){
   const job=await imports.create({files:[{name,dataBase64:bytes.toString('base64')}]});assert.equal(job.status,'failed');assert.equal(job.files.length,1);assert.equal(job.archive.expandedFiles,0);assert.deepEqual(files.read(job.files[0].id),bytes);
  }
+});
+
+test('revoked ZIP expansion worker cannot add a child asset or import progress',async t=>{
+ const {imports,files,store}=fixture(t),original=files.putParts.bind(files);let failInitial=true,revoked=false;
+ files.putParts=(input,parts,size,authorize)=>{
+   if(failInitial&&input.relativePath?.includes('.contents/'))throw Error('Generated interrupted expansion');
+   const file=original(input,parts,size,authorize);
+   if(!revoked&&input.relativePath?.includes('.contents/')){revoked=true;revoke(imports,runningStep(store,'imports.prepare',job.id));}
+   return file;
+ };
+ const zip=Buffer.from(zipSync({'child.txt':Buffer.from('Generated child original')}));
+ const job=await imports.create({files:[{name:'generated.zip',dataBase64:zip.toString('base64')}]});
+ assert.equal(job.status,'failed');failInitial=false;
+ const assetCount=store.db.prepare('SELECT COUNT(*) AS n FROM assets').get()!.n;
+ const saved=await imports.retry(job.id);
+ assert.equal(revoked,true);assert.notEqual(saved.status,'completed');
+ assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM assets').get()!.n,assetCount);
+ assert.equal(store.db.prepare('SELECT COUNT(*) AS n FROM archived_files').get()!.n,1);
+ assert.equal(imports.get(job.id).archive.expandedFiles,0);
 });
 
 test('400 generated ZIP files recover an interrupted staging batch with stable original and child identities',async t=>{

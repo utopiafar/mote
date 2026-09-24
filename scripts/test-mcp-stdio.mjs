@@ -10,9 +10,14 @@ const root=await mkdtemp(join(tmpdir(),'mote-stdio-fixture-'));const owner=rando
 const config={dataDir:join(root,'data'),token:owner,tokenPath:'unused',dataKey:undefined,host:'127.0.0.1',port:0,maxStorageBytes:1000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(root,'secrets'),mcpEnabled:true,mcpReadToken:read,mcpWriteEnabled:true,mcpWriteToken:write,mcpWriteSourceIds:['stdio-fixture']}};
 const {app,sources}=await buildApp(config);const clients=[];
 try{
- sources.register({id:'stdio-fixture',name:'Synthetic stdio',kind:'mcp',deviceId:'fixture',platform:'import'});await app.listen({port:0,host:'127.0.0.1'});const url='http://127.0.0.1:'+app.server.address().port+'/mcp';
- for(const [role,token]of [['read',read],['write',write]]){
-  const connection=role==='read'?{mcpServers:{mote:{type:'http',url,headers:{Authorization:'Bearer '+token}}}}:{url,token};
+ sources.register({id:'stdio-fixture',name:'Synthetic stdio',kind:'mcp',deviceId:'fixture',platform:'import'});await app.listen({port:0,host:'127.0.0.1'});
+ const serverUrl='http://127.0.0.1:'+app.server.address().port;
+ for(const role of ['read','write']){
+  const minted=await app.inject({method:'POST',url:'/api/connections/mcp',headers:{authorization:'Bearer '+owner},
+   payload:{serverUrl,label:'Generated '+role+' MCP',access:role}});
+  assert.equal(minted.statusCode,200,minted.body);
+  const exported=minted.json().config,server=exported.mcpServers.mote;
+  const connection=role==='read'?exported:{url:server.url,token:server.headers.Authorization.slice(7)};
   const path=join(root,role+'.json');await writeFile(path,JSON.stringify(connection),{mode:0o600});
   const client=new Client({name:'fixture-chatbot',version:'1'});const transport=new StdioClientTransport({command:process.execPath,args:[resolve('scripts/mcp-stdio.mjs'),'--connection',path],stderr:'pipe'});clients.push(client);await client.connect(transport);
   const {tools}=await client.listTools();

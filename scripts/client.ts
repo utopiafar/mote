@@ -3,6 +3,7 @@ import { readFileSync,existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnvironment } from '@mote/shared/environment';
+import {INGRESS_VERSION_HEADERS,requireIngressReceipt} from '../apps/desktop/src/ingress-protocol.js';
 const {env,baseDir,envFile}=loadEnvironment(fileURLToPath(new URL('../',import.meta.url)));
 export const resolvedConnection={url:(env.MOTE_URL||`http://127.0.0.1:${env.MOTE_PORT||47832}`).replace(/\/$/,''),baseDir,envFile,profileDirectory:env.MOTE_ENV_FILE?baseDir:undefined,profile:env.MOTE_PROFILE||'legacy'};
 export function apiClient() {
@@ -14,8 +15,13 @@ export function apiClient() {
   const token=env.MOTE_TOKEN|| (existsSync(path)?readFileSync(path,'utf8').trim():'');
   if(!token)throw new Error('Set MOTE_TOKEN or MOTE_TOKEN_FILE; start the central node once to generate a token');
   return Object.assign(async function request(path:string,body?:unknown,method=body?'POST':'GET',signal?:AbortSignal) {
-    const response=await fetch(url+path,{method,headers:{Authorization:`Bearer ${token}`,'Content-Type':body instanceof Uint8Array?'application/octet-stream':'application/json'},...(body?{body:body instanceof Uint8Array?new Uint8Array(body):JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(180000)]):AbortSignal.timeout(180000),redirect:'error'});
+    const response=await fetch(url+path,{method,headers:{Authorization:`Bearer ${token}`,'Content-Type':body instanceof Uint8Array?'application/octet-stream':'application/json',...INGRESS_VERSION_HEADERS},...(body?{body:body instanceof Uint8Array?new Uint8Array(body):JSON.stringify(body)}:{}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(180000)]):AbortSignal.timeout(180000),redirect:'error'});
     if(!response.ok){const text=await response.text();throw Object.assign(new Error(`HTTP ${response.status}: ${text.slice(0,400)}`),{httpStatus:response.status});}
-    return response.json();
+    const result:unknown=await response.json();
+    if(method==='POST'&&(path==='/api/captures'||path==='/api/notes')){
+      const id=(body as {id?:unknown}|undefined)?.id;
+      requireIngressReceipt(result,{kind:'capture',...(typeof id==='string'?{id}:{})});
+    }
+    return result;
   }, { binding: createHash('sha256').update(url + '\0' + token).digest('hex') });
 }

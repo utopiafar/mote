@@ -2,12 +2,13 @@ import {afterEach,it,expect} from 'vitest';
 import {mkdtemp,realpath,writeFile,readFile,rm,stat,access,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {createHash,randomUUID} from 'node:crypto';
+import {createHash} from 'node:crypto';
 import {spoolOriginal,originalPart} from '../src/original-spool';
 import {scanSourceFiles} from '../src/source-files';
 import {SourceSync} from '../src/source-sync';
 import {DEFAULT_SOURCE_OPTIONS,type SourceDefinition,type SourceRequest,type LocalFileCheckpoint} from '../src/source-types';
 import {configureLocalContent} from '../src/local-content';
+import {sourceAck} from './fixtures';
 const dirs:string[]=[];
 afterEach(async()=>{configureLocalContent({enabled:false});for(const dir of dirs.splice(0))await rm(dir,{force:true,recursive:true});});
 async function fixture(){const dir=await realpath(await mkdtemp(join(tmpdir(),'mote-spool-')));dirs.push(dir);return dir;}
@@ -20,11 +21,11 @@ it('20 MiB history yields to 400 dated notes, resumes across restart and never a
  const parts=new Map<number,Buffer>(),events:string[]=[];let revision='';
  const request:SourceRequest=async(url,body,method)=>{
   if(url==='/api/sources')return body;
-  if(url.startsWith('/api/sources/notes/items')){const items=(body as any).items??[body];events.push('notes:'+items.length);return {receipts:items.map((item:any)=>({id:randomUUID(),sourceId:small.id,externalId:item.externalId,revision:item.revision,duplicate:false}))};}
+  if(url.startsWith('/api/sources/notes/items')){const items=(body as any).items??[body];events.push('notes:'+items.length);return {receipts:items.map((item:any)=>sourceAck(small.id,item))};}
   if(url.startsWith('/api/file-sync/v1/head?'))return {revision:null};
   if(url==='/api/file-sync/v1/uploads'){revision=(body as any).item.revision;return {uploadId:'large',partBytes:4194304,parts:[...parts.keys()].map(part=>({part}))};}
   if(method==='PUT'){const part=Number(url.split('/').at(-1));expect(parts.has(part)).toBe(false);parts.set(part,Buffer.from(body as Uint8Array));events.push('part:'+part);return {};}
-  if(url.endsWith('/commit')){events.push('commit');return {id:randomUUID(),sourceId:source.id,externalId:scan.items[0].externalId,revision,duplicate:false};}
+  if(url.endsWith('/commit')){events.push('commit');return sourceAck(source.id,{externalId:scan.items[0].externalId,revision},'file-revision');}
   throw Error(url);
  };
  const first=await large.flushSlice(source,request);expect(first.state).toBe('yielded');expect(first.bytes).toBeLessThan(4*1024*1024+10000);expect(large.status().pending).toBe(1);expect(parts.size).toBe(1);await access(spool.directory);
@@ -54,7 +55,7 @@ it('streams an encrypted 20 MiB immutable original across restart, resumes missi
    return {uploadId:'fixture',partBytes:4194304,parts:[...parts.keys()].map(part=>({part}))};
   }
   if(method==='PUT'){const part=Number(url.split('/').at(-1));sent.push(part);parts.set(part,Buffer.from(body as Uint8Array));if(part===1&&lose){lose=false;throw Error('ACK lost');}return {};}
-  if(url.endsWith('/commit'))return {id:'b67c1b84-f2cd-4e59-bf67-215545a882dc',sourceId:source.id,externalId:scan.items[0].externalId,revision,duplicate:false};
+  if(url.endsWith('/commit'))return sourceAck(source.id,{externalId:scan.items[0].externalId,revision},'file-revision');
   throw Error(url);
  };
  await expect(sync.flush(source,request)).rejects.toThrow('ACK lost');await access(spool.directory);

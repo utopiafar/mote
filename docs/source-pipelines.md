@@ -1,6 +1,6 @@
 # Source pipelines: archive first, publish before model processing
 
-This is an MVP storage cut-over, not a backwards-compatible dual-write layer. A server with legacy Coding captures refuses startup with an actionable error. Back up the stopped vault, preserve its configuration/key, and select a fresh data directory before starting this version. This change does not automatically modify a running personal vault. Existing client upload and receipt contracts stay unchanged. Ordinary record-backed sources retain their existing storage path.
+This is an MVP backend epoch 2 cut-over, not a backwards-compatible dual-write layer. An old vault refuses startup with an actionable error. Stop the server and explicitly run `npm run reset:mvp-vault -- --data-dir <directory> --confirm-clear` before starting the new backend. This removes historical data and old connection records while preserving configuration and keys; it does not automatically modify a running vault. Mac, Android, and CLI collectors must be upgraded together. Collector writes require `X-Mote-Ingress-Version: 2`, and a versioned receipt means only that the input can be recovered. Ordinary record-backed sources retain their physical storage path but use the same receipt, recipe, execution, and material publication boundaries. See [后端流程重构工作稿](backend-plugin-rearchitecture.md) for the full contract and confirmed product decisions.
 
 ## Contract
 
@@ -11,7 +11,7 @@ A `SourcePipeline` declares:
 - `id`, `version`, `sourceKinds`, optional `priority`: explicit protocol identity, never inferred topics. Equal-priority overlapping defaults are rejected. Existing source bindings remain pinned; an owner may select another installed pipeline for the same source kind.
 - `storage: records | archive`: record-backed ingestion, or file-only raw events. Moving an existing source between physical storage modes requires a new source identity.
 - `group(item)`: deterministic logical grouping using declared source IDs/fields.
-- `organize({source, items, group})`: deterministic construction of a complete `MaterialDraft`. It receives values, not the database, filesystem paths or a model client.
+- `recipe`: a versioned declarative DAG bound to trusted reader, grouping, organizing, publication and exposure components. The Coding recipe receives a scoped, paged `RawReader` and reads only newly appended archive references when the prior published head can be reused. The older trusted `organize({source, items, group})` fallback remains for installed archive pipelines without a recipe; it receives values, not the database or filesystem paths.
 - `index: material | none`: whether the published current document participates in full-text search.
 - `modelInput: material`: the only input boundary for this workflow's semantic processing.
 - `memory`: opt into the existing Memory executor after publication and settling. The executor continues to own model configuration, quotas, concurrency, review, cancellation and retries. No model runs in the raw receiving/organizing steps.
@@ -21,7 +21,7 @@ Other workflows can reuse the same host services, register their own representat
 ## Coding path
 
 ```text
-unchanged client events and receipts
+v2 client events and durable receipt
   → private immutable batch files + file-only version/head manifest
   → one durable work row per source/session group
   → complete chronological conversation Markdown
@@ -35,7 +35,7 @@ Raw events produce no `captures`, `source_versions`, `source_heads`, observation
 
 Grouping uses source, provider, project and session IDs. Rendering preserves roles, event IDs, timestamps, parts and tool-call IDs. Missing event parts or reference-only inputs are marked partial and are not automatically submitted for Memory extraction. No four-million-character tail truncation remains. Physical text blocks are bounded to 12,000 UTF-16 units; they are contiguous document sections, not raw event records. Markdown fragments concatenate without inserting characters inside words or surrogate pairs. Pages and per-model budgets remain bounded.
 
-Unknown original times are labelled observed times. Equal-time events retain received order; the unchanged client protocol does not include a recoverable native sequence for every provider, so it cannot reconstruct an ordering absent from the input. Unknown fields, local paths and native system/reasoning data are not invented in the Markdown. Raw received source items retain their approved metadata.
+Unknown original times are labelled observed times. Equal-time events retain received order; the v2 client event shape does not include a recoverable native sequence for every provider, so it cannot reconstruct an ordering absent from the input. Unknown fields, local paths and native system/reasoning data are not invented in the Markdown. Raw received source items retain their approved metadata.
 
 Only the latest document revision is indexed, using a contentless FTS index; search does not keep another full text copy. One/two-character queries use a bounded result query over published indexed material blocks. Historical revisions remain readable by pinned ref but do not appear as duplicate search results.
 

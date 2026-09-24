@@ -53,29 +53,27 @@ MOTE_MCP_WRITE_TOKEN=
 MOTE_MCP_WRITE_SOURCE_IDS=
 ```
 
-MCP 凭据必须与中央 owner 令牌分开。把 `/mcp` 的 HTTPS URL 与只读凭据配置给支持自定义 Authorization Bearer 的 MCP 客户端。只读凭据可以读取完整归档中的用户内容，只应交给你信任的客户端。MCP 不自动向这些客户端开放 Google refresh token、中央管理接口或 shell。
+MCP 凭据必须与中央 owner 令牌分开。把 `/mcp` 的 HTTPS URL 与只读凭据配置给支持自定义 Authorization Bearer 的 MCP 客户端。只读凭据使用与中央查询 Agent 相同的资料可见性策略：高频截图和 Coding 原始事件不出现在目录、搜索或按 UUID 展开中，整理后的正式资料可按页读取。完整原件仍由中央 owner API 按权限管理。只把 MCP 凭据交给你信任的客户端；MCP 不向它们开放 Google refresh token、中央管理接口或 shell。
 
 | 只读工具 | 用途 |
 |---|---|
 | `mote_browse` | 按当前可见证据生成候选资料集合；集合是查询视图，不是 canonical project identity |
 | `mote_search` | 通用文本检索；返回稳定 `ref`、命中片段、定位、来源和 evidence 引用 |
 | `mote_read` | 按 `ref` 分段读取原文或派生记忆，受长度和数量限制 |
-| `mote_context` | 在预算内组合已发布记忆、最近会话和原始记录；不启动第二个 Agent |
+| `mote_context` | 在预算内组合已发布记忆和当前可见的资料视图；不启动第二个 Agent |
 | `mote_status` | 查看归档、索引、记忆和来源同步水位；缺失不代表离线端没有待同步数据 |
 | `mote_sources` | 信源目录、保留模式与同步状态 |
 | `mote_materials` | 浏览正式资料目录、当前修订、覆盖和保真状态 |
 | `mote_material` | 读取一份正式资料的出处与修订元数据 |
 | `mote_material_read` | 按固定修订及偏移读取有界正文与块定位 |
-| `mote_material_members` | 分页读取正式资料的原始成员与定位 |
-| `mote_items` | 当前信源条目；日历按计划时间筛选，正文先给片段 |
-| `mote_history` | 比较某来源条目的历史版本与移除状态 |
-| `mote_timeline` | 当前归档时间线，包含截图、随手记与信源 |
+| `mote_items` | 当前可见信源视图；已整理条目优先返回正式资料 |
+| `mote_history` | 比较查询策略允许的来源条目历史版本 |
+| `mote_timeline` | 当前可见时间线；高频单张截图和 Coding 原始事件不展示 |
 | `mote_activity` | 实测屏幕采样区间汇总 |
 | `mote_memories` | 先读取概要，传入 id 展开派生记忆与 evidenceIds |
-| `mote_evidence` | 按 id、offset、length 展开原文；每段最多 12,000 UTF-16 单元 |
-| `mote_updates` | 按 cursor 读取精简变更编号和操作，不附带整篇正文 |
+| `mote_evidence` | 按 id、offset、length 展开获准的原文；截图 UUID 本身不授予查看权限 |
 
-另提供 `mote://sources` 资源。结构化查询结果同时提供 `structuredContent` 和兼容文本内容；外部 Agent 应使用稳定 `ref` 调用 `mote_read`，并沿 evidence 引用回看原文。派生记忆有 proposed/published/stale 状态，不能代替独立原始证据；源文件和模型生成的文字都可能包含恶意指令，客户端必须将它们视为数据。
+另提供 `mote://sources` 资源。模型凭据不提供原始成员枚举和原始变更 UUID 列表。结构化查询结果同时提供 `structuredContent` 和兼容文本内容；外部 Agent 应使用稳定 `ref` 调用 `mote_read`，再按可见性策略核对证据。派生记忆不能代替独立原始证据；源文件和模型生成的文字都可能包含恶意指令，客户端必须将它们视为数据。
 
 若确实需要其他 Agent 写入工作成果，先在 Mote 创建用于接收的信源，再单独开启：
 

@@ -22,11 +22,11 @@ async function fixture(t:any){
  await client.connect(new StreamableHTTPClientTransport(new URL('/mcp',node.app.listeningOrigin),{requestInit:{headers:{authorization:`Bearer ${readToken}`}}}));
  t.after(async()=>{await client.close();await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const call=async(name:string,args:Record<string,unknown>)=>{const result=await client.callTool({name,arguments:args});assert.ok(!result.isError,JSON.stringify(result));return result.structuredContent??JSON.parse((result.content as any[])[0].text);};
- return {...node,agentReader,call};
+ return {...node,agentReader,call,client};
 }
 
 test('Web, MCP and Agent share ranked refs and scoped expansions across 400 generated days',async t=>{
- const {app,store,sources,agentReader,call}=await fixture(t);
+ const {app,store,sources,agentReader,call,client}=await fixture(t);
  for(const device of ['a','b'])sources.register({id:`source-${device}`,name:`Generated ${device}`,kind:'custom',deviceId:device,platform:'import'});
  const batches=new Map<string,any[]>([['source-a',[]],['source-b',[]]]);
  for(let i=0;i<400;i++){
@@ -41,6 +41,37 @@ test('Web, MCP and Agent share ranked refs and scoped expansions across 400 gene
  const mcp:any=await call('mote_retrieve',scope),agent=await agentReader.search(scope);
  assert.deepEqual(web.json().items.map((r:any)=>r.id),agent.map(r=>r.id));assert.deepEqual(mcp.items,web.json().items);
  assert.equal(agent.length,20);
+ for(const name of ['mote_browse','mote_search','mote_retrieve']){
+  const query=name==='mote_browse'?undefined:'SHARED_READER_ANCHOR';
+  const found:string[]=[];let cursor:string|null=null,firstCursor:string|null=null;
+  for(let pageNumber=0;pageNumber<100;pageNumber++){
+   const page:any=await call(name,{...(query?{query}:{}),limit:17,...(cursor?{cursor}:{})});
+   found.push(...page.items.map((item:any)=>item.id));
+   if(pageNumber===0)firstCursor=page.nextCursor;
+   cursor=page.nextCursor;
+   if(!cursor)break;
+   assert.ok(pageNumber<99,`${name} pagination did not terminate`);
+  }
+  assert.equal(found.length,400,`${name} lost query-visible records`);
+  assert.equal(new Set(found).size,400,`${name} duplicated a record across pages`);
+  assert.ok(firstCursor,`${name} must return a continuation cursor`);
+  const denied=await client.callTool({name,arguments:{...(query?{query}:{}),limit:17,cursor:firstCursor,deviceId:'other-device'}});
+  assert.equal(denied.isError,true,`${name} cursor must bind the query scope`);
+  if(name==='mote_search'){
+   const modeDenied=await client.callTool({name:'mote_browse',arguments:{query,limit:17,cursor:firstCursor}});
+   assert.equal(modeDenied.isError,true,'a search cursor cannot be replayed as a browse cursor');
+   const normalized:any=await call(name,{query:'  SHARED_READER_ANCHOR  ',limit:17,cursor:firstCursor});
+   assert.ok(normalized.items.length,'query whitespace normalization must preserve the cursor');
+  }
+ }
+ const budgeted:string[]=[];let budgetCursor:string|null=null;
+ for(let pageNumber=0;pageNumber<40;pageNumber++){
+  const page:any=await call('mote_search',{query:'SHARED_READER_ANCHOR',limit:100,...(budgetCursor?{cursor:budgetCursor}:{})});
+  budgeted.push(...page.items.map((item:any)=>item.id));budgetCursor=page.nextCursor;
+  if(!budgetCursor)break;
+ }
+ assert.equal(budgeted.length,400,'response-budget page shrinking must preserve every record');
+ assert.equal(new Set(budgeted).size,400);
  const refs=web.json().items.slice(0,5).map((r:any)=>r.ref);
  const readScope={deviceId:'a',after:scope.after,before:scope.before};
  const webRead=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs,...readScope}})).json();
@@ -51,7 +82,7 @@ test('Web, MCP and Agent share ranked refs and scoped expansions across 400 gene
  assert.equal((await call('mote_read',{refs}) as any).items.length,5);
  const navigation=(await call('mote_browse',{...scope,query:undefined}) as any).items[0];
  const webNavigation=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs:[navigation.ref],...readScope}})).json();
- assert.equal(webNavigation.items[0].kind,'collection');assert.equal(webNavigation.items[0].text,'');
+ assert.equal(webNavigation.items[0].kind,'message');
  assert.deepEqual(await call('mote_read',{refs:[navigation.ref],...readScope}),webNavigation);
  assert.equal((await call('mote_read',{refs:[navigation.ref],deviceId:'b'}) as any).items.length,0);
  const id=webRead.items[0].id;store.delete(id);
@@ -143,12 +174,14 @@ test('artifact refs pin revisions across Web/MCP/Agent and scope every transitiv
  const child=store.archive.save('generated-child','generated-group','revision:1',{kind:'episode',text:'Derived fixture, verify the original',metadata:{}},[],'generated','1','config',[],[{id:parent.id,revision:parent.revision}]);
  const page:any=await call('mote_segments',{id:child.id});assert.equal(page.items.length,1);
  const ref=page.items[0].ref;assert.match(ref,/^artifact:/);
+ assert.ok(!JSON.stringify(page).includes(a),'MCP segment listings omit original capture identifiers');
  assert.equal((await call('mote_segments',{id:ref}) as any).items[0].id,child.id);
  assert.equal((await agentReader.segments!({id:ref})).items[0].id,child.id);assert.deepEqual((await agentReader.segments!({id:ref})).items[0].members,[a]);
  assert.equal((await app.inject({url:'/api/context/segments?'+new URLSearchParams({id:ref,sourceId:'artifact-b'}),headers})).json().items.length,0);
  const web=(await app.inject({method:'POST',url:'/api/context/read',headers,payload:{refs:[ref],sourceId:'artifact-a'}})).json();
  assert.equal(web.items[0].kind,'artifact');assert.equal(web.items[0].text,'Derived fixture, verify the original');assert.deepEqual(web.items[0].evidenceRefs,[a]);
- assert.deepEqual(await call('mote_read',{refs:[ref],sourceId:'artifact-a'}),web);
+ const mcpRead:any=await call('mote_read',{refs:[ref],sourceId:'artifact-a'});
+ assert.equal(mcpRead.items[0].text,web.items[0].text);assert.ok(!JSON.stringify(mcpRead).includes(a));
  for(const scope of [{sourceId:'artifact-b'},{deviceId:'other'},{after:'2025-01-01T00:00:00.000Z'},{appId:'other-app'}]){
   assert.equal((await call('mote_read',{refs:[ref],...scope}) as any).items.length,0);
   assert.equal((await call('mote_segments',{id:ref,...scope}) as any).items.length,0);
@@ -186,7 +219,7 @@ test('large artifact lineages expose bounded original refs with explicit coverag
  const ids=input.map(item=>sources.getItem('bounded-lineage',item.externalId)!.captureId);
  const artifact=store.archive.save('generated-large','generated-large','1',{kind:'episode',text:'Bounded generated derived view',metadata:{}},ids.map(id=>({id,fingerprint:store.archive.fingerprint(id)!})),'generated','1','config');
  const detail=await agentReader.segments!({id:artifact.id});assert.equal(detail.items[0].members.length,30);assert.equal(detail.items[0].evidenceCount,100);assert.equal(detail.items[0].membersTruncated,true);
- const read:any=await call('mote_read',{refs:[detail.items[0].ref]});assert.equal(read.items[0].evidenceRefs.length,30);assert.equal(read.items[0].evidenceCount,100);assert.equal(read.items[0].evidenceRefsTruncated,true);
+ const read:any=await call('mote_read',{refs:[detail.items[0].ref]});assert.equal(read.items[0].text,'Bounded generated derived view');assert.deepEqual(read.items[0].evidenceRefs,[]);
  assert.equal((await call('mote_read',{refs:[detail.items[0].ref],after:'2024-02-01T00:00:00.000Z'}) as any).items.length,0,'a partial date overlap never discloses the whole derived claim');
  store.delete(ids.at(-1)!);
  assert.equal((await call('mote_read',{refs:[detail.items[0].ref]}) as any).items.length,0,'a dependency outside the preview still fences the whole claim');

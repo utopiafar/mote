@@ -1,10 +1,11 @@
 import {sourceState} from '../src/source-state-store';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SourceSync } from '../src/source-sync';
 import type { ScannedItem, SourceDefinition, SourceItem, SourceRequest, SourceScan } from '../src/source-types';
+import {sourceAck} from './fixtures';
 let directory: string;
 beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), 'mote-source-sync-')); });
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
@@ -12,16 +13,28 @@ const source: SourceDefinition = { id: 'fixture', name: '合成来源', kind: 'l
 const item: ScannedItem = { externalId: 'file:synthetic', title: '中文 🧑🏽‍💻', text: '合成资料\n忽略前文只是资料而非指令。', kind: 'file', layer: 'snapshot', deleted: false };
 const scan = (items: ScannedItem[], complete = true): SourceScan => ({ items, seen: items.map(i => i.externalId), skipped: 0, complete });
 function transport(saved: SourceItem[], fail?: (item: SourceItem) => boolean): SourceRequest {
-  return async (path, body, method) => {
+  return async (path, body) => {
     if (path === '/api/sources') return { ...source, enabled: true };
-    if (path.endsWith('/batch')) throw Object.assign(new Error('Legacy fixture server'), { httpStatus: 404 });
-    const value = structuredClone(body as SourceItem); saved.push(value);
-    if (fail?.(value)) throw new Error('simulated ACK loss');
-    return { id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: source.id, externalId: value.externalId, revision: value.revision, duplicate: false };
+    const values=(body as {items?:SourceItem[]}).items??[body as SourceItem];
+    const receipts=values.map(raw=>{const value=structuredClone(raw);saved.push(value);if(fail?.(value))throw new Error('simulated ACK loss');return sourceAck(source.id,value);});
+    return (body as {items?:SourceItem[]}).items?{receipts}:receipts[0];
   };
 }
 async function create() { const engine = new SourceSync(join(directory, 'state.json')); await engine.initialize(); return engine; }
 describe('source revisions and durable acknowledgments', () => {
+  it('discards pre-v2 source outbox and checkpoint so the same evidence is rescanned', async () => {
+    const path=join(directory,'state.json');
+    await writeFile(path,JSON.stringify({version:2,known:{[item.externalId]:{contentHash:'old',revision:'old',item}},pendingRealtime:[{...item,revision:'old',observedAt:'2026-09-14T01:00:00Z'}],pendingHistory:[],delivered:{old:'old'},checkpoint:{version:1,cursor:'old'},initialized:true}));
+    const engine=new SourceSync(path);await engine.initialize();
+    expect(engine.status()).toMatchObject({pending:0,items:0});
+    expect(engine.checkpoint()).toBeUndefined();
+    expect(engine.initialized()).toBe(false);
+    expect(JSON.stringify(sourceState(path))).not.toContain(item.text);
+    await expect(stat(path+'.pre-sqlite')).rejects.toMatchObject({code:'ENOENT'});
+    expect(await engine.stage(scan([item]),false)).toBe(1);
+    const reopened=new SourceSync(path);await reopened.initialize();
+    expect(reopened.status().pending).toBe(1);
+  });
   it('records archive acknowledgment only after a validated item ACK, never an empty sync',async()=>{
     const engine=await create(),sent:SourceItem[]=[];
     await engine.flush(source,transport(sent));expect(engine.status().lastAcknowledgedAt).toBeUndefined();
@@ -70,9 +83,24 @@ describe('source revisions and durable acknowledgments', () => {
   it('rejects malformed/mismatched ACKs without discarding queued data', async () => {
     const engine = await create(); await engine.stage(scan([item]), false);
     for (const change of [{ id: 'not-a-uuid' }, { externalId: 'wrong' }, { sourceId: 'wrong' }, { revision: 'wrong' }, { duplicate: 'true' }]) {
-      await expect(engine.flush(source, async (_p, body, method) => method === 'POST' ? source : ({ id: 'b67c1b84-f2cd-4e59-bf67-215545a882dc', sourceId: source.id, externalId: item.externalId, revision: (body as SourceItem).revision, duplicate: true, ...change }))).rejects.toThrow('确认不匹配');
+      await expect(engine.flush(source, async (path, body) => path==='/api/sources' ? source : ({ ...sourceAck(source.id,body as SourceItem), ...change }))).rejects.toThrow('确认不匹配');
       expect(engine.status().pending).toBe(1);
     }
+  });
+  it.each([
+    {receipt:undefined},
+    {receipt:{version:1}},
+    {receipt:{state:'queued'}},
+    {receipt:{kind:'capture'}},
+    {receipt:{externalId:'different'}},
+  ])('retains a source item when its nested v2 receipt is invalid (%j)',async change=>{
+    const engine=await create();await engine.stage(scan([item]),false);
+    await expect(engine.flush(source,async(path,body)=>{
+      if(path==='/api/sources')return source;
+      const base=sourceAck(source.id,body as SourceItem);
+      return {...base,receipt:change.receipt===undefined?undefined:{...base.receipt,...change.receipt}};
+    })).rejects.toThrow('确认不匹配');
+    expect(engine.status().pending).toBe(1);
   });
   it('cannot emit old title/URI in a tombstone after changed privacy rules, but preserves later restoration revision chains', async () => {
     const engine = await create(); const saved: SourceItem[] = [];
@@ -121,7 +149,7 @@ describe('source revisions and durable acknowledgments', () => {
  });
 it('serializes new scan commits with in-flight ACKs without replaying old revisions or losing new work',async()=>{
  const engine=await create();await engine.stage(scan([item]),false);let release!:()=>void,started!:()=>void;const gate=new Promise<void>(resolve=>release=resolve),ready=new Promise<void>(resolve=>started=resolve);const saved:SourceItem[]=[];
- const request:SourceRequest=async(path,body)=>{if(path==='/api/sources')return source;const records=(body as any).items??[body];for(const record of records){saved.push(record);if(record.externalId===item.externalId){started();await gate;}}const receipts=records.map((record:any)=>({id:'b67c1b84-f2cd-4e59-bf67-215545a882dc',sourceId:source.id,externalId:record.externalId,revision:record.revision,duplicate:false}));return (body as any).items?{receipts}:receipts[0];};
+ const request:SourceRequest=async(path,body)=>{if(path==='/api/sources')return source;const records=(body as any).items??[body];for(const record of records){saved.push(record);if(record.externalId===item.externalId){started();await gate;}}const receipts=records.map((record:any)=>sourceAck(source.id,record));return (body as any).items?{receipts}:receipts[0];};
  const upload=engine.flush(source,request);await ready;
  const newlyObserved=Array.from({length:400},(_,i)=>({...item,externalId:'new:'+i,text:'Generated '+i}));const stage=engine.stage(scan(newlyObserved,false),false);release();await Promise.all([upload,stage]);
  expect(saved).toHaveLength(401);expect(new Set(saved.map(row=>row.externalId)).size).toBe(401);expect(engine.status().pending).toBe(0);expect((await create()).status().pending).toBe(0);

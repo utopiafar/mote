@@ -16,12 +16,20 @@ class PowerOptimizationTest {
         assertThrows(IllegalArgumentException::class.java) { OcrPolicy.validate("chinese", "{\"fixture.app\":\"unknown\"}") }
     }
     @Test fun partialReceiptsCannotClearMissingOrForeignRecords() {
-        fun response(vararg entries: Pair<String, Int>) = JSONObject().put("results", JSONArray(entries.map { JSONObject().put("id", it.first).put("status", it.second) }))
-        val expected = setOf("a", "b", "c")
-        assertEquals(mapOf("a" to 201, "b" to 507), BatchUpload.receipts(expected, response("a" to 201, "b" to 507)))
+        val a = java.util.UUID.randomUUID().toString(); val b = java.util.UUID.randomUUID().toString(); val c = java.util.UUID.randomUUID().toString()
+        fun response(vararg entries: Pair<String, Int>) = JSONObject().put("results", JSONArray(entries.map { (id, status) ->
+            JSONObject().put("id", id).put("status", status).apply {
+                if (status in setOf(200, 201)) put("receipt", JSONObject().put("version", 2).put("id", id)
+                    .put("kind", "capture").put("state", "received").put("duplicate", false))
+            }
+        }))
+        val expected = setOf(a, b, c)
+        assertEquals(mapOf(a to 201, b to 507), BatchUpload.receipts(expected, response(a to 201, b to 507)))
         assertThrows(IllegalArgumentException::class.java) { BatchUpload.receipts(expected, response("other" to 201)) }
-        assertThrows(IllegalArgumentException::class.java) { BatchUpload.receipts(expected, response("a" to 201, "a" to 201)) }
-        assertThrows(IllegalArgumentException::class.java) { BatchUpload.receipts(expected, response("a" to 202)) }
+        assertThrows(IllegalArgumentException::class.java) { BatchUpload.receipts(expected, response(a to 201, a to 201)) }
+        assertThrows(IllegalArgumentException::class.java) { BatchUpload.receipts(expected, response(a to 202)) }
+        val legacy = response(a to 201); legacy.getJSONArray("results").getJSONObject(0).remove("receipt")
+        assertThrows(IllegalArgumentException::class.java) { BatchUpload.receipts(expected, legacy) }
     }
     @Test fun newInstallUsesActivityWhileLegacyDefaultRemainsContent() {
         assertEquals(AppCollectionMode.ACTIVITY, AppCollectionRules.parse(AppCollectionRules.DEFAULT).defaultMode)

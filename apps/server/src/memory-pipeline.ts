@@ -15,6 +15,7 @@ import type {ModelConfiguration} from './model-configuration.js';
 import {semanticProductsSchema} from './semantic-extraction.js';
 import {memoryReviewReceipt} from './memory-review.js';
 import type {MemoryReviewReceipt} from './memory-schema.js';
+import {formatMaterialRef} from './materials.js';
 
 export type MemoryValidationFailure={at:string;code:string;phase:'extract'|'review';attempt?:number;runId?:string;details?:MemoryValidationDetails};
 export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;batchId:string;batchIndex:number};
@@ -22,10 +23,10 @@ export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;b
 type Chunk=EvidenceRange&{profile?:'personal'|'coding';profileVersion?:string;group?:string;fingerprint:string;key:string};
 export type MemoryBatch={configuration?:ModelConfiguration;id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];availableAt?:number;errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope;splitDepth?:number;splitHistory?:{at:string;errorCode:'provider_timeout';attempts:number;evidenceRanges:EvidenceRange[]}[]};
 type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];skillVersion?:string;resourceEvidenceIds?:string[]};
-export type MemoryJob={configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
+export type MemoryJob={configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs?:Record<string,string>;language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={contextTime?:string;signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
-export type MemoryPipelineOptions={configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
+export type MemoryPipelineOptions={configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;materialAllowedForMemory?:(ref:string)=>boolean;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
 
 type BatchOutput={result:QueryResult;reviewReceipt?:MemoryReviewReceipt;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
 
@@ -89,6 +90,60 @@ export class MemoryPipeline {
       INSERT INTO memory_job_counts SELECT job_id,count(*),sum(json_extract(json,'$.status')='completed'),sum(json_extract(json,'$.status') IN ('failed','invalidated')),sum(json_extract(json,'$.status')='running'),sum(json_extract(json,'$.status')='pending'),sum(coalesce(json_extract(json,'$.attempts'),0)) FROM memory_batches WHERE job_id NOT IN (SELECT job_id FROM memory_job_counts) GROUP BY job_id;`);
   }
   private get store(){return this.options.store;}
+  private formalMaterialsEnabled(){return Boolean(this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_evidence'").get());}
+  /** SourceStore originals are intake evidence, not a Memory input. They must
+   * enter through a published Material anchor with its declared dependencies. */
+  private rawSourceItem(id:string):boolean {
+    if(!this.formalMaterialsEnabled())return false;
+    const record=this.options.memories.readEvidence([id])[0];
+    const sourceId=record?.provenance?.sourceId,externalId=record?.provenance?.externalId;
+    if(!sourceId||!externalId||record.source==='screen'||record.source==='ui_page')return false;
+    return Boolean(this.store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(sourceId));
+  }
+  private currentMaterialRef(id:string):string|undefined {
+    if(!this.formalMaterialsEnabled())return;
+    const row=this.store.db.prepare(`SELECT h.id,h.revision,h.retired FROM material_evidence e
+      JOIN material_heads h ON h.id=e.material_id WHERE e.id=?`).get(id) as
+      {id:string;revision:string;retired:number}|undefined;
+    return row&&!row.retired?formatMaterialRef(row.id,row.revision):undefined;
+  }
+  private materialAdmission(ids:readonly string[],pinned?:Readonly<Record<string,string>>):Record<string,string> {
+    const refs:Record<string,string>={};
+    for(const id of ids){
+      const ref=this.currentMaterialRef(id);
+      if(!ref){
+        if(this.rawSourceItem(id))throw new StoreError('Source item Memory requires a published Material',409);
+        if(pinned?.[id])throw new StoreError('Memory Material changed',409);
+        continue;
+      }
+      if(!this.options.memories.isCurrentEvidence(id)||
+        !this.options.materialAllowedForMemory?.(ref)||
+        pinned&&pinned[id]!==ref)throw new StoreError('Memory Material dependency is not ready or changed',409);
+      refs[id]=ref;
+    }
+    if(pinned&&Object.keys(pinned).length!==Object.keys(refs).length)throw new StoreError('Memory Material pin changed',409);
+    return refs;
+  }
+  /** Manual extraction and consolidation use the same source-item boundary. */
+  assertAdmissibleEvidence(ids:readonly string[]):void {this.materialAdmission(ids);}
+  withAdmissibleEvidence<T>(ids:readonly string[],run:()=>T):T {
+    const db=this.store.db,own=!db.isTransaction;
+    if(own)db.exec('BEGIN IMMEDIATE');
+    try{this.materialAdmission(ids);const value=run();if(own)db.exec('COMMIT');return value;}
+    catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
+  }
+  /** The legacy artifact lifecycle remains for screenshots and authored
+   * records. Source items have their own revision-pinned Material Memory queue. */
+  legacyArtifactIds(ids:readonly string[]):string[] {
+    return ids.filter(id=>{
+      const artifact=this.store.archive.get(id);
+      if(!artifact)return false;
+      const evidenceIds=artifact.kind==='segment'?artifact.members:
+        artifact.kind==='semantic'&&Array.isArray(artifact.metadata.evidenceRanges)?
+          artifact.metadata.evidenceRanges.flatMap(range=>range&&typeof range==='object'&&'id' in range&&typeof range.id==='string'?[range.id]:[]):[];
+      return !evidenceIds.some(evidenceId=>this.rawSourceItem(evidenceId));
+    });
+  }
   private storedJob(id:string):MemoryJob {
     const row=this.store.db.prepare('SELECT json FROM memory_jobs WHERE id=?').get(id) as {json:string}|undefined;
     if(!row)throw new StoreError('Memory job not found',404);return JSON.parse(row.json);
@@ -120,6 +175,7 @@ export class MemoryPipeline {
   create(raw:{artifactRefs?:{id:string;revision:string}[];evidenceRanges?:EvidenceRange[];modelProfileId?:string;modelOverride?:string;evidenceIds:string[];importJobId?:string;originKey?:string;timeZone?:string;batchCharacters?:number}):MemoryJobDetail {
     if(this.closed)throw new StoreError('Memory pipeline is closed',503);
     const input=z.object({artifactRefs:z.array(z.object({id:z.string().length(64),revision:z.string().length(64)})).max(2000).optional(),evidenceRanges:z.array(z.object({id:z.string().uuid(),offset:z.number().int().min(0),length:z.number().int().min(1).max(12000)})).max(10000).optional(),modelProfileId:modelProfileIdSchema.optional(),modelOverride:z.string().trim().min(1).max(512).refine(v=>!/[\u0000-\u001f\u007f]/.test(v)).optional(),originKey:z.string().max(200).optional(),batchCharacters:z.number().int().min(256).max(12000).optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000),importJobId:z.string().max(200).optional(),timeZone:z.string().max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Invalid time zone').optional()}).strict().parse(raw);
+    const materialRefs=this.materialAdmission([...new Set(input.evidenceIds)]);
     // Import completion may be replayed after a process interruption.
     if(input.importJobId){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.importJobId')=?").get(input.importJobId) as {id:string}|undefined;if(prior)return this.get(prior.id);}
     if(input.originKey){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.originKey')=?").get(input.originKey) as {id:string}|undefined;if(prior)return this.get(prior.id);}
@@ -149,10 +205,11 @@ export class MemoryPipeline {
     const groups:Chunk[][]=[];let group:Chunk[]=[],characters=0;
     for(const chunk of all){if(group.length&&(group[0].group!==chunk.group||characters+chunk.length>budget||group.length>=20)){groups.push(group);group=[];characters=0;}group.push(chunk);characters+=chunk.length;}
     if(group.length)groups.push(group);
-    const now=new Date().toISOString(),job:MemoryJob={artifactRefs:input.artifactRefs,language:requestLocale.getStore()??'zh-CN',id:randomUUID(),modelProfileId:input.modelProfileId,modelOverride:input.modelOverride,importJobId:input.importJobId,originKey:input.originKey,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
+    const now=new Date().toISOString(),job:MemoryJob={artifactRefs:input.artifactRefs,materialRefs,language:requestLocale.getStore()??'zh-CN',id:randomUUID(),modelProfileId:input.modelProfileId,modelOverride:input.modelOverride,importJobId:input.importJobId,originKey:input.originKey,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
     const batches:StoredBatch[]=groups.map((chunks,index)=>({artifactRefs:[...new Map(chunks.flatMap(c=>refsByEvidence.get(c.id)??[]).map(ref=>[ref.id,ref])).values()],id:randomUUID(),index,status:'pending',chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),attempts:0,memoryIds:[]}));
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{
+      this.materialAdmission(evidenceIds,materialRefs);
       this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(job))+batches.reduce((sum,b)=>sum+Buffer.byteLength(JSON.stringify(b)),0));
       this.store.db.prepare('INSERT INTO memory_jobs(id,created_at,json) VALUES(?,?,?)').run(job.id,now,JSON.stringify(job));
       for(const batch of batches){this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,job.id,batch.index,JSON.stringify(batch));for(const id of new Set(batch.chunks.flatMap(c=>this.options.memories.dependencyIds(c.id))))this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);}
@@ -186,11 +243,13 @@ export class MemoryPipeline {
   async retry(id:string):Promise<MemoryJobDetail> {
     if(this.active.has(id))return this.active.get(id)!;
     let job=this.storedJob(id);
+    this.materialAdmission(job.evidenceIds,job.materialRefs??{});
     if(job.availableAt&&job.availableAt>Date.now())throw new ProviderFailure({category:'transient',code:job.errorCode??'provider_unavailable',retryAfterMs:job.availableAt-Date.now()});
     if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
-    try{
+      try{
       job=this.storedJob(id);
+      this.materialAdmission(job.evidenceIds,job.materialRefs??{});
       if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
       if(job.availableAt&&job.availableAt>Date.now())throw new ProviderFailure({category:'transient',code:job.errorCode??'provider_unavailable',retryAfterMs:job.availableAt-Date.now()});
       const batches=this.batches(id);
@@ -221,6 +280,8 @@ export class MemoryPipeline {
   private validateStep(step:ExecutionStep){
     const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(String(step.input.batchId));if(!row)return false;
     const batch=JSON.parse(String(row.json)) as StoredBatch;
+    try{const job=this.storedJob(String(step.input.jobId));this.materialAdmission(job.evidenceIds,job.materialRefs??{});}
+    catch{return false;}
     return batch.status!=='invalidated'&&batch.chunks.every(chunk=>this.valid(chunk))&&(batch.artifactRefs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision);
   }
   private projectStep(step:ExecutionStep){
@@ -251,7 +312,8 @@ export class MemoryPipeline {
   }
   private commitBatch(step:ExecutionStep,output:BatchOutput|undefined){
     if(!output)return;
-    this.assertConfiguration(this.storedJob(String(step.input.jobId)));
+    const job=this.storedJob(String(step.input.jobId));
+    this.assertConfiguration(job);this.materialAdmission(job.evidenceIds,job.materialRefs??{});
     const batch=this.batch(String(step.input.batchId)),{result,model,profile,skillVersion,ranges,chunks}=output;
     this.options.memories.extract(result,model,{profile,requireAdmission:this.options.requireAdmission,reviewReceipt:output.reviewReceipt,reviewRunId:output.reviewReceipt?output.reviewReceipt.reviewRunId:this.options.review?result.runId:undefined,skillVersion,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),onSaved:items=>{
       for(const item of items)for(const ref of batch.artifactRefs??[])this.store.db.prepare('INSERT INTO memory_artifact_dependencies VALUES(?,?)').run(item.id,ref.id);
@@ -296,6 +358,7 @@ export class MemoryPipeline {
     const ranges=chunks.map(({id,offset,length})=>({id,offset,length}));
     try{
         this.assertConfiguration(job);
+        this.materialAdmission(job.evidenceIds,job.materialRefs??{});
         if(job.configuration&&!observeCurrent(()=>{batch.configuration=structuredClone(job.configuration);this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(batch.configuration)));this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
         const model=job.configuration?.model??job.modelOverride??this.options.model(job.modelProfileId);
         let feedback:MemoryOutputValidationError|undefined;
@@ -317,7 +380,7 @@ export class MemoryPipeline {
             if(!observeCurrent(()=>{batch.validationFailures=[...(batch.validationFailures??[]),failure].slice(-20);this.saveBatch(batch);}))return;
             try{this.options.onValidationFailure?.({...failure,jobId:id,batchId:batch.id,batchIndex:batch.index});}catch{}
           };
-          const validateArtifacts=()=>{assertGrant();this.assertConfiguration(job);if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
+          const validateArtifacts=()=>{assertGrant();this.assertConfiguration(job);this.materialAdmission(job.evidenceIds,job.materialRefs??{});if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
           const validateOutput:QueryInput['validateOutput']=result=>{
             validateArtifacts();
             try{this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});}

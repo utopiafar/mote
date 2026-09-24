@@ -47,8 +47,8 @@ try {
   const source = join(directory, 'selected-files'); await mkdir(source); await writeFile(join(source, 'synthetic.md'), '合成文件同步资料：每个环境独立确认与重试。');
   const importArgs = ['--', process.execPath, '--import', 'tsx', join(repository, 'scripts/import-files.ts'), '--root', source];
   for (const p of [dev, test]) {
-    assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Imported 1 changed/);
-    assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Imported 0 changed/);
+    assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Received 1 changed/);
+    assert.match((await cli(home, p.profile, 'exec', importArgs)).stdout, /Received 0 changed/);
     const syncDirectory=join(p.directory,'file-sync');
     const syncFiles=(await readdir(syncDirectory)).filter(name=>name.endsWith('.json')||name.endsWith('.json.sqlite'));
     const stateFiles=syncFiles.filter(name=>name.endsWith('.json.sqlite')).map(name=>name.slice(0,-7));
@@ -61,7 +61,7 @@ try {
   for (const p of [dev, test]) {
     const clean = Object.fromEntries(Object.keys(process.env).filter(key => key.startsWith('MOTE_')).map(key => [key, undefined]));
     const imported = await command(process.execPath, ['--import', 'tsx', join(repository, 'scripts/import-files.ts'), '--root', source], { env: { ...clean, MOTE_ENV_FILE: p.envFile } });
-    assert.equal(imported.code, 0, imported.stderr); assert.match(imported.stdout, /Imported 1 changed/);
+    assert.equal(imported.code, 0, imported.stderr); assert.match(imported.stdout, /Received 1 changed/);
     assert.equal((await request(p, '/api/captures?source=file')).items.length, 2);
   }
   await cli(home, 'dev', 'backup', ['--out', join(directory, 'running-backup')], { fail: true });

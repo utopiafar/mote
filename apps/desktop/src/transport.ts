@@ -4,6 +4,7 @@ import type { CaptureEvent, Config } from './contracts';
 import { validateServerUrl } from './config';
 import { TransportFailure, failureCode, httpFailure, type EventJournal } from './support';
 import { readResponseText } from './response-body';
+import {INGRESS_VERSION_HEADERS,requireIngressReceipt} from './ingress-protocol';
 
 // Authentication is the explicit Bearer header. Omit ambient HTTP credentials so
 // fetch does not attempt to replay a streaming upload after a 401 response.
@@ -14,7 +15,7 @@ export async function uploadDeferredOcr(config: Config, id: string, ocrText: str
   let response: Response;
   try {
     response = await fetch(`${validateServerUrl(config.serverUrl)}/api/capture-browser/${id}/ocr`, {
-      method: 'POST', headers: { 'Accept-Language': getLocale(), Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { ...INGRESS_VERSION_HEADERS,'Accept-Language': getLocale(), Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json' },
       credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
       body: meteredBody(JSON.stringify({ ocrText, status: 'completed' })), ...({duplex:'half'} as object),
     });
@@ -39,7 +40,7 @@ export async function uploadCapture(config: Config, event: CaptureEvent, image?:
   let response: Response;
   try {
     response = await fetch(`${origin}/api/captures`, {
-      method: 'POST', headers: { 'Accept-Language': getLocale(), 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { ...INGRESS_VERSION_HEADERS,'Accept-Language': getLocale(), 'Authorization': `Bearer ${config.token}`, 'Content-Type': 'application/json' },
       credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000),
       body: meteredBody(JSON.stringify({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })),
       ...({ duplex: 'half' } as object),
@@ -52,9 +53,8 @@ export async function uploadCapture(config: Config, event: CaptureEvent, image?:
     if (response.status === 400 && event.ocr) throw new TransportFailure(moteText("当前截图协议未被接受，请先确认中央节点已升级至 0.0.2 或更新版本；队列已保留"), 'RESPONSE', 400);
     throw new TransportFailure(moteText("中央节点返回 HTTP {0}；队列已保留", response.status), httpFailure(response.status), response.status);
   }
-  let ack: { id?: string };
-  try { ack = JSON.parse(await readResponseText(response, 16384)) as { id?: string }; } catch { throw new TransportFailure(moteText("中央节点确认格式无效；队列已保留"), 'RESPONSE', response.status); }
-  if (ack.id !== event.id) throw new TransportFailure(moteText("中央节点确认 ID 不匹配；队列已保留"), 'RESPONSE', response.status);
+  try { requireIngressReceipt(JSON.parse(await readResponseText(response, 16384)),{kind:'capture',id:event.id}); }
+  catch { throw new TransportFailure(moteText("中央节点确认格式无效；队列已保留"), 'RESPONSE', response.status); }
 }
 
 export async function heartbeat(config: Config, body: object, events?: EventJournal, signal?: AbortSignal): Promise<void> {
@@ -75,7 +75,7 @@ export async function uploadCaptureBatch(config: Config, entries: { event: Captu
   let response: Response;
   try { response = await fetch(`${origin}/api/captures/batch`, {
     method: 'POST', credentials: 'omit', redirect: 'error', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60000)]) : AbortSignal.timeout(60000),
-    headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', 'Accept-Language': getLocale() },
+    headers: { ...INGRESS_VERSION_HEADERS,Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', 'Accept-Language': getLocale() },
     body: meteredBody(JSON.stringify({ captures: entries.map(({event, image}) => ({ ...event, ...(image ? { imageBase64: image.toString('base64') } : {}) })) })),
     ...({ duplex: 'half' } as object),
   }); } catch (error) {
@@ -88,24 +88,16 @@ export async function uploadCaptureBatch(config: Config, entries: { event: Captu
     for(const [id,status] of await uploadCaptureBatch(config,entries.slice(middle),signal))receipts.set(id,status);
     return receipts;
   }
-  // Unsupported routes may use the legacy protocol. Authorization and rate
-  // limits are authoritative; they never trigger another upload endpoint.
-  if ([404, 405].includes(response.status)) {
-    await response.body?.cancel();
-    const receipts = new Map<string, number>();
-    for (const entry of entries) {
-      await uploadCapture(config, entry.event, entry.image, signal); receipts.set(entry.event.id, 201);
-    }
-    return receipts;
-  }
   if (response.status !== 200) { await response.body?.cancel(); throw new TransportFailure(moteText("批量上传未确认（HTTP {0}）", response.status), httpFailure(response.status), response.status); }
-  let body: { results?: {id: string; status: number}[] } | null;
+  let body: { results?: {id: string; status: number;receipt?:unknown}[] } | null;
   try { body = JSON.parse(await readResponseText(response, 65536)); }
   catch { throw new TransportFailure(moteText("中央节点确认格式无效；队列已保留"), 'RESPONSE', response.status); }
   const expected = new Set(entries.map(entry => entry.event.id)), result = new Map<string, number>();
   if (!body || !Array.isArray(body.results) || body.results.length > entries.length) throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
   for (const receipt of body.results) {
     if (!receipt || !expected.has(receipt.id) || result.has(receipt.id) || !Number.isInteger(receipt.status) || !([200, 201].includes(receipt.status) || receipt.status >= 400 && receipt.status <= 599)) throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
+    if([200,201].includes(receipt.status))try{requireIngressReceipt(receipt,{kind:'capture',id:receipt.id});}catch{throw new TransportFailure('Invalid batch receipts', 'RESPONSE');}
+    else if(receipt.receipt!==undefined)throw new TransportFailure('Invalid batch receipts', 'RESPONSE');
     result.set(receipt.id, receipt.status);
   }
   return result;

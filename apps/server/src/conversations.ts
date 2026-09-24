@@ -5,7 +5,7 @@ import {Store,StoreError} from './store.js';
 import {combineDependencies,resolveDependencies} from './conversation-lineage.js';
 
 export type ConversationScope = Pick<QueryInput,'after'|'before'|'deviceId'|'timeZone'>;
-export type ConversationTurn = {id:string;question:string;scope:ConversationScope;result?:QueryResult;status:'completed'|'failed';error?:{code:string;message:string};createdAt:string;evidenceDeleted?:boolean};
+export type ConversationTurn = {id:string;question:string;scope:ConversationScope;result?:QueryResult;status:'completed'|'failed';error?:{code:string;message:string};createdAt:string;evidenceDeleted?:boolean;attachments?:{id:string;name:string;mimeType:string}[]};
 export type ConversationSummary = {id:string;title:string;createdAt:string;updatedAt:string;turnCount:number;scope:ConversationScope;status:'completed'|'failed'};
 export type Conversation = ConversationSummary & {turns:ConversationTurn[];revision?:number};
 type Row = {id:string;title:string;created_at:string;updated_at:string;json:string};
@@ -58,10 +58,10 @@ export class Conversations {
     return {id:row.id,title:row.title,createdAt:row.created_at,updatedAt:row.updated_at,scope:value.scope,turnCount:value.turnCount,status:value.status,revision:value.revision,turns,firstIndex:Number(rows[0]?.idx??0)};
   }
 
-  append(previous:Conversation|undefined,input:ConversationScope&{question:string},result:QueryResult) {
-    const {question,...scope}=input,now=new Date().toISOString();
+  append(previous:Conversation|undefined,input:ConversationScope&{question:string;attachments?:{id:string;name:string;mimeType:string}[]},result:QueryResult) {
+    const {question,attachments,...scope}=input,now=new Date().toISOString();
     const evidenceDependencies=resolveDependencies(this.store,result.evidenceDependencies);
-    const turn:ConversationTurn={id:randomUUID(),question,scope,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},status:'completed',createdAt:now};
+    const turn:ConversationTurn={id:randomUUID(),question,scope,result:{...result,...(evidenceDependencies?{evidenceDependencies}:{})},status:'completed',createdAt:now,...(attachments?.length?{attachments}:{})};
     return this.write(previous,turn);
   }
 
@@ -107,7 +107,7 @@ export class Conversations {
       if(turn.status==='failed'||!turn.result)continue;
 
       const answer=turn.result.answer.slice(0,20000);
-      const value={question:turn.question,answer,scope:turn.scope,createdAt:turn.createdAt,...(answer.length<turn.result.answer.length?{answerTruncated:true}:{}),...(turn.evidenceDeleted?{evidenceDeleted:true}:{})};
+      const value={question:turn.question,answer,scope:turn.scope,createdAt:turn.createdAt,...(answer.length<turn.result.answer.length?{answerTruncated:true}:{}),...(turn.evidenceDeleted?{evidenceDeleted:true}:{}),...(turn.attachments?.length?{attachments:turn.attachments}:{})};
       const size=JSON.stringify(value).length;
       if(turns.length===maxTurns||length+size>maxCharacters)break;
       turns.unshift(value);length+=size;

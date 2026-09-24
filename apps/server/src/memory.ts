@@ -71,6 +71,16 @@ export class MemoryStore {
   isCurrentEvidence(id:string):boolean {
     const record=this.readEvidence([id])[0];
     if(!record||!this.currentEvidence(id))return false;
+    // Formal Material anchors keep their immutable origin revision even when
+    // Coding append reuses an unchanged prefix. The injected currentEvidence
+    // resolver checks that the block is still active in the current head.
+    if(record.appId==='mote.material'&&record.provenance?.uri?.startsWith('material:')){
+      if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE name='material_evidence'").get())return false;
+      const anchor=this.store.db.prepare(`SELECT e.material_id,e.revision,e.block_id FROM material_evidence e
+        JOIN material_heads h ON h.id=e.material_id
+        WHERE e.id=? AND h.retired=0`).get(id) as {material_id:string;revision:string;block_id:string}|undefined;
+      return Boolean(anchor&&record.provenance.uri===`material:${anchor.material_id}@${anchor.revision}#${anchor.block_id}`);
+    }
     if(record.provenance?.layer!=='derived')return true;
     const file=fileEvidenceSchema.safeParse(record.fileEvidence);
     // The injected host resolver verifies active, traceable file artifacts. Other

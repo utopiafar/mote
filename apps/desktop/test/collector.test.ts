@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { DurableQueue } from '../src/queue';
 import type { NsfwGate } from '../src/contracts';
 import { defaultConfig } from '../src/config';
+import { captureAck } from './fixtures';
 
 const fixtureConfig=()=>({...defaultConfig(),syncMode:'realtime' as const,syncIntervalMinutes:15,syncBatchSize:20,packedUpload:false});
 
@@ -74,7 +75,7 @@ it('one manual flush drains 400 historical notes while admitting a new note betw
  const note=(i:number,capturedAt:string)=>({...event(`00000000-0000-4000-8000-${String(i).padStart(12,'0')}`),source:'note' as const,imageMime:undefined,durationMs:0,ocrText:'Generated note '+i,capturedAt,privacy:{excluded:false as const,redacted:false,mode:'none' as const}});
  for(let i=0;i<400;i++)await queue.enqueue(note(i,new Date(Date.UTC(2025,0,1+i)).toISOString()));
  const sent:string[]=[],phases:string[]=[];let sourcePending=1;
- vi.mocked(fetch).mockImplementation(async (_url,init)=>{const body=JSON.parse(await new Response(init!.body).text()),items=body.captures??[body];sent.push(...items.map((v:{id:string})=>v.id));phases.push('captures');return new Response(JSON.stringify(body.captures?{results:items.map((v:{id:string})=>({id:v.id,status:201}))}:{id:body.id}),{status:body.captures?200:201});});
+ vi.mocked(fetch).mockImplementation(async (_url,init)=>{const body=JSON.parse(await new Response(init!.body).text()),items=body.captures??[body];sent.push(...items.map((v:{id:string})=>v.id));phases.push('captures');return new Response(JSON.stringify(body.captures?{results:items.map((v:{id:string})=>({...captureAck(v.id),status:201}))}:captureAck(body.id)),{status:body.captures?200:201});});
  const fresh=note(999,new Date().toISOString());
  const sources={nodeBinding:{unbound:()=>false},pendingStats:()=>({pendingRecords:sourcePending,eligibleRecords:sourcePending}),flushPending:async(_signal:AbortSignal,between:()=>Promise<void>)=>{
    phases.push('source-part-0');fresh.capturedAt=new Date().toISOString();await queue.enqueue(fresh);await between();
@@ -222,7 +223,7 @@ describe.skipIf(process.platform !== 'darwin')('deferred OCR from sanitized dura
     const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const, reason: 'charging' as const } };
     await queue.enqueue(original, image);
     const calls: { url: string; body: any }[] = [];
-    vi.mocked(fetch).mockImplementation(async (url, init) => { calls.push({ url: String(url), body: JSON.parse(await new Response(init!.body).text()) }); return new Response(JSON.stringify({ id: original.id }), { status: 200 }); });
+    vi.mocked(fetch).mockImplementation(async (url, init) => { calls.push({ url: String(url), body: JSON.parse(await new Response(init!.body).text()) }); return new Response(JSON.stringify(String(url).endsWith('/ocr')?{id:original.id}:captureAck(original.id)), { status: 200 }); });
     await collector.retry();
     expect(queue.stats()).toMatchObject({ depth: 1, eligibleDepth: 0, waitingOcr: 1 }); expect(await queue.next()).toBeUndefined();
     expect(await queue.imageForBrowser(original.id)).toEqual(image);
@@ -272,7 +273,7 @@ describe.skipIf(process.platform !== 'darwin')('deferred OCR from sanitized dura
     const original = { ...event(), ocrText: undefined, ocr: { status: 'pending' as const } };
     const later = { ...event('f50650f0-fb31-4215-90cd-c96dc62d5e93'), capturedAt: new Date(Date.parse(original.capturedAt) + 1000).toISOString() };
     await queue.enqueue(original, image); await queue.acknowledge(original.id); await queue.saveOcr(original.id, 'DIFFERENT OCR'); await queue.enqueue(later, image);
-    vi.mocked(fetch).mockImplementation(async (url, init) => String(url).endsWith('/ocr') ? new Response('{}', { status: 409 }) : new Response(JSON.stringify({ id: JSON.parse(await new Response(init!.body).text()).id }), { status: 200 }));
+    vi.mocked(fetch).mockImplementation(async (url, init) => String(url).endsWith('/ocr') ? new Response('{}', { status: 409 }) : new Response(JSON.stringify(captureAck(JSON.parse(await new Response(init!.body).text()).id)), { status: 200 }));
     await collector.upload(true);
     expect(queue.contains(original.id)).toBe(true); expect(queue.contains(later.id)).toBe(false); expect(queue.stats().blocked).toBe(1);
     expect((await queue.exportArchive()).records[0].syncError).toContain('保留中央原文字');
@@ -300,7 +301,7 @@ describe('capture and synchronization are independent', () => {
     await queue.enqueue({ ...event(), capturedAt: new Date().toISOString() }, image);
     await collector.upload(); await (collector as any).sendHeartbeat();
     expect(fetch).not.toHaveBeenCalled(); expect(collector.status().sync).toMatchObject({ state: 'manual', pendingRecords: 1 });
-    vi.mocked(fetch).mockImplementation(async (_url, init) => new Response(JSON.stringify({ id: JSON.parse(await new Response(init!.body).text()).id }), { status: 201 }));
+    vi.mocked(fetch).mockImplementation(async (_url, init) => new Response(JSON.stringify(captureAck(JSON.parse(await new Response(init!.body).text()).id)), { status: 201 }));
     await collector.retry(); expect(queue.stats().depth).toBe(0); expect(fetch).toHaveBeenCalledTimes(2);
     const finalHeartbeat = JSON.parse(vi.mocked(fetch).mock.calls.at(-1)![1]!.body as string);
     expect(finalHeartbeat.sync).toMatchObject({ mode: 'manual', state: 'idle', pendingRecords: 0 });
@@ -323,7 +324,7 @@ describe('capture and synchronization are independent', () => {
     const flush = vi.fn(async () => { sourcePending = 0; });
     const sources = { pendingStats: () => ({ pendingRecords: sourcePending, oldestPendingAt: capturedAt, hasUpdates: false }), nodeBinding: { unbound: () => false }, flushPending: flush };
     collector = new Collector(config, queue, '/fixture/no-real-helper', () => true, () => undefined, undefined, undefined, undefined, sources as any);
-    vi.mocked(fetch).mockImplementation(async (_url, init) => new Response(JSON.stringify({ id: JSON.parse(await new Response(init!.body).text()).id }), { status: 201 }));
+    vi.mocked(fetch).mockImplementation(async (_url, init) => new Response(JSON.stringify(captureAck(JSON.parse(await new Response(init!.body).text()).id)), { status: 201 }));
     await collector.upload(); expect(fetch).toHaveBeenCalledTimes(1); expect(flush).toHaveBeenCalledTimes(1);
     expect(collector.status().sync).toMatchObject({ pendingRecords: 0, state: 'idle' });
   });
@@ -373,7 +374,7 @@ it('does not reinterpret failed final heartbeats as failed or missing record upl
   await queue.enqueue(event(), image);
   vi.mocked(fetch).mockImplementation(async (url, init) => {
     if (String(url).endsWith('/heartbeat')) throw new Error('synthetic heartbeat outage');
-    return new Response(JSON.stringify({ id: JSON.parse(await new Response(init!.body).text()).id }), { status: 201 });
+    return new Response(JSON.stringify(captureAck(JSON.parse(await new Response(init!.body).text()).id)), { status: 201 });
   });
   await expect(collector.retry()).resolves.toBeUndefined(); expect(queue.stats().depth).toBe(0);
   expect(collector.status().lastUploadError).toBeUndefined(); expect(collector.status().lastUploadAt).toBeDefined();

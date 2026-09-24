@@ -322,9 +322,15 @@ class CaptureRecordsInstrumentedTest {
                             val capture = items.getJSONObject(0)
                             check(capture.keys().asSequence().none { it.startsWith("_") })
                             captures.incrementAndGet(); original = capture
-                            JSONObject().put("results", org.json.JSONArray().put(JSONObject().put("id", capture.getString("id")).put("status", 201)))
+                            val id = capture.getString("id")
+                            JSONObject().put("results", org.json.JSONArray().put(JSONObject().put("id", id).put("status", 201)
+                                .put("receipt", JSONObject().put("version", 2).put("id", id).put("kind", "capture")
+                                    .put("state", "received").put("duplicate", false))))
                         }
-                        route == "/api/captures" -> { check(json.keys().asSequence().none { it.startsWith("_") }); captures.incrementAndGet(); original = json; JSONObject().put("id", json.getString("id")) }
+                        route == "/api/captures" -> { check(json.keys().asSequence().none { it.startsWith("_") }); captures.incrementAndGet(); original = json
+                            val id = json.getString("id")
+                            JSONObject().put("id", id).put("receipt", JSONObject().put("version", 2).put("id", id)
+                                .put("kind", "capture").put("state", "received").put("duplicate", false)) }
                         method == "POST" && route.endsWith("/ocr") -> {
                             patches.incrementAndGet(); check(original != null); check(json.getString("ocrText") == "Generated PATCH OCR"); result = json
                             JSONObject().put("id", if (wrongPatchAck) "wrong-id" else original!!.getString("id"))

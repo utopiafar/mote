@@ -263,8 +263,9 @@ class OfflineSyncInstrumentedTest {
                 client.soTimeout = 5_000
                 val input = client.getInputStream()
                 fun line(): String { val value = StringBuilder(); while (true) { val byte = input.read(); if (byte < 0 || byte == 10) break; if (byte != 13) value.append(byte.toChar()) }; return value.toString() }
-                val route = line().split(' ').getOrNull(1); var length = 0; var contentType = ""
-                while (true) { val header = line(); if (header.isEmpty()) break; if (header.startsWith("Content-Length:", true)) length = header.substringAfter(':').trim().toInt(); if (header.startsWith("Content-Type:", true)) contentType = header.substringAfter(':').trim() }
+                val request = line().split(' '); val method = request.getOrNull(0); val route = request.getOrNull(1); var length = 0; var contentType = ""; var ingressVersion = ""
+                while (true) { val header = line(); if (header.isEmpty()) break; if (header.startsWith("Content-Length:", true)) length = header.substringAfter(':').trim().toInt(); if (header.startsWith("Content-Type:", true)) contentType = header.substringAfter(':').trim(); if (header.startsWith("X-Mote-Ingress-Version:", true)) ingressVersion = header.substringAfter(':').trim() }
+                if (method in setOf("POST", "PUT", "PATCH") && route != "/api/devices/heartbeat") require(ingressVersion == "2")
                 require(length in 0..(12 * 1024 * 1024)); val data = ByteArray(length); var read = 0
                 while (read < length) { val count = input.read(data, read, length - read); require(count > 0); read += count }
                 val body = if (contentType.startsWith(CaptureBundle.CONTENT_TYPE)) {
@@ -281,15 +282,28 @@ class OfflineSyncInstrumentedTest {
                             val captures = body.getJSONArray("captures"); notes.addAndGet(captures.length())
                             if (fault == "dropNote") return@use
                             JSONObject().put("results", org.json.JSONArray().apply {
-                                for (i in 0 until if (fault == "partial") 1 else captures.length()) put(JSONObject().put("id", if (fault == "wrongNoteAck") "wrong-id" else captures.getJSONObject(i).getString("id")).put("status", 201))
+                                for (i in 0 until if (fault == "partial") 1 else captures.length()) {
+                                    val id = if (fault == "wrongNoteAck") "wrong-id" else captures.getJSONObject(i).getString("id")
+                                    put(JSONObject().put("id", id).put("status", 201).put("receipt", JSONObject().put("version", 2)
+                                        .put("id", id).put("kind", "capture").put("state", "received").put("duplicate", false)))
+                                }
                             })
                         }
                     }
-                    "/api/captures" -> { notes.incrementAndGet(); if (fault == "dropNote") return@use; JSONObject().put("id", if (fault == "wrongNoteAck") "wrong-id" else body.getString("id")) }
+                    "/api/captures" -> { notes.incrementAndGet(); if (fault == "dropNote") return@use
+                        val id = if (fault == "wrongNoteAck") "wrong-id" else body.getString("id")
+                        JSONObject().put("id", id).put("receipt", JSONObject().put("version", 2).put("id", id)
+                            .put("kind", "capture").put("state", "received").put("duplicate", false)) }
                     "/api/sources" -> JSONObject().put("id", body.getString("id")).put("enabled", true)
-                    else -> if (route?.endsWith("/items") == true) JSONObject().put("id", UUID.randomUUID().toString()).put("duplicate", false)
-                        .put("sourceId", route.split('/')[3]).put("externalId", body.getString("externalId"))
-                        .put("revision", if (fault == "wrongSourceAck") "wrong-revision" else body.getString("revision"))
+                    else -> if (route?.endsWith("/items") == true) {
+                        val id = UUID.randomUUID().toString(); val sourceId = route.split('/')[3]
+                        val revision = if (fault == "wrongSourceAck") "wrong-revision" else body.getString("revision")
+                        JSONObject().put("id", id).put("duplicate", false).put("sourceId", sourceId)
+                            .put("externalId", body.getString("externalId")).put("revision", revision)
+                            .put("receipt", JSONObject().put("version", 2).put("id", id).put("kind", "source-item")
+                                .put("state", "received").put("duplicate", false).put("sourceId", sourceId)
+                                .put("externalId", body.getString("externalId")).put("revision", revision))
+                    }
                     else if (route?.startsWith("/api/sources/") == true) JSONObject().put("id", route.substringAfterLast('/'))
                     else { responseStatus=404; JSONObject().put("error","fixture_route_missing") }
                 }.toString().toByteArray(Charsets.UTF_8)
