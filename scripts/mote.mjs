@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Explicit profiles only. Ambient MOTE_* variables never choose a target or supply credentials.
 import { parseArgs } from 'node:util';
-import { writeFile,readFile,mkdir,stat } from 'node:fs/promises';
+import { writeFile,readFile,stat } from 'node:fs/promises';
 import { join,resolve } from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createHash} from 'node:crypto';
 import { profilePaths, initialize, loadProfile, isolatedEnvironment, withProfileLock, startNative, nativeIdentity, health, compose, execute, backupProfile, restoreProfile, atomicJson, launchdXml, effectiveConfiguration, setPublicUrl } from './profile-lib.mjs';
+import { ensureMediaRuntime } from './media-workers.mjs';
 import { configureTunnel, runNativeTunnel, nativeTunnelArgs, nativeTunnelIdentity, stopNativeTunnel } from './tunnel-lib.mjs';
 import { startProfile as start, stopProfile as stop, changeProfileDeployment } from './update-deploy.mjs';
 const help = `Mote central profiles (Node 24+, default: dev; prod requires --profile prod)
@@ -89,14 +89,9 @@ async function main() {
     if (p.meta.runtime !== 'native') throw Error('Docker bundles the media runtime in its image');
     const result=await withProfileLock(p,async()=>{
       if((await nativeIdentity(p)).running)throw Error('Stop this profile before installing the Native media runtime');
-      const requirements=['requirements-audio.txt','requirements-ocr.txt'].map(name=>fileURLToPath(new URL(name,import.meta.url)));
-      const hash=createHash('sha256');for(const path of requirements)hash.update(await readFile(path));const version=hash.digest('hex');
-      const root=join(p.directory,'media-venv'),marker=join(root,'mote-requirements.sha256');
-      if(await readFile(marker,'utf8').catch(()=>null)===version)return {profile:p.profile,installed:true,changed:false,python:join(root,'bin/python')};
-      await mkdir(p.directory,{recursive:true,mode:0o700});
-      await execute(values.python||'python3',['-m','venv',root],{env:isolatedEnvironment(p),timeoutMs:120000});
-      await execute(join(root,'bin/python'),['-m','pip','install','--disable-pip-version-check','--no-cache-dir',...requirements.flatMap(path=>['-r',path])],{env:isolatedEnvironment(p),timeoutMs:30*60*1000});
-      await writeFile(marker,version,{mode:0o600});return {profile:p.profile,installed:true,changed:true,python:join(root,'bin/python')};
+      const python=join(p.directory,'media-venv/bin/python');
+      const changed=await ensureMediaRuntime({root:resolve(p.meta.release),python,env:isolatedEnvironment(p),sourcePython:values.python||'python3',run:(command,args,env)=>execute(command,args,{env,timeoutMs:30*60*1000,capture:true})});
+      return {profile:p.profile,installed:true,changed,python};
     });print(result);return;
   }
   if (command === 'media-import') {

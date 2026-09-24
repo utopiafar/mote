@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Foreground source builds use the selected profile's identity, never its installed release.
 import { spawn } from 'node:child_process';
+import { startMediaWorkers } from './media-workers.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile, readdir, stat, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
@@ -133,7 +134,7 @@ export async function runDevServer(options = {}, root = repository) {
   const controller = new AbortController(), { signal } = controller;
   const interrupt = () => { if (!signal.aborted) console.info('\n[dev] Stopping…'); controller.abort(); };
   for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(name, interrupt);
-  let server, marker;
+  let server, marker, workers;
   try {
     await withProfileLock(p, async () => {
       console.info(`[dev] Stopping the previous managed ${p.profile} server…`);
@@ -145,6 +146,7 @@ export async function runDevServer(options = {}, root = repository) {
       await assertFreePort(p);
       const version = JSON.parse(await readFile(join(root, 'apps/server/package.json'), 'utf8')).version;
       marker = randomUUID();
+      workers = startMediaWorkers({ root, env: serverEnvironment(p), signal });
       server = startCommand(process.execPath, [join(root, 'apps/server/dist/index.js'), `--mote-instance=${marker}`], {
         cwd: root, env: serverEnvironment(p), signal, graceMs: 20000,
       });
@@ -174,6 +176,7 @@ export async function runDevServer(options = {}, root = repository) {
     if (!signal.aborted) throw error;
   } finally {
     controller.abort();
+    if (workers) await workers.close();
     if (server) await server.done;
     if (marker) {
       try {

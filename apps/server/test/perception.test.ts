@@ -9,7 +9,7 @@ import {Store} from '../src/store.js';
 import {Perception} from '../src/perception.js';
 import {FileProcessorRuntime} from '../src/file-processors.js';
 import {MediaAssets,MEDIA_CATALOG} from '../src/media-assets.js';
-async function setup(t:any,managed=false){const dir=mkdtempSync(join(tmpdir(),'mote-perception-')),store=new Store(dir),runtime=new FileProcessorRuntime();await runtime.ready;const processor=runtime.registry.get('image.http');let calls=0;processor.process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'合成中文错误 MODULE_NOT_FOUND'}]};};const assets=managed?new MediaAssets(join(dir,'models')):undefined,p=new Perception(store,runtime,undefined,assets);t.after(async()=>{await p.close();await runtime.close();store.close();rmSync(dir,{recursive:true,force:true});});const image=await sharp({create:{width:16,height:16,channels:3,background:'#aabbcc'}}).png().toBuffer();const input={id:randomUUID(),deviceId:'fixture',deviceName:'fixture',platform:'macos',capturedAt:'2026-09-18T00:00:00Z',durationMs:0,source:'screen',appId:'fixture',appName:'fixture',ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:image.toString('base64')};return {dir,store,p,runtime,input,calls:()=>calls,assets};}
+async function setup(t:any,managed=false){const dir=mkdtempSync(join(tmpdir(),'mote-perception-')),store=new Store(dir),runtime=new FileProcessorRuntime();await runtime.ready;const processor=runtime.registry.get('image.http');let calls=0;processor.process=async()=>{calls++;return {durationMs:0,segments:[{startMs:0,endMs:0,text:'合成中文错误 MODULE_NOT_FOUND'}]};};const assets=managed?new MediaAssets(join(dir,'models')):undefined,p=new Perception(store,runtime,undefined,assets,async()=>true);t.after(async()=>{await p.close();await runtime.close();store.close();rmSync(dir,{recursive:true,force:true});});const image=await sharp({create:{width:16,height:16,channels:3,background:'#aabbcc'}}).png().toBuffer();const input={id:randomUUID(),deviceId:'fixture',deviceName:'fixture',platform:'macos',capturedAt:'2026-09-18T00:00:00Z',durationMs:0,source:'screen',appId:'fixture',appName:'fixture',ocrText:'',ocr:{status:'disabled'},privacy:{excluded:false,redacted:false,mode:'local'},imageMime:'image/png',imageBase64:image.toString('base64')};return {dir,store,p,runtime,input,calls:()=>calls,assets};}
 test('managed OCR waits for model, processes new captures and requires preview for historical captures',async t=>{
  const {dir,store,p,input,calls}=await setup(t,true);assert.equal(p.settings().ocrEndpoint,'http://127.0.0.1:9010/ocr');
  await store.ingest(input);store.db.prepare("UPDATE perception_jobs SET auto_eligible=0 WHERE capture_id=? AND kind='ocr'").run(input.id);
@@ -92,4 +92,32 @@ test('restoring a previous OCR configuration can retry its cancelled execution w
  p.configure({...p.settings(),enabled:false});await running;p.configure({...p.settings(),enabled:true});
  runtime.registry.get('image.http').process=async()=>({durationMs:0,segments:[{startMs:0,endMs:0,text:'New resumed result'}]});
  await p.tick();release();await new Promise(r=>setImmediate(r));assert.equal(store.evidence([input.id])[0].ocrText,'New resumed result');
+});
+
+test('managed worker unavailability does not consume attempts and readiness resumes queued captures',async t=>{
+ const {store,p:old,runtime,assets,dir,input}=await setup(t,true);await old.close();let ready=false;
+ const p=new Perception(store,runtime,undefined,assets,async()=>ready);t.after(()=>p.close());
+ const root=join(dir,'models/ocr');for(const name of ['det/inference.onnx','det/inference.yml','rec/inference.onnx','rec/inference.yml']){const path=join(root,name);mkdirSync(dirname(path),{recursive:true});writeFileSync(path,'fixture');}
+ writeFileSync(join(root,'complete.json'),JSON.stringify({version:MEDIA_CATALOG.ocr.version}));
+ await store.ingest(input);
+ for(let i=0;i<6;i++){store.db.exec("UPDATE execution_steps SET available_at=0 WHERE error='ocr_worker_unavailable'");store.db.exec("UPDATE perception_jobs SET available_at=0 WHERE error='ocr_worker_unavailable'");await p.tick();}
+ const job=()=>store.db.prepare("SELECT state,error,attempts FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!;
+ assert.equal(job().error,'ocr_worker_unavailable');assert.equal(job().attempts,0);
+ ready=true;await p.tick();assert.equal(job().state,'succeeded');assert.equal(job().attempts,1);
+});
+
+test('first healthy worker recovers exhausted legacy failures but leaves historical jobs and repeated errors alone',async t=>{
+ const {store,p:old,runtime,assets,dir,input}=await setup(t,true);await old.close();let ready=false;
+ const p=new Perception(store,runtime,undefined,assets,async()=>ready);t.after(()=>p.close());
+ const root=join(dir,'models/ocr');for(const name of ['det/inference.onnx','det/inference.yml','rec/inference.onnx','rec/inference.yml']){const path=join(root,name);mkdirSync(dirname(path),{recursive:true});writeFileSync(path,'fixture');}
+ writeFileSync(join(root,'complete.json'),JSON.stringify({version:MEDIA_CATALOG.ocr.version}));
+ const historical=randomUUID();await store.ingest(input);await store.ingest({...input,id:historical});
+ store.db.prepare("UPDATE perception_jobs SET auto_eligible=0 WHERE capture_id=?").run(historical);
+ p.prepare();store.db.exec("UPDATE execution_steps SET state='failed',attempts=4,error='processor_failed' WHERE kind='perception.ocr'");
+ store.db.exec("UPDATE perception_jobs SET state='failed',attempts=4,error='processor_failed' WHERE kind='ocr'");
+ await p.tick();assert.equal(store.db.prepare("SELECT attempts FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.attempts,4);
+ ready=true;await p.tick();assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.state,'succeeded');
+ assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(historical)!.state,'failed');
+ store.db.prepare("UPDATE perception_jobs SET state='failed',attempts=4,error='processor_failed' WHERE capture_id=? AND kind='ocr'").run(input.id);
+ await p.tick();assert.equal(store.db.prepare("SELECT attempts FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.attempts,4);
 });

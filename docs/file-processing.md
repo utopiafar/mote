@@ -16,7 +16,7 @@
 
 ## 在中央主机启动本地服务
 
-受管理部署先参见 [OCR 与转写方案](ocr-asr-implementation-plan.md)：Native 使用 `node scripts/mote.mjs media-runtime --profile dev` 安装独立运行时，Docker 镜像已包含运行时，两者均在设置页安装模型。下面的手工启动方式供自定义部署使用。需要 Python 3.9+、FFmpeg 和 CPU 内存。推理用独立进程运行；每次只处理一个请求，退出时回收模型内存。服务只监听 127.0.0.1，中央服务与音频服务应在同一网络命名空间。
+受管理部署先参见 [OCR 与转写方案](ocr-asr-implementation-plan.md)：Native 启动时自动准备该 profile 的独立运行时（也可用 `node scripts/mote.mjs media-runtime --profile dev` 预装），Docker 镜像已包含运行时，两者均在设置页安装模型。下面的手工启动方式供自定义部署使用。需要 Python 3.9+、FFmpeg 和 CPU 内存。推理用独立进程运行；每次只处理一个请求，退出时回收模型内存。服务只监听 127.0.0.1，中央服务与音频服务应在同一网络命名空间。
 
 ```sh
 python3 -m venv .mote/audio/venv

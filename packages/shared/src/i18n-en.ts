@@ -5429,5 +5429,7 @@ export const english: Readonly<Record<string, string>> = {
   "Mote 页面受系统防截屏保护，已跳过；离开后自动恢复": "Mote pages are protected from screenshots. Collection resumes after leaving.",
   "屏幕采集：{0}": "Screen collection: {0}",
   "与中央资料库共用登录，回答和历史对话自动保存。": "Shares your central archive login. Answers and conversation history are saved automatically.",
-  "截图像素读取失败": "Unable to read screenshot pixels"
+  "截图像素读取失败": "Unable to read screenshot pixels",
+  "本地 OCR 服务正在准备，恢复后将自动继续。": "Local OCR is getting ready. Processing will resume automatically.",
+  "模型已安装，正在准备本地 OCR 服务；就绪后会自动处理": "Model installed. Local OCR is getting ready; processing will start automatically."
 };

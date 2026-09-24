@@ -2,6 +2,7 @@ import {moteText} from '@mote/shared/i18n';
 /** Display follows protocol codes, never provider text or semantic matching. The
  * server's allowedActions remains the authority for recovery controls. */
 const messages:Record<string,string>={
+ ocr_worker_unavailable:'本地 OCR 服务正在准备，恢复后将自动继续。',
  model_profile_missing:'所选模型配置不存在，请重新选择。',
  model_profile_read_only:'部署配置为只读，请复制为新预设后编辑。',
  model_profile_in_use:'该配置仍是某项功能的默认模型，请先修改功能默认值。',

@@ -1,7 +1,8 @@
 // Private bounded stdout/stderr supervisor. The CLI records this process's unique marker.
 import { spawn } from 'node:child_process';
-import { appendFileSync, statSync, renameSync, rmSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { appendFileSync, statSync, renameSync, rmSync, mkdirSync, chmodSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { startMediaWorkers } from './media-workers.mjs';
 
 const [entry, logPath, marker] = process.argv.slice(2);
 if (!entry || !logPath || !/^--mote-instance=[a-f0-9-]{36}$/.test(marker ?? '')) throw Error('Invalid central supervisor invocation');
@@ -50,28 +51,8 @@ function safeWrite(line) {
 }
 if (size(logPath) >= maxBytes) rotate();
 const child = spawn(process.execPath, [entry, marker], { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
-const workers=[];
-let stopping=false;
-if(process.env.MOTE_MEDIA_MODEL_DIR&&process.env.MOTE_MEDIA_WORKER_TOKEN){
-  const root=process.env.MOTE_MEDIA_MODEL_DIR;
-  const executable=process.env.MOTE_MEDIA_PYTHON&&existsSync(process.env.MOTE_MEDIA_PYTHON)?process.env.MOTE_MEDIA_PYTHON:'python3';
-  const env={PATH:process.env.PATH??'',HOME:process.env.HOME??'',LANG:process.env.LANG??'C.UTF-8',TMPDIR:process.env.TMPDIR??'/tmp',PYTHONUNBUFFERED:'1',MOTE_MEDIA_WORKER_TOKEN:process.env.MOTE_MEDIA_WORKER_TOKEN};
-  const specs=[
-    ['ocr',join(process.cwd(),'scripts/ocr-server.py'),['--model-root',join(root,'ocr'),'--port',process.env.MOTE_MEDIA_OCR_PORT??'9010']],
-    ['asr',join(process.cwd(),'scripts/transcription-server.py'),['--model',join(root,'dialogue'),'--segmentation-model',join(root,'dialogue/segmentation.onnx'),'--speaker-model',join(root,'dialogue/speaker.onnx'),'--port',process.env.MOTE_MEDIA_ASR_PORT??'9009']],
-  ];
-  for(const [name,script,args] of specs){
-    const slot={name,child:null,timer:null};workers.push(slot);
-    const launch=()=>{
-      if(stopping)return;
-      const worker=spawn(executable,[script,...args],{cwd:process.cwd(),env,stdio:'ignore'});slot.child=worker;
-      worker.on('error',()=>{});
-      worker.on('close',()=>{if(slot.child===worker)slot.child=null;if(!stopping)slot.timer=setTimeout(launch,5000);});
-    };
-    launch();
-  }
-}
-function stopWorkers(){stopping=true;for(const slot of workers){if(slot.timer)clearTimeout(slot.timer);slot.child?.kill('SIGTERM');}}
+const workers = startMediaWorkers({ report: event => { safeWrite(JSON.stringify({event}) + '\n'); flush(); } });
+function stopWorkers(){void workers.close();}
 const events = new Set(['server.listening', 'server.stopped', 'server.stop_failed', 'server.start_failed']);
 const categories = new Set(['data_directory_in_use', 'port_in_use', 'permission', 'startup', 'shutdown', 'configuration']);
 const fields = new Set(['MOTE_RUNTIME', 'MOTE_PUBLIC_URL', 'MOTE_CONFIG_FILE', 'MOTE_STORAGE_KIND', 'MOTE_STORAGE_SOURCE', 'MOTE_STORAGE_MOUNT', 'MOTE_TUNNEL_ENABLED', 'MOTE_TUNNEL_PROVIDER', 'MOTE_TUNNEL_PROTOCOL', 'MOTE_ALLOWED_ORIGINS', 'MOTE_MODEL_BASE_URL', 'MOTE_MODEL_API_KEY', 'MOTE_MODEL', 'MOTE_EMBEDDING_MODEL', 'MOTE_EMBEDDING_API_KEY', 'MOTE_ENV_FILE', 'MOTE_PROFILE', 'MOTE_DATA_DIR', 'MOTE_PORT', 'MOTE_TOKEN', 'MOTE_DATA_KEY', 'MOTE_LOG_LEVEL', 'MOTE_MODEL_REASONING_EFFORT', 'MOTE_MODEL_MAX_TOKENS', 'MOTE_MODEL_REQUEST_TIMEOUT_MS', 'MOTE_AGENT_TIMEOUT_MS','MOTE_AGENT_CONCURRENCY','MOTE_LLM_CONCURRENCY','MOTE_MEMORY_CONCURRENCY', 'MOTE_MODEL_TIMEOUT_MS', 'MOTE_MAX_STORAGE_MB', 'MOTE_MAX_EXPORT_MB', 'MOTE_RETENTION_DAYS', 'MOTE_INSIGHT_INTERVAL_HOURS', 'MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL', 'MOTE_DIAGNOSTICS_ENABLED', 'MOTE_DEBUG', 'MOTE_AGENT_TRACE_ENABLED', 'MOTE_LOG_DIR', 'MOTE_LOG_MAX_MB', 'MOTE_LOG_MAX_FILES', 'MOTE_LOG_MAX_ENTRIES', 'MOTE_EMBEDDING_BASE_URL']);

@@ -6,6 +6,14 @@ import {Store,StoreError,sha256} from './store.js';
 import type {FileProcessorRuntime} from './file-processors.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
 const managedOcrEndpoint=()=>process.env.MOTE_MEDIA_OCR_ENDPOINT??'http://127.0.0.1:9010/ocr';
+async function managedOcrReady(){
+  const token=process.env.MOTE_MEDIA_WORKER_TOKEN;if(!token)return false;
+  const url=new URL(managedOcrEndpoint());url.pathname='/health';
+  try{const response=await fetch(url,{headers:{Authorization:`Bearer ${token}`},redirect:'error',signal:AbortSignal.timeout(1200)});
+    if(!response.ok)return false;const value=await response.json() as {version?:number;execution?:string;ocr?:boolean};
+    return value.version===1&&value.execution==='local'&&value.ocr===true;
+  }catch{return false;}
+}
 
 const endpoint=z.string().max(2048).refine(value=>{if(!value)return true;try{const u=new URL(value);return ['http:','https:'].includes(u.protocol)&&!u.username&&!u.password&&!u.search&&!u.hash&&(u.protocol==='https:'||['127.0.0.1','localhost','[::1]'].includes(u.hostname));}catch{return false;}},'Use HTTPS or loopback HTTP');
 export const perceptionSettingsSchema=z.object({
@@ -20,7 +28,8 @@ export class Perception {
   readonly engine:ExecutionEngine;private owned:boolean;private closed=false;
   private inFlight=new Map<string,Promise<unknown>>();
   private historicalPreviews=new Map<string,{expires:number;items:{id:string;hash:string}[]}>();
-  constructor(private store:Store,private runtime:FileProcessorRuntime,engine?:ExecutionEngine,private mediaAssets?:MediaAssets){
+  private workerReady=false;private workerCheckedAt=0;private workerProbe?:Promise<void>;
+  constructor(private store:Store,private runtime:FileProcessorRuntime,engine?:ExecutionEngine,private mediaAssets?:MediaAssets,private probeOcr:()=>Promise<boolean>=managedOcrReady){
     this.engine=engine??new ExecutionEngine(store);this.owned=!engine;
     if(mediaAssets&&!store.db.prepare("SELECT 1 FROM settings WHERE key='managed-ocr-v1'").get()){
       const row=store.db.prepare("SELECT value FROM settings WHERE key='perception'").get();
@@ -45,6 +54,7 @@ export class Perception {
     if(!settings.enabled)return new ExecutionFailure('blocked','processing_disabled');
     if(!url)return new ExecutionFailure('blocked','provider_not_configured');
     if(kind==='ocr'&&url===managedOcrEndpoint()&&this.mediaAssets&&!this.mediaAssets.ready('ocr'))return new ExecutionFailure('blocked','model_missing');
+    if(kind==='ocr'&&url===managedOcrEndpoint()&&this.mediaAssets&&!this.workerReady)return new ExecutionFailure('waiting','ocr_worker_unavailable',5000);
     if(!settings.allowExternalProcessing&&!['localhost','127.0.0.1','[::1]'].includes(new URL(url).hostname))return new ExecutionFailure('blocked','external_processing_disabled');
     try{const processor=this.runtime.registry.get(kind==='ocr'?settings.ocrProcessorId:settings.semanticProcessorId);if(step.input.processorVersion&&step.input.processorVersion!==processor.version)return new ExecutionFailure('blocked','processor_version_unavailable');}catch{return new ExecutionFailure('blocked','processor_unavailable');}
   }
@@ -91,9 +101,30 @@ export class Perception {
     }catch(error){db.exec('ROLLBACK');throw error;}
   }
   /** Compatibility helper for callers/tests; production ticks the shared engine. */
-  async tick(){const ids=this.prepare(true);await this.engine.drain(ids);}
+  async tick(){await this.refreshWorker();const ids=this.prepare(true);await this.engine.drain(ids);}
+  private refreshWorker(){
+    if(this.closed||!this.mediaAssets||this.settings().ocrEndpoint!==managedOcrEndpoint())return Promise.resolve();
+    if(!this.mediaAssets.ready('ocr')){this.workerReady=false;return Promise.resolve();}
+    if(this.workerProbe)return this.workerProbe;
+    this.workerProbe=(async()=>{
+      const ready=await this.probeOcr().catch(()=>false);if(this.closed||this.settings().ocrEndpoint!==managedOcrEndpoint())return;
+      this.workerReady=ready;this.workerCheckedAt=Date.now();
+      if(ready)for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind='perception.ocr' AND state='waiting' AND error='ocr_worker_unavailable'").all()){
+        const step=this.engine.get(String(row.id));if(step&&this.valid(step))this.engine.retry(step.id,false);
+      }
+      // Recover old connection failures once, only after the managed worker loads its model.
+      // Historical opt-in jobs and genuine repeated processor failures remain bounded.
+      if(ready&&!this.store.db.prepare("SELECT 1 FROM settings WHERE key='ocr-worker-recovery-v1'").get()){
+        const rows=this.store.db.prepare("SELECT capture_id FROM perception_jobs WHERE kind='ocr' AND auto_eligible=1 AND state='failed' AND error='processor_failed'").all();
+        for(const row of rows)if(this.store.imageReference(String(row.capture_id))?.blobHash)this.retry(String(row.capture_id),'ocr');
+        this.store.db.prepare("INSERT INTO settings(key,value) VALUES('ocr-worker-recovery-v1','1')").run();
+      }
+    })().finally(()=>{this.workerProbe=undefined;});
+    return this.workerProbe;
+  }
   prepare(skipActive=false){
     if(this.closed)return [];
+    if(Date.now()-this.workerCheckedAt>=5000)void this.refreshWorker().catch(()=>{});
     if(this.mediaAssets?.ready('ocr'))this.store.db.prepare("UPDATE perception_jobs SET state='waiting',error=NULL,available_at=0 WHERE kind='ocr' AND auto_eligible=1 AND state='blocked' AND error='model_missing'").run();
     const settings=this.settings(),now=Date.now(),ids:string[]=[];
     for(const kind of ['ocr','semantic'] as const){

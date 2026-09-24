@@ -32,19 +32,9 @@ def main():
         return (root / 'complete.json').is_file() and all((root / name).is_file() for name in (
             'det/inference.onnx', 'det/inference.yml', 'rec/inference.onnx', 'rec/inference.yml'))
 
-    def recognize(image):
+    def load_model():
         nonlocal pipeline, pipeline_marker
-        from PIL import Image
-        import numpy as np
         from paddlex.inference.pipelines import create_pipeline, load_pipeline_config
-        Image.MAX_IMAGE_PIXELS = 40_000_000
-        try:
-            with Image.open(io.BytesIO(image)) as opened:
-                if opened.format not in ('PNG', 'JPEG', 'WEBP') or opened.width * opened.height > 40_000_000 or max(opened.size) > 12000:
-                    raise UnsupportedImage('Image format or dimensions unsupported')
-                pixels = np.asarray(opened.convert('RGB'))
-        except (ValueError, OSError) as error:
-            raise UnsupportedImage('Image could not be decoded') from error
         stamp = (root / 'complete.json').stat().st_mtime_ns
         if pipeline is None or pipeline_marker != stamp:
             config = load_pipeline_config('OCR')
@@ -54,6 +44,19 @@ def main():
             config['SubModules']['TextRecognition'].update(model_name='PP-OCRv5_mobile_rec', model_dir=str(root / 'rec'))
             pipeline = create_pipeline(config=config, engine='onnxruntime', device='cpu')
             pipeline_marker = stamp
+
+    def recognize(image):
+        from PIL import Image
+        import numpy as np
+        Image.MAX_IMAGE_PIXELS = 40_000_000
+        try:
+            with Image.open(io.BytesIO(image)) as opened:
+                if opened.format not in ('PNG', 'JPEG', 'WEBP') or opened.width * opened.height > 40_000_000 or max(opened.size) > 12000:
+                    raise UnsupportedImage('Image format or dimensions unsupported')
+                pixels = np.asarray(opened.convert('RGB'))
+        except (ValueError, OSError) as error:
+            raise UnsupportedImage('Image could not be decoded') from error
+        load_model()
         segments = []
         for result in pipeline.predict(pixels):
             data = result.json.get('res', result.json)
@@ -85,7 +88,21 @@ def main():
             if not self.authorized():
                 self.send_error(401)
             elif self.path == '/health':
-                self.send_json({'version': 1, 'execution': 'local', 'ocr': ready()})
+                # Readiness includes dependencies and model loading, not only files.
+                # The worker can start before model installation and load it later.
+                available = False
+                if ready():
+                    if busy.acquire(blocking=False):
+                        try:
+                            load_model()
+                            available = True
+                        except Exception:
+                            pass
+                        finally:
+                            busy.release()
+                    else:
+                        available = pipeline is not None and pipeline_marker == (root / 'complete.json').stat().st_mtime_ns
+                self.send_json({'version': 1, 'execution': 'local', 'ocr': available})
             else:
                 self.send_error(404)
 

@@ -43,12 +43,14 @@ OCR Worker 使用 PaddleX 的 OCR pipeline，显式指定两个本地 PP-OCRv5 m
 
 ## 部署操作
 
-Native profile 先安装 Python 运行时和系统 FFmpeg，随后在网页分别安装 OCR 与音频模型：
+Native profile 的正式启动和 `scripts/dev-server.mjs` 开发启动都会在后台自动准备独立 Python 运行时并启动 Worker；首次安装需要网络，失败后每 30 秒重试。系统需提供 Python 3.9+，音频处理另需 FFmpeg。模型可以在启动后从网页安装，无需重启。也可先停止 profile，手工预装运行时：
 
 ```sh
 node scripts/mote.mjs media-runtime --profile dev --python python3
 # 然后正常启动该 profile，在中央感知和文件处理设置页点安装模型
 ```
+
+启动时会核对依赖版本标记和导入检查，已就绪则复用；安装子进程不接收中央凭据。Worker 健康检查实际加载 OCR 模型，未就绪时任务等待，不消耗识别重试次数。首次确认 Worker 就绪时会恢复旧版本自动处理任务的 `processor_failed` 失败；历史未授权截图不会回扫，之后的真实处理错误仍受重试上限限制。
 
 `media-runtime` 安装 pinned Python 依赖到该 profile 的 `media-venv`，要求先停止该 profile；Python 3.9+ 且具有对应平台 wheel。Docker 镜像构建时安装 FFmpeg 和相同依赖，Compose 同时启动中央、OCR 与 ASR sidecar。模型卷独立于归档卷；恢复资料备份后需重新安装或导入权重。
 
@@ -66,3 +68,13 @@ OCR 目录需有 `det.tar`、`rec.tar`。音频目录需有 `config.json`、`mod
 自动化 fixture 验证默认策略、旧任务隔离、模型缺失后恢复、预览确认、原件不变、检查点复用、索引和密钥隐藏。Native macOS arm64 上安装了 pinned Python 依赖，用生成图片通过真实 OCR Worker 识别出 `MOTE OCR TEST 123`；系统合成的中文语音经真实 faster-whisper 得到正确转写，sherpa-onnx 返回一个匿名说话人片段。中央归档 → OCR Worker → 索引，以及音频归档 → ASR Worker → 说话人分离 → 对齐产物的生成素材端到端检查也已通过。当前执行环境没有 Docker 命令，因此 Docker 镜像构建和 Linux amd64 运行需在有 Docker 的 CI 或目标主机验收；物理手机同步与真人录音质量也不由 fixture 测试替代。未经明确同意，不使用真实个人截图或录音做测试。
 
 可进一步执行的发布门槛是 Docker Linux amd64 构建与生成素材端到端验收、Native 重启和依赖更新演练、模型下载中断恢复、长音频 CPU/内存测量，以及用户设备的实际同步验证。尚未执行的项在 PR 中如实标注。
+
+### Native 启动恢复回归验证
+
+2026-09-24：`npm run check:local` 通过。新增测试覆盖依赖首次安装、标记复用和损坏修复、安装失败不写就绪标记、Worker 异常重启与父进程退出清理、等待服务不消耗 OCR 尝试次数，以及旧失败任务恢复与历史任务隔离。
+
+macOS arm64 的临时 Python 3.9.6 环境中，使用实际 pinned 依赖和已下载的 PP-OCRv5 模型运行下列检查：Worker 在模型目录不存在时先启动，原子安装模型后无需重启，成功识别生成图片中的 `MOTE OCR TEST 123`。只使用生成图片和回环 HTTP，未使用真实个人截图；未验证物理设备或 Docker。
+
+```sh
+node scripts/test-ocr-runtime.mjs --python /path/to/media-venv/bin/python --model-root /path/to/models/ocr
+```
