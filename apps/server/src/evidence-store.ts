@@ -70,9 +70,9 @@ export class EvidenceStore {
       CREATE TABLE IF NOT EXISTS perception_jobs(capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,kind TEXT NOT NULL,state TEXT NOT NULL,created_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,available_at INTEGER NOT NULL DEFAULT 0,requested INTEGER NOT NULL DEFAULT 0,error TEXT,PRIMARY KEY(capture_id,kind));
       CREATE TABLE IF NOT EXISTS perception_results(id TEXT PRIMARY KEY,capture_id TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,kind TEXT NOT NULL,fingerprint TEXT NOT NULL,json TEXT NOT NULL,current INTEGER NOT NULL DEFAULT 1);
       CREATE INDEX IF NOT EXISTS perception_cache ON perception_results(fingerprint);
-      CREATE TRIGGER IF NOT EXISTS perception_ingest AFTER INSERT ON captures WHEN new.blob_hash IS NOT NULL AND json_extract(new.json,'$.source')='screen' BEGIN
+      DROP TRIGGER IF EXISTS perception_ingest;
+      CREATE TRIGGER perception_ingest AFTER INSERT ON captures WHEN new.blob_hash IS NOT NULL AND json_extract(new.json,'$.source')='screen' BEGIN
         INSERT INTO perception_jobs(capture_id,kind,state,created_at) VALUES(new.id,'ocr','waiting',CAST(strftime('%s','now') AS INTEGER)*1000);
-        INSERT INTO perception_jobs(capture_id,kind,state,created_at) VALUES(new.id,'semantic','waiting',CAST(strftime('%s','now') AS INTEGER)*1000);
       END;
       CREATE INDEX IF NOT EXISTS captures_vectors ON captures(embedding_model,captured_at DESC,id) WHERE embedding IS NOT NULL;
       CREATE INDEX IF NOT EXISTS captures_time ON captures(captured_at DESC,id DESC);
@@ -156,7 +156,7 @@ export class EvidenceStore {
     }
     if(!this.db.prepare("SELECT 1 FROM settings WHERE key='fts-rowid-v2'").get())this.db.exec(`BEGIN IMMEDIATE;
       DELETE FROM captures_fts; DELETE FROM captures_trigram;
-      INSERT INTO captures_fts(rowid,id,text) SELECT rowid,id,mote_search_text(json)||COALESCE((SELECT group_concat(json_extract(p.json,'$.text'),' ') FROM perception_results p WHERE p.capture_id=captures.id AND p.current=1),'') FROM captures;
+      INSERT INTO captures_fts(rowid,id,text) SELECT rowid,id,mote_search_text(json)||COALESCE((SELECT group_concat(json_extract(p.json,'$.text'),' ') FROM perception_results p WHERE p.capture_id=captures.id AND p.kind='ocr' AND p.current=1),'') FROM captures;
       INSERT INTO captures_trigram(rowid,id,text) SELECT rowid,id,text FROM captures_fts;
       INSERT INTO settings VALUES('fts-rowid-v2','1'); COMMIT;`);
     this.db.exec('CREATE TRIGGER IF NOT EXISTS captures_words_delete BEFORE DELETE ON captures BEGIN DELETE FROM captures_fts WHERE rowid=old.rowid; END;');
@@ -169,12 +169,13 @@ export class EvidenceStore {
     if(!options.maintenance)this.sweep();
   }
   private record(row:Row):CaptureRecord {
-    const derived=this.db.prepare('SELECT kind,json FROM perception_results WHERE capture_id=? AND current=1').all(row.id).map(r=>({kind:String(r.kind),...JSON.parse(String(r.json))}));
-    const ocr=derived.find(r=>r.kind==='ocr'),semantic=derived.find(r=>r.kind==='semantic');
-    const jobs=row.blob_hash?this.db.prepare('SELECT kind,state,error FROM perception_jobs WHERE capture_id=?').all(row.id):[];
+    const ocrRow=this.db.prepare("SELECT json FROM perception_results WHERE capture_id=? AND kind='ocr' AND current=1").get(row.id);
+    const ocr=ocrRow?JSON.parse(String(ocrRow.json)):undefined;
+    const jobs=row.blob_hash?this.db.prepare("SELECT kind,state,error FROM perception_jobs WHERE capture_id=? AND kind='ocr'").all(row.id):[];
     const original=JSON.parse(row.json);
     const ocrJob=!original.ocrText&&original.ocr?.status==='disabled'?jobs.find(j=>j.kind==='ocr'):undefined;
-    return {...original,...(ocr?{ocrText:ocr.text,ocr:{status:'completed',updatedAt:ocr.generatedAt}}:ocrJob?{ocr:{status:ocrJob.state==='failed'?'failed':'pending'}}:{}),...(derived.length?{perception:{results:derived.map((r:Record<string,unknown>)=>{const {transcript,text,...metadata}=r;return {...metadata,textLength:typeof text==='string'?text.length:0};}),layers:derived.map(r=>r.kind==='ocr'?'L1':'L2')}}:{}),...(row.blob_hash?{perceptionJobs:jobs}:{}),receivedAt:row.received_at,blobHash:row.blob_hash,imageMime:row.mime,indexingStatus:row.index_status,...(semantic?{summary:semantic.text}:row.summary?{summary:row.summary}:{})};
+    const {transcript:_,text:ocrText,...ocrMetadata}=ocr??{};
+    return {...original,...(ocr?{ocrText:ocr.text,ocr:{status:'completed',updatedAt:ocr.generatedAt}}:ocrJob?{ocr:{status:ocrJob.state==='failed'?'failed':'pending'}}:{}),...(ocr?{perception:{results:[{kind:'ocr',...ocrMetadata,textLength:typeof ocrText==='string'?ocrText.length:0}],layers:['L1']}}:{}),...(row.blob_hash?{perceptionJobs:jobs}:{}),receivedAt:row.received_at,blobHash:row.blob_hash,imageMime:row.mime,indexingStatus:row.index_status,...(row.summary?{summary:row.summary}:{})};
   }
   private clauses(range:Range={}) {
     const clauses:string[]=["(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=captures.id) OR EXISTS(SELECT 1 FROM source_heads h WHERE h.capture_id=captures.id AND h.deleted=0) OR id IN (SELECT capture_id FROM file_heads))"]; const values:(string|number)[]=[];
@@ -328,7 +329,7 @@ export class EvidenceStore {
       for(const c of connections){const prior=this.db.prepare('SELECT json FROM source_connections WHERE id=?').get(c.id) as {json:string}|undefined;if(prior){const original=JSON.parse(prior.json);if(original.deviceId!==c.deviceId||original.kind!==c.kind)throw new StoreError('Source identity conflict',409);}else this.db.prepare('INSERT INTO source_connections(id,json) VALUES(?,?)').run(c.id,JSON.stringify({...c,enabled:false}));}
       for(const rawVersion of archive.sourceVersions??[]){const v=rawVersion as Record<string,unknown>;if(typeof v.capture_id!=='string'||typeof v.source_id!=='string'||typeof v.external_id!=='string'||typeof v.revision!=='string'||typeof v.hash!=='string'||!(/^[a-f0-9]{64}$/.test(v.hash)))throw new StoreError('Invalid source revision');const e=this.evidence([v.capture_id])[0];if(!e?.provenance||e.provenance.sourceId!==v.source_id||e.provenance.externalId!==v.external_id||e.provenance.revision!==v.revision||!this.db.prepare('SELECT id FROM source_connections WHERE id=?').get(v.source_id))throw new StoreError('Source revision evidence mismatch');const p=e.provenance;const {observedAt:_,...semantic}=sourceItemSchema.parse({externalId:p.externalId,revision:p.revision,observedAt:e.capturedAt,modifiedAt:p.modifiedAt,title:e.windowTitle,text:p.deleted||p.layer==='reference'?'':e.ocrText,uri:p.uri,kind:e.source,layer:p.layer,mimeType:p.mimeType,calendar:p.calendar,deleted:p.deleted,metadata:p.metadata,document:p.document});if(sha256(JSON.stringify(semantic))!==v.hash)throw new StoreError('Source revision checksum mismatch');this.db.prepare('INSERT OR IGNORE INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(v.source_id,v.external_id,v.revision,v.capture_id,v.hash);}
       for(const rawHead of archive.sourceHeads??[]){const h=rawHead as Record<string,unknown>;if(typeof h.capture_id!=='string'||typeof h.source_id!=='string'||typeof h.external_id!=='string'||typeof h.observed_at!=='string'||!Number.isFinite(Date.parse(h.observed_at))||![0,1].includes(Number(h.deleted)))throw new StoreError('Invalid source pointer');const v=this.db.prepare('SELECT capture_id FROM source_versions WHERE source_id=? AND external_id=? AND capture_id=?').get(h.source_id,h.external_id,h.capture_id);if(!v)throw new StoreError('Source pointer has no revision');const e=this.evidence([h.capture_id])[0];if(!e||Date.parse(h.observed_at)!==Date.parse(e.capturedAt)||Number(h.deleted)!==Number(e.provenance?.deleted))throw new StoreError('Source pointer metadata mismatch');const priorHead=this.db.prepare('SELECT capture_id,observed_at FROM source_heads WHERE source_id=? AND external_id=?').get(h.source_id,h.external_id) as {capture_id:string;observed_at:string}|undefined;if(priorHead&&Date.parse(priorHead.observed_at)===Date.parse(h.observed_at)&&priorHead.capture_id!==h.capture_id)throw new StoreError('Equal observation times contain conflicting source heads',409);const moved=this.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted WHERE excluded.observed_at>source_heads.observed_at').run(h.source_id,h.external_id,h.capture_id,new Date(h.observed_at).toISOString(),Number(h.deleted));if(moved.changes&&priorHead&&priorHead.capture_id!==h.capture_id){this.invalidateMemoryEvidence(priorHead.capture_id);this.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(priorHead.capture_id,new Date().toISOString());}}
-      const perceptionRows=z.array(z.object({capture_id:z.string().uuid(),kind:z.enum(['ocr','semantic']),json:z.string().max(2000000),current:z.number().int().min(0).max(1)})).max(100000).parse(archive.perceptionResults??[]);
+      const perceptionRows=z.array(z.object({capture_id:z.string().uuid(),kind:z.literal('ocr'),json:z.string().max(2000000),current:z.number().int().min(0).max(1)})).max(100000).parse(archive.perceptionResults??[]);
       for(const row of perceptionRows){
         const result=z.object({id:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),text:z.string().max(100000),inputHash:z.string(),engine:z.string().max(100),engineVersion:z.string().max(100),configRevision:z.string().max(128),generatedAt:z.string().datetime(),transcript:z.unknown()}).parse(JSON.parse(row.json));
         if(this.imageReference(row.capture_id)?.blobHash!==result.inputHash)throw new StoreError('Perception input mismatch');
@@ -459,7 +460,7 @@ export class EvidenceStore {
   imageReference(id:string) {
     return this.db.prepare('SELECT device_id AS deviceId,blob_hash AS blobHash FROM captures WHERE id=?').get(id) as {deviceId:string;blobHash:string|null}|undefined;
   }
-  savePerception(id:string,kind:string,result:{id:string;text:string;fingerprint:string;[key:string]:unknown},projectState=true) {
+  savePerception(id:string,kind:'ocr',result:{id:string;text:string;fingerprint:string;[key:string]:unknown},projectState=true) {
     if(!this.imageReference(id)?.blobHash)throw new StoreError('Capture not found',404);
     const before=this.evidence([id])[0];
     const previousText=searchText(before)+'\n'+(before.summary??'');
@@ -514,7 +515,7 @@ export class EvidenceStore {
     if(!range.query?.trim()){const page=this.list(range);return {...page,retrieval:{mode:'lexical' as const,degraded:false}};}
     const {cursor:_cursor,...scope}=range;
     const {where,values}=this.clauses(scope); const conjunction=where?' AND ':' WHERE ';
-    const lexical=textSearch(range.query,{id:'captures.id',text:"(mote_search_text(captures.json) || coalesce((SELECT group_concat(json_extract(json,'$.text'),' ') FROM perception_results WHERE capture_id=captures.id AND current=1),''))",words:'captures_fts',trigrams:'captures_trigram'});
+    const lexical=textSearch(range.query,{id:'captures.id',text:"(mote_search_text(captures.json) || coalesce((SELECT group_concat(json_extract(json,'$.text'),' ') FROM perception_results WHERE capture_id=captures.id AND kind='ocr' AND current=1),''))",words:'captures_fts',trigrams:'captures_trigram'});
     let position:{t:string;id:string}|undefined;
     if(range.cursor){try{position=z.object({t:z.string().datetime(),id:z.string().uuid()}).strict().parse(JSON.parse(Buffer.from(range.cursor,'base64url').toString()));}catch{throw new StoreError('Invalid search cursor');}}
     const seek=position?` AND (context_at<? OR (context_at=? AND captures.id<?))`:'';
@@ -635,7 +636,7 @@ export class EvidenceStore {
     if(estimated>maxBytes||stats.captures>20000)throw new StoreError('Archive too large for HTTP export; use npm run backup for a consistent database backup',413);
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
-    const archive={todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare('SELECT capture_id,kind,json,current FROM perception_results').all(),version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
+    const archive={todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;
   }
