@@ -36,7 +36,7 @@ const server = createServer(async (req, res) => {
   if (req.url === '/api/connections/self') {
     const isOwner = req.headers.authorization === 'Bearer ' + owner;
     if (!isOwner && req.headers.authorization !== 'Bearer ' + responseToken) { res.writeHead(401); res.end('{}'); return; }
-    res.end(JSON.stringify({ credential: { id: isOwner ? 'fixture-owner' : 'fixture-collector', scope: isOwner ? 'owner' : 'collector', label: 'Synthetic', ...(!isOwner ? { deviceId: config.deviceId } : {}) }, node: { version: 'synthetic', profile: 'test' }, capabilities: { ingest: true, ownSources: true, archiveRead: isOwner } })); return;
+    res.end(JSON.stringify({ credential: { id: isOwner ? 'fixture-owner' : 'fixture-collector', scope: isOwner ? 'owner' : 'collector', label: 'Synthetic', ...(!isOwner ? { deviceId: config.deviceId } : {}) }, node: { version: 'synthetic', profile: 'test' }, capabilities: { ingest: true, ingressVersion: 2, ownSources: true, archiveRead: isOwner } })); return;
   }
   if (req.url === '/api/captures') { const body = JSON.parse(Buffer.concat(chunks).toString()); uploadBodies.push(body); if (!uploadsAllowed || req.headers.authorization !== 'Bearer ' + responseToken) { res.writeHead(401); res.end('{}'); return; } res.end(JSON.stringify({ id: body.id })); return; }
   if (req.url === '/api/fixture-owner') { ownerApiHeaders.push(req.headers.authorization); res.end('{}'); return; }

@@ -29,7 +29,7 @@ const freePort = () => new Promise(resolve => { const server = createServer(); s
     const flow = new ConnectionOnboarding(), preview = flow.preview(JSON.stringify(invitation));
     const redeemed = await flow.redeem(preview.id, preview.serverUrl, original, 'macos'); assert.notEqual(redeemed.token, owner);
     const config = { ...updateConfig(original, { ...original, serverUrl: redeemed.serverUrl, token: redeemed.token }), credentialScope: redeemed.scope };
-    const identity = await testConnection(config); assert.equal(identity.credential.deviceId, original.deviceId); assert.equal(identity.credential.scope, 'collector');
+    const identity = await testConnection(config); assert.equal(identity.credential.deviceId, original.deviceId); assert.equal(identity.credential.scope, 'collector'); assert.equal(identity.capabilities.ingressVersion, 2);
     const profile = join(root, 'profile'); const store = new ConfigStore(profile, { available: () => true, encrypt: value => Buffer.from(value).map(v => v ^ 71), decrypt: value => Buffer.from(value).map(v => v ^ 71).toString() });
     await store.save(config); const reloaded = await store.load(); assert.equal(reloaded.deviceId, original.deviceId); assert.deepEqual(reloaded.masks, original.masks); assert(!String(await readFile(join(profile, 'config.json'))).includes(redeemed.token));
     const queue = new DurableQueue(join(profile, 'queue'), config); await queue.initialize();
