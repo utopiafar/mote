@@ -160,6 +160,7 @@ export class ConnectorRegistry {
       });
     }
   }
+  inventory(){return this.instances.map(({manifest})=>({id:manifest.id,version:String(manifest.apiVersion),sourceKinds:manifest.sourceKinds.map(k=>typeof k==='string'?k:k.kind),active:!this.closed}));}
   async close(){
     if(this.closed)return;
     this.closed=true;
