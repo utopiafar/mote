@@ -4,7 +4,7 @@ import { connectionUri } from '@mote/shared/connection';
 import { defaultConfig, updateConfig } from '../src/config';
 const now = 1789350000000, token = 'synthetic-collector-token-' + 'a'.repeat(32);
 const invitation = { format: 'mote.connection' as const, version: 1 as const, code: 'a'.repeat(43), serverUrl: 'https://central.example', expiresAt: new Date(now + 60000).toISOString() };
-const identity = { credential: { id: 'fixture-credential', scope: 'collector', label: 'Synthetic Mac', deviceId: 'fixture-device' }, node: { version: '0.6.0', profile: 'test' }, capabilities: { ingest: true, ownSources: true, archiveRead: false } };
+const identity = { credential: { id: 'fixture-credential', scope: 'collector', label: 'Synthetic Mac', deviceId: 'fixture-device' }, node: { version: '0.6.0', profile: 'test' }, capabilities: { ingest: true, ingressVersion: 2, ownSources: true, archiveRead: false } };
 function response(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } }); }
 it('previews JSON and URI without network or disclosing the invitation code, then requires the exact reviewed origin', async () => {
   let calls = 0; const value = new ConnectionOnboarding(async () => { calls++; return response({ serverUrl: invitation.serverUrl, token, credentialId: 'fixture-credential', scope: 'collector' }); }, () => now);
@@ -56,8 +56,8 @@ it('returns fixed network/409 errors without provider body or token leakage and 
 it('validates connection scope, device binding and bounded responses', async () => {
   const config = { serverUrl: invitation.serverUrl, token, deviceId: 'fixture-device' };
   const result = await testConnection(config, async (_url, init) => { expect(init?.headers).toEqual({ Authorization: 'Bearer ' + token, 'Accept-Language': 'zh-CN' }); expect(init?.redirect).toBe('error'); return response(identity); });
-  expect(result.credential.scope).toBe('collector'); expect(JSON.stringify(result)).not.toContain(token);
-  for (const bad of [{ ...identity, credential: { ...identity.credential, deviceId: 'other' } }, { ...identity, capabilities: { ...identity.capabilities, archiveRead: true } }, { ...identity, credential: { ...identity.credential, token } }]) await expect(testConnection(config, async () => response(bad))).rejects.toThrow();
+  expect(result.credential.scope).toBe('collector'); expect(result.capabilities.ingressVersion).toBe(2); expect(JSON.stringify(result)).not.toContain(token);
+  for (const bad of [{ ...identity, credential: { ...identity.credential, deviceId: 'other' } }, { ...identity, capabilities: { ...identity.capabilities, archiveRead: true } }, { ...identity, capabilities: { ...identity.capabilities, ingressVersion: '2' } }, { ...identity, credential: { ...identity.credential, token } }]) await expect(testConnection(config, async () => response(bad))).rejects.toThrow();
   await expect(testConnection(config, async () => new Response('x'.repeat(16385)))).rejects.toThrow();
 });
 it('blocks changing node or credential for pending screenshots, prepared notes, paused source bodies or in-flight work', () => {
