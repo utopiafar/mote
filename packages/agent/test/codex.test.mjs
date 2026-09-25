@@ -39,7 +39,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   send({id:m.id,result:{thread:{id:'thread-fixture'},approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
   turns++;
-  if(mode==='max'&&m.params.effort!=='max')process.exit(4);
+  if(['max','medium'].includes(mode)&&m.params.effort!==mode)process.exit(4);
   send({id:m.id,result:{turn:{id:'turn-fixture'}}});
   if(mode==='import'){send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
   if(mode==='structured-error'){send({method:'error',params:{threadId:'thread-fixture',willRetry:false,error:{codexErrorInfo:'usageLimitExceeded',message:'synthetic-private-secret'}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed'}}});return;}
@@ -68,6 +68,10 @@ test('Codex App Server exchanges scoped tools, validates citations and leaves no
 });
 test('Codex preserves the requested Max effort without silently downgrading it',async t=>{
   await fake(t,'max');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'max',timeoutMs:5000});t.after(()=>agent.close());
+  assert.equal((await agent.query({question:'Generated fixture'})).citations[0].id,record.id);
+});
+test('Codex passes the catalog medium effort to turn/start',async t=>{
+  await fake(t,'medium');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'medium',timeoutMs:5000});t.after(()=>agent.close());
   assert.equal((await agent.query({question:'Generated fixture'})).citations[0].id,record.id);
 });
 test('Codex errors and approval requests are rejected without exposing raw provider output',async t=>{

@@ -24,7 +24,7 @@ MOTE_AGENT_TIMEOUT_MS=600000
 
 使用 `MOTE_ENV_FILE` 选择独立配置文件，或通过 [环境 CLI](deployment.md) 启动。没有模型或凭据时 `/api/status` 返回 `agent.configured=false`，问答返回 503；采集、笔记、存档与时间线仍可使用。
 
-模型服务需要支持所选协议的流式输出和工具调用，不能把“兼容 OpenAI”理解成支持每个模型及参数。可选 DeepSeek、Chat Completions、Responses、Anthropic Messages、Google 原生 Gemini 五种 HTTP 协议，另支持 `codex-app-server` 本机协议。推理强度通常用 `auto` 交给模型决定；DeepSeek 预设保留既有的 `high` 默认，也可改成 `auto`。其余 `off`、`low`、`high`、`max` 需模型支持。输出预算默认 65,536 token，范围 1–128000，实际不得超过所选模型限制；提高预算可能增加耗时和费用。
+模型服务需要支持所选协议的流式输出和工具调用，不能把“兼容 OpenAI”理解成支持每个模型及参数。可选 DeepSeek、Chat Completions、Responses、Anthropic Messages、Google 原生 Gemini 五种 HTTP 协议，另支持 `codex-app-server` 本机协议。推理强度通常用 `auto` 交给模型决定；DeepSeek 预设保留既有的 `high` 默认，也可改成 `auto`。HTTP 协议的 `off`、`low`、`high`、`max` 需模型支持；Codex 的可用挡位按所选模型的 `model/list` 目录展示。输出预算默认 65,536 token，范围 1–128000，实际不得超过所选模型限制；提高预算可能增加耗时和费用。
 
 显式设置 `MOTE_MODEL_ALLOW_UNAUTHENTICATED_LOCAL=1` 可使用无需凭据的 loopback 模型服务。它不允许远端免密地址；容器内的 loopback 指容器自身。
 

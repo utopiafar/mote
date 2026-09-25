@@ -82,6 +82,14 @@ test('saved configuration is private, survives restart and takes precedence over
   await f.store.close(); assert.equal(f.disposed.length, 0, 'Store close does not cancel active requests');
 });
 
+test('Codex saves catalog effort levels while HTTP profiles retain their existing choices',async t=>{
+  const f=await fixture(t);await f.store.initialize();
+  await assert.rejects(f.store.update({revision:0,settings:{...input(),reasoningEffort:'ultra'}}),errorCode('model_settings_invalid'));
+  const view=await f.store.update({revision:0,settings:{...input(),provider:'codex',protocol:'codex-app-server',baseUrl:'',model:'fixture',reasoningEffort:'ultra',modelRequestTimeoutMs:null,agentTimeoutMs:null,apiKey:null,headers:null,extraBody:null}});
+  assert.equal(view.settings.reasoningEffort,'ultra');
+  assert.equal(f.store.current().reasoningEffort,'ultra');
+});
+
 test('reset persists a monotonic tombstone and uses current startup environment after restart', async t => {
   const f = await fixture(t); await f.store.initialize();
   await f.store.update({ revision: 0, settings: { ...input(), model: 'saved-synthetic-model', apiKey: 'saved-synthetic-key' } });
