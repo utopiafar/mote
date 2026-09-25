@@ -106,7 +106,7 @@ codex -c 'cli_auth_credentials_store="file"' login
 
 每次请求启动独立进程和临时 home，只链接登录文件，不继承个人 MCP、插件、hooks、历史会话或用户指令。查询使用只读沙箱、关闭环境访问与原生执行工具，动态工具仅调用 Mote 已有证据桥。当前验证过的 Codex 0.154.0 还会提供仅修改临时运行计划的 `update_plan`，不访问或修改用户资料。导入有单独的可写临时工作区，不接入归档查询工具；仍须经过原有预览、确认和宿主校验。
 
-App Server 的动态工具接口为实验接口，兼容性取决于安装的 CLI。配置警告、额外审批请求、未知执行工具和错误返回会终止请求；不会降级为另一个服务商。设置中的“单次模型请求超时”对 Codex Server 不适用：App Server 不把内部模型生成作为 Mote 可见的单次 Provider 请求；Mote 只可选择是否设置“Agent 总运行超时”，它覆盖整个 `turn` 及其中的工具循环，留空则不设置 Mote 总期限。响应字节预算仍由 Mote 限制，输出 token 上限由 Codex 管理，页面的 HTTP 输出预算不传给 Codex。`auto` 不指定推理强度，`off/low/high/max` 分别传递 `none/low/high/xhigh`，具体模型可能不支持全部档位。
+App Server 的动态工具接口为实验接口，兼容性取决于安装的 CLI。配置警告、额外审批请求、未知执行工具和错误返回会终止请求；不会降级为另一个服务商。设置中的“单次模型请求超时”对 Codex Server 不适用：App Server 不把内部模型生成作为 Mote 可见的单次 Provider 请求；Mote 只可选择是否设置“Agent 总运行超时”，它覆盖整个 `turn` 及其中的工具循环，留空则不设置 Mote 总期限。响应字节预算仍由 Mote 限制，输出 token 上限由 Codex 管理，页面的 HTTP 输出预算不传给 Codex。设置页从本机 `model/list` 读取所选模型的 `supportedReasoningEfforts` 和 `defaultReasoningEffort`；`auto` 不指定推理强度，旧设置 `off` 对应 App Server 的 `none`，其余挡位按原值传给 `turn/start.effort`。目录不可用或手动填写目录外模型时，页面仍显示通用选项，具体支持情况须通过测试连接验证。
 
 ## 环境配置与保存位置
 

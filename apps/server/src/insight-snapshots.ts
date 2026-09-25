@@ -9,9 +9,9 @@ function selection(scope:Scope){return {where:current+(scope.after?' AND c.conte
 function evidenceFingerprint(store:Store,scope:Scope){
  const {where,args}=selection(scope),hash=createHash('sha256');let records=0,referenceOnlyRecords=0,pendingProcessing=0;
  for(const row of store.db.prepare(`SELECT c.id,c.fingerprint,c.context_at,c.context_end,json_extract(c.json,'$.stateSeries.samples') samples,CASE WHEN json_type(c.json,'$.stateSeries') IS NOT NULL THEN json_remove(c.json,'$.stateSeries') END state,json_extract(c.json,'$.provenance.layer') layer,
-  (SELECT group_concat(id,',') FROM (SELECT id FROM perception_results WHERE capture_id=c.id AND current=1 ORDER BY id)) perception,
+  (SELECT group_concat(id,',') FROM (SELECT id FROM perception_results WHERE capture_id=c.id AND kind='ocr' AND current=1 ORDER BY id)) perception,
   (SELECT group_concat(id,',') FROM (SELECT id FROM file_artifacts WHERE capture_id=c.id AND current=1 ORDER BY id)) files,
-  EXISTS(SELECT 1 FROM perception_jobs WHERE capture_id=c.id AND state NOT IN ('succeeded','blocked')) OR EXISTS(SELECT 1 FROM file_jobs WHERE capture_id=c.id AND state!='succeeded') pending
+  EXISTS(SELECT 1 FROM perception_jobs WHERE capture_id=c.id AND kind='ocr' AND state NOT IN ('succeeded','blocked')) OR EXISTS(SELECT 1 FROM file_jobs WHERE capture_id=c.id AND state!='succeeded') pending
   FROM captures c WHERE ${where} ORDER BY c.id`).iterate(...args)){
   records++;if(row.layer==='reference')referenceOnlyRecords++;if(row.pending)pendingProcessing++;
   const samples=row.samples?(JSON.parse(String(row.samples)) as {at:string;durationMs:number}[]).filter(sample=>(!scope.after||Date.parse(sample.at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(sample.at)-sample.durationMs<Date.parse(scope.before))).map(sample=>[sample.at,sample.durationMs]):undefined;

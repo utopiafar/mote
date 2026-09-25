@@ -31,10 +31,10 @@ test('Codex discovery only initializes and pages model/list, then closes the chi
     child.kill=()=>{killed=true;queueMicrotask(()=>child.emit('close',0));return true;};
     child.stdin=new Writable({write(chunk,_encoding,done){const request=JSON.parse(chunk.toString());methods.push(request.method);
       if(request.method==='initialize')queueMicrotask(()=>child.stdout.write(JSON.stringify({id:request.id,result:{}})+'\n'));
-      if(request.method==='model/list')queueMicrotask(()=>child.stdout.write(JSON.stringify({id:request.id,result:{data:[{model:request.params.cursor?'model-two':'model-one',displayName:'Model',supportedReasoningEfforts:[{reasoningEffort:'high'}]}],nextCursor:request.params.cursor?null:'next'}})+'\n'));
+      if(request.method==='model/list')queueMicrotask(()=>child.stdout.write(JSON.stringify({id:request.id,result:{data:[{model:request.params.cursor?'model-two':'model-one',displayName:'Model',defaultReasoningEffort:'medium',supportedReasoningEfforts:[{reasoningEffort:'low'},{reasoningEffort:'medium'},{reasoningEffort:'max'}]}],nextCursor:request.params.cursor?null:'next'}})+'\n'));
       done();}});return child;
   }) as typeof spawn;
-  const catalog=await codexModels(launch);assert.equal(catalog.items.length,2);assert.deepEqual(methods,['initialize','initialized','model/list','model/list']);assert.equal(killed,true);
+  const catalog=await codexModels(launch);assert.equal(catalog.items.length,2);assert.deepEqual(catalog.items[0],{id:'model-one',name:'Model',reasoningEfforts:['low','medium','max'],defaultReasoningEffort:'medium'});assert.deepEqual(methods,['initialize','initialized','model/list','model/list']);assert.equal(killed,true);
 });
 
 test('draft catalogs use the selected preset credentials, not the legacy default',async t=>{

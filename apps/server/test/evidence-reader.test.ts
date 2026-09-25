@@ -26,7 +26,10 @@ async function fixture(t:any){
 }
 
 test('Web, MCP and Agent share ranked refs and scoped expansions across 400 generated days',async t=>{
- const {app,store,sources,agentReader,call,client}=await fixture(t);
+ const {app,store,sources,materialOrganizer,agentReader,call,client}=await fixture(t);
+ // This test pages raw source items. Keep the timer from replacing that corpus
+ // with Material cards between cursor requests under a busy parallel suite.
+ materialOrganizer.tick=async()=>0;
  for(const device of ['a','b'])sources.register({id:`source-${device}`,name:`Generated ${device}`,kind:'custom',deviceId:device,platform:'import'});
  const batches=new Map<string,any[]>([['source-a',[]],['source-b',[]]]);
  for(let i=0;i<400;i++){

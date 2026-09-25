@@ -218,6 +218,7 @@ test('session members sharing a timestamp stay separate and pages do not include
  assert.equal((await app.inject({url:'/api/capture-browser/updates?deviceId=other',headers:auth(phone.token)})).statusCode,403);
  for(const method of ['GET','PUT'] as const)assert.equal((await app.inject({method,url:'/api/perception',headers:auth(phone.token),...(method==='PUT'?{payload:{}}:{})})).statusCode,403);
  assert.equal((await app.inject({url:'/api/perception',headers:auth()})).json().settings.allowQueryImages,false);
+ assert.equal((await app.inject({method:'POST',url:`/api/perception/${own.id}/retry`,headers:auth(),payload:{kind:'semantic'}})).statusCode,400);
  });
 
 test('typed screenshot refs keep owner and collector scope checks before original or cached image reads',async t=>{

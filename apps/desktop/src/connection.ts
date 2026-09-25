@@ -7,7 +7,7 @@ export interface ConnectionPreview { id: string; serverUrl: string; expiresAt: s
 export interface ConnectionIdentity {
   credential: { id: string; scope: 'owner' | 'collector'; label: string; deviceId?: string; deviceName?: string; platform?: string; serverUrl?: string };
   node: { version: string; profile: string };
-  capabilities: { ingest: boolean; ownSources: boolean; archiveRead: boolean };
+  capabilities: { ingest: boolean; ingressVersion?: number; ownSources: boolean; archiveRead: boolean };
 }
 export interface ConnectionStatus { state: 'unchecked' | 'checking' | 'connected' | 'error'; message: string; checkedAt?: string; identity?: ConnectionIdentity }
 export class ConnectionError extends Error { constructor(readonly code: string, message: string) { super(message); } }
@@ -43,8 +43,8 @@ export async function testConnection(config: Pick<Config, 'serverUrl' | 'token' 
   const result = object(await request(config.serverUrl, '/api/connections/self', { headers: { 'Accept-Language': getLocale(), Authorization: 'Bearer ' + config.token } }, fetcher), ['credential', 'node', 'capabilities']);
   const credential = object(result.credential, ['id', 'scope', 'label'], ['deviceId', 'deviceName', 'platform', 'serverUrl']);
   if (!['owner', 'collector'].includes(credential.scope as string)) throw invalid();
-  const node = object(result.node, ['version', 'profile']), capabilities = object(result.capabilities, ['ingest', 'ownSources', 'archiveRead']);
-  if (Object.values(capabilities).some(value => typeof value !== 'boolean') || (credential.scope === 'collector' && (credential.deviceId !== config.deviceId || capabilities.archiveRead !== false))) throw invalid();
+  const node = object(result.node, ['version', 'profile']), capabilities = object(result.capabilities, ['ingest', 'ownSources', 'archiveRead'], ['ingressVersion']);
+  if (['ingest', 'ownSources', 'archiveRead'].some(key => typeof capabilities[key] !== 'boolean') || (capabilities.ingressVersion !== undefined && (!Number.isInteger(capabilities.ingressVersion) || (capabilities.ingressVersion as number) < 1)) || (credential.scope === 'collector' && (credential.deviceId !== config.deviceId || capabilities.archiveRead !== false))) throw invalid();
   const cleanCredential: ConnectionIdentity['credential'] = { id: bounded(credential.id, 128), scope: credential.scope as 'owner' | 'collector', label: bounded(credential.label, 200, true) };
   for (const key of ['deviceId', 'deviceName', 'platform', 'serverUrl'] as const) if (credential[key] !== undefined) cleanCredential[key] = bounded(credential[key], key === 'serverUrl' ? 2048 : 200);
   if (cleanCredential.serverUrl && validateServerUrl(cleanCredential.serverUrl) !== config.serverUrl) throw invalid();

@@ -3,7 +3,7 @@ import {spawn} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import type {ModelSettings} from '@mote/shared/models';
 import {StoreError} from './store.js';
-export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[]}
+export interface CatalogModel {id:string;name:string;reasoningEfforts?:string[];defaultReasoningEffort?:string}
 export class ModelCatalogError extends StoreError {constructor(){super(moteText("无法读取模型列表。请检查节点上的服务、凭据及目录接口；仍可手动填写模型 ID。"),502);}}
 const failure=()=>new ModelCatalogError();
 
@@ -36,7 +36,17 @@ export async function codexModels(launch:typeof spawn=spawn,options:{executable?
           if(message.id===0){send('initialized',{});send('model/list',{limit:100,includeHidden:false},nextId);}
           else if(message.id===nextId&&message.result){
             if(!Array.isArray(message.result.data))throw Error();
-            for(const model of message.result.data){if(typeof model.model==='string'&&model.model.length<=512&&!items.some(i=>i.id===model.model))items.push({id:model.model,name:typeof model.displayName==='string'?model.displayName.slice(0,512):model.model,reasoningEfforts:Array.isArray(model.supportedReasoningEfforts)?model.supportedReasoningEfforts.map((e:{reasoningEffort:string})=>e.reasoningEffort):[]});}
+            for(const model of message.result.data){
+              if(typeof model.model!=='string'||!model.model.length||model.model.length>512||items.some(i=>i.id===model.model))continue;
+              const reasoningEfforts:string[]|undefined=Array.isArray(model.supportedReasoningEfforts)
+                ?[...new Set<string>(model.supportedReasoningEfforts.flatMap((entry:unknown)=>{
+                  const effort=entry&&typeof entry==='object'?(entry as {reasoningEffort?:unknown}).reasoningEffort:undefined;
+                  return typeof effort==='string'&&/^[a-z]{2,32}$/.test(effort)?[effort]:[];
+                }))]:undefined;
+              items.push({id:model.model,name:typeof model.displayName==='string'?model.displayName.slice(0,512):model.model,
+                ...(reasoningEfforts?{reasoningEfforts}:{}),
+                ...(typeof model.defaultReasoningEffort==='string'&&/^[a-z]{2,32}$/.test(model.defaultReasoningEffort)?{defaultReasoningEffort:model.defaultReasoningEffort}:{})});
+            }
             if(message.result.nextCursor&&nextId<20){nextId++;send('model/list',{limit:100,includeHidden:false,cursor:message.result.nextCursor},nextId);}else if(message.result.nextCursor)finish(failure());else finish();
           }
         }catch{finish(failure());}
