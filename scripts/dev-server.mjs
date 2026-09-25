@@ -168,6 +168,7 @@ export async function runDevServer(options = {}, root = repository) {
         await sleep(100, undefined, { signal });
       }
       console.info(`[dev] Mote ${version} (${p.profile}) ready at ${p.url}. Web rebuilt. Ctrl+C to stop.`);
+      console.info(`[dev] Owner token: ${p.env.MOTE_TOKEN}`);
     });
     const result = await server.done;
     signal.throwIfAborted();
