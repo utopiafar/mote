@@ -1,7 +1,7 @@
 import { moteText } from './i18n.js';
 export const MODEL_PROTOCOLS = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'codex-app-server'] as const;
 export type ModelProtocol = typeof MODEL_PROTOCOLS[number];
-export const MODEL_REASONING_EFFORTS = ['auto', 'off', 'low', 'high', 'max'] as const;
+export const MODEL_REASONING_EFFORTS = ['auto', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 export type ModelReasoningEffort = typeof MODEL_REASONING_EFFORTS[number];
 export const DEFAULT_MODEL_MAX_TOKENS = 65_536;
 export const MODEL_OUTPUT_BUDGETS = [8192, 16384, 32768, DEFAULT_MODEL_MAX_TOKENS, 128000] as const;

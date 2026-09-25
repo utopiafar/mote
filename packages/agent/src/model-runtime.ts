@@ -1,4 +1,4 @@
-import {DEFAULT_MODEL_MAX_TOKENS,type ModelProtocol} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS,MODEL_REASONING_EFFORTS,type ModelProtocol} from '@mote/shared/models';
 import {AgentConfigurationError, type AgentOptions} from './types.js';
 
 const protocols: ModelProtocol[] = ['deepseek', 'openai-completions', 'openai-responses', 'anthropic-messages', 'google-generative-ai', 'codex-app-server'];
@@ -29,7 +29,8 @@ type ConnectionOptions = Pick<AgentOptions, 'protocol' | 'provider' | 'model' | 
 export function validateModelOptions(options: ConnectionOptions): void {
   if(options.protocol==='codex-app-server'&&(options.baseUrl||Object.keys(options.headers??{}).length||Object.keys(options.extraBody??{}).length))throw new AgentConfigurationError('Codex uses its local login and does not accept HTTP endpoints or advanced request parameters.');
   if (options.protocol !== undefined && !protocols.includes(options.protocol)) throw new AgentConfigurationError('Unsupported model protocol.');
-  if (options.reasoningEffort !== undefined && !['auto', 'off', 'low', 'high', 'max'].includes(options.reasoningEffort)) throw new AgentConfigurationError('Unsupported reasoning effort.');
+  if (options.reasoningEffort !== undefined && !MODEL_REASONING_EFFORTS.includes(options.reasoningEffort)) throw new AgentConfigurationError('Unsupported reasoning effort.');
+  if (options.protocol !== 'codex-app-server' && options.reasoningEffort !== undefined && ['minimal', 'medium', 'xhigh', 'ultra'].includes(options.reasoningEffort)) throw new AgentConfigurationError('This reasoning effort requires Codex App Server.');
   if (options.maxTokens !== undefined && (!Number.isInteger(options.maxTokens) || options.maxTokens < 1 || options.maxTokens > 128_000)) throw new AgentConfigurationError('Model output limit must be between 1 and 128000 tokens.');
   const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs === undefined ? undefined : Math.max(options.timeoutMs, 5_000);
   if (requestTimeoutMs !== undefined && requestTimeoutMs !== null && (!Number.isInteger(requestTimeoutMs) || requestTimeoutMs < 5_000 || requestTimeoutMs > 600_000)) throw new AgentConfigurationError('Model request timeout must be between 5000 and 600000 milliseconds.');

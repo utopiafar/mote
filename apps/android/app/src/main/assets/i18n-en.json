@@ -5442,5 +5442,11 @@
   "与中央资料库共用登录，回答和历史对话自动保存。": "Shares your central archive login. Answers and conversation history are saved automatically.",
   "截图像素读取失败": "Unable to read screenshot pixels",
   "本地 OCR 服务正在准备，恢复后将自动继续。": "Local OCR is getting ready. Processing will resume automatically.",
-  "模型已安装，正在准备本地 OCR 服务；就绪后会自动处理": "Model installed. Local OCR is getting ready; processing will start automatically."
+  "模型已安装，正在准备本地 OCR 服务；就绪后会自动处理": "Model installed. Local OCR is getting ready; processing will start automatically.",
+  "目录建议默认": "Catalog suggested default",
+  "当前模型不支持": "Unsupported by this model",
+  "当前版本暂不支持": "Unsupported by this version",
+  "挡位来自所选模型的 Codex 目录。": "Effort levels come from the selected model's Codex catalog.",
+  "当前推理强度不受所选 Codex 模型支持，请重新选择。": "The selected Codex model does not support this reasoning effort. Choose another effort.",
+  "未取得 Codex 模型挡位，以下选项尚未核实。": "Codex model effort levels are unavailable; these options are unverified."
 }

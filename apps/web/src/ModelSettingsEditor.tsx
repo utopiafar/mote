@@ -1,11 +1,12 @@
 import {readResource,resources} from './resource-cache';
 import {useUnsavedChanges} from './unsaved';
 import { moteText, getLocale } from '@mote/shared/i18n';
-import {useEffect, useRef, useState} from 'react';
+import React,{useEffect, useRef, useState} from 'react';
 import {Check, ExternalLink, KeyRound, LoaderCircle, RotateCcw, Save, SlidersHorizontal, TestTube2} from 'lucide-react';
-import {DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS, type ModelSettingsView, type ModelTestResult} from '@mote/shared/models';
+import {DEFAULT_MODEL_MAX_TOKENS, MODEL_OUTPUT_BUDGETS, MODEL_PROVIDER_PRESETS, MODEL_REASONING_EFFORTS, type ModelSettingsView, type ModelTestResult} from '@mote/shared/models';
 import {ApiError, errorMessage, type Api} from './api';
 import {createModelDraft, modelDraftChanged, modelSettingsRequest, retainedCredentialsNeedConfirmation, type CredentialAction, type ModelSettingsDraft} from './model-settings-form';
+import {codexReasoningChoices,type CatalogModel} from './model-reasoning';
 
 const protocolNames: Record<ModelSettingsDraft['protocol'], string> = {
   'codex-app-server':moteText("本机 Codex App Server"),
@@ -16,7 +17,8 @@ const protocolNames: Record<ModelSettingsDraft['protocol'], string> = {
   'google-generative-ai': moteText("Google Gemini 原生"),
 };
 const groupNames = {china: moteText("国内服务"), international: moteText("国际服务"), local: moteText("本机服务"), custom: moteText("自定义服务")};
-const reasoningNames = {auto: moteText("由模型决定（推荐）"), off: moteText("关闭"), low: moteText("轻量"), high: moteText("深入"), max: moteText("最高")};
+const reasoningNames = {auto: moteText("由模型决定（推荐）"), off: moteText("关闭"), minimal:'minimal',low: moteText("轻量"),medium:'medium',high: moteText("深入"),xhigh:'xhigh',max: moteText("最高"),ultra:'ultra'};
+const genericReasoningEfforts=['auto','off','low','high','max'] as const;
 interface EditorState {name:string;api: Api; snapshot: ModelSettingsView; latest: ModelSettingsView; draft: ModelSettingsDraft}
 
 export function ModelSettingsEditor({api, revision, onApplied, profileId='default'}: {api: Api; revision: number; onApplied: () => void;profileId?:string}) {
@@ -28,7 +30,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [conflict, setConflict] = useState(false);
   const [probe, setProbe] = useState<ModelTestResult>(), [restoreReview, setRestoreReview] = useState(false), [reload, setReload] = useState(0);
   const [customBudget,setCustomBudget]=useState(false);
-  const [catalog,setCatalog]=useState<{id:string;name:string}[]>([]),[catalogError,setCatalogError]=useState(''),[catalogLoading,setCatalogLoading]=useState(false),[catalogReload,setCatalogReload]=useState(0);
+  const [catalog,setCatalog]=useState<CatalogModel[]>([]),[catalogError,setCatalogError]=useState(''),[catalogLoading,setCatalogLoading]=useState(false),[catalogReload,setCatalogReload]=useState(0);
   const requestRef = useRef<AbortController | undefined>(undefined), loadRef = useRef<AbortController | undefined>(undefined), epoch = useRef(0);
   const active = state?.api === api ? state : undefined;
   const busy = loading || !!operation;
@@ -41,7 +43,7 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
       try{body=modelSettingsRequest(active.snapshot,active.draft);}
       catch(e){setCatalogError(errorMessage(e));return;}
       setCatalogLoading(true);
-      void api.request<{items:{id:string;name:string}[]}>(endpoint+'/models',{method:'POST',...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal})
+      void api.request<{items:CatalogModel[]}>(endpoint+'/models',{method:'POST',...(body?{body:JSON.stringify(body)}:{}),signal:controller.signal})
         .then(result=>{if(!controller.signal.aborted)setCatalog(result.items);})
         .catch(e=>{if(!controller.signal.aborted)setCatalogError(errorMessage(e));})
         .finally(()=>{if(!controller.signal.aborted)setCatalogLoading(false);});
@@ -74,7 +76,10 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
     setState(previous => {
       if (!previous || previous.api !== api) return previous;
       const destinationChanged = 'provider' in patch || 'protocol' in patch || 'baseUrl' in patch;
-      return {...previous, draft: {...previous.draft, ...(destinationChanged ? {allowCredentialReuse: false} : {}), ...patch}};
+      const protocol=patch.protocol??previous.draft.protocol;
+      const effort=patch.reasoningEffort??previous.draft.reasoningEffort;
+      return {...previous, draft: {...previous.draft, ...(destinationChanged ? {allowCredentialReuse: false} : {}), ...patch,
+        ...(protocol!=='codex-app-server'&&['minimal','medium','xhigh','ultra'].includes(effort)?{reasoningEffort:'auto'}:{})}};
     });
     setError(''); setNotice(''); setProbe(undefined); setRestoreReview(false);
   }
@@ -86,6 +91,11 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
   function reread() { resources(api).invalidate(key=>key==='/api/model-settings');reset(); setState(undefined); setReload(n => n + 1); }
   async function run(kind: 'save' | 'test' | 'restore') {
     if (!active || busy) return;
+    const selectedModel=catalog.find(model=>model.id===active.draft.model);
+    const choices=codexReasoningChoices(selectedModel);
+    if(kind!=='restore'&&active.draft.protocol==='codex-app-server'&&choices.known&&active.draft.reasoningEffort!=='auto'&&!choices.options.some(option=>option.value===active.draft.reasoningEffort)){
+      setError(moteText("当前推理强度不受所选 Codex 模型支持，请重新选择。"));return;
+    }
     let body: unknown;
     try {
       body = kind === 'restore' ? {revision: active.snapshot.revision} : {...modelSettingsRequest(active.snapshot, active.draft),...(kind==='save'&&profileId!=='default'?{name:active.name.trim()}: {})};
@@ -118,6 +128,9 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
     } finally { if (!controller.signal.aborted && requestEpoch === epoch.current) setOperation(undefined); }
   }
   const draft = active?.draft, saved = active?.latest.settings;
+  const selectedCatalogModel=draft?.protocol==='codex-app-server'?catalog.find(model=>model.id===draft.model):undefined;
+  const codexChoices=codexReasoningChoices(selectedCatalogModel);
+  const codexEffortSupported=draft?.reasoningEffort==='auto'||codexChoices.options.some(option=>option.value===draft?.reasoningEffort);
   const preset = MODEL_PROVIDER_PRESETS.find(p => p.id === draft?.provider);
   const dirty = active ? modelDraftChanged(active.draft, active.snapshot.settings)||active.name!==profileName(active.snapshot) : false;
   useUnsavedChanges(dirty);
@@ -146,7 +159,16 @@ export function ModelSettingsEditor({api, revision, onApplied, profileId='defaul
             <div className="preference-grid">{credentialChoice('apiKeyAction', moteText("API key 操作"), active.snapshot.settings.apiKeyConfigured)}{draft.apiKeyAction === 'replace' && <label className="preference-field">{moteText("新的 API key")}<input aria-label={moteText("新的 API key")} type="password" autoComplete="new-password" spellCheck={false} value={draft.apiKey} onChange={e => change({apiKey: e.target.value})} placeholder={moteText("输入此服务的 API key")}/><small>{moteText("只保留在当前页面内存，保存后清空输入。")}</small></label>}</div>
           </div>}
           <div className="preference-grid">
-            <label className="preference-field">{moteText("推理强度")}<select aria-label={moteText("推理强度")} value={draft.reasoningEffort} onChange={e => change({reasoningEffort: e.target.value as ModelSettingsDraft['reasoningEffort']})}>{Object.entries(reasoningNames).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><small>{moteText("选择“由模型决定”兼容更多模型；具体能力取决于所选模型。")}</small></label>
+            <label className="preference-field">{moteText("推理强度")}<select aria-label={moteText("推理强度")} value={draft.reasoningEffort} onChange={e => change({reasoningEffort: e.target.value as ModelSettingsDraft['reasoningEffort']})}>
+              {draft.protocol==='codex-app-server'&&codexChoices.known?<>
+                <option value="auto">{reasoningNames.auto}{selectedCatalogModel?.defaultReasoningEffort?` · ${moteText("目录建议默认")}: ${selectedCatalogModel.defaultReasoningEffort}`:''}</option>
+                {codexChoices.options.map(({value,wire})=><option key={value} value={value}>{wire}</option>)}
+                {!codexEffortSupported&&<option value={draft.reasoningEffort} disabled>{draft.reasoningEffort} · {moteText("当前模型不支持")}</option>}
+                {codexChoices.unknown.map(wire=><option key={wire} disabled>{wire} · {moteText("当前版本暂不支持")}</option>)}
+              </>:draft.protocol==='codex-app-server'?<>{MODEL_REASONING_EFFORTS.map(id=><option key={id} value={id}>{id==='auto'?reasoningNames.auto:id==='off'?'none':id}</option>)}</>:<>{genericReasoningEfforts.map(id=><option key={id} value={id}>{reasoningNames[id]}</option>)}
+                {!genericReasoningEfforts.some(id=>id===draft.reasoningEffort)&&<option value={draft.reasoningEffort}>{reasoningNames[draft.reasoningEffort]}</option>}
+              </>}
+            </select><small>{draft.protocol==='codex-app-server'?(codexChoices.known?moteText("挡位来自所选模型的 Codex 目录。") : moteText("未取得 Codex 模型挡位，以下选项尚未核实。")) : moteText("选择“由模型决定”兼容更多模型；具体能力取决于所选模型。")}</small></label>
             <label className="preference-field">{moteText("单次模型请求超时（秒）")}<input aria-label={moteText("单次模型请求超时（秒）")} type="number" min={5} max={600} step={1} disabled={draft.protocol==='codex-app-server'} value={draft.protocol==='codex-app-server'?'':draft.modelRequestTimeoutSeconds} onChange={e => change({modelRequestTimeoutSeconds: e.target.value})}/><small>{draft.protocol==='codex-app-server'?moteText("Codex Server 不暴露内部单次模型生成请求，此项不适用。") : moteText("5–600 秒；只限制一次 Provider API 请求，不包含后续工具循环。")}</small></label>
             <label className="preference-field">{moteText("Agent 总运行超时（秒）")}<input aria-label={moteText("Agent 总运行超时（秒）")} type="number" min={5} max={3600} step={1} placeholder={draft.protocol==='codex-app-server'?moteText("可留空"):undefined} value={draft.agentTimeoutSeconds} onChange={e => change({agentTimeoutSeconds: e.target.value})}/><small>{draft.protocol==='codex-app-server'?moteText("可留空；限制从 Agent 开始到结束的整个运行周期，包含多次模型请求和工具调用。") : moteText("5–3600 秒；限制一次 Agent 从开始到完成的整个运行周期。")}</small></label>
           </div>
