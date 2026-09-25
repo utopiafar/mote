@@ -29,7 +29,7 @@ test('server conversations survive restart, preserve follow-up dialogue and allo
   assert.equal(list.json().items[0].id,conversationId);assert.equal(list.json().items[0].title,'关于我那份合成观测笔记');
   const next=await running.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'继续解释它'}});
   assert.equal(next.statusCode,200);assert.equal(next.json().conversationId,conversationId);assert.notEqual(next.json().turnId,turnId);
-  assert.equal(seen[1].deviceId,scope.deviceId);assert.equal(seen[1].after,scope.after);assert.equal(seen[1].timeZone,scope.timeZone);
+  assert.equal(seen[1].deviceId,undefined);assert.equal(seen[1].after,undefined);assert.equal(seen[1].before,undefined);assert.equal(seen[1].timeZone,scope.timeZone);
   assert.deepEqual(seen[1].conversation,{turns:[{question:'关于我那份合成观测笔记',answer:'Synthetic first answer',scope,createdAt:seen[1].conversation!.turns[0].createdAt}],omittedTurns:0});
   const detail=(await running.app.inject({url:`/api/conversations/${conversationId}`,headers})).json();
   assert.equal(detail.turnCount,2);assert.deepEqual(detail.turns.map((turn:any)=>turn.question),['关于我那份合成观测笔记','继续解释它']);
@@ -38,6 +38,29 @@ test('server conversations survive restart, preserve follow-up dialogue and allo
   assert.equal(all.statusCode,200);assert.equal(seen[2].after,undefined);assert.equal(seen[2].deviceId,undefined);assert.equal(seen[2].timeZone,'UTC');
   assert.equal((await running.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'invalid',conversation:{turns:[]}}})).statusCode,400);
   assert.equal((await running.app.inject({method:'POST',url:'/api/query',headers,payload:{conversationId,question:'invalid',before:'2026-09-01T00:00:00Z',after:'2026-09-02T00:00:00Z'}})).statusCode,400);
+});
+
+test('new answers receive bounded visible memory leads and respect explicit archive scope',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-opening-memory-')),seen:QueryInput[]=[];
+  const {app,sources,memories,store}=await buildApp(config(dir),{agent:agent(async input=>{seen.push(input);return answer();})});
+  t.after(async()=>{await app.close();rmSync(dir,{recursive:true,force:true});});
+  sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'fixture',platform:'import'});
+  async function card(key:string,quote:string){
+    const original=await sources.upsert('generated',{externalId:key,text:quote,revision:'1',observedAt:'2026-09-18T00:00:00Z',title:'Generated',kind:'file',layer:'original'});
+    const result={answer:JSON.stringify({memories:[{title:`Generated ${key}`,statement:`${quote} [${original.id}]`,uncertainty:'Only in this fixture',admission:{layer:'memory',reason:'Generated project choice for future reference',scope:'Generated project',attribution:'user'},evidenceIds:[original.id],evidence:[{id:original.id,quote}]}]}),citations:[{id:original.id,capturedAt:'2026-09-18T00:00:00Z',appName:'Generated',excerpt:quote}],trace:[],runId:randomUUID()};
+    return {original,memory:memories.extract(result,'fixture',{requireAdmission:true}).items[0]};
+  }
+  const published=await card('published','Generated published project choice');
+  const proposed=await card('proposed','Generated proposed project choice');
+  memories.publish(published.memory.id);
+  assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Tell me about this generated project'}})).statusCode,200);
+  assert.deepEqual(seen[0].openingMemories?.map(item=>[item.id,item.status]),[[published.memory.id,'published'],[proposed.memory.id,'proposed']]);
+  assert.ok(seen[0].openingMemories!.every(item=>!('evidence' in item)));
+  assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Only later records',after:'2026-09-19T00:00:00Z'}})).statusCode,200);
+  assert.deepEqual(seen[1].openingMemories,[]);
+  store.delete(published.original.id);
+  assert.equal((await app.inject({method:'POST',url:'/api/query',headers,payload:{question:'Again'}})).statusCode,200);
+  assert.deepEqual(seen[2].openingMemories?.map(item=>item.id),[proposed.memory.id]);
 });
 
 test('only the owner can read, continue or delete saved conversations',async t=>{

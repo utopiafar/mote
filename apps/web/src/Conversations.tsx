@@ -32,11 +32,10 @@ interface ConversationTurn {
 interface Conversation extends ConversationSummary {turns: ConversationTurn[];nextCursor?:string|null}
 interface HistoryPage {items: ConversationSummary[]; nextCursor?: string | null}
 
-export function Conversations({api, configured, devices, range, renderAnswer}: {
+export function Conversations({api, configured, devices, renderAnswer}: {
   api: Api;
   configured: boolean;
   devices: Device[];
-  range: Range;
   renderAnswer: (answer: Answer) => ReactNode;
 }) {
   const [modelProfileId,setModelProfileId]=useState(''),[modelOverride,setModelOverride]=useState('');
@@ -139,7 +138,7 @@ export function Conversations({api, configured, devices, range, renderAnswer}: {
     setRun(null);setBusy(true); setError(''); setConfirmDelete(false); setPendingQuestion(text);
     try {
       const id=crypto.randomUUID();
-      const body=JSON.stringify({id,input:{question:text,modelProfileId:modelProfileId||undefined,modelOverride:modelOverride||undefined,...(conversation?{conversationId:conversation.id}:{}),attachmentIds:attachments.map(attachment=>attachment.id),after:range.after??null,before:range.before??null,deviceId:null,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
+      const body=JSON.stringify({id,input:{question:text,modelProfileId:modelProfileId||undefined,modelOverride:modelOverride||undefined,...(conversation?{conversationId:conversation.id}:{}),attachmentIds:attachments.map(attachment=>attachment.id),timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone}});
       let accepted:QueryRun;
       try{accepted=await api.request<QueryRun>('/api/query-runs',{method:'POST',signal:controller.signal,body});}
       catch(e){

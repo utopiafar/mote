@@ -55,7 +55,7 @@ export interface ContextReader {
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
-  memories?(args:ContextRange & {includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[]}>;
+  memories?(args:ContextRange & {includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[]}>;
 }
 
 export interface AgentOptions {
@@ -123,6 +123,8 @@ export interface QueryInput {
   incrementalEvidenceIds?:string[];
   /** Host-reported archive-wide coverage, not a guarantee for the selected window. */
   memoryCoverage?:{scope:'archive';pendingBatches:number;failedBatches:number;lastSavedAt:string|null};
+  /** Small host-selected memory leads for an interactive answer; never citation evidence. */
+  openingMemories?:{id:string;title:string;statement:string;uncertainty:string;status:'published'|'proposed';tier:'episode'|'consolidated';createdAt:string}[];
   evidenceRanges?: {id:string;offset:number;length:number}[];
   after?: string;
   before?: string;

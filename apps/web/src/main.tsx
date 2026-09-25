@@ -920,10 +920,10 @@ function RecordTimeline({
   );
 }
 
-function Ask({api,status,devices,range,onOpen,onInsights,onSettings}: {api:Api;status:Status;devices:Device[];range:Range;onOpen:(id:string)=>void;onInsights:()=>void;onSettings:()=>void}) {
+function Ask({api,status,devices,onOpen,onInsights,onSettings}: {api:Api;status:Status;devices:Device[];onOpen:(id:string)=>void;onInsights:()=>void;onSettings:()=>void}) {
   return <><div className="page-heading split-heading"><div><div className="eyebrow">{moteText("带着问题，回到上下文")}</div><h1>{moteText("你只管问。")}</h1><p>{moteText("让 Mote 沿着你的上下文，找回答案和它的来处。")}</p></div><button className="button subtle" onClick={onInsights}><Sparkles size={15}/>{moteText("查看洞察")}</button></div>
   {!status.agent.configured&&<div className="notice model-notice"><Sparkles size={19}/><div><strong>{moteText("再连接一个模型，让资料变成答案。")}</strong><p>{moteText("在设置中配置模型后，就可以开始提问。")}</p><button className="button" onClick={onSettings}>{moteText("打开模型设置")}</button></div></div>}
-  <Conversations api={api} configured={status.agent.configured} devices={devices} range={range} renderAnswer={answer=><AnswerView answer={answer} onOpen={onOpen}/>}/></>;
+  <Conversations api={api} configured={status.agent.configured} devices={devices} renderAnswer={answer=><AnswerView answer={answer} onOpen={onOpen}/>}/></>;
 }
 
 function Vault({
@@ -1483,7 +1483,7 @@ function App() {
                 <span className="private-label">
                   <ShieldCheck size={14} />
                   {moteText("私有节点")}</span>
-                {(["overview", "ask", "memories", "insights"].includes(page) || (page === "archive" && archiveTab !== "records")) && (
+                {(["overview", "memories", "insights"].includes(page) || (page === "archive" && archiveTab !== "records")) && (
                   <select
                     className="period-select"
                     aria-label={moteText("选择时间范围")}
@@ -1633,7 +1633,6 @@ function App() {
                           api={api}
                           devices={devices}
                           status={status}
-                          range={range}
                           onOpen={setEvidenceId}
                           onInsights={()=>onPage("insights")}
                           onSettings={()=>onPage("settings")}
