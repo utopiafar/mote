@@ -123,12 +123,8 @@ class MainActivity : MoteActivity() {
     private lateinit var nsfwSource: Spinner
     private lateinit var nsfwCustom: EditText
     private lateinit var nsfwStatus: TextView
-    private lateinit var permissionsSummary: TextView
     private val permissionBadges = linkedMapOf<String, TextView>()
-    private lateinit var accessibilityButton: Button
-    private lateinit var notificationButton: Button
-    private lateinit var usageButton: Button
-    private lateinit var batteryButton: Button
+    private lateinit var projectionButton: Button
     private val nsfwSources = listOf("auto", "mirror", "official", "custom")
     private var notePoll: Runnable? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -153,7 +149,7 @@ class MainActivity : MoteActivity() {
         val loading = moteDetailPage()
         val label = TextView(this).apply { text = MoteI18n.text("正在读取本机设置…") }; loading.addView(label); loading.addView(ProgressBar(this))
         uiTask.start(MoteI18n.text("正在读取本机设置…"), { label.text = it }, { settings.read() }) { result ->
-            result.onSuccess { buildUi(it, savedInstanceState, retained); if (resumed) { updatePermissionSummary(); refreshStatus() } }
+            result.onSuccess { buildUi(it, savedInstanceState, retained); if (resumed) { updatePermissionStatuses(); refreshStatus() } }
                 .onFailure { label.text = MoteI18n.text("设置无法读取，原数据保留。请退出后检查存储或重试。") }
         }
     }
@@ -637,49 +633,62 @@ class MainActivity : MoteActivity() {
 
     private fun buildPermissions() {
         page(Page.PERMISSIONS, MoteI18n.text("按需授权，让记录稳定运行"))
-        section(MoteI18n.text("当前状态"))
-        permissionsSummary = text(MoteI18n.text("正在检查系统权限…"), 14, MoteUi.muted)
-        for (name in listOf("无障碍截图", "通知使用权", "投屏会话", "通知", "使用情况", "电池优化", "自启动")) {
-            permissionBadges[name] = text(MoteI18n.text(name), 17).apply { setPadding(dp(12), dp(12), dp(12), dp(12)); setTypeface(null, android.graphics.Typeface.BOLD) }
-        }
-        accessibilityButton = button(MoteI18n.text("启用无障碍截图服务")) {
+        section(MoteI18n.text("采集权限"))
+        permissionStatus("无障碍截图")
+        button(MoteI18n.text("启用无障碍截图服务")) {
             MoteDialogBuilder(this).setTitle(MoteI18n.text("屏幕采集权限说明"))
                 .setMessage(getString(R.string.accessibility_description) + MoteI18n.text("\n\n继续后请在系统设置中选择 Mote 屏幕采集。启用服务本身不会开始截图，仍需回到此处点击开始。"))
                 .setNegativeButton(MoteI18n.text("取消"), null).setPositiveButton(MoteI18n.text("打开系统设置")) { _, _ -> safeOpen(Intent(SystemSettings.ACTION_ACCESSIBILITY_SETTINGS)) }.show()
         }
+        permissionStatus("通知使用权")
         button(MoteI18n.text("授权通知与媒体（通知使用权）")) { mediaPermission() }
         help(MoteI18n.text("HyperOS 通知设置帮助"), MoteI18n.text("HyperOS 通知使用权：请按需打开实时、对话、通知、静音类别。旧版曾禁用这些类别；更新后若仍是灰色，可关闭再重新授予通知使用权。类别和应用级开关会影响可接收的事件。"))
-        notificationButton = button(MoteI18n.text("通知权限")) { notifications() }
-        usageButton = button(MoteI18n.text("使用情况权限")) { safeOpen(Intent(SystemSettings.ACTION_USAGE_ACCESS_SETTINGS)) }
-        batteryButton = button(MoteI18n.text("电池优化设置")) { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        permissionStatus("投屏会话")
+        projectionButton = button(MoteI18n.text("前往开始采集")) { showPage(Page.OVERVIEW) }
+        permissionStatus("通知")
+        button(MoteI18n.text("通知权限")) { notifications() }
+        permissionStatus("使用情况")
+        button(MoteI18n.text("使用情况权限")) { safeOpen(Intent(SystemSettings.ACTION_USAGE_ACCESS_SETTINGS)) }
+        section(MoteI18n.text("后台运行"))
+        permissionStatus("电池优化")
+        button(MoteI18n.text("电池优化设置")) { safeOpen(Intent(SystemSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        permissionStatus("自启动")
         button(MoteI18n.text("自启动设置 · 需在系统确认")) { autostart() }
         button(MoteI18n.text("应用详情 / 受限制设置")) { safeOpen(detailsIntent()) }
         help(MoteI18n.text("HyperOS 后台设置帮助"), MoteI18n.text("小米 / HyperOS：在系统应用设置中允许 Mote 自启动，将省电策略设为无限制，并允许通知；可在最近任务中锁定应用。菜单随系统版本变化。若侧载 APK 的无障碍开关受限，请在应用详情的菜单中检查“允许受限制的设置”。这些设置不能保证系统永不终止采集。"))
     }
 
-    private fun updatePermissionSummary() {
-        if (!::permissionsSummary.isInitialized) return
+    private fun permissionStatus(name: String) {
+        permissionBadges[name] = text(MoteI18n.text(name) + " · " + MoteI18n.text("正在检查系统权限…"), 14).apply {
+            setPadding(dp(12), dp(9), dp(12), dp(9))
+            layoutParams = (layoutParams as LinearLayout.LayoutParams).apply { bottomMargin = dp(5) }
+        }
+    }
+
+    private fun setPermissionStatus(name: String, status: String, allowed: Boolean?) {
+        permissionBadges[name]?.apply {
+            text = MoteI18n.text(name) + " · " + status
+            setTextColor(Color.parseColor(if (allowed == true) "#15613A" else if (allowed == false) "#9C341D" else "#665419"))
+            background = MoteUi.shape(this@MainActivity, Color.parseColor(if (allowed == true) "#E7F7EC" else if (allowed == false) "#FFF0E9" else "#FFF8D9"), 12)
+        }
+    }
+
+    private fun updatePermissionStatuses() {
+        if (permissionBadges.isEmpty()) return
         val accessibility = runCatching { SystemSettings.Secure.getString(contentResolver, SystemSettings.Secure.ENABLED_ACCESSIBILITY_SERVICES)?.split(':')?.any { ComponentName.unflattenFromString(it) == ComponentName(this, CaptureAccessibilityService::class.java) } == true }.getOrDefault(false)
-        val notifications = getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+        val notifications = getSystemService(NotificationManager::class.java).areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
+        val media = MediaCollection.permissionAllowed(this)
         val usage = ForegroundApps.usageAllowed(this)
         val power = runCatching { getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) }.getOrDefault(false)
-        val checks = mapOf("无障碍截图" to accessibility, "通知使用权" to MediaCollection.permissionAllowed(this), "投屏会话" to ProjectionService.running, "通知" to notifications, "使用情况" to usage, "电池优化" to power)
-        for ((name, badge) in permissionBadges) {
-            val allowed = checks[name]
-            badge.text = (if (allowed == true) "✓ " else if (allowed == false) "! " else "? ") + MoteI18n.text(name) + " · " + when {
-                allowed == null -> MoteI18n.text("需在系统确认")
-                name == "投屏会话" -> if (allowed) MoteI18n.text("本次会话正在运行") else MoteI18n.text("未运行 · 开始时需系统授权")
-                name == "电池优化" -> if (allowed) MoteI18n.text("已豁免") else MoteI18n.text("未豁免")
-                else -> if (allowed) MoteI18n.text("已授权") else MoteI18n.text("未授权")
-            }
-            badge.setTextColor(android.graphics.Color.parseColor(if (allowed == true) "#15613A" else if (allowed == false) "#9C341D" else "#665419"))
-            badge.setBackgroundColor(android.graphics.Color.parseColor(if (allowed == true) "#E7F7EC" else if (allowed == false) "#FFF0E9" else "#FFF8D9"))
-        }
-        accessibilityButton.text = if (accessibility) MoteI18n.text("无障碍截图已授权 · 管理") else MoteI18n.text("无障碍截图未授权 · 去授权")
-        notificationButton.text = if (notifications) MoteI18n.text("通知已允许 · 管理") else MoteI18n.text("通知未允许 · 去授权")
-        usageButton.text = if (usage) MoteI18n.text("使用情况已授权 · 管理") else MoteI18n.text("使用情况未授权 · 去授权")
-        batteryButton.text = if (power) MoteI18n.text("电池优化已豁免 · 管理") else MoteI18n.text("电池优化未豁免 · 设置")
-        permissionsSummary.text = MoteI18n.text("无障碍截图：{0}\n媒体通知使用权：{1}\n投屏：{2}\n通知：{3}\n使用情况：{4}\n电池优化：{5}\n自启动：系统未提供可靠查询，请在系统设置确认。", if (accessibility) if (CaptureAccessibilityService.connected) MoteI18n.text("已授权 · 服务已连接") else MoteI18n.text("已授权 · 等待系统连接服务") else MoteI18n.text("未授权"), if (MediaCollection.permissionAllowed(this)) MoteI18n.text("已授权") else MoteI18n.text("未授权"), if (ProjectionService.running) MoteI18n.text("本次会话正在运行") else MoteI18n.text("未运行 · 开始时需系统授权"), if (notifications) MoteI18n.text("已允许") else MoteI18n.text("未允许"), if (usage) MoteI18n.text("已授权") else MoteI18n.text("未授权"), if (power) MoteI18n.text("已豁免") else MoteI18n.text("系统可能限制后台运行"))
+        setPermissionStatus("无障碍截图", if (!accessibility) MoteI18n.text("未授权") else if (CaptureAccessibilityService.connected) MoteI18n.text("已授权 · 服务已连接") else MoteI18n.text("已授权 · 等待系统连接服务"), if (!accessibility) false else if (CaptureAccessibilityService.connected) true else null)
+        setPermissionStatus("通知使用权", if (media) MoteI18n.text("已授权") else MoteI18n.text("未授权"), media)
+        setPermissionStatus("投屏会话", if (ProjectionService.running) MoteI18n.text("本次会话正在运行") else MoteI18n.text("未运行 · 开始时需系统授权"), if (ProjectionService.running) true else null)
+        projectionButton.text = if (settings.enabled) MoteI18n.text("查看采集状态") else MoteI18n.text("前往开始采集")
+        setPermissionStatus("通知", if (notifications) MoteI18n.text("已允许") else MoteI18n.text("未允许"), notifications)
+        setPermissionStatus("使用情况", if (usage) MoteI18n.text("已授权") else MoteI18n.text("未授权"), usage)
+        setPermissionStatus("电池优化", if (power) MoteI18n.text("已豁免") else MoteI18n.text("未豁免") + " · " + MoteI18n.text("系统可能限制后台运行"), if (power) true else null)
+        setPermissionStatus("自启动", MoteI18n.text("系统未提供可靠查询，请在系统设置确认。"), null)
     }
 
     private fun retrySync() {
@@ -1045,6 +1054,11 @@ class MainActivity : MoteActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 101)
         else safeOpen(Intent(SystemSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(SystemSettings.EXTRA_APP_PACKAGE, packageName))
     }
+    @Deprecated("Platform permission callback")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101) updatePermissionStatuses()
+    }
     private fun detailsIntent() = Intent(SystemSettings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
     private fun autostart() {
         val intent = Intent().setComponent(ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"))
@@ -1058,7 +1072,7 @@ class MainActivity : MoteActivity() {
         super.onResume()
         resumed = true
         notePoll?.let { handler.removeCallbacks(it); handler.post(it) }
-        if (::server.isInitialized) updatePermissionSummary()
+        updatePermissionStatuses()
         RuntimeSettings.observeProjectionConsent { if (::server.isInitialized) resumeProjectionAfterSettings() }
         RuntimeSettings.observeConfiguration {
             if (!applyingSettings && !isDestroyed) refreshStatus()
@@ -1129,7 +1143,7 @@ class MainActivity : MoteActivity() {
             return
         }
         ensurePage(page)
-        if (page == Page.PERMISSIONS) updatePermissionSummary()
+        if (page == Page.PERMISSIONS) updatePermissionStatuses()
         if (currentPage != page) {
             if (pageControlValues().isNotEmpty()) discardPageDraft()
             else pages[currentPage]?.let { scrollPositions[currentPage] = it.scrollY }
