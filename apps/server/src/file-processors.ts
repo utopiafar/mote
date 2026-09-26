@@ -95,7 +95,7 @@ export class FileProcessorRuntime {
           const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
           const transcript=transcriptSchema.parse(await readProcessorJson(response));if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
         }}));
-        await pluginScope.install(builtin({id:'audio.diarize',version:'1',name:moteText("本地说话人分离"),stage:'diarize',mediaTypes:['audio/'],localOnly:true,async process(input){
+        await pluginScope.install(builtin({id:'audio.diarize',version:'2',name:moteText("本地说话人分离"),stage:'diarize',mediaTypes:['audio/'],localOnly:true,async process(input){
           if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);
           const endpoint=new URL(input.settings.endpoint);endpoint.pathname=endpoint.pathname.replace(/\/transcribe\/?$/,'/diarize');
           if(!endpoint.pathname.endsWith('/diarize'))throw new StoreError('Local worker URL must end with /transcribe',409);

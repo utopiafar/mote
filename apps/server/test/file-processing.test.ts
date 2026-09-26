@@ -25,7 +25,7 @@ async function fixture(t:any,options:any={}){
  sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});
  const manifest={sourceId:'phone',item:{externalId:'fixture.wav',revision:'1',observedAt:new Date().toISOString(),title:'Synthetic interview.wav',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},sizeBytes:wave.length,sha256:sha256(wave)};
  const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,wave,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
- const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return diary;}});return()=>{disposed=true;dispose();};});}};
+ const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return options.diarization??diary;}});return()=>{disposed=true;dispose();};});}};
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
  const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async()=>{asrCalls++;return options.transcribe?options.transcribe():raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics});instances.push(instance);return instance;};const processing=createProcessing();
  await processing.runtime.ready;
@@ -33,6 +33,18 @@ async function fixture(t:any,options:any={}){
  t.after(async()=>{for(const instance of instances)await instance.close();await diagnostics.close();store.close();rmSync(dir,{recursive:true,force:true});});
  return {dir,store,sources,files,processing,createProcessing,diagnostics,id:ack.id,counts:()=>({asrCalls,diaryCalls,summaries,disposed})};
 }
+
+test('unverified acoustic labels can outnumber bounded speaker previews without losing the transcript',async t=>{
+ const data={...diary,expectedSpeakers:null,observedSpeakers:48,segments:Array.from({length:48},(_,i)=>({startMs:i*50,endMs:(i+1)*50,speaker:'SPEAKER_'+i})),samples:diary.samples,warnings:['Generated labels are not confirmed people.']};
+ assert.doesNotThrow(()=>diarizationSchema.parse(data));
+ assert.throws(()=>diarizationSchema.parse({...data,observedSpeakers:101}));
+ assert.throws(()=>diarizationSchema.parse({...data,samples:Array(17).fill(diary.samples[0])}));
+ const f=await fixture(t,{diarization:data,settings:{speakerCount:null}});await f.processing.tick();
+ const detail=f.files.detail(f.id);assert.equal(detail.job.state,'succeeded');
+ const artifact=detail.artifacts.find((a:any)=>a.kind==='diarization')!;assert.equal(artifact.observedSpeakers,48);
+ assert.ok(detail.artifacts.some((a:any)=>a.kind==='transcript'));assert.ok(f.files.chunks(f.id).length>0);
+ assert.equal(f.counts().asrCalls,1);assert.equal(f.counts().diaryCalls,1);
+});
 
 test('actual Cordis registration and disposal; local pipeline checkpoints resume without repeating ASR',async t=>{
  const f=await fixture(t,{failFirst:true});await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'failed');assert.equal(f.files.detail(f.id).artifacts.filter((a:any)=>a.kind==='transcript').length,1);

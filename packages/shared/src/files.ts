@@ -33,7 +33,9 @@ export type Transcript=z.infer<typeof transcriptSchema>;
 const speakerLabel=z.string().regex(/^SPEAKER_(?:[0-9]{1,2}|UNKNOWN)$/);
 export const diarizationSchema=z.object({
   durationMs:z.number().finite().nonnegative(),engine:z.string().min(1).max(200),
-  expectedSpeakers:z.number().int().min(1).max(16).nullable(),observedSpeakers:z.number().int().min(0).max(16),
+  // Model labels are unverified clusters. Their bounded count is independent of
+  // the configured person-count constraint and the 16-clip preview allowance.
+  expectedSpeakers:z.number().int().min(1).max(16).nullable(),observedSpeakers:z.number().int().min(0).max(100),
   overlapDetection:z.enum(['available','unknown']),
   segments:z.array(z.object({startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),speaker:speakerLabel}).strict()).max(100000),
   samples:z.array(z.object({speaker:speakerLabel,startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),wavBase64:z.string().max(1024*1024)}).strict()).max(16).default([]),

@@ -1,7 +1,7 @@
 /** Opt-in local media journey. Inputs are only the files explicitly listed in a manifest. */
 import assert from 'node:assert/strict';
 import {spawn,type ChildProcess} from 'node:child_process';
-import {randomBytes} from 'node:crypto';
+import {randomBytes,randomUUID} from 'node:crypto';
 import {mkdir,readFile,writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {join,relative,resolve} from 'node:path';
@@ -18,20 +18,29 @@ const manifest=z.object({personalDataUsed:z.boolean(),files:z.array(z.object({id
 assert.equal(new Set(manifest.files.map(file=>file.id)).size,manifest.files.length);
 const directory=resolve(values.output),outside=relative(repositoryRoot,directory);
 assert.ok(outside==='..'||outside.startsWith('../'),'Reports and originals must stay outside the repository');
-await mkdir(directory,{mode:0o700});
-const token=randomBytes(32).toString('hex'),workerToken=randomBytes(32).toString('hex');
+let previous:any,priorSettings:any;
+if(process.env.MOTE_FILE_JOURNEY_RESUME==='1'){
+  previous=JSON.parse(await readFile(join(directory,'report.json'),'utf8'));
+  assert.ok(previous.status==='failed'&&previous.personalDataUsed===manifest.personalDataUsed&&manifest.files.length===1,'Resume one failed file in its isolated vault');
+  assert.equal(previous.files[0].id,manifest.files[0].id);assert.ok(previous.files[0].detail?.artifacts.some((a:{kind:string})=>a.kind==='transcript'),'Resume requires a saved transcript');
+  priorSettings=JSON.parse(await readFile(join(directory,'vault','file-processing.json'),'utf8')).settings;
+  assert.equal(priorSettings.audioProcessor,'audio.local-dialogue');
+  await writeFile(join(directory,`report.previous-${randomUUID()}.json`),JSON.stringify(previous,null,2)+'\n',{mode:0o600,flag:'wx'});
+}else await mkdir(directory,{mode:0o700});
+const token=randomBytes(32).toString('hex'),workerToken=priorSettings?.localWorkerApiKey??randomBytes(32).toString('hex');
 const config:Config={dataKey:undefined,dataDir:join(directory,'vault'),token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,
   maxStorageBytes:2_000_000_000,maxExportBytes:200_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
   model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
   diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
 const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'running',personalDataUsed:manifest.personalDataUsed,
-  browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,files:[]};
+  browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,...(previous?{resumedFrom:previous.startedAt}:{}),files:[]};
 const save=()=>writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const children:{child:ChildProcess;closed:Promise<unknown>}[]=[];
 async function worker(script:string,args:string[],capability:'ocr'|'asr'){
-  const socket=createServer();await new Promise<void>(done=>socket.listen(0,'127.0.0.1',done));
+  const resumePort=capability==='asr'&&priorSettings?Number(new URL(priorSettings.localEndpoint).port):0;
+  const socket=createServer();await new Promise<void>((done,reject)=>{socket.once('error',reject);socket.listen(resumePort,'127.0.0.1',done);});
   const address=socket.address();assert.ok(address&&typeof address==='object');const port=address.port;await new Promise<void>(done=>socket.close(()=>done()));
   const child=spawn(values.python!,[join(repositoryRoot,'scripts',script),...args,'--port',String(port)],{
     env:{PATH:process.env.PATH,HOME:directory,MOTE_MEDIA_WORKER_TOKEN:workerToken},stdio:'ignore'});
@@ -62,7 +71,8 @@ try{
   for(const key of ['extraction','consolidation','insights','working'] as const)lifecycle[key].enabled=false;
   node.lifecycle.configure(lifecycle);await node.app.ready();
   const view=(await request('GET','/api/file-processing')).json();
-  await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,
+  if(priorSettings)assert.equal(asr+'/transcribe',priorSettings.localEndpoint,'Keep worker identity to reuse the saved extraction');
+  else await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,
     enabled:true,summarize:false,semanticTurns:false,timeoutMs:600000,
     ...(ocr?{imageProcessor:'image.http',imageEndpoint:ocr+'/ocr',apiKey:workerToken}:{}),
     ...(asr?{audioProcessor:'audio.local-dialogue',localEndpoint:asr+'/transcribe',localWorkerApiKey:workerToken}:{}),
@@ -73,16 +83,32 @@ try{
     try{
       const bytes=await readFile(resolve(file.path));result.sizeBytes=bytes.length;result.sha256=sha256(bytes);
       const sourceId='media-'+file.id;
+      let ack:any,priorTranscriptId:string|undefined;
+      if(previous){
+        assert.equal(previous.files[0].sha256,sha256(bytes),'Resume original changed');
+        ack={id:previous.files[0].captureId};result.captureId=ack.id;
+        const before=(await request('GET','/api/files/'+ack.id)).json();priorTranscriptId=before.artifacts.find((a:{kind:string})=>a.kind==='transcript')?.id;assert.ok(priorTranscriptId);
+        await request('POST',`/api/files/${ack.id}/retry`,{stage:'diarize'});result.resumedStage='diarize';result.originalUploadReused=true;
+      }else{
       await request('POST','/api/sources',{id:sourceId,name:'Local media validation',kind:'local-files',deviceId:sourceId,platform:'import',retention:'archive'});
       const upload=(await request('POST','/api/file-sync/v1/uploads',{sourceId,sizeBytes:bytes.length,sha256:sha256(bytes),item:{externalId:file.id,revision:'1',observedAt:file.observedAt,title:file.id,kind:'file',layer:'original',text:'',mimeType:file.mimeType,deleted:false}})).json();
       for(let part=0;part<Math.ceil(bytes.length/FILE_PART_BYTES);part++)await request('PUT',`/api/file-sync/v1/uploads/${upload.uploadId}/parts/${part}`,bytes.subarray(part*FILE_PART_BYTES,(part+1)*FILE_PART_BYTES));
-      const ack=(await request('POST',`/api/file-sync/v1/uploads/${upload.uploadId}/commit`,{})).json();result.captureId=ack.id;assert.equal(ack.receipt.state,'received');
-      result.receivedMs=Date.now()-started;await save();console.log(JSON.stringify({stage:'received',id:file.id,bytes:bytes.length}));
+      ack=(await request('POST',`/api/file-sync/v1/uploads/${upload.uploadId}/commit`,{})).json();result.captureId=ack.id;assert.equal(ack.receipt.state,'received');
+      }
+      result.receivedMs=Date.now()-started;await save();console.log(JSON.stringify({stage:previous?'resume-diarization':'received',id:file.id,bytes:bytes.length}));
       await node.processing.tick();
       const detail=(await request('GET','/api/files/'+ack.id)).json();result.detail=detail;await save();assert.equal(detail.job.state,'succeeded',JSON.stringify(detail.job));
+      if(priorTranscriptId){assert.equal(detail.artifacts.find((a:{kind:string})=>a.kind==='transcript')?.id,priorTranscriptId,'Retry repeated extraction');result.transcriptArtifactReused=priorTranscriptId;}
       const chunks:unknown[]=[];
       for(let offset=0;;){const page=(await request('GET',`/api/files/${ack.id}/chunks?offset=${offset}`)).json();chunks.push(...page.items);if(page.nextOffset===null)break;offset=page.nextOffset;}
       result.chunks=chunks;assert.ok(chunks.length,'Processed media has no readable evidence');
+      const rawArtifact=detail.artifacts.find((a:{kind:string})=>a.kind==='transcript'),dialogue=detail.artifacts.find((a:{kind:string})=>a.kind==='dialogue');
+      if(rawArtifact&&dialogue){
+        const text=(artifactId:string)=>node!.store.db.prepare('SELECT text FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,rowid').all(artifactId).map(row=>String(row.text)).join('');
+        const rawText=text(rawArtifact.id),alignedText=text(dialogue.id);
+        assert.equal(rawText.replace(/\s/gu,''),alignedText.replace(/\s/gu,''),'Alignment changed recognized non-whitespace characters');
+        result.alignmentIntegrity={rawCharacters:rawText.length,alignedCharacters:alignedText.length,sameNonWhitespace:true,acousticAccuracyVerified:false};
+      }
       const original=await request('GET','/api/files/'+ack.id+'/content');assert.equal(sha256(original.rawPayload),sha256(bytes),'Original changed during processing');
       if(file.expectedLines)assert.deepEqual(chunks.map(chunk=>(chunk as {ocrText:string}).ocrText),file.expectedLines,'Every generated line must be readable through the file evidence API');
       result.status='passed';

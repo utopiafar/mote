@@ -7,11 +7,32 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 import wave
-from mote_audio import exclusive_sample, normalize, sample_bytes
+from mote_audio import diarization_output, exclusive_sample, normalize, sample_bytes
 
 class AudioPrimitives(unittest.TestCase):
+    def test_model_labels_do_not_share_the_preview_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'generated.wav'
+            with wave.open(str(source), 'wb') as writer:
+                writer.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+                writer.writeframes(b'\0\0' * 16000 * 30)
+            segments = [SimpleNamespace(speaker=i, start=i * 0.5, end=i * 0.5 + 0.4) for i in range(48)]
+            result = diarization_output(source, segments, 30000, 0)
+            self.assertEqual(result['observedSpeakers'], 48)
+            self.assertEqual(len(result['segments']), 48)
+            self.assertEqual(result['segments'][-1]['speaker'], 'SPEAKER_47')
+            self.assertEqual(len(result['samples']), 16)
+            self.assertEqual(len(result['warnings']), 2)
+            self.assertIsNone(result['expectedSpeakers'])
+
+    def test_label_output_keeps_a_hard_bound(self):
+        segments = [SimpleNamespace(speaker=i, start=i, end=i + 0.5) for i in range(101)]
+        with self.assertRaises(OverflowError):
+            diarization_output('no-file-needed', segments, 102000, 0)
+
     def test_exclusive_samples_exclude_other_speakers(self):
         rows = [{'startMs': 0, 'endMs': 5000, 'speaker': 'SPEAKER_0'},
                 {'startMs': 2000, 'endMs': 4000, 'speaker': 'SPEAKER_1'}]
