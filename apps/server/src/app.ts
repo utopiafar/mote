@@ -124,7 +124,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   await diagnostics.init();
   const executor=new ExecutionEngine(store);
   backendContext.provide('moteExecution',executor);
-  const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor);await sourcePipelines.ready;
+  const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>lifecycle.settings().extraction.enabled);
+  const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor,materialMemoryWork);await sourcePipelines.ready;
   const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources),ingress=new IngressService(store,sources,files);const fileEvidence=new FileEvidenceRequests(sources);
   const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));
   const usageLedger=new UsageLedger(store);
@@ -134,7 +135,6 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
     return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');modelBudgets.finish(id,usage,price);}};
   },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId});
-  const materialMemoryWork=new MaterialMemoryWork(store,materials);
   const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
   const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials,sourcePipelines,materialOrganizer.sourceItemRecipes,
     ref=>materialMemoryWork.readyForMemory(ref));

@@ -44,14 +44,14 @@ async function fixture(t:TestContext,query:()=>Promise<ReturnType<typeof empty>>
 
 test('ordinary raw artifact and manual raw job cannot bypass pending or failed named dependencies',async t=>{
   const f=await fixture(t),pending=f.publish(body,'pending');
-  f.work.observe(pending.id,['extracted-text']);
+  f.work.observe(pending.id,['extracted-text'],{inputKey:'generated-raw-input',change:'rebuild'});
   f.store.archive.aggregate();
   const segment=f.store.archive.page().items.find(item=>item.kind==='segment')!;
   assert.deepEqual(f.pipeline.legacyArtifactIds([segment.id]),[]);
   assert.equal(f.work.readyForMemory(pending.ref),false);
   assert.throws(()=>f.pipeline.create({evidenceIds:[f.raw]}),{statusCode:409});
   assert.throws(()=>f.pipeline.create({evidenceIds:f.materials.evidenceIds(pending.ref)}),{statusCode:409});
-  const failed=f.publish(body+' Failed extraction.','failed');f.work.observe(failed.id,['extracted-text']);
+  const failed=f.publish(body+' Failed extraction.','failed');f.work.observe(failed.id,['extracted-text'],{inputKey:'generated-raw-input',change:'rebuild'});
   assert.equal(f.work.readyForMemory(failed.ref),false);
   assert.throws(()=>f.pipeline.create({evidenceIds:f.materials.evidenceIds(failed.ref)}),{statusCode:409});
 });
@@ -60,13 +60,13 @@ test('a ready named source body admits partial Material anchor, then supersessio
   let entered!:()=>void,release!:()=>void;
   const started=new Promise<void>(resolve=>entered=resolve),held=new Promise<void>(resolve=>release=resolve);
   const f=await fixture(t,async()=>{entered();await held;return empty();});
-  const partial=f.publish(body,'pending');f.work.observe(partial.id,['source-body']);
+  const partial=f.publish(body,'pending');f.work.observe(partial.id,['source-body'],{inputKey:'generated-raw-input',change:'rebuild'});
   assert.equal(f.work.readyForMemory(partial.ref),true);
   const anchor=f.materials.evidenceIds(partial.ref)[0];assert.ok(anchor);
   const job=f.pipeline.create({evidenceIds:[anchor]});
   assert.equal(job.materialRefs?.[anchor],partial.ref);
   const running=f.pipeline.run(job.id);await started;
-  const next=f.publish(body+' New revision.','ready');f.work.observe(next.id,['source-body']);
+  const next=f.publish(body+' New revision.','ready');f.work.observe(next.id,['source-body'],{inputKey:'generated-raw-input',change:'rebuild'});
   assert.equal(f.work.readyForMemory(partial.ref),false);
   release();const finished=await running;
   assert.equal(finished.status,'failed');assert.equal(finished.batches[0].status,'invalidated');

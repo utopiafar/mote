@@ -14,7 +14,7 @@ A `SourcePipeline` declares:
 - `recipe`: a versioned declarative DAG bound to trusted reader, grouping, organizing, publication and exposure components. The Coding recipe receives a scoped, paged `RawReader` and reads only newly appended archive references when the prior published head can be reused. The older trusted `organize({source, items, group})` fallback remains for installed archive pipelines without a recipe; it receives values, not the database or filesystem paths.
 - `index: material | none`: whether the published current document participates in full-text search.
 - `modelInput: material`: the only input boundary for this workflow's semantic processing.
-- `memory`: opt into the existing Memory executor after publication and settling. The executor continues to own model configuration, quotas, concurrency, review, cancellation and retries. No model runs in the raw receiving/organizing steps.
+- `memory`: opt new source input into the existing Memory executor after publication and settling. Record-backed and archive-backed materials share `MaterialMemoryWork`; recipe/configuration rebuilds alone do not renew paid extraction authorization. A grant waiting for its initial required output may continue, but a completed/started job does not gain another grant when derived output changes. Explicit owner Memory jobs remain available over current, ready evidence. The executor continues to own model configuration, quotas, concurrency, review, cancellation and retries. No model runs in the raw receiving/organizing steps.
 
 Other workflows can reuse the same host services, register their own representation, and compose registered `ContextProcessor` steps using pinned `materialInputs`. Record-backed files still use their existing extraction/transcription processors. This API does not replace those decoders or require every binary input to become Markdown before OCR/ASR.
 
@@ -48,8 +48,13 @@ Owner-only endpoints:
 - `GET /api/source-pipelines`: installed policies and group states.
 - `GET /api/source-pipelines/:sourceId`: effective source options.
 - `PUT /api/source-pipelines/:sourceId`: `{ "pipelineId": "installed.id", "index": true, "memory": false, "settleSeconds": 300 }`. Fields other than the settling default may be omitted. Replacement configuration is explicit; changing settings requeues group organization.
+
 - `DELETE /api/source-pipelines/:sourceId`: erase that archive source's materials/history, dependent evidence and raw files, and pause the source to prevent queued uploads restoring it. Only archive-backed sources are accepted.
 - `GET /api/materials?query=...`: search published indexed material text, with the existing scope/pagination filters.
+
+Automatic admission pins the host's raw input identity separately from the material revision: a source-head capture for ordinary sources, or the archive group checkpoint for Coding sources. Processing completions cannot masquerade as new raw input. Installing an organizer over existing captures uses deterministic backfill without granting model work. Readiness is separate from automatic authorization, so a withheld grant does not hide the material or prevent an explicit owner request. Missing authorization on old queue records fails closed; the old archive-only queue is retired into the common queue, without rewriting Memory artifacts. Startup recovery of automatic material jobs belongs to this queue, not the generic detached-job resumer. Deletion removes the queue state and durably requests cancellation.
+
+This boundary currently evaluates enablement when the formal material is observed. The receipt-time enablement of accepted but not yet published backlog still needs an explicit host contract; do not treat these checks as full acceptance of every install/enable timing race. Independent simultaneous Memory strategies and their scoped historical-recompute authorizations are also separate pending work.
 
 Uninstalling a bound pipeline blocks reception and pending organization. It never falls through to the raw record store. Reinstall resumes pending work; upgrading a version requeues existing logical groups. A higher-priority plugin can supply a different default for new sources; `pipelineId` selects it explicitly for an existing compatible source. Source capability registration remains required.
 

@@ -16,7 +16,7 @@ app.get('/api/coding/uploads',async req=>{
     work:store.db.prepare('SELECT state,count(*) AS count FROM source_pipeline_work WHERE source_id=? GROUP BY state').all(source.id),
     materials:Number(store.db.prepare('SELECT count(*) AS n FROM material_heads WHERE source_id=? AND retired=0').get(source.id)?.n??0),
     indexedMaterials:Number(store.db.prepare('SELECT count(*) AS n FROM material_searchable s JOIN material_heads h ON h.id=s.material_id WHERE h.source_id=? AND h.retired=0').get(source.id)?.n??0),
-    memory:store.db.prepare("SELECT coalesce(json_extract(j.json,'$.status'),CASE WHEN w.error IS NOT NULL THEN 'blocked' ELSE 'waiting' END) AS state,count(*) AS count FROM material_memory_work w JOIN material_heads h ON h.id=w.material_id LEFT JOIN memory_jobs j ON j.id=w.job_id WHERE h.source_id=? AND h.retired=0 GROUP BY state").all(source.id),
+    memory:store.db.prepare("SELECT coalesce(json_extract(j.json,'$.status'),CASE WHEN w.auto_authorized=0 THEN 'not_requested' WHEN w.error IS NOT NULL THEN 'blocked' ELSE 'waiting' END) AS state,count(*) AS count FROM material_memory_requests w JOIN material_heads h ON h.id=w.material_id LEFT JOIN memory_jobs j ON j.id=w.job_id WHERE h.source_id=? AND h.retired=0 GROUP BY state").all(source.id),
     pipeline:(()=>{try{return sourcePipelines.select(source)?.id??null;}catch(error){if(error instanceof StoreError&&error.statusCode===409)return null;throw error;}})(),
   }));
   return {items,nextOffset:offset+limit<all.length?offset+limit:null};

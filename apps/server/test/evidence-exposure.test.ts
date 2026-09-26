@@ -265,16 +265,16 @@ test('synthetic Material evidence obeys named Memory readiness without blocking 
   const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,undefined,recipes,
     ref=>memoryWork.readyForMemory(ref));
   const agent=reader.agent({diagnostics,currentOperation:()=> 'memory'});
-  let material=materials.publish(base);memoryWork.observe(material.id,['source-body']);
+  let material=materials.publish(base);memoryWork.observe(material.id,['source-body'],{inputKey:'generated-raw-input',change:'rebuild'});
   let anchor=materials.evidenceIds(material.ref)[0];assert.ok(anchor);
   assert.deepEqual(await agent.evidence({ids:[anchor]}),[],'pending named artifact blocks synthetic evidence');
   assert.equal((await agent.evidence({ids:[rawId]})).length,1,'unrelated raw evidence keeps its existing Memory path');
   material=materials.publish({...base,artifacts:[{key:'source-body',state:'failed',reason:'generated failure'}]},
-    {expectedRevision:material.revision});memoryWork.observe(material.id,['source-body']);
+    {expectedRevision:material.revision});memoryWork.observe(material.id,['source-body'],{inputKey:'generated-raw-input',change:'rebuild'});
   anchor=materials.evidenceIds(material.ref)[0];assert.ok(anchor);
   assert.deepEqual(await agent.evidence({ids:[anchor]}),[],'failed named artifact blocks synthetic evidence');
   material=materials.publish({...base,artifacts:[{key:'source-body',state:'ready'}]},
-    {expectedRevision:material.revision});memoryWork.observe(material.id,['source-body']);
+    {expectedRevision:material.revision});memoryWork.observe(material.id,['source-body'],{inputKey:'generated-raw-input',change:'rebuild'});
   anchor=materials.evidenceIds(material.ref)[0];assert.ok(anchor);
   assert.equal((await agent.evidence({ids:[anchor]})).length,1,'ready named artifact permits partial synthetic evidence');
 });

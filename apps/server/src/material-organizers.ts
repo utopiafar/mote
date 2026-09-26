@@ -396,7 +396,7 @@ export class MaterialOrganizerRegistry {
   list(){return [...this.organizers.values()].map(({id,version,slot,priority,exclusive})=>({id,version,slot:slot??id,priority:priority??0,exclusive:Boolean(exclusive)}));}
 }
 
-type OrganizerJobInput=Record<string,unknown>&{groupKey:string;organizerId:string;version:string;group:Record<string,string>;materialId:string;generation:number;checkpoint:number;active:boolean;recipe?:SourceItemRecipePin};
+type OrganizerJobInput=Record<string,unknown>&{groupKey:string;organizerId:string;version:string;group:Record<string,string>;materialId:string;generation:number;checkpoint:number;active:boolean;sourceChanged?:boolean;recipe?:SourceItemRecipePin};
 type OrganizerResult={draft:MaterialDraft|undefined;calls:ReaderCall[];pinnedSourceHead?:string};
 type OrganizerGroupRow={group_key:string;organizer_id:string;version:string;group_json:string;material_id:string;generation:number;checkpoint:number;active:number};
 const ORGANIZER_STEP='material.organizer';
@@ -444,6 +444,9 @@ export class MaterialOrganizerRuntime {
         INSERT INTO changes(id,operation,changed_at) VALUES(old.capture_id,'supersede',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
       END;`);
     if(!(store.db.prepare('PRAGMA table_info(material_organizer_inputs)').all() as {name:string}[]).some(row=>row.name==='material_id'))store.db.exec('ALTER TABLE material_organizer_inputs ADD COLUMN material_id TEXT');
+    // Installation may find an existing archive. Rebuild it deterministically
+    // through backfill; only changes after installation count as new intake.
+    store.db.prepare("INSERT OR IGNORE INTO settings(key,value) SELECT 'material-organizer-cursor',CAST(coalesce(max(seq),0) AS TEXT) FROM changes").run();
     this.sourceItemRecipes=new SourceItemRecipeCatalog(store,sourceItem.version);
     this.executor=executor??new ExecutionEngine(store);
     this.unregister=this.executor.register({kind:ORGANIZER_STEP,pool:'material-organizer',concurrency:()=>8,
@@ -479,9 +482,9 @@ export class MaterialOrganizerRuntime {
           materials.setSearchable(input.materialId,true);
           if(input.organizerId===sourceItem.id){
             const required=prepared.draft.artifacts?.some(item=>item.key==='original')?'extracted-text':'source-body';
-            const state=prepared.draft.artifacts?.find(item=>item.key===required)?.state;
-            if(state==='unavailable'||state==='failed')this.memoryWork?.withdraw(input.materialId);
-            else this.memoryWork?.observe(input.materialId,[required]);
+            if(prepared.pinnedSourceHead)this.memoryWork?.observe(input.materialId,[required],{
+              inputKey:prepared.pinnedSourceHead,change:input.sourceChanged?'source':'rebuild',
+            });
           }
         }else if(!other){
           const prior=materials.get(input.materialId);if(prior)materials.retire(input.materialId,{expectedRevision:prior.revision});
@@ -586,11 +589,12 @@ export class MaterialOrganizerRuntime {
         .find(row=>this.registry.get(row.id)?.version===row.version);
       const backfillRows=backfill?db.prepare('SELECT rowid,id FROM captures WHERE rowid>? ORDER BY rowid LIMIT ?').all(backfill.cursorRowid,batchSize) as {rowid:number;id:string}[]:[];
       const changedIds=[...new Set([...rows.map(row=>row.id),...backfillRows.map(row=>row.id)])];
-      const touched=new Map<string,{organizerId:string;group:Record<string,string>;priorMaterialId:string|null}>();
+      const changedSourceIds=new Set(rows.map(row=>row.id));
+      const touched=new Map<string,{organizerId:string;group:Record<string,string>;priorMaterialId:string|null;sourceChanged:boolean}>();
       const replacements=new Map<string,Set<string>>();
-      const touch=(organizerId:string,group:Record<string,string>,priorMaterialId:string|null=null)=>{
+      const touch=(organizerId:string,group:Record<string,string>,priorMaterialId:string|null=null,sourceChanged=false)=>{
         const key=digest([organizerId,group]),prior=touched.get(key);
-        touched.set(key,{organizerId,group,priorMaterialId:prior?.priorMaterialId??priorMaterialId});
+        touched.set(key,{organizerId,group,priorMaterialId:prior?.priorMaterialId??priorMaterialId,sourceChanged:Boolean(prior?.sourceChanged||sourceChanged)});
       };
       for(const captureId of changedIds){
         const previous=db.prepare('SELECT organizer_id,group_json,material_id FROM material_organizer_inputs WHERE capture_id=?').all(captureId) as {organizer_id:string;group_json:string;material_id:string|null}[];
@@ -606,7 +610,7 @@ export class MaterialOrganizerRuntime {
         }
         db.prepare('DELETE FROM material_organizer_inputs WHERE capture_id=?').run(captureId);
         for(const {organizer,group} of selections){
-          touch(organizer.id,group);
+          touch(organizer.id,group,null,changedSourceIds.has(captureId));
           db.prepare('INSERT INTO material_organizer_inputs(capture_id,organizer_id,group_json,material_id) VALUES(?,?,?,?)').run(captureId,organizer.id,JSON.stringify(group),organizer.identity(group)??null);
         }
       }
@@ -614,7 +618,7 @@ export class MaterialOrganizerRuntime {
       // backlog must still invalidate a group before its fenced commit.
       const checkpoint=rows.at(-1)?.seq??this.cursor();
       const prepared:{key:string;input:OrganizerJobInput;id:string}[]=[];
-      for(const [key,{organizerId,group,priorMaterialId}] of touched){
+      for(const [key,{organizerId,group,priorMaterialId,sourceChanged}] of touched){
         const organizer=this.registry.get(organizerId),prior=db.prepare('SELECT * FROM material_organizer_groups WHERE group_key=?').get(key) as OrganizerGroupRow|undefined;
         const materialId=organizer?.identity(group)??priorMaterialId??prior?.material_id;
         if(!materialId)continue;
@@ -626,7 +630,7 @@ export class MaterialOrganizerRuntime {
           ON CONFLICT(group_key) DO UPDATE SET version=excluded.version,group_json=excluded.group_json,material_id=excluded.material_id,
             generation=excluded.generation,checkpoint=excluded.checkpoint,active=excluded.active`).run(key,organizerId,version,groupJson,materialId,generation,checkpoint,Number(active));
         const recipe=active&&organizerId===sourceItem.id?this.sourceItemRecipes.resolveForSourceId(group.sourceId):undefined;
-        const input:OrganizerJobInput={groupKey:key,organizerId,version,group,materialId,generation,checkpoint,active,...(recipe?{recipe}:{})};
+        const input:OrganizerJobInput={groupKey:key,organizerId,version,group,materialId,generation,checkpoint,active,sourceChanged,...(recipe?{recipe}:{})};
         prepared.push({key,input,id:digest([ORGANIZER_STEP,key,generation])});
       }
       const ids=new Map(prepared.map(item=>[item.key,item.id]));

@@ -102,7 +102,9 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
 export function recoverableMemoryJobs(store:Store,lifecycle:MemoryLifecycle):string[]{
   const state=lifecycle.view(),active=state.extensions.find(e=>e.id==='extraction')?.active?.checkpoint;
   return (store.db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.status') IN ('queued','running')").all() as {id:string;json:string}[]).filter(row=>{
-    const job=JSON.parse(row.json) as {importJobId?:string};
+    const job=JSON.parse(row.json) as {importJobId?:string;originKey?:string};
+    // Material work is resumed only by its durable, currently authorized queue.
+    if(job.originKey?.startsWith('material:'))return false;
     return !job.importJobId?.startsWith('lifecycle:')||(state.settings.extraction.enabled&&row.id!==active);
   }).map(row=>row.id);
 }

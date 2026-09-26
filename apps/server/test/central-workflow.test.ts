@@ -15,6 +15,28 @@ const config=(dataDir:string):Config=>({dataDir,token:'synthetic-central-workflo
 const original='合成记录：我准备下周验证观测方案。';
 async function until<T>(read:()=>Promise<T>,done:(value:T)=>boolean):Promise<T>{for(let index=0;index<100;index++){const value=await read();if(done(value))return value;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Fixture workflow did not finish');}
 
+test('source received while automatic Memory is disabled stays searchable and supports an explicit HTTP job',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-explicit-material-memory-')),cfg=config(directory);
+  let calls=0;
+  const node=await buildApp(cfg,{agent:{configured:true,close:async()=>{},query:async()=>{
+    calls++;return {answer:'{"memories":[]}',citations:[],trace:[],runId:randomUUID()};
+  }}});
+  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  const settings=node.lifecycle.settings();node.lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});
+  node.sources.register({id:'fixture-disabled-memory',name:'Generated',kind:'custom',deviceId:'fixture',platform:'import',retention:'archive'});
+  await node.sources.upsert('fixture-disabled-memory',{externalId:'original',revision:'1',observedAt:'2026-09-20T00:00:00Z',text:'Generated independently readable original',kind:'message',layer:'original'});
+  await node.materialOrganizer.tick();
+  const material=node.materials.get(materialId('fixture-disabled-memory','original'))!;
+  assert.equal(node.materialMemoryWork.readyForMemory(material.ref),true);
+  node.lifecycle.configure(settings);
+  assert.equal(node.sourcePipelines.drainMemory(node.memoryPipeline,true),0);assert.equal(calls,0);
+  assert.equal(node.materials.list({query:'independently readable'}).items[0]?.id,material.id);
+  const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers:{authorization:'Bearer '+cfg.token},payload:{evidenceIds:node.materials.evidenceIds(material.ref)}});
+  assert.equal(response.statusCode,202,response.body);
+  const finished=await until(async()=>node.memoryPipeline.get(response.json().id),job=>job.status==='completed');
+  assert.equal(finished.failedBatches,0);assert.equal(calls,1);
+});
+
 test('central UI APIs complete original import → exact Memory → cited static insight with recoverable jobs',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-central-workflow-')),cfg=config(directory),queries:QueryInput[]=[];
   let failMemory=true,evidenceId='';

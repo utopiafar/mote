@@ -8,6 +8,8 @@ import {MaterialStore} from '../src/materials.js';
 import {SourceStore} from '../src/sources.js';
 import {SourcePipelineRuntime} from '../src/source-pipelines.js';
 import {codingSourcePlugin} from '../src/coding-source-plugin.js';
+import {EvidenceReader} from '../src/evidence-reader.js';
+import {MemoryPipeline} from '../src/memory-pipeline.js';
 import type {Context} from '@deepseek-ai/cordis';
 
 const event=(id:string,text:string)=>({externalId:id,revision:'1',observedAt:'2026-09-24T01:00:00Z',kind:'message',layer:'snapshot',text,
@@ -98,4 +100,49 @@ test('recipe upgrade does not silently replay after out-of-band configuration dr
   assert.equal(blocked.recipe_version,'6');assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'recipe_config_changed');
   assert.equal(store.db.prepare("SELECT COUNT(*) n FROM execution_steps WHERE kind='source.archive-group'").get()!.n,1);
   await runtime.close();store.close();
+});
+
+test('Coding recipe upgrade reuses the common queue without paying for historical extraction; explicit work remains available',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-source-upgrade-memory-'));
+  let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  let sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
+  let calls=0;
+  const pipeline=()=>{const reader=new EvidenceReader(store,sources,undefined,undefined,undefined,materials,runtime);
+    return new MemoryPipeline({store,memories:reader.memories,materialAllowedForMemory:ref=>reader.materialAllowedForMemory(ref),configured:()=>true,model:()=> 'fixture',query:async()=>{
+      calls++;return {answer:'{"memories":[]}',citations:[],trace:[],runId:'fixture'};
+    }});};
+  let memory=pipeline();
+  t.after(async()=>{await memory.close();await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  runtime.configure('coding',{settleSeconds:0});
+  await sources.upsert('coding',event('one','Generated authorization boundary'));await runtime.tick();
+  const first=materials.list().items[0];
+  assert.equal(runtime.drainMemory(memory,true),1);
+  const jobId=String(store.db.prepare('SELECT job_id FROM material_memory_requests').get()!.job_id);
+  assert.equal((await memory.run(jobId)).status,'completed');assert.equal(calls,1);
+  await memory.close();await runtime.close();store.close();
+
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
+  sources=new SourceStore(store,runtime);memory=pipeline();
+  const snapshot=runtime.recipes.snapshot.bind(runtime.recipes);
+  // The generated replacement renderer needs a full rebuild of the same raw
+  // input. Exercise a changed output, not an idempotent no-op append.
+  runtime.recipes.snapshot=(recipe,reader,source,group,signal)=>snapshot(recipe,reader,source,group,signal);
+  const organize=runtime.recipes.organize.bind(runtime.recipes);
+  runtime.recipes.organize=(...args)=>{const draft=organize(...args);return draft?{...draft,title:'Generated new rendering version'}:draft;};
+  await runtime.tick();
+  const upgraded=materials.get(first.id)!;assert.notEqual(upgraded.revision,first.revision,'the deterministic upgrade really changed the material');
+  assert.equal(runtime.memoryWork.readyForMemory(upgraded.ref),true);
+  assert.equal(runtime.drainMemory(memory,true),0);assert.equal(calls,1);
+  const oldJob=memory.get(jobId);assert.equal(oldJob.id,jobId,'the historical receipt is retained');
+  assert.ok(oldJob.batches.every(batch=>batch.status==='invalidated'),'changed evidence keeps the existing stale-input guarantee');
+  const explicit=memory.create({evidenceIds:materials.evidenceIds(upgraded.ref)});
+  await memory.run(explicit.id);assert.equal(calls,2,'a separate explicit request can use the new revision');
+  // Changing enablement/configuration on this same input cannot manufacture a grant.
+  runtime.configure('coding',{memory:false,settleSeconds:0});await runtime.tick();
+  runtime.configure('coding',{memory:true,settleSeconds:0});await runtime.tick();
+  assert.equal(runtime.drainMemory(memory,true),0);assert.equal(calls,2);
+  await sources.upsert('coding',event('two','Generated newly received evidence'));await runtime.tick();
+  assert.equal(runtime.drainMemory(memory,true),1);
+  const next=String(store.db.prepare('SELECT job_id FROM material_memory_requests').get()!.job_id);
+  await memory.run(next);assert.equal(calls,3,'new raw input retains automatic intake behavior');
 });

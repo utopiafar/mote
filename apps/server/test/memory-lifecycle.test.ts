@@ -139,6 +139,7 @@ test('startup recovers detached queued jobs without bypassing active retry or di
   lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){}});
   store.db.exec('CREATE TABLE IF NOT EXISTS memory_jobs(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL)');
   for(const [id,status,importJobId] of [['manual','queued',null],['orphan','queued','lifecycle:old'],['active','queued','lifecycle:current'],['paused','paused','lifecycle:paused'],['cancelled','cancelled',null]])store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run(id,new Date().toISOString(),JSON.stringify({id,status,importJobId}));
+  store.db.prepare('INSERT INTO memory_jobs VALUES(?,?,?)').run('material',new Date().toISOString(),JSON.stringify({id:'material',status:'queued',originKey:'material:generated@revision'}));
   store.db.prepare('UPDATE memory_lifecycle_state SET json=? WHERE id=?').run(JSON.stringify({cursor:0,lastSuccess:0,failures:1,retryAt:Date.now()+60000,active:{checkpoint:'active',ids:[]}}),'extraction');
   assert.deepEqual(recoverableMemoryJobs(store,lifecycle),['manual','orphan']);
   const settings=lifecycle.settings();lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false}});

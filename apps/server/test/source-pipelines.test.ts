@@ -143,7 +143,7 @@ test('model extraction first reads the assembled conversation, never raw upload 
   let calls=0;const pipeline=new MemoryPipeline({store,memories:reader.memories,materialAllowedForMemory:ref=>reader.materialAllowedForMemory(ref),configured:()=>true,model:()=> 'fixture',query:async input=>{
     calls++;assert.equal(input.skill,'coding-memory');const records=reader.evidence(input.evidenceIds);assert.ok(records[0].ocrText.includes('Second generated message.'));assert.ok(records[0].ocrText.includes('Generated user requirement'));return {answer:'{"memories":[]}',citations:[],trace:[],runId:'fixture'};
   }});
-  runtime.drainMemory(pipeline,true);const job=store.db.prepare('SELECT job_id FROM material_memory_work').get()!;assert.ok(job.job_id);await pipeline.run(String(job.job_id));assert.ok(calls>0);await pipeline.close();
+  runtime.drainMemory(pipeline,true);const job=store.db.prepare('SELECT job_id FROM material_memory_requests').get()!;assert.ok(job.job_id);await pipeline.run(String(job.job_id));assert.ok(calls>0);await pipeline.close();
   const material=materials.list().items[0];materials.forget(material.id);assert.equal(materials.list({query:'Generated'}).items.length,0);assert.equal(store.db.prepare('SELECT count(*) n FROM material_evidence').get()!.n,0);
 });
 
@@ -183,9 +183,9 @@ test('Memory waits for named outputs while a partial material remains queryable'
   runtime.configure('partial',{settleSeconds:0});await runtime.tick();
   const material=materials.list().items.find(item=>item.origin.sourceId==='partial');assert.ok(material);
   assert.equal(material.coverage.state,'partial');assert.match(reader.materialRead({ref:material.ref}).text,/Generated partial evidence/);
-  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM material_memory_work WHERE material_id=?').get(material.id)!.n,1);
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM material_memory_requests WHERE material_id=?').get(material.id)!.n,1);
   runtime.configure('partial',{memoryDependencies:['attachment'],settleSeconds:0});await runtime.tick();
-  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM material_memory_work WHERE material_id=?').get(material.id)!.n,0);
+  assert.equal(runtime.memoryWork.readyForMemory(material.ref),false);
 });
 
 test('HTTP source upload, material search and actual agent bridge cite assembled evidence end to end',async t=>{
@@ -213,7 +213,7 @@ test('HTTP source upload, material search and actual agent bridge cite assembled
 test('fragment boundaries preserve exact text and partial messages wait for their remaining parts',async t=>{
   const {runtime,sources,materials,store}=await fixture(t);
   const body='甲🙂乙'.repeat(4500);const first=item(1,'session-a',body);first.document.coding.parts=2;
-  await sources.upsert('coding',first);await runtime.tick();const partial=materials.list().items[0];assert.equal(partial.coverage.state,'partial');assert.equal(store.db.prepare('SELECT count(*) n FROM material_memory_work').get()!.n,0);
+  await sources.upsert('coding',first);await runtime.tick();const partial=materials.list().items[0];assert.equal(partial.coverage.state,'partial');assert.equal(runtime.memoryWork.readyForMemory(partial.ref),false);
   const second={...first,externalId:'part-two',text:'The end.',document:{...first.document,coding:{...first.document.coding,part:1}}};
   await sources.upsert('coding',second);await runtime.tick();const full=materials.list().items[0];assert.equal(full.coverage.state,'complete');
   let text='',offset=0;for(;;){const page=materials.read(full.ref,{offset});text+=page.text;if(page.textRange.nextOffset===null)break;offset=page.textRange.nextOffset;}assert.ok(text.includes(body));assert.ok(text.includes('The end.'));

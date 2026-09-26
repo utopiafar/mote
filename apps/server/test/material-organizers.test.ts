@@ -110,6 +110,22 @@ test('ordinary material revisions and retirement update the fenced Memory reques
   assert.equal(request(),undefined);
 });
 
+test('installing organizers over an existing source archive backfills readable materials without authorizing model work',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-existing-source-memory-'));
+  const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
+  sources.register({id:'fixture-existing',name:'Generated archive',kind:'custom',deviceId:'fixture',platform:'import',retention:'archive'});
+  await sources.upsert('fixture-existing',{externalId:'old',revision:'1',observedAt:at(0),text:'Generated existing original',kind:'message',layer:'original'});
+  const work=new MaterialMemoryWork(store,materials),organizers=new MaterialOrganizerRuntime(store,materials,[],undefined,work);
+  t.after(async()=>{await organizers.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  for(let i=0;i<8;i++)await organizers.tick();
+  const old=materials.get(materialId('fixture-existing','old'))!;assert.ok(old);
+  assert.equal(work.readyForMemory(old.ref),true);assert.equal(materials.list({query:'existing original'}).items[0]?.id,old.id);
+  let calls=0;const runner={create:()=>{calls++;return {id:'fixture'};},get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+  assert.equal(work.drain(runner,true),0);assert.equal(calls,0);
+  await sources.upsert('fixture-existing',{externalId:'new',revision:'1',observedAt:at(1),text:'Generated new original',kind:'message',layer:'original'});
+  await organizers.tick();work.drain(runner,true);assert.equal(calls,1);
+});
+
 test('real FileStore original stays pinned while processing and late attachment changes rebuild its material',async t=>{
   const {store,sources,files,materials,organizers,archived}=fixture(t);
   sources.register({id:'fixture-files',name:'Generated files',kind:'local-files',deviceId:'fixture-phone',platform:'android',retention:'archive'});
