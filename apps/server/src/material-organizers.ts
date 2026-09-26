@@ -217,7 +217,7 @@ const codingExternalId=(g:Record<string,string>)=>JSON.stringify([g.provider,g.p
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'5',slot:'source-item',
+  id:'mote.source-item',version:'6',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -226,6 +226,7 @@ const sourceItem:MaterialOrganizer={
     const {attachments,chunks,job}=file;
     const body=new MaterialBody();body.addMember(r);
     body.text('source-record',captureText(r),r.id,'json',undefined,undefined,evidenceContext(r));
+    const sourceBlocks=body.blocks.map(block=>block.id);
     for(const c of chunks){
       const text=c.speaker?JSON.stringify({speaker:c.speaker,...(c.speakerAttribution?{speakerAttribution:c.speakerAttribution}:{}),text:c.text}):c.text;
       // The chunk writer preserves a real media timeline across corrections.
@@ -234,6 +235,7 @@ const sourceItem:MaterialOrganizer={
         {chunkId:c.id,...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],
         evidenceContext(r,c.startMs===null?undefined:'transcript'));
     }
+    const extractedBlocks=body.blocks.filter(block=>!sourceBlocks.includes(block.id)).map(block=>block.id);
     if(file.objectHash)body.asset('original',file.objectHash,r.provenance?.mimeType??'application/octet-stream',r.id);
     for(const attachment of attachments){
       body.asset(`attachment:${attachment.id}`,attachment.hash,attachment.mimeType,r.id,
@@ -251,12 +253,15 @@ const sourceItem:MaterialOrganizer={
     if(r.provenance?.document?.fileIndex&&r.provenance.document.fileIndex.coverage!=='full'){state='partial';reason='source_index_partial';}
     const reference=r.provenance?.layer==='reference'||r.provenance?.layer==='derived';
     const hasSourceBody=Boolean(r.ocrText?.trim());
-    const limitations=['metadata_projected',...(reference?['original_body_not_collected']:[]),...(state==='partial'?[reason??'processing_incomplete']:[])];
+    // Processing readiness belongs to coverage/artifacts. Changing an unrelated
+    // processor's state must not change the identity of the authored body.
+    const limitations=['metadata_projected',...(reference?['original_body_not_collected']:[])];
     const artifacts:MaterialDraft['artifacts']=[
-      {key:'source-body',state:reference||!hasSourceBody?'unavailable':'ready',
+      {key:'source-record',blockIds:sourceBlocks,state:'ready'},
+      {key:'source-body',blockIds:sourceBlocks,state:reference||!hasSourceBody?'unavailable':'ready',
         ...(reference?{reason:'original_body_not_collected'}:!hasSourceBody?{reason:'source_body_empty'}:{})},
-      ...(file.objectHash?[{key:'original',state:'ready' as const,revision:file.objectHash}]:[]),
-      ...(file.objectHash?[{key:'extracted-text',state:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed'].includes(job?.state??'')?'failed' as const:chunks.length?'ready' as const:'unavailable' as const,...(job?.error?{reason:job.error}:{})}]:[]),
+      ...(file.objectHash?[{key:'original',blockIds:body.blocks.filter(b=>b.id==='original').map(b=>b.id),state:'ready' as const,revision:file.objectHash}]:[]),
+      ...(file.objectHash?[{key:'extracted-text',blockIds:extractedBlocks,state:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed'].includes(job?.state??'')?'failed' as const:chunks.length?'ready' as const:'unavailable' as const,...(job?.error?{reason:job.error}:{})}]:[]),
     ];
     const start=r.provenance?.calendar?.start??sourceContentTime(r),end=r.provenance?.calendar?.end??start;
     return {id:materialId(g.sourceId,g.externalId),kind:r.source==='file'?'mote.file':`mote.${r.source}`,schemaVersion:1,

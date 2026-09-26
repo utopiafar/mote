@@ -31,7 +31,8 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryRecipeSettings,s
   app.post('/api/memory-jobs',async(req,reply)=>{
     const scope=z.object({...scopeFields,contextTime:z.string().datetime({offset:true}).optional(),recipes:z.array(memoryStrategyRefSchema).min(1).max(8).optional(),modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
     const profile=modelSettings.select('memory',scope.modelProfileId);
-    const selection=scope.evidenceIds?undefined:evidenceReader.memorySelection(scope,undefined,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)));
+    const requirements=scope.recipes?.map(ref=>{try{return memoryPipeline.strategies.resolve(ref).binding.requires;}catch{throw new StoreError('Memory recipe is unavailable',409);}});
+    const selection=scope.evidenceIds?undefined:evidenceReader.memorySelection(scope,undefined,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)),requirements);
     let ids=scope.evidenceIds??selection!.evidenceIds;
     if(!ids.length)throw new StoreError('No evidence in this range',409);
     ids=[...new Set(ids)];

@@ -1,9 +1,10 @@
 import {z} from 'zod';
 import {recipeIdentifierSchema,recipeFingerprint} from './recipe-contract.js';
+import {materialRequirementsSchema} from './material-readiness.js';
 
 export const memoryStrategyRefSchema=z.object({id:recipeIdentifierSchema,version:z.string().min(1).max(64).regex(/^[0-9A-Za-z][0-9A-Za-z._+-]*$/)}).strict();
 export const memoryStrategyPinSchema=memoryStrategyRefSchema.extend({fingerprint:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
-export const memoryRecipeBindingSchema=z.object({recipe:memoryStrategyPinSchema,extract:memoryStrategyPinSchema,review:memoryStrategyPinSchema}).strict();
+export const memoryRecipeBindingSchema=z.object({recipe:memoryStrategyPinSchema,extract:memoryStrategyPinSchema,review:memoryStrategyPinSchema,requires:materialRequirementsSchema.optional()}).strict();
 export type MemoryStrategyRef=z.infer<typeof memoryStrategyRefSchema>;
 export type MemoryStrategyPin=z.infer<typeof memoryStrategyPinSchema>;
 export type MemoryRecipeBinding=z.infer<typeof memoryRecipeBindingSchema>;
@@ -14,7 +15,7 @@ export const memoryStrategyPin=(value:MemoryStrategyRef):MemoryStrategyPin=>({id
 const common=memoryStrategyRefSchema.extend({output:z.literal('memory-candidates@1'),permissions:z.tuple([z.literal('evidence.read')])});
 export const memoryExtractionStrategySchema=common.extend({input:z.literal('memory-evidence@1'),prompt:z.string().min(1).max(16000)}).strict();
 export const memoryReviewStrategySchema=common.extend({input:z.literal('memory-candidates@1'),policy:z.string().min(1).max(16000)}).strict();
-export const memoryRecipeSchema=memoryStrategyRefSchema.extend({extract:memoryStrategyRefSchema,review:memoryStrategyRefSchema}).strict();
+export const memoryRecipeSchema=memoryStrategyRefSchema.extend({extract:memoryStrategyRefSchema,review:memoryStrategyRefSchema,requires:materialRequirementsSchema.optional()}).strict();
 export type MemoryExtractionStrategy=z.infer<typeof memoryExtractionStrategySchema>;
 export type MemoryReviewStrategy=z.infer<typeof memoryReviewStrategySchema>;
 

@@ -1,13 +1,13 @@
 import {z} from 'zod';
 import {sha256,StoreError,type Store} from './store.js';
 import type {MaterialStore} from './materials.js';
-import {materialDependencyStatus} from './material-readiness.js';
+import {materialRequirementsSchema} from './material-readiness.js';
 import {DEFAULT_MEMORY_INPUT_SCOPE,MemoryInputAuthorization,type AutomaticMemoryGrant} from './memory-input-authorization.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import {memoryRecipeBindingSchema,type MemoryStrategyRef} from './memory-strategy-contract.js';
 
-const requiredSchema=z.array(z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._/-]*$/)).min(1).max(64).refine(v=>new Set(v).size===v.length,'Duplicate material dependency');
-type WorkRow={material_id:string;scope:string;revision:string;required_json:string;ready_at:number;job_id:string|null;error:string|null;input_key:string;auto_authorized:number;binding_json:string|null;context_time:string|null};
+const requiredSchema=materialRequirementsSchema;
+type WorkRow={material_id:string;scope:string;revision:string;required_json:string;source_required_json:string;input_fingerprint:string|null;ready_at:number;job_id:string|null;error:string|null;input_key:string;auto_authorized:number;binding_json:string|null;context_time:string|null};
 const TERMINAL_AT=Number.MAX_SAFE_INTEGER,RESUME_DELAY_MS=5000,RETRY_DELAY_MS=60000;
 export type MaterialMemoryRunner={
   create:(input:{evidenceIds:string[];originKey:string;contextTime?:string;recipes?:MemoryStrategyRef[];automaticGrant?:AutomaticMemoryGrant})=>{id:string};
@@ -46,6 +46,10 @@ export class MaterialMemoryWork {
       db.exec(`INSERT OR IGNORE INTO material_memory_requests SELECT material_id,'memory.default',revision,'["material"]',ready_at,job_id,error,'',0,NULL,NULL FROM material_memory_work;
         INSERT OR IGNORE INTO material_memory_revocations SELECT job_id,material_id,revision FROM material_memory_work WHERE job_id IS NOT NULL; DROP TABLE material_memory_work;`);
     });
+    const scopedColumns=new Set(db.prepare('PRAGMA table_info(material_memory_requests)').all().map(r=>String(r.name)));
+    if(!scopedColumns.has('source_required_json')){db.exec("ALTER TABLE material_memory_requests ADD COLUMN source_required_json TEXT NOT NULL DEFAULT '[\"material\"]'; UPDATE material_memory_requests SET source_required_json=required_json");}
+    if(!scopedColumns.has('input_fingerprint'))db.exec('ALTER TABLE material_memory_requests ADD COLUMN input_fingerprint TEXT');
+    if(!scopedColumns.has('input_fingerprint'))db.exec('DROP TRIGGER IF EXISTS ledger_material_memory_requests_insert; DROP TRIGGER IF EXISTS ledger_material_memory_requests_update; DROP TRIGGER IF EXISTS ledger_material_memory_requests_delete; DELETE FROM storage_ledger WHERE name=\'material_memory_requests\'');
     db.exec(`DROP TRIGGER IF EXISTS material_memory_forget;
       CREATE TRIGGER material_memory_forget BEFORE DELETE ON material_heads BEGIN
       INSERT OR IGNORE INTO material_memory_revocations SELECT job_id,material_id,revision FROM material_memory_requests WHERE material_id=old.id AND job_id IS NOT NULL;
@@ -68,34 +72,41 @@ export class MaterialMemoryWork {
     const keys=requiredSchema.parse([...required]),inputKey=z.string().min(1).max(256).parse(observation.inputKey);
     if(!Number.isSafeInteger(settleMs)||settleMs<0||settleMs>7*86400000)throw Error('Invalid material Memory settle delay');
     const material=this.materials.get(materialId);if(!material){this.withdraw(materialId);return;}
-    const requiredJson=JSON.stringify(keys),readyAt=this.now()+settleMs;
+    const sourceRequiredJson=JSON.stringify(keys),readyAt=this.now()+settleMs;
     this.transaction(()=>{
       const previous=this.rows(materialId),grants=this.inputs.list(material.origin.sourceId,inputKey);
       if(!grants.length)grants.push({scope:DEFAULT_MEMORY_INPUT_SCOPE,authorized:false,contextTime:new Date(this.now()).toISOString()});
       for(const row of previous)if(!grants.some(g=>g.scope===row.scope)){this.revoke(row);this.store.db.prepare('DELETE FROM material_memory_requests WHERE material_id=? AND scope=?').run(materialId,row.scope);}
       for(const grant of grants){
         const prior=previous.find(r=>r.scope===grant.scope),bindingJson=grant.binding?JSON.stringify(grant.binding):null;
-        const current:WorkRow={material_id:materialId,scope:grant.scope,revision:material.revision,required_json:requiredJson,ready_at:readyAt,job_id:null,error:null,input_key:inputKey,auto_authorized:0,binding_json:bindingJson,context_time:grant.contextTime};
+        const required=grant.binding?.requires??keys,requiredJson=JSON.stringify(required),selection=this.materials.input(material.ref,required);
+        const fingerprint=selection?.ready?selection.fingerprint:null;
+        const current:WorkRow={material_id:materialId,scope:grant.scope,revision:material.revision,required_json:requiredJson,source_required_json:sourceRequiredJson,input_fingerprint:fingerprint,ready_at:readyAt,job_id:null,error:null,input_key:inputKey,auto_authorized:0,binding_json:bindingJson,context_time:grant.contextTime};
         const automatic=this.automaticEnabled()&&observation.automatic!==false&&grant.authorized&&this.available(current,material.origin.sourceId,prior?.job_id??undefined);
         const authorized=automatic&&(prior?.input_key===inputKey?Boolean(prior.auto_authorized&&!prior.job_id):observation.change==='source');
-        if(prior?.revision===material.revision&&prior.required_json===requiredJson){
+        const sameInput=prior?.input_key===inputKey&&prior.required_json===requiredJson&&
+          (prior.revision===material.revision||Boolean(prior.input_fingerprint&&prior.input_fingerprint===fingerprint));
+        if(sameInput){
           if(!automatic&&prior.auto_authorized){this.revoke(prior);this.update(prior,'auto_authorized=0,job_id=NULL,input_key=?',[inputKey]);}
           else this.update(prior,'input_key=?,auto_authorized=?',[inputKey,prior.job_id?prior.auto_authorized:Number(authorized)]);
+          this.update(prior,'source_required_json=?,input_fingerprint=?,revision=?',[sourceRequiredJson,fingerprint,material.revision]);
           continue;
         }
         if(prior)this.revoke(prior);
-        this.store.reserveMetadata(Buffer.byteLength(requiredJson+(bindingJson??''))+512);
-        this.store.db.prepare(`INSERT INTO material_memory_requests VALUES(?,?,?,?,?,NULL,NULL,?,?,?,?) ON CONFLICT(material_id,scope) DO UPDATE SET
-          revision=excluded.revision,required_json=excluded.required_json,ready_at=excluded.ready_at,job_id=NULL,error=NULL,input_key=excluded.input_key,auto_authorized=excluded.auto_authorized,binding_json=excluded.binding_json,context_time=excluded.context_time`)
-          .run(materialId,grant.scope,material.revision,requiredJson,readyAt,inputKey,Number(authorized),bindingJson,grant.contextTime);
+        this.store.reserveMetadata(Buffer.byteLength(requiredJson+sourceRequiredJson+(bindingJson??''))+640);
+        this.store.db.prepare(`INSERT INTO material_memory_requests VALUES(?,?,?,?,?,NULL,NULL,?,?,?,?,?,?) ON CONFLICT(material_id,scope) DO UPDATE SET
+          revision=excluded.revision,required_json=excluded.required_json,ready_at=excluded.ready_at,job_id=NULL,error=NULL,input_key=excluded.input_key,auto_authorized=excluded.auto_authorized,binding_json=excluded.binding_json,context_time=excluded.context_time,source_required_json=excluded.source_required_json,input_fingerprint=excluded.input_fingerprint`)
+          .run(materialId,grant.scope,material.revision,requiredJson,readyAt,inputKey,Number(authorized),bindingJson,grant.contextTime,sourceRequiredJson,fingerprint);
       }
     });
   }
   withdraw(materialId:string){this.transaction(()=>{for(const row of this.rows(materialId))this.revoke(row);this.store.db.prepare('DELETE FROM material_memory_requests WHERE material_id=?').run(materialId);});}
-  readyForMemory(ref:string):boolean{
+  private selection(row:WorkRow){return this.materials.input(row.material_id,requiredSchema.parse(JSON.parse(row.required_json)));}
+  sourceRequirements(ref:string):string[]|undefined {const material=this.materials.get(ref),row=material&&this.rows(material.id)[0];return row?requiredSchema.parse(JSON.parse(row.source_required_json)):undefined;}
+  readyForMemory(ref:string,scope?:string):boolean{
     try{const pinned=this.materials.get(ref);if(!pinned)return false;const current=this.materials.get(pinned.id);if(current?.revision!==pinned.revision)return false;
-      const row=this.rows(pinned.id).find(r=>r.revision===pinned.revision);if(!row)return false;
-      return materialDependencyStatus(current,requiredSchema.parse(JSON.parse(row.required_json))).ready&&this.materials.evidenceIds(current.ref).some(id=>this.materials.isCurrentEvidence(id));
+      const row=this.rows(pinned.id).find(r=>r.revision===pinned.revision&&(scope===undefined||r.scope===scope));if(!row)return false;
+      return Boolean(this.materials.input(current.ref,requiredSchema.parse(JSON.parse(scope===undefined?row.source_required_json:row.required_json)))?.ready);
     }catch{return false;}
   }
   /** Execution and commit both check this, including a retry of an old auto job. */
@@ -104,7 +115,9 @@ export class MaterialMemoryWork {
     const {sourceId,inputKey,scope}=job.automaticGrant;
     if(!this.automaticEnabled()||!this.inputs.available(sourceId,inputKey,job.id,scope))return false;
     const grant=this.inputs.list(sourceId,inputKey).find(g=>g.scope===scope);
-    return Boolean(grant&&(!this.recipes||grant.binding&&this.recipes.enabled(sourceId,grant.binding)));
+    const row=this.store.db.prepare('SELECT * FROM material_memory_requests WHERE scope=? AND input_key=? AND job_id=?').get(scope,inputKey,job.id) as WorkRow|undefined;
+    const selection=row&&this.selection(row);
+    return Boolean(grant&&row?.auto_authorized&&selection?.ready&&selection.fingerprint===row.input_fingerprint&&(!this.recipes||grant.binding&&this.recipes.enabled(sourceId,grant.binding)));
   }
   /** Selection changes revoke work, without creating receipts or deleting products. */
   reconcile(runner:MaterialMemoryRunner){
@@ -126,7 +139,7 @@ export class MaterialMemoryWork {
       const current=this.rows(row.material_id).find(r=>r.scope===row.scope&&r.job_id===id&&r.auto_authorized);
       if(!current||!this.automaticEnabled()||!allowed(row.material_id))return;
       const material=this.materials.get(row.material_id);
-      if(material?.revision!==current.revision||!this.readyForMemory(material.ref)||!this.available(current,material.origin.sourceId,id))return;
+      if(material?.revision!==current.revision||!this.readyForMemory(material.ref,current.scope)||!this.available(current,material.origin.sourceId,id))return;
       return runner.run(id);
     }).catch(()=>this.update(row,"error='memory_run_failed'")).finally(()=>this.active.delete(id));
   }
@@ -138,21 +151,21 @@ export class MaterialMemoryWork {
       if(!allowed(row.material_id)){this.update(row,'ready_at=?',[this.now()+RETRY_DELAY_MS]);continue;}
       const material=this.materials.get(row.material_id);if(!material){this.withdraw(row.material_id);continue;}
       if(!this.available(row,material.origin.sourceId,row.job_id??undefined)){this.revoke(row);this.update(row,'auto_authorized=0');continue;}
-      if(material.revision!==row.revision){this.observe(row.material_id,requiredSchema.parse(JSON.parse(row.required_json)),{inputKey:row.input_key||'unknown',change:'rebuild'});continue;}
-      if(!this.readyForMemory(material.ref)){
+      if(material.revision!==row.revision){this.observe(row.material_id,requiredSchema.parse(JSON.parse(row.source_required_json)),{inputKey:row.input_key||'unknown',change:'rebuild'});continue;}
+      if(!this.readyForMemory(material.ref,row.scope)){
         if(existing){this.revoke(row);this.update(row,'auto_authorized=0');}else this.update(row,'ready_at=?',[this.now()+RETRY_DELAY_MS]);continue;
       }
       if(!existing){
-        const evidenceIds=this.materials.evidenceIds(material.ref);if(!evidenceIds.length){this.update(row,'ready_at=?',[this.now()+RETRY_DELAY_MS]);continue;}
+        const selection=this.selection(row),evidenceIds=selection?.evidenceIds??[];if(!selection?.ready||!evidenceIds.length){this.update(row,'ready_at=?',[this.now()+RETRY_DELAY_MS]);continue;}
         try{
           const binding=row.binding_json?memoryRecipeBindingSchema.parse(JSON.parse(row.binding_json)):undefined;
           if(binding&&!this.recipes?.available(binding))throw Error('recipe unavailable');
           const job=runner.create({evidenceIds,originKey:binding?'material:'+sha256(JSON.stringify([material.ref,row.scope,row.input_key])):material.ref,...(binding?{contextTime:row.context_time!,recipes:[{id:binding.recipe.id,version:binding.recipe.version}],automaticGrant:{sourceId:material.origin.sourceId,inputKey:row.input_key,scope:row.scope}}:{})});
           const claimed=this.transaction(()=>{
             const current=this.rows(row.material_id).find(r=>r.scope===row.scope);
-            if(!current?.auto_authorized||current.revision!==row.revision||current.input_key!==row.input_key||current.job_id||!this.readyForMemory(material.ref)||!this.available(current,material.origin.sourceId))return false;
+            if(!current?.auto_authorized||current.revision!==row.revision||current.input_key!==row.input_key||current.job_id||this.selection(current)?.fingerprint!==selection.fingerprint||!this.readyForMemory(material.ref,row.scope)||!this.available(current,material.origin.sourceId))return false;
             if(!this.inputs.claim(material.origin.sourceId,row.input_key,job.id,row.scope))return false;
-            return Boolean(this.update(row,'job_id=?,error=NULL',[job.id]).changes);
+            return Boolean(this.update(row,'job_id=?,input_fingerprint=?,error=NULL',[job.id,selection.fingerprint]).changes);
           });
           if(!claimed){this.revoke({...row,job_id:job.id});continue;}row.job_id=job.id;
         }catch{this.update(row,"error='memory_enqueue_failed',ready_at=?",[this.now()+RETRY_DELAY_MS]);continue;}

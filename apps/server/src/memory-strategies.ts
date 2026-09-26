@@ -42,7 +42,7 @@ export class MemoryStrategies {
   resolve(ref:MemoryStrategyRef):ResolvedMemoryRecipe {
     const recipe=this.recipes.get(key(ref));if(!recipe)throw Error('Memory recipe is not installed');
     const {extract,review}=this.components(recipe);
-    return {binding:{recipe:memoryStrategyPin(recipe),extract:memoryStrategyPin(extract),review:memoryStrategyPin(review)},extract,review};
+    return {binding:{recipe:memoryStrategyPin(recipe),extract:memoryStrategyPin(extract),review:memoryStrategyPin(review),...(recipe.requires?{requires:recipe.requires}:{})},extract,review};
   }
   resolvePinned(binding:MemoryRecipeBinding):ResolvedMemoryRecipe {
     const current=this.resolve(binding.recipe);

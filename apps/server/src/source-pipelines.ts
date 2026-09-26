@@ -9,7 +9,6 @@ import {BackendPluginScope} from './backend-plugin-scope.js';
 import {SourceRecipeExecutor,type RecipeSnapshot} from './source-recipe-executor.js';
 import {recipeFingerprint} from './recipe-contract.js';
 import type {InstalledRecipe} from './recipe-registry.js';
-import {materialDependencyStatus} from './material-readiness.js';
 import {SourceArchiveRawReader} from './source-archive-reader.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 
@@ -32,7 +31,7 @@ export interface SourcePipeline {
   index:'none'|'material';
   modelInput:'material';
   memory?:boolean;
-  /** Named material outputs required before this source may derive Memory. */
+  /** Default named outputs for Memory recipes without their own requirements. */
   memoryDependencies?:string[];
   /** A declarative recipe pins trusted implementations used by this pipeline. */
   recipe?:{id:string;version:string};
@@ -338,12 +337,7 @@ export class SourcePipelineRuntime {
   drainMemory(pipeline:MaterialMemoryRunner,enabled:boolean,limit=1){
     return this.memoryWork.drain(pipeline,enabled,limit,materialId=>{
       const material=this.materials.get(materialId);if(!material)return true;
-      if(!this.memoryAllowed(material.origin.sourceId))return false;
-      const binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(material.origin.sourceId);
-      if(!binding||binding.storage!=='archive')return true;
-      const sourcePipeline=this.registry.get(String(binding.pipeline_id));if(!sourcePipeline)return false;
-      const options=this.options(material.origin.sourceId);
-      return (options.memory??sourcePipeline.memory??false)&&materialDependencyStatus(material,options.memoryDependencies??sourcePipeline.memoryDependencies??['material']).ready;
+      return this.memoryAllowed(material.origin.sourceId);
     });
   }
   forget(sourceId:string){

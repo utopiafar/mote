@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
 import {installEvidenceDependencies} from './evidence-dependencies.js';
+import {materialDependencyStatus,materialRequirementsSchema,type MaterialInputPin} from './material-readiness.js';
 
 const MATERIAL_PREFIX='mat_';
 const materialIdSchema=z.string().regex(/^mat_[a-f0-9]{64}$/);
@@ -39,7 +40,7 @@ const draftSchema=z.object({
   coverage:z.object({state:z.enum(['complete','partial','pending']),reason:z.string().max(500).optional()}).strict(),
   /** Named processing outputs let each consumer declare only the dependencies
    * it actually needs. A query may use a partial material while Memory waits. */
-  artifacts:z.array(z.object({key:nameSchema,state:z.enum(['ready','pending','failed','unavailable']),revision:z.string().min(1).max(256).optional(),reason:z.string().max(500).optional()}).strict()).max(64).optional(),
+  artifacts:z.array(z.object({key:nameSchema,state:z.enum(['ready','pending','failed','unavailable']),revision:z.string().min(1).max(256).optional(),reason:z.string().max(500).optional(),blockIds:z.array(z.string().min(1).max(128)).max(10000).optional()}).strict()).max(64).optional(),
   fidelity:z.object({state:z.enum(['lossless','derived','summary-only']),limitations:z.array(z.string().max(500)).max(20).optional()}).strict(),
   retention:z.object({original:z.enum(['retained','unavailable']),policy:z.enum(['keep','allow-expiry'])}).strict(),
 }).strict();
@@ -72,6 +73,10 @@ const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const parseId=(id:string)=>materialIdSchema.parse(id);
 const parseRevision=(revision:string)=>revisionSchema.parse(revision);
 const currentRef=(value:string)=>value.startsWith('material:')?value.slice('material:'.length):value;
+function assertArtifactBlocks(artifacts:MaterialDraft['artifacts'],blockIds:ReadonlySet<string>){
+  if(artifacts&&new Set(artifacts.map(a=>a.key)).size!==artifacts.length)throw new StoreError('Duplicate material artifact key');
+  if(artifacts?.some(a=>a.blockIds&&(new Set(a.blockIds).size!==a.blockIds.length||a.blockIds.some(id=>!blockIds.has(id)))))throw new StoreError('Material artifact has duplicate or unknown blocks');
+}
 
 /** Stable identity belongs to the upstream logical item, not to a transport batch. */
 export function materialId(sourceId:string,externalId:string):string {
@@ -233,11 +238,22 @@ export class MaterialStore {
     const text=this.store.db.prepare('SELECT p.text,b.format FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? ORDER BY b.idx').all(id,row.revision).map(r=>String(r.text)+(r.format==='markdown-fragment'?'':'\n')).join('');
     this.store.db.prepare('INSERT INTO material_fts(rowid,material_id,text) VALUES(?,?,?)').run(row.rowid,id,text);
   }
-  evidenceIds(ref:string){const material=this.get(ref);if(!material)return [];
+  evidenceIds(ref:string,blockIds?:readonly string[]){const material=this.get(ref);if(!material)return [];
     if(this.codingLayout(material.id,material.revision))return (this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
-      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ORDER BY idx`)
-      .all(material.id,material.sequence,material.sequence) as {anchor_id:string}[]).map(row=>row.anchor_id);
-    return this.store.db.prepare('SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ORDER BY idx').all(material.id,material.revision).map(r=>String(r.anchor_id));}
+      WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx`)
+      .all(material.id,material.sequence,material.sequence,...(blockIds?[JSON.stringify(blockIds)]:[])) as {anchor_id:string}[]).map(row=>row.anchor_id);
+    return this.store.db.prepare(`SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ${blockIds?'AND block_id IN (SELECT value FROM json_each(?))':''} ORDER BY idx`).all(material.id,material.revision,...(blockIds?[JSON.stringify(blockIds)]:[])).map(r=>String(r.anchor_id));}
+  /** A named output pins its declared blocks, not unrelated processing state.
+   * Older organizers without block mappings retain whole-revision semantics. */
+  input(ref:string,rawRequired:readonly string[]):(MaterialInputPin&ReturnType<typeof materialDependencyStatus>)|undefined {
+    const required=materialRequirementsSchema.parse([...rawRequired]),material=this.get(ref);
+    if(!material||this.get(material.id)?.ref!==material.ref)return;
+    const status=materialDependencyStatus(material,required),artifacts=required.map(key=>material.artifacts?.find(a=>a.key===key));
+    const mapped=required.every((key,i)=>key!=='material'&&artifacts[i]?.blockIds!==undefined);
+    const evidenceIds=this.evidenceIds(ref,mapped?[...new Set(artifacts.flatMap(a=>a!.blockIds!))]:undefined);
+    return {...status,ready:status.ready&&evidenceIds.length>0&&evidenceIds.every(id=>this.isCurrentEvidence(id)),materialId:material.id,required,evidenceIds,
+      fingerprint:hash(JSON.stringify([material.id,required,mapped?artifacts.map(a=>[a!.key,a!.revision??null,a!.blockIds]):material.ref,evidenceIds]))};
+  }
   evidence(ids:string[]):CaptureRecord[]{return ids.flatMap(id=>{
     const anchor=this.store.db.prepare('SELECT * FROM material_evidence WHERE id=?').get(id);if(!anchor)return [];
     const material=this.get(formatMaterialRef(String(anchor.material_id),String(anchor.revision)));if(!material)return [];
@@ -273,8 +289,11 @@ export class MaterialStore {
   private record(head:HeadRow,row:RevisionRow):MaterialRecord {
     const manifest=JSON.parse(row.manifest) as Omit<MaterialDraft,'blocks'|'members'>;
     const rebuilding=head.revision===row.revision&&this.needsRebuild(head.id,row.revision,row.sequence);
+    const invalidBlocks=rebuilding?new Set(this.store.db.prepare(`SELECT b.block_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
+      WHERE b.material_id=? AND b.revision=? AND e.invalidated=1 UNION SELECT b.block_id FROM material_block_versions b JOIN material_evidence e ON e.id=b.anchor_id
+      WHERE b.material_id=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?) AND e.invalidated=1`).all(head.id,row.revision,head.id,row.sequence,row.sequence).map(b=>String(b.block_id))):undefined;
     return {...manifest,...(rebuilding?{coverage:{state:'pending' as const,reason:'source_evidence_changed'},
-      artifacts:manifest.artifacts?.map(artifact=>({...artifact,state:'pending' as const,reason:'source_evidence_changed'}))}:{}),
+      artifacts:manifest.artifacts?.map(artifact=>artifact.blockIds&&!artifact.blockIds.some(id=>invalidBlocks!.has(id))?artifact:{...artifact,state:'pending' as const,reason:'source_evidence_changed'})}:{}),
       ref:formatMaterialRef(head.id,row.revision),revision:row.revision,sequence:row.sequence,
       createdAt:head.created_at,updatedAt:row.version_created_at,blockCount:row.block_count,memberCount:row.member_count,
       textLength:row.text_length,assetCount:row.asset_count};
@@ -302,7 +321,7 @@ export class MaterialStore {
     if(id!==materialId(draft.origin.sourceId,draft.origin.externalId))throw new StoreError('Material ID does not match source identity',409);
     if(draft.origin.firstAt&&draft.origin.lastAt&&draft.origin.firstAt>draft.origin.lastAt)throw new StoreError('Invalid material time range');
     if(new Set(draft.blocks.map(block=>block.id)).size!==draft.blocks.length||new Set(draft.members.map(member=>member.id)).size!==draft.members.length)throw new StoreError('Duplicate material block or member ID');
-    if(draft.artifacts&&new Set(draft.artifacts.map(artifact=>artifact.key)).size!==draft.artifacts.length)throw new StoreError('Duplicate material artifact key');
+    assertArtifactBlocks(draft.artifacts,new Set(draft.blocks.map(b=>b.id)));
     const memberIds=new Set(draft.members.map(member=>member.id));
     if(draft.blocks.some(block=>block.memberIds.some(id=>!memberIds.has(id))))throw new StoreError('Material block has an unknown member');
     const totalCharacters=draft.blocks.reduce((n,block)=>n+(block.kind==='text'?block.text.length:0),0);
@@ -422,7 +441,11 @@ export class MaterialStore {
         {append_epoch:number|null;head_count:number|null}|undefined;
       if(!prior||prior.append_epoch!==snapshot.appendEpoch||prior.head_count===null||snapshot.headCount<prior.head_count)
         throw new StoreError('Coding append archive changed',409);
-      if(draft.blocks.length===0&&draft.reuseBlocks===base.block_count){
+      const prefixIds=draft.artifacts?.some(a=>a.blockIds)?db.prepare(`SELECT block_id FROM material_block_versions WHERE material_id=? AND idx<?
+        AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?)`).all(draft.id,draft.reuseBlocks,head.sequence,head.sequence).map(b=>String(b.block_id)):[];
+      assertArtifactBlocks(draft.artifacts,new Set([...prefixIds,...draft.blocks.map(b=>b.id)]));
+      const {mode:_,baseRevision:__,reuseBlocks:___,blocks:____,...manifest}=draft,manifestJson=JSON.stringify(manifest);
+      if(draft.blocks.length===0&&draft.reuseBlocks===base.block_count&&manifestJson===base.manifest){
         db.prepare('UPDATE material_coding_snapshots SET archive_checkpoint=?,head_count=? WHERE material_id=? AND revision=?')
           .run(snapshot.checkpoint,snapshot.headCount,draft.id,head.revision);
         if(ownTransaction)db.exec('COMMIT');return {...this.record(head,base),changed:false};
@@ -432,7 +455,6 @@ export class MaterialStore {
         AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?)`).get(draft.id,draft.reuseBlocks-1,head.sequence,head.sequence) as
         {end_offset:number}|undefined:undefined;
       if(draft.reuseBlocks&&!prefix)throw new StoreError('Coding append prefix missing',409);
-      const {mode:_,baseRevision:__,reuseBlocks:___,blocks:____,...manifest}=draft,manifestJson=JSON.stringify(manifest);
       const revision=hash(JSON.stringify(draft)),sequence=head.sequence+1,now=new Date().toISOString();
       if(this.version(draft.id,revision))throw new StoreError('An older material revision cannot become current',409);
       let requiredBytes=Buffer.byteLength(manifestJson)+512;

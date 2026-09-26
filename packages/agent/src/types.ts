@@ -125,6 +125,8 @@ export interface QueryInput {
   evidenceIds?: string[];
   /** Host-only immutable evidence fingerprints for a bounded background read. */
   processingEvidence?: Record<string,string>;
+  /** Host-only named material outputs for a bounded background read. */
+  processingMaterialInputs?: {materialId:string;required:string[];fingerprint:string;evidenceIds:string[]}[];
   /** Host snapshot for paginated change disclosure; does not restrict historical retrieval. */
   incrementalEvidenceIds?:string[];
   /** Host-reported archive-wide coverage, not a guarantee for the selected window. */
