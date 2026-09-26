@@ -78,7 +78,7 @@ flowchart LR
     UI[管理界面]
     API --> Store
     API --> Blobs
-    Blobs --> Perception[中央 OCR / 可选语义处理]
+    Blobs --> Perception[中央 OCR]
     Perception --> Index
     UI --> API
     API --> Agent
@@ -87,7 +87,7 @@ flowchart LR
   end
   Queue -->|HTTPS · 幂等确认| API
   Files -->|显式导入| API
-  Agent -->|文本证据| Model[用户配置的模型服务]
+  Agent -->|文字证据 / 授权原图| Model[用户配置的模型服务]
 ```
 
 | 组件 | 职责 | 技术与边界 |

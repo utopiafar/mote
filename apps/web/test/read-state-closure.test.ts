@@ -58,8 +58,8 @@ test('execution overview shares initial settings read; dirty runtime draft survi
  revoked=true;await act(async()=>resources(api).invalidate(path=>path==='/api/execution-settings'));assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/generated revoked/);
 });
 test('perception refresh retains owner draft and revoked settings never remain editable',async t=>{
- const {root,d}=await fixture(t);let revoked=false;const api=apiWith(()=>{if(revoked)throw new ApiError('generated permission revoked',403);return {settings:{providerRevision:'1',enabled:true,ocrEndpoint:'',semanticEndpoint:'',semanticMode:'manual',batchMinutes:5,batchSize:5,allowExternalProcessing:false,allowQueryImages:false},recent:[],jobs:[]};});
- await act(async()=>root.render(React.createElement(PerceptionSettings,{api})));await act(async()=>d.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());await act(async()=>button(d,'刷新').click());assert.equal(d.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked,false);
+ const {root,d}=await fixture(t);let revoked=false;const api=apiWith(()=>{if(revoked)throw new ApiError('generated permission revoked',403);return {settings:{providerRevision:'1',enabled:true,ocrEndpoint:'',allowExternalProcessing:false,allowQueryImages:false},recent:[],jobs:[]};});
+ await act(async()=>root.render(React.createElement(PerceptionSettings,{api})));assert.doesNotMatch(d.body.textContent!,/语义理解 Worker 地址|语义理解时机/);await act(async()=>d.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());await act(async()=>button(d,'刷新').click());assert.equal(d.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked,false);
  revoked=true;await act(async()=>button(d,'刷新').click());assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/generated permission revoked/);
 });
 

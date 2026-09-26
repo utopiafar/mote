@@ -13,7 +13,7 @@ export function registerProcessingRoutes(app:FastifyInstance,{store,workflows,pe
   app.post('/api/processing/:id/cancel',async req=>{workflows.cancel((req.params as {id:string}).id);return {cancelled:true};});
   app.get('/api/perception',async()=>perception.view());
   app.put('/api/perception',async req=>perception.configure(req.body));
-  app.post('/api/perception/:id/retry',async req=>{const {id}=z.object({id:z.string().uuid()}).parse(req.params);const {kind}=z.object({kind:z.enum(['ocr','semantic'])}).parse(req.body);return perception.retry(id,kind);});
+  app.post('/api/perception/:id/retry',async req=>{const {id}=z.object({id:z.string().uuid()}).parse(req.params);z.object({kind:z.literal('ocr')}).strict().parse(req.body);return perception.retry(id);});
   app.post('/api/perception/ocr/historical-preview',async()=>perception.previewHistoricalOcr());
   app.post('/api/perception/ocr/historical-process',async req=>perception.processHistoricalOcr(req.body));
   app.get('/api/media-models',async()=>{

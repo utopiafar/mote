@@ -569,7 +569,7 @@ class MainActivity : MoteActivity() {
             setSelection(listOf("hold", "drop", "allow").indexOf(config.uploadGate.failureAction).coerceAtLeast(0))
         }
         content.addView(gateFailure); track(gateFailure, "gateFailure")
-        text(MoteI18n.text("审查 OCR 仅在规则需要时运行，文字不会保存或上传。应用范围与固定遮罩仍然生效。VLM 接口保留，本版本暂停；中央负责完整 OCR 和理解。待复核记录请在同步恢复中逐条处理。"), 13)
+        text(MoteI18n.text("审查 OCR 仅在规则需要时运行，文字不会保存或上传。应用范围与固定遮罩仍然生效。VLM 接口保留，本版本暂停；中央负责完整 OCR，查询模型可在授权后按需看图。待复核记录请在同步恢复中逐条处理。"), 13)
         nsfwEnabled = CheckBox(this).apply { isChecked = false }
         nsfwStatus = TextView(this)
 
