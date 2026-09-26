@@ -1,4 +1,5 @@
 import {installEvidenceDependencies,invalidateRetiredFileEvidence} from './evidence-dependencies.js';
+import {writeFileTranscriptChunks} from './file-transcript-chunks.js';
 import {DOCUMENT_MIME_TYPES} from '@mote/shared/document-decoder';
 import type {ModelSettings} from '@mote/shared/models';
 import {fileConfiguration,processorContract,processorSettingsFingerprint} from './file-configuration.js';
@@ -211,16 +212,7 @@ export class FileProcessing {
     this.files.store.reserveMetadata(Buffer.byteLength(json)+(transcript?Buffer.byteLength(JSON.stringify(transcript)):0)+4096);
     db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind=?').run(id,kind);
     db.prepare('INSERT INTO file_artifacts(id,capture_id,kind,created_at,config_revision,json,current) VALUES(?,?,?,?,?,?,1)').run(artifactId,id,kind,new Date().toISOString(),revision,json);
-    if(transcript){
-      // A chunk is immutable evidence. Reuse its identity only when content and all
-      // locations are unchanged; old containers retain their full transcript JSON.
-      const identity=(text:string,start:number|null,end:number|null,metadata:string)=>sha256(JSON.stringify([text,start,end,JSON.parse(metadata)]));
-      const prior=new Map<string,string[]>();for(const row of db.prepare('SELECT c.id,c.text,c.start_ms,c.end_ms,c.metadata FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND a.kind=? ORDER BY a.created_at DESC,c.rowid').all(id,kind)){const key=identity(String(row.text),row.start_ms===null?null:Number(row.start_ms),row.end_ms===null?null:Number(row.end_ms),String(row.metadata));prior.set(key,[...(prior.get(key)??[]),String(row.id)]);}
-      for(const s of transcript.segments){const {speaker,uncertain,overlap,documentLocation}=s,metadata=JSON.stringify({speaker,uncertain,overlap,documentLocation}),start=kind==='text'||kind==='image-text'?null:s.startMs,end=kind==='text'||kind==='image-text'?null:s.endMs,key=identity(s.text,start,end,metadata),existing=prior.get(key)?.shift();
-        if(existing)db.prepare('UPDATE file_chunks SET artifact_id=? WHERE id=?').run(artifactId,existing);
-        else db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,start_ms,end_ms,text,metadata) VALUES(?,?,?,?,?,?,?)').run(randomUUID(),artifactId,id,start,end,s.text,metadata);
-      }
-    }
+    if(transcript)writeFileTranscriptChunks(this.files.store,id,artifactId,transcript,{kind});
     return artifactId;
   }
   private async step(id:string,name:string,processor:string,version:string,key:unknown,revision:string,execute:()=>Promise<unknown>,save:(value:any)=>string){
@@ -316,7 +308,7 @@ export class FileProcessing {
             if(settings.semanticTurns){
               await this.step(id,'turns','mote.semantic-turns','1',[alignId,settings.localModelEndpoint,settings.localModelName,revision],revision,async()=>{
                 if(!this.options.analyze||localOnly&&!settings.localModelName)throw new StoreError('A compatible language model is required for semantic turn grouping',409);
-                const ids=db.prepare('SELECT id FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,rowid LIMIT 200').all(alignId).map(row=>String(row.id));const records=this.files.evidence(ids);if(records.length!==aligned.segments.length)throw new StoreError('Semantic grouping currently supports up to 200 turns per file',413);
+                const ids=db.prepare('SELECT id FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,ordinal,rowid LIMIT 200').all(alignId).map(row=>String(row.id));const records=this.files.evidence(ids);if(records.length!==aligned.segments.length)throw new StoreError('Semantic grouping currently supports up to 200 turns per file',413);
                 const response=await this.options.analyze(records.map((r,i)=>({...r,ocrText:JSON.stringify({turnIndex:i,...aligned.segments[i]})})),TURN_GROUP_PROMPT,{...effective,...(this.options.analysisSnapshot?{modelSnapshot:structuredClone(this.options.analysisSnapshot(effective,localOnly))}:{})},localOnly,signal,this.analysisHost(id));
                 const {groups}=z.object({groups:z.array(z.array(z.number().int().nonnegative()).min(1)).max(200)}).strict().parse(JSON.parse(response.answer));
                 return applySemanticGroups(aligned,groups);

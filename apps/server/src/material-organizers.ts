@@ -122,7 +122,7 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
       AND NOT EXISTS(SELECT 1 FROM file_artifacts preferred WHERE preferred.capture_id=a.capture_id AND preferred.current=1
         AND ((preferred.kind='corrected-dialogue' AND a.kind!='corrected-dialogue')
           OR (preferred.kind='dialogue' AND a.kind IN ('transcript','text','image-text'))))
-      ORDER BY c.start_ms,c.rowid LIMIT 2001`).all(captureId) as {id:string;artifact_id:string;text:string;metadata:string|null;start_ms:number|null;end_ms:number|null;kind:string;artifact_json:string}[];
+      ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT 2001`).all(captureId) as {id:string;artifact_id:string;text:string;metadata:string|null;start_ms:number|null;end_ms:number|null;kind:string;artifact_json:string}[];
     const confirmations=new Map([...new Set(chunkRows.map(row=>row.artifact_id))].map(id=>[id,readFileSpeakerAttributions(store,captureId,id)]));
     const job=store.db.prepare('SELECT state,error FROM file_jobs WHERE capture_id=?').get(captureId) as {state:string;error:string|null}|undefined;
     return {objectHash:original?.object_hash??undefined,
@@ -210,7 +210,7 @@ const codingExternalId=(g:Record<string,string>)=>JSON.stringify([g.provider,g.p
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'3',slot:'source-item',
+  id:'mote.source-item',version:'4',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -221,7 +221,7 @@ const sourceItem:MaterialOrganizer={
     body.text('source-record',captureText(r),r.id,'json');
     for(const c of chunks){
       const text=c.speaker?JSON.stringify({speaker:c.speaker,...(c.speakerAttribution?{speakerAttribution:c.speakerAttribution}:{}),text:c.text}):c.text;
-      body.text(`chunk:${c.id}`,text,r.id,c.speaker?'json':c.kind==='transcript'||c.kind==='dialogue'||c.kind==='corrected-dialogue'?'transcript':'plain',
+      body.text(`chunk:${c.id}`,text,r.id,c.speaker?'json':c.startMs===null?'plain':'transcript',
         {chunkId:c.id,...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id]);
     }
     if(file.objectHash)body.asset('original',file.objectHash,r.provenance?.mimeType??'application/octet-stream',r.id);

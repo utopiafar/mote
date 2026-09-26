@@ -187,7 +187,7 @@ export class FileStore {
     for(const bytes of this.store.assets.bytes(v.object_hash,start,end)){this.version(id);yield bytes;}
   }
   stream(id:string,start=0,end?:number){return Readable.from(this.bytes(id,start,end));}
-  chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
+  chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
   speakerAttributions(captureId:string,artifactId:string){
     return readFileSpeakerAttributions(this.store,captureId,artifactId);
   }

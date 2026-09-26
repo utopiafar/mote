@@ -123,7 +123,7 @@ try{
       result.chunks=chunks;assert.ok(chunks.length,'Processed media has no readable evidence');
       const rawArtifact=detail.artifacts.find((a:{kind:string})=>a.kind==='transcript'),dialogue=detail.artifacts.find((a:{kind:string})=>a.kind==='dialogue');
       if(rawArtifact&&dialogue){
-        const text=(artifactId:string)=>node!.store.db.prepare('SELECT text FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,rowid').all(artifactId).map(row=>String(row.text)).join('');
+        const text=(artifactId:string)=>node!.store.db.prepare('SELECT text FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,ordinal,rowid').all(artifactId).map(row=>String(row.text)).join('');
         const rawText=text(rawArtifact.id),alignedText=text(dialogue.id);
         assert.equal(rawText.replace(/\s/gu,''),alignedText.replace(/\s/gu,''),'Alignment changed recognized non-whitespace characters');
         result.alignmentIntegrity={rawCharacters:rawText.length,alignedCharacters:alignedText.length,sameNonWhitespace:true,acousticAccuracyVerified:false};

@@ -30,8 +30,9 @@ const diary=diarizationSchema.parse({durationMs:3000,engine:'synthetic',expected
 async function fixture(t:any,options:any={}){
  const dir=mkdtempSync(join(tmpdir(),'mote-processing-')),store=new Store(dir,{dataKey:'41'.repeat(32),contentEncryptionEnabled:true}),sources=new SourceStore(store),files=new FileStore(store,sources);
  sources.register({id:'phone',name:'Synthetic phone',kind:'local-files',deviceId:'phone',platform:'android',retention:'archive'});
- const manifest={sourceId:'phone',item:{externalId:'fixture.wav',revision:'1',observedAt:new Date().toISOString(),title:'Synthetic interview.wav',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},sizeBytes:wave.length,sha256:sha256(wave)};
- const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,wave,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
+ const bytes=options.file?.bytes??wave,filename=options.file?.name??'fixture.wav';
+ const manifest={sourceId:'phone',item:{externalId:filename,revision:'1',observedAt:new Date().toISOString(),title:options.file?.name??'Synthetic interview.wav',kind:'file',layer:'original',text:'',mimeType:options.file?.mimeType??'audio/wav',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)};
+ const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,bytes,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
  const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return options.diarization??diary;}});return()=>{disposed=true;dispose();};});}};
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
  const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async()=>{asrCalls++;return options.transcribe?options.transcribe():raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics});instances.push(instance);return instance;};const processing=createProcessing();
@@ -94,6 +95,34 @@ test('term proposals require exact cited text and explicit selection; correction
  assert.deepEqual(f.files.chunks(f.id)[0].fileEvidence!.speakerAttribution,attribution,'text-only correction preserves the actual owner confirmation');
  const entries=fileExportEntries(f.files,f.id);assert.match(entries.find(e=>e.name==='原始转写_未校正.md')!.bytes.toString(),/扣迪斯/);assert.match(entries.find(e=>e.name==='带说话人_已确认校正记录.md')!.bytes.toString(),/Cordis/);
  f.processing.retry(f.id,'diarize');await f.processing.tick();assert.match(f.files.chunks(f.id)[0].ocrText,/扣迪斯/);assert.equal(f.files.chunks(f.id)[0].fileEvidence!.speakerAttribution,undefined,'new acoustic separation cannot inherit old label identities');
+});
+
+test('confirmed text correction preserves unrelated raw and formal memories and invalidates only replaced speech',async t=>{
+ const f=await fixture(t,{analyze:async(records:any[])=>{const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original:'扣迪斯',replacement:'Cordis',reason:'Generated exact correction'}]}),citations:[{id:chunk.chunkId}]};}});
+ await f.processing.tick();const reviews=new FileReviews(f.files,f.processing),artifactId=f.files.chunks(f.id)[0].fileEvidence!.artifactId;
+ reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Alice',SPEAKER_1:'Generated Bob'}});
+ const materials=new MaterialStore(f.store),work=new MaterialMemoryWork(f.store,materials),organizers=new MaterialOrganizerRuntime(f.store,materials,[],undefined,work);
+ try{
+  while(await organizers.tick(100));const material=materials.get(materialId('phone','fixture.wav'))!;
+  const raw=f.files.chunks(f.id),formal=materials.evidence(materials.evidenceIds(material.ref)).filter(r=>JSON.parse(r.ocrText).speaker);
+  const memories=new MemoryStore(f.store,ids=>[...f.files.evidence(ids),...materials.evidence(ids)],id=>f.files.isCurrentEvidence(id)||materials.isCurrentEvidence(id));
+  const save=(record:typeof raw[number]|typeof formal[number])=>memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated correction fixture',statement:`Generated speech [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-text-correction'},'fixture').items[0].id);
+  const savedRaw=raw.map(save),savedFormal=formal.map(save),stableFingerprint=memoryEvidenceFingerprint(raw[1]);
+  const proposal=await reviews.propose(f.id,{kind:'terms'});reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});
+  const after=f.files.chunks(f.id);
+  assert.equal(after[1].id,raw[1].id,'the unedited segment keeps its immutable evidence identity');
+  assert.equal(memoryEvidenceFingerprint(after[1]),stableFingerprint);
+  assert.notEqual(after[0].id,raw[0].id);assert.match(after[0].ocrText,/Cordis/);
+  assert.equal(memories.get(savedRaw[0].id).status,'stale');assert.equal(memories.get(savedFormal[0].id).status,'stale');
+  assert.equal(memories.get(savedRaw[1].id).status,'published');assert.equal(memories.get(savedFormal[1].id).status,'published');
+  assert.deepEqual(after.map(r=>r.fileEvidence!.speakerAttribution),raw.map(r=>r.fileEvidence!.speakerAttribution));
+  assert.throws(()=>materials.read(material.ref),{statusCode:409});assert.equal(work.readyForMemory(material.ref),false);
+  while(await organizers.tick(100));const corrected=materials.get(material.id)!;
+  assert.ok(materials.evidenceIds(corrected.ref).includes(formal[1].id));assert.equal(materials.isCurrentEvidence(formal[0].id),false);
+  assert.equal(memories.get(savedFormal[1].id).status,'published');assert.match(materials.read(corrected.ref).text,/Cordis/);
+  assert.match(materials.read(material.ref).text,/扣迪斯/);
+  const entries=fileExportEntries(f.files,f.id);assert.match(entries.find(e=>e.name==='原始转写_未校正.md')!.bytes.toString(),/扣迪斯/);
+ }finally{await organizers.close();}
 });
 
 test('a model cannot inject corrections outside cited chunks or guess a speaker name',async t=>{
@@ -186,11 +215,12 @@ test('formal audio material preserves anonymous and confirmed speakers and repub
  }finally{await organizers.close();}
 });
 
-test('formal speaker correction fences a late Memory result before organizer rebuild',async t=>{
- const f=await fixture(t);await f.processing.tick();
+for(const correction of ['speaker','text'] as const)test(`formal ${correction} correction fences a late Memory result before organizer rebuild`,async t=>{
+ const f=await fixture(t,{analyze:async(records:any[])=>{const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original:'扣迪斯',replacement:'Cordis',reason:'Generated exact correction'}]}),citations:[{id:chunk.chunkId}]};}});await f.processing.tick();
  const materials=new MaterialStore(f.store),work=new MaterialMemoryWork(f.store,materials),organizers=new MaterialOrganizerRuntime(f.store,materials,[],undefined,work);
  const reviews=new FileReviews(f.files,f.processing),artifactId=f.files.chunks(f.id)[0].fileEvidence!.artifactId;
  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Alice'}});
+ const proposal=correction==='text'?await reviews.propose(f.id,{kind:'terms'}):undefined;
  while(await organizers.tick(100));
  const material=materials.get(materialId('phone','fixture.wav'))!;
  const record=materials.evidence(materials.evidenceIds(material.ref)).find(r=>JSON.parse(r.ocrText).speaker==='SPEAKER_0')!;
@@ -199,13 +229,50 @@ test('formal speaker correction fences a late Memory result before organizer reb
  const pipeline=new MemoryPipeline({store:f.store,memories,configured:()=>true,model:()=> 'fixture',materialAllowedForMemory:ref=>work.readyForMemory(ref),query:async()=>{enter();await release;return {answer:JSON.stringify({memories:[{title:'Old formal attribution',statement:`Old speaker [${record.id}]`,uncertainty:'Generated',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-old-formal-attribution'};}});
  try{
   const job=pipeline.create({evidenceIds:[record.id]}),running=pipeline.run(job.id);await entered;
-  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol'}});finish();
+  if(proposal)reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});
+  else reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol'}});
+  finish();
   const done=await running;assert.equal(done.status,'failed');assert.equal(done.batches[0].status,'invalidated');
   assert.equal(memories.list({includeStale:true}).length,0);
   assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM memory_checkpoints').get()!.n,0);
   assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM memory_extraction_drafts').get()!.n,0);
   assert.throws(()=>pipeline.create({evidenceIds:[record.id]}));
  }finally{finish();await pipeline.close();await organizers.close();}
+});
+
+test('repeated text corrections retain simultaneous segment order and remove only obsolete word alignment',async t=>{
+ let original='扣迪斯',replacement='Cordis';
+ const transcript:Transcript={durationMs:3000,segments:[raw.segments[0],{startMs:0,endMs:1000,text:'尚未完成。',words:[{startMs:0,endMs:1000,text:'尚未完成。'}]}]};
+ const f=await fixture(t,{settings:{audioProcessor:'audio.http',summarize:false},transcribe:async()=>transcript,analyze:async(records:any[])=>{const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original,replacement,reason:'Generated correction'}]}),citations:[{id:chunk.chunkId}]};}});
+ await f.processing.tick();const reviews=new FileReviews(f.files,f.processing),initial=f.files.chunks(f.id),initialArtifact=initial[0].fileEvidence!.artifactId;
+ const before=f.processing.artifact(initialArtifact).transcript as Transcript;assert.ok(before.segments[0].words?.length);assert.ok(before.segments[1].words?.length);
+ for(const word of ['Cordis','Mote']){
+  replacement=word;const proposal=await reviews.propose(f.id,{kind:'terms'});reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});
+  const chunks=f.files.chunks(f.id),after=f.processing.artifact(chunks[0].fileEvidence!.artifactId).transcript as Transcript;
+  assert.deepEqual(chunks.map(c=>c.ocrText.replace(/^\[SPEAKER_\w+\] /,'')),after.segments.map(s=>s.text));
+  assert.equal(chunks[1].id,initial[1].id);assert.ok(chunks[0].ocrText.includes(word));
+  assert.equal(after.segments[0].words,undefined);assert.deepEqual(after.segments[1].words,before.segments[1].words);
+  original=word;
+ }
+ assert.equal(f.processing.artifact(initialArtifact).transcript.segments[0].text,before.segments[0].text);
+});
+
+test('document text correction retains original locations without inventing audio times or replacing unchanged formal blocks',async t=>{
+ const f=await fixture(t,{file:{name:'generated.txt',mimeType:'text/plain',bytes:Buffer.from('Wrong '+ 'generated '.repeat(1800))},settings:{summarize:false},
+  analyze:async(records:any[])=>{const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original:'Wrong',replacement:'Right',reason:'Generated correction'}]}),citations:[{id:chunk.chunkId}]};}});
+ await f.processing.tick();const before=f.files.chunks(f.id);assert.ok(before.length>1);
+ const materials=new MaterialStore(f.store),organizers=new MaterialOrganizerRuntime(f.store,materials);
+ try{
+  while(await organizers.tick(100));const material=materials.get(materialId('phone','generated.txt'))!;
+  const anchors=materials.evidence(materials.evidenceIds(material.ref)),stable=anchors.find(r=>r.ocrText===before.at(-1)!.ocrText)!;assert.ok(stable);
+  const reviews=new FileReviews(f.files,f.processing),proposal=await reviews.propose(f.id,{kind:'terms'});
+  reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});
+  const after=f.files.chunks(f.id);assert.equal(after.length,before.length);assert.equal(after.at(-1)!.id,before.at(-1)!.id);
+  assert.deepEqual(after.map(r=>r.fileEvidence!.documentLocation),before.map(r=>r.fileEvidence!.documentLocation));
+  assert.ok(after.every(r=>r.fileEvidence!.startMs===undefined&&r.fileEvidence!.endMs===undefined));
+  while(await organizers.tick(100));assert.equal(materials.isCurrentEvidence(stable.id),true);
+  assert.ok(materials.evidenceIds(material.id).includes(stable.id));assert.match(materials.read(material.id).text,/Right/);
+ }finally{await organizers.close();}
 });
 
 test('local semantic grouping blocks without a local model and never invokes the default summarizer',async t=>{
