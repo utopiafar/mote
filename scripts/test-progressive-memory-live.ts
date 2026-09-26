@@ -35,7 +35,8 @@ if(resuming){
   browserTested:false,physicalDevicesTested:false,mediaProcessingTested:false,semanticQualityAccepted:false,
   priority:['functionality','performance','cost'],agentDeadlineMs:300000,records:manifest.records.map(r=>({key:r.key,id:randomUUID(),at:r.at,textSha256:r.textSha256})),waves:[],readsDuringModelWork:[]};
 }
-report.runnerHashes??=[];report.runnerHashes.push({at:new Date().toISOString(),hash:sha256(await readFile(join(repositoryRoot,'scripts/test-progressive-memory-live.ts'))),head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',cwd:repositoryRoot}).trim()});
+report.runnerHashes??=[];report.runnerHashes.push({at:new Date().toISOString(),hash:sha256(await readFile(join(repositoryRoot,'scripts/test-progressive-memory-live.ts'))),head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',cwd:repositoryRoot}).trim(),
+ agentFiles:Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])))});
 const vault=join(directory,'vault'),token=randomBytes(32).toString('hex'),deviceId='private-progressive-replay';
 const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:500_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
  model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',

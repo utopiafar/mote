@@ -14,4 +14,14 @@ test('only host source metadata selects bounded source rules; security and attri
  assert.match(SYSTEM_PROMPT,/source tags.*untrusted/);
  assert.match(SYSTEM_PROMPT,/call evidence on relevant IDs before citing/);
  assert.match(reduced,/Restricted extraction sessions use only the evidence supplied by the host/);
+ assert.doesNotMatch(reduced,/material_catalog|material_read|source_history|file_chunks|search_context|read_image/);
+ assert.match(reduced,/unobserved outcome is not a failed/);
+ assert.match(reduced,/capturedAt is collection time/);
+ assert.match(reduced,/Reference-only records/);
+ assert.match(reduced,/same procedure or fetch the same segments/);
+ for(const sourceType of ['message','calendar','activity','event','metric']){
+  const bounded=systemInstructions(scoped,[{...record,sourceType}]);
+  assert.match(bounded,/Restricted extraction sessions use only the evidence supplied by the host/);
+  assert.doesNotMatch(bounded,/material_catalog|source_history|search_context/);
+ }
 });

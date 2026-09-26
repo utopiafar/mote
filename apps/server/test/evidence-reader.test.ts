@@ -25,6 +25,18 @@ async function fixture(t:any){
  return {...node,agentReader,call,client};
 }
 
+test('direct Agent expansion preserves the source protocol through bounded evidence projection',async t=>{
+ const {app,agentReader}=await fixture(t),id=randomUUID(),text='Generated note: media notification screen are quoted words, not the source protocol.';
+ const response=await app.inject({method:'POST',url:'/api/notes',headers:{...headers,'x-mote-ingress-version':'2'},payload:{id,deviceId:'generated-notes',deviceName:'Generated',platform:'import',capturedAt:'2026-09-20T00:00:00Z',text}});
+ assert.equal(response.statusCode,201,response.body);
+ const expanded=(await agentReader.evidence({ids:[id]}))[0];
+ assert.equal(expanded.sourceType,'note');assert.equal(expanded.ocrText,text);assert.equal(expanded.ref,'capture:'+id);
+ const {startBridge}=await import('../../../packages/agent/dist/bridge.js');
+ const bridge=await startBridge(agentReader,{question:'Extract generated note',skill:'memory-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:text.length}]},4);t.after(()=>bridge.close());
+ assert.equal(bridge.seedEvidence[0].sourceType,'note');assert.equal(bridge.seedEvidence[0].ocrText,text);
+ assert.deepEqual(await agentReader.evidence({ids:[id],deviceId:'another-device'}),[]);
+});
+
 test('Web, MCP and Agent share ranked refs and scoped expansions across 400 generated days',async t=>{
  const {app,store,sources,materialOrganizer,agentReader,call,client}=await fixture(t);
  // This test pages raw source items. Keep the timer from replacing that corpus
