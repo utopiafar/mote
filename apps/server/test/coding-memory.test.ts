@@ -12,7 +12,24 @@ import {registerMemoryExtensions} from '../src/lifecycle-extensions.js';
 import {FileStore} from '../src/files.js';
 import {WorkingMemory} from '../src/working-memory.js';
 import {Conversations} from '../src/conversations.js';
+import {noteCapture} from '@mote/shared';
+import {randomUUID} from 'node:crypto';
+import {memoryProfile} from '../src/memory-profiles.js';
 const empty={answer:'{"memories":[]}',citations:[],trace:[],runId:'fixture'};
+test('an authored note can carry coding meaning without inventing a repository identity',async t=>{
+ const {store,memories}=fixture(t),text='Generated: for Harbor I prefer importing first, charts later, for this phase only.';
+ const id=randomUUID();await store.ingest(noteCapture({id,deviceId:'fixture',deviceName:'Generated',platform:'import',capturedAt:'2026-06-01T10:00:00Z',text}));
+ const claim={domain:'coding',title:'Harbor phase preference',statement:`Import first [${id}]`,uncertainty:'This phase only',admission:{layer:'memory',reason:'Owner preference',scope:'Harbor phase',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:text}],coding:{kind:'preference',scope:'session',applicability:'Harbor, current phase; repository not identified',validation:'user_confirmed'}};
+ const extract=(candidate:unknown)=>memories.extract({...empty,answer:JSON.stringify({memories:[candidate]}),citations:[{id,capturedAt:'2026-06-01T10:00:00Z',appName:'Generated',excerpt:text}]},'fixture',{requireAdmission:true});
+ const saved=extract(claim).items[0];assert.equal(saved.domain,'coding');assert.equal(saved.coding?.scope,'session');assert.equal(saved.scopeRefs,undefined);
+ assert.throws(()=>extract({...claim,coding:{...claim.coding,scope:'project'}}),{code:'coding_scope'});
+ assert.throws(()=>extract({...claim,coding:{...claim.coding,validation:'explanation is not an enum'}}),error=>{
+  assert.equal((error as {code:string}).code,'coding_contract');assert.match((error as {repairInstruction:string}).repairInstruction,/user_confirmed/);assert.ok(!(error as {repairInstruction:string}).repairInstruction.includes('explanation is not an enum'));return true;
+ });
+ assert.throws(()=>extract({...claim,applicability:'wrong nesting'}),{code:'coding_contract'});
+ const correction=await memories.correct(saved.id,{version:saved.version,title:'Corrected Harbor preference',statement:'Generated owner correction: import first only during setup.',uncertainty:'Setup only'});
+ const original=store.evidence(correction.evidenceIds)[0];assert.equal(original.metadata?.memoryCorrection?.scopeRefs.length,0);assert.equal(memoryProfile(original).skill,'coding-memory');
+});
 const item=(id:string,session='s1',coding=true)=>({externalId:id,revision:'1',observedAt:'2026-09-15T01:00:00Z',kind:'message',layer:'snapshot',text:'Use a transaction; the rollback test passed.',document:coding?{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:session,projectKey:'project-a',eventId:id,role:'user',part:0,parts:1}}:undefined});
 function fixture(t:any){const dir=mkdtempSync(join(tmpdir(),'mote-coding-memory-')),store=new Store(dir),sources=new SourceStore(store),memories=new MemoryStore(store);sources.register({id:'coding',name:'Generated coding',kind:'coding-agent',deviceId:'fixture',platform:'macos'});t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});return {store,sources,memories};}
 test('profiles isolate personal material and different coding sessions, zero results checkpoint and origin replay is idempotent',async t=>{

@@ -15,6 +15,8 @@ export const codingMemorySchema=z.object({
   kind:z.enum(['pitfall','decision','principle','preference']),scope:z.enum(['session','project','shared']),
   applicability:z.string().trim().min(1).max(2000),validation:z.enum(['observed','user_confirmed','tested','unverified']),
 }).strict();
+/** Shared host-owned contract for extraction and repair; semantic choice stays with the model. */
+export const CODING_MEMORY_CONTRACT='Each candidate may select domain personal or coding by its meaning, regardless of source. Personal candidates omit coding. Coding candidates require a nested coding object: {kind:"pitfall"|"decision"|"principle"|"preference",scope:"session"|"project"|"shared",applicability:"evidenced context and limits",validation:"observed"|"user_confirmed"|"tested"|"unverified"}. Select one enum string for each enum field; explanations belong in uncertainty, not validation. applicability is inside coding, never a top-level field. A diary or other source without host-provided project identity can still support a coding memory: use session scope for limited/unresolved applicability, state the evidenced project name in prose, and never invent provider, session, repository or project keys. Project scope requires resolved host provenance; shared scope only permits principles/preferences with explicit transferability. scopeRefs are created by the host and must never be emitted by the model.';
 export const memoryAdmissionSchema=z.object({
   layer:z.enum(['observation','memory']),
   reason:z.string().trim().min(1).max(1200),

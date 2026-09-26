@@ -9,13 +9,24 @@ import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
 import {MemoryReviewCache} from '../src/memory-review-cache.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
-import {MemoryStore} from '../src/memory.js';
+import {MemoryStore,MEMORY_ADMISSION_PROMPT,MEMORY_EXTRACTION_PROMPT} from '../src/memory.js';
+import {CONSOLIDATION_RELATION_POLICY} from '../src/memory-policy.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {memorySchema} from '../src/memory-schema.js';
 
 const id=randomUUID();
 const draft=()=>({answer:JSON.stringify({memories:[{title:'Untrusted candidate',statement:`Proposed meeting [${id}]`,uncertainty:'Outcome unknown',admission:{layer:'observation',attribution:'observed',reason:'Model says low risk',scope:'Generated'},evidenceIds:[id],evidence:[{id,quote:'Meeting proposed'}]}]}),citations:[{id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:'Meeting proposed'}],trace:[],runId:randomUUID()});
 const input=():QueryInput=>({contextTime:'2026-09-01T00:00:00Z',question:'Keep speaker and event state',skill:'memory-extraction',responseMode:'memory-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:16}],validateOutput:()=>undefined});
+
+test('review of a complete consolidation task fits the Agent question limit without discarding its context',async()=>{
+ const context='Generated candidate context. '.repeat(100),question=MEMORY_EXTRACTION_PROMPT+'\n'+CONSOLIDATION_RELATION_POLICY+'\n'+context,d=draft();
+ assert.ok(question.length+MEMORY_ADMISSION_PROMPT.length>20000,'Fixture must cross the old duplicate-policy limit');
+ await reviewMemory({...input(),question,skill:'memory-consolidation'},d,async request=>{
+  assert.ok(request.question.length<=20000);assert.equal(request.question.split(MEMORY_ADMISSION_PROMPT).length-1,1);
+  assert.ok(request.question.includes(context));assert.ok(request.question.includes(CONSOLIDATION_RELATION_POLICY));
+  assert.deepEqual(request.taskContext?.untrustedMemoryDraft,JSON.parse(d.answer));return {...d,runId:'review'};
+ });
+});
 
 test('only an identical independently reviewed verdict is reused; no duplicate usage or false run receipt',async()=>{
  const cache=new MemoryReviewCache(),options={cache,snapshot:()=> 'host-version'},d=draft();let calls=0,validations=0;
