@@ -5,10 +5,12 @@ import { AnswerMarkdown } from '../AnswerMarkdown';
 import { useResource } from '../useResource';
 import { builtinCollections } from './collections';
 import { builtinPages } from './entries';
-import { WebFeatureHost } from './host';
+import {webFeatures} from './registry';
+export {webFeatures} from './registry';
+import {ErrorNotice,Spinner} from '../shell-components';
+import {errorMessage} from '../api';
 import { MemoryRecordPanel } from './memory-record';
 import type { PageProps,ViewProps } from './types';
-export const webFeatures=new WebFeatureHost();
 export const featuresReady=(async()=>{
   for(const id of new Set([...builtinPages,...builtinCollections].map(page=>page.featureId)))await webFeatures.install({id,version:'1',components:[]},[...builtinPages.filter(page=>page.featureId===id).map(entry=>({surface:'page' as const,entry})),...builtinCollections.filter(page=>page.featureId===id).map(entry=>({surface:'collection' as const,entry}))]);
   await webFeatures.install({id:'mote.saved-record-views',version:'1',components:[]},[
@@ -27,6 +29,8 @@ export function FeaturePage({page,props}:{page:string;props:PageProps}){
   const entry=webFeatures.page(page);
   const capabilities=useResource<FeatureInventory>(props.api,entry?.requires?.length?'/api/features':null);
   const unavailable=<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>;
+  if(entry?.requires?.length&&capabilities.error)return <ErrorNotice text={errorMessage(capabilities.error)} retry={capabilities.refresh}/>;
+  if(entry?.requires?.length&&!capabilities.data)return <Spinner/>;
   if(entry?.requires?.length&&(!capabilities.data||capabilities.data.schemaVersion!==1||entry.requires.some(id=>!capabilities.data?.capabilities.some(c=>c.id===id&&c.version==='1'&&c.state==='active'))))return unavailable;
   return <ViewBoundary key={page} fallback={unavailable}>{entry?<PageContent entry={entry} props={props}/>:unavailable}</ViewBoundary>;
 }

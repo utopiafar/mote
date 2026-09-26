@@ -1,3 +1,4 @@
+import type {EvidenceReader} from './evidence-reader.js';
 import {ProviderFailure} from '@mote/shared';
 import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
@@ -22,7 +23,7 @@ export interface InsightRun {
 export class InsightRuns {
   private execution:RunExecution;
   private commitGuards=new Map<string,()=>void>();
-  constructor(private readonly store:Store,options:RunExecutionOptions={}){
+  constructor(private readonly store:Store,private readonly options:RunExecutionOptions&{evidenceReader?:Pick<EvidenceReader,'materialCatalog'>}={}){
     store.db.exec('CREATE TABLE IF NOT EXISTS insight_runs(id TEXT PRIMARY KEY,request_hash TEXT NOT NULL,json TEXT NOT NULL)');
     this.execution=new RunExecution(store,'insight',{
       exists:id=>Boolean(store.db.prepare('SELECT 1 FROM insight_runs WHERE id=?').get(id)),
@@ -58,7 +59,7 @@ export class InsightRuns {
       const next={stage:event.stage,...(event.phase?{phase:event.phase}:{}),...(event.tool?{tool:event.tool.slice(0,80)}:{}),...(Number.isSafeInteger(event.count)&&event.count!>=0?{count:event.count}:{}),at:new Date().toISOString()};
       current.events.push(next);current.updatedAt=next.at;this.save(current);
     };
-    this.execution.start(id,signal=>work(observe,signal,structuredClone(run.snapshot!)),deadline,()=>{run.snapshot=createInsightSnapshot(this.store,id,input);this.store.reserveMetadata(16384+Buffer.byteLength(JSON.stringify(run.snapshot)));this.store.db.prepare('INSERT INTO insight_runs VALUES(?,?,?)').run(id,hash,JSON.stringify(run));});return this.get(id);
+    this.execution.start(id,signal=>work(observe,signal,structuredClone(run.snapshot!)),deadline,()=>{run.snapshot=createInsightSnapshot(this.store,id,input,this.options.evidenceReader);this.store.reserveMetadata(16384+Buffer.byteLength(JSON.stringify(run.snapshot)));this.store.db.prepare('INSERT INTO insight_runs VALUES(?,?,?)').run(id,hash,JSON.stringify(run));});return this.get(id);
   }
   async perform(id:string,input:Scope&{prompt?:string},work:(observe:(event:AgentProgress)=>void,signal:AbortSignal,snapshot:InsightSnapshot)=>Promise<QueryResult>,deadline:RunDeadline&{beforeCommit?:()=>void}={}):Promise<QueryResult>{
     let result:QueryResult|undefined,error:unknown;

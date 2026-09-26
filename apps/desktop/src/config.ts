@@ -77,16 +77,6 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
   if (typeof captureStorageDirectory !== 'string' || captureStorageDirectory.length > 2048 || /[\x00-\x1f]/.test(captureStorageDirectory) || (captureStorageDirectory && (!isAbsolute(captureStorageDirectory) || resolve(captureStorageDirectory) !== captureStorageDirectory))) throw new Error(moteText("请通过文件夹选择器选择截图保存位置"));
   if (typeof input.ocrEnabled !== 'boolean' || typeof input.openAtLogin !== 'boolean') throw new Error(moteText("开关值不正确"));
   if (typeof input.diagnosticsEnabled !== 'boolean' || typeof input.pauseOnBattery !== 'boolean') throw new Error(moteText("诊断或电量策略开关值无效"));
-  if (typeof input.nsfwEnabled !== 'boolean') throw new Error(moteText("本地千问视觉审查开关值不正确"));
-  if (typeof input.reviewPolicy !== 'string' || !input.reviewPolicy.trim() || input.reviewPolicy.length > 8000) throw new Error(moteText("视觉审查策略需为 1–8000 字符"));
-  if (!['auto', 'mirror', 'official', 'custom'].includes(input.nsfwSource)) throw new Error(moteText("模型下载来源无效"));
-  if (typeof input.nsfwCustomUrl !== 'string' || input.nsfwCustomUrl.length > 2048) throw new Error(moteText("自定义模型地址无效"));
-  if (input.nsfwCustomUrl) {
-    let url: URL;
-    try { url = new URL(input.nsfwCustomUrl); } catch { throw new Error(moteText("自定义模型需要完整 HTTPS 目录地址")); }
-    if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.search) throw new Error(moteText("自定义模型地址必须为 HTTPS 且不能含账号、查询参数或锚点"));
-  }
-  if (input.nsfwSource === 'custom' && !input.nsfwCustomUrl) throw new Error(moteText("选择自定义来源后，请填写模型目录 URL"));
   if (input.token !== undefined && (typeof input.token !== 'string' || input.token.length > 4096 || /[\r\n]/.test(input.token))) throw new Error(moteText("令牌格式不正确"));
   const syncMode = input.syncMode ?? current.syncMode ?? 'realtime';
   if (!['realtime', 'interval', 'batch', 'manual'].includes(syncMode)) throw new Error(moteText("同步方式无效"));
@@ -109,10 +99,11 @@ export function updateConfig(current: Config, input: ConfigUpdate, queuedEvents 
     metadataEnabled: input.metadataEnabled ?? current.metadataEnabled ?? true, diagnosticsEnabled: input.diagnosticsEnabled, diagnosticIntervalSeconds: integer(input.diagnosticIntervalSeconds, 15, 3600, moteText("诊断采样秒数")),
     jpegQuality: integer(input.jpegQuality, 40, 95, moteText("JPEG 质量")), captureMaxSide: integer(input.captureMaxSide, 640, 2560, moteText("截图最大边长")),
     pauseOnBattery: input.pauseOnBattery, batteryPauseBelowPct: integer(input.batteryPauseBelowPct, 0, 95, moteText("低电量暂停百分比")),
-    nsfwEnabled: false, reviewPolicy: input.reviewPolicy.trim(),
-    reviewMaxTokens: integer(input.reviewMaxTokens, 32, 1024, moteText("最大生成 token 数")), reviewMaxSide: integer(input.reviewMaxSide, 256, 1024, moteText("审查图片最大边长")),
-    nsfwThreads: integer(input.nsfwThreads, 1, 8, moteText("本地推理线程数")), nsfwTimeoutMs: integer(input.nsfwTimeoutMs, 5000, 180000, moteText("本地推理超时（毫秒）")),
-    nsfwSource: input.nsfwSource, nsfwCustomUrl: input.nsfwCustomUrl.trim(),
+    // Paused visual-review settings belong to its optional model controls.
+    nsfwEnabled: false, reviewPolicy: current.reviewPolicy,
+    reviewMaxTokens: current.reviewMaxTokens, reviewMaxSide: current.reviewMaxSide,
+    nsfwThreads: current.nsfwThreads, nsfwTimeoutMs: current.nsfwTimeoutMs,
+    nsfwSource: current.nsfwSource, nsfwCustomUrl: current.nsfwCustomUrl,
     token: input.token === undefined ? current.token : input.token.trim(),
   };
   if (config.serverUrl === current.serverUrl && config.token === current.token && ['owner', 'collector'].includes(current.credentialScope || '')) config.credentialScope = current.credentialScope;

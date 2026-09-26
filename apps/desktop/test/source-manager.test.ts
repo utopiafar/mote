@@ -12,20 +12,22 @@ let servers: Server[] = [];
 beforeEach(async () => { directory = await realpath(await mkdtemp(join(tmpdir(), 'mote-source-manager-'))); });
 afterEach(async () => { for (const manager of managers) await manager.close(); for (const server of servers) await new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }); managers = []; servers = []; await rm(directory, { recursive: true, force: true }); });
 async function endpoint(dropFirstAck = false) {
+  const reads: unknown[] = [],readReplies:any[]=[];
   const items: SourceItem[] = []; const registered: unknown[] = []; let id = ''; let dropNext = dropFirstAck;
   const server = createServer(async (req, res) => {
     expect(req.headers['x-mote-ingress-version']).toBe('2');
     const chunks: Buffer[] = []; for await (const chunk of req) chunks.push(chunk);
-    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({revision:null}));return;}
+    if(req.method==='GET'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url?.endsWith('/read-requests')?{items:reads}:{revision:null}));return;}
     const manifest = JSON.parse(Buffer.concat(chunks).toString()); const body = manifest.item ?? manifest;
     res.setHeader('Content-Type', 'application/json');
-    if (req.url?.endsWith('/items/batch')) { res.statusCode = 404; res.end('{}'); }
+    if(req.url?.includes('/read-requests/')){readReplies.push(body);reads.length=0;res.end('{}');}
+    else if (req.url?.endsWith('/items/batch')) { res.statusCode = 404; res.end('{}'); }
     else if (req.method === 'POST') { id = body.id; registered.push(body); res.end(JSON.stringify(body)); }
     else if (req.method === 'PATCH') res.end(JSON.stringify({ ...body, id }));
     else { items.push(body); if (dropNext) { dropNext = false; res.destroy(); return; } res.end(JSON.stringify(sourceAck(id,body,body.kind==='file'?'file-revision':'source-item',items.length>1))); }
   });
   servers.push(server); await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, loseNextAck: () => { dropNext = true; } };
+  return { url: 'http://127.0.0.1:' + (server.address() as { port: number }).port, items, registered, reads, readReplies, loseNextAck: () => { dropNext = true; } };
 }
 async function manager(url: string, token = 'synthetic-source-token') {
   const value = new LocalSourceManager(join(directory, 'private-state'), { serverUrl: url, token, deviceId: 'synthetic-device' }, '/must-not-be-invoked-calendar-helper');
@@ -141,4 +143,13 @@ it('waits for a watcher scan rerun before flushing a durable pending source item
   expect(scans).toBe(2);
   expect(app.pendingStats().pendingRecords).toBe(0);
   expect(server.items).toHaveLength(2);
+});
+
+
+it('serves file evidence from the durable directory catalog immediately after restart',async()=>{
+ const server=await endpoint(),folder=join(directory,'catalog');await mkdir(folder);const text='Generated long file evidence '.repeat(700);await writeFile(join(folder,'first.txt'),text);await writeFile(join(folder,'last.txt'),'Generated short file');
+ let value=await manager(server.url);await value.addFiles(folder,{...DEFAULT_SOURCE_OPTIONS,indexMode:'lightweight',allowRead:true});await value.sync();
+ const source=value.status()[0].source,original=server.items.find(item=>item.title==='first.txt')!;expect(original).toBeTruthy();await value.close();
+ server.reads.push({id:'11111111-1111-4111-8111-111111111111',sourceId:source.id,externalId:original.externalId,revision:original.revision,contentVersion:original.document!.fileIndex!.contentVersion,offset:9000,length:100});
+ value=await manager(server.url);await value.sync();expect(server.readReplies[0]).toMatchObject({status:'ready',text:text.slice(9000,9100)});
 });

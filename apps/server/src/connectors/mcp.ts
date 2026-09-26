@@ -1,3 +1,4 @@
+import {contextBundle} from '../context-bundle.js';
 import {MAX_CONTEXT_REF_LENGTH} from '../context-navigation.js';
 import {EvidenceReader} from '../evidence-reader.js';
 import {createHash,timingSafeEqual} from 'node:crypto';
@@ -25,7 +26,7 @@ export const equalToken=(header:string|undefined,token:string|undefined)=>{
   if(!token||token.length<24||!header)return false;const a=Buffer.from(header),b=Buffer.from(`Bearer ${token}`);return a.length===b.length&&timingSafeEqual(a,b);
 };
 const readonly={readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false};
-const boundedJson=(value:unknown)=>{const text=JSON.stringify(value);if(text.length>16000||Buffer.byteLength(text)>65536)throw new ConnectorError('response_budget_exceeded_reduce_limit',413);return text;};
+const boundedJson=(value:unknown)=>{const text=JSON.stringify(value);if(text.length>24000||Buffer.byteLength(text)>96000)throw new ConnectorError('response_budget_exceeded_reduce_limit',413);return text;};
 const json=(value:unknown)=>({content:[{type:'text' as const,text:boundedJson(value)}]});
 const safeResult=async(operation:()=>unknown)=>{try{return json(await operation());}catch(error){return {...json({error:error instanceof ConnectorError?error.code:'source_operation_failed'}),isError:true};}};
 const structuredResult=async(operation:()=>unknown,compatibility?:(value:any)=>unknown)=>{try{const value=await operation();boundedJson(value);return {content:[{type:'text' as const,text:boundedJson(compatibility?compatibility(value):value)}],structuredContent:value as Record<string,unknown>};}catch(error){return {...json({error:error instanceof ConnectorError?error.code:'source_operation_failed'}),isError:true};}};
@@ -100,9 +101,7 @@ export function createMoteMcp(ctx:ConnectorContext,write=false,track?:<T>(work:P
     return {items,missingRefs,truncated:page.truncated};
   }));
   server.registerTool('mote_context',{description:'Assemble a bounded package from query-visible published memories and formal source views.',inputSchema:{...contextFilter,maxCharacters:z.number().int().min(1000).max(24000).default(12000),includeRecentSessions:z.boolean().default(true),includeMemories:z.boolean().default(true)},outputSchema:{stableMemories:z.array(z.object(contextCardShape)),recentSessions:z.array(z.object(contextCardShape)),recentRecords:z.array(z.object(contextCardShape)),coverage:z.record(z.unknown()),nextCursor:z.string().nullable(),truncated:z.boolean()},annotations:readonly},async args=>structuredSafe(async()=>{
-    const records=await queryPage(args),memoryPage=args.includeMemories&&!args.cursor?await query.memories?.(args):undefined;
-    const stableMemories=(memoryPage?.items??[]).slice(0,args.limit).map(value=>cardFromMemory(value as Memory));
-    return {stableMemories,recentSessions:[],recentRecords:records.items,coverage:{...records.coverage,memoriesReturned:stableMemories.length},nextCursor:records.nextCursor,truncated:records.truncated};
+    return contextBundle(reader,query,args);
   }));
   server.registerTool('mote_status',{description:'Report known archive, index, memory and source synchronization watermarks. Absence from this status is not proof that an offline device has no unsent data.',inputSchema:{},outputSchema:{archive:z.record(z.unknown()),index:z.record(z.unknown()),memories:z.record(z.unknown()),sources:z.array(z.record(z.unknown())),limits:z.record(z.unknown())},annotations:readonly},async()=>structuredSafe(()=>context.status()));
   server.registerTool('mote_sources',{description:'List explicitly connected sources and their synchronization state.',inputSchema:{},annotations:readonly},async()=>safe(()=>ctx.sources.listSources()));

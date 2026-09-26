@@ -1,3 +1,4 @@
+import {randomUUID} from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm,readFile} from 'node:fs/promises';
@@ -38,6 +39,7 @@ test('profiles route each request and feature independently; credentials, restar
   assert.equal(node.modelSettings.select('chat','second').settings.model,'second-model');
   assert.equal((await query('second')).json().answer,'second-model');
   assert.equal(node.modelSettings.select('memory').id,'second');assert.equal(node.modelSettings.select('import').id,'env:deployment');
+  await node.store.ingest({id:randomUUID(),deviceId:'generated-memory',deviceName:'Generated',platform:'import',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:'Generated memory model routing evidence'});
   assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}})).statusCode,200);
   assert.deepEqual(calls.at(-1),{model:'second-model',skill:'memory-extraction'});
   assert.equal((await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{modelProfileId:'default'}})).statusCode,200);
@@ -137,6 +139,7 @@ test('module model overrides reach chat, insights, immediate memory and persiste
   assert.equal(temporary.json().modelSelection.model,'one-turn');
   const insight=await node.app.inject({method:'POST',url:'/api/insights',headers,payload:{}});
   assert.equal(insight.statusCode,200,insight.body);assert.equal(insight.json().modelSelection.model,'insight-model');
+  await node.store.ingest({id:randomUUID(),deviceId:'generated-memory',deviceName:'Generated',platform:'import',source:'note',capturedAt:new Date().toISOString(),durationMs:0,ocrText:'Generated memory model routing evidence'});
   const memory=await node.app.inject({method:'POST',url:'/api/memories/extract',headers,payload:{}});
   assert.equal(memory.statusCode,200,memory.body);assert.equal(called.at(-1),'memory-model');
   node.sources.register({id:'module-fixture',name:'Generated',kind:'custom',deviceId:'fixture',platform:'import'});

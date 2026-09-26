@@ -71,6 +71,7 @@ export class SourcePipelineRuntime {
         recipe_id TEXT,recipe_version TEXT,recipe_definition_fingerprint TEXT,recipe_config_fingerprint TEXT,recipe_component_pins TEXT);
       CREATE TABLE IF NOT EXISTS source_pipeline_config(source_id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS material_memory_work(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE,revision TEXT NOT NULL,ready_at INTEGER NOT NULL,job_id TEXT,error TEXT);`);
+    if(!(store.db.prepare('PRAGMA table_info(source_pipeline_bindings)').all() as {name:string}[]).some(c=>c.name==='storage'))store.db.exec('ALTER TABLE source_pipeline_bindings ADD COLUMN storage TEXT');
     const workColumns=new Set((store.db.prepare('PRAGMA table_info(source_pipeline_work)').all() as {name:string}[]).map(column=>column.name));
     if(!workColumns.has('generation'))store.db.exec('ALTER TABLE source_pipeline_work ADD COLUMN generation INTEGER NOT NULL DEFAULT 0');
     if(!workColumns.has('archive_checkpoint'))store.db.exec('ALTER TABLE source_pipeline_work ADD COLUMN archive_checkpoint TEXT');
@@ -203,11 +204,11 @@ export class SourcePipelineRuntime {
     this.store.db.prepare("UPDATE source_pipeline_work SET state=?,error=?,updated_at=? WHERE id=? AND generation=? AND state!='complete'").run(state,step.error??null,Date.now(),input.workId,input.generation);
   }
   select(source:SourceConnection){
-    const binding=this.store.db.prepare('SELECT pipeline_id FROM source_pipeline_bindings WHERE source_id=?').get(source.id);
+    const binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(source.id);
     const pipeline=binding?this.registry.get(String(binding.pipeline_id)):this.registry.forKind(source.kind);
     if(binding&&!pipeline)throw new StoreError('Source pipeline unavailable',409);
     if(pipeline&&!pipeline.sourceKinds.includes(source.kind))throw new StoreError('Source pipeline kind mismatch',409);
-    if(pipeline)this.recipeFor(pipeline,source);
+    if(pipeline){this.recipeFor(pipeline,source);if(binding&&!binding.storage)this.store.db.prepare('UPDATE source_pipeline_bindings SET storage=? WHERE source_id=?').run(pipeline.storage,source.id);}
     // Ordinary sources retain the record-store path. A declared plugin kind
     // may never silently fall through after uninstall.
     if(!pipeline&&this.registry.declared(source.kind))throw new StoreError('Source pipeline unavailable',409);
@@ -224,7 +225,7 @@ export class SourcePipelineRuntime {
       const archived=recipe?this.recipes.receive(recipe,this.archive,source,items,groups):this.archive.receive(source.id,items,groups);
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
       if(items.some(item=>item.deleted))for(const group of archived.groups)this.materials.redactUntilRebuilt(materialId(source.id,group));
-      db.prepare('INSERT OR IGNORE INTO source_pipeline_bindings VALUES(?,?)').run(source.id,pipeline.id);
+      db.prepare('INSERT OR IGNORE INTO source_pipeline_bindings(source_id,pipeline_id,storage) VALUES(?,?,?)').run(source.id,pipeline.id,pipeline.storage);
       const superseded:string[]=[];
       for(const group of archived.groups){
         const id=archiveHash([source.id,group]);
@@ -240,7 +241,7 @@ export class SourcePipelineRuntime {
         this.enqueueWork(db.prepare('SELECT * FROM source_pipeline_work WHERE id=?').get(id) as WorkRow);
       }
       db.exec('COMMIT');for(const id of superseded)this.engine.abortLocal(id);
-      this.archive.acknowledge(source.id,archived.checkpoint);return {receipts:archived.receipts};
+      return {receipts:archived.receipts};
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   async tick(limit=10){
@@ -308,9 +309,12 @@ export class SourcePipelineRuntime {
     let selected:SourcePipeline|undefined;
     if(value.pipelineId){if(!source)throw new StoreError('Source not found',404);
       selected=this.registry.get(value.pipelineId);if(!selected||!selected.sourceKinds.includes(source.kind))throw new StoreError('Pipeline unavailable for source kind',409);
-      const prior=this.select(source);if(prior&&prior.storage!==selected.storage)throw new StoreError('Changing physical storage requires a fresh source identity',409);
+      const binding=db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(sourceId);
+      const storage=binding?.storage??(binding?this.registry.get(String(binding.pipeline_id))?.storage:this.registry.forKind(source.kind)?.storage);
+      if(binding&&!storage)throw new StoreError('Previous storage contract is unavailable; reconnect this source',409);
+      if(storage&&storage!==selected.storage)throw new StoreError('Changing physical storage requires a fresh source identity',409);
       this.recipeFor(selected,source);
-      this.store.db.prepare('INSERT INTO source_pipeline_bindings VALUES(?,?) ON CONFLICT(source_id) DO UPDATE SET pipeline_id=excluded.pipeline_id').run(sourceId,selected.id);
+      this.store.db.prepare('INSERT INTO source_pipeline_bindings(source_id,pipeline_id,storage) VALUES(?,?,?) ON CONFLICT(source_id) DO UPDATE SET pipeline_id=excluded.pipeline_id,storage=excluded.storage').run(sourceId,selected.id,selected.storage);
     }else if(source)selected=this.select(source);
     const recipe=selected&&source?this.recipeFor(selected,source):undefined;
     const metadata=recipe?this.recipeMetadata(recipe,sourceId,value):undefined;

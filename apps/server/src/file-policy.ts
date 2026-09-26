@@ -6,7 +6,7 @@ import {StoreError,sha256} from './store.js';
 
 export function migrateFilePolicy(s:FileProcessingSettings,registry:ProcessorRegistry):FilePolicy{
   const services:ProcessingService[]=[{id:'asr-api',name:moteText("录音转写接口"),kind:'asr',execution:isLoopback(s.endpoint)?'local':'remote',endpoint:s.endpoint,model:'',apiKey:s.apiKey},{id:'asr-local',name:moteText("本地录音服务"),kind:'asr',execution:'local',endpoint:s.localEndpoint,model:'',apiKey:s.localWorkerApiKey}];
-  if(s.imageEndpoint)services.push({id:'image-api',name:moteText("图片提取服务"),kind:'image',execution:isLoopback(s.imageEndpoint)?'local':'remote',endpoint:s.imageEndpoint,model:''});
+  if(s.imageEndpoint)services.push({id:'image-api',name:moteText("图片提取服务"),kind:'image',execution:isLoopback(s.imageEndpoint)?'local':'remote',endpoint:s.imageEndpoint,model:'',apiKey:s.apiKey});
   if(s.localModelName)services.push({id:'model-local',name:moteText("本地语言模型"),kind:'model',execution:'local',endpoint:s.localModelEndpoint,model:s.localModelName,apiKey:s.localModelApiKey});
   const profiles:ProcessingProfile[]=[];
   const add=(processorId:string)=>{const found=profiles.find(p=>p.processorId===processorId);if(found)return found.id;

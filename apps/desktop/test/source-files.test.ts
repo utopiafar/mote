@@ -120,3 +120,25 @@ it('incremental catalog drafts preserve prior state until durable commit and rol
  const reopened=new SourceSync(join(root,'state.json'));await reopened.initialize();
  expect(reopened.fileCheckpoint()!.catalog['a.txt'].size).toBe(Buffer.byteLength('Generated changed'));
 });
+
+it('retries changed content after an interrupted read without advancing the successful baseline', async () => {
+  await writeFile(join(root, 'retry.md'), 'old');
+  const first = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS);
+  await writeFile(join(root, 'retry.md'), 'new content');
+  const {DirectoryCatalog} = await import('../src/directory-catalog');
+  const catalog = new DirectoryCatalog(root, first.checkpoint as any);
+  const page = await catalog.next(10, []);
+  catalog.markContent(page.candidates[0].relativePath, undefined, 'error');
+  const retry = await scanSourceFiles(root, DEFAULT_SOURCE_OPTIONS, undefined, undefined, undefined, catalog.checkpoint());
+  expect(retry.items.map(item => item.text)).toEqual(['new content']);
+});
+
+it('single-file new-only establishes a durable baseline and collects later changes', async () => {
+  const path = join(root, 'single.md'); await writeFile(path, 'old');
+  const options = {...DEFAULT_SOURCE_OPTIONS, initialSync: 'new_only' as const};
+  const first = await scanSourceFiles(path, options);
+  expect(first.items).toEqual([]); expect(first.checkpoint?.initialized).toBe(true);
+  await writeFile(path, 'changed');
+  const next = await scanSourceFiles(path, options, undefined, undefined, undefined, first.checkpoint as any);
+  expect(next.items.map(item => item.text)).toEqual(['changed']);
+});

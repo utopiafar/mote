@@ -24,6 +24,7 @@ useEffect,
 useMemo,
 useRef,
 useState,
+useSyncExternalStore,
 } from "react";
 import { createRoot } from "react-dom/client";
 import type { ArchiveTab } from './Archive';
@@ -42,9 +43,9 @@ type Range,
 type Status
 } from "./api";
 import { changeEvidenceRoute,readEvidenceRoute } from './evidence-route';
-import { FeaturePage } from './features/runtime';
+import { FeaturePage,featuresReady,webFeatures } from './features/runtime';
 import { pageLabels,readPage,routes,sectionFor,sections,type Page } from './navigation';
-import { readResource } from './resource-cache';
+import { readResource,resources } from './resource-cache';
 import { clearSession,persistSession,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
 import { CentralStatusPill,ErrorNotice,EvidenceDialog,LoginDialog,SetupSteps,Spinner } from './shell-components';
 import "./styles.css";
@@ -76,6 +77,7 @@ const readConnection = () => {
   }
 };
 function App() {
+  useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
   const [connection, setConnection] = useState<Connection | null>(
     readConnection,
   );
@@ -195,9 +197,10 @@ function App() {
     return { after: after.toISOString(), before: now.toISOString() };
   }, [period, revision]);
   const refresh = useCallback(() => {
+    if(api)resources(api).invalidate(()=>true);
     setRevision((value) => value + 1);
     setTimelineRevision((value) => value + 1);
-  }, []);
+  }, [api]);
   useEffect(() => {
     if (!api || !verified) return;
     let active = true;
@@ -496,8 +499,8 @@ function App() {
 
 document.documentElement.lang = getLocale();
 document.documentElement.dir = 'ltr';
-createRoot(document.getElementById("root")!).render(
+void featuresReady.then(()=>createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,
-);
+));

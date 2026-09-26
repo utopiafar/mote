@@ -1,3 +1,4 @@
+import {scanVectors} from '../src/vector-work.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -157,11 +158,12 @@ test('file digest mismatch never creates an archive or ACK',async t=>{
 });
 
 test('derived semantic index respects device/app bounds and disappears with its file',async t=>{
- const {files}=fixture(t),bytes=Buffer.from('generated vector input'),ack=await upload(files,manifest(bytes),bytes);
+ const {files,store}=fixture(t),bytes=Buffer.from('generated vector input'),ack=await upload(files,manifest(bytes),bytes);
  const processing=new FileProcessing(files,{transcribe:async()=>({durationMs:1000,segments:[{startMs:0,endMs:1000,text:'A planned visit; attendance unknown.'}]})});t.after(()=>processing.close());
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'}});await processing.tick();const chunk=files.chunks(ack.id)[0];
  assert.equal(files.pendingIndex('fixture-vector').length,1);files.indexed(chunk.id,[1,0,0],'fixture-vector');assert.equal(files.pendingIndex('fixture-vector').length,0);
- assert.equal(files.vectorSearch([1,0,0],'fixture-vector',{deviceId:'phone'})[0].id,chunk.id);assert.equal(files.vectorSearch([1,0,0],'fixture-vector',{deviceId:'other'}).length,0);
- assert.equal(files.vectorSearch([1,0,0],'fixture-vector',{appId:'other'}).length,0);assert.equal(files.search({query:'planned',appId:'other'}).length,0);
- files.forget(ack.id);assert.equal(files.vectorSearch([1,0,0],'fixture-vector',{}).length,0);
+ const search=async(args:Parameters<FileStore['vectorQuery']>[1])=>{const query=files.vectorQuery('fixture-vector',args);if(!query)return [];return (await scanVectors({path:join(store.directory,'mote.sqlite'),queries:[query],vector:[1,0,0],limit:30},AbortSignal.timeout(10000)))[0].candidates;};
+ assert.equal((await search({deviceId:'phone'}))[0].id,chunk.id);assert.equal((await search({deviceId:'other'})).length,0);
+ assert.equal((await search({appId:'other'})).length,0);assert.equal(files.search({query:'planned',appId:'other'}).length,0);
+ files.forget(ack.id);assert.equal((await search({})).length,0);
 });

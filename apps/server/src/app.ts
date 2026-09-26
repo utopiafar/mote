@@ -1,3 +1,5 @@
+import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
+import {memoryEvidenceFingerprint} from './memory.js';
 import { Context } from '@deepseek-ai/cordis';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
@@ -41,7 +43,7 @@ import { Indexer } from './indexer.js';
 import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite } from './ingress.js';
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
-import { recoverableMemoryJobs,registerMemoryExtensions } from './lifecycle-extensions.js';
+import { registerMemoryExtensions } from './lifecycle-extensions.js';
 import { MaintenanceWorker } from './maintenance.js';
 import { MaterialMemoryWork } from './material-memory-work.js';
 import { MaterialOrganizerRuntime } from './material-organizers.js';
@@ -78,16 +80,14 @@ const querySchema=z.object({modelProfileId:modelProfileIdSchema.optional(),model
 const queryWithAttachmentsSchema=querySchema.extend({attachmentIds:z.array(z.string().uuid()).max(4).refine(ids=>new Set(ids).size===ids.length).optional()});
 const insightSchema=z.object(scopeFields).strict().refine(validRange,{message:'Invalid time range'});
 const insightRequestSchema=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional()}).strict().refine(validRange,{message:'Invalid time range'});
-const CAPTURE_BUNDLE_MAX_INFLATED_BYTES=32*1024*1024;
-const CAPTURE_BUNDLE_MAX_RECORDS=500;
 function parseCaptureBundle(body:unknown):CaptureInput[] {
   if(!Buffer.isBuffer(body))throw new StoreError('Capture bundle body must be gzip bytes');
   let inflated:Buffer;
-  try{inflated=gunzipSync(body,{maxOutputLength:CAPTURE_BUNDLE_MAX_INFLATED_BYTES});}
+  try{inflated=gunzipSync(body,{maxOutputLength:CAPTURE_BATCH_MAX_BYTES});}
   catch{throw new StoreError('Invalid capture bundle compression');}
   const text=inflated.toString('utf8');
   const lines=text.endsWith('\n')?text.slice(0,-1).split('\n'):text.split('\n');
-  if(lines.length<1||lines.length>CAPTURE_BUNDLE_MAX_RECORDS||lines.some(line=>line.length===0))throw new StoreError('Capture bundle JSONL is empty or too large');
+  if(lines.length<1||lines.length>CAPTURE_BATCH_MAX_RECORDS||lines.some(line=>line.length===0))throw new StoreError('Capture bundle JSONL is empty or too large');
   try{return lines.map(line=>captureSchema.parse(JSON.parse(line)));}
   catch(error){if(error instanceof z.ZodError)throw error;throw new StoreError('Invalid capture bundle JSONL');}
 }
@@ -147,7 +147,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
   const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
-    currentGrantContext:()=>modelContext.getStore()}));
+    currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence}));
   const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
   const fileRawReader=new FileRawReader(store,files,archivedFiles,{
@@ -179,6 +179,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const codex={executable:config.codexBin,home:config.codexHome};
   const wrapAgent=(inner:QueryAgent,settings:import('@mote/shared/models').ModelSettings):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:async input=>{
+    if(input.evidenceIds&&input.executionLane!=='interactive')input={...input,processingEvidence:Object.fromEntries(memories.readEvidence(input.evidenceIds).map(record=>[record.id,memoryEvidenceFingerprint(record)]))};
     input.signal?.throwIfAborted();providerAdmission.check(settings);
     input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
     return (input.executionLane==='interactive'?interactiveGate:agentGate).run(async()=>{
@@ -220,7 +221,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     catch(error){meter.finish('failed');throw error;}finally{await model?.close();}
   };
   const queryRuns=new QueryRuns(store,{executor,concurrency:()=>runtimeSettings.execution().interactiveConcurrency});
-  const insightRuns=new InsightRuns(store,{executor});
+  const insightRuns=new InsightRuns(store,{executor,evidenceReader});
   const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials,backendContext);
   const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:config.fileProcessorModules,analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
   try{await processing.runtime.ready;}catch(error){await processing.close();await workflows.close();await sourcePipelines.close();await executor.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
@@ -470,43 +471,25 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     });
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:moteText("未找到所请求的资料。"),requestId:req.id}));
   const maintenanceWorker=dependencies?.backgroundWorker?new MaintenanceWorker(config):undefined;
-  const actionTimer=setInterval(()=>void actions.tick().catch(()=>{}),15000);actionTimer.unref();
-  const perceptionTimer=setInterval(()=>{try{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);}catch{diagnostics.record('request.failed',{category:'internal'},'error');}try{perception.prepare();void executor.tick().catch(()=>{});}catch{diagnostics.record('request.failed',{category:'internal'},'error');}},5000);perceptionTimer.unref();
-  const fileTimer=setInterval(()=>{try{processing.prepare();void executor.tick().catch(()=>diagnostics.record('file.failed',{category:'internal'},'error'));}catch{diagnostics.record('file.failed',{category:'internal'},'error');}},5000);fileTimer.unref();
-  const indexTimer=setInterval(()=>void indexer.tick().catch(()=>{diagnostics.record('index.failed',{category:'internal'},'error');}),5000);indexTimer.unref();
-  const sourcePipelineTimer=setInterval(()=>{try{
-    void sourcePipelines.tick().catch(()=>diagnostics.record('request.failed',{category:'internal'},'error'));
-    const enabled=agent.configured&&lifecycle.settings().extraction.enabled;
-    sourcePipelines.drainMemory(memoryPipeline,enabled);
-    materialMemoryWork.drain(memoryPipeline,enabled,1);
-  }catch{diagnostics.record('request.failed',{category:'internal'},'error');}},5000);sourcePipelineTimer.unref();
-  const materialTimer=setInterval(()=>void materialOrganizer.tick(200).catch(()=>diagnostics.record('request.failed',{category:'internal'},'error')),5000);materialTimer.unref();
-  const maintenance=()=>{files.sweep();if(config.retentionDays>0)void diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted}))).catch(()=>{});};
-  maintenance();const retentionTimer=setInterval(maintenance,3600000);retentionTimer.unref();
-  const lifecycleTimer=setInterval(()=>{if(!closing)void lifecycle.tick().catch(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));},60000);lifecycleTimer.unref();
-  const featureServices={setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelBudgets,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
-  const featureHost=new ServerFeatureHost(backendContext,app);
+  const featureServices={setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelBudgets,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
+  const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   await installServerFeatures(featureHost,featureServices);
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
-    void sourcePipelines.tick().catch(()=>diagnostics.record('request.failed',{category:'internal'},'error'));
-    void materialOrganizer.tick(200).catch(()=>diagnostics.record('request.failed',{category:'internal'},'error'));
-    for(const id of recoverableMemoryJobs(store,lifecycle))void memoryPipeline.run(id).catch(()=>{});
     for(const row of store.db.prepare("SELECT id FROM import_jobs WHERE json_extract(json,'$.status')='queued'").all() as {id:string}[])launchImport(row.id,()=>imports.prepare(row.id));
   });
   app.addHook('onClose',async()=>{
-    clearInterval(sourcePipelineTimer);await sourcePipelines.close();
-    closing=true;eventLoop.disable();await files.close();await maintenanceWorker?.close();agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();clearInterval(perceptionTimer);await executor.close();const memoryClose=memoryPipeline.close();await perception.close();clearInterval(fileTimer);await processing.close();clearInterval(indexTimer);clearInterval(materialTimer);clearInterval(retentionTimer);clearInterval(lifecycleTimer);const lifecycleClose=lifecycle.close();
-    clearInterval(actionTimer);const actionClose=actions.close();
-    await workflows.close();
+    closing=true;eventLoop.disable();
+    agentGate.close();llmGate.close();interactiveGate.close();interactiveModelGate.close();
+    await featureHost.close();await executor.close();
     await backendContext.fiber.dispose();
     await Promise.allSettled([...importAgents].map(runtime=>runtime.close()));
     await modelSettings.close();
     await contentStorage.close();
     try{await agent.close();}catch(error){diagnostics.record('agent.failed',{category:safeError(error).category},'error');}
-    await Promise.allSettled([...activeQueries,...importTasks.values(),memoryClose,actionClose]);await lifecycleClose;await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
+    await Promise.allSettled([...activeQueries,...importTasks.values()]);await insightRuns.close();await queryRuns.close();await connectors.close();await softwareUpdate.close();await connections.close();
     memoryReviews.clear();
-    try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
+    try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}
   });
   return {app,featureServices,featureHost,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

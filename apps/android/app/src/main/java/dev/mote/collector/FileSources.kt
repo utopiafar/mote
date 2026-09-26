@@ -135,19 +135,22 @@ object FileUpload {
     internal fun sync(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean): Boolean = try { syncSlice(context, source, config, slice, stillSelected) } catch (_: SliceYield) { false }
     private class SliceYield : RuntimeException()
     private fun syncSlice(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean): Boolean {
+        var selectedRow: JSONObject? = null
         fun send(stage: EventStage, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
             if (!slice.admit(body?.size ?: 0)) throw SliceYield()
             check(stillSelected())
+            selectedRow?.let { context.fileArchives().assertCurrent(source, it) }
             return request(context, stage, config, path, method, body, binary)
         }
-        val queue = context.fileArchives(); val row = queue.next(source.id) ?: FileSources(context).prepare(source) { external ->
+        val queue = context.fileArchives(); queue.configure(source); val row = queue.next(source.id) ?: FileSources(context).prepare(source) { external ->
             check(stillSelected())
             val q = "sourceId=" + java.net.URLEncoder.encode(source.id, "UTF-8") + "&externalId=" + java.net.URLEncoder.encode(external, "UTF-8")
             val head = send(EventStage.FILE_UPLOAD, "/api/file-sync/v1/head?$q", "GET")
             requireCurrentHead(head)
             head.optString("revision").takeIf { head.has("revision") && !head.isNull("revision") && it.isNotEmpty() }
         } ?: return queue.pendingCount(source.id) == 0
-        fun checkSelection() { check(stillSelected()); check(SyncSchedule.waitingReason(context, config) == null) }
+        selectedRow = row
+        fun checkSelection() { check(stillSelected()); queue.assertCurrent(source, row); check(SyncSchedule.waitingReason(context, config) == null) }
         checkSelection()
         val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
         if (!manifest.has("sha256")) {

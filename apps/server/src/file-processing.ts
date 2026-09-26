@@ -32,6 +32,7 @@ export class FileProcessing {
   private saved:Saved;private path:string;readonly engine:ExecutionEngine;private owned:boolean;private execution=new AsyncLocalStorage<{step:ExecutionStep;signal:AbortSignal}>();private abort=new AbortController();private stopping=false;
   private rememberedRevision?:string;private reconciledEpoch?:string;private configurationEpoch?:string;private configurationCache=new Map<string,{fingerprint:string;receipt:Record<string,unknown>}>();
   readonly runtime:FileProcessorRuntime;
+  private unregister:Array<()=>Promise<void>>=[];
   constructor(readonly files:FileStore,provider?:TranscriptionProvider,private summarize?:SummarizeFiles,private options:{executor?:ExecutionEngine;contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry;pluginContext?:Context;plugins?:Plugin[];modules?:string[];analyze?:FileAnalysis;analysisSnapshot?:(settings:Parameters<FileAnalysis>[2],localOnly:boolean)=>ModelSettings;analysisRevision?:()=>number;diagnostics?:ServerDiagnostics;mediaAssets?:MediaAssets}={}){
     installEvidenceDependencies(files.store);
     this.path=join(files.store.directory,'file-processing.json');
@@ -43,13 +44,13 @@ export class FileProcessing {
     this.runtime=new FileProcessorRuntime(provider,options.plugins,options.modules,options.contextProcessors,options.pluginContext);
     this.engine=options.executor??new ExecutionEngine(files.store);this.owned=!options.executor;
     files.store.db.exec("UPDATE file_jobs SET state='waiting' WHERE state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_jobs.capture_id AND kind='files.pipeline'); UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_jobs.capture_id AND kind='files.summary'); UPDATE file_steps SET state='waiting' WHERE state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_steps.capture_id)");
-    for(const phase of ['pipeline','summary'] as const)this.engine.register({kind:'files.'+phase,pool:'files.'+phase,concurrency:()=>1,timeoutMs:()=>this.saved.settings.timeoutMs,
+    for(const phase of ['pipeline','summary'] as const)this.unregister.push(this.engine.register({kind:'files.'+phase,pool:'files.'+phase,concurrency:()=>1,timeoutMs:()=>this.saved.settings.timeoutMs,
       validate:step=>this.exists(String(step.input.captureId),String(step.input.revision),phase),
       admit:step=>this.admit(String(step.input.captureId),phase),
       execute:(step,signal)=>{const run=()=>this.execution.run({step,signal},()=>phase==='pipeline'?this.runFile(step,signal):this.runSummary(step,signal));return this.options.diagnostics?this.options.diagnostics.run(randomUUID(),run):run();},
       commit:(step,result)=>{if(phase==='summary'){const id=String(step.input.captureId);this.saveArtifact(id,'summary',result,String(step.input.revision));this.invalidate(id);}},
       project:step=>this.project(step,phase),classify:error=>error instanceof StoreError&&error.statusCode===409?new ExecutionFailure('blocked','processor_not_configured'):error instanceof StoreError&&error.statusCode===422?new ExecutionFailure('permanent','unsupported_format'):error instanceof StoreError&&error.statusCode===413?new ExecutionFailure('permanent','processing_limit'):new ExecutionFailure('transient',phase==='summary'?'summary_failed':'provider_failed',30000),
-    });
+    }));
   }
   private log(event:string,id?:string,fields:EventFields={},level:'debug'|'info'|'warn'|'error'='info') {
     this.options.diagnostics?.record(event,{jobId:id,...fields},level);
@@ -127,11 +128,11 @@ export class FileProcessing {
     this.log('file.settings',undefined,{operation:'file_settings'});
     return this.view();
   }
-  retry(id:string,stage:'transcribe'|'diarize'|'summary'='transcribe'){
+  retry(id:string,stage:'transcribe'|'diarize'|'summary'='transcribe',reuseMatchingSteps=false){
     this.files.version(id);const db=this.files.store.db;
     if(db.prepare("SELECT 1 FROM file_jobs WHERE capture_id=? AND (state='running' OR summary_state='running')").get(id))throw new StoreError('File processing is active',409);
     if(stage==='summary')db.prepare("UPDATE file_jobs SET summary_state='waiting',available_at=0,error=NULL WHERE capture_id=?").run(id);
-    else {if(stage==='transcribe')db.prepare('UPDATE file_jobs SET policy_json=NULL WHERE capture_id=?').run(id);db.prepare("UPDATE file_jobs SET state='waiting',attempts=0,available_at=0,error=NULL,auto_eligible=1 WHERE capture_id=?").run(id);db.prepare(stage==='transcribe'?'DELETE FROM file_steps WHERE capture_id=?':"DELETE FROM file_steps WHERE capture_id=? AND step!='extract'").run(id);}
+    else {if(stage==='transcribe')db.prepare('UPDATE file_jobs SET policy_json=NULL WHERE capture_id=?').run(id);db.prepare("UPDATE file_jobs SET state='waiting',attempts=0,available_at=0,error=NULL,auto_eligible=1 WHERE capture_id=?").run(id);if(!reuseMatchingSteps)db.prepare(stage==='transcribe'?'DELETE FROM file_steps WHERE capture_id=?':"DELETE FROM file_steps WHERE capture_id=? AND step!='extract'").run(id);}
     const prior=this.engine.list({operationId:'file:'+id,kind:stage==='summary'?'files.summary':'files.pipeline',limit:100}).items.find(step=>this.exists(id,String(step.input.revision),stage==='summary'?'summary':'pipeline'));if(prior)this.engine.retry(prior.id);
     this.log('file.retry',id,{operation:stage==='transcribe'?'extract':stage});
     return {queued:true};
@@ -165,7 +166,7 @@ export class FileProcessing {
     const q=z.object({token:z.string().uuid()}).strict().parse(raw),preview=this.previews.get(q.token);
     if(!preview||preview.expires<Date.now()||preview.revision!==this.saved.revision)throw new StoreError(moteText("预览已过期或设置已改变，请重新预览"),409);
     for(const item of preview.items)if(this.jobFingerprint(item.id)!==item.fingerprint)throw new StoreError(moteText("文件状态已改变，请重新预览"),409);
-    const db=this.files.store.db;db.exec('BEGIN IMMEDIATE');try{for(const item of preview.items)this.retry(item.id);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
+    const db=this.files.store.db;db.exec('BEGIN IMMEDIATE');try{for(const item of preview.items)this.retry(item.id,'transcribe',true);db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}
     this.previews.delete(q.token);return {queued:preview.items.length};
   }
   private project(step:ExecutionStep,phase:'pipeline'|'summary'){
@@ -295,7 +296,7 @@ export class FileProcessing {
             if(!isLoopback(effective.endpoint))throw new StoreError('Local dialogue requires a local worker',409);
             const raw=this.transcript(extractId),diarizer=this.runtime.registry.get(settings.diarizationProcessor);
             if(diarizer.stage!=='diarize'||!diarizer.localOnly)throw new StoreError('Local dialogue requires a local diarization plugin',409);
-            const diarizeId=await this.step(id,'diarize',diarizer.id,diarizer.version,[file.sha256,diarizer.id,diarizer.version,effective.endpoint,settings.speakerCount,this.options.mediaAssets?MEDIA_CATALOG.dialogue.version:''],revision,()=>diarizer.process({...input,maxAudioMs:Math.ceil(raw.durationMs)+1000}),(rawDiarization:unknown)=>{
+            const diarizeId=await this.step(id,'diarize',diarizer.id,diarizer.version,[file.sha256,diarizer.id,diarizer.version,processorSettingsFingerprint(diarizer.id,effective,{speakerCount:settings.speakerCount}),this.options.mediaAssets?MEDIA_CATALOG.dialogue.version:''],revision,()=>diarizer.process({...input,maxAudioMs:Math.ceil(raw.durationMs)+1000}),(rawDiarization:unknown)=>{
               const data=diarizationSchema.parse(rawDiarization);
               db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind IN ('dialogue','corrected-dialogue','summary','speaker-names','calendar-link')").run(id);
               db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);
@@ -337,6 +338,6 @@ export class FileProcessing {
   private invalidate(id:string){const db=this.files.store.db;invalidateRetiredFileEvidence(this.files.store,id);this.files.store.invalidateConversationAnswers([id]);db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(id,new Date().toISOString());}
   private analysisHost(id:string){const step=this.execution.getStore()?.step;return {operationId:step?.operationId??'file:'+id,jobId:id,requestId:randomUUID()};}
   async analyze(id:string,records:ContextRecord[],prompt:string){if(!this.options.analyze)throw new StoreError('Analysis model is unavailable',409);const job=this.files.store.db.prepare('SELECT local_only,policy_json FROM file_jobs WHERE capture_id=?').get(id);const settings=job?.policy_json?effectiveFileSettings(JSON.parse(String(job.policy_json)),this.policy(),this.saved.settings,this.runtime.registry):this.currentSettings();return this.options.analyze(records,prompt,settings,!!job?.local_only,undefined,this.analysisHost(id));}
-  async close(){if(this.owned)await this.engine.close();else if(!this.engine.closed){this.engine.cancelKind('files.pipeline');this.engine.cancelKind('files.summary');await this.engine.drain(this.engine.list({kind:'files.pipeline',limit:100}).items.map(s=>s.id));}this.stopping=true;this.abort.abort();await this.runtime.close();}
+  async close(){if(this.owned)await this.engine.close();else if(!this.engine.closed){this.engine.cancelKind('files.pipeline');this.engine.cancelKind('files.summary');await this.engine.drain(this.engine.list({kind:'files.pipeline',limit:100}).items.map(s=>s.id));}this.stopping=true;this.abort.abort();await this.runtime.close();await Promise.all(this.unregister.splice(0).map(stop=>stop()));}
 }
 async function* ReadableAsync(chunks:Iterable<Buffer>){yield* chunks;}

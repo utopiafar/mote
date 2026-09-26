@@ -194,7 +194,7 @@ else {
     },60000);calendarTimer.unref();
     app.once('before-quit',()=>clearInterval(calendarTimer));
 
-    await nsfw.initialize();
+    // Visual review is paused; initialize its runtime only through model controls.
     await configureDiagnostics();
     const pageUrl = pathToFileURL(join(__dirname, 'index.html')).href;
     window = new BrowserWindow({

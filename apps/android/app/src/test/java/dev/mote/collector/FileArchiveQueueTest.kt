@@ -36,6 +36,29 @@ class FileArchiveQueueTest {
                 .put("duplicate", false).put("sourceId", sourceId).put("externalId", externalId).put("revision", revision))
     }
 
+    @Test fun changedExclusionsDiscardCandidatesAndRevokeAlreadyPreparedBytes() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher); val s = source()
+        val generation = queue.configure(s).getString("generation")
+        queue.observe(s, item().put("_relativePath", "private/a.wav"), generation, 0)
+        val pending = queue.prepare(s, { ByteArrayInputStream(byteArrayOf(1, 2)) }, { true }, 61000)!!
+        val changed = s.copy(excluded = "private")
+        queue.configure(changed)
+        assertNull(queue.next(s.id)); assertEquals(0, queue.pendingCount(s.id))
+        assertNull(queue.prepare(changed, { error("Excluded content must never open") }, { true }, 62000))
+        assertThrows(IllegalStateException::class.java) { queue.assertCurrent(s, pending) }
+    }
+
+    @Test fun exclusionsPreserveAllowedNewOnlyBaselines() {
+        val queue = FileArchiveQueue(folder.newFolder(), cipher); val s = source(initial = "new_only")
+        val generation = queue.configure(s).getString("generation")
+        queue.observe(s, item("old"), generation, 0); queue.finish(s, generation) { false }
+        val changed = s.copy(excluded = "private")
+        val next = queue.configure(changed).getString("generation")
+        queue.observe(changed, item("old"), next, 0)
+        assertEquals(0, queue.pendingCount(s.id))
+        assertNull(queue.prepare(changed, { error("Baseline must not upload") }, { true }, 62000))
+    }
+
     @Test fun immutablePartsSurviveRestartAndBadAckDoesNotReleaseThem() {
         val dir = folder.newFolder(); val queue = FileArchiveQueue(dir, cipher); val s = source(); val state = queue.configure(s)
         val bytes = ByteArray(FileArchiveQueue.PART_BYTES + 19) { (it % 253).toByte() }

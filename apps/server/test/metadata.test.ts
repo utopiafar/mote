@@ -1,3 +1,4 @@
+import {scanVectors} from '../src/vector-work.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -56,8 +57,8 @@ test('activity has no embedding work while content indexes normally; query filte
   await indexer.tick();assert.equal(calls.length,2);assert.equal(store.pending().length,0);assert.equal(store.indexCounts().failed,0);
   assert.equal((await indexer.search({query:'Same visible name',collection:'activity',appId:'synthetic.app'})).length,3);assert.equal(calls.length,2,'Activity search must not request a model embedding');
   assert.equal(store.search({query:'original',collection:'content',appId:'synthetic.other'}).length,1);
-  assert.equal(store.vectorSearch([1,0],'synthetic',{appId:'synthetic.other',collection:'content'}).length,1);
-  assert.equal(store.vectorSearch([1,0],'synthetic',{collection:'activity'}).length,0);
+  const scans=await scanVectors({path:join(store.directory,'mote.sqlite'),queries:[store.vectorQuery('synthetic',{appId:'synthetic.other',collection:'content'}),store.vectorQuery('synthetic',{collection:'activity'})],vector:[1,0],limit:30},AbortSignal.timeout(10000));
+  assert.equal(scans[0].candidates.length,1);assert.equal(scans[1].candidates.length,0);
   assert.equal(store.list({collection:'content'}).totalCount,2,'Legacy records without explicit collection remain content');
   const first=store.list({appId:'synthetic.app',source:'activity',collection:'activity',limit:2}),second=store.list({appId:'synthetic.app',source:'activity',collection:'activity',limit:2,cursor:first.nextCursor!});
   assert.equal(first.totalCount,3);assert.equal(second.totalCount,3);assert.equal(new Set([...first.items,...second.items].map(r=>r.id)).size,3);assert.equal(second.nextCursor,null);

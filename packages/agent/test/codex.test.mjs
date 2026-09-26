@@ -35,7 +35,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  else if(m.method==='thread/start'){
   if(m.params.ephemeral!==true||m.params.approvalPolicy!=='never')process.exit(2);
   if(mode==='import'){if(m.params.dynamicTools.length||m.params.sandbox!=='workspace-write')process.exit(2);}
-  else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)))process.exit(2);
+  else if(m.params.environments.length||m.params.dynamicTools.some(t=>!${JSON.stringify(codexContextTools.map(t=>t.name))}.includes(t.name)&&!(mode==='contribution'&&t.name==='fixture_context')))process.exit(2);
   send({id:m.id,result:{thread:{id:'thread-fixture'},approvalPolicy:'never',sandbox:{type:mode==='import'?'workspaceWrite':'readOnly'}}});
  }else if(m.method==='turn/start'){
   turns++;
@@ -45,7 +45,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='structured-error'){send({method:'error',params:{threadId:'thread-fixture',willRetry:false,error:{codexErrorInfo:'usageLimitExceeded',message:'synthetic-private-secret'}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed'}}});return;}
   if(mode==='timeout')return;
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
-  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
+  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='contribution'?'fixture_context':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
  }else if(m.id===999&&mode==='tool-repair'){
   const feedback=JSON.parse(m.result.contentItems[0].text);
   if(m.result.success!==false||feedback.toolError.code!=='invalid_tool_arguments'||feedback.toolError.recovery!=='correct_arguments')process.exit(5);
@@ -53,7 +53,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  }else if(m.id===999||m.id===1000){
   if(!m.result?.success)process.exit(3);
   if(mode==='usage')for(const sample of [turns*100,turns*100])send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
-  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:'Generated evidence [synthetic-codex-record]',citationIds:['synthetic-codex-record']})}}});
+  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:mode==='contribution'?'Generated metadata':'Generated evidence [synthetic-codex-record]',citationIds:mode==='contribution'?[]:['synthetic-codex-record']})}}});
   send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
  }
 });
@@ -170,4 +170,12 @@ test('Codex cumulative usage replaces duplicate samples and covers repair turns 
 test('Codex structured quota errors retain safe typed state without exposing provider text',async t=>{
  await fake(t,'structured-error');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
  await assert.rejects(agent.query({question:'Generated failure'}),e=>e.details?.category==='blocked'&&e.details.code==='provider_quota'&&!e.message.includes('synthetic-private'));
+});
+
+
+test('Codex advertises and dispatches a host contribution from the same pinned declaration',async t=>{
+ const root=await fake(t,'contribution');const {ContextToolRegistry}=await import('../dist/tool-contributions.js');const tools=new ContextToolRegistry();let calls=0;
+ tools.register({name:'fixture_context',version:'generated-1',description:'Generated read-only metadata',fields:{},maxCharacters:1000,parse:args=>args,authorize:()=>true,read:()=>{calls++;return {fixture:'generated'};}});
+ const agent=createAgent({reader:{...reader,contextTools:()=>tools.snapshot()},protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ const answer=await agent.query({question:'Read generated metadata'});assert.equal(calls,1);assert.equal(answer.trace[0].tool,'fixture_context');assert.deepEqual(answer.citations,[]);
 });

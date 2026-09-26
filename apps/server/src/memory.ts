@@ -127,6 +127,7 @@ export class MemoryStore {
   list(args:Parameters<MemoryStore['page']>[0]={}){return this.page(args).items;}
   text(id:string){const m=this.get(id);return `# ${m.title}\n\n${m.statement}\n\n## Uncertainty\n\n${m.uncertainty}\n\n## Provenance\n\nStatus: ${m.status}\nTier: ${m.tier??'episode'}\nKind: ${m.kind??'episodic'}\nModel: ${m.model}\nSkill: ${m.skillVersion??'unknown'}\n\n${(m.evidence??[]).map(e=>`- ${e.id} (${e.occurredAt??e.recordedAt??e.capturedAt})${e.quote?'\n  '+e.quote.replaceAll('\n','\n  '):''}`).join('\n')}\n`;}
   get(id:string):Memory{const row=this.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Memory not found',404);return {version:1,...JSON.parse(row.json)};}
+  private validatedClaims=new Map<string,unknown>();
   extract(result:QueryResult,model:string,options:MemoryExtractOptions={}) {
     let input:unknown;try{input=JSON.parse(result.answer);}catch{throw new MemoryOutputValidationError('json','Model returned an invalid memory format; no memories were saved');}
     const parsed=z.object({memories:z.array(claimSchema).max(8),citationIds:z.array(z.string().uuid()).max(240).optional()}).strict().safeParse(input);
@@ -135,14 +136,19 @@ export class MemoryStore {
     const allowed=new Set(result.citations.map(c=>c.id)),now=new Date().toISOString(),items:Memory[]=[];
     if(parsed.data.citationIds){const repeated=new Set(parsed.data.citationIds);if(repeated.size!==allowed.size||[...repeated].some(id=>!allowed.has(id)))throw new MemoryOutputValidationError('citations','Repeated memory citation envelope does not match verified evidence');}
 
-    const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
+    const own=!options.validateOnly&&!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{
+      const evidenceIds=[...new Set([...Object.keys(options.expectedFingerprints??{}),...result.citations.map(c=>c.id)])];
+      const evidenceById=new Map(this.readEvidence(evidenceIds).map(record=>[record.id,record]));
+      const fingerprints=evidenceIds.map(id=>{const record=evidenceById.get(id);return [id,record?memoryEvidenceFingerprint(record):null,this.isCurrentEvidence(id)];});
+      const related=[...new Set([...(options.relatedMemoryIds??[]),...parsed.data.memories.flatMap(m=>(m.relations??[]).map(r=>r.memoryId))])].map(id=>this.get(id));
+      const cacheKey=sha256(JSON.stringify([result.answer,result.citations.map(c=>c.id),options.profile,options.requireAdmission,options.tier,options.relatedMemoryIds,options.evidenceRanges,options.expectedFingerprints,fingerprints,related]));
       // Validate all batch inputs after model completion, including zero-candidate batches.
       for(const [id,expected] of Object.entries(options.expectedFingerprints??{})){
-        const record=this.readEvidence([id])[0];
+        const record=evidenceById.get(id);
         if(!record||!this.isCurrentEvidence(id)||memoryEvidenceFingerprint(record)!==expected)throw new StoreError('Memory evidence changed during extraction',409);
       }
-      const claims=parsed.data.memories.map((m,candidateIndex)=>{
+      const validateClaims=()=>parsed.data.memories.map((m,candidateIndex)=>{
         if(options.requireAdmission&&(!m.admission||!m.evidence))throw new MemoryOutputValidationError('schema','Admission and exact evidence are required');
         if(options.requireAdmission&&options.tier==='consolidated'&&(m.admission?.layer!=='memory'||!m.relatedMemoryIds?.length))throw new MemoryOutputValidationError('schema','Consolidation requires selected memory and precise input lineage');
         if(m.relatedMemoryIds?.some(id=>!options.relatedMemoryIds?.includes(id)))throw new MemoryOutputValidationError('scope','Related memory is outside supplied candidates');
@@ -152,7 +158,7 @@ export class MemoryStore {
         for(const id of ids){
           if(!allowed.has(id))throw new MemoryOutputValidationError('citations','Memory evidence was not retrieved or declared in the outer citations');
           if(options.evidenceRanges&&!options.evidenceRanges.some(range=>range.id===id))throw new MemoryOutputValidationError('scope','Memory evidence is outside this batch');
-          const record=this.readEvidence([id])[0];
+          const record=evidenceById.get(id);
           if(!record||!this.isCurrentEvidence(id))throw new StoreError('Memory evidence is missing or superseded',409);
           if(record.provenance?.document?.fileIndex?.coverage==='lightweight')throw new MemoryOutputValidationError('scope','Lightweight indexes require verified original excerpts before memory extraction');
           records.set(id,record);
@@ -204,8 +210,12 @@ export class MemoryStore {
         }
         return {...m,evidenceIds:ids,evidence,domain,...(scopeRefs.length?{scopeRefs}:{})};
       });
-      for(const id of options.relatedMemoryIds??[])this.get(id);
-      if(options.validateOnly){if(own)this.store.db.exec('ROLLBACK');return {items:[] as Memory[],runId:result.runId};}
+      const claims=(this.validatedClaims.get(cacheKey) as ReturnType<typeof validateClaims>|undefined)??validateClaims();
+      if(!this.validatedClaims.has(cacheKey)){
+        if(this.validatedClaims.size>=16)this.validatedClaims.delete(this.validatedClaims.keys().next().value!);
+        this.validatedClaims.set(cacheKey,claims);
+      }
+      if(options.validateOnly){return {items:[] as Memory[],runId:result.runId};}
       for(const m of claims){
         const parents=m.relatedMemoryIds??[];
         if(options.requireAdmission&&options.tier==='consolidated'){

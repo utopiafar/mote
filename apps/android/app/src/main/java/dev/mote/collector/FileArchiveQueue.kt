@@ -64,12 +64,36 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
         if (!dirty(row)) mark(id, row)
         if (!row.has("pending") && state.optString("activeKey") == key) { state.remove("activeKey"); saveState(id, state) }
     }
+    private fun allowed(source: LocalSource, item: JSONObject): Boolean {
+        val path = item.optString("_relativePath", item.optString("title"))
+        val parts = path.split('/')
+        return SourceRules.include(path, source) && parts.indices.none { index ->
+            SourceRules.patterns(source.excluded).any { it.matches(parts.take(index + 1).joinToString("/")) }
+        }
+    }
+    private fun discard(id: String, row: JSONObject) {
+        val external = row.getJSONObject("candidate").getString("externalId")
+        itemFile(id, external).delete()
+        File(root(id), "todo-" + SourceRules.hash(external)).delete()
+        if (row.has("pending")) File(root(id), "spool").deleteRecursively()
+    }
+    fun assertCurrent(source: LocalSource, row: JSONObject) = synchronized(lock) {
+        check(allowed(source, row.getJSONObject("candidate"))) { "File excluded by current source policy" }
+        val current = read(itemFile(source.id, row.getJSONObject("candidate").getString("externalId")))
+        check(current.optJSONObject("pending")?.toString() == row.optJSONObject("pending")?.toString() && current.has("pending")) { "File policy or pending revision changed" }
+    }
     fun configure(source: LocalSource): JSONObject = synchronized(lock) {
         indexed(source.id)
         val state = state(source.id)
-        val policy = SourceRules.hash(listOf(source.uri, source.extensions, source.excluded, source.retention, source.lightweightIndex, source.allowRead).joinToString("\u0000"))
+        val policy = SourceRules.hash(listOf(source.uri, source.tree, source.maxFileMiB, source.extensions, source.excluded, source.retention, source.lightweightIndex, source.allowRead).joinToString("\u0000"))
         if (state.optString("policy") != policy) {
-            rows(source.id).forEach { row -> row.remove("pending"); row.remove("signature"); row.remove("revision"); row.remove("indexPending"); saveRow(source.id, row) }
+            rows(source.id).forEach { row ->
+                // An exclusion edit must not turn old new-only baseline files into uploads.
+                if (row.optBoolean("baseline") && allowed(source, row.getJSONObject("candidate"))) {
+                    row.remove("pending"); row.remove("indexPending"); saveRow(source.id, row)
+                } else discard(source.id, row)
+            }
+            state.remove("activeKey")
             File(root(source.id), "spool").deleteRecursively()
             state.put("policy", policy).remove("stack"); state.put("generation", UUID.randomUUID().toString())
         }
@@ -79,6 +103,7 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     }
     fun signature(item: JSONObject) = SourceRules.hash(SourceRules.canonical(JSONObject(item.toString()).apply { remove("observedAt"); remove("revision") }))
     fun observe(source: LocalSource, item: JSONObject, generation: String, now: Long = System.currentTimeMillis()) = synchronized(lock) {
+        require(allowed(source, item)) { "File excluded by current source policy" }
         SourcePrivacyGate.validate(source, item)
         val path = itemFile(source.id, item.getString("externalId")); val row = read(path)
         if (!path.exists()) check((root(source.id).listFiles()?.count { it.name.startsWith("item-") } ?: 0) < 50000) { MoteI18n.text("文件清单达到 50000 项上限，请缩小目录") }
@@ -123,10 +148,14 @@ class FileArchiveQueue(private val directory: File, private val cipher: ByteCiph
     }
     /** Open is called only for archive bytes, after stability and baseline checks. */
     fun prepare(source: LocalSource, open: (JSONObject) -> InputStream, unchanged: (JSONObject) -> Boolean, now: Long = System.currentTimeMillis(), anchor: ((String) -> String?)? = null): JSONObject? = synchronized(lock) {
-        next(source.id)?.let { return@synchronized it }
+        configure(source)
+        next(source.id)?.let { assertCurrent(source, it); return@synchronized it }
         val row = markers(source.id).asSequence().mapNotNull { marker ->
             val file = File(root(source.id), "item-${marker.name.removePrefix("todo-")}.enc")
-            if (!file.exists()) { marker.delete(); null } else read(file).also { if (!dirty(it)) marker.delete() }
+            if (!file.exists()) { marker.delete(); null } else read(file).let { row ->
+                if (!allowed(source, row.getJSONObject("candidate"))) { discard(source.id, row); null }
+                else row.also { if (!dirty(it)) marker.delete() }
+            }
         }.firstOrNull { dirty(it) && (source.retention == "reference" || it.getJSONObject("candidate").optBoolean("deleted") || now - it.optLong("stableSince", now) >= 60000) } ?: return@synchronized null
         if (!row.has("revision") && anchor != null) anchor(row.getJSONObject("candidate").getString("externalId"))?.let { row.put("revision", it); saveRow(source.id, row) }
         val candidate = row.getJSONObject("candidate"); val item = JSONObject(candidate.toString()).apply { remove("_relativePath") }; SourcePrivacyGate.validate(source, item); val spool = File(root(source.id), "spool")

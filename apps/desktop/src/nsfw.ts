@@ -12,7 +12,8 @@ interface NativeVisionResult { text: string; status: string; backend: string; du
 
 export class NsfwController implements NsfwGate {
   private readonly modelStore: VisionFiles;
-  private readonly worker: InferenceProcess;
+  private worker?: InferenceProcess;
+  private readonly createWorker:()=>InferenceProcess;
   private downloadAbort?: AbortController;
   private downloadTask?: Promise<void>;
   private verifiedPaths?: VisionPaths;
@@ -25,7 +26,7 @@ export class NsfwController implements NsfwGate {
   constructor(directory: string, executable: string, private readonly onChange: () => void, options: { store?: VisionFiles; spawn?: () => InferenceChild; events?: EventJournal } = {}) {
     this.events = options.events;
     this.modelStore = options.store ?? new VisionModelStore(join(directory, 'qwen'));
-    this.worker = new InferenceProcess(options.spawn ?? (() => nativeInferenceChild(executable)), (state, error) => {
+    this.createWorker = () => new InferenceProcess(options.spawn ?? (() => nativeInferenceChild(executable)), (state, error) => {
       this.value.inferenceState = state;
       if (state === 'error' || state === 'stopped') this.verifiedPaths = undefined;
       if (error) this.value.error = error;
@@ -59,7 +60,7 @@ export class NsfwController implements NsfwGate {
     if (signal?.aborted) throw new Error(moteText("本地视觉推理已取消"));
     await this.ensureReady();
     const started = Date.now();
-    const result = await this.worker.request<NativeVisionResult>({ ...this.verifiedPaths, threads: config.nsfwThreads,
+    const result = await (this.worker??=this.createWorker()).request<NativeVisionResult>({ ...this.verifiedPaths, threads: config.nsfwThreads,
       system: REVIEW_SYSTEM, grammar: REVIEW_GRAMMAR,
       prompt: config.reviewPolicy, maxTokens: config.reviewMaxTokens,
       ...await imageWork.run<ReturnType<typeof prepareVisionImage>>({ kind: 'vision', bytes: image.bitmap, width: image.width, height: image.height, maxSide: config.reviewMaxSide }),
@@ -110,6 +111,6 @@ export class NsfwController implements NsfwGate {
     finally { this.value.downloading = false; this.publish(); }
   }
   async reload(): Promise<void> { if (this.value.downloading) throw new Error(moteText("模型操作进行中，请稍后重载")); this.reset(); await this.ensureReady(); }
-  reset(): void { this.verifiedPaths = undefined; this.worker.reset(); }
-  close(): void { this.closed = true; this.downloadAbort?.abort(); this.worker.close(); }
+  reset(): void { this.verifiedPaths = undefined; this.worker?.reset(); }
+  close(): void { this.closed = true; this.downloadAbort?.abort(); this.worker?.close(); }
 }

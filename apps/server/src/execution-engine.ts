@@ -40,7 +40,7 @@ const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value)).d
 export class ExecutionEngine {
  private programs=new Map<string,Promise<unknown>>();
  private handlers=new Map<string,ExecutionHandler>();
- private active=new Map<string,{controller:AbortController;task:Promise<void>;pool:string}>();
+ private active=new Map<string,{controller:AbortController;task:Promise<void>;pool:string;kind:string}>();
  private stopping=false;
  private pumping=false;
  private pumpAgain=false;
@@ -60,7 +60,7 @@ export class ExecutionEngine {
   installOperationProjection(store);
  }
  get closed(){return this.stopping;}
- register(handler:ExecutionHandler){if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return ()=>{this.handlers.delete(handler.kind);};}
+ register(handler:ExecutionHandler){if(this.handlers.has(handler.kind))throw Error('Duplicate execution handler');this.handlers.set(handler.kind,handler);return async()=>{if(this.handlers.get(handler.kind)===handler)this.handlers.delete(handler.kind);const running=[...this.active.values()].filter(value=>value.kind===handler.kind);for(const value of running)value.controller.abort();await Promise.allSettled(running.map(value=>value.task));};}
  enqueue(operationId:string,kind:string,input:Record<string,unknown>,options:OperationMembership&{id?:string;dependencies?:string[];initial?:{state:ExecutionState;attempts:number;availableAt:number;error?:string}}={}){
   const handler=this.handlers.get(kind);if(!handler)throw new StoreError('Execution handler unavailable',409);
   input=canonical(input) as Record<string,unknown>;
@@ -141,7 +141,7 @@ export class ExecutionEngine {
      if(!row)break;
      const handler=this.handlers.get(row.kind)!;if(!handler.validate(view(row))){this.store.db.prepare("UPDATE execution_steps SET state='stale',error='input_changed',updated_at=? WHERE id=? AND state='waiting'").run(this.now(),row.id);this.project(row.id);continue;}
      const controller=new AbortController();let completed=true;const task=this.execute(row,handler,controller).catch(error=>{completed=false;throw error;}).finally(()=>{this.active.delete(row.id);if(!this.stopping&&completed)queueMicrotask(()=>{void this.tick().catch(()=>{});});});
-     this.active.set(row.id,{controller,task,pool});started.push(task);
+     this.active.set(row.id,{controller,task,pool,kind:row.kind});started.push(task);
     }
    }
   }finally{this.pumping=false;if(this.pumpAgain){this.pumpAgain=false;queueMicrotask(()=>{void this.tick().catch(()=>{});});}}

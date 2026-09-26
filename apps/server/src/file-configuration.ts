@@ -8,7 +8,7 @@ export type FileConfiguration={revision:string;settings:FileProcessingSettings;p
 /** Content-affecting dependencies declared by built-in transports; plugins default to all settings. */
 const builtinKeys:Record<string,(keyof FileProcessingSettings)[]>={
  'audio.http':['endpoint','apiKey','allowRemote'],
- 'audio.local-dialogue':['endpoint','apiKey','allowRemote','diarizationProcessor','speakerCount','semanticTurns','localModelEndpoint','localModelName','localModelApiKey'],
+ 'audio.local-dialogue':['endpoint','apiKey','allowRemote'],
  'audio.diarize':['endpoint','apiKey','speakerCount'],
  'image.http':['imageEndpoint','apiKey','allowRemote'],
  'text.utf8':[],'document.generic':[],
@@ -16,7 +16,7 @@ const builtinKeys:Record<string,(keyof FileProcessingSettings)[]>={
 const hash=(value:unknown)=>createHash('sha256').update(JSON.stringify(value,(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(key=>[key,v[key]])):v)).digest('hex');
 export function processorSettingsFingerprint(id:string,settings:FileProcessingSettings,parameters:unknown){
  const keys=builtinKeys[id]??Object.keys(settings).sort() as (keyof FileProcessingSettings)[];
- return hash({parameters,settings:Object.fromEntries(keys.map(key=>[key,settings[key]]))});
+ return hash({parameters:id==='audio.local-dialogue'?{}:parameters,settings:Object.fromEntries(keys.map(key=>[key,settings[key]]))});
 }
 export function fileConfiguration(saved:FileConfiguration,sourceId:string,mime:string,registry:ProcessorRegistry,prior?:AppliedFilePolicy){
  const base=saved.settings,policy=saved.policy??migrateFilePolicy(base,registry);

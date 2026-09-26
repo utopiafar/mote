@@ -4,7 +4,7 @@ import { apply as applySkillTool } from "@deepseek-ai/dsh-tool-skill";
 
 export const name = "mote-context";
 export const inject = ["tools", "skills", "agents", "attachments"];
-const names = ["material_catalog","material_read","read_image","progress_update", "search_context", "timeline", "evidence", "activity", "media_activity", "devices", "sources", "source_items", "source_history", "memories", "read_file_evidence", "file_chunks", "changes"];
+const names = CONTEXT_TOOLS.map(([name])=>name);
 /** Bound decoded provider bytes before the SDK buffers SSE or error bodies.
  * A token parameter and wall-clock timeout do not constrain a hostile response.
  * The limit covers retries and repair turns in this isolated agent process. */
@@ -133,7 +133,7 @@ export async function apply(ctx) {
     return result;
   }
   const allowed = JSON.parse(process.env.MOTE_TASK_TOOLS || JSON.stringify(names));
-  for (const [tool, description, parameters] of CONTEXT_TOOLS) {
+  for (const [tool, description, parameters] of JSON.parse(process.env.MOTE_TOOL_DEFINITIONS || JSON.stringify(CONTEXT_TOOLS))) {
     if (!allowed.includes(tool)) continue;
     ctx.tools.register(
       defineTool({

@@ -1,3 +1,4 @@
+import {scanVectors} from '../src/vector-work.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -68,7 +69,7 @@ test('in-flight source deletion and expired leases fence late completions',async
 test('vector scoring reaches historical evidence outside the former recent candidate window',async t=>{
  const store=fixture(t),inputs=Array.from({length:4097},()=>observation());for(let i=0;i<inputs.length;i+=500)await store.ingestBatch(inputs.slice(i,i+500));store.db.exec("UPDATE captures SET embedding='[0,1]',embedding_model='fixture'");
  store.db.prepare("UPDATE captures SET embedding='[1,0]',captured_at='2020-01-01T00:00:00Z' WHERE id=?").run(inputs[0].id);
- const result=store.vectorSearch([1,0],'fixture',{limit:3});assert.equal(result.length,3);assert.equal(result[0].id,inputs[0].id);assert.equal(result.coverage.scanned,4097);assert.equal(result.coverage.bounded,false);
+ const [scan]=await scanVectors({path:join(store.directory,'mote.sqlite'),queries:[store.vectorQuery('fixture',{})],vector:[1,0],limit:3},AbortSignal.timeout(10000));const result=Object.assign(scan.candidates,{coverage:scan.coverage});assert.equal(result.length,3);assert.equal(result[0].id,inputs[0].id);assert.equal(result.coverage.scanned,4097);assert.equal(result.coverage.bounded,false);
 });
 
 test('source directory catalog paginates without losing same-title files and tracks revisions/deletes',async t=>{

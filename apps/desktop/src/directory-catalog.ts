@@ -126,8 +126,10 @@ export class DirectoryCatalog {
     if (!entry) return;
     this.remember(relativePath);
     if (syncState === 'error') this.state.scanFaulted = true;
-    this.state.catalog[relativePath] = { ...entry, ...(contentHash ? { contentHash } : {}), syncState };
+    this.state.catalog[relativePath] = { ...entry, ...(contentHash ? { contentHash, contentQuickHash: entry.quickHash } : {}), syncState };
   }
+
+  finishSingle(): void { this.state.inProgress = false; this.state.pendingDirectories = []; this.finishReconciliation(); }
 
   finishReconciliation(): string[] {
     const removed: string[] = [];

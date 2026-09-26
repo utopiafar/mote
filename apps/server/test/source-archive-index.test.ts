@@ -15,7 +15,7 @@ function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-source-index-')),store=new Store(directory),archive=new SourceArchive(store);
   const receive=(items:SourceItem[],groups=items.map(()=>group))=>{
     store.db.exec('BEGIN IMMEDIATE');
-    try{const result=archive.receive(sourceId,items,groups);store.db.exec('COMMIT');archive.acknowledge(sourceId,result.checkpoint);return result;}
+    try{const result=archive.receive(sourceId,items,groups);store.db.exec('COMMIT');return result;}
     catch(error){if(store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}
   };
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});

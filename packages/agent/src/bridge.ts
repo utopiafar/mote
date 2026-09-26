@@ -1,3 +1,5 @@
+import {CONTEXT_TOOLS} from './context-tools.js';
+import {pinContextTools} from './tool-contributions.js';
 import {rememberEvidence} from './evidence-ledger.js';
 import {taskTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
 import {actionEvidenceText,parseEvidenceRef} from '@mote/shared';
@@ -19,28 +21,7 @@ import type {
 
 const hostError=(message:string)=>new ContextToolError('invalid_tool_arguments',message,'correct_arguments');
 
-export const TOOL_NAMES = [
-  "action_catalog",
-  "material_catalog",
-  "material_read",
-  "context_index",
-  "segments",
-  "read_image",
-  "progress_update",
-  "search_context",
-  "timeline",
-  "evidence",
-  "activity",
-  "media_activity",
-  "devices",
-  "sources",
-  "source_items",
-  "source_history",
-  "memories",
-  "read_file_evidence",
-  "file_chunks",
-  "changes",
-] as const;
+export const TOOL_NAMES = CONTEXT_TOOLS.map(([name])=>name);
 
 function dateValue(value: unknown, field: string): string | undefined {
   if (value === undefined) return undefined;
@@ -217,6 +198,8 @@ export async function startBridge(
   bounds: QueryInput,
   maxToolCalls: number,
 ) {
+  bounds=pinContextTools(bounds,reader);
+  const contributions=new Map((bounds.toolContributions??[]).map(tool=>[tool.name,tool]));
   const token = randomBytes(32).toString("hex");
   const trace: ToolTrace[] = [];
   const records = new Map<string, ContextRecord>();
@@ -306,7 +289,7 @@ export async function startBridge(
         res.end('{"ok":true}');
         return;
       }
-      if (!TOOL_NAMES.includes(tool as (typeof TOOL_NAMES)[number])) {
+      if (!TOOL_NAMES.includes(tool)&&!contributions.has(tool)) {
         res.writeHead(404).end('{"error":"Unknown tool"}');
         return;
       }
@@ -317,9 +300,9 @@ export async function startBridge(
         reportProgress(bounds,{stage:'model',message:args.message.trim()});
         res.end('{"ok":true}');return;
       }
-      if (!['timeline','search_context','activity','media_activity','segments','context_index'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
+      if (!contributions.has(tool)&&!['timeline','search_context','activity','media_activity','segments','context_index'].includes(tool) && ['source','appId','collection'].some(field => args[field] !== undefined))
         throw hostError('App/source/collection filters require a context or activity tool');
-      if (tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
+      if (!contributions.has(tool)&&tool !== 'media_activity' && ['appVisibility','screenLocked','playbackType'].some(field => args[field] !== undefined))
         throw hostError('Media state filters require media_activity');
       // Normalize typed references before discovery/range checks, never after them.
       // Opaque legacy IDs remain supported for injected readers; explicit kinds cannot cross layers.
@@ -337,6 +320,18 @@ export async function startBridge(
       if(deliveredCharacters>=limits.totalToolCharacters-1000)throw budgetError();
       reportProgress(bounds,{stage:'tool',tool,phase:'started'});
       if(bounds.skill==='working-memory')throw hostError('Working memory uses only the supplied dialogue; retrieval is disabled');
+      const contribution=contributions.get(tool);
+      if(contribution){
+        const scope=Object.freeze(range(args,bounds)),parsed=Object.freeze(contribution.parse(args));
+        if(!await contribution.authorize(scope,parsed))throw hostError('Context capability is unavailable or outside the authorized scope');
+        bounds.signal?.throwIfAborted();
+        const value=await contribution.read(parsed,{scope,signal:bounds.signal});
+        if(!await contribution.authorize(scope,parsed))throw hostError('Context capability was revoked');
+        const serialized=JSON.stringify({source:'untrusted_personal_context',version:contribution.version,data:value??null,evidencePolicy:'Metadata only; no original citation grants.'});
+        if(serialized.length>Math.min(contribution.maxCharacters,limits.toolResultCharacters)||deliveredCharacters+serialized.length>limits.totalToolCharacters)throw budgetError();
+        deliveredCharacters+=serialized.length;completeLineage=false;
+        trace.push({tool,arguments:{...parsed,...scope},count:1});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
+      }
       if(tool==='action_catalog'){
         if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');
         if(Object.keys(args).some(key=>!['query','id','cursor','limit'].includes(key))||args.query!==undefined&&(typeof args.query!=='string'||args.query.length>200)||args.id!==undefined&&(typeof args.id!=='string'||!/^[0-9a-f-]{36}$/i.test(args.id))||args.cursor!==undefined&&(typeof args.cursor!=='string'||args.cursor.length>4096)||args.limit!==undefined&&(!Number.isInteger(args.limit)||Number(args.limit)<1||Number(args.limit)>20))throw hostError('Invalid action catalog arguments');

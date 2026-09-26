@@ -41,6 +41,7 @@ const lanes:ProcessingLane[]=['extract','aggregate','semantic','memory'];
 export class ProcessingRuntime {
   readonly registry=new ContextProcessorRegistry();readonly context:Context;private readonly pluginScope:BackendPluginScope;
   readonly ready:Promise<void>;readonly engine:ExecutionEngine;private owned:boolean;private stopping=false;
+  private unregister:Array<()=>Promise<void>>=[];
   constructor(readonly store:Store,plugins:Plugin[]=[],private limits:Partial<Record<ProcessingLane,{concurrency:number;dailyCalls:number;dailyInputCharacters?:number}>>={},private now=Date.now,engine?:ExecutionEngine,private materials?:MaterialStore,root?:Context){
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.pluginScope.provide('moteContextProcessors',this.registry);
@@ -51,10 +52,10 @@ export class ProcessingRuntime {
     if(!store.db.prepare('PRAGMA table_info(processing_usage)').all().some(r=>r.name==='input_characters'))store.db.exec('ALTER TABLE processing_usage ADD COLUMN input_characters INTEGER NOT NULL DEFAULT 0');
     if(materials)store.archive.enableMaterialLineage();
     this.engine=engine??new ExecutionEngine(store,now);this.owned=!engine;
-    for(const lane of lanes)this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,
+    for(const lane of lanes)this.unregister.push(this.engine.register({kind:'context-dag.'+lane,pool:lane,concurrency:()=>this.settings()[lane].concurrency,
       validate:step=>this.valid(this.job(step.id)),admit:step=>this.admit(this.job(step.id)),execute:(step,signal)=>this.process(this.job(step.id),signal,step),commit:(step,result)=>this.commit(this.job(step.id),result),project:step=>this.project(step),
       classify:error=>{const category=error instanceof ProcessingFailure?error.category:error instanceof z.ZodError?'permanent':error instanceof StoreError?(error.statusCode===409?'blocked':error.statusCode<500?'permanent':'transient'):'transient';return new ExecutionFailure(category,category);},
-    });
+    }));
     this.migrate();
     const pluginScope=this.pluginScope;
     this.ready=(async()=>{for(const plugin of plugins)await pluginScope.install(plugin);})();void this.ready.catch(()=>{});
@@ -79,7 +80,7 @@ export class ProcessingRuntime {
     }
     const db=this.store.db;db.exec('BEGIN IMMEDIATE');try{
       this.store.reserveMetadata(jobs.reduce((n,j)=>n+Buffer.byteLength(JSON.stringify(j))+1024,0));
-      for(const job of jobs){db.prepare("INSERT OR IGNORE INTO processing_jobs(id,lane,state,json) VALUES(?,?,'waiting',?)").run(job.id,job.lane,JSON.stringify(job));for(const dep of job.dependencies)db.prepare('INSERT OR IGNORE INTO processing_dependencies VALUES(?,?)').run(job.id,dep);}
+      for(const job of jobs){db.prepare("INSERT OR IGNORE INTO processing_jobs(id,lane,state,json) VALUES(?,?,'waiting',?)").run(job.id,job.lane,JSON.stringify(job));}
       const operationId='workflow:'+fingerprint(jobs.map(j=>j.id).sort());
       for(const job of jobs)this.engine.enqueue(operationId,'context-dag.'+job.lane,{jobId:job.id},{id:job.id,dependencies:job.dependencies});
       db.exec('COMMIT');return Object.fromEntries(ids);
@@ -148,5 +149,5 @@ export class ProcessingRuntime {
     job.outputs=outputs.map((output,index)=>{const artifactId=fingerprint([job.id,index]);this.store.archive.save(artifactId,job.id,job.id,output,job.inputs,job.processor,job.version,fingerprint(job.config),job.inputs.map(i=>i.id),artifacts.flatMap(a=>a.outputs.map(o=>({id:o.id,revision:o.revision}))),job.materialInputs??[]);return artifactId;});
     this.store.db.prepare('UPDATE processing_jobs SET json=? WHERE id=?').run(JSON.stringify(job),job.id);
   }
-  async close(){if(this.owned)await this.engine.close();this.stopping=true;await this.ready.catch(()=>{});await this.pluginScope.close();}
+  async close(){if(this.owned)await this.engine.close();this.stopping=true;await Promise.all(this.unregister.splice(0).map(stop=>stop()));await this.ready.catch(()=>{});await this.pluginScope.close();}
 }

@@ -14,7 +14,7 @@ import {MemorySettings} from './MemorySettings';
 import {ModelProfiles} from './ModelProfiles';
 import {ModelAssignments} from './ModelAssignments';
 export type SettingsDestination = 'imports'|'usage'|'lark'|'vault'|'developer'|'about'|'connections';
-const categories: {id:ConfigCategory|'providers';title:string;description:string;icon:typeof Bot}[] = [
+const categories: {id:ConfigCategory|'providers'|'model';title:string;description:string;icon:typeof Bot}[] = [
   {id:'providers',title:moteText("模型 Provider"),description:moteText("连接预设、模型目录、凭据与测试"),icon:Bot},
   {id:'model',title:moteText("模块与模型"),description:moteText("为各模块分配预设和模型，设置记忆与回顾"),icon:Settings2},
   {id:'storage',title:moteText("保留与容量"),description:moteText("历史保留周期与资料库容量"),icon:Database},
@@ -27,7 +27,7 @@ function EffectiveField({field}:{field:ConfigurationField}) {
  return <div className="effective-field" data-config-key={field.key}><div><strong>{field.label}</strong><small>{field.description}</small></div><div>{field.visibility==='secret-status'?<span className={`badge ${value?'green':'muted'}`}>{value?moteText("已配置"):moteText("未配置")}</span>:<span>{value===null||value===''?moteText("未设置"):field.unit==='bytes'&&typeof value==='number'?bytes(value):Array.isArray(value)?value.join('、')||moteText("未设置"):typeof value==='boolean'?value?moteText("已开启"):moteText("已关闭"):String(value)}{typeof value==='number'&&field.unit&&field.unit!=='bytes'?` ${{days:moteText("天"),hours:moteText("小时"),seconds:moteText("秒"),ms:moteText("毫秒"),tokens:'tokens',files:moteText("个"),entries:moteText("条")}[field.unit]||field.unit}`:''}</span>}<small>{origins[field.source]}</small></div></div>;
 }
 export function ServerSettings({api,onNavigate,onModelApplied}:{api:Api;onNavigate:(page:SettingsDestination)=>void;onModelApplied:()=>void}) {
- const [category,setCategory]=useState<ConfigCategory|'providers'|null>(null),[revision,setRevision]=useState(0);
+ const [category,setCategory]=useState<ConfigCategory|'providers'|'model'|null>(null),[revision,setRevision]=useState(0);
  const configuration=useResource<ServerConfiguration>(api,'/api/configuration'),sourceResource=useResource<{items:SourceConnection[]}>(api,category==='connectors'?'/api/sources':null);
  const config=configuration.data,busy=configuration.loading,error=configuration.error,sources=sourceResource.data?.items??[],sourcesError=sourceResource.error?errorMessage(sourceResource.error):'';
  const refresh=()=>{resources(api).invalidate(key=>key==='/api/configuration'||key==='/api/sources'||key.startsWith('/api/model-settings'));setRevision(n=>n+1);};

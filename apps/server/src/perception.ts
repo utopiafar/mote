@@ -28,6 +28,7 @@ export class Perception {
   private inFlight=new Map<string,Promise<unknown>>();
   private historicalPreviews=new Map<string,{expires:number;items:{id:string;hash:string}[]}>();
   private workerReady=false;private workerCheckedAt=0;private workerProbe?:Promise<void>;
+  private unregister:Array<()=>Promise<void>>=[];
   constructor(private store:Store,private runtime:FileProcessorRuntime,engine?:ExecutionEngine,private mediaAssets?:MediaAssets,private probeOcr:()=>Promise<boolean>=managedOcrReady){
     this.engine=engine??new ExecutionEngine(store);this.owned=!engine;
     if(mediaAssets&&!store.db.prepare("SELECT 1 FROM settings WHERE key='managed-ocr-v1'").get()){
@@ -43,10 +44,10 @@ export class Perception {
     this.engine.cancelKind('perception.semantic');
     store.db.prepare("DELETE FROM perception_jobs WHERE kind='semantic'").run();
     store.db.exec("UPDATE perception_jobs SET state='waiting' WHERE kind='ocr' AND state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='capture:'||perception_jobs.capture_id AND kind='perception.ocr')");
-    this.engine.register({kind:'perception.ocr',pool:'image-ocr',concurrency:()=>this.settings().concurrency,
+    this.unregister.push(this.engine.register({kind:'perception.ocr',pool:'image-ocr',concurrency:()=>this.settings().concurrency,
       validate:step=>this.valid(step),admit:step=>this.admit(step),execute:(step,signal)=>this.process(step,signal),commit:(step,result)=>this.commit(step,result),project:step=>this.project(step),
       classify:error=>error instanceof z.ZodError?new ExecutionFailure('permanent','invalid_processor_output'):new ExecutionFailure('transient','processor_failed',60000),
-    });
+    }));
   }
   private execution(settings:PerceptionSettings){return sha256(JSON.stringify([settings.enabled,settings.allowExternalProcessing,settings.providerRevision,settings.ocrProcessorId,settings.ocrEndpoint,settings.ocrEndpoint===managedOcrEndpoint()&&this.mediaAssets?MEDIA_CATALOG.ocr.version:'']));}
   private valid(step:ExecutionStep){return !this.closed&&step.input.kind==='ocr'&&this.store.imageReference(String(step.input.captureId))?.blobHash===step.input.blobHash&&this.execution(this.settings())===step.input.configRevision;}
@@ -166,5 +167,5 @@ export class Perception {
     if((result as {skip?:boolean}).skip)return;
     this.store.savePerception(String(step.input.captureId),'ocr',result as {id:string;text:string;fingerprint:string},false);
   }
-  async close(){if(this.owned)await this.engine.close();else if(!this.engine.closed)this.engine.cancelKind('perception.ocr');this.closed=true;}
+  async close(){if(this.owned)await this.engine.close();else if(!this.engine.closed)this.engine.cancelKind('perception.ocr');this.closed=true;await Promise.all(this.unregister.splice(0).map(stop=>stop()));}
 }

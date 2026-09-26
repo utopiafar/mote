@@ -18,7 +18,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
   const selected = await lstat(selectedPath);
   if (selected.isSymbolicLink() || (!selected.isFile() && !selected.isDirectory())) throw new Error(moteText("所选来源必须是普通文件或目录，不能是符号链接"));
   const root = await realpath(selectedPath);
-  const catalog = selected.isDirectory() ? new DirectoryCatalog(root, previous, undefined, incrementalCheckpoint) : undefined;
+  const catalog = new DirectoryCatalog(root, previous, undefined, incrementalCheckpoint);
   catalog?.begin();
   const result: SourceScan = { items: [], seen: [], complete: true, skipped: 0, ...(catalog ? { checkpoint: catalog.checkpoint(incrementalCheckpoint) } : {}) };
   let totalBytes = 0;
@@ -43,7 +43,7 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     const maximumFile=options.retention==='archive'&&accessMarkerPath?512*1024*1024:16*1024*1024;
     if (options.retention !== 'reference' && candidate.size > maximumFile) { result.skipped++; return 'ok'; }
     if (result.items.length >= 2000 || options.retention !== 'reference' && result.items.length>0 && totalBytes + candidate.size > 16 * 1024 * 1024) return 'stop';
-    const unchanged = prior && prior.fileId === candidate.fileId && prior.size === candidate.size && prior.mtimeMs === candidate.mtimeMs && prior.ctimeMs === candidate.ctimeMs && prior.quickHash === candidate.quickHash && prior.contentHash;
+    const unchanged = prior && prior.syncState === 'synced' && prior.contentQuickHash === candidate.quickHash && prior.fileId === candidate.fileId && prior.size === candidate.size && prior.mtimeMs === candidate.mtimeMs && prior.ctimeMs === candidate.ctimeMs && prior.quickHash === candidate.quickHash && prior.contentHash;
     if (unchanged) { catalog?.markContent(candidate.relativePath, prior.contentHash, 'synced'); return 'ok'; }
     if (options.initialSync === 'new_only' && !previous?.initialized) { catalog?.markContent(candidate.relativePath, candidate.quickHash, 'synced'); return 'ok'; }
     let handle;let spooled:OriginalSpool|undefined;
@@ -119,7 +119,11 @@ export async function scanSourceFiles(selectedPath: string, options: SourceOptio
     if(incrementalCheckpoint)result.catalogChanges=catalog.catalogChanges();
   } else {
     const fileId = `${selected.dev}:${selected.ino}`, candidate: DirectoryCandidate = { path: root, relativePath: basename(root), fileId, birthtimeMs: selected.birthtimeMs, size: selected.size, mtimeMs: selected.mtimeMs, ctimeMs: selected.ctimeMs, quickHash: sourceHash(`${fileId}:${selected.size}:${selected.mtimeMs}:${selected.ctimeMs}`) };
-    await processFile(candidate, undefined);
+    catalog.savepoint(); catalog.observe(candidate);
+    await processFile(candidate, catalog.previous(candidate.relativePath));
+    if (result.complete) catalog.finishSingle();
+    result.checkpoint = catalog.checkpoint(incrementalCheckpoint);
+    if (incrementalCheckpoint) result.catalogChanges = catalog.catalogChanges();
   }
   await accessMarkers.persist(result.complete);
   return result;

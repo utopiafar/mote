@@ -48,3 +48,10 @@ test('concurrent owner corrections bind one version and roll back the losing not
  const f=await fixture(t),old=save(f,[f.ids[0]]),input={version:old.version,title:'Concurrent owner correction',statement:'Only one explicit replacement may win.'};
  const results=await Promise.allSettled([f.memories.correct(old.id,input),f.memories.correct(old.id,input)]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(results.filter(r=>r.status==='rejected'&&r.reason.statusCode===409).length,1);assert.equal(Number(f.store.db.prepare("SELECT count(*) n FROM captures WHERE json_extract(json,'$.source')='note'").get()!.n),1);assert.equal(f.memories.list().length,1);
 });
+
+test('validation works on a read-only database and a cached claim cannot commit after evidence deletion',async t=>{
+ const f=await fixture(t),id=f.ids[0],record=f.store.evidence([id])[0];
+ const result={answer:JSON.stringify({memories:[{title:'Generated preference',statement:`Generated preference [${id}]`,uncertainty:'Fixture',evidenceIds:[id],evidence:[{id,quote:record.ocrText}]}]}),citations:[{id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()};
+ f.store.db.exec('PRAGMA query_only=ON');try{assert.doesNotThrow(()=>f.memories.extract(result,'fixture',{validateOnly:true}));}finally{f.store.db.exec('PRAGMA query_only=OFF');}
+ assert.equal(f.memories.list().length,0);f.store.delete(id);assert.throws(()=>f.memories.extract(result,'fixture'));assert.equal(f.memories.list().length,0);
+});

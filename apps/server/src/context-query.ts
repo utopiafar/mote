@@ -269,7 +269,7 @@ export class ContextQuery {
       }
       const parsed=parseEvidenceRef(ref);if(!parsed){missing.push(ref);continue;}const raw=parsed.id;
       if(parsed.kind==='memory'){
-        try {const memory=this.reader.memory(ref,scope);if(!memory){missing.push(ref);continue;}const text=`${memory.title}\n\n${memory.statement}\n\nUncertainty: ${memory.uncertainty}`;const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref:formatEvidenceRef('memory',memory.id),id:memory.id,kind:'memory',text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:memory.title,evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope});} catch {missing.push(ref);}continue;
+        try {const memory=this.reader.memory(ref,scope);if(!memory){missing.push(ref);continue;}const text=`${memory.title}\n\n${memory.statement}\n\nUncertainty: ${memory.uncertainty}`;const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref:formatEvidenceRef('memory',memory.id),id:memory.id,kind:'memory',text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:memory.title,evidenceRefs:memory.evidenceIds??[],status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope});} catch {missing.push(ref);}continue;
       }
       const record=this.reader.evidence([raw],scope)[0];if(!record){missing.push(ref);continue;}
       const text=record.ocrText||record.windowTitle||'';const bounded=text.slice(offset,offset+take);remaining-=bounded.length;result.push({ref:formatEvidenceRef('capture',record.id),id:record.id,kind:kind(record),text:bounded,textRange:{offset,total:text.length,nextOffset:offset+bounded.length<text.length?offset+bounded.length:null},title:record.windowTitle||record.appName,origin:recordOrigin(record),evidenceRefs:[record.id]});
@@ -329,7 +329,7 @@ export class ContextQuery {
   }
 }
 
-export function cardFromMemory(memory:Memory):ContextCard {
+export function cardFromMemory(memory:Pick<Memory,'id'|'title'|'status'|'createdAt'>&Partial<Memory>):ContextCard {
   const scope=memory.scopeRefs?.[0],capturedAt=memory.createdAt;
-  return {ref:formatEvidenceRef('memory',memory.id),id:memory.id,kind:'memory',title:memory.title,snippet:memory.statement.slice(0,DEFAULT_SNIPPET),matchReasons:['published memory','evidence-linked'],origin:{source:'memory',deviceId:scope?.deviceId??'memory',appName:'Mote memory',capturedAt,receivedAt:capturedAt,...(scope??{})},evidenceRefs:memory.evidenceIds,status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope};
+  return {ref:formatEvidenceRef('memory',memory.id),id:memory.id,kind:'memory',title:memory.title,snippet:memory.statement?.slice(0,DEFAULT_SNIPPET)??'',matchReasons:['published memory','evidence-linked'],origin:{source:'memory',deviceId:scope?.deviceId??'memory',appName:'Mote memory',capturedAt,receivedAt:capturedAt,...(scope??{})},evidenceRefs:memory.evidenceIds??[],status:memory.status,applicability:memory.coding?.applicability??memory.admission?.scope};
 }

@@ -17,7 +17,7 @@ export interface SourceItem {
 }
 export interface FileCatalogEntry {
   relativePath: string; fileId: string; birthtimeMs: number; size: number; mtimeMs: number; ctimeMs: number;
-  quickHash: string; contentHash?: string; lastSeenScan: number; syncState: 'pending'|'synced'|'error';
+  quickHash: string; contentQuickHash?: string; contentHash?: string; lastSeenScan: number; syncState: 'pending'|'synced'|'error';
 }
 export interface LocalFileCheckpoint {
   version: 1; root: string; scanNumber: number; scanStartedAt: string; initialized: boolean;

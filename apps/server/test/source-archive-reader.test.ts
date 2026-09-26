@@ -15,7 +15,7 @@ function fixture(t:import('node:test').TestContext){
   const reader=new SourceArchiveRawReader(store,archive,access);
   const receive=(items:ReturnType<typeof item>[],groups:string[])=>{
     store.db.exec('BEGIN IMMEDIATE');
-    try{const result=archive.receive('generated-source',items,groups);store.db.exec('COMMIT');archive.acknowledge('generated-source',result.checkpoint);return result;}
+    try{const result=archive.receive('generated-source',items,groups);store.db.exec('COMMIT');return result;}
     catch(error){if(store.db.isTransaction)store.db.exec('ROLLBACK');throw error;}
   };
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
