@@ -113,6 +113,21 @@ export default {
 
 `ctx.effect()` 返回的注销函数随 Cordis Context 释放。处理器 ID 不能重复；版本参与任务指纹。插件模块拥有中央进程代码权限，只能由部署者安装。网页/API 不提供安装可执行模块的入口。
 
+处理器的身份用于注册和选择，流程行为由能力声明决定：
+
+| 声明 | 中央如何使用 |
+| --- | --- |
+| `localOnly: true` | 处理器在本地执行，只能绑定本地处理服务；不单独决定后续模型的内容权限。 |
+| `contentPolicy: 'local-only'` | 派生内容只允许本地读取和分析；必须同时声明本地执行。完成后的隐私标记持久保存。 |
+| `allowSummary: false` | 不执行自动摘要。省略时由用户方案决定；私有内容的摘要仍必须使用本地模型。 |
+| `dialogue: true` | 音频提取后组合方案选定的分离器、时间对齐及可选语义分组；不以插件名判断。 |
+| `managedModel: 'dialogue'` | 仅在实际使用中央受管理音频服务时，依赖它的模型安装状态和版本。自定义服务管理自己的模型。 |
+| `dependencies: {settings, parameters?}` | 声明影响该步骤结果的设置及参数。未声明时保守纳入全部；空数组表示不依赖。 |
+
+声明、处理器版本及所选分离器共同进入配置快照和检查点指纹。改变人数只重做相关分离步骤，已证明相同的 ASR 结果可以复用；缺少完整依赖的旧指纹不能证明兼容，会重新提取。插件实现、参数默认值或结果语义改变时须更新版本。
+
+[私有录音组合示例](../plugins/file-processors/private-dialogue/README.md) 以新 ID 复用内置离线 ASR 和分离能力，只新增模块并注册即可运行。本地 ASR 后使用中央模型分析是另一种可以明确选择的插件方案：保留 `localOnly`，不声明 `contentPolicy: 'local-only'`，按需允许摘要。内置私有录音仍禁止自动摘要，也不回退到中央模型。当前录音组合的 ASR 与分离步骤共享方案服务地址；采用不同服务的适配需在插件中实现。
+
 扩展接口在 [file-processors.ts](../apps/server/src/file-processors.ts)：
 
 - `extract` 处理器接受原文件并返回严格 Transcript；内置音频 HTTP、UTF-8、图片 HTTP。
@@ -141,7 +156,7 @@ MOTE_FILE_TEST_DIR=.mote/processing-validation/cross-end \
 
 把生成的 `manifest.json` 交给 `scripts/test-file-journey-live.ts`，再使用 `scripts/evaluate-audio-control.py --reference .../reference.json --run ... --output .../quality.json` 读取已关闭的隔离资料库。评估器报告字符错误率和两个已知声音的一对一匿名标签匹配；轮次内部的未标注部分可能包含自然静音，因此该指标不是标准 DER。可在独立评估环境安装 `scripts/requirements-audio-evaluation.txt` 并加 `--normalize-chinese-script`，同时报告原始 CER 与 OpenCC 繁简归一后的 CER，不改写归档转写。
 
-对照发现，默认连续解码会漏掉完整发言；关闭 VAD 或直接换成默认批量解码均未解决。当前本地处理器 v2 使用 Silero 检测的语音片段分别解码，保留原始时间偏移，每段最多 30 秒、推理批量为 1，片段间不再拼回同一个解码窗口。500 ms 静音分隔及显式片段接口来自 [faster-whisper](https://github.com/SYSTRAN/faster-whisper)；这是声学处理参数，不是用户意图或 Memory 分类规则。原始模型权重和匿名说话人分离保持不变。空语音保留原时长，越界或过长片段明确失败，避免 SDK 静默只解码前 30 秒。
+对照发现，默认连续解码会漏掉完整发言；关闭 VAD 或直接换成默认批量解码均未解决。本地处理器从 v2 起使用 Silero 检测的语音片段分别解码，保留原始时间偏移，每段最多 30 秒、推理批量为 1，片段间不再拼回同一个解码窗口。v3 增加显式能力和依赖契约，不改变该声学算法。500 ms 静音分隔及显式片段接口来自 [faster-whisper](https://github.com/SYSTRAN/faster-whisper)；这是声学处理参数，不是用户意图或 Memory 分类规则。原始模型权重和匿名说话人分离保持不变。空语音保留原时长，越界或过长片段明确失败，避免 SDK 静默只解码前 30 秒。
 
 同一份 129 秒生成录音经过正式文件流程，繁简归一后的 CER 从 25.85% 降到 3.77%，两个匿名标签在已识别语音上无混淆；新流程约 30.8 秒。原始 CER 与完整输出另行保存。该单一对照尚不能替代真实长录音核听。
 

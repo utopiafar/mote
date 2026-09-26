@@ -13,7 +13,8 @@ import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type Config} from '../apps/server/src/config.js';
 import {sha256} from '../apps/server/src/store.js';
 
-const {values}=parseArgs({options:{manifest:{type:'string'},output:{type:'string'},python:{type:'string'},'ocr-model-root':{type:'string'},'asr-model-root':{type:'string'}}});
+const {values}=parseArgs({options:{manifest:{type:'string'},output:{type:'string'},python:{type:'string'},'ocr-model-root':{type:'string'},'asr-model-root':{type:'string'},'processor-module':{type:'string'},'audio-processor':{type:'string'}}});
+const audioProcessor=values['audio-processor']??'audio.local-dialogue';
 assert.ok(values.manifest&&values.output&&values.python,'Required: --manifest --output --python; plus model roots for the selected types');
 const manifest=z.object({personalDataUsed:z.boolean(),files:z.array(z.object({id:z.string().regex(/^[a-z0-9-]+$/),path:z.string(),mimeType:z.string(),observedAt:z.string().datetime({offset:true}),expectedLines:z.array(z.string()).optional()})).min(1).max(10)}).parse(JSON.parse(await readFile(values.manifest,'utf8')));
 assert.equal(new Set(manifest.files.map(file=>file.id)).size,manifest.files.length);
@@ -25,7 +26,7 @@ if(process.env.MOTE_FILE_JOURNEY_RESUME==='1'){
   assert.ok(previous.status==='failed'&&previous.personalDataUsed===manifest.personalDataUsed&&manifest.files.length===1,'Resume one failed file in its isolated vault');
   assert.equal(previous.files[0].id,manifest.files[0].id);assert.ok(previous.files[0].detail?.artifacts.some((a:{kind:string})=>a.kind==='transcript'),'Resume requires a saved transcript');
   priorSettings=JSON.parse(await readFile(join(directory,'vault','file-processing.json'),'utf8')).settings;
-  assert.equal(priorSettings.audioProcessor,'audio.local-dialogue');
+  assert.equal(priorSettings.audioProcessor,audioProcessor);
   await writeFile(join(directory,`report.previous-${randomUUID()}.json`),JSON.stringify(previous,null,2)+'\n',{mode:0o600,flag:'wx'});
 }else await mkdir(directory,{mode:0o700});
 const token=randomBytes(32).toString('hex'),workerToken=priorSettings?.localWorkerApiKey??randomBytes(32).toString('hex');
@@ -33,7 +34,8 @@ const config:Config={dataKey:undefined,dataDir:join(directory,'vault'),token,tok
   maxStorageBytes:2_000_000_000,maxExportBytes:200_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
   model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
-  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
+  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME,
+  ...(values['processor-module']?{fileProcessorModules:[resolve(values['processor-module'])]}:{})};
 const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'running',personalDataUsed:manifest.personalDataUsed,
   browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,
   runtime:{python:resolve(values.python),asrModelRoot:values['asr-model-root']?resolve(values['asr-model-root']):undefined,ocrModelRoot:values['ocr-model-root']?resolve(values['ocr-model-root']):undefined},
@@ -65,6 +67,8 @@ async function request(method:'POST'|'PUT'|'GET',url:string,payload?:Record<stri
 }
 try{
   await save();
+  report.processorModule=values['processor-module']?{path:resolve(values['processor-module']),sha256:sha256(await readFile(resolve(values['processor-module'])))}:null;
+  report.processingCodeHashes=Object.fromEntries(await Promise.all(['apps/server/src/file-processors.ts','apps/server/src/file-processing.ts','apps/server/src/file-policy.ts','apps/server/src/file-configuration.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
   report.workerCodeHashes=Object.fromEntries(await Promise.all(['scripts/mote_audio.py','scripts/transcription-server.py','scripts/requirements-audio.txt','scripts/test-file-journey-live.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
   const hasImage=manifest.files.some(file=>file.mimeType.startsWith('image/')),hasAudio=manifest.files.some(file=>file.mimeType.startsWith('audio/'));
   assert.ok(manifest.files.every(file=>file.mimeType.startsWith('image/')||file.mimeType.startsWith('audio/')),'Choose image/audio files');
@@ -82,12 +86,13 @@ try{
   node=await buildApp(config);const lifecycle=node.lifecycle.settings();
   for(const key of ['extraction','consolidation','insights','working'] as const)lifecycle[key].enabled=false;
   node.lifecycle.configure(lifecycle);await node.app.ready();
+  if(hasAudio){const selected=node.processing.runtime.registry.get(audioProcessor);assert.ok(selected.localOnly&&selected.contentPolicy==='local-only'&&selected.dialogue&&selected.allowSummary===false,'This acoustic runner requires a private dialogue processor without model analysis');report.audioProcessor=node.processing.runtime.registry.list().find(processor=>processor.id===audioProcessor);}
   const view=(await request('GET','/api/file-processing')).json();
   if(priorSettings)assert.equal(asr+'/transcribe',priorSettings.localEndpoint,'Keep worker identity to reuse the saved extraction');
   else await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,
     enabled:true,summarize:false,semanticTurns:false,timeoutMs:600000,
     ...(ocr?{imageProcessor:'image.http',imageEndpoint:ocr+'/ocr',apiKey:workerToken}:{}),
-    ...(asr?{audioProcessor:'audio.local-dialogue',localEndpoint:asr+'/transcribe',localWorkerApiKey:workerToken}:{}),
+    ...(asr?{audioProcessor,localEndpoint:asr+'/transcribe',localWorkerApiKey:workerToken}:{}),
   }});
   for(const file of manifest.files){
     const result:Record<string,unknown>={id:file.id,mimeType:file.mimeType,observedAt:file.observedAt,status:'running'};

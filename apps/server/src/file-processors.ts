@@ -8,12 +8,12 @@ import {isAbsolute} from 'node:path';
 import {request as httpRequest} from 'node:http';
 import {request as httpsRequest} from 'node:https';
 import {once} from 'node:events';
-import {transcriptSchema,diarizationSchema,type Transcript,type FileProcessingSettings,processorParameterSchema,type ProcessorParameter} from '@mote/shared';
+import {transcriptSchema,diarizationSchema,fileProcessingSchema,type Transcript,type FileProcessingSettings,processorParameterSchema,type ProcessorParameter} from '@mote/shared';
 import {StoreError} from './store.js';
 import {BackendPluginScope} from './backend-plugin-scope.js';
 
 export interface TranscriptionProvider {
-  transcribe(input:{body:AsyncIterable<Buffer>;sizeBytes:number;mimeType:string;settings:FileProcessingSettings;maxAudioMs:number;signal:AbortSignal}):Promise<Transcript>;
+  transcribe(input:{body:AsyncIterable<Buffer>;sizeBytes:number;mimeType:string;settings:FileProcessingSettings;localOnly?:boolean;maxAudioMs:number;signal:AbortSignal}):Promise<Transcript>;
 }
 export function isLoopback(endpoint:string){try{return ['127.0.0.1','localhost','[::1]'].includes(new URL(endpoint).hostname);}catch{return false;}}
 export async function readProcessorJson(response:Response,limit=32*1024*1024){
@@ -42,7 +42,7 @@ async function postLocalProcessor(endpoint:string,headers:Record<string,string>,
 }
 export class HttpTranscriptionProvider implements TranscriptionProvider {
   async transcribe(input:Parameters<TranscriptionProvider['transcribe']>[0]){
-    const {settings,signal}=input,localOnly=settings.audioProcessor==='audio.local-dialogue';
+    const {settings,signal,localOnly=false}=input;
     if(localOnly&&!isLoopback(settings.endpoint))throw new StoreError('Local dialogue requires a loopback worker',409);
     const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.sizeBytes),'X-Mote-Max-Audio-Ms':String(input.maxAudioMs),...(localOnly?{'X-Mote-Offline':'1'}:{}),...(settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{})};
     if(localOnly)return transcriptSchema.parse(await postLocalProcessor(settings.endpoint,headers,input.body,signal));
@@ -57,12 +57,30 @@ export interface ProcessorInput {
 }
 export interface FileProcessor {
   id:string;version:string;name:string;stage:'extract'|'diarize';mediaTypes:string[];localOnly?:boolean;serviceKind?:'asr'|'image'|'file';parameters?:ProcessorParameter[];
+  /** Execution location and downstream disclosure are separate contracts. */
+  contentPolicy?:'local-only';
+  allowSummary?:boolean;
+  /** Compose the selected diarizer, exact alignment and optional semantic grouping. */
+  dialogue?:boolean;
+  /** Opt into the host-managed dialogue worker's model availability/version. */
+  managedModel?:'dialogue';
+  /** Omitted dependencies conservatively include all settings and parameters. */
+  dependencies?:{settings:(keyof FileProcessingSettings)[];parameters?:string[]};
   process(input:ProcessorInput):Promise<unknown>;
 }
 export class ProcessorRegistry {
   private entries=new Map<string,FileProcessor>();
   register(processor:FileProcessor){
     if(!/^[a-z][a-z0-9.-]{0,99}$/.test(processor.id)||!processor.version||this.entries.has(processor.id))throw new Error('Invalid or duplicate file processor');
+    if(processor.contentPolicy!==undefined&&(processor.contentPolicy!=='local-only'||processor.localOnly!==true))throw new Error('Local-only content requires a local processor');
+    if(processor.dialogue&&(processor.stage!=='extract'||!processor.mediaTypes.length||!processor.mediaTypes.every(type=>type.startsWith('audio/'))))throw new Error('Dialogue composition requires an audio extraction processor');
+    if(processor.managedModel!==undefined&&processor.managedModel!=='dialogue')throw new Error('Unknown managed processing model');
+    if(processor.dialogue!==undefined&&typeof processor.dialogue!=='boolean'||processor.localOnly!==undefined&&typeof processor.localOnly!=='boolean'||processor.allowSummary!==undefined&&typeof processor.allowSummary!=='boolean')throw new Error('Invalid processing capability');
+    if(processor.dependencies){
+      const {settings,parameters}=processor.dependencies;
+      if(!Array.isArray(settings)||settings.some(key=>!Object.hasOwn(fileProcessingSchema.innerType().shape,key))||new Set(settings).size!==settings.length||
+        parameters!==undefined&&(!Array.isArray(parameters)||parameters.some(key=>typeof key!=='string'||!key||key.length>128)||new Set(parameters).size!==parameters.length))throw new Error('Invalid processor dependencies');
+    }
     if(processor.parameters){processor.parameters=processor.parameters.map(p=>processorParameterSchema.parse(p));if(new Set(processor.parameters.map(p=>p.key)).size!==processor.parameters.length)throw new Error('Duplicate processor parameter');}
     this.entries.set(processor.id,processor);
     return ()=>{if(this.entries.get(processor.id)===processor)this.entries.delete(processor.id);};
@@ -81,21 +99,23 @@ export class FileProcessorRuntime {
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.pluginScope.provide('moteFileProcessors',this.registry);
     if(contextProcessors&&!root)this.pluginScope.provide('moteContextProcessors',contextProcessors);
-    const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'2':'1',name:localOnly?moteText("本地多人录音"):moteText("转写接口"),stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',parameters:localOnly?[{key:'speakerCount',label:moteText("预期说话人数"),type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:moteText("留空由模型自动识别")},{key:'semanticTurns',label:moteText("使用本地语言模型合并自然发言轮次"),type:'boolean',default:false}]:[],
-      process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,maxAudioMs:input.maxAudioMs,signal:input.signal})});
+    const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'3':'2',name:localOnly?moteText("本地多人录音"):moteText("转写接口"),stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',
+      ...(localOnly?{contentPolicy:'local-only' as const,allowSummary:false,dialogue:true,managedModel:'dialogue' as const}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
+      parameters:localOnly?[{key:'speakerCount',label:moteText("预期说话人数"),type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:moteText("留空由模型自动识别")},{key:'semanticTurns',label:moteText("使用本地语言模型合并自然发言轮次"),type:'boolean',default:false}]:[],
+      process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly,maxAudioMs:input.maxAudioMs,signal:input.signal})});
     const pluginScope=this.pluginScope;
     this.ready=(async()=>{
       try{
         await pluginScope.install(audio('audio.http'));
         await pluginScope.install(audio('audio.local-dialogue',true));
-        await pluginScope.install(builtin({id:'text.utf8',version:'3',name:moteText("UTF-8 文字提取"),stage:'extract',mediaTypes:['text/'],localOnly:true,process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
-        await pluginScope.install(builtin({id:'document.generic',version:'1',name:moteText("文档文字提取"),stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
-        await pluginScope.install(builtin({id:'image.http',version:'1',name:moteText("图片文字提取接口"),stage:'extract',mediaTypes:['image/'],serviceKind:'image',async process(input){
+        await pluginScope.install(builtin({id:'text.utf8',version:'3',name:moteText("UTF-8 文字提取"),stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
+        await pluginScope.install(builtin({id:'document.generic',version:'1',name:moteText("文档文字提取"),stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,dependencies:{settings:[]},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
+        await pluginScope.install(builtin({id:'image.http',version:'1',name:moteText("图片文字提取接口"),stage:'extract',mediaTypes:['image/'],serviceKind:'image',dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
           if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
           const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
           const transcript=transcriptSchema.parse(await readProcessorJson(response));if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
         }}));
-        await pluginScope.install(builtin({id:'audio.diarize',version:'2',name:moteText("本地说话人分离"),stage:'diarize',mediaTypes:['audio/'],localOnly:true,async process(input){
+        await pluginScope.install(builtin({id:'audio.diarize',version:'2',name:moteText("本地说话人分离"),stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:'dialogue',dependencies:{settings:['endpoint','apiKey','speakerCount'],parameters:['speakerCount']},async process(input){
           if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);
           const endpoint=new URL(input.settings.endpoint);endpoint.pathname=endpoint.pathname.replace(/\/transcribe\/?$/,'/diarize');
           if(!endpoint.pathname.endsWith('/diarize'))throw new StoreError('Local worker URL must end with /transcribe',409);

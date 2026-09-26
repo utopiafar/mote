@@ -74,7 +74,7 @@ function checkMemories(job:MemoryJobDetail){
  return memories;
 }
 try{
- report.status='running';delete report.failure;await save();progress('catalog',{directory});
+ report.status='running';delete report.failure;delete report.finishedAt;await save();progress('catalog',{directory});
  const catalog=await codexModels(undefined,{executable:config.codexBin,home:config.codexHome});report.catalog=catalog.items.find(item=>item.id===config.model);assert.ok(report.catalog?.reasoningEfforts?.includes('max'));
  await start();
  let offset=0;

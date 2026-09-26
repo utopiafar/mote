@@ -65,6 +65,30 @@ test('file processing settings preserve edited drafts on refresh, show source er
  revision++;await act(async()=>resources(api).invalidate(key=>key==='/api/file-processing'));assert.equal(d.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked,false);assert.match(d.body.textContent!,/有未保存修改/);
  forbidden=true;await act(async()=>resources(api).invalidate(key=>key==='/api/file-processing'));assert.match(d.body.textContent!,/generated permission revoked/);assert.equal(d.querySelector('form'),null);
 });
+test('processing controls use plugin capabilities independently of built-in names',async t=>{
+ const {FileProcessingSettings}=await import('../src/FileProcessingSettings.js'),{root,document:d}=await fixture(t);
+ const processors=[
+  {id:'extension.private',name:'Private alias',stage:'extract',mediaTypes:['audio/'],serviceKind:'asr',localOnly:true,contentPolicy:'local-only',dialogue:true,allowSummary:false},
+  {id:'extension.analysis',name:'Analysis alias',stage:'extract',mediaTypes:['audio/'],serviceKind:'asr',localOnly:true,dialogue:true,allowSummary:true},
+  {id:'extension.text',name:'Text alias',stage:'extract',mediaTypes:['text/'],localOnly:true},
+  {id:'extension.local-speaker',name:'Local speaker',stage:'diarize',mediaTypes:['audio/'],localOnly:true},
+  {id:'extension.remote-speaker',name:'Remote speaker',stage:'diarize',mediaTypes:['audio/']},
+ ];
+ const view={revision:'generated',settings:{enabled:true,maxAudioMinutes:60,timeoutMs:1000},processors,policy:{rules:[],
+  profiles:processors.slice(0,3).map(processor=>({id:processor.id,name:processor.name,processorId:processor.id,parameters:{},diarizationProcessor:'extension.local-speaker',summarize:false})),
+  services:[{id:'asr-local',kind:'asr',execution:'local',name:'Local ASR',endpoint:'http://localhost/transcribe'},{id:'asr-remote',kind:'asr',execution:'remote',name:'Remote ASR',endpoint:'https://example.test/transcribe'},
+   {id:'model-local',kind:'model',execution:'local',name:'Local model',endpoint:'http://localhost/v1',model:'generated'},{id:'model-remote',kind:'model',execution:'remote',name:'Remote model',endpoint:'https://example.test/v1',model:'generated'}]}};
+ const api={request:async(path:string)=>path==='/api/sources'?{items:[]}:path==='/api/media-models'?{dialogue:{state:'ready',runtimeReady:true}}:view,setAgentTimeout:()=>{}} as Api;
+ await act(async()=>root.render(React.createElement(FileProcessingSettings,{api})));
+ const card=(name:string)=>Array.from(d.querySelectorAll('details.policy-card')).find(element=>element.querySelector('summary')?.textContent?.startsWith(name))!;
+ const options=(element:Element,label:string)=>Array.from(element.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!.options).map(option=>option.value);
+ const privateCard=card('Private alias'),analysisCard=card('Analysis alias'),textCard=card('Text alias');
+ assert.deepEqual(options(privateCard,'说话人分离插件'),['extension.local-speaker']);
+ assert.deepEqual(options(privateCard,'处理服务'),['','asr-local']);assert.deepEqual(options(privateCard,'分析语言模型'),['','model-local']);
+ assert.equal(privateCard.querySelector('input[type=checkbox]'),null);
+ assert.deepEqual(options(analysisCard,'处理服务'),['','asr-local']);assert.deepEqual(options(analysisCard,'分析语言模型'),['','model-local','model-remote']);assert.ok(analysisCard.querySelector('input[type=checkbox]'));
+ assert.equal(textCard.querySelector('select[aria-label="说话人分离插件"]'),null);assert.ok(textCard.querySelector('input[type=checkbox]'));
+});
 test('successful evidence read displays archival presence independently of unknown processing',async t=>{
  const {EvidenceState}=await import('../src/EvidenceState.js');const {root,document:d}=await fixture(t);await act(async()=>root.render(React.createElement(EvidenceState)));
  assert.equal(d.querySelector('[data-archive-state]')?.getAttribute('data-archive-state'),'acknowledged');assert.equal(d.querySelector('[data-processing-state]')?.getAttribute('data-processing-state'),'unknown');assert.doesNotMatch(d.body.textContent!,/记忆已完成/);

@@ -1,4 +1,7 @@
 {
+  "本地处理插件只能绑定本地服务": "Local processing plugins require local services",
+  "此方案只允许本地模型": "This profile allows only local models",
+  "此处理插件不支持自动摘要": "This processing plugin does not allow automatic summaries",
   "上传文件即可保存原件。普通文本直接收录；需要解释人物和结构的资料先预览再确认。": "Upload to retain originals. Plain text is archived directly; content requiring attribution or structure interpretation is previewed for confirmation.",
   "上传后保留原件。解析结果明确可靠且无歧义时自动保存，否则先预览并确认。": "Originals are retained after upload. Clear, reliable, unambiguous results are saved automatically; other results require preview and confirmation.",
   "解析方式": "Parsing method",
