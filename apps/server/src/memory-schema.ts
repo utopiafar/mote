@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {fileIndexSchema,fileEvidenceSchema,memoryScopeRefSchema} from '@mote/shared';
-import {memoryRecipeBindingSchema,memoryStrategyPinSchema} from './memory-strategy-contract.js';
+import {memoryRecipeBindingSchema,memoryStrategyPinSchema,memoryIntegrationBindingSchema} from './memory-strategy-contract.js';
 
 const timestamp=z.string().max(64).datetime({offset:true});
 export const memoryEvidenceSchema=z.object({
@@ -34,6 +34,7 @@ export type MemoryReviewReceipt=z.infer<typeof memoryReviewReceiptSchema>;
 export const memoryRelationSchema=z.object({kind:z.enum(['contradicts','supersedes']),memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),version:z.number().int().positive()}).strict();
 export const memorySchema=z.object({
   strategy:memoryRecipeBindingSchema.optional(),
+  integration:memoryIntegrationBindingSchema.optional(),
   version:z.number().int().positive().optional(),relations:z.array(memoryRelationSchema).max(20).optional(),supersededBy:z.string().uuid().optional(),supersededAt:timestamp.optional(),
   correction:z.object({memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),noteId:z.string().uuid()}).strict().optional(),
   domain:z.enum(['personal','coding']).optional(),coding:codingMemorySchema.optional(),

@@ -149,6 +149,11 @@ export class MemoryPipeline {
     return refs;
   }
   /** Manual extraction and consolidation use the same source-item boundary. */
+  modelSnapshot(){
+    if(!this.options.configured())throw new StoreError('Memory model is unavailable',409);
+    const configuration=this.options.configuration?.();
+    return {model:configuration?.model??this.options.model(),...(configuration?{configuration}: {})};
+  }
   assertAdmissibleEvidence(ids:readonly string[],profileId?:string):void {this.materialAdmission(ids,undefined,profileId);}
   withAdmissibleEvidence<T>(ids:readonly string[],run:()=>T,profileId?:string):T {
     const db=this.store.db,own=!db.isTransaction;

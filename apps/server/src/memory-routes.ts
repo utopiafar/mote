@@ -1,3 +1,5 @@
+import type {MemoryIntegrationSettings} from './memory-integration-settings.js';
+import {requestMemoryIntegration} from './memory-integration.js';
 import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import type {FastifyInstance} from 'fastify';
 import {randomUUID} from 'node:crypto';
@@ -16,7 +18,7 @@ import type {FileStore} from './files.js';
 import {StoreError,type Store} from './store.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import {usesLocalModel} from './model-agent.js';
-export function registerMemoryRoutes(app:FastifyInstance,{memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
+export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memories.publish((req.params as {id:string}).id,body.version);});
   app.post('/api/memories/:id/correct',async req=>memories.correct((req.params as {id:string}).id,req.body));
@@ -25,6 +27,12 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryRecipeSettings,s
   app.put('/api/memory-settings',{bodyLimit:8192},async req=>lifecycle.configure(req.body));
   app.get('/api/memory-recipe-settings',async req=>memoryRecipeSettings.view(z.object({sourceId:z.string().min(1).max(256).optional()}).strict().parse(req.query).sourceId));
   app.put('/api/memory-recipe-settings',{bodyLimit:8192},async req=>memoryRecipeSettings.configure(req.body));
+  app.get('/api/memory-integration-recipes',async()=>({items:memoryPipeline.strategies.listIntegrations()}));
+  app.get('/api/memory-integration-settings',async()=>memoryIntegrationSettings.view());
+  app.put('/api/memory-integration-settings',{bodyLimit:4096},async req=>memoryIntegrationSettings.configure(req.body));
+  app.post('/api/memory-integrations',{bodyLimit:8192},async(req,reply)=>{const result=requestMemoryIntegration(req.body,{lifecycle,memories,pipeline:memoryPipeline});void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);});
+  app.post('/api/memory-integrations/:id/cancel',async req=>lifecycle.cancel('consolidation',jobId(req.params)));
+  app.post('/api/memory-integrations/:id/retry',async(req,reply)=>{const result=lifecycle.retry('consolidation',jobId(req.params));void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);});
   app.get('/api/memory-recipes',async()=>({items:memoryPipeline.strategies.list()}));
   app.get('/api/memory-jobs',async()=>({items:memoryPipeline.list()}));
   app.get('/api/memory-jobs/:id',async req=>memoryPipeline.get(jobId(req.params)));

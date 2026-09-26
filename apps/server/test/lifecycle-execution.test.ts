@@ -56,3 +56,14 @@ test('a parent cancellation from another host fences the automatic insight commi
  const settings=lifecycle.settings();lifecycle.configure({...settings,extraction:{...settings.extraction,enabled:false},consolidation:{...settings.consolidation,enabled:false},working:{...settings.working,enabled:false},insights:{...settings.insights,minChanges:1}});
  const record=await sources.upsert('fixture',{externalId:'one',revision:'1',observedAt:'2025-02-01T00:00:30.000Z',kind:'message',layer:'original',text:'Generated only'}),id='f'.repeat(64);store.archive.save(id,id,id,{kind:'semantic',text:'Generated semantics',metadata:{complete:true}},[{id:record.id,fingerprint:store.archive.fingerprint(record.id)!}],'fixture','1','fixture');await lifecycle.tick();assert.equal(store.db.prepare('SELECT count(*) n FROM insights').get()!.n,0);assert.equal(insights.list()[0].status,'failed');assert.equal(lifecycle.view().extensions.find(e=>e.id==='insights')!.status,'cancelled');
 });
+
+test('manual lifecycle work has bounded attempts, explicit retry and cancellation without advancing automatic history',async t=>{
+ const {store,engine,closers}=fixture(t);let now=0,calls=0,fail=true;const lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,engine);closers.push(()=>lifecycle.close());
+ lifecycle.register({id:'consolidation',version:'fixture',maxAttempts:3,stream:'memory',async run(window,checkpoint){calls++;assert.equal(window.manual,true);if(fail)throw Error('Generated failure');checkpoint('done');}});
+ const s=lifecycle.settings();lifecycle.configure({...s,consolidation:{...s.consolidation,enabled:false}});
+ const id=lifecycle.request('consolidation',[randomUUID()],'initial');
+ for(let i=0;i<3;i++){await lifecycle.tick();now+=3600000;}
+ assert.equal(calls,3);assert.equal(lifecycle.view().extensions[0].status,'failed');assert.equal(lifecycle.view().extensions[0].retryAt,undefined);await lifecycle.tick();assert.equal(calls,3);
+ lifecycle.cancel('consolidation',id);await lifecycle.tick();assert.equal(calls,3);assert.equal(lifecycle.view().extensions[0].status,'cancelled');
+ fail=false;lifecycle.retry('consolidation',id);await lifecycle.tick();assert.equal(calls,4);assert.equal(lifecycle.view().extensions[0].active,undefined);assert.equal(lifecycle.view().extensions[0].cursor,0);
+});

@@ -102,7 +102,7 @@ Memory 配方可声明 `requires: ['extracted-text']`，或 `requires: ['source-
 
 这些验证首先证明执行契约；真实私有资料已完成的定向审核对照见验证记录，不能代替全体资料质量验收。新增回归固定真正产生草稿的自动任务，在审核中停用它，再跨重启运行另一已授权策略，实际调用计数仍只有一次提取；删除、保留期清理和更正均清除该草稿。
 
-命名输入回归使用生成 WAV、脚本 ASR/模型及实际 UTF-8 文件处理器，验证转写失败时来源记录索引仍可完成、重启后恢复转写、两个转写消费者共享提取、单审核失败只重试审核，以及更正只使相关产物过时。另一普通文本来源用相同锚点同时生成个人 Memory 与观察线索，提取一次、审核两次。还验证了手工范围入口、21 个转写块跨两个批次时的模型实际读取范围、提交时隐私撤权和 Coding 追加块映射。真实音频/图文解析质量及组合复用、更多实际保留集、可替换整合策略和大数据量 UI 仍待完成；生成夹具不替代这些验收。
+命名输入回归使用生成 WAV、脚本 ASR/模型及实际 UTF-8 文件处理器，验证转写失败时来源记录索引仍可完成、重启后恢复转写、两个转写消费者共享提取、单审核失败只重试审核，以及更正只使相关产物过时。另一普通文本来源用相同锚点同时生成个人 Memory 与观察线索，提取一次、审核两次。还验证了手工范围入口、21 个转写块跨两个批次时的模型实际读取范围、提交时隐私撤权和 Coding 追加块映射。真实音频/图文解析质量及组合复用、更多实际保留集、跨域整合/去重和大数据量 UI 仍待完成；生成夹具不替代这些验收。
 
 `scripts/test-memory-recipes-ui.cjs` 在隔离库启动实际服务与 Electron 渲染器，只创建生成来源，不调用模型；验证默认组合、来源覆盖、刷新恢复、继承、空选择和桌面/窄屏布局。先运行 `npm run build -w @mote/server` 与 `npm run build -w @mote/web`，再用 `MOTE_RECIPE_UI_OUTPUT=/private/output node_modules/.bin/electron scripts/test-memory-recipes-ui.cjs` 运行。输出目录保存截图和结果；这不是 Android 真机或真实资料负载验证。
 
@@ -121,3 +121,26 @@ node --import tsx scripts/review-memory-recipe-live.ts
 默认比较 `mote.personal-memory@2`，可用 `MOTE_REVIEW_RECIPE` 提供明确的已安装配方引用。仅适用于同提取器、最多 8 个已完成批次的定向比较。脚本固定本地 Codex App Server 的 `gpt-6-sol / max`，不恢复未完成基线，不覆盖历史报告。
 
 `scripts/test-personal-review-live.ts` 使用 `scripts/fixtures/personal-review-cases.ts` 的生成原文和故意可疑的提案验证审核边界；使用 `MOTE_REVIEW_FIXTURE_OUTPUT` 指定全新私有输出目录。案例预期只用于执行后的独立复核，不送入审核策略，不以关键词自动宣告语义通过。该脚本未验证提取或全流程，也不是未见过的真实保留集。两个脚本的 `status=passed` 仅表示执行及公共契约检查通过，`semanticQualityAccepted` 保持 false；原文、结果、独立 rubric 与人工判断仍需逐项核对。
+
+## 可替换的整合与审核
+
+本地受信模块可用 `registerIntegration` 注册 `memory-cards@1 → memory-candidates@1` 的整合策略，并用 `registerIntegrationRecipe({id, version, integrate, review})` 组合整合器和独立审核器。两者分别引用固定版本；整合审核器声明 `permissions: ['memory.read', 'evidence.read']`。内置组合为 `mote.memory-integration@1`。任务采用中性的 `memory-integration` Agent 程序，允许只读检索卡片与原件；语义价值与冲突判断来自所选策略。
+
+公共层继续执行权限和资料准入、精确引用、父卡片直接证据、关系目标版本、删除传播、提交事务、取消和用量核算。安装内容的指纹、输入卡片的完整版本以及模型配置固定在已有生命周期检查点中；删除/修改原件、更新父卡片、替换定义或改变模型配置都会阻止旧结果提交。产物保存 `integration` 配方、整合器与审核器指纹及独立审核凭据，关系仍是待所有者明确确认的提案。
+
+所有者 API：
+
+- `GET /api/memory-integration-recipes`：已安装组合及可用状态。
+- `GET/PUT /api/memory-integration-settings`：选择自动整合配方，写入体为 `{recipe: {id, version}}`，`{recipe: null}` 停用。
+- `POST /api/memory-integrations`：明确选择历史 `memoryIds` 和一个 `recipe`，返回既有生命周期任务及操作 ID；受当前 `consolidation.maxItems` 限制，最多 50 张卡片。
+- `POST /api/memory-integrations/:id/cancel`、`.../:id/retry`：取消或显式重试当前任务；状态沿用 `/api/memory-settings`。
+
+自动配方切换只授权选择之后的 Memory 日志增量，不隐式重跑历史。再次保存同一配方不改变授权起点。初始化默认组合、安装和重启也不会补跑已有卡片。停用或换选会撤销旧的待执行自动窗口，保留已有产物；明确手工发起的历史任务有自己的固定授权，不因自动选择变化而被撤销。自动开关与手工任务分开，采集端令牌无权访问这些管理接口。
+
+整合复用已有 `MemoryLifecycle`、`ExecutionEngine`、模型账本和 Memory 存储，没有第二套队列或数据库。当前一个自动整合配方、一个活动窗口；窗口仍按个人/Coding 域处理。一个域失败不阻止另一个域完成，检查点与产物在同一事务内提交，恢复跳过已完成域。最多自动尝试三次，之后必须显式重试。开放检索会读取检查点之外的当前卡片，因此失败域重试暂时重新生成并审核，不复用提取阶段的有界草稿缓存。空结果直接完成，不追加无意义审核。
+
+该版本支持可替换的整合提案和既有 `contradicts`/`supersedes` 关系；**跨域等价/关联、可替换的去重检索视图、同时启用多个自动整合策略及整合管理 UI 仍未完成**。不能以这些接口或一次空结果宣称完整整合目标已完成。
+
+生成应用回归实际安装插件，并独立更换整合器、审核器，覆盖个人/Coding 共用原件、历史授权、跨重启定义固定、取消与删除、模型配置变化、错误引用/关系版本、两种失败顺序的局部恢复、最大输入长度和采集端鉴权。`scripts/test-memory-integration-live.ts` 在一个已完成自动回放的私有副本上，选择其全部（最多 8 张）个人 Memory，使用本地 Codex App Server `gpt-6-sol / max`，最多两次外层调用和 400 秒、一次实际尝试；复用原件、保存调用/用量/原文、验证旧产物不变及重启不重跑。`MOTE_INTEGRATION_BASELINE` 与新的 `MOTE_INTEGRATION_OUTPUT` 必须在 Git 之外。执行通过和语义价值分别判断，零产出不证明正向整合能力。
+
+调研依据（2026-09-27）：[Graphiti 当前 main 的去重提示代码](https://github.com/getzep/graphiti/blob/main/graphiti_core/prompts/dedupe_edges.py) 区分重复与冲突，并保留日期、数值和限定条件差异；[Mem0 Dream 官方产品说明](https://mem0.ai/blog/dream-background-memory-consolidation-for-ai-agents) 区分合并、替代和综合，使用条件写入并将启用范围限定于之后的新活动。后者是托管产品说明，不是已审计的开源实现。本轮借鉴这些边界，没有引入新依赖，也没有采用其自动替换已确认事实的行为。

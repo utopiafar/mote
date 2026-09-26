@@ -46,6 +46,7 @@ import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite } from '.
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
+import {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import { MaintenanceWorker } from './maintenance.js';
 import { MaterialMemoryWork } from './material-memory-work.js';
 import { MaterialOrganizerRuntime } from './material-organizers.js';
@@ -377,7 +378,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor),working=new WorkingMemory(store,conversations);
-  registerMemoryExtensions({semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
+  const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
+  registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
 
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
@@ -486,7 +488,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     });
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:moteText("未找到所请求的资料。"),requestId:req.id}));
   const maintenanceWorker=dependencies?.backgroundWorker?new MaintenanceWorker(config):undefined;
-  const featureServices={memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelBudgets,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
+  const featureServices={memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelBudgets,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   await installServerFeatures(featureHost,featureServices);
   diagnostics.record('server.started');
@@ -506,5 +508,5 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     memoryReviews.clear();
     try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}
   });
-  return {app,featureServices,featureHost,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,featureServices,featureHost,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

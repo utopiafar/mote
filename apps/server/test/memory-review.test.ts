@@ -108,3 +108,11 @@ test('transaction rollback reuses the validated draft and original independent v
  const recovered=await pipeline.retry(job.id);assert.equal(recovered.status,'completed');assert.equal(extractions,1);assert.equal(reviews,1);
  const m=memories.get(recovered.memoryIds[0]);assert.equal(m.reviewReceipt?.decision,'reused');assert.equal(m.reviewReceipt?.draftRunId,'draft-1');assert.equal(m.reviewRunId,'original-independent-review');assert.equal(m.status,'proposed');
 });
+
+test('changed host integration instructions invalidate a bounded review cache entry',async()=>{
+ const d=draft(),cache=new MemoryReviewCache(),options={cache,snapshot:()=> 'same',strategy:defaultMemoryReviewStrategy};let calls=0;
+ const query=async(request:QueryInput)=>{calls++;assert.ok(request.question.includes('Generated host scope'));return {...d,runId:'review-'+calls};};
+ await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope A'});
+ await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope B'});
+ await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope B'});assert.equal(calls,2);
+});
