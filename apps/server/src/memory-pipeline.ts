@@ -1,7 +1,7 @@
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {withExecutionCancellation} from './execution-cancellation.js';
 import {requestLocale} from './i18n.js';
-import {AgentResponseError,AgentTimeoutError,type QueryInput} from '@mote/agent';
+import {AgentResponseError,AgentTimeoutError,SYSTEM_PROMPT,skillCatalog,type QueryInput} from '@mote/agent';
 import {memoryProfile} from './memory-profiles.js';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -16,6 +16,7 @@ import {semanticProductsSchema} from './semantic-extraction.js';
 import {memoryReviewReceipt} from './memory-review.js';
 import type {MemoryReviewReceipt} from './memory-schema.js';
 import {formatMaterialRef} from './materials.js';
+import {MemoryExtractionDrafts} from './memory-extraction-drafts.js';
 
 export type MemoryValidationFailure={at:string;code:string;phase:'extract'|'review';attempt?:number;runId?:string;details?:MemoryValidationDetails};
 export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;batchId:string;batchIndex:number};
@@ -30,8 +31,9 @@ export type MemoryPipelineOptions={configuration?:(profileId?:string,modelOverri
 
 type BatchOutput={result:QueryResult;reviewReceipt?:MemoryReviewReceipt;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
 
-/** Durable work references original evidence; jobs never persist extra copies of private text. */
+/** Jobs reference originals. Validated drafts have a separate private, dependency-bound stage store. */
 export class MemoryPipeline {
+  private drafts:MemoryExtractionDrafts;
   private active=new Map<string,Promise<MemoryJobDetail>>();
   readonly engine:ExecutionEngine;
   private owned:boolean;
@@ -60,6 +62,7 @@ export class MemoryPipeline {
     this.budget=options.batchCharacters??12000;
     if(!Number.isSafeInteger(this.budget)||this.budget<256||this.budget>12000)throw new StoreError('Memory batch budget must be 256–12000 characters');
     this.initializeCounts();
+    this.drafts=new MemoryExtractionDrafts(this.store);
     this.engine=options.executor??new ExecutionEngine(this.store);this.owned=!options.executor;
     this.recover();
     this.unregister.push(this.engine.register({kind:'memory.batch',pool:'memory.batch',concurrency:()=>this.options.concurrency?.()??1,maxAttempts:1,timeoutMs:3600000,
@@ -260,7 +263,7 @@ export class MemoryPipeline {
       for(const batch of batches)if(batch.status==='failed'){
         // Retry a measured deadline with less evidence, never by interpreting
         // its content. Keep original ranges/keys and cap subdivision at 2 levels.
-        if(batch.errorCode==='provider_timeout'&&batch.chunks.length>1&&(batch.splitDepth??0)<2){
+        if(batch.errorCode==='provider_timeout'&&batch.phase!=='review'&&batch.chunks.length>1&&(batch.splitDepth??0)<2){
           const history=[...(batch.splitHistory??[]),{at:new Date().toISOString(),errorCode:'provider_timeout' as const,attempts:batch.attempts,evidenceRanges:structuredClone(batch.evidenceRanges)}];
           batch.resourceEvidenceIds??=[...new Set(batch.chunks.map(chunk=>chunk.id))];
           const remaining=batch.chunks.splice(Math.ceil(batch.chunks.length/2));
@@ -388,12 +391,17 @@ export class MemoryPipeline {
             catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;recordFailure(error,result);return {code:error.code,feedback:error.repairInstruction};}
           };
           const input:MemoryPipelineQuery={contextTime:job.createdAt,signal,validateOutput,onProgress:event=>observe(event.message??event.stage),onTrace:()=>observe(),language:job.language,modelProfileId:job.configuration?.profileId??job.modelProfileId,modelOverride:model,question,skill:profile.skill,responseMode:'memory-extraction',evidenceIds:[...new Set(chunks.map(c=>c.id))],evidenceRanges:ranges.map(range=>({...range})),timeZone:job.timeZone,traceContext:{operationId:'memory:'+id,jobId:id,batchId:batch.id,batchIndex:batch.index,attempt:batch.attempts,phase:'extract'}};
-          let result=(generation===0?this.reuseCandidates(batch,ranges):undefined)??await withExecutionCancellation(signal,()=>this.options.query(input));
+          const {signal:_signal,validateOutput:_validate,onProgress:_progress,onTrace:_trace,traceContext:_context,...semanticInput}=input;
+          const draftKey=sha256(JSON.stringify(['memory-extraction-draft@1',SYSTEM_PROMPT,skillCatalog().find(s=>s.id===profile.skill)?.version,profile.version,batch.skillVersion??job.skillVersion,job.configuration?.fingerprint,semanticInput,chunks,this.options.memories.readEvidence(input.evidenceIds),batch.artifactRefs,Boolean(this.options.requireAdmission)]));
+          let cached:QueryResult|undefined;
+          if(!observeCurrent(()=>{batch.phase='extract';this.saveBatch(batch);if(this.options.review&&generation===0)cached=this.drafts.get(batch.id,draftKey);} ))throw new ExecutionFailure('waiting','interrupted');
+          let result=cached??(generation===0?this.reuseCandidates(batch,ranges):undefined)??await withExecutionCancellation(signal,()=>this.options.query(input));
           signal.throwIfAborted();
           try{
             validateArtifacts();
             if(this.options.review){
               this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:true,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
+              if(!observeCurrent(()=>{validateArtifacts();this.drafts.put(batch.id,draftKey,result);} ))throw new ExecutionFailure('waiting','interrupted');
               phase='review';batch.phase='review';observe('model');result=await withExecutionCancellation(signal,()=>this.options.review!(input,result));
               signal.throwIfAborted();
             }
@@ -401,6 +409,7 @@ export class MemoryPipeline {
             this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});
             return {result,reviewReceipt:memoryReviewReceipt(result),model,profile:profile.id,skillVersion:profile.id==='coding'?profile.version:batch.skillVersion??job.skillVersion,ranges,chunks};
           }catch(error){if(error instanceof MemoryOutputValidationError){
+              observeCurrent(()=>this.drafts.clear(batch.id));
               recordFailure(error,result);
             }if(generation===0&&error instanceof MemoryOutputValidationError){feedback=error;continue;}throw error;}
         }

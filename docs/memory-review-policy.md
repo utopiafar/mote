@@ -12,6 +12,8 @@ A candidate stores a host-authored receipt with the policy, decision, draft run,
 
 A useful recovery case is a successful model review followed by a failed database commit: the candidate and checkpoint roll back together, and retrying the same durable job may reuse the verified review without paying for another review call. All result and checkpoint writes still pass the execution engine's cancellation/version fence.
 
+Extraction drafts have a separate durable stage store. After host validation and before review, a draft is saved against its exact batch, semantic request, complete originals, model configuration and policy/skill identity. Review timeout or shutdown can resume from that draft after revalidation; it never skips independent review. Review timeouts do not split extraction ranges. Drafts are private, unindexed, absent from job API payloads and excluded from Memory until review and commit succeed. Each vault retains at most 128 drafts/8 MiB, with a 512 KiB per-draft bound and normal storage accounting. Completion, source invalidation/deletion and job cancellation purge dependent drafts; changed inputs invalidate reuse. Eviction permits regeneration. No draft reuse creates another model usage receipt. The review-verdict cache above remains process-local, so a restart repeats review even when it preserves extraction.
+
 ## Validation
 
 `apps/server/test/memory-review.test.ts` covers configuration/scope/clock changes, invalid outputs, cancellation/deletion races, cache expiry/count/byte bounds, archive isolation, immutable receipts, publication and a real SQLite checkpoint rollback/retry. The existing 400-day Memory fixture covers individual and batch ingestion and replay through the shared executor.

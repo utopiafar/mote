@@ -93,7 +93,7 @@ test('pipeline saves the host review receipt and keeps user publication separate
  assert.equal(memories.publish(m.id).status,'published');
 });
 
-test('transaction rollback retries extraction with the original independent verdict, without duplicating review charges',async t=>{
+test('transaction rollback reuses the validated draft and original independent verdict without duplicate charges',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-review-recovery-')),store=new Store(dir),sources=new SourceStore(store),memories=new MemoryStore(store),cache=new MemoryReviewCache();
  sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});
  const original=await sources.upsert('generated',{externalId:'1',revision:'1',text:'Meeting proposed',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
@@ -103,6 +103,6 @@ test('transaction rollback retries extraction with the original independent verd
  store.db.exec("CREATE TRIGGER fixture_commit_failure BEFORE INSERT ON memory_checkpoints BEGIN SELECT RAISE(ABORT,'generated commit failure'); END");
  const job=await pipeline.run(pipeline.create({evidenceIds:[original.id]}).id);assert.equal(job.status,'failed');assert.equal(memories.list().length,0);assert.equal(reviews,1);
  store.db.exec('DROP TRIGGER fixture_commit_failure');
- const recovered=await pipeline.retry(job.id);assert.equal(recovered.status,'completed');assert.equal(extractions,2);assert.equal(reviews,1);
- const m=memories.get(recovered.memoryIds[0]);assert.equal(m.reviewReceipt?.decision,'reused');assert.equal(m.reviewReceipt?.draftRunId,'draft-2');assert.equal(m.reviewRunId,'original-independent-review');assert.equal(m.status,'proposed');
+ const recovered=await pipeline.retry(job.id);assert.equal(recovered.status,'completed');assert.equal(extractions,1);assert.equal(reviews,1);
+ const m=memories.get(recovered.memoryIds[0]);assert.equal(m.reviewReceipt?.decision,'reused');assert.equal(m.reviewReceipt?.draftRunId,'draft-1');assert.equal(m.reviewRunId,'original-independent-review');assert.equal(m.status,'proposed');
 });
