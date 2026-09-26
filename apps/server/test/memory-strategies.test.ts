@@ -9,6 +9,7 @@ import type {Config} from '../src/config.js';
 import type {QueryInput} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {MemoryStrategies} from '../src/memory-strategies.js';
+import {personalMemoryReviewStrategyV2} from '../src/personal-memory-review-policy.js';
 import type {MemoryStrategyRef} from '../src/memory-strategy-contract.js';
 
 const ref=(id:string,version='1'):MemoryStrategyRef=>({id:'fixture.'+id,version});
@@ -38,7 +39,7 @@ async function fixture(t:any){
     if(input.traceContext?.phase==='review'){
       control.duringReview?.();
       if(control.failCoding&&input.question.includes('GENERATED_CODING'))throw Error('Generated reviewer failure');
-      memories=input.question.includes('GENERATED_REJECT')?[]:(input.question.includes('GENERATED_PERSONAL')||input.question.includes('This strategy admits only personal-domain'))?[candidates[0]]:[candidates[1]];
+      memories=input.question.includes('GENERATED_REJECT')?[]:(input.question.includes('GENERATED_PERSONAL')||input.question.includes('This strategy admits only personal-domain')||input.question.startsWith(personalMemoryReviewStrategyV2.policy))?[candidates[0]]:[candidates[1]];
       if(input.question.includes('GENERATED_INVALID'))memories=[{...candidates[1],evidence:[{id,quote:'This quote never occurred.'}]}];
     }
     return {answer:JSON.stringify({memories}),citations:[{id,capturedAt:record.capturedAt,appName:record.appName,excerpt:''}],trace:[],runId:randomUUID()};
@@ -85,6 +86,14 @@ test('installed recipes compose independent products, replace either strategy, a
   const builtin=await f.run(source.evidenceIds,['mote.personal-memory','mote.coding-memory']);
   assert.equal(builtin.status,'completed');assert.deepEqual(builtin.memoryIds.map(id=>f.node.memories.get(id).domain).sort(),['coding','personal']);
   assert.equal(f.count('extract'),4);assert.equal(f.count('review'),8);
+  const oldBinding=f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'1'}).binding;
+  const next=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[{id:'mote.personal-memory',version:'2'}]});
+  const nextResult=await f.node.memoryPipeline.run(next.id);
+  assert.equal(nextResult.status,'completed');
+  assert.equal(f.node.memories.get(nextResult.memoryIds[0]).domain,'personal','the selected v2 reviewer receives its own policy');
+  assert.equal(f.count('extract'),4,'the new personal review recipe reuses the unchanged extractor');
+  assert.equal(f.count('review'),9);assert.equal(next.batches[0].strategy?.review.version,'2');
+  assert.deepEqual(f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'1'}).binding,oldBinding,'prior strategy pins remain available and unchanged');
   assert.ok(f.calls.every(c=>c.skill==='memory-strategy'&&c.evidenceRanges?.length));
 });
 

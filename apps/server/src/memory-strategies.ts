@@ -2,6 +2,7 @@ import {memoryExtractionStrategySchema,memoryReviewStrategySchema,memoryRecipeSc
 import {freezeRecipe,recipeFingerprint} from './recipe-contract.js';
 import {MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION} from './memory.js';
 import {defaultMemoryReviewStrategy} from './memory-review-policy.js';
+import {personalMemoryReviewStrategyV2} from './personal-memory-review-policy.js';
 
 const key=(ref:MemoryStrategyRef)=>`${ref.id}@${ref.version}`;
 export type ResolvedMemoryRecipe={binding:MemoryRecipeBinding;extract:MemoryExtractionStrategy;review:MemoryReviewStrategy};
@@ -17,6 +18,8 @@ export class MemoryStrategies {
     this.registerReview({...defaultMemoryReviewStrategy,id:'mote.personal-review',policy:defaultMemoryReviewStrategy.policy+'\nThis strategy admits only personal-domain candidates. Reject coding-domain candidates here; another independently enabled strategy may retain them. Do not invent a personal claim to replace a rejected coding claim.'});
     this.registerReview({...defaultMemoryReviewStrategy,id:'mote.coding-review',policy:defaultMemoryReviewStrategy.policy+'\nThis strategy admits only coding-domain candidates supported by actual scoped engineering experience. Reject personal-domain candidates here; another independently enabled strategy may retain them. Do not invent a coding lesson to replace a rejected personal claim.'});
     for(const domain of ['personal','coding'])this.registerRecipe({id:`mote.${domain}-memory`,version:'1',extract:{id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1]},review:{id:`mote.${domain}-review`,version:defaultMemoryReviewStrategy.version}});
+    this.registerReview(personalMemoryReviewStrategyV2);
+    this.registerRecipe({id:'mote.personal-memory',version:'2',extract:{id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1]},review:{id:'mote.personal-review',version:'2'}});
   }
   private install<T extends MemoryStrategyRef>(kind:string,map:Map<string,T>,value:T):()=>void {
     const id=key(value),identity=kind+':'+id,fingerprint=recipeFingerprint(value);
