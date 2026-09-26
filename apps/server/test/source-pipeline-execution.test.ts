@@ -16,9 +16,9 @@ const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>
 const codingV5=(ctx:Context)=>{
   codingSourcePlugin(ctx);
   const prior=ctx.moteSourceRecipes.registry.listRecipes().find(recipe=>recipe.definition.id==='mote.coding')!;
-  ctx.effect(()=>ctx.moteSourceRecipes.installRecipe({...prior.definition,version:'5'}));
+  ctx.effect(()=>ctx.moteSourceRecipes.installRecipe({...prior.definition,version:'6'}));
   const pipeline=ctx.moteSourcePipelines.get('mote.coding')!;
-  pipeline.version='5';pipeline.recipe={id:'mote.coding',version:'5'};
+  pipeline.version='6';pipeline.recipe={id:'mote.coding',version:'6'};
 };
 
 test('archive group is an engine step that survives a runtime restart',async t=>{
@@ -71,13 +71,13 @@ test('installed deterministic Coding recipe upgrades persisted groups without a 
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   await sources.upsert('coding',event('one','Generated deterministic upgrade'));
   await runtime.tick();const prior=store.db.prepare('SELECT id,generation,recipe_version,state FROM source_pipeline_work').get()!;
-  assert.equal(prior.recipe_version,'4');assert.equal(prior.state,'complete');
+  assert.equal(prior.recipe_version,'5');assert.equal(prior.state,'complete');
   await runtime.close();store.close();
 
   store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingV5]);await runtime.ready;
   await runtime.tick();const upgraded=store.db.prepare('SELECT generation,recipe_version,state FROM source_pipeline_work').get()!;
   assert.equal(upgraded.generation,Number(prior.generation)+1);
-  assert.equal(upgraded.recipe_version,'5');assert.equal(upgraded.state,'complete');
+  assert.equal(upgraded.recipe_version,'6');assert.equal(upgraded.state,'complete');
   assert.equal(runtime.engine.get(`source.archive-group:${prior.id}:${upgraded.generation}`)?.state,'succeeded');
   assert.equal(materials.list({query:'deterministic upgrade'}).items.length,1);
   await runtime.close();store.close();
@@ -95,7 +95,7 @@ test('recipe upgrade does not silently replay after out-of-band configuration dr
 
   store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingV5]);await runtime.ready;
   await runtime.tick();const blocked=store.db.prepare('SELECT generation,recipe_version,state,error FROM source_pipeline_work').get()!;
-  assert.equal(blocked.recipe_version,'4');assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'recipe_config_changed');
+  assert.equal(blocked.recipe_version,'5');assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'recipe_config_changed');
   assert.equal(store.db.prepare("SELECT COUNT(*) n FROM execution_steps WHERE kind='source.archive-group'").get()!.n,1);
   await runtime.close();store.close();
 });

@@ -94,14 +94,14 @@ test('pipeline version change during organization waits for the new version',asy
   const {materials,runtime,sources,store}=await fixture(t);
   let updated=false;
   const {original}=intercept(runtime,input=>{
-    if(!updated){updated=true;runtime.registry.get('fixture.interceptor')!.version='5';}
+    if(!updated){updated=true;runtime.registry.get('fixture.interceptor')!.version='6';}
     return original.organize!(input);
   });
   await sources.upsert('coding',item(1));await runtime.tick();
   assert.equal(materials.list().items.length,0);
-  assert.equal(store.db.prepare('SELECT version FROM source_pipeline_work').get()!.version,'4');
-  await runtime.tick();assert.equal(materials.list().items.length,1);
   assert.equal(store.db.prepare('SELECT version FROM source_pipeline_work').get()!.version,'5');
+  await runtime.tick();assert.equal(materials.list().items.length,1);
+  assert.equal(store.db.prepare('SELECT version FROM source_pipeline_work').get()!.version,'6');
 });
 test('1,000 raw events remain file-only; complete conversation is indexed and cited by material sections',async t=>{
   const {store,materials,runtime,sources,reader}=await fixture(t);

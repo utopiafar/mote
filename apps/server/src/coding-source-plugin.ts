@@ -1,3 +1,4 @@
+import {codingProjectContext} from './coding-project.js';
 import type {Context} from '@deepseek-ai/cordis';
 import {sourceItemSchema,type SourceConnection,type SourceItem} from '@mote/shared';
 import {materialId,type CodingAppendBase,type MaterialAppendDraft,type MaterialDraft} from './materials.js';
@@ -57,10 +58,10 @@ async function codingPageRange(reader:RawReader,source:SourceConnection,identity
   return {items,checkpoint,headCount:total,appendEpoch};
 }
 async function readCodingSnapshot(reader:RawReader,source:SourceConnection,identity:string,signal:AbortSignal,base?:CodingAppendBase):Promise<RecipeSnapshot>{
-  if(base&&base.record.origin.sourceId===source.id&&base.record.origin.externalId===identity&&base.record.coverage.state==='complete'&&
+  if(base&&base.record.origin.sourceId===source.id&&base.record.origin.externalId===identity&&base.record.coverage.state==='complete'&&base.record.schemaVersion>=3&&
     base.record.artifacts?.some(artifact=>artifact.key==='conversation'&&artifact.state==='ready')&&base.lastBlock?.format==='markdown-fragment'){
     const delta=await codingPageRange(reader,source,identity,signal,base);
-    if(delta&&delta.appendEpoch===base.appendEpoch&&delta.items.every(item=>!item.deleted&&item.layer!=='reference'&&
+    if(delta&&Object.entries(codingProjectContext(delta.items.map(item=>item.document!.coding!))).every(([key,value])=>value===(base.record.origin as Record<string,unknown>)[key])&&delta.appendEpoch===base.appendEpoch&&delta.items.every(item=>!item.deleted&&item.layer!=='reference'&&
       item.document?.coding?.parts===1&&item.document.coding.part===0&&
       Date.parse(item.document.recordedAt??item.observedAt)>=Date.parse(base.record.origin.lastAt??'1970-01-01T00:00:00.000Z')))
       return {...delta,mode:'append',base};
@@ -91,9 +92,10 @@ const organize:NonNullable<SourcePipeline['organize']>=({source,items,group:iden
       const missingParts=[...events.values()].some(event=>event.seen.size!==event.parts||[...event.seen].some(part=>part>=event.parts));
       const partial=!records.length?'no_events':records.some(item=>item.layer==='reference')?'original_body_not_collected':missingParts?'missing_event_parts':undefined;
       const conversationState=!records.length||partial==='original_body_not_collected'?'unavailable':missingParts?'pending':'ready';
-      return {id:materialId(source.id,identity),kind:'mote.coding-session',schemaVersion:2,
-        title:records[0]?.document?.coding?.projectName??sessionId,
-        origin:{sourceId:source.id,externalId:identity,deviceId:source.deviceId,provider,projectKey,sessionId,...(times.length?{firstAt:times[0],lastAt:times.at(-1)!}:{})},blocks,
+      const project=codingProjectContext(records.map(item=>item.document!.coding!));
+      return {id:materialId(source.id,identity),kind:'mote.coding-session',schemaVersion:3,
+        title:project.projectName??sessionId,
+        origin:{sourceId:source.id,externalId:identity,deviceId:source.deviceId,provider,projectKey,sessionId,...project,...(times.length?{firstAt:times[0],lastAt:times.at(-1)!}:{})},blocks,
         members:[{id:'archive',kind:'archive',ref:'archive:'+archiveHash([source.id,identity])}],
         coverage:partial?{state:'partial',reason:partial}:{state:'complete'},
         artifacts:[{key:'conversation',state:conversationState,revision:archiveHash(records.map(item=>[item.externalId,item.revision])),...(partial?{reason:partial}:{})}],
@@ -126,13 +128,13 @@ export function codingSourcePlugin(ctx:Context){
   ctx.effect(()=>recipes.registerPolicy({id:'mote.retain-source-archive',version:'1',kind:'raw-retention'}));
   ctx.effect(()=>recipes.registerPolicy({id:'mote.on-receive',version:'1',kind:'trigger'}));
   ctx.effect(()=>recipes.registerGroup({id:'mote.coding-group',version:'1',kind:'group'},group));
-  ctx.effect(()=>recipes.registerStep({id:'mote.coding-assemble',version:'3',kind:'step'},input=>input.snapshot.mode==='append'?
+  ctx.effect(()=>recipes.registerStep({id:'mote.coding-assemble',version:'4',kind:'step'},input=>input.snapshot.mode==='append'?
     organizeAppend(input.source,input.group,input.snapshot):organize({source:input.source,items:[...input.items],group:input.group})));
   ctx.effect(()=>recipes.registerPublisher({id:'mote.material-draft',version:'1',kind:'publish'},input=>input.outputs.assemble as MaterialDraft|MaterialAppendDraft|undefined));
   ctx.effect(()=>recipes.registerPolicy({id:'mote.material-index',version:'1',kind:'index'}));
   ctx.effect(()=>recipes.registerPolicy({id:'mote.coding-exposure',version:'2',kind:'exposure'}));
   ctx.effect(()=>recipes.installRecipe({
-    schemaVersion:1,id:'mote.coding',version:'4',accepts:{sourceKind:'coding-agent'},
+    schemaVersion:1,id:'mote.coding',version:'5',accepts:{sourceKind:'coding-agent'},
     raw:{writer:{id:'mote.source-archive-writer'},reader:{id:'mote.source-archive-reader'},retention:{id:'mote.retain-source-archive'}},
     trigger:{policy:{id:'mote.on-receive'}},group:{policy:{id:'mote.coding-group'}},
     steps:[{id:'assemble',use:{id:'mote.coding-assemble'},dependsOn:[]}],
@@ -145,7 +147,7 @@ export function codingSourcePlugin(ctx:Context){
     ]},
   }));
   ctx.effect(()=>ctx.moteSourcePipelines.register({
-    id:'mote.coding',featureId:'mote.coding',version:'4',recipe:{id:'mote.coding',version:'4'},reprocess:'deterministic',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['conversation'],
+    id:'mote.coding',featureId:'mote.coding',version:'5',recipe:{id:'mote.coding',version:'5'},reprocess:'deterministic',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['conversation'],
     // Retained temporarily for explicit legacy pipeline migration tests. Coding
     // production work executes the registered recipe implementations above.
     group,organize,

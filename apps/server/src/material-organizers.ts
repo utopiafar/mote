@@ -1,3 +1,4 @@
+import {codingProjectContext} from './coding-project.js';
 import {createHash} from 'node:crypto';
 import {sourceContentTime,type CaptureRecord,type SourceItemRecord} from '@mote/shared';
 import {materialId,MaterialStore,type MaterialDraft} from './materials.js';
@@ -247,7 +248,7 @@ const sourceItem:MaterialOrganizer={
 };
 
 const codingSession:MaterialOrganizer={
-  id:'mote.coding-session',version:'1',slot:'coding-session',
+  id:'mote.coding-session',version:'2',slot:'coding-session',
   select:r=>{const c=r.provenance?.document?.coding;return c?{sourceId:r.provenance!.sourceId,provider:c.provider,projectKey:c.projectKey,sessionId:c.sessionId}:undefined;},
   identity:g=>materialId(g.sourceId,codingExternalId(g)),
   build(reader,g){
@@ -266,9 +267,10 @@ const codingSession:MaterialOrganizer={
     if(truncated)body.limitations.add('session_member_limit');
     const byId=new Map(records.map(r=>[r.id,r]));
     const included=body.members.map(m=>byId.get(m.id)!).filter(Boolean);
+    const project=codingProjectContext(included.map(r=>r.provenance!.document!.coding!));
     return {id:materialId(g.sourceId,externalId),kind:'mote.coding-session',schemaVersion:1,
-      title:records[0]?.provenance?.document?.coding?.projectName??g.projectKey,
-      origin:origin(g.sourceId,externalId,included,{provider:g.provider,projectKey:g.projectKey,sessionId:g.sessionId}),
+      title:project.projectName??g.sessionId,
+      origin:origin(g.sourceId,externalId,included,{provider:g.provider,projectKey:g.projectKey,sessionId:g.sessionId,...project}),
       blocks:body.blocks,members:body.members,coverage:body.coverage(),fidelity:body.fidelity('derived',['metadata_projected']),retention:{original:'retained',policy:'keep'}};
   },
 };

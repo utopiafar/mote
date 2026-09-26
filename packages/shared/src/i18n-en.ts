@@ -5490,5 +5490,9 @@ export const english: Readonly<Record<string, string>> = {
   "保存记录（只读）": "Saved record (read-only)",
   "这是中央端返回的结构化记忆记录；下载文本是导出表示，实际模型输入请查看运行追踪。": "This is the structured memory record returned by the server. Downloaded text is an export; inspect run traces for actual model inputs.",
   "专用视图暂不可用，请查看资料库或重试。": "This view is unavailable. Browse the library or try again.",
-  "已索引资料": "Indexed materials"
+  "已索引资料": "Indexed materials",
+  "项目未知（仅关联会话）": "Project unknown (session only)",
+  "会话项目：{0}": "Session project: {0}",
+  "优先记住你的经历、感受和选择。代办任务线索放在“事件与资料”，需要时再查原文。": "Prioritize your experiences, feelings and choices. Delegated-task breadcrumbs stay in Events and sources; open the originals when needed.",
+  "已关联项目（名称未知）": "Project linked (name unknown)"
 };
