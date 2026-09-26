@@ -1,12 +1,11 @@
 import {codingProjectContext} from './coding-project.js';
 import {createHash} from 'node:crypto';
-import {sourceContentTime,type CaptureRecord,type SourceItemRecord} from '@mote/shared';
+import {sourceContentTime,type CaptureRecord} from '@mote/shared';
 import {materialId,MaterialStore,type MaterialDraft} from './materials.js';
 import {ArchivedFileStore} from './archived-files.js';
 import type {Store} from './store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {CaptureRawReader,captureRawRef} from './capture-raw-reader.js';
-import {MAX_RAW_READ_BYTES} from './raw-reader.js';
 import {SourceItemRecipeCatalog,type SourceItemRecipePin} from './source-item-recipe.js';
 import type {MaterialMemoryWork} from './material-memory-work.js';
 
@@ -86,7 +85,7 @@ const origin=(sourceId:string,externalId:string,records:CaptureRecord[],extra:Pa
 };
 const MAX_BLOCKS=2000,MAX_MEMBERS=2000,MAX_BLOCK_TEXT=250_000,MAX_TEXT=4_000_000;
 
-function organizerReader(store:Store,selection:Record<string,string>,pinnedSourceHead?:string):MaterialOrganizerReader {
+function organizerReader(store:Store,selection:Record<string,string>,pinnedSourceHead?:CaptureRecord):MaterialOrganizerReader {
   const group={...selection},allowed=new Set<string>();
   const permit=(record:CaptureRecord|undefined)=>{
     if(record&&current(store,record.id)){allowed.add(record.id);return record;}
@@ -95,7 +94,7 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
   const sourceHead=()=>{
     if(!group.sourceId||!group.externalId)return;
     const row=store.db.prepare('SELECT capture_id,deleted FROM source_heads WHERE source_id=? AND external_id=?').get(group.sourceId,group.externalId) as {capture_id:string;deleted:number}|undefined;
-    return row&&!row.deleted&&(pinnedSourceHead===undefined||row.capture_id===pinnedSourceHead)?permit(capture(store,row.capture_id)):undefined;
+    return row&&!row.deleted&&(pinnedSourceHead===undefined||row.capture_id===pinnedSourceHead.id)?permit(pinnedSourceHead??capture(store,row.capture_id)):undefined;
   };
   const codingSession=()=>{
     if(!group.sourceId||!group.provider||!group.projectKey||!group.sessionId)return {records:[],truncated:false};
@@ -136,7 +135,7 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
 }
 
 type ReaderCall={method:'capture'|'sourceHead'|'codingSession'|'screenGroup'|'file';captureId?:string;fingerprint:string};
-function recordingReader(store:Store,group:Record<string,string>,pinnedSourceHead?:string){
+function recordingReader(store:Store,group:Record<string,string>,pinnedSourceHead?:CaptureRecord){
   const base=organizerReader(store,group,pinnedSourceHead),calls:ReaderCall[]=[];
   const record=<T>(method:ReaderCall['method'],value:T,captureId?:string)=>{
     calls.push({method,...(captureId?{captureId}:{}),fingerprint:digest([value])});return value;
@@ -387,6 +386,8 @@ export class MaterialOrganizerRuntime {
   readonly sourceItemRecipes:SourceItemRecipeCatalog;
   private readonly failures=new Map<string,unknown>();
   private running=false;
+  private closed=false;
+  private unregister:()=>Promise<void>;
   constructor(private readonly store:Store,readonly materials:MaterialStore,additionalOrganizers:MaterialOrganizer[]=[],executor?:ExecutionEngine,private readonly memoryWork?:MaterialMemoryWork){
     new ArchivedFileStore(store);
     store.db.exec(`CREATE TABLE IF NOT EXISTS material_organizer_inputs(capture_id TEXT NOT NULL,organizer_id TEXT NOT NULL,group_json TEXT NOT NULL,material_id TEXT,PRIMARY KEY(capture_id,organizer_id));
@@ -423,9 +424,9 @@ export class MaterialOrganizerRuntime {
     if(!(store.db.prepare('PRAGMA table_info(material_organizer_inputs)').all() as {name:string}[]).some(row=>row.name==='material_id'))store.db.exec('ALTER TABLE material_organizer_inputs ADD COLUMN material_id TEXT');
     this.sourceItemRecipes=new SourceItemRecipeCatalog(store,sourceItem.version);
     this.executor=executor??new ExecutionEngine(store);
-    this.executor.register({kind:ORGANIZER_STEP,pool:'material-organizer',concurrency:()=>8,
+    this.unregister=this.executor.register({kind:ORGANIZER_STEP,pool:'material-organizer',concurrency:()=>8,
       resourceKeys:step=>[`material:${(step.input as OrganizerJobInput).materialId}`],
-      validate:step=>this.valid(step),
+      validate:step=>!this.closed&&this.valid(step),
       execute:async(step,signal)=>{try{
         signal.throwIfAborted();const input=step.input as OrganizerJobInput;
         if(!input.active)return {draft:undefined,calls:[]} satisfies OrganizerResult;
@@ -436,15 +437,15 @@ export class MaterialOrganizerRuntime {
         const {reader,calls}=recordingReader(store,input.group,pinnedSourceHead),draft=organizer.build(reader,input.group);
         signal.throwIfAborted();
         if(draft&&draft.id!==input.materialId)throw Error('Ambiguous material organizer identity');
-        return {draft,calls,...(pinnedSourceHead?{pinnedSourceHead}:{})} satisfies OrganizerResult;
+        return {draft,calls,...(pinnedSourceHead?{pinnedSourceHead:pinnedSourceHead.id}:{})} satisfies OrganizerResult;
       }catch(error){this.failures.set(step.id,error);throw error;}},
       commit:(step,result)=>{try{
         const input=step.input as OrganizerJobInput,prepared=result as OrganizerResult;
-        if(!this.valid(step)||!readerStillCurrent(store,input.group,prepared.calls))throw new ExecutionFailure('stale','input_changed');
+        if(this.closed||!this.valid(step)||!readerStillCurrent(store,input.group,prepared.calls))throw new ExecutionFailure('stale','input_changed');
         if(prepared.pinnedSourceHead&&input.group.sourceId&&input.group.externalId){
           const raw=new CaptureRawReader(store,{mayReadSource:id=>id===input.group.sourceId,
             mayReadGroup:(id,external)=>id===input.group.sourceId&&external===input.group.externalId,mayListKind:()=>false});
-          if(raw.refForItem(input.group.sourceId,input.group.externalId)!==captureRawRef(prepared.pinnedSourceHead))
+          if(raw.currentRefForItem(input.group.sourceId,input.group.externalId)!==captureRawRef(prepared.pinnedSourceHead))
             throw new ExecutionFailure('stale','source_head_changed');
         }
         const other=store.db.prepare('SELECT 1 FROM material_organizer_groups WHERE material_id=? AND group_key!=? AND active=1 LIMIT 1').get(input.materialId,input.groupKey);
@@ -493,25 +494,12 @@ export class MaterialOrganizerRuntime {
       mayReadGroup:(id,external)=>id===sourceId&&external===externalId,
       mayListKind:()=>false,
     });
-    const ref=raw.refForItem(sourceId,externalId);
-    if(!ref)throw new ExecutionFailure('stale','source_head_unavailable');
-    const parts:Buffer[]=[];let offset=0,totalBytes:number|undefined;
-    do{
-      signal.throwIfAborted();
-      const page=await raw.read(ref,{offset,length:MAX_RAW_READ_BYTES});
-      if(page.status!=='available'||page.offset!==offset||page.totalBytes>2*1024*1024||
-        totalBytes!==undefined&&page.totalBytes!==totalBytes||page.bytes.length===0)throw new ExecutionFailure('stale','source_head_changed');
-      parts.push(Buffer.from(page.bytes));offset+=page.bytes.length;totalBytes=page.totalBytes;
-      if(page.nextOffset===null)break;
-      if(page.nextOffset!==offset)throw new ExecutionFailure('stale','source_head_changed');
-    }while(offset<totalBytes);
-    let item:SourceItemRecord;
-    try{item=JSON.parse(Buffer.concat(parts).toString()) as SourceItemRecord;}catch{throw new ExecutionFailure('stale','source_head_invalid');}
-    if(item.sourceId!==sourceId||item.externalId!==externalId||!item.current||ref!==captureRawRef(item.captureId)||
-      !this.store.isCurrentEvidence(item.captureId)||capture(this.store,item.captureId)?.provenance?.revision!==item.revision)
-      throw new ExecutionFailure('stale','source_head_changed');
-    return item.captureId;
+    signal.throwIfAborted();
+    const snapshot=raw.snapshotForItem(sourceId,externalId);
+    if(!snapshot)throw new ExecutionFailure('stale','source_head_unavailable');
+    return snapshot.capture;
   }
+
   private retryFailed(organizerId:string){
     for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state='failed'").all(ORGANIZER_STEP) as {id:string}[]){
       const step=this.executor.get(row.id),input=step?.input as OrganizerJobInput|undefined;
@@ -632,7 +620,7 @@ export class MaterialOrganizerRuntime {
     }catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   async tick(limit=100){
-    if(this.running)return 0;this.running=true;
+    if(this.closed||this.running)return 0;this.running=true;
     try{
       const {count,stepIds}=this.discover(limit);
       const waiting=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind=? AND state='waiting' AND available_at<=?").all(ORGANIZER_STEP,Date.now()) as {id:string}[];
@@ -642,4 +630,8 @@ export class MaterialOrganizerRuntime {
       return count;
     }finally{this.running=false;}
   }
+  async close(){
+    this.closed=true;await this.unregister();
+  }
+
 }

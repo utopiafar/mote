@@ -1,3 +1,4 @@
+import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
 import {AssetStore} from './assets.js';
 import {ensureTodoSchema} from './todo-schema.js';
 import {archivedTodoSchema} from './todos.js';
@@ -270,19 +271,20 @@ export class EvidenceStore {
   /** Validation and image decoding happen before a single bounded durable commit.
    * No await is allowed inside the transaction. A failed item acknowledges nothing. */
   async ingestBatch(raw:unknown[],transaction?:(result:{id:string;duplicate:boolean},index:number)=>void,before?:()=>void) {
-    if(!Array.isArray(raw)||!raw.length||raw.length>500)throw new StoreError('Expected 1–500 observations',413);
-    if(Buffer.byteLength(JSON.stringify(raw))>32*1024*1024)throw new StoreError('Observation batch exceeds 32 MiB',413);
+    if(!Array.isArray(raw)||!raw.length||raw.length>CAPTURE_BATCH_MAX_RECORDS)throw new StoreError('Expected 1–500 observations',413);
+    if(Buffer.byteLength(JSON.stringify(raw))>CAPTURE_BATCH_MAX_BYTES)throw new StoreError('Observation batch exceeds 32 MiB',413);
     const prepared:Prepared[]=[];
     // Bound decoder memory independently of caller batch size.
     for(let i=0;i<raw.length;i+=4)prepared.push(...await Promise.all(raw.slice(i,i+4).map(item=>this.prepare(item))));
     const size=prepared.reduce((n,p)=>n+Buffer.byteLength(JSON.stringify(p.input)),0);
-    if(size>32*1024*1024)throw new StoreError('Observation batch exceeds 32 MiB',413);
+    if(size>CAPTURE_BATCH_MAX_BYTES)throw new StoreError('Observation batch exceeds 32 MiB',413);
     this.db.exec('BEGIN IMMEDIATE');
     try {before?.();const results=prepared.map((p,i)=>{const result=this.insert(p);transaction?.(result,i);return result;});this.db.exec('COMMIT');return results;}
     catch(e){this.db.exec('ROLLBACK');this.sweep();throw e;}
   }
   async ingestSettled(raw:CaptureInput[],authorize?:()=>void) {
-    if(!raw.length||raw.length>100)throw new StoreError('Expected 1–100 observations',413);
+    if(!raw.length||raw.length>CAPTURE_BATCH_MAX_RECORDS)throw new StoreError('Expected 1–500 observations',413);
+    if(Buffer.byteLength(JSON.stringify(raw))>CAPTURE_BATCH_MAX_BYTES)throw new StoreError('Observation batch exceeds 32 MiB',413);
     const prepared:PromiseSettledResult<Prepared>[]=[];
     for(let i=0;i<raw.length;i+=4)prepared.push(...await Promise.allSettled(raw.slice(i,i+4).map(item=>this.prepare(item))));
     this.db.exec('BEGIN IMMEDIATE');
@@ -537,16 +539,6 @@ export class EvidenceStore {
   vectorQuery(model:string,range:Range={}) {
     const {where,values}=this.clauses(range);
     return {sql:`SELECT captures.id,embedding FROM captures${where}${where?' AND ':' WHERE '}embedding_model=? AND embedding IS NOT NULL`,values:[...values,model]};
-  }
-  vectorSearch(vector:number[], model:string, range:Range={}) {
-    const {where,values}=this.clauses(range);
-    const limit=Math.min(range.limit??30,200),norm=Math.hypot(...vector);
-    const rows=this.db.prepare(`SELECT id,embedding FROM captures${where}${where?' AND ':' WHERE '}embedding_model=? AND embedding IS NOT NULL ORDER BY captured_at DESC,id`).iterate(...values,model);
-    const best:{id:string;score:number}[]=[];let scanned=0;
-    for(const row of rows){scanned++;const v=JSON.parse(String(row.embedding)) as number[],vn=Math.hypot(...v);if(v.length!==vector.length||!vn||!norm||!v.every(Number.isFinite))continue;
-      const score=v.reduce((sum,n,i)=>sum+n*vector[i],0)/(vn*norm);best.push({id:String(row.id),score});best.sort((a,b)=>b.score-a.score||a.id.localeCompare(b.id));if(best.length>limit)best.pop();
-    }
-    return Object.assign(best.flatMap(r=>this.evidence([r.id])),{coverage:{candidateLimit:null,scanned,bounded:false,selection:'all_indexed_within_scope'}});
   }
 
   image(id:string) {

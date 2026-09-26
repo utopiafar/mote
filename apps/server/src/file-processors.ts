@@ -47,7 +47,6 @@ export class HttpTranscriptionProvider implements TranscriptionProvider {
     const headers={'Content-Type':'application/octet-stream','Content-Length':String(input.sizeBytes),'X-Mote-Max-Audio-Ms':String(input.maxAudioMs),...(localOnly?{'X-Mote-Offline':'1'}:{}),...(settings.apiKey?{Authorization:`Bearer ${settings.apiKey}`}:{})};
     if(localOnly)return transcriptSchema.parse(await postLocalProcessor(settings.endpoint,headers,input.body,signal));
     const response=await fetch(settings.endpoint,{method:'POST',headers,body:input.body as unknown as BodyInit,duplex:'half',redirect:'error',signal} as RequestInit);
-    if(response.ok&&localOnly&&response.headers.get('x-mote-execution')!=='local'){await response.body?.cancel();throw new StoreError('Local worker did not confirm offline execution',502);}
     return transcriptSchema.parse(await readProcessorJson(response));
   }
 }

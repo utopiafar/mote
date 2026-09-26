@@ -1,3 +1,5 @@
+import {randomUUID} from 'node:crypto';
+import type {ServerFeatureScope} from '../feature-host.js';
 import { storageStatistics } from '@mote/shared/storage-statistics';
 import type { FastifyInstance } from 'fastify';
 import { registerArchiveExport } from '../archive-export.js';
@@ -6,7 +8,10 @@ import type { FeatureServices } from '../feature-services.js';
 import { StoreError } from '../store.js';
 
 /** storage: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{archivedFiles,config,contentStorage,diagnostics,files,indexer,store}:Pick<FeatureServices,"archivedFiles"|"config"|"contentStorage"|"diagnostics"|"files"|"indexer"|"store">){
+export function register(app:FastifyInstance,{archivedFiles,config,contentStorage,diagnostics,files,indexer,store}:Pick<FeatureServices,"archivedFiles"|"config"|"contentStorage"|"diagnostics"|"files"|"indexer"|"store">,scope?:ServerFeatureScope){
+ scope?.every(5000,()=>indexer.tick());scope?.defer(()=>indexer.close());
+ const maintain=()=>{files.sweep();if(config.retentionDays>0)return diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted})));};
+ if(scope)void scope.run(maintain);else void maintain();scope?.every(3600000,maintain);
 registerContentStorage(app,contentStorage);
 app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=indexer.retry();diagnostics.record('queue.snapshot',{pending:result.queued});void indexer.tick();return result;});
 registerArchiveExport(app,store,files,archivedFiles,config.maxExportBytes);

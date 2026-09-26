@@ -1,8 +1,9 @@
+import {materialDependencyStatus} from './material-readiness.js';
 import {scopeRecord} from './evidence-scope-record.js';
 import {sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,type CaptureRecord} from '@mote/shared';
 import type {ContextReader} from '@mote/agent';
 import {StoreError,type Store,type Range} from './store.js';
-import {MemoryStore} from './memory.js';
+import {MemoryStore,memoryEvidenceFingerprint} from './memory.js';
 import type {SourceStore} from './sources.js';
 import type {FileStore} from './files.js';
 import type {Indexer} from './indexer.js';
@@ -213,6 +214,37 @@ export class EvidenceReader {
     const page=this.materials.list({query:args.query,sourceId:args.sourceId,kind:args.kind,deviceId:args.deviceId,after:args.after,before:args.before,limit:args.limit,cursor:args.cursor});
     return {...page,items:page.items.filter(item=>Boolean(this.scopedMaterial(item.ref,args)))};
   }
+  /** Shared scope selection for manual and automatic Memory admission. */
+  memorySelection(scope:Range={}, maximum=20000){
+    const ids=new Set<string>(),waiting:string[]=[],unavailable:string[]=[];
+    const add=(id:string)=>{const record=this.memories.readEvidence([id])[0];
+      if(record&&withinEvidenceScope(record,scope)&&this.memories.isCurrentEvidence(id)&&record.ocrText.length&&record.provenance?.layer!=='reference'&&record.provenance?.document?.fileIndex?.coverage!=='lightweight')ids.add(id);
+      if(ids.size>maximum)throw new StoreError('Choose a smaller range for memory extraction',413);
+    };
+    let cursor:string|undefined;
+    do{const page=this.materialCatalog({...scope,cursor,limit:100});
+      for(const material of page.items){
+        if(!this.materialAllowedForMemory(material.ref)){(material.coverage.state==='complete'?unavailable:waiting).push(material.ref);continue;}
+        const anchors=this.materials!.evidenceIds(material.ref);
+        if(anchors.length){anchors.forEach(add);continue;}
+        const selected=this.scopedMaterial(material.ref,scope);
+        for(const member of selected?.members??[]){const id=evidenceRefId(member.ref,'capture');if(id)add(id);}
+      }
+      cursor=page.nextCursor??undefined;
+    }while(cursor);
+    cursor=undefined;
+    do{const page=this.store.list({...scope,cursor,limit:200});
+      for(const record of page.items){
+        if(this.sourceItemMaterial(record,scope)||record.provenance?.document?.coding)continue;
+        if(record.provenance?.sourceId&&record.source!=='screen'&&record.source!=='ui_page'&&this.store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(record.provenance.sourceId))continue;
+        if(record.ocr?.status==='pending'){waiting.push(record.id);continue;}
+        if(record.ocr?.status==='failed'){unavailable.push(record.id);continue;}
+        if(this.captureExposure(record,'memory',defaultEvidenceExposurePolicy,'capture',true))add(record.id);
+      }
+      cursor=page.nextCursor??undefined;
+    }while(cursor);
+    return {evidenceIds:[...ids],waiting,unavailable};
+  }
   materialRead(args:Range&{ref:string;offset?:number;length?:number}){
     const scoped=this.scopedMaterial(args.ref,args);if(!scoped||!this.materials)throw new StoreError('Material not found in selected scope',404);
     const page=this.materials.read(scoped.material.ref,{offset:args.offset,length:args.length});
@@ -281,6 +313,7 @@ export class EvidenceReader {
     if(operation==='memory'&&this.sourceItemRecipes){
       try{
         const source=this.sources.getSource(material.origin.sourceId),pipeline=this.sourcePipelines?.select(source);
+        if(pipeline&&!materialDependencyStatus(material,this.sourcePipelines!.options(source.id).memoryDependencies??pipeline.memoryDependencies??['material']).ready)return false;
         if(!pipeline?.recipe&&pipeline?.storage!=='archive'&&!this.materialMemoryReady?.(material.ref))return false;
       }catch{return false;}
     }
@@ -524,7 +557,7 @@ export class EvidenceReader {
     }
     return {items,nextCursor:cursor??null};
   }
-  agent(options:{diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean;exposurePolicy?:EvidenceExposurePolicy;currentOperation?:()=> 'query'|'memory';currentGrantContext?:()=>object|undefined}):ContextReader {
+  agent(options:{diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean;exposurePolicy?:EvidenceExposurePolicy;currentOperation?:()=> 'query'|'memory';currentGrantContext?:()=>object|undefined;currentProcessingEvidence?:()=>Readonly<Record<string,string>>|undefined}):ContextReader {
     const {store,sources}=this,{diagnostics}=options;
     const policy=options.exposurePolicy??defaultEvidenceExposurePolicy;
     const operation=(normal:'discover'|'expand'):EvidenceOperation=>options.currentOperation?.()==='memory'?'memory':normal;
@@ -553,7 +586,13 @@ export class EvidenceReader {
         return page.items.some(item=>item.ref===source.ref&&item.members.includes(id));
       }catch{return false;}
     };
-    const hasScreenGrant=(id:string)=>operation('expand')==='expand'&&Boolean(currentGrants()?.get(id)?.some(source=>grantIsCurrent(id,source)));
+    const hasScreenGrant=(id:string)=>{
+      const pinned=options.currentProcessingEvidence?.()?.[id];
+      if(pinned){const record=this.store.evidence([id])[0];
+        if(record&&this.store.isCurrentEvidence(id)&&record.ocr?.status!=='pending'&&record.ocr?.status!=='failed'&&memoryEvidenceFingerprint(record)===pinned)return true;
+      }
+      return operation('expand')==='expand'&&Boolean(currentGrants()?.get(id)?.some(source=>grantIsCurrent(id,source)));
+    };
     return {
       catalog:async args=>contextIndex(this.store,{page:scope=>this.agentMemoryPage(scope??{},policy,operation('discover'))},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),
       materialCatalog:async args=>{const page=this.materialCatalog(args);return {...page,items:page.items.filter(material=>this.materialExposure(material,operation('discover'),policy))};},

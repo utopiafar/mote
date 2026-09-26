@@ -32,10 +32,11 @@ function customPolicy(f:Awaited<ReturnType<typeof fixture>>):FilePolicy{
 }
 
 test('migration preserves legacy services and credentials, persists atomically, and keeps legacy clients safe',async t=>{
- const f=await fixture(t),v=f.processing.view();f.processing.update({revision:v.revision,settings:{...v.settings,enabled:true,apiKey:'generated-cloud-secret',localWorkerApiKey:'generated-worker-secret',sourceProfiles:{phone:'audio.local-dialogue'},speakerCount:4}});
+ const f=await fixture(t),v=f.processing.view();f.processing.update({revision:v.revision,settings:{...v.settings,enabled:true,imageEndpoint:'http://127.0.0.1:9912/image',apiKey:'generated-cloud-secret',localWorkerApiKey:'generated-worker-secret',sourceProfiles:{phone:'audio.local-dialogue'},speakerCount:4}});
  const migrated=f.processing.view();assert.equal(migrated.policyConfigured,false);assert.equal(migrated.policy.rules.find(r=>r.sourceId==='phone')?.type,'audio/*');assert.ok(!JSON.stringify(migrated).includes('generated-'));
  f.save();await f.restart();assert.equal(f.processing.view().policyConfigured,true);assert.equal(f.processing.match({sourceId:'phone',mimeType:'audio/wav'}).profile.parameters.speakerCount,4);
  assert.ok(readFileSync(join(f.dir,'file-processing.json'),'utf8').includes('generated-worker-secret'));
+ const persisted=JSON.parse(readFileSync(join(f.dir,'file-processing.json'),'utf8'));assert.equal(persisted.policy.services.find((s:any)=>s.id==='image-api').apiKey,'generated-cloud-secret');
  const current=f.processing.view();assert.throws(()=>f.processing.update({revision:current.revision,settings:{...current.settings,speakerCount:8}}),{statusCode:409});
  f.processing.update({revision:current.revision,settings:{...current.settings,maxAudioMinutes:300}});assert.equal(f.processing.view().settings.maxAudioMinutes,300);
 });
@@ -116,4 +117,13 @@ test('temporarily missing Cordis plugins retain configured profiles and block un
  f.processing.runtime.registry.register({...processor,id:'fixture.replacement'});
  const p=f.processing.view().policy;assert.doesNotThrow(()=>f.save(p));const id=await f.upload('unavailable.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.state,'blocked');assert.equal(f.files.detail(id).job.error,'processor_not_configured');
  f.processing.runtime.registry.register(processor);f.save();await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');
+});
+
+test('changing dialogue speaker count reuses transcription while rebuilding downstream artifacts',async t=>{
+ const f=await fixture(t),policy=f.processing.view().policy,profile=policy.profiles.find(p=>p.processorId==='audio.local-dialogue')!;
+ profile.diarizationProcessor='fixture.diarize';profile.parameters.speakerCount=2;policy.rules.find(r=>r.type==='audio/*')!.profileId=profile.id;f.save(policy);
+ const id=await f.upload('generated-cache.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.calls.length,1);
+ const oldDiarization=f.files.detail(id).artifacts.find((a:any)=>a.kind==='diarization')!.id,next=f.processing.view().policy;next.profiles.find(p=>p.id===profile.id)!.parameters.speakerCount=3;f.save(next);
+ const preview=f.processing.preview({revision:f.processing.view().revision});f.processing.reprocess({token:preview.token});await f.processing.tick();
+ assert.equal(f.files.detail(id).job.state,'succeeded');assert.equal(f.calls.length,1,'downstream-only settings do not spend ASR again');assert.notEqual(f.files.detail(id).artifacts.find((a:any)=>a.kind==='diarization')!.id,oldDiarization);
 });

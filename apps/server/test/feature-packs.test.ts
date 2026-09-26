@@ -1,3 +1,5 @@
+import {randomUUID} from 'node:crypto';
+import {gzipSync} from 'node:zlib';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
@@ -7,6 +9,8 @@ import Fastify from 'fastify';
 import {Context} from '@deepseek-ai/cordis';
 import {ServerFeatureHost} from '../src/feature-host.js';
 import {buildApp} from '../src/app.js';
+import {createInsightSnapshot} from '../src/insight-snapshots.js';
+import {contextBundle} from '../src/context-bundle.js';
 import type {Config} from '../src/config.js';
 test('server feature disposal revokes routes without deleting retained data',async t=>{
   const app=Fastify(),root=new Context(),host=new ServerFeatureHost(root,app);let retained=1;
@@ -34,6 +38,15 @@ test('small Coding upload flows through feature routes to pinned owner and real 
   await node.sourcePipelines.tick();
   const materials=(await call('/api/agent-view/materials')).json();assert.equal(materials.items.length,1);
   const material=materials.items[0];assert.equal(material.kind,'mote.coding-session');
+  const scope={after:'2026-09-24T00:00:00.000Z',before:'2026-09-25T00:00:00.000Z'};
+  const snapshot=createInsightSnapshot(node.store,'generated-snapshot',scope,node.featureServices.evidenceReader);
+  assert.equal(snapshot.coverage.materialRecords,1);assert.equal(snapshot.coverage.measured.observedDurationMs,0);assert.ok(!snapshot.coverage.limitations.includes('no_records_in_scope'));
+  const selection=node.featureServices.evidenceReader.memorySelection(scope);
+  assert.ok(selection.evidenceIds.length>0);assert.ok(selection.evidenceIds.every(id=>node.materials.isCurrentEvidence(id)));
+  const bundle=await contextBundle(node.featureServices.evidenceReader,node.featureServices.archiveReader,{maxCharacters:1000,projectKey:'generated-project'});
+  assert.equal(bundle.recentSessions.length,1);assert.ok(JSON.stringify(bundle).length<=1000);
+  assert.equal((await contextBundle(node.featureServices.evidenceReader,node.featureServices.archiveReader,{projectKey:'other-project'})).recentSessions.length,0);
+
   const read=(await call('/api/agent-view/material-read?ref='+encodeURIComponent(material.ref))).json();assert.match(read.text,/Generated event 2/);
   assert.equal((await call('/api/agent-view/materials?deviceId=unrelated')).json().items.length,0);
   assert.equal((await call('/api/agent-view/material-read?ref='+encodeURIComponent(material.ref)+'&deviceId=unrelated')).statusCode,404);
@@ -46,8 +59,22 @@ test('small Coding upload flows through feature routes to pinned owner and real 
   assert.equal((await call('/api/agent-view/catalog?path=%2Fetc')).statusCode,400);
   assert.equal((await call('/api/agent-view/material-read?ref='+encodeURIComponent('archive:raw-hidden'))).statusCode,400);
   await call('/api/sources/fixture-coding/items/batch','POST',{items:[event(3)]});await node.sourcePipelines.tick();
+  assert.notEqual(createInsightSnapshot(node.store,'next-snapshot',scope,node.featureServices.evidenceReader).scopeFingerprint,snapshot.scopeFingerprint);
   assert.equal((await call('/api/agent-view/material-read?ref='+encodeURIComponent(material.ref))).statusCode,404,'old ref cannot regain Agent access');
   assert.equal((await call('/api/materials/'+material.id+'/read?revision='+material.revision)).statusCode,200,'owner can inspect retained revision');
+  const captures=Array.from({length:500},()=>({id:randomUUID(),deviceId:'generated-bundle-device',deviceName:'Generated',platform:'macos',source:'activity',capturedAt:'2026-09-24T00:00:00.000Z',durationMs:0,appId:'fixture',appName:'Generated',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}}));
+  const bulk=await node.app.inject({url:'/api/captures/bundle',method:'POST',headers:{...headers,'content-type':'application/gzip'},payload:gzipSync(captures.map(record=>JSON.stringify(record)).join('\n'))});
+  assert.equal(bulk.statusCode,200,bulk.body);assert.equal(bulk.json().results.length,500);assert.ok(bulk.json().results.every((row:{status:number})=>row.status===201));
   await call('/api/source-pipelines/fixture-coding','DELETE');
   assert.equal((await call('/api/agent-view/materials')).json().items.length,0);
+  await node.featureHost.dispose('mote.materials');assert.equal((await call('/api/materials')).statusCode,503);await assert.rejects(async()=>node.featureServices.archiveReader.materialCatalog!({}),{statusCode:503});
+});
+
+test('feature scope stops recurring work and releases resources exactly once',async t=>{
+ const app=Fastify(),root=new Context(),host=new ServerFeatureHost(root,app);let ticks=0,closes=0;
+ await host.install({id:'fixture.lifecycle',version:'1',components:[]},(server,scope)=>{scope.every(5,()=>{ticks++;});scope.defer(()=>{closes++;});server.get('/lifecycle',async()=>({ticks}));});
+ await app.ready();t.after(async()=>{await host.close();await app.close();await root.fiber.dispose();});
+ await new Promise(resolve=>setTimeout(resolve,25));assert.ok(ticks>0);
+ await host.dispose('fixture.lifecycle');const stopped=ticks;await new Promise(resolve=>setTimeout(resolve,25));
+ assert.equal(ticks,stopped);assert.equal(closes,1);assert.equal((await app.inject('/lifecycle')).statusCode,503);
 });

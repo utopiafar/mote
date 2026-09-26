@@ -1,6 +1,7 @@
 import {SYSTEM_PROMPT,systemInstructions} from './instructions.js';
 import {observeModelTransport} from './model-transport-observer.js';
-import {CONTEXT_TOOLS} from './context-tools.js';
+import {contextToolDefinitions,pinContextTools} from './tool-contributions.js';
+export {ContextToolRegistry,type ContextToolContribution} from './tool-contributions.js';
 import {evidenceExcerpt} from './evidence-ledger.js';
 import {assembleContext,taskTools} from './task-context.js';
 import {observeHarness} from './usage.js';
@@ -177,6 +178,7 @@ export function createAgent(options: AgentOptions) {
   const configured =
     !!options.model?.trim() && (!!options.apiKey?.trim() || localWithoutKey);
   async function execute(input: QueryInput): Promise<AgentAnswer> {
+    input=pinContextTools(input,options.reader);
     input.signal?.throwIfAborted();
     if (closed) throw new AgentClosedError();
     if (!configured) throw new AgentNotConfiguredError();
@@ -204,7 +206,7 @@ export function createAgent(options: AgentOptions) {
       throw error;
     }
     const system=systemInstructions(input,bridge.seedEvidence);
-    trace({type:'instructions.assembled',stage:'starting',payload:{system,tools:taskTools(input).map(name=>CONTEXT_TOOLS.find(tool=>tool[0]===name))}});
+    trace({type:'instructions.assembled',stage:'starting',payload:{system,tools:taskTools(input).map(name=>contextToolDefinitions(input).find(tool=>tool[0]===name))}});
     let harness: DeepSeekHarness | undefined;
     let transportObserver:Awaited<ReturnType<typeof observeModelTransport>>|undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -258,11 +260,12 @@ export function createAgent(options: AgentOptions) {
           MOTE_CONTEXT_BRIDGE: bridge.url,
           MOTE_CONTEXT_BRIDGE_TOKEN: bridge.token,
           MOTE_TASK_TOOLS: JSON.stringify(taskTools(input)),
+          MOTE_TOOL_DEFINITIONS: JSON.stringify(contextToolDefinitions(input)),
           MOTE_SKILLS: JSON.stringify(bundledSkills.filter(skill=>skill.id!=='document-import')),
         },
       });
       active.add(harness);
-      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,taskTools(input).map(name=>CONTEXT_TOOLS.find(t=>t[0]===name)),options.maxTokens??DEFAULT_MODEL_MAX_TOKENS);
+      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,taskTools(input).map(name=>contextToolDefinitions(input).find(t=>t[0]===name)),options.maxTokens??DEFAULT_MODEL_MAX_TOKENS);
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       const checkProviderResult = (result: Awaited<ReturnType<DeepSeekHarness['run']>>) => {
         // The SDK resolves some failed turns instead of throwing. Inspect only

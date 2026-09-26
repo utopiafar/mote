@@ -22,6 +22,8 @@ async function run(){
  await window.loadURL(endpoint);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token}))});location.reload()`);
  const route=async(path,selector)=>{await js(`location.hash=${JSON.stringify('#/'+path)}`);await until(()=>js(`!!document.querySelector(${JSON.stringify(selector)})`),path);};
  const click=async label=>{await until(()=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(label)});if(!b)return false;b.click();return true})()`),label);};
+ await request('/api/captures',{id:require('node:crypto').randomUUID(),deviceId:'fixture-activity',deviceName:'Generated',platform:'macos',source:'activity',capturedAt:new Date().toISOString(),durationMs:60000,appId:'generated.activity',appName:'Generated Activity Browser',privacy:{excluded:false,redacted:false,mode:'none',collection:'activity'}});
+ await route('library','.segmented-nav');await click('应用活动');await until(()=>js(`document.querySelector('.activity-panel')?.textContent.includes('Generated Activity Browser')`),'library activity fetch without overview');
  await route('library/coding','.coding-uploads');await until(()=>js(`document.querySelector('.coding-uploads').textContent.includes('Generated Coding upload')`),'upload counts');
  assert.match(await js(`document.querySelector('.coding-uploads').textContent`),/已接收事件3/);
  await click('查看聚合正文');await until(()=>js(`!!document.querySelector('.materials-browser .source-item')`),'material card');await js(`document.querySelector('.materials-browser .source-item').click()`);
@@ -34,7 +36,13 @@ async function run(){
  await route('system/extensions','.feature-inventory');await until(()=>js(`document.querySelector('.feature-inventory')?.textContent.includes('mote.coding')`),'inventory');await js(`document.querySelectorAll('.feature-inventory details').forEach(d=>d.open=true)`);assert.match(await js(`document.querySelector('.feature-inventory').textContent`),/http:POST:\/api\/sources\/:id\/items\/batch/);
  // Every contributed page must load without a thrown renderer error.
  for(const path of ['today','library','library/materials','library/segments','library/files','library/notes','library/memories','library/insights','library/import','ask','actions','connections','connections/devices','connections/access','connections/lark','system','system/processing','system/models','system/usage','system/storage','system/diagnostics','preferences','help']){await js(`location.hash=${JSON.stringify('#/'+path)}`);await delay(150);assert.equal(await js(`document.body.textContent.includes('专用视图暂不可用')`),false,path);}
- assert.deepEqual(errors,[]);writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,codingEvents:3,pages:26,checks:['upload counts','assembled body','Agent permissions','honest missing traces','registered capabilities','all pages','mobile layout']},null,2));console.log('PASS: feature packs, Coding upload, model directory and 26 browser pages with generated fixtures.');
+ assert.deepEqual(errors,[]);
+ // A transient capability fetch failure must expose a retry, not permanently hide the page.
+ let failedCapability=false;wc.session.webRequest.onBeforeRequest({urls:[endpoint+'/api/features']},(_details,callback)=>{if(!failedCapability){failedCapability=true;callback({cancel:true});}else callback({});});
+ await window.loadURL(endpoint+'/#/library/coding');await until(()=>js(`!!document.querySelector('.notice.error button')`),'capability retry');
+ await js(`document.querySelector('.notice.error button').click()`);await until(()=>js(`document.querySelector('.coding-uploads')?.textContent.includes('Generated Coding upload')`),'capability retry recovery');
+ wc.session.webRequest.onBeforeRequest(null);
+writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,codingEvents:3,pages:26,checks:['upload counts','assembled body','Agent permissions','honest missing traces','registered capabilities','all pages','mobile layout','library activity fetch','capability error retry']},null,2));console.log('PASS: feature packs, Coding upload, model directory and 26 browser pages with generated fixtures.');
 }
 async function finish(code){if(window&&!window.isDestroyed())window.destroy();if(server&&server.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('exit',r)),delay(5000)]);}rmSync(root,{recursive:true,force:true});app.exit(code);}
 run().then(()=>finish(0)).catch(error=>{console.error(error);finish(1);});

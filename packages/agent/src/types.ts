@@ -39,6 +39,8 @@ export interface MediaContextRange extends ContextRange {
 }
 
 export interface ContextReader {
+  /** Host registry, snapshotted before each model run. */
+  contextTools?():readonly import('./tool-contributions.js').ContextToolContribution[];
   catalog?(args:ContextRange&{path?:string;query?:string}):Promise<unknown>;
   materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null}>;
   materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean}>;
@@ -88,6 +90,8 @@ export interface AgentOptions {
 }
 
 export interface QueryInput {
+  /** Host-only pinned tool contributions; never accepted from query HTTP input. */
+  toolContributions?:readonly import('./tool-contributions.js').ContextToolContribution[];
   /** Host-verified originals deliberately attached to this dialogue. Bytes remain in the vault. */
   directImages?:{id:string;name:string;mimeType:string;hash:string;sizeBytes:number}[];
   /** Host-only bounded observation and coverage snapshot for one insight version. */
@@ -119,6 +123,8 @@ export interface QueryInput {
   skill?: Exclude<MoteSkillId,'document-import'>;
   /** A bounded extraction session may read only these original evidence ranges. */
   evidenceIds?: string[];
+  /** Host-only immutable evidence fingerprints for a bounded background read. */
+  processingEvidence?: Record<string,string>;
   /** Host snapshot for paginated change disclosure; does not restrict historical retrieval. */
   incrementalEvidenceIds?:string[];
   /** Host-reported archive-wide coverage, not a guarantee for the selected window. */

@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import sharp from 'sharp';
+import {memoryEvidenceFingerprint} from '../src/memory.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
@@ -313,4 +314,20 @@ test('installed Coding recipe routes query partial materials and gate Memory unt
   assert.equal(reader.materialAllowedForMemory(complete.ref),true);
   memory=true;
   assert.deepEqual((await agent.materialCatalog!({})).items.map(item=>item.ref),[complete.ref]);
+});
+
+
+test('a bounded background grant reads current ready screen text without opening global discovery',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-memory-screen-grant-')),store=new Store(directory),sources=new SourceStore(store);
+ const diagnostics=new ServerDiagnostics({directory:join(directory,'logs'),enabled:false});await diagnostics.init();
+ t.after(async()=>{await diagnostics.close();store.close();rmSync(directory,{recursive:true,force:true});});
+ const id=randomUUID();await store.ingest({id,deviceId:'generated',deviceName:'Generated',platform:'macos',source:'screen',capturedAt:'2026-09-20T00:00:00Z',durationMs:5000,ocrText:'Generated ready screen text'});
+ const reader=new EvidenceReader(store,sources);let grants:Record<string,string>|undefined;
+ const agent=reader.agent({diagnostics,currentOperation:()=> 'memory',currentProcessingEvidence:()=>grants});
+ assert.deepEqual(await agent.evidence({ids:[id]}),[]);
+ grants={[id]:memoryEvidenceFingerprint(store.evidence([id])[0])};
+ assert.equal((await agent.evidence({ids:[id]}))[0].id,id);
+ const query=reader.agent({diagnostics});assert.deepEqual(await query.evidence({ids:[id]}),[]);assert.equal((await query.search({query:'Generated ready'})).length,0);
+ grants={[id]:'stale-fingerprint'};assert.deepEqual(await agent.evidence({ids:[id]}),[]);
+ store.delete(id);assert.deepEqual(await agent.evidence({ids:[id]}),[]);
 });

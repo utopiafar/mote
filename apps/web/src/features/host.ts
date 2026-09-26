@@ -13,6 +13,7 @@ export class WebFeatureHost {
     });
     try{await fiber;return fiber;}catch(error){await fiber.dispose();throw error;}
   }
+  pages(){return this.registry.list('page').flatMap(({value})=>value.surface==='page'?[value.entry]:[]);}
   collections(){return this.registry.list('collection').flatMap(({value})=>value.surface==='collection'?[value.entry]:[]).sort((a,b)=>a.order-b.order);}
   page(id:string){const value=this.registry.get('page:'+id);return value?.surface==='page'?value.entry:undefined;}
   views(surface:'renderer'|'panel',value:Pick<ViewEntry,'kind'|'schemaVersion'|'representation'>){return this.registry.list(surface).flatMap(({value:entry})=>entry.surface===surface&&entry.entry.kind===value.kind&&entry.entry.schemaVersion===value.schemaVersion&&entry.entry.representation===value.representation?[entry.entry]:[]);}

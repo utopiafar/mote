@@ -9,9 +9,10 @@ import {MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,type MemoryStore} f
 import {memoryReviewReceipt} from './memory-review.js';
 import type {MemoryPipeline} from './memory-pipeline.js';
 import type {MemoryLifecycle} from './memory-lifecycle.js';
+import type {EvidenceReader} from './evidence-reader.js';
 import type {FileStore} from './files.js';
 import {StoreError,type Store} from './store.js';
-export function registerMemoryRoutes(app:FastifyInstance,{store,files,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{store:Store;files:FileStore;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
+export function registerMemoryRoutes(app:FastifyInstance,{store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memories.publish((req.params as {id:string}).id,body.version);});
   app.post('/api/memories/:id/correct',async req=>memories.correct((req.params as {id:string}).id,req.body));
@@ -23,8 +24,8 @@ export function registerMemoryRoutes(app:FastifyInstance,{store,files,memories,m
   app.post('/api/memory-jobs',async(req,reply)=>{
     const scope=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
     const profile=modelSettings.select('memory',scope.modelProfileId);
-    let ids=scope.evidenceIds;
-    if(!ids){ids=[];let cursor:string|undefined;do{const page=store.list({...scope,limit:200,cursor});ids.push(...page.items.map(record=>record.id));cursor=page.nextCursor??undefined;if(ids.length>20000)throw new StoreError('Choose a smaller range for memory extraction',413);}while(cursor);}
+    const selection=scope.evidenceIds?undefined:evidenceReader.memorySelection(scope);
+    let ids=scope.evidenceIds??selection!.evidenceIds;
     if(!ids.length)throw new StoreError('No evidence in this range',409);
     ids=[...new Set(ids)];
     for(let offset=0;offset<ids.length;offset+=200){
@@ -43,7 +44,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{store,files,memories,m
       if(expanded.size>20000)throw new StoreError('Choose a smaller range for memory extraction',413);
     }
     ids=[...expanded];if(!ids.length)throw new StoreError('No processed evidence in this range',409);
-    const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send(job);
+    const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send({...job,selection:selection?{waiting:selection.waiting,unavailable:selection.unavailable}:undefined});
   });
   app.post('/api/memory-jobs/:id/pause',async req=>memoryPipeline.pause(jobId(req.params)));
   app.post('/api/memory-jobs/:id/resume',async req=>{const id=jobId(req.params);memoryPipeline.resume(id);return memoryPipeline.get(id);});
@@ -51,7 +52,11 @@ export function registerMemoryRoutes(app:FastifyInstance,{store,files,memories,m
   app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
   app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
-    const input:QueryInput={...scope,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
+    const selected=evidenceReader.memorySelection(scope,100);
+    if(!selected.evidenceIds.length)throw new StoreError('No processed evidence in this range',409);
+    const evidenceRanges=memories.readEvidence(selected.evidenceIds).map(record=>({id:record.id,offset:0,length:record.ocrText.length}));
+    if(evidenceRanges.reduce((sum,range)=>sum+range.length,0)>100000)throw new StoreError('Use a Memory job for this larger range',413);
+    const input:QueryInput={...scope,evidenceRanges,evidenceIds:selected.evidenceIds,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
     input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const draft=await query(input);
     memoryPipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));

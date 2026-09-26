@@ -3,7 +3,7 @@ import { meteredBody } from './upload-meter';
 import { moteText, statusMessage } from '@mote/shared/i18n';
 import { type EventJournal, failureCode, httpFailure, TransportFailure } from './support';
 import { randomUUID } from 'node:crypto';
-import { join, basename, isAbsolute } from 'node:path';
+import { join, basename, isAbsolute, dirname } from 'node:path';
 import { stat,readdir,rm } from 'node:fs/promises';
 import { atomicSourceJson, sourceHash, SourceSync } from './source-sync';
 import { readLocalContent } from './local-content';
@@ -195,7 +195,13 @@ export class LocalSourceManager {
   private async run(force: boolean, signal: AbortSignal): Promise<void> {
     if(this.connection.serverUrl&&this.connection.token&&this.nodeBinding.matches(this.connection))for(const source of this.sources.filter(s=>s.enabled&&this.adapters.get(s.kind).readEvidence&&s.allowRead&&s.retention==='snapshot')){
       try{const request=this.request(signal),pending=await request('/api/sources/'+source.id+'/read-requests',undefined,'GET',signal) as {items:import('@mote/shared').FileReadRequest[]};
-        for(const read of pending.items){const result=await this.adapters.get(source.kind).readEvidence!(source,read,this.fileLocations.get(source.id)??new Map(),signal);await request('/api/sources/'+source.id+'/read-requests/'+read.id,result,'PUT',signal);}
+        const locations = new Map(this.fileLocations.get(source.id) ?? []);
+        const checkpoint = this.engines.get(source.id)?.fileCheckpoint();
+        if (source.kind === 'local-files' && checkpoint) {
+          const root = (await stat(checkpoint.root)).isDirectory() ? checkpoint.root : dirname(checkpoint.root);
+          for (const entry of Object.values(checkpoint.catalog)) locations.set('file:' + sourceHash([entry.fileId, entry.birthtimeMs].join(':')), join(root, entry.relativePath));
+        }
+        for(const read of pending.items){const result=await this.adapters.get(source.kind).readEvidence!(source,read,locations,signal);await request('/api/sources/'+source.id+'/read-requests/'+read.id,result,'PUT',signal);}
       }catch{if(signal.aborted)return;}
     }
     for (const source of this.sources) {
@@ -217,7 +223,7 @@ export class LocalSourceManager {
         await engine.ensureAdapterVersion(adapter.version);
         // Stage locally even when offline; this same revision is retried after process restarts.
         const now = Date.now(); const scope = { start: new Date(now - 30 * 86400000).toISOString(), end: new Date(now + 90 * 86400000).toISOString() };
-        if(adapter.readEvidence)this.fileLocations.set(source.id,new Map());
+        if(adapter.readEvidence&&!this.fileLocations.has(source.id))this.fileLocations.set(source.id,new Map());
         const priorityVersions = new Map(this.dirtyPathVersions.get(source.id) ?? []);
         const scan = await this.adapters.scan({ source, signal, checkpoint: engine.checkpoint(), fileCheckpoint: engine.fileCheckpoint(), priorityPaths: [...priorityVersions.keys()], fileLocations: this.fileLocations.get(source.id) ?? new Map(), stateDirectory: this.directory, helperPath: this.helperPath, scope });
         unqueuedScan = scan;

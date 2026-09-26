@@ -246,7 +246,6 @@ export class SourceArchive {
       receipts:versions.map(({item,duplicate})=>({id:sourceReceiptId(sourceId,item),sourceId,externalId:item.externalId,revision:item.revision,duplicate}))};
   }
   /** The index and receipt are committed together. No file journal ACK is needed. */
-  acknowledge(_sourceId:string,_checkpoint:string){}
   forget(sourceId:string){rmSync(this.directory(sourceId),{recursive:true});this.store.db.prepare('DELETE FROM source_archive_sizes WHERE source_id=?').run(sourceId);}
   current(sourceId:string,group:string):SourceItem[]{return this.currentSnapshot(sourceId,group).items;}
 }

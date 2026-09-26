@@ -132,9 +132,10 @@ test('MCP context continues visible records with its scoped cursor',async t=>{
   for(let pageNumber=0;pageNumber<10;pageNumber++){
     const response=await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${readToken}`,
       'content-type':'application/json',accept:'application/json, text/event-stream'},payload:{jsonrpc:'2.0',id:pageNumber+1,
-      method:'tools/call',params:{name:'mote_context',arguments:{limit:1,...(cursor?{cursor}:{})}}}});
+      method:'tools/call',params:{name:'mote_context',arguments:{limit:1,maxCharacters:1000,...(cursor?{cursor}:{})}}}});
     assert.equal(response.statusCode,200);
     const page=jsonResult(response.json().result);
+    assert.ok(JSON.stringify(page).length<=1000);
     assert.ok(page.recentRecords.length<=1);ids.push(...page.recentRecords.map((record:{id:string})=>record.id));
     cursor=page.nextCursor;
     if(!cursor)break;
@@ -479,4 +480,19 @@ test('Google real provider timestamps remain distinct from observation and metad
   assert.deepEqual(cancel.metadata,prior.metadata);assert.equal(cancel.modifiedAt,prior.modifiedAt);assert.equal(cancel.calendar!.status,'cancelled');assert.equal(cancel.text,'');
   const unknown=googleItem(googleEvent('unknown-timestamps','Synthetic unknown'),calendar);assert.equal(unknown.metadata,undefined);assert.equal(unknown.modifiedAt,undefined);
   const reference=googleItem(event,calendar,undefined,true);assert.equal(reference.text,'');assert.deepEqual(reference.metadata,first.metadata);
+});
+
+test('MCP context pages every published memory under a small serialized budget',async t=>{
+ const {ctx,store,sources}=await fixture(t),app=Fastify(),connector=registerMcp(app,ctx);t.after(async()=>{await connector.close();await app.close();});
+ const expected=new Set<string>();
+ for(let i=0;i<7;i++){
+   const original=await sources.upsert('allowed',{...item('Generated memory evidence '+i),externalId:'memory-page-'+i});const id=randomUUID(),at=new Date().toISOString();expected.add(id);
+   store.db.prepare('INSERT INTO memories(id,created_at,json) VALUES(?,?,?)').run(id,at,JSON.stringify({id,title:'Generated memory '+i,statement:'Generated memory prose '.repeat(30),uncertainty:'Fixture only',status:'published',createdAt:at,evidenceIds:[original.id],evidence:[{id:original.id,capturedAt:at,deviceId:'synthetic-device'}],admission:{layer:'memory'}}));store.db.prepare('INSERT INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(id,original.id);
+ }
+ const seen:string[]=[];let cursor:string|undefined;
+ for(let pageNumber=0;pageNumber<30;pageNumber++){
+  const response=await app.inject({method:'POST',url:'/mcp',headers:{authorization:`Bearer ${readToken}`,'content-type':'application/json',accept:'application/json, text/event-stream'},payload:{jsonrpc:'2.0',id:pageNumber+1,method:'tools/call',params:{name:'mote_context',arguments:{maxCharacters:1000,limit:20,...(cursor?{cursor}:{})}}}});
+  const result=response.json().result;assert.ok(!result.isError,JSON.stringify(result));const page=jsonResult(result);assert.ok(JSON.stringify(page).length<=1000);seen.push(...page.stableMemories.map((row:{id:string})=>row.id));if(!page.nextCursor){cursor=undefined;break;}assert.notEqual(page.nextCursor,cursor);cursor=page.nextCursor;
+ }
+ assert.equal(cursor,undefined);assert.equal(seen.length,expected.size);assert.deepEqual(new Set(seen),expected);
 });

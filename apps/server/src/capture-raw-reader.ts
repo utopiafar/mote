@@ -74,8 +74,8 @@ export class CaptureRawReader implements RawReader {
     return this.sourceExists(row.source_id)&&this.permitted(()=>this.access.mayReadSource(row.source_id))&&
       this.permitted(()=>this.access.mayReadGroup(row.source_id,row.external_id));
   }
-  private record(row:CurrentRow):SourceItemRecord|undefined {
-    const capture=JSON.parse(row.json) as CaptureRecord,p=capture.provenance;
+  private record(row:CurrentRow,capture=JSON.parse(row.json) as CaptureRecord):SourceItemRecord|undefined {
+    const p=capture.provenance;
     if(!p||p.sourceId!==row.source_id||p.externalId!==row.external_id||p.revision!==row.revision||capture.id!==row.capture_id||p.deleted||Date.parse(capture.capturedAt)!==Date.parse(row.observed_at))return;
     const parsed=sourceItemSchema.safeParse({externalId:p.externalId,revision:p.revision,observedAt:capture.capturedAt,
       modifiedAt:p.modifiedAt,title:capture.windowTitle,text:p.layer==='reference'?'':capture.ocrText,uri:p.uri,kind:capture.source,
@@ -84,6 +84,17 @@ export class CaptureRawReader implements RawReader {
     const {observedAt:_,...semantic}=parsed.data;
     if(createHash('sha256').update(JSON.stringify(semantic)).digest('hex')!==row.hash)return;
     return {...parsed.data,sourceId:row.source_id,captureId:row.capture_id,receivedAt:row.received_at,current:true};
+  }
+  /** One authorized typed snapshot for an organizer build; no paging/serialization round trip. */
+  snapshotForItem(sourceId:string,externalId:string){
+    const row=this.currentByItem(sourceId,externalId);if(!row||!this.authorized(row))return;
+    const capture=JSON.parse(row.json) as CaptureRecord,item=this.record(row,capture);
+    if(!item||!this.authorized(row))return;
+    const evidence=this.store.evidence([row.capture_id])[0];if(!evidence)return;
+    return {ref:captureRawRef(row.capture_id),item,capture:evidence};
+  }
+  currentRefForItem(sourceId:string,externalId:string){
+    const row=this.currentByItem(sourceId,externalId);return row&&this.authorized(row)?captureRawRef(row.capture_id):undefined;
   }
   /** Resolve an exact SourceItem group to a revision-pinned ref after checking access. */
   refForItem(sourceId:string,externalId:string):RawRef|undefined {

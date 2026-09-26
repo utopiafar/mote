@@ -141,8 +141,10 @@ export class Actions {
   }
 
   private discover(){
+    const db=this.store.db;db.exec('BEGIN IMMEDIATE');try{
     const changes=this.store.updates(this.meta('cursor',0),200);for(const row of changes.items)if(row.operation==='upsert')this.enqueue(row.id);this.setMeta('cursor',changes.nextCursor);
-    const chunks=this.store.db.prepare('SELECT seq,id FROM action_chunk_changes WHERE seq>? ORDER BY seq LIMIT 200').all(this.meta('chunkCursor',0)) as {seq:number;id:string}[];for(const r of chunks)this.enqueue(r.id);if(chunks.length)this.setMeta('chunkCursor',chunks.at(-1)!.seq);
+    const chunks=this.store.db.prepare('SELECT seq,id FROM action_chunk_changes WHERE seq>? ORDER BY seq LIMIT 200').all(this.meta('chunkCursor',0)) as {seq:number;id:string}[];for(const r of chunks)this.enqueue(r.id);if(chunks.length){this.setMeta('chunkCursor',chunks.at(-1)!.seq);this.store.db.prepare('DELETE FROM action_chunk_changes WHERE seq<=?').run(chunks.at(-1)!.seq);}
+    db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
   }
   private async sharedCues(jobs:Job[],operationId:string){
     const ranges:{id:string;offset:number;length:number}[]=[],cues:unknown[]=[],refs:{id:string;revision:string}[]=[];
@@ -196,7 +198,6 @@ export class Actions {
       signal.throwIfAborted();
       return ()=>{validateCommit();
       const output=proposedSchema.parse(JSON.parse(result.answer));
-      if(!sharedCurrent()||valid.some(j=>{const r=this.read([j.id])[0];return !r||!this.current(j.id)||fingerprint(r)!==j.fingerprint;}))throw new StoreError(moteText("证据已更新"),409);
       const proposals:ActionProposal[]=[],merges:ActionProposal[]=[];
       for(const item of output.actions){
         const evidence=item.evidence.map(e=>{const r=this.read([e.id])[0];if(!r||!result.citations.some(c=>c.id===e.id)||!shared.ranges.some(j=>j.id===e.id&&actionEvidenceText(r).slice(j.offset,j.offset+j.length).includes(e.quote)))throw new StoreError(moteText("日程证据校验失败"),502);return {...e,fingerprint:fingerprint(r),source:r.windowTitle||r.appName,capturedAt:r.capturedAt};});

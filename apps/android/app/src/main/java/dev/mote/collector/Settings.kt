@@ -50,7 +50,7 @@ data class CollectorConfig(
         AppCollectionRules.parse(appCollectionRules)
         PrivacyRules.validateLocalReview(localReviewUrl)
         require(mode in setOf("accessibility", "projection"))
-        nsfw.validate()
+        // The optional visual model validates when explicitly invoked.
         require(jpegQuality in 40..95 && captureMaxSide in 640..2560 && batteryPauseBelowPct in 0..95) { MoteI18n.text("检查 JPEG 质量、图片最长边或电量配置") }
         require(diagnosticsIntervalSeconds in 15..3600) { MoteI18n.text("诊断采样间隔为 15..3600 秒") }
     }

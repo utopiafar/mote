@@ -2,8 +2,8 @@ import {ProviderFailure} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {assembleContext,taskTools} from './task-context.js';
 import {randomUUID} from 'node:crypto';
-import {startBridge,TOOL_NAMES} from './bridge.js';
-import {CONTEXT_TOOLS} from './context-tools.js';
+import {startBridge} from './bridge.js';
+import {contextToolDefinitions,pinContextTools} from './tool-contributions.js';
 import {CodexSession,type CodexTool} from './codex-session.js';
 import {bundledSkills} from './skills.js';
 import {displayTime} from './time.js';
@@ -11,14 +11,17 @@ import {parseAnswer} from './index.js';
 import {systemInstructions} from './instructions.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,validateHostOutput,type AgentOptions,type QueryInput,type AgentAnswer} from './types.js';
 
-export const codexContextTools:CodexTool[]=[...CONTEXT_TOOLS.map(([name,description,fields]):CodexTool=>({
+const toolsFor=(input:QueryInput):CodexTool[]=>[...contextToolDefinitions(input).map(([name,description,fields]):CodexTool=>({
   type:'function',name,description,inputSchema:{type:'object',properties:Object.fromEntries(Object.entries(fields).map(([key,{required:_,...schema}])=>[key,schema])),required:Object.entries(fields).filter(([,schema])=>schema.required).map(([key])=>key),additionalProperties:false},
 })),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.id!=='document-import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
+export const codexContextTools=toolsFor({question:''});
 const answerSchema={type:'object',properties:{answer:{type:'string'},citationIds:{type:'array',items:{type:'string'}}},required:['answer','citationIds'],additionalProperties:false};
 
 export function createCodexAgent(options:AgentOptions){
   let closed=false;const sessions=new Set<CodexSession>(),pending=new Set<Promise<AgentAnswer>>();
   async function execute(input:QueryInput):Promise<AgentAnswer>{
+    input=pinContextTools(input,options.reader);
+    const runTools=toolsFor(input).filter(t=>taskTools(input).includes(t.name)||t.name==='skill');
     input.signal?.throwIfAborted();
     if(closed)throw new AgentProviderError();if(!options.model?.trim())throw new AgentNotConfiguredError();
     if(!input.question?.trim()||input.question.length>20000)throw new AgentProviderError();
@@ -39,7 +42,7 @@ export function createCodexAgent(options:AgentOptions){
           const skill=bundledSkills.find(s=>s.id!=='document-import'&&s.id===(args as {name?:unknown})?.name);
           if(!skill)throw new Error('Unknown skill');const result={name:skill.name,content:skill.content};trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'succeeded',payload:{result}});return result;
         }
-        if(!(TOOL_NAMES as readonly string[]).includes(name))throw new Error('Unknown tool');
+        if(!taskTools(input).includes(name))throw new Error('Unknown tool');
         const requestTimeoutMs = options.requestTimeoutMs !== undefined ? options.requestTimeoutMs : options.timeoutMs;
         try {
           const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(requestTimeoutMs??120000)});
@@ -53,10 +56,10 @@ export function createCodexAgent(options:AgentOptions){
       session=new CodexSession(options,call,trace,input.onUsage);sessions.add(session);
       input.signal?.throwIfAborted();
       const system=systemInstructions(input,bridge.seedEvidence);
-      trace({type:'instructions.assembled',stage:'starting',payload:{system:system,tools:codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill')}});
-      await session.start(system,codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill'));
+      trace({type:'instructions.assembled',stage:'starting',payload:{system:system,tools:runTools}});
+      await session.start(system,runTools);
       reportProgress(input,{stage:'model'});
-      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,codexContextTools.filter(t=>taskTools(input).includes(t.name)||t.name==='skill'),options.maxTokens??65536);
+      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,runTools,options.maxTokens??65536);
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       trace({type:'model.started',stage:'model',phase:'started',payload:{prompt}});
       const modelStarted=performance.now();

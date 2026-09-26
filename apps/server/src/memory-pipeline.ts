@@ -55,13 +55,14 @@ export class MemoryPipeline {
 
   private closed=false;
   private budget:number;
+  private unregister:Array<()=>Promise<void>>=[];
   constructor(private options:MemoryPipelineOptions){
     this.budget=options.batchCharacters??12000;
     if(!Number.isSafeInteger(this.budget)||this.budget<256||this.budget>12000)throw new StoreError('Memory batch budget must be 256–12000 characters');
     this.initializeCounts();
     this.engine=options.executor??new ExecutionEngine(this.store);this.owned=!options.executor;
     this.recover();
-    this.engine.register({kind:'memory.batch',pool:'memory.batch',concurrency:()=>this.options.concurrency?.()??1,maxAttempts:1,timeoutMs:3600000,
+    this.unregister.push(this.engine.register({kind:'memory.batch',pool:'memory.batch',concurrency:()=>this.options.concurrency?.()??1,maxAttempts:1,timeoutMs:3600000,
       resourceKeys:step=>(step.input.evidenceIds as string[]).map(id=>'memory-evidence:'+id),
       validate:step=>this.validateStep(step),admit:step=>{
         const job=this.storedJob(String(step.input.jobId));
@@ -75,7 +76,7 @@ export class MemoryPipeline {
       execute:(step,signal)=>{const fence=this.store.db.prepare('SELECT fence FROM execution_steps WHERE id=?').get(step.id)?.fence;return this.execute(String(step.input.jobId),String(step.input.batchId),signal,()=>typeof fence==='string'&&this.engine.isCurrentGrant(step.id,fence));},
       commit:(step,output)=>this.commitBatch(step,output as BatchOutput|undefined),
       project:step=>this.projectStep(step),
-    });
+    }));
   }
   private counts(id:string){return this.store.db.prepare('SELECT * FROM memory_job_counts WHERE job_id=?').get(id)??{total:0,completed:0,failed:0,running:0,pending:0,attempts:0};}
   private initializeCounts(){
@@ -411,6 +412,6 @@ export class MemoryPipeline {
   async close(){
     this.closed=true;
     if(this.owned)await this.engine.close();else if(!this.engine.closed){for(const id of this.active.keys())for(const step of this.steps(id))this.engine.cancel(step);}
-    this.settle();await Promise.allSettled([...this.active.values()]);
+    this.settle();await Promise.allSettled([...this.active.values()]);await Promise.all(this.unregister.splice(0).map(stop=>stop()));
   }
 }

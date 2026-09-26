@@ -1,3 +1,4 @@
+import type {EvidenceReader} from './evidence-reader.js';
 import {createHash} from 'node:crypto';
 import type {InsightSnapshot} from '@mote/shared';
 import type {Store} from './store.js';
@@ -6,7 +7,7 @@ const current="(NOT EXISTS(SELECT 1 FROM source_versions v WHERE v.capture_id=c.
 function selection(scope:Scope){return {where:current+(scope.after?' AND c.context_end>=?':'')+(scope.before?" AND (c.context_at<? OR (json_extract(c.json,'$.source') IN ('screen','activity') AND (unixepoch(c.captured_at,'subsec')*1000-json_extract(c.json,'$.durationMs')<? OR EXISTS(SELECT 1 FROM json_each(c.json,'$.stateSeries.samples') sample WHERE unixepoch(json_extract(sample.value,'$.at'),'subsec')*1000-json_extract(sample.value,'$.durationMs')<?))))":'')+(scope.deviceId?' AND c.device_id=?':''),args:[...(scope.after?[scope.after]:[]),...(scope.before?[scope.before,Date.parse(scope.before),Date.parse(scope.before)]:[]),...(scope.deviceId?[scope.deviceId]:[])]};}
 /** Start-of-run provenance for later report versions, never a commit fence.
  * No original prose, screenshots, credentials or inferred categories enter it. */
-function evidenceFingerprint(store:Store,scope:Scope){
+function evidenceFingerprint(store:Store,scope:Scope,reader?:Pick<EvidenceReader,'materialCatalog'>){
  const {where,args}=selection(scope),hash=createHash('sha256');let records=0,referenceOnlyRecords=0,pendingProcessing=0;
  for(const row of store.db.prepare(`SELECT c.id,c.fingerprint,c.context_at,c.context_end,json_extract(c.json,'$.stateSeries.samples') samples,CASE WHEN json_type(c.json,'$.stateSeries') IS NOT NULL THEN json_remove(c.json,'$.stateSeries') END state,json_extract(c.json,'$.provenance.layer') layer,
   (SELECT group_concat(id,',') FROM (SELECT id FROM perception_results WHERE capture_id=c.id AND kind='ocr' AND current=1 ORDER BY id)) perception,
@@ -22,7 +23,14 @@ function evidenceFingerprint(store:Store,scope:Scope){
  // dependency set belongs to this window; unrelated consolidation keeps running.
  for(const row of store.db.prepare(`WITH selected AS (SELECT c.id FROM captures c WHERE ${where}) SELECT m.id,m.json FROM memories m WHERE json_extract(m.json,'$.status')='published' AND EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN file_chunks f ON f.id=d.evidence_id WHERE d.memory_id=m.id AND coalesce(f.capture_id,d.evidence_id) IN (SELECT id FROM selected)) AND NOT EXISTS(SELECT 1 FROM memory_dependencies d LEFT JOIN file_chunks f ON f.id=d.evidence_id WHERE d.memory_id=m.id AND coalesce(f.capture_id,d.evidence_id) NOT IN (SELECT id FROM selected)) ORDER BY m.id`).iterate(...args))hash.update(JSON.stringify(['memory',row.id,row.json]));
  for(const row of store.db.prepare(`WITH RECURSIVE selected AS (SELECT c.id FROM captures c WHERE ${where}),related(id) AS (SELECT artifact_id FROM artifact_inputs WHERE observation_id IN (SELECT id FROM selected) UNION SELECT d.artifact_id FROM artifact_dependencies d JOIN related r ON d.parent_id=r.id) SELECT a.id,a.revision,a.content_hash FROM context_artifacts a JOIN related r ON r.id=a.id ORDER BY a.id`).iterate(...args))hash.update(JSON.stringify(['artifact',row.id,row.revision,row.content_hash]));
- return {scopeFingerprint:hash.digest('hex'),records,referenceOnlyRecords,pendingProcessing};
+ let materialRecords=0;
+ if(reader){let cursor:string|undefined;do{const page=reader.materialCatalog({...scope,cursor,limit:100});
+   for(const material of page.items){materialRecords++;if(material.coverage.state!=='complete')pendingProcessing++;
+     hash.update(JSON.stringify(['material',material.ref,material.coverage,material.artifacts,material.retention]));
+     for(const row of store.db.prepare("SELECT DISTINCT m.id,m.json FROM memories m JOIN memory_dependencies d ON d.memory_id=m.id JOIN material_evidence e ON e.id=d.evidence_id WHERE e.material_id=? AND json_extract(m.json,'$.status')='published' ORDER BY m.id").iterate(material.id))hash.update(JSON.stringify(['material-memory',row.id,row.json]));
+   }cursor=page.nextCursor??undefined;
+ }while(cursor);}
+ return {scopeFingerprint:hash.digest('hex'),records,materialRecords,referenceOnlyRecords,pendingProcessing};
 }
 /** Use the existing per-device activity service, then union explicit sampled
  * intervals across devices for the review's person-level coverage measurement. */
@@ -39,12 +47,12 @@ function measuredCoverage(store:Store,scope:Scope):InsightSnapshot['coverage']['
  for(const row of rows){const at=Date.parse(String(row.at)),start=Math.max(lower,at-Number(row.duration)),finish=Math.min(upper,at);if(finish<=start)continue;observedDurationMs+=Math.max(0,finish-Math.max(start,end));end=Math.max(end,finish);}
  return {observedDurationMs,deviceDurationMs:activity.totalDurationMs,overlapDurationMs:Math.max(0,activity.totalDurationMs-observedDurationMs),unobservedDurationMs:Number.isFinite(lower)&&Number.isFinite(upper)?Math.max(0,upper-lower-observedDurationMs):null,accounting:'union_across_devices',coverage:'observed_intervals_only'};
 }
-export function createInsightSnapshot(store:Store,id:string,input:Scope&{prompt?:string}):InsightSnapshot{
+export function createInsightSnapshot(store:Store,id:string,input:Scope&{prompt?:string},reader?:Pick<EvidenceReader,'materialCatalog'>):InsightSnapshot{
  const asOf=new Date().toISOString(),scope={...(input.after?{after:new Date(input.after).toISOString()}:{}),before:input.before?new Date(input.before).toISOString():asOf,...(input.deviceId?{deviceId:input.deviceId}:{}),timeZone:input.timeZone??'UTC'};
  const seriesId=createHash('sha256').update(JSON.stringify([input.after??null,input.before??null,input.deviceId??null,input.timeZone??'UTC',input.prompt??''])).digest('hex');
  const previous=store.db.prepare("SELECT id,json_extract(json,'$.snapshot.version') version FROM insight_runs WHERE json_extract(json,'$.snapshot.seriesId')=? ORDER BY CAST(json_extract(json,'$.snapshot.version') AS INTEGER) DESC LIMIT 1").get(seriesId);
- const {scopeFingerprint,...counts}=evidenceFingerprint(store,scope),measured=measuredCoverage(store,scope);
+ const {scopeFingerprint,...counts}=evidenceFingerprint(store,scope,reader),measured=measuredCoverage(store,scope);
  const sourceStates=store.db.prepare("SELECT id,coalesce(json_extract(json,'$.status.state'),CASE WHEN json_extract(json,'$.enabled')=0 THEN 'paused' ELSE 'unknown' END) state,json_extract(json,'$.status.lastSyncAt') lastSyncAt FROM source_connections "+(scope.deviceId?"WHERE json_extract(json,'$.deviceId')=? ":'')+'ORDER BY id LIMIT 500').all(...(scope.deviceId?[scope.deviceId]:[])).map(row=>({id:String(row.id),state:String(row.state),...(row.lastSyncAt?{lastSyncAt:String(row.lastSyncAt)}:{})}));
- const limitations=['observed_samples_do_not_establish_work_time','source_registration_does_not_establish_complete_coverage',...(counts.records?[]:['no_records_in_scope']),...(counts.referenceOnlyRecords?['reference_content_unavailable']:[]),...(counts.pendingProcessing?['processing_incomplete']:[]),...(measured.unobservedDurationMs===null?['sampling_extent_unknown']:measured.unobservedDurationMs>0?['unobserved_sampling_intervals']:[])];
+ const limitations=['observed_samples_do_not_establish_work_time','source_registration_does_not_establish_complete_coverage',...(counts.records||counts.materialRecords?[]:['no_records_in_scope']),...(counts.referenceOnlyRecords?['reference_content_unavailable']:[]),...(counts.pendingProcessing?['processing_incomplete']:[]),...(measured.unobservedDurationMs===null?['sampling_extent_unknown']:measured.unobservedDurationMs>0?['unobserved_sampling_intervals']:[])];
  return {schemaVersion:1,id,seriesId,version:previous?Number(previous.version)+1:1,...(previous?{previousRunId:String(previous.id)}:{}),asOf,scope,watermark:Number(store.db.prepare('SELECT coalesce(max(seq),0) n FROM changes').get()!.n),scopeFingerprint,coverage:{...counts,sourceStates,measured,limitations}};
 }

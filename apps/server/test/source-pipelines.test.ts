@@ -256,3 +256,11 @@ test('encrypted raw archive survives bulk decrypt and a keyless restart',async t
   await runtime.close();store.close();store=new Store(directory);const materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;await runtime.tick();
   assert.equal(materials.list({query:'Encrypted generated conversation'}).items.length,1);
 });
+
+test('a missing pipeline can be replaced from its persisted storage contract',async t=>{
+ const {runtime,sources,materials}=await fixture(t);const original=runtime.registry.get('mote.coding')!;
+ const unregister=runtime.registry.register({...original,id:'fixture.old',priority:2});runtime.configure('coding',{pipelineId:'fixture.old',memory:false,settleSeconds:0});
+ await sources.upsert('coding',item(1));await runtime.tick();unregister();
+ runtime.registry.register({...original,id:'fixture.new',priority:2});
+ assert.doesNotThrow(()=>runtime.configure('coding',{pipelineId:'fixture.new',memory:false,settleSeconds:0}));await runtime.tick();assert.equal(materials.list().items.length,1);
+});

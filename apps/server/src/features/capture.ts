@@ -1,3 +1,4 @@
+import type {ServerFeatureScope} from '../feature-host.js';
 import { captureSchema,rangeSchema } from '@mote/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -8,7 +9,8 @@ import type { FeatureServices } from '../feature-services.js';
 import { StoreError } from '../store.js';
 
 /** capture: owns its transport, data and command contributions. */
-export function register(app:FastifyInstance,{connections,credential,diagnostics,evidenceReader,files,ingress,parseCaptureBundle,store}:Pick<FeatureServices,"connections"|"credential"|"diagnostics"|"evidenceReader"|"files"|"ingress"|"parseCaptureBundle"|"store">){
+export function register(app:FastifyInstance,{perception,executor,maintenanceWorker,connections,credential,diagnostics,evidenceReader,files,ingress,parseCaptureBundle,store}:Pick<FeatureServices,"perception"|"executor"|"maintenanceWorker"|"connections"|"credential"|"diagnostics"|"evidenceReader"|"files"|"ingress"|"parseCaptureBundle"|"store">,scope?:ServerFeatureScope){
+ scope?.every(5000,()=>{if(!maintenanceWorker)store.archive.aggregate(1,Date.now()-15000);perception.prepare();return executor.tick();});scope?.defer(()=>perception.close());scope?.defer(()=>maintenanceWorker?.close());
 registerCaptureBrowser(app,{store,connections,credential,evidenceReader});
 app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);assertExternalCaptures([input]);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>ingress.capture(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
 app.post('/api/captures/bundle',{bodyLimit:12*1024*1024},async req=>{
