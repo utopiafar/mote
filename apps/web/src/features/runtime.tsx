@@ -10,6 +10,7 @@ export {webFeatures} from './registry';
 import {ErrorNotice,Spinner} from '../shell-components';
 import {errorMessage} from '../api';
 import { MemoryRecordPanel } from './memory-record';
+import {sourceMaterialViews} from './source-material';
 import type { PageProps,ViewProps } from './types';
 export const featuresReady=(async()=>{
   for(const id of new Set([...builtinPages,...builtinCollections].map(page=>page.featureId)))await webFeatures.install({id,version:'1',components:[]},[...builtinPages.filter(page=>page.featureId===id).map(entry=>({surface:'page' as const,entry})),...builtinCollections.filter(page=>page.featureId===id).map(entry=>({surface:'collection' as const,entry}))]);
@@ -17,6 +18,7 @@ export const featuresReady=(async()=>{
     {surface:'panel',entry:{id:'memory.saved',kind:'mote.memory',schemaVersion:1,representation:'saved-record',render:({value})=><MemoryRecordPanel record={JSON.parse(value.text)}/>}},
     {surface:'panel',entry:{id:'operation.saved',kind:'mote.operation',schemaVersion:1,representation:'saved-record',render:({value})=><details><summary>{moteText('保存记录（只读）')}</summary><pre className="feature-json">{value.text}</pre></details>}},
   ]);
+  await webFeatures.install({id:'mote.source-material-views',version:'1',components:[]},sourceMaterialViews.map(entry=>({surface:'renderer' as const,entry})));
 })();
 class ViewBoundary extends React.Component<{fallback:React.ReactNode;children:React.ReactNode},{failed:boolean}>{
   state={failed:false};static getDerivedStateFromError(){return {failed:true};}
@@ -36,7 +38,7 @@ export function FeaturePage({page,props}:{page:string;props:PageProps}){
 }
 export function FeatureView(props:ViewProps){
   useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
-  const fallback=<AnswerMarkdown answer={{answer:props.value.text,runId:props.value.ref,trace:[],citations:[]}} onOpen={props.onOpen}/>;
+  const fallback=props.fallback??<AnswerMarkdown answer={{answer:props.value.text,runId:props.value.ref,trace:[],citations:[]}} onOpen={props.onOpen}/>;
   const renderers=webFeatures.views('renderer',props.value),panels=webFeatures.views('panel',props.value);
   // Ambiguous providers never win by installation order. Keep the safe default.
   return <><ViewBoundary key={props.value.ref+props.value.revision} fallback={fallback}>{renderers.length===1?<ViewContent entry={renderers[0]} props={props}/>:fallback}</ViewBoundary><FeaturePanels {...props}/></>;

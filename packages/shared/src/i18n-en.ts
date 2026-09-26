@@ -5502,5 +5502,14 @@ export const english: Readonly<Record<string, string>> = {
   "查看当前版本": "View current version",
   "来源已更正，正在重新整理资料。完成后可继续查看。": "The source was corrected and this material is being rebuilt. You can continue reading when it is ready.",
   "已确认说话人：{0}": "Confirmed speaker: {0}",
-  "历史证据，仅用于核对当时的内容。": "Historical evidence, retained to review what was recorded at the time."
+  "历史证据，仅用于核对当时的内容。": "Historical evidence, retained to review what was recorded at the time.",
+  "返回阅读视图": "Return to reading view",
+  "查看原始结构": "View raw structure",
+  "归档附件": "Archived attachment",
+  "匿名说话人：{0}": "Anonymous speaker: {0}",
+  "接上一页": "Continued from the previous page",
+  "本片段未完，下一页继续。": "This passage continues on the next page.",
+  "资料仍在整理，先展示当前可读的内容。": "This material is still being processed. Available content is shown below.",
+  "资料尚不完整，可在“来源与处理”中查看缺失情况。": "This material is incomplete. See Sources and processing for what is missing.",
+  "查看文件详情": "View file details"
 };

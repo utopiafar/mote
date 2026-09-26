@@ -8,6 +8,7 @@ import {Files,FileDetail} from '../src/Files.js';
 import {Sources} from '../src/Sources.js';
 import {ReferenceDetail} from '../src/ReferenceDetail.js';
 import {MaterialDetail,type Material} from '../src/Materials.js';
+import {SourceMaterialView} from '../src/features/source-material.js';
 import {resources} from '../src/resource-cache.js';
 import {ApiError,type Api} from '../src/api.js';
 const ids=['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
@@ -35,10 +36,22 @@ test('material corrections hide cached prose while pending and explicitly link h
 });
 test('agent material views cannot fall back to owner routes when a corrected reference becomes unavailable',async t=>{
  const {root,document:d}=await fixture(t);let unavailable=false;const paths:string[]=[];
- const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'generated',schemaVersion:1,title:'Generated agent material',sequence:1,textLength:6,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};
+ const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'mote.file',schemaVersion:1,title:'Generated agent material',sequence:1,textLength:6,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};
  const api=apiWith(path=>{paths.push(path);assert.ok(path.startsWith('/api/agent-view/'));if(unavailable)throw new ApiError('Generated unavailable',404);return {material,text:'生成的原文',textRange:{offset:0,total:6,nextOffset:null}};});
  await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,agent:true,onOpen:()=>{}})));assert.match(d.body.textContent!,/生成的原文/);
  unavailable=true;await act(async()=>resources(api).invalidate(()=>true));assert.doesNotMatch(d.body.textContent!,/生成的原文/);assert.match(d.body.textContent!,/Generated unavailable/);assert.ok(paths.length>=2);
+});
+test('source presentation pages decoded text, preserves raw fallback, escapes content and hides pending cached bodies',async t=>{
+ const {root,document:d}=await fixture(t),paths:string[]=[];let pending=false;
+ const value={kind:'mote.file',schemaVersion:1,representation:'owner-material',ref:'material:mat_'+'a'.repeat(64)+'@'+'b'.repeat(64),revision:'b'.repeat(64),title:'Generated recording',text:'Raw original'};
+ const api=apiWith(path=>{paths.push(path);if(pending)throw new ApiError('Generated pending',409);const next=path.includes('offset=4000');return {items:[{blockId:'generated',type:'text',text:next?'Generated continuation':'<img src=x onerror=bad()>\nGenerated first page',speaker:'SPEAKER_0',confirmedName:'Generated owner',offset:next?4000:0,total:8000,continued:!next,startMs:3000}],next:next?null:{block:1,offset:4000}};});
+ await act(async()=>root.render(React.createElement(SourceMaterialView,{api,value,onOpen:()=>{},fallback:React.createElement('pre',null,'Raw original')})));
+ assert.match(d.body.textContent!,/已确认说话人：Generated owner/);assert.match(d.body.textContent!,/Generated first page/);assert.equal(d.querySelector('img'),null);
+ const click=async(label:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!.click());
+ await click('继续展开');assert.match(d.body.textContent!,/接上一页/);assert.match(d.body.textContent!,/Generated continuation/);assert.doesNotMatch(d.body.textContent!,/Generated first page/);assert.ok(paths.some(path=>path.includes('block=1&offset=4000')));
+ await click('上一页');assert.match(d.body.textContent!,/Generated first page/);
+ await click('查看原始结构');assert.match(d.body.textContent!,/Raw original/);assert.doesNotMatch(d.body.textContent!,/Generated first page/);
+ await click('返回阅读视图');pending=true;await act(async()=>resources(api).invalidate(()=>true));assert.match(d.body.textContent!,/正在重新整理/);assert.doesNotMatch(d.body.textContent!,/Generated first page/);
 });
 test('formal material links open their pinned revision through the material API',async t=>{
  const {root,document:d}=await fixture(t),id='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${id}@${revision}`,paths:string[]=[];

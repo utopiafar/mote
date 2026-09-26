@@ -57,6 +57,7 @@ export type MaterialReadSpan={blockId:string;kind:'text'|'asset';format?:string;
   pageRange:{start:number;end:number};materialRange:{start:number;end:number};
   memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string};};
 export type MaterialReadPage={material:MaterialRecord;text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:MaterialReadSpan[]};
+export type MaterialStoredBlock={id:string;kind:'text'|'asset';format?:string;text:string;memberIds:string[];locator?:Record<string,unknown>;asset?:{hash:string;mimeType:string}};
 export type MaterialPage={items:MaterialRecord[];nextCursor:string|null};
 export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;total:number};
 
@@ -538,6 +539,19 @@ export class MaterialStore {
     }
     const nextOffset=cursor<total?cursor:null;
     return {material,text,textRange:{offset,total,nextOffset},spans};
+  }
+
+  /** A presentation plugin can decode one bounded, immutable block without
+   * assembling the whole material. Never exposed as a model tool. */
+  block(ref:string,index:number):{material:MaterialRecord;block:MaterialStoredBlock}|undefined {
+    const material=this.get(ref);if(!material)throw new StoreError('Material not found',404);
+    if(material.coverage.reason==='source_evidence_changed')throw new StoreError('Material source evidence changed; reconstruction is pending',409);
+    if(!Number.isSafeInteger(index)||index<0||index>material.blockCount)throw new StoreError('Invalid material block index');
+    if(index===material.blockCount)return;
+    const columns='b.block_id,b.kind,b.format,p.text payload,b.asset_hash,b.mime_type,b.member_ids,b.locator';
+    const row=(this.codingLayout(material.id,material.revision)?this.store.db.prepare(`SELECT ${columns} FROM material_block_versions b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.idx=? AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)`).get(material.id,index,material.sequence,material.sequence):this.store.db.prepare(`SELECT ${columns} FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=? AND b.idx=?`).get(material.id,material.revision,index)) as BlockRow|undefined;
+    if(!row)throw new StoreError('Material block is unavailable',404);
+    return {material,block:{id:row.block_id,kind:row.kind,text:row.payload,...(row.format?{format:row.format}:{}),memberIds:JSON.parse(row.member_ids),...(row.locator?{locator:JSON.parse(row.locator)}:{}),...(row.asset_hash?{asset:{hash:row.asset_hash,mimeType:row.mime_type!}}:{})}};
   }
 
   members(ref:string,args:{offset?:number;limit?:number}={}):MaterialMemberPage {
