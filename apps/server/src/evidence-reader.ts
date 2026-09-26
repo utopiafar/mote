@@ -45,14 +45,23 @@ export class EvidenceReader {
     const value=this.store.imageReference(id);return value?{...value,id,source:metadata.source}:undefined;
   }
   evidence(refs:string[],scope:Range={}){
+    return this.readEvidence(refs,scope,false);
+  }
+  /** Owner archive views may inspect retained old quotes; model tools stay current-only. */
+  archivedEvidence(refs:string[],scope:Range={}){
+    return this.readEvidence(refs,scope,true);
+  }
+  private readEvidence(refs:string[],scope:Range,includeHistorical:boolean){
     const ids=[...new Set(refs.map(ref=>parseEvidenceRef(ref)).filter(ref=>ref?.kind==='capture').map(ref=>ref!.id))];
     const materialRecords=(this.materials?.evidence(ids)??[]).flatMap(record=>{
       const ref=record.provenance?.uri?.split('#')[0];if(!ref)return [];
-      const prior=this.materials?.get(ref),material=prior&&this.materials?.get(prior.id);
+      const prior=this.materials?.get(ref),current=prior&&this.materials?.get(prior.id);
+      const active=current&&this.currentMaterialAnchor(record,current);
+      const material=active?current:includeHistorical?prior:undefined;
       if(!material||!this.scopedMaterial(material.ref,scope))return [];
-      const active=this.currentMaterialAnchor(record,material);if(!active)return [];
+      const selected=active??record;
       const head=this.materialHead(material,scope);
-      return [head?this.materialCard(material,head,undefined,active)??active:active];
+      return [head?this.materialCard(material,head,undefined,selected)??selected:selected];
     });
     return [...this.store.evidence(ids),...materialRecords,...(this.files?.evidence(ids)??[])].filter(record=>withinEvidenceScope(record,scope));
   }
@@ -72,11 +81,11 @@ export class EvidenceReader {
       provenance:{...record.provenance,revision:current.revision,
         uri:`${current.ref}#${active?.block_id??record.provenance.uri.slice(oldRef.length+1)}`}};
   }
-  memory(ref:string,scope:Range={}){
+  memory(ref:string,scope:Range={},ownerArchive=false){
     const parsed=parseEvidenceRef(ref);if(parsed?.kind!=='memory')return;
-    return this.memoryPage({...scope,id:parsed.id,includeStale:true,includeHistory:true,level:'detail',limit:1}).items[0];
+    return this.memoryPage({...scope,id:parsed.id,includeStale:true,includeHistory:true,level:'detail',limit:1},ownerArchive).items[0];
   }
-  memoryPage(args:Parameters<MemoryStore['page']>[0]&Range={}){
+  memoryPage(args:Parameters<MemoryStore['page']>[0]&Range={},ownerArchive=false){
     const id=args.id===undefined?undefined:evidenceRefId(args.id,'memory');
     if(args.id!==undefined&&!id)return {items:[],nextCursor:null};
     const page=this.memories.page({...args,id});
@@ -84,13 +93,14 @@ export class EvidenceReader {
     const scoped=['deviceId','source','sourceId','appId','collection','projectKey','repositoryKey','provider','sessionId','after','before','ocrStatus'].some(key=>args[key as keyof Range]!==undefined);
     return {...page,items:scoped?page.items.filter(value=>{
       const ids=this.store.db.prepare('SELECT evidence_id FROM memory_dependencies WHERE memory_id=?').all(value.id).map(row=>String(row.evidence_id));
-      const records=this.evidence(ids,args);
+      const records=ownerArchive?this.archivedEvidence(ids,args):this.evidence(ids,args);
       return records.length>0&&records.length===ids.length;
     }):page.items};
   }
   context(records:CaptureRecord[]){return records.map(record=>{
+    const formal=this.materials&&this.store.db.prepare('SELECT 1 FROM material_evidence WHERE id=?').get(record.id);
     const nativeFile=this.files&&this.store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(record.id,record.id);
-    const current=this.materials?.isCurrentEvidence(record.id)|| (nativeFile?this.files!.isCurrentEvidence(record.id)||Boolean(this.store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance&&this.sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id);
+    const current=formal?this.materials!.isCurrentEvidence(record.id):nativeFile?this.files!.isCurrentEvidence(record.id)||Boolean(this.store.db.prepare('SELECT 1 FROM file_heads WHERE capture_id=?').get(record.id)):record.provenance?.externalId&&this.sources.getItem(record.provenance.sourceId,record.provenance.externalId)?.captureId===record.id;
     return {...record,ref:formatEvidenceRef('capture',record.id),sourceType:record.source,...(record.provenance?{revisionState:current?'current':'historical'}:{})};
   });}
   records(args:Range&{query?:string},search=false){

@@ -5496,5 +5496,10 @@
   "项目未知（仅关联会话）": "Project unknown (session only)",
   "会话项目：{0}": "Session project: {0}",
   "优先记住你的经历、感受和选择。代办任务线索放在“事件与资料”，需要时再查原文。": "Prioritize your experiences, feelings and choices. Delegated-task breadcrumbs stay in Events and sources; open the originals when needed.",
-  "已关联项目（名称未知）": "Project linked (name unknown)"
+  "已关联项目（名称未知）": "Project linked (name unknown)",
+  "这是历史版本，当前资料已更新。": "This is a historical version. The current material has been updated.",
+  "查看当前版本": "View current version",
+  "来源已更正，正在重新整理资料。完成后可继续查看。": "The source was corrected and this material is being rebuilt. You can continue reading when it is ready.",
+  "已确认说话人：{0}": "Confirmed speaker: {0}",
+  "历史证据，仅用于核对当时的内容。": "Historical evidence, retained to review what was recorded at the time."
 }

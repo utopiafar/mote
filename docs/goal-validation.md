@@ -163,3 +163,22 @@ A subsequent regression reproduces that remaining problem through `FileReviews.p
 Explicit chunk ordinals preserve order when a replacement and a reused segment have the same timestamp. Repeated confirmation tests check that the next proposal edits the intended segment. Changed text loses obsolete word alignment while unchanged words retain theirs. The initial ordering test used dialogue output, which intentionally lacks word alignment, and failed during setup; the revised fixture uses the raw ASR adapter with a stub provider. A real local text-decoding fixture also verifies document locations, absent audio times and preservation of unchanged formal blocks. Forty-seven focused file, Memory, policy and organizer tests pass. These fixtures use no real model or personal data.
 
 The seventeenth full `npm run check:local` also passes with the final implementation, including the shared chunk writer and document case. Browser interaction and a live-model correction replay are not claimed by these checks. The separate progressive private-data run still has three failed timeout batches and has not completed its full acceptance.
+
+## Corrections through the renderer
+
+The generated two-window renderer journey exercises the real server and owner APIs while stubbing audio recognition and the correction proposal. It reproduces several user-visible gaps beyond the earlier service tests: import-platform file cards do not open file processing controls; pending Material reads keep displaying cached old prose; formal Material links reach an unsupported generic reader; and corrected Memory disappears from scoped owner lists because its retained historical evidence is excluded. Opening that historical evidence also exposes missing source identity in the small metadata projection.
+
+File detail routing now uses a host-declared archive association rather than source platform. Confirmed speaker names display beside unchanged transcript text. Material reads hide cached prose while reconstruction is pending, identify historical revisions and link to the current revision using the dedicated Material API. Owner archive views can inspect retained old quotes and scoped stale Memory; model-facing reads retain their current-evidence restrictions. Every original must still remain in the requested scope, and deleted originals prevent historical disclosure. A historical evidence label distinguishes old quotes from current content. Source identity and small presentation fields stay available without loading original text or images into scope checks.
+
+Twenty-four focused server tests and twenty focused web tests pass, covering API scope restrictions, historical reads, model-facing defaults, current-version navigation, pending cached text and the agent-view boundary. The renderer passes the correction, naming, stale/unaffected Memory, evidence navigation and 430/1180-pixel scrolling checks. Screenshots, failures and code hashes are kept outside Git. This is generated UI/API validation: no personal recording, real model correction, physical device or full-corpus quality acceptance is implied. Some formal content still uses the generic structured-text presentation, which remains a usability improvement to address.
+
+The final renderer run passes all twenty checks with no renderer crash or unexpected HTTP error; the one 409 is the intentionally pending Material read. The twentieth full `npm run check:local` passes with the final production changes. Visual inspection confirms the narrow-screen transcript, pending Material notice, stale Memory state and retained historical quote.
+
+After building the workspaces, rerun the isolated journey with:
+
+```sh
+env -u ELECTRON_RUN_AS_NODE MOTE_UI_OUTPUT_DIR=/path/outside/repository \
+  ./node_modules/.bin/electron scripts/test-file-corrections-ui.cjs
+```
+
+The progressive private-data retry preserves its original timeout failures and resumes through the existing retry entry point. The runner now records IDs, attempt counts and Memory IDs of every previously completed batch, then checks that all remain unchanged after recovery. That recovery check is not considered passed until the resumed job finishes; full-wave and held-out acceptance remain outstanding.

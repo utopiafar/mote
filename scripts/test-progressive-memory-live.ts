@@ -101,7 +101,11 @@ try{
   if(needsPauseCheckpoint)delete wave.pauseRequested;
   if(job.status==='failed'||job.failedBatches>0){
    assert.equal(process.env.MOTE_REPLAY_RETRY,'1','A failed model batch requires explicit MOTE_REPLAY_RETRY=1 after diagnosis');
+   const checkpoint={at:new Date().toISOString(),completed:job.batches.filter(b=>b.status==='completed').map(b=>({id:b.id,attempts:b.attempts,memoryIds:b.memoryIds})),preserved:false};
+   (wave.retryCheckpoints??=[]).push(checkpoint);await save();
    job=await waitForJob(wave,node!.memoryPipeline.retry(job.id),needsPauseCheckpoint);
+   for(const prior of checkpoint.completed){const after=job.batches.find(b=>b.id===prior.id);assert.ok(after);assert.equal(after.status,'completed');assert.equal(after.attempts,prior.attempts);assert.deepEqual(after.memoryIds,prior.memoryIds);}
+   checkpoint.preserved=true;await save();
   }else if(job.status==='paused'||job.status==='pausing'){
    await request('POST',`/api/memory-jobs/${job.id}/resume`);job=await waitForJob(wave,node!.memoryPipeline.run(job.id),needsPauseCheckpoint);
   }else job=await waitForJob(wave,node!.memoryPipeline.run(job.id),needsPauseCheckpoint);

@@ -2,10 +2,20 @@ import {useEffect,useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage,ApiError} from './api';
 import {AnswerMarkdown} from './AnswerMarkdown';
+import {MaterialDetail,type Material} from './Materials';
+import {useResource} from './useResource';
 type ReadItem={id:string;ref:string;title?:string;kind:string;text:string;status?:string;applicability?:string;textRange:{offset:number;total:number;nextOffset:number|null};evidenceRefs?:string[];evidenceCount?:number;evidenceRefsTruncated?:boolean;expansion?:{kind:'search';scope:Record<string,string>;refs:string[]}};
 type Card={ref:string;title:string;snippet?:string};
 /** Non-capture references keep their type and pinned revision through every read. */
 export function ReferenceDetail({api,reference,onOpen}:{api:Api;reference:string;onOpen:(id:string)=>void}){
+ const material=/^material:(mat_[a-f0-9]{64})(?:@([a-f0-9]{64}))?$/.exec(reference);
+ return material?<MaterialReferenceDetail key={reference} api={api} id={material[1]} revision={material[2]} onOpen={onOpen}/>:<ContextReferenceDetail key={reference} api={api} reference={reference} onOpen={onOpen}/>;
+}
+function MaterialReferenceDetail({api,id,revision,onOpen}:{api:Api;id:string;revision?:string;onOpen:(id:string)=>void}){
+ const value=useResource<Material>(api,`/api/materials/${id}${revision?`/revisions/${revision}`:''}`);
+ return <div className="panel-pad reference-detail">{value.error!==undefined?<p role="alert">{errorMessage(value.error)} <button className="button" onClick={value.refresh}>{moteText('重新读取')}</button></p>:value.data?<MaterialDetail key={value.data.ref} api={api} material={value.data} onOpen={onOpen}/>:<p role="status">{moteText('正在读取…')}</p>}</div>;
+}
+function ContextReferenceDetail({api,reference,onOpen}:{api:Api;reference:string;onOpen:(id:string)=>void}){
  const [item,setItem]=useState<ReadItem>(),[text,setText]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(true),[revision,setRevision]=useState(0),[offset,setOffset]=useState(0);
  const [members,setMembers]=useState<Card[]>([]),[cursor,setCursor]=useState<string|null>(null),[nextCursor,setNextCursor]=useState<string|null>(null),[loadingMembers,setLoadingMembers]=useState(false);
  useEffect(()=>{const controller=new AbortController();setBusy(true);setError('');

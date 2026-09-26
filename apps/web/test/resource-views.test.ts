@@ -7,12 +7,46 @@ import {Memories} from '../src/Memories.js';
 import {Files,FileDetail} from '../src/Files.js';
 import {Sources} from '../src/Sources.js';
 import {ReferenceDetail} from '../src/ReferenceDetail.js';
+import {MaterialDetail,type Material} from '../src/Materials.js';
+import {resources} from '../src/resource-cache.js';
 import {ApiError,type Api} from '../src/api.js';
 const ids=['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
 function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
 function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return {settings:{agentTimeoutMs:120000},profiles:[]};if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const memory=(id:string)=>({id,title:'Generated '+id[0],statement:'Current evidence '+id[0],status:'published',createdAt:'2020-01-01T00:00:00Z',evidenceIds:[]});
+test('material corrections hide cached prose while pending and explicitly link historical revisions to the current one',async t=>{
+ const {root,document:d}=await fixture(t);let state='ready';const opened:string[]=[];
+ const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'generated',schemaVersion:1,title:'Generated material',sequence:1,textLength:20,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};
+ const next={...material,ref:'material:generated@v2',revision:'v2',sequence:2};
+ const api=apiWith(path=>{
+   if(path.includes('/read?')){assert.match(path,/revision=v1/);if(state==='pending')throw new ApiError('Generated rebuild',409);return {material,text:'旧的生成正文',textRange:{offset:0,total:7,nextOffset:null}};}
+   if(state==='revoked')throw new ApiError('Generated revoked',403);
+   return state==='rebuilt'?next:state==='pending'?{...material,coverage:{state:'pending',reason:'source_evidence_changed'}}:material;
+ });
+ await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,onOpen:ref=>opened.push(ref)})));
+ assert.match(d.body.textContent!,/旧的生成正文/);
+ state='pending';await act(async()=>resources(api).invalidate(()=>true));
+ assert.doesNotMatch(d.body.textContent!,/旧的生成正文/);assert.match(d.querySelector('[role=status]')!.textContent!,/正在重新整理/);
+ state='rebuilt';await act(async()=>resources(api).invalidate(()=>true));
+ assert.match(d.body.textContent!,/旧的生成正文/);assert.match(d.body.textContent!,/历史版本/);
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看当前版本')!.click());assert.deepEqual(opened,[next.ref]);
+ state='revoked';await act(async()=>resources(api).invalidate(()=>true));assert.doesNotMatch(d.body.textContent!,/旧的生成正文|查看当前版本/);assert.match(d.body.textContent!,/Generated revoked/);
+});
+test('agent material views cannot fall back to owner routes when a corrected reference becomes unavailable',async t=>{
+ const {root,document:d}=await fixture(t);let unavailable=false;const paths:string[]=[];
+ const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'generated',schemaVersion:1,title:'Generated agent material',sequence:1,textLength:6,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};
+ const api=apiWith(path=>{paths.push(path);assert.ok(path.startsWith('/api/agent-view/'));if(unavailable)throw new ApiError('Generated unavailable',404);return {material,text:'生成的原文',textRange:{offset:0,total:6,nextOffset:null}};});
+ await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,agent:true,onOpen:()=>{}})));assert.match(d.body.textContent!,/生成的原文/);
+ unavailable=true;await act(async()=>resources(api).invalidate(()=>true));assert.doesNotMatch(d.body.textContent!,/生成的原文/);assert.match(d.body.textContent!,/Generated unavailable/);assert.ok(paths.length>=2);
+});
+test('formal material links open their pinned revision through the material API',async t=>{
+ const {root,document:d}=await fixture(t),id='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${id}@${revision}`,paths:string[]=[];
+ const material:Material={id,revision,ref,kind:'generated',schemaVersion:1,title:'Pinned generated material',sequence:1,textLength:4,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};
+ const api=apiWith(path=>{paths.push(path);assert.ok(path.startsWith('/api/materials/'));return path.includes('/read?')?{material,text:'固定正文',textRange:{offset:0,total:4,nextOffset:null}}:material;});
+ await act(async()=>root.render(React.createElement(ReferenceDetail,{api,reference:ref,onOpen:()=>{}})));
+ assert.match(d.querySelector('.reference-detail')!.textContent!,/固定正文/);assert.ok(paths.includes(`/api/materials/${id}/revisions/${revision}`));assert.ok(paths.some(path=>path.includes('revision='+revision)));
+});
 test('Memory selection and scope changes fence uncooperative late detail replies and errors do not look empty',async t=>{
  const {root,document:d}=await fixture(t),a=deferred(),b=deferred();let failure=false;const api=apiWith(path=>{if(path.startsWith('/api/memories?')){if(failure)throw new ApiError('generated offline',503);return {items:ids.map(memory),nextCursor:null};}return path.split('?')[0].endsWith(ids[0])?a.promise:b.promise;});
  await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));const buttons=d.querySelectorAll<HTMLButtonElement>('.workspace-select');

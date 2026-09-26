@@ -428,6 +428,7 @@ export function EvidenceDialog({
             <X size={20} />
           </button>
         </div>
+        {capture?.revisionState==='historical'&&<p role="status">{moteText('历史证据，仅用于核对当时的内容。')}</p>}
         {presentation?.nativeFile && <FileDetail api={api} id={presentation.nativeFile.captureId} startMs={presentation.nativeFile.startMs} onOpen={onOpen}/>}
         {error && <ErrorNotice text={error} />}
         {!captureRef&&<ReferenceDetail key={id} api={api} reference={id} onOpen={onOpen}/>}

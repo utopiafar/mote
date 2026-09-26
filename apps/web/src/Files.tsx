@@ -3,7 +3,7 @@ import {resources} from './resource-cache';
 import {useOperationUpdates} from './useOperationUpdates';
 import { moteText } from '@mote/shared/i18n';
 import {useEffect,useRef,useState} from 'react';
-import {type Api,bytes,dateTime,errorMessage} from './api';
+import {type Api,type Capture,bytes,dateTime,errorMessage} from './api';
 import {FileProcessingSettings} from './FileProcessingSettings';
 import {FileReview} from './FileReview';
 import {AnswerMarkdown} from './AnswerMarkdown';
@@ -29,7 +29,7 @@ export function FileDetail(props:{api:Api;id:string;startMs?:number;onOpen:(id:s
 function FileDetailContents({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs?:number;onOpen:(id:string)=>void}){
  const {data:file,error:readError,loading,refresh}=useResource<FileRow>(api,'/api/files/'+encodeURIComponent(id));
  useOperationUpdates(api);
- const [mutationError,setError]=useState(''),[chunks,setChunks]=useState<any[]>([]),[offset,setOffset]=useState<number|null>(0),[url,setUrl]=useState('');
+ const [mutationError,setError]=useState(''),[chunks,setChunks]=useState<Capture[]>([]),[offset,setOffset]=useState<number|null>(0),[url,setUrl]=useState('');
  const player=useRef<HTMLAudioElement>(null);
  useEffect(()=>{if(player.current)player.current.currentTime=startMs/1000;},[startMs,url]);
  const error=mutationError||(readError?errorMessage(readError):'');
@@ -46,8 +46,8 @@ function FileDetailContents({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs
  {file.steps?.map(s=><p key={s.step}>{{extract:moteText("转写 / 提取"),diarize:moteText("说话人分离"),align:moteText("时间对齐"),turns:moteText("语义分组")}[s.step]??s.step}：{states[s.state]??s.state}{' '}{moteText("· 尝试")}{' '}{s.attempts}{' '}{moteText("次")}</p>)}
  {file.artifacts.some(a=>['transcript','text','image-text'].includes(a.kind))&&<FileReview key={id} api={api} id={id} artifacts={file.artifacts} onChanged={async()=>{await load();setChunks([]);setOffset(0);}}/>}
  {file.artifacts.filter(a=>a.kind==='summary').map(a=><div key={a.id}><h4>{moteText("模型摘要")}</h4>{a.sections?.map((s,i)=><AnswerMarkdown key={i} onOpen={onOpen} answer={{answer:s.answer,runId:a.id,trace:[],citations:s.citationIds.map(id=>({id,capturedAt:file.item.observedAt,appName:file.item.title,excerpt:''}))}}/>)}</div>)}
- {chunks.length>0&&<h4>{moteText("转写 / 提取片段")}</h4>}{chunks.map(c=><div key={c.id} className="source-item"><button className="text-button" onClick={()=>{if(player.current&&c.fileEvidence?.startMs!==undefined)player.current.currentTime=c.fileEvidence.startMs/1000;}}>{c.fileEvidence?.startMs!==undefined?moteText("{0} 秒", Math.floor(c.fileEvidence.startMs/1000)):moteText("文本片段")}</button>{(c.fileEvidence?.uncertain||c.fileEvidence?.overlap)&&<span> · {c.fileEvidence.overlap?moteText("重叠说话"):moteText("说话人不确定")}</span>}<p className="file-text">{c.ocrText}</p></div>)}
- {offset!==null&&file.job?.state==='succeeded'&&<button className="button" onClick={()=>void action(async()=>{const r=await api.request<{items:any[];nextOffset:number|null}>('/api/files/'+id+'/chunks?offset='+offset);setChunks(v=>[...v,...r.items]);setOffset(r.nextOffset);})}>{chunks.length?moteText("继续展开"):moteText("展开转写 / 原文片段")}</button>}
+ {chunks.length>0&&<h4>{moteText("转写 / 提取片段")}</h4>}{chunks.map(c=><div key={c.id} className="source-item"><button className="text-button" onClick={()=>{if(player.current&&c.fileEvidence?.startMs!==undefined)player.current.currentTime=c.fileEvidence.startMs/1000;}}>{c.fileEvidence?.startMs!==undefined?moteText("{0} 秒", Math.floor(c.fileEvidence.startMs/1000)):moteText("文本片段")}</button>{c.fileEvidence?.speakerAttribution&&<span> · {moteText("已确认说话人：{0}",c.fileEvidence.speakerAttribution.name)}</span>}{(c.fileEvidence?.uncertain||c.fileEvidence?.overlap)&&<span> · {c.fileEvidence.overlap?moteText("重叠说话"):moteText("说话人不确定")}</span>}<p className="file-text">{c.ocrText}</p></div>)}
+ {offset!==null&&file.job?.state==='succeeded'&&<button className="button" onClick={()=>void action(async()=>{const r=await api.request<{items:Capture[];nextOffset:number|null}>('/api/files/'+id+'/chunks?offset='+offset);setChunks(v=>[...v,...r.items]);setOffset(r.nextOffset);})}>{chunks.length?moteText("继续展开"):moteText("展开转写 / 原文片段")}</button>}
  {error&&<p role="alert" className="error-banner">{error}</p>}</section>;
 }
 
