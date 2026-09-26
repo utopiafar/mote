@@ -329,9 +329,16 @@ export class SourcePipelineRuntime {
         Date.now(),selected?.id??null,selected?.version??null,metadata?.id??null,metadata?.version??null,metadata?.definitionFingerprint??null,metadata?.configFingerprint??null,metadata?.componentPins??null,sourceId);
     for(const prior of previous){const old=stepId(prior.id,prior.generation);this.revoke(old);superseded.push(old);this.enqueueWork(this.row(prior.id)!);}
     db.exec('COMMIT');for(const id of superseded)this.engine.abortLocal(id);return value;}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
+  memoryAllowed(sourceId:string):boolean {
+    try{const options=this.options(sourceId),binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(sourceId);
+      if(!binding||binding.storage!=='archive')return options.memory!==false;
+      const pipeline=this.registry.get(String(binding.pipeline_id));return Boolean(pipeline&&(options.memory??pipeline.memory??false));
+    }catch{return false;}
+  }
   drainMemory(pipeline:MaterialMemoryRunner,enabled:boolean,limit=1){
     return this.memoryWork.drain(pipeline,enabled,limit,materialId=>{
       const material=this.materials.get(materialId);if(!material)return true;
+      if(!this.memoryAllowed(material.origin.sourceId))return false;
       const binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(material.origin.sourceId);
       if(!binding||binding.storage!=='archive')return true;
       const sourcePipeline=this.registry.get(String(binding.pipeline_id));if(!sourcePipeline)return false;

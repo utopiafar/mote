@@ -1,3 +1,4 @@
+import type {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import type {FastifyInstance} from 'fastify';
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
@@ -15,13 +16,15 @@ import type {FileStore} from './files.js';
 import {StoreError,type Store} from './store.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import {usesLocalModel} from './model-agent.js';
-export function registerMemoryRoutes(app:FastifyInstance,{store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
+export function registerMemoryRoutes(app:FastifyInstance,{memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memories.publish((req.params as {id:string}).id,body.version);});
   app.post('/api/memories/:id/correct',async req=>memories.correct((req.params as {id:string}).id,req.body));
   app.delete('/api/memories/:id',async req=>memories.delete((req.params as {id:string}).id));
   app.get('/api/memory-settings',async()=>{const view=lifecycle.view();return {...view,extensions:view.extensions.map(extension=>({...extension,status:extension.retryAt&&extension.retryAt>Date.now()?'retry_wait':extension.id==='extraction'&&extension.active?.checkpoint?memoryPipeline.get(extension.active.checkpoint).status:extension.status}))};});
   app.put('/api/memory-settings',{bodyLimit:8192},async req=>lifecycle.configure(req.body));
+  app.get('/api/memory-recipe-settings',async req=>memoryRecipeSettings.view(z.object({sourceId:z.string().min(1).max(256).optional()}).strict().parse(req.query).sourceId));
+  app.put('/api/memory-recipe-settings',{bodyLimit:8192},async req=>memoryRecipeSettings.configure(req.body));
   app.get('/api/memory-recipes',async()=>({items:memoryPipeline.strategies.list()}));
   app.get('/api/memory-jobs',async()=>({items:memoryPipeline.list()}));
   app.get('/api/memory-jobs/:id',async req=>memoryPipeline.get(jobId(req.params)));

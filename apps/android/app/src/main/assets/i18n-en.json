@@ -5512,5 +5512,15 @@
   "资料尚不完整，可在“来源与处理”中查看缺失情况。": "This material is incomplete. See Sources and processing for what is missing.",
   "查看文件详情": "View file details",
   "记录时间：{0}": "Recorded at: {0}",
-  "发生时间：{0}": "Occurred at: {0}"
+  "发生时间：{0}": "Occurred at: {0}",
+  "个人记忆": "Personal memory",
+  "编码经验": "Coding experience",
+  "自动 Memory 组合": "Automatic Memory recipes",
+  "为新接收的来源资料选择记忆策略。多个策略可共用处理结果；保存设置不会重算历史资料，停用也不会删除已有记忆。": "Choose memory strategies for newly received source material. Strategies can share processing results. Saving does not reprocess history, and disabling preserves existing memories.",
+  "应用范围": "Apply to",
+  "默认组合": "Default recipes",
+  "选择记忆策略": "Select memory strategies",
+  "跟随默认组合": "Use default recipes",
+  "组件暂不可用": "Component unavailable",
+  "保存组合": "Save recipes"
 }

@@ -1,5 +1,15 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "保存组合": "Save recipes",
+  "组件暂不可用": "Component unavailable",
+  "跟随默认组合": "Use default recipes",
+  "选择记忆策略": "Select memory strategies",
+  "默认组合": "Default recipes",
+  "应用范围": "Apply to",
+  "为新接收的来源资料选择记忆策略。多个策略可共用处理结果；保存设置不会重算历史资料，停用也不会删除已有记忆。": "Choose memory strategies for newly received source material. Strategies can share processing results. Saving does not reprocess history, and disabling preserves existing memories.",
+  "自动 Memory 组合": "Automatic Memory recipes",
+  "编码经验": "Coding experience",
+  "个人记忆": "Personal memory",
   "本地处理插件只能绑定本地服务": "Local processing plugins require local services",
   "此方案只允许本地模型": "This profile allows only local models",
   "此处理插件不支持自动摘要": "This processing plugin does not allow automatic summaries",

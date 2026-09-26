@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {Store} from '../src/store.js';
+import {Store,StoreError} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {MaterialMemoryWork,type MaterialMemoryRunner} from '../src/material-memory-work.js';
@@ -175,4 +175,33 @@ test('completed, failed and cancelled receipts do not starve new materials with 
   assert.deepEqual(fake.created,[first.ref,second.ref,third.ref,fourth.ref]);
   assert.equal(work.readyForMemory(first.ref),true);
   assert.equal(work.readyForMemory(second.ref),true);
+});
+
+test('queue schema upgrade preserves material readiness and retires unpinned automatic work without replay',async t=>{
+  const {store,materials,work,draft,receive}=fixture(t),fake=fakeRunner();
+  const first=materials.publish(draft());receive('old-input');work.observe(first.id,['source-body'],{inputKey:'old-input',change:'source'});work.drain(fake.runner,true);
+  await new Promise(resolve=>setImmediate(resolve));const evidence=materials.evidenceIds(first.ref);
+  // An actual prior schema snapshot, not a second migration implementation.
+  store.db.exec(`DROP TRIGGER material_memory_forget;
+    DROP TRIGGER IF EXISTS ledger_material_memory_requests_insert; DROP TRIGGER IF EXISTS ledger_material_memory_requests_update; DROP TRIGGER IF EXISTS ledger_material_memory_requests_delete;
+    DELETE FROM storage_ledger WHERE name='material_memory_requests'; DROP INDEX material_memory_requests_due;
+    ALTER TABLE material_memory_requests RENAME TO scoped_fixture;
+    CREATE TABLE material_memory_requests(material_id TEXT PRIMARY KEY,revision TEXT NOT NULL,required_json TEXT NOT NULL,ready_at INTEGER NOT NULL,job_id TEXT,error TEXT,input_key TEXT NOT NULL,auto_authorized INTEGER NOT NULL);
+    INSERT INTO material_memory_requests SELECT material_id,revision,required_json,ready_at,job_id,error,input_key,auto_authorized FROM scoped_fixture;
+    DROP TABLE scoped_fixture;`);
+  const upgraded=new MaterialMemoryWork(store,materials);
+  assert.equal(upgraded.readyForMemory(first.ref),true);assert.deepEqual(materials.evidenceIds(first.ref),evidence);
+  assert.equal(upgraded.drain(fake.runner,true),0);assert.deepEqual(fake.cancelled,['memory-1']);assert.equal(fake.created.length,1);
+  upgraded.observe(first.id,['source-body'],{inputKey:'old-input',change:'rebuild'});assert.equal(upgraded.drain(fake.runner,true),0);
+  const next=materials.publish(draft('A newly received original'),{expectedRevision:first.revision});receive('new-input');upgraded.observe(next.id,['source-body'],{inputKey:'new-input',change:'source'});
+  assert.equal(upgraded.drain(fake.runner,true),1);
+});
+
+test('a removed job in the cancellation journal does not indefinitely block unrelated fresh work',async t=>{
+  const {materials,work,draft,receive}=fixture(t),fake=fakeRunner();
+  const first=materials.publish(draft());receive('first');work.observe(first.id,['source-body'],{inputKey:'first',change:'source'});work.drain(fake.runner,true);
+  await new Promise(resolve=>setImmediate(resolve));work.withdraw(first.id);fake.jobs.delete('memory-1');
+  const next=materials.publish(draft('Fresh original'),{expectedRevision:first.revision});receive('second');work.observe(next.id,['source-body'],{inputKey:'second',change:'source'});
+  const cancel=fake.runner.cancel;fake.runner.cancel=id=>{if(!fake.jobs.has(id))throw new StoreError('Memory job not found',404);return cancel(id);};
+  assert.equal(work.drain(fake.runner,true),1);
 });

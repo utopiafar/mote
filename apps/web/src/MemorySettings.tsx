@@ -1,4 +1,5 @@
 import {useResource} from './useResource';
+import {MemoryRecipeSelection} from './MemoryRecipeSelection';
 import {ApiError} from './api';
 import {useUnsavedChanges} from './unsaved';
 import { moteText } from '@mote/shared/i18n';
@@ -25,5 +26,6 @@ export function MemorySettings({api}:{api:Api}){
       <fieldset disabled={busy}><legend>{moteText("每次披露的内容量")}</legend><div className="memory-settings-grid">{([['drainWindows',moteText("每轮积压处理窗口上限"),1,1000],['batchCharacters',moteText("提取批次字符上限"),256,12000],['recentTurns',moteText("至少保留近期对话轮数"),2,20],['contextCharacters',moteText("对话上下文字符上限"),4000,60000],['summaryCharacters',moteText("工作记忆字符上限"),1000,12000]] as const).map(([key,label,min,max])=><label key={key}>{label}<input type="number" min={min} max={max} step="1" required value={draft[key]} onChange={e=>{setSaved(false);setDraft({...draft,[key]:Number(e.target.value)});}}/></label>)}</div></fieldset>
       <p>{moteText("记忆以文本保存，按“概览 → 内容与边界 → 原始证据”逐层展开，全文索引可从文本重建。自动生成的长期记忆需要你确认。提取轮次启动后，按窗口持续处理已圈定的积压，每轮窗口上限控制成本。")}</p><button className="button primary" disabled={busy} type="submit">{busy?moteText("正在保存…"):moteText("保存记忆设置")}</button>
     </form>}
+    <MemoryRecipeSelection api={api}/>
   </section>;
 }
