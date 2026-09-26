@@ -20,6 +20,14 @@ export const defaultLifecycleSettings:LifecycleSettings={
   working:{enabled:true,intervalHours:1,minChanges:8,maxItems:20},
   drainWindows:100,batchCharacters:12000,recentTurns:8,contextCharacters:24000,summaryCharacters:6000,
 };
+/** Connector initialization can receive originals before the lifecycle runtime
+ * exists. Consult persisted policy (or its declared initial default), not a
+ * closure over a later-created service. */
+export function automaticMemoryExtractionEnabled(store:Store):boolean {
+  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_lifecycle_settings'").get())return defaultLifecycleSettings.extraction.enabled;
+  const row=store.db.prepare('SELECT json FROM memory_lifecycle_settings WHERE id=1').get() as {json:string}|undefined;
+  return row?lifecycleSettingsSchema.parse(JSON.parse(row.json)).extraction.enabled:defaultLifecycleSettings.extraction.enabled;
+}
 export type LifecycleWindow={id:string;version:string;from:number;through:number;ids:string[];startedAt:number;settings:LifecycleSettings;checkpoint?:string};
 type State={stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
 export type LifecycleExecution={operationId:string;jobId:string;signal:AbortSignal;interrupted:()=>boolean;commit:<T>(write:()=>T)=>T};

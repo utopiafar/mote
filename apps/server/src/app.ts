@@ -50,7 +50,7 @@ import { MaterialMemoryWork } from './material-memory-work.js';
 import { MaterialOrganizerRuntime } from './material-organizers.js';
 import { MaterialStore } from './materials.js';
 import { MediaAssets } from './media-assets.js';
-import { MemoryLifecycle,type LifecycleExtension } from './memory-lifecycle.js';
+import { MemoryLifecycle,automaticMemoryExtractionEnabled,type LifecycleExtension } from './memory-lifecycle.js';
 import { MemoryPipeline } from './memory-pipeline.js';
 import { MemoryReviewCache } from './memory-review-cache.js';
 import { reviewMemory } from './memory-review.js';
@@ -124,7 +124,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   await diagnostics.init();
   const executor=new ExecutionEngine(store);
   backendContext.provide('moteExecution',executor);
-  const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>lifecycle.settings().extraction.enabled);
+  const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>automaticMemoryExtractionEnabled(store));
   const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor,materialMemoryWork);await sourcePipelines.ready;
   const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources),ingress=new IngressService(store,sources,files);const fileEvidence=new FileEvidenceRequests(sources);
   const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));

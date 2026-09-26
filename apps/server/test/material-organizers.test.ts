@@ -83,8 +83,8 @@ test('ordinary source-item work pins a declared recipe and fails closed without 
 
 test('ordinary material revisions and retirement update the fenced Memory request',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-material-memory-organizer-'));
-  const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
-  const memoryWork=new MaterialMemoryWork(store,materials);
+  const store=new Store(directory),materials=new MaterialStore(store),memoryWork=new MaterialMemoryWork(store,materials);
+  const sources=new SourceStore(store,undefined,memoryWork.inputs);
   const organizers=new MaterialOrganizerRuntime(store,materials,[],undefined,memoryWork);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'fixture-memory-source',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
@@ -112,10 +112,10 @@ test('ordinary material revisions and retirement update the fenced Memory reques
 
 test('installing organizers over an existing source archive backfills readable materials without authorizing model work',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-existing-source-memory-'));
-  const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
+  const store=new Store(directory),materials=new MaterialStore(store),work=new MaterialMemoryWork(store,materials),sources=new SourceStore(store,undefined,work.inputs);
   sources.register({id:'fixture-existing',name:'Generated archive',kind:'custom',deviceId:'fixture',platform:'import',retention:'archive'});
   await sources.upsert('fixture-existing',{externalId:'old',revision:'1',observedAt:at(0),text:'Generated existing original',kind:'message',layer:'original'});
-  const work=new MaterialMemoryWork(store,materials),organizers=new MaterialOrganizerRuntime(store,materials,[],undefined,work);
+  const organizers=new MaterialOrganizerRuntime(store,materials,[],undefined,work);
   t.after(async()=>{await organizers.close();store.close();rmSync(directory,{recursive:true,force:true});});
   for(let i=0;i<8;i++)await organizers.tick();
   const old=materials.get(materialId('fixture-existing','old'))!;assert.ok(old);

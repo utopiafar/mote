@@ -242,7 +242,7 @@ export class SourceArchive {
     }
     db.prepare('DELETE FROM source_archive_recovery_groups WHERE source_id=?').run(sourceId);
     const groupCheckpoints=Object.fromEntries([...touched].map(group=>[group,this.indexedCheckpoint(sourceId,group)]));
-    return {checkpoint:archiveHash([sourceId,batch,groupCheckpoints]),groups:[...touched],groupCheckpoints,
+    return {checkpoint:archiveHash([sourceId,batch,groupCheckpoints]),groups:[...touched],changedGroups:[...changes.keys()],groupCheckpoints,
       receipts:versions.map(({item,duplicate})=>({id:sourceReceiptId(sourceId,item),sourceId,externalId:item.externalId,revision:item.revision,duplicate}))};
   }
   /** The index and receipt are committed together. No file journal ACK is needed. */

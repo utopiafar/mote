@@ -2,6 +2,7 @@ import {z} from 'zod';
 import type {Store} from './store.js';
 import type {MaterialStore} from './materials.js';
 import {materialDependencyStatus} from './material-readiness.js';
+import {MemoryInputAuthorization} from './memory-input-authorization.js';
 
 const requiredSchema=z.array(z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._/-]*$/)).min(1).max(64)
   .refine(values=>new Set(values).size===values.length,'Duplicate material dependency');
@@ -26,7 +27,9 @@ export type MaterialMemoryObservation={
  * of permission to start paid automatic work; explicit jobs use ready evidence. */
 export class MaterialMemoryWork {
   private readonly active=new Set<string>();
+  readonly inputs:MemoryInputAuthorization;
   constructor(private readonly store:Store,private readonly materials:MaterialStore,private readonly now=Date.now,private readonly automaticEnabled=()=>true){
+    this.inputs=new MemoryInputAuthorization(store,automaticEnabled,now);
     store.db.exec(`CREATE TABLE IF NOT EXISTS material_memory_requests(
       material_id TEXT PRIMARY KEY,revision TEXT NOT NULL,required_json TEXT NOT NULL,ready_at INTEGER NOT NULL,
       job_id TEXT,error TEXT,input_key TEXT NOT NULL DEFAULT '',auto_authorized INTEGER NOT NULL DEFAULT 0);
@@ -35,8 +38,10 @@ export class MaterialMemoryWork {
     const columns=new Set((store.db.prepare('PRAGMA table_info(material_memory_requests)').all() as {name:string}[]).map(row=>row.name));
     if(!columns.has('input_key'))store.db.exec("ALTER TABLE material_memory_requests ADD COLUMN input_key TEXT NOT NULL DEFAULT ''");
     if(!columns.has('auto_authorized'))store.db.exec('ALTER TABLE material_memory_requests ADD COLUMN auto_authorized INTEGER NOT NULL DEFAULT 0');
-    store.db.exec(`CREATE TRIGGER IF NOT EXISTS material_memory_forget BEFORE DELETE ON material_heads BEGIN
+    store.db.exec(`DROP TRIGGER IF EXISTS material_memory_forget;
+      CREATE TRIGGER material_memory_forget BEFORE DELETE ON material_heads BEGIN
       INSERT OR IGNORE INTO material_memory_revocations SELECT job_id,material_id,revision FROM material_memory_requests WHERE material_id=old.id AND job_id IS NOT NULL;
+      DELETE FROM memory_input_authorizations WHERE source_id=old.source_id AND input_key IN (SELECT input_key FROM material_memory_requests WHERE material_id=old.id);
       DELETE FROM material_memory_requests WHERE material_id=old.id;
     END;`);
     // Retire the old archive-only queue. Unknown historical authorization never
@@ -71,7 +76,7 @@ export class MaterialMemoryWork {
     const requiredJson=JSON.stringify(keys),readyAt=this.now()+settleMs;
     this.transaction(()=>{
       const prior=this.row(materialId);
-      const automatic=this.automaticEnabled()&&observation.automatic!==false;
+      const automatic=this.automaticEnabled()&&observation.automatic!==false&&this.inputs.available(material.origin.sourceId,inputKey,prior?.job_id??undefined);
       const authorized=automatic&&(prior?.input_key===inputKey?
         Boolean(prior.auto_authorized&&!prior.job_id):observation.change==='source');
       if(prior?.revision===material.revision&&prior.required_json===requiredJson){
@@ -91,7 +96,7 @@ export class MaterialMemoryWork {
     this.transaction(()=>{const prior=this.row(materialId);if(prior)this.revoke(prior);
       this.store.db.prepare('DELETE FROM material_memory_requests WHERE material_id=?').run(materialId);});
   }
-  /** Used only for source-item Material memory exposure. A ref to any old
+  /** Shared readiness for automatic and explicit Memory work. A ref to any old
    * revision, an unconfigured dependency, or a missing text anchor fails closed. */
   readyForMemory(ref:string):boolean {
     try{
@@ -110,7 +115,7 @@ export class MaterialMemoryWork {
       const row=this.store.db.prepare('SELECT * FROM material_memory_requests WHERE job_id=? AND auto_authorized=1').get(id) as WorkRow|undefined;
       if(!row||!this.automaticEnabled()||!allowed(row.material_id))return;
       const material=this.materials.get(row.material_id);
-      if(material?.revision!==row.revision||!this.readyForMemory(material.ref))return;
+      if(material?.revision!==row.revision||!this.readyForMemory(material.ref)||!this.inputs.available(material.origin.sourceId,row.input_key,id))return;
       return runner.run(id);
     }).catch(()=>{
       this.store.db.prepare("UPDATE material_memory_requests SET error='memory_run_failed' WHERE job_id=?").run(id);
@@ -133,6 +138,9 @@ export class MaterialMemoryWork {
       if(!allowed(row.material_id)){db.prepare('UPDATE material_memory_requests SET ready_at=? WHERE material_id=?').run(this.now()+RETRY_DELAY_MS,row.material_id);continue;}
       const material=this.materials.get(row.material_id);
       if(!material){this.withdraw(row.material_id);continue;}
+      if(!this.inputs.available(material.origin.sourceId,row.input_key,row.job_id!)){
+        this.revoke(row);db.prepare('UPDATE material_memory_requests SET auto_authorized=0,job_id=NULL WHERE material_id=? AND revision=?').run(row.material_id,row.revision);continue;
+      }
       if(material.revision!==row.revision){this.observe(row.material_id,requiredSchema.parse(JSON.parse(row.required_json)),{inputKey:row.input_key||'unknown',change:'rebuild'});continue;}
       if(!this.readyForMemory(material.ref)){
         this.revoke(row);
@@ -154,6 +162,9 @@ export class MaterialMemoryWork {
       if(!allowed(row.material_id)){db.prepare('UPDATE material_memory_requests SET ready_at=? WHERE material_id=?').run(this.now()+RETRY_DELAY_MS,row.material_id);continue;}
       const material=this.materials.get(row.material_id);
       if(!material){this.withdraw(row.material_id);continue;}
+      if(!this.inputs.available(material.origin.sourceId,row.input_key)){
+        db.prepare('UPDATE material_memory_requests SET auto_authorized=0 WHERE material_id=? AND revision=?').run(row.material_id,row.revision);continue;
+      }
       if(material.revision!==row.revision){this.observe(row.material_id,requiredSchema.parse(JSON.parse(row.required_json)),{inputKey:row.input_key||'unknown',change:'rebuild'});continue;}
       if(!this.readyForMemory(material.ref)){
         db.prepare('UPDATE material_memory_requests SET ready_at=? WHERE material_id=? AND revision=?').run(this.now()+RETRY_DELAY_MS,row.material_id,row.revision);
@@ -167,7 +178,12 @@ export class MaterialMemoryWork {
       if(!this.readyForMemory(material.ref)){
         db.prepare('INSERT OR IGNORE INTO material_memory_revocations VALUES(?,?,?)').run(job.id,row.material_id,row.revision);continue;
       }
-      const claimed=db.prepare('UPDATE material_memory_requests SET job_id=?,error=NULL WHERE material_id=? AND revision=? AND job_id IS NULL').run(job.id,row.material_id,row.revision).changes;
+      const claimed=this.transaction(()=>{
+        const current=this.row(row.material_id);
+        if(!current?.auto_authorized||current.revision!==row.revision||current.input_key!==row.input_key||current.job_id)return false;
+        if(!this.inputs.claim(material.origin.sourceId,row.input_key,job.id))return false;
+        return Boolean(db.prepare('UPDATE material_memory_requests SET job_id=?,error=NULL WHERE material_id=? AND revision=? AND job_id IS NULL').run(job.id,row.material_id,row.revision).changes);
+      });
       if(!claimed){db.prepare('INSERT OR IGNORE INTO material_memory_revocations VALUES(?,?,?)').run(job.id,row.material_id,row.revision);continue;}
       // create() may return a completed or failed receipt after a crash before
       // this queue stored its job id. Never run that receipt a second time.

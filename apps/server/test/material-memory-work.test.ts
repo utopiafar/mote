@@ -4,12 +4,15 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {Store} from '../src/store.js';
+import {SourceStore} from '../src/sources.js';
 import {MaterialStore,materialId,type MaterialDraft} from '../src/materials.js';
 import {MaterialMemoryWork,type MaterialMemoryRunner} from '../src/material-memory-work.js';
 
 function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-material-memory-')),store=new Store(directory),materials=new MaterialStore(store);
   let now=1000;const work=new MaterialMemoryWork(store,materials,()=>now);
+  new SourceStore(store).register({id:'generated-source',name:'Generated',kind:'custom',deviceId:'fixture',platform:'import'});
+  const receive=(inputKey:string,automatic=true)=>{store.db.exec('BEGIN IMMEDIATE');try{work.inputs.receive({sourceId:'generated-source',inputKey},automatic);store.db.exec('COMMIT');}catch(error){store.db.exec('ROLLBACK');throw error;}};
   t.after(async()=>{await new Promise(resolve=>setImmediate(resolve));store.close();rmSync(directory,{recursive:true,force:true});});
   const draft=(text='Generated material body',artifacts:MaterialDraft['artifacts']=[{key:'source-body',state:'ready'},{key:'extracted-text',state:'pending'}],anchor=true):MaterialDraft=>({
     id:materialId('generated-source','generated-item'),kind:'mote.file',schemaVersion:1,title:'Generated file',
@@ -19,7 +22,7 @@ function fixture(t:import('node:test').TestContext){
     coverage:{state:'partial',reason:'processing_pending'},artifacts,
     fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'},
   });
-  return {store,materials,work,draft,advance:(ms:number)=>{now+=ms;}};
+  return {store,materials,work,draft,receive,advance:(ms:number)=>{now+=ms;}};
 }
 
 function fakeRunner(){
@@ -34,9 +37,9 @@ function fakeRunner(){
 }
 
 test('raw input grant survives initial processing, but completed input cannot be replayed by a derived revision',async t=>{
-  const {materials,work,draft}=fixture(t),fake=fakeRunner();
+  const {materials,work,draft,receive}=fixture(t),fake=fakeRunner();
   const first=materials.publish(draft('',[{key:'source-body',state:'pending'}]));
-  work.observe(first.id,['source-body'],{inputKey:'raw-1',change:'source'});
+  receive('raw-1');work.observe(first.id,['source-body'],{inputKey:'raw-1',change:'source'});
   assert.equal(work.drain(fake.runner,true),0);
   const processed=materials.publish(draft('Generated first extraction'),{expectedRevision:first.revision});
   work.observe(processed.id,['source-body'],{inputKey:'raw-1',change:'rebuild'});
@@ -53,25 +56,25 @@ test('raw input grant survives initial processing, but completed input cannot be
   work.observe(rebuilt.id,['source-body'],{inputKey:'raw-1',change:'source'});
   assert.equal(work.drain(fake.runner,true),0);
   const revised=materials.publish(draft('Generated new original'),{expectedRevision:rebuilt.revision});
-  work.observe(revised.id,['source-body'],{inputKey:'raw-2',change:'source'});
+  receive('raw-2');work.observe(revised.id,['source-body'],{inputKey:'raw-2',change:'source'});
   assert.equal(work.drain(fake.runner,true),1);
   assert.equal(fake.created.length,2);
 });
 
 test('installation and later enabling do not grant historical work; revocation runs even while disabled',async t=>{
-  const {store,materials,work,draft}=fixture(t),fake=fakeRunner();
+  const {store,materials,work,draft,receive}=fixture(t),fake=fakeRunner();
   const first=materials.publish(draft());
   work.observe(first.id,['source-body'],{inputKey:'old-raw',change:'rebuild'});
   assert.equal(work.readyForMemory(first.ref),true);
   assert.equal(work.drain(fake.runner,true),0);
   const second=materials.publish(draft('Received while disabled'),{expectedRevision:first.revision});
-  work.observe(second.id,['source-body'],{inputKey:'new-raw',change:'source',automatic:false});
+  receive('new-raw',false);work.observe(second.id,['source-body'],{inputKey:'new-raw',change:'source',automatic:false});
   work.observe(second.id,['source-body'],{inputKey:'new-raw',change:'rebuild',automatic:true});
   assert.equal(work.drain(fake.runner,true),0);
   const recovered=new MaterialMemoryWork(store,materials);
   assert.equal(recovered.drain(fake.runner,true),0,'restart does not manufacture a missing grant');
   const third=materials.publish(draft('Fresh enabled original'),{expectedRevision:second.revision});
-  recovered.observe(third.id,['source-body'],{inputKey:'fresh-raw',change:'source'});
+  receive('fresh-raw');recovered.observe(third.id,['source-body'],{inputKey:'fresh-raw',change:'source'});
   assert.equal(recovered.drain(fake.runner,true),1);
   await new Promise(resolve=>setImmediate(resolve));
   recovered.observe(third.id,['source-body'],{inputKey:'fresh-raw',change:'rebuild',automatic:false});
@@ -81,8 +84,8 @@ test('installation and later enabling do not grant historical work; revocation r
 });
 
 test('forgetting a material removes even unscheduled authorization state and cancels its queued job',async t=>{
-  const {store,materials,work,draft}=fixture(t),fake=fakeRunner();
-  const first=materials.publish(draft());work.observe(first.id,['source-body'],{inputKey:'raw',change:'source'});
+  const {store,materials,work,draft,receive}=fixture(t),fake=fakeRunner();
+  const first=materials.publish(draft());receive('raw');work.observe(first.id,['source-body'],{inputKey:'raw',change:'source'});
   work.drain(fake.runner,true);await new Promise(resolve=>setImmediate(resolve));
   materials.forget(first.id);work.drain(fake.runner,false);
   assert.deepEqual(fake.cancelled,['memory-1']);
@@ -93,8 +96,8 @@ test('forgetting a material removes even unscheduled authorization state and can
 });
 
 test('a revoked grant cannot start a job between queue claim and asynchronous launch',async t=>{
-  const {materials,work,draft}=fixture(t),fake=fakeRunner();
-  const material=materials.publish(draft());work.observe(material.id,['source-body'],{inputKey:'raw',change:'source'});
+  const {materials,work,draft,receive}=fixture(t),fake=fakeRunner();
+  const material=materials.publish(draft());receive('raw');work.observe(material.id,['source-body'],{inputKey:'raw',change:'source'});
   assert.equal(work.drain(fake.runner,true),1);
   work.observe(material.id,['source-body'],{inputKey:'raw',change:'rebuild',automatic:false});
   await new Promise(resolve=>setImmediate(resolve));
@@ -120,9 +123,9 @@ test('named ready artifact admits partial material; pending, failed, missing, de
 });
 
 test('queue resumes after restart, pins revision and cancels work after supersession or withdrawal',async t=>{
-  const {store,materials,work,draft,advance}=fixture(t),fake=fakeRunner();
+  const {store,materials,work,draft,advance,receive}=fixture(t),fake=fakeRunner();
   const first=materials.publish(draft('Generated version one'));
-  work.observe(first.id,['source-body'],{inputKey:first.revision,change:'source'},100);
+  receive(first.revision);work.observe(first.id,['source-body'],{inputKey:first.revision,change:'source'},100);
   assert.equal(work.drain(fake.runner,true),0);assert.equal(fake.created.length,0);
   advance(100);assert.equal(work.drain(fake.runner,true),1);
   await new Promise(resolve=>setImmediate(resolve));
@@ -133,7 +136,7 @@ test('queue resumes after restart, pins revision and cancels work after superses
   await new Promise(resolve=>setImmediate(resolve));
   assert.deepEqual(fake.created,[first.ref]);assert.equal(fake.ran.length,2);
   const second=materials.publish(draft('Generated version two'),{expectedRevision:first.revision});
-  recovered.observe(second.id,['source-body'],{inputKey:second.revision,change:'source'});
+  receive(second.revision);recovered.observe(second.id,['source-body'],{inputKey:second.revision,change:'source'});
   assert.equal(recovered.readyForMemory(first.ref),false);
   assert.equal(recovered.readyForMemory(second.ref),true);
   assert.equal(recovered.drain(fake.runner,true),1);
@@ -144,8 +147,8 @@ test('queue resumes after restart, pins revision and cancels work after superses
 });
 
 test('retired material and disabled scheduling cannot authorize memory',t=>{
-  const {materials,work,draft}=fixture(t),fake=fakeRunner();
-  const material=materials.publish(draft());work.observe(material.id,['source-body'],{inputKey:material.revision,change:'source'});
+  const {materials,work,draft,receive}=fixture(t),fake=fakeRunner();
+  const material=materials.publish(draft());receive(material.revision);work.observe(material.id,['source-body'],{inputKey:material.revision,change:'source'});
   assert.equal(work.drain(fake.runner,false),0);assert.equal(fake.created.length,0);
   materials.retire(material.id,{expectedRevision:material.revision});
   assert.equal(work.readyForMemory(material.ref),false);
@@ -153,21 +156,21 @@ test('retired material and disabled scheduling cannot authorize memory',t=>{
 });
 
 test('completed, failed and cancelled receipts do not starve new materials with a one-job drain limit',t=>{
-  const {materials,work,draft}=fixture(t),fake=fakeRunner();
+  const {materials,work,draft,receive}=fixture(t),fake=fakeRunner();
   const publish=(externalId:string)=>materials.publish({...draft(`Body for ${externalId}`),
     id:materialId('generated-source',externalId),origin:{sourceId:'generated-source',externalId}});
-  const first=publish('first');work.observe(first.id,['source-body'],{inputKey:first.revision,change:'source'});
+  const first=publish('first');receive(first.revision);work.observe(first.id,['source-body'],{inputKey:first.revision,change:'source'});
   assert.equal(work.drain(fake.runner,true,1),1);
   fake.jobs.get('memory-1')!.status='completed';
-  const second=publish('second');work.observe(second.id,['source-body'],{inputKey:second.revision,change:'source'});
+  const second=publish('second');receive(second.revision);work.observe(second.id,['source-body'],{inputKey:second.revision,change:'source'});
   assert.equal(work.drain(fake.runner,true,1),1);
   assert.deepEqual(fake.created,[first.ref,second.ref]);
   fake.jobs.get('memory-2')!.status='failed';
-  const third=publish('third');work.observe(third.id,['source-body'],{inputKey:third.revision,change:'source'});
+  const third=publish('third');receive(third.revision);work.observe(third.id,['source-body'],{inputKey:third.revision,change:'source'});
   assert.equal(work.drain(fake.runner,true,1),1);
   assert.deepEqual(fake.created,[first.ref,second.ref,third.ref]);
   fake.jobs.get('memory-3')!.status='cancelled';
-  const fourth=publish('fourth');work.observe(fourth.id,['source-body'],{inputKey:fourth.revision,change:'source'});
+  const fourth=publish('fourth');receive(fourth.revision);work.observe(fourth.id,['source-body'],{inputKey:fourth.revision,change:'source'});
   assert.equal(work.drain(fake.runner,true,1),1);
   assert.deepEqual(fake.created,[first.ref,second.ref,third.ref,fourth.ref]);
   assert.equal(work.readyForMemory(first.ref),true);

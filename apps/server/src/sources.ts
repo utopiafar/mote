@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {sourceCapabilities,sourceConnectionSchema,sourceItemSchema,type SourceConnection,type SourceItem,type SourceItemRecord,type CaptureRecord} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
+import type {MemoryInputAuthorization} from './memory-input-authorization.js';
 
 const uuid=(text:string)=>{const h=createHash('sha256').update(text).digest('hex');return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`;};
 type Head={capture_id:string;observed_at:string;deleted:number};
@@ -10,7 +11,7 @@ type Version={capture_id:string;hash:string};
 export class SourceStore {
   private pending=new Map<string,Promise<unknown>>();
   readonly capabilities=sourceCapabilities.clone();
-  constructor(public store:Store,public pipelines?:SourcePipelineRuntime){}
+  constructor(public store:Store,public pipelines?:SourcePipelineRuntime,private readonly memoryInputs:MemoryInputAuthorization|undefined=pipelines?.memoryWork.inputs){}
   listSources():SourceConnection[]{return (this.store.db.prepare('SELECT json FROM source_connections ORDER BY id').all() as {json:string}[]).map(r=>this.present(JSON.parse(r.json)));}
   getSource(id:string):SourceConnection {const row=this.store.db.prepare('SELECT json FROM source_connections WHERE id=?').get(id) as {json:string}|undefined;if(!row)throw new StoreError('Source not found',404);return this.present(JSON.parse(row.json));}
   register(raw:unknown):SourceConnection {
@@ -85,6 +86,7 @@ export class SourceStore {
       if(!prior){
         const head=this.store.db.prepare('SELECT * FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,item.externalId) as Head|undefined;
         this.store.db.prepare('INSERT INTO source_versions(source_id,external_id,revision,capture_id,hash) VALUES(?,?,?,?,?)').run(sourceId,item.externalId,item.revision,id,hash);
+        if(!ack.duplicate)this.memoryInputs?.receive({sourceId,inputKey:id,captureId:id},!item.deleted&&this.pipelines?.options(sourceId).memory!==false);
         if(!head||Date.parse(item.observedAt)>=Date.parse(head.observed_at)){
           this.store.db.prepare('INSERT INTO source_heads(source_id,external_id,capture_id,observed_at,deleted) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET capture_id=excluded.capture_id,observed_at=excluded.observed_at,deleted=excluded.deleted').run(sourceId,item.externalId,id,new Date(item.observedAt).toISOString(),Number(item.deleted));
           if(head){this.store.invalidateMemoryEvidence(head.capture_id);this.store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(head.capture_id,new Date().toISOString());}

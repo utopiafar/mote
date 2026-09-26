@@ -226,6 +226,8 @@ export class SourcePipelineRuntime {
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
       const archived=recipe?this.recipes.receive(recipe,this.archive,source,items,groups):this.archive.receive(source.id,items,groups);
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
+      const automatic=this.options(source.id).memory??pipeline.memory??false;
+      for(const group of archived.changedGroups)this.memoryWork.inputs.receive({sourceId:source.id,inputKey:archived.groupCheckpoints[group]},automatic);
       if(items.some(item=>item.deleted))for(const group of archived.groups)this.materials.redactUntilRebuilt(materialId(source.id,group));
       db.prepare('INSERT OR IGNORE INTO source_pipeline_bindings(source_id,pipeline_id,storage) VALUES(?,?,?)').run(source.id,pipeline.id,pipeline.storage);
       const superseded:string[]=[];
@@ -342,6 +344,7 @@ export class SourcePipelineRuntime {
     const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
       db.prepare("UPDATE source_connections SET json=json_set(json,'$.enabled',json('false')) WHERE id=?").run(sourceId);
       for(const row of db.prepare('SELECT id FROM material_heads WHERE source_id=?').all(sourceId)){this.memoryWork.withdraw(String(row.id));this.materials.forget(String(row.id));}
+      this.memoryWork.inputs.forgetSource(sourceId);
       for(const row of db.prepare('SELECT id,generation FROM source_pipeline_work WHERE source_id=?').all(sourceId) as {id:string;generation:number}[]){const id=stepId(row.id,row.generation);this.revoke(id);superseded.push(id);}
       db.prepare('DELETE FROM source_pipeline_work WHERE source_id=?').run(sourceId);
       db.exec('COMMIT');
