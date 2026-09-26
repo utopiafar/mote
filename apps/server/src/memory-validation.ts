@@ -11,7 +11,7 @@ export const validationFeedback={
   quote_evidence_undeclared:'The evidence entry ID is not in this candidate’s evidenceIds. Use only this candidate’s declared, retrieved evidence.',
   quote_length_mismatch:'The declared length differs from quote.length in UTF-16 code units. Omit length; the host computes it.',
   quote_offset_mismatch:'The quote does not match at the declared absolute UTF-16 offset. Omit offset for unique exact matching, or use the correct absolute UTF-16 offset. Never paraphrase the quote.',
-  quote_not_found:'The quote is not an exact substring of the original evidence. Copy the original verbatim, preserving whitespace, punctuation and newlines.',
+  quote_not_found:'The quote is not an exact substring of the original evidence. Copy from the supplied original, not from your previous answer. Preserve whitespace, newlines and the exact Unicode punctuation: curly double quotation marks U+201C/U+201D, curly single quotation marks U+2018/U+2019 and ASCII U+0022/U+0027 are different characters. JSON escaping must decode back to the original characters; it must not replace them. Use separate short exact evidence entries for disjoint supporting passages, even from one ID, rather than retyping a long intervening passage. Keep every substantive claim supported.',
   quote_ambiguous:'The quote matches multiple authorized positions. Use a longer unique exact quote or an explicit absolute UTF-16 offset.',
   quote_range:'A quote was outside its supplied evidence segment. Keep the entire quote within one supplied range and use an absolute UTF-16 offset in the full original text.',
   missing_quote:'When supplying evidence spans, include an exact matching quote for every ID in evidenceIds.',

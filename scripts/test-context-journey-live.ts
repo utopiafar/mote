@@ -60,6 +60,7 @@ const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'
   worktreeDiff:execFileSync('git',['diff','--stat'],{cwd:repositoryRoot,encoding:'utf8'}),cases:[]};
 if(imported)report.imported=imported;
 report.runnerHashes=Object.fromEntries(await Promise.all(['scripts/test-context-journey-live.ts','scripts/context-journey-judgment.ts','scripts/fixtures/context-journey.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
+report.agentHashes=Object.fromEntries(await Promise.all(['apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','apps/server/src/memory-profiles.ts','apps/server/src/memory-validation.ts','packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','packages/agent/dist/skills.js','packages/agent/skills/memory-extraction/SKILL.md','packages/agent/skills/coding-memory/SKILL.md'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 const cases=report.cases as Record<string,unknown>[];
 async function save(){
   if(node)report.usage=node.featureServices.usageLedger.summary('2020-01-01','2100-01-01','UTC',{},'skill',1,200);

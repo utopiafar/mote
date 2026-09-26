@@ -12,6 +12,9 @@ export interface ContextJourneyCase {
   incremental?:boolean;
 }
 export const contextJourneyCases:ContextJourneyCase[]=[
+  {id:'development-progress',channel:'coding',events:[{at:'2026-06-02T09:00:00Z',text:'今天用 Agent 做了纸舟的小功能，启动时报错，来回改了两次，现在好像能用了。提交评审时又有人说一个字段没存下来，我补了一下。'},{at:'2026-06-02T09:04:00Z',role:'tool_result',text:'Generated change receipt: two files updated; review comment resolved. No patch diff or test output is included in this transcript.'}],question:'纸舟这次开发记录能找回什么，已经足够沉淀一条具体修复经验了吗？',rubric:'开发经过可从原件或 observation 找回，但两次修改、字段未保存和评审已解决没有具体故障机制、修复方法或权衡，不能用 session scope 包装成长久 coding memory。不能补造技术细节或把好像能用说成已通过测试。允许零派生卡，不要求索引每次操作。',observationOnly:true},
+  {id:'development-personal-meaning',channel:'note',events:[{at:'2026-06-03T11:00:00Z',text:'上午在折纸小站加了个按钮，报错后又改了改，终于能点了。反复折腾得挺烦，我到晚上还觉得累。'},{at:'2026-06-03T12:00:00Z',text:'不过妈妈今天第一次用我做的小站看到了家里的老照片，还给我发语音说喜欢。我一下觉得这几天没白忙，这是我第一次做的东西真被家里人用起来，挺开心。'}],question:'这次做折纸小站给我留下什么感受，哪些开发细节还不能算技术经验？',rubric:'必须保留反复折腾时烦和累、妈妈第一次使用自己的作品看老照片并说喜欢、本人觉得付出值得和开心的个人意义。不要求这些经历可泛化。不把加按钮后报错、改到能点击另拆成长久 coding 决策或经验；可以作为理解感受的简短背景。不得推断具体修复原因、长期职业偏好或永久亲密程度。',requiredMemoryEvents:[0,1]},
+  {id:'development-specific-lesson',channel:'note',events:[{at:'2026-06-04T10:00:00Z',text:'纸桥上传器这次丢队列项的原因找到了：我在发出请求时就删本地队列，响应在路上断掉后本地也没有可重试项。现在决定只在收到服务器的持久化确认后删本地项，代价是暂时要多占一份存储。模拟在响应到达前断网，重启后该项还在并能继续上传；服务器按同一个上传 ID 去重，测试里没有多一份文件。只测了这个故障点，磁盘写满还没测。'},{at:'2026-06-04T11:00:00Z',text:'今天顺便给纸桥的工具栏换了图标，按钮位置也调了一下，目前看着正常。'}],question:'纸桥上传器这次可以保留什么有依据的经验，适用范围和验证边界是什么？',rubric:'保留删除队列过早导致确认丢失后无法重试的机制，持久化确认后删除的决定及存储代价，以及仅模拟响应前断网/重启/同上传 ID 去重的验证边界。不能宣称所有断点或磁盘满已验证，不外推成所有软件的永久规则。改图标调位置只是事件资料，不能单独成为长期 coding memory。',requiredMemoryEvents:[0]},
   {id:'capture-and-recall',channel:'note',events:[
     {at:'2026-05-01T11:00:00Z',text:'散步回来又忘了路上想到什么。每次要解锁再点好几下，我就想着回家再记，结果现在只记得跟那个小灯有关。要是能随手说两句就好了。刚才把花浇了。'},
     {at:'2026-05-03T12:00:00Z',text:'试了桌面上那个直接录音的入口，下午记了三小段，确实顺手。今天也刚好比较闲，别急着说我养成什么习惯，之前也有这种兴头。'},

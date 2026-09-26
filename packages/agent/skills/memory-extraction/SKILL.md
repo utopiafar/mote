@@ -1,7 +1,7 @@
 ---
 name: memory-extraction
 description: Extract proposed memories from an explicit evidence batch.
-version: 3.2.0
+version: 3.3.0
 ---
 
 # Memory extraction
@@ -27,3 +27,5 @@ When the original supplies an explicit validity boundary, include `validFrom` an
 ## Owner context, delegated tasks and project attribution
 
 The host supplies the active owner-context policy and output contract for this operation. Apply that policy to both extraction and independent review. Do not replace it with a source-specific definition of personal memory. Coding is a semantic choice, not proof of a Coding Agent source or a resolved repository. A source without host project identity can support a scoped coding claim, using session scope for limited or unresolved applicability and the evidenced project name in prose. Never invent provider, session or repository identifiers.
+
+Routine development progress is not a selected coding lesson merely because the owner reports it. Feature changes, errors, edits and usable-looking outcomes stay in the archive or a concise observation unless the evidence supports a consequential choice with rationale, a specific failure mechanism/remedy, or an engineering preference with scope. Session scope and a generic future-debugging rationale cannot supply missing substance. Preserve separately expressed personal significance, feelings and milestones with their event context; those do not need to teach a transferable technique. Follow the host policy when deciding this boundary.

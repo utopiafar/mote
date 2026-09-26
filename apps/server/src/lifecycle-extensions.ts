@@ -30,7 +30,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
       DELETE FROM memory_lifecycle_state WHERE id IN ('extraction','insights');
       INSERT INTO settings VALUES('layered-extraction-v3','1'); COMMIT;`);
   }
-  lifecycle.register({id:'extraction',version:'3.2.0',stream:'artifact',async run(window,checkpoint,execution){
+  lifecycle.register({id:'extraction',version:'3.3.0',stream:'artifact',async run(window,checkpoint,execution){
     let job=window.checkpoint?pipeline.get(window.checkpoint):undefined;
     if(!job){
       if(!semanticArtifacts)return;
