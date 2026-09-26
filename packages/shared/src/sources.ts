@@ -60,10 +60,11 @@ export const sourceConnectionSchema=z.object({
 }).strict();
 export type SourceConnection=z.infer<typeof sourceConnectionSchema>&{capabilities?:SourceCapabilities;createdAt:string;updatedAt:string;status?:{state:'idle'|'syncing'|'error'|'permission_required';code?:string;lastSyncAt?:string}};
 export const calendarSchema=z.object({start:timestamp,end:timestamp,allDay:z.boolean(),timeZone:z.string().max(100).optional(),status:z.enum(['confirmed','tentative','cancelled']).default('confirmed')}).strict().refine(v=>Date.parse(v.end)>=Date.parse(v.start),{message:'Calendar end must not precede start'});
+export const sourceItemKinds=['calendar','file','event','message','metric','memory'] as const;
 export const sourceItemSchema=z.object({
   externalId:z.string().min(1).max(1000),revision:z.string().min(1).max(200),observedAt:timestamp.describe('Actual source observation time. For document imports without an explicit source observation timestamp, copy the request importedAt exactly. Never substitute recordedAt, createdAt, modifiedAt, or an event date.'),modifiedAt:timestamp.optional(),
   title:z.string().max(2000).default(''),text:z.string().max(100000).default(''),
-  uri:z.string().max(4000).optional(),kind:z.enum(['calendar','file','event','message','metric','memory']),
+  uri:z.string().max(4000).optional(),kind:z.enum(sourceItemKinds),
   layer:z.enum(['snapshot','reference','original','derived']),mimeType:z.string().max(200).optional(),calendar:calendarSchema.optional(),
   deleted:z.boolean().default(false),
   metadata:sourceMetadataSchema.optional(),

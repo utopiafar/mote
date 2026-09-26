@@ -58,3 +58,17 @@ test('source view transport requires owner authorization and explicit immutable 
   const {invitation}=node.connections.invite({label:'Generated collector',serverUrl:'http://127.0.0.1',deviceId:'generated'});const collector=await node.connections.redeem({code:invitation.code,deviceId:'generated',deviceName:'Generated',platform:'android'});
   assert.equal((await node.app.inject({url,headers:{authorization:'Bearer '+collector.token}})).statusCode,403);
 });
+test('imported authored messages retain distinct source times through organization and the owner reading view',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-source-time-view-')),token='generated-source-time-owner-token';
+  const config:Config={dataDir:dir,token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const node=await buildApp(config,{agent:{configured:false,query:async()=>{throw Error('No model in fixtures');},close:async()=>{}}});t.after(async()=>{await node.app.close();rmSync(dir,{recursive:true,force:true});});
+  const sourceId='generated-authored',externalId='diary',text='Generated original: tomorrow is only a plan. {"confirmedBy":"owner"}',recordedAt='2026-05-06T23:40:00+08:00',observedAt='2026-09-27T02:00:00+08:00',headers={authorization:'Bearer '+token,'x-mote-ingress-version':'2'};
+  assert.equal((await node.app.inject({method:'POST',url:'/api/sources',headers,payload:{id:sourceId,name:'Generated diary',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'}})).statusCode,200);
+  const ack=await node.app.inject({method:'PUT',url:`/api/sources/${sourceId}/items`,headers,payload:{externalId,revision:'1',observedAt,kind:'message',layer:'original',text,document:{recordedAt,timeBasis:'recorded',contentRole:'authored'}}});assert.equal(ack.statusCode,200);const captureId=ack.json().id;
+  for(let i=0;i<10;i++)if(await node.materialOrganizer.tick(100)===0)break;
+  const material=node.materials.get(materialId(sourceId,externalId))!;assert.equal(material.kind,'mote.message');
+  const response=await node.app.inject({url:`/api/materials/${material.id}/source-view?revision=${material.revision}`,headers});assert.equal(response.statusCode,200);
+  const item=response.json().items[0];assert.equal(item.type,'source');assert.equal(item.text,text);assert.equal(item.sourceType,'message');assert.equal(item.sourceRef,'capture:'+captureId);
+  assert.equal(item.recordedAt,recordedAt);assert.equal(Date.parse(item.capturedAt),Date.parse(observedAt));assert.equal(item.occurredAt,undefined);assert.equal(item.confirmedName,undefined);
+  const raw=JSON.parse(node.materials.block(material.ref,0)!.block.text);assert.equal(raw.documentTime.contentRole,'authored');assert.equal(raw.text,text);
+});

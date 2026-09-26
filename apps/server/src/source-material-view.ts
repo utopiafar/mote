@@ -1,21 +1,21 @@
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
-import {fileSpeakerAttributionSchema} from '@mote/shared';
+import {fileSpeakerAttributionSchema,documentSchema,sourceItemKinds} from '@mote/shared';
 import {MaterialStore,formatMaterialRef,type MaterialStoredBlock} from './materials.js';
 import {StoreError} from './store.js';
 
 // Presentation of the source-item organizer's declared block formats, never
 // intent inference. Unknown structures remain literal text in the fallback.
 const speech=z.object({speaker:z.string().max(100),speakerAttribution:fileSpeakerAttributionSchema.optional(),text:z.string().max(250000)}).strict();
-const source=z.object({captureId:z.string().uuid(),capturedAt:z.string().datetime({offset:true}),source:z.literal('file'),appName:z.string().max(300).optional(),text:z.string().max(250000).optional()}).passthrough();
-type Display={type:'text'|'source'|'asset'|'raw';text:string;speaker?:string;confirmedName?:string;capturedAt?:string;appName?:string;sourceRef?:string;startMs?:number;endMs?:number;mimeType?:string};
+const source=z.object({captureId:z.string().uuid(),capturedAt:z.string().datetime({offset:true}),source:z.enum(sourceItemKinds),appName:z.string().max(300).optional(),text:z.string().max(250000).optional(),documentTime:documentSchema.pick({recordedAt:true,occurredAt:true,timeBasis:true,contentRole:true}).strict().optional()}).passthrough();
+type Display={type:'text'|'source'|'asset'|'raw';text:string;speaker?:string;confirmedName?:string;capturedAt?:string;recordedAt?:string;occurredAt?:string;appName?:string;sourceRef?:string;sourceType?:string;startMs?:number;endMs?:number;mimeType?:string};
 function display(block:MaterialStoredBlock):Display {
   if(block.kind==='asset')return {type:'asset',text:'',mimeType:block.asset?.mimeType};
   const timing=typeof block.locator?.startMs==='number'&&Number.isFinite(block.locator.startMs)&&block.locator.startMs>=0?{startMs:block.locator.startMs,...(typeof block.locator.endMs==='number'&&Number.isFinite(block.locator.endMs)?{endMs:block.locator.endMs}:{})}:{};
   if(block.format==='json'){
     let json:unknown;try{json=JSON.parse(block.text);}catch{return {type:'raw',text:block.text,...timing};}
     if(block.id==='source-record'){
-      const value=source.safeParse(json);if(value.success)return {type:'source',text:value.data.text??'',capturedAt:value.data.capturedAt,appName:value.data.appName,sourceRef:'capture:'+value.data.captureId};
+      const value=source.safeParse(json);if(value.success)return {type:'source',text:value.data.text??'',capturedAt:value.data.capturedAt,recordedAt:value.data.documentTime?.recordedAt,occurredAt:value.data.documentTime?.occurredAt,appName:value.data.appName,sourceRef:'capture:'+value.data.captureId,sourceType:value.data.source};
     }
     if(typeof block.locator?.chunkId==='string'){
       const value=speech.safeParse(json);if(value.success)return {type:'text',text:value.data.text,speaker:value.data.speaker,...(value.data.speakerAttribution?{confirmedName:value.data.speakerAttribution.name}:{}),...timing};
@@ -27,7 +27,7 @@ function display(block:MaterialStoredBlock):Display {
 const query=z.object({revision:z.string().regex(/^[a-f0-9]{64}$/),block:z.coerce.number().int().nonnegative().default(0),offset:z.coerce.number().int().nonnegative().max(250000).default(0),length:z.coerce.number().int().min(2).max(8000).default(4000)}).strict();
 export function sourceMaterialView(materials:MaterialStore,id:string,input:unknown){
   const args=query.parse(input),ref=formatMaterialRef(id,args.revision),material=materials.get(ref);
-  if(!material||material.kind!=='mote.file'||material.schemaVersion!==1)throw new StoreError('Source material view is unavailable',404);
+  if(!material||!sourceItemKinds.some(kind=>material.kind==='mote.'+kind)||material.schemaVersion!==1)throw new StoreError('Source material view is unavailable',404);
   let index=args.block,offset=args.offset,remaining=args.length;
   if(index>material.blockCount||index===material.blockCount&&offset)throw new StoreError('Invalid material view range');
   const items:(Omit<Display,'text'>&{blockId:string;text:string;offset:number;total:number;continued:boolean})[]=[];

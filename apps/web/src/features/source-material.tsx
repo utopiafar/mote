@@ -1,10 +1,11 @@
 import {useState} from 'react';
 import {moteText} from '@mote/shared/i18n';
+import {sourceItemKinds} from '@mote/shared';
 import {ApiError,errorMessage,dateTime} from '../api';
 import {useResource} from '../useResource';
 import type {ViewEntry,ViewProps} from './types';
 type Position={block:number;offset:number};
-type Item={blockId:string;type:'text'|'source'|'asset'|'raw';text:string;offset:number;total:number;continued:boolean;speaker?:string;confirmedName?:string;capturedAt?:string;appName?:string;sourceRef?:string;startMs?:number;endMs?:number;mimeType?:string};
+type Item={blockId:string;type:'text'|'source'|'asset'|'raw';text:string;offset:number;total:number;continued:boolean;speaker?:string;confirmedName?:string;capturedAt?:string;recordedAt?:string;occurredAt?:string;appName?:string;sourceRef?:string;sourceType?:string;startMs?:number;endMs?:number;mimeType?:string};
 type Page={material?:{coverage:{state:string}};items:Item[];next:Position|null};
 export function SourceMaterialView({api,value,fallback,onOpen}:ViewProps){
   const [position,setPosition]=useState<Position>({block:0,offset:0}),[history,setHistory]=useState<Position[]>([]),[raw,setRaw]=useState(false);
@@ -21,8 +22,8 @@ export function SourceMaterialView({api,value,fallback,onOpen}:ViewProps){
         {page.data.material?.coverage.state==='pending'&&<p role="status">{moteText('资料仍在整理，先展示当前可读的内容。')}</p>}
         {page.data.material?.coverage.state==='partial'&&<p role="status">{moteText('资料尚不完整，可在“来源与处理”中查看缺失情况。')}</p>}
         <div className="source-material-blocks">{page.data.items.map(item=><section className="source-item" key={item.blockId+':'+item.offset}>
-        {item.type==='source'&&<p className="fine-print">{item.appName}{item.capturedAt&&' · '+dateTime(item.capturedAt)}</p>}
-        {item.sourceRef&&<button className="text-button" onClick={()=>onOpen(item.sourceRef!)}>{moteText('查看文件详情')}</button>}
+        {item.type==='source'&&<div className="fine-print">{item.appName&&<p>{item.appName}</p>}{item.recordedAt&&<p>{moteText('记录时间：{0}',dateTime(item.recordedAt))}</p>}{item.occurredAt&&<p>{moteText('发生时间：{0}',dateTime(item.occurredAt))}</p>}{item.capturedAt&&<p>{moteText('采集于')} {dateTime(item.capturedAt)}</p>}</div>}
+        {item.sourceRef&&<button className="text-button" onClick={()=>onOpen(item.sourceRef!)}>{item.sourceType==='file'?moteText('查看文件详情'):moteText('查看原始记录')}</button>}
         {item.type==='asset'?<p>{moteText('归档附件')} · {item.mimeType}</p>:<>
           {(item.confirmedName||item.speaker||item.startMs!==undefined)&&<p className="source-material-speaker">{item.confirmedName?moteText('已确认说话人：{0}',item.confirmedName):item.speaker?moteText('匿名说话人：{0}',item.speaker):''}{item.startMs!==undefined&&<> · {moteText('{0} 秒',Math.floor(item.startMs/1000))}</>}</p>}
           {item.offset>0&&<p className="fine-print">{moteText('接上一页')}</p>}
@@ -33,4 +34,4 @@ export function SourceMaterialView({api,value,fallback,onOpen}:ViewProps){
     </>}
   </div>;
 }
-export const sourceMaterialViews:ViewEntry[]=[{id:'source-item.file',kind:'mote.file',schemaVersion:1,representation:'owner-material',render:props=><SourceMaterialView key={props.value.ref} {...props}/>}];
+export const sourceMaterialViews:ViewEntry[]=sourceItemKinds.map(kind=>({id:'source-item.'+kind,kind:'mote.'+kind,schemaVersion:1,representation:'owner-material',render:props=><SourceMaterialView key={props.value.ref} {...props}/>}));

@@ -10,7 +10,7 @@ import {ReferenceDetail} from '../src/ReferenceDetail.js';
 import {MaterialDetail,type Material} from '../src/Materials.js';
 import {SourceMaterialView} from '../src/features/source-material.js';
 import {resources} from '../src/resource-cache.js';
-import {ApiError,type Api} from '../src/api.js';
+import {ApiError,dateTime,type Api} from '../src/api.js';
 const ids=['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'];
 function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void;const promise=new Promise<any>((a,b)=>{resolve=a;reject=b;});return {promise,resolve,reject};}
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
@@ -52,6 +52,17 @@ test('source presentation pages decoded text, preserves raw fallback, escapes co
  await click('上一页');assert.match(d.body.textContent!,/Generated first page/);
  await click('查看原始结构');assert.match(d.body.textContent!,/Raw original/);assert.doesNotMatch(d.body.textContent!,/Generated first page/);
  await click('返回阅读视图');pending=true;await act(async()=>resources(api).invalidate(()=>true));assert.match(d.body.textContent!,/正在重新整理/);assert.doesNotMatch(d.body.textContent!,/Generated first page/);
+});
+test('the source plugin renders imported messages and distinguishes recorded, occurred and collected times',async t=>{
+ const {featuresReady}=await import('../src/features/runtime.js');await featuresReady;
+ const {root,document:d}=await fixture(t),opened:string[]=[];
+ const material:Material={id:'mat_'+'c'.repeat(64),ref:'material:mat_'+'c'.repeat(64)+'@'+'d'.repeat(64),revision:'d'.repeat(64),kind:'mote.message',schemaVersion:1,title:'Generated diary',sequence:1,textLength:40,blockCount:1,coverage:{state:'complete'},origin:{sourceId:'generated'},retention:{original:'retained'}};
+ const item={blockId:'source-record',type:'source',sourceType:'message',sourceRef:'capture:'+ids[0],text:'Readable generated diary',appName:'Generated archive',recordedAt:'2026-05-07T00:15:00+08:00',occurredAt:'2026-05-01T12:00:00+08:00',capturedAt:'2026-09-27T02:00:00+08:00',offset:0,total:24,continued:false};
+ const api=apiWith(path=>path.includes('/source-view?')?{items:[item],next:null}:path.includes('/read?')?{material,text:'Raw storage fields',textRange:{offset:0,total:18,nextOffset:null}}:material);
+ await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,onOpen:ref=>opened.push(ref)})));
+ assert.match(d.body.textContent!,/Readable generated diary/);assert.doesNotMatch(d.body.textContent!,/Raw storage fields/);
+ for(const label of ['记录时间：'+dateTime(item.recordedAt),'发生时间：'+dateTime(item.occurredAt),'采集于 '+dateTime(item.capturedAt)])assert.ok(d.body.textContent!.includes(label),label);
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看原始记录')!.click());assert.deepEqual(opened,[item.sourceRef]);
 });
 test('formal material links open their pinned revision through the material API',async t=>{
  const {root,document:d}=await fixture(t),id='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${id}@${revision}`,paths:string[]=[];

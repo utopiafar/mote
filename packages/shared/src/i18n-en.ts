@@ -5511,5 +5511,7 @@ export const english: Readonly<Record<string, string>> = {
   "本片段未完，下一页继续。": "This passage continues on the next page.",
   "资料仍在整理，先展示当前可读的内容。": "This material is still being processed. Available content is shown below.",
   "资料尚不完整，可在“来源与处理”中查看缺失情况。": "This material is incomplete. See Sources and processing for what is missing.",
-  "查看文件详情": "View file details"
+  "查看文件详情": "View file details",
+  "记录时间：{0}": "Recorded at: {0}",
+  "发生时间：{0}": "Occurred at: {0}"
 };

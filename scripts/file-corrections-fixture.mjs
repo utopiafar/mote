@@ -23,6 +23,9 @@ node.files.part(upload.uploadId,0,wave,()=>{});const ack=await node.files.commit
 assert.equal(node.files.chunks(ack.id).length,2,JSON.stringify(node.files.detail(ack.id).job));
 const reviews=new FileReviews(node.files,node.processing),artifactId=node.files.chunks(ack.id)[0].fileEvidence.artifactId;
 reviews.nameSpeakers(ack.id,{artifactId,names:{SPEAKER_0:'我（生成）',SPEAKER_1:'林工（生成）'}});
+const diary={title:'合成日记：原始记录时间',recordedAt:new Date(Date.now()-86400000).toISOString(),occurredAt:new Date(Date.now()-172800000).toISOString(),observedAt:new Date().toISOString(),text:'我见到了老朋友，隔天才记录下来。当时很开心。'};
+node.sources.register({id:'generated-ui-authored',name:'合成日记来源',kind:'custom',deviceId:'generated-ui-device',platform:'import',retention:'archive'});
+await node.featureServices.ingress.sourceItem('generated-ui-authored',{externalId:'generated-diary',revision:'1',observedAt:diary.observedAt,title:diary.title,kind:'message',layer:'original',text:diary.text,document:{recordedAt:diary.recordedAt,occurredAt:diary.occurredAt,timeBasis:'recorded',contentRole:'authored'}});
 const tick=node.materialOrganizer.tick.bind(node.materialOrganizer);while(await tick(100));
 const id=materialId('generated-ui-audio','generated.wav'),initial=node.materials.get(id);
 const anchors=node.materials.evidence(node.materials.evidenceIds(initial.ref)).filter(r=>JSON.parse(r.ocrText).speaker);
@@ -32,5 +35,5 @@ node.processing.analyze=async(_id,records)=>{proposalStubCalls++;const record=re
 const state=()=>({fileId:ack.id,name,initial,material:node.materials.get(id),memoryIds:memories.map(m=>m.id),memories:memories.map(m=>node.memories.get(m.id)),chunks:node.files.chunks(ack.id),proposalStubCalls,held});
 node.app.get('/api/fixture/state',async()=>state());
 node.app.post('/api/fixture/rebuild',async()=>{held=false;try{while(await tick(100));}finally{held=true;}return state();});
-await node.app.listen({host:'127.0.0.1',port:0});writeFileSync(ready,JSON.stringify({port:node.app.server.address().port,fileId:ack.id,name}),{mode:0o600});
+await node.app.listen({host:'127.0.0.1',port:0});writeFileSync(ready,JSON.stringify({port:node.app.server.address().port,fileId:ack.id,name,diary}),{mode:0o600});
 process.once('SIGTERM',async()=>{disposeAudio();dispose();await node.app.close();process.exit(0);});
