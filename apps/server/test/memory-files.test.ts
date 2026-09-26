@@ -137,3 +137,21 @@ test('full local indexes remain exact evidence, while manual raw Memory waits fo
  assert.throws(()=>node.memoryPipeline.create({evidenceIds:[light.id]}),{statusCode:409});assert.throws(()=>node.memories.extract(result(light.id,text),'fixture'),/Lightweight/);
  const saved=node.memories.extract(result(full.id,text),'fixture').items[0];assert.equal(saved.evidence![0].fileIndex?.contentVersion,descriptor.contentVersion);assert.equal(saved.evidence![0].quote,text);
 });
+
+test('manual Memory jobs honor the saved character budget without rewriting existing job ranges',async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-manual-memory-budget-'));
+ const config:Config={dataDir:directory,token:'generated-memory-budget-token',tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ const node=await buildApp(config,{createModelAgent:async()=>({configured:false,close:async()=>{},query:async()=>{throw Error('This structural test must not call a model');}})});
+ t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const headers={authorization:'Bearer '+config.token,'x-mote-ingress-version':'2'};
+ async function budget(value:number){const settings=node.lifecycle.settings();settings.batchCharacters=value;const response=await node.app.inject({method:'PUT',url:'/api/memory-settings',headers,payload:settings});assert.equal(response.statusCode,200,response.body);}
+ async function create(){
+  const id=randomUUID(),text='合成的完整笔记。'.repeat(75);
+  const note=await node.app.inject({method:'POST',url:'/api/notes',headers,payload:{id,deviceId:'generated-budget-device',deviceName:'Generated',platform:'import',capturedAt:'2026-05-01T00:00:00Z',text}});assert.equal(note.statusCode,201,note.body);
+  const response=await node.app.inject({method:'POST',url:'/api/memory-jobs',headers,payload:{evidenceIds:[id]}});assert.equal(response.statusCode,202,response.body);return {job:response.json(),text};
+ }
+ await budget(256);const first=await create();assert.equal(first.job.totalBatches,3);
+ const ranges=first.job.batches.flatMap((b:any)=>b.evidenceRanges);assert.ok(ranges.every((r:any)=>r.length<=256));assert.equal(ranges.map((r:any)=>first.text.slice(r.offset,r.offset+r.length)).join(''),first.text);
+ await budget(400);const second=await create();assert.equal(second.job.totalBatches,2);
+ assert.deepEqual(node.memoryPipeline.get(first.job.id).batches.flatMap(b=>b.evidenceRanges),ranges);
+});

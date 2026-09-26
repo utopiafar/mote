@@ -44,7 +44,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{store,files,evidenceRe
       if(expanded.size>20000)throw new StoreError('Choose a smaller range for memory extraction',413);
     }
     ids=[...expanded];if(!ids.length)throw new StoreError('No processed evidence in this range',409);
-    const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send({...job,selection:selection?{waiting:selection.waiting,unavailable:selection.unavailable}:undefined});
+    const job=memoryPipeline.create({evidenceIds:ids,timeZone:scope.timeZone,batchCharacters:lifecycle.settings().batchCharacters,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send({...job,selection:selection?{waiting:selection.waiting,unavailable:selection.unavailable}:undefined});
   });
   app.post('/api/memory-jobs/:id/pause',async req=>memoryPipeline.pause(jobId(req.params)));
   app.post('/api/memory-jobs/:id/resume',async req=>{const id=jobId(req.params);memoryPipeline.resume(id);return memoryPipeline.get(id);});
