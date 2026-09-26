@@ -1,4 +1,4 @@
-import type {CaptureRecord} from '@mote/shared';
+import {documentSchema,type CaptureRecord} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
@@ -15,11 +15,15 @@ const memberSchema=z.object({
   id:z.string().min(1).max(128),kind:nameSchema,ref:z.string().min(1).max(2048),
   revision:z.string().min(1).max(256).optional(),locator:locatorSchema.optional(),
 }).strict();
+/** Declared by a trusted organizer, never decoded from captured prose. */
+const evidenceContextSchema=z.object({observedAt:z.string().datetime({offset:true}),
+  document:documentSchema.pick({recordedAt:true,occurredAt:true,timeBasis:true,contentRole:true}).strict()}).strict();
+export type MaterialEvidenceContext=z.infer<typeof evidenceContextSchema>;
 const blockBase={id:z.string().min(1).max(128),memberIds:z.array(z.string().min(1).max(128)).max(32).default([]),locator:locatorSchema.optional(),
   /** Fine-grained inputs supplement the original members used for authorization. */
   evidenceIds:z.array(z.string().uuid()).max(32).optional()};
 const blockSchema=z.discriminatedUnion('kind',[
-  z.object({...blockBase,kind:z.literal('text'),format:nameSchema,text:z.string().max(250_000)}).strict(),
+  z.object({...blockBase,kind:z.literal('text'),format:nameSchema,text:z.string().max(250_000),evidenceContext:evidenceContextSchema.optional()}).strict(),
   z.object({...blockBase,kind:z.literal('asset'),hash:revisionSchema,mimeType:z.string().min(1).max(200)}).strict(),
 ]);
 const draftSchema=z.object({
@@ -45,7 +49,7 @@ const appendDraftSchema=draftSchema.omit({blocks:true}).extend({mode:z.literal('
   reuseBlocks:z.number().int().nonnegative(),blocks:z.array(blockSchema)}).strict();
 export type MaterialAppendDraft=z.infer<typeof appendDraftSchema>;
 export type CodingAppendBase={record:MaterialRecord;archiveCheckpoint:string;appendEpoch:number;headCount:number;
-  lastBlock:{id:string;text:string;format:string|null}|null};
+  lastBlock:{id:string;text:string;format:string|null;evidenceContext?:MaterialEvidenceContext}|null};
 export type CodingArchiveSnapshot={checkpoint:string;appendEpoch:number;headCount:number};
 export type MaterialMember=MaterialDraft['members'][number];
 export type MaterialBlock=MaterialDraft['blocks'][number];
@@ -88,6 +92,8 @@ export class MaterialStore {
       CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS material_evidence(id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL,block_id TEXT NOT NULL,FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS material_evidence_parent ON material_evidence(material_id,revision);
+      CREATE TABLE IF NOT EXISTS material_evidence_context(
+        anchor_id TEXT PRIMARY KEY REFERENCES material_evidence(id) ON DELETE CASCADE,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS material_evidence_dependencies(
         anchor_id TEXT NOT NULL REFERENCES material_evidence(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,
         PRIMARY KEY(anchor_id,evidence_id));
@@ -199,13 +205,14 @@ export class MaterialStore {
     const row=this.store.db.prepare('SELECT archive_checkpoint,append_epoch,head_count FROM material_coding_snapshots WHERE material_id=? AND revision=?').get(id,record.revision) as
       {archive_checkpoint:string|null;append_epoch:number|null;head_count:number|null}|undefined;
     if(!row||row.archive_checkpoint===null||row.append_epoch===null||row.head_count===null)return;
-    const tail=record.blockCount?this.store.db.prepare(`SELECT b.block_id,b.format,p.text FROM material_block_versions b
-      JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.idx=?
+    const tail=record.blockCount?this.store.db.prepare(`SELECT b.block_id,b.format,p.text,c.json context_json FROM material_block_versions b
+      JOIN material_block_payloads p ON p.hash=b.payload_hash LEFT JOIN material_evidence_context c ON c.anchor_id=b.anchor_id WHERE b.material_id=? AND b.idx=?
       AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?)`).get(id,record.blockCount-1,record.sequence,record.sequence) as
-      {block_id:string;format:string|null;text:string}|undefined:undefined;
+      {block_id:string;format:string|null;text:string;context_json:string|null}|undefined:undefined;
     if(record.blockCount&&!tail)return;
     return {record,archiveCheckpoint:row.archive_checkpoint,appendEpoch:row.append_epoch,headCount:row.head_count,
-      lastBlock:tail?{id:tail.block_id,text:tail.text,format:tail.format}:null};
+      lastBlock:tail?{id:tail.block_id,text:tail.text,format:tail.format,
+        ...(tail.context_json?{evidenceContext:evidenceContextSchema.parse(JSON.parse(tail.context_json))}:{})}:null};
   }
 
   setSearchable(id:string,enabled:boolean){
@@ -238,8 +245,14 @@ export class MaterialStore {
       JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.from_revision=? AND b.block_id=? AND b.anchor_id=?`)
       .get(material.id,material.revision,anchor.block_id,id):this.store.db.prepare(`SELECT p.text,b.start_offset FROM material_blocks b JOIN material_block_payloads p ON p.hash=b.payload_hash
       WHERE b.material_id=? AND b.revision=? AND b.block_id=?`).get(material.id,material.revision,anchor.block_id);if(!block)return [];
-    const at=material.origin.firstAt??material.createdAt;
-    return [{id,deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{recordedAt:at,timeBasis:'recorded',contentRole:'transcript',...(material.origin.provider&&material.origin.projectKey&&material.origin.sessionId?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
+    const contextRow=this.store.db.prepare('SELECT json FROM material_evidence_context WHERE anchor_id=?').get(id);
+    const context=contextRow?evidenceContextSchema.parse(JSON.parse(String(contextRow.json))):undefined;
+    const coding=material.origin.provider&&material.origin.projectKey&&material.origin.sessionId;
+    const at=context?.observedAt??material.createdAt;
+    // A material's range is not a block's authored/recording/event time. Only
+    // the organizer can declare that context; captured prose cannot supply it.
+    const document=context?.document??{timeBasis:'unknown',contentRole:'other'};
+    return [{id,deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{...document,...(coding?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
   });}
   isCurrentEvidence(id:string){const row=this.store.db.prepare(`SELECT h.source_id,h.sequence,h.min_visible_sequence,h.retired,h.revision,e.revision evidence_revision,e.invalidated,
     EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=h.id AND b.revision=h.revision AND b.anchor_id=e.id) snapshot_active,
@@ -331,7 +344,7 @@ export class MaterialStore {
           const display=block.kind==='text'?block.text:`[asset ${block.id} ${block.mimeType} ${block.hash}]`;
           const payloadHash=hash(display);
           if(!db.prepare('SELECT 1 FROM material_block_payloads WHERE hash=?').get(payloadHash))requiredBytes+=Buffer.byteLength(display);
-          requiredBytes+=Buffer.byteLength(JSON.stringify(block.kind==='text'?{id:block.id,format:block.format,memberIds:block.memberIds,locator:block.locator}:{id:block.id,hash:block.hash,mimeType:block.mimeType,memberIds:block.memberIds,locator:block.locator}))+256+(block.memberIds.length+(block.evidenceIds?.length??0))*128;
+          requiredBytes+=Buffer.byteLength(JSON.stringify(block.kind==='text'?{id:block.id,format:block.format,memberIds:block.memberIds,locator:block.locator,evidenceContext:block.evidenceContext}:{id:block.id,hash:block.hash,mimeType:block.mimeType,memberIds:block.memberIds,locator:block.locator}))+256+(block.memberIds.length+(block.evidenceIds?.length??0))*128+(block.kind==='text'&&block.evidenceContext?128:0);
         }
         this.store.reserveMetadata(requiredBytes);
         if(!head)db.prepare(`INSERT INTO material_heads(id,source_id,external_id,kind,revision,sequence,retired,device_id,first_at,last_at,created_at,updated_at)
@@ -349,6 +362,7 @@ export class MaterialStore {
         const insertVersion=db.prepare(`INSERT INTO material_block_versions(material_id,from_revision,from_sequence,until_sequence,idx,block_id,kind,format,
           payload_hash,asset_hash,mime_type,member_ids,locator,start_offset,end_offset,anchor_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         const insertEvidence=db.prepare('INSERT OR IGNORE INTO material_evidence(id,material_id,revision,block_id) VALUES(?,?,?,?)');
+        const insertContext=db.prepare('INSERT OR IGNORE INTO material_evidence_context VALUES(?,?)');
         const insertDependency=db.prepare('INSERT OR IGNORE INTO material_evidence_dependencies VALUES(?,?)');
         const retained=new Set<string>();
         const insertFtsBlock=db.prepare('INSERT INTO material_fts_blocks(rowid,text) VALUES(?,?)');
@@ -370,7 +384,11 @@ export class MaterialStore {
           }else insertBlock.run(id,revision,index,block.id,block.kind,block.kind==='text'?block.format:null,payloadHash,
             block.kind==='asset'?block.hash:null,block.kind==='asset'?block.mimeType:null,
             JSON.stringify(block.memberIds),block.locator?JSON.stringify(block.locator):null,offset,end,anchor,identity);
-          if(anchor){insertEvidence.run(anchor,id,revision,block.id);retained.add(anchor);for(const input of dependencies)insertDependency.run(anchor,input);}
+          if(anchor){
+            insertEvidence.run(anchor,id,revision,block.id);
+            if(block.kind==='text'&&block.evidenceContext)insertContext.run(anchor,JSON.stringify(block.evidenceContext));
+            retained.add(anchor);for(const input of dependencies)insertDependency.run(anchor,input);
+          }
           offset=end;if(block.kind==='asset')assetCount++;
         }
         const insertMember=db.prepare('INSERT INTO material_members VALUES(?,?,?,?,?,?,?,?)');
@@ -421,7 +439,8 @@ export class MaterialStore {
       for(const member of draft.members)requiredBytes+=Buffer.byteLength(JSON.stringify(member))+128;
       for(const block of draft.blocks){const display=block.kind==='text'?block.text:'';
         if(!db.prepare('SELECT 1 FROM material_block_payloads WHERE hash=?').get(hash(display)))requiredBytes+=Buffer.byteLength(display);
-        requiredBytes+=256+(block.memberIds.length+(block.evidenceIds?.length??0))*128;
+        requiredBytes+=256+(block.memberIds.length+(block.evidenceIds?.length??0))*128+
+          (block.kind==='text'&&block.evidenceContext?Buffer.byteLength(JSON.stringify(block.evidenceContext))+128:0);
       }
       this.store.reserveMetadata(requiredBytes);
       db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?,?)').run(draft.id,revision,sequence,manifestJson,now,0,
@@ -437,6 +456,7 @@ export class MaterialStore {
       const insertVersion=db.prepare(`INSERT INTO material_block_versions(material_id,from_revision,from_sequence,until_sequence,idx,block_id,kind,format,
         payload_hash,asset_hash,mime_type,member_ids,locator,start_offset,end_offset,anchor_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
       const insertEvidence=db.prepare('INSERT INTO material_evidence(id,material_id,revision,block_id) VALUES(?,?,?,?)');
+      const insertContext=db.prepare('INSERT INTO material_evidence_context VALUES(?,?)');
       const insertDependency=db.prepare('INSERT OR IGNORE INTO material_evidence_dependencies VALUES(?,?)');
       const insertFts=db.prepare('INSERT INTO material_fts_blocks(rowid,text) VALUES(?,?)');
       let offset=prefix?.end_offset??0;
@@ -447,6 +467,7 @@ export class MaterialStore {
         const end=offset+text.length,inserted=insertVersion.run(draft.id,revision,sequence,null,idx,block.id,'text','markdown-fragment',
           payloadHash,null,null,JSON.stringify(block.memberIds),block.locator?JSON.stringify(block.locator):null,offset,end,anchor);
         insertEvidence.run(anchor,draft.id,revision,block.id);
+        if(block.kind==='text'&&block.evidenceContext)insertContext.run(anchor,JSON.stringify(block.evidenceContext));
         for(const input of this.blockDependencies(block,draft.members))insertDependency.run(anchor,input);
         if(searchable)insertFts.run(Number(inserted.lastInsertRowid),text);
         offset=end;

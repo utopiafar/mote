@@ -46,7 +46,7 @@ if(resuming){
 report.ingress=report.ingressMode==='source'?'Exact authored text and original document time through source ingress; observation time is this replay. Original Material references retained in manifest. Linked image bytes are not replayed.':'Exact authored text through notes; original document time is NOT preserved as provenance. Not evidence of faithful temporal import. Linked image bytes are not replayed.';
 if(report.ingressMode==='source')for(const record of manifest.records){const document=documentSchema.parse(record.origin.documentTime);assert.equal(document.contentRole,'authored');assert.equal(document.timeBasis,'recorded');assert.ok(document.recordedAt);assert.equal(Date.parse(document.recordedAt),Date.parse(record.at));}
 report.runnerHashes??=[];report.runnerHashes.push({at:new Date().toISOString(),hash:sha256(await readFile(join(repositoryRoot,'scripts/test-progressive-memory-live.ts'))),head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',cwd:repositoryRoot}).trim(),
- agentFiles:Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])))});
+ agentFiles:Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','apps/server/src/materials.ts','apps/server/src/material-organizers.ts','apps/server/src/coding-source-plugin.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])))});
 const vault=join(directory,'vault'),token=randomBytes(32).toString('hex'),deviceId='private-progressive-replay';
 const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:500_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
  model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
@@ -113,7 +113,10 @@ try{
    for(const [i,original] of originals.entries()){
     const material=node!.materials.get(materialId(deviceId,sha256(original.key)));assert.ok(material);assert.equal(material.coverage.state,'complete');assert.ok(node!.materialMemoryWork.readyForMemory(material.ref));
     const ids=node!.materials.evidenceIds(material.ref),evidence=node!.memories.readEvidence(ids);assert.equal(evidence.length,1,'Authored source replay must preserve the complete source block');
-    const body=JSON.parse(evidence[0].ocrText);assert.equal(body.text,original.text);assert.deepEqual(body.documentTime,saved[i].document);assert.equal(Date.parse(evidence[0].provenance!.document!.recordedAt!),Date.parse(original.at));
+    const body=JSON.parse(evidence[0].ocrText);assert.equal(body.text,original.text);assert.deepEqual(body.documentTime,saved[i].document);
+    assert.deepEqual(evidence[0].provenance!.document,saved[i].document,'formal evidence preserves the original declared role and times');
+    assert.equal(Date.parse(evidence[0].provenance!.document!.recordedAt!),Date.parse(original.at));
+    assert.equal(evidence[0].capturedAt,saved[i].storedAt,'observation time is independent of the original recording time');
     saved[i].material=material;saved[i].memoryEvidenceIds=ids;saved[i].modelEvidence=evidence;
    }
    await save();

@@ -57,7 +57,7 @@ test('central UI APIs complete original import → exact Memory → cited static
   const completed=await until(async()=>(await request('GET',`/api/memory-jobs/${memory.id}`)).json(),job=>job.status==='completed');
   assert.equal(completed.memoryIds.length,1);assert.equal(node.store.list().items.length,1);
   const detail=(await request('GET',`/api/memories/${completed.memoryIds[0]}`)).json();
-  assert.equal(detail.status,'proposed');assert.equal(detail.evidence[0].quote,original);assert.equal(detail.evidence[0].recordedAt,'2020-02-03T04:05:00.000Z');
+  assert.equal(detail.status,'proposed');assert.equal(detail.evidence[0].quote,original);assert.equal(detail.evidence[0].recordedAt,'2020-02-03T04:05:00Z');
   assert.equal(detail.evidence[0].id,evidenceId);
   const download=await request('GET',`/api/archived-files/${imported.files[0].id}/content`);assert.equal(download.body,original);assert.match(download.headers['content-disposition'] as string,/attachment/);
   assert.equal(node.store.list({after:'2020-02-01T00:00:00Z',before:'2020-03-01T00:00:00Z'}).items.length,1);

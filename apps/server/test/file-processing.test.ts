@@ -265,12 +265,14 @@ test('document text correction retains original locations without inventing audi
  try{
   while(await organizers.tick(100));const material=materials.get(materialId('phone','generated.txt'))!;
   const anchors=materials.evidence(materials.evidenceIds(material.ref)),stable=anchors.find(r=>r.ocrText===before.at(-1)!.ocrText)!;assert.ok(stable);
+  assert.equal(stable.provenance?.document?.contentRole,'other');
   const reviews=new FileReviews(f.files,f.processing),proposal=await reviews.propose(f.id,{kind:'terms'});
   reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});
   const after=f.files.chunks(f.id);assert.equal(after.length,before.length);assert.equal(after.at(-1)!.id,before.at(-1)!.id);
   assert.deepEqual(after.map(r=>r.fileEvidence!.documentLocation),before.map(r=>r.fileEvidence!.documentLocation));
   assert.ok(after.every(r=>r.fileEvidence!.startMs===undefined&&r.fileEvidence!.endMs===undefined));
   while(await organizers.tick(100));assert.equal(materials.isCurrentEvidence(stable.id),true);
+  assert.equal(materials.evidence([stable.id])[0]?.provenance?.document?.contentRole,'other','corrected document text is not an audio transcript');
   assert.ok(materials.evidenceIds(material.id).includes(stable.id));assert.match(materials.read(material.id).text,/Right/);
  }finally{await organizers.close();}
 });

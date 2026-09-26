@@ -60,6 +60,35 @@ test('append reads only new refs, reuses prefix blocks and anchors, and keeps th
   assert.throws(()=>pipeline.create({evidenceIds:[oldIds.at(-1)!]}),/superseded|changed|ready/i);
 });
 
+test('Coding blocks retain observation context through append without assigning one event date to the conversation',async t=>{
+  const {store,materials,runtime,sources}=await fixture(t);
+  const original=event(0,'Generated multi-block conversation. '.repeat(750));
+  await sources.upsert('coding',{...original,document:{...original.document,recordedAt:'2026-05-01T08:00:00+08:00',timeBasis:'recorded'}});
+  await runtime.tick();
+  const before=materials.list().items[0]!,old=materials.evidence(materials.evidenceIds(before.ref));
+  assert.ok(old.length>2);
+  for(const record of old){
+    assert.equal(record.capturedAt,original.observedAt);
+    assert.equal(record.provenance?.document?.contentRole,'transcript');
+    assert.equal(record.provenance?.document?.recordedAt,undefined);
+    assert.equal(record.provenance?.document?.timeBasis,'unknown');
+  }
+  assert.match(old[0]!.ocrText!,/Recorded: 2026-05-01T08:00:00\+08:00/,'event-specific dates stay in the labeled event text');
+  const oldTailContext=materials.codingBase(before.id)!.lastBlock!.evidenceContext;
+  const added=event(1,'Generated appended message. '.repeat(600));
+  await sources.upsert('coding',{...added,document:{...added.document,recordedAt:'2026-05-02T08:00:00+08:00',timeBasis:'recorded'}});
+  await runtime.tick();
+  const after=materials.list().items[0]!,current=materials.evidence(materials.evidenceIds(after.ref));
+  assert.equal(current[0]!.id,old[0]!.id,'unchanged prefix keeps its evidence and context');
+  assert.deepEqual(materials.evidence([old.at(-1)!.id])[0],old.at(-1),'the replaced tail keeps its historical context');
+  assert.equal(current[old.length-1]!.capturedAt,oldTailContext!.observedAt,'a reused tail keeps the earlier observation');
+  assert.equal(current.at(-1)!.capturedAt,added.observedAt,'new-only blocks use the appended event observation');
+  assert.equal(current.at(-1)!.provenance?.document?.recordedAt,undefined);
+  assert.equal(materials.codingBase(after.id)!.lastBlock!.evidenceContext?.observedAt,added.observedAt);
+  materials.forget(after.id);
+  assert.equal(store.db.prepare('SELECT COUNT(*) n FROM material_evidence_context').get()!.n,0);
+});
+
 test('one thousand generated Coding events form one complete searchable Material for model reads',async t=>{
   const {store,materials,runtime,sources}=await fixture(t);
   for(let first=0;first<1000;first+=500)

@@ -1,7 +1,7 @@
 import {codingProjectContext} from './coding-project.js';
 import {createHash} from 'node:crypto';
 import {sourceContentTime,type CaptureRecord} from '@mote/shared';
-import {materialId,MaterialStore,type MaterialDraft} from './materials.js';
+import {materialId,MaterialStore,type MaterialDraft,type MaterialEvidenceContext} from './materials.js';
 import {ArchivedFileStore} from './archived-files.js';
 import type {Store} from './store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
@@ -49,6 +49,12 @@ const member=(record:CaptureRecord)=>({id:record.id,kind:'capture' as const,ref:
 const iso=(value:string)=>new Date(value).toISOString();
 const sourceKey=(prefix:string,deviceId:string)=>`${prefix}:${digest(deviceId)}`;
 const canonicalGroup=(group:Record<string,string>):Record<string,string>=>Object.fromEntries(Object.entries(group).sort(([a],[b])=>a.localeCompare(b)));
+/** Source declarations and processor contracts, never fields parsed from prose. */
+const evidenceContext=(record:CaptureRecord,role?:MaterialEvidenceContext['document']['contentRole']):MaterialEvidenceContext=>{
+  const document=record.provenance?.document;
+  return {observedAt:record.capturedAt,document:{recordedAt:document?.recordedAt,occurredAt:document?.occurredAt,
+    timeBasis:document?.timeBasis??'unknown',contentRole:role??document?.contentRole??'other'}};
+};
 /** Model-facing material text is an allowlist, not the stored capture JSON. The
  * latter can contain local file URIs, document paths and provider metadata. */
 const captureText=(record:CaptureRecord)=>{
@@ -176,7 +182,7 @@ class MaterialBody {
     if(this.members.length>=MAX_MEMBERS){this.limitations.add('member_limit');return false;}
     this.members.push(member(record));return true;
   }
-  text(id:string,text:string,memberId:string,format:'plain'|'json'|'transcript'='plain',locator?:Record<string,unknown>,evidenceIds?:string[]){
+  text(id:string,text:string,memberId:string,format:'plain'|'json'|'transcript'='plain',locator?:Record<string,unknown>,evidenceIds?:string[],context?:MaterialEvidenceContext){
     if(!text)return;
     let position=0,part=0;
     while(position<text.length){
@@ -188,6 +194,7 @@ class MaterialBody {
       const slice=text.slice(position,end);
       this.blocks.push({id:part?`${id}:${part}`:id,kind:'text',format,text:slice,memberIds:[memberId],
         ...(evidenceIds?{evidenceIds}:{}),
+        ...(context?{evidenceContext:context}:{}),
         ...(locator||part?{locator:{...locator,textStart:position,textEnd:end}}:{})});
       this.characters+=slice.length;position=end;part++;
     }
@@ -210,7 +217,7 @@ const codingExternalId=(g:Record<string,string>)=>JSON.stringify([g.provider,g.p
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'4',slot:'source-item',
+  id:'mote.source-item',version:'5',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -218,11 +225,14 @@ const sourceItem:MaterialOrganizer={
     const file=reader.file(r.id);if(!file)return;
     const {attachments,chunks,job}=file;
     const body=new MaterialBody();body.addMember(r);
-    body.text('source-record',captureText(r),r.id,'json');
+    body.text('source-record',captureText(r),r.id,'json',undefined,undefined,evidenceContext(r));
     for(const c of chunks){
       const text=c.speaker?JSON.stringify({speaker:c.speaker,...(c.speakerAttribution?{speakerAttribution:c.speakerAttribution}:{}),text:c.text}):c.text;
+      // The chunk writer preserves a real media timeline across corrections.
+      // A corrected-dialogue container can also contain untimed document text.
       body.text(`chunk:${c.id}`,text,r.id,c.speaker?'json':c.startMs===null?'plain':'transcript',
-        {chunkId:c.id,...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id]);
+        {chunkId:c.id,...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],
+        evidenceContext(r,c.startMs===null?undefined:'transcript'));
     }
     if(file.objectHash)body.asset('original',file.objectHash,r.provenance?.mimeType??'application/octet-stream',r.id);
     for(const attachment of attachments){
@@ -257,7 +267,7 @@ const sourceItem:MaterialOrganizer={
 };
 
 const codingSession:MaterialOrganizer={
-  id:'mote.coding-session',version:'2',slot:'coding-session',
+  id:'mote.coding-session',version:'3',slot:'coding-session',
   select:r=>{const c=r.provenance?.document?.coding;return c?{sourceId:r.provenance!.sourceId,provider:c.provider,projectKey:c.projectKey,sessionId:c.sessionId}:undefined;},
   identity:g=>materialId(g.sourceId,codingExternalId(g)),
   build(reader,g){
@@ -268,7 +278,7 @@ const codingSession:MaterialOrganizer={
     for(const [index,r] of records.entries()){
       if(body.full){body.limitations.add('session_text_limit');break;}
       if(!body.addMember(r))break;
-      body.text(`event:${r.id}`,captureText(r),r.id,'json',{newestIndex:index});
+      body.text(`event:${r.id}`,captureText(r),r.id,'json',{newestIndex:index},undefined,evidenceContext(r,'transcript'));
     }
     const order=new Map(records.map((r,index)=>[r.id,index]));
     body.blocks.sort((a,b)=>(order.get(b.memberIds[0]!)??0)-(order.get(a.memberIds[0]!)??0));
@@ -285,7 +295,7 @@ const codingSession:MaterialOrganizer={
 };
 
 const screenGroup:MaterialOrganizer={
-  id:'mote.screen-segment',version:'1',slot:'screen-segment',
+  id:'mote.screen-segment',version:'2',slot:'screen-segment',
   select:r=>{if(r.source!=='screen'&&r.source!=='ui_page')return;const row=(r as CaptureRecord&{groupKey?:string}).groupKey;return {deviceId:r.deviceId,groupKey:row??''};},
   identity:g=>g.groupKey?materialId(sourceKey('screen',g.deviceId),g.groupKey):undefined,
   build(reader,g){
@@ -309,14 +319,16 @@ const screenGroup:MaterialOrganizer={
     const apps=[...applications.values()].sort((a,b)=>b.durationMs-a.durationMs||a.appId.localeCompare(b.appId));
     body.text('overview',JSON.stringify({sampleCount:records.length,firstAt:sourceContentTime(records[0]!),lastAt:sourceContentTime(records.at(-1)!),
       observedDurationMs:durationMs,applicationCount:apps.length,applications:apps.slice(0,8),distinctOcrCount:distinctOcr.size,
-      keyframeCount:frameIndices.length,originalsRetained:true}),records[0]!.id,'json');
+      keyframeCount:frameIndices.length,originalsRetained:true}),records[0]!.id,'json',undefined,undefined,
+      {observedAt:records[0]!.capturedAt,document:{timeBasis:'unknown',contentRole:'summary'}});
     for(const [index,position] of frameIndices.entries()){
       const r=records[position]!;
       body.text(`keyframe:${index}`,JSON.stringify({capturedAt:r.capturedAt,appId:r.appId,appName:r.appName,
-        ocrText:(r.ocrText??'').trim().slice(0,800),hasImage:Boolean(r.blobHash)}),r.id,'json',{capturedAt:r.capturedAt});
+        ocrText:(r.ocrText??'').trim().slice(0,800),hasImage:Boolean(r.blobHash)}),r.id,'json',{capturedAt:r.capturedAt},undefined,evidenceContext(r));
     }
     body.text('ocr-distinct',JSON.stringify({items:[...distinctOcr.values()].slice(0,12).map(text=>text.slice(0,500)),
-      total:distinctOcr.size,truncated:distinctOcr.size>12}),records[0]!.id,'json');
+      total:distinctOcr.size,truncated:distinctOcr.size>12}),records[0]!.id,'json',undefined,undefined,
+      {observedAt:records[0]!.capturedAt,document:{timeBasis:'unknown',contentRole:'other'}});
     const ocrPending=records.some(r=>r.ocr?.status==='pending'),ocrFailed=records.some(r=>r.ocr?.status==='failed');
     return {id:materialId(sourceId,externalId),kind:'mote.screen-segment',schemaVersion:1,title:records.at(-1)?.appName||'Screen',
       origin:origin(sourceId,externalId,records),blocks:body.blocks,members:body.members,
@@ -327,13 +339,13 @@ const screenGroup:MaterialOrganizer={
 };
 
 const stateSeries:MaterialOrganizer={
-  id:'mote.state-series',version:'1',slot:'state-series',
+  id:'mote.state-series',version:'2',slot:'state-series',
   select:r=>r.stateSeries||['activity','media','device_event'].includes(r.source)?{deviceId:r.deviceId,captureId:r.id}:undefined,
   identity:g=>materialId(sourceKey('state',g.deviceId),g.captureId),
   build(reader,g){
     const r=reader.capture();if(!r)return;
     const sourceId=sourceKey('state',r.deviceId),body=new MaterialBody();body.addMember(r);
-    body.text('samples',captureText(r),r.id,'json');
+    body.text('samples',captureText(r),r.id,'json',undefined,undefined,evidenceContext(r));
     return {id:materialId(sourceId,r.id),kind:'mote.state-series',schemaVersion:1,title:r.appName||r.source,
       origin:origin(sourceId,r.id,[r],{firstAt:iso(r.capturedAt),lastAt:iso(r.stateSeries?.samples.at(-1)?.at??r.capturedAt)}),
       blocks:body.blocks,members:body.members,coverage:body.coverage(),artifacts:[{key:'state-series',state:'ready'}],fidelity:body.fidelity('derived',['metadata_projected']),retention:{original:'retained',policy:'keep'}};
@@ -341,13 +353,13 @@ const stateSeries:MaterialOrganizer={
 };
 
 const authored:MaterialOrganizer={
-  id:'mote.authored-record',version:'1',slot:'authored-record',
+  id:'mote.authored-record',version:'2',slot:'authored-record',
   select:r=>r.provenance||['screen','ui_page','activity','media','device_event'].includes(r.source)?undefined:{deviceId:r.deviceId,captureId:r.id},
   identity:g=>materialId(sourceKey('authored',g.deviceId),g.captureId),
   build(reader,g){
     const r=reader.capture();if(!r)return;
     const sourceId=sourceKey('authored',r.deviceId),body=new MaterialBody();body.addMember(r);
-    body.text('record',captureText(r),r.id,'json');
+    body.text('record',captureText(r),r.id,'json',undefined,undefined,evidenceContext(r,r.source==='note'?'authored':undefined));
     const file=reader.file(r.id);if(!file)return;
     for(const attachment of file.attachments)body.asset(`attachment:${attachment.id}`,attachment.hash,attachment.mimeType,r.id,{fileId:attachment.id,...(attachment.relativePath?{relativePath:attachment.relativePath}:{})});
     if(file.attachmentsTruncated)body.limitations.add('attachment_limit');

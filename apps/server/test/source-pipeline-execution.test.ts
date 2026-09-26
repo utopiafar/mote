@@ -13,12 +13,12 @@ import type {Context} from '@deepseek-ai/cordis';
 const event=(id:string,text:string)=>({externalId:id,revision:'1',observedAt:'2026-09-24T01:00:00Z',kind:'message',layer:'snapshot',text,
   document:{contentRole:'transcript',coding:{version:1,provider:'codex',sessionId:'shared-session',projectKey:'generated',eventId:id,role:'user',part:0,parts:1}}});
 const deferred=()=>{let resolve!:()=>void;const promise=new Promise<void>(done=>resolve=done);return {promise,resolve};};
-const codingV5=(ctx:Context)=>{
+const codingNextVersion=(ctx:Context)=>{
   codingSourcePlugin(ctx);
   const prior=ctx.moteSourceRecipes.registry.listRecipes().find(recipe=>recipe.definition.id==='mote.coding')!;
-  ctx.effect(()=>ctx.moteSourceRecipes.installRecipe({...prior.definition,version:'6'}));
+  ctx.effect(()=>ctx.moteSourceRecipes.installRecipe({...prior.definition,version:'7'}));
   const pipeline=ctx.moteSourcePipelines.get('mote.coding')!;
-  pipeline.version='6';pipeline.recipe={id:'mote.coding',version:'6'};
+  pipeline.version='7';pipeline.recipe={id:'mote.coding',version:'7'};
 };
 
 test('archive group is an engine step that survives a runtime restart',async t=>{
@@ -71,13 +71,13 @@ test('installed deterministic Coding recipe upgrades persisted groups without a 
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   await sources.upsert('coding',event('one','Generated deterministic upgrade'));
   await runtime.tick();const prior=store.db.prepare('SELECT id,generation,recipe_version,state FROM source_pipeline_work').get()!;
-  assert.equal(prior.recipe_version,'5');assert.equal(prior.state,'complete');
+  assert.equal(prior.recipe_version,'6');assert.equal(prior.state,'complete');
   await runtime.close();store.close();
 
-  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingV5]);await runtime.ready;
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
   await runtime.tick();const upgraded=store.db.prepare('SELECT generation,recipe_version,state FROM source_pipeline_work').get()!;
   assert.equal(upgraded.generation,Number(prior.generation)+1);
-  assert.equal(upgraded.recipe_version,'6');assert.equal(upgraded.state,'complete');
+  assert.equal(upgraded.recipe_version,'7');assert.equal(upgraded.state,'complete');
   assert.equal(runtime.engine.get(`source.archive-group:${prior.id}:${upgraded.generation}`)?.state,'succeeded');
   assert.equal(materials.list({query:'deterministic upgrade'}).items.length,1);
   await runtime.close();store.close();
@@ -93,9 +93,9 @@ test('recipe upgrade does not silently replay after out-of-band configuration dr
   store.db.prepare('INSERT INTO source_pipeline_config VALUES(?,?)').run('coding',JSON.stringify({settleSeconds:0}));
   await runtime.close();store.close();
 
-  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingV5]);await runtime.ready;
+  store=new Store(directory);materials=new MaterialStore(store);runtime=new SourcePipelineRuntime(store,materials,[codingNextVersion]);await runtime.ready;
   await runtime.tick();const blocked=store.db.prepare('SELECT generation,recipe_version,state,error FROM source_pipeline_work').get()!;
-  assert.equal(blocked.recipe_version,'5');assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'recipe_config_changed');
+  assert.equal(blocked.recipe_version,'6');assert.equal(blocked.state,'blocked');assert.equal(blocked.error,'recipe_config_changed');
   assert.equal(store.db.prepare("SELECT COUNT(*) n FROM execution_steps WHERE kind='source.archive-group'").get()!.n,1);
   await runtime.close();store.close();
 });

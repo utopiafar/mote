@@ -61,13 +61,14 @@ test('agent transcript can yield a task breadcrumb and personal memory without f
     {profile:'personal',requireAdmission:true,tier:'consolidated',relatedMemoryIds:[breadcrumbs[0].id]}),/Consolidation/);
 });
 
-test('distinct occurrences of the same personal expression retain evidence and survive owner correction',async t=>{
+test('distinct observations of the same personal expression retain evidence and survive owner correction',async t=>{
   const f=await fixture(t),quote='I feel drained after today’s meetings.';
   const first=await f.add(quote,'day-one',true),second=await f.add(quote,'day-two',true,'day-two',{},'2026-01-03T08:00:00Z');
   const a=f.memories.extract(result(first.id,quote),'fixture',{profile:'coding',requireAdmission:true}).items[0];
   const b=f.memories.extract(result(second.id,quote),'fixture',{profile:'coding',requireAdmission:true}).items[0];
   assert.notEqual(a.id,b.id);assert.notDeepEqual(a.evidenceIds,b.evidenceIds);
-  assert.notEqual(a.evidence?.[0].recordedAt,b.evidence?.[0].recordedAt);
+  assert.notEqual(a.evidence?.[0].capturedAt,b.evidence?.[0].capturedAt);
+  assert.equal(a.evidence?.[0].recordedAt,undefined);assert.equal(b.evidence?.[0].recordedAt,undefined,'observation timestamps do not establish recording dates');
   assert.equal(a.scopeRefs?.[0].projectName,'Aster');assert.equal(a.scopeRefs?.[0].repositoryKey,'a'.repeat(64));
   const correction=await f.memories.correct(a.id,{version:1,title:'Owner clarification',statement:'Only the planning meetings felt draining.',uncertainty:'One dated experience'});
   assert.equal(correction.domain,'personal');assert.deepEqual(correction.scopeRefs,a.scopeRefs);
