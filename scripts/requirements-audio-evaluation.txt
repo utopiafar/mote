@@ -1,0 +1,2 @@
+# Optional scorer only; never part of the production transcription worker.
+opencc-python-reimplemented==0.1.7

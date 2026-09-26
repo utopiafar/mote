@@ -43,12 +43,31 @@ def normalize(source, destination, budget_ms, timeout=600):
 
 
 def transcribe(normalized, model_path, threads):
-    from faster_whisper import WhisperModel
+    from faster_whisper import WhisperModel, BatchedInferencePipeline
+    from faster_whisper.audio import decode_audio
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
     if not Path(model_path).is_dir():
         raise ValueError('A local ASR model directory is required')
+    audio = decode_audio(str(normalized), sampling_rate=16000)
+    duration_ms = len(audio) / 16
+    # Keep model-detected speech clips separate. Packing distinct voices back into
+    # one decoder window dropped complete turns in the generated control.
+    speech = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=500, max_speech_duration_s=30))
+    if len(speech) > 50000:
+        raise OverflowError('Too many speech clips')
+    clips = []
+    previous_end = 0
+    for clip in speech:
+        start, end = clip['start'], clip['end']
+        if start < previous_end or end <= start or end > len(audio) or end - start > 30 * 16000:
+            raise ValueError('Invalid or oversized speech clip')
+        clips.append({'start': start / 16000, 'end': end / 16000})
+        previous_end = end
+    if not clips:
+        return {'durationMs': duration_ms, 'segments': [], 'engine': 'faster-whisper-local/vad-clips-1', 'uncorrected': True}
     model = WhisperModel(str(model_path), device='cpu', compute_type='int8', cpu_threads=threads, local_files_only=True)
-    segments, info = model.transcribe(str(normalized), beam_size=5, vad_filter=True,
-                                     word_timestamps=True, condition_on_previous_text=False)
+    segments, _info = BatchedInferencePipeline(model).transcribe(
+        audio, beam_size=5, vad_filter=False, clip_timestamps=clips, word_timestamps=True, batch_size=1)
     result = []
     for segment in segments:
         if not segment.text.strip():
@@ -59,8 +78,8 @@ def transcribe(normalized, model_path, threads):
                        'text': segment.text.strip(), 'words': words})
         if len(result) > 50000:
             raise OverflowError('Too many transcript segments')
-    return {'durationMs': info.duration * 1000, 'segments': result,
-            'engine': 'faster-whisper-local', 'uncorrected': True}
+    return {'durationMs': duration_ms, 'segments': result,
+            'engine': 'faster-whisper-local/vad-clips-1', 'uncorrected': True}
 
 
 def sample_bytes(normalized, start_ms, end_ms):

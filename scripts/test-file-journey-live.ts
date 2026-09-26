@@ -1,8 +1,9 @@
 /** Opt-in local media journey. Inputs are only the files explicitly listed in a manifest. */
 import assert from 'node:assert/strict';
 import {spawn,type ChildProcess} from 'node:child_process';
-import {randomBytes,randomUUID} from 'node:crypto';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {createHash,randomBytes,randomUUID} from 'node:crypto';
+import {createReadStream} from 'node:fs';
+import {mkdir,readFile,readdir,stat,writeFile} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import {join,relative,resolve} from 'node:path';
 import {parseArgs} from 'node:util';
@@ -34,7 +35,9 @@ const config:Config={dataKey:undefined,dataDir:join(directory,'vault'),token,tok
   allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
   diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
 const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'running',personalDataUsed:manifest.personalDataUsed,
-  browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,...(previous?{resumedFrom:previous.startedAt}:{}),files:[]};
+  browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,
+  runtime:{python:resolve(values.python),asrModelRoot:values['asr-model-root']?resolve(values['asr-model-root']):undefined,ocrModelRoot:values['ocr-model-root']?resolve(values['ocr-model-root']):undefined},
+  ...(previous?{resumedFrom:previous.startedAt}:{}),files:[]};
 const save=()=>writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const children:{child:ChildProcess;closed:Promise<unknown>}[]=[];
@@ -62,9 +65,18 @@ async function request(method:'POST'|'PUT'|'GET',url:string,payload?:Record<stri
 }
 try{
   await save();
+  report.workerCodeHashes=Object.fromEntries(await Promise.all(['scripts/mote_audio.py','scripts/transcription-server.py','scripts/requirements-audio.txt','scripts/test-file-journey-live.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
   const hasImage=manifest.files.some(file=>file.mimeType.startsWith('image/')),hasAudio=manifest.files.some(file=>file.mimeType.startsWith('audio/'));
   assert.ok(manifest.files.every(file=>file.mimeType.startsWith('image/')||file.mimeType.startsWith('audio/')),'Choose image/audio files');
   if(hasImage)assert.ok(values['ocr-model-root'],'OCR model root required');if(hasAudio)assert.ok(values['asr-model-root'],'ASR model root required');
+  if(hasAudio){
+    const names=new Set(await readdir(values['asr-model-root']!));
+    report.audioModelFiles=await Promise.all(['config.json','preprocessor_config.json','model.bin','tokenizer.json','vocabulary.txt','vocabulary.json','segmentation.onnx','speaker.onnx'].filter(name=>names.has(name)).map(async name=>{
+      const path=join(values['asr-model-root']!,name),before=await stat(path),hash=createHash('sha256');
+      for await(const part of createReadStream(path))hash.update(part);const after=await stat(path);assert.equal(before.size,after.size);assert.equal(before.mtimeMs,after.mtimeMs);
+      return {name,sizeBytes:after.size,sha256:hash.digest('hex')};
+    }));await save();
+  }
   const ocr=hasImage?await worker('ocr-server.py',['--model-root',values['ocr-model-root']!],'ocr'):undefined;
   const asr=hasAudio?await worker('transcription-server.py',['--model',values['asr-model-root']!,'--segmentation-model',join(values['asr-model-root']!,'segmentation.onnx'),'--speaker-model',join(values['asr-model-root']!,'speaker.onnx')],'asr'):undefined;
   node=await buildApp(config);const lifecycle=node.lifecycle.settings();

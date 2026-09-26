@@ -134,3 +134,15 @@ MOTE_FILE_TEST_DIR=.mote/processing-validation/cross-end \
 ```
 
 模拟器完整文件同步链路见 [验证记录](file-sync-validation.md)。真实模型、合成 fixture、物理设备验证分开报告。
+
+### 可核对的本地语音对照
+
+`scripts/generate-audio-control.py --output /absolute/new-directory` 使用本机已安装的两种 macOS 中文声音，生成八轮对话及精确台词、时间范围、声音和文件哈希。`--gap-ms 0` 可去掉轮次之间额外加入的静音。它不下载声音，不使用私人录音，也不证明真实访谈准确率。
+
+把生成的 `manifest.json` 交给 `scripts/test-file-journey-live.ts`，再使用 `scripts/evaluate-audio-control.py --reference .../reference.json --run ... --output .../quality.json` 读取已关闭的隔离资料库。评估器报告字符错误率和两个已知声音的一对一匿名标签匹配；轮次内部的未标注部分可能包含自然静音，因此该指标不是标准 DER。可在独立评估环境安装 `scripts/requirements-audio-evaluation.txt` 并加 `--normalize-chinese-script`，同时报告原始 CER 与 OpenCC 繁简归一后的 CER，不改写归档转写。
+
+对照发现，默认连续解码会漏掉完整发言；关闭 VAD 或直接换成默认批量解码均未解决。当前本地处理器 v2 使用 Silero 检测的语音片段分别解码，保留原始时间偏移，每段最多 30 秒、推理批量为 1，片段间不再拼回同一个解码窗口。500 ms 静音分隔及显式片段接口来自 [faster-whisper](https://github.com/SYSTRAN/faster-whisper)；这是声学处理参数，不是用户意图或 Memory 分类规则。原始模型权重和匿名说话人分离保持不变。空语音保留原时长，越界或过长片段明确失败，避免 SDK 静默只解码前 30 秒。
+
+同一份 129 秒生成录音经过正式文件流程，繁简归一后的 CER 从 25.85% 降到 3.77%，两个匿名标签在已识别语音上无混淆；新流程约 30.8 秒。原始 CER 与完整输出另行保存。该单一对照尚不能替代真实长录音核听。
+
+去掉额外静音后的连续换人对照仍未通过：同一指标由旧解码的 47.92% 降至 26.04%，仍有遗漏，分离产生三个匿名标签。不能把带停顿样例的通过推广到连续交谈；连续换人和真实访谈质量仍是功能验收缺口。
