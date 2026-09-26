@@ -17,10 +17,15 @@ export class MemoryExtractionDrafts {
         DELETE FROM memory_extraction_drafts WHERE batch_id=new.id AND (shared=0 OR json_extract(new.json,'$.status')='invalidated'); END;
       CREATE TRIGGER IF NOT EXISTS memory_draft_dependency_removed AFTER DELETE ON memory_batch_dependencies BEGIN
         DELETE FROM memory_extraction_drafts WHERE batch_id=old.batch_id; END;
-      CREATE TRIGGER IF NOT EXISTS memory_draft_job_cancelled AFTER UPDATE OF json ON memory_jobs
+      DROP TRIGGER IF EXISTS memory_draft_job_cancelled;
+      CREATE TRIGGER memory_draft_job_cancelled AFTER UPDATE OF json ON memory_jobs
         WHEN json_extract(new.json,'$.status')='cancelled' BEGIN
-        DELETE FROM memory_extraction_drafts WHERE batch_id IN (SELECT id FROM memory_batches WHERE job_id=new.id); END;`);
+        DELETE FROM memory_extraction_drafts WHERE shared=0 AND batch_id IN (SELECT id FROM memory_batches WHERE job_id=new.id); END;`);
   }
+  // Cancellation ends a consumer's work, not an already validated shared stage.
+  // Other consumers still need their own admission, exact input hash and review.
+  // Evidence invalidation/deletion and bounded eviction remove shared drafts;
+  // the cancelled producer cannot add or update them after its fence closes.
   get(batchId:string,inputHash:string,shared=false):QueryResult|undefined {
     if(shared){const common=this.store.db.prepare('SELECT json FROM memory_extraction_drafts WHERE input_hash=? AND shared=1 LIMIT 1').get(inputHash);if(common)return JSON.parse(String(common.json));}
     const row=this.store.db.prepare('SELECT input_hash,json FROM memory_extraction_drafts WHERE batch_id=?').get(batchId);

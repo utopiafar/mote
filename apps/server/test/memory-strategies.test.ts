@@ -30,9 +30,9 @@ async function fixture(t:any){
     for(const value of ${JSON.stringify(recipes)})disposers.push(ctx.memoryStrategies.registerRecipe(value));
   },close(){for(const dispose of disposers.reverse())dispose();}};}};`);
   const config:Config={dataDir:join(directory,'vault'),token:'generated-strategy-test-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false,connectors:{directory:join(directory,'connectors'),modules:[modulePath]}};
-  const calls:QueryInput[]=[],control:{failCoding:boolean;duringReview?:()=>void}={failCoding:false};
+  const calls:QueryInput[]=[],control:{failCoding:boolean;duringExtract?:()=>void;duringReview?:()=>void}={failCoding:false};
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
-    calls.push(input);const id=input.evidenceIds![0],record=node.memories.readEvidence([id])[0];
+    calls.push(input);if(input.traceContext?.phase==='extract')control.duringExtract?.();const id=input.evidenceIds![0],record=node.memories.readEvidence([id])[0];
     const common={uncertainty:'Only the supplied generated source is known.',admission:{layer:'memory',reason:'Generated test claim',scope:'Generated session',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:record.ocrText.trim()}]};
     const candidates=[{...common,domain:'personal',title:'Generated personal context',statement:`Felt proud of finishing the prototype [${id}]`},{...common,domain:'coding',title:'Generated coding experience',statement:`Used an idempotency key to prevent duplicate writes and verified retry [${id}]`,coding:{kind:'pitfall',scope:'session',applicability:'Generated prototype retry',validation:'tested'}}];
     let memories=candidates;
@@ -153,13 +153,28 @@ test('a recipe pin cannot be replaced by different code under the same version a
   assert.equal(f.calls.length,0,'changed installed content cannot run an old pinned job');
 });
 
-for(const mutation of ['cancel','delete'] as const)test(`${mutation} during composed review removes shared draft text and fences late output`,async t=>{
+for(const mutation of ['cancel','delete'] as const)test(`${mutation} during composed review fences late output and preserves only still-valid shared stages`,async t=>{
   const f=await fixture(t),source=await f.add('diary');
   const job=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('personal'),ref('coding')]});
   f.control.duringReview=()=>{f.control.duringReview=undefined;if(mutation==='cancel')f.node.memoryPipeline.cancel(job.id);else f.node.store.delete(source.id);};
   const result=await f.node.memoryPipeline.run(job.id);
   assert.equal(result.status,mutation==='cancel'?'cancelled':'failed');assert.equal(result.memoryIds.length,0);
-  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts WHERE shared=1').get()!.n,0);
+  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts WHERE shared=1').get()!.n,mutation==='cancel'?1:0);
+  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+  if(mutation==='cancel'){
+    assert.equal((await f.run(source.evidenceIds,['coding'])).status,'completed','a separate owner request may consume a validated stage');
+    assert.equal(f.count('extract'),1);assert.equal(f.count('review'),2);
+    assert.equal(f.node.memoryPipeline.get(job.id).status,'cancelled','reuse cannot revive the cancelled consumer');
+    f.node.store.delete(source.id);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
+  }
+});
+
+test('cancellation before extraction validation cannot populate shared drafts with late output',async t=>{
+  const f=await fixture(t),source=await f.add('diary'),job=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[ref('personal')]});
+  f.control.duringExtract=()=>f.node.memoryPipeline.cancel(job.id);
+  assert.equal((await f.node.memoryPipeline.run(job.id)).status,'cancelled');
+  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),0);assert.equal(f.node.memories.list().length,0);
+  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
 });
 

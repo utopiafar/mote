@@ -641,10 +641,14 @@ export class EvidenceStore {
   delete(id:string) {
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      // Resolve lineage while formal anchors still exist. Deleting the capture
+      // cascades through materials and would otherwise erase these links before
+      // their Memory, checkpoint and private draft dependents can be revoked.
+      if(this.db.prepare('SELECT 1 FROM captures WHERE id=?').get(id))this.invalidateMemoryEvidence(id,true);
       const result=this.db.prepare('DELETE FROM captures WHERE id=?').run(id);this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(id);
       if(result.changes)this.db.prepare('INSERT INTO changes(id,operation,changed_at) VALUES(?,?,?)').run(id,'delete',new Date().toISOString());
       // Derived retrospectives can refer to removed evidence; invalidate, rather than retain stale personal facts.
-      if(result.changes){this.invalidateMemoryEvidence(id,true);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);}
+      if(result.changes)this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(id);
       this.db.exec('COMMIT');this.sweep();this.archive.collect();return {deleted:Number(result.changes)};
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
@@ -653,9 +657,12 @@ export class EvidenceStore {
     try {
       const removed=this.db.prepare('SELECT id FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)').all(before) as {id:string}[];
       this.db.prepare("INSERT INTO changes(id,operation,changed_at) SELECT id,'delete',? FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)").run(new Date().toISOString(),before);
+      // Journal/count the selected set before invalidation can delete excerpts
+      // through their parent. The whole operation remains one transaction.
+      for(const row of removed)this.invalidateMemoryEvidence(row.id,true);
       this.db.prepare('DELETE FROM captures_fts WHERE rowid IN (SELECT rowid FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions))').run(before);
-      const result=this.db.prepare('DELETE FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
-      if(result.changes){for(const row of removed)this.invalidateMemoryEvidence(row.id,true);this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');}this.db.exec('COMMIT');this.sweep();this.archive.collect();return Number(result.changes);
+      this.db.prepare('DELETE FROM captures WHERE context_end < ? AND id NOT IN (SELECT capture_id FROM file_versions)').run(before);
+      if(removed.length)this.db.exec('UPDATE source_heads SET deleted=1 WHERE capture_id NOT IN (SELECT id FROM captures)');this.db.exec('COMMIT');this.sweep();this.archive.collect();return removed.length;
     }catch(e){this.db.exec('ROLLBACK');throw e;}
   }
   invalidateConversationAnswers(evidenceIds?:string[]) {

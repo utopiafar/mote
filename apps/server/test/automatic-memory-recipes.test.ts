@@ -15,7 +15,7 @@ const body='I felt proud of finishing the prototype. For the prototype retry pat
 async function fixture(t:import('node:test').TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-auto-recipes-'));
   const config:Config={dataKey:undefined,dataDir:directory,token:'generated-auto-recipes-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
-  const calls:QueryInput[]=[],control:{failCoding:boolean;duringReview?:(input:QueryInput)=>Promise<void>}={failCoding:false};
+  const calls:QueryInput[]=[],control:{failCoding:boolean;emptyResults?:boolean;duringReview?:(input:QueryInput)=>Promise<void>}={failCoding:false};
   let node:Awaited<ReturnType<typeof buildApp>>;
   const dependencies={backgroundWorker:false,agent:{configured:true,close:async()=>{},query:async(input:QueryInput):Promise<QueryResult>=>{
     calls.push(input);const evidence=node.memories.readEvidence(input.evidenceIds!)[0],id=evidence.id;
@@ -28,7 +28,7 @@ async function fixture(t:import('node:test').TestContext){
       if(recipe.id===coding.id&&control.failCoding)throw Error('Generated independent review failure');
       values=recipe.id===coding.id?[candidates[1]]:[candidates[0]];
     }
-    return {answer:JSON.stringify({memories:values}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
+    return {answer:JSON.stringify({memories:control.emptyResults?[]:values}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
   }}};
   node=await buildApp(config,dependencies);await node.app.ready();
   const configure=async(recipes:typeof personal[]|null,sourceId?:string)=>{
@@ -36,11 +36,14 @@ async function fixture(t:import('node:test').TestContext){
     assert.equal(r.statusCode,200,r.body);return r.json();
   };
   const source=(id:string,isCoding=false)=>{node.sources.register({id,name:'Generated '+id,kind:isCoding?'coding-agent':'custom',deviceId:'fixture',platform:'import'});node.sourcePipelines.configure(id,{memory:true,settleSeconds:0});};
-  const add=async(sourceId:string,externalId:string,isCoding=false,revision='1')=>node.sources.upsert(sourceId,{externalId,revision,observedAt:'2020-01-01T00:00:00Z',kind:'message',layer:'original',text:body,...(isCoding?{document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated',sessionId:externalId,eventId:'event',role:'user',part:0,parts:1}}}:{document:{contentRole:'authored'}})});
+  const add=async(sourceId:string,externalId:string,isCoding=false,revision='1',text=body)=>node.sources.upsert(sourceId,{externalId,revision,observedAt:'2020-01-01T00:00:00Z',kind:'message',layer:'original',text,...(isCoding?{document:{contentRole:'transcript',coding:{version:1,provider:'codex',projectKey:'generated',sessionId:externalId,eventId:'event',role:'user',part:0,parts:1}}}:{document:{contentRole:'authored'}})});
   const publish=async()=>{await node.materialOrganizer.tick(100);await node.sourcePipelines.tick(100);};
   const run=async()=>{node.sourcePipelines.drainMemory(node.memoryPipeline,true,100);await Promise.all(node.memoryPipeline.list().filter(j=>['queued','running','waiting_for_model'].includes(j.status)).map(j=>node.memoryPipeline.run(j.id)));};
+  // Hold scheduling, not admission: the production queue still creates and
+  // claims actual jobs. Tests can then choose a producer or restart before work.
+  const queue=async()=>{const p=node.memoryPipeline;node.sourcePipelines.drainMemory({create:input=>p.create(input),get:id=>p.get(id),cancel:id=>p.cancel(id),run:async()=>{}},true,100);await new Promise(resolve=>setImmediate(resolve));};
   t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
-  return {get node(){return node;},jobs:()=>node.memoryPipeline.list().map(j=>node.memoryPipeline.get(j.id)),calls,control,config,configure,source,add,publish,run,count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();}};
+  return {get node(){return node;},jobs:()=>node.memoryPipeline.list().map(j=>node.memoryPipeline.get(j.id)),calls,control,config,configure,source,add,publish,run,queue,count:(phase:string)=>calls.filter(c=>c.traceContext?.phase===phase).length,async restart(){await node.app.close();node=await buildApp(config,dependencies);await node.app.ready();}};
 }
 
 test('owner-selected automatic recipes share one generation, support source overrides and survive restart without replay',async t=>{
@@ -114,6 +117,49 @@ test('unavailable selected definitions preserve their pinned receipt and do not 
   const pending=f.node.store.db.prepare('SELECT job_id,error FROM material_memory_requests WHERE scope=?').get(scope);
   assert.equal(pending!.job_id,null);assert.equal(pending!.error,'memory_enqueue_failed');
   assert.equal(f.jobs().length,1,'no fallback policy is silently substituted');
+});
+
+for(const mutation of ['delete','prune','revise'] as const)test(`a cancelled automatic producer preserves a shared stage for an authorized sibling across restart; ${mutation} still invalidates it`,async t=>{
+  const f=await fixture(t);f.source('diary');await f.configure([personal,coding]);const original=await f.add('diary','first');await f.publish();await f.queue();
+  const producer=f.jobs().find(j=>j.recipes![0].id===personal.id)!;
+  let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>enter=r),held=new Promise<void>(r=>release=r);
+  f.control.duringReview=async()=>{enter();await held;};const running=f.node.memoryPipeline.run(producer.id);await entered;
+  const draft=f.node.store.db.prepare('SELECT batch_id,input_hash,json FROM memory_extraction_drafts WHERE shared=1').get()!;
+  assert.ok(producer.batches.some(b=>b.id===draft.batch_id),'the cancelled job actually produced the shared draft');
+  await f.configure([coding]);release();assert.equal((await running).status,'cancelled');
+  assert.equal(f.node.memories.list().length,0);assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+  assert.deepEqual(f.node.store.db.prepare('SELECT batch_id,input_hash,json FROM memory_extraction_drafts WHERE shared=1').get(),draft);
+  await f.restart();f.control.duringReview=undefined;await f.run();
+  assert.equal(f.count('extract'),1);assert.equal(f.count('review'),2);
+  const sibling=f.jobs().find(j=>j.recipes![0].id===coding.id)!;assert.equal(sibling.status,'completed');assert.equal(sibling.memoryIds.length,1);
+  const memory=f.node.memories.get(sibling.memoryIds[0]);assert.equal(memory.domain,'coding');
+  assert.equal(memory.reviewReceipt!.draftRunId,JSON.parse(String(draft.json)).runId);
+  assert.equal(f.node.memoryPipeline.get(producer.id).status,'cancelled');
+  if(mutation==='delete')assert.equal(f.node.store.delete(original.id).deleted,1);
+  else if(mutation==='prune')assert.ok(f.node.store.prune('2021-01-01T00:00:00Z')>=1);
+  else await f.node.sources.upsert('diary',{externalId:'first',revision:'2',observedAt:'2020-01-02T00:00:00Z',kind:'message',layer:'original',text:'A corrected original.',document:{contentRole:'authored'}});
+  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
+  assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
+  if(mutation==='revise'){assert.equal(f.node.memories.get(memory.id).status,'stale');assert.equal(f.node.store.evidence([original.id]).length,1,'revision keeps historical original');}
+  else assert.throws(()=>f.node.memories.get(memory.id),{statusCode:404});
+});
+
+test('automatic source jobs use the owner batch limit and keep existing ranges through setting changes and restart',async t=>{
+  const f=await fixture(t);f.control.emptyResults=true;f.source('diary');f.source('coding-source',true);
+  const setBudget=async(batchCharacters:number)=>{const r=await f.node.app.inject({method:'PUT',url:'/api/memory-settings',headers:{authorization:'Bearer '+f.config.token},payload:{...f.node.lifecycle.settings(),batchCharacters}});assert.equal(r.statusCode,200,r.body);};
+  await setBudget(257);const text='🍃'.repeat(700)+body;
+  await f.add('diary','first',false,'1',text);await f.add('coding-source','first',true,'1',text);await f.publish();await f.queue();
+  const jobs=f.jobs();assert.equal(jobs.length,2);
+  const assertBudget=(job:typeof jobs[number],limit:number)=>{assert.equal(job.batchCharacters,limit);const ranges=job.batches.flatMap(b=>b.evidenceRanges);assert.ok(job.batches.every(b=>b.evidenceRanges.reduce((n,r)=>n+r.length,0)<=limit));
+    for(const evidence of f.node.memories.readEvidence(job.evidenceIds)){let end=0;for(const range of ranges.filter(r=>r.id===evidence.id).sort((a,b)=>a.offset-b.offset)){assert.equal(range.offset,end);end+=range.length;const part=evidence.ocrText.slice(range.offset,end);assert.ok(!/^[\uDC00-\uDFFF]|[\uD800-\uDBFF]$/.test(part),'Unicode remains whole');}assert.equal(end,evidence.ocrText.length);}
+  };
+  for(const job of jobs)assertBudget(job,257);
+  const before=jobs.map(j=>({id:j.id,ranges:j.batches.map(b=>b.evidenceRanges)}));
+  await setBudget(512);await f.restart();for(const old of before)assert.deepEqual(f.node.memoryPipeline.get(old.id).batches.map(b=>b.evidenceRanges),old.ranges);
+  await f.add('diary','second',false,'1',text);await f.publish();await f.queue();
+  const fresh=f.jobs().find(j=>!before.some(old=>old.id===j.id))!;assertBudget(fresh,512);assert.ok(fresh.batches.some(b=>b.evidenceRanges.some(r=>r.length>257)));
+  await f.run();assert.ok(f.jobs().every(j=>j.status==='completed'));assert.equal(f.jobs().length,3,'settings changes do not create history jobs');
+  for(const call of f.calls.filter(c=>c.traceContext?.phase==='extract'))assert.ok(call.evidenceRanges!.reduce((n,r)=>n+r.length,0)<=(call.traceContext!.jobId===fresh.id?512:257));
 });
 
 test('the commit boundary rejects revoked automatic permission even without local cancellation notification',async t=>{

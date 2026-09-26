@@ -23,11 +23,12 @@ export const defaultLifecycleSettings:LifecycleSettings={
 /** Connector initialization can receive originals before the lifecycle runtime
  * exists. Consult persisted policy (or its declared initial default), not a
  * closure over a later-created service. */
-export function automaticMemoryExtractionEnabled(store:Store):boolean {
-  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_lifecycle_settings'").get())return defaultLifecycleSettings.extraction.enabled;
+export function storedMemoryLifecycleSettings(store:Store):LifecycleSettings {
+  if(!store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_lifecycle_settings'").get())return structuredClone(defaultLifecycleSettings);
   const row=store.db.prepare('SELECT json FROM memory_lifecycle_settings WHERE id=1').get() as {json:string}|undefined;
-  return row?lifecycleSettingsSchema.parse(JSON.parse(row.json)).extraction.enabled:defaultLifecycleSettings.extraction.enabled;
+  return row?lifecycleSettingsSchema.parse(JSON.parse(row.json)):structuredClone(defaultLifecycleSettings);
 }
+export const automaticMemoryExtractionEnabled=(store:Store)=>storedMemoryLifecycleSettings(store).extraction.enabled;
 export type LifecycleWindow={id:string;version:string;from:number;through:number;ids:string[];startedAt:number;settings:LifecycleSettings;checkpoint?:string};
 type State={stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
 export type LifecycleExecution={operationId:string;jobId:string;signal:AbortSignal;interrupted:()=>boolean;commit:<T>(write:()=>T)=>T};

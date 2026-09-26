@@ -28,10 +28,10 @@ export type MemoryValidationFailureEvent=MemoryValidationFailure&{jobId:string;b
 type Chunk=EvidenceRange&{strategy?:MemoryRecipeBinding;reviewFingerprint?:string;profile?:'personal'|'coding';profileVersion?:string;group?:string;fingerprint:string;key:string};
 export type MemoryBatch={strategy?:MemoryRecipeBinding;configuration?:ModelConfiguration;id:string;index:number;status:'pending'|'running'|'completed'|'failed'|'invalidated';evidenceRanges:EvidenceRange[];attempts:number;memoryIds:string[];availableAt?:number;errorCode?:string;validationFailures?:MemoryValidationFailure[];phase?:'extract'|'review';stage?:string;startedAt?:string;lastActivityAt?:string;execution?:ExecutionEnvelope;splitDepth?:number;splitHistory?:{at:string;errorCode:'provider_timeout';attempts:number;evidenceRanges:EvidenceRange[]}[]};
 type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks:Chunk[];skillVersion?:string;resourceEvidenceIds?:string[]};
-export type MemoryJob={automaticGrant?:AutomaticMemoryGrant;contextTime?:string;recipes?:MemoryStrategyRef[];configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs?:Record<string,string>;language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
+export type MemoryJob={batchCharacters?:number;automaticGrant?:AutomaticMemoryGrant;contextTime?:string;recipes?:MemoryStrategyRef[];configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs?:Record<string,string>;language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={contextTime?:string;signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory'|'memory-strategy';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
-export type MemoryPipelineOptions={automaticAllowed?:(job:MemoryJob)=>boolean;strategies?:MemoryStrategies;configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult,strategy?:MemoryReviewStrategy)=>Promise<QueryResult>;materialAllowedForMemory?:(ref:string,profileId?:string)=>boolean;evidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
+export type MemoryPipelineOptions={automaticAllowed?:(job:MemoryJob)=>boolean;strategies?:MemoryStrategies;configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult,strategy?:MemoryReviewStrategy)=>Promise<QueryResult>;materialAllowedForMemory?:(ref:string,profileId?:string)=>boolean;evidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number|(()=>number)};
 
 type BatchOutput={strategy?:MemoryRecipeBinding;result:QueryResult;reviewReceipt?:MemoryReviewReceipt;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
 
@@ -61,12 +61,15 @@ export class MemoryPipeline {
   cancel(id:string){const job=this.storedJob(id);if(!['completed','cancelled'].includes(job.status)){job.status='cancelled';this.saveJob(job);for(const step of this.steps(id))this.engine.cancel(step);this.wake();}return this.get(id);}
 
   private closed=false;
-  private budget:number;
+  private batchBudget(){
+    const value=typeof this.options.batchCharacters==='function'?this.options.batchCharacters():this.options.batchCharacters??12000;
+    if(!Number.isSafeInteger(value)||value<256||value>12000)throw new StoreError('Memory batch budget must be 256–12000 characters');
+    return value;
+  }
   private unregister:Array<()=>Promise<void>>=[];
   constructor(private options:MemoryPipelineOptions){
     this.strategies=options.strategies??new MemoryStrategies();
-    this.budget=options.batchCharacters??12000;
-    if(!Number.isSafeInteger(this.budget)||this.budget<256||this.budget>12000)throw new StoreError('Memory batch budget must be 256–12000 characters');
+    this.batchBudget();
     this.initializeCounts();
     this.drafts=new MemoryExtractionDrafts(this.store);
     this.engine=options.executor??new ExecutionEngine(this.store);this.owned=!options.executor;
@@ -193,7 +196,7 @@ export class MemoryPipeline {
     if(input.importJobId){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.importJobId')=?").get(input.importJobId) as {id:string}|undefined;if(prior)return this.get(prior.id);}
     if(input.originKey){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.originKey')=?").get(input.originKey) as {id:string}|undefined;if(prior)return this.get(prior.id);}
     const jobTime=new Date().toISOString(),evaluationTime=selectedRecipes?(input.contextTime??jobTime):input.contextTime;
-    const budget=input.batchCharacters??this.budget;
+    const budget=input.batchCharacters??this.batchBudget();
     const evidenceIds=[...new Set(input.evidenceIds)],skillVersion=this.options.skillVersion??MEMORY_SKILL_VERSION,all:Chunk[]=[];
     const refsByEvidence=new Map<string,{id:string;revision:string}[]>();
     for(const ref of input.artifactRefs??[]){const artifact=this.store.archive.get(ref.id);if(!artifact||artifact.revision!==ref.revision)throw new StoreError('Semantic input changed',409);for(const range of (artifact.metadata.evidenceRanges??[]) as EvidenceRange[]){const refs=refsByEvidence.get(range.id)??[];if(!refs.some(r=>r.id===ref.id))refs.push(ref);refsByEvidence.set(range.id,refs);}}
@@ -222,7 +225,7 @@ export class MemoryPipeline {
     const groups:Chunk[][]=[];let group:Chunk[]=[],characters=0;
     for(const chunk of all){if(group.length&&(group[0].group!==chunk.group||characters+chunk.length>budget||group.length>=20)){groups.push(group);group=[];characters=0;}group.push(chunk);characters+=chunk.length;}
     if(group.length)groups.push(group);
-    const now=jobTime,job:MemoryJob={automaticGrant:input.automaticGrant,contextTime:evaluationTime,recipes:input.recipes,artifactRefs:input.artifactRefs,materialRefs,language:requestLocale.getStore()??'zh-CN',id:randomUUID(),modelProfileId:input.modelProfileId,modelOverride:input.modelOverride,importJobId:input.importJobId,originKey:input.originKey,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
+    const now=jobTime,job:MemoryJob={batchCharacters:budget,automaticGrant:input.automaticGrant,contextTime:evaluationTime,recipes:input.recipes,artifactRefs:input.artifactRefs,materialRefs,language:requestLocale.getStore()??'zh-CN',id:randomUUID(),modelProfileId:input.modelProfileId,modelOverride:input.modelOverride,importJobId:input.importJobId,originKey:input.originKey,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
     const batches:StoredBatch[]=groups.map((chunks,index)=>({strategy:chunks[0].strategy,artifactRefs:[...new Map(chunks.flatMap(c=>refsByEvidence.get(c.id)??[]).map(ref=>[ref.id,ref])).values()],id:randomUUID(),index,status:'pending',chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),attempts:0,memoryIds:[]}));
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{
