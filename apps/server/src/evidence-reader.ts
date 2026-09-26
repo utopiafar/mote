@@ -215,7 +215,7 @@ export class EvidenceReader {
     return {...page,items:page.items.filter(item=>Boolean(this.scopedMaterial(item.ref,args)))};
   }
   /** Shared scope selection for manual and automatic Memory admission. */
-  memorySelection(scope:Range={}, maximum=20000){
+  memorySelection(scope:Range={}, maximum=20000,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy){
     const ids=new Set<string>(),waiting:string[]=[],unavailable:string[]=[];
     const add=(id:string)=>{const record=this.memories.readEvidence([id])[0];
       if(record&&withinEvidenceScope(record,scope)&&this.memories.isCurrentEvidence(id)&&record.ocrText.length&&record.provenance?.layer!=='reference'&&record.provenance?.document?.fileIndex?.coverage!=='lightweight')ids.add(id);
@@ -224,7 +224,7 @@ export class EvidenceReader {
     let cursor:string|undefined;
     do{const page=this.materialCatalog({...scope,cursor,limit:100});
       for(const material of page.items){
-        if(!this.materialAllowedForMemory(material.ref)){(material.coverage.state==='complete'?unavailable:waiting).push(material.ref);continue;}
+        if(!this.materialAllowedForMemory(material.ref,policy)){(material.coverage.state==='complete'?unavailable:waiting).push(material.ref);continue;}
         const anchors=this.materials!.evidenceIds(material.ref);
         if(anchors.length){anchors.forEach(add);continue;}
         const selected=this.scopedMaterial(material.ref,scope);
@@ -239,7 +239,7 @@ export class EvidenceReader {
         if(record.provenance?.sourceId&&record.source!=='screen'&&record.source!=='ui_page'&&this.store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(record.provenance.sourceId))continue;
         if(record.ocr?.status==='pending'){waiting.push(record.id);continue;}
         if(record.ocr?.status==='failed'){unavailable.push(record.id);continue;}
-        if(this.captureExposure(record,'memory',defaultEvidenceExposurePolicy,'capture',true))add(record.id);
+        if(this.captureExposure(record,'memory',policy,'capture',true))add(record.id);
       }
       cursor=page.nextCursor??undefined;
     }while(cursor);
@@ -287,6 +287,30 @@ export class EvidenceReader {
   private exposureAllows(context:EvidenceExposureContext,policy:EvidenceExposurePolicy,screenOriginalGrant=false){
     return policy.allows(context,this.recipeRoutes(context.sourceKind,context.sourceId),screenOriginalGrant);
   }
+  /** Content restrictions follow original file lineage, including excerpts and
+   * formal Material anchors. Owner archive reads do not use this model gate. */
+  evidenceLocalOnly(id:string):boolean {
+    const anchor=this.materials&&this.store.db.prepare('SELECT material_id,revision FROM material_evidence WHERE id=?').get(id);
+    if(anchor){const material=this.materials!.get(`material:${anchor.material_id}@${anchor.revision}`);return !material||this.materialLocalOnly(material);}
+    const row=this.store.db.prepare(`WITH RECURSIVE originals(id) AS (
+      SELECT ? UNION SELECT c.capture_id FROM file_chunks c JOIN originals o ON c.id=o.id
+      UNION SELECT l.parent_id FROM file_evidence_links l JOIN originals o ON l.capture_id=o.id
+    ) SELECT 1 FROM originals o JOIN file_jobs j ON j.capture_id=o.id WHERE j.local_only=1 LIMIT 1`).get(id);
+    return Boolean(row);
+  }
+  private materialLocalOnly(material:MaterialRecord):boolean {
+    if(!this.materials)return true;
+    for(let offset=0;offset<material.memberCount;offset+=200){
+      const page=this.materials.members(material.ref,{offset,limit:200});
+      if(!page.items.length)return true;
+      for(const member of page.items){
+        if(member.kind==='capture'){
+          const id=evidenceRefId(member.ref,'capture');if(!id||this.evidenceLocalOnly(id))return true;
+        }
+      }
+    }
+    return false;
+  }
   private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false){
     const provenance=record.provenance,materialRef=provenance?.uri?.startsWith('material:')?provenance.uri.split('#')[0]:undefined;
     const material=materialRef?this.materials?.get(materialRef):undefined;
@@ -307,7 +331,7 @@ export class EvidenceReader {
     }
     const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':provenance?.document?.coding?'coding-agent':this.sourceKind(provenance?.sourceId,record.source);
     const phase:EvidencePhase=record.ocr?.status==='pending'?'pending':record.ocr?.status==='failed'?'partial':'complete';
-    return this.exposureAllows({sourceKind,sourceId:provenance?.sourceId,representation,operation,phase},policy,screenOriginalGrant);
+    return this.exposureAllows({sourceKind,sourceId:provenance?.sourceId,representation,operation,phase,localOnly:this.evidenceLocalOnly(record.id)},policy,screenOriginalGrant);
   }
   private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy){
     if(operation==='memory'&&this.sourceItemRecipes){
@@ -317,7 +341,7 @@ export class EvidenceReader {
         if(!pipeline?.recipe&&pipeline?.storage!=='archive'&&!this.materialMemoryReady?.(material.ref))return false;
       }catch{return false;}
     }
-    return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase:material.coverage.state},policy);
+    return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase:material.coverage.state,localOnly:this.materialLocalOnly(material)},policy);
   }
   /** Memory runners can inspect a material only after its declared route admits the current phase. */
   materialAllowedForMemory(ref:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy){
@@ -333,7 +357,7 @@ export class EvidenceReader {
         const record=scopeRecord(this.store,id)??this.materials?.evidence([id])[0];
         if(!record)return false;
         const sourceKind=record.source==='screen'||record.source==='ui_page'?'screen':record.provenance?.document?.coding?'coding-agent':this.sourceKind(record.provenance?.sourceId,record.source);
-        return this.exposureAllows({sourceKind,sourceId:record.provenance?.sourceId,representation:'segment',operation,phase},policy);
+        return this.exposureAllows({sourceKind,sourceId:record.provenance?.sourceId,representation:'segment',operation,phase,localOnly:this.evidenceLocalOnly(record.id)},policy);
       });
     })};
   }

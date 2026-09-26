@@ -4,7 +4,7 @@
 export type EvidenceRepresentation='capture'|'material'|'segment'|'image'|'memory';
 export type EvidenceOperation='discover'|'expand'|'memory';
 export type EvidencePhase='pending'|'partial'|'complete';
-export type EvidenceExposureContext={sourceKind:string;sourceId?:string;representation:EvidenceRepresentation;operation:EvidenceOperation;phase:EvidencePhase};
+export type EvidenceExposureContext={sourceKind:string;sourceId?:string;representation:EvidenceRepresentation;operation:EvidenceOperation;phase:EvidencePhase;localOnly?:boolean};
 export type EvidenceExposureRule={sourceKind?:string;sourceId?:string;representation?:EvidenceRepresentation;operation?:EvidenceOperation;phase?:EvidencePhase;allow:boolean};
 export type RecipeExposureRoute={audience:string;operation:string;phase:string;readProjection:string};
 
@@ -36,11 +36,13 @@ function matches(rule:EvidenceExposureRule,context:EvidenceExposureContext){
 export class EvidenceExposurePolicy {
   private readonly rules:readonly EvidenceExposureRule[];
   private readonly overrides:readonly EvidenceExposureRule[];
-  constructor(overrides:readonly EvidenceExposureRule[]=[]){
+  constructor(overrides:readonly EvidenceExposureRule[]=[],private readonly localExecution:()=>boolean=()=>false){
     this.overrides=overrides.map(rule=>({...rule}));
     this.rules=[...this.overrides,...defaults];
   }
   allows(context:EvidenceExposureContext,recipeRoutes?:readonly RecipeExposureRoute[],screenOriginalGrant=false){
+    // A source recipe can select a view, but cannot waive its content policy.
+    if(context.localOnly&&!this.localExecution())return false;
     // A coding archive can contain thousands of raw events. No recipe route or
     // host override may disclose those events through the full-record tools.
     if(context.sourceKind==='coding-agent'&&['capture','image'].includes(context.representation))return false;

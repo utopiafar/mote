@@ -132,6 +132,8 @@ export default {
 
 [私有录音组合示例](../plugins/file-processors/private-dialogue/README.md) 以新 ID 复用内置离线 ASR 和分离能力，只新增模块并注册即可运行。本地 ASR 后使用中央模型分析是另一种可以明确选择的插件方案：保留 `localOnly`，不声明 `contentPolicy: 'local-only'`，按需允许摘要。内置私有录音仍禁止自动摘要，也不回退到中央模型。当前录音组合的 ASR 与分离步骤共享方案服务地址；采用不同服务的适配需在插件中实现。
 
+模型读取时，“仅本地”标记沿原始文件、转写片段、摘录、正式 Material、Memory 和聚合资料的引用传播。声明可检索的来源插件不能绕过这项限制；远程模型读取、固定证据处理与 Memory 准入都检查当前标记，排队后的模型调用会重新检查。显式配置的 `custom` 模型可使用本机 loopback 端点读取这些资料；本地 Codex App Server 仍调用托管模型，不因此获得本地内容权限。模型配置按请求隔离，用户已有权限的原件/资料查看 API 保持可用。
+
 [中央分析组合示例](../plugins/file-processors/local-dialogue-analysis/README.md) 提供这一替代方案；原件仍由离线服务转写，派生文字可用于中央 Memory 和查询。加载模块与给具体来源分配方案是两个明确步骤。
 
 扩展接口在 [file-processors.ts](../apps/server/src/file-processors.ts)：

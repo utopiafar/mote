@@ -27,7 +27,7 @@ type StoredBatch=MemoryBatch&{artifactRefs?:{id:string;revision:string}[];chunks
 export type MemoryJob={configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs?:Record<string,string>;language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={contextTime?:string;signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
-export type MemoryPipelineOptions={configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;materialAllowedForMemory?:(ref:string)=>boolean;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
+export type MemoryPipelineOptions={configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult)=>Promise<QueryResult>;materialAllowedForMemory?:(ref:string,profileId?:string)=>boolean;evidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number};
 
 type BatchOutput={result:QueryResult;reviewReceipt?:MemoryReviewReceipt;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
 
@@ -111,9 +111,10 @@ export class MemoryPipeline {
       {id:string;revision:string;retired:number}|undefined;
     return row&&!row.retired?formatMaterialRef(row.id,row.revision):undefined;
   }
-  private materialAdmission(ids:readonly string[],pinned?:Readonly<Record<string,string>>):Record<string,string> {
+  private materialAdmission(ids:readonly string[],pinned?:Readonly<Record<string,string>>,profileId?:string):Record<string,string> {
     const refs:Record<string,string>={};
     for(const id of ids){
+      if(this.options.evidenceAllowedForMemory&&!this.options.evidenceAllowedForMemory(id,profileId))throw new StoreError('Memory evidence is not allowed for this model',409);
       const ref=this.currentMaterialRef(id);
       if(!ref){
         if(this.rawSourceItem(id))throw new StoreError('Source item Memory requires a published Material',409);
@@ -121,7 +122,7 @@ export class MemoryPipeline {
         continue;
       }
       if(!this.options.memories.isCurrentEvidence(id)||
-        !this.options.materialAllowedForMemory?.(ref)||
+        !this.options.materialAllowedForMemory?.(ref,profileId)||
         pinned&&pinned[id]!==ref)throw new StoreError('Memory Material dependency is not ready or changed',409);
       refs[id]=ref;
     }
@@ -129,11 +130,11 @@ export class MemoryPipeline {
     return refs;
   }
   /** Manual extraction and consolidation use the same source-item boundary. */
-  assertAdmissibleEvidence(ids:readonly string[]):void {this.materialAdmission(ids);}
-  withAdmissibleEvidence<T>(ids:readonly string[],run:()=>T):T {
+  assertAdmissibleEvidence(ids:readonly string[],profileId?:string):void {this.materialAdmission(ids,undefined,profileId);}
+  withAdmissibleEvidence<T>(ids:readonly string[],run:()=>T,profileId?:string):T {
     const db=this.store.db,own=!db.isTransaction;
     if(own)db.exec('BEGIN IMMEDIATE');
-    try{this.materialAdmission(ids);const value=run();if(own)db.exec('COMMIT');return value;}
+    try{this.materialAdmission(ids,undefined,profileId);const value=run();if(own)db.exec('COMMIT');return value;}
     catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   /** The legacy artifact lifecycle remains for screenshots and authored
@@ -179,7 +180,7 @@ export class MemoryPipeline {
   create(raw:{artifactRefs?:{id:string;revision:string}[];evidenceRanges?:EvidenceRange[];modelProfileId?:string;modelOverride?:string;evidenceIds:string[];importJobId?:string;originKey?:string;timeZone?:string;batchCharacters?:number}):MemoryJobDetail {
     if(this.closed)throw new StoreError('Memory pipeline is closed',503);
     const input=z.object({artifactRefs:z.array(z.object({id:z.string().length(64),revision:z.string().length(64)})).max(2000).optional(),evidenceRanges:z.array(z.object({id:z.string().uuid(),offset:z.number().int().min(0),length:z.number().int().min(1).max(12000)})).max(10000).optional(),modelProfileId:modelProfileIdSchema.optional(),modelOverride:z.string().trim().min(1).max(512).refine(v=>!/[\u0000-\u001f\u007f]/.test(v)).optional(),originKey:z.string().max(200).optional(),batchCharacters:z.number().int().min(256).max(12000).optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000),importJobId:z.string().max(200).optional(),timeZone:z.string().max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value});return true;}catch{return false;}},'Invalid time zone').optional()}).strict().parse(raw);
-    const materialRefs=this.materialAdmission([...new Set(input.evidenceIds)]);
+    const materialRefs=this.materialAdmission([...new Set(input.evidenceIds)],undefined,input.modelProfileId);
     // Import completion may be replayed after a process interruption.
     if(input.importJobId){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.importJobId')=?").get(input.importJobId) as {id:string}|undefined;if(prior)return this.get(prior.id);}
     if(input.originKey){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.originKey')=?").get(input.originKey) as {id:string}|undefined;if(prior)return this.get(prior.id);}
@@ -213,7 +214,7 @@ export class MemoryPipeline {
     const batches:StoredBatch[]=groups.map((chunks,index)=>({artifactRefs:[...new Map(chunks.flatMap(c=>refsByEvidence.get(c.id)??[]).map(ref=>[ref.id,ref])).values()],id:randomUUID(),index,status:'pending',chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),attempts:0,memoryIds:[]}));
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{
-      this.materialAdmission(evidenceIds,materialRefs);
+      this.materialAdmission(evidenceIds,materialRefs,input.modelProfileId);
       this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(job))+batches.reduce((sum,b)=>sum+Buffer.byteLength(JSON.stringify(b)),0));
       this.store.db.prepare('INSERT INTO memory_jobs(id,created_at,json) VALUES(?,?,?)').run(job.id,now,JSON.stringify(job));
       for(const batch of batches){this.store.db.prepare('INSERT INTO memory_batches(id,job_id,idx,json) VALUES(?,?,?,?)').run(batch.id,job.id,batch.index,JSON.stringify(batch));for(const id of new Set(batch.chunks.flatMap(c=>this.options.memories.dependencyIds(c.id))))this.store.db.prepare('INSERT INTO memory_batch_dependencies(batch_id,evidence_id) VALUES(?,?)').run(batch.id,id);}
@@ -247,13 +248,13 @@ export class MemoryPipeline {
   async retry(id:string):Promise<MemoryJobDetail> {
     if(this.active.has(id))return this.active.get(id)!;
     let job=this.storedJob(id);
-    this.materialAdmission(job.evidenceIds,job.materialRefs??{});
+    this.materialAdmission(job.evidenceIds,job.materialRefs??{},job.modelProfileId);
     if(job.availableAt&&job.availableAt>Date.now())throw new ProviderFailure({category:'transient',code:job.errorCode??'provider_unavailable',retryAfterMs:job.availableAt-Date.now()});
     if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
     const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
       try{
       job=this.storedJob(id);
-      this.materialAdmission(job.evidenceIds,job.materialRefs??{});
+      this.materialAdmission(job.evidenceIds,job.materialRefs??{},job.modelProfileId);
       if(job.status==='cancelled')throw new StoreError('Cancelled memory job cannot be retried',409);
       if(job.availableAt&&job.availableAt>Date.now())throw new ProviderFailure({category:'transient',code:job.errorCode??'provider_unavailable',retryAfterMs:job.availableAt-Date.now()});
       const batches=this.batches(id);
@@ -284,7 +285,7 @@ export class MemoryPipeline {
   private validateStep(step:ExecutionStep){
     const row=this.store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(String(step.input.batchId));if(!row)return false;
     const batch=JSON.parse(String(row.json)) as StoredBatch;
-    try{const job=this.storedJob(String(step.input.jobId));this.materialAdmission(job.evidenceIds,job.materialRefs??{});}
+    try{const job=this.storedJob(String(step.input.jobId));this.materialAdmission(job.evidenceIds,job.materialRefs??{},job.modelProfileId);}
     catch{return false;}
     return batch.status!=='invalidated'&&batch.chunks.every(chunk=>this.valid(chunk))&&(batch.artifactRefs??[]).every(ref=>this.store.archive.revision(ref.id)===ref.revision);
   }
@@ -317,7 +318,7 @@ export class MemoryPipeline {
   private commitBatch(step:ExecutionStep,output:BatchOutput|undefined){
     if(!output)return;
     const job=this.storedJob(String(step.input.jobId));
-    this.assertConfiguration(job);this.materialAdmission(job.evidenceIds,job.materialRefs??{});
+    this.assertConfiguration(job);this.materialAdmission(job.evidenceIds,job.materialRefs??{},job.modelProfileId);
     const batch=this.batch(String(step.input.batchId)),{result,model,profile,skillVersion,ranges,chunks}=output;
     this.options.memories.extract(result,model,{profile,requireAdmission:this.options.requireAdmission,reviewReceipt:output.reviewReceipt,reviewRunId:output.reviewReceipt?output.reviewReceipt.reviewRunId:this.options.review?result.runId:undefined,skillVersion,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),onSaved:items=>{
       for(const item of items)for(const ref of batch.artifactRefs??[])this.store.db.prepare('INSERT INTO memory_artifact_dependencies VALUES(?,?)').run(item.id,ref.id);
@@ -362,7 +363,7 @@ export class MemoryPipeline {
     const ranges=chunks.map(({id,offset,length})=>({id,offset,length}));
     try{
         this.assertConfiguration(job);
-        this.materialAdmission(job.evidenceIds,job.materialRefs??{});
+        this.materialAdmission(job.evidenceIds,job.materialRefs??{},job.modelProfileId);
         if(job.configuration&&!observeCurrent(()=>{batch.configuration=structuredClone(job.configuration);this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(batch.configuration)));this.saveBatch(batch);} ))throw new ExecutionFailure('waiting','interrupted');
         const model=job.configuration?.model??job.modelOverride??this.options.model(job.modelProfileId);
         let feedback:MemoryOutputValidationError|undefined;
@@ -384,7 +385,7 @@ export class MemoryPipeline {
             if(!observeCurrent(()=>{batch.validationFailures=[...(batch.validationFailures??[]),failure].slice(-20);this.saveBatch(batch);}))return;
             try{this.options.onValidationFailure?.({...failure,jobId:id,batchId:batch.id,batchIndex:batch.index});}catch{}
           };
-          const validateArtifacts=()=>{assertGrant();this.assertConfiguration(job);this.materialAdmission(job.evidenceIds,job.materialRefs??{});if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
+          const validateArtifacts=()=>{assertGrant();this.assertConfiguration(job);this.materialAdmission(job.evidenceIds,job.materialRefs??{},job.modelProfileId);if((batch.artifactRefs??[]).some(ref=>this.store.archive.revision(ref.id)!==ref.revision))throw new StoreError('Semantic input changed during extraction',409);};
           const validateOutput:QueryInput['validateOutput']=result=>{
             validateArtifacts();
             try{this.options.memories.extract(result,model,{profile:profile.id,requireAdmission:this.options.review?true:this.options.requireAdmission,evidenceRanges:ranges,expectedFingerprints:Object.fromEntries(chunks.map(c=>[c.id,c.fingerprint])),validateOnly:true});}

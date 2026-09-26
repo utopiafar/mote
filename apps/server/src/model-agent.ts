@@ -3,6 +3,11 @@ import { DEFAULT_AGENT_TIMEOUT_MS, DEFAULT_MODEL_MAX_TOKENS, DEFAULT_MODEL_REQUE
 import type { Config } from './config.js';
 import type { QueryAgent } from './app.js';
 import type { PreparedModelSettings } from './model-settings.js';
+import {isLoopback} from './file-processors.js';
+
+/** A local Codex transport still calls a hosted model. Local content requires
+ * an explicitly configured custom model endpoint on this machine. */
+export const usesLocalModel=(settings:ModelSettings)=>settings.provider==='custom'&&settings.protocol!=='codex-app-server'&&isLoopback(settings.baseUrl);
 
 export type ModelAgentFactory = (settings: ModelSettings, reader: ContextReader) => Promise<QueryAgent>;
 export const createModelAgent = async (settings:ModelSettings, reader:ContextReader, codex?:AgentOptions['codex'],runModel?:AgentOptions['runModel'],admitModelRequest?:AgentOptions['admitModelRequest']):Promise<QueryAgent> => createAgent({ ...settings, reader, runModel, admitModelRequest, requestTimeoutMs: settings.modelRequestTimeoutMs, agentTimeoutMs: settings.agentTimeoutMs, codex });

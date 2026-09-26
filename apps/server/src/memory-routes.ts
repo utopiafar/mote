@@ -12,6 +12,8 @@ import type {MemoryLifecycle} from './memory-lifecycle.js';
 import type {EvidenceReader} from './evidence-reader.js';
 import type {FileStore} from './files.js';
 import {StoreError,type Store} from './store.js';
+import {EvidenceExposurePolicy} from './evidence-exposure.js';
+import {usesLocalModel} from './model-agent.js';
 export function registerMemoryRoutes(app:FastifyInstance,{store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memories.publish((req.params as {id:string}).id,body.version);});
@@ -24,7 +26,7 @@ export function registerMemoryRoutes(app:FastifyInstance,{store,files,evidenceRe
   app.post('/api/memory-jobs',async(req,reply)=>{
     const scope=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
     const profile=modelSettings.select('memory',scope.modelProfileId);
-    const selection=scope.evidenceIds?undefined:evidenceReader.memorySelection(scope);
+    const selection=scope.evidenceIds?undefined:evidenceReader.memorySelection(scope,undefined,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)));
     let ids=scope.evidenceIds??selection!.evidenceIds;
     if(!ids.length)throw new StoreError('No evidence in this range',409);
     ids=[...new Set(ids)];
@@ -52,17 +54,17 @@ export function registerMemoryRoutes(app:FastifyInstance,{store,files,evidenceRe
   app.post('/api/memory-jobs/:id/retry',async(req,reply)=>{const id=jobId(req.params);memoryPipeline.get(id);void memoryPipeline.retry(id).catch(()=>{});return reply.code(202).send(memoryPipeline.get(id));});
   app.post('/api/memories/extract',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
-    const selected=evidenceReader.memorySelection(scope,100);
+    const selected=evidenceReader.memorySelection(scope,100,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)));
     if(!selected.evidenceIds.length)throw new StoreError('No processed evidence in this range',409);
     const evidenceRanges=memories.readEvidence(selected.evidenceIds).map(record=>({id:record.id,offset:0,length:record.ocrText.length}));
     if(evidenceRanges.reduce((sum,range)=>sum+range.length,0)>100000)throw new StoreError('Use a Memory job for this larger range',413);
     const input:QueryInput={...scope,evidenceRanges,evidenceIds:selected.evidenceIds,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
-    input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
+    input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const draft=await query(input);
-    memoryPipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));
+    memoryPipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id),profile.id);
     memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true});
     const result=await reviewExtraction(input,draft);
     return memoryPipeline.withAdmissibleEvidence(result.citations.map(c=>c.id),()=>
-      memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)}));
+      memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)}),profile.id);
   });
 }
