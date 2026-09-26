@@ -59,6 +59,7 @@ import { join,dirname } from 'node:path';
 import { z } from 'zod';
 import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,type QueryResult,type CaptureRecord,type CaptureInput } from '@mote/shared';
 import { AgentNotConfiguredError,createImportAgent,skillCatalog,type ContextReader,type QueryInput,type AgentTraceEvent } from '@mote/agent';
+import {openingMemories} from './opening-memory.js';
 import { DEFAULT_MODEL_MAX_TOKENS, modelProvider } from '@mote/shared/models';
 import { ModelSettingsStore,ModelSettingsError,modelProfileIdSchema } from './model-settings.js';
 import { ReloadableAgent,createModelRegistry,modelSettingsFromConfig,applyModelSettings,createModelAgent,testModelConnection,type ModelAgentFactory } from './model-agent.js';
@@ -502,7 +503,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     if(previous&&previous.turnCount>=200)throw new StoreError('Conversation has reached its turn limit; start a new conversation',409);
     const scope:QueryScope={};
     for(const key of ['after','before','deviceId','timeZone'] as const) {
-      const value=selected[key]===undefined?previous?.scope[key]:selected[key];
+      const value=key==='timeZone'&&selected.timeZone===undefined?previous?.scope.timeZone:selected[key];
       if(value!==undefined&&value!==null)scope[key]=value;
     }
     insightSchema.parse(scope);
@@ -514,7 +515,11 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       const previousIds=previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[];
       const previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
       const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
-      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,modelProfileId,modelOverride,onProgress,signal,directImages,...(previous?{conversation:await working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution)}:{})});
+      const [memoryLeads,conversation]=await Promise.all([
+        openingMemories(archiveReader,question,scope),
+        previous?working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution):undefined,
+      ]);
+      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,modelProfileId,modelOverride,onProgress,signal,directImages,openingMemories:memoryLeads,...(conversation?{conversation}:{})});
       signal?.throwIfAborted();
       return ()=>({...result,...conversations.append(previous,{question,...scope,attachments:directImages.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result)});
     } catch(error) {

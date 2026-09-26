@@ -20,12 +20,21 @@ const button=(d:Document,text:string)=>Array.from(d.querySelectorAll<HTMLButtonE
 test('conversation restore, detail and older-page replies cannot replace later owner selection',async t=>{
  const {root,d}=await fixture(t),restore=deferred(),a=deferred(),old=deferred();
  const api=apiWith(path=>path==='/api/conversations?limit=30'?{items:['A','B'].map(summary)}:path==='/api/query-runs'?restore.promise:path.includes('?cursor=')?old.promise:path.endsWith('/A')?a.promise:detail('B'));
- await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],range:{},renderAnswer:a=>a.answer})));
+ await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
  const rows=d.querySelectorAll<HTMLButtonElement>('.conversation-item');await act(async()=>rows[0].click());await act(async()=>rows[1].click());
  await act(async()=>a.resolve(detail('A')));await act(async()=>restore.resolve({items:[{id:'old-run',status:'completed',conversationId:'A'}]}));
  assert.match(d.querySelector('.conversation-messages')!.textContent!,/Answer B/);assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/Answer A/);
  await act(async()=>button(d,'加载更早的对话').click());await act(async()=>rows[0].click());await act(async()=>old.resolve({...detail('B'),turns:[{...detail('B').turns[0],id:'older-B',question:'STALE OLDER'}]}));
  assert.doesNotMatch(d.querySelector('.conversation-messages')!.textContent!,/STALE OLDER|Answer B/);
+});
+test('Ask sends a question without the dashboard time or device filter',async t=>{
+ const {root,d}=await fixture(t);let submitted:any;
+ const completed={id:'generated-run',status:'completed',createdAt:when,updatedAt:when,events:[]};
+ const api=apiWith((path,init)=>{if(path==='/api/query-runs'&&init?.method==='POST'){submitted=JSON.parse(String(init.body));return completed;}if(path==='/api/query-runs/generated-run')return completed;return {items:[]};});
+ await act(async()=>root.render(React.createElement(Conversations,{api,configured:true,devices:[],renderAnswer:a=>a.answer})));
+ await act(async()=>button(d,'我最近都做了些什么？').click());
+ assert.equal(submitted.input.question,'我最近都做了些什么？');
+ assert.equal(submitted.input.after,undefined);assert.equal(submitted.input.before,undefined);assert.equal(submitted.input.deviceId,undefined);
 });
 test('insight reads isolate sessions and show skills failures without a false empty history',async t=>{
  const {root,d}=await fixture(t),old=deferred();const first=apiWith(path=>path==='/api/skills'?{items:[]}:old.promise),next=apiWith(path=>{if(path==='/api/skills')throw new ApiError('generated abilities failure',503);return {items:[]};});
