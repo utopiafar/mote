@@ -16,6 +16,11 @@ import {FileProcessorRuntime} from '../src/file-processors.js';
 import {alignDialogue,applySemanticGroups} from '../src/file-dialogue.js';
 import {FileReviews} from '../src/file-reviews.js';
 import {fileExportEntries,exportTar} from '../src/file-export.js';
+import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
+import {MemoryPipeline} from '../src/memory-pipeline.js';
+import {MaterialStore,materialId} from '../src/materials.js';
+import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
+import {MaterialMemoryWork} from '../src/material-memory-work.js';
 
 const raw:Transcript={durationMs:3000,segments:[{startMs:0,endMs:1000,text:'使用扣迪斯插件。',words:[{startMs:0,endMs:300,text:'使用'},{startMs:300,endMs:700,text:'扣迪斯'},{startMs:700,endMs:1000,text:'插件。'}]},{startMs:1500,endMs:2500,text:'嗯，对，尚未完成。'}]};
 const wave=Buffer.alloc(32044);wave.write('RIFF');wave.writeUInt32LE(wave.length-8,4);wave.write('WAVEfmt ',8);wave.writeUInt32LE(16,16);wave.writeUInt16LE(1,20);wave.writeUInt16LE(1,22);wave.writeUInt32LE(16000,24);wave.writeUInt32LE(32000,28);wave.writeUInt16LE(2,32);wave.writeUInt16LE(16,34);wave.write('data',36);wave.writeUInt32LE(32000,40);
@@ -82,15 +87,78 @@ test('export contains raw and speaker transcripts, valid tar headers, encrypted 
 test('term proposals require exact cited text and explicit selection; correction preserves raw export and rejects stale proposals',async t=>{
  const f=await fixture(t,{analyze:async(records:any[],_prompt:string,_settings:any,local:boolean)=>{assert.equal(local,true);const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original:'扣迪斯',replacement:'Cordis',reason:'请确认框架名称'}]}),citations:[{id:chunk.chunkId}]};}});await f.processing.tick();const reviews=new FileReviews(f.files,f.processing),proposal=await reviews.propose(f.id,{kind:'terms'}),other=await reviews.propose(f.id,{kind:'terms'});
  assert.match(f.files.chunks(f.id)[0].ocrText,/扣迪斯/);assert.throws(()=>reviews.confirm(f.id,proposal.id,{action:'accept'}));
+ const before=f.files.chunks(f.id)[0];reviews.nameSpeakers(f.id,{artifactId:before.fileEvidence!.artifactId,names:{SPEAKER_0:'Generated Alice'}});const attribution=f.files.chunks(f.id)[0].fileEvidence!.speakerAttribution;
  const suggestion=proposal.suggestions[0];reviews.confirm(f.id,proposal.id,{action:'accept',selected:[suggestion.id]});assert.match(f.files.chunks(f.id)[0].ocrText,/Cordis/);assert.throws(()=>reviews.confirm(f.id,other.id,{action:'accept',selected:[other.suggestions[0].id]}),{statusCode:409});
+ assert.deepEqual(f.files.chunks(f.id)[0].fileEvidence!.speakerAttribution,attribution,'text-only correction preserves the actual owner confirmation');
  const entries=fileExportEntries(f.files,f.id);assert.match(entries.find(e=>e.name==='原始转写_未校正.md')!.bytes.toString(),/扣迪斯/);assert.match(entries.find(e=>e.name==='带说话人_已确认校正记录.md')!.bytes.toString(),/Cordis/);
- f.processing.retry(f.id,'diarize');await f.processing.tick();assert.match(f.files.chunks(f.id)[0].ocrText,/扣迪斯/);
+ f.processing.retry(f.id,'diarize');await f.processing.tick();assert.match(f.files.chunks(f.id)[0].ocrText,/扣迪斯/);assert.equal(f.files.chunks(f.id)[0].fileEvidence!.speakerAttribution,undefined,'new acoustic separation cannot inherit old label identities');
 });
 
 test('a model cannot inject corrections outside cited chunks or guess a speaker name',async t=>{
  const f=await fixture(t,{analyze:async(records:any[])=>({answer:JSON.stringify({suggestions:[{chunkId:records[0].id,original:'not in evidence',replacement:'rewrite',reason:'bad'}]}),citations:[{id:records[0].id}]})});await f.processing.tick();const reviews=new FileReviews(f.files,f.processing);
  await assert.rejects(reviews.propose(f.id,{kind:'terms'}),{statusCode:502});assert.equal(reviews.list(f.id).items.length,0);
  const artifact=f.files.detail(f.id).artifacts.find((a:any)=>a.kind==='dialogue')!;assert.throws(()=>reviews.nameSpeakers(f.id,{artifactId:artifact.id,names:{SPEAKER_9:'Unknown'}}));reviews.nameSpeakers(f.id,{artifactId:artifact.id,names:{SPEAKER_0:'用户确认名'}});assert.ok(fileExportEntries(f.files,f.id).some(e=>e.name==='已确认说话人.json'));
+});
+
+test('confirmed speaker identities reach evidence without rewriting speech and only invalidate changed labels',async t=>{
+ const f=await fixture(t);await f.processing.tick();const reviews=new FileReviews(f.files,f.processing),raw=f.files.chunks(f.id),artifactId=raw[0].fileEvidence!.artifactId;
+ const save=(names:Record<string,string>)=>reviews.nameSpeakers(f.id,{artifactId,names});
+ save({SPEAKER_0:'Generated Alice',SPEAKER_1:'Generated Bob'});
+ const named=f.files.chunks(f.id);assert.deepEqual(named.map(r=>r.ocrText),raw.map(r=>r.ocrText));assert.deepEqual(named.map(r=>r.id),raw.map(r=>r.id));
+ assert.equal(named[0].fileEvidence!.speakerAttribution!.name,'Generated Alice');assert.equal(named[0].fileEvidence!.speakerAttribution!.confirmedBy,'owner');
+ assert.deepEqual(f.files.evidence(named.map(r=>r.id)).map(r=>r.fileEvidence),named.map(r=>r.fileEvidence));
+ const memories=new MemoryStore(f.store,ids=>[...f.store.evidence(ids),...f.files.evidence(ids)],id=>f.files.isCurrentEvidence(id)||f.store.isCurrentEvidence(id));
+ const saved=named.map(r=>memories.extract({answer:JSON.stringify({memories:[{title:'Generated attribution',statement:`Recorded speech [${r.id}]`,uncertainty:'Generated fixture',evidenceIds:[r.id],evidence:[{id:r.id,quote:r.ocrText}]}]}),citations:[{id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:r.ocrText}],trace:[],runId:'generated-attribution'},'fixture').items[0]);
+ for(const memory of saved)memories.publish(memory.id);
+ save({SPEAKER_0:'Generated Carol',SPEAKER_1:'Generated Bob'});
+ const renamed=f.files.chunks(f.id);assert.notEqual(memoryEvidenceFingerprint(renamed[0]),memoryEvidenceFingerprint(named[0]));assert.equal(memoryEvidenceFingerprint(renamed[1]),memoryEvidenceFingerprint(named[1]));
+ assert.equal(memories.get(saved[0].id).status,'stale');assert.equal(memories.get(saved[1].id).status,'published');assert.throws(()=>memories.publish(saved[0].id),{statusCode:409});
+ const count=f.store.db.prepare("SELECT COUNT(*) n FROM file_artifacts WHERE kind='speaker-names'").get()!.n;
+ save({SPEAKER_0:'Generated Carol',SPEAKER_1:'Generated Bob'});assert.equal(f.store.db.prepare("SELECT COUNT(*) n FROM file_artifacts WHERE kind='speaker-names'").get()!.n,count,'re-saving unchanged names is idempotent');
+ save({SPEAKER_0:'Generated Carol'});assert.equal(f.files.chunks(f.id)[1].fileEvidence!.speakerAttribution,undefined);assert.equal(memories.get(saved[1].id).status,'stale');
+ assert.deepEqual(f.files.chunks(f.id).map(r=>r.ocrText),raw.map(r=>r.ocrText));
+});
+
+test('speaker correction during Memory extraction fences the late response and clears checkpoints',async t=>{
+ const f=await fixture(t);await f.processing.tick();const reviews=new FileReviews(f.files,f.processing),record=f.files.chunks(f.id)[0];
+ reviews.nameSpeakers(f.id,{artifactId:record.fileEvidence!.artifactId,names:{SPEAKER_0:'Generated Alice'}});
+ const memories=new MemoryStore(f.store,ids=>[...f.store.evidence(ids),...f.files.evidence(ids)],id=>f.files.isCurrentEvidence(id)||f.store.isCurrentEvidence(id));
+ let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),release=new Promise<void>(resolve=>finish=resolve);
+ const pipeline=new MemoryPipeline({store:f.store,memories,configured:()=>true,model:()=> 'fixture',query:async()=>{enter();await release;return {answer:JSON.stringify({memories:[{title:'Old attribution',statement:`Old speaker [${record.id}]`,uncertainty:'Generated',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-old-attribution'};}});
+ t.after(()=>pipeline.close());const job=pipeline.create({evidenceIds:[record.id]}),running=pipeline.run(job.id);await entered;
+ reviews.nameSpeakers(f.id,{artifactId:record.fileEvidence!.artifactId,names:{SPEAKER_0:'Generated Carol'}});finish();
+ const done=await running;assert.equal(done.status,'failed');assert.equal(done.batches[0].status,'invalidated');assert.equal(memories.list({includeStale:true}).length,0);
+ assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM memory_checkpoints').get()!.n,0);assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM memory_extraction_drafts').get()!.n,0);
+ assert.equal(pipeline.create({evidenceIds:[record.id]}).totalBatches,1,'corrected attribution remains eligible for fresh extraction');
+});
+
+test('formal audio material preserves anonymous and confirmed speakers and republishes corrections',async t=>{
+ const f=await fixture(t);await f.processing.tick();
+ const materials=new MaterialStore(f.store),work=new MaterialMemoryWork(f.store,materials),organizers=new MaterialOrganizerRuntime(f.store,materials,[],undefined,work);
+ const reviews=new FileReviews(f.files,f.processing),raw=f.files.chunks(f.id),artifactId=raw[0].fileEvidence!.artifactId;
+ const id=materialId('phone','fixture.wav');
+ const publish=async()=>{while(await organizers.tick(100));return materials.get(id)!;};
+ try{
+  const anonymous=await publish(),anonymousEvidence=materials.evidence(materials.evidenceIds(anonymous.ref));
+  assert.ok(anonymousEvidence.some(record=>JSON.parse(record.ocrText).speaker==='SPEAKER_0'));
+  assert.ok(anonymousEvidence.every(record=>JSON.parse(record.ocrText).speakerAttribution===undefined));
+  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Alice',SPEAKER_1:'Generated Bob'}});
+  const named=await publish();assert.notEqual(named.revision,anonymous.revision);assert.equal(work.readyForMemory(named.ref),true);
+  const namedRecords=materials.evidence(materials.evidenceIds(named.ref)),dialogue=namedRecords.map(record=>JSON.parse(record.ocrText)).filter(value=>value.speaker);
+  assert.deepEqual(dialogue.map(value=>value.text),raw.map(record=>record.ocrText.replace(/^\[SPEAKER_\d+\] /,'')));
+  assert.deepEqual(dialogue.map(value=>value.speakerAttribution),f.files.chunks(f.id).map(record=>record.fileEvidence!.speakerAttribution));
+  const memories=new MemoryStore(f.store,ids=>materials.evidence(ids),anchor=>materials.isCurrentEvidence(anchor));
+  const record=namedRecords.find(record=>JSON.parse(record.ocrText).speaker==='SPEAKER_0')!;
+  const memory=memories.extract({answer:JSON.stringify({memories:[{title:'Generated owner experience',statement:`Generated speech [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-material-speaker'},'fixture').items[0];
+  memories.publish(memory.id);
+  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol'}});
+  const corrected=await publish();assert.notEqual(corrected.revision,named.revision);assert.equal(work.readyForMemory(named.ref),false);
+  assert.equal(memories.get(memory.id).status,'stale');assert.equal(materials.isCurrentEvidence(record.id),false);
+  const correctedDialogue=materials.evidence(materials.evidenceIds(id)).map(record=>JSON.parse(record.ocrText)).filter(value=>value.speaker);
+  assert.equal(correctedDialogue[0].speakerAttribution.name,'Generated Carol');assert.equal(correctedDialogue[1].speakerAttribution,undefined);
+  assert.deepEqual(correctedDialogue.map(value=>value.text),dialogue.map(value=>value.text));
+  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol'}});assert.equal((await publish()).revision,corrected.revision);
+ }finally{await organizers.close();}
 });
 
 test('local semantic grouping blocks without a local model and never invokes the default summarizer',async t=>{

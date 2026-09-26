@@ -42,7 +42,8 @@ export const diarizationSchema=z.object({
   warnings:z.array(z.string().max(1000)).max(30).default([]),
 }).strict().superRefine((v,c)=>{for(const s of [...v.segments,...v.samples])if(s.endMs<=s.startMs||s.endMs>v.durationMs+1000)c.addIssue({code:'custom',message:'Invalid diarization timeline'});});
 export type Diarization=z.infer<typeof diarizationSchema>;
-export const fileEvidenceSchema=z.object({documentLocation:documentLocationSchema.optional(),captureId:z.string().uuid(),revision:z.string().max(200),artifactId:z.string().uuid(),chunkId:z.string().uuid(),startMs:z.number().nonnegative().optional(),endMs:z.number().nonnegative().optional(),speaker:z.string().max(100).optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional()}).strict();
+export const fileSpeakerAttributionSchema=z.object({name:z.string().trim().min(1).max(100),confirmedBy:z.literal('owner'),confirmationId:z.string().uuid(),confirmedAt:z.string().datetime()}).strict();
+export const fileEvidenceSchema=z.object({documentLocation:documentLocationSchema.optional(),captureId:z.string().uuid(),revision:z.string().max(200),artifactId:z.string().uuid(),chunkId:z.string().uuid(),startMs:z.number().nonnegative().optional(),endMs:z.number().nonnegative().optional(),speaker:z.string().max(100).optional(),speakerAttribution:fileSpeakerAttributionSchema.optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional()}).strict();
 export const fileProcessingSchema=z.object({
   enabled:z.boolean().default(true),
   endpoint:z.string().max(2000).default('http://127.0.0.1:9009/transcribe'),

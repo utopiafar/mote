@@ -94,7 +94,17 @@ export class FileReviews {
       db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(artifactId,id,kind,new Date().toISOString(),'user-confirmed',json);
       if(transcript)for(const segment of transcript.segments){const {speaker,uncertain,overlap}=segment;db.prepare('INSERT INTO file_chunks(id,artifact_id,capture_id,start_ms,end_ms,text,metadata) VALUES(?,?,?,?,?,?,?)').run(randomUUID(),artifactId,id,segment.startMs,segment.endMs,segment.text,JSON.stringify({speaker,uncertain,overlap}));}
       db.prepare("UPDATE file_reviews SET status='accepted' WHERE id=?").run(reviewId);
-      if(transcript){db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);this.files.store.invalidateMemoryEvidence(id);}
+      if(transcript){
+        // A text correction retains the same speaker intervals and confirmed identities.
+        const attributions=this.files.speakerAttributions(id,current.artifactId);
+        if(Object.keys(attributions).length){
+          db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind='speaker-names'").run(id);
+          const names=Object.fromEntries(Object.entries(attributions).map(([label,attribution])=>[label,attribution.name]));
+          const speakerJson=JSON.stringify({names,attributions,confirmed:true,inputArtifact:artifactId});this.files.store.reserveMetadata(Buffer.byteLength(speakerJson)+512);
+          db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(randomUUID(),id,'speaker-names',new Date().toISOString(),'user-confirmed',speakerJson);
+        }
+        db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);this.files.store.invalidateMemoryEvidence(id);
+      }
       db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(id,new Date().toISOString());db.exec('COMMIT');
     }catch(error){db.exec('ROLLBACK');throw error;}
     return {status:'accepted',artifactId};
@@ -103,8 +113,18 @@ export class FileReviews {
     const input=z.object({artifactId:z.string().uuid(),names:z.record(z.string().regex(/^SPEAKER_[0-9]{1,2}$/),z.string().trim().min(1).max(100))}).strict().parse(raw);
     const current=latestFileTranscript(this.files,id);if(current.artifactId!==input.artifactId)throw new StoreError('Transcript changed',409);
     const known=new Set(current.transcript.segments.map(s=>s.speaker));if(Object.keys(input.names).length>16||Object.keys(input.names).some(s=>!known.has(s)))throw new StoreError('Unknown speaker label');
-    const db=this.files.store.db,json=JSON.stringify({names:input.names,confirmed:true,inputArtifact:current.artifactId});this.files.store.reserveMetadata(Buffer.byteLength(json)+1024);
-    db.exec('BEGIN IMMEDIATE');try{db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind='speaker-names'").run(id);db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(randomUUID(),id,'speaker-names',new Date().toISOString(),'user-confirmed',json);db.exec('COMMIT');}catch(error){db.exec('ROLLBACK');throw error;}
+    const db=this.files.store.db,previous=this.files.speakerAttributions(id,current.artifactId),confirmationId=randomUUID(),confirmedAt=new Date().toISOString();
+    const changed=[...new Set([...Object.keys(previous),...Object.keys(input.names)])].filter(label=>previous[label]?.name!==input.names[label]);
+    if(!changed.length)return {saved:true};
+    const attributions=Object.fromEntries(Object.entries(input.names).map(([label,name])=>[label,previous[label]?.name===name?previous[label]:{name,confirmedBy:'owner',confirmationId,confirmedAt}]));
+    const json=JSON.stringify({names:input.names,attributions,confirmed:true,inputArtifact:current.artifactId});this.files.store.reserveMetadata(Buffer.byteLength(json)+1024);
+    db.exec('BEGIN IMMEDIATE');try{
+      db.prepare("UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind='speaker-names'").run(id);
+      db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(confirmationId,id,'speaker-names',confirmedAt,'user-confirmed',json);
+      const affected=db.prepare("SELECT id FROM file_chunks WHERE artifact_id=? AND json_extract(metadata,'$.speaker') IN (SELECT value FROM json_each(?))").all(current.artifactId,JSON.stringify(changed));
+      for(const chunk of affected){const chunkId=String(chunk.id);this.files.store.invalidateMemoryEvidence(chunkId);db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(chunkId,confirmedAt);}
+      db.exec('COMMIT');
+    }catch(error){db.exec('ROLLBACK');throw error;}
     return {saved:true};
   }
 }

@@ -51,7 +51,7 @@ async function start(){
  assert.equal(node.modelSettings.current().model,config.model);assert.equal(node.modelSettings.current().reasoningEffort,'max');
 }
 async function close(){const old=node;if(old){await save();await old.app.close();node=undefined;}}
-async function waitForJob(wave:Record<string,any>,task:Promise<MemoryJobDetail>){
+async function waitForJob(wave:Record<string,any>,task:Promise<MemoryJobDetail>,pauseAfterProgress=false){
  let settled=false,failure:unknown,completed:MemoryJobDetail|undefined;
  task.then(value=>{completed=value;settled=true;},error=>{failure=error;settled=true;});
  let last='',lastRead=0;
@@ -59,6 +59,10 @@ async function waitForJob(wave:Record<string,any>,task:Promise<MemoryJobDetail>)
   const job=node!.memoryPipeline.get(wave.jobId);wave.job=job;
   const signature=JSON.stringify(job.batches.map(b=>[b.status,b.phase,b.stage]));
   if(signature!==last){last=signature;progress('memory-progress',{wave:wave.index,completed:job.completedBatches,failed:job.failedBatches,total:job.totalBatches,status:job.status,phase:job.batches.find(b=>b.status==='running')?.phase});await save();}
+  if(pauseAfterProgress&&!wave.pauseRequested&&job.status==='running'&&job.completedBatches>0&&job.runningBatches!>0&&job.pendingBatches!>0){
+   wave.pauseRequested={at:new Date().toISOString(),completedBatches:job.completedBatches,runningBatches:job.runningBatches,pendingBatches:job.pendingBatches};
+   await request('POST',`/api/memory-jobs/${job.id}/pause`);await save();
+  }
   if(job.runningBatches&&Date.now()-lastRead>15000){
    const at=Date.now(),page=await request('GET','/api/notes?limit=12&deviceId='+deviceId);
    assert.ok(page.items.length>0&&page.items.length<=12);report.readsDuringModelWork.push({at:new Date().toISOString(),wave:wave.index,durationMs:Date.now()-at,items:page.items.length});lastRead=Date.now();
@@ -93,22 +97,22 @@ try{
   const ids=saved.map((r:{id:string})=>r.id);
   if(!wave.jobId){const job=await request('POST','/api/memory-jobs',{evidenceIds:ids,timeZone:'Asia/Shanghai'});wave.jobId=job.id;wave.job=job;await save();}
   let job=node!.memoryPipeline.get(wave.jobId);
-  if(job.status==='failed'){
+  const needsPauseCheckpoint=index===1&&!wave.pauseCheckpoint&&job.totalBatches>1;
+  if(needsPauseCheckpoint)delete wave.pauseRequested;
+  if(job.status==='failed'||job.failedBatches>0){
    assert.equal(process.env.MOTE_REPLAY_RETRY,'1','A failed model batch requires explicit MOTE_REPLAY_RETRY=1 after diagnosis');
-   job=await waitForJob(wave,node!.memoryPipeline.retry(job.id));
+   job=await waitForJob(wave,node!.memoryPipeline.retry(job.id),needsPauseCheckpoint);
   }else if(job.status==='paused'||job.status==='pausing'){
-   await request('POST',`/api/memory-jobs/${job.id}/resume`);job=await waitForJob(wave,node!.memoryPipeline.run(job.id));
-  }else if(index===1&&!wave.pauseCheckpoint&&job.totalBatches>1&&job.status!=='completed'){
-   const active=node!.memoryPipeline.run(job.id),deadline=Date.now()+30000;
-   while(!node!.memoryPipeline.get(job.id).runningBatches&&Date.now()<deadline)await delay(50);
-   assert.ok(node!.memoryPipeline.get(job.id).runningBatches,'No active batch to pause');
-   await request('POST',`/api/memory-jobs/${job.id}/pause`);job=await waitForJob(wave,active);
+   await request('POST',`/api/memory-jobs/${job.id}/resume`);job=await waitForJob(wave,node!.memoryPipeline.run(job.id),needsPauseCheckpoint);
+  }else job=await waitForJob(wave,node!.memoryPipeline.run(job.id),needsPauseCheckpoint);
+  if(needsPauseCheckpoint&&job.status==='paused'){
    assert.equal(job.status,'paused');assert.ok(job.completedBatches>0&&job.pendingBatches!>0,'Restart must preserve both completed and pending work');
    wave.pauseCheckpoint={job:structuredClone(job),memories:checkMemories(job),at:new Date().toISOString()};await save();
    await close();await start();
    const recovered=node!.memoryPipeline.get(job.id);assert.equal(recovered.status,'paused');assert.deepEqual(recovered.memoryIds,job.memoryIds);
    await request('POST',`/api/memory-jobs/${job.id}/resume`);job=await waitForJob(wave,node!.memoryPipeline.run(job.id));
-  }else job=await waitForJob(wave,node!.memoryPipeline.run(job.id));
+  }
+  if(needsPauseCheckpoint&&job.status==='completed')assert.ok(wave.pauseCheckpoint,'Wave completed without the required pause/restart evidence');
   assert.equal(job.status,'completed',JSON.stringify(job.batches.map(b=>({index:b.index,status:b.status,error:b.errorCode}))));
   if(wave.pauseCheckpoint)for(const prior of wave.pauseCheckpoint.job.batches.filter((b:{status:string})=>b.status==='completed')){
    const after=job.batches.find(b=>b.id===prior.id);assert.ok(after);assert.equal(after.attempts,prior.attempts);assert.deepEqual(after.memoryIds,prior.memoryIds);
