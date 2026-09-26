@@ -1,0 +1,98 @@
+/** Opt-in local media journey. Inputs are only the files explicitly listed in a manifest. */
+import assert from 'node:assert/strict';
+import {spawn,type ChildProcess} from 'node:child_process';
+import {randomBytes} from 'node:crypto';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {createServer} from 'node:net';
+import {join,relative,resolve} from 'node:path';
+import {parseArgs} from 'node:util';
+import {z} from 'zod';
+import {FILE_PART_BYTES} from '@mote/shared';
+import {buildApp} from '../apps/server/src/app.js';
+import {repositoryRoot,type Config} from '../apps/server/src/config.js';
+import {sha256} from '../apps/server/src/store.js';
+
+const {values}=parseArgs({options:{manifest:{type:'string'},output:{type:'string'},python:{type:'string'},'ocr-model-root':{type:'string'},'asr-model-root':{type:'string'}}});
+assert.ok(values.manifest&&values.output&&values.python,'Required: --manifest --output --python; plus model roots for the selected types');
+const manifest=z.object({personalDataUsed:z.boolean(),files:z.array(z.object({id:z.string().regex(/^[a-z0-9-]+$/),path:z.string(),mimeType:z.string(),observedAt:z.string().datetime({offset:true}),expectedLines:z.array(z.string()).optional()})).min(1).max(10)}).parse(JSON.parse(await readFile(values.manifest,'utf8')));
+assert.equal(new Set(manifest.files.map(file=>file.id)).size,manifest.files.length);
+const directory=resolve(values.output),outside=relative(repositoryRoot,directory);
+assert.ok(outside==='..'||outside.startsWith('../'),'Reports and originals must stay outside the repository');
+await mkdir(directory,{mode:0o700});
+const token=randomBytes(32).toString('hex'),workerToken=randomBytes(32).toString('hex');
+const config:Config={dataKey:undefined,dataDir:join(directory,'vault'),token,tokenPath:join(directory,'token'),host:'127.0.0.1',port:0,
+  maxStorageBytes:2_000_000_000,maxExportBytes:200_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
+  model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',
+  allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
+  diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:300000,codexBin:process.env.MOTE_CODEX_BIN,codexHome:process.env.MOTE_CODEX_HOME};
+const report:Record<string,unknown>={startedAt:new Date().toISOString(),status:'running',personalDataUsed:manifest.personalDataUsed,
+  browserTested:false,physicalDeviceTested:false,liveLlmUsed:false,localInference:true,semanticQualityVerified:false,files:[]};
+const save=()=>writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
+let node:Awaited<ReturnType<typeof buildApp>>|undefined;
+const children:{child:ChildProcess;closed:Promise<unknown>}[]=[];
+async function worker(script:string,args:string[],capability:'ocr'|'asr'){
+  const socket=createServer();await new Promise<void>(done=>socket.listen(0,'127.0.0.1',done));
+  const address=socket.address();assert.ok(address&&typeof address==='object');const port=address.port;await new Promise<void>(done=>socket.close(()=>done()));
+  const child=spawn(values.python!,[join(repositoryRoot,'scripts',script),...args,'--port',String(port)],{
+    env:{PATH:process.env.PATH,HOME:directory,MOTE_MEDIA_WORKER_TOKEN:workerToken},stdio:'ignore'});
+  let startupError:Error|undefined;child.on('error',error=>{startupError=error;});
+  children.push({child,closed:new Promise(done=>child.once('close',done))});
+  const endpoint=`http://127.0.0.1:${port}`,deadline=Date.now()+60000;
+  for(;;){
+    if(startupError)throw startupError;
+    assert.ok(child.exitCode===null&&child.signalCode===null,'Local media worker exited');
+    let health:{ocr?:boolean;asr?:boolean;diarization?:boolean}|undefined;
+    try{const response=await fetch(endpoint+'/health',{headers:{authorization:'Bearer '+workerToken},signal:AbortSignal.timeout(10000)});if(response.ok)health=await response.json();}catch{}
+    if(health?.[capability]&&(capability!=='asr'||health.diarization))return endpoint;
+    assert.ok(Date.now()<deadline,'Local media model did not become ready');await new Promise(done=>setTimeout(done,250));
+  }
+}
+async function request(method:'POST'|'PUT'|'GET',url:string,payload?:Record<string,unknown>|Buffer){
+  const response=await node!.app.inject({method,url,headers:{authorization:'Bearer '+token,'x-mote-ingress-version':'2',...(Buffer.isBuffer(payload)?{'content-type':'application/octet-stream'}:{})},...(payload?{payload}:{})});
+  assert.ok(response.statusCode>=200&&response.statusCode<300,`${method} ${url}: ${response.statusCode} ${response.body.slice(0,1000)}`);return response;
+}
+try{
+  await save();
+  const hasImage=manifest.files.some(file=>file.mimeType.startsWith('image/')),hasAudio=manifest.files.some(file=>file.mimeType.startsWith('audio/'));
+  assert.ok(manifest.files.every(file=>file.mimeType.startsWith('image/')||file.mimeType.startsWith('audio/')),'Choose image/audio files');
+  if(hasImage)assert.ok(values['ocr-model-root'],'OCR model root required');if(hasAudio)assert.ok(values['asr-model-root'],'ASR model root required');
+  const ocr=hasImage?await worker('ocr-server.py',['--model-root',values['ocr-model-root']!],'ocr'):undefined;
+  const asr=hasAudio?await worker('transcription-server.py',['--model',values['asr-model-root']!,'--segmentation-model',join(values['asr-model-root']!,'segmentation.onnx'),'--speaker-model',join(values['asr-model-root']!,'speaker.onnx')],'asr'):undefined;
+  node=await buildApp(config);const lifecycle=node.lifecycle.settings();
+  for(const key of ['extraction','consolidation','insights','working'] as const)lifecycle[key].enabled=false;
+  node.lifecycle.configure(lifecycle);await node.app.ready();
+  const view=(await request('GET','/api/file-processing')).json();
+  await request('PUT','/api/file-processing',{revision:view.revision,settings:{...view.settings,
+    enabled:true,summarize:false,semanticTurns:false,timeoutMs:600000,
+    ...(ocr?{imageProcessor:'image.http',imageEndpoint:ocr+'/ocr',apiKey:workerToken}:{}),
+    ...(asr?{audioProcessor:'audio.local-dialogue',localEndpoint:asr+'/transcribe',localWorkerApiKey:workerToken}:{}),
+  }});
+  for(const file of manifest.files){
+    const result:Record<string,unknown>={id:file.id,mimeType:file.mimeType,observedAt:file.observedAt,status:'running'};
+    (report.files as unknown[]).push(result);await save();const started=Date.now();
+    try{
+      const bytes=await readFile(resolve(file.path));result.sizeBytes=bytes.length;result.sha256=sha256(bytes);
+      const sourceId='media-'+file.id;
+      await request('POST','/api/sources',{id:sourceId,name:'Local media validation',kind:'local-files',deviceId:sourceId,platform:'import',retention:'archive'});
+      const upload=(await request('POST','/api/file-sync/v1/uploads',{sourceId,sizeBytes:bytes.length,sha256:sha256(bytes),item:{externalId:file.id,revision:'1',observedAt:file.observedAt,title:file.id,kind:'file',layer:'original',text:'',mimeType:file.mimeType,deleted:false}})).json();
+      for(let part=0;part<Math.ceil(bytes.length/FILE_PART_BYTES);part++)await request('PUT',`/api/file-sync/v1/uploads/${upload.uploadId}/parts/${part}`,bytes.subarray(part*FILE_PART_BYTES,(part+1)*FILE_PART_BYTES));
+      const ack=(await request('POST',`/api/file-sync/v1/uploads/${upload.uploadId}/commit`,{})).json();result.captureId=ack.id;assert.equal(ack.receipt.state,'received');
+      result.receivedMs=Date.now()-started;await save();console.log(JSON.stringify({stage:'received',id:file.id,bytes:bytes.length}));
+      await node.processing.tick();
+      const detail=(await request('GET','/api/files/'+ack.id)).json();result.detail=detail;await save();assert.equal(detail.job.state,'succeeded',JSON.stringify(detail.job));
+      const chunks:unknown[]=[];
+      for(let offset=0;;){const page=(await request('GET',`/api/files/${ack.id}/chunks?offset=${offset}`)).json();chunks.push(...page.items);if(page.nextOffset===null)break;offset=page.nextOffset;}
+      result.chunks=chunks;assert.ok(chunks.length,'Processed media has no readable evidence');
+      const original=await request('GET','/api/files/'+ack.id+'/content');assert.equal(sha256(original.rawPayload),sha256(bytes),'Original changed during processing');
+      if(file.expectedLines)assert.deepEqual(chunks.map(chunk=>(chunk as {ocrText:string}).ocrText),file.expectedLines,'Every generated line must be readable through the file evidence API');
+      result.status='passed';
+    }catch(error){result.status='failed';result.failure=error instanceof Error?error.message:String(error);process.exitCode=1;}
+    finally{result.durationMs=Date.now()-started;await save();console.log(JSON.stringify({stage:'processed',id:file.id,status:result.status,durationMs:result.durationMs}));}
+  }
+  report.status=(report.files as {status:string}[]).every(file=>file.status==='passed')?'passed':'failed';
+}catch(error){report.status='failed';report.failure=error instanceof Error?error.message:String(error);process.exitCode=1;}
+finally{
+  report.finishedAt=new Date().toISOString();await save();await node?.app.close();
+  for(const {child,closed} of children){child.kill('SIGTERM');const force=setTimeout(()=>child.kill('SIGKILL'),5000);await closed;clearTimeout(force);}
+  console.log(JSON.stringify({status:report.status,report:join(directory,'report.json')}));
+}

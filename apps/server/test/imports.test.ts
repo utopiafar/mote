@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {existsSync,mkdtempSync,readFileSync,rmSync,symlinkSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {zipSync} from 'fflate';
+import {zipSync,Zip,ZipDeflate,ZipPassThrough} from 'fflate';
 import {Store} from '../src/store.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {SourceStore} from '../src/sources.js';
@@ -41,6 +41,15 @@ test('originals archive before model configuration without manufacturing parsed 
  assert.equal(job.status,'queued');assert.equal(files.read(job.files[0].id).toString(),'synthetic bytes');assert.equal(store.list().items.length,0);
  const result=await imports.prepare(job.id);assert.equal(result.status,'needs_configuration');assert.equal(result.preview,undefined);assert.equal(existsSync(join(directory,'imports',job.id,'inputs')),false);
  await assert.rejects(imports.confirm(job.id),{statusCode:409});
+});
+test('large inline originals and portable backups validate without a regex stack overflow',async t=>{
+ const {imports,files}=fixture(t),bytes=Buffer.alloc(11_000_000,83),encoded=bytes.toString('base64');
+ const job=await imports.create({files:[{name:'large-generated.bin',dataBase64:encoded}]});assert.equal(job.files.length,1);assert.deepEqual(files.read(job.files[0].id),bytes);
+ const portable=files.exportPortable();assert.deepEqual(files.preparePortable(portable)[0].bytes,bytes);
+ for(const invalid of ['A===','AAAA=','AA=A','AAAA\n','A A=','====',encoded.slice(0,-1)+'!']){
+  await assert.rejects(imports.create({files:[{name:'invalid.bin',dataBase64:invalid}]}),/Invalid file base64/);
+  assert.throws(()=>files.preparePortable([{...portable[0],dataBase64:invalid}]),/Invalid portable file base64/);
+ }
 });
 test('generic model manifest previews, confirms, retains attachments and notifies only new IDs once',async t=>{
  const notified:string[][]=[];
@@ -103,6 +112,20 @@ test('ZIP expands generic files and rejects traversal while retaining supplied o
  const {imports,files}=fixture(t);const zip=zipSync({'folder/note.txt':Buffer.from('synthetic note'),'assets/data.bin':Buffer.from([0,1,2])});
  const job=await imports.create({files:[{name:'backup.zip',dataBase64:Buffer.from(zip).toString('base64')}]});assert.equal(job.archive.expandedFiles,2);assert.equal(job.files.length,3);assert.deepEqual(files.read(job.files[0].id),Buffer.from(zip));
  const bad=zipSync({'../escape.txt':Buffer.from('bad path')});const rejected=await imports.create({files:[{name:'unsafe.zip',dataBase64:Buffer.from(bad).toString('base64')}]});assert.equal(rejected.status,'failed');assert.equal(rejected.files.length,1);assert.match(rejected.error!,/expansion failed/);
+});
+test('streamed ZIP data descriptors spanning reused read buffers preserve every original byte',async t=>{
+ const {imports,files}=fixture(t),pieces:Buffer[]=[],zip=new Zip((error,data)=>{if(error)throw error;pieces.push(Buffer.from(data));});
+ let seed=17;const noise=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed>>>24;};
+ const bodies=[Buffer.alloc(63895,83),Buffer.from(Array.from({length:20000},noise)),Buffer.alloc(150000,84)];
+ for(const [index,body] of bodies.entries()){
+  const member=index===1?new ZipDeflate('compressed.txt'):new ZipPassThrough(index===0?'stored.bin':'tail.bin');zip.add(member);
+  for(let at=0;at<body.length;at+=17003)member.push(body.subarray(at,at+17003),at+17003>=body.length);
+ }
+ zip.end();const bytes=Buffer.concat(pieces),job=await imports.create({files:[{name:'streamed.zip',dataBase64:bytes.toString('base64')}]});
+ assert.equal(job.status,'queued',job.error);assert.equal(job.archive.expandedFiles,3);
+ assert.deepEqual(files.read(job.files.find(file=>file.relativePath.endsWith('/stored.bin'))!.id),bodies[0]);
+ assert.deepEqual(files.read(job.files.find(file=>file.relativePath.endsWith('/compressed.txt'))!.id),bodies[1]);
+ assert.deepEqual(files.read(job.files.find(file=>file.relativePath.endsWith('/tail.bin'))!.id),bodies[2]);
 });
 test('invalid manifests never partially import; original bytes survive and instructions can be revised',async t=>{
  let calls=0;const {imports,store}=fixture(t,{prepare:async({workspace,inputPaths})=>{calls++;writeFileSync(join(workspace,'records.jsonl'),JSON.stringify({item:item(),evidencePaths:inputPaths})+'\n'+(calls===1?'not json\n':''));return {summary:'synthetic parser output'};}});
