@@ -375,6 +375,12 @@ export class EvidenceStore {
   }
   /** Called inside the evidence mutation transaction so in-flight extraction cannot revive old claims. */
   invalidateMemoryEvidence(id:string,deleted=false) {
+    if(this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_evidence_dependencies'").get()){
+      this.db.prepare('UPDATE material_evidence SET invalidated=1 WHERE id=?').run(id);
+      const derived=this.db.prepare(`SELECT e.id FROM material_evidence_dependencies d JOIN material_evidence e ON e.id=d.anchor_id
+        WHERE d.evidence_id=? AND (e.invalidated=0 OR ?)`).all(id,Number(deleted));
+      for(const anchor of derived)this.invalidateMemoryEvidence(String(anchor.id),deleted);
+    }
     const excerpts=this.db.prepare('SELECT capture_id FROM file_evidence_links WHERE parent_id=?').all(id) as {capture_id:string}[];
     this.db.prepare('DELETE FROM file_evidence_links WHERE parent_id=?').run(id);
     for(const excerpt of excerpts){this.invalidateMemoryEvidence(excerpt.capture_id,deleted);this.db.prepare('UPDATE source_heads SET deleted=1 WHERE capture_id=?').run(excerpt.capture_id);if(deleted){this.db.prepare('DELETE FROM captures_fts WHERE rowid=(SELECT rowid FROM captures WHERE id=?)').run(excerpt.capture_id);this.db.prepare('DELETE FROM captures WHERE id=?').run(excerpt.capture_id);}}

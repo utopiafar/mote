@@ -121,3 +121,26 @@ test('owner material API requires owner credential and serves only bounded reads
   assert.equal((await app.inject({url:'/api/materials',headers})).json().items[0].ref,record.ref);
   assert.equal((await app.inject({url:`/api/materials/${record.id}/read?length=12001`,headers})).statusCode,400);
 });
+
+test('source invalidation permits an identical rebuild once, preserves other anchors and stays idempotent across store instances',async t=>{
+  const {store,materials}=fixture(t),ids=[randomUUID(),randomUUID()];
+  for(const id of ids)await store.ingest({id,deviceId:'fixture',deviceName:'Generated',platform:'import',source:'note',capturedAt:'2026-09-24T01:00:00Z',durationMs:0,ocrText:'Generated original'});
+  const value:MaterialDraft={...draft(),members:ids.map((id,i)=>({id:`m${i}`,kind:'capture',ref:id})),
+    blocks:ids.map((_,i)=>({id:`b${i}`,kind:'text',format:'plain',text:`Generated fact ${i}`,memberIds:[`m${i}`]}))};
+  const first=materials.publish(value),[changed,stable]=materials.evidenceIds(first.ref);
+  store.invalidateMemoryEvidence(ids[0]);
+  assert.equal(materials.isCurrentEvidence(changed),false);assert.equal(materials.isCurrentEvidence(stable),true);
+  assert.throws(()=>materials.read(first.ref),{statusCode:409});
+  const reopened=new MaterialStore(store),second=reopened.publish(value,{expectedRevision:first.revision});
+  assert.notEqual(second.ref,first.ref);assert.equal(second.changed,true);
+  assert.equal(reopened.evidenceIds(second.ref)[1],stable);assert.notEqual(reopened.evidenceIds(second.ref)[0],changed);
+  assert.equal(reopened.publish(value,{expectedRevision:second.revision}).changed,false);
+  assert.equal(new MaterialStore(store).publish(value).ref,second.ref);
+  assert.equal(reopened.read(first.ref).text,reopened.read(second.ref).text);
+  const renamed=reopened.publish({...value,title:'New evidence context'},{expectedRevision:second.revision});
+  assert.equal(reopened.isCurrentEvidence(stable),false,'changed contextual metadata cannot silently retain an old fingerprint');
+  assert.ok(reopened.evidenceIds(renamed.ref).every(id=>!reopened.evidenceIds(second.ref).includes(id)));
+  const illegal={...value,blocks:[{...value.blocks[0],evidenceIds:[ids[1]]}]};
+  assert.throws(()=>reopened.publish(illegal,{expectedRevision:renamed.revision}),{statusCode:409});
+  assert.equal(reopened.get(value.id)?.ref,renamed.ref,'invalid provenance rolls back publication');
+});

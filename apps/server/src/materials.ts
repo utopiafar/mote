@@ -2,6 +2,7 @@ import type {CaptureRecord} from '@mote/shared';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {StoreError,type Store} from './store.js';
+import {installEvidenceDependencies} from './evidence-dependencies.js';
 
 const MATERIAL_PREFIX='mat_';
 const materialIdSchema=z.string().regex(/^mat_[a-f0-9]{64}$/);
@@ -14,7 +15,9 @@ const memberSchema=z.object({
   id:z.string().min(1).max(128),kind:nameSchema,ref:z.string().min(1).max(2048),
   revision:z.string().min(1).max(256).optional(),locator:locatorSchema.optional(),
 }).strict();
-const blockBase={id:z.string().min(1).max(128),memberIds:z.array(z.string().min(1).max(128)).max(32).default([]),locator:locatorSchema.optional()};
+const blockBase={id:z.string().min(1).max(128),memberIds:z.array(z.string().min(1).max(128)).max(32).default([]),locator:locatorSchema.optional(),
+  /** Fine-grained inputs supplement the original members used for authorization. */
+  evidenceIds:z.array(z.string().uuid()).max(32).optional()};
 const blockSchema=z.discriminatedUnion('kind',[
   z.object({...blockBase,kind:z.literal('text'),format:nameSchema,text:z.string().max(250_000)}).strict(),
   z.object({...blockBase,kind:z.literal('asset'),hash:revisionSchema,mimeType:z.string().min(1).max(200)}).strict(),
@@ -58,7 +61,7 @@ export type MaterialPage={items:MaterialRecord[];nextCursor:string|null};
 export type MaterialMemberPage={items:MaterialMember[];nextOffset:number|null;total:number};
 
 type HeadRow={id:string;source_id:string;external_id:string;kind:string;revision:string;sequence:number;retired:number;min_visible_sequence:number;created_at:string;updated_at:string};
-type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number};
+type RevisionRow={manifest:string;revision:string;sequence:number;version_created_at:string;text_length:number;block_count:number;member_count:number;asset_count:number;draft_hash:string|null};
 type BlockRow={block_id:string;kind:'text'|'asset';format:string|null;payload:string;asset_hash:string|null;mime_type:string|null;member_ids:string;locator:string|null;start_offset:number;end_offset:number};
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 const parseId=(id:string)=>materialIdSchema.parse(id);
@@ -84,6 +87,10 @@ export class MaterialStore {
       CREATE TABLE IF NOT EXISTS material_searchable(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE);
       CREATE TABLE IF NOT EXISTS material_evidence(id TEXT PRIMARY KEY,material_id TEXT NOT NULL,revision TEXT NOT NULL,block_id TEXT NOT NULL,FOREIGN KEY(material_id,revision) REFERENCES material_revisions(material_id,revision) ON DELETE CASCADE);
       CREATE INDEX IF NOT EXISTS material_evidence_parent ON material_evidence(material_id,revision);
+      CREATE TABLE IF NOT EXISTS material_evidence_dependencies(
+        anchor_id TEXT NOT NULL REFERENCES material_evidence(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,
+        PRIMARY KEY(anchor_id,evidence_id));
+      CREATE INDEX IF NOT EXISTS material_evidence_dependencies_input ON material_evidence_dependencies(evidence_id,anchor_id);
       CREATE VIRTUAL TABLE IF NOT EXISTS material_fts USING fts5(material_id UNINDEXED,text,content='',tokenize='trigram',contentless_delete=1);
       CREATE VIRTUAL TABLE IF NOT EXISTS material_fts_blocks USING fts5(text,content='',tokenize='trigram',contentless_delete=1);
       CREATE TABLE IF NOT EXISTS material_heads(
@@ -148,6 +155,15 @@ export class MaterialStore {
     `);
     const columns=new Set((store.db.prepare('PRAGMA table_info(material_heads)').all() as {name:string}[]).map(row=>row.name));
     if(!columns.has('min_visible_sequence'))store.db.exec('ALTER TABLE material_heads ADD COLUMN min_visible_sequence INTEGER NOT NULL DEFAULT 1');
+    const evidenceColumns=new Set(store.db.prepare('PRAGMA table_info(material_evidence)').all().map(row=>String(row.name)));
+    if(!evidenceColumns.has('invalidated'))store.db.exec('ALTER TABLE material_evidence ADD COLUMN invalidated INTEGER NOT NULL DEFAULT 0');
+    const blockColumns=new Set(store.db.prepare('PRAGMA table_info(material_blocks)').all().map(row=>String(row.name)));
+    if(!blockColumns.has('anchor_id'))store.db.exec(`ALTER TABLE material_blocks ADD COLUMN anchor_id TEXT;
+      UPDATE material_blocks SET anchor_id=(SELECT id FROM material_evidence e WHERE e.material_id=material_blocks.material_id
+        AND e.revision=material_blocks.revision AND e.block_id=material_blocks.block_id);`);
+    if(!blockColumns.has('identity_hash'))store.db.exec('ALTER TABLE material_blocks ADD COLUMN identity_hash TEXT');
+    if(!store.db.prepare('PRAGMA table_info(material_revisions)').all().some(row=>row.name==='draft_hash'))
+      store.db.exec('ALTER TABLE material_revisions ADD COLUMN draft_hash TEXT');
     const payloadTrigger=store.db.prepare("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='material_block_payload_delete'").get() as {sql:string}|undefined;
     if(!payloadTrigger?.sql.includes('material_block_versions'))store.db.exec(`DROP TRIGGER IF EXISTS material_block_payload_delete;
       CREATE TRIGGER material_block_payload_delete AFTER DELETE ON material_blocks BEGIN
@@ -155,6 +171,7 @@ export class MaterialStore {
           AND NOT EXISTS(SELECT 1 FROM material_blocks WHERE payload_hash=old.payload_hash)
           AND NOT EXISTS(SELECT 1 FROM material_block_versions WHERE payload_hash=old.payload_hash);
       END;`);
+    installEvidenceDependencies(store);
   }
 
   private codingLayout(id:string,revision:string):boolean {
@@ -163,6 +180,16 @@ export class MaterialStore {
   private anchor(id:string,revision:string,blockId:string):string {
     const value=hash(JSON.stringify([id,revision,blockId]));
     return `${value.slice(0,8)}-${value.slice(8,12)}-5${value.slice(13,16)}-a${value.slice(17,20)}-${value.slice(20,32)}`;
+  }
+  private blockDependencies(block:MaterialBlock,members:MaterialMember[]):string[] {
+    const originals=new Set(members.filter(member=>block.memberIds.includes(member.id)&&member.kind==='capture').map(member=>member.ref.replace(/^capture:/,'')));
+    const dependencies=new Set(originals);
+    for(const input of block.evidenceIds??[]){
+      const parent=originals.has(input)?input:this.store.db.prepare('SELECT capture_id FROM file_chunks WHERE id=?').get(input)?.capture_id;
+      if(typeof parent!=='string'||!originals.has(parent))throw new StoreError('Material block evidence is outside its original members',409);
+      dependencies.add(input);
+    }
+    return [...dependencies];
   }
   /** A pinned, host-created base. The archive append epoch is authoritative;
    * no source item can create or edit this checkpoint. */
@@ -202,7 +229,7 @@ export class MaterialStore {
     if(this.codingLayout(material.id,material.revision))return (this.store.db.prepare(`SELECT anchor_id FROM material_block_versions
       WHERE material_id=? AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?) AND anchor_id IS NOT NULL ORDER BY idx`)
       .all(material.id,material.sequence,material.sequence) as {anchor_id:string}[]).map(row=>row.anchor_id);
-    return this.store.db.prepare('SELECT id FROM material_evidence WHERE material_id=? AND revision=? ORDER BY rowid').all(material.id,material.revision).map(r=>String(r.id));}
+    return this.store.db.prepare('SELECT anchor_id FROM material_blocks WHERE material_id=? AND revision=? AND anchor_id IS NOT NULL ORDER BY idx').all(material.id,material.revision).map(r=>String(r.anchor_id));}
   evidence(ids:string[]):CaptureRecord[]{return ids.flatMap(id=>{
     const anchor=this.store.db.prepare('SELECT * FROM material_evidence WHERE id=?').get(id);if(!anchor)return [];
     const material=this.get(formatMaterialRef(String(anchor.material_id),String(anchor.revision)));if(!material)return [];
@@ -213,18 +240,28 @@ export class MaterialStore {
     const at=material.origin.firstAt??material.createdAt;
     return [{id,deviceId:material.origin.deviceId??material.origin.sourceId,deviceName:'Material',platform:'import',capturedAt:at,receivedAt:material.createdAt,durationMs:0,source:'message',appId:'mote.material',appName:material.title,windowTitle:material.title,ocrText:String(block.text),indexingStatus:'indexed',privacy:{excluded:false,redacted:false,mode:'none'},provenance:{sourceId:material.origin.sourceId,externalId:material.id,revision:material.revision,layer:'snapshot',deleted:false,uri:material.ref+'#'+anchor.block_id,document:{recordedAt:at,timeBasis:'recorded',contentRole:'transcript',...(material.origin.provider&&material.origin.projectKey&&material.origin.sessionId?{coding:{version:1,provider:material.origin.provider,projectKey:material.origin.projectKey,projectName:material.origin.projectName,projectIdentity:material.origin.projectIdentity,cwd:material.origin.cwd,repositoryKey:material.origin.repositoryKey,branch:material.origin.branch,sessionId:material.origin.sessionId,eventId:String(anchor.block_id),role:'transcript',part:0,parts:1}}:{})}}} as CaptureRecord];
   });}
-  isCurrentEvidence(id:string){const row=this.store.db.prepare(`SELECT h.source_id,h.sequence,h.min_visible_sequence,h.retired,h.revision,e.revision evidence_revision,
+  isCurrentEvidence(id:string){const row=this.store.db.prepare(`SELECT h.source_id,h.sequence,h.min_visible_sequence,h.retired,h.revision,e.revision evidence_revision,e.invalidated,
+    EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=h.id AND b.revision=h.revision AND b.anchor_id=e.id) snapshot_active,
     EXISTS(SELECT 1 FROM material_block_versions b WHERE b.anchor_id=e.id AND b.material_id=h.id AND b.from_sequence<=h.sequence
       AND (b.until_sequence IS NULL OR b.until_sequence>h.sequence)) coding_active
     FROM material_evidence e JOIN material_heads h ON h.id=e.material_id WHERE e.id=?`).get(id) as
-    {source_id:string;sequence:number;min_visible_sequence:number;retired:number;revision:string;evidence_revision:string;coding_active:number}|undefined;
-    return Boolean(row&&!row.retired&&row.sequence>=row.min_visible_sequence&&
-      (row.revision===row.evidence_revision||row.coding_active));}
+    {source_id:string;sequence:number;min_visible_sequence:number;retired:number;revision:string;evidence_revision:string;coding_active:number;snapshot_active:number;invalidated:number}|undefined;
+    return Boolean(row&&!row.retired&&!row.invalidated&&row.sequence>=row.min_visible_sequence&&
+      (row.snapshot_active||row.coding_active));}
+  private needsRebuild(id:string,revision:string,sequence:number):boolean {
+    return Boolean(this.store.db.prepare(`SELECT 1 FROM material_evidence e WHERE e.invalidated=1 AND e.material_id=? AND (
+      EXISTS(SELECT 1 FROM material_blocks b WHERE b.material_id=e.material_id AND b.revision=? AND b.anchor_id=e.id)
+      OR EXISTS(SELECT 1 FROM material_block_versions b WHERE b.material_id=e.material_id AND b.anchor_id=e.id
+        AND b.from_sequence<=? AND (b.until_sequence IS NULL OR b.until_sequence>?))) LIMIT 1`).get(id,revision,sequence,sequence));
+  }
   private head(id:string):HeadRow|undefined{return this.store.db.prepare('SELECT * FROM material_heads WHERE id=?').get(id) as HeadRow|undefined;}
-  private version(id:string,revision:string):RevisionRow|undefined{return this.store.db.prepare('SELECT revision,sequence,manifest,created_at AS version_created_at,text_length,block_count,member_count,asset_count FROM material_revisions WHERE material_id=? AND revision=?').get(id,revision) as RevisionRow|undefined;}
+  private version(id:string,revision:string):RevisionRow|undefined{return this.store.db.prepare('SELECT revision,sequence,manifest,created_at AS version_created_at,text_length,block_count,member_count,asset_count,draft_hash FROM material_revisions WHERE material_id=? AND revision=?').get(id,revision) as RevisionRow|undefined;}
   private record(head:HeadRow,row:RevisionRow):MaterialRecord {
     const manifest=JSON.parse(row.manifest) as Omit<MaterialDraft,'blocks'|'members'>;
-    return {...manifest,ref:formatMaterialRef(head.id,row.revision),revision:row.revision,sequence:row.sequence,
+    const rebuilding=head.revision===row.revision&&this.needsRebuild(head.id,row.revision,row.sequence);
+    return {...manifest,...(rebuilding?{coverage:{state:'pending' as const,reason:'source_evidence_changed'},
+      artifacts:manifest.artifacts?.map(artifact=>({...artifact,state:'pending' as const,reason:'source_evidence_changed'}))}:{}),
+      ref:formatMaterialRef(head.id,row.revision),revision:row.revision,sequence:row.sequence,
       createdAt:head.created_at,updatedAt:row.version_created_at,blockCount:row.block_count,memberCount:row.member_count,
       textLength:row.text_length,assetCount:row.asset_count};
   }
@@ -256,9 +293,14 @@ export class MaterialStore {
     if(draft.blocks.some(block=>block.memberIds.some(id=>!memberIds.has(id))))throw new StoreError('Material block has an unknown member');
     const totalCharacters=draft.blocks.reduce((n,block)=>n+(block.kind==='text'?block.text.length:0),0);
     if(!Number.isSafeInteger(totalCharacters))throw new StoreError('Material text size is invalid',413);
-    const original=this.head(id);
-    const revision=original&&original.min_visible_sequence>original.sequence?
-      hash(JSON.stringify([draft,options.codingSnapshot?.checkpoint??null,original.min_visible_sequence])):hash(JSON.stringify(draft));
+    const original=this.head(id),draftHash=hash(JSON.stringify(draft));
+    const rebuilding=original&&this.needsRebuild(id,original.revision,original.sequence);
+    if(original&&!original.retired&&original.sequence>=original.min_visible_sequence&&!rebuilding){
+      const prior=this.version(id,original.revision)!;
+      if((prior.draft_hash??prior.revision)===draftHash)return {...this.record(original,prior),changed:false};
+    }
+    const revision=original&&(original.min_visible_sequence>original.sequence||rebuilding)?
+      hash(JSON.stringify([draft,options.codingSnapshot?.checkpoint??null,original.min_visible_sequence,original.sequence+1])):draftHash;
     if(original&&!original.retired&&original.revision===revision)return {...this.record(original,this.version(id,revision)!),changed:false};
     const releases:(()=>void)[]=[];
     try{
@@ -288,12 +330,12 @@ export class MaterialStore {
           const display=block.kind==='text'?block.text:`[asset ${block.id} ${block.mimeType} ${block.hash}]`;
           const payloadHash=hash(display);
           if(!db.prepare('SELECT 1 FROM material_block_payloads WHERE hash=?').get(payloadHash))requiredBytes+=Buffer.byteLength(display);
-          requiredBytes+=Buffer.byteLength(JSON.stringify(block.kind==='text'?{id:block.id,format:block.format,memberIds:block.memberIds,locator:block.locator}:{id:block.id,hash:block.hash,mimeType:block.mimeType,memberIds:block.memberIds,locator:block.locator}))+128;
+          requiredBytes+=Buffer.byteLength(JSON.stringify(block.kind==='text'?{id:block.id,format:block.format,memberIds:block.memberIds,locator:block.locator}:{id:block.id,hash:block.hash,mimeType:block.mimeType,memberIds:block.memberIds,locator:block.locator}))+256+(block.memberIds.length+(block.evidenceIds?.length??0))*128;
         }
         this.store.reserveMetadata(requiredBytes);
         if(!head)db.prepare(`INSERT INTO material_heads(id,source_id,external_id,kind,revision,sequence,retired,device_id,first_at,last_at,created_at,updated_at)
           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run(id,draft.origin.sourceId,draft.origin.externalId,draft.kind,'',0,0,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,now);
-        db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?)').run(id,revision,sequence,manifestJson,now,0,draft.blocks.length,draft.members.length,draft.blocks.filter(b=>b.kind==='asset').length);
+        db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,revision,sequence,manifestJson,now,0,draft.blocks.length,draft.members.length,draft.blocks.filter(b=>b.kind==='asset').length,draftHash);
         const coding=draft.kind==='mote.coding-session';
         if(head&&this.codingLayout(id,head.revision))db.prepare('UPDATE material_block_versions SET until_sequence=? WHERE material_id=? AND until_sequence IS NULL').run(sequence,id);
         if(coding)db.prepare('DELETE FROM material_fts WHERE rowid=(SELECT rowid FROM material_heads WHERE id=?)').run(id);
@@ -302,16 +344,23 @@ export class MaterialStore {
         const searchable=Boolean(db.prepare('SELECT 1 FROM material_searchable WHERE material_id=?').get(id));
         const lineageIds=new Set(draft.members.filter(member=>member.kind==='archive'||member.kind==='capture').map(member=>member.id));
         const insertPayload=db.prepare('INSERT OR IGNORE INTO material_block_payloads VALUES(?,?)');
-        const insertBlock=db.prepare('INSERT INTO material_blocks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)');
+        const insertBlock=db.prepare('INSERT INTO material_blocks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
         const insertVersion=db.prepare(`INSERT INTO material_block_versions(material_id,from_revision,from_sequence,until_sequence,idx,block_id,kind,format,
           payload_hash,asset_hash,mime_type,member_ids,locator,start_offset,end_offset,anchor_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-        const insertEvidence=db.prepare('INSERT INTO material_evidence VALUES(?,?,?,?)');
+        const insertEvidence=db.prepare('INSERT OR IGNORE INTO material_evidence(id,material_id,revision,block_id) VALUES(?,?,?,?)');
+        const insertDependency=db.prepare('INSERT OR IGNORE INTO material_evidence_dependencies VALUES(?,?)');
+        const retained=new Set<string>();
         const insertFtsBlock=db.prepare('INSERT INTO material_fts_blocks(rowid,text) VALUES(?,?)');
         for(const [index,block] of draft.blocks.entries()){
           const display=block.kind==='text'?block.text:`[asset ${block.id} ${block.mimeType} ${block.hash}]`;
           const payloadHash=hash(display);insertPayload.run(payloadHash,display);
           const end=offset+display.length+(block.kind==='text'&&block.format==='markdown-fragment'?0:1);
-          const anchor=block.kind==='text'&&block.memberIds.some(memberId=>lineageIds.has(memberId))?this.anchor(id,revision,block.id):null;
+          const members=draft.members.filter(member=>block.memberIds.includes(member.id));
+          const dependencies=this.blockDependencies(block,members);
+          const identity=hash(JSON.stringify([draft.kind,draft.schemaVersion,draft.title,draft.origin,draft.fidelity,draft.retention,block,members]));
+          const prior=!coding&&head?db.prepare(`SELECT b.anchor_id FROM material_blocks b JOIN material_evidence e ON e.id=b.anchor_id
+            WHERE b.material_id=? AND b.revision=? AND b.block_id=? AND b.identity_hash=? AND e.invalidated=0`).get(id,head.revision,block.id,identity):undefined;
+          const anchor=block.kind==='text'&&block.memberIds.some(memberId=>lineageIds.has(memberId))?String(prior?.anchor_id??this.anchor(id,revision,block.id)):null;
           if(coding){
             const inserted=insertVersion.run(id,revision,sequence,null,index,block.id,block.kind,block.kind==='text'?block.format:null,payloadHash,
               block.kind==='asset'?block.hash:null,block.kind==='asset'?block.mimeType:null,JSON.stringify(block.memberIds),
@@ -319,14 +368,14 @@ export class MaterialStore {
             if(searchable&&block.kind==='text')insertFtsBlock.run(Number(inserted.lastInsertRowid),display);
           }else insertBlock.run(id,revision,index,block.id,block.kind,block.kind==='text'?block.format:null,payloadHash,
             block.kind==='asset'?block.hash:null,block.kind==='asset'?block.mimeType:null,
-            JSON.stringify(block.memberIds),block.locator?JSON.stringify(block.locator):null,offset,end);
-          if(anchor)insertEvidence.run(anchor,id,revision,block.id);
+            JSON.stringify(block.memberIds),block.locator?JSON.stringify(block.locator):null,offset,end,anchor,identity);
+          if(anchor){insertEvidence.run(anchor,id,revision,block.id);retained.add(anchor);for(const input of dependencies)insertDependency.run(anchor,input);}
           offset=end;if(block.kind==='asset')assetCount++;
         }
         const insertMember=db.prepare('INSERT INTO material_members VALUES(?,?,?,?,?,?,?,?)');
         for(const [index,member] of draft.members.entries())insertMember.run(id,revision,index,member.id,member.kind,member.ref,member.revision??null,member.locator?JSON.stringify(member.locator):null);
         db.prepare('UPDATE material_revisions SET text_length=?,asset_count=? WHERE material_id=? AND revision=?').run(offset,assetCount,id,revision);
-        for(const anchor of this.evidenceIds(id))this.store.invalidateMemoryEvidence(anchor);
+        for(const anchor of this.evidenceIds(id))if(!retained.has(anchor))this.store.invalidateMemoryEvidence(anchor);
         db.prepare('UPDATE material_heads SET revision=?,sequence=?,kind=?,retired=0,device_id=?,first_at=?,last_at=?,updated_at=? WHERE id=?').run(revision,sequence,draft.kind,draft.origin.deviceId??null,draft.origin.firstAt??null,draft.origin.lastAt??null,now,id);
         if(searchable&&!coding)this.setSearchable(id,true);
         if(ownTransaction)db.exec('COMMIT');
@@ -348,7 +397,7 @@ export class MaterialStore {
     try{
       const head=this.head(draft.id),base=head?this.version(draft.id,head.revision):undefined;
       if(!head||head.retired||!base||head.revision!==draft.baseRevision||options.expectedRevision!==head.revision||
-        !this.codingLayout(draft.id,head.revision)||draft.reuseBlocks>base.block_count||draft.reuseBlocks<base.block_count-1)
+        !this.codingLayout(draft.id,head.revision)||this.needsRebuild(draft.id,head.revision,head.sequence)||draft.reuseBlocks>base.block_count||draft.reuseBlocks<base.block_count-1)
         throw new StoreError('Coding append base changed',409);
       const prior=this.store.db.prepare('SELECT append_epoch,head_count FROM material_coding_snapshots WHERE material_id=? AND revision=?').get(draft.id,head.revision) as
         {append_epoch:number|null;head_count:number|null}|undefined;
@@ -371,11 +420,11 @@ export class MaterialStore {
       for(const member of draft.members)requiredBytes+=Buffer.byteLength(JSON.stringify(member))+128;
       for(const block of draft.blocks){const display=block.kind==='text'?block.text:'';
         if(!db.prepare('SELECT 1 FROM material_block_payloads WHERE hash=?').get(hash(display)))requiredBytes+=Buffer.byteLength(display);
-        requiredBytes+=256;
+        requiredBytes+=256+(block.memberIds.length+(block.evidenceIds?.length??0))*128;
       }
       this.store.reserveMetadata(requiredBytes);
-      db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?)').run(draft.id,revision,sequence,manifestJson,now,0,
-        draft.reuseBlocks+draft.blocks.length,draft.members.length,0);
+      db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?,?)').run(draft.id,revision,sequence,manifestJson,now,0,
+        draft.reuseBlocks+draft.blocks.length,draft.members.length,0,null);
       db.prepare('INSERT INTO material_coding_snapshots VALUES(?,?,?,?,?)').run(draft.id,revision,snapshot.checkpoint,snapshot.appendEpoch,snapshot.headCount);
       const replaced=db.prepare(`SELECT anchor_id FROM material_block_versions WHERE material_id=? AND idx>=? AND until_sequence IS NULL
         AND anchor_id IS NOT NULL`).all(draft.id,draft.reuseBlocks) as {anchor_id:string}[];
@@ -386,7 +435,8 @@ export class MaterialStore {
       const insertPayload=db.prepare('INSERT OR IGNORE INTO material_block_payloads VALUES(?,?)');
       const insertVersion=db.prepare(`INSERT INTO material_block_versions(material_id,from_revision,from_sequence,until_sequence,idx,block_id,kind,format,
         payload_hash,asset_hash,mime_type,member_ids,locator,start_offset,end_offset,anchor_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-      const insertEvidence=db.prepare('INSERT INTO material_evidence VALUES(?,?,?,?)');
+      const insertEvidence=db.prepare('INSERT INTO material_evidence(id,material_id,revision,block_id) VALUES(?,?,?,?)');
+      const insertDependency=db.prepare('INSERT OR IGNORE INTO material_evidence_dependencies VALUES(?,?)');
       const insertFts=db.prepare('INSERT INTO material_fts_blocks(rowid,text) VALUES(?,?)');
       let offset=prefix?.end_offset??0;
       for(const [i,block] of draft.blocks.entries()){
@@ -395,7 +445,9 @@ export class MaterialStore {
         insertPayload.run(payloadHash,text);
         const end=offset+text.length,inserted=insertVersion.run(draft.id,revision,sequence,null,idx,block.id,'text','markdown-fragment',
           payloadHash,null,null,JSON.stringify(block.memberIds),block.locator?JSON.stringify(block.locator):null,offset,end,anchor);
-        insertEvidence.run(anchor,draft.id,revision,block.id);if(searchable)insertFts.run(Number(inserted.lastInsertRowid),text);
+        insertEvidence.run(anchor,draft.id,revision,block.id);
+        for(const input of this.blockDependencies(block,draft.members))insertDependency.run(anchor,input);
+        if(searchable)insertFts.run(Number(inserted.lastInsertRowid),text);
         offset=end;
       }
       const insertMember=db.prepare('INSERT INTO material_members VALUES(?,?,?,?,?,?,?,?)');
@@ -459,6 +511,7 @@ export class MaterialStore {
   /** Read a pinned revision through a bounded character window and at most 64 blocks. */
   read(ref:string,args:{offset?:number;length?:number}={}):MaterialReadPage {
     const material=this.get(ref);if(!material)throw new StoreError('Material not found',404);
+    if(material.coverage.reason==='source_evidence_changed')throw new StoreError('Material source evidence changed; reconstruction is pending',409);
     const offset=args.offset??0,length=args.length??4000;
     if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(length)||length<1||length>12000)throw new StoreError('Invalid material read range');
     const total=material.textLength;if(offset>total)throw new StoreError('Material read offset exceeds length',416);
@@ -507,7 +560,7 @@ export class MaterialStore {
       if(head.revision!==options.expectedRevision)throw new StoreError('Material revision changed; refresh and retry',409);
       this.setSearchable(id,false);for(const anchor of this.evidenceIds(id))this.store.invalidateMemoryEvidence(anchor);
       const now=new Date().toISOString(),revision=hash(JSON.stringify(['retire',id,head.revision])),sequence=head.sequence+1;
-      db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?)').run(id,revision,sequence,JSON.stringify({id,kind:head.kind,retired:true}),now,0,0,0,0);
+      db.prepare('INSERT INTO material_revisions VALUES(?,?,?,?,?,?,?,?,?,?)').run(id,revision,sequence,JSON.stringify({id,kind:head.kind,retired:true}),now,0,0,0,0,null);
       db.prepare('UPDATE material_heads SET revision=?,sequence=?,retired=1,updated_at=? WHERE id=?').run(revision,sequence,now,id);
       if(ownTransaction)db.exec('COMMIT');return {id,revision,retired:true};
     }catch(error){if(ownTransaction&&db.isTransaction)db.exec('ROLLBACK');throw error;}

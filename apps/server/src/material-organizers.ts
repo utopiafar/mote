@@ -176,7 +176,7 @@ class MaterialBody {
     if(this.members.length>=MAX_MEMBERS){this.limitations.add('member_limit');return false;}
     this.members.push(member(record));return true;
   }
-  text(id:string,text:string,memberId:string,format:'plain'|'json'|'transcript'='plain',locator?:Record<string,unknown>){
+  text(id:string,text:string,memberId:string,format:'plain'|'json'|'transcript'='plain',locator?:Record<string,unknown>,evidenceIds?:string[]){
     if(!text)return;
     let position=0,part=0;
     while(position<text.length){
@@ -187,6 +187,7 @@ class MaterialBody {
       if(end===position){this.limitations.add('text_limit');return;}
       const slice=text.slice(position,end);
       this.blocks.push({id:part?`${id}:${part}`:id,kind:'text',format,text:slice,memberIds:[memberId],
+        ...(evidenceIds?{evidenceIds}:{}),
         ...(locator||part?{locator:{...locator,textStart:position,textEnd:end}}:{})});
       this.characters+=slice.length;position=end;part++;
     }
@@ -209,7 +210,7 @@ const codingExternalId=(g:Record<string,string>)=>JSON.stringify([g.provider,g.p
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'2',slot:'source-item',
+  id:'mote.source-item',version:'3',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -221,7 +222,7 @@ const sourceItem:MaterialOrganizer={
     for(const c of chunks){
       const text=c.speaker?JSON.stringify({speaker:c.speaker,...(c.speakerAttribution?{speakerAttribution:c.speakerAttribution}:{}),text:c.text}):c.text;
       body.text(`chunk:${c.id}`,text,r.id,c.speaker?'json':c.kind==='transcript'||c.kind==='dialogue'||c.kind==='corrected-dialogue'?'transcript':'plain',
-        {chunkId:c.id,...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})});
+        {chunkId:c.id,...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id]);
     }
     if(file.objectHash)body.asset('original',file.objectHash,r.provenance?.mimeType??'application/octet-stream',r.id);
     for(const attachment of attachments){

@@ -21,6 +21,8 @@ import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {MaterialStore,materialId} from '../src/materials.js';
 import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
+import {EvidenceReader} from '../src/evidence-reader.js';
+import {evidenceDependents} from '../src/evidence-dependencies.js';
 
 const raw:Transcript={durationMs:3000,segments:[{startMs:0,endMs:1000,text:'使用扣迪斯插件。',words:[{startMs:0,endMs:300,text:'使用'},{startMs:300,endMs:700,text:'扣迪斯'},{startMs:700,endMs:1000,text:'插件。'}]},{startMs:1500,endMs:2500,text:'嗯，对，尚未完成。'}]};
 const wave=Buffer.alloc(32044);wave.write('RIFF');wave.writeUInt32LE(wave.length-8,4);wave.write('WAVEfmt ',8);wave.writeUInt32LE(16,16);wave.writeUInt16LE(1,20);wave.writeUInt16LE(1,22);wave.writeUInt32LE(16000,24);wave.writeUInt32LE(32000,28);wave.writeUInt16LE(2,32);wave.writeUInt16LE(16,34);wave.write('data',36);wave.writeUInt32LE(32000,40);
@@ -151,14 +153,59 @@ test('formal audio material preserves anonymous and confirmed speakers and repub
   const record=namedRecords.find(record=>JSON.parse(record.ocrText).speaker==='SPEAKER_0')!;
   const memory=memories.extract({answer:JSON.stringify({memories:[{title:'Generated owner experience',statement:`Generated speech [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-material-speaker'},'fixture').items[0];
   memories.publish(memory.id);
-  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol'}});
+  const other=namedRecords.find(record=>JSON.parse(record.ocrText).speaker==='SPEAKER_1')!;
+  const otherFingerprint=memoryEvidenceFingerprint(other);
+  const otherMemory=memories.extract({answer:JSON.stringify({memories:[{title:'Unchanged speaker',statement:`Generated speech [${other.id}]`,uncertainty:'Fixture',evidenceIds:[other.id],evidence:[{id:other.id,quote:other.ocrText}]}]}),citations:[{id:other.id,capturedAt:other.capturedAt,appName:other.appName,excerpt:other.ocrText}],trace:[],runId:'generated-unchanged-speaker'},'fixture').items[0];
+  memories.publish(otherMemory.id);
+  assert.ok(evidenceDependents(f.store,{kind:'file_chunk',id:raw[0].id}).some(node=>node.kind==='material_evidence'&&node.id===record.id));
+  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol',SPEAKER_1:'Generated Bob'}});
+  assert.equal(memories.get(memory.id).status,'stale','old formal attribution is invalid immediately, before rebuilding');
+  assert.equal(materials.isCurrentEvidence(record.id),false);
+  assert.equal(materials.isCurrentEvidence(other.id),true);
+  assert.equal(memories.get(otherMemory.id).status,'published');
+  assert.equal(materials.get(id)?.coverage.reason,'source_evidence_changed');
+  assert.equal(work.readyForMemory(named.ref),false);
+  assert.throws(()=>materials.read(named.ref),{statusCode:409},'current whole-body read cannot expose old names while rebuilding');
   const corrected=await publish();assert.notEqual(corrected.revision,named.revision);assert.equal(work.readyForMemory(named.ref),false);
   assert.equal(memories.get(memory.id).status,'stale');assert.equal(materials.isCurrentEvidence(record.id),false);
+  assert.equal(materials.isCurrentEvidence(other.id),true,'unaffected block anchor survives publication');
+  assert.equal(memories.get(otherMemory.id).status,'published');
+  assert.equal(memoryEvidenceFingerprint(materials.evidence([other.id])[0]),otherFingerprint);
+  assert.ok(materials.evidenceIds(corrected.ref).includes(other.id));
+  const reader=new EvidenceReader(f.store,f.sources,f.files,undefined,undefined,materials);
+  assert.equal(reader.evidence([record.id]).length,0);
+  assert.ok(reader.evidence([other.id])[0].provenance!.uri!.startsWith(corrected.ref+'#'));
+  assert.ok(materials.read(named.ref).text.includes('Generated Alice'),'pinned history remains distinguishable from current state');
   const correctedDialogue=materials.evidence(materials.evidenceIds(id)).map(record=>JSON.parse(record.ocrText)).filter(value=>value.speaker);
-  assert.equal(correctedDialogue[0].speakerAttribution.name,'Generated Carol');assert.equal(correctedDialogue[1].speakerAttribution,undefined);
+  assert.equal(correctedDialogue[0].speakerAttribution.name,'Generated Carol');assert.equal(correctedDialogue[1].speakerAttribution.name,'Generated Bob');
   assert.deepEqual(correctedDialogue.map(value=>value.text),dialogue.map(value=>value.text));
-  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol'}});assert.equal((await publish()).revision,corrected.revision);
+  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol',SPEAKER_1:'Generated Bob'}});assert.equal((await publish()).revision,corrected.revision);
+  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol'}});
+  assert.equal(memories.get(otherMemory.id).status,'stale','withdrawing confirmation invalidates that speaker immediately');
+  await publish();assert.equal(materials.evidence(materials.evidenceIds(id)).map(r=>JSON.parse(r.ocrText)).find(r=>r.speaker==='SPEAKER_1').speakerAttribution,undefined);
  }finally{await organizers.close();}
+});
+
+test('formal speaker correction fences a late Memory result before organizer rebuild',async t=>{
+ const f=await fixture(t);await f.processing.tick();
+ const materials=new MaterialStore(f.store),work=new MaterialMemoryWork(f.store,materials),organizers=new MaterialOrganizerRuntime(f.store,materials,[],undefined,work);
+ const reviews=new FileReviews(f.files,f.processing),artifactId=f.files.chunks(f.id)[0].fileEvidence!.artifactId;
+ reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Alice'}});
+ while(await organizers.tick(100));
+ const material=materials.get(materialId('phone','fixture.wav'))!;
+ const record=materials.evidence(materials.evidenceIds(material.ref)).find(r=>JSON.parse(r.ocrText).speaker==='SPEAKER_0')!;
+ const memories=new MemoryStore(f.store,ids=>materials.evidence(ids),id=>materials.isCurrentEvidence(id));
+ let enter!:()=>void,finish!:()=>void;const entered=new Promise<void>(resolve=>enter=resolve),release=new Promise<void>(resolve=>finish=resolve);
+ const pipeline=new MemoryPipeline({store:f.store,memories,configured:()=>true,model:()=> 'fixture',materialAllowedForMemory:ref=>work.readyForMemory(ref),query:async()=>{enter();await release;return {answer:JSON.stringify({memories:[{title:'Old formal attribution',statement:`Old speaker [${record.id}]`,uncertainty:'Generated',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-old-formal-attribution'};}});
+ try{
+  const job=pipeline.create({evidenceIds:[record.id]}),running=pipeline.run(job.id);await entered;
+  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Carol'}});finish();
+  const done=await running;assert.equal(done.status,'failed');assert.equal(done.batches[0].status,'invalidated');
+  assert.equal(memories.list({includeStale:true}).length,0);
+  assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM memory_checkpoints').get()!.n,0);
+  assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM memory_extraction_drafts').get()!.n,0);
+  assert.throws(()=>pipeline.create({evidenceIds:[record.id]}));
+ }finally{finish();await pipeline.close();await organizers.close();}
 });
 
 test('local semantic grouping blocks without a local model and never invokes the default summarizer',async t=>{
