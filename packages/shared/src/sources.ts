@@ -21,6 +21,7 @@ const originalMetadataSchema=z.record(z.unknown()).superRefine((value,ctx)=>{
 });
 export const codingEvidenceSchema=z.object({
   version:z.literal(1),provider:z.enum(['claude','codex','kimi']),sessionId:z.string().min(1).max(500),
+  projectIdentity:z.enum(['workspace','session','unknown']).optional(),
   projectKey:z.string().min(1).max(200),cwd:z.string().max(4000).optional(),
   projectName:z.string().max(400).optional(),repositoryKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),branch:z.string().max(500).optional(),
   eventId:z.string().min(1).max(200),role:z.enum(['user','assistant','tool_call','tool_result','assistant_delta','tool_call_delta','transcript']),

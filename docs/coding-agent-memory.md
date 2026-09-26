@@ -1,5 +1,7 @@
 # 编码 Agent 对话与经验记忆
 
+> 当前提取政策见[用户表达、代办任务与项目归属](personal-memory-attribution.md)：Agent 会话不再强制输出 coding 领域；用户自身表达进入个人记忆，代办任务只保留可按需查找的资料线索。下文早期“渠道到 coding 领域”描述不再适用于新提取。
+
 > Coding 接入已切换为 Cordis source pipeline：原始事件只存文件归档，会话发布后才索引和送入模型。此路径不再走下文的原始 capture 整理链；新配置、MVP 切换与验收边界见 [Source pipelines](source-pipelines.md)。普通记录来源保留原链路。
 
 本期 Mac 可显式连接本机 Claude Code、Codex、Kimi Code。中央保留可读对话、工具调用和结果，自动提炼编码经验；已有洞察与 Chat 读取同一份证据和记忆。本期不向外部 Agent 提供新检索入口、不回写其配置/记忆、不恢复原生 session。
