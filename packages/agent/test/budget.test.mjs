@@ -54,3 +54,28 @@ test('a rejected later page cannot overwrite earlier delivered citation evidence
     assert.equal((await request(bridge, 'evidence', { ids:['synthetic-budget-99'] })).status, 400);
   } finally { await bridge.close(); }
 });
+
+test('successful and rejected tools expose the same host budget without granting rejected evidence', async t => {
+  let searches=0;
+  const bridge=await startBridge({search:async args=>{searches++;return args.query==='large'?oversized:[small];},timeline:async()=>[],evidence:async()=>[small],activity:async()=>({}),devices:async()=>[]},{question:'Generated bounded retrieval'},4);
+  t.after(()=>bridge.close());
+  const initial=bridge.deliveredCharacters;
+  const rejected=await request(bridge,'search_context',{query:'large',limit:100});
+  assert.equal(rejected.status,400);
+  assert.deepEqual(rejected.body.hostBudget,{remainingCalls:3,remainingCharactersBeforeResult:48000-initial,unit:'utf16_characters'});
+  assert.equal(bridge.deliveredCharacters,initial);assert.equal(bridge.records.size,0);
+  const found=await request(bridge,'search_context',{query:'small'});
+  assert.equal(found.status,200);assert.equal(found.body.hostBudget.remainingCalls,2);
+  assert.equal(found.body.hostBudget.remainingCharactersBeforeResult,48000-initial);
+  assert.equal(bridge.deliveredCharacters,initial+JSON.stringify(found.body).length,'Budget metadata is counted in delivered text');
+  const before=bridge.deliveredCharacters;
+  const expanded=await request(bridge,'evidence',{ids:[small.id]});
+  assert.equal(expanded.status,200);assert.equal(expanded.body.hostBudget.remainingCalls,1);
+  assert.equal(expanded.body.hostBudget.remainingCharactersBeforeResult,48000-before);
+  const last=await request(bridge,'search_context',{query:'small'});assert.equal(last.body.hostBudget.remainingCalls,0);
+  const delivered=bridge.deliveredCharacters,count=searches;
+  const denied=await request(bridge,'search_context',{query:'small'});
+  assert.equal(denied.status,400);assert.equal(denied.body.toolError.code,'tool_budget_exceeded');assert.equal(denied.body.hostBudget.remainingCalls,0);
+  assert.equal(searches,count);assert.equal(bridge.deliveredCharacters,delivered);
+  assert.equal(parseAnswer(answerFor(small.id),bridge.records).citations[0].id,small.id,'Exhaustion does not remove already admitted evidence');
+});

@@ -265,7 +265,7 @@ export function createAgent(options: AgentOptions) {
         },
       });
       active.add(harness);
-      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,taskTools(input).map(name=>contextToolDefinitions(input).find(t=>t[0]===name)),options.maxTokens??DEFAULT_MODEL_MAX_TOKENS);
+      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,taskTools(input).map(name=>contextToolDefinitions(input).find(t=>t[0]===name)),options.maxTokens??DEFAULT_MODEL_MAX_TOKENS,options.maxToolCalls??24);
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       const checkProviderResult = (result: Awaited<ReturnType<DeepSeekHarness['run']>>) => {
         // The SDK resolves some failed turns instead of throwing. Inspect only

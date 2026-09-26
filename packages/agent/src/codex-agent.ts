@@ -59,7 +59,7 @@ export function createCodexAgent(options:AgentOptions){
       trace({type:'instructions.assembled',stage:'starting',payload:{system:system,tools:runTools}});
       await session.start(system,runTools);
       reportProgress(input,{stage:'model'});
-      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,runTools,options.maxTokens??65536);
+      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,runTools,options.maxTokens??65536,options.maxToolCalls??24);
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       trace({type:'model.started',stage:'model',phase:'started',payload:{prompt}});
       const modelStarted=performance.now();

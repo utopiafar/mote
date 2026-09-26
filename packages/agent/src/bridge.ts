@@ -252,6 +252,9 @@ export async function startBridge(
   const failure=new Promise<never>((_,reject)=>rejectFailure=reject);void failure.catch(()=>{});
   let previousFailure='',repeatedFailures=0;
   const budgetError=()=>new ContextToolError('evidence_budget_exceeded','Context result exceeds the evidence budget. Request fewer records or a shorter range. If no useful reads fit, finish with existing evidence and explicitly state incomplete coverage.','use_existing_evidence',{remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters),perResultCharacters:limits.toolResultCharacters});
+  // Budget metadata is host-owned, outside untrusted tool data. Its serialized
+  // text characters consume the same result budget; no extra model call.
+  const hostBudget=()=>({remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharactersBeforeResult:Math.max(0,limits.totalToolCharacters-deliveredCharacters),unit:'utf16_characters'});
 
   const server: Server = createServer(async (req, res) => {
     const given = Buffer.from(req.headers.authorization ?? "");
@@ -327,7 +330,7 @@ export async function startBridge(
         bounds.signal?.throwIfAborted();
         const value=await contribution.read(parsed,{scope,signal:bounds.signal});
         if(!await contribution.authorize(scope,parsed))throw hostError('Context capability was revoked');
-        const serialized=JSON.stringify({source:'untrusted_personal_context',version:contribution.version,data:value??null,evidencePolicy:'Metadata only; no original citation grants.'});
+        const serialized=JSON.stringify({source:'untrusted_personal_context',version:contribution.version,data:value??null,evidencePolicy:'Metadata only; no original citation grants.',hostBudget:hostBudget()});
         if(serialized.length>Math.min(contribution.maxCharacters,limits.toolResultCharacters)||deliveredCharacters+serialized.length>limits.totalToolCharacters)throw budgetError();
         deliveredCharacters+=serialized.length;completeLineage=false;
         trace.push({tool,arguments:{...parsed,...scope},count:1});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
@@ -336,7 +339,7 @@ export async function startBridge(
         if(bounds.skill!=='calendar-extraction'||!bounds.actionCatalog)throw hostError('Action catalog is not authorized for this task');
         if(Object.keys(args).some(key=>!['query','id','cursor','limit'].includes(key))||args.query!==undefined&&(typeof args.query!=='string'||args.query.length>200)||args.id!==undefined&&(typeof args.id!=='string'||!/^[0-9a-f-]{36}$/i.test(args.id))||args.cursor!==undefined&&(typeof args.cursor!=='string'||args.cursor.length>4096)||args.limit!==undefined&&(!Number.isInteger(args.limit)||Number(args.limit)<1||Number(args.limit)>20))throw hostError('Invalid action catalog arguments');
         const scope=range({},bounds),effective={...scope,...args,limit:Number(args.limit??8)};
-        const value=await bounds.actionCatalog(effective),serialized=JSON.stringify({data:value,evidencePolicy:'Untrusted prior proposals; sameAs identifiers only, not original citation grants.'});
+        const value=await bounds.actionCatalog(effective),serialized=JSON.stringify({data:value,evidencePolicy:'Untrusted prior proposals; sameAs identifiers only, not original citation grants.',hostBudget:hostBudget()});
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>128000)throw budgetError();
         deliveredCharacters+=serialized.length;trace.push({tool,arguments:args,count:value.items.length});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:value.items.length});res.end(serialized);return;
       }
@@ -347,7 +350,7 @@ export async function startBridge(
         const page=await reader.materialCatalog?.(effective)??{items:[],nextCursor:null};
         if(!page||!Array.isArray(page.items)||(page.nextCursor!==null&&(typeof page.nextCursor!=='string'||page.nextCursor.length>4096)))throw hostError('Invalid material catalog page');
         const items=page.items.slice(0,scope.limit).map(item=>materialMetadata(item,scope)).filter((item):item is Record<string,unknown>=>Boolean(item));
-        const serialized=JSON.stringify({source:'untrusted_personal_context',data:{items,nextCursor:page.nextCursor}});
+        const serialized=JSON.stringify({source:'untrusted_personal_context',data:{items,nextCursor:page.nextCursor},hostBudget:hostBudget()});
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000)throw budgetError();
         deliveredCharacters+=serialized.length;
         for(const item of items)pinnedMaterials.add(item.ref as string);
@@ -378,7 +381,7 @@ export async function startBridge(
         }
         const total=Number.isSafeInteger(page.originalRefsTotal)&&page.originalRefsTotal>=ids.length?page.originalRefsTotal:ids.length;
         const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids,originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length};
-        const serialized=JSON.stringify({source:'untrusted_personal_context',data});
+        const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget()});
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000)throw budgetError();
         deliveredCharacters+=serialized.length;
         for(const id of ids){discovered.add(id);disclosedIds.add(id);}
@@ -400,7 +403,7 @@ export async function startBridge(
             return project(record,Number(offset),Number(length),bounds.timeZone);
           });
         }
-        const serialized=JSON.stringify({source:'untrusted_personal_context',data});
+        const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget()});
         if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters)throw budgetError();
         deliveredCharacters+=serialized.length;
         trace.push({tool,arguments:{ids:args.ids,ranges:ranges.filter(r=>(args.ids as string[]).includes(r.id))},count:data.length});
@@ -417,7 +420,7 @@ export async function startBridge(
         if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||image.data.length>12*1024*1024)throw hostError('Invalid image output');
         trace.push({tool,arguments:{id:args.id},count:1});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});
-        res.end(JSON.stringify({source:'untrusted_personal_context',id:args.id,image}));return;
+        res.end(JSON.stringify({source:'untrusted_personal_context',id:args.id,image,hostBudget:hostBudget()}));return;
       }
       let value: unknown;
       let effective: Record<string, unknown> = args;
@@ -583,6 +586,7 @@ export async function startBridge(
       const serialized = JSON.stringify({
         source: "untrusted_personal_context",
         data: safeValue,
+        hostBudget:hostBudget(),
         ...(retrieval?{retrieval}:{}),
         ...(pagination ? { pagination } : {}),
       });
@@ -619,7 +623,7 @@ export async function startBridge(
       repeatedFailures=signature===previousFailure?repeatedFailures+1:1;previousFailure=signature;
       if(repeatedFailures>=3)issue=new ContextToolError('repeated_tool_failure','The same invalid tool request failed three times. This run has stopped; no output will be committed.','stop',{originalCode:issue.code});
       reportTrace(bounds,{type:'tool.rejected',stage:'tool',tool,status:'rejected',payload:{...issue.toJSON(),call:calls,repeatCount:repeatedFailures,remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters)}});
-      res.writeHead(400).end(JSON.stringify({error:issue.message,toolError:issue.toJSON()}));
+      res.writeHead(400).end(JSON.stringify({error:issue.message,toolError:issue.toJSON(),hostBudget:hostBudget()}));
       if(issue.recovery==='stop'||calls>maxToolCalls+2)rejectFailure(new AgentResponseError('Tool failure recovery exhausted.','tool_failure'));
 
     }

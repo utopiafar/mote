@@ -63,6 +63,9 @@ test('host context accounts for schema and system input before admitting a task'
  const {metrics}=assembleContext({question:'generated'},[],'system',[{name:'evidence'}],4096);
  assert.equal(metrics.system,6);assert.equal(metrics.outputTokenReserve,4096);assert.equal(metrics.unit,'utf16_characters');
  assert.throws(()=>assembleContext({question:'generated'},[],'x'.repeat(180000),[],4096),/input budget/);
+ const limited=JSON.parse(assembleContext({question:'generated'},[],'system',[],4096,7).prompt);
+ assert.equal(limited.contextBudget.maxToolCalls,7);
+ assert.equal(buildContextEnvelope({question:'Extract',evidenceIds:['one']},[]).retrievalInstruction,undefined,'Bounded extraction is not given archive convergence instructions');
 });
 
 test('bounded evidence does not silently change an ordinary answer into memory extraction',()=>{
