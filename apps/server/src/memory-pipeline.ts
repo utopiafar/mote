@@ -191,6 +191,7 @@ export class MemoryPipeline {
     // Import completion may be replayed after a process interruption.
     if(input.importJobId){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.importJobId')=?").get(input.importJobId) as {id:string}|undefined;if(prior)return this.get(prior.id);}
     if(input.originKey){const prior=this.store.db.prepare("SELECT id FROM memory_jobs WHERE json_extract(json,'$.originKey')=?").get(input.originKey) as {id:string}|undefined;if(prior)return this.get(prior.id);}
+    const jobTime=new Date().toISOString(),evaluationTime=selectedRecipes?(input.contextTime??jobTime):input.contextTime;
     const budget=input.batchCharacters??this.budget;
     const evidenceIds=[...new Set(input.evidenceIds)],skillVersion=this.options.skillVersion??MEMORY_SKILL_VERSION,all:Chunk[]=[];
     const refsByEvidence=new Map<string,{id:string;revision:string}[]>();
@@ -209,7 +210,7 @@ export class MemoryPipeline {
         let end=Math.min(offset+budget,range.offset+range.length);
         if(end<record.ocrText.length&&/[\uD800-\uDBFF]/.test(record.ocrText[end-1])&&/[\uDC00-\uDFFF]/.test(record.ocrText[end]))end--;
         const reviewFingerprint=this.options.review?memoryStrategyPin(defaultMemoryReviewStrategy).fingerprint:undefined;
-        const chunk:Chunk={id,profile:profile.id,profileVersion:profile.version,strategy:selectedRecipe?.binding,reviewFingerprint:selectedRecipe?undefined:reviewFingerprint,group:JSON.stringify([selectedRecipe?.binding??null,profile.group]),offset,length:end-offset,fingerprint,key:sha256(JSON.stringify([id,fingerprint,offset,end-offset,selectedRecipe?.binding??(profile.id==='coding'?profile.version:skillVersion),selectedRecipe?null:reviewFingerprint]))};
+        const chunk:Chunk={id,profile:profile.id,profileVersion:profile.version,strategy:selectedRecipe?.binding,reviewFingerprint:selectedRecipe?undefined:reviewFingerprint,group:JSON.stringify([selectedRecipe?.binding??null,profile.group]),offset,length:end-offset,fingerprint,key:sha256(JSON.stringify([id,fingerprint,offset,end-offset,selectedRecipe?.binding??(profile.id==='coding'?profile.version:skillVersion),selectedRecipe?[evaluationTime,input.timeZone??'UTC',requestLocale.getStore()??'zh-CN']:reviewFingerprint]))};
         if(input.artifactRefs?.length)chunk.key=sha256(JSON.stringify([chunk.key,refsByEvidence.get(id)??[]]));
         if(this.checkpoint(chunk))skippedChunks++;else all.push(chunk);
         if(all.length>10000)throw new StoreError('Memory input exceeds 10000 chunks; use smaller jobs',413);
@@ -220,7 +221,7 @@ export class MemoryPipeline {
     const groups:Chunk[][]=[];let group:Chunk[]=[],characters=0;
     for(const chunk of all){if(group.length&&(group[0].group!==chunk.group||characters+chunk.length>budget||group.length>=20)){groups.push(group);group=[];characters=0;}group.push(chunk);characters+=chunk.length;}
     if(group.length)groups.push(group);
-    const now=new Date().toISOString(),job:MemoryJob={contextTime:input.contextTime,recipes:input.recipes,artifactRefs:input.artifactRefs,materialRefs,language:requestLocale.getStore()??'zh-CN',id:randomUUID(),modelProfileId:input.modelProfileId,modelOverride:input.modelOverride,importJobId:input.importJobId,originKey:input.originKey,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
+    const now=jobTime,job:MemoryJob={contextTime:evaluationTime,recipes:input.recipes,artifactRefs:input.artifactRefs,materialRefs,language:requestLocale.getStore()??'zh-CN',id:randomUUID(),modelProfileId:input.modelProfileId,modelOverride:input.modelOverride,importJobId:input.importJobId,originKey:input.originKey,timeZone:input.timeZone,status:groups.length?'queued':'completed',createdAt:now,updatedAt:now,evidenceIds,skillVersion,totalBatches:groups.length,completedBatches:0,failedBatches:0,skippedChunks,memoryIds:[]};
     const batches:StoredBatch[]=groups.map((chunks,index)=>({strategy:chunks[0].strategy,artifactRefs:[...new Map(chunks.flatMap(c=>refsByEvidence.get(c.id)??[]).map(ref=>[ref.id,ref])).values()],id:randomUUID(),index,status:'pending',chunks,evidenceRanges:chunks.map(({id,offset,length})=>({id,offset,length})),attempts:0,memoryIds:[]}));
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');
     try{

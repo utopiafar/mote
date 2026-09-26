@@ -153,3 +153,11 @@ for(const mutation of ['cancel','delete'] as const)test(`${mutation} during comp
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts WHERE shared=1').get()!.n,0);
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
 });
+
+test('an explicitly changed evaluation time cannot hit a prior recipe completion checkpoint',async t=>{
+  const f=await fixture(t),source=await f.add('diary');await f.run(source.evidenceIds,['personal']);
+  const changed=f.node.memoryPipeline.create({contextTime:'2026-09-02T12:00:00Z',evidenceIds:source.evidenceIds,recipes:[ref('personal')]});
+  assert.equal(changed.batches.length,1);
+  assert.equal((await f.node.memoryPipeline.run(changed.id)).status,'completed');assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2);
+  assert.equal((await f.run(source.evidenceIds,['personal'])).batches.length,0,'the unchanged explicit evaluation still reuses its own checkpoint');
+});
