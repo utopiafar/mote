@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {fileIndexSchema,fileEvidenceSchema,memoryScopeRefSchema} from '@mote/shared';
+import {memoryRecipeBindingSchema,memoryStrategyPinSchema} from './memory-strategy-contract.js';
 
 const timestamp=z.string().max(64).datetime({offset:true});
 export const memoryEvidenceSchema=z.object({
@@ -24,6 +25,7 @@ export const memoryAdmissionSchema=z.object({
   attribution:z.enum(['user','third_party','observed','inferred']),
 }).strict();
 export const memoryReviewReceiptSchema=z.object({
+  strategy:memoryStrategyPinSchema.optional(),
   policy:z.literal('bounded-exact-review@1'),decision:z.enum(['independent','reused','empty']),
   draftRunId:z.string().max(200),reviewRunId:z.string().max(200).optional(),
   checkedAt:timestamp,contextTime:timestamp.optional(),inputHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),model:z.string().max(512).optional(),
@@ -31,6 +33,7 @@ export const memoryReviewReceiptSchema=z.object({
 export type MemoryReviewReceipt=z.infer<typeof memoryReviewReceiptSchema>;
 export const memoryRelationSchema=z.object({kind:z.enum(['contradicts','supersedes']),memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),version:z.number().int().positive()}).strict();
 export const memorySchema=z.object({
+  strategy:memoryRecipeBindingSchema.optional(),
   version:z.number().int().positive().optional(),relations:z.array(memoryRelationSchema).max(20).optional(),supersededBy:z.string().uuid().optional(),supersededAt:timestamp.optional(),
   correction:z.object({memoryId:z.string().uuid(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),noteId:z.string().uuid()}).strict().optional(),
   domain:z.enum(['personal','coding']).optional(),coding:codingMemorySchema.optional(),

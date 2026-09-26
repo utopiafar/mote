@@ -13,6 +13,7 @@ import {codexModels} from '../apps/server/src/model-catalog.js';
 import {sha256} from '../apps/server/src/store.js';
 import type {MemoryJobDetail} from '../apps/server/src/memory-pipeline.js';
 import {materialId} from '../apps/server/src/materials.js';
+import {memoryStrategyRefSchema} from '../apps/server/src/memory-strategy-contract.js';
 
 const recordSchema=z.object({key:z.string(),at:z.string().datetime({offset:true}),text:z.string().min(1).max(100000),textSha256:z.string().length(64),origin:z.record(z.unknown())}).strict();
 const manifestSchema=z.object({purpose:z.enum(['progressive','targeted']).default('progressive'),personalDataUsed:z.boolean(),sourceRun:z.string(),selectionMethod:z.string(),heldOutAfter:z.string(),records:z.array(recordSchema).min(1).max(200),waves:z.array(z.number().int().positive().max(100)).min(1).max(10)}).strict().refine(value=>value.purpose==='targeted'||value.records.length>=20&&value.waves.length>=2,'Progressive acceptance requires at least 20 records and two waves');
@@ -25,6 +26,7 @@ for(const record of manifest.records){assert.equal(sha256(record.text),record.te
 const directory=outside(process.env.MOTE_REPLAY_OUTPUT),resuming=process.env.MOTE_REPLAY_RESUME==='1';
 const requestedIngress=process.env.MOTE_REPLAY_INGRESS?z.enum(['source','notes']).parse(process.env.MOTE_REPLAY_INGRESS):undefined;
 const ingressOnly=process.env.MOTE_REPLAY_INGRESS_ONLY==='1';
+const requestedRecipes=process.env.MOTE_REPLAY_RECIPES?z.array(memoryStrategyRefSchema).min(1).max(8).parse(JSON.parse(process.env.MOTE_REPLAY_RECIPES)):undefined;
 const requestedBatchCharacters=process.env.MOTE_REPLAY_BATCH_CHARACTERS?z.coerce.number().int().min(256).max(12000).parse(process.env.MOTE_REPLAY_BATCH_CHARACTERS):undefined;
 let report:Record<string,any>;
 if(resuming){
@@ -35,18 +37,19 @@ if(resuming){
  // and time semantics. A corrected source replay uses a separate vault.
  report.ingressMode??='notes';assert.equal(ingressOnly,report.ingressOnly??false);
  if(requestedIngress)assert.equal(report.ingressMode,requestedIngress);
+ assert.deepEqual(report.recipes,requestedRecipes,'Resuming must retain the original recipe selection');
 }else{
  await mkdir(directory,{mode:0o700});
  await writeFile(join(directory,'manifest.json'),manifestBytes,{mode:0o600,flag:'wx'});
  report={startedAt:new Date().toISOString(),status:'running',manifestSha256:sha256(manifestBytes),model:'gpt-6-sol',reasoningEffort:'max',personalDataUsed:manifest.personalDataUsed,
-  purpose:manifest.purpose,ingressMode:requestedIngress??'source',ingressOnly,selectionMethod:manifest.selectionMethod,heldOutAfter:manifest.heldOutAfter,
+  recipes:requestedRecipes,purpose:manifest.purpose,ingressMode:requestedIngress??'source',ingressOnly,selectionMethod:manifest.selectionMethod,heldOutAfter:manifest.heldOutAfter,
   browserTested:false,physicalDevicesTested:false,mediaProcessingTested:false,semanticQualityAccepted:false,
   priority:['functionality','performance','cost'],agentDeadlineMs:300000,records:manifest.records.map(r=>({key:r.key,id:randomUUID(),at:r.at,textSha256:r.textSha256})),waves:[],readsDuringModelWork:[]};
 }
 report.ingress=report.ingressMode==='source'?'Exact authored text and original document time through source ingress; observation time is this replay. Original Material references retained in manifest. Linked image bytes are not replayed.':'Exact authored text through notes; original document time is NOT preserved as provenance. Not evidence of faithful temporal import. Linked image bytes are not replayed.';
 if(report.ingressMode==='source')for(const record of manifest.records){const document=documentSchema.parse(record.origin.documentTime);assert.equal(document.contentRole,'authored');assert.equal(document.timeBasis,'recorded');assert.ok(document.recordedAt);assert.equal(Date.parse(document.recordedAt),Date.parse(record.at));}
 report.runnerHashes??=[];report.runnerHashes.push({at:new Date().toISOString(),hash:sha256(await readFile(join(repositoryRoot,'scripts/test-progressive-memory-live.ts'))),head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',cwd:repositoryRoot}).trim(),
- agentFiles:Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','apps/server/src/materials.ts','apps/server/src/material-organizers.ts','apps/server/src/coding-source-plugin.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])))});
+ agentFiles:Object.fromEntries(await Promise.all(['packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','apps/server/src/evidence-reader.ts','apps/server/src/memory-policy.ts','apps/server/src/memory.ts','apps/server/src/memory-review.ts','apps/server/src/memory-review-policy.ts','apps/server/src/memory-strategies.ts','apps/server/src/memory-strategy-contract.ts','apps/server/src/memory-pipeline.ts','packages/agent/skills/memory-strategy/SKILL.md','apps/server/src/materials.ts','apps/server/src/material-organizers.ts','apps/server/src/coding-source-plugin.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])))});
 const vault=join(directory,'vault'),token=randomBytes(32).toString('hex'),deviceId='private-progressive-replay';
 const config:Config={dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:500_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
  model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',
@@ -85,7 +88,7 @@ async function waitForJob(wave:Record<string,any>,task:Promise<MemoryJobDetail>,
 }
 function checkMemories(job:MemoryJobDetail){
  const memories=job.memoryIds.map(id=>node!.memories.get(id));
- for(const memory of memories){assert.ok(memory.reviewRunId);for(const span of memory.evidence??[]){const original=node!.memories.readEvidence([span.id])[0];assert.ok(original);assert.equal(original.ocrText.slice(span.offset!,span.offset!+span.length!),span.quote);}}
+ for(const memory of memories){assert.ok(memory.reviewRunId);if(report.recipes){assert.ok(memory.strategy);assert.ok(report.recipes.some((ref:{id:string;version:string})=>ref.id===memory.strategy!.recipe.id&&ref.version===memory.strategy!.recipe.version));assert.equal(memory.reviewReceipt?.strategy?.fingerprint,memory.strategy.review.fingerprint);}for(const span of memory.evidence??[]){const original=node!.memories.readEvidence([span.id])[0];assert.ok(original);assert.equal(original.ocrText.slice(span.offset!,span.offset!+span.length!),span.quote);}}
  return memories;
 }
 try{
@@ -123,7 +126,7 @@ try{
   }
   if(ingressOnly){wave.status='passed';wave.finishedAt=new Date().toISOString();await save();continue;}
   const ids=saved.flatMap((r:{id:string;memoryEvidenceIds?:string[]})=>r.memoryEvidenceIds??[r.id]);
-  if(!wave.jobId){const job=await request('POST','/api/memory-jobs',{evidenceIds:ids,timeZone:'Asia/Shanghai'});wave.jobId=job.id;wave.job=job;await save();}
+  if(!wave.jobId){const job=await request('POST','/api/memory-jobs',{evidenceIds:ids,timeZone:'Asia/Shanghai',...(report.recipes?{recipes:report.recipes,contextTime:report.startedAt}:{})});wave.jobId=job.id;wave.job=job;await save();}
   let job=node!.memoryPipeline.get(wave.jobId);
   const needsPauseCheckpoint=index===1&&!wave.pauseCheckpoint&&job.totalBatches>1;
   if(needsPauseCheckpoint)delete wave.pauseRequested;
@@ -153,7 +156,7 @@ try{
   progress('wave-finished',{wave:index,count,cumulative:offset,batches:job.totalBatches,memories:job.memoryIds.length});
  }
  const allIds=report.records.map((r:{id:string})=>r.id),allMemoryIds=report.records.flatMap((r:{id:string;memoryEvidenceIds?:string[]})=>r.memoryEvidenceIds??[r.id]);
- if(!ingressOnly){const replay=await request('POST','/api/memory-jobs',{evidenceIds:allMemoryIds,timeZone:'Asia/Shanghai'});
+ if(!ingressOnly){const replay=await request('POST','/api/memory-jobs',{evidenceIds:allMemoryIds,timeZone:'Asia/Shanghai',...(report.recipes?{recipes:report.recipes,contextTime:report.startedAt}:{})});
  assert.equal(replay.totalBatches,0,'Completed extraction checkpoints should avoid model calls');
  assert.equal(replay.skippedChunks,report.waves.reduce((n:number,w:any)=>n+w.job.batches.reduce((sum:number,b:any)=>sum+b.evidenceRanges.length,0),0));report.checkpointReplay=replay;
  }

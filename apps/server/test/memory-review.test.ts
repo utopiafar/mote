@@ -12,6 +12,8 @@ import {SourceStore} from '../src/sources.js';
 import {MemoryStore,MEMORY_ADMISSION_PROMPT,MEMORY_EXTRACTION_PROMPT} from '../src/memory.js';
 import {CONSOLIDATION_RELATION_POLICY} from '../src/memory-policy.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
+import {defaultMemoryReviewStrategy} from '../src/memory-review-policy.js';
+import {memoryStrategyPin} from '../src/memory-strategy-contract.js';
 import {memorySchema} from '../src/memory-schema.js';
 
 const id=randomUUID();
@@ -35,7 +37,7 @@ test('only an identical independently reviewed verdict is reused; no duplicate u
  const first=await reviewMemory(request,d,query,options);assert.equal(memoryReviewReceipt(first)?.decision,'independent');assert.equal(calls,1);
  const second=await reviewMemory({...request,traceContext:{jobId:'another-job'},onTrace:()=>{}},{...d,runId:'later-extraction'},query,options);
  assert.equal(calls,1);assert.equal(validations,4);assert.equal(second.answer,first.answer);assert.equal(second.usage,undefined);
- assert.deepEqual(memoryReviewReceipt(second),{policy:'bounded-exact-review@1',decision:'reused',draftRunId:'later-extraction',reviewRunId:'actual-review',checkedAt:memoryReviewReceipt(second)!.checkedAt,contextTime:input().contextTime,inputHash:memoryReviewReceipt(first)!.inputHash,model:'fixture'});
+ assert.deepEqual(memoryReviewReceipt(second),{strategy:memoryStrategyPin(defaultMemoryReviewStrategy),policy:'bounded-exact-review@1',decision:'reused',draftRunId:'later-extraction',reviewRunId:'actual-review',checkedAt:memoryReviewReceipt(second)!.checkedAt,contextTime:input().contextTime,inputHash:memoryReviewReceipt(first)!.inputHash,model:'fixture'});
  second.answer='mutated by caller';assert.equal((await reviewMemory(request,d,query,options)).answer,'{"memories":[]}');
 });
 
