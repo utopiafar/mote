@@ -145,7 +145,7 @@ export function codingSourcePlugin(ctx:Context){
     ]},
   }));
   ctx.effect(()=>ctx.moteSourcePipelines.register({
-    id:'mote.coding',version:'4',recipe:{id:'mote.coding',version:'4'},reprocess:'deterministic',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['conversation'],
+    id:'mote.coding',featureId:'mote.coding',version:'4',recipe:{id:'mote.coding',version:'4'},reprocess:'deterministic',sourceKinds:['coding-agent'],storage:'archive',index:'material',modelInput:'material',memory:true,memoryDependencies:['conversation'],
     // Retained temporarily for explicit legacy pipeline migration tests. Coding
     // production work executes the registered recipe implementations above.
     group,organize,

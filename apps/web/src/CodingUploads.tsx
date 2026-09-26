@@ -1,0 +1,11 @@
+import {useState} from 'react';
+import {moteText} from '@mote/shared/i18n';
+import {type Api,bytes,errorMessage} from './api';
+import {useResource} from './useResource';
+import {Materials} from './Materials';
+type Upload={source:{id:string;name:string;deviceId:string;enabled:boolean;status?:{state:string;lastSyncAt?:string}};received:{events:number;lastObservedAt:string|null};archiveBytes:number;materials:number;indexedMaterials:number;memory:{state:string;count:number}[];work:{state:string;count:number}[];pipeline:string|null};
+export function CodingUploads({api,onOpen}:{api:Api;onOpen:(ref:string)=>void}){
+  const [offset,setOffset]=useState(0),[sourceId,setSourceId]=useState<string>();
+  const page=useResource<{items:Upload[];nextOffset:number|null}>(api,`/api/coding/uploads?offset=${offset}&limit=20`,5000);
+  return <div className="coding-uploads"><div className="page-heading"><h1>{moteText('Coding Agent 上传')}</h1><p>{moteText('接收成功表示原件已保留；正文发布、索引和记忆整理分别显示状态。')}</p></div>{page.error!==undefined&&<p role="alert">{errorMessage(page.error)}</p>}{page.data?.items.map(item=><article key={item.source.id} className="panel panel-pad"><h2>{item.source.name}</h2><p>{item.source.deviceId} · {item.source.enabled?moteText('已启用'):moteText('已暂停')}</p><dl><dt>{moteText('已接收事件')}</dt><dd>{item.received.events}</dd><dt>{moteText('原件大小')}</dt><dd>{bytes(item.archiveBytes)}</dd><dt>{moteText('已发布资料')}</dt><dd>{item.materials}</dd><dt>{moteText('已索引资料')}</dt><dd>{item.indexedMaterials}</dd><dt>{moteText('记忆整理')}</dt><dd>{item.memory.map(w=>`${w.state}: ${w.count}`).join(' · ')||moteText('未安排')}</dd></dl><p>{item.work.map(w=>`${w.state}: ${w.count}`).join(' · ')||moteText('暂无处理任务')}</p><button className="button" onClick={()=>setSourceId(item.source.id)}>{moteText('查看聚合正文')}</button></article>)}{page.data&&!page.data.items.length&&<p>{moteText('暂无 Coding 来源，请在采集端启用 Coding Agent 同步。')}</p>}<div className="processing-actions">{offset>0&&<button className="button" onClick={()=>setOffset(0)}>{moteText('返回第一页')}</button>}{page.data?.nextOffset!=null&&<button className="button" onClick={()=>setOffset(page.data!.nextOffset!)}>{moteText('下一页')}</button>}</div><Materials key={sourceId??'all'} api={api} onOpen={onOpen} kind="mote.coding-session" sourceId={sourceId}/></div>;
+}

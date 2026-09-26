@@ -25,7 +25,7 @@ const STEP_KIND='source.archive-group';
 const stepId=(id:string,generation:number)=>`source.archive-group:${id}:${generation}`;
 
 export interface SourcePipeline {
-  id:string;version:string;priority?:number;
+  id:string;version:string;priority?:number;featureId?:string;
   /** Explicit protocol/source kinds only, never semantic classification. */
   sourceKinds:string[];
   storage:'records'|'archive';

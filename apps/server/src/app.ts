@@ -1,95 +1,77 @@
-import {SourcePipelineRuntime} from './source-pipelines.js';
-import {codingSourcePlugin} from './coding-source-plugin.js';
-import {linkOperationParent} from './operation-projection.js';
-import {assertExternalCaptures} from './capture-admission.js';
-import {registerSourceRoutes} from './source-routes.js';
-import {IngressService,INGRESS_PROTOCOL_VERSION,collectorIngressWrite} from './ingress.js';
-import {FileRawReader,fileOriginalRawRef} from './file-raw-reader.js';
-import {MAX_RAW_READ_BYTES} from './raw-reader.js';
-import {registerProcessingRoutes} from './processing-routes.js';
-import {registerMemoryRoutes} from './memory-routes.js';
-import {registerModelSettingsRoutes} from './model-settings-routes.js';
-import {registerExecutionSettingsRoutes} from './execution-settings-routes.js';
-import {scopeFields,validRange,type QueryScope} from './query-scope.js';
-import {semanticProcessor} from './semantic-extraction.js';
-import {registerEvidenceRoutes} from './evidence-routes.js';
-import {MaterialStore} from './materials.js';
-import {MaterialMemoryWork} from './material-memory-work.js';
-import {registerMaterialRoutes} from './material-routes.js';
-import {MaterialOrganizerRuntime} from './material-organizers.js';
-import {navigationScopeSchema} from './context-navigation.js';
-import {ModelBudgets,MINIMUM_MODEL_INPUT_RESERVATION_TOKENS} from './model-budgets.js';
-import {ProviderAdmission} from './provider-admission.js';
-import {ProviderFailure} from '@mote/shared';
-import {Operations,registerOperations} from './operations.js';
-import {registerImportUploads} from './import-uploads.js';
-import {registerTodoRoutes} from './todos.js';
-import {ExecutionEngine} from './execution-engine.js';
-import {EvidenceReader} from './evidence-reader.js';
-import {ContextQuery} from './context-query.js';
-import {registerContextRoutes} from './context-routes.js';
-import {monitorEventLoopDelay} from 'node:perf_hooks';
-import {MaintenanceWorker} from './maintenance.js';
-import {AsyncLocalStorage} from 'node:async_hooks';
-import {ConcurrencyGate} from './concurrency.js';
-import {ExecutionSettings} from './execution-settings.js';
-import {ProcessingRuntime} from './processing-runtime.js';
-import {reviewMemory,memoryReviewReceipt} from './memory-review.js';
-import {MemoryReviewCache} from './memory-review-cache.js';
-import {Perception} from './perception.js';
-import {MediaAssets} from './media-assets.js';
-import { requestLocale } from './i18n.js';
-import { negotiateLocale } from '@mote/shared/i18n';
-import { moteText } from './i18n.js';
-import {ModelCatalogError} from './model-catalog.js';
-import {UsageLedger} from './usage.js';
-import {registerArchiveExport} from './archive-export.js';
-import {QueryRuns} from './query-runs.js';
-import {Actions,registerActions} from './actions.js';
-import {InsightRuns} from './insight-runs.js';
-import Fastify,{type FastifyReply,type FastifyRequest} from 'fastify';
+import { Context } from '@deepseek-ai/cordis';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
-import {storageStatistics} from '@mote/shared/storage-statistics';
 import staticFiles from '@fastify/static';
-import { timingSafeEqual,randomUUID } from 'node:crypto';
-import { gunzipSync } from 'node:zlib';
+import { AgentNotConfiguredError,createImportAgent,skillCatalog,type AgentTraceEvent,type ContextReader,type QueryInput } from '@mote/agent';
+import { ProviderFailure,captureSchema,type CaptureInput,type CaptureRecord,type QueryResult } from '@mote/shared';
+import { negotiateLocale } from '@mote/shared/i18n';
+import Fastify,{ type FastifyReply,type FastifyRequest } from 'fastify';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID,timingSafeEqual } from 'node:crypto';
 import { existsSync,readFileSync } from 'node:fs';
-import { join,dirname } from 'node:path';
+import { dirname,join } from 'node:path';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
-import { captureSchema,noteSchema,noteCapture,heartbeatSchema,rangeSchema,type QueryResult,type CaptureRecord,type CaptureInput } from '@mote/shared';
-import { AgentNotConfiguredError,createImportAgent,skillCatalog,type ContextReader,type QueryInput,type AgentTraceEvent } from '@mote/agent';
-import {openingMemories} from './opening-memory.js';
-import { DEFAULT_MODEL_MAX_TOKENS, modelProvider } from '@mote/shared/models';
-import { ModelSettingsStore,ModelSettingsError,modelProfileIdSchema } from './model-settings.js';
-import { ReloadableAgent,createModelRegistry,modelSettingsFromConfig,applyModelSettings,createModelAgent,testModelConnection,type ModelAgentFactory } from './model-agent.js';
-import { Store,StoreError,sha256 } from './store.js';
-import { Indexer } from './indexer.js';
+import { Actions } from './actions.js';
+import { installAgentFeatures } from './agent-feature-host.js';
+import { ArchivedFileStore } from './archived-files.js';
+import { codingSourcePlugin } from './coding-source-plugin.js';
+import { ConcurrencyGate } from './concurrency.js';
 import { repositoryRoot,type Config } from './config.js';
-import { ServerDiagnostics,safeError,diagnosticStageFilters,type AgentTraceContext } from './diagnostics.js';
-import { serverConfiguration } from './configuration.js';
-import {FileEvidenceRequests} from './file-evidence.js';
+import { ConnectionError,Connections,type ConnectionCredential } from './connections.js';
+import { registerConnectors } from './connectors/index.js';
+import { ContentStorageService } from './content-storage.js';
+import { Conversations } from './conversations.js';
+import { ServerDiagnostics,safeError,type AgentTraceContext } from './diagnostics.js';
+import { EvidenceReader } from './evidence-reader.js';
+import { ExecutionEngine } from './execution-engine.js';
+import { ExecutionSettings } from './execution-settings.js';
+import { ServerFeatureHost } from './feature-host.js';
+import { installServerFeatures } from './features/index.js';
+import { FileEvidenceRequests } from './file-evidence.js';
+import { FileProcessing,type FileAnalysis,type TranscriptionProvider } from './file-processing.js';
+import { FileRawReader,fileOriginalRawRef } from './file-raw-reader.js';
+import { registerFileRoutes } from './file-routes.js';
+import { FileStore } from './files.js';
+import { moteText,requestLocale } from './i18n.js';
+import { prepareImportInput } from './import-runtime.js';
+import { ImportStore,type ImportPreparation,type ImportPreparationResult } from './imports.js';
+import { Indexer } from './indexer.js';
+import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite } from './ingress.js';
+import { InsightRuns } from './insight-runs.js';
+import { insightResult,validateInsightOutput } from './insights.js';
+import { recoverableMemoryJobs,registerMemoryExtensions } from './lifecycle-extensions.js';
+import { MaintenanceWorker } from './maintenance.js';
+import { MaterialMemoryWork } from './material-memory-work.js';
+import { MaterialOrganizerRuntime } from './material-organizers.js';
+import { MaterialStore } from './materials.js';
+import { MediaAssets } from './media-assets.js';
+import { MemoryLifecycle,type LifecycleExtension } from './memory-lifecycle.js';
+import { MemoryPipeline } from './memory-pipeline.js';
+import { MemoryReviewCache } from './memory-review-cache.js';
+import { reviewMemory } from './memory-review.js';
+import { ReloadableAgent,applyModelSettings,createModelAgent,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory } from './model-agent.js';
+import { MINIMUM_MODEL_INPUT_RESERVATION_TOKENS,ModelBudgets } from './model-budgets.js';
+import { ModelCatalogError } from './model-catalog.js';
+import { modelConfiguration } from './model-configuration.js';
+import { ModelSettingsError,ModelSettingsStore,modelProfileIdSchema } from './model-settings.js';
+import { openingMemories } from './opening-memory.js';
+import { linkOperationParent } from './operation-projection.js';
+import { Perception } from './perception.js';
+import { ProcessingRuntime } from './processing-runtime.js';
+import { ProviderAdmission } from './provider-admission.js';
+import { PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput } from './python-source-pack-executor.js';
+import { QueryRuns } from './query-runs.js';
+import { scopeFields,validRange,type QueryScope } from './query-scope.js';
+import { MAX_RAW_READ_BYTES } from './raw-reader.js';
+import { semanticProcessor } from './semantic-extraction.js';
+import { SourcePipelineRuntime } from './source-pipelines.js';
 import { SourceStore } from './sources.js';
-import {registerConnectors} from './connectors/index.js';
-import {createUpdateService,registerUpdateRoutes} from './updates.js';
-import {Connections,ConnectionError,type ConnectionCredential} from './connections.js';
-import {registerCaptureBrowser} from './capture-browser.js';
-import {FileStore} from './files.js';
-import {FileProcessing,type FileAnalysis,type TranscriptionProvider} from './file-processing.js';
-import {registerFileRoutes} from './file-routes.js';
-import {Conversations} from './conversations.js';
-import {ArchivedFileStore} from './archived-files.js';
-import {ImportStore,type ImportPreparation,type ImportPreparationResult} from './imports.js';
-import {prepareImportInput} from './import-runtime.js';
-import {PythonSourcePackExecutor,pythonImportOutputSchema,pythonImportPreparation,type PythonImportOutput} from './python-source-pack-executor.js';
-import {MemoryLifecycle,type LifecycleExtension} from './memory-lifecycle.js';
-import {registerMemoryExtensions,recoverableMemoryJobs} from './lifecycle-extensions.js';
-import {WorkingMemory} from './working-memory.js';
-import {modelConfiguration} from './model-configuration.js';
-import {MemoryPipeline} from './memory-pipeline.js';
-import {ContentStorageService,registerContentStorage} from './content-storage.js';
-import {insightResult,validateInsightOutput} from './insights.js';
-import {Context} from '@deepseek-ai/cordis';
+import { Store,StoreError,sha256 } from './store.js';
+import { createUpdateService } from './updates.js';
+import { UsageLedger } from './usage.js';
+import { WorkingMemory } from './working-memory.js';
 
 export interface QueryAgent {configured:boolean;configuredFor?(id:string):boolean;query(args:QueryInput):Promise<QueryResult>;close():Promise<void>}
 const querySchema=z.object({modelProfileId:modelProfileIdSchema.optional(),modelOverride:z.string().trim().min(1).max(512).refine(v=>!/[\u0000-\u001f\u007f]/.test(v)).optional(),question:z.string().trim().min(1).max(8000),conversationId:z.string().uuid().optional(),after:scopeFields.after.nullable(),before:scopeFields.before.nullable(),deviceId:scopeFields.deviceId.nullable(),timeZone:scopeFields.timeZone.nullable()}).strict();
@@ -163,9 +145,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const credential=(req:FastifyRequest)=>identities.get(req);
   const sourceOwner=(req:FastifyRequest,id:string)=>{const c=credential(req);if(c)connections.assertOwnSource(c,id);};
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
-  const archiveReader=evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
+  const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
-    currentGrantContext:()=>modelContext.getStore()});
+    currentGrantContext:()=>modelContext.getStore()}));
+  const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
   const fileRawReader=new FileRawReader(store,files,archivedFiles,{
     mayReadFileVersion:(_sourceId,id)=>Boolean(directImage(id)),mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
@@ -301,89 +284,25 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     reply.code(failure.status).send({error:failure.category,message:failure.message,...(failure.reason?{reason:failure.reason}:{}),requestId:req.id});
   });
   const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured,{semanticArtifacts,executor});
-  registerActions(app,actions,connections,credential);
+
   const connectors=await registerConnectors(app,{files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
   const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
-  app.post('/api/connections/invitations',{bodyLimit:8192,config:connectionRate},async req=>connections.invite(req.body));
-  app.post('/api/connections/invitations/revoke',{bodyLimit:8192,config:connectionRate},async req=>connections.cancelInvitation(req.body));
-  app.post('/api/connections/redeem',{bodyLimit:8192,config:{rateLimit:{max:12,timeWindow:'1 minute',keyGenerator:(req:FastifyRequest)=>`redeem:${req.ip}`}}},async req=>connections.redeem(req.body));
-  app.get('/api/connections',async()=>connections.inventory(config.connectors));
-  app.delete('/api/connections/:id',{config:connectionRate},async req=>connections.revoke((req.params as {id:string}).id));
-  app.post('/api/connections/mcp',{bodyLimit:8192,config:connectionRate},async req=>connections.mintMcp(req.body,config.connectors));
-  app.get('/api/connections/self',async req=>{
-    const c=credential(req);if(c)connections.assertActive(c);
-    const owner=!c,collector=c?.scope==='collector';
-    return {credential:c?{id:c.id,scope:c.scope,label:c.label,serverUrl:c.serverUrl,...(c.deviceId?{deviceId:c.deviceId,deviceName:c.deviceName,platform:c.platform}:{})}:{id:'owner',scope:'owner',label:moteText("节点所有者")},node:{version:serverVersion,profile:config.profile??'legacy'},capabilities:{ingest:owner||collector,ingressVersion:Number(INGRESS_PROTOCOL_VERSION),ownSources:owner||collector,archiveRead:owner||c?.scope==='mcp-read'}};
-  });
+
   const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
-  registerUpdateRoutes(app,softwareUpdate);
-  registerContentStorage(app,contentStorage);
-  registerCaptureBrowser(app,{store,connections,credential,evidenceReader});
-  registerEvidenceRoutes(app,evidenceReader);
-  registerMaterialRoutes(app,materials,materialOrganizer);
-  app.get('/api/source-pipelines',async()=>sourcePipelines.status());
-  app.get('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.options(sourceId);});
-  app.delete('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.forget(sourceId);});
-  app.put('/api/source-pipelines/:sourceId',async req=>{const {sourceId}=req.params as {sourceId:string};sources.getSource(sourceId);return sourcePipelines.configure(sourceId,req.body);});
-  registerSourceRoutes(app,{store,sources,fileEvidence,evidenceReader,ingress,connections,credential,sourceOwner});
-  playbackAuthorization=registerFileRoutes(app,files,processing,ingress,sourceOwner,req=>credential(req)?.deviceId,evidenceReader,diagnostics);
-  registerModelSettingsRoutes(app,modelSettings,codex);
-  app.get('/api/health',async()=>({ok:true,version:serverVersion}));
-  app.get('/api/status',async()=>{const profiles=modelSettings.profiles(),current=modelSettings.current(),unbounded=profiles.some(p=>p.settings.agentTimeoutMs===null),agentTimeouts=profiles.map(p=>p.settings.agentTimeoutMs).filter((value):value is number=>value!==null);return {runtime:{eventLoopP95Ms:eventLoop.percentile(95)/1e6,maintenance:maintenanceWorker?.snapshot()??null},profile:config.profile??'legacy',agent:{configured:agent.configured,provider:modelProvider(config.modelProvider??'deepseek')?.name??config.modelProvider,runtime:config.modelProtocol==='codex-app-server'?'Codex App Server':'DeepSeek Harness',protocol:config.modelProtocol,model:config.model||null,reasoningEffort:config.modelReasoningEffort??'high',maxTokens:config.modelMaxTokens??DEFAULT_MODEL_MAX_TOKENS,modelRequestTimeoutMs:current.modelRequestTimeoutMs,agentTimeoutMs:unbounded?null:agentTimeouts.length?Math.max(...agentTimeouts):null},storage:store.stats(),index:{mode:indexer.configured?'hybrid':'text',model:config.embeddingModel||null},diagnostics:diagnostics.snapshot(),retentionDays:config.retentionDays,insightIntervalHours:lifecycle.settings().insights.enabled?lifecycle.settings().insights.intervalHours:0,serverTime:new Date().toISOString()};});
-  app.get('/api/configuration',async()=>{const d=runtimeSettings.diagnostics(),view=serverConfiguration({...config,...runtimeSettings.execution(),diagnosticsEnabled:d.enabled,diagnosticsDebug:d.debug,agentTraceEnabled:d.traceEnabled,logLevel:d.level},{modelSource:modelSettings.view().source}),policy=lifecycle.settings().insights,field=view.groups.flatMap(g=>g.fields).find(f=>f.key==='insightIntervalHours');for(const f of view.groups.flatMap(g=>g.fields))if(['agentConcurrency','llmConcurrency','memoryConcurrency','diagnosticsEnabled','diagnosticsDebug','agentTraceEnabled','logLevel'].includes(f.key)){f.source='derived';f.restartRequired=false;}if(field){field.value=policy.enabled?policy.intervalHours:0;field.source='derived';field.description=moteText("已保存的洞察策略：周期到达并且至少 {0} 次增量变化时运行。在记忆设置中直接修改。", policy.minChanges);delete field.envVar;}return view;});
-  app.get('/api/context/segments',async req=>evidenceReader.segments(z.object({...navigationScopeSchema.shape,id:z.string().max(1600).optional(),query:z.string().max(500).optional(),cursor:z.string().max(4096).optional(),limit:z.coerce.number().int().min(1).max(100).optional()}).strict().parse(req.query)));
-  app.get('/api/context-index',async req=>evidenceReader.catalog(z.object({path:z.string().max(100).optional(),query:z.string().max(500).optional(),limit:z.coerce.number().int().min(1).max(12).optional(),...navigationScopeSchema.shape}).strict().parse(req.query)));
-  registerContextRoutes(app,new ContextQuery(store,sources,files,evidenceReader));
-  registerTodoRoutes(app,store);
-  registerOperations(app,new Operations(store),req=>Boolean(credential(req)));
-  registerProcessingRoutes(app,{store,workflows,perception,mediaAssets,semanticFingerprint:()=>semanticSelection().fingerprint});
-  app.post('/api/captures',async(req,reply)=>{const input=captureSchema.parse(req.body),c=credential(req);assertExternalCaptures([input]);if(c)connections.assertCapture(c,input);const result=await diagnostics.measure('ingest','capture',()=>ingress.capture(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
-  app.post('/api/captures/bundle',{bodyLimit:12*1024*1024},async req=>{
-    const captures=parseCaptureBundle(req.body);assertExternalCaptures(captures);
-    if(new Set(captures.map(c=>c.id)).size!==captures.length)throw new StoreError('Duplicate IDs in bundle');
-    const c=credential(req);
-    if(c)for(const input of captures)connections.assertCapture(c,input);
-    const committed=await ingress.captureSettled(captures,c?()=>{for(const input of captures)connections.assertCapture(c,input);}:undefined);
-    return {results:committed.map(item=>{if(item.result)return {...item.result,status:item.result.duplicate?200:201};const failure=safeError(item.error);return {id:item.id,status:failure.status,error:failure.category};})};
-  });
+
   // Bounded transport batch with independent durable acknowledgements. Validate the
   // entire envelope and credential scope before writing any member of the batch.
-  app.post('/api/captures/batch',{bodyLimit:12*1024*1024},async req=>{
-    const {captures}=z.object({captures:z.array(captureSchema).min(1).max(25)}).strict().parse(req.body);assertExternalCaptures(captures);
-    if(new Set(captures.map(c=>c.id)).size!==captures.length)throw new StoreError('Duplicate IDs in batch');
-    const c=credential(req);
-    if(c)for(const input of captures)connections.assertCapture(c,input);
-    const committed=await ingress.captureSettled(captures,c?()=>{for(const input of captures)connections.assertCapture(c,input);}:undefined);
-    return {results:committed.map(item=>{if(item.result)return {...item.result,status:item.result.duplicate?200:201};const failure=safeError(item.error);return {id:item.id,status:failure.status,error:failure.category};})};
-  });
-  app.get('/api/captures',async req=>{
-    const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
-    return diagnostics.measure('source','timeline',()=>store.list({...args,cursor:raw.cursor}),page=>({count:page.items.length}));
-  });
-  app.delete('/api/captures/:id',async req=>{const id=(req.params as {id:string}).id;const file=store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=? UNION SELECT capture_id FROM file_chunks WHERE id=? LIMIT 1').get(id,id) as {capture_id:string}|undefined;return file?files.forget(file.capture_id):store.delete(id);});
+
   // Notes share capture IDs, indexing, archive export and deletion tombstones.
   // The convenience route does not rewrite the author's text or infer their mood.
-  app.post('/api/notes',async(req,reply)=>{const input=noteCapture(noteSchema.parse(req.body)),c=credential(req);assertExternalCaptures([input]);if(c)connections.assertCapture(c,input);for(const id of input.metadata?.attachments??[]){const attachment=files.detail(id);if(c&&sources.getSource(attachment.sourceId).deviceId!==c.deviceId)throw new StoreError('Attachment belongs to another device',403);}const result=await diagnostics.measure('ingest','note',()=>ingress.capture(input,c?()=>connections.assertCapture(c,input):undefined),r=>({count:r.duplicate?0:1}));return reply.code(result.duplicate?200:201).send(result);});
-  app.get('/api/notes',async req=>{
-    const raw=req.query as Record<string,string>;const args=rangeSchema.parse(raw);
-    return diagnostics.measure('source','timeline',()=>store.list({...args,source:'note',cursor:raw.cursor}),page=>({count:page.items.length}));
-  });
-  app.delete('/api/notes/:id',async req=>{const {id}=req.params as {id:string};const record=store.evidence([id])[0];if(record&&record.source!=='note')throw new StoreError('Note not found',404);return store.delete(id);});
-  app.post('/api/devices/heartbeat',async req=>{const beat=heartbeatSchema.parse(req.body),c=credential(req);if(c){connections.assertOwnDevice(c,beat);connections.assertPlatform(c,beat.platform);}const result=store.heartbeat(beat);diagnostics.record('queue.snapshot',{queueDepth:beat.queueDepth});return result;});
-  app.get('/api/devices',async()=>({items:store.devices()}));
-  app.get('/api/updates',async req=>{const {cursor,limit}=z.object({cursor:z.coerce.number().int().min(0).default(0),limit:z.coerce.number().int().min(1).max(200).default(100)}).parse(req.query);return store.updates(cursor,limit);});
-  app.get('/api/activity',async req=>store.activity(rangeSchema.parse(req.query)));
+
   const mediaRange=z.object({
     after:z.string().max(64).datetime({offset:true}).optional(),before:z.string().max(64).datetime({offset:true}).optional(),
     deviceId:z.string().min(1).max(128).optional(),appId:z.string().min(1).max(300).optional(),collection:z.enum(['content','activity']).optional(),
     appVisibility:z.enum(['foreground','background','unknown']).optional(),
     screenLocked:z.enum(['true','false']).transform(value=>value==='true').optional(),playbackType:z.enum(['local','remote','unknown']).optional(),
   }).strict().refine(value=>!value.after||!value.before||Date.parse(value.after)<Date.parse(value.before),{message:'Invalid time range'});
-  app.get('/api/media-activity',async req=>{
-    const query=mediaRange.parse(req.query),c=credential(req);
-    if(c){connections.assertActive(c);if(query.deviceId&&query.deviceId!==c.deviceId)throw new ConnectionError('connection_scope_denied',403,moteText("只能读取本设备的媒体采集统计。"));query.deviceId=c.deviceId;}
-    return store.mediaActivity(query);
-  });
+
   let closing=false;
   const activeQueries=new Set<Promise<QueryResult>>();
   function queryAgent(input:QueryInput,operation:'query'|'insight'='query',moduleId='conversations') {
@@ -444,8 +363,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor),working=new WorkingMemory(store,conversations);
   registerMemoryExtensions({semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
-  registerExecutionSettingsRoutes(app,{modelBudgets,runtimeSettings,agentGate,llmGate,interactiveGate,interactiveModelGate,diagnostics,providerAdmission,maintenanceSnapshot:()=>maintenanceWorker?.snapshot()??null,wakeMemory:()=>memoryPipeline.wake()});
-  registerMemoryRoutes(app,{store,files,memories,memoryPipeline,lifecycle,modelSettings,query:input=>queryAgent(input,'query','memories'),reviewExtraction});
+
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
   const sourcePacks=new Map((config.importPythonPacks??[]).map(spec=>{
     const executor=new PythonSourcePackExecutor<PythonImportOutput>({...spec,outputSchema:pythonImportOutputSchema});
@@ -475,22 +393,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     void promise.finally(()=>importTasks.delete(id)).catch(()=>{diagnostics.record('agent.failed',{category:'internal'},'error');});
   }
   const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
-  app.get('/api/skills',async()=>({items:skillCatalog()}));
-  registerImportUploads(app,store,archivedFiles);
-  app.get('/api/imports',async()=>({items:imports.list()}));
-  app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
-  app.post('/api/imports',{bodyLimit:360*1024*1024,config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{const job=await imports.create(req.body);if(job.status==='queued')launchImport(job.id,()=>imports.prepare(job.id));return reply.code(202).send(imports.get(job.id));});
-  app.get('/api/imports/:id',async req=>imports.get(jobId(req.params)));
-  app.delete('/api/imports/:id',async req=>{const id=jobId(req.params);if(importTasks.has(id))throw new StoreError('Import is already processing',409);return imports.delete(id);});
-  app.post('/api/imports/:id/prepare',async(req,reply)=>{const id=jobId(req.params),body=z.object({instruction:z.string().max(12000).optional()}).strict().parse(req.body??{});if(importTasks.has(id))return reply.code(202).send(imports.get(id));if(body.instruction!==undefined)imports.updateInstruction(id,body.instruction);imports.get(id);launchImport(id,()=>imports.prepare(id));return reply.code(202).send(imports.get(id));});
-  app.post('/api/imports/:id/confirm',async(req,reply)=>{const id=jobId(req.params),job=imports.get(id);if(job.status!=='awaiting_confirmation'&&job.status!=='completed')throw new StoreError('Review an import preview before confirming',409);launchImport(id,()=>imports.confirm(id));return reply.code(202).send(imports.get(id));});
-  app.post('/api/imports/:id/retry',async(req,reply)=>{const id=jobId(req.params);imports.get(id);launchImport(id,()=>imports.retry(id));return reply.code(202).send(imports.get(id));});
-  app.get('/api/archived-files/:id',async req=>archivedFiles.get(jobId(req.params)));
-  app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.stream(id));});
-  app.get('/api/captures/:id/archived-files',async req=>{const record=evidenceReader.evidence([(req.params as {id:string}).id],navigationScopeSchema.parse(req.query))[0];if(!record)throw new StoreError('Capture not found',404);return {items:archivedFiles.listForCapture(record.id)};});
-  app.get('/api/conversations',async req=>conversations.list(z.object({limit:z.coerce.number().int().min(1).max(100).default(50),cursor:z.string().max(1000).optional()}).strict().parse(req.query)));
-  app.get('/api/conversations/:id',async req=>conversations.page(z.object({id:z.string().uuid()}).parse(req.params).id,z.object({limit:z.coerce.number().int().min(1).max(50).default(20),cursor:z.string().optional()}).parse(req.query)));
-  app.delete('/api/conversations/:id',async req=>conversations.delete(z.object({id:z.string().uuid()}).parse(req.params).id));
+
   const runningConversations=new Set<string>();
   async function runQuery(body:unknown,onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId='query:'+randomUUID(),execution?:import('./run-execution.js').RunExecutionContext) {
     signal?.throwIfAborted();
@@ -536,57 +439,23 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       throw error;
     }finally{if(conversationId)runningConversations.delete(conversationId);}
   }
-  app.post('/api/query',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async req=>{if(!agent.configured)throw new AgentNotConfiguredError();const id=randomUUID(),input=queryWithAttachmentsSchema.parse(req.body);return queryRuns.perform(id,input,(observe,signal,execution)=>runQuery(input,observe,signal,'query:'+id,execution),{timeoutMs:modelSettings.select('chat',input.modelProfileId).settings.agentTimeoutMs});});
-  app.post('/api/query-runs/:id/cancel',async req=>queryRuns.cancel(z.object({id:z.string().uuid()}).parse(req.params).id));
-  app.get('/api/query-runs',async()=>({items:queryRuns.list()}));
-  app.get('/api/query-runs/:id',async req=>queryRuns.get(z.object({id:z.string().uuid()}).parse(req.params).id));
-  app.post('/api/query-runs',{config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{
-    const {id,input}=z.object({id:z.string().uuid(),input:queryWithAttachmentsSchema}).strict().parse(req.body);
-    if(!agent.configured)throw new AgentNotConfiguredError();
-    return reply.code(202).send(queryRuns.start(id,input,(observe,signal,execution)=>runQuery(input,observe,signal,'query:'+id,execution),{timeoutMs:modelSettings.select('chat',input.modelProfileId).settings.agentTimeoutMs}));
-  });
-  app.get('/api/usage',async req=>{
-    const day=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s=>Number.isFinite(Date.parse(s))&&new Date(s).toISOString().slice(0,10)===s);
-    const {from,to,timeZone,groupBy,page,pageSize,...filters}=z.object({from:day,to:day,timeZone:scopeFields.timeZone.default('UTC'),page:z.coerce.number().int().min(1).max(1000000).default(1),pageSize:z.coerce.number().int().min(1).max(100).default(20),groupBy:z.enum(['agent','module','skill','model','provider']).default('agent'),agentId:z.string().min(1).max(128).optional(),moduleId:z.string().min(1).max(128).optional(),skillId:z.string().min(1).max(128).optional(),provider:z.string().min(1).max(128).optional(),model:z.string().max(512).optional(),status:z.enum(['running','completed','failed']).optional()}).strict().refine(v=>v.from<=v.to&&Date.parse(v.to)-Date.parse(v.from)<=366*86400000).parse(req.query);
-    return usageLedger.summary(from,to,timeZone,filters,groupBy,page,pageSize);
-  });
-  app.put('/api/usage/prices',async req=>usageLedger.setPrice(req.body));
+
   async function insight(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId='insight:'+randomUUID(),snapshot?:import('@mote/shared').InsightSnapshot) {
     if(!agent.configured)throw new AgentNotConfiguredError();
     const {prompt,...scope}=range;
     const result=insightResult(await queryAgent({question:prompt||moteText("请回顾这段时间的个人上下文，选择有证据支撑的发现。区分事实、推断与信息缺口，保留来源引用，用 personal-insight Skill 生成完整文字报告和静态 HTML 展示。"),skill:'personal-insight',...scope,...(snapshot?{...snapshot.scope,contextTime:snapshot.asOf,insightSnapshot:snapshot}:{}),onProgress,signal,traceContext:{operationId}},'insight','insights'));
     signal?.throwIfAborted();return {...result,...(snapshot?{snapshot}:{})};
   }
-  app.post('/api/insight-runs',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async(req,reply)=>{
-    const body=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional(),prompt:z.string().trim().max(8000).optional(),requestId:z.string().uuid()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body);
-    const {requestId,...input}=body;
-    if(!agent.configuredFor(modelSettings.select('insight',input.modelProfileId).id))throw new AgentNotConfiguredError();
-    if(closing)throw new StoreError('Central node is shutting down',503);
-    const run=insightRuns.start(requestId,input,(observe,signal,snapshot)=>diagnostics.run(requestId,()=>insight(input,observe,signal,'insight:'+requestId,snapshot)),{timeoutMs:modelSettings.select('insight',input.modelProfileId).settings.agentTimeoutMs});
-    return reply.code(202).send(run);
-  });
-  app.get('/api/insight-runs',async()=>({items:insightRuns.list()}));
-  app.get('/api/insight-runs/:id',async req=>insightRuns.detail(z.string().uuid().parse((req.params as {id:string}).id)));
-  app.post('/api/insights',{config:{rateLimit:{max:5,timeWindow:'1 minute'}}},async req=>{const id=randomUUID(),input=insightRequestSchema.parse(req.body??{});return insightRuns.perform(id,input,(observe,signal,snapshot)=>insight(input,observe,signal,'insight:'+id,snapshot),{timeoutMs:modelSettings.select('insight',input.modelProfileId).settings.agentTimeoutMs});});
-  app.get('/api/insights',async()=>({items:store.insights()}));
-  app.post('/api/index/retry',async()=>{if(!indexer.configured)throw new StoreError('Embedding model is not configured',409);const result=indexer.retry();diagnostics.record('queue.snapshot',{pending:result.queued});void indexer.tick();return result;});
-  registerArchiveExport(app,store,files,archivedFiles,config.maxExportBytes);
-  app.get('/api/export',async(_req,reply)=>reply.header('Content-Disposition',`attachment; filename="mote-${new Date().toISOString().slice(0,10)}.json"`).send(store.exportArchive(config.maxExportBytes)));
-  app.post('/api/import',{bodyLimit:config.maxExportBytes},async req=>diagnostics.measure('ingest','import',()=>store.importArchive(req.body),r=>({count:r.imported})));
+
   function diagnosticSnapshot() {
     const counts=store.indexCounts(),devices=store.devices(),storage=store.stats();
     return {version:1,scope:'central-safe-diagnostics',...diagnostics.snapshot(),execution:{agents:agentGate.snapshot(),llm:llmGate.snapshot()},services:{agentConfigured:agent.configured,embeddingConfigured:indexer.configured,activeQueries:activeQueries.size,closing},queue:{index:counts,devices:devices.length,reportedPending:devices.reduce((n,d)=>n+d.queueDepth,0)},storage:{captures:storage.captures,imageCaptures:storage.imageCaptures,blobs:storage.blobs,bytes:storage.bytes,logicalBytes:storage.logicalBytes,maxBytes:storage.maxBytes,imagesEncrypted:storage.imagesEncrypted}};
   }
-  app.get('/api/storage-statistics',async()=>{const types=new Map((store.db.prepare("SELECT object_hash,MIN(json_extract(manifest,'$.item.mimeType')) AS mime FROM file_versions WHERE object_hash IS NOT NULL GROUP BY object_hash").all() as {object_hash:string;mime:string}[]).map(r=>[r.object_hash,r.mime]));return storageStatistics([config.dataDir],path=>path.startsWith(store.blobsDir+'/')?'image':path.startsWith(files.objects+'/')?types.get(path.slice(files.objects.length+1).split('/')[0])??'original':undefined);});
-  app.get('/api/diagnostics',async()=>diagnosticSnapshot());
-  app.get('/api/diagnostics/logs',async(req,reply)=>{const {file}=z.object({file:z.coerce.number().int().min(0).max(9).default(0)}).strict().parse(req.query);return reply.type('text/plain; charset=utf-8').send(await diagnostics.readRaw(file));});
-  app.get('/api/diagnostics/log-pages',async req=>{const args=z.object({file:z.coerce.number().int().min(0).max(9).default(0),page:z.coerce.number().int().min(1).default(1),pageSize:z.coerce.number().int().min(1).max(500).default(100),stage:z.enum(diagnosticStageFilters).default('all')}).strict().parse(req.query);return diagnostics.readPage(args.file,args.page,args.pageSize,args.stage);});
-  app.get('/api/diagnostics/events',async req=>{const args=z.object({afterSeq:z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),limit:z.coerce.number().int().min(1).max(500).default(200)}).strict().parse(req.query);return diagnostics.events(args.afterSeq,args.limit);});
-  app.get('/api/support-bundle',async(req,reply)=>{const range=z.object({after:z.string().datetime().default(new Date(Date.now()-86400000).toISOString()),before:z.string().datetime().default(new Date(Date.now()+1).toISOString())}).strict().refine(v=>v.after<v.before).parse(req.query);diagnostics.record('support.exported',{requestId:req.id});const logs=await diagnostics.exportRange(range.after,range.before);return reply.header('Content-Disposition','attachment; filename="mote-support.json"').type('application/json').send({version:1,scope:'central-safe-support',createdAt:new Date().toISOString(),snapshot:diagnosticSnapshot(),...logs});});
+
   const web=join(repositoryRoot,'apps/web/dist');
   let webVersion:string|null=null;
   try {webVersion=JSON.parse(readFileSync(join(web,'build-info.json'),'utf8')).version??null;} catch {}
-  app.get('/api/build-info',async()=>({serverVersion,webVersion,consistent:webVersion===serverVersion}));
+
   if(existsSync(web)) {
     app.addHook('onRequest',async(req,reply)=>{if(!req.url.startsWith('/api/')&&webVersion!==serverVersion)return reply.code(503).type('text/plain; charset=utf-8').send('Web/server build mismatch. Run npm run build -w @mote/web and restart the server.');});
     await app.register(staticFiles,{root:web,prefix:'/'});
@@ -615,6 +484,9 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const maintenance=()=>{files.sweep();if(config.retentionDays>0)void diagnostics.run(randomUUID(),()=>diagnostics.measure('maintenance','retention',()=>store.prune(new Date(Date.now()-config.retentionDays*86400000).toISOString()),deleted=>({deleted}))).catch(()=>{});};
   maintenance();const retentionTimer=setInterval(maintenance,3600000);retentionTimer.unref();
   const lifecycleTimer=setInterval(()=>{if(!closing)void lifecycle.tick().catch(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));},60000);lifecycleTimer.unref();
+  const featureServices={setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelBudgets,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
+  const featureHost=new ServerFeatureHost(backendContext,app);
+  await installServerFeatures(featureHost,featureServices);
   diagnostics.record('server.started');
   app.addHook('onReady',async()=>{
     void sourcePipelines.tick().catch(()=>diagnostics.record('request.failed',{category:'internal'},'error'));
@@ -636,5 +508,5 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     memoryReviews.clear();
     try{await indexer.close();}finally{try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}}
   });
-  return {app,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,featureServices,featureHost,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }
