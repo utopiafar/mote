@@ -95,6 +95,7 @@ export class EvidenceStore {
       CREATE TABLE IF NOT EXISTS source_connections (id TEXT PRIMARY KEY,json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS source_versions (source_id TEXT NOT NULL,external_id TEXT NOT NULL,revision TEXT NOT NULL,capture_id TEXT NOT NULL UNIQUE,hash TEXT NOT NULL,PRIMARY KEY(source_id,external_id,revision));
       CREATE TABLE IF NOT EXISTS file_evidence_links(parent_id TEXT NOT NULL,capture_id TEXT NOT NULL,PRIMARY KEY(parent_id,capture_id));
+      CREATE INDEX IF NOT EXISTS file_evidence_links_capture ON file_evidence_links(capture_id,parent_id);
       CREATE TABLE IF NOT EXISTS source_heads (source_id TEXT NOT NULL,external_id TEXT NOT NULL,capture_id TEXT NOT NULL,observed_at TEXT NOT NULL,deleted INTEGER NOT NULL,PRIMARY KEY(source_id,external_id));
       CREATE INDEX IF NOT EXISTS source_head_capture ON source_heads(capture_id);
       CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL);

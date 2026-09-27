@@ -36,6 +36,8 @@ export const documentSchema=z.object({
   recordedAt:timestamp.describe('Explicit original authored/recording date; never the import or observation time. Omit when unknown.').optional(),occurredAt:timestamp.describe('Explicit time of the described event; omit when unknown.').optional(),
   timeBasis:z.enum(['recorded','occurred','unknown']).optional(),
   contentRole:z.enum(['authored','transcript','summary','reference','other']).optional(),
+  /** A host-verified attachment relationship. This declaration alone never grants access. */
+  attachmentOf:z.object({captureId:z.string().uuid(),fileId:z.string().uuid()}).strict().optional(),
   attachments:z.array(z.object({id:z.string().min(1).max(200).optional(),name:z.string().max(1000).optional(),path:z.string().max(4000).optional(),uri:z.string().max(4000).optional(),mimeType:z.string().max(200).optional()}).strict()).max(100).optional(),
   originalMetadata:originalMetadataSchema.optional(),
 }).strict();

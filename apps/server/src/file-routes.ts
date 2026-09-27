@@ -11,11 +11,13 @@ import {fileExportEntries,exportTar} from './file-export.js';
 import {isLoopback,readProcessorJson} from './file-processors.js';
 import {FileProcessing} from './file-processing.js';
 import {StoreError} from './store.js';
+import {FileAttachments} from './file-attachments.js';
 import type {IngressService} from './ingress.js';
 
 export function registerFileRoutes(app:FastifyInstance,files:FileStore,processing:FileProcessing,ingress:IngressService,authorize:(req:FastifyRequest,sourceId:string)=>void,device:(req:FastifyRequest)=>string|undefined,reader:EvidenceReader,diagnostics?:ServerDiagnostics){
   const measure=<T>(operation:Operation,task:()=>T|Promise<T>)=>diagnostics?diagnostics.measure('file',operation,task):Promise.resolve().then(task);
   const reviews=new FileReviews(files,processing);
+  const attachments=new FileAttachments(files);
   const grants=new Map<string,{id:string;until:number;check:()=>void}>();
   const cookieName=(id:string)=>'mote_file_'+id.replace(/-/g,'');
   const id=(req:FastifyRequest)=>(req.params as {id:string}).id;
@@ -58,6 +60,7 @@ export function registerFileRoutes(app:FastifyInstance,files:FileStore,processin
     return reply.header('Accept-Ranges','bytes').header('Content-Length',Math.max(0,end-start+1)).header('Content-Disposition',`${mime==='application/octet-stream'||(req.query as {download?:string}).download==='1'?'attachment':'inline'}; filename*=UTF-8''${encodeURIComponent(v.item.title).replace(/'/g,'%27')}`).type(mime).send(files.stream(fileId(req),start,end));
   });
   // Owner-only routes are excluded from the collector route allowlist.
+  app.post('/api/records/:id/attachments/:attachmentId/processing',{bodyLimit:1024},async req=>attachments.prepare(id(req),(req.params as {attachmentId:string}).attachmentId,req.body,check(req)));
   app.delete('/api/files/:id',async req=>files.forget(fileId(req)));
   app.post('/api/files/:id/allow-again',async req=>{const q=z.object({sourceId:z.string(),externalId:z.string()}).strict().parse(req.body);files.store.db.prepare('DELETE FROM file_forgotten WHERE source_id=? AND external_id=?').run(q.sourceId,q.externalId);return {allowed:true};});
   app.post('/api/files/:id/retry',async req=>{const q=z.object({stage:z.enum(['transcribe','diarize','summary']).default('transcribe')}).strict().parse(req.body??{});return processing.retry(fileId(req),q.stage);});

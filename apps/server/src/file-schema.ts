@@ -36,4 +36,5 @@ export function fileSchema(db:DatabaseSync){db.exec(`
  if(!jobs.has('policy_json'))db.exec('ALTER TABLE file_jobs ADD COLUMN policy_json TEXT');
  if(!jobs.has('local_only'))db.exec('ALTER TABLE file_jobs ADD COLUMN local_only INTEGER NOT NULL DEFAULT 0');
  if(!jobs.has('auto_eligible'))db.exec('BEGIN IMMEDIATE; ALTER TABLE file_jobs ADD COLUMN auto_eligible INTEGER NOT NULL DEFAULT 1; UPDATE file_jobs SET auto_eligible=0; COMMIT');
+ if(!jobs.has('reuse_allowed'))db.exec('ALTER TABLE file_jobs ADD COLUMN reuse_allowed INTEGER NOT NULL DEFAULT 1');
 }

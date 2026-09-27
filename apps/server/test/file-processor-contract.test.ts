@@ -23,6 +23,8 @@ test('processor registration rejects contradictory or malformed capability decla
  assert.throws(()=>registry.register({...base,dialogue:true}),/audio extraction/);
  assert.throws(()=>registry.register({...base,dependencies:{settings:['invented' as any]}}),/dependencies/);
  assert.throws(()=>registry.register({...base,allowSummary:'yes' as any}),/capability/);
+ assert.throws(()=>registry.register({...base,stage:'diarize',reuseByContent:true}),/reuse capability/);
+ assert.throws(()=>registry.register({...base,reuseByContent:'yes' as any}),/reuse capability/);
  assert.doesNotThrow(()=>registry.register({...base,localOnly:true,contentPolicy:'local-only',allowSummary:true,dependencies:{settings:[]}}));
  assert.equal(registry.list()[0].contentPolicy,'local-only');
 });

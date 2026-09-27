@@ -18,6 +18,7 @@ import type {SourceItemRecipeCatalog} from './source-item-recipe.js';
 import {createHash} from 'node:crypto';
 import {ArchivedFileStore} from './archived-files.js';
 import {readEvidenceImage} from './evidence-image.js';
+import {fileAttachmentAvailable,fileAttachmentParent} from './file-attachments.js';
 
 export {parseEvidenceRef} from '@mote/shared';
 type ScreenOriginalGrant={kind:'material'|'segment';ref:string;scope:Range};
@@ -321,19 +322,25 @@ export class EvidenceReader {
     return Boolean(row);
   }
   private materialLocalOnly(material:MaterialRecord):boolean {
-    if(!this.materials)return true;
+    return this.materialMemberAccess(material).localOnly;
+  }
+  private materialMemberAccess(material:MaterialRecord):{available:boolean;localOnly:boolean} {
+    if(!this.materials)return {available:false,localOnly:true};
+    let localOnly=false;
     for(let offset=0;offset<material.memberCount;offset+=200){
       const page=this.materials.members(material.ref,{offset,limit:200});
-      if(!page.items.length)return true;
+      if(!page.items.length)return {available:false,localOnly:true};
       for(const member of page.items){
         if(member.kind==='capture'){
-          const id=evidenceRefId(member.ref,'capture');if(!id||this.evidenceLocalOnly(id))return true;
+          const id=evidenceRefId(member.ref,'capture');if(!id||!fileAttachmentAvailable(this.store,id))return {available:false,localOnly:true};
+          if(this.evidenceLocalOnly(id))localOnly=true;
         }
       }
     }
-    return false;
+    return {available:true,localOnly};
   }
   private captureExposure(record:CaptureRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,representation:EvidenceRepresentation='capture',screenOriginalGrant=false){
+    if(!fileAttachmentAvailable(this.store,record.id))return false;
     const provenance=record.provenance,materialRef=provenance?.uri?.startsWith('material:')?provenance.uri.split('#')[0]:undefined;
     const material=materialRef?this.materials?.get(materialRef):undefined;
     if(materialRef){
@@ -356,6 +363,7 @@ export class EvidenceReader {
     return this.exposureAllows({sourceKind,sourceId:provenance?.sourceId,representation,operation,phase,localOnly:this.evidenceLocalOnly(record.id)},policy,screenOriginalGrant);
   }
   private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[]){
+    const access=this.materialMemberAccess(material);if(!access.available)return false;
     if(required&&!this.materials?.input(material.ref,required)?.ready)return false;
     if(operation==='memory'&&this.sourceItemRecipes){
       try{
@@ -367,7 +375,7 @@ export class EvidenceReader {
       }catch{return false;}
     }
     const phase=required&&material.coverage.state==='pending'?'partial':material.coverage.state;
-    return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase,localOnly:this.materialLocalOnly(material)},policy);
+    return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase,localOnly:access.localOnly},policy);
   }
   /** Memory runners can inspect a material only after its declared route admits the current phase. */
   materialAllowedForMemory(ref:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,required?:readonly string[]){
@@ -391,26 +399,26 @@ export class EvidenceReader {
    * published revision includes the current source head. A newer receipt is
    * still discoverable as raw evidence while its organizer job catches up. */
   private sourceItemMaterial(record:CaptureRecord,scope:Range):MaterialRecord|undefined {
-    const p=record.provenance;
+    const original=(record as CaptureRecord&{fileEvidence?:{captureId:string}}).fileEvidence?.captureId??record.id;
+    const linked=fileAttachmentParent(this.store,original),p=linked?.record.provenance??record.provenance;
     if(!this.materials||!p||p.document?.coding||p.uri?.startsWith('material:'))return;
     try{
       const head=this.sources.getItem(p.sourceId,p.externalId);
-      const parent=(record as CaptureRecord&{fileEvidence?:{captureId:string}}).fileEvidence?.captureId??record.id;
+      const parent=linked?.record.id??original;
       if(!head||head.deleted||head.captureId!==parent)return;
       const material=this.materials.get(materialId(p.sourceId,p.externalId));
-      if(!material||material.memberCount!==1||material.origin.sourceId!==p.sourceId||material.origin.externalId!==p.externalId||
-        !this.scopedMaterial(material.ref,scope))return;
-      const member=this.materials.members(material.ref,{limit:1}).items[0];
-      return member?.kind==='capture'&&evidenceRefId(member.ref,'capture')===head.captureId?material:undefined;
+      if(!material||material.origin.sourceId!==p.sourceId||material.origin.externalId!==p.externalId)return;
+      return this.materialHead(material,scope)?.id===head.captureId?material:undefined;
     }catch{return;}
   }
   private materialHead(material:MaterialRecord,scope:Range):CaptureRecord|undefined {
-    if(!this.materials||material.memberCount!==1||!this.scopedMaterial(material.ref,scope))return;
+    if(!this.materials||material.memberCount>101||!this.scopedMaterial(material.ref,scope))return;
     try{
       const head=this.sources.getItem(material.origin.sourceId,material.origin.externalId);
       if(!head||head.deleted)return;
-      const member=this.materials.members(material.ref,{limit:1}).items[0];
-      if(member?.kind!=='capture'||evidenceRefId(member.ref,'capture')!==head.captureId)return;
+      const members=this.materials.members(material.ref,{limit:200}).items;
+      if(members.length!==material.memberCount||!members.some(member=>member.kind==='capture'&&evidenceRefId(member.ref,'capture')===head.captureId))return;
+      for(const member of members){const id=member.kind==='capture'&&evidenceRefId(member.ref,'capture');if(!id||id!==head.captureId&&fileAttachmentParent(this.store,id)?.record.id!==head.captureId)return;}
       const record=scopeRecord(this.store,head.captureId,true);
       return record&&withinEvidenceScope(record,scope)?record:undefined;
     }catch{return;}
@@ -573,6 +581,9 @@ export class EvidenceReader {
       for(let index=0;index<page.items.length;index++){
         const record=page.items[index];
         const material=this.sourceItemMaterial(record,args);
+        // Visit a composed source once at its parent position, including across
+        // page boundaries. Attachment processing receipts are not new activity.
+        if(material&&fileAttachmentParent(this.store,record.id))continue;
         const view=material?this.materialCard(material,record):record;
         if(!view||!this.captureExposure(view,operation,policy))continue;
         items.push(view);
@@ -668,7 +679,7 @@ export class EvidenceReader {
         const parent=()=>{
           const original=scopeRecord(store,captureId);if(original)return original;
           // A source-item Material anchor carries the same attachment metadata.
-          // Resolve only a current, single-source material with a verified member.
+          // Resolve a current root plus only its host-verified attachment members.
           const anchor=this.evidence([captureId])[0],ref=anchor?.provenance?.uri?.split('#')[0],material=ref&&this.materials?.get(ref);
           if(!anchor||!material||!this.materials?.isCurrentEvidence(captureId)||!this.captureExposure(anchor,operation('expand'),policy))return;
           return this.materialHead(material,{});

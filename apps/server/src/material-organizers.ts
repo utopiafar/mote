@@ -9,6 +9,7 @@ import {CaptureRawReader,captureRawRef} from './capture-raw-reader.js';
 import {SourceItemRecipeCatalog,type SourceItemRecipePin} from './source-item-recipe.js';
 import type {MaterialMemoryWork} from './material-memory-work.js';
 import {readFileSpeakerAttributions} from './file-speaker-attribution.js';
+import {fileAttachmentAvailable,fileAttachmentChildren,fileAttachmentParent} from './file-attachments.js';
 
 /** Organizers select declared source shapes, never infer a topic or user intent. */
 export interface MaterialOrganizerFile {
@@ -19,6 +20,7 @@ export interface MaterialOrganizerFile {
     speakerAttribution?:ReturnType<typeof readFileSpeakerAttributions>[string];artifact:{complete?:boolean;coverage?:string}}[];
   job?:{state:string;error:string|null};
   attachmentsTruncated:boolean;
+  attachedFiles?:{fileId:string;record:CaptureRecord;file:MaterialOrganizerFile}[];
 }
 
 /** A build receives only evidence selected by its declared group. It has no SQL or write access. */
@@ -120,7 +122,7 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
       WHERE o.group_key=? AND c.device_id=? ORDER BY c.captured_at,o.id LIMIT 1001`).all(group.groupKey,group.deviceId) as {id:string}[];
     return {records:rows.slice(0,1000).map(row=>permit(capture(store,row.id))).filter((r):r is CaptureRecord=>Boolean(r)),truncated:rows.length>1000};
   };
-  const file=(captureId:string):MaterialOrganizerFile|undefined=>{
+  const file=(captureId:string,includeAttached=true):MaterialOrganizerFile|undefined=>{
     if(!allowed.has(captureId))return;
     const original=store.db.prepare('SELECT object_hash FROM file_versions WHERE capture_id=?').get(captureId) as {object_hash:string|null}|undefined;
     const attachmentRows=store.db.prepare('SELECT f.id,f.hash,f.json FROM capture_files c JOIN archived_files f ON f.id=c.file_id WHERE c.capture_id=? ORDER BY f.id LIMIT 2001').all(captureId) as {id:string;hash:string;json:string}[];
@@ -132,7 +134,10 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
       ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT 2001`).all(captureId) as {id:string;artifact_id:string;text:string;metadata:string|null;start_ms:number|null;end_ms:number|null;kind:string;artifact_json:string}[];
     const confirmations=new Map([...new Set(chunkRows.map(row=>row.artifact_id))].map(id=>[id,readFileSpeakerAttributions(store,captureId,id)]));
     const job=store.db.prepare('SELECT state,error FROM file_jobs WHERE capture_id=?').get(captureId) as {state:string;error:string|null}|undefined;
-    return {objectHash:original?.object_hash??undefined,
+    const attachedFiles=includeAttached?fileAttachmentChildren(store,captureId).flatMap(({record,fileId})=>{
+      permit(record);const selected=file(record.id,false);return selected?[{fileId,record,file:selected}]:[];
+    }):[];
+    return {objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
       attachments:attachmentRows.slice(0,2000).map(row=>{
         const metadata=JSON.parse(row.json) as {mimeType?:string;relativePath?:string};
         return {id:row.id,hash:row.hash,mimeType:metadata.mimeType??'application/octet-stream',...(metadata.relativePath?{relativePath:metadata.relativePath}:{})};
@@ -184,7 +189,7 @@ class MaterialBody {
     if(this.members.length>=MAX_MEMBERS){this.limitations.add('member_limit');return false;}
     this.members.push(member(record));return true;
   }
-  text(id:string,text:string,memberId:string,format:'plain'|'json'|'transcript'='plain',locator?:Record<string,unknown>,evidenceIds?:string[],context?:MaterialEvidenceContext){
+  text(id:string,text:string,memberId:string|string[],format:'plain'|'json'|'transcript'='plain',locator?:Record<string,unknown>,evidenceIds?:string[],context?:MaterialEvidenceContext){
     if(!text)return;
     let position=0,part=0;
     while(position<text.length){
@@ -194,7 +199,7 @@ class MaterialBody {
       if(end<text.length&&/[\uD800-\uDBFF]/.test(text[end-1])&&/[\uDC00-\uDFFF]/.test(text[end]))end--;
       if(end===position){this.limitations.add('text_limit');return;}
       const slice=text.slice(position,end);
-      this.blocks.push({id:part?`${id}:${part}`:id,kind:'text',format,text:slice,memberIds:[memberId],
+      this.blocks.push({id:part?`${id}:${part}`:id,kind:'text',format,text:slice,memberIds:Array.isArray(memberId)?memberId:[memberId],
         ...(evidenceIds?{evidenceIds}:{}),
         ...(context?{evidenceContext:context}:{}),
         ...(locator||part?{locator:{...locator,textStart:position,textEnd:end}}:{})});
@@ -219,7 +224,7 @@ const codingExternalId=(g:Record<string,string>)=>JSON.stringify([g.provider,g.p
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'7',slot:'source-item',
+  id:'mote.source-item',version:'8',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -239,6 +244,24 @@ const sourceItem:MaterialOrganizer={
         evidenceContext(r,c.startMs===null?undefined:'transcript'));
     }
     const extractedBlocks=body.blocks.filter(block=>!sourceBlocks.includes(block.id)).map(block=>block.id);
+    const attachedArtifacts:NonNullable<MaterialDraft['artifacts']>=[];
+    let attachmentPartial=false;
+    for(const {fileId,record:attached,file:processed} of file.attachedFiles??[]){
+      if(!body.addMember(attached))break;
+      if(processed.attachmentsTruncated)body.limitations.add('attachment_processing_truncated');
+      if(processed.chunks.some(c=>c.artifact.complete===false||c.artifact.coverage==='partial'))attachmentPartial=true;
+      const blockIds:string[]=[];
+      for(const c of processed.chunks){
+        const before=body.blocks.length;
+        body.text(`attachment:${fileId}:${c.id}`,JSON.stringify({attachment:{fileId,captureId:attached.id,parentCaptureId:r.id},
+          ...(c.speaker?{speaker:c.speaker}:{}),...(c.speakerAttribution?{speakerAttribution:c.speakerAttribution}:{}),
+          ...(c.imageLocation?{imageLocation:c.imageLocation}:{}),text:c.text}),[r.id,attached.id],'json',
+          {fileId,captureId:attached.id,chunkId:c.id,...(c.imageLocation?{imageLocation:c.imageLocation}:{}),...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],evidenceContext(attached,c.startMs===null?'other':'transcript'));
+        blockIds.push(...body.blocks.slice(before).map(b=>b.id));
+      }
+      const waiting=['waiting','running'].includes(processed.job?.state??'waiting'),failed=['blocked','failed'].includes(processed.job?.state??'');
+      attachedArtifacts.push({key:`attachment/${fileId}/text`,blockIds,state:waiting?'pending':failed?'failed':blockIds.length?'ready':'unavailable',...(processed.job?.error?{reason:processed.job.error}:{})});
+    }
     if(file.objectHash)body.asset('original',file.objectHash,r.provenance?.mimeType??'application/octet-stream',r.id);
     for(const attachment of attachments){
       body.asset(`attachment:${attachment.id}`,attachment.hash,attachment.mimeType,r.id,
@@ -254,6 +277,7 @@ const sourceItem:MaterialOrganizer={
       else if(artifact&&(artifact.complete===false||artifact.coverage==='partial')){state='partial';reason='processor_partial';}
     }
     if(r.provenance?.document?.fileIndex&&r.provenance.document.fileIndex.coverage!=='full'){state='partial';reason='source_index_partial';}
+    if(attachmentPartial||attachedArtifacts.some(a=>a.state!=='ready')){state='partial';reason='attachment_processing_incomplete';}
     const reference=r.provenance?.layer==='reference'||r.provenance?.layer==='derived';
     const hasSourceBody=Boolean(r.ocrText?.trim());
     // Processing readiness belongs to coverage/artifacts. Changing an unrelated
@@ -265,6 +289,7 @@ const sourceItem:MaterialOrganizer={
         ...(reference?{reason:'original_body_not_collected'}:!hasSourceBody?{reason:'source_body_empty'}:{})},
       ...(file.objectHash?[{key:'original',blockIds:body.blocks.filter(b=>b.id==='original').map(b=>b.id),state:'ready' as const,revision:file.objectHash}]:[]),
       ...(file.objectHash?[{key:'extracted-text',blockIds:extractedBlocks,state:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed'].includes(job?.state??'')?'failed' as const:chunks.length?'ready' as const:'unavailable' as const,...(job?.error?{reason:job.error}:{})}]:[]),
+      ...attachedArtifacts,
     ];
     const start=r.provenance?.calendar?.start??sourceContentTime(r),end=r.provenance?.calendar?.end??start;
     return {id:materialId(g.sourceId,g.externalId),kind:r.source==='file'?'mote.file':`mote.${r.source}`,schemaVersion:1,
@@ -515,9 +540,10 @@ export class MaterialOrganizerRuntime {
   private cursor(){return Number(this.store.db.prepare("SELECT value FROM settings WHERE key='material-organizer-cursor'").get()?.value??0);}
   private selectedFor(captureId:string){
     const record=capture(this.store,captureId);
-    if(!record||!current(this.store,record.id))return [];
+    if(!record||!current(this.store,record.id)||!fileAttachmentAvailable(this.store,record.id))return [];
     return this.registry.select(record).map(({organizer,group})=>{
       if(organizer===screenGroup){const row=this.store.db.prepare('SELECT group_key FROM context_observations WHERE id=?').get(record.id) as {group_key:string}|undefined;group.groupKey=row?.group_key??'';}
+      if(organizer===sourceItem){const parent=fileAttachmentParent(this.store,record.id)?.record.provenance;if(parent)group={sourceId:parent.sourceId,externalId:parent.externalId};}
       return {organizer,group:canonicalGroup(group)};
     });
   }

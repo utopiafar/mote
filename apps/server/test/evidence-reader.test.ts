@@ -17,10 +17,12 @@ async function fixture(t:any){
  const dir=mkdtempSync(join(tmpdir(),'mote-shared-reader-'));let agentReader!:ContextReader;
  const config:Config={dataDir:dir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(dir,'connectors'),mcpEnabled:true,mcpReadToken:readToken}};
  const node=await buildApp(config,{createModelAgent:async(_settings,reader)=>{agentReader=reader;return {configured:true,query:async()=>({answer:'fixture',citations:[],trace:[],runId:randomUUID()}),close:async()=>{}};}});
- await node.app.listen({host:'127.0.0.1',port:0});
  const client=new Client({name:'generated-reader-test',version:'1.0'});
+ // Register cleanup before transport setup: a failed MCP handshake must not
+ // leave a listening fixture behind and keep the whole test process alive.
+ t.after(async()=>{try{await client.close();}finally{try{await node.app.close();}finally{rmSync(dir,{recursive:true,force:true});}}});
+ await node.app.listen({host:'127.0.0.1',port:0});
  await client.connect(new StreamableHTTPClientTransport(new URL('/mcp',node.app.listeningOrigin),{requestInit:{headers:{authorization:`Bearer ${readToken}`}}}));
- t.after(async()=>{await client.close();await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const call=async(name:string,args:Record<string,unknown>)=>{const result=await client.callTool({name,arguments:args});assert.ok(!result.isError,JSON.stringify(result));return result.structuredContent??JSON.parse((result.content as any[])[0].text);};
  return {...node,agentReader,call,client};
 }

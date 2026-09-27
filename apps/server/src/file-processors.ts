@@ -66,6 +66,9 @@ export interface FileProcessor {
   managedModel?:'dialogue';
   /** Omitted dependencies conservatively include all settings and parameters. */
   dependencies?:{settings:(keyof FileProcessingSettings)[];parameters?:string[]};
+  /** Output depends only on original bytes, MIME and the pinned processor inputs,
+   * never on a record ID, title, owner context or human corrections. */
+  reuseByContent?:boolean;
   process(input:ProcessorInput):Promise<unknown>;
 }
 export class ProcessorRegistry {
@@ -75,6 +78,7 @@ export class ProcessorRegistry {
     if(processor.contentPolicy!==undefined&&(processor.contentPolicy!=='local-only'||processor.localOnly!==true))throw new Error('Local-only content requires a local processor');
     if(processor.dialogue&&(processor.stage!=='extract'||!processor.mediaTypes.length||!processor.mediaTypes.every(type=>type.startsWith('audio/'))))throw new Error('Dialogue composition requires an audio extraction processor');
     if(processor.managedModel!==undefined&&processor.managedModel!=='dialogue')throw new Error('Unknown managed processing model');
+    if(processor.reuseByContent!==undefined&&(typeof processor.reuseByContent!=='boolean'||processor.stage!=='extract'))throw new Error('Invalid content reuse capability');
     if(processor.dialogue!==undefined&&typeof processor.dialogue!=='boolean'||processor.localOnly!==undefined&&typeof processor.localOnly!=='boolean'||processor.allowSummary!==undefined&&typeof processor.allowSummary!=='boolean')throw new Error('Invalid processing capability');
     if(processor.dependencies){
       const {settings,parameters}=processor.dependencies;
@@ -110,7 +114,7 @@ export class FileProcessorRuntime {
         await pluginScope.install(audio('audio.local-dialogue',true));
         await pluginScope.install(builtin({id:'text.utf8',version:'3',name:moteText("UTF-8 文字提取"),stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
         await pluginScope.install(builtin({id:'document.generic',version:'1',name:moteText("文档文字提取"),stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,dependencies:{settings:[]},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
-        await pluginScope.install(builtin({id:'image.http',version:'2',name:moteText("图片文字提取接口"),stage:'extract',mediaTypes:['image/'],serviceKind:'image',dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
+        await pluginScope.install(builtin({id:'image.http',version:'2',name:moteText("图片文字提取接口"),stage:'extract',mediaTypes:['image/'],serviceKind:'image',reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
           if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
           const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
           const transcript=transcriptSchema.parse(await readProcessorJson(response));if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;

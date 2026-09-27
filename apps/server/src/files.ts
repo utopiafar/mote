@@ -11,6 +11,7 @@ import {Store,StoreError,sha256,type Range} from './store.js';
 import {SourceStore} from './sources.js';
 import {privateDirectory} from './private-storage.js';
 import {readFileSpeakerAttributions} from './file-speaker-attribution.js';
+import {fileAttachmentAvailable} from './file-attachments.js';
 
 type Upload={id:string;source_id:string;manifest:string;fingerprint:string;created_at:string;ack:string|null};
 type Version={capture_id:string;source_id:string;external_id:string;revision:string;manifest:string;object_hash:string|null};
@@ -197,6 +198,7 @@ export class FileStore {
   }
   /** Only the preferred transcript/text of the retained current file revision is independent evidence. */
   isCurrentEvidence(id:string):boolean {
+    if(!fileAttachmentAvailable(this.store,id))return false;
     return Boolean(this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`).get(id));
   }
   evidence(ids:string[]){return ids.flatMap(id=>{const c=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1').get(id) as Chunk|undefined;return c?[this.chunkRecord(c)]:[];});}

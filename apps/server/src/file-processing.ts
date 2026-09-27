@@ -18,13 +18,14 @@ import {FileStore} from './files.js';
 import {StoreError,sha256} from './store.js';
 import {FileProcessorRuntime,isLoopback,type FileProcessor,type TranscriptionProvider,type ProcessorInput} from './file-processors.js';
 import {MEDIA_CATALOG,type MediaAssets} from './media-assets.js';
+import {fileAttachmentAvailable} from './file-attachments.js';
 import {alignDialogue,applySemanticGroups,TURN_GROUP_PROMPT} from './file-dialogue.js';
 export {HttpTranscriptionProvider,type TranscriptionProvider} from './file-processors.js';
 
 import {migrateFilePolicy,publicFilePolicy,parseFilePolicy,selectFilePolicy,effectiveFileSettings,type AppliedFilePolicy} from './file-policy.js';
 
 type Saved={revision:string;settings:FileProcessingSettings;policy?:FilePolicy};
-type Job={capture_id:string;state:string;stage:string;attempts:number;summary_state:string;local_only:number;policy_json:string|null};
+type Job={capture_id:string;state:string;stage:string;attempts:number;summary_state:string;local_only:number;policy_json:string|null;reuse_allowed:number};
 type Step={fingerprint:string;state:string;artifact_id:string|null;attempts:number};
 const managedAsrEndpoint=()=>process.env.MOTE_MEDIA_ASR_ENDPOINT??'http://127.0.0.1:9009/transcribe';
 export type FileAnalysis=(records:ContextRecord[],prompt:string,settings:FileProcessingSettings&{analysisModel?:ProcessingService;modelSnapshot?:ModelSettings},localOnly:boolean,signal?:AbortSignal,host?:{operationId:string;jobId:string;requestId:string})=>Promise<{answer:string;citations:{id:string}[]}>;
@@ -46,6 +47,7 @@ export class FileProcessing {
     this.engine=options.executor??new ExecutionEngine(files.store);this.owned=!options.executor;
     files.store.db.exec("UPDATE file_jobs SET state='waiting' WHERE state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_jobs.capture_id AND kind='files.pipeline'); UPDATE file_jobs SET summary_state='waiting' WHERE summary_state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_jobs.capture_id AND kind='files.summary'); UPDATE file_steps SET state='waiting' WHERE state='running' AND NOT EXISTS(SELECT 1 FROM execution_steps WHERE operation_id='file:'||file_steps.capture_id)");
     for(const phase of ['pipeline','summary'] as const)this.unregister.push(this.engine.register({kind:'files.'+phase,pool:'files.'+phase,concurrency:()=>1,timeoutMs:()=>this.saved.settings.timeoutMs,
+      resourceKeys:step=>{const hash=phase==='pipeline'&&files.store.db.prepare('SELECT object_hash FROM file_versions WHERE capture_id=?').get(String(step.input.captureId))?.object_hash;return hash?['file-extraction:'+sha256(JSON.stringify([hash,step.input.revision]))]:[];},
       validate:step=>this.exists(String(step.input.captureId),String(step.input.revision),phase),
       admit:step=>this.admit(String(step.input.captureId),phase),
       execute:(step,signal)=>{const run=()=>this.execution.run({step,signal},()=>phase==='pipeline'?this.runFile(step,signal):this.runSummary(step,signal));return this.options.diagnostics?this.options.diagnostics.run(randomUUID(),run):run();},
@@ -136,7 +138,7 @@ export class FileProcessing {
     this.files.version(id);const db=this.files.store.db;
     if(db.prepare("SELECT 1 FROM file_jobs WHERE capture_id=? AND (state='running' OR summary_state='running')").get(id))throw new StoreError('File processing is active',409);
     if(stage==='summary')db.prepare("UPDATE file_jobs SET summary_state='waiting',available_at=0,error=NULL WHERE capture_id=?").run(id);
-    else {if(stage==='transcribe')db.prepare('UPDATE file_jobs SET policy_json=NULL WHERE capture_id=?').run(id);db.prepare("UPDATE file_jobs SET state='waiting',attempts=0,available_at=0,error=NULL,auto_eligible=1 WHERE capture_id=?").run(id);if(!reuseMatchingSteps)db.prepare(stage==='transcribe'?'DELETE FROM file_steps WHERE capture_id=?':"DELETE FROM file_steps WHERE capture_id=? AND step!='extract'").run(id);}
+    else {if(stage==='transcribe')db.prepare('UPDATE file_jobs SET policy_json=NULL,reuse_allowed=? WHERE capture_id=?').run(Number(reuseMatchingSteps),id);db.prepare("UPDATE file_jobs SET state='waiting',attempts=0,available_at=0,error=NULL,auto_eligible=1 WHERE capture_id=?").run(id);if(!reuseMatchingSteps)db.prepare(stage==='transcribe'?'DELETE FROM file_steps WHERE capture_id=?':"DELETE FROM file_steps WHERE capture_id=? AND step!='extract'").run(id);}
     const prior=this.engine.list({operationId:'file:'+id,kind:stage==='summary'?'files.summary':'files.pipeline',limit:100}).items.find(step=>this.exists(id,String(step.input.revision),stage==='summary'?'summary':'pipeline'));if(prior)this.engine.retry(prior.id);
     this.log('file.retry',id,{operation:stage==='transcribe'?'extract':stage});
     return {queued:true};
@@ -201,7 +203,7 @@ export class FileProcessing {
   }
   async tick(){await this.runtime.ready;const revision=this.saved.revision,first=this.prepare();await this.engine.drain(first);if(revision!==this.saved.revision)return;const summaries=first.flatMap(id=>{const step=this.engine.get(id);return step?this.engine.list({operationId:step.operationId,kind:'files.summary',limit:100}).items.map(s=>s.id):[];});await this.engine.drain([...this.prepare(),...summaries]);}
   private exists(id:string,revision:string,phase:'pipeline'|'summary'='pipeline'){
-    if(this.stopping||!this.files.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(id))return false;
+    if(this.stopping||!this.files.store.db.prepare('SELECT 1 FROM file_versions WHERE capture_id=?').get(id)||!fileAttachmentAvailable(this.files.store,id))return false;
     const expected=this.files.store.db.prepare('SELECT fingerprint FROM file_configuration_aliases WHERE capture_id=? AND phase=? AND revision=?').get(id,phase,revision)?.fingerprint??revision;
     return expected===this.configuration(id,phase).fingerprint;
   }
@@ -215,16 +217,27 @@ export class FileProcessing {
     if(transcript)writeFileTranscriptChunks(this.files.store,id,artifactId,transcript,{kind});
     return artifactId;
   }
-  private async step(id:string,name:string,processor:string,version:string,key:unknown,revision:string,execute:()=>Promise<unknown>,save:(value:any)=>string){
+  private async step(id:string,name:string,processor:string,version:string,key:unknown,revision:string,execute:()=>Promise<unknown>,save:(value:any)=>string,reuseByContent=false){
     const db=this.files.store.db,fingerprint=sha256(JSON.stringify(key)),old=db.prepare('SELECT fingerprint,state,artifact_id,attempts FROM file_steps WHERE capture_id=? AND step=?').get(id,name) as Step|undefined;
     const cached=old?.state==='succeeded'&&old.fingerprint===fingerprint&&old.artifact_id&&db.prepare('SELECT 1 FROM file_artifacts WHERE id=?').get(old.artifact_id);
+    // Reuse only a raw extraction whose plugin explicitly declares byte-only
+    // semantics. Never copy human edits, speaker assignments or summaries.
+    const reusable=!cached&&reuseByContent&&name==='extract'?db.prepare(`SELECT s.capture_id,s.artifact_id,a.json
+      FROM file_steps s JOIN file_artifacts a ON a.id=s.artifact_id JOIN file_versions v ON v.capture_id=s.capture_id
+      JOIN file_versions target ON target.capture_id=?
+      WHERE s.capture_id!=? AND s.step='extract' AND s.state='succeeded' AND s.fingerprint=?
+       AND s.processor=? AND s.version=? AND v.object_hash=target.object_hash
+       AND json_extract(v.manifest,'$.item.mimeType')=json_extract(target.manifest,'$.item.mimeType')
+       AND a.kind IN ('image-text','text','transcript')
+      ORDER BY s.updated_at DESC LIMIT 1`).get(id,id,fingerprint,processor,version):undefined;
+    const reused=reusable?transcriptSchema.parse(JSON.parse(String(reusable.json)).transcript):undefined;
     if(cached)this.log('file.cached',id,{operation:name as Operation},'debug');
     const active=this.execution.getStore();if(!active)throw new StoreError('File step needs an execution grant',409);
     const stepId=sha256(JSON.stringify(['file-step',id,name,fingerprint])),started=performance.now(),requestId=this.options.diagnostics?.requestId()??randomUUID();
     db.prepare("INSERT INTO file_steps(capture_id,step,processor,version,fingerprint,state,attempts,updated_at) VALUES(?,?,?,?,?,'waiting',0,?) ON CONFLICT(capture_id,step) DO UPDATE SET processor=excluded.processor,version=excluded.version,fingerprint=excluded.fingerprint,artifact_id=CASE WHEN file_steps.fingerprint=excluded.fingerprint THEN file_steps.artifact_id ELSE NULL END").run(id,name,processor,version,fingerprint,new Date().toISOString());
     return this.engine.runStep({id:stepId,operationId:'file:'+id,kind:'file-step',pool:'file-work',input:{captureId:id,name,fingerprint},generation:{slot:'file-pipeline',version:revision},signal:active.signal,timeoutMs:this.saved.settings.timeoutMs,cached:Boolean(cached),initialAttempts:old?.fingerprint===fingerprint?old.attempts:0,validate:()=>this.exists(id,revision),
-      execute:async()=>{this.log('file.step.started',id,{operation:name as Operation,requestId},'debug');return execute();},
-      commit:value=>{const artifactId=save(value);db.prepare('UPDATE file_steps SET artifact_id=? WHERE capture_id=? AND step=?').run(artifactId,id,name);this.invalidate(id);this.log('file.step.completed',id,{operation:name as Operation,requestId,durationMs:performance.now()-started});},
+      execute:async()=>{this.log(reused?'file.cached':'file.step.started',id,{operation:name as Operation,requestId},'debug');return reused??execute();},
+      commit:value=>{const artifactId=save(value);if(reusable)db.prepare("UPDATE file_artifacts SET json=json_set(json,'$.reuse',json(?)) WHERE id=?").run(JSON.stringify({kind:'same-original-extraction',captureId:reusable.capture_id,artifactId:reusable.artifact_id,processor,version,fingerprint}),artifactId);db.prepare('UPDATE file_steps SET artifact_id=? WHERE capture_id=? AND step=?').run(artifactId,id,name);this.invalidate(id);this.log('file.step.completed',id,{operation:name as Operation,requestId,durationMs:performance.now()-started});},
       read:()=>{const row=db.prepare('SELECT artifact_id FROM file_steps WHERE capture_id=? AND step=? AND fingerprint=?').get(id,name,fingerprint);return row?.artifact_id&&db.prepare('SELECT 1 FROM file_artifacts WHERE id=?').get(row.artifact_id)?String(row.artifact_id):undefined;},
       project:step=>{if(!this.exists(id,revision))return;db.prepare('UPDATE file_steps SET state=?,attempts=?,error=?,updated_at=? WHERE capture_id=? AND step=? AND fingerprint=?').run(step.state,step.attempts,step.error??null,new Date().toISOString(),id,name,fingerprint);if(step.state==='running')db.prepare('UPDATE file_jobs SET stage=? WHERE capture_id=?').run(name,id);if(step.state==='failed')this.log('file.step.failed',id,{operation:name as Operation,requestId,category:'internal',durationMs:performance.now()-started},'error');},
     });
@@ -283,12 +296,13 @@ export class FileProcessing {
           const extractId=await this.step(id,'extract',processor.id,processor.version,[file.sha256,processor.id,processor.version,processorSettingsFingerprint(processor,effective,parameters),this.modelVersion(processor,effective)],revision,async()=>{
             const result=transcriptSchema.parse(await processor.process(input));signal.throwIfAborted();if(mime.startsWith('audio/')&&result.durationMs>budget)throw new StoreError('Audio budget exceeded',413);return result;
           },(transcript:Transcript)=>{
+            if(mime.startsWith('audio/')&&transcript.durationMs>budget)throw new StoreError('Audio budget exceeded',413);
             db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=?').run(id);
             db.prepare('UPDATE file_jobs SET local_only=? WHERE capture_id=?').run(Number(localOnly),id);
             db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=?").run(id);
             const out=this.saveArtifact(id,mime.startsWith('audio/')?'transcript':mime.startsWith('image/')?'image-text':'text',{transcript,durationMs:transcript.durationMs,segments:transcript.segments.length,complete:transcript.coverage!=='partial',coverage:transcript.coverage??'full',processor:processor.id,processorVersion:processor.version,uncorrected:true},revision,transcript);
             return out;
-          });
+          },processor.reuseByContent===true&&job.reuse_allowed!==0);
           if(processor.dialogue){
             if(localOnly&&!isLoopback(effective.endpoint))throw new StoreError('Local dialogue requires a local worker',409);
             const raw=this.transcript(extractId),diarizer=this.runtime.registry.get(settings.diarizationProcessor);
