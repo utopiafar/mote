@@ -72,3 +72,13 @@ The original runner used the upper middle sample for even-sized groups. A subseq
 4. Fourth attempt passed the complete unchanged journey. All earlier failure reports are retained externally.
 
 The three script syntax checks, generated-manifest consistency checks and `git diff --check` passed. This document records the targeted UI run; the parent task owns the final full `check:local` result and commit.
+
+## Original-dialog tail follow-up
+
+A separate narrow Electron check on 2026-09-27 closed the original-dialog interaction gap described above. It reimported the same frozen 400 generated records into a new isolated vault and exercised citation → Material → original for record 0135 at widths 1280 and 430. It did not repeat the 124-check journey or create a Memory job.
+
+All 12 checks passed. Both original DOMs contained exactly 17,072 UTF-16 code units with the frozen text hash. Six actual wheel events moved the desktop dialog from 0 to 5,286 px; 18 moved the narrow window's 240 px inner text area from 0 to 18,960.5 px. The complete known tail was visible in both screenshots. Escape returned to the original conversation and restored the exact citation opener's focus. Root review also inspected both tail screenshots. No truncation or scrolling fix was needed; discovering the inner scroll area remains a usability consideration.
+
+This run used the existing server/Web builds (the same entry-file hashes as the earlier run) and current shared/agent builds, with exact hashes recorded externally. There were zero stub calls, real model calls and usage rows. The owned Electron/server processes closed and their port was released. The 430 px window is not a physical mobile device, and this narrow check is not a load or performance benchmark.
+
+Evidence: `material-original-tail-ui-001/ROOT_SAFE_verification.json` in the external 2026-09-27 goal directory, SHA-256 `57be39db70e7c5efeeac50eb98f04941e08bdc0184461db77522982549ac69ca`. An auxiliary narrow head screenshot caught the preceding compositor frame and is excluded as head evidence; the settled tail/return screenshots and DOM checks support this result. Historical reports are unchanged.
