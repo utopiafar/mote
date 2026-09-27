@@ -56,6 +56,21 @@ test('manual consolidation uses one fresh selected card and feature default, nev
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.click());
  assert.deepEqual(writes[2].body,{recipe:{id:'mote.memory-integration',version:'2'},memoryIds:[ids[0]]});
 });
+test('cancelled consolidation hides its obsolete failure code while failed and retry-wait retain diagnostics',async t=>{
+ const {root,document:d}=await fixture(t);let status='failed';
+ const api=apiWith(path=>path==='/api/memory-settings'?{settings:{consolidation:{enabled:false,maxItems:1}},extensions:[{id:'consolidation',status,error:'workflow_failed',failures:1,retryAt:Date.now()+120000,active:{id:ids[0],manual:true,items:1,startedAt:0}}]}:{});
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api})));
+ const panel=()=>d.querySelector('#manual-memory-integration')!;
+ assert.match(panel().textContent!,/整理失败/);assert.match(panel().textContent!,/workflow_failed/);
+ status='retry_wait';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.match(panel().textContent!,/等待自动重试/);assert.match(panel().textContent!,/workflow_failed/);
+ status='cancelled';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.match(panel().textContent!,/已取消/);assert.doesNotMatch(panel().textContent!,/workflow_failed|预计重试时间/);
+ assert.ok(Array.from(panel().querySelectorAll('button')).some(button=>button.textContent==='显式重试整理'));
+ assert.ok(!Array.from(panel().querySelectorAll('button')).some(button=>button.textContent==='取消整理'));
+ status='failed';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.match(panel().textContent!,/workflow_failed/,'a later genuine failure is not hidden by the earlier cancellation');
+});
 test('manual consolidation rejects changed or expired cards and fences a late response from another node',async t=>{
  const {root,document:d}=await fixture(t),candidate={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
  let late=deferred();let posts=0,reads=0,fresh={...candidate,version:3};
