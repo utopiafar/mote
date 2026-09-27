@@ -4,6 +4,7 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {Memories} from '../src/Memories.js';
+import {MemoryIntegration} from '../src/MemoryIntegration.js';
 import {Files,FileDetail} from '../src/Files.js';
 import {Sources} from '../src/Sources.js';
 import {ReferenceDetail} from '../src/ReferenceDetail.js';
@@ -16,6 +17,95 @@ function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
 function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return {settings:{agentTimeoutMs:120000},profiles:[]};if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const memory=(id:string)=>({id,title:'Generated '+id[0],statement:'Current evidence '+id[0],status:'published',createdAt:'2020-01-01T00:00:00Z',evidenceIds:[]});
+test('manual consolidation uses one fresh selected card and feature default, never treats an automatic window as this run',async t=>{
+ const {root,document:d}=await fixture(t),candidate={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
+ const writes:{path:string;body?:unknown}[]=[];
+ let windowState:{id:string;manual:boolean;items:number;startedAt:number}|undefined={id:ids[1],manual:false,items:4,startedAt:0};let status='running';
+ const view=()=>({settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status,failures:0,active:windowState}]});
+ const api={request:async(path:string,init?:RequestInit)=>{
+   if(path==='/api/memory-settings')return view();
+   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+   if(path==='/api/model-settings')return {settings:{model:'',agentTimeoutMs:120000},profiles:[{id:'fixture',name:'Generated profile',settings:{model:'',agentTimeoutMs:120000}}],defaults:{memory:'fixture'},defaultModels:{memory:'generated-model'}};
+   if(path==='/api/memories/'+candidate.id)return candidate;
+   if(path==='/api/memory-integrations'&&init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});windowState={id:ids[0],manual:true,items:1,startedAt:Date.now()};status='running';return {id:ids[0]};}
+   if(path==='/api/memory-integrations/'+ids[0]+'/cancel'){writes.push({path});status='cancelled';return view();}
+   throw Error('Unexpected fixture path '+path);
+ },setAgentTimeout:()=>{}} as Api;
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate})));
+ assert.match(d.body.textContent!,/Generated profile · generated-model.*120 秒/);
+ assert.match(d.body.textContent!,/自动整理当前已关闭/);
+ assert.match(d.body.textContent!,/自动整理窗口正在运行/);
+ assert.equal(Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.disabled,true);
+ assert.equal(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='取消整理'),false);
+ windowState=undefined;status='waiting_for_increment';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.click());
+ assert.deepEqual(writes[0],{path:'/api/memory-integrations',body:{recipe:{id:'mote.memory-integration',version:'2'},memoryIds:[ids[0]]}});
+ assert.match(d.body.textContent!,/本次所选：Generated a/);
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api})));
+ assert.ok(d.querySelector('#manual-memory-integration'),'active manual work remains visible after clearing the card');
+ assert.equal(d.querySelector('select[aria-label="整理方案"]'),null,'the setup form does not fill the empty list view');
+ assert.ok(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='取消整理'));
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate})));
+ status='retry_wait';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.ok(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='取消整理'),'cancel stays available during backoff');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='取消整理')!.click());
+ assert.equal(writes[1].path,'/api/memory-integrations/'+ids[0]+'/cancel');
+ assert.ok(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='显式重试整理'));
+ assert.equal(Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.disabled,false,'a cancelled window does not permanently block a new manual run');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.click());
+ assert.deepEqual(writes[2].body,{recipe:{id:'mote.memory-integration',version:'2'},memoryIds:[ids[0]]});
+});
+test('manual consolidation rejects changed or expired cards and fences a late response from another node',async t=>{
+ const {root,document:d}=await fixture(t),candidate={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
+ let late=deferred();let posts=0,reads=0,fresh={...candidate,version:3};
+ const makeApi=(defer:boolean)=>({request:async(path:string,init?:RequestInit)=>{
+   if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:1}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0}]};
+   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+   if(path==='/api/model-settings')return {settings:{model:'generated-model',agentTimeoutMs:300000}};
+   if(path==='/api/memories/'+candidate.id){reads++;return defer?late.promise:fresh;}
+   if(path==='/api/memory-integrations'&&init?.method==='POST'){posts++;return {id:ids[1]};}
+   throw Error('Unexpected fixture path '+path);
+ },setAgentTimeout:()=>{}} as Api);
+ let api=makeApi(false);await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate})));
+ const submit=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!;
+ await act(async()=>submit().click());assert.equal(posts,0);assert.match(d.body.textContent!,/所选记忆已变化/);
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate:{...candidate,validUntil:'2020-01-01T00:00:00Z'}})));
+ assert.equal(d.querySelector('#manual-memory-integration'),null,'expired cards have no consolidation entry');
+ api=makeApi(true);await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate})));
+ await act(async()=>{submit().click();submit().click();});assert.equal(reads,2,'one earlier stale check and one in-flight fresh read');
+ const other=makeApi(false);await act(async()=>root.render(React.createElement(MemoryIntegration,{api:other,candidate})));
+ await act(async()=>late.resolve(candidate));assert.equal(posts,0,'old node cannot submit after its fresh read resolves');
+ late=deferred();const selected=makeApi(true);await act(async()=>root.render(React.createElement(MemoryIntegration,{api:selected,candidate})));
+ await act(async()=>submit().click());
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api:selected,candidate:{...candidate,id:ids[1]}})));
+ await act(async()=>late.resolve(candidate));assert.equal(posts,0,'switching cards during fresh GET cannot submit the old card');
+ assert.match(d.body.textContent!,/所选记忆已变化/);
+});
+test('current featured Memory detail offers the manual consolidation entry, while historical and observation cards do not',async t=>{
+ const {root,document:d}=await fixture(t),item={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
+ let shown:any=item;
+ const api=apiWith(path=>{
+   if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0}]};
+   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+   if(path==='/api/memory-recipes')return {items:[]};
+   if(path.startsWith('/api/memories?'))return {items:[shown],nextCursor:null};
+   if(path==='/api/memories/'+ids[0]||path.startsWith('/api/memories/'+ids[0]+'?'))return shown;
+   return {};
+ });
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));
+ assert.equal(d.querySelector('#manual-memory-integration'),null,'no full form above the list before selecting a current card');
+ await act(async()=>d.querySelector('.workspace-select')!.dispatchEvent(new window.MouseEvent('click',{bubbles:true})));
+ assert.ok(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'));
+ assert.match(d.querySelector('#manual-memory-integration')!.textContent!,/仅选择此卡作为整合起点/);
+ assert.equal(Array.from(d.querySelectorAll('#manual-memory-integration button')).find(b=>b.textContent==='整理这条记忆')!.disabled,true,'the Memory feature default is unconfigured in this fixture');
+ shown={...item,validUntil:'2020-01-01T00:00:00Z'};
+ await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/')));
+ assert.equal(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'),false);
+ shown={...item,admission:{layer:'observation'}};
+ await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/')));
+ assert.equal(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'),false);
+ assert.equal(d.querySelector('#manual-memory-integration'),null);
+});
 test('material corrections hide cached prose while pending and explicitly link historical revisions to the current one',async t=>{
  const {root,document:d}=await fixture(t);let state='ready';const opened:string[]=[];
  const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'generated',schemaVersion:1,title:'Generated material',sequence:1,textLength:20,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};

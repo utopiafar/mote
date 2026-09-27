@@ -129,7 +129,7 @@ export class MemoryLifecycle {
     const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():state.lastSuccess+(p.maxWaitHours??Math.min(p.intervalHours,1))*3600000;
     return {id:e.id,version:e.version,stream:e.stream,pendingChanges,dueAt,retryAt:state.retryAt,cursor:state.cursor,failures:state.failures,maxAttempts:e.maxAttempts,error:state.error,manualRetryRequired:state.manualRetryRequired??false,
       drainThrough:state.drainThrough,status:state.cancelled||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':!p.enabled&&!state.active?.manual?'disabled':this.running.has(e.id)?'running':state.manualRetryRequired||e.maxAttempts&&state.failures>=e.maxAttempts?'failed':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':pendingChanges>=p.minChanges||this.now()>=dueAt?'ready':'waiting_for_interval',
-      active:state.active?{id:state.active.id,operationId:this.executor?'workflow:lifecycle:'+state.active.id:undefined,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
+      active:state.active?{id:state.active.id,manual:state.active.manual===true,operationId:this.executor?'workflow:lifecycle:'+state.active.id:undefined,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){
     if(this.closed)return Promise.resolve();
     // Aggregation is independently scheduled by the maintenance worker.
