@@ -4,7 +4,7 @@ import {randomBytes,randomUUID} from 'node:crypto';
 import {mkdir,readFile,readdir,realpath,writeFile} from 'node:fs/promises';
 import {join,resolve,relative} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
-import type {AgentAnswer,ContextReader,QueryInput} from '@mote/agent';
+import {AgentTimeoutError,type AgentAnswer,type ContextReader,type QueryInput} from '@mote/agent';
 import {sourceItemSchema,type QueryResult,type UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type Config} from '../apps/server/src/config.js';
@@ -15,6 +15,9 @@ import {corpus,evaluation,freezes,recipes,SafeFailure,check,equal,json,hashObjec
 import {AdmissionLedger,StageSafetyError,inspectAdmissionLedger,type LedgerEvent} from './test-heldout-memory-replay-ledger.js';
 type Node=Awaited<ReturnType<typeof buildApp>>;
 type Stub=(reader:ContextReader,input:QueryInput)=>Promise<QueryResult>;
+// Preserve the product timeout classification without attributing a provider's
+// own timeout (or a user abort) to this runner's separately accounted deadline.
+class StageOuterDeadlineError extends AgentTimeoutError {}
 export type RuntimePin={nodeVersion:string;nodeExecutable:string;nodeExecutableSha256:string};
 export async function runtimePin():Promise<RuntimePin>{const nodeExecutable=await realpath(process.execPath);return {nodeVersion:process.version,nodeExecutable,nodeExecutableSha256:sha256(await readFile(nodeExecutable))};}
 export async function assertRuntimePin(expected:RuntimePin){const actual=await runtimePin();check(expected.nodeVersion===actual.nodeVersion,'runtime_node_changed');check(expected.nodeExecutable===actual.nodeExecutable,'runtime_node_path_changed');check(expected.nodeExecutableSha256===actual.nodeExecutableSha256,'runtime_node_binary_changed');}
@@ -127,10 +130,10 @@ export async function runBatch(options:{manifest:Manifest;manifestHash:string;ou
         node!.memoryPipeline.pause(m.jobId);const receipts=node!.store.db.prepare("SELECT id FROM model_usage WHERE json_extract(json,'$.status')='running'").all().map(row=>String(row.id)).filter(id=>!inherited.has(id)&&!usedReceipts.has(id));check(receipts.length===1,'running_receipt_ambiguous');const receiptId=receipts[0];usedReceipts.add(receiptId);
         const serial=JSON.parse(JSON.stringify(input,(_key,value)=>typeof value==='function'?undefined:value));const inputHash=hashObject(serial);const callId=ledger.reserve(hashObject([m.jobId,target.id,phase,...(authority?.manifest.recoveryLineage?[authority.manifest.recoveryLineage.plan.sha256,authority.expectedAttempt]:[])]),inputHash,receiptId);inFlight=true;
         await privateWrite(join(output,'DO_NOT_OPEN',callId+'-input.json'),serial);const control=new AbortController();activeControl=control;let timer:ReturnType<typeof setTimeout>|undefined;let requests=0,repairs=0;const traces:unknown[]=[];const abort=()=>control.abort(input.signal?.reason);input.signal?.addEventListener('abort',abort,{once:true});
-        try{input.signal?.throwIfAborted();const answer=await Promise.race([originalQuery({...input,signal:control.signal,onTrace:event=>{traces.push(event);if(event.type==='model.started'){requests++;if((event.payload as {repair?:boolean}|undefined)?.repair===true)repairs++;}input.onTrace?.(event);}}),new Promise<never>((_ok,reject)=>{timer=setTimeout(()=>{control.abort();reject(new StageSafetyError('outer_deadline_exceeded'));},options.perOuterMs??m.limits.perOuterMs);})]);
+        try{input.signal?.throwIfAborted();const answer=await Promise.race([originalQuery({...input,signal:control.signal,onTrace:event=>{traces.push(event);if(event.type==='model.started'){requests++;if((event.payload as {repair?:boolean}|undefined)?.repair===true)repairs++;}input.onTrace?.(event);}}),new Promise<never>((_ok,reject)=>{timer=setTimeout(()=>{const reason=control.signal.aborted?control.signal.reason:new StageOuterDeadlineError();reject(reason);control.abort(reason);},options.perOuterMs??m.limits.perOuterMs);})]);
           // The ordinary agent already performs output validation. Verify host mechanics before a success terminal.
           const issue=await input.validateOutput?.(answer as AgentAnswer);check(!issue,'outer_host_validation_failed');await privateWrite(join(output,'DO_NOT_OPEN',callId+'-result.json'),answer);ledger.terminal(callId,'completed','ok',{modelRunStarts:requests||null,repairs:requests?repairs:null});return answer;
-        }catch(error){control.abort();await sealedError(join(output,'DO_NOT_OPEN'),error);ledger.terminal(callId,'failed',error instanceof StageSafetyError?error.code:'outer_failed',{modelRunStarts:requests||null,repairs:requests?repairs:null});throw error;}
+        }catch(error){control.abort();await sealedError(join(output,'DO_NOT_OPEN'),error);ledger.terminal(callId,'failed',error instanceof StageOuterDeadlineError?'outer_deadline_exceeded':error instanceof StageSafetyError&&error.code!=='outer_deadline_exceeded'?error.code:'outer_failed',{modelRunStarts:requests||null,repairs:requests?repairs:null});throw error;}
         finally{if(timer)clearTimeout(timer);input.signal?.removeEventListener('abort',abort);await privateWrite(join(output,'DO_NOT_OPEN',callId+'-trace.json'),traces);inFlight=false;activeControl=undefined;}
       }catch(error){ledger.stop(safeCode(error)==='internal_error_details_sealed'?'outer_failed':safeCode(error));node!.memoryPipeline.pause(m.jobId);throw error;}
     };

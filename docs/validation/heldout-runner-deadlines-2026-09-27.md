@@ -1,0 +1,11 @@
+# Heldout runner deadline classification
+
+The historical runner aborted without a reason and raised a generic stage error at its own deadline. The product therefore persisted `model_failed`, although the validation ledger recorded `outer_deadline_exceeded`. This difference invalidated the proposed native timeout-splitting recovery. The frozen `27dafcd` tree, its failed snapshots and the D recovery fixture retain that historical behavior.
+
+Future runners use a private `AgentTimeoutError` subtype for their own deadline. It reaches the product as the existing `provider_timeout` category; only that private type produces the runner's `outer_deadline_exceeded` terminal. An unrelated provider timeout or a generic error with the same text cannot impersonate the runner timer. This classification describes an observed deadline, not a diagnosis of a remote provider fault.
+
+Independent review found a cancellation race in the first revision: an earlier SIGINT could be overwritten by the later timer when provider cleanup was slow. The timer now preserves an already aborted signal's original reason. A generated case with an 80 ms deadline and cancellation settling 120 ms after abort verifies the closed product batch and ledger: `model_failed / outer_failed`, with `stage_interrupted` as the first and only stop. The original failing probe is retained separately.
+
+Validation on Node 24: the final stage suite passed 16/16 with 13 stub calls, and an independent filtered cancellation regression passed 1/1 with one stub call. Script typechecking and diff checks passed. The unchanged historical D behavior passed 15/15 with 20 stub calls before the final cancellation-only adjustment; it was not unnecessarily rerun afterward. All these checks used generated data and zero real model calls.
+
+The 300-second call bound, 720-second stage bound, admission limits and persistent stop policy are unchanged. This patch does not resume the stopped experiment, reinterpret its two failures or authorize another recovery. Detailed external evidence is in `ROOT_SAFE_stage-deadline-reason-fix-v2.json` and `heldout-stage-abort-race-independent-002/ROOT_SAFE_independent-review.json` under the 2026-09-27 goal directory.
