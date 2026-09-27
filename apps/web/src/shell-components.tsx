@@ -1,5 +1,5 @@
 import {memorySourceRoute} from './memory-source-route';
-import { captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
+import { decodeSourceText,captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import {
 ArrowRight,
@@ -414,6 +414,9 @@ export function EvidenceDialog({
     }
   }
   const presentation = capture ? evidencePresentation(capture) : null;
+  // Decode only the server-declared organizer format; user prose that resembles JSON stays literal.
+  const sourceBody=capture?.evidencePresentation==='source-record-json-v1'?decodeSourceText(capture.evidencePresentation,capture.ocrText):undefined;
+  const readableText=sourceBody?.kind==='source'?sourceBody.text:capture?.ocrText;
   const ocr = capture ? ocrPresentation(captureOcrState(capture), capture.ocrText, capture.metadata?.capture?.deduplication?.duplicate, capture.perceptionJobs) : null;
   const materialRef=capture?.revisionState==='current'&&capture.memoryMaterialRef;
   const currentMaterialRef=materialRef&&/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(materialRef)?materialRef:undefined;
@@ -460,15 +463,15 @@ export function EvidenceDialog({
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
               <div className="evidence-text"><EvidenceState/>
-                {currentMaterialRef?<button className="button" onClick={()=>onOpen(currentMaterialRef)}>{moteText('查看正式资料并提取记忆')}</button>:
+                <div className="evidence-source-actions">{currentMaterialRef?<button className="button" onClick={()=>onOpen(currentMaterialRef)}>{moteText('查看正式资料并提取记忆')}</button>:
                   capture.requiresMaterialForMemory?<p className="muted">{moteText('此来源的原始记录需通过正式资料提取记忆。')} <a href="#/library/materials">{moteText('查看正式资料')}</a></p>:
-                  capture.revisionState!=='historical'&&<a className="button" href={memorySourceRoute(capture.id)}>{moteText("仅从这条资料提取记忆")}</a>}
+                  capture.revisionState!=='historical'&&<a className="button" href={memorySourceRoute(capture.id)}>{moteText("仅从这条资料提取记忆")}</a>}</div>
                 <span className="eyebrow">{presentation?.textLabel}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || moteText("原始上下文")}</h3>
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
                 <h4 className="evidence-body-heading">{capture.source === 'screen' ? moteText("OCR 全文") : moteText("记录全文")}</h4>
                 <pre>
-                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || capture.ocrText || (capture.provenance?.deleted ? moteText("来源已报告删除；本次只保留来源元数据。") : capture.provenance?.layer === 'reference' ? moteText("此来源仅保留引用与元数据，未导入正文。") : presentation?.nativeFile&&capture.provenance?.layer==='original'?moteText("原件单独保存；转写与摘要见上方。"):capture.blobHash ? moteText("暂无文字。") : moteText("此记录没有正文。"))}
+                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || readableText || (capture.provenance?.deleted ? moteText("来源已报告删除；本次只保留来源元数据。") : capture.provenance?.layer === 'reference' ? moteText("此来源仅保留引用与元数据，未导入正文。") : presentation?.nativeFile&&capture.provenance?.layer==='original'?moteText("原件单独保存；转写与摘要见上方。"):capture.blobHash ? moteText("暂无文字。") : moteText("此记录没有正文。"))}
                 </pre>
                 {(capture.source==='media'||capture.metadata?.media)&&<MediaSnapshot media={capture.metadata?.media} observedAt={capture.metadata?.observedAt??capture.capturedAt} screenLocked={capture.metadata?.state?.screenLocked} collection={capture.privacy.collection}/>}
                 <dl>

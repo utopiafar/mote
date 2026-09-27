@@ -370,3 +370,17 @@ for(const outcome of ['resolve','reject'] as const)test('archived image ignores 
  assert.equal(d.querySelector('img'),null);assert.doesNotMatch(d.body.textContent!,/generated stale failure/);
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());assert.equal(d.querySelector('img')!.getAttribute('src'),'/generated-current.jpg');
 });
+
+test('source drawer decodes only declared organizer text once and separates actions from the body heading',async t=>{
+ const {EvidenceDialog}=await import('../src/shell-components.js');const {root,document:d}=await fixture(t);
+ const text='Generated first line\n\n{"text":"literal inner JSON"}\n<SCRIPT>untrusted</SCRIPT> [SPEAKER_0] tail';
+ const envelope=JSON.stringify({captureId:ids[1],capturedAt:'2026-09-27T00:00:00Z',source:'file',text});
+ let declaration:string|undefined='source-record-json-v1',raw=envelope;
+ const api=apiWith(()=>({id:ids[0],source:'file',platform:'import',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated',ocrText:raw,evidencePresentation:declaration,privacy:{},revisionState:'current',requiresMaterialForMemory:true,memoryMaterialRef:`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`}));
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:()=>{}})));
+ const body=()=>d.querySelector('.evidence-text>pre')!;
+ assert.equal(body().textContent,text);assert.equal(body().querySelector('script'),null);
+ const action=d.querySelector('.evidence-source-actions')!;assert.ok(action.querySelector('button'));assert.equal(action.nextElementSibling?.className,'eyebrow');assert.equal(body().previousElementSibling?.tagName,'H4');
+ declaration=undefined;await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/capture-browser/')));assert.equal(body().textContent,envelope,'ordinary JSON prose is never unwrapped heuristically');
+ declaration='source-record-json-v1';raw='{"text":"not a valid organizer envelope"}';await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/capture-browser/')));assert.equal(body().textContent,raw,'invalid declarations retain the supplied evidence');
+});

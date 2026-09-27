@@ -19,6 +19,7 @@ export interface FileEvidence {
   overlap?: boolean;
 }
 export interface Capture {
+  evidencePresentation?: import('@mote/shared').SourceTextFormat;
   requiresMaterialForMemory?: boolean;
   memoryMaterialRef?: string;
   perceptionJobs?: Array<{kind:string;state:string;error?:string|null}>;
