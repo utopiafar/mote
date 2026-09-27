@@ -5568,6 +5568,7 @@ export const english: Readonly<Record<string, string>> = {
   "暂停等待与后续批次": "Pause waiting inputs and remaining batches",
   "取消未完成方案": "Cancel unfinished recipes",
   "重新检查未完成方案": "Recheck unfinished recipes",
+  "重试会复用仍有效的提取结果；结果不可用或资料、设置变化时，可能重新提取。历史用量会保留。": "Retries reuse extraction results that remain valid. If results are unavailable or materials or settings have changed, extraction may run again. Past usage is retained.",
   "所需资料仍在处理中，就绪后会自动继续。": "Required material is still being processed. This recipe will continue automatically when it is ready.",
   "所需资料处理失败，请查看来源并修复后重新检查。": "Required material processing failed. Inspect the source, fix processing, and recheck.",
   "所需资料不可用，请查看来源与处理状态。": "Required material is unavailable. Inspect its source and processing status.",
