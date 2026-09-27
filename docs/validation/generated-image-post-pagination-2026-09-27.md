@@ -17,3 +17,11 @@ External evidence under the September 27 goal directory:
 - `generated-image-post-pagination-live-002.supervisor.json`: closure and fixed-control checks.
 
 This validates the measured generated path only. It does not establish private-image quality, combined image Memory quality, full-goal completion or a generally acceptable token threshold.
+
+## Read-only diagnosis of the omitted qualification
+
+The qualification's original image coordinates were fully inside both prepared upper-image payloads, without downscaling. Host preparation and delivery checks passed, so the observable evidence does not support a crop-boundary or text-pagination loss. The text tools returned the caption; there was no separate OCR-text read. This establishes that the relevant visual evidence was delivered, not that the model internally recognized the sentence. The trace cannot distinguish a visual reading omission from losing the qualification while composing the answer.
+
+Existing shared agent instructions already require preserving attribution, tense and certainty, checking cited facts and avoiding unsupported generalization. This single omission does not establish a systematic product defect or justify an extra mandatory OCR call. The original partial grade remains unchanged. A later fidelity improvement should be checked on independent generated discussions and preserve speaker, tried/untried status, experience scope and explicit limitations; it must not introduce a rule keyed to this item.
+
+The external `ROOT_SAFE_generated-image-qualification-diagnosis.md` records exact artifact hashes and image coordinates. This diagnosis made zero new model, OCR or ASR calls and changed no source, prompt, rubric or old report.

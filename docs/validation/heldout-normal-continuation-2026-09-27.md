@@ -12,4 +12,20 @@ An independent narrow review passed both success and failure cases, including ex
 
 The separate normal supervisor fixes each phase's process budget and preserves the old supervisors. Its three test groups contain 25 generated control cases. Four generated CLI invocations rejected invalid root manifests before provider access, closed their process groups and left their sentinel ledger unchanged. These checks are not live model or semantic quality results.
 
-Evidence is outside Git in the 2026-09-27 goal directory: `ROOT_SAFE_normal-main-delivery.json`, `heldout-normal-offline-007/ROOT_SAFE_normal.json`, `heldout-normal-independent-002/ROOT_SAFE_independent-review.json` and `ROOT_SAFE_normal-supervisor-delivery.json`. This change only updates validation adapters. Original production/build pins, private inputs, actual heldout ledger and successful snapshots are unchanged. Frozen applicability, actual preparation and subsequent bounded execution are separate steps; no heldout question pair or net-value result is claimed here.
+Evidence is outside Git in the 2026-09-27 goal directory: `ROOT_SAFE_normal-main-delivery.json`, `heldout-normal-offline-007/ROOT_SAFE_normal.json`, `heldout-normal-independent-002/ROOT_SAFE_independent-review.json` and `ROOT_SAFE_normal-supervisor-delivery.json`. The adapter delivery left original production/build pins, private inputs, actual heldout ledger and successful snapshots unchanged. Subsequent applicability and actual execution are recorded below; no heldout question pair or net-value result is claimed here.
+
+## Original frozen environment and actual preparation
+
+The exporter prerequisite and continuation adapter were subsequently migrated to frozen HEAD `840b4112`, preserving all 418 original production/build pins. All nine delivered source hashes matched. The 13 normal generated tests passed with 14 stub calls and zero real calls; script typechecking passed. The explicit existing generated E ancestor remained unchanged, and both test process groups closed. No production rebuild or new E run was needed.
+
+A read-only review of the actual E boundary confirmed its exact 16 admissions and receipts, two historical failures, completed first batch and eight checkpoints. The other five batches remained pending with zero attempts. The subsequent explicit preparation completed in 1.131 seconds with zero provider attempts and no usage delta. Its process group closed, its frozen controls and historical ledger prefix remained unchanged, and only the normal continuation authorization was appended. Root validation confirmed the original successful canonical tree, the separate prepared tree and the next cursor at wave 2, batch 1.
+
+These checks are recorded in `heldout-frozen-normal-validation-001/ROOT_SAFE_applicability.json`, `ROOT_SAFE_normal-actual-eligibility-001.json`, `heldout-normal-continuation-preparation-supervision-001/ROOT_SAFE_supervision.json` and `heldout-normal-continuation-freeze-001/ROOT_SAFE_root-review.json`. They establish preparation and applicability, not the outcome of subsequent live phases.
+
+## First normal batch completed
+
+The original second-wave batch at index 1 completed extraction, independent model review, submission and closed checks. `heldout-wave2-normal-batch1-live-001` closed normally after 422.195 seconds, with unchanged control hashes and ledger prefix, no remaining process group and no termination. The stage is `paused-success`, with two of six second-wave batches complete.
+
+Its two completed calls reported 28,399 tokens, bringing the closed experiment to 18 admissions and 18 receipts: 16 completed and the same two historical failures. There were no unknown admissions, unreconciled receipts, conflicts or host rejections. Cumulative reported usage is 771,949 tokens, still a lower bound because the two old incomplete/missing usage records remain. HTTP request counts and monetary costs remain unknown. No new repair was observed.
+
+The new closed snapshot hash is `ef2f01420077d0efe6544f07fa88e865556a7a18f2470d92e1423b4ccfb2c0d6`. Subsequent zero-call phase preparation selected only the original next batch, index 2, and left the ledger unchanged. These are technical completion results; the original question pairs and semantic assessment are still pending.
