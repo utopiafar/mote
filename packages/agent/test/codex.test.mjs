@@ -28,6 +28,8 @@ import {writeFileSync,appendFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(join(root,'runtime-home'))},process.env.CODEX_HOME);
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 const mode=${JSON.stringify(mode)};let turns=0;
+const usage=sample=>send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
+if(mode==='usage-late-exit')process.on('SIGTERM',()=>{usage(200);setTimeout(()=>process.exit(0),20);});
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);appendFileSync(${JSON.stringify(join(root,'rpc.ndjson'))},JSON.stringify(m)+'\\n');
  if(m.method==='initialize')send({id:m.id,result:{}});
@@ -41,6 +43,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   turns++;
   if(['max','medium'].includes(mode)&&m.params.effort!==mode)process.exit(4);
   send({id:m.id,result:{turn:{id:'turn-fixture'}}});
+  if(['usage-timeout','usage-exit','usage-late-exit'].includes(mode)){usage(100);if(mode==='usage-exit')setTimeout(()=>process.exit(23),20);return;}
   if(mode==='import'){send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
   if(mode==='structured-error'){send({method:'error',params:{threadId:'thread-fixture',willRetry:false,error:{codexErrorInfo:'usageLimitExceeded',message:'synthetic-private-secret'}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed'}}});return;}
   if(mode==='timeout')return;
@@ -199,6 +202,31 @@ test('Codex cumulative usage replaces duplicate samples and covers repair turns 
  const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
  await agent.query({question:'Generated usage fixture',onUsage:u=>samples.push(u),validateOutput:()=>++validation===1?{code:'fixture',feedback:'Return exact original citation.'}:undefined});
  assert.equal(samples.at(-1).totalTokens,300);assert.equal(samples.at(-1).complete,true);assert.equal(samples.at(-1).measurement,'thread_cumulative');assert.equal(samples.at(-1).requests,0);assert.equal(samples.at(-1).cacheReadTokens,40);assert.ok(samples.some(s=>s.complete===false));
+});
+test('Codex interrupted turns preserve observed counts but mark cumulative usage incomplete',{timeout:15000},async t=>{
+ for(const kind of ['deadline','host-deadline','cancel','close','child-exit','late-usage']){
+  await fake(t,kind==='child-exit'?'usage-exit':kind==='late-usage'?'usage-late-exit':'usage-timeout');
+  const samples=[];let sampleArrived;const firstSample=new Promise(resolve=>{sampleArrived=resolve;});
+  const session=new CodexSession({model:'fixture',timeoutMs:kind==='deadline'?1000:5000},async()=>({}),undefined,value=>{samples.push(value);sampleArrived();});
+  try{
+   await session.start('Generated interrupted usage',codexContextTools);const pending=session.run('Generated pending turn');void pending.catch(()=>{});
+   await Promise.race([firstSample,pending.then(()=>{throw Error('Fixture unexpectedly completed');})]);
+   assert.equal(samples[0].totalTokens,150);assert.equal(samples[0].complete,true);
+   if(kind==='host-deadline')session.cancel(new DOMException('Generated host deadline','TimeoutError'));
+   if(kind==='cancel'||kind==='late-usage')session.cancel(new DOMException('Generated owner cancellation','AbortError'));
+   if(kind==='close')await session.close();
+   await assert.rejects(pending,kind==='deadline'||kind==='host-deadline'?AgentTimeoutError:AgentProviderError);
+   await session.close();
+   const last=samples.at(-1);assert.equal(last.complete,false,kind);assert.equal(last.totalTokens,kind==='late-usage'?300:150,kind);
+   assert.equal(last.inputTokens,kind==='late-usage'?200:100);assert.equal(last.outputTokens,kind==='late-usage'?100:50);
+   assert.equal(last.measurement,'thread_cumulative');assert.equal(last.requests,0);
+   const interrupted=samples.findIndex(sample=>sample.complete===false);assert.ok(interrupted>=0);assert.ok(samples.slice(interrupted).every(sample=>sample.complete===false),'late samples must not restore completeness after interruption');
+  }finally{await session.close();}
+ }
+});
+test('Codex successful turn usage remains complete after normal session cleanup',async t=>{
+ await fake(t,'usage');const samples=[],session=new CodexSession({model:'fixture',timeoutMs:5000},async()=>({}),undefined,value=>samples.push(value));
+ try{await session.start('Generated successful usage',codexContextTools);await session.run('Generated completed turn');const before=structuredClone(samples.at(-1));assert.equal(before.complete,true);await session.close();assert.deepEqual(samples.at(-1),before);}finally{await session.close();}
 });
 test('Codex structured quota errors retain safe typed state without exposing provider text',async t=>{
  await fake(t,'structured-error');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());

@@ -39,6 +39,7 @@ export class CodexSession {
   private timer?:ReturnType<typeof setTimeout>;
   private usage?:TokenUsage;
   private turnError?:unknown;
+  private usageInterrupted=false;
   constructor(private options:Pick<AgentOptions,'model'|'reasoningEffort'|'agentTimeoutMs'|'timeoutMs'|'codex'|'runModel'>,private toolCall:(name:string,args:unknown)=>Promise<unknown>,private observe?:(event:AgentTraceEvent)=>void,private onUsage?:(usage:TokenUsage)=>void){ }
 
   async start(instructions:string,tools:CodexTool[],workspace?:string):Promise<void>{
@@ -102,6 +103,10 @@ export class CodexSession {
   private fail(error:Error){
     this.modelAdmission.abort(error);
     if(this.failure)return;this.failure=error;
+    // A cumulative sample only covers work reported so far. A local timeout,
+    // cancellation or child exit can end a turn without a final provider event.
+    // Successful cleanup also calls fail(), but no turn remains in that case.
+    if(this.turn)this.interruptUsage();
     for(const pending of this.requests.values())pending.reject(error);this.requests.clear();this.turn?.reject(error);this.turn=undefined;
     if(this.child&&!this.ending)this.child.kill('SIGTERM');
   }
@@ -122,6 +127,7 @@ export class CodexSession {
   }
   private emit(event:AgentTraceEvent){try{this.observe?.(event);}catch{}}
   private publishUsage(value:TokenUsage){this.usage=value;try{this.onUsage?.(structuredClone(value));}catch{}}
+  private interruptUsage(){this.usageInterrupted=true;if(this.usage)this.publishUsage({...this.usage,complete:false});}
   private deltaText=new Map<string,string>();
   private deltaTimer?:ReturnType<typeof setTimeout>;
   private flushDeltas(){if(this.deltaTimer)clearTimeout(this.deltaTimer);this.deltaTimer=undefined;for(const [type,text] of this.deltaText)this.emit({type:'codex.'+type,stage:'model',payload:{text}});this.deltaText.clear();}
@@ -138,7 +144,7 @@ export class CodexSession {
 
     if(method==='thread/tokenUsage/updated'){
       const sample=codexUsage(p?.tokenUsage);
-      if(sample&&(!this.usage||sample.totalTokens>=this.usage.totalTokens))this.publishUsage(sample);
+      if(sample&&(!this.usage||sample.totalTokens>=this.usage.totalTokens))this.publishUsage(this.usageInterrupted?{...sample,complete:false}:sample);
     }
     if(method==='error'){
       this.turnError=p?.error?.codexErrorInfo;
@@ -164,7 +170,7 @@ export class CodexSession {
     // separately scoped import workspace; query sessions have no environment.
     if(message.method==='turn/completed'){
       const pending=this.turn;this.turn=undefined;
-      if(params.turn?.status!=='completed'&&this.usage)this.publishUsage({...this.usage,complete:false});
+      if(params.turn?.status!=='completed')this.interruptUsage();
       if(params.turn?.status!=='completed')pending?.reject(params.turn?.status==='interrupted'?new AgentProviderError({category:'permanent',code:'cancelled'}):new AgentProviderError(codexFailure(params.turn?.error?.codexErrorInfo??this.turnError)));
       else pending?.resolve([...this.messages.values()].at(-1)??'');
     }
@@ -178,6 +184,7 @@ export class CodexSession {
   }
   private async runTurn(prompt:string,outputSchema?:unknown):Promise<string>{
     if(this.failure)throw this.failure;if(this.turn||!this.threadId||this.ending)throw new AgentProviderError();
+    this.usageInterrupted=false;
     this.messages.clear();
     this.turnError=undefined;
     if(this.usage)this.publishUsage({...this.usage,complete:false});
@@ -186,7 +193,7 @@ export class CodexSession {
     void completed.catch(()=>{});
     const effort=this.options.reasoningEffort;
     try{await this.request('turn/start',{threadId:this.threadId,input:[{type:'text',text:prompt,text_elements:[]}],...(outputSchema?{outputSchema}:{}),...(effort&&effort!=='auto'?{effort:effort==='off'?'none':effort}:{})});return await completed;}
-    catch(error){this.turn=undefined;throw error;}
+    catch(error){this.interruptUsage();this.turn=undefined;throw error;}
   }
   close():Promise<void>{return this.closed??=this.cleanup();}
   private async cleanup(){
