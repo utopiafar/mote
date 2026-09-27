@@ -3,6 +3,7 @@ import {freezeRecipe,recipeFingerprint} from './recipe-contract.js';
 import {MEMORY_EXTRACTION_PROMPT,MEMORY_SKILL_VERSION} from './memory.js';
 import {defaultMemoryReviewStrategy} from './memory-review-policy.js';
 import {personalMemoryReviewStrategyV2} from './personal-memory-review-policy.js';
+import {codingMemoryReviewStrategyV2} from './coding-memory-review-policy.js';
 import {memoryIntegrationStrategySchema,memoryIntegrationRecipeSchema,type MemoryIntegrationStrategy,type MemoryIntegrationBinding} from './memory-strategy-contract.js';
 import {defaultMemoryIntegrationStrategy,defaultMemoryIntegrationRecipe,defaultMemoryIntegrationReview} from './memory-integration-policy.js';
 
@@ -24,6 +25,8 @@ export class MemoryStrategies {
     for(const domain of ['personal','coding'])this.registerRecipe({id:`mote.${domain}-memory`,version:'1',extract:{id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1]},review:{id:`mote.${domain}-review`,version:defaultMemoryReviewStrategy.version}});
     this.registerReview(personalMemoryReviewStrategyV2);
     this.registerRecipe({id:'mote.personal-memory',version:'2',extract:{id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1]},review:{id:'mote.personal-review',version:'2'}});
+    this.registerReview(codingMemoryReviewStrategyV2);
+    this.registerRecipe({id:'mote.coding-memory',version:'2',extract:{id:'mote.context-extraction',version:MEMORY_SKILL_VERSION.split('@')[1]},review:{id:'mote.coding-review',version:'2'}});
     this.registerReview(defaultMemoryIntegrationReview);
     this.registerIntegration(defaultMemoryIntegrationStrategy);
     this.registerIntegrationRecipe({...defaultMemoryIntegrationRecipe,integrate:{id:defaultMemoryIntegrationStrategy.id,version:defaultMemoryIntegrationStrategy.version},review:{id:defaultMemoryIntegrationReview.id,version:defaultMemoryIntegrationReview.version}});

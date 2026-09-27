@@ -35,7 +35,7 @@ const stopRecipe = ctx.memoryStrategies.registerRecipe({
   "evidenceIds": ["a-current-formal-evidence-uuid"],
   "recipes": [
     { "id": "mote.personal-memory", "version": "2" },
-    { "id": "mote.coding-memory", "version": "1" }
+    { "id": "mote.coding-memory", "version": "2" }
   ]
 }
 ```
@@ -43,6 +43,8 @@ const stopRecipe = ctx.memoryStrategies.registerRecipe({
 两个内置组合共用上下文提取器，审核器分别判断个人和 Coding 产物；它们都能处理日记或 Coding 会话等来源。一方的审核拒绝不会否决另一方。手工任务未传 `recipes` 时仍沿用原有默认流程；正式来源资料的自动接收队列使用下面的独立启用配置。
 
 `mote.personal-memory@2` 使用同一提取器和独立的 `mote.personal-review@2`。新版个人审核区分普通任务线索与有依据的个人意义或后续用途：单次感受、重要经历、有意义的愿望、明确约束及限定用途的资源关联仍可收录；不能仅以“未来可能追踪”为由，将待办、普通开发进度和一次性安排升为选中 Memory。这是可替换的产品政策，不是公共层的关键词规则，也不限制 Coding 或其他策略。版本 1 保留原定义；安装新版本不改变已有选择或重算历史。
+
+`mote.coding-memory@2` 只替换独立的 `mote.coding-review@2`，继续共享原提取器。审核保留有依据的工程决定、失败机制与适用经验中的具体接口、前提、实施顺序和验证边界，可从原文补回草稿遗漏的必要细节；相关进展可以作为这条经验的上下文，但不能仅凭报错、修补、PR 或成功自述构成长效经验。尚未实施的有理由设计也可收录，须区分他人建议、用户采纳、已完成与未知。具体测试及结果才支持相应范围内的 `tested`，不能把未测试部分一并升级。旧 Coding v1 和个人策略保持原定义，已有启用选择及历史产物不变。
 
 ## 自动接收的组合选择
 
@@ -55,7 +57,7 @@ const stopRecipe = ctx.memoryStrategies.registerRecipe({
   "sourceId": "an-existing-source-id",
   "recipes": [
     { "id": "mote.personal-memory", "version": "2" },
-    { "id": "mote.coding-memory", "version": "1" }
+    { "id": "mote.coding-memory", "version": "2" }
   ]
 }
 ```
@@ -110,7 +112,7 @@ Memory 配方可声明 `requires: ['extracted-text']`，或 `requires: ['source-
 
 ## 独立审核迭代的对照方法
 
-`scripts/review-memory-recipe-live.ts` 接收已完成的私有 progressive replay 目录和全新输出目录，在私有副本上通过实际应用的 MemoryPipeline 创建新版本审核任务。保留原来的证据分组、提取器、模型配置和评估时刻；若缓存不匹配，在收费提取前失败，不偷偷重跑。核对实际审核调用、trace、旧产物不变与原文哈希，报告单独统计新增任务用量。基线目录和报告保持不变。
+`scripts/review-memory-recipe-live.ts` 接收已完成的私有 progressive replay 或 automatic-memory 目录和全新输出目录，在私有副本上通过实际应用的 MemoryPipeline 创建新版本审核任务。按每个实际原任务保留证据分组、提取器、模型配置、评估时刻、语言、时区及正式资料依赖；不能用报告开始时间替代任务语境。若缓存不匹配，在收费提取前失败，不偷偷重跑。核对实际审核调用、trace、原草稿身份、旧产物不变与原文哈希，报告单独统计新增任务用量。基线目录和报告保持不变。
 
 ```sh
 MOTE_REVIEW_BASELINE=/private/completed-replay \
@@ -120,7 +122,11 @@ node --import tsx scripts/review-memory-recipe-live.ts
 
 默认比较 `mote.personal-memory@2`，可用 `MOTE_REVIEW_RECIPE` 提供明确的已安装配方引用。仅适用于同提取器、最多 8 个已完成批次的定向比较。脚本固定本地 Codex App Server 的 `gpt-6-sol / max`，不恢复未完成基线，不覆盖历史报告。
 
+例如只更换 Coding 审核器时显式设置 `MOTE_REVIEW_RECIPE='{"id":"mote.coding-memory","version":"2"}'`。最多每个原批次一次新审核，各 300 秒，整轮额外预留 60 秒；不自动重跑失败。基线必须仍保有有效共享草稿和完全匹配的资料及模型身份。
+
 `scripts/test-personal-review-live.ts` 使用 `scripts/fixtures/personal-review-cases.ts` 的生成原文和故意可疑的提案验证审核边界；使用 `MOTE_REVIEW_FIXTURE_OUTPUT` 指定全新私有输出目录。案例预期只用于执行后的独立复核，不送入审核策略，不以关键词自动宣告语义通过。该脚本未验证提取或全流程，也不是未见过的真实保留集。两个脚本的 `status=passed` 仅表示执行及公共契约检查通过，`semanticQualityAccepted` 保持 false；原文、结果、独立 rubric 与人工判断仍需逐项核对。
+
+该生成审核脚本默认保持个人 v2 案例，可显式设置 `MOTE_REVIEW_FIXTURE_STRATEGY=coding-v2`，使用 `scripts/fixtures/coding-review-cases.ts` 的四例独立准入与细节回归。仍只允许一次最多 300 秒的审核，不调用提取器；环境选择是测试配置，不是生产内容分类。
 
 ## 可替换的整合与审核
 

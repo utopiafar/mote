@@ -94,6 +94,16 @@ test('installed recipes compose independent products, replace either strategy, a
   assert.equal(f.count('extract'),4,'the new personal review recipe reuses the unchanged extractor');
   assert.equal(f.count('review'),9);assert.equal(next.batches[0].strategy?.review.version,'2');
   assert.deepEqual(f.node.memoryStrategies.resolve({id:'mote.personal-memory',version:'1'}).binding,oldBinding,'prior strategy pins remain available and unchanged');
+  const codingBinding=f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'1'}).binding;
+  const existing=new Map(f.node.store.db.prepare('SELECT id,json FROM memories').all().map(row=>[row.id,row.json]));
+  const codingV2=f.node.memoryPipeline.create({contextTime,evidenceIds:source.evidenceIds,recipes:[{id:'mote.coding-memory',version:'2'}]});
+  const codingResult=await f.node.memoryPipeline.run(codingV2.id);
+  assert.equal(codingResult.status,'completed');assert.equal(f.count('extract'),4);assert.equal(f.count('review'),10);
+  const codingProduct=f.node.memories.get(codingResult.memoryIds[0]);assert.equal(codingProduct.domain,'coding');
+  assert.equal(codingProduct.strategy?.review.version,'2');assert.equal(codingProduct.reviewReceipt?.strategy?.fingerprint,codingProduct.strategy?.review.fingerprint);
+  assert.deepEqual(codingProduct.strategy?.extract,codingBinding.extract,'Coding v2 changes the reviewer independently');
+  assert.deepEqual(f.node.memoryStrategies.resolve({id:'mote.coding-memory',version:'1'}).binding,codingBinding);
+  for(const [id,json] of existing)assert.equal(f.node.store.db.prepare('SELECT json FROM memories WHERE id=?').get(id)?.json,json);
   assert.ok(f.calls.every(c=>c.skill==='memory-strategy'&&c.evidenceRanges?.length));
 });
 
