@@ -98,10 +98,55 @@ test('retry while cancelled parser is stopping shows an actionable error without
 });
 
 test('preview finishing conflict keeps confirmation available with localized guidance',async t=>{
- const {root,d}=await fixture(t);let writes=0;
- const api=apiWith((_path,init)=>{if(init?.method==='POST'){writes++;throw new ApiError('Parsing is finishing',409,'generated-request','import_finishing');}return {items:[importJob({status:'awaiting_confirmation',captureIds:[],preview:{count:1,samples:[]}})]};});
+ const {root,d}=await fixture(t);let writes=0,resolve!:(value:unknown)=>void;
+ const api=apiWith((_path,init)=>{if(init?.method==='POST'){if(++writes===1)throw new ApiError('Parsing is finishing',409,'generated-request','import_finishing');return new Promise(r=>resolve=r);}return {items:[importJob({status:'awaiting_confirmation',captureIds:[],preview:{count:1,samples:[]}})]};});
  await act(async()=>root.render(view(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  await act(async()=>button(d,'确认并开始导入').click());
  assert.equal(writes,1);assert.match(d.body.textContent!,/解析正在收尾，请稍后再确认。/);
  assert.ok(button(d,'确认并开始导入'));assert.doesNotMatch(d.body.textContent!,/Parsing is finishing|上一次处理仍在结束/);
+ const confirm=button(d,'确认并开始导入'),alert=confirm.previousElementSibling!;
+ assert.equal(alert.getAttribute('role'),'alert');assert.equal(alert.parentElement,confirm.parentElement);
+ assert.equal(d.querySelectorAll('[role=alert]').length,1);assert.equal(d.querySelector('.imports-page > [role=alert]'),null);
+ await act(async()=>confirm.click());assert.equal(d.querySelector('[role=alert]'),null);assert.equal(confirm.disabled,true);
+ await act(async()=>resolve(importJob()));assert.equal(d.querySelector('[role=alert]'),null);assert.equal(writes,2);
+});
+
+test('confirmation guidance belongs only to its selected import and is cleared on leaving it',async t=>{
+ const {root,d}=await fixture(t);
+ const jobs=['first','second'].map(id=>importJob({id,name:id,status:'awaiting_confirmation',captureIds:[],preview:{count:1,samples:[]}}));
+ const api=apiWith((_path,init)=>{if(init?.method==='POST')throw new ApiError('Parsing is finishing',409,'generated-request','import_finishing');return {items:jobs};});
+ await act(async()=>root.render(view(api)));
+ const choose=async(index:number)=>act(async()=>d.querySelectorAll<HTMLButtonElement>('.workspace-select')[index].click());
+ await choose(0);await act(async()=>button(d,'确认并开始导入').click());assert.ok(d.querySelector('.confirm-import [role=alert]'));
+ await choose(1);assert.equal(d.querySelector('[role=alert]'),null);
+ await choose(0);assert.equal(d.querySelector('[role=alert]'),null);
+});
+
+test('a late confirmation rejection from the previous node cannot restore stale guidance',async t=>{
+ const {root,d}=await fixture(t);let reject!:(reason:unknown)=>void;
+ const job=importJob({status:'awaiting_confirmation',captureIds:[],preview:{count:1,samples:[]}});
+ const oldApi=apiWith((_path,init)=>init?.method==='POST'?new Promise((_resolve,r)=>reject=r):{items:[job]});
+ const newApi=apiWith(()=>({items:[job]}));
+ await act(async()=>root.render(view(oldApi)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ await act(async()=>button(d,'确认并开始导入').click());
+ await act(async()=>root.render(view(newApi)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ await act(async()=>reject(new ApiError('Parsing is finishing',409,'generated-request','import_finishing')));
+ assert.equal(d.querySelector('[role=alert]'),null);assert.ok(button(d,'确认并开始导入'));
+});
+
+test('a late confirmation success cannot replace the new node or release its pending button',async t=>{
+ const {root,d}=await fixture(t);let resolveOld!:(value:unknown)=>void,resolveNew!:(value:unknown)=>void,changed=0;
+ const waiting={status:'awaiting_confirmation',captureIds:[],preview:{count:1,samples:[]}};
+ const oldJob=importJob({...waiting,name:'Old node generated import'}),newJob=importJob({...waiting,name:'New node generated import'});
+ let newStored=newJob;
+ const oldApi=apiWith((_path,init)=>init?.method==='POST'?new Promise(r=>resolveOld=r):{items:[oldJob]});
+ const newApi=apiWith((_path,init)=>init?.method==='POST'?new Promise(r=>resolveNew=r):{items:[newStored]});
+ await act(async()=>root.render(view(oldApi,{onChanged:()=>changed++})));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ await act(async()=>button(d,'确认并开始导入').click());
+ await act(async()=>root.render(view(newApi,{onChanged:()=>changed++})));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ await act(async()=>button(d,'确认并开始导入').click());assert.equal(button(d,'确认并开始导入').disabled,true);
+ await act(async()=>resolveOld(importJob({name:oldJob.name})));
+ assert.match(d.body.textContent!,/New node generated import/);assert.doesNotMatch(d.body.textContent!,/Old node generated import/);
+ assert.equal(button(d,'确认并开始导入').disabled,true);assert.equal(changed,0);
+ newStored=importJob({name:newJob.name});await act(async()=>resolveNew(newStored));assert.equal(changed,1);assert.match(d.body.textContent!,/记录已保存到中央归档/);
 });

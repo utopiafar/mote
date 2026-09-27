@@ -24,10 +24,13 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
   const sourcePacks=useResource<{items:{id:string;version:string;description?:string}[]}>(api,'/api/import-source-packs');
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[loading,setLoading]=useState(true),[dragging,setDragging]=useState(false);
   const [deleteConfirm,setDeleteConfirm]=useState('');
+  const [confirmError,setConfirmError]=useState<{jobId:string;message:string}|null>(null);
+  const confirmGeneration=useRef(0);
   const active=items.find(item=>item.id===selected);
   const {job:memoryJob,error:memoryError,reload:reloadMemory}=useMemoryJob(api,active?.memoryJobId);
   const [revision,setRevision]=useState(0);
   useEffect(()=>()=>{uploadController.current?.abort();uploadController.current=null;},[api]);
+  useEffect(()=>{confirmGeneration.current++;setConfirmError(null);},[api,selected]);
   useEffect(()=>{setItems([]);setSelected('');setCreating(true);setLoadError('');setError('');setNotice('');setBusy(false);setUploading(false);setFiles([]);setName('');setInstruction('');setSourcePackId('');setDirectory('');uploadIds.current=new WeakMap();submission.current=null;},[api]);
   useEffect(()=>{
     const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
@@ -67,10 +70,12 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
     }catch(e){if(uploadController.current===controller){if(controller.signal.aborted)setNotice(moteText('上传已暂停；已选择的文件仍保留，可继续上传。'));else setError(errorMessage(e));}}
     finally{if(uploadController.current===controller){uploadController.current=null;setBusy(false);setUploading(false);}}
   }
-  async function action(path:string,body?:unknown){
-    setBusy(true);setError('');
-    try{update(await api.request<ImportJob>(path,{method:'POST',...(body?{body:JSON.stringify(body)}:{})}));onChanged();}
-    catch(e){setError(e instanceof ApiError&&e.code==='import_stopping'?moteText('上一次处理仍在结束，请稍后再点击重试。'):e instanceof ApiError&&e.code==='import_finishing'?moteText('解析正在收尾，请稍后再确认。'):errorMessage(e));}finally{setBusy(false);}
+  async function action(path:string,body?:unknown,confirmJobId?:string){
+    const generation=++confirmGeneration.current;
+    const current=()=>!confirmJobId||generation===confirmGeneration.current;
+    setBusy(true);setError('');setConfirmError(null);
+    try{const job=await api.request<ImportJob>(path,{method:'POST',...(body?{body:JSON.stringify(body)}:{})});if(current()){update(job);onChanged();}}
+    catch(e){const message=e instanceof ApiError&&e.code==='import_stopping'?moteText('上一次处理仍在结束，请稍后再点击重试。'):e instanceof ApiError&&e.code==='import_finishing'?moteText('解析正在收尾，请稍后再确认。'):errorMessage(e);if(confirmJobId){if(current())setConfirmError({jobId:confirmJobId,message});}else setError(message);}finally{if(current())setBusy(false);}
   }
   async function controlMemory(action:'retry'|'pause'|'resume'|'cancel'){if(!memoryJob)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+encodeURIComponent(memoryJob.id)+'/'+action,{method:'POST'});reloadMemory();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function remove(){
@@ -110,7 +115,7 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
         {active.status==='unsupported'&&<p className="muted">{moteText("这次未能提取可用记录，原件已保留。你可以补充格式说明后重新分析。")}</p>}
         {active.preview&&<section className="import-preview"><div className="section-heading"><div><h3>{moteText("解析预览")}</h3><p>{moteText("预计")}{' '}{active.preview.count}{' '}{moteText("条记录 · 以下是内容样例")}</p></div></div>{active.preview.samples.map((sample,index)=><article className="preview-sample" key={index}><strong>{sample.title||moteText("未命名记录")}</strong><p>{sample.text}</p>{sample.attachmentCount>0&&<small>{sample.attachmentCount}{' '}{moteText("个关联附件")}</small>}</article>)}</section>}
         {['awaiting_confirmation','needs_configuration','failed','unsupported'].includes(active.status)&&<ImportInstructions key={active.id} instruction={active.instruction} busy={busy} onPrepare={value=>void action('/api/imports/'+encodeURIComponent(active.id)+'/prepare',{instruction:value})}/>}
-        {active.status==='awaiting_confirmation'&&<div className="confirm-import"><div><strong>{moteText("确认这份资料的理解方式")}</strong><p>{moteText("确认后保存记录；记忆整理按自动设置执行，也可稍后手动发起。")}</p></div><button className="button primary" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/confirm')}><Check size={16}/>{moteText("确认并开始导入")}</button></div>}
+        {active.status==='awaiting_confirmation'&&<div className="confirm-import"><div><strong>{moteText("确认这份资料的理解方式")}</strong><p>{moteText("确认后保存记录；记忆整理按自动设置执行，也可稍后手动发起。")}</p></div>{confirmError?.jobId===active.id&&<div className="error-banner" role="alert">{confirmError.message}</div>}<button className="button primary" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/confirm',undefined,active.id)}><Check size={16}/>{moteText("确认并开始导入")}</button></div>}
         {(active.status==='failed'||active.status==='cancelled')&&<button className="button" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/retry')}><RefreshCw size={15}/>{moteText("重试导入")}</button>}
         {active.status==='completed'&&<div className="workflow-line"><span className="workflow-icon done"><Check size={18}/></span><div><strong>{moteText("记录已保存到中央归档")}</strong><p>{active.progress.imported}{' '}{moteText("条新记录 ·")}{' '}{active.progress.duplicates}{' '}{moteText("条重复记录")}{!active.memoryJobId?moteText("；尚未安排记忆整理。"):''}</p></div></div>}
         {memoryJob&&<MemoryProgress job={memoryJob} onRetry={()=>void controlMemory('retry')} onAction={action=>void controlMemory(action)} onView={onMemories} busy={busy}/>}{memoryError&&<p className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{memoryError}</p>}
