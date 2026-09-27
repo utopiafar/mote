@@ -1,7 +1,9 @@
 /** Frozen generated-scenario adapter. Default: offline stub preflight, never a live baseline.
  * MOTE_SCENARIO_FIXTURE=/external/wave-1.v1.json MOTE_SCENARIO_OUTPUT=/external/new-run
  * node --import tsx scripts/test-memory-scenario-live.ts
- * A separately supervised live run requires MOTE_SCENARIO_MODE=live. No resume/retry/judge.
+ * A separately supervised live run requires MOTE_SCENARIO_MODE=live. No automatic retry/judge.
+ * MOTE_SCENARIO_RECOVERY_PLAN explicitly clones a failed run, retains completed extraction,
+ * cancels its old integration window and requests the current recipe. It never imports a draft.
  */
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
@@ -17,9 +19,19 @@ import {repositoryRoot,type Config} from '../apps/server/src/config.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
+import {defaultMemoryIntegrationRecipe,defaultMemoryIntegrationStrategy,defaultMemoryIntegrationReview} from '../apps/server/src/memory-integration-policy.js';
 
 const frozenWaveHash='6f02fa2ca1a129c3f8dcb427eecaf6fc7ad84893613d63ff1afa2925678a04e1';
 const frozenManifestHash='5e01370bee0816ca38cf8e2512fc74b7638606c456c146e296ea52fffe551c5e';
+const frozenLiveRecoveryHash='dfca5c52b103a783c725b3db7f7297cdd9b8151f8d26496aeb05cab00ac7187a';
+const hashSchema=z.string().regex(/^[a-f0-9]{64}$/);
+const recoverySchema=z.object({schema:z.literal('mote-memory-scenario-recovery-plan@1'),kind:z.literal('completed-extractions-new-integration'),
+  sourceReport:z.string(),sourceReportSha256:hashSchema,sourceVaultSha256:hashSchema,sourceMode:z.enum(['preflight','live']),sourceOuterCalls:z.literal(8),fixtureSha256:hashSchema,
+  sourceFailedPhase:z.literal('integration/review'),oldWindowId:z.string().uuid(),integrationRecipe:z.object({id:z.literal('mote.memory-integration'),version:z.literal('2')}).strict(),
+  limits:z.object({maximumOuterModelCalls:z.literal(6),perCallTimeoutMs:z.literal(300000),maximumRunDurationMs:z.literal(2100000),maximumAutomaticRetries:z.literal(0)}).strict(),
+  protocol:z.string(),limitations:z.array(z.string()),
+}).strict();
+type RecoveryPlan=z.infer<typeof recoverySchema>;
 const stamp=z.string().datetime({offset:true}),armSchema=z.enum(['archive-only','memory-and-archive']);
 const recordSchema=z.object({id:z.string().min(1),sourceType:z.literal('note'),recordedAt:stamp,observedAt:stamp,text:z.string().min(1).max(12000),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 const fixtureSchema=z.object({schema:z.literal('mote-memory-scenario-fixture@1'),personalDataUsed:z.literal(false),heldOut:z.literal(false),contextTime:stamp,timeZone:z.string(),
@@ -85,22 +97,28 @@ class OuterBudget {
     finally{if(timer)clearTimeout(timer);parent?.removeEventListener('abort',abort);}
   }
 }
-async function budgetPrecheck(){
-  const budget=new OuterBudget(12,1000,100,()=>0);let calls=0;
-  for(let i=0;i<12;i++)await budget.run(String(i),async()=>{calls++;});await assert.rejects(budget.run('13',async()=>{calls++;}),/budget exhausted/);assert.equal(calls,12);
+async function budgetPrecheck(max:number){
+  const budget=new OuterBudget(max,1000,100,()=>0);let calls=0;
+  for(let i=0;i<max;i++)await budget.run(String(i),async()=>{calls++;});await assert.rejects(budget.run('extra',async()=>{calls++;}),/budget exhausted/);assert.equal(calls,max);
   const retry=new OuterBudget(12,1000,100,()=>0);await retry.run('same',async()=>{});await assert.rejects(retry.run('same',async()=>{}),/retry blocked/);
   await assert.rejects(new OuterBudget(12,0,100,()=>0).run('late',async()=>{}),/Run deadline/);
   let aborted=false;await assert.rejects(new OuterBudget(12,Date.now()+1000,5).run('slow',signal=>new Promise(()=>{signal.addEventListener('abort',()=>{aborted=true;});})),/call deadline/);assert.equal(aborted,true);
-  return {thirteenthCallBlocked:true,retryBlocked:true,runDeadlineBlocked:true,callTimeoutAborted:true,providerCalls:0};
+  return {maximumCalls:max,firstExcessCallBlocked:true,retryBlocked:true,runDeadlineBlocked:true,callTimeoutAborted:true,providerCalls:0};
 }
 
 assert.ok(process.env.MOTE_SCENARIO_FIXTURE&&process.env.MOTE_SCENARIO_OUTPUT,'Set MOTE_SCENARIO_FIXTURE and a new external MOTE_SCENARIO_OUTPUT');
 const mode=z.enum(['preflight','live']).parse(process.env.MOTE_SCENARIO_MODE??'preflight'),preflight=mode==='preflight';
 assert.ok(preflight||process.env.MOTE_SCENARIO_PREFLIGHT_VARIANT===undefined,'A stub variant must never affect a live run');
-const preflightVariant=z.enum(['empty-integration','nonempty-integration']).parse(process.env.MOTE_SCENARIO_PREFLIGHT_VARIANT??'empty-integration');
+const recoveryPath=process.env.MOTE_SCENARIO_RECOVERY_PLAN?await externalExisting(process.env.MOTE_SCENARIO_RECOVERY_PLAN):undefined;
+const recoveryBytes=recoveryPath?await readFile(recoveryPath):undefined;
+const recovery:RecoveryPlan|undefined=recoveryBytes?recoverySchema.parse(JSON.parse(recoveryBytes.toString('utf8'))):undefined;
+if(recovery){assert.equal(recovery.sourceMode,mode,'Preflight and live source runs cannot be mixed');assert.equal(recovery.fixtureSha256,frozenWaveHash);assert.deepEqual(recovery.integrationRecipe,defaultMemoryIntegrationRecipe);if(!preflight)assert.equal(sha256(recoveryBytes!),frozenLiveRecoveryHash,'Live recovery must use the separately frozen plan');}
+const preflightVariant=z.enum(['empty-integration','nonempty-integration','failed-integration-review']).parse(process.env.MOTE_SCENARIO_PREFLIGHT_VARIANT??(recovery?'nonempty-integration':'empty-integration'));
+if(recovery&&preflight)assert.equal(preflightVariant,'nonempty-integration','Recovery preflight must exercise independent integration review');
 const fixturePath=await externalExisting(process.env.MOTE_SCENARIO_FIXTURE),fixtureBytes=await readFile(fixturePath);
 assert.equal(sha256(fixtureBytes),frozenWaveHash,'Only frozen wave-1.v1 is supported; new scenarios need explicit registration');
 const fixture:Fixture=fixtureSchema.parse(JSON.parse(fixtureBytes.toString('utf8'))),fixtureDirectory=dirname(fixturePath);
+const limits=recovery?.limits??fixture.limits;
 const manifestBytes=await readFile(join(fixtureDirectory,'manifest.json')),manifest=JSON.parse(manifestBytes.toString('utf8'));
 assert.equal(sha256(manifestBytes),frozenManifestHash,'The registry/design paths and hashes must remain frozen');
 assert.equal(manifest.privateDataUsed,false);assert.equal(manifest.modelsCalled,0);assert.equal(manifest.files[basename(fixturePath)],frozenWaveHash);
@@ -123,9 +141,9 @@ const report:Record<string,any>={schema:'mote-memory-scenario-run@1',mode,status
   ...(preflight?{preflightVariant}:{}),
   fixtureSha256:frozenWaveHash,fixtureHashes,manifestSha256:sha256(manifestBytes),intendedModel:fixture.model,actualAgent:preflight?'offline-stub':fixture.model,
   semanticQualityAccepted:false,netBenefitAccepted:false,liveBaselineEligible:!preflight,browserTested:false,physicalDevicesTested:false,
-  maximumOuterCalls:fixture.limits.maximumOuterModelCalls,maximumAutomaticOuterRetries:0,callCounterUnit:'outer agent.query invocation',providerInternalRequestCount:null,
+  maximumOuterCalls:limits.maximumOuterModelCalls,fixtureMaximumOuterCalls:fixture.limits.maximumOuterModelCalls,priorOuterCalls:recovery?.sourceOuterCalls??0,maximumCumulativeOuterCalls:(recovery?.sourceOuterCalls??0)+limits.maximumOuterModelCalls,maximumAutomaticOuterRetries:0,callCounterUnit:'outer agent.query invocation',providerInternalRequestCount:null,
   internalRepairPolicy:'Production Agent may repair validation within one outer invocation; visible model/repair turns are reported separately, hidden provider requests remain unknown.',
-  deadlineProtection:{outerAdmissionDeadlineMs:fixture.limits.maximumRunDurationMs,perCallDeadlineMs:fixture.limits.perCallTimeoutMs,wholeProcessWatchdog:false,limitation:'Open, filesystem backup and close are not bounded by the query timer; supervise a live process separately.'},
+  deadlineProtection:{outerAdmissionDeadlineMs:limits.maximumRunDurationMs,perCallDeadlineMs:limits.perCallTimeoutMs,wholeProcessWatchdog:false,limitation:'Open, filesystem backup and close are not bounded by the query timer; supervise a live process separately.'},
   rubricInjected:false,paidJudge:false,publishRequests:0,realModelCalls:0,stubCalls:0,
   contextTimeAdapter:'Host-only QueryInput.contextTime is fixed; HTTP question and original timestamps are unchanged.',
   ablationPolicy:'Both arms retain identical production query instructions and read-only tools. A has empty Memory data/tools results, no special ignore-Memory prompt. Every arm/question opens a fresh snapshot clone and conversation.',
@@ -133,7 +151,9 @@ const report:Record<string,any>={schema:'mote-memory-scenario-run@1',mode,status
   limitations:['Generated development set, not held out.','Stub preflight outputs are synthetic plumbing fixtures, not extracted knowledge or live quality evidence.','Provider internal requests and cache state are unknown.','Only frozen wave 1 note ingress is supported.'],
   records:[],jobs:[],calls:[],arms:[],usageByVault:[],failures:[]};
 let node:Node|undefined,currentVault='',stage='prepare',currentArm:Arm|undefined,questionId:string|undefined,saveChain=Promise.resolve();
-const budget=new OuterBudget(fixture.limits.maximumOuterModelCalls,started+fixture.limits.maximumRunDurationMs,fixture.limits.perCallTimeoutMs);
+let vaultInitialUsageIds=new Set<string>();const newUsageById=new Map<string,UsageReceipt>();
+let recoverySource:{vault:string;reportPath:string;hashes:Record<string,string>;records:any[];jobs:any[];parents:any[];checkpoint:any;oldState:any;integrationSelection:string;jobSnapshot:Snapshot;receipts:UsageReceipt[]}|undefined;
+const budget=new OuterBudget(limits.maximumOuterModelCalls,started+limits.maximumRunDurationMs,limits.perCallTimeoutMs);
 function save(){const value=json(report);saveChain=saveChain.then(async()=>{await writeFile(reportPath+'.tmp',value,{mode:0o600});await rename(reportPath+'.tmp',reportPath);});return saveChain;}
 function progress(value:string,extra:Record<string,unknown>={}){console.log(JSON.stringify({stage:value,mode,...extra}));}
 function memories(){return node!.store.db.prepare('SELECT json FROM memories ORDER BY id').all().map(row=>JSON.parse(String(row.json)));}
@@ -141,11 +161,12 @@ function evidenceIds():string[]{return report.records.flatMap((r:any)=>r.evidenc
 function config(vault:string):Config{return {dataKey:undefined,dataDir:vault,token,tokenPath:join(vault,'token'),host:'127.0.0.1',port:0,maxStorageBytes:200_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],
   model:preflight?'scenario-preflight-stub':fixture.model.model,modelReasoningEffort:fixture.model.reasoningEffort,modelProvider:preflight?'custom':fixture.model.provider,modelProtocol:preflight?'openai-completions':fixture.model.protocol,
   modelBaseUrl:preflight?'http://127.0.0.1:1':'',apiKey:'',allowUnauthenticatedLocal:preflight,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:false,agentTraceEnabled:true,
-  agentTimeoutMs:fixture.limits.perCallTimeoutMs,codexBin:preflight?'/nonexistent-scenario-preflight-no-provider':process.env.MOTE_CODEX_BIN,codexHome:preflight?join(directory,'unused-codex-home'):process.env.MOTE_CODEX_HOME,memoryConcurrency:1};}
+  agentTimeoutMs:limits.perCallTimeoutMs,codexBin:preflight?'/nonexistent-scenario-preflight-no-provider':process.env.MOTE_CODEX_BIN,codexHome:preflight?join(directory,'unused-codex-home'):process.env.MOTE_CODEX_HOME,memoryConcurrency:1};}
 async function stub(reader:ContextReader,input:QueryInput):Promise<QueryResult>{
   assert.ok(preflight);assert.equal(input.contextTime,fixture.contextTime);
   const result={citations:[] as QueryResult['citations'],trace:[],runId:'stub-'+randomUUID()};
   if(input.skill==='memory-integration'){
+    if(preflightVariant==='failed-integration-review'&&input.traceContext?.phase==='review')throw Error('Frozen offline integration review failure');
     if(preflightVariant==='empty-integration')return {...result,answer:'{"memories":[]}'}; // Deliberate empty output, never a semantic verdict.
     // Mechanical schema fixture exercises commit/review/parent proofs, not synthesis quality.
     const parents=report.beforeIntegration.slice(0,2);assert.equal(parents.length,2);
@@ -170,11 +191,17 @@ async function stub(reader:ContextReader,input:QueryInput):Promise<QueryResult>{
 async function open(vault:string){
   assert.equal(node,undefined);currentVault=vault;
   node=await buildApp(config(vault),{backgroundWorker:false,...(preflight?{createModelAgent:async(_settings:any,reader:ContextReader)=>({configured:true,close:async()=>{},query:(input:QueryInput)=>stub(reader,input)})}:{})});
+  // Offline-only old-version fixture. A restarted recovery node does not install it.
+  if(preflight&&!recovery&&preflightVariant==='failed-integration-review'){
+    node.memoryStrategies.registerIntegration({...defaultMemoryIntegrationStrategy,version:'1',prompt:'Offline old-version integration plumbing fixture; no semantic evaluation.'});
+    node.memoryStrategies.registerIntegrationRecipe({id:defaultMemoryIntegrationRecipe.id,version:'1',integrate:{id:defaultMemoryIntegrationStrategy.id,version:'1'},review:{id:defaultMemoryIntegrationReview.id,version:defaultMemoryIntegrationReview.version}});
+    node.memoryIntegrationSettings.configure({recipe:{id:defaultMemoryIntegrationRecipe.id,version:'1'}});
+  }
   const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
   const query=node.agent.query.bind(node.agent);
   node.agent.query=async input=>{
     const phase=input.traceContext?.phase??'ask',key=[stage,currentArm??'',questionId??'',input.traceContext?.jobId??'',input.traceContext?.batchId??'',phase].join(':');
-    assert.ok(report.calls.filter((call:any)=>call.stage===stage).length<({extraction:6,integration:2,ask:4}[stage]??0),'Frozen stage call budget exhausted');
+    assert.ok(report.calls.filter((call:any)=>call.stage===stage).length<({extraction:recovery?0:6,integration:2,ask:4}[stage]??0),'Frozen stage call budget exhausted');
     const request={...input,contextTime:fixture.contextTime};
     if(stage==='ask'){assert.equal(request.question,fixture.questions.find(q=>q.id===questionId)!.text);assert.equal(request.conversation,undefined);if(currentArm==='archive-only')assert.equal(request.openingMemories?.length??0,0);}
     return budget.run(key,async signal=>{
@@ -187,11 +214,17 @@ async function open(vault:string){
     },input.signal);
   };
   await node.app.ready();assertSqlite(node.store.db);
+  vaultInitialUsageIds=new Set(node.store.db.prepare('SELECT id FROM model_usage').all().map(row=>String(row.id)));
 }
 async function close(){if(!node)return;const closing=node;node=undefined;
-  const receipts=closing.store.db.prepare('SELECT json FROM model_usage ORDER BY created_at,id').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt);
-  report.usageByVault.push({vault:relative(directory,currentVault),includesSeedReceipts:currentVault!==generationVault,stub:preflight,total:usageTotals(receipts),receipts});
-  await closing.app.close();await closed(currentVault);await save();
+  // app.close drains Agent cancellation and final usage before the store closes.
+  // Reading before it can lose a late sample after the outer deadline has fired.
+  await closing.app.close();await closed(currentVault);const db=new DatabaseSync(join(currentVault,'mote.sqlite'),{readOnly:true});
+  let rows:ReturnType<ReturnType<DatabaseSync['prepare']>['all']>;try{rows=db.prepare('SELECT id,json FROM model_usage ORDER BY created_at,id').all();}finally{db.close();}
+  const receipts=rows.map(row=>JSON.parse(String(row.json)) as UsageReceipt),newReceipts=rows.filter(row=>!vaultInitialUsageIds.has(String(row.id))).map(row=>JSON.parse(String(row.json)) as UsageReceipt);
+  for(const row of rows)if(!vaultInitialUsageIds.has(String(row.id))){const receipt=JSON.parse(String(row.json)) as UsageReceipt;assert.ok(!newUsageById.has(String(row.id))||JSON.stringify(newUsageById.get(String(row.id)))===JSON.stringify(receipt),'Receipt ID changed across vaults');newUsageById.set(String(row.id),receipt);}
+  report.usageByVault.push({vault:relative(directory,currentVault),includesSeedReceipts:Boolean(recovery)||currentVault!==generationVault,stub:preflight,readAfterAppClose:true,total:usageTotals(receipts),receipts,newIds:rows.filter(row=>!vaultInitialUsageIds.has(String(row.id))).map(row=>String(row.id)),newTotal:usageTotals(newReceipts),inheritedIds:[...vaultInitialUsageIds],note:'Read from closed SQLite after Agent shutdown; total includes inherited snapshot receipts, only newIds count toward this run'});
+  await save();
 }
 async function request(method:'GET'|'POST'|'PUT',url:string,payload?:unknown){assert.ok(!url.endsWith('/publish'));const response=await node!.app.inject({method,url,headers:{authorization:'Bearer '+token,'x-mote-ingress-version':'2'},...(payload===undefined?{}:{payload:payload as object})});assert.ok(response.statusCode>=200&&response.statusCode<300,`${method} ${url}: ${response.statusCode} ${response.body}`);return response.json();}
 function originals(){return node!.memories.readEvidence(evidenceIds());}
@@ -213,14 +246,76 @@ async function seed(){
   verifyOriginals();assertNoOtherDerived(node!.store.db);assert.equal(report.calls.length,0);
 }
 function assertIdle(){assert.ok(node!.memoryPipeline.list().every(j=>['completed','failed','cancelled'].includes(j.status)),'Unfinished Memory job');assert.ok(node!.lifecycle.view().extensions.every(e=>!e.active),'Unfinished lifecycle window');}
+const extractionTables=['memory_jobs','memory_batches','memory_checkpoints','memory_input_plans','memory_input_authorizations','memory_extraction_drafts'];
+function extractionSnapshot(db:DatabaseSync){const snapshot=tableSnapshot(db);return Object.fromEntries(extractionTables.filter(name=>snapshot[name]).map(name=>[name,snapshot[name]]));}
+async function recoveryPrecheck(){
+  assert.ok(recovery);const sourceReport=await externalExisting(recovery.sourceReport),vault=await externalExisting(join(dirname(sourceReport),'generation','vault'));
+  disjoint(dirname(sourceReport),directory);await closed(vault);
+  const paths={report:sourceReport,db:join(vault,'mote.sqlite'),fixture:join(dirname(sourceReport),'wave-1.v1.json'),manifest:join(dirname(sourceReport),'source-manifest.json')};
+  const hashes=Object.fromEntries(await Promise.all(Object.entries(paths).map(async([key,path])=>[key,sha256(await readFile(path))])));
+  assert.equal(hashes.report,recovery.sourceReportSha256,'Failed report changed');assert.equal(hashes.db,recovery.sourceVaultSha256,'Failed source database changed');assert.equal(hashes.fixture,frozenWaveHash);assert.equal(hashes.manifest,frozenManifestHash);
+  // Discard all call inputs/results while parsing. In particular, call 7's draft and
+  // call 8's review prompt are neither inspected nor supplied to the new task.
+  const source=JSON.parse(await readFile(sourceReport,'utf8'),(key,value)=>key==='result'||key==='input'?undefined:value);
+  assert.equal(source.schema,'mote-memory-scenario-run@1');assert.equal(source.mode,mode);assert.equal(source.status,'failed');assert.equal(source.fixtureSha256,frozenWaveHash);assert.equal(source.personalDataUsed,false);assert.equal(source.heldOut,false);assert.deepEqual(source.intendedModel,fixture.model);
+  assert.equal(source.outerCalls,recovery.sourceOuterCalls);assert.equal(source.calls.length,8);assert.equal(source.realModelCalls,preflight?0:8);assert.equal(source.stubCalls,preflight?8:0);assert.equal(source.arms.length,0);
+  assert.deepEqual(source.calls.map((call:any)=>[call.stage,call.phase,call.status]),[['extraction','extract','completed'],['extraction','review','completed'],['extraction','extract','completed'],['extraction','review','completed'],['extraction','extract','completed'],['extraction','review','completed'],['integration','extract','completed'],['integration','review','failed']]);
+  if(preflight){assert.equal(source.preflightVariant,'failed-integration-review');assert.equal(source.calls[7].failure,'Frozen offline integration review failure');}
+  assert.equal(source.records.length,fixture.records.length);assert.deepEqual(source.records.map((record:any)=>record.id),fixture.extractionOrder);
+  for(const record of source.records)assert.deepEqual(recordSchema.parse(Object.fromEntries(Object.keys(recordSchema.shape).map(key=>[key,record[key]]))),fixture.records.find(r=>r.id===record.id));
+  assert.equal(source.jobs.length,3);assert.ok(source.jobs.every((job:any)=>job.status==='completed'&&job.failedBatches===0&&job.completedBatches===job.totalBatches));
+  assert.equal(source.integration.request.id,recovery.oldWindowId);assert.equal(source.integration.state.active.id,recovery.oldWindowId);assert.ok(source.integration.state.error);
+  const db=new DatabaseSync(paths.db,{readOnly:true});let oldState:any,checkpoint:any,integrationSelection:string,jobSnapshot:Snapshot,receipts:UsageReceipt[];
+  try{
+    assertSqlite(db);assertNoOtherDerived(db);const savedJobs=db.prepare('SELECT id,json FROM memory_jobs ORDER BY id').all();assert.equal(savedJobs.length,3);
+    for(const row of savedJobs){
+      const saved=JSON.parse(String(row.json)),expected=source.jobs.find((job:any)=>job.id===row.id);assert.ok(expected);
+      // get() projects memoryIds from completed batches; the stored job keeps its
+      // initial empty array. Check the projection against its persisted authority.
+      for(const [key,value] of Object.entries(saved))if(key!=='memoryIds')assert.deepEqual(value,expected[key],`Completed job changed: ${key}`);
+      const batches=db.prepare('SELECT json FROM memory_batches WHERE job_id=? ORDER BY idx').all(String(row.id)).map(batch=>JSON.parse(String(batch.json)));assert.equal(batches.length,expected.batches.length);
+      for(const batch of batches){const prior=expected.batches.find((item:any)=>item.id===batch.id);assert.ok(prior);for(const key of ['status','strategy','configuration','evidenceRanges','attempts','memoryIds'])assert.deepEqual(batch[key],prior[key],`Completed batch changed: ${key}`);}
+      assert.deepEqual([...new Set(batches.flatMap(batch=>batch.memoryIds))],expected.memoryIds);
+    }
+    const parents=db.prepare('SELECT json FROM memories ORDER BY id').all().map(row=>JSON.parse(String(row.json)));assert.deepEqual(parents,source.beforeIntegration,'Stored reviewed cards differ from the failed report');assert.ok(parents.every((parent:any)=>parent.status==='published'&&parent.reviewReceipt&&parent.reviewReceipt.model===(preflight?'scenario-preflight-stub':fixture.model.model)));
+    oldState=JSON.parse(String(db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));assert.equal(oldState.active.id,recovery.oldWindowId);assert.equal(oldState.active.manual,true);assert.equal(oldState.active.checkpoint,source.integration.state.active.checkpoint);assert.equal(oldState.failures,1);assert.ok(!oldState.cancelled);
+    checkpoint=JSON.parse(oldState.active.checkpoint);assert.deepEqual(checkpoint.completed,[]);assert.equal(checkpoint.selection.binding.recipe.id,defaultMemoryIntegrationRecipe.id);assert.equal(checkpoint.selection.binding.recipe.version,'1');assert.equal(checkpoint.selection.binding.integrate.version,'1');
+    integrationSelection=String(db.prepare("SELECT value FROM settings WHERE key='memory-integration-selection'").get()!.value);assert.equal(JSON.parse(integrationSelection).binding.recipe.version,'1','Source default selection must remain the old recipe');
+    const eligible=parents.filter((parent:any)=>!parent.supersededBy&&parent.admission?.layer==='memory');assert.deepEqual([...oldState.active.ids].sort(),eligible.map((parent:any)=>parent.id).sort());assert.deepEqual(checkpoint.inputs.map((input:any)=>input.id).sort(),[...oldState.active.ids].sort());
+    for(const input of checkpoint.inputs)assert.equal(input.hash,sha256(JSON.stringify(parents.find((parent:any)=>parent.id===input.id))),'Integration parent hash changed');
+    for(const job of source.jobs){assert.deepEqual(job.configuration,checkpoint.model.configuration);assert.deepEqual(job.recipes,[{id:'mote.personal-memory',version:'2'}]);for(const batch of job.batches)assert.equal(batch.strategy.recipe.id,'mote.personal-memory');}
+    assert.equal(checkpoint.model.model,preflight?'scenario-preflight-stub':fixture.model.model);jobSnapshot=extractionSnapshot(db);receipts=db.prepare('SELECT json FROM model_usage ORDER BY id').all().map(row=>JSON.parse(String(row.json)) as UsageReceipt);
+  }finally{db.close();}
+  recoverySource={vault,reportPath:sourceReport,hashes,records:source.records,jobs:source.jobs,parents:source.beforeIntegration,checkpoint,oldState,integrationSelection:integrationSelection!,jobSnapshot:jobSnapshot!,receipts:receipts!};
+  report.recovery={kind:recovery.kind,planSha256:sha256(recoveryBytes!),sourceMode:mode,sourceReportSha256:hashes.report,sourceVaultSha256:hashes.db,oldWindowId:recovery.oldWindowId,oldBinding:checkpoint.selection.binding,newRecipe:recovery.integrationRecipe,completedExtractionJobs:source.jobs.map((job:any)=>job.id),parentHashes:checkpoint.inputs,originalHashes:source.records.map((record:any)=>({id:record.id,sha256:record.sha256,formalTextSha256:record.formalTextSha256})),sourceCalls:8,maximumNewCalls:6,maximumCumulativeCalls:14,originalFixtureCallLimit:12,sourceInputsAndResultsDiscarded:true,oldDraftInjected:false,sourceHashesBefore:hashes,sourceUsage:{total:usageTotals(receipts!),receipts:receipts!,note:preflight?'Inherited offline seed receipts, excluded from new-call accounting.':'Inherited receipts are preserved unchanged. The old failed receipt claims complete=true unreliably: 50,927 tokens are only the last reported sample; the prior total 196,355 may undercount. Do not infer exact cumulative usage.'},limitations:recovery.limitations};
+  await assertRecoverySourceUnchanged();await save();
+}
+async function assertRecoverySourceUnchanged(){
+  if(!recoverySource)return;const paths={report:recoverySource.reportPath,db:join(recoverySource.vault,'mote.sqlite'),fixture:join(dirname(recoverySource.reportPath),'wave-1.v1.json'),manifest:join(dirname(recoverySource.reportPath),'source-manifest.json')};
+  await closed(recoverySource.vault);const hashes=Object.fromEntries(await Promise.all(Object.entries(paths).map(async([key,path])=>[key,sha256(await readFile(path))])));assert.deepEqual(hashes,recoverySource.hashes,'Recovery modified its closed source');report.recovery.sourceHashesAfter=hashes;report.recovery.sourceUnchanged=true;
+}
+async function recoverGeneration(){
+  assert.ok(recovery&&recoverySource);report.recovery.clone=await cloneClosed(recoverySource.vault,generationVault);report.records=structuredClone(recoverySource.records);report.jobs=structuredClone(recoverySource.jobs);
+  await open(generationVault);verifyOriginals();assertNoOtherDerived(node!.store.db);assert.deepEqual(memories(),recoverySource.parents);assert.deepEqual(extractionSnapshot(node!.store.db),recoverySource.jobSnapshot);
+  assert.deepEqual(node!.memoryPipeline.modelSnapshot(),recoverySource.checkpoint.model,'Recovery model pin changed');
+  const oldSelection=JSON.parse(String(node!.store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));assert.deepEqual(oldSelection,recoverySource.oldState,'Opening clone changed old window');
+  assert.equal(String(node!.store.db.prepare("SELECT value FROM settings WHERE key='memory-integration-selection'").get()!.value),recoverySource.integrationSelection,'Opening clone silently rebound the default selection');
+  assert.throws(()=>node!.memoryStrategies.resolveIntegration({id:defaultMemoryIntegrationRecipe.id,version:'1'}),'Old recipe must not silently map to new policy');
+  const cancellation=await request('POST',`/api/memory-integrations/${recovery.oldWindowId}/cancel`,{}),cancelled=cancellation.extensions.find((entry:any)=>entry.id==='consolidation');assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.active.id,recovery.oldWindowId);assert.equal(cancelled.active.checkpoint,recoverySource.oldState.active.checkpoint);assert.equal(report.calls.length,0);
+  report.recovery.oldWindowCancelled={id:cancelled.active.id,status:cancelled.status,checkpointUnchanged:true};report.recovery.newBinding=node!.memoryStrategies.resolveIntegration(recovery.integrationRecipe).binding;assert.equal(report.recovery.newBinding.integrate.version,'2');
+  await integrate(recovery.integrationRecipe);assert.deepEqual(extractionSnapshot(node!.store.db),recoverySource.jobSnapshot,'Recovery re-ran or changed completed extraction');assert.equal(String(node!.store.db.prepare("SELECT value FROM settings WHERE key='memory-integration-selection'").get()!.value),recoverySource.integrationSelection,'Manual v2 task changed the old default selection');report.recovery.oldDefaultSelectionUnchanged=true;report.recovery.extractionJobsUnchanged=true;assert.equal(report.calls.filter((call:any)=>call.stage==='extraction').length,0);await close();await assertRecoverySourceUnchanged();
+}
 async function generate(){
   stage='extraction';for(const id of fixture.extractionOrder){const record=report.records.find((r:any)=>r.id===id);
     const job=await request('POST','/api/memory-jobs',{evidenceIds:record.evidenceIds,recipes:[{id:'mote.personal-memory',version:'2'}],contextTime:fixture.contextTime,timeZone:fixture.timeZone});
     const done=await node!.memoryPipeline.run(job.id);report.jobs.push(done);await save();assert.equal(done.status,'completed',JSON.stringify(done));
   }
+  await integrate(preflight&&preflightVariant==='failed-integration-review'?{id:defaultMemoryIntegrationRecipe.id,version:'1'}:defaultMemoryIntegrationRecipe);
+}
+async function integrate(recipe=defaultMemoryIntegrationRecipe){
   report.beforeIntegration=memories();const eligible=report.beforeIntegration.filter((m:any)=>m.status==='published'&&!m.supersededBy&&m.admission?.layer==='memory');
   assert.ok(eligible.every((m:any)=>(m.domain??'personal')==='personal'),'Wave 1 only supports personal integration');stage='integration';
-  if(eligible.length){const integration=await request('POST','/api/memory-integrations',{recipe:{id:'mote.memory-integration',version:'1'},memoryIds:eligible.map((m:any)=>m.id)});await node!.lifecycle.tick();
+  if(eligible.length){const integration=await request('POST','/api/memory-integrations',{recipe,memoryIds:eligible.map((m:any)=>m.id)});if(recovery)assert.notEqual(integration.id,recovery.oldWindowId);await node!.lifecycle.tick();
     const state=node!.lifecycle.view().extensions.find(e=>e.id==='consolidation')!;report.integration={request:integration,state};assert.equal(state.active,undefined,JSON.stringify(state));assert.ok(!state.error,JSON.stringify(state));
   }else report.integration={status:'not-applicable',reason:'No eligible input cards; no forced Memory or integration call.'};
   report.afterIntegration=memories();for(const memory of report.afterIntegration){assert.equal(memory.status,'published');assert.ok(memory.reviewReceipt);}
@@ -264,20 +359,31 @@ async function blindPackage(){
 // No catalog lookup, Codex executable, HTTP transport or model factory is reachable in preflight.
 const realFetch=globalThis.fetch;if(preflight)globalThis.fetch=async()=>{throw Error('Offline preflight forbids network requests');};
 try{
-  report.budgetPrecheck=await budgetPrecheck();report.head=execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim();
-  const paths=['scripts/test-memory-scenario-live.ts','package-lock.json','apps/server/src/app.ts','apps/server/src/memory-pipeline.ts','apps/server/src/memory-review.ts','apps/server/src/memory-integration.ts','apps/server/src/evidence-reader.ts','apps/server/src/opening-memory.ts','packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','packages/agent/dist/skills.js','packages/agent/dist/codex-agent.js','packages/agent/dist/bridge.js'];
+  report.budgetPrecheck=await budgetPrecheck(limits.maximumOuterModelCalls);report.head=execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim();
+  const paths=['scripts/test-memory-scenario-live.ts','package-lock.json','apps/server/src/app.ts','apps/server/src/memory-pipeline.ts','apps/server/src/memory-review.ts','apps/server/src/memory-integration.ts','apps/server/src/memory-integration-policy.ts','apps/server/src/memory-policy.ts','apps/server/src/evidence-reader.ts','apps/server/src/opening-memory.ts','packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','packages/agent/dist/skills.js','packages/agent/dist/codex-agent.js','packages/agent/dist/codex-session.js','packages/agent/dist/bridge.js'];
   report.codeHashes=Object.fromEntries(await Promise.all(paths.map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
   await mkdir(join(directory,'code'),{mode:0o700});await writeFile(join(directory,'code','working-tree.patch'),execFileSync('git',['diff','--binary'],{cwd:repositoryRoot}),{mode:0o600});
   for(const path of paths)await cp(join(repositoryRoot,path),join(directory,'code',path.replaceAll('/','__')));
   await writeFile(join(directory,'wave-1.v1.json'),fixtureBytes,{mode:0o600});await writeFile(join(directory,'source-manifest.json'),manifestBytes,{mode:0o600});
+  if(recovery){await writeFile(join(directory,'recovery-plan.json'),recoveryBytes!,{mode:0o600});await recoveryPrecheck();}
   if(!preflight){const {codexModels}=await import('../apps/server/src/model-catalog.js');const catalog=await codexModels(undefined,{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME});report.catalog=catalog.items.find(item=>item.id===fixture.model.model);assert.ok(report.catalog?.reasoningEfforts?.includes(fixture.model.reasoningEffort));}
-  report.status='running';await save();await mkdir(dirname(generationVault),{mode:0o700});await open(generationVault);await seed();await close();
-  const rawVault=join(directory,'ingress-snapshot','vault');await mkdir(dirname(rawVault),{mode:0o700});report.ingressSnapshot=await cloneClosed(generationVault,rawVault);
-  const emptyControl=join(directory,'empty-memory-control','vault');await mkdir(dirname(emptyControl),{mode:0o700});await cloneClosed(rawVault,emptyControl);report.emptyMemoryAblation=ablate(emptyControl,'archive-only');assert.equal(report.emptyMemoryAblation.before.memories.rows,0);
-  await open(generationVault);await generate();await close();await mkdir(dirname(snapshotVault),{mode:0o700});report.snapshot=await cloneClosed(generationVault,snapshotVault);await chmod(join(snapshotVault,'mote.sqlite'),0o400);
-  await writeFile(join(directory,'seed.json'),json({schema:'mote-memory-scenario-seed@1',artifactMode:preflight?'stub-preflight':'live-model',generationStatus:preflight?'stub-completed':'model-completed',semanticQualityAccepted:false,liveBaselineEligible:!preflight,personalDataUsed:false,heldOut:false,fixtureSha256:frozenWaveHash,records:report.records,memories:report.afterIntegration,snapshot:report.snapshot,maximumOuterCalls:fixture.limits.maximumOuterModelCalls}),{mode:0o600});
+  report.status='running';await save();await mkdir(dirname(generationVault),{mode:0o700});
+  if(recovery)await recoverGeneration();
+  else{
+    await open(generationVault);await seed();await close();
+    const rawVault=join(directory,'ingress-snapshot','vault');await mkdir(dirname(rawVault),{mode:0o700});report.ingressSnapshot=await cloneClosed(generationVault,rawVault);
+    const emptyControl=join(directory,'empty-memory-control','vault');await mkdir(dirname(emptyControl),{mode:0o700});await cloneClosed(rawVault,emptyControl);report.emptyMemoryAblation=ablate(emptyControl,'archive-only');assert.equal(report.emptyMemoryAblation.before.memories.rows,0);
+    await open(generationVault);await generate();await close();
+  }
+  await mkdir(dirname(snapshotVault),{mode:0o700});report.snapshot=await cloneClosed(generationVault,snapshotVault);await chmod(join(snapshotVault,'mote.sqlite'),0o400);
+  await writeFile(join(directory,'seed.json'),json({schema:'mote-memory-scenario-seed@1',artifactMode:preflight?'stub-preflight':'live-model',generationStatus:preflight?'stub-completed':'model-completed',semanticQualityAccepted:false,liveBaselineEligible:!preflight,personalDataUsed:false,heldOut:false,fixtureSha256:frozenWaveHash,records:report.records,memories:report.afterIntegration,snapshot:report.snapshot,maximumOuterCalls:limits.maximumOuterModelCalls,...(recovery?{recoveryPlanSha256:sha256(recoveryBytes!),priorOuterCalls:8}:{} )}),{mode:0o600});
   await questions();await blindPackage();assert.equal(sha256(await readFile(join(snapshotVault,'mote.sqlite'))),report.snapshot.cloneSha256,'Immutable snapshot changed');
   report.status=preflight?'preflight-structural-passed':'completed-awaiting-human-review';report.structuralChecksPassed=true;
-  if(preflight){assert.equal(report.realModelCalls,0);assert.equal(report.stubCalls,preflightVariant==='nonempty-integration'?12:11);if(preflightVariant==='nonempty-integration')assert.equal(report.afterIntegration.length,report.beforeIntegration.length+1);}
+  if(preflight){assert.equal(report.realModelCalls,0);assert.equal(report.stubCalls,recovery?6:preflightVariant==='nonempty-integration'?12:11);if(preflightVariant==='nonempty-integration')assert.equal(report.afterIntegration.length,report.beforeIntegration.length+1);}
 }catch(error){report.status='failed';report.failures.push({stage,questionId,arm:currentArm,message:message(error)});process.exitCode=1;}
-finally{await close();globalThis.fetch=realFetch;report.finishedAt=new Date().toISOString();report.durationMs=Date.now()-started;report.outerCalls=budget.count;await save();progress('finished',{status:report.status,realModelCalls:report.realModelCalls,stubCalls:report.stubCalls,report:reportPath});}
+finally{
+  await close();globalThis.fetch=realFetch;await assertRecoverySourceUnchanged();report.finishedAt=new Date().toISOString();report.durationMs=Date.now()-started;report.outerCalls=budget.count;report.cumulativeOuterCalls=(recovery?.sourceOuterCalls??0)+budget.count;
+  const runReceipts=[...newUsageById.values()];report.runUsage={ids:[...newUsageById.keys()],total:usageTotals(runReceipts),receipts:runReceipts,note:'Only receipts newly created in this run; inherited clone receipts excluded and IDs deduplicated.'};
+  if(recoverySource){const all=new Map(recoverySource.receipts.map(receipt=>[receipt.id,receipt]));for(const [id,receipt] of newUsageById){assert.ok(!all.has(id),'New receipt reused a source receipt ID');all.set(id,receipt);}report.cumulativeUsage={total:usageTotals([...all.values()]),receiptIds:[...all.keys()],priorOuterCalls:8,newOuterCalls:budget.count,outerCalls:8+budget.count,oldFailedUsageMayBeIncomplete:!preflight,note:'Sum of distinct reported receipts, not an exact usage claim; original failed usage is preserved unchanged.'};}
+  await save();progress('finished',{status:report.status,realModelCalls:report.realModelCalls,stubCalls:report.stubCalls,report:reportPath});
+}
