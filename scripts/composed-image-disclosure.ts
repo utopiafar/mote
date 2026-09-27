@@ -1,4 +1,4 @@
-/** Mechanical accounting for the generated image harness; no fixture prose or model calls. */
+/** Mechanical accounting for image harnesses; no fixture prose or model calls. */
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import sharp from 'sharp';
@@ -7,8 +7,20 @@ export type ImageDisclosureProtocol='one-original'|'bounded-views';
 type Selection={id:string;attachmentId?:string;view:'image'|'metadata';expectedImageSha256?:string;region:{x:number;y:number;width:number;height:number}|null};
 type Json=Record<string,any>;
 type Metadata=Awaited<ReturnType<ReturnType<typeof sharp>['metadata']>>;
-type Read={selection:Selection;kind:'metadata'|'payload'|'repeat';imageView?:Json;firstSelection?:Selection;firstImageView?:Json;imageBudget?:Json;hostBudget?:Json;payloadKey?:string;encodedCharacters?:number};
+type Read={selection:Selection;kind:'metadata'|'payload'|'repeat';imageView?:Json;firstSelection?:Selection;firstImageView?:Json;imageBudget?:Json;hostBudget?:Json;payloadKey?:string;mimeType?:string;encodedCharacters?:number};
 const digest=(value:Buffer|string)=>createHash('sha256').update(value).digest('hex');
+function imageMime(format:string|undefined){
+ const mime=format==='png'?'image/png':format==='jpeg'?'image/jpeg':format==='webp'?'image/webp':undefined;
+ assert.ok(mime,'Unsupported original image format');return mime;
+}
+// libvips does not expose APNG frame count. Inspect only the bounded file structure.
+function pngPages(bytes:Buffer){
+ let offset=8,declared=1,frames=0,animation=false;
+ while(offset+12<=bytes.length){const length=bytes.readUInt32BE(offset),end=offset+12+length;assert.ok(end<=bytes.length,'Invalid PNG chunk bounds');const kind=bytes.toString('ascii',offset+4,offset+8);
+  if(kind==='acTL'){assert.ok(!animation&&length===8,'Invalid PNG animation header');declared=bytes.readUInt32BE(offset+8);assert.ok(declared>0);animation=true;}
+  if(kind==='fcTL'){assert.equal(length,26);frames++;}if(kind==='IEND')return Math.max(declared,frames);offset=end;
+ }throw Error('Invalid PNG frame structure');
+}
 const keys=(value:Json,allowed:string[])=>assert.ok(Object.keys(value).every(key=>allowed.includes(key)),'Unknown image protocol field');
 function selection(raw:Json):Selection{
  assert.ok(raw&&typeof raw==='object'&&!Array.isArray(raw));keys(raw,['id','attachmentId','view','expectedImageSha256','region']);
@@ -34,23 +46,28 @@ export class ComposedImageDisclosure {
  private failed?:string;
  private adapterVerified=false;
  constructor(readonly protocol:ImageDisclosureProtocol,original:Buffer,readonly width:number,readonly height:number){
-  assert.ok(protocol==='one-original'||protocol==='bounded-views');this.bytes=Buffer.from(original);this.originalHash=digest(this.bytes);this.originalMetadata=sharp(this.bytes,{limitInputPixels:40_000_000}).metadata();
+  assert.ok(protocol==='one-original'||protocol==='bounded-views');assert.ok(original.length>0&&original.length<=8*1024*1024,'Original exceeds the fixed byte quota');this.bytes=Buffer.from(original);this.originalHash=digest(this.bytes);this.originalMetadata=sharp(this.bytes,{limitInputPixels:40_000_000}).metadata();
  }
+ private async originalIdentity(){
+  const original=await this.originalMetadata;assert.equal(original.width,this.width);assert.equal(original.height,this.height);
+  return {sha256:this.originalHash,width:this.width,height:this.height,mimeType:imageMime(original.format),orientation:original.orientation??1,pages:original.format==='png'?pngPages(this.bytes):original.pages??1};
+ }
+ private async outputMime(selected:Selection){return selected.region?'image/png':(await this.originalIdentity()).mimeType;}
  private expectedOutput(selected:Selection){
   const key=JSON.stringify(selected.region);let value=this.outputs.get(key);
   if(!value){value=selected.region?sharp(this.bytes).extract({left:selected.region.x,top:selected.region.y,width:selected.region.width,height:selected.region.height}).toColourspace('srgb').png().toBuffer():Promise.resolve(this.bytes);this.outputs.set(key,value);}return value;
  }
  private async verifyView(selected:Selection,view:Json,kind:Read['kind']){
   assert.ok(view&&typeof view==='object','A successful bounded read requires imageView');keys(view,['original','coordinateSpace','region','transform','viewId','output','id','attachmentId','delivery']);
-  const original=await this.originalMetadata;assert.equal(original.format,'png');assert.equal(original.width,this.width);assert.equal(original.height,this.height);
-  assert.deepEqual(view.original,{sha256:this.originalHash,width:this.width,height:this.height,mimeType:'image/png',orientation:original.orientation??1,pages:original.pages??1},'Unknown or changed original image');
+  const original=await this.originalIdentity();assert.deepEqual(view.original,original,'Unknown or changed original image');
+  if(selected.region)assert.equal(original.pages,1,'Multi-frame regions are unsupported');
   assert.equal(view.id,selected.id);assert.equal(view.attachmentId,selected.attachmentId);assert.equal(view.coordinateSpace,'encoded-raster-pixels-v1');assert.deepEqual(view.region,selected.region);
   const transform=kind==='metadata'?'metadata@1':selected.region?'crop-encoded-raster-png@1':'original-bytes@1';assert.equal(view.transform,transform,'Unknown image transform');
   assert.equal(view.viewId,digest(JSON.stringify([this.originalHash,'encoded-raster-pixels-v1',selected.region,transform])));
   assert.equal(view.delivery,kind==='metadata'?'metadata':kind==='repeat'?'already_disclosed':'pending');
   if(kind==='metadata'){assert.equal(view.output,undefined);return;}
   const expected=await this.expectedOutput(selected);assert.ok(expected.length<=8*1024*1024,'Output exceeds the fixed byte quota');
-  assert.deepEqual(view.output,{sha256:digest(expected),width:selected.region?.width??this.width,height:selected.region?.height??this.height,mimeType:'image/png',sizeBytes:expected.length},'Output identity/geometry does not match the requested original pixels');
+  assert.deepEqual(view.output,{sha256:digest(expected),width:selected.region?.width??this.width,height:selected.region?.height??this.height,mimeType:await this.outputMime(selected),sizeBytes:expected.length},'Output identity/geometry does not match the requested original pixels');
  }
  async observeSuccessfulRead(raw:Json,result:Json){
   try{
@@ -64,19 +81,19 @@ export class ComposedImageDisclosure {
    const row:Read={selection:selected,kind,...(result.imageView?{imageView:structuredClone(result.imageView)}:{})};
    if(kind==='metadata'){assert.equal(result.image,undefined);assert.equal(result.imageDisclosure,undefined);assert.equal(result.imageDelivery,undefined);}
    else if(kind==='payload'){
-    assert.equal(result.imageDisclosure,undefined);assert.equal(result.image.mimeType,'image/png');assert.ok(typeof result.image.data==='string'&&result.image.data.length>0);
+    assert.equal(result.imageDisclosure,undefined);const mimeType=await this.outputMime(selected);assert.equal(result.image.mimeType,mimeType);assert.ok(typeof result.image.data==='string'&&result.image.data.length>0);
     const actual=Buffer.from(result.image.data,'base64');assert.ok(actual.toString('base64')===result.image.data,'Invalid encoded image');assert.ok(actual.length<=8*1024*1024);
     const expected=await this.expectedOutput(selected);assert.equal(digest(actual),digest(expected),'Actual payload bytes do not match the frozen original/view');
-    const geometry=await sharp(actual).metadata();assert.equal(geometry.width,selected.region?.width??this.width);assert.equal(geometry.height,selected.region?.height??this.height);
-    const key='image/png:'+digest(actual);assert.ok(!this.first.has(key),'An identical payload was appended again');assert.ok(this.first.size<(this.protocol==='one-original'?1:4),'Unique payload quota exceeded');
+    const geometry=await sharp(actual).metadata();assert.equal(imageMime(geometry.format),mimeType);assert.equal(geometry.width,selected.region?.width??this.width);assert.equal(geometry.height,selected.region?.height??this.height);
+    const key=mimeType+':'+digest(actual);assert.ok(!this.first.has(key),'An identical payload was appended again');assert.ok(this.first.size<(this.protocol==='one-original'?1:4),'Unique payload quota exceeded');
     assert.ok(typeof result.imageDelivery==='string'&&/^[a-f0-9]{48}$/.test(result.imageDelivery),'Missing local delivery reservation');
-    row.payloadKey=key;row.encodedCharacters=result.image.data.length;this.first.set(key,row);
+    row.payloadKey=key;row.mimeType=mimeType;row.encodedCharacters=result.image.data.length;this.first.set(key,row);
    }else{
     assert.equal(result.image,undefined);assert.equal(result.imageDelivery,undefined);assert.equal(result.imageDisclosure?.status,'already_disclosed','Unclassified successful image read');
-    const expected=await this.expectedOutput(selected),key='image/png:'+digest(expected);assert.equal(result.imageDisclosure.sha256,digest(expected));assert.equal(result.imageDisclosure.mimeType,'image/png');
+    const expected=await this.expectedOutput(selected),mimeType=await this.outputMime(selected),key=mimeType+':'+digest(expected);assert.equal(result.imageDisclosure.sha256,digest(expected));assert.equal(result.imageDisclosure.mimeType,mimeType);
     const first=this.first.get(key);assert.ok(first,'Repeat refers to an image that this query never received');sameSelection(selection(result.imageDisclosure.firstSelection),first.selection);
     if(this.protocol==='bounded-views'){assert.ok(result.imageDisclosure.firstImageView);assert.deepEqual(viewWithoutDelivery(result.imageDisclosure.firstImageView),viewWithoutDelivery(first.imageView!));assert.equal(result.imageDisclosure.firstImageView.delivery,'prepared');}
-    row.payloadKey=key;row.firstSelection=selection(result.imageDisclosure.firstSelection);if(result.imageDisclosure.firstImageView)row.firstImageView=structuredClone(result.imageDisclosure.firstImageView);
+    row.payloadKey=key;row.mimeType=mimeType;row.firstSelection=selection(result.imageDisclosure.firstSelection);if(result.imageDisclosure.firstImageView)row.firstImageView=structuredClone(result.imageDisclosure.firstImageView);
    }
    if(this.protocol==='bounded-views'){assert.deepEqual(result.imageBudget,{remainingPayloads:4-this.first.size,maxRegionSide:2048,maxOutputBytes:8*1024*1024});assert.ok(Number.isSafeInteger(result.hostBudget?.remainingCalls)&&result.hostBudget.remainingCalls>=0);assert.ok(Number.isSafeInteger(result.hostBudget?.remainingCharactersBeforeResult)&&result.hostBudget.remainingCharactersBeforeResult>=0);assert.equal(result.hostBudget.unit,'utf16_characters');row.imageBudget=structuredClone(result.imageBudget);row.hostBudget=structuredClone(result.hostBudget);}
    this.reads.push(row);
@@ -90,8 +107,8 @@ export class ComposedImageDisclosure {
   assert.equal(reads.length,this.reads.length,'Unaccounted successful read_image trace');assert.equal(adapters.length,this.reads.length,'Unaccounted successful adapter image result');
   for(const [i,row] of this.reads.entries()){
    sameSelection(selection(reads[i].arguments),row.selection);assert.equal(reads[i].count,1);const result=adapters[i].payload?.result;assert.ok(result);assert.equal(result.id,row.selection.id);assert.equal(result.attachmentId,row.selection.attachmentId);
-   if(row.kind==='payload'){assert.equal(result.image?.mimeType,'image/png');assert.equal(result.image?.encodedCharacters,row.encodedCharacters);assert.equal(result.imageDisclosure,undefined);}
-   else{assert.equal(result.image,undefined);if(row.kind==='repeat'){assert.equal(result.imageDisclosure?.status,'already_disclosed');assert.equal('image/png:'+result.imageDisclosure.sha256,row.payloadKey);sameSelection(selection(result.imageDisclosure.firstSelection),row.firstSelection!);if(row.firstImageView)assert.deepEqual(result.imageDisclosure.firstImageView,row.firstImageView);}else assert.equal(result.imageDisclosure,undefined);}
+   if(row.kind==='payload'){assert.equal(result.image?.mimeType,row.mimeType);assert.equal(result.image?.encodedCharacters,row.encodedCharacters);assert.equal(result.imageDisclosure,undefined);}
+   else{assert.equal(result.image,undefined);if(row.kind==='repeat'){assert.equal(result.imageDisclosure?.status,'already_disclosed');assert.equal(result.imageDisclosure.mimeType,row.mimeType);assert.equal(result.imageDisclosure.mimeType+':'+result.imageDisclosure.sha256,row.payloadKey);sameSelection(selection(result.imageDisclosure.firstSelection),row.firstSelection!);if(row.firstImageView)assert.deepEqual(result.imageDisclosure.firstImageView,row.firstImageView);}else assert.equal(result.imageDisclosure,undefined);}
    if(row.imageView){const delivery=row.kind==='payload'?'prepared':row.kind==='repeat'?'already_disclosed':'metadata';for(const view of [reads[i].imageView,result.imageView]){assert.ok(view);assert.deepEqual(viewWithoutDelivery(view),viewWithoutDelivery(row.imageView));assert.equal(view.delivery,delivery);}}
    if(this.protocol==='bounded-views'){assert.deepEqual(result.imageBudget,row.imageBudget,'Adapter dropped the image quota');assert.deepEqual(result.hostBudget,row.hostBudget,'Adapter dropped the context quota');}
   }

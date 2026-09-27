@@ -6,16 +6,16 @@ import sharp from 'sharp';
 import {ComposedImageDisclosure} from './composed-image-disclosure.js';
 const hash=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
 type Json=Record<string,any>;
-async function fixture(){
- const bytes=await sharp({create:{width:12,height:12,channels:3,background:'#356791'}}).png().toBuffer(),original={sha256:hash(bytes),width:12,height:12,mimeType:'image/png',orientation:1,pages:1};
+async function fixture(format:'png'|'jpeg'|'webp'='png'){
+ const bytes=await sharp({create:{width:12,height:12,channels:3,background:'#356791'}}).toFormat(format).toBuffer(),mimeType='image/'+format,original={sha256:hash(bytes),width:12,height:12,mimeType,orientation:1,pages:1};
  async function wire(args:Json,kind:'metadata'|'payload'|'repeat',remaining:number,first?:{args:Json;result:Json}){
   const region=args.region??null,transform=kind==='metadata'?'metadata@1':region?'crop-encoded-raster-png@1':'original-bytes@1';
   const view:Json={original,coordinateSpace:'encoded-raster-pixels-v1',region,transform,viewId:hash(JSON.stringify([original.sha256,'encoded-raster-pixels-v1',region,transform])),id:args.id,...(args.attachmentId?{attachmentId:args.attachmentId}:{}),delivery:kind==='metadata'?'metadata':kind==='repeat'?'already_disclosed':'pending'};
   const payload=region?await sharp(bytes).extract({left:region.x,top:region.y,width:region.width,height:region.height}).toColourspace('srgb').png().toBuffer():bytes;
-  if(kind!=='metadata')view.output={sha256:hash(payload),width:region?.width??12,height:region?.height??12,mimeType:'image/png',sizeBytes:payload.length};
+  if(kind!=='metadata')view.output={sha256:hash(payload),width:region?.width??12,height:region?.height??12,mimeType:region?'image/png':mimeType,sizeBytes:payload.length};
   const result:Json={source:'untrusted_personal_context',...args,imageView:view,imageBudget:{remainingPayloads:remaining,maxRegionSide:2048,maxOutputBytes:8*1024*1024},hostBudget:{remainingCalls:20,remainingCharactersBeforeResult:20000,unit:'utf16_characters'}};
-  if(kind==='payload'){result.image={mimeType:'image/png',data:payload.toString('base64')};result.imageDelivery='a'.repeat(48);}
-  if(kind==='repeat'){assert.ok(first);result.imageDisclosure={status:'already_disclosed',sha256:hash(payload),mimeType:'image/png',firstSelection:first.args,firstImageView:{...first.result.imageView,delivery:'prepared'}};}
+  if(kind==='payload'){result.image={mimeType:region?'image/png':mimeType,data:payload.toString('base64')};result.imageDelivery='a'.repeat(48);}
+  if(kind==='repeat'){assert.ok(first);result.imageDisclosure={status:'already_disclosed',sha256:hash(payload),mimeType:region?'image/png':mimeType,firstSelection:first.args,firstImageView:{...first.result.imageView,delivery:'prepared'}};}
   return {args,result};
  }
  return {bytes,hash:original.sha256,wire,audit:()=>new ComposedImageDisclosure('bounded-views',bytes,12,12)};
@@ -89,4 +89,22 @@ test('adapter must retain both quotas and the first-view lineage of a successful
  for(const mutate of [(events:Json[])=>delete events[0].payload.result.imageBudget,(events:Json[])=>delete events[0].payload.result.hostBudget,(events:Json[])=>delete events[1].payload.result.imageDisclosure.firstImageView,(events:Json[])=>events[1].payload.result.imageDisclosure.firstSelection.id='unrelated']){
   const final=adapter([first,repeat]);mutate(final.events);assert.throws(()=>audit.verifyModelDelivery(final.trace,final.events));
  }
+});
+
+for(const format of ['png','jpeg','webp'] as const)test(`${format}: unchanged originals and PNG regions retain MIME, bytes, aliases and adapter lineage`,async()=>{
+ const f=await fixture(format),audit=f.audit();
+ const metadata=await f.wire({id:'formal',attachmentId:'attachment',view:'metadata'},'metadata',4);
+ const original=await f.wire({id:'child'},'payload',3);
+ const repeated=await f.wire({id:'raw',attachmentId:'attachment'},'repeat',3,original);
+ const crop=await f.wire({id:'formal',attachmentId:'attachment',expectedImageSha256:f.hash,region:{x:1,y:2,width:3,height:4}},'payload',2);
+ for(const row of [metadata,original,repeated,crop])await audit.observeSuccessfulRead(row.args,row.result);
+ assert.equal(crop.result.image.mimeType,'image/png');assert.equal(original.result.image.mimeType,'image/'+format);
+ const final=adapter([metadata,original,repeated,crop]);assert.equal(audit.verifyModelDelivery(final.trace,final.events).imagePayloads,2);
+ const legacy=new ComposedImageDisclosure('one-original',f.bytes,12,12),legacyRow=structuredClone(original);delete legacyRow.result.imageView;
+ await legacy.observeSuccessfulRead(legacyRow.args,legacyRow.result);const old=adapter([legacyRow]);assert.equal(legacy.verifyModelDelivery(old.trace,old.events).imagePayloads,1);
+ for(const mutate of [(r:Json)=>r.image.mimeType='image/gif',(r:Json)=>r.imageView.original.mimeType='image/gif',(r:Json)=>r.imageView.output.mimeType='image/gif']){
+  const result=structuredClone(original.result);mutate(result);await assert.rejects(f.audit().observeSuccessfulRead(original.args,result));
+ }
+ const wrongAdapter=adapter([metadata,original,repeated,crop]);wrongAdapter.events[1].payload.result.image.mimeType='image/gif';assert.throws(()=>audit.verifyModelDelivery(wrongAdapter.trace,wrongAdapter.events));
+ const wrongRepeat=adapter([metadata,original,repeated,crop]);wrongRepeat.events[2].payload.result.imageDisclosure.mimeType='image/gif';assert.throws(()=>audit.verifyModelDelivery(wrongRepeat.trace,wrongRepeat.events));
 });

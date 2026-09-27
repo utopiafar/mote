@@ -7,6 +7,8 @@ import {basename,dirname,join,relative,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {backup,DatabaseSync} from 'node:sqlite';
 import {z} from 'zod';
+import sharp from 'sharp';
+import {ComposedImageDisclosure} from './composed-image-disclosure.js';
 import type {UsageReceipt} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type Config} from '../apps/server/src/config.js';
@@ -20,13 +22,13 @@ function outside(path:string){const value=resolve(path),part=relative(repository
 assert.ok(process.env.MOTE_IMAGE_CONTEXT_MANIFEST,'Set MOTE_IMAGE_CONTEXT_MANIFEST');
 const manifestBytes=await readFile(outside(process.env.MOTE_IMAGE_CONTEXT_MANIFEST));
 const mode=z.enum(['preflight','live']).parse(process.env.MOTE_IMAGE_CONTEXT_MODE??'preflight');
-const manifest=z.object({sourceRun:z.string(),sourceKind:z.enum(['one-record-import','composed-material']).default('one-record-import'),sourceVault:z.enum(['vault','seed-vault']).default('vault'),sourceReportSha256:z.string().length(64).optional(),sourceDatabaseSha256:z.string().length(64).optional(),output:z.string(),personalDataUsed:z.boolean(),imageSha256:z.string().length(64),captionBodySha256:z.string().length(64),question:z.string().min(1).max(2000),scope:z.object({after:z.string().datetime({offset:true}),before:z.string().datetime({offset:true}),timeZone:z.literal('Asia/Shanghai')}).optional(),maximumQueries:z.literal(1),queryTimeoutMs:z.union([z.literal(120000),z.literal(300000)]),model:z.literal('gpt-6-sol'),reasoningEffort:z.literal('max')}).passthrough().parse(JSON.parse(manifestBytes.toString()));
+const manifest=z.object({sourceRun:z.string(),sourceKind:z.enum(['one-record-import','composed-material']).default('one-record-import'),sourceVault:z.enum(['vault','seed-vault']).default('vault'),sourceReportSha256:z.string().length(64).optional(),sourceDatabaseSha256:z.string().length(64).optional(),output:z.string(),personalDataUsed:z.boolean(),imageDisclosureProtocol:z.enum(['one-original','bounded-views']).default('one-original'),imageSha256:z.string().length(64),captionBodySha256:z.string().length(64),question:z.string().min(1).max(2000),scope:z.object({after:z.string().datetime({offset:true}),before:z.string().datetime({offset:true}),timeZone:z.literal('Asia/Shanghai')}).optional(),maximumQueries:z.literal(1),queryTimeoutMs:z.union([z.literal(120000),z.literal(300000)]),model:z.literal('gpt-6-sol'),reasoningEffort:z.literal('max')}).passthrough().parse(JSON.parse(manifestBytes.toString()));
 if(mode==='live')assert.equal(process.env.MOTE_IMAGE_CONTEXT_LIVE_AUTHORIZED,'1','Live requires explicit authorization for one Ask');
 if(manifest.personalDataUsed){
  assert.equal(process.env.MOTE_PRIVATE_IMAGE_ACCESS,'1','Private source access requires a conscious-access switch before reading or cloning the source');
  if(mode==='live')assert.equal(process.env.MOTE_PRIVATE_IMAGE_CONSENT,'1','Private image transmission requires explicit user consent');
 }
-if(manifest.sourceKind==='composed-material')assert.equal(manifest.queryTimeoutMs,300000);
+if(manifest.sourceKind==='composed-material'||manifest.imageDisclosureProtocol==='bounded-views')assert.equal(manifest.queryTimeoutMs,300000);
 const source=outside(await realpath(outside(manifest.sourceRun))),directory=outside(join(await realpath(dirname(outside(manifest.output))),basename(manifest.output)));
 for(const [from,to] of [[source,directory],[directory,source]]){const part=relative(from,to);assert.ok(part==='..'||part.startsWith('../'),'Source and destination must be disjoint');}
 const seedBytes=await readFile(join(source,'report.json')),seed=JSON.parse(seedBytes.toString());
@@ -44,17 +46,20 @@ await cp(sourceVault,join(directory,'vault'),{recursive:true,errorOnExist:true,f
 const sourceDb=new DatabaseSync(sourceDatabase,{readOnly:true});try{assert.equal(sourceDb.prepare('PRAGMA quick_check').get()!.quick_check,'ok');await backup(sourceDb,join(directory,'vault','mote.sqlite'));}finally{sourceDb.close();}
 const dataDir=join(directory,'vault'),token=randomBytes(32).toString('hex');
 const config:Config={dataKey:undefined,dataDir,token,tokenPath:join(dataDir,'token'),host:'127.0.0.1',port:0,maxStorageBytes:500_000_000,maxExportBytes:20_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'gpt-6-sol',modelReasoningEffort:'max',modelProvider:'codex',modelProtocol:'codex-app-server',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'warn',diagnosticsEnabled:true,agentTraceEnabled:true,agentTimeoutMs:manifest.queryTimeoutMs,codexBin:mode==='live'?process.env.MOTE_CODEX_BIN:'/nonexistent-offline-image-provider',codexHome:mode==='live'?process.env.MOTE_CODEX_HOME:join(directory,'unused-codex-home')};
-const report:Record<string,any>={status:'running',mode,startedAt:new Date().toISOString(),personalDataUsed:manifest.personalDataUsed,heldOut:false,model:'gpt-6-sol',reasoningEffort:'max',modelCalls:0,stubModelCalls:0,processorCalls:0,externalFetchAttempts:0,blockedLoopbackFetchAttempts:0,queryTimeoutMs:manifest.queryTimeoutMs,maximumQueries:1,automaticOuterRetries:0,semanticQualityAccepted:false,memoryGenerated:false,mediaProcessingTested:false,browserTested:false,physicalDeviceTested:false,sourceReportSha256:sha256(seedBytes),sourceDatabaseSha256,manifestSha256:sha256(manifestBytes),head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()};
-report.codeHashes=Object.fromEntries(await Promise.all(['scripts/test-image-context-live.ts','apps/server/src/evidence-image.ts','apps/server/src/evidence-reader.ts','apps/server/src/evidence-scope-record.ts','apps/server/src/file-raw-reader.ts','apps/server/src/app.ts','packages/agent/dist/bridge.js','packages/agent/dist/context-tools.js','packages/agent/dist/codex-agent.js','packages/agent/dist/codex-session.js'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
+const report:Record<string,any>={status:'running',mode,startedAt:new Date().toISOString(),personalDataUsed:manifest.personalDataUsed,heldOut:false,model:'gpt-6-sol',reasoningEffort:'max',modelCalls:0,stubModelCalls:0,processorCalls:0,externalFetchAttempts:0,blockedLoopbackFetchAttempts:0,queryTimeoutMs:manifest.queryTimeoutMs,maximumQueries:1,imageDisclosureProtocol:manifest.imageDisclosureProtocol,maximumUniqueImagePayloads:manifest.imageDisclosureProtocol==='bounded-views'?4:1,automaticOuterRetries:0,semanticQualityAccepted:false,memoryGenerated:false,mediaProcessingTested:false,browserTested:false,physicalDeviceTested:false,sourceReportSha256:sha256(seedBytes),sourceDatabaseSha256,manifestSha256:sha256(manifestBytes),head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()};
+report.codeHashes=Object.fromEntries(await Promise.all(['scripts/test-image-context-live.ts','scripts/composed-image-disclosure.ts','apps/server/src/evidence-image.ts','apps/server/src/evidence-reader.ts','apps/server/src/evidence-scope-record.ts','apps/server/src/file-raw-reader.ts','apps/server/src/app.ts','packages/agent/dist/bridge.js','packages/agent/dist/context-tools.js','packages/agent/dist/codex-agent.js','packages/agent/dist/codex-session.js'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 let node:Awaited<ReturnType<typeof buildApp>>|undefined;
 const priorUsageIds=new Set<string>();
 const save=()=>writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 const realFetch=globalThis.fetch,manualBridges=new Map<string,string>(),modelTools=new Set<string>();let liveQueryActive=false,modelBridgeIdentity:string|undefined;
+let activeImageAudit:ComposedImageDisclosure|undefined,activeImageAbort:AbortController|undefined;
 globalThis.fetch=async(input,init)=>{
  const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url),headers=new Headers(init?.headers),authorization=headers.get('authorization')??'';
  const local=url.protocol==='http:'&&url.hostname==='127.0.0.1'&&!!url.port&&!url.username&&!url.password&&!url.search&&!url.hash&&init?.method==='POST'&&headers.get('content-type')==='application/json';
  if(local&&manualBridges.get(url.origin)===authorization&&['timeline','evidence','read_image'].includes(url.pathname.slice(1)))return realFetch(input,init);
- if(local&&liveQueryActive&&/^Bearer [a-f0-9]{64}$/.test(authorization)&&modelTools.has(url.pathname.slice(1))){const identity=url.origin+' '+authorization;if(!modelBridgeIdentity||identity===modelBridgeIdentity){modelBridgeIdentity=identity;report.modelBridgeRequests=(report.modelBridgeRequests??0)+1;return realFetch(input,init);}}
+ if(local&&liveQueryActive&&/^Bearer [a-f0-9]{64}$/.test(authorization)&&modelTools.has(url.pathname.slice(1))){const identity=url.origin+' '+authorization;if(!modelBridgeIdentity||identity===modelBridgeIdentity){modelBridgeIdentity=identity;report.modelBridgeRequests=(report.modelBridgeRequests??0)+1;const response=await realFetch(input,init);
+  if(activeImageAudit&&url.pathname==='/read_image'&&response.ok){try{assert.equal(typeof init?.body,'string');await activeImageAudit.observeSuccessfulRead(JSON.parse(init!.body as string),await response.clone().json());}catch(error){activeImageAbort?.abort(error);throw error;}}
+  return response;}}
  if(url.hostname==='127.0.0.1')report.blockedLoopbackFetchAttempts++;else report.externalFetchAttempts++;
  throw Error('Image reuse harness forbids this fetch');
 };
@@ -73,36 +78,60 @@ try{
  const processing=node.processing.view();const disabled=await node.app.inject({method:'PUT',url:'/api/file-processing',headers:{authorization:'Bearer '+token},payload:{revision:processing.revision,settings:{...processing.settings,enabled:false,summarize:false}}});assert.equal(disabled.statusCode,200);
  const records=node.store.evidence(composition?[composition.parentId]:seed.job.captureIds);assert.equal(records.length,1);const parent=records[0],attachment=parent.provenance!.document!.attachments!.find(item=>!composition||item.id===composition.attachmentId)!;assert.ok(attachment);
  assert.equal(sha256(parent.ocrText),manifest.captionBodySha256);
- const image=node.archivedFiles.get(attachment.id!);assert.equal(image.hash,manifest.imageSha256);assert.equal(sha256(node.archivedFiles.read(image.id)),manifest.imageSha256);
+ const image=node.archivedFiles.get(attachment.id!);assert.equal(image.hash,manifest.imageSha256);const originalBytes=node.archivedFiles.read(image.id);assert.equal(sha256(originalBytes),manifest.imageSha256);
+ const geometry=await sharp(originalBytes,{limitInputPixels:40_000_000}).metadata();assert.ok(geometry.width&&geometry.height);
+ const newImageAudit=()=>new ComposedImageDisclosure(manifest.imageDisclosureProtocol,originalBytes,geometry.width!,geometry.height!);
  report.parent={id:parent.id,bodySha256:sha256(parent.ocrText),bodyCharacters:parent.ocrText.length};report.image={id:image.id,sha256:image.hash,sizeBytes:image.sizeBytes};
  for(let i=0;i<100;i++)if(await node.materialOrganizer.tick(100)===0)break;
  if(composition){const material=node.materials.get(composition.materialRef);assert.ok(material&&material.ref===composition.materialRef);const ids=node.materials.evidenceIds(composition.materialRef);assert.equal(ids.length,composition.evidenceBlocks??composition.evidenceIds.length);report.composition={materialRef:material.ref,evidenceBlocks:ids.length};}
  const scope={...(manifest.scope??{after:'2026-04-13T00:00:00+08:00',before:'2026-04-14T00:00:00+08:00',timeZone:'Asia/Shanghai'}),deviceId:parent.deviceId};
- const bridge=await startBridge(node.featureServices.archiveReader,{question:manifest.question,...scope},6);
+ // This zero-model bridge is closed before the ordinary Ask and never supplies model context.
+ const preflightAudit=newImageAudit(),bridge=await startBridge(node.featureServices.archiveReader,{question:manifest.question,...scope},manifest.imageDisclosureProtocol==='bounded-views'?12:6);
  manualBridges.set(bridge.url,'Bearer '+bridge.token);
  let selectedId:string;
  try{
-  const call=async(tool:string,args:Record<string,unknown>)=>{const result=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)});assert.equal(result.status,200,'Private image preflight failed before model admission');return result.json() as Promise<any>;};
-  const found=await call('timeline',{});assert.equal(found.data.length,1);selectedId=found.data[0].id;
+  const call=async(tool:string,args:Record<string,unknown>)=>{const result=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)});assert.equal(result.status,200,'Private image preflight failed before model admission');const value=await result.json() as any;if(tool==='read_image'){await preflightAudit.observeSuccessfulRead(args,value);if(value.imageDelivery)bridge.imageDelivery(value.imageDelivery,true);}return value;};
+  const found=await call('timeline',{}),rows=Array.isArray(found.data)?found.data:found.data.items;assert.equal(rows.length,1);selectedId=rows[0].id;
   const expanded=await call('evidence',{ids:[selectedId]});assert.deepEqual(expanded.data[0].provenance.document,parent.provenance!.document);
-  const original=await call('read_image',{id:selectedId,attachmentId:image.id});assert.equal(sha256(Buffer.from(original.image.data,'base64')),manifest.imageSha256);
-  bridge.imageDelivery(original.imageDelivery,true);
-  report.preflight={status:'passed',selectedId,parentId:parent.id,attachmentId:image.id,mimeType:original.image.mimeType,sha256:manifest.imageSha256,modelCalls:0};await save();
+  const imageSelection={id:selectedId,attachmentId:image.id};
+  if(manifest.imageDisclosureProtocol==='bounded-views'){
+   await call('read_image',{...imageSelection,view:'metadata'});
+   // Generated-only, fixed geometry checks transport. No semantic choice or
+   // pre-cropped image is ever supplied to a model, including a later live run.
+   if(mode==='preflight'&&!manifest.personalDataUsed){const region={x:0,y:0,width:Math.min(64,Math.max(1,geometry.width!-1)),height:Math.min(64,Math.max(1,geometry.height!-1))},args={...imageSelection,expectedImageSha256:manifest.imageSha256,region};await call('read_image',args);await call('read_image',args);}
+  }
+  const original=await call('read_image',imageSelection);assert.equal(sha256(Buffer.from(original.image.data,'base64')),manifest.imageSha256);
+  if(manifest.imageDisclosureProtocol==='bounded-views')await call('read_image',imageSelection);
+  report.preflight={status:'passed',selectedId,parentId:parent.id,attachmentId:image.id,mimeType:original.image.mimeType,sha256:manifest.imageSha256,modelCalls:0,imageDisclosure:preflightAudit.snapshot(),separateFromLiveContext:true,generatedGeometryChecked:mode==='preflight'&&!manifest.personalDataUsed&&manifest.imageDisclosureProtocol==='bounded-views'};await save();
  }finally{manualBridges.delete(bridge.url);await bridge.close();}
+ if(mode==='preflight'&&!manifest.personalDataUsed){
+  // Generated-only proof of the separate Agent callback transport. This bridge
+  // is deliberately absent from manualBridges and does not invoke an adapter/model.
+  const audit=newImageAudit(),agentBridge=await startBridge(node.featureServices.archiveReader,{question:manifest.question,...scope},6);
+  liveQueryActive=true;modelBridgeIdentity=undefined;activeImageAudit=audit;activeImageAbort=new AbortController();
+  try{
+   const call=async(tool:string,args:Record<string,unknown>)=>{const response=await fetch(agentBridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+agentBridge.token,'content-type':'application/json'},body:JSON.stringify(args)});assert.equal(response.status,200);const result=await response.json() as any;if(result.imageDelivery)agentBridge.imageDelivery(result.imageDelivery,true);return result;};
+   const timeline=(await call('timeline',{})).data,rows=Array.isArray(timeline)?timeline:timeline.items;assert.equal(rows.length,1);assert.equal(rows[0].id,selectedId);
+   await call('evidence',{ids:[selectedId]});const selected={id:selectedId,attachmentId:image.id};
+   if(manifest.imageDisclosureProtocol==='bounded-views')await call('read_image',{...selected,view:'metadata'});
+   await call('read_image',selected);
+   if(manifest.imageDisclosureProtocol==='bounded-views')await call('read_image',selected);
+   assert.equal(audit.snapshot().imagePayloads,1);report.agentBridgePreflight={...audit.snapshot(),realModelCalls:0,transport:'Generated unregistered Agent callback bridge; no adapter or model invocation'};
+  }finally{liveQueryActive=false;modelBridgeIdentity=undefined;activeImageAudit=undefined;activeImageAbort=undefined;await agentBridge.close();}
+ }
  if(mode==='live'){
+ const imageAudit=newImageAudit();
  const readImage=node.featureServices.archiveReader.readImage!.bind(node.featureServices.archiveReader);
- node.featureServices.archiveReader.readImage=async selection=>{assert.ok([parent.id,selectedId,composition?.childId].includes(selection.id),'Only the frozen parent or image child may disclose pixels');assert.ok(selection.attachmentId===undefined||selection.attachmentId===image.id,'Only the frozen attachment is authorized');const result=await readImage(selection);assert.equal(sha256(Buffer.from(result.data!,'base64')),manifest.imageSha256);return result;};
+ node.featureServices.archiveReader.readImage=async selection=>{assert.ok([parent.id,selectedId,composition?.childId].includes(selection.id),'Only the frozen parent or image child may disclose pixels');assert.ok(selection.attachmentId===undefined||selection.attachmentId===image.id,'Only the frozen attachment is authorized');const result=await readImage(selection);assert.equal(result.imageView?.original.sha256,manifest.imageSha256,'Only the frozen original may back metadata or pixels');return result;};
  const query=node.agent.query.bind(node.agent);node.agent.query=async input=>{
-  assert.equal(report.modelCalls,0,'Only one query is authorized');assert.ok(!input.skill&&!input.directImages?.length,'Use normal archive retrieval, not a dialogue attachment or extraction');report.modelCalls++;report.trace=[];await save();
-  const deadline=AbortSignal.timeout(manifest.queryTimeoutMs),signal=input.signal?AbortSignal.any([input.signal,deadline]):deadline;
-  liveQueryActive=true;try{return await query({...input,signal,onTrace:event=>{report.trace.push(event);input.onTrace?.(event);}});}finally{liveQueryActive=false;report.visibleModelTurns=report.trace.filter((event:any)=>event.type==='model.started').length;report.visibleRepairTurns=report.trace.filter((event:any)=>event.type==='model.started'&&event.payload?.repair===true).length;await save();}
+  assert.equal(report.modelCalls,0,'Only one query is authorized');assert.ok(!input.skill&&!input.evidenceIds&&!input.evidenceRanges&&!input.directImages?.length&&!input.conversation&&!input.taskContext&&!input.openingMemories?.length,'Use a fresh normal archive Ask');assert.equal(input.question,manifest.question);report.modelCalls++;report.trace=[];await save();
+  const deadline=AbortSignal.timeout(manifest.queryTimeoutMs),auditAbort=new AbortController(),signal=AbortSignal.any([deadline,auditAbort.signal,...(input.signal?[input.signal]:[])]);
+  liveQueryActive=true;modelBridgeIdentity=undefined;activeImageAudit=imageAudit;activeImageAbort=auditAbort;try{return await query({...input,signal,onTrace:event=>{report.trace.push(event);input.onTrace?.(event);}});}finally{liveQueryActive=false;activeImageAudit=undefined;activeImageAbort=undefined;modelBridgeIdentity=undefined;report.imageDisclosure=imageAudit.snapshot();report.visibleModelTurns=report.trace.filter((event:any)=>event.type==='model.started').length;report.visibleRepairTurns=report.trace.filter((event:any)=>event.type==='model.started'&&event.payload?.repair===true).length;await save();}
  };
  await node.app.ready();report.question=manifest.question;await save();console.log(JSON.stringify({stage:'query-started',model:report.model,reasoningEffort:report.reasoningEffort}));
  const start=Date.now(),response=await node.app.inject({method:'POST',url:'/api/query',headers:{authorization:'Bearer '+token,'accept-language':'zh-CN'},payload:{question:manifest.question,...scope}});
  report.durationMs=Date.now()-start;report.httpStatus=response.statusCode;report.result=response.json();await save();assert.equal(response.statusCode,200,'Ask did not complete; preserve the failure without retry');
- const reads=report.result.trace.filter((event:any)=>event.tool==='read_image');assert.ok(reads.some((event:any)=>[parent.id,selectedId].includes(event.arguments.id)&&event.arguments.attachmentId===image.id),'No verified parent attachment read');
- assert.ok(report.trace.some((event:any)=>event.type==='tool.completed'&&event.tool==='read_image'&&event.status==='succeeded'&&event.payload?.result?.attachmentId===image.id&&event.payload.result.image?.encodedCharacters>0),'No actual image payload was delivered to the model adapter');
- report.imagePayloads=report.trace.filter((event:any)=>event.type==='tool.completed'&&event.tool==='read_image'&&event.status==='succeeded'&&event.payload?.result?.image?.encodedCharacters>0).length;assert.equal(report.imagePayloads,1,'Only one original image payload may be appended');assert.equal(report.modelCalls,1);
+ report.imageDisclosure=imageAudit.verifyModelDelivery(report.result.trace,report.trace);report.imagePayloads=report.imageDisclosure.imagePayloads;report.modelImageReadVerified=true;assert.equal(report.modelCalls,1);
  }
  assert.equal(report.processorCalls,0);assert.equal(report.stubModelCalls,0);assert.equal(report.externalFetchAttempts,0);assert.equal(report.blockedLoopbackFetchAttempts,0);assert.equal(report.modelCalls,mode==='live'?1:0);
  assert.equal(sha256(node.store.evidence([parent.id])[0].ocrText),manifest.captionBodySha256);assert.equal(sha256(node.archivedFiles.read(image.id)),manifest.imageSha256);
