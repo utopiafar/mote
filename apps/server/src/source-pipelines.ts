@@ -227,12 +227,21 @@ export class SourcePipelineRuntime {
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
       const automatic=this.options(source.id).memory??pipeline.memory??false;
       for(const group of archived.changedGroups)this.memoryWork.inputs.receive({sourceId:source.id,inputKey:archived.groupCheckpoints[group]},automatic);
-      if(items.some(item=>item.deleted))for(const group of archived.groups)this.materials.redactUntilRebuilt(materialId(source.id,group));
+      // A repeated tombstone has already revoked its old projection. Hiding
+      // its unchanged current Material again would require a rebuild that an
+      // immutable replay must not enqueue. New deletions still revoke every
+      // changed group (including the previous group when an identity moves).
+      if(items.some(item=>item.deleted))for(const group of archived.changedGroups)this.materials.redactUntilRebuilt(materialId(source.id,group));
       db.prepare('INSERT OR IGNORE INTO source_pipeline_bindings(source_id,pipeline_id,storage) VALUES(?,?,?)').run(source.id,pipeline.id,pipeline.storage);
       const superseded:string[]=[];
       for(const group of archived.groups){
         const id=archiveHash([source.id,group]);
-        const prior=db.prepare('SELECT generation FROM source_pipeline_work WHERE id=?').get(id) as {generation:number}|undefined;
+        const prior=this.row(id),step=prior?this.engine.get(stepId(id,prior.generation)):undefined;
+        // An immutable receipt replay does not replace a valid queued/running
+        // worker, reset its failure, or rebuild an already published Material.
+        // Missing work and changed source/recipe/config pins still use the
+        // normal recovery/reprocessing path below.
+        if(prior?.archive_checkpoint===archived.groupCheckpoints[group]&&step&&this.validWork(step)&&!this.admitWork(step))continue;
         db.prepare(`INSERT INTO source_pipeline_work(id,source_id,pipeline_id,version,group_key,state,error,updated_at,material_ref,generation,archive_checkpoint,recipe_id,recipe_version,recipe_definition_fingerprint,recipe_config_fingerprint,recipe_component_pins,memory_trigger)
         VALUES(?,?,?,?,?,'pending',NULL,?,NULL,0,?,?,?,?,?,?,'source')
         ON CONFLICT(id) DO UPDATE SET state='pending',error=NULL,updated_at=excluded.updated_at,pipeline_id=excluded.pipeline_id,version=excluded.version,memory_trigger='source',

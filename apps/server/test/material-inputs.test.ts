@@ -46,6 +46,17 @@ test('append mappings include retained blocks and honor output-only state change
   assert.equal(failed.changed,true);assert.equal(materials.input(failed.ref,['conversation'])!.ready,false);
 });
 
+test('empty append no-op compares real members and dependency revisions after a full publication',t=>{
+  const {materials,draft}=fixture(t),initial={...draft,kind:'mote.coding-session',coverage:{state:'complete' as const},blocks:[{...draft.blocks[0],id:'section-0',kind:'text' as const,format:'markdown-fragment',text:'Generated immutable section'}],artifacts:[{key:'conversation',state:'ready' as const,revision:'input-1',blockIds:['section-0']}]};
+  const snapshot={checkpoint:'first',appendEpoch:1,headCount:1},first=materials.publish(initial,{codingSnapshot:snapshot});
+  const noContent={...initial,mode:'append' as const,baseRevision:first.revision,reuseBlocks:1,blocks:[]};
+  const same=materials.publish(noContent,{expectedRevision:first.revision,codingSnapshot:snapshot});assert.equal(same.changed,false);assert.equal(same.revision,first.revision);
+  const members=[{...initial.members[0],revision:'member-2'}],changedMember=materials.publish({...noContent,members},{expectedRevision:first.revision,codingSnapshot:snapshot});
+  assert.equal(changedMember.changed,true);assert.notEqual(changedMember.revision,first.revision);assert.deepEqual(materials.members(changedMember.ref).items,members);
+  const changedInput=materials.publish({...noContent,baseRevision:changedMember.revision,members,artifacts:[{...initial.artifacts[0],revision:'input-2'}]},{expectedRevision:changedMember.revision,codingSnapshot:snapshot});
+  assert.equal(changedInput.changed,true);assert.notEqual(changedInput.revision,changedMember.revision);
+});
+
 test('recipe requirement changes need a new identity and cannot substitute for an old pin',()=>{
   const strategies=new MemoryStrategies(),recipe={id:'fixture.required',version:'1',extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'},requires:['source-body']};
   assert.throws(()=>strategies.registerRecipe({...recipe,requires:['source-body','source-body']}),/Duplicate/);

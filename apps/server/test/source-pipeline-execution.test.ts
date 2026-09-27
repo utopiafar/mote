@@ -23,6 +23,56 @@ const codingNextVersion=(ctx:Context)=>{
   pipeline.version='7';pipeline.recipe={id:'mote.coding',version:'7'};
 };
 
+test('exact archive retransmission preserves the published Coding revision and input fingerprint',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-source-duplicate-complete-'));
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
+  const first=event('one','Generated first event'),second=event('two','Generated continuation');
+  const receipt=await sources.upsert('coding',first);await runtime.tick();const initial=materials.list().items[0];
+  await sources.upsert('coding',second);await runtime.tick();const appended=materials.list().items[0];
+  assert.notEqual(appended.revision,initial.revision);assert.equal(appended.sequence,initial.sequence+1);
+  const before=materials.input(appended.ref,['conversation']),work=store.db.prepare('SELECT * FROM source_pipeline_work').all(),steps=store.db.prepare("SELECT * FROM execution_steps WHERE kind='source.archive-group' ORDER BY id").all();
+  const repeated=await sources.upsert('coding',first);assert.equal(repeated.id,receipt.id);assert.equal(repeated.duplicate,true);await runtime.tick();
+  const after=materials.list().items[0];assert.equal(after.revision,appended.revision);assert.equal(after.sequence,appended.sequence);assert.deepEqual(materials.input(after.ref,['conversation']),before);
+  assert.deepEqual(store.db.prepare('SELECT * FROM source_pipeline_work').all(),work);assert.deepEqual(store.db.prepare("SELECT * FROM execution_steps WHERE kind='source.archive-group' ORDER BY id").all(),steps);
+  assert.equal(store.db.prepare('SELECT count(*) n FROM source_archive_versions').get()!.n,2);
+});
+
+test('exact retransmission does not revoke a running archive worker',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-source-duplicate-running-'));
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  const entered=deferred(),release=deferred(),snapshot=runtime.recipes.snapshot.bind(runtime.recipes);
+  runtime.recipes.snapshot=(async(...args:Parameters<typeof snapshot>)=>{const result=snapshot(...args);entered.resolve();await release.promise;return result;}) as unknown as typeof snapshot;
+  t.after(async()=>{release.resolve();await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
+  const original=event('one','Generated running retransmission fixture');await sources.upsert('coding',original);
+  const running=runtime.tick();await entered.promise;const work=store.db.prepare('SELECT * FROM source_pipeline_work').get()!,step=runtime.engine.get(`source.archive-group:${work.id}:${work.generation}`)!;assert.equal(step.state,'running');
+  assert.equal((await sources.upsert('coding',original)).duplicate,true);assert.deepEqual(store.db.prepare('SELECT * FROM source_pipeline_work').get(),work);assert.equal(runtime.engine.get(step.id)?.fence,step.fence);assert.equal(runtime.engine.get(step.id)?.state,'running');
+  release.resolve();await running;assert.equal(runtime.engine.get(step.id)?.state,'succeeded');assert.equal(materials.list().items[0].sequence,1);
+});
+
+test('an exact retransmission preserves failure backoff while an explicit retry remains available',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-source-duplicate-failed-'));
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
+  let calls=0;const snapshot=runtime.recipes.snapshot.bind(runtime.recipes);runtime.recipes.snapshot=(()=>{calls++;throw Error('Generated transient fixture failure');}) as typeof runtime.recipes.snapshot;
+  const original=event('one','Generated failed retransmission fixture');await sources.upsert('coding',original);await runtime.tick();const work=store.db.prepare('SELECT * FROM source_pipeline_work').get()!,step=runtime.engine.get(`source.archive-group:${work.id}:${work.generation}`)!;assert.equal(work.error,'organization_failed');assert.equal(step.state,'waiting');assert.ok(step.availableAt>Date.now());
+  assert.equal((await sources.upsert('coding',original)).duplicate,true);await runtime.tick();assert.deepEqual(store.db.prepare('SELECT * FROM source_pipeline_work').get(),work);assert.deepEqual(runtime.engine.get(step.id),step);assert.equal(calls,1);
+  runtime.recipes.snapshot=snapshot;runtime.engine.retry(step.id);await runtime.tick();assert.equal(runtime.engine.get(step.id)?.state,'succeeded');assert.equal(materials.list().items.length,1);
+});
+
+test('explicit config reprocessing with an empty Coding delta keeps the same Material',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-source-empty-append-'));
+  const store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;
+  t.after(async()=>{await runtime.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  const sources=new SourceStore(store,runtime);sources.register({id:'coding',name:'Generated',kind:'coding-agent',deviceId:'device',platform:'macos'});
+  await sources.upsert('coding',event('one','Generated config reprocessing fixture'));await runtime.tick();const before=materials.list().items[0],input=materials.input(before.ref,['conversation']);
+  runtime.configure('coding',{memory:false});await runtime.tick();const after=materials.list().items[0];assert.equal(after.revision,before.revision);assert.equal(after.sequence,before.sequence);assert.deepEqual(materials.input(after.ref,['conversation']),input);
+  assert.equal(runtime.memoryAllowed('coding'),false);assert.equal(store.db.prepare('SELECT generation FROM source_pipeline_work').get()!.generation,1,'configuration change still executes its new pinned work');
+});
+
 test('archive group is an engine step that survives a runtime restart',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-source-engine-restart-'));
   let store=new Store(directory),materials=new MaterialStore(store),runtime=new SourcePipelineRuntime(store,materials,[codingSourcePlugin]);await runtime.ready;

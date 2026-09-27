@@ -445,7 +445,17 @@ export class MaterialStore {
         AND from_sequence<=? AND (until_sequence IS NULL OR until_sequence>?)`).all(draft.id,draft.reuseBlocks,head.sequence,head.sequence).map(b=>String(b.block_id)):[];
       assertArtifactBlocks(draft.artifacts,new Set([...prefixIds,...draft.blocks.map(b=>b.id)]));
       const {mode:_,baseRevision:__,reuseBlocks:___,blocks:____,...manifest}=draft,manifestJson=JSON.stringify(manifest);
-      if(draft.blocks.length===0&&draft.reuseBlocks===base.block_count&&manifestJson===base.manifest){
+      // Full revisions keep members in their own table; appended revisions may
+      // also carry them in the manifest. Compare the same body and the actual
+      // ordered members before treating an empty append as a no-op.
+      const {members:_nextMembers,...nextBody}=manifest,{members:_priorMembers,...priorBody}=JSON.parse(base.manifest);
+      const sameMembers=()=>{
+        const rows=db.prepare('SELECT id,kind,ref,source_revision,locator FROM material_members WHERE material_id=? AND revision=? ORDER BY idx').all(draft.id,head.revision);
+        return rows.length===draft.members.length&&rows.every((row,index)=>{
+          const member=draft.members[index];return row.id===member.id&&row.kind===member.kind&&row.ref===member.ref&&row.source_revision===(member.revision??null)&&row.locator===(member.locator?JSON.stringify(member.locator):null);
+        });
+      };
+      if(draft.blocks.length===0&&draft.reuseBlocks===base.block_count&&JSON.stringify(nextBody)===JSON.stringify(priorBody)&&sameMembers()){
         db.prepare('UPDATE material_coding_snapshots SET archive_checkpoint=?,head_count=? WHERE material_id=? AND revision=?')
           .run(snapshot.checkpoint,snapshot.headCount,draft.id,head.revision);
         if(ownTransaction)db.exec('COMMIT');return {...this.record(head,base),changed:false};
