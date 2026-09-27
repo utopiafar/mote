@@ -415,12 +415,15 @@ export async function startBridge(
         if(++imageCalls>4)throw hostError('Image disclosure budget exceeded');
         const direct=directImages.some(image=>image.id===args.id);
         const record=direct?records.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
-        if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(record.capturedAt)<Date.parse(scope.after)||scope.before&&Date.parse(record.capturedAt)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
-        const image=await reader.readImage({id:args.id});
+        const document=documentSchema.safeParse((record?.provenance as {document?:unknown}|undefined)?.document),at=record&&sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
+        if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at!)<Date.parse(scope.after)||scope.before&&Date.parse(at!)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
+        if(args.attachmentId!==undefined&&(direct||typeof args.attachmentId!=='string'||!document.success||!document.data.attachments?.some(attachment=>attachment.id===args.attachmentId)))throw hostError('Select an image attachment declared by the expanded parent evidence');
+        const selection={id:args.id,...(typeof args.attachmentId==='string'?{attachmentId:args.attachmentId}:{})};
+        const image=await reader.readImage(selection);
         if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||image.data.length>12*1024*1024)throw hostError('Invalid image output');
-        trace.push({tool,arguments:{id:args.id},count:1});
+        trace.push({tool,arguments:selection,count:1});
         reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});
-        res.end(JSON.stringify({source:'untrusted_personal_context',id:args.id,image,hostBudget:hostBudget()}));return;
+        res.end(JSON.stringify({source:'untrusted_personal_context',...selection,image,hostBudget:hostBudget()}));return;
       }
       let value: unknown;
       let effective: Record<string, unknown> = args;

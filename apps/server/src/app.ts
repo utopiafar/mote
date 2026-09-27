@@ -170,9 +170,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       const regular=args.ids.filter(id=>!directImage(id));
       return [...direct,...(regular.length?await archiveReader.evidence({...args,ids:regular}):[])];
     },
-    readImage:async({id})=>{
+    readImage:async({id,attachmentId})=>{
       const direct=directImage(id);
-      if(!direct)return archiveReader.readImage!({id});
+      if(!direct)return archiveReader.readImage!({id,attachmentId});
+      if(attachmentId!==undefined)throw new StoreError('Dialogue images have no nested attachments',400);
       const ref=fileOriginalRawRef(id,direct.hash),parts:Buffer[]=[];
       for(let offset=0;offset<direct.sizeBytes;){
         const page=await fileRawReader.read(ref,{offset,length:Math.min(MAX_RAW_READ_BYTES,direct.sizeBytes-offset)});

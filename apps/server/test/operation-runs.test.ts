@@ -13,6 +13,7 @@ import {ImportStore} from '../src/imports.js';
 import {SourceStore} from '../src/sources.js';
 import {ArchivedFileStore} from '../src/archived-files.js';
 import {linkOperationParent} from '../src/operation-projection.js';
+import {safeError} from '../src/diagnostics.js';
 const turn=()=>new Promise<void>(resolve=>setImmediate(resolve));
 function fixture(t:any){const directory=mkdtempSync(join(tmpdir(),'mote-operation-runs-')),store=new Store(directory),executor=new ExecutionEngine(store);t.after(async()=>{await executor.close();store.close();rmSync(directory,{recursive:true,force:true});});return {store,executor,operations:new Operations(store)};}
 
@@ -28,6 +29,17 @@ test('queries share engine state, expire while queued, and reject late completio
  runs.cancel(first);release();await runs.close();assert.equal(runs.get(first).status,'cancelled');assert.equal(runs.get(first).conversationId,undefined);
  assert.equal(operations.detail(`query:${first}`).operation.state,'cancelled');assert.doesNotMatch(JSON.stringify(operations.page())+JSON.stringify(operations.detail(`query:${first}`)),/private/);
  assert.deepEqual(store.db.prepare('SELECT input FROM execution_steps WHERE kind LIKE ?').all('query.run.%').map(row=>JSON.parse(String(row.input)).runId).sort(),[first,second].sort());
+});
+
+test('a host deadline preserves the public timeout reason before an uncooperative provider settles',async t=>{
+ const {store,executor}=fixture(t),runs=new QueryRuns(store,{executor}),id=randomUUID();let release!:()=>void,committed=false;
+ try{
+ const pending=runs.perform(id,{question:'Generated deadline'},async()=>{await new Promise<void>(resolve=>release=resolve);return ()=>{committed=true;return {conversationId:randomUUID(),turnId:randomUUID()};};},{timeoutMs:20});
+ const rejected=assert.rejects(pending,error=>{const publicError=safeError(error);assert.equal(publicError.status,504);assert.equal(publicError.category,'timeout');return true;});
+ await Promise.all([rejected,new Promise(resolve=>setTimeout(resolve,40))]);
+ assert.equal(runs.get(id).status,'failed');assert.equal(runs.get(id).error?.code,'timeout');
+ release();await turn();assert.equal(committed,false);assert.equal(runs.get(id).conversationId,undefined);
+ }finally{release?.();await runs.close();}
 });
 
 test('legacy query and insight receipts migrate once without replaying work or losing historical dates',async t=>{

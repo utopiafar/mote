@@ -14,7 +14,10 @@ const projection=`json_object(
   'timeBasis',${field('provenance.document.timeBasis')},'occurredAt',${field('provenance.document.occurredAt')},'recordedAt',${field('provenance.document.recordedAt')},'coding',${field('provenance.document.coding')})),
  'metadata',json_object('memoryCorrection',${field('metadata.memoryCorrection')},'media',json_object('sessions',json(coalesce((SELECT json_group_array(json_object('appId',json_extract(value,'$.appId'))) FROM json_each(captures.json,'$.metadata.media.sessions')),'[]'))))
 )`;
-export function scopeRecord(store:Store,id:string):CaptureRecord|undefined {
- const row=store.db.prepare(`SELECT ${projection} AS scope FROM captures WHERE id=?`).get(id);
+export function scopeRecord(store:Store,id:string,fullProvenance=false):CaptureRecord|undefined {
+ // Selected source presentation needs its complete declared dates and
+ // attachments, but still must not load the potentially large source body.
+ const selected=fullProvenance?`json_set(${projection},'$.provenance',json(${field('provenance')}))`:projection;
+ const row=store.db.prepare(`SELECT ${selected} AS scope FROM captures WHERE id=?`).get(id);
  return row?JSON.parse(String(row.scope)) as CaptureRecord:undefined;
 }

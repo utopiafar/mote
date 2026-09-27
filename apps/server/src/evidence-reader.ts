@@ -16,6 +16,8 @@ import {defaultEvidenceExposurePolicy,type EvidenceExposurePolicy,type EvidenceE
 import type {SourcePipelineRuntime} from './source-pipelines.js';
 import type {SourceItemRecipeCatalog} from './source-item-recipe.js';
 import {createHash} from 'node:crypto';
+import {ArchivedFileStore} from './archived-files.js';
+import {readEvidenceImage} from './evidence-image.js';
 
 export {parseEvidenceRef} from '@mote/shared';
 type ScreenOriginalGrant={kind:'material'|'segment';ref:string;scope:Range};
@@ -33,7 +35,9 @@ export function withinEvidenceScope(record:CaptureRecord,scope:Range={}) {
 /** Long-lived read-only service. Never stores credentials or a previous request's scope. */
 export class EvidenceReader {
   readonly memories:MemoryStore;
+  private readonly archivedFiles:ArchivedFileStore;
   constructor(readonly store:Store,readonly sources:SourceStore,readonly files?:FileStore,private readonly indexer?:Indexer,private readonly fileEvidence?:FileEvidenceRequests,private readonly materials?:MaterialStore,private readonly sourcePipelines?:SourcePipelineRuntime,private readonly sourceItemRecipes?:SourceItemRecipeCatalog,private readonly materialMemoryReady?:(ref:string)=>boolean){
+    this.archivedFiles=new ArchivedFileStore(store);
     // Memory dependencies must use the canonical Material anchor. The query
     // projection below decorates it with source metadata for display and must
     // not replace its identity when validating a durable dependency.
@@ -407,7 +411,7 @@ export class EvidenceReader {
       if(!head||head.deleted)return;
       const member=this.materials.members(material.ref,{limit:1}).items[0];
       if(member?.kind!=='capture'||evidenceRefId(member.ref,'capture')!==head.captureId)return;
-      const record=scopeRecord(this.store,head.captureId);
+      const record=scopeRecord(this.store,head.captureId,true);
       return record&&withinEvidenceScope(record,scope)?record:undefined;
     }catch{return;}
   }
@@ -658,7 +662,23 @@ export class EvidenceReader {
       catalog:async args=>contextIndex(this.store,{page:scope=>this.agentMemoryPage(scope??{},policy,operation('discover'))},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),
       materialCatalog:async args=>{const page=this.materialCatalog(args);return {...page,items:page.items.filter(material=>this.materialExposure(material,operation('discover'),policy))};},
       materialRead:async args=>{const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);const page=this.materialRead(args);grant(page.originalRefs,{kind:'material',ref:material.ref,scope:{...args}});return page;},
-      readImage:async ({id})=>{if(!options.allowQueryImages?.())throw new StoreError('Query image disclosure is disabled',403);const captureId=evidenceRefId(id,'capture');if(!captureId)throw new StoreError('Invalid capture reference');const record=scopeRecord(store,captureId);if(!record||!this.captureExposure(record,operation('expand'),policy,'image',hasScreenGrant(captureId)))throw new StoreError('Image not found',404);const image=store.image(captureId);return {mimeType:image.mime,data:image.bytes.toString('base64')};},
+      readImage:async ({id,attachmentId})=>{
+        if(!options.allowQueryImages?.())throw new StoreError('Query image disclosure is disabled',403);
+        const captureId=evidenceRefId(id,'capture');if(!captureId)throw new StoreError('Invalid capture reference');
+        const parent=()=>{
+          const original=scopeRecord(store,captureId);if(original)return original;
+          // A source-item Material anchor carries the same attachment metadata.
+          // Resolve only a current, single-source material with a verified member.
+          const anchor=this.evidence([captureId])[0],ref=anchor?.provenance?.uri?.split('#')[0],material=ref&&this.materials?.get(ref);
+          if(!anchor||!material||!this.materials?.isCurrentEvidence(captureId)||!this.captureExposure(anchor,operation('expand'),policy))return;
+          return this.materialHead(material,{});
+        };
+        const selected=parent();if(!selected)throw new StoreError('Image not found in authorized evidence',404);
+        return readEvidenceImage(store,this.files,this.archivedFiles,{id:selected.id,attachmentId},()=>{
+          const record=parent();return Boolean(options.allowQueryImages?.()&&record&&record.id===selected.id&&
+            this.captureExposure(record,operation('expand'),policy,'image',hasScreenGrant(record.id)));
+        });
+      },
       readFileEvidence:async args=>{const original=this.evidence([args.id],args)[0];if(!original||!this.captureExposure(original,operation('expand'),policy))return {status:'unavailable'};return this.readFileEvidence(args);},
       fileChunks:async args=>{const id=evidenceRefId(args.id,'capture');if(!id||!this.files)return [];const parent=this.evidence([this.files.version(id).capture_id],args)[0];if(!parent||!this.captureExposure(parent,operation('expand'),policy))return [];return this.chunks(args).filter(record=>this.captureExposure(record,operation('expand'),policy));},
       mediaActivity:async args=>diagnostics.measure('source','activity',()=>store.mediaActivity(args),result=>({count:result.observations})),

@@ -44,14 +44,19 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='import'){send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
   if(mode==='structured-error'){send({method:'error',params:{threadId:'thread-fixture',willRetry:false,error:{codexErrorInfo:'usageLimitExceeded',message:'synthetic-private-secret'}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed'}}});return;}
   if(mode==='timeout')return;
+  if(mode==='oversize-frame'){send({method:'fixture/opaque',params:{data:'x'.repeat(14*1024*1024)}});return;}
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
-  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='contribution'?'fixture_context':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
+  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='contribution'?'fixture_context':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
+ }else if(mode==='image-flow'&&(m.id===999||m.id===1000)){
+  if(!m.result?.success)process.exit(3);
+  send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:m.id===999?{ids:['synthetic-codex-record']}:{id:'synthetic-codex-record',attachmentId:'generated-image'}}});
  }else if(m.id===999&&mode==='tool-repair'){
   const feedback=JSON.parse(m.result.contentItems[0].text);
   if(m.result.success!==false||feedback.toolError.code!=='invalid_tool_arguments'||feedback.toolError.recovery!=='correct_arguments')process.exit(5);
   send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:{}}});
- }else if(m.id===999||m.id===1000){
+ }else if(m.id===999||m.id===1000||m.id===1001){
   if(!m.result?.success)process.exit(3);
+  if(mode==='image-echo'||mode==='image-flow')send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'image-echo',type:'dynamicToolCall',contentItems:m.result.contentItems}}});
   if(mode==='usage')for(const sample of [turns*100,turns*100])send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
   send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:mode==='contribution'?'Generated metadata':'Generated evidence [synthetic-codex-record]',citationIds:mode==='contribution'?[]:['synthetic-codex-record']})}}});
   send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
@@ -73,6 +78,34 @@ test('Codex preserves the requested Max effort without silently downgrading it',
 test('Codex passes the catalog medium effort to turn/start',async t=>{
   await fake(t,'medium');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'medium',timeoutMs:5000});t.after(()=>agent.close());
   assert.equal((await agent.query({question:'Generated fixture'})).citations[0].id,record.id);
+});
+test('Codex receives an allowed image-sized dynamic tool completion without dropping the session',async t=>{
+ const root=await fake(t,'image-echo'),events=[],data=Buffer.alloc(3*1024*1024,123).toString('base64');
+ const session=new CodexSession({model:'fixture',timeoutMs:5000},async()=>({id:'generated-parent',attachmentId:'generated-image',image:{mimeType:'image/png',data}}),event=>events.push(event));t.after(()=>session.close());
+ await session.start('Generated protocol fixture',codexContextTools);assert.match(await session.run('Read generated image'),/Generated evidence/);
+ const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse),response=messages.find(m=>m.id===999);
+ assert.deepEqual(JSON.parse(response.result.contentItems[0].text),{id:'generated-parent',attachmentId:'generated-image',source:'untrusted_personal_context'});
+ assert.equal(response.result.contentItems[1].imageUrl,'data:image/png;base64,'+data);
+ assert.ok(events.some(e=>e.type==='codex.item/completed'&&e.payload.itemType==='dynamicToolCall'));
+ assert.ok(!JSON.stringify(events).includes(data),'trace records event metadata, never echoed image bytes');
+});
+test('Codex still rejects oversized protocol frames with bounded diagnostic metadata',async t=>{
+ await fake(t,'oversize-frame');const events=[],session=new CodexSession({model:'fixture',timeoutMs:5000},async()=>({}),event=>events.push(event));t.after(()=>session.close());
+ await session.start('Generated protocol limit',codexContextTools);
+ await assert.rejects(session.run('Generated oversize'),e=>e instanceof AgentProviderError&&e.details.category==='permanent'&&e.details.code==='processing_limit');
+ assert.ok(events.some(e=>e.type==='codex.transport.failed'&&e.payload.code==='frame_limit'));
+ assert.ok(JSON.stringify(events).length<10000);
+});
+test('Codex discloses a selected image to the model while keeping its bytes out of Agent traces',async t=>{
+ const root=await fake(t,'image-flow'),events=[],data=Buffer.alloc(3*1024*1024,123).toString('base64'),parent={...record,provenance:{document:{attachments:[{id:'generated-image',mimeType:'image/png'}]}}};
+ const imageReader={...reader,timeline:async()=>[parent],evidence:async()=>[parent],readImage:async input=>{assert.deepEqual(input,{id:record.id,attachmentId:'generated-image'});return {mimeType:'image/png',data};}};
+ const agent=createAgent({reader:imageReader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ const answer=await agent.query({question:'Read the generated image',onTrace:event=>events.push(event)});assert.equal(answer.citations[0].id,record.id);
+ const result=events.find(e=>e.type==='tool.completed'&&e.tool==='read_image').payload.result;
+ assert.equal(result.attachmentId,'generated-image');assert.deepEqual(result.image,{mimeType:'image/png',encodedCharacters:data.length});
+ assert.ok(!JSON.stringify(events).includes(data.slice(0,200)),'neither model RPC echoes nor tool-completion traces retain image data');
+ const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+ assert.equal(messages.find(m=>m.id===1001).result.contentItems[1].imageUrl,'data:image/png;base64,'+data);
 });
 test('Codex errors and approval requests are rejected without exposing raw provider output',async t=>{
   for(const mode of ['error','approval']){await fake(t,mode);const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});try{await assert.rejects(agent.query({question:'Fixture'}),e=>e instanceof AgentProviderError&&!e.message.includes('synthetic-private'));}finally{await agent.close();}}
