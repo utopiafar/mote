@@ -479,14 +479,33 @@ export async function startBridge(
         if(args.kind!==undefined&&!['episodic','semantic','procedural'].includes(String(args.kind)))throw hostError('Invalid memory kind');
         if(args.layer!==undefined&&!['observation','memory','legacy'].includes(String(args.layer)))throw hostError('Invalid memory layer');
         if(args.includeHistory!==undefined&&typeof args.includeHistory!=='boolean')throw hostError('Invalid memory history flag');
+        if(args.includeEvidence!==undefined&&typeof args.includeEvidence!=='boolean')throw hostError('Invalid memory evidence flag');
+        if(args.includeEvidence===true&&!args.id)throw hostError('Select a memory id before requesting its original evidence');
         if(args.asOf!==undefined&&(typeof args.asOf!=='string'||!Number.isFinite(Date.parse(args.asOf))))throw hostError('Invalid memory validity time');
         const search={includeHistory:args.id?true:args.includeHistory as boolean|undefined,asOf:args.asOf as string|undefined,layer:args.id?undefined:(args.layer??'memory') as 'observation'|'memory'|'legacy',query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
-        effective={...scope,id:args.id,...search};
-        const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
+        effective={...scope,id:args.id,...search,includeEvidence:args.includeEvidence};
+        const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search,includeEvidence:args.includeEvidence as boolean|undefined})??{items:[]};
         derivedIds.push(...result.items.flatMap(item=>typeof (item as {id?:unknown}).id==='string'?[(item as {id:string}).id]:[]));
         const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,characters:r.ocrText.length}));
         discoveredMemoryIds.push(...evidence.map(r=>r.id),...(result.references??[]).map(r=>r.id));
-        value={items:result.items,evidence:[...evidence,...(result.references??[])],coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
+        const references=result.references??[];
+        if(args.includeEvidence===true&&result.items.length){
+          // Only host-verified, requested, in-scope original ranges become citable.
+          const allowedIds=new Set(references.map(ref=>ref.id));
+          for(const span of (result.sourceSpans??[]).slice(0,3)){
+            const r=span.record,at=sourceContentTime(r);
+            if(!allowedIds.has(r.id)||!Number.isFinite(Date.parse(at))||!Number.isSafeInteger(span.offset)||span.offset<0||!Number.isSafeInteger(span.length)||span.length<1||span.offset>=r.ocrText.length||
+              scope.deviceId&&r.deviceId!==scope.deviceId||scope.after&&Date.parse(at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))continue;
+            memoryEvidence.push(project(r,span.offset,Math.min(span.length,2000),bounds.timeZone));
+          }
+        }
+        // Saved quotes locate a claim but are not a fresh permission/version check.
+        const items=result.items.map(item=>{
+          if(!item||typeof item!=='object'||!Array.isArray((item as {evidence?:unknown}).evidence))return item;
+          return {...item,evidence:(item as {evidence:Record<string,unknown>[]}).evidence.map(({quote,...ref})=>ref)};
+        });
+        const partial=result.sourceCoverage?.partial===true||memoryEvidence.length<references.length||(result.sourceSpans??[]).length>memoryEvidence.length||(result.sourceSpans??[]).some(span=>span.length>2000);
+        value={items,evidence:[...evidence,...references],...(args.includeEvidence===true?{sourceEvidence:memoryEvidence,sourceCoverage:{references:result.sourceCoverage?.references??references.length,delivered:memoryEvidence.length,partial}}:{}),coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
       }
       else if (tool === "evidence") {
         if (
@@ -607,7 +626,7 @@ export async function startBridge(
           {rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
         if(tool==='evidence')for(const record of safeValue as ContextRecord[])expanded.add(record.id);
       }
-      for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
+      for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);if(tool==='memories')expanded.add(record.id);}
       trace.push({
         tool,
         arguments: effective,

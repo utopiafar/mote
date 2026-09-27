@@ -14,6 +14,8 @@ import {MemoryPipeline} from '../src/memory-pipeline.js';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
 import type {ContextReader} from '@mote/agent';
+import {EvidenceReader} from '../src/evidence-reader.js';
+import {EvidenceExposurePolicy} from '../src/evidence-exposure.js';
 
 function fixture(t:TestContext){
   const directory=mkdtempSync(join(tmpdir(),'mote-memory-files-generated-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);
@@ -154,4 +156,24 @@ test('manual Memory jobs honor the saved character budget without rewriting exis
  const ranges=first.job.batches.flatMap((b:any)=>b.evidenceRanges);assert.ok(ranges.every((r:any)=>r.length<=256));assert.equal(ranges.map((r:any)=>first.text.slice(r.offset,r.offset+r.length)).join(''),first.text);
  await budget(400);const second=await create();assert.equal(second.job.totalBatches,2);
  assert.deepEqual(node.memoryPipeline.get(first.job.id).batches.flatMap(b=>b.evidenceRanges),ranges);
+});
+
+test('deleting file Memory retains the original, rejects reprocessed chunk aliases and cleans the private intent with the parent',async t=>{
+ const {store,files,memories}=fixture(t),parent=await upload(files),first=artifact(store,parent.id),record=files.evidence([first.chunkId])[0];
+ const saved=memories.extract(result(first.chunkId,record.ocrText),'fixture').items[0];memories.delete(saved.id);
+ assert.equal(files.version(parent.id).capture_id,parent.id);
+ const intents=memories.deletions.export();assert.deepEqual(intents[0].originalTexts,[record.ocrText]);assert.deepEqual(intents[0].dependencies,[parent.id]);
+ assert.throws(()=>store.exportArchive(1_000_000),{statusCode:409},'Typed-file vaults still require the complete backup, not lossy portable JSON');
+ assert.deepEqual(new MemoryStore(store,ids=>[...store.evidence(ids),...files.evidence(ids)],id=>files.isCurrentEvidence(id)||store.isCurrentEvidence(id)).deletions.export(),intents,'A reconstructed service reads the durable deletion intent without replay');
+ const rerun=artifact(store,parent.id,'corrected-dialogue',record.ocrText),candidate=result(rerun.chunkId,record.ocrText);let comparisons=0;
+ const reviewed=await memories.deletions.review({question:'Generated extraction',skill:'memory-extraction'},candidate,async input=>{comparisons++;assert.equal(input.responseMode,'answer');assert.deepEqual(input.derivedContextEvidenceIds,[parent.id]);assert.equal(input.evidenceIds,undefined);return {...candidate,answer:JSON.stringify({sameConclusion:true,newSupportEvidenceIds:[]})};});
+ assert.equal(comparisons,1);assert.equal(JSON.parse(reviewed.answer).memories.length,0);
+ files.forget(parent.id);assert.deepEqual(memories.deletions.export(),[]);
+});
+
+
+test('derived deletion context rechecks local-only policy on retained original files',async t=>{
+ const {store,sources,files}=fixture(t),parent=await upload(files),reader=new EvidenceReader(store,sources,files);
+ assert.equal(reader.deletionContextAllowed(parent.id),true);store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(parent.id);
+ assert.equal(reader.deletionContextAllowed(parent.id),false);assert.equal(reader.deletionContextAllowed(parent.id,new EvidenceExposurePolicy([],()=>true)),true);
 });

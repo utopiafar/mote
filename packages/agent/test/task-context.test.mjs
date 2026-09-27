@@ -12,8 +12,8 @@ test('opening memory hints are separate from cited evidence and include verifica
  const lead={id:'generated-memory',title:'Generated preference',statement:'Generated statement',uncertainty:'Only in one project',status:'proposed',tier:'episode',createdAt:'2026-09-18T00:00:00Z'};
  const envelope=buildContextEnvelope({question:'What do you know?',openingMemories:[lead]},[]);
  assert.deepEqual(envelope.untrustedMemoryLeads,[lead]);
- assert.match(envelope.memoryLeadInstruction,/proposed cards are unconfirmed/);
- assert.match(envelope.memoryLeadInstruction,/original evidence before asserting or citing/);
+ assert.match(envelope.memoryLeadInstruction,/legacy drafts are not awaiting user confirmation/);
+ assert.match(envelope.memoryLeadInstruction,/Cite delivered original ids, not memory ids/);
  assert.equal(envelope.untrustedEvidence,undefined);
 });
 import {startBridge} from '../dist/bridge.js';
@@ -81,4 +81,9 @@ test('bounded extraction supplies the unchanged procedure, draft and originals w
  assert.match(envelope.procedureInstruction,/no skill tool call is required/);
  assert.match(envelope.disclosurePolicy,/Archive discovery tools are unavailable/);
  assert.doesNotMatch(envelope.disclosurePolicy,/material_catalog|search_context|context_index/);
+});
+
+test('host derived-context dependencies are authorization metadata and never new evidence seeds or tool scope',()=>{
+ const input={question:'Compare a derived rule',evidenceIds:['candidate-only'],derivedContextEvidenceIds:['private-root-only'],taskContext:{turns:[],untrustedMemoryDraft:{statement:'The derived rule'}}};
+ const envelope=buildContextEnvelope(input,[]);assert.equal(JSON.stringify(envelope).includes('private-root-only'),false);assert.deepEqual(taskTools(input),['evidence']);
 });

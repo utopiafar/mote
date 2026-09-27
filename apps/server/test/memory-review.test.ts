@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import type {QueryInput} from '@mote/agent';
 import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
 import {MemoryReviewCache} from '../src/memory-review-cache.js';
-import {Store} from '../src/store.js';
+import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {MemoryStore,MEMORY_ADMISSION_PROMPT,MEMORY_EXTRACTION_PROMPT} from '../src/memory.js';
 import {CONSOLIDATION_RELATION_POLICY} from '../src/memory-policy.js';
@@ -37,7 +37,7 @@ test('only an identical independently reviewed verdict is reused; no duplicate u
  const first=await reviewMemory(request,d,query,options);assert.equal(memoryReviewReceipt(first)?.decision,'independent');assert.equal(calls,1);
  const second=await reviewMemory({...request,traceContext:{jobId:'another-job'},onTrace:()=>{}},{...d,runId:'later-extraction'},query,options);
  assert.equal(calls,1);assert.equal(validations,4);assert.equal(second.answer,first.answer);assert.equal(second.usage,undefined);
- assert.deepEqual(memoryReviewReceipt(second),{strategy:memoryStrategyPin(defaultMemoryReviewStrategy),policy:'bounded-exact-review@1',decision:'reused',draftRunId:'later-extraction',reviewRunId:'actual-review',checkedAt:memoryReviewReceipt(second)!.checkedAt,contextTime:input().contextTime,inputHash:memoryReviewReceipt(first)!.inputHash,model:'fixture'});
+ assert.deepEqual(memoryReviewReceipt(second),{deletionSnapshot:undefined,resultHash:sha256(second.answer),strategy:memoryStrategyPin(defaultMemoryReviewStrategy),policy:'bounded-exact-review@1',decision:'reused',draftRunId:'later-extraction',reviewRunId:'actual-review',checkedAt:memoryReviewReceipt(second)!.checkedAt,contextTime:input().contextTime,inputHash:memoryReviewReceipt(first)!.inputHash,model:'fixture'});
  second.answer='mutated by caller';assert.equal((await reviewMemory(request,d,query,options)).answer,'{"memories":[]}');
 });
 
@@ -83,7 +83,7 @@ test('review reuse obeys TTL, count/byte bounds and archive isolation',()=>{
  cache.put('a',d);assert.equal(new MemoryReviewCache().get('a'),undefined);cache.clear();assert.equal(cache.get('a'),undefined);
 });
 
-test('pipeline saves the host review receipt and keeps user publication separate',async t=>{
+test('pipeline saves the host review receipt and activates the validated Memory automatically',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-review-pipeline-')),store=new Store(dir),sources=new SourceStore(store),memories=new MemoryStore(store);
  sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});
  const original=await sources.upsert('generated',{externalId:'1',revision:'1',text:'Meeting proposed',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
@@ -91,7 +91,7 @@ test('pipeline saves the host review receipt and keeps user publication separate
  const pipeline=new MemoryPipeline({store,memories,requireAdmission:true,configured:()=>true,model:()=> 'fixture',query:async()=>d,review:(request,value)=>reviewMemory(request,value,async()=>({...value,runId:'independent-review'}),{cache:new MemoryReviewCache(),snapshot:()=> 'fixed'})});
  t.after(async()=>{await pipeline.close();store.close();rmSync(dir,{recursive:true,force:true});});
  const job=await pipeline.run(pipeline.create({evidenceIds:[original.id]}).id);assert.equal(job.status,'completed');
- const m=memorySchema.parse(memories.get(job.memoryIds[0]));assert.equal(m.reviewRunId,'independent-review');assert.equal(m.reviewReceipt?.decision,'independent');assert.equal(m.reviewReceipt?.draftRunId,d.runId);assert.equal(m.status,'proposed');
+ const m=memorySchema.parse(memories.get(job.memoryIds[0]));assert.equal(m.reviewRunId,'independent-review');assert.equal(m.reviewReceipt?.decision,'independent');assert.equal(m.reviewReceipt?.draftRunId,d.runId);assert.equal(m.status,'published');
  assert.equal(memories.publish(m.id).status,'published');
 });
 
@@ -106,7 +106,7 @@ test('transaction rollback reuses the validated draft and original independent v
  const job=await pipeline.run(pipeline.create({evidenceIds:[original.id]}).id);assert.equal(job.status,'failed');assert.equal(memories.list().length,0);assert.equal(reviews,1);
  store.db.exec('DROP TRIGGER fixture_commit_failure');
  const recovered=await pipeline.retry(job.id);assert.equal(recovered.status,'completed');assert.equal(extractions,1);assert.equal(reviews,1);
- const m=memories.get(recovered.memoryIds[0]);assert.equal(m.reviewReceipt?.decision,'reused');assert.equal(m.reviewReceipt?.draftRunId,'draft-1');assert.equal(m.reviewRunId,'original-independent-review');assert.equal(m.status,'proposed');
+ const m=memories.get(recovered.memoryIds[0]);assert.equal(m.reviewReceipt?.decision,'reused');assert.equal(m.reviewReceipt?.draftRunId,'draft-1');assert.equal(m.reviewRunId,'original-independent-review');assert.equal(m.status,'published');
 });
 
 test('changed host integration instructions invalidate a bounded review cache entry',async()=>{

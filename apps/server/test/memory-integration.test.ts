@@ -58,17 +58,23 @@ async function fixture(t:any){
 test('installed integration recipes independently replace generation and review through the owner API',async t=>{
  const f=await fixture(t),{products}=await f.add('diary',true);assert.equal(f.calls.length,0);
  assert.equal((await f.api('GET','/api/memory-integration-recipes')).json().items.filter((r:any)=>r.id.startsWith('fixture.')).length,3);
- f.node.memories.publish(products[0].id);f.control.relation=true;
+ f.node.memories.publish(products[0].id);
  for(const recipe of ['base','review-replaced','integrator-replaced']){
   const response=await f.api('POST','/api/memory-integrations',{recipe:ref(recipe),memoryIds:products.map(m=>m.id)});assert.equal(response.statusCode,202,response.body);await f.node.lifecycle.tick();assert.equal(f.view().error,undefined);assert.equal(f.view().active,undefined);
  }
  assert.equal(f.calls.length,12);assert.equal(f.products().length,6);assert.ok(f.calls.every(c=>c.skill==='memory-integration'&&!c.evidenceIds),JSON.stringify(f.calls.map(c=>({skill:c.skill,evidenceIds:c.evidenceIds}))));
  assert.equal(f.calls.filter(c=>c.question.startsWith('GENERATED_INTEGRATOR_1')).length,4);assert.equal(f.calls.filter(c=>c.question.startsWith('GENERATED_INTEGRATOR_2')).length,2);
  assert.equal(f.calls.filter(c=>c.question.startsWith('GENERATED_REVIEW_1')).length,2);assert.equal(f.calls.filter(c=>c.question.startsWith('GENERATED_REVIEW_2')).length,4);
- for(const m of f.products()){assert.equal(m.status,'proposed');assert.equal(m.integration?.review.fingerprint,m.reviewReceipt?.strategy?.fingerprint);assert.deepEqual(m.evidenceIds,products[0].evidenceIds);assert.ok(m.relatedMemoryIds?.length);}
- assert.equal(f.node.memories.get(products[0].id).status,'published');assert.equal(f.node.memories.get(products[0].id).supersededBy,undefined,'strategies never publish a replacement');
- assert.throws(()=>f.node.memories.publish(f.products()[0].id),/version/i);
+ for(const m of f.products()){assert.equal(m.status,'published');assert.equal(m.integration?.review.fingerprint,m.reviewReceipt?.strategy?.fingerprint);assert.deepEqual(m.evidenceIds,products[0].evidenceIds);assert.ok(m.relatedMemoryIds?.length);}
+ assert.equal(f.node.memories.get(products[0].id).status,'published');assert.equal(f.node.memories.get(products[0].id).supersededBy,undefined,'no replacement was requested by this recipe');
  const before=f.calls.length;await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.length,before,'installation and restart do not replay historical cards');
+});
+
+test('reviewed integration automatically supersedes both domains without invalidating its own checkpoint',async t=>{
+ const f=await fixture(t),{products}=await f.add('automatic-relations',true);f.control.relation=true;
+ f.queue(products.map(m=>m.id));await f.node.lifecycle.tick();assert.equal(f.view().error,undefined);assert.equal(f.products().length,2);
+ for(const old of products){const current=f.node.memories.get(old.id),replacement=f.products().find(m=>m.domain===old.domain)!;assert.equal(current.supersededBy,replacement.id);assert.equal(replacement.status,'published');}
+ const calls=f.calls.length;await f.restart();await f.node.lifecycle.tick();assert.equal(f.calls.length,calls);
 });
 
 test('selection changes process only subsequent events; disable preserves products and explicit history remains available',async t=>{

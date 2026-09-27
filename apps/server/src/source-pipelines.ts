@@ -344,6 +344,15 @@ export class SourcePipelineRuntime {
     if(!this.store.db.prepare('SELECT 1 FROM source_pipeline_bindings WHERE source_id=?').get(sourceId))throw new StoreError('Source has no archive pipeline',409);
     const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
       db.prepare("UPDATE source_connections SET json=json_set(json,'$.enabled',json('false')) WHERE id=?").run(sourceId);
+      // Explicit source forgetting erases entire derived owner rules, including
+      // mixed-source conclusions. Ordinary retention uses partial cleanup instead.
+      if(db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletion_dependencies'").get())db.prepare(`DELETE FROM memory_deletions WHERE id IN (
+        SELECT d.deletion_id FROM memory_deletion_dependencies d
+        LEFT JOIN captures c ON c.id=d.evidence_id
+        LEFT JOIN material_evidence e ON e.id=d.evidence_id
+        LEFT JOIN material_heads m ON m.id=e.material_id
+        WHERE json_extract(c.json,'$.provenance.sourceId')=? OR m.source_id=?)
+        OR EXISTS (SELECT 1 FROM json_each(memory_deletions.json,'$.derivationSourceIds') s WHERE s.value=?)`).run(sourceId,sourceId,sourceId);
       for(const row of db.prepare('SELECT id FROM material_heads WHERE source_id=?').all(sourceId)){this.memoryWork.withdraw(String(row.id));this.materials.forget(String(row.id));}
       this.memoryWork.inputs.forgetSource(sourceId);
       for(const row of db.prepare('SELECT id,generation FROM source_pipeline_work WHERE source_id=?').all(sourceId) as {id:string;generation:number}[]){const id=stepId(row.id,row.generation);this.revoke(id);superseded.push(id);}

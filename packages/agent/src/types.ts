@@ -38,6 +38,13 @@ export interface MediaContextRange extends ContextRange {
   playbackType?: 'local' | 'remote' | 'unknown';
 }
 
+/** Host-verified original range. The bridge projects it before model disclosure. */
+export interface MemorySourceSpan {
+  record: ContextRecord;
+  offset: number;
+  length: number;
+}
+
 export interface ContextReader {
   /** Host registry, snapshotted before each model run. */
   contextTools?():readonly import('./tool-contributions.js').ContextToolContribution[];
@@ -57,7 +64,7 @@ export interface ContextReader {
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
-  memories?(args:ContextRange & {includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[]}>;
+  memories?(args:ContextRange & {includeEvidence?:boolean;includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[];sourceSpans?:MemorySourceSpan[];sourceCoverage?:{references:number;delivered:number;partial:boolean}}>;
 }
 
 export interface AgentOptions {
@@ -94,6 +101,9 @@ export interface QueryInput {
   toolContributions?:readonly import('./tool-contributions.js').ContextToolContribution[];
   /** Host-verified originals deliberately attached to this dialogue. Bytes remain in the vault. */
   directImages?:{id:string;name:string;mimeType:string;hash:string;sizeBytes:number}[];
+  /** Host-only lineage of derived context already included in taskContext. Used
+   * solely for disclosure authorization/revocation; never evidence seeds or tools. */
+  derivedContextEvidenceIds?:readonly string[];
   /** Host-only bounded observation and coverage snapshot for one insight version. */
   insightSnapshot?: import('@mote/shared').InsightSnapshot;
   /** Host-only read grant for original action proposals. No mutation capability is exposed. */

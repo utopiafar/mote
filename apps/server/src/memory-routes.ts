@@ -8,7 +8,7 @@ import {sourceContentTime,type QueryResult} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import {scopeFields,validRange} from './query-scope.js';
 import {modelProfileIdSchema,type ModelSettingsStore} from './model-settings.js';
-import {MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,type MemoryStore} from './memory.js';
+import {MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
 import {memoryStrategyRefSchema} from './memory-strategy-contract.js';
 import {memoryReviewReceipt} from './memory-review.js';
 import type {MemoryPipeline} from './memory-pipeline.js';
@@ -70,15 +70,16 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
     const selected=evidenceReader.memorySelection(scope,100,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)));
     if(!selected.evidenceIds.length)throw new StoreError('No processed evidence in this range',409);
-    const evidenceRanges=memories.readEvidence(selected.evidenceIds).map(record=>({id:record.id,offset:0,length:record.ocrText.length}));
+    const records=memories.readEvidence(selected.evidenceIds),expectedFingerprints=Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
+    const evidenceRanges=records.map(record=>({id:record.id,offset:0,length:record.ocrText.length}));
     if(evidenceRanges.reduce((sum,range)=>sum+range.length,0)>100000)throw new StoreError('Use a Memory job for this larger range',413);
     const input:QueryInput={...scope,evidenceRanges,evidenceIds:selected.evidenceIds,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
-    input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
+    input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const draft=await query(input);
     memoryPipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id),profile.id);
-    memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true});
+    memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});
     const result=await reviewExtraction(input,draft);
     return memoryPipeline.withAdmissibleEvidence(result.citations.map(c=>c.id),()=>
-      memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)}),profile.id);
+      memories.extract(result,profile.settings.model,{requireAdmission:true,expectedFingerprints,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)}),profile.id);
   });
 }

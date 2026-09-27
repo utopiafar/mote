@@ -321,6 +321,18 @@ export class EvidenceReader {
     ) SELECT 1 FROM originals o JOIN file_jobs j ON j.capture_id=o.id WHERE j.local_only=1 LIMIT 1`).get(id);
     return Boolean(row);
   }
+  /** Owner deletion rules carry derived text, not a grant to seed raw originals.
+   * Check their retained lineage against current source revocation and locality. */
+  deletionContextAllowed(id:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy):boolean {
+    const record=this.memories.readEvidence([id])[0];if(!record)return false;
+    if(!fileAttachmentAvailable(this.store,id))return false;
+    const p=record.provenance;
+    if(p?.sourceId&&p.externalId&&this.store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(p.sourceId,p.externalId)?.deleted)return false;
+    const anchor=this.materials&&this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(id);
+    const material=anchor?this.materials?.get(String(anchor.material_id)):p?.sourceId&&p.externalId&&this.materials?this.materials.get(materialId(p.sourceId,p.externalId)):undefined;
+    if(material)return this.materialExposure(material,'expand',policy)&&policy.allows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation:'expand',phase:material.coverage.state,localOnly:this.evidenceLocalOnly(id)});
+    return this.captureExposure(record,'expand',policy,'capture',true);
+  }
   private materialLocalOnly(material:MaterialRecord):boolean {
     return this.materialMemberAccess(material).localOnly;
   }
@@ -708,7 +720,29 @@ export class EvidenceReader {
           const selected=page.items.find(item=>item.ref===ref);if(selected)grant(selected.members,{kind:'segment',ref,scope:{...args}});
         }
         return page as any;},
-      memories:async args=>{const page=this.agentMemoryPage({...args,level:args.id?'detail':'overview'},policy,operation('discover'));return {...page,references:args.id?page.items.flatMap((m:any)=>(m.evidence??[]).map((e:any)=>({id:e.id,capturedAt:e.capturedAt,characters:e.length??0}))):[]};},
+      memories:async args=>{
+        const page=this.agentMemoryPage({...args,level:args.id?'detail':'overview'},policy,operation('discover'));
+        const refs=args.id?page.items.flatMap((m:any)=>(m.evidence??[]) as import('./memory-schema.js').MemoryEvidence[]):[];
+        const references=refs.map(e=>({id:e.id,capturedAt:e.capturedAt,characters:e.length??0}));
+        if(!args.id||!args.includeEvidence)return {...page,references};
+        const sourceSpans:import('@mote/agent').MemorySourceSpan[]=[];
+        let partial=false;
+        for(const ref of refs){
+          if(sourceSpans.length===3){partial=true;break;}
+          const record=this.evidence([ref.id],args)[0],canonical=this.memories.readEvidence([ref.id])[0];
+          const offset=ref.offset,quotedLength=ref.length;
+          // Verify the stored locator against the original now, not a saved quote.
+          // Historical immutable originals remain labelled historical by context().
+          if(!record||!canonical||!boundedEvidenceAllowed(record)||memoryEvidenceFingerprint(canonical)!==ref.contentHash||canonical.ocrText!==record.ocrText||
+            typeof offset!=='number'||typeof quotedLength!=='number'||!Number.isSafeInteger(offset)||!Number.isSafeInteger(quotedLength)||offset<0||quotedLength<1||
+            offset+quotedLength>record.ocrText.length||ref.quote!==record.ocrText.slice(offset,offset+quotedLength)){
+            partial=true;continue;
+          }
+          const length=Math.min(quotedLength,2000);if(length<quotedLength)partial=true;
+          sourceSpans.push({record:this.context([record])[0],offset,length});
+        }
+        return {...page,references,sourceSpans,sourceCoverage:{references:refs.length,delivered:sourceSpans.length,partial}};
+      },
       search:async args=>diagnostics.measure('source','search',async()=>{const results=await this.agentSearch(args,policy,operation('discover'));return Object.assign(this.context(results),{retrieval:results.retrieval});},rows=>({count:rows.length})),timeline:async args=>diagnostics.measure('source','timeline',()=>{const page=this.agentTimeline(args,policy,operation('discover'));return {...page,items:this.context(page.items)};},page=>({count:page.items.length})),evidence:async args=>diagnostics.measure('source','evidence',()=>this.context(this.evidence(args.ids,args).filter(boundedEvidenceAllowed)),rows=>({count:rows.length})),activity:async args=>diagnostics.measure('source','activity',()=>store.activity(args),result=>({count:result.captures})),devices:async()=>diagnostics.measure('source','devices',()=>store.devices(),rows=>({count:rows.length}))};
   }
 }

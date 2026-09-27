@@ -55,7 +55,7 @@ async function run(){
  for(const width of [1180,430]){file.win.setSize(width,950);await file.js(`([...document.querySelectorAll('.file-text')].at(-1)).scrollIntoView({block:'center'})`);await delay(200);check('no horizontal overflow at '+width,await file.js(`document.documentElement.scrollWidth<=innerWidth&&document.querySelector('.evidence-modal').scrollWidth<=document.querySelector('.evidence-modal').clientWidth`));check('transcript is reachable by scrolling at '+width,await file.js(`(()=>{const r=[...document.querySelectorAll('.file-text')].at(-1).getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight;})()`));writeFileSync(join(out,'file-'+width+'.png'),(await file.wc.capturePage()).toPNG());}
  material.win.show();material.win.focus();await material.js(`document.querySelector('button[aria-label="关闭证据详情"]')?.click()`);await material.click('记忆');
  await until(()=>material.js(`document.querySelectorAll('.workspace-select').length===2`),'memory list');
- for(const [title,status] of [['合成计划记忆','需要重验'],['合成相框经历','已确认']]){
+ for(const [title,status] of [['合成计划记忆','需要重验'],['合成相框经历','已生效']]){
    await material.js(`([...document.querySelectorAll('.workspace-select')].find(e=>e.textContent.includes(${JSON.stringify(title)}))).click()`);
    await until(()=>material.js(`document.querySelector('.memory-detail h2')?.textContent===${JSON.stringify(title)}`),'memory detail '+title);
    check(title+' displays its correct status',await material.js(`document.querySelector('.memory-detail .status-label')?.textContent===${JSON.stringify(status)}`));
