@@ -19,6 +19,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
 import { Actions } from './actions.js';
+import { agentDeadline } from './agent-deadline.js';
 import { installAgentFeatures } from './agent-feature-host.js';
 import { ArchivedFileStore } from './archived-files.js';
 import { codingSourcePlugin } from './coding-source-plugin.js';
@@ -356,8 +357,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
     trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
     const meter=usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()});
-    const deadline=profile.settings.agentTimeoutMs;
-    const taskSignal=deadline===null?input.signal:AbortSignal.any([...(input.signal?[input.signal]:[]),AbortSignal.timeout(deadline)]);
+    const deadline=agentDeadline(input.signal,profile.settings.agentTimeoutMs),taskSignal=deadline.signal;
     const observed={...input,signal:taskSignal,traceContext,onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
@@ -375,7 +375,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       return {...result,configuration,usage:meter.finish('completed')};
     }).catch(error=>{meter.finish('failed');trace({type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
-    activeQueries.add(promise);void promise.finally(()=>{clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
+    activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
   const memoryReviews=new MemoryReviewCache();
   const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
@@ -444,9 +444,10 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
     insightSchema.parse(scope);
     const contextTime=freezeSemanticContextTime(dependencies?.semanticContextTime);
     if(conversationId)runningConversations.add(conversationId);
+    let deadline:ReturnType<typeof agentDeadline>|undefined;
     try {
       const selectedProfile=modelSettings.select('chat',modelProfileId),timeout=selectedProfile.settings.agentTimeoutMs;
-      signal=timeout===null?signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(timeout)]);
+      deadline=agentDeadline(signal,timeout);signal=deadline.signal;
       signal?.throwIfAborted();
       const previousIds=previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[];
       const previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
@@ -470,7 +471,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
         }
       }
       throw error;
-    }finally{if(conversationId)runningConversations.delete(conversationId);}
+    }finally{deadline?.dispose();if(conversationId)runningConversations.delete(conversationId);}
   }
 
   async function insight(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId='insight:'+randomUUID(),snapshot?:import('@mote/shared').InsightSnapshot) {
