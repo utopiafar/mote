@@ -1,15 +1,39 @@
 /** Isolated generated server for test-material-load-ui; no live provider or personal data. */
-import {readFileSync,writeFileSync,renameSync} from 'node:fs';
+import {readFileSync,writeFileSync,renameSync,appendFileSync,realpathSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
+import assert from 'node:assert/strict';
+import {join,resolve,relative} from 'node:path';
+import fixtureHelpers from './material-load-fixture.cjs';
 import {randomUUID} from 'node:crypto';
 import {buildApp} from '../apps/server/dist/app.js';
 import {Conversations} from '../apps/server/dist/conversations.js';
-const {config,fixturePath,ready}=JSON.parse(readFileSync(process.argv[2],'utf8'));
+const {config,fixturePath,ready,recoveryOnly}=JSON.parse(readFileSync(process.argv[2],'utf8'));
 const fixture=JSON.parse(readFileSync(fixturePath,'utf8')),interactive=fixture.profile==='interactive-400',calls=[],ticks=[];
 // Provider code receives only this explicit factory. Fail closed for all outbound fetches.
 const actualFetch=globalThis.fetch;
 globalThis.fetch=(input,init)=>{const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);if(!['127.0.0.1','localhost','[::1]'].includes(url.hostname))throw Error('Non-loopback request prohibited in generated fixture');return actualFetch(input,init);};
-let node;
+let node,sample,recoveryDeadline,closing=false;
+async function shutdown(code){if(closing)return;closing=true;clearInterval(sample);clearTimeout(recoveryDeadline);const hard=setTimeout(()=>process.exit(code||1),3000);try{await node?.app.close();}finally{clearTimeout(hard);process.exit(code);}}
+let recovery;
+if(recoveryOnly){
+ assert.ok(interactive,'Recovery requires frozen interactive fixture');
+ assert.ok(relative(resolve('.'),resolve(config.dataDir)).startsWith('..'),'Recovery vault must be outside repository');
+ assert.ok(realpathSync(config.dataDir)!==realpathSync(recoveryOnly.originalVault),'Never start the preserved original vault');
+ const db=new DatabaseSync(join(config.dataDir,'mote.sqlite'),{readOnly:true});
+ try{
+  const rows=db.prepare('SELECT id,json FROM model_usage').all();assert.ok(rows.every(r=>JSON.parse(r.json).status==='completed'));
+  const settings=JSON.parse(db.prepare('SELECT json FROM memory_lifecycle_settings').get().json);
+  for(const key of ['extraction','consolidation','insights','working'])assert.equal(settings[key].enabled,false,'Recovery never changes automation policy');
+  const jobs=db.prepare('SELECT id,json FROM memory_jobs').all();assert.equal(jobs.length,1);assert.equal(jobs[0].id,recoveryOnly.jobId);assert.equal(JSON.parse(jobs[0].json).status,'waiting_for_input');
+  const memories=db.prepare('SELECT id,json FROM memories').all();assert.deepEqual(Object.fromEntries(memories.map(r=>[r.id,fixtureHelpers.sha(r.json)])),recoveryOnly.memoryHashes);
+  const log=join(config.dataDir,'recovery-query-attempts.jsonl');writeFileSync(log,'',{mode:0o600,flag:'wx'});
+  recovery=fixtureHelpers.recoveryGuard({historicalUsageIds:rows.map(r=>r.id),expectedUsageIds:recoveryOnly.usageIds,jobId:recoveryOnly.jobId,recordAttempt:event=>appendFileSync(log,JSON.stringify(event)+'\n'),onViolation:()=>setImmediate(()=>void shutdown(1))});
+ }finally{db.close();}
+ recoveryDeadline=setTimeout(()=>{writeFileSync(join(config.dataDir,'recovery-deadline.json'),JSON.stringify({failed:true,reason:'120-second recovery deadline'}),{mode:0o600});void shutdown(1);},120000);
+}
+
 node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_settings,reader)=>({configured:interactive,close:async()=>{},query:async input=>{
+ if(recovery)return recovery.query();
  if(!interactive||!input.traceContext?.jobId)throw Error('Unexpected query in generated UI fixture');
  if(calls.length>=fixture.expectations.stubCallLimit)throw Error('Frozen stub call budget exceeded');
  const job=node.memoryPipeline.get(input.traceContext.jobId),batch=job.batches.find(b=>b.id===input.traceContext.batchId);
@@ -21,21 +45,22 @@ node=await buildApp(config,{backgroundWorker:false,createModelAgent:async(_setti
  return {answer:JSON.stringify({memories:[{domain:'personal',title:'合成正文记忆',statement:'Generated body records a preference for written checklists. ['+id+']',uncertainty:'Generated fixture only.',admission:{layer:'memory',reason:'Generated explicit owner preference',scope:'Generated fixture',attribution:'user'},evidenceIds:[id],evidence:[{id,quote:evidence.ocrText.trim()}]}]}),citations:[{id,capturedAt:evidence.capturedAt,appName:evidence.appName,excerpt:''}],trace:[],runId:randomUUID()};
 }})});
 // Model selection is a separate provider capability from query(); keep both local and generated.
-node.app.addHook('onRequest',async(req,reply)=>{if(req.method==='GET'&&/^\/api\/model-settings\/profiles\/[^/?]+\/models$/.test(req.url))return reply.send({items:[{id:'fixture',name:'Generated fixture'}]});});
-const lifecycle=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'])lifecycle[key].enabled=false;node.lifecycle.configure(lifecycle);
-let peakRss=0,controlRecord,controlState='pending';const sample=setInterval(()=>peakRss=Math.max(peakRss,process.memoryUsage().rss),100);
+node.app.addHook('onRequest',async(req,reply)=>{if(recovery&&!recovery.allows(req.method,new URL(req.url,'http://127.0.0.1').pathname))return reply.code(403).send({error:'recovery_only_write_forbidden'});if(req.method==='GET'&&/^\/api\/model-settings\/profiles\/[^/?]+\/models$/.test(req.url))return reply.send({items:[{id:'fixture',name:'Generated fixture'}]});});
+const lifecycle=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working']){if(recovery)assert.equal(lifecycle[key].enabled,false);else lifecycle[key].enabled=false;}if(!recovery)node.lifecycle.configure(lifecycle);
+let peakRss=0,controlRecord,controlState='pending';sample=setInterval(()=>peakRss=Math.max(peakRss,process.memoryUsage().rss),100);
 function controlDraft(record){const c=fixture.control;return {id:c.materialId,kind:'mote.message',schemaVersion:1,title:c.title,origin:{sourceId:c.sourceId,externalId:c.externalId,deviceId:c.deviceId,firstAt:c.observedAt,lastAt:c.observedAt},members:[{id:'original',kind:'capture',ref:'capture:'+record.id}],blocks:[{id:'body',kind:'text',format:'plain',text:c.body,memberIds:['original']},...(controlState==='ready'?[{id:'transcript',kind:'text',format:'transcript',text:c.transcript,memberIds:['original']}]:[])],artifacts:[{key:'source-body',state:'ready',revision:'body-v1',blockIds:['body']},{key:'extracted-text',state:controlState,revision:controlState+'-v1',blockIds:controlState==='ready'?['transcript']:[]}],coverage:{state:controlState==='ready'?'complete':'partial'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}};}
 if(interactive){
  const c=fixture.control;
  node.materialOrganizer.registry.register({id:'fixture.ui-controlled',version:'1',slot:'source-item',priority:100,exclusive:true,select:r=>r.provenance?.sourceId===c.sourceId?{sourceId:c.sourceId,externalId:c.externalId}:undefined,identity:()=>c.materialId,build:reader=>{const r=reader.sourceHead();return r?controlDraft(r):undefined;}});
  for(const [id,requires] of [['fixture.body-memory',['source-body']],['fixture.transcript-memory',['extracted-text']]])node.memoryStrategies.registerRecipe({id,version:'1',requires,extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'}});
- node.sources.register({id:c.sourceId,name:'生成的受控处理资料',kind:'custom',deviceId:c.deviceId,platform:'import'});
- controlRecord=await node.sources.upsert(c.sourceId,{externalId:c.externalId,revision:'1',observedAt:c.observedAt,title:c.title,kind:'message',layer:'original',text:c.body+' '+c.transcript});
+ if(recovery){const existing=node.sources.getItem(c.sourceId,c.externalId);assert.ok(existing,'Existing control head required');assert.equal(existing.text,c.body+' '+c.transcript);assert.equal(existing.revision,'1');controlRecord={id:existing.captureId};assert.equal(node.materials.get(c.materialId).artifacts.find(a=>a.key==='extracted-text').state,'pending');}
+ else{node.sources.register({id:c.sourceId,name:'生成的受控处理资料',kind:'custom',deviceId:c.deviceId,platform:'import'});
+ controlRecord=await node.sources.upsert(c.sourceId,{externalId:c.externalId,revision:'1',observedAt:c.observedAt,title:c.title,kind:'message',layer:'original',text:c.body+' '+c.transcript});}
  await node.materialOrganizer.tick(200);
 }
 const catalog=()=>node.store.db.prepare('SELECT id FROM material_heads WHERE retired=0').all().map(row=>{const m=node.materials.get(row.id);return {id:m.id,ref:m.ref,title:m.title,kind:m.kind,revision:m.revision};});
 const publications=()=>node.store.db.prepare('SELECT material_id AS materialId,revision,created_at AS publishedAt FROM material_revisions ORDER BY created_at,material_id,revision').all();
-const state=()=>({publications:publications(),count:catalog().length,catalog:catalog(),peakRss,cpuUsage:process.cpuUsage(),calls,ticks,jobs:node.memoryPipeline.list().map(job=>({...node.memoryPipeline.get(job.id),operation:node.store.db.prepare('SELECT state FROM operation_progress WHERE id=?').get('memory:'+job.id)})),control:interactive?{recordId:controlRecord.id,material:node.materials.get(fixture.control.materialId)}:undefined});
+const state=()=>({...(recovery?{recovery:recovery.snapshot(),historicalUsageIds:recoveryOnly.usageIds,memoryHashes:Object.fromEntries(node.store.db.prepare('SELECT id,json FROM memories').all().map(r=>[r.id,fixtureHelpers.sha(r.json)])),usageCount:Number(node.store.db.prepare('SELECT count(*) AS n FROM model_usage').get().n)}:{}),publications:publications(),count:catalog().length,catalog:catalog(),peakRss,cpuUsage:process.cpuUsage(),calls,ticks,jobs:node.memoryPipeline.list().map(job=>({...node.memoryPipeline.get(job.id),operation:node.store.db.prepare('SELECT state FROM operation_progress WHERE id=?').get('memory:'+job.id)})),control:interactive?{recordId:controlRecord.id,material:node.materials.get(fixture.control.materialId)}:undefined});
 node.app.post('/api/fixture/configure',async()=>node.sourcePipelines.configure('generated-load',{settleSeconds:0,memory:false}));
 node.app.post('/api/fixture/drain',async()=>{const start=Date.now(),beforeCount=catalog().length;await node.sourcePipelines.tick(100);await node.materialOrganizer.tick(200);ticks.push({start,end:Date.now(),beforeCount,afterCount:catalog().length});return state();});
 node.app.get('/api/fixture/state',async()=>state());
@@ -47,4 +72,4 @@ node.app.post('/api/fixture/conversation',async req=>{
  return {materialRef:material.ref,recordId:node.store.db.prepare('SELECT capture_id FROM source_heads WHERE source_id=? AND external_id=?').get(record.sourceId,record.item.externalId)?.capture_id,conversation:result};
 });
 await node.app.listen({host:'127.0.0.1',port:0});writeFileSync(ready+'.tmp',JSON.stringify({url:node.app.listeningOrigin}),{mode:0o600});renameSync(ready+'.tmp',ready);
-process.once('SIGTERM',async()=>{clearInterval(sample);await node.app.close();process.exit(0);});
+process.once('SIGTERM',()=>void shutdown(0));

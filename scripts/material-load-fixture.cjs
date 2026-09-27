@@ -19,3 +19,19 @@ function makeFixture(profile='legacy-631'){
  return {schemaVersion:1,profile,initial:interactive?160:20,total:interactive?400:631,initialIngress:initial,batchSize:interactive?20:25,batchIntervalMs:interactive?500:80,records,...(control?{control}:{}),expectations:{longRecords:interactive?64:undefined,listLimit:12,readLength:4000,fullPages:interactive?33:52,lastPageItems:interactive?4:7,stubCallLimit:interactive?4:0,actionTimeoutMs:25000,runTimeoutMs:600000}};
 }
 module.exports={makeFixture,sha};
+
+/** Recovery-only test guard: prior fake history is never reset to a fresh allowance. */
+function recoveryGuard({historicalUsageIds,expectedUsageIds,jobId,recordAttempt,onViolation=()=>{}}){
+ const assert=require('node:assert/strict');
+ assert.equal(historicalUsageIds.length,2,'Recovery expects exactly two prior fake usage rows');
+ assert.deepEqual([...historicalUsageIds].sort(),[...expectedUsageIds].sort(),'Recovery usage history differs');
+ assert.equal(new Set(historicalUsageIds).size,2);
+ assert.ok(typeof jobId==='string'&&jobId.length>0);
+ let attempts=0;
+ return {
+  snapshot:()=>({historicalFake:historicalUsageIds.length,newFake:0,queryAttempts:attempts,realModels:0}),
+  query(){const event={event:'forbidden-recovery-query',at:new Date().toISOString(),attempt:++attempts,historicalFake:historicalUsageIds.length};try{recordAttempt(event);}finally{onViolation();}throw Error('Recovery-only fixture forbids every new query attempt');},
+  allows(method,path){return ['GET','HEAD','OPTIONS'].includes(method)||(method==='POST'&&(path==='/api/fixture/drain'||path==='/api/memory-jobs/'+jobId+'/cancel'));},
+ };
+}
+module.exports.recoveryGuard=recoveryGuard;
