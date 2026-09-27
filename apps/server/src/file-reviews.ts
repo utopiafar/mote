@@ -91,12 +91,29 @@ export class FileReviews {
       }
       delete transcript.uncorrected;transcript=transcriptSchema.parse(transcript);kind='corrected-dialogue';payload={transcript,confirmed:true,inputArtifact:current.artifactId,reviewId,accepted:input.selected,replacements:input.replacements};
     }
+    return this.publish(id,current,kind,payload,transcript,reviewId);
+  }
+  correct(id:string,raw:unknown){
+    const input=z.object({artifactId:z.string().uuid(),chunkId:z.string().uuid(),originalText:z.string().min(1).max(8000),correctedText:z.string().min(1).max(8000)}).strict().parse(raw);
+    const current=latestFileTranscript(this.files,id);
+    if(current.artifactId!==input.artifactId)throw new StoreError('Transcript changed; reload before correcting',409);
+    const chunks=this.files.store.db.prepare('SELECT id,text FROM file_chunks WHERE capture_id=? AND artifact_id=? ORDER BY start_ms,ordinal,rowid').all(id,input.artifactId) as {id:string;text:string}[];
+    const index=chunks.findIndex(chunk=>chunk.id===input.chunkId);
+    if(index<0||chunks.length!==current.transcript.segments.length||chunks[index].text!==input.originalText)throw new StoreError('Transcript segment changed or does not belong to this file',409);
+    if(input.originalText===input.correctedText)return {status:'unchanged',artifactId:current.artifactId};
+    const transcript=structuredClone(current.transcript);
+    transcript.segments[index].text=input.correctedText;delete transcript.segments[index].words;delete transcript.uncorrected;
+    return this.publish(id,current,'corrected-dialogue',{transcript:transcriptSchema.parse(transcript),confirmed:true,inputArtifact:current.artifactId,correction:{kind:'manual',chunkId:input.chunkId,originalText:input.originalText,correctedText:input.correctedText}},transcript);
+  }
+  private publish(id:string,current:ReturnType<typeof latestFileTranscript>,kind:string,payload:unknown,transcript?:Transcript,reviewId?:string){
+    const db=this.files.store.db;
     const json=JSON.stringify(payload);this.files.store.reserveMetadata(Buffer.byteLength(json)*2+4096);const artifactId=randomUUID();
+    const priorChunks=transcript?db.prepare('SELECT id FROM file_chunks WHERE artifact_id=?').all(current.artifactId).map(row=>String(row.id)):[];
     db.exec('BEGIN IMMEDIATE');try{
       db.prepare('UPDATE file_artifacts SET current=0 WHERE capture_id=? AND kind=?').run(id,kind);
       db.prepare('INSERT INTO file_artifacts VALUES(?,?,?,?,?,?,1)').run(artifactId,id,kind,new Date().toISOString(),'user-confirmed',json);
       if(transcript)writeFileTranscriptChunks(this.files.store,id,artifactId,transcript,{artifactId:current.artifactId});
-      db.prepare("UPDATE file_reviews SET status='accepted' WHERE id=?").run(reviewId);
+      if(reviewId)db.prepare("UPDATE file_reviews SET status='accepted' WHERE id=?").run(reviewId);
       if(transcript){
         // A text correction retains the same speaker intervals and confirmed identities.
         const attributions=this.files.speakerAttributions(id,current.artifactId);
@@ -108,7 +125,7 @@ export class FileReviews {
         }
         db.prepare("UPDATE file_reviews SET status='stale' WHERE capture_id=? AND status='proposed'").run(id);
         invalidateRetiredFileEvidence(this.files.store,id);
-        this.files.store.invalidateConversationAnswers([id]);
+        this.files.store.invalidateConversationAnswers(priorChunks.filter(chunkId=>db.prepare('SELECT artifact_id FROM file_chunks WHERE id=?').get(chunkId)?.artifact_id!==artifactId));
       }
       db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'supersede',?)").run(id,new Date().toISOString());db.exec('COMMIT');
     }catch(error){db.exec('ROLLBACK');throw error;}

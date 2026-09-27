@@ -1,3 +1,4 @@
+import {memorySourceRoute} from './memory-source-route';
 import { captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import {
@@ -446,6 +447,7 @@ export function EvidenceDialog({
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
               <div className="evidence-text"><EvidenceState/>
+                <a className="button" href={memorySourceRoute(capture.id)}>{moteText("仅从这条资料提取记忆")}</a>
                 <span className="eyebrow">{presentation?.textLabel}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || moteText("原始上下文")}</h3>
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}

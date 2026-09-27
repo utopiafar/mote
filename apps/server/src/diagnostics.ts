@@ -51,6 +51,7 @@ const responseReasons:Record<string,string>={
 
   invalid_response:"模型未返回可验证的回答，请重试或检查模型配置。",
   tool_failure:"工具调用修复次数已耗尽，本次任务已停止。",
+  image_disclosure_disabled:"问答读取原图尚未开启。请在中央感知设置中允许查询模型按需读取原图，再重新提问。",
   host_validation:"模型输出未通过业务校验，当前对话内修复后仍不合规。",
   invalid_json:"模型返回的回答格式不完整或无效，请重试。",
   invalid_shape:"模型返回的回答或引用列表格式无效，请重试。",
@@ -124,7 +125,7 @@ function fields(raw:unknown):EventFields {
   if(typeof value.jobId==='string'&&uuid.test(value.jobId))out.jobId=value.jobId;
   for(const key of ['batchId','runId','evidenceId'] as const)if(typeof value[key]==='string'&&uuid.test(value[key]))out[key]=value[key];
   if(typeof value.validationCode==='string'&&Object.hasOwn(validationFeedback,value.validationCode))out.validationCode=value.validationCode;
-  if(typeof value.toolErrorCode==='string'&&['evidence_changed','invalid_tool_arguments','evidence_budget_exceeded','tool_budget_exceeded','evidence_scope_denied','invalid_evidence_range','evidence_range_exceeded','invalid_changes_view','context_tool_failed','repeated_tool_failure'].includes(value.toolErrorCode))out.toolErrorCode=value.toolErrorCode;
+  if(typeof value.toolErrorCode==='string'&&['evidence_changed','invalid_tool_arguments','evidence_budget_exceeded','tool_budget_exceeded','evidence_scope_denied','invalid_evidence_range','evidence_range_exceeded','invalid_changes_view','context_tool_failed','repeated_tool_failure','image_disclosure_disabled'].includes(value.toolErrorCode))out.toolErrorCode=value.toolErrorCode;
   if(value.validationPhase==='extract'||value.validationPhase==='review')out.validationPhase=value.validationPhase;
   if(typeof value.method==='string'&&['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(value.method))out.method=value.method as EventFields['method'];
   if(operations.includes(value.operation as Operation))out.operation=value.operation as Operation;

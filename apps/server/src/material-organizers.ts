@@ -90,6 +90,8 @@ const captureText=(record:CaptureRecord)=>{
       callId:coding.callId,parentSessionId:coding.parentSessionId,part:coding.part,parts:coding.parts}}:{}),
   });
 };
+/** Exact host projection used by the built-in authored Material. */
+export const authoredRecordProjection=captureText;
 const origin=(sourceId:string,externalId:string,records:CaptureRecord[],extra:Partial<MaterialDraft['origin']>={})=>{
   const times=records.map(sourceContentTime).map(iso).sort();
   return {sourceId,externalId,deviceId:records[0]?.deviceId,firstAt:times[0],lastAt:times.at(-1),...extra};

@@ -74,6 +74,20 @@ test('Memory settings preserve edited policy on refresh, save current draft, and
  revoked=true;await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/memory-')));assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/generated Memory revoked/);
  const next=apiWith(path=>recipeRead(path)??{settings,extensions:[]});await act(async()=>root.render(React.createElement(MemorySettings,{api:next})));assert.equal(d.querySelector<HTMLInputElement>('input[type=checkbox]')!.checked,true);assert.doesNotMatch(d.body.textContent!,/generated Memory revoked/);
 });
+test('terminal legacy extraction offers an explicit retry without claiming automatic recovery',async t=>{
+ const {MemorySettings}=await import('../src/MemorySettings.js'),{root,d}=await fixture(t),windowId='123e4567-e89b-42d3-a456-426614174000';
+ const policy={enabled:true,intervalHours:6,maxWaitHours:6,minChanges:1,maxItems:10},settings={drainWindows:5,extraction:policy,consolidation:policy,insights:policy,working:policy,batchCharacters:500,recentTurns:2,contextCharacters:4000,summaryCharacters:1000};
+ let status='failed',requests=0;
+ const api=apiWith((path,init)=>{
+   if(path==='/api/memory-recipe-settings')return {sourceId:null,inherited:false,items:[]};
+   if(['/api/memory-recipes','/api/sources'].includes(path))return {items:[]};
+   if(path===`/api/memory-settings/extraction/${windowId}/retry`){assert.equal(init?.method,'POST');requests++;status='pending';return {settings,extensions:[]};}
+   assert.equal(path,'/api/memory-settings');return {settings,extensions:[{id:'extraction',version:'3.3.0',status,pendingChanges:1,dueAt:Date.now(),failures:status==='failed'?3:0,maxAttempts:3,cursor:0,active:{id:windowId}}]};
+ });
+ await act(async()=>root.render(React.createElement(MemorySettings,{api})));
+ assert.match(d.body.textContent!,/已停止自动重试：失败 3\/3 次/);assert.doesNotMatch(d.body.textContent!,/自动退避重试/);
+ await act(async()=>button(d,'重试').click());assert.equal(requests,1);assert.doesNotMatch(d.body.textContent!,/已停止自动重试/);
+});
 test('Memory progress readers share pending reads and fence another selected job',async t=>{
  const {useMemoryJob}=await import('../src/MemoryProgress.js'),{root,d}=await fixture(t),a=deferred(),b=deferred();let reads=0;
  const api=apiWith(path=>{reads++;return path.endsWith('/A')?a.promise:b.promise;});

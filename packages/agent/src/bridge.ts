@@ -739,7 +739,9 @@ export async function startBridge(
       if(repeatedFailures>=3)issue=new ContextToolError('repeated_tool_failure','The same invalid tool request failed three times. This run has stopped; no output will be committed.','stop',{originalCode:issue.code});
       reportTrace(bounds,{type:'tool.rejected',stage:'tool',tool,status:'rejected',payload:{...issue.toJSON(),call:calls,repeatCount:repeatedFailures,remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters),...(materialReadAttempts?{materialPage:{readAttempts:materialReadAttempts}}:{})}});
       res.writeHead(400).end(JSON.stringify({error:issue.message,toolError:issue.toJSON(),hostBudget:hostBudget()}));
-      if(issue.recovery==='stop'||calls>maxToolCalls+2)rejectFailure(new AgentResponseError('Tool failure recovery exhausted.','tool_failure'));
+      if(issue.recovery==='stop'||calls>maxToolCalls+2)rejectFailure(issue.code==='image_disclosure_disabled'
+        ?new AgentResponseError('Original-image access for queries is off.','image_disclosure_disabled')
+        :new AgentResponseError('Tool failure recovery exhausted.','tool_failure'));
 
     }
   });

@@ -1,4 +1,4 @@
-import {ExecutionEngine} from './execution-engine.js';
+import {ExecutionEngine,ExecutionFailure} from './execution-engine.js';
 import {AgentTimeoutError} from '@mote/agent';
 import {ProviderFailure} from '@mote/shared';
 import {randomUUID} from 'node:crypto';
@@ -34,7 +34,7 @@ export function freezeSemanticContextTime(clock:()=>string=()=>new Date().toISOS
   return z.string().max(64).datetime({offset:true}).refine(value=>Number.isFinite(Date.parse(value)),'Invalid semantic context time').parse(clock());
 }
 export type LifecycleWindow={manual?:boolean;id:string;version:string;from:number;through:number;ids:string[];startedAt:number;contextTime?:string;settings:LifecycleSettings;checkpoint?:string};
-type State={cancelled?:boolean;stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
+type State={cancelled?:boolean;manualRetryRequired?:boolean;stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
 export type LifecycleExecution={operationId:string;jobId:string;signal:AbortSignal;interrupted:()=>boolean;commit:<T>(write:()=>T)=>T};
 export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'consolidation'|'insights'|'working'>;version:string;stream:'evidence'|'artifact'|'memory'|'conversation';maxAttempts?:number;
   run:(window:LifecycleWindow,checkpoint:(id:string)=>void,execution?:LifecycleExecution)=>Promise<void>};
@@ -89,18 +89,23 @@ export class MemoryLifecycle {
     if(this.running.has(id)||state.active&&!state.cancelled&&this.executor?.get('lifecycle:'+state.active.id)?.state!=='cancelled')throw new StoreError('Finish or cancel the active lifecycle task first',409);
     if(!ids.length||ids.length>settings[id].maxItems||new Set(ids).size!==ids.length||checkpoint.length>32000)throw new StoreError('Choose a smaller unique set of inputs',413);
     state.active={manual:true,id:randomUUID(),version:extension.version,from:state.cursor,through:state.cursor,ids,startedAt:this.now(),contextTime:freezeSemanticContextTime(this.semanticContextTime),settings,checkpoint};
-    delete state.cancelled;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);if(own)db.exec('COMMIT');return state.active.id;
+    delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);if(own)db.exec('COMMIT');return state.active.id;
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   cancel(id:LifecycleExtension['id'],windowId:string){
     const state=this.state(id);if(state.active?.id!==windowId)throw new StoreError('Active lifecycle task not found',404);
     state.cancelled=true;delete state.retryAt;this.save(id,state);this.executor?.cancel('lifecycle:'+windowId);return this.view();
   }
-  retry(id:LifecycleExtension['id'],windowId:string){
-    const state=this.state(id);if(state.active?.id!==windowId)throw new StoreError('Active lifecycle task not found',404);
-    if(this.running.has(id)||this.executor?.get('lifecycle:'+windowId)?.state==='running')throw new StoreError('Wait for the current task to stop before retrying',409);
-    if(this.executor?.get('lifecycle:'+windowId))this.executor.retry('lifecycle:'+windowId);
-    delete state.cancelled;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);return this.view();
+  retry(id:LifecycleExtension['id'],windowId:string,prepare?:(window:LifecycleWindow)=>void){
+    const db=this.store.db,own=!db.isTransaction;if(own)db.exec('BEGIN IMMEDIATE');
+    try{
+      const state=this.state(id);if(state.active?.id!==windowId)throw new StoreError('Active lifecycle task not found',404);
+      if(this.running.has(id)||this.executor?.get('lifecycle:'+windowId)?.state==='running')throw new StoreError('Wait for the current task to stop before retrying',409);
+      prepare?.(structuredClone(state.active));
+      if(this.executor?.get('lifecycle:'+windowId))this.executor.retry('lifecycle:'+windowId);
+      delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);
+      if(own)db.exec('COMMIT');return this.view();
+    }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
   /** Owner strategy changes retire earlier pending work, never its products. */
   retirePending(id:LifecycleExtension['id'],through:number){
@@ -108,7 +113,7 @@ export class MemoryLifecycle {
     const state=this.state(id);if(state.cursor>=through||state.active&&state.active.through>through)return;
     if(state.active?.manual)return;
     if(state.active)this.executor?.cancel('lifecycle:'+state.active.id);
-    state.cursor=through;delete state.active;delete state.cancelled;delete state.retryAt;delete state.error;delete state.drainThrough;state.failures=0;this.save(id,state);
+    state.cursor=through;delete state.active;delete state.cancelled;delete state.manualRetryRequired;delete state.retryAt;delete state.error;delete state.drainThrough;state.failures=0;this.save(id,state);
   }
   configure(input:unknown){const parsed=lifecycleSettingsSchema.parse(input);this.store.db.prepare('UPDATE memory_lifecycle_settings SET json=? WHERE id=1').run(JSON.stringify(parsed));return this.view();}
   private state(id:string):State{return JSON.parse(String(this.store.db.prepare('SELECT json FROM memory_lifecycle_state WHERE id=?').get(id)!.json));}
@@ -122,8 +127,8 @@ export class MemoryLifecycle {
   }
   view(){const settings=this.settings();return {settings,trigger:'increment threshold OR maximum wait',storage:'text',extensions:[...this.extensions.values()].map(e=>{
     const state=this.state(e.id),p=settings[e.id],pendingChanges=this.count(e,state.cursor),dueAt=state.drainThrough?this.now():state.lastSuccess+(p.maxWaitHours??Math.min(p.intervalHours,1))*3600000;
-    return {id:e.id,version:e.version,stream:e.stream,pendingChanges,dueAt,retryAt:state.retryAt,cursor:state.cursor,failures:state.failures,error:state.error,
-      drainThrough:state.drainThrough,status:state.cancelled||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':!p.enabled&&!state.active?.manual?'disabled':this.running.has(e.id)?'running':e.maxAttempts&&state.failures>=e.maxAttempts?'failed':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':pendingChanges>=p.minChanges||this.now()>=dueAt?'ready':'waiting_for_interval',
+    return {id:e.id,version:e.version,stream:e.stream,pendingChanges,dueAt,retryAt:state.retryAt,cursor:state.cursor,failures:state.failures,maxAttempts:e.maxAttempts,error:state.error,manualRetryRequired:state.manualRetryRequired??false,
+      drainThrough:state.drainThrough,status:state.cancelled||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled'?'cancelled':!p.enabled&&!state.active?.manual?'disabled':this.running.has(e.id)?'running':state.manualRetryRequired||e.maxAttempts&&state.failures>=e.maxAttempts?'failed':(state.retryAt??0)>this.now()?'retry_wait':state.active?'pending':!this.configured()?'waiting_for_model':pendingChanges===0?'waiting_for_increment':pendingChanges>=p.minChanges||this.now()>=dueAt?'ready':'waiting_for_interval',
       active:state.active?{id:state.active.id,operationId:this.executor?'workflow:lifecycle:'+state.active.id:undefined,through:state.active.through,items:state.active.ids.length,startedAt:state.active.startedAt,checkpoint:state.active.checkpoint}:undefined,lastRun:state.lastRun};})};}
   tick(){
     if(this.closed)return Promise.resolve();
@@ -139,7 +144,7 @@ export class MemoryLifecycle {
   private async execute(extension:LifecycleExtension){
       if(this.closed||!this.configured())return;
       const settings=this.settings(),p=settings[extension.id],state=this.state(extension.id),now=this.now();
-      if(!p.enabled&&!state.active?.manual||state.cancelled||extension.maxAttempts&&state.failures>=extension.maxAttempts||(state.retryAt??0)>now||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled')return;
+      if(!p.enabled&&!state.active?.manual||state.cancelled||state.manualRetryRequired||extension.maxAttempts&&state.failures>=extension.maxAttempts||(state.retryAt??0)>now||state.active&&this.executor?.get('lifecycle:'+state.active.id)?.state==='cancelled')return;
       if(!state.active){
         if(!state.drainThrough){
           const pending=this.count(extension,state.cursor);
@@ -168,8 +173,23 @@ export class MemoryLifecycle {
           });
         }else await extension.run(window,checkpoint);
         if(this.closed||this.state(extension.id).active?.id!==state.active.id)return;
-        state.cursor=state.active.through;if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;if(!state.active.manual)state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.cancelled;delete state.error;delete state.retryAt;state.failures=0;
-      }catch(error){if(this.closed)return;if(state.active){if(this.executor?.get('lifecycle:'+state.active.id)?.state==='running')return;const latest=this.state(extension.id);if(latest.active?.id!==state.active.id)return;Object.assign(state,latest);}state.failures++;state.error=error instanceof ProviderFailure?error.details.code:error instanceof AgentTimeoutError?'provider_timeout':error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';if(!state.cancelled&&(!extension.maxAttempts||state.failures<extension.maxAttempts))state.retryAt=this.now()+Math.max(error instanceof ProviderFailure?error.details.retryAfterMs??0:0,Math.min(6*3600000,60000*2**Math.min(state.failures,8)));else delete state.retryAt;}
+        state.cursor=state.active.through;if(!state.drainThrough||state.cursor>=state.drainThrough){delete state.drainThrough;if(!state.active.manual)state.lastSuccess=this.now();}state.lastRun={id:state.active.id,through:state.cursor,completedAt:this.now()};delete state.active;delete state.cancelled;delete state.manualRetryRequired;delete state.error;delete state.retryAt;state.failures=0;
+      }catch(error){
+        if(this.closed)return;
+        if(state.active){
+          if(this.executor?.get('lifecycle:'+state.active.id)?.state==='running')return;
+          const latest=this.state(extension.id);if(latest.active?.id!==state.active.id)return;Object.assign(state,latest);
+        }
+        const waiting=extension.id==='extraction'&&error instanceof ExecutionFailure&&error.category==='waiting';
+        const semanticTerminal=extension.id==='extraction'&&error instanceof ExecutionFailure&&error.category==='blocked'&&['semantic_processing_failed','semantic_processing_blocked'].includes(error.code);
+        if(!waiting&&(!semanticTerminal||error.code==='semantic_processing_failed'))state.failures++;
+        if(semanticTerminal)state.manualRetryRequired=true;
+        state.error=waiting||semanticTerminal?error.code:error instanceof ProviderFailure?error.details.code:error instanceof AgentTimeoutError?'provider_timeout':error instanceof StoreError?'workflow_'+error.statusCode:'workflow_failed';
+        if(!state.cancelled&&!state.manualRetryRequired&&(waiting||!extension.maxAttempts||state.failures<extension.maxAttempts)){
+          const requestedDelay=error instanceof ExecutionFailure?error.retryAfterMs:error instanceof ProviderFailure?error.details.retryAfterMs:undefined;
+          state.retryAt=this.now()+Math.max(requestedDelay??0,waiting?60000:Math.min(6*3600000,60000*2**Math.min(state.failures,8)));
+        }else delete state.retryAt;
+      }
       this.save(extension.id,state);
   }
   async close(){

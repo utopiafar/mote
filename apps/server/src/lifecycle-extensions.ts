@@ -5,6 +5,7 @@ import { moteText } from './i18n.js';
 import type {QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {MemoryLifecycle} from './memory-lifecycle.js';
+import {ExecutionFailure} from './execution-engine.js';
 import {MemoryPipeline} from './memory-pipeline.js';
 import {MemoryStore} from './memory.js';
 import {FileStore} from './files.js';
@@ -14,9 +15,10 @@ import {insightResult} from './insights.js';
 import {registerMemoryIntegration} from './memory-integration.js';
 import {MemoryIntegrationSettings} from './memory-integration-settings.js';
 
-export function registerMemoryExtensions({integrationSettings,lifecycle,store,files,memories,pipeline,working,query,model,semanticArtifacts,insights,insightTimeout}:{
+export function registerMemoryExtensions({integrationSettings,lifecycle,store,files,memories,pipeline,working,query,model,semanticArtifacts,providerCooldownCheck,insights,insightTimeout}:{
   integrationSettings?:MemoryIntegrationSettings;
-  semanticArtifacts?:(ids:string[],operationId?:string)=>Promise<string[]>;
+  semanticArtifacts?:(ids:string[],operationId?:string,mode?:'lifecycle')=>Promise<string[]>;
+  providerCooldownCheck?:()=>void;
   insights?:InsightRuns;insightTimeout?:()=>number|null;
   lifecycle:MemoryLifecycle;store:Store;files:FileStore;memories:MemoryStore;pipeline:MemoryPipeline;working:WorkingMemory;
   query:(input:QueryInput,module:'memories'|'insights'|'conversations')=>Promise<QueryResult>;model:()=>string;
@@ -30,15 +32,19 @@ export function registerMemoryExtensions({integrationSettings,lifecycle,store,fi
       DELETE FROM memory_lifecycle_state WHERE id IN ('extraction','insights');
       INSERT INTO settings VALUES('layered-extraction-v3','1'); COMMIT;`);
   }
-  lifecycle.register({id:'extraction',version:'3.3.0',stream:'artifact',async run(window,checkpoint,execution){
+  lifecycle.register({id:'extraction',version:'3.3.0',stream:'artifact',maxAttempts:3,async run(window,checkpoint,execution){
     let job=window.checkpoint?pipeline.get(window.checkpoint):undefined;
     if(!job){
       if(!semanticArtifacts)return;
-      const artifactIds=await semanticArtifacts(pipeline.legacyArtifactIds(window.ids),execution?.operationId);
+      const artifactIds=await semanticArtifacts(pipeline.legacyArtifactIds(window.ids),execution?.operationId,'lifecycle');
       const admit=()=>{const created=pipeline.createFromArtifacts(artifactIds,'lifecycle:'+window.id,window.settings.batchCharacters);if(created){if(execution)linkOperationParent(store,execution.operationId,'memory:'+created.id);checkpoint(created.id);}return created;};
       job=execution?execution.commit(admit):admit();if(!job)return;
     }
+    // A provider cooldown is admission, not another extraction attempt.
+    if(job.status==='failed'&&job.availableAt&&job.availableAt>Date.now())throw new ExecutionFailure('waiting',job.errorCode??'provider_cooldown',job.availableAt-Date.now());
+    if(job.status!=='completed'&&providerCooldownCheck)try{providerCooldownCheck();}catch(error){if(error instanceof ProviderFailure)throw new ExecutionFailure('waiting',error.details.code,error.details.retryAfterMs);throw error;}
     const abort=()=>{if(!execution?.interrupted())pipeline.cancel(job!.id);};execution?.signal.addEventListener('abort',abort,{once:true});let result;try{execution?.signal.throwIfAborted();result=await (job.status==='failed'?pipeline.retry(job.id):pipeline.run(job.id));}finally{execution?.signal.removeEventListener('abort',abort);}
+    if(result.status==='waiting_for_model'||result.status==='waiting_for_input'||result.status==='paused'||result.status==='pausing')throw new ExecutionFailure('waiting',result.errorCode??'extraction_input_pending',result.availableAt?Math.max(0,result.availableAt-Date.now()):undefined);
     // Deleted/superseded inputs are intentionally retired; their new revisions
     // are later journal entries. Other failures retain this window for retry.
     if(result.batches.some(b=>b.status!=='completed'&&b.status!=='invalidated')){

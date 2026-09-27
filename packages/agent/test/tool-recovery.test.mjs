@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {startBridge} from '../dist/bridge.js';
 import {parseAnswer} from '../dist/index.js';
+import {ContextToolError} from '../dist/index.js';
 const id='11111111-1111-4111-8111-111111111111';
 const record={id,capturedAt:'2026-01-01T00:00:00Z',appName:'Fixture',ocrText:'hidden:generated evidence:hidden'};
 const reader={search:async()=>[record],timeline:async()=>[],evidence:async()=>[record],activity:async()=>({}),devices:async()=>[]};
@@ -37,6 +38,18 @@ test('source revision changes stop extraction instead of repeatedly repairing st
   let revised=false;
   const b=await startBridge({...reader,evidence:async()=>[{...record,ocrText:revised?'revised fixture':record.ocrText}]},{question:'fixture',evidenceIds:[id],evidenceRanges:[{id,offset:7,length:18}]},8);t.after(()=>b.close());
   revised=true;const result=await call(b,'evidence',{ids:[id]});assert.equal(result.body.toolError.code,'evidence_changed');assert.equal(result.body.toolError.recovery,'stop');await assert.rejects(b.failure,e=>e.reason==='tool_failure');
+});
+
+test('disabled image disclosure stops after one generated read and gives owner settings guidance',async t=>{
+ let reads=0;
+ const imageReader={...reader,readImage:async()=>{reads++;throw new ContextToolError('image_disclosure_disabled','Original-image access for queries is off. Enable it in Central Perception settings before a new query.','stop');}};
+ const b=await startBridge(imageReader,{question:'Inspect generated image'},12);t.after(()=>b.close());
+ await call(b,'search_context',{});await call(b,'evidence',{ids:[id]});
+ const denied=await call(b,'read_image',{id});
+ assert.equal(denied.status,400);assert.equal(denied.body.toolError.code,'image_disclosure_disabled');
+ assert.equal(denied.body.toolError.recovery,'stop');assert.match(denied.body.toolError.message,/Central Perception/);
+ await assert.rejects(b.failure,error=>error.reason==='image_disclosure_disabled');
+ assert.equal(reads,1);assert.equal(b.trace.some(entry=>entry.tool==='read_image'),false);
 });
 
 test('canonical capture refs pass through discovery and extraction grants before reading',async t=>{

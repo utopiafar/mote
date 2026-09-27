@@ -8,6 +8,7 @@ import {sourceContentTime,type QueryResult} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import {scopeFields,validRange} from './query-scope.js';
 import {modelProfileIdSchema,type ModelSettingsStore} from './model-settings.js';
+import {modelConfiguration} from './model-configuration.js';
 import {MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
 import {memoryStrategyRefSchema} from './memory-strategy-contract.js';
 import {memoryReviewReceipt} from './memory-review.js';
@@ -24,8 +25,24 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memories.publish((req.params as {id:string}).id,body.version);});
   app.post('/api/memories/:id/correct',async req=>memories.correct((req.params as {id:string}).id,req.body));
   app.delete('/api/memories/:id',async req=>memories.delete((req.params as {id:string}).id));
-  app.get('/api/memory-settings',async()=>{const view=lifecycle.view();return {...view,extensions:view.extensions.map(extension=>({...extension,status:extension.retryAt&&extension.retryAt>Date.now()?'retry_wait':extension.id==='extraction'&&extension.active?.checkpoint?memoryPipeline.get(extension.active.checkpoint).status:extension.status}))};});
+  app.get('/api/memory-settings',async()=>lifecycle.view());
   app.put('/api/memory-settings',{bodyLimit:8192},async req=>lifecycle.configure(req.body));
+  app.post('/api/memory-settings/extraction/:id/retry',async(req,reply)=>{
+    const id=jobId(req.params),extraction=lifecycle.view().extensions.find(extension=>extension.id==='extraction');
+    if(extraction?.status!=='failed'||extraction.active?.id!==id)throw new StoreError('Failed extraction window not found',409);
+    const result=lifecycle.retry('extraction',id,window=>{
+      if(!extraction.manualRetryRequired)return;
+      const selected=modelSettings.select('memory'),fingerprint=modelConfiguration(selected.id,selected.settings,modelSettings.view().revision).fingerprint,inputs=new Set(window.ids);
+      const rows=store.db.prepare("SELECT e.id,j.json FROM operation_parents p JOIN execution_steps e ON e.operation_id=p.child_id JOIN processing_jobs j ON j.id=e.id WHERE p.parent_id=? AND e.kind='context-dag.semantic' AND e.state IN ('failed','blocked')").all('workflow:lifecycle:'+window.id) as {id:string;json:string}[];
+      for(const row of rows){
+        const job=JSON.parse(row.json) as {processor?:string;config?:{artifactId?:string;modelFingerprint?:string};artifactInputs?:{id:string;revision:string}[]};
+        const artifactId=job.config?.artifactId,source=job.artifactInputs?.[0];
+        if(job.processor!=='mote.segment-understanding'||!artifactId||!inputs.has(artifactId)||job.config?.modelFingerprint!==fingerprint||!source||source.id!==artifactId||store.archive.revision(source.id)!==source.revision)continue;
+        memoryPipeline.engine.retry(row.id);
+      }
+    });
+    void lifecycle.tick().catch(()=>{});return reply.code(202).send(result);
+  });
   app.get('/api/memory-recipe-settings',async req=>memoryRecipeSettings.view(z.object({sourceId:z.string().min(1).max(256).optional()}).strict().parse(req.query).sourceId));
   app.put('/api/memory-recipe-settings',{bodyLimit:8192},async req=>memoryRecipeSettings.configure(req.body));
   app.get('/api/memory-integration-recipes',async()=>({items:memoryPipeline.strategies.listIntegrations()}));

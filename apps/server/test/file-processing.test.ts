@@ -16,6 +16,7 @@ import {ExecutionEngine} from '../src/execution-engine.js';
 import {FileProcessorRuntime} from '../src/file-processors.js';
 import {alignDialogue,applySemanticGroups} from '../src/file-dialogue.js';
 import {FileReviews} from '../src/file-reviews.js';
+import {Conversations} from '../src/conversations.js';
 import {fileExportEntries,exportTar} from '../src/file-export.js';
 import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
@@ -99,7 +100,7 @@ test('term proposals require exact cited text and explicit selection; correction
  f.processing.retry(f.id,'diarize');await f.processing.tick();assert.match(f.files.chunks(f.id)[0].ocrText,/扣迪斯/);assert.equal(f.files.chunks(f.id)[0].fileEvidence!.speakerAttribution,undefined,'new acoustic separation cannot inherit old label identities');
 });
 
-test('confirmed text correction preserves unrelated raw and formal memories and invalidates only replaced speech',async t=>{
+for(const manual of [false,true])test(`confirmed ${manual?'manual':'model'} text correction preserves unrelated raw and formal memories and invalidates only replaced speech`,async t=>{
  const f=await fixture(t,{analyze:async(records:any[])=>{const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original:'扣迪斯',replacement:'Cordis',reason:'Generated exact correction'}]}),citations:[{id:chunk.chunkId}]};}});
  await f.processing.tick();const reviews=new FileReviews(f.files,f.processing),artifactId=f.files.chunks(f.id)[0].fileEvidence!.artifactId;
  reviews.nameSpeakers(f.id,{artifactId,names:{SPEAKER_0:'Generated Alice',SPEAKER_1:'Generated Bob'}});
@@ -110,10 +111,18 @@ test('confirmed text correction preserves unrelated raw and formal memories and 
   const memories=new MemoryStore(f.store,ids=>[...f.files.evidence(ids),...materials.evidence(ids)],id=>f.files.isCurrentEvidence(id)||materials.isCurrentEvidence(id));
   const save=(record:typeof raw[number]|typeof formal[number])=>memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated correction fixture',statement:`Generated speech [${record.id}]`,uncertainty:'Fixture',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:record.appName,excerpt:record.ocrText}],trace:[],runId:'generated-text-correction'},'fixture').items[0].id);
   const savedRaw=raw.map(save),savedFormal=formal.map(save),stableFingerprint=memoryEvidenceFingerprint(raw[1]);
-  const proposal=await reviews.propose(f.id,{kind:'terms'});reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});
+  const conversations=new Conversations(f.store),answers=raw.map(record=>conversations.append(undefined,{question:'Generated question'},{answer:'Generated answer '+record.id,citations:[],trace:[],runId:'generated',evidenceDependencies:{version:1,complete:true,ids:[record.id]}}));
+  const derivedAnswers=[formal.map(record=>record.id),[savedFormal[0].id],[savedFormal[1].id]].map(ids=>conversations.append(undefined,{question:'Generated derived read without citations'},{answer:'Generated derived answer',citations:[],trace:[],runId:'generated',evidenceDependencies:{version:1,complete:true,ids}}));
+  if(manual){const text=String(f.store.db.prepare('SELECT text FROM file_chunks WHERE id=?').get(raw[0].id)!.text);reviews.correct(f.id,{artifactId,chunkId:raw[0].id,originalText:text,correctedText:text.replace('扣迪斯','Cordis')});}
+  else{const proposal=await reviews.propose(f.id,{kind:'terms'});reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});}
   const after=f.files.chunks(f.id);
   assert.equal(after[1].id,raw[1].id,'the unedited segment keeps its immutable evidence identity');
   assert.equal(memoryEvidenceFingerprint(after[1]),stableFingerprint);
+  assert.equal(conversations.get(answers[0].conversationId).turns[0].evidenceDeleted,true);
+  assert.equal(conversations.get(derivedAnswers[0].conversationId).turns[0].evidenceDeleted,true,'aggregate material read depends on the changed segment even without citations');
+  assert.equal(conversations.get(derivedAnswers[1].conversationId).turns[0].evidenceDeleted,true,'derived memory read retains its segment lineage');
+  assert.equal(conversations.get(derivedAnswers[2].conversationId).turns[0].result?.answer,'Generated derived answer');
+  assert.equal(conversations.get(answers[1].conversationId).turns[0].result?.answer,'Generated answer '+raw[1].id);
   assert.notEqual(after[0].id,raw[0].id);assert.match(after[0].ocrText,/Cordis/);
   assert.equal(memories.get(savedRaw[0].id).status,'stale');assert.equal(memories.get(savedFormal[0].id).status,'stale');
   assert.equal(memories.get(savedRaw[1].id).status,'published');assert.equal(memories.get(savedFormal[1].id).status,'published');
@@ -380,4 +389,37 @@ test('old daily usage does not limit new audio processing',async t=>{
 test('configurable per-file audio limit rejects incomplete long results',async t=>{
  const f=await fixture(t,{settings:{maxAudioMinutes:1},transcribe:()=>({...raw,durationMs:61000})});
  await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'failed');assert.equal(f.files.detail(f.id).job.error,'processing_limit');assert.equal(f.counts().asrCalls,1);assert.equal(f.counts().diaryCalls,0);
+});
+
+
+test('manual correction uses exact stored text, is idempotent and rejects stale or foreign segments without model calls',async t=>{
+ let modelCalls=0;
+ const f=await fixture(t,{settings:{summarize:false},analyze:async()=>{modelCalls++;throw Error('No model allowed');}});await f.processing.tick();
+ const reviews=new FileReviews(f.files,f.processing),before=f.files.chunks(f.id),artifactId=before[0].fileEvidence!.artifactId;
+ const originalText=String(f.store.db.prepare('SELECT text FROM file_chunks WHERE id=?').get(before[0].id)!.text),input={artifactId,chunkId:before[0].id,originalText,correctedText:originalText};
+ const artifact=f.processing.artifact(artifactId),count=()=>f.store.db.prepare('SELECT COUNT(*) n FROM file_artifacts').get()!.n;
+ const initialCount=count();assert.equal(reviews.correct(f.id,input).status,'unchanged');assert.equal(count(),initialCount);
+ assert.throws(()=>reviews.correct(f.id,{...input,chunkId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'}),{statusCode:409});
+ assert.throws(()=>reviews.correct(f.id,{...input,originalText:originalText+' '}),{statusCode:409});
+ reviews.correct(f.id,{...input,correctedText:'[SPEAKER_0] Generated owner correction'});
+ assert.throws(()=>reviews.correct(f.id,{...input,correctedText:'Late correction'}),{statusCode:409});
+ const after=f.files.chunks(f.id),next=f.processing.artifact(after[0].fileEvidence!.artifactId);
+ assert.equal(after[1].id,before[1].id);assert.notEqual(after[0].id,before[0].id);
+ assert.equal(next.transcript.segments[0].text,'[SPEAKER_0] Generated owner correction');assert.equal(next.transcript.segments[0].words,undefined);
+ assert.deepEqual(f.processing.artifact(artifactId),artifact);assert.equal(modelCalls,0);assert.equal(f.counts().summaries,0);
+ assert.deepEqual(Buffer.concat([...f.files.bytes(f.id)]),wave);
+});
+
+test('manual correction route rejects device credentials and validates owner segment identity',async t=>{
+ const f=await fixture(t,{settings:{summarize:false}});await f.processing.tick();
+ const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js');
+ const app=Fastify();t.after(()=>app.close());
+ registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},req=>req.headers['x-generated-device']?'generated-device':undefined,{evidence:()=>[{}]} as any);
+ const before=f.files.chunks(f.id)[0],originalText=String(f.store.db.prepare('SELECT text FROM file_chunks WHERE id=?').get(before.id)!.text);
+ const payload={artifactId:before.fileEvidence!.artifactId,chunkId:before.id,originalText,correctedText:'Generated manual correction'};
+ const request={method:'POST' as const,url:'/api/files/'+f.id+'/corrections',payload};
+ assert.equal((await app.inject({...request,headers:{'x-generated-device':'true'}})).statusCode,403);
+ assert.equal((await app.inject({...request,payload:{...payload,originalText:'stale'}})).statusCode,409);
+ assert.equal((await app.inject(request)).statusCode,200);
+ assert.equal((await app.inject(request)).statusCode,409);
 });

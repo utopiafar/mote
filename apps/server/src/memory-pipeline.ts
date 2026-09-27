@@ -35,7 +35,7 @@ type StoredBatch=MemoryBatch&BatchInputScope&{artifactRefs?:{id:string;revision:
 export type MemoryJob={inputPlanVersion?:1;inputPlans?:MemoryPlanSummary;recipeProgress?:MemoryRecipeProgress[];materialInputs?:MaterialInputPin[];batchCharacters?:number;automaticGrant?:AutomaticMemoryGrant;contextTime?:string;recipes?:MemoryStrategyRef[];configuration?:ModelConfiguration;artifactRefs?:{id:string;revision:string}[];materialRefs?:Record<string,string>;language?:'zh-CN'|'en';id:string;modelProfileId?:string;modelOverride?:string;importJobId?:string;originKey?:string;timeZone?:string;status:'queued'|'running'|'completed'|'failed'|'waiting_for_model'|'waiting_for_input'|'cancelled'|'paused'|'pausing';createdAt:string;updatedAt:string;evidenceIds:string[];skillVersion:string;totalBatches:number;completedBatches:number;failedBatches:number;skippedChunks:number;memoryIds:string[];availableAt?:number;errorCode?:string;queuePosition?:number;runningBatches?:number;pendingBatches?:number;lastSavedAt?:string;execution?:ExecutionEnvelope};
 export type MemoryJobDetail=MemoryJob&{batches:MemoryBatch[]};
 export type MemoryPipelineQuery={processingMaterialInputs?:QueryInput['processingMaterialInputs'];contextTime?:string;signal?:AbortSignal;language?:'zh-CN'|'en';modelProfileId?:string;modelOverride?:string;question:string;skill:'memory-extraction'|'coding-memory'|'memory-strategy';responseMode:'memory-extraction';evidenceIds:string[];evidenceRanges:EvidenceRange[];timeZone?:string;validateOutput?:QueryInput['validateOutput'];onProgress?:QueryInput['onProgress'];onTrace?:QueryInput['onTrace'];traceContext?:QueryInput['traceContext']};
-export type MemoryPipelineOptions={materialSourceCurrent?:(pin:MaterialSourcePin,materialId:string)=>boolean;materialPlanAllowed?:(materialId:string,profileId?:string)=>boolean;deletionEvidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;materialInput?:(ref:string,required:readonly string[])=> (MaterialInputPin&{ready:boolean;dependencies?:MaterialDependencyStatus[]})|undefined;materialRequirements?:(ref:string)=>string[]|undefined;automaticAllowed?:(job:MemoryJob)=>boolean;strategies?:MemoryStrategies;configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult,strategy?:MemoryReviewStrategy)=>Promise<QueryResult>;materialAllowedForMemory?:(ref:string,profileId?:string,required?:readonly string[])=>boolean;evidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number|(()=>number)};
+export type MemoryPipelineOptions={materialSourceCurrent?:(pin:MaterialSourcePin,materialId:string)=>boolean;materialPlanAllowed?:(materialId:string,profileId?:string)=>boolean;authoredMaterialOriginalForReuse?:(materialId:string,selectedRef:string)=>string|undefined;deletionEvidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;materialInput?:(ref:string,required:readonly string[])=> (MaterialInputPin&{ready:boolean;dependencies?:MaterialDependencyStatus[]})|undefined;materialRequirements?:(ref:string)=>string[]|undefined;automaticAllowed?:(job:MemoryJob)=>boolean;strategies?:MemoryStrategies;configuration?:(profileId?:string,modelOverride?:string)=>ModelConfiguration;executor?:ExecutionEngine;concurrency?:()=>number;onValidationFailure?:(event:MemoryValidationFailureEvent)=>void;requireAdmission?:boolean;review?:(input:MemoryPipelineQuery,result:QueryResult,strategy?:MemoryReviewStrategy)=>Promise<QueryResult>;materialAllowedForMemory?:(ref:string,profileId?:string,required?:readonly string[])=>boolean;evidenceAllowedForMemory?:(id:string,profileId?:string)=>boolean;store:Store;memories:MemoryStore;query:(input:MemoryPipelineQuery)=>Promise<QueryResult>;model:(profileId?:string)=>string;configured:(profileId?:string)=>boolean;skillVersion?:string;batchCharacters?:number|(()=>number)};
 
 type ReadyInputScope={strategy?:MemoryRecipeBinding;ids:string[];inputs:MaterialInputPin[];refs:Record<string,string>;planIds?:string[]};
 type BatchOutput={strategy?:MemoryRecipeBinding;result:QueryResult;reviewReceipt?:MemoryReviewReceipt;model:string;profile:'personal'|'coding';skillVersion:string;ranges:EvidenceRange[];chunks:Chunk[]};
@@ -411,6 +411,51 @@ export class MemoryPipeline {
     const availableAt=Number(delayed?.at)||0;
     if(availableAt>Date.now())throw new ProviderFailure({category:'transient',code:typeof delayed?.code==='string'?delayed.code:'provider_unavailable',retryAfterMs:availableAt-Date.now()});
   }
+  /** An older manual job could select both an authored Material and its raw
+   * original. Recheck may account for a fully reviewed raw result exactly once;
+   * it must not present that result as if the Material anchor was model input. */
+  private completedAuthoredCoverage(job:MemoryJob,plan:ManualMemoryInputPlan,batches:readonly StoredBatch[],previous?:ModelConfiguration,current?:ModelConfiguration):string|undefined {
+    if(plan.batchIds!==undefined||plan.evidenceAllowList||plan.sourcePin.kind!=='material-revision'||
+      !previous||!current||previous.fingerprint!==current.fingerprint||
+      previous.profileId!==job.modelProfileId||current.profileId!==job.modelProfileId)return;
+    const step=this.engine.get(plan.id);
+    if(step?.state!=='blocked'||step.error!=='memory_authorization_revoked')return;
+    const evaluated=this.evaluatePlan(plan,job);
+    if(evaluated.state!=='ready')return;
+    const originalId=this.options.authoredMaterialOriginalForReuse?.(plan.materialId,plan.selectedRef);
+    if(!originalId)return;
+    const original=this.options.memories.readEvidence([originalId])[0];
+    if(!original||!this.options.memories.isCurrentEvidence(originalId)||!original.ocrText.length)return;
+    try{this.materialAdmission([originalId],undefined,job.modelProfileId);}catch{return;}
+    const fingerprint=memoryEvidenceFingerprint(original),strategy=JSON.stringify(plan.strategy);
+    const matches=batches.filter(batch=>{
+      if(batch.status!=='completed'||batch.planIds?.length||batch.materialInputs?.length||
+        Object.keys(batch.materialRefs??{}).length||batch.artifactRefs?.length||
+        JSON.stringify(batch.strategy)!==strategy||
+        batch.configuration?.fingerprint!==previous.fingerprint||
+        batch.configuration?.profileId!==job.modelProfileId||
+        batch.chunks.length!==1||!batch.memoryIds.length)return false;
+      const chunk=batch.chunks[0];
+      if(chunk.id!==originalId||chunk.offset!==0||chunk.length!==original.ocrText.length||
+        chunk.fingerprint!==fingerprint||!this.store.db.prepare('SELECT 1 FROM memory_checkpoints WHERE key=?').get(chunk.key))return false;
+      const deletionReviewRequired=Boolean(this.store.db.prepare('SELECT 1 FROM memory_deletions LIMIT 1').get());
+      return batch.memoryIds.every(id=>{
+        let memory:ReturnType<MemoryStore['get']>;
+        try{memory=this.options.memories.get(id);}catch{return false;}
+        const receipt=memory.reviewReceipt;
+        return memory.status==='published'&&memory.version===2&&!memory.correction&&!memory.supersededBy&&
+          memory.evidenceIds.length===1&&memory.evidenceIds[0]===originalId&&
+          JSON.stringify(memory.strategy)===strategy&&memory.model===previous.model&&
+          receipt?.policy==='bounded-exact-review@1'&&receipt.decision!=='empty'&&
+          Boolean(receipt.resultHash&&receipt.reviewRunId&&receipt.draftRunId)&&
+          receipt.contextTime===job.contextTime&&JSON.stringify(receipt.strategy)===JSON.stringify(plan.strategy.review)&&
+          (!deletionReviewRequired||receipt.deletionSnapshot===this.options.memories.deletions.snapshot())&&
+          Boolean(memory.evidence?.length)&&memory.evidence!.every(span=>span.id===originalId&&span.contentHash===fingerprint&&
+            span.quote!==undefined&&span.offset!==undefined&&original.ocrText.slice(span.offset,span.offset+span.quote.length)===span.quote);
+      });
+    });
+    return matches.length===1?matches[0].id:undefined;
+  }
   async retry(id:string):Promise<MemoryJobDetail> {
     if(this.active.has(id))return this.active.get(id)!;
     let job=this.storedJob(id);
@@ -424,6 +469,7 @@ export class MemoryPipeline {
       this.assertRetryWindow(job);
       const batches=this.batches(id);
       if(batches.some(batch=>{const fence=db.prepare("SELECT fence FROM execution_steps WHERE id=? AND state='running'").get(batch.id)?.fence;return typeof fence==='string'&&this.engine.isCurrentGrant(batch.id,fence);}))throw new StoreError('Memory job is already running',409);
+      const previousConfiguration=job.configuration;
       if(this.options.configuration&&this.options.configured(job.modelProfileId)){job.configuration=structuredClone(this.options.configuration(job.modelProfileId,job.modelOverride));this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(job.configuration)));}
       let nextIndex=Math.max(-1,...batches.map(batch=>batch.index))+1;
       for(const batch of batches)if(batch.status==='failed'){
@@ -447,7 +493,16 @@ export class MemoryPipeline {
         batch.status='pending';delete batch.errorCode;this.saveBatch(batch);
       }
       job.status='queued';delete job.errorCode;this.saveJob(job);
-      if(job.inputPlanVersion)for(const plan of this.inputPlans.list(id)){const step=this.engine.get(plan.id);if(step&&['waiting','blocked','failed'].includes(step.state)&&plan.batchIds===undefined)this.engine.retry(plan.id);}
+      if(job.inputPlanVersion)for(const plan of this.inputPlans.list(id)){
+        const step=this.engine.get(plan.id);
+        if(!step||!['waiting','blocked','failed'].includes(step.state)||plan.batchIds!==undefined)continue;
+        const coveredBy=this.completedAuthoredCoverage(job,plan,batches,previousConfiguration,job.configuration);
+        if(coveredBy){
+          const changed=db.prepare("UPDATE execution_steps SET state='succeeded',fence=NULL,error=NULL,available_at=0,updated_at=? WHERE id=? AND kind='memory.input' AND state='blocked' AND error='memory_authorization_revoked'").run(Date.now(),plan.id);
+          if(changed.changes){plan.batchIds=[coveredBy];plan.coveredByBatchId=coveredBy;this.inputPlans.put(plan);continue;}
+        }
+        this.engine.retry(plan.id);
+      }
       if(own)db.exec('COMMIT');
     }catch(error){if(own)db.exec('ROLLBACK');throw error;}
     return this.run(id);

@@ -15,6 +15,12 @@ import {FileStore} from '../src/files.js';
 import {WorkingMemory} from '../src/working-memory.js';
 import {Conversations} from '../src/conversations.js';
 import {registerMemoryExtensions} from '../src/lifecycle-extensions.js';
+import {ExecutionFailure} from '../src/execution-engine.js';
+import {ProviderFailure} from '@mote/shared';
+import Fastify from 'fastify';
+import {registerMemoryRoutes} from '../src/memory-routes.js';
+import {MemoryIntegrationSettings} from '../src/memory-integration-settings.js';
+import {MemoryRecipeSettings} from '../src/memory-recipe-settings.js';
 function fixture(t:TestContext){const directory=mkdtempSync(join(tmpdir(),'mote-lifecycle-execution-')),store=new Store(directory),engine=new ExecutionEngine(store);const closers:(()=>Promise<unknown>)[]=[];t.after(async()=>{for(const close of closers.reverse())await close();await engine.close();store.close();rmSync(directory,{recursive:true,force:true});});return {store,engine,closers};}
 function deferred(){let resolve!:()=>void;const promise=new Promise<void>(r=>resolve=r);return {promise,resolve};}
 function event(store:Store){store.db.prepare("INSERT INTO changes(id,operation,changed_at) VALUES(?,'upsert',?)").run(randomUUID(),new Date().toISOString());}
@@ -66,4 +72,43 @@ test('manual lifecycle work has bounded attempts, explicit retry and cancellatio
  assert.equal(calls,3);assert.equal(lifecycle.view().extensions[0].status,'failed');assert.equal(lifecycle.view().extensions[0].retryAt,undefined);await lifecycle.tick();assert.equal(calls,3);
  lifecycle.cancel('consolidation',id);await lifecycle.tick();assert.equal(calls,3);assert.equal(lifecycle.view().extensions[0].status,'cancelled');
  fail=false;lifecycle.retry('consolidation',id);await lifecycle.tick();assert.equal(calls,4);assert.equal(lifecycle.view().extensions[0].active,undefined);assert.equal(lifecycle.view().extensions[0].cursor,0);
+});
+
+test('legacy artifact extraction stops after three failed provider turns across restart and resumes only on explicit retry',async t=>{
+ const {store,engine,closers}=fixture(t),sources=new SourceStore(store),files=new FileStore(store,sources),memories=new MemoryStore(store),working=new WorkingMemory(store,new Conversations(store));
+ sources.register({id:'generated-lifecycle',name:'Generated lifecycle source',kind:'custom',deviceId:'fixture',platform:'import'});
+ const content='Generated artifact extraction input.',record=await sources.upsert('generated-lifecycle',{externalId:'one',revision:'1',observedAt:'2026-09-27T00:00:00Z',kind:'message',layer:'original',text:content});
+ const artifactId='e'.repeat(64);store.archive.save(artifactId,artifactId,artifactId,{kind:'semantic',text:'Generated interpretation',metadata:{complete:true,evidenceRanges:[{id:record.id,offset:0,length:content.length}]}},[{id:record.id,fingerprint:store.archive.fingerprint(record.id)!}],'fixture','1','fixture');
+ let now=Date.now(),calls=0,fail=true;
+ const pipeline=new MemoryPipeline({store,memories,executor:engine,configured:()=>true,model:()=> 'generated',query:async()=>{calls++;if(fail)throw new ProviderFailure({category:'permanent',code:'generated_provider_failure'});return {runId:randomUUID(),answer:'{"memories":[]}',citations:[],trace:[]};}});closers.push(()=>pipeline.close());
+ const register=(lifecycle:MemoryLifecycle)=>{
+   registerMemoryExtensions({store,files,memories,pipeline,working,lifecycle,model:()=> 'generated',query:async()=>{throw Error('Unexpected integration query');},semanticArtifacts:async ids=>ids});
+   const settings=lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;settings.extraction.minChanges=1;lifecycle.configure(settings);
+ };
+ let lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,engine);register(lifecycle);await lifecycle.tick();
+ const first=lifecycle.view().extensions.find(e=>e.id==='extraction')!;assert.equal(calls,1);assert.equal(first.failures,1);assert.equal(first.maxAttempts,3);assert.equal(first.cursor,0);assert.ok(first.active?.checkpoint);
+ await lifecycle.close();lifecycle=new MemoryLifecycle(store,()=>true,()=>now,0,engine);closers.push(()=>lifecycle.close());register(lifecycle);
+ assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.failures,1,'failure count survives a host restart');
+ for(let attempt=2;attempt<=3;attempt++){now+=3600000;await lifecycle.tick();assert.equal(calls,attempt);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.failures,attempt);}
+ const exhausted=lifecycle.view().extensions.find(e=>e.id==='extraction')!;assert.equal(exhausted.status,'failed');assert.equal(exhausted.retryAt,undefined);assert.equal(exhausted.cursor,0);
+ now+=86400000;await lifecycle.tick();await lifecycle.tick();assert.equal(calls,3,'automatic ticks cannot purchase a fourth provider turn');
+ const app=Fastify();closers.push(()=>app.close());registerMemoryRoutes(app,{store,files,memories,memoryPipeline:pipeline,lifecycle,memoryIntegrationSettings:new MemoryIntegrationSettings(store,pipeline.strategies),memoryRecipeSettings:new MemoryRecipeSettings(store,pipeline.strategies),evidenceReader:{} as never,modelSettings:{} as never,query:async()=>{throw Error('Unexpected query');},reviewExtraction:async(_input,result)=>result});
+ const status=await app.inject({method:'GET',url:'/api/memory-settings'});assert.equal(status.statusCode,200);assert.equal(status.json().extensions.find((item:{id:string})=>item.id==='extraction').status,'failed','the API must not mask the terminal lifecycle state with a child job status');
+ const stale=await app.inject({method:'POST',url:'/api/memory-settings/extraction/'+randomUUID()+'/retry'});assert.equal(stale.statusCode,409);assert.equal(calls,3);
+ fail=false;const resumed=await app.inject({method:'POST',url:'/api/memory-settings/extraction/'+exhausted.active!.id+'/retry'});assert.equal(resumed.statusCode,202);await lifecycle.tick();assert.equal(calls,4);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.active,undefined);
+});
+
+test('legacy extraction waits for semantic dependencies or allowance without spending failure attempts',async t=>{
+ const {store,engine,closers}=fixture(t),sources=new SourceStore(store),files=new FileStore(store,sources),memories=new MemoryStore(store),working=new WorkingMemory(store,new Conversations(store));
+ sources.register({id:'generated-wait',name:'Generated wait source',kind:'custom',deviceId:'fixture',platform:'import'});
+ const content='Generated waiting input.',record=await sources.upsert('generated-wait',{externalId:'one',revision:'1',observedAt:'2026-09-27T00:00:00Z',kind:'message',layer:'original',text:content});
+ const artifactId='d'.repeat(64);store.archive.save(artifactId,artifactId,artifactId,{kind:'semantic',text:'Generated interpretation',metadata:{complete:true,evidenceRanges:[{id:record.id,offset:0,length:content.length}]}},[{id:record.id,fingerprint:store.archive.fingerprint(record.id)!}],'fixture','1','fixture');
+ let now=Date.now(),checks=0,calls=0,modelReady=false;
+ const pipeline=new MemoryPipeline({store,memories,executor:engine,configured:()=>modelReady,model:()=> 'generated',query:async()=>{calls++;return {runId:randomUUID(),answer:'{"memories":[]}',citations:[],trace:[]};}});closers.push(()=>pipeline.close());
+ const lifecycle=new MemoryLifecycle(store,()=>true,()=>now);closers.push(()=>lifecycle.close());
+ registerMemoryExtensions({store,files,memories,pipeline,working,lifecycle,model:()=> 'generated',query:async()=>{throw Error('Unexpected integration query');},semanticArtifacts:async ids=>{checks++;if(checks<3)throw new ExecutionFailure('waiting','daily_budget',60000);return ids;}});
+ const settings=lifecycle.settings();for(const id of ['consolidation','insights','working'] as const)settings[id].enabled=false;settings.extraction.minChanges=1;lifecycle.configure(settings);
+ for(let i=0;i<2;i++){await lifecycle.tick();const state=lifecycle.view().extensions.find(e=>e.id==='extraction')!;assert.equal(state.failures,0);assert.equal(state.error,'daily_budget');assert.equal(state.status,'retry_wait');assert.equal(calls,0);now+=60000;}
+ await lifecycle.tick();assert.equal(checks,3);assert.equal(calls,0);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.failures,0,'model admission is also not a provider failure');
+ modelReady=true;now+=60000;await lifecycle.tick();assert.equal(calls,1);assert.equal(lifecycle.view().extensions.find(e=>e.id==='extraction')!.failures,0);
 });
