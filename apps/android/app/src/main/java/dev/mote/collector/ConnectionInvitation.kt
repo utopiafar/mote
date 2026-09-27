@@ -5,7 +5,7 @@ import java.net.URI
 import java.time.Instant
 import java.util.Base64
 
-class ConnectionFailure(val category: String) : Exception(category)
+class ConnectionFailure(val category: String) : Exception(if (category == "pending") MoteI18n.text("仍有截图/笔记/来源待同步或已准备提交的草稿，不能切换节点。请先同步原节点。") else category)
 data class ConnectionInvitation(val serverUrl: String, val code: String, val expiresAt: Instant) {
     override fun toString() = "ConnectionInvitation(redacted)"
     companion object {

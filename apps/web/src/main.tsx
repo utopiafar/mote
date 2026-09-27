@@ -137,7 +137,7 @@ function App() {
   }, []);
   const [notice, setNotice] = useState("");
   const [timelineRevision, setTimelineRevision] = useState(0);
-  const disconnect = useCallback(() => {
+  const clearConnection = useCallback(() => {
     connectionGeneration.current++;
     clearSession();
     setConnection(null);
@@ -150,14 +150,19 @@ function App() {
     setDevices([]);
     setRecent([]);
     setInsights([]);
+  }, []);
+  const disconnect = useCallback(() => {
+    clearConnection();
     setEvidenceId(null);
     window.moteCentralSession?.close();
-  }, []);
+  }, [clearConnection, setEvidenceId]);
   const unauthorized = useCallback(() => {
-    disconnect();
+    // A same-node re-login may continue a direct evidence link. Clear the
+    // credential and private UI, but keep the URL until the owner logs in.
+    clearConnection();
     setNotice(moteText("登录已失效，请重新输入管理令牌。"));
     setShowConnect(true);
-  }, [disconnect]);
+  }, [clearConnection]);
   useEffect(() => {
     if (!connection?.expiresAt) return;
     let timer: number | undefined;
@@ -254,7 +259,8 @@ function App() {
     setConnection(persistSession(value, lifetime));
     setVerified(false);
     setStatus(null);
-    setDevices([]); setRecent([]); setInsights([]); setEvidenceId(null);
+    setDevices([]); setRecent([]); setInsights([]);
+    updateEvidenceId(readEvidenceRoute(window.location.hash));
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
     setShowConnect(false);
     setNotice("");
@@ -484,7 +490,7 @@ function App() {
           onClose={() => setShowConnect(false)}
         />
       )}
-      {evidenceId && api && (
+      {evidenceId && api && verified && (
         <EvidenceDialog
           id={evidenceId}
           api={api}

@@ -94,6 +94,8 @@ object QueueArchive {
         val source = prepared.queue()
         val ids = source.dedupeIds()
         for (id in ids) {
+            val archived = requireNotNull(source.archiveRecord(id)).first
+            require(!archived.has("_archiveOrigin") || archived.getString("_archiveOrigin") == origin.trim().trimEnd('/')) { MoteI18n.text("备份属于不同中央节点；请连接原节点后导入") }
             val existing = target.archiveRecord(id) ?: continue
             val incoming = requireNotNull(source.archiveRecord(id))
             require(SourceRules.canonical(wire(existing.first)) == SourceRules.canonical(wire(incoming.first)) && existing.second.contentEquals(incoming.second)) { MoteI18n.text("备份中存在同 ID 内容冲突，未导入") }

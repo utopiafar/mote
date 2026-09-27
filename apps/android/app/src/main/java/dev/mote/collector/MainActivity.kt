@@ -194,7 +194,7 @@ class MainActivity : MoteActivity() {
         buildToday()
         buildOverview()
         buildSettings()
-        val restoredPage = savedInstanceState?.getString("page")?.let { value -> Page.entries.find { it.name == value } } ?: Page.OVERVIEW
+        val restoredPage = savedInstanceState?.getString("page")?.let { value -> Page.entries.find { it.name == value } } ?: intent.getStringExtra("page")?.let { value -> Page.entries.find { it.name == value } } ?: Page.OVERVIEW
         ensurePage(restoredPage)
         baseline = controlValues()
         retained?.let { retained ->
@@ -311,23 +311,6 @@ class MainActivity : MoteActivity() {
 
     private fun buildConnection(config: CollectorConfig) {
         page(Page.CONNECTION, MoteI18n.text("可先只在本机记录，需要时再连接中央档案"))
-        section(MoteI18n.text("统一同步方式"))
-        text(MoteI18n.text("所有采集记录和来源文件共用以下同步设置。"), 13, MoteUi.muted)
-        syncMode = Spinner(this).apply {
-            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("实时同步"), MoteI18n.text("定时同步"), MoteI18n.text("批量同步"), MoteI18n.text("仅手动同步")))
-            setSelection(syncModes.indexOf(config.syncMode).coerceAtLeast(0))
-        }; content.addView(syncMode, LinearLayout.LayoutParams(-1, dp(56))); track(syncMode, "syncMode")
-        syncInterval = presetNumber(MoteI18n.text("同步间隔 / 分钟（批量模式下也是最长等待时间）"), config.syncIntervalMinutes, "1", 1..1440, listOf(1, 15, 30, 60, 180, 360, 720, 1440))
-        syncBatch = presetNumber(MoteI18n.text("批量达到多少条时同步"), config.syncBatchSize, "20", 1..500, listOf(5, 10, 20, 50, 100, 200, 500))
-        packedUpload = check(MoteI18n.text("压缩包上传（gzip JSONL，服务端解包后逐条确认）"), config.packedUpload)
-        jsonlWindow = presetNumber(MoteI18n.text("无图片状态 JSONL 合并窗口 / 分钟"), config.jsonlWindowMinutes, "10", 1..1440, listOf(1, 5, 10, 15, 30, 60))
-        updateSyncFields()
-        help(MoteI18n.text("同步方式说明"), MoteI18n.text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。压缩包内是 gzip JSONL，服务端解包后逐条校验并确认。无图片的短状态记录会按时间窗口合并，默认 10 分钟。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。"))
-        section(MoteI18n.text("同步条件"))
-        wifi = check(MoteI18n.text("仅非计费 Wi-Fi 同步"), config.wifiOnly)
-        syncChargingOnly = check(MoteI18n.text("仅充电时同步"), config.syncChargingOnly)
-        syncBatteryNotLow = check(MoteI18n.text("低电量时暂停同步"), config.syncBatteryNotLow)
-        text(MoteI18n.text("适用于记录、来源文件和 OCR 结果。立即同步与全量补传也遵守这些条件；低电量由系统判定。"), 13, MoteUi.muted)
         section(MoteI18n.text("中央节点"))
         menu(MoteI18n.text("扫码或导入邀请"), MoteI18n.text("推荐使用中央节点生成的一次性邀请"), "sync") { discardPageDraft(); startActivity(Intent(this, ConnectionActivity::class.java)) }
         section(MoteI18n.text("节点与设备"))
@@ -346,9 +329,45 @@ class MainActivity : MoteActivity() {
         })
         name = field(MoteI18n.text("设备名称"), config.deviceName, MoteI18n.text("我的 K90 Pro Max"))
         text(MoteI18n.text("中央节点可在电脑、NAS 或服务器部署。手机的 localhost 指手机本身；跨设备请填写局域网 IP 或 HTTPS 域名。"), 13, MoteUi.muted)
+        text(MoteI18n.text("验证采集连接只检查本设备的上传权限；中央资料仍需在中央界面单独登录。"), 13, MoteUi.muted)
+        val verification = text("", 13, MoteUi.muted)
+        button(MoteI18n.text("验证已保存的采集连接")) {
+            if (applyingSettings || uiTask.busy) return@button
+            uiTask.start(MoteI18n.text("正在测试节点和设备凭据…"), { verification.text = it }, {
+                if (!settings.read().hasSyncConnection()) throw ConnectionFailure("authentication")
+                ConnectionClient(applicationContext).test()
+            }) { result ->
+                verification.text = if (result.isSuccess) MoteI18n.text("采集连接验证成功；中央资料仍需单独登录。")
+                    else MoteI18n.text("采集连接验证未通过，请检查已保存的地址、凭据和网络后重试。")
+                refreshStatus()
+            }
+        }
+        button(MoteI18n.text("保存并打开中央界面")) {
+            saveConfig {
+                if (intent.getBooleanExtra("returnToCentral", false)) finish()
+                else startActivity(Intent(this, CentralActivity::class.java).putExtra("page", "overview"))
+            }
+        }
         button(MoteI18n.text("立即重试同步")) { retrySync() }
         menu(MoteI18n.text("待上传队列"), MoteI18n.text("查看采集、随手记和来源待发条目"), "sync") { startActivity(Intent(this, SyncQueueActivity::class.java)) }
         menu(MoteI18n.text("同步与恢复"), MoteI18n.text("两端检查、补传与冲突处理"), "sync") { startActivity(Intent(this, SyncRecoveryActivity::class.java)) }
+        section(MoteI18n.text("统一同步方式"))
+        text(MoteI18n.text("所有采集记录和来源文件共用以下同步设置。"), 13, MoteUi.muted)
+        syncMode = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, listOf(MoteI18n.text("实时同步"), MoteI18n.text("定时同步"), MoteI18n.text("批量同步"), MoteI18n.text("仅手动同步")))
+            setSelection(syncModes.indexOf(config.syncMode).coerceAtLeast(0))
+        }; content.addView(syncMode, LinearLayout.LayoutParams(-1, dp(56))); track(syncMode, "syncMode")
+        syncInterval = presetNumber(MoteI18n.text("同步间隔 / 分钟（批量模式下也是最长等待时间）"), config.syncIntervalMinutes, "1", 1..1440, listOf(1, 15, 30, 60, 180, 360, 720, 1440))
+        syncBatch = presetNumber(MoteI18n.text("批量达到多少条时同步"), config.syncBatchSize, "20", 1..500, listOf(5, 10, 20, 50, 100, 200, 500))
+        packedUpload = check(MoteI18n.text("压缩包上传（gzip JSONL，服务端解包后逐条确认）"), config.packedUpload)
+        jsonlWindow = presetNumber(MoteI18n.text("无图片状态 JSONL 合并窗口 / 分钟"), config.jsonlWindowMinutes, "10", 1..1440, listOf(1, 5, 10, 15, 30, 60))
+        updateSyncFields()
+        help(MoteI18n.text("同步方式说明"), MoteI18n.text("定时模式按所选间隔发送；批量模式达到数量或最长等待时间即发送。压缩包内是 gzip JSONL，服务端解包后逐条校验并确认。无图片的短状态记录会按时间窗口合并，默认 10 分钟。手动模式仅在点击“立即同步”后发送；同步条件始终有效。Android 省电可能推迟后台执行。"))
+        section(MoteI18n.text("同步条件"))
+        wifi = check(MoteI18n.text("仅非计费 Wi-Fi 同步"), config.wifiOnly)
+        syncChargingOnly = check(MoteI18n.text("仅充电时同步"), config.syncChargingOnly)
+        syncBatteryNotLow = check(MoteI18n.text("低电量时暂停同步"), config.syncBatteryNotLow)
+        text(MoteI18n.text("适用于记录、来源文件和 OCR 结果。立即同步与全量补传也遵守这些条件；低电量由系统判定。"), 13, MoteUi.muted)
     }
 
     private fun buildCapture(config: CollectorConfig) {
@@ -796,7 +815,7 @@ class MainActivity : MoteActivity() {
                 applyingSettings = false
                 if (isDestroyed || isFinishing) {
                     // Binding still requires a visible confirmation; preserve that draft for review.
-                    if (result.getOrNull() == false) RuntimeSettings.apply(app, c, bindLocal, expected = current) { }
+                    if (result.getOrNull() == false) RuntimeSettings.apply(app, c, bindLocal, expected = current, confirmCentralEndpoint = MoteI18n.text("节点 URL（可留空，仅在本机记录）") in savedFields) { }
                     return@post
                 }
                 updateSaveBar()
@@ -818,7 +837,7 @@ class MainActivity : MoteActivity() {
         generation: Int = draftGeneration, saved: () -> Unit) {
         if (applyingSettings) return
         pendingSubmission = submitted; applyingSettings = true; updateSaveBar()
-        RuntimeSettings.apply(this, config, bindLocal, expected = expected) { result ->
+        RuntimeSettings.apply(this, config, bindLocal, expected = expected, confirmCentralEndpoint = MoteI18n.text("节点 URL（可留空，仅在本机记录）") in appliedFields) { result ->
             applyingSettings = false
             if (isDestroyed) return@apply
             result.onSuccess {
@@ -1453,8 +1472,8 @@ class MainActivity : MoteActivity() {
         val labelView = text(label, 13, MoteUi.muted)
         return MoteUi.field(EditText(this)).apply {
             fieldLabels[this] = labelView
-            inputType = if (multiline) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE else type
-            setText(value); hint = placeholder; if (multiline) { minLines = 2; gravity = Gravity.TOP } else setSingleLine()
+            MoteUi.textInput(this, type, multiline)
+            setText(value); hint = placeholder
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO; isSaveEnabled = false
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(18) }; content.addView(this)
             if (buildingPage != Page.NOTES) track(this, label)

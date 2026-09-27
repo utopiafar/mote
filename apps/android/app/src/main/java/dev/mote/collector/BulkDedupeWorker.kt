@@ -15,7 +15,7 @@ class BulkDedupeStore(context: Context) {
     companion object { private val fileLock = Any() }
     private val dir = File(context.noBackupFilesDir, "bulk-dedupe").apply { check(isDirectory || mkdirs()) }
     private val cipher = context.localContentCipher()
-    fun quarantine() = DurableQueue(File(dir, "pending"), cipher).apply { onMutation = { LocalStateChanges.changed(records = it, storage = true) } }
+    fun quarantine() = DurableQueue(File(dir, "pending"), cipher, role = DurableQueue.Role.QUARANTINE).apply { onMutation = { LocalStateChanges.changed(records = it, storage = true) } }
     fun read(name: String): JSONObject = synchronized(fileLock) {
         require(name in listOf("report", "plan"))
         val file = File(dir, "$name.enc")
@@ -131,7 +131,8 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
             .put("scanned", rows.size).put("errors", errors).put("pairs", pairs).put("at", Instant.now().toString()))
         return Result.success(workDataOf("message" to MoteI18n.text("扫描完成：{0} 张，{1} 张候选，{2} 张跳过或读取失败", rows.size, pairs.length(), errors)))
     }
-    private fun resolve(): Result {
+    private fun resolve(): Result = ConnectionGuard.sync { resolveWithConnection() } ?: Result.retry()
+    private fun resolveWithConnection(): Result {
         val action = inputData.getString("action")!!
         require(action in listOf("move", "delete", "restore", "purge"))
         val plan = store.read("plan"); require(plan.getString("job") == inputData.getString("job"))
@@ -143,7 +144,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
         // rebuildable index writes are combined; cancellation never leaves a partial move.
         queue.withDeferredIndexWrites { pending.withDeferredIndexWrites {
             for (index in 0 until items.length()) {
-                if (isStopped) break
+                if (isStopped || ConnectionGuard.reconfiguring()) break
                 val pair = items.getJSONObject(index); val row = pair.getJSONObject("candidate"); val ref = pair.optJSONObject("reference")
                 try {
                     val source = if (action in listOf("restore", "purge")) pending else queue
@@ -156,6 +157,7 @@ class BulkDedupeWorker(context: Context, params: WorkerParameters) : Worker(cont
             }
         } }
         if (isStopped) return Result.failure()
+        if (ConnectionGuard.reconfiguring()) return Result.retry()
         return Result.success(workDataOf("message" to MoteI18n.text("处理完成：成功 {0}，失效或失败 {1}；失败记录保留，可重新扫描或重试", done, skipped)))
     }
 }

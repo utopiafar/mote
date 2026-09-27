@@ -1,0 +1,102 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: #f3f7fb;
+  color: #152437;
+  line-height: 1.65;
+}
+
+* { box-sizing: border-box; }
+
+body { margin: 0; }
+
+.site-header {
+  background: #14334d;
+  color: #fff;
+  padding: 1.15rem max(1rem, calc((100vw - 860px) / 2));
+}
+
+.fixture-badge {
+  display: inline-block;
+  padding: .2rem .6rem;
+  border: 1px solid #aee5e0;
+  border-radius: 999px;
+  color: #d7fff9;
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.site-header h1 { margin: .45rem 0 0; font-size: clamp(1.3rem, 4.6vw, 2rem); line-height: 1.3; }
+.site-header p { margin: .35rem 0 0; color: #e3edf5; }
+
+.site-nav { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1rem; }
+.site-nav a {
+  display: inline-block;
+  border: 1px solid #a4bfd3;
+  border-radius: .65rem;
+  padding: .4rem .7rem;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  background: #244b69;
+}
+.site-nav a[aria-current="page"] { color: #112d43; background: #e7faff; border-color: #e7faff; }
+.site-nav a:focus-visible, .version-switch a:focus-visible { outline: 3px solid #e99b3e; outline-offset: 3px; }
+
+main { width: min(100% - 2rem, 860px); margin: 1.3rem auto 2rem; }
+.panel {
+  background: #fff;
+  border: 1px solid #cad8e4;
+  border-radius: 1rem;
+  box-shadow: 0 5px 18px #203e5420;
+  padding: clamp(1rem, 3vw, 1.5rem);
+}
+.panel + .panel { margin-top: 1rem; }
+.eyebrow { margin: 0 0 .35rem; color: #285271; font-size: .85rem; font-weight: 800; letter-spacing: .04em; }
+h2 { margin: .1rem 0 .6rem; font-size: clamp(1.2rem, 4vw, 1.5rem); line-height: 1.35; }
+h3 { margin: 1rem 0 .25rem; font-size: 1.08rem; }
+p { margin: .6rem 0; }
+.note { color: #3b566b; font-size: .93rem; }
+
+.diagram-wrap { max-width: 570px; margin: 1rem auto .5rem; }
+.diagram-wrap svg { display: block; width: 100%; height: auto; border: 1px solid #d4e1e8; border-radius: .8rem; background: #f8fbfd; }
+.diagram-wrap figcaption { margin-top: .6rem; color: #3b566b; font-size: .9rem; }
+.diagram-label { font-size: 14px; font-weight: 750; fill: #152437; }
+.diagram-copy { font-size: 12px; fill: #31516a; }
+
+.chapter {
+  min-height: 88vh;
+  min-height: 88svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  scroll-margin-top: .5rem;
+}
+.chapter + .chapter { margin-top: 1rem; }
+.chapter .chapter-index { color: #206883; font-weight: 800; letter-spacing: .06em; }
+.chapter .chapter-rule { width: 3rem; height: .32rem; margin: 1rem 0 1.2rem; border-radius: 999px; background: #2b819d; }
+.chapter .spacer { flex: 1; }
+.chapter .chapter-foot { border-top: 1px solid #d6e4eb; padding-top: .8rem; color: #4c6575; font-size: .9rem; }
+
+.version-switch { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1rem 0; }
+.version-switch a { border: 1px solid #52758a; border-radius: .65rem; color: #143e57; background: #edf5f9; padding: .55rem .8rem; font-weight: 750; text-decoration: none; }
+.version-switch a[aria-current="page"] { color: #fff; background: #205d78; border-color: #205d78; }
+.version-card { border: 2px solid #7893a6; border-radius: .85rem; padding: 1rem; background: #f7fafc; }
+.version-card.corrected { border-color: #27806f; background: #f1fbf7; }
+.version-card .time { margin: .5rem 0; font-size: clamp(1.35rem, 5vw, 1.8rem); line-height: 1.25; font-weight: 800; }
+.version-card .status { display: inline-block; border-radius: 999px; padding: .15rem .55rem; font-size: .85rem; font-weight: 750; background: #e1eaf0; }
+.version-card.corrected .status { background: #d7f0e4; }
+.change-note { margin-top: 1rem; border-left: 4px solid #27806f; padding: .35rem .8rem; background: #eaf7f2; }
+body[data-version="1"] .version-two, body[data-version="2"] .version-one { display: none; }
+
+.site-footer { width: min(100% - 2rem, 860px); margin: 0 auto 2rem; color: #496173; font-size: .85rem; }
+
+@media (max-width: 430px) {
+  .site-header { padding: 1rem; }
+  .site-nav a { flex: 1 1 29%; text-align: center; padding: .4rem .3rem; font-size: .85rem; }
+  main { width: calc(100% - 1rem); margin: .6rem auto 1rem; }
+  .panel { padding: 1rem; border-radius: .75rem; }
+  .chapter { min-height: 88svh; }
+  .site-footer { width: calc(100% - 1rem); }
+}

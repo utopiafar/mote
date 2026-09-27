@@ -37,11 +37,13 @@ internal object CentralWebSession {
     }
 
     fun failed(web: WebView) { if (web === view) reloadRequired = true }
-    fun navigate(web: WebView, destination: String) {
+    fun navigate(web: WebView, destination: String): Boolean {
         if (web.url != destination || reloadRequired) {
             reloadRequired = false
             web.loadUrl(destination)
+            return true
         }
+        return false
     }
 
     fun release(web: WebView) {
@@ -57,11 +59,18 @@ internal object CentralWebSession {
     }
 }
 
-internal class CentralOriginClient(private val origin: Uri, private val onError: () -> Unit = {}) : WebViewClient() {
+internal class CentralOriginClient(private val origin: Uri, private val onError: () -> Unit = {}, private val onLoaded: () -> Unit = {}) : WebViewClient() {
     private fun allowed(uri: Uri) = uri.scheme == origin.scheme && uri.host == origin.host && uri.port == origin.port
     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = !allowed(request.url)
     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
         if (allowed(request.url)) null else WebResourceResponse("text/plain", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0)))
+    override fun onPageFinished(view: WebView, url: String) { if (allowed(Uri.parse(url))) onLoaded() }
+    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
+        if (request.isForMainFrame) onError()
+    }
+    override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: android.net.http.SslError) {
+        handler.cancel(); onError()
+    }
     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
         if (request.isForMainFrame) onError()
     }

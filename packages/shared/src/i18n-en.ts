@@ -1,5 +1,12 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "先选择中央节点。本机记录可以继续保存；选择节点后，中央资料仍需单独登录。": "Choose a central node first. You can keep saving records locally; central materials require a separate sign-in.",
+  "中央界面暂时无法打开。本机记录不受影响；请检查节点地址和网络后重试，或打开连接设置。": "The central interface could not be opened. Local records are unaffected. Check the node address and network, then retry or open connection settings.",
+  "验证采集连接只检查本设备的上传权限；中央资料仍需在中央界面单独登录。": "Verifying the collection connection only checks this device’s upload access. Sign in separately to read central materials.",
+  "验证已保存的采集连接": "Verify saved collection connection",
+  "采集连接验证成功；中央资料仍需单独登录。": "Collection connection verified. Central materials still require a separate sign-in.",
+  "采集连接验证未通过，请检查已保存的地址、凭据和网络后重试。": "Collection connection verification failed. Check the saved address, credentials and network, then retry.",
+  "保存并打开中央界面": "Save and open central interface",
   "保存组合": "Save recipes",
   "组件暂不可用": "Component unavailable",
   "跟随默认组合": "Use default recipes",

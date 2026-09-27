@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>版本更正 · Story B 合成采集页</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-version="1">
+  <header class="site-header">
+    <span class="fixture-badge">合成测试页 · 非真实用户经历</span>
+    <h1>借阅安排的版本更正</h1>
+    <p>同一虚构事项的旧版与显式更正版。</p>
+    <nav class="site-nav" aria-label="合成页面">
+      <a href="index.html">布局连线</a>
+      <a href="long.html">三屏长文</a>
+      <a href="revision.html?v=1" aria-current="page">版本更正</a>
+    </nav>
+  </header>
+  <main>
+    <section class="panel" aria-labelledby="revision-title">
+      <p class="eyebrow">画面 03 / 03</p>
+      <h2 id="revision-title">蓝封套交接 · 虚构安排</h2>
+      <p>两个版本都指向同一件虚构的蓝封套交接。旧文保留以便对照，新文通过明确的更正说明发布。</p>
+      <nav class="version-switch" aria-label="查看安排版本">
+        <a id="revision-old" href="revision.html?v=1">查看旧版 v1</a>
+        <a id="revision-new" href="revision.html?v=2">查看更正版 v2</a>
+      </nav>
+      <div class="version-one">
+        <article class="version-card" id="version-one" aria-labelledby="old-title">
+          <p class="eyebrow">版本 v1 · 原始记录</p>
+          <h3 id="old-title">蓝封套交接时间</h3>
+          <p class="time">周三 14:00</p>
+          <p><span class="status">待确认</span></p>
+          <p>记录角色：岚；旁观角色：周沐。</p>
+        </article>
+        <p class="note">旧版仍可查看，但它不是更正后的安排。</p>
+      </div>
+      <div class="version-two">
+        <article class="version-card corrected" id="version-two" aria-labelledby="new-title">
+          <p class="eyebrow">版本 v2 · 更正记录</p>
+          <h3 id="new-title">蓝封套交接时间</h3>
+          <p class="time">周四 15:30</p>
+          <p><span class="status">已确认</span></p>
+          <p>记录角色：岚；旁观角色：周沐。</p>
+        </article>
+        <p class="change-note" id="correction-note"><strong>显式更正：</strong>旧版“周三 14:00，待确认”写错了安排；现改为“周四 15:30，已确认”。</p>
+      </div>
+    </section>
+  </main>
+  <footer class="site-footer">Story B · 本地生成夹具 · 2026-09-27</footer>
+  <script>
+    const currentVersion = new URLSearchParams(location.search).get('v') === '2' ? '2' : '1';
+    document.body.dataset.version = currentVersion;
+    document.getElementById(currentVersion === '2' ? 'revision-new' : 'revision-old').setAttribute('aria-current', 'page');
+  </script>
+</body>
+</html>

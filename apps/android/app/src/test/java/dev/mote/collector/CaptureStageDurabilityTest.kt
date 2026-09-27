@@ -77,6 +77,8 @@ class CaptureStageDurabilityTest {
         val first = note("generated first")
         queue.enqueue(first, null, 1_000_000)
         assertEquals(0, queue.depth())
+        assertTrue(queue.hasPendingConnectionWork())
+        assertThrows(IllegalStateException::class.java) { queue.pinRetainedOrigin("https://generated.invalid") }
         assertFalse(File(dir, ".capture-stages.checkpoint").readText().contains("generated first"))
         val restarted = DurableQueue(dir, cipher, captureStages = stages)
         val ids = restarted.flushStages(1_000_000)

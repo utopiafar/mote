@@ -17,13 +17,15 @@ data class QueueStats(val depth: Int, val diskBytes: Long, val reservedOcrBytes:
 /** Atomic events + content-addressed blobs. All callers share the process lock. */
 class DurableQueue(private val dir: File, private val cipher: ByteCipher, createMissing: Boolean = true,
                    private val captureStages: CaptureStageRegistry = CaptureStages.default,
+                   private val role: Role = Role.ACTIVE,
                    private val onChange: ((OperationKind, Long, String) -> Unit)? = null) {
+    enum class Role { ACTIVE, QUARANTINE }
     companion object {
         private val lock = Any()
         fun <T> exclusive(action: () -> T): T = synchronized(lock) { action() }
         // 100,000 UTF-16 code units can require six JSON bytes each, plus result fields.
         internal const val OCR_RESERVE_BYTES = 600_256L
-        private val localFields = listOf("_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_ocrUploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts", "_uploadConflict")
+        private val localFields = listOf("_archiveOrigin", "_centralDerived", "_reviewHeld", "_uploaded", "_retainedUntil", "_ocrUploaded", "_ocrResult", "_archiveMissing", "_ocrConflict", "_ocrAttempts", "_uploadConflict")
         // Only fixed statistics and date/source index fields are cached, never capture content. A bounded process cache
         // is shared by the short-lived queue handles; the record files remain authoritative.
         private const val MAX_CACHED_DIRECTORIES = 4
@@ -35,6 +37,24 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         private data class BlobStamp(val bytes: Long, val modified: Long)
         private val validatedBlobs = object : LinkedHashMap<String, BlobStamp>(256, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, BlobStamp>?) = size > 4096
+        }
+    }
+    /** Origin snapshot supplied by the connection-owned queue handle; unbound handles fail closed for pinned records. */
+    internal var archiveOrigin: String = ""
+    private fun matchesOrigin(event: JSONObject) = !event.has("_archiveOrigin") || event.getString("_archiveOrigin") == archiveOrigin.trim().trimEnd('/')
+    private fun unfinished(event: JSONObject) = !event.optBoolean("_uploaded") || syncFailed(event) || event.optBoolean("_reviewHeld") ||
+        ((event.optJSONObject("ocr")?.optString("status") == "pending" || event.has("_ocrResult")) && !event.optBoolean("_ocrUploaded"))
+    fun hasPendingConnectionWork(): Boolean = guarded {
+        stageInbox.exists() || stageJournal.exists() || readStageCheckpoint()?.let { stageHeldCount(it) > 0 } == true || records().any { unfinished(read(it)) }
+    }
+    fun hasUnboundRecords(): Boolean = guarded { records().any { !read(it).has("_archiveOrigin") } }
+    /** Write before changing configuration. Partial failure leaves the old origin valid and retryable. */
+    fun pinRetainedOrigin(origin: String) = guarded {
+        require(origin.isNotBlank())
+        check(!hasPendingConnectionWork())
+        for (file in records()) {
+            val event = read(file)
+            if (!event.has("_archiveOrigin")) atomic(file, event.put("_archiveOrigin", origin.trim().trimEnd('/')).toString().toByteArray())
         }
     }
     /** Nonblocking invalidation only; listeners must never read storage inside this callback. */
@@ -124,14 +144,14 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     }
     fun syncIds(after: String? = null, limit: Int = 100): List<String> = guarded {
         require(limit in 1..100)
-        records().map { it.nameWithoutExtension }.filter { after == null || it > after }.sorted().take(limit)
+        records().filter { matchesOrigin(read(it)) }.map { it.nameWithoutExtension }.filter { after == null || it > after }.sorted().take(limit)
     }
     /** Replay original immutable events, never display/OCR-merged records or centrally rejected IDs. */
     fun requeueRetained(): Int = guarded {
         var count = 0
         for (file in records()) {
             val event = read(file)
-            if (syncFailed(event)) continue
+            if (syncFailed(event) || !matchesOrigin(event)) continue
             if (event.optBoolean("_uploaded")) { event.remove("_uploaded"); event.remove("_ocrUploaded"); event.remove("_retainedUntil"); atomic(file, event.toString().toByteArray()) }
             count++
         }; count
@@ -141,7 +161,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return@guarded false
         val event = read(file)
-        if (event.optBoolean("_archiveMissing")) return@guarded false
+        if (event.optBoolean("_archiveMissing") || !matchesOrigin(event)) return@guarded false
         if (!event.optBoolean("_uploadConflict") && !event.optBoolean("_ocrConflict")) return@guarded false
         val previousReserve = ocrReserve(event)
         event.remove("_uploadConflict"); event.remove("_ocrConflict"); event.remove("_reviewHeld")
@@ -392,8 +412,9 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             if (existing != null) {
                 val comparable = JSONObject(existing.toString()).apply { localFields.forEach(::remove) }
                 if (SourceRules.canonical(comparable) == SourceRules.canonical(stored)) return@mapNotNull null
-                check(!existing.optBoolean("_uploaded") && !syncFailed(existing) && !existing.optBoolean("_reviewHeld") && isStateExtension(existing, stored)) { MoteI18n.text("相同记录 ID 的内容发生变化") }
+                check(matchesOrigin(existing) && !existing.optBoolean("_uploaded") && !syncFailed(existing) && !existing.optBoolean("_reviewHeld") && isStateExtension(existing, stored)) { MoteI18n.text("相同记录 ID 的内容发生变化") }
             }
+            if (archiveOrigin.isNotBlank()) stored.put("_archiveOrigin", archiveOrigin.trim().trimEnd('/'))
             if (privacyFloor.optBoolean("reviewHeld")) stored.put("_uploadConflict", true).put("_reviewHeld", true)
             Triple(stored, capture.image, existing)
         }
@@ -474,6 +495,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             for (row in metadata().sortedWith(compareBy<JSONObject> { if (preferSince != null && it.getLong("modified") >= preferSince) 0 else 1 }.thenBy { it.getLong("modified") }.thenBy { it.getString("id") })) {
                 if (row.optBoolean("uploaded") || row.optBoolean("blocked")) continue
                 val event = read(File(dir, "${row.getString("id")}.event"))
+                if (!matchesOrigin(event)) continue
                 localFields.forEach(event::remove)
                 val hash = event.optString("_blob", "")
                 event.remove("_blob")
@@ -546,8 +568,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     fun pendingOcr(): JSONObject? {
         prepareIndex()
         return guarded {
-            metadata().asSequence().filter { it.optBoolean("awaitingOcr") && !it.optBoolean("blocked") }.minByOrNull { it.getLong("modified") }
-                ?.let { read(File(dir, "${it.getString("id")}.event")) }?.apply { remove("_blob"); remove("_uploaded") }
+            metadata().asSequence().filter { it.optBoolean("awaitingOcr") && !it.optBoolean("blocked") }.sortedBy { it.getLong("modified") }
+                .map { read(File(dir, "${it.getString("id")}.event")) }.firstOrNull(::matchesOrigin)?.apply { remove("_blob"); remove("_uploaded") }
         }
     }
     fun completeOcr(id: String, text: String, status: String, maxBytes: Long) = guarded {
@@ -555,6 +577,7 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
         val file = File(dir, "${UUID.fromString(id)}.event")
         if (!file.exists()) return
         val event = read(file)
+        check(matchesOrigin(event)) { MoteI18n.text("待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定") }
         require(event.optJSONObject("ocr")?.optString("status") == "pending")
         val reserve = ocrReserve(event)
         val result = JSONObject().put("status", status).put("ocrText", text).put("updatedAt", java.time.Instant.now().toString())
@@ -574,8 +597,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
     fun nextOcrUpdate(): JSONObject? {
         prepareIndex()
         return guarded {
-            metadata().asSequence().filter { it.optBoolean("uploaded") && it.optBoolean("hasOcrResult") && !it.optBoolean("ocrUploaded") && !it.optBoolean("blocked") }.minByOrNull { it.getLong("modified") }
-                ?.let { read(File(dir, "${it.getString("id")}.event")) }
+            metadata().asSequence().filter { it.optBoolean("uploaded") && it.optBoolean("hasOcrResult") && !it.optBoolean("ocrUploaded") && !it.optBoolean("blocked") }.sortedBy { it.getLong("modified") }
+                .map { read(File(dir, "${it.getString("id")}.event")) }.firstOrNull(::matchesOrigin)
                 ?.let { JSONObject(it.getJSONObject("_ocrResult").toString()).put("id", it.getString("id")) }
         }
     }
@@ -642,6 +665,8 @@ class DurableQueue(private val dir: File, private val cipher: ByteCipher, create
             verifiedBlob(requireNotNull(referenceHash))
         }
         if (destination != null) {
+            if (!event.has("_archiveOrigin") && archiveOrigin.isNotBlank()) event.put("_archiveOrigin", archiveOrigin.trim().trimEnd('/'))
+            if (destination.role != Role.QUARANTINE && !destination.matchesOrigin(event)) return@guarded false
             destination.assertCurrent?.invoke()
             require(destination.dir.canonicalFile != dir.canonicalFile)
             val target = File(destination.dir, file.name)

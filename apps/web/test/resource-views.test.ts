@@ -161,3 +161,17 @@ test('budget settings explain reservations and remove editable drafts after revo
  revoked=true;await act(async()=>resources(api).invalidate(key=>key==='/api/model-budgets'));assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/Generated budget revoked/);
  const next=apiWith(()=>value());await act(async()=>root.render(React.createElement(ModelBudgets,{api:next})));assert.equal(d.querySelector('select')!.value,'USD');assert.doesNotMatch(d.body.textContent!,/Generated budget revoked/);
 });
+
+
+test('full record uses a visible heading and unnamed text content without losing whitespace or interpreting markup',async t=>{
+ const {EvidenceDialog}=await import('../src/shell-components.js');const {root,document:d}=await fixture(t);
+ const text=Array.from({length:6},(_,index)=>`生成段落 ${index+1}：  保留空格与原文 🌉 <b>plain evidence</b> & text.\n<img src=x onerror="window.__evidenceExecuted=true"><script>window.__evidenceExecuted=true</script>`).join('\n\n');
+ const capture={id:ids[0],source:'note',platform:'macos',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated note',deviceName:'Fixture Mac',ocrText:text,durationMs:0,indexingStatus:'indexed',privacy:{excluded:false,redacted:false}};
+ const api=apiWith(path=>{assert.equal(path,`/api/capture-browser/${ids[0]}`);return capture;});
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:()=>{}})));
+ const body=d.querySelector('.evidence-text pre')!;
+ assert.equal(body.previousElementSibling?.tagName,'H4');assert.equal(body.previousElementSibling?.textContent,'记录全文');
+ assert.equal(body.textContent,text);assert.equal(body.getAttribute('aria-label'),null);assert.equal(body.getAttribute('aria-labelledby'),null);
+ assert.equal(body.querySelector('b, img, script'),null);assert.equal(body.closest('[aria-hidden=true], [inert]'),null);
+ assert.equal((d.defaultView as unknown as {__evidenceExecuted?:boolean}).__evidenceExecuted,undefined);
+});

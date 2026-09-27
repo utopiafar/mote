@@ -2158,8 +2158,7 @@ strong {
 }
 .evidence-text {
   padding: 25px;
-  overflow: auto;
-  max-height: 65vh;
+  min-width: 0;
   border-left: 1px solid #dfe8d1;
 }
 .evidence-text h3 {
@@ -2167,6 +2166,11 @@ strong {
   margin: 10px 0 18px;
   color: #6d8a56;
   line-height: 1.8;
+}
+.evidence-body-heading {
+  font-size: 13px;
+  margin: 0 0 12px;
+  color: var(--ink);
 }
 .evidence-text pre {
   white-space: pre-wrap;
@@ -2727,10 +2731,6 @@ strong {
   }
   .evidence-heading {
     padding: 19px 23px;
-  }
-  .evidence-text pre {
-    max-height: 240px;
-    overflow: auto;
   }
   .evidence-footer {
     padding: 16px 21px;
