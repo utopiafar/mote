@@ -37,3 +37,13 @@ apps/android/gradlew -p apps/android --offline -Pmote.testBuildType=development 
 Two earlier configuration-stage failures omitted these settings and are preserved separately; no instrumentation ran in those attempts. The successful check changed no source or harness. Root verification matched four source files, two harness files, two APKs and seven evidence hashes. All owned app, emulator, central, logcat and runner processes closed, with the test reverse mapping removed. Existing user emulators and physical devices were untouched.
 
 External report: `/Users/utopiafar/Documents/Codex/mote-goal-2026-09-27/android-process-recovery-validation-002/ROOT_SAFE_android-process-recovery.json` (SHA-256 `27a2417a5b3fd0ab570d8e1b26c659cb04370677dbf2c917e5312dbfa76d79ec`). This single six-note round is distinct from the earlier 18-note run and the 30-test instrumentation suite.
+
+## Automatic recovery on ordinary app launch
+
+A separate six-note round reused only the two offline instrumentation phases, then force-stopped the app, restored the test reverse mapping and launched MainActivity normally. It did not run the explicit-sync phase, call manual upload scheduling, repeat POSTs, clear WorkManager state, reinstall or rebuild the APK. App PIDs were 1770, 3175 and 3314.
+
+The poll at 21.003 seconds still showed six queued notes and no central records; the first successful poll at 26.062 seconds showed an empty queue and six unique central records. That interval is an observation bound, not a precise transfer duration. Original IDs, complete text, mood and epoch-millisecond capture times matched, including reuse of the prepared note UUID. Existing retry/backoff was left in place. HTTP request counts were not measured.
+
+The closed central database had zero model usage and provider admissions. All owned app, emulator, central and logcat processes exited, and the reverse mapping was removed. Root review verified the report, 19 linked file hashes and absent host PIDs. This proves ordinary-launch automatic recovery for this generated API 35 emulator run; it does not generalize to physical devices or all OEM background policies.
+
+External report: `/Users/utopiafar/Documents/Codex/mote-goal-2026-09-27/android-auto-start-recovery-validation-001/ROOT_SAFE_verification.json` (SHA-256 `8f8edbed39e09ba5228da6a9c034c7b5ee88010a3e6524afae7d7a5a357919b1`). Source, fixture and APK hashes match the preceding explicit-sync check.
