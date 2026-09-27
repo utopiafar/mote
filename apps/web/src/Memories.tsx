@@ -54,21 +54,23 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
   const selectionScope=JSON.stringify([rangeSelectionKey??[range.after,range.before],range.deviceId]);
   const [modelProfileId,setModelProfileId]=useState('');
   const [recipes,setRecipes]=useState<MemoryRecipeRef[]>([]);
-  const [selectedId,setSelectedId]=useState<string|null>(null),[mutationError,setError]=useState(''),[busy,setBusy]=useState(false),[filter,setFilter]=useState('all'),[confirmDelete,setConfirmDelete]=useState(false);
+  const [selectedId,setSelectedId]=useState<string|null>(null),[selectedReadScope,setSelectedReadScope]=useState(''),[mutationError,setError]=useState(''),[busy,setBusy]=useState(false),[filter,setFilter]=useState('all'),[confirmDelete,setConfirmDelete]=useState(false);
   const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[tier,setTier]=useState(''),[layer,setLayer]=useState('memory'),[cursor,setCursor]=useState<string>();
   const [jobId,setJobId]=useState<string>();
   const [history,setHistory]=useState(false),[asOf,setAsOf]=useState(''),[correcting,setCorrecting]=useState(false),[correction,setCorrection]=useState({title:'',statement:'',uncertainty:'',validFrom:'',validUntil:''});
   const {job,error:jobError,reload:reloadJob}=useMemoryJob(api,jobId);
   const page=useResource<{items:Memory[];nextCursor:string|null}>(api,'/api/memories?'+new URLSearchParams({...range,includeStale:'true',includeHistory:String(history),...(asOf?{asOf:new Date(asOf).toISOString()}:{}),limit:'30',...(layer?{layer}:{}),...(query?{query}:{}),...(tier?{tier}:{}),...(cursor?{cursor}:{}),...(filter!=='all'?{status:filter}:{})}));
   const jobList=useResource<{items:MemoryJob[]}>(api,'/api/memory-jobs');
-  const selected=useResource<Memory>(api,selectedId?'/api/memories/'+encodeURIComponent(selectedId)+'?'+new URLSearchParams(selectedId===createdMemoryId?{}:{...range}):null);
+  // Keep a selected card in the scope in which the owner opened it. The shell
+  // advances rolling endpoints on every poll; that does not change the choice.
+  const selected=useResource<Memory>(api,selectedId?'/api/memories/'+encodeURIComponent(selectedId)+'?'+(selectedId===createdMemoryId?'':selectedReadScope):null);
   const detail=selected.data,items=page.data?.items??[],nextCursor=page.data?.nextCursor,jobs=jobList.data?.items??[],loading=page.loading;
   const error=mutationError||([page.error,selected.error,jobList.error].find(Boolean)?errorMessage([page.error,selected.error,jobList.error].find(Boolean)):'');
   useOperationUpdates(api);
   function refresh(){resources(api).invalidate(key=>/^\/api\/(memories|memory-jobs)([/?]|$)/.test(key));}
   useEffect(()=>{if(refreshVersion)refresh();},[api,refreshVersion]);
   useEffect(()=>{setJobId(current=>current??jobs.find(item=>['queued','running','pausing','paused','failed','waiting_for_model','waiting_for_input'].includes(item.status))?.id);},[jobList.data]);
-  useEffect(()=>{const sameSession=selectionApi.current===api;selectionApi.current=api;setCursor(undefined);if(!(sameSession&&preserveSelection.current)){setSelectedId(null);setCreatedMemoryId(undefined);}preserveSelection.current=false;},[api,selectionScope,query,tier,layer,filter,history,asOf]);
+  useEffect(()=>{const sameSession=selectionApi.current===api;selectionApi.current=api;setCursor(undefined);if(!(sameSession&&preserveSelection.current)){setSelectedId(null);setSelectedReadScope('');setCreatedMemoryId(undefined);}preserveSelection.current=false;},[api,selectionScope,query,tier,layer,filter,history,asOf]);
   useEffect(()=>{if(job?.status==='completed'||job?.status==='failed')refresh();},[job?.id,job?.status]);
   async function extract(){
     if(explicitSource&&!selectionReady)return;
@@ -76,7 +78,7 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
     try{const result=await api.request<MemoryJob>('/api/memory-jobs',{method:'POST',body:JSON.stringify({... (explicitMaterial?{evidenceIds:material.data!.memorySource!.evidenceIds}:explicitSource?{evidenceIds:[sourceId]}:range),...(recipes.length?{recipes}:{}),modelProfileId:modelProfileId||undefined,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});setJobId(result.id);reloadJob();refresh();}
     catch(e){setError(errorMessage(e));}finally{setBusy(false);}
   }
-  function open(id:string){setCreatedMemoryId(undefined);setCorrecting(false);setError('');setConfirmDelete(false);setSelectedId(id);}
+  function open(id:string){setCreatedMemoryId(undefined);setCorrecting(false);setError('');setConfirmDelete(false);setSelectedReadScope(new URLSearchParams({...range}).toString());setSelectedId(id);}
   async function saveCorrection(){if(!detail)return;setBusy(true);setError('');try{const result=await api.request<Memory>('/api/memories/'+encodeURIComponent(detail.id)+'/correct',{method:'POST',body:JSON.stringify({...correction,version:detail.version??1,validFrom:correction.validFrom?new Date(correction.validFrom).toISOString():undefined,validUntil:correction.validUntil?new Date(correction.validUntil).toISOString():undefined})});setCorrecting(false);setCreatedMemoryId(result.id);setSelectedId(result.id);if(onChanged){preserveSelection.current=rangeSelectionKey===undefined;onChanged();}refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function remove(){if(!detail)return;setBusy(true);setError('');try{await api.request('/api/memories/'+encodeURIComponent(detail.id),{method:'DELETE'});setSelectedId(current=>current===detail.id?null:current);setConfirmDelete(false);refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function download(){if(!detail)return;try{const blob=new Blob([moteText("# {0}\n\n{1}\n\n## 判断边界\n\n{2}\n\n## 原始证据\n\n{3}\n", detail.title, detail.statement??'', detail.uncertainty??'', JSON.stringify(detail.evidence??[],null,2))],{type:'text/markdown'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='memory.md';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){setError(errorMessage(e));}}
@@ -91,7 +93,7 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
     {error&&<div className="error-banner" role="alert">{error}</div>}{jobError&&<div className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{jobError}</div>}
     <ExecutionQueueOverview api={api}/>
     {job&&<MemoryProgress job={job} onAction={action=>void control(action)} onRetry={()=>void retry()} onView={()=>open(job.memoryIds[0])} onOpen={onOpen} busy={busy}/>}
-    <MemoryIntegration api={api} candidate={selectedId===detail?.id&&!selected.error&&!selected.loading?detail:undefined}/>
+    <MemoryIntegration api={api} candidate={selectedId===detail?.id&&!selected.error?detail:undefined} verificationPending={selected.loading}/>
     {jobs.length>0&&<details className="memory-job-history"><summary>{moteText("整理任务与排队（")}{jobs.length}）</summary><div className="evidence-buttons">{jobs.map(item=><button className="button subtle" key={item.id} onClick={()=>setJobId(item.id)}>{item.importJobId?.startsWith('lifecycle:')?moteText('自动整理'):moteText('手动整理')} · {memoryJobLabels[item.status]} · {item.completedBatches}/{item.totalBatches} · {dateTime(item.createdAt)} · {item.memoryIds.length}{' '}{moteText("条记忆")}</button>)}</div></details>}
     <form className="memory-search" onSubmit={e=>{e.preventDefault();setQuery(search);setCursor(undefined);}}><label>{moteText("检索记忆")}<input aria-label={moteText("检索记忆")} value={search} onChange={e=>setSearch(e.target.value)} placeholder={moteText("搜索中文或英文原文")} maxLength={500}/></label><label>{moteText("内容分类")}<select aria-label={moteText("内容分类")} value={layer} onChange={e=>{setLayer(e.target.value);setCursor(undefined);}}><option value="memory">{moteText("精选记忆")}</option><option value="observation">{moteText("事件与资料")}</option><option value="legacy">{moteText("旧版未审核")}</option><option value="">{moteText("全部")}</option></select></label><label>{moteText("记忆层级")}<select value={tier} onChange={e=>{setTier(e.target.value);setCursor(undefined);}}><option value="">{moteText("全部层级")}</option><option value="episode">{moteText("初次提取")}</option><option value="consolidated">{moteText("整合产物")}</option></select></label><button className="button subtle" type="submit">{moteText("搜索")}</button></form>
     <div className="memory-search"><label><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>{moteText("包括已替代和过期的历史记忆")}</label><label>{moteText("查看当时有效的记忆")}<input type="datetime-local" value={asOf} disabled={history} onChange={e=>setAsOf(e.target.value)}/></label>{asOf&&<button className="button subtle" onClick={()=>setAsOf('')}>{moteText("回到当前")}</button>}</div>

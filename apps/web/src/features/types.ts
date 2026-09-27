@@ -8,5 +8,5 @@ export type PageEntry={id:string;route?:string;label?:string;section?:'library'|
 export type ViewValue={kind:string;schemaVersion:number;representation:string;ref:string;revision:string;title:string;text:string};
 export type ViewProps={value:ViewValue;api:Api;onOpen:(ref:string)=>void;fallback?:ReactNode};
 export type ViewEntry={id:string;kind:string;schemaVersion:number;representation:string;render:(props:ViewProps)=>ReactNode};
-export type CollectionProps={api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(ref:string)=>void;onChanged?:()=>void};
+export type CollectionProps={api:Api;devices:Device[];range:Range;rangeSelectionKey?:string;activity:Activity;revision:number;onOpen:(ref:string)=>void;onChanged?:()=>void};
 export type CollectionEntry={id:string;featureId:string;label:string;order:number;render:(props:CollectionProps)=>ReactNode};

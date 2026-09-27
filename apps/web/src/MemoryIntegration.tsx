@@ -16,7 +16,7 @@ export function currentIntegrationCandidate(item:IntegrationCandidate|undefined,
 
 const statusLabels:Record<string,string>={pending:moteText('等待执行'),running:moteText('正在整理'),retry_wait:moteText('等待自动重试'),failed:moteText('整理失败'),cancelled:moteText('已取消')};
 const recipeLabel=(item:Recipe)=>item.id==='mote.memory-integration'?moteText('记忆整理'):item.id;
-export function MemoryIntegration({api,candidate}:{api:Api;candidate?:IntegrationCandidate}){
+export function MemoryIntegration({api,candidate,verificationPending=false}:{api:Api;candidate?:IntegrationCandidate;verificationPending?:boolean}){
   const eligible=currentIntegrationCandidate(candidate);
   const lifecycle=useResource<LifecycleView>(api,'/api/memory-settings',3000);
   const recipes=useResource<{items:Recipe[]}>(api,eligible?'/api/memory-integration-recipes':null);
@@ -36,7 +36,7 @@ export function MemoryIntegration({api,candidate}:{api:Api;candidate?:Integratio
   const timeout=profile?.settings?.agentTimeoutMs;
   const configured=!!model&&!!profile;
   const limit=lifecycle.data?.settings?.consolidation?.maxItems;
-  const canSubmit=eligible&&!!chosen&&configured&&!!limit&&limit>=1&&(!active||state?.status==='cancelled')&&!busy&&!lifecycle.error&&!models.error&&!recipes.error;
+  const canSubmit=eligible&&!verificationPending&&!!chosen&&configured&&!!limit&&limit>=1&&(!active||state?.status==='cancelled')&&!busy&&!lifecycle.error&&!models.error&&!recipes.error;
   async function act(action:'start'|'cancel'|'retry'){
     if(busy||request.current||activeApi.current!==api)return;
     const controller=new AbortController();request.current=controller;setBusy(true);setError('');

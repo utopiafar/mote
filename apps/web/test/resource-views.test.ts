@@ -5,6 +5,7 @@ import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {Memories} from '../src/Memories.js';
 import {MemoryIntegration} from '../src/MemoryIntegration.js';
+import {FeaturePage,featuresReady} from '../src/features/runtime.js';
 import {Files,FileDetail} from '../src/Files.js';
 import {Sources} from '../src/Sources.js';
 import {ReferenceDetail} from '../src/ReferenceDetail.js';
@@ -380,7 +381,9 @@ test('Memory rolling-window polling retains selected detail while real scope and
  const open=()=>act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
  await act(async()=>render());await open();assert.match(d.querySelector('.memory-detail')!.textContent!,/Current evidence a/);
  await act(async()=>t.mock.timers.tick(30000));assert.match(d.querySelector('.memory-detail')!.textContent!,/Current evidence a/);
- delayDetail=true;await act(async()=>t.mock.timers.tick(30000));assert.match(d.querySelector('.workspace-content')!.textContent!,/正在读取/);
+ delayDetail=true;await act(async()=>t.mock.timers.tick(30000));assert.match(d.querySelector('.memory-detail')!.textContent!,/Current evidence a/);
+ await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/'+ids[0])));
+ assert.match(d.querySelector('.memory-detail')!.textContent!,/Current evidence a/,'an in-flight refresh keeps the previously authorized detail visible');
  await act(async()=>render('month'));await act(async()=>late.resolve({...memory(ids[0]),statement:'STALE WINDOW DETAIL'}));
  assert.equal(d.querySelector('.memory-detail'),null);assert.doesNotMatch(d.body.textContent!,/STALE WINDOW DETAIL/);
  delayDetail=false;await open();assert.ok(d.querySelector('.memory-detail'));
@@ -390,6 +393,46 @@ test('Memory rolling-window polling retains selected detail while real scope and
  await open();assert.ok(d.querySelector('.memory-detail'));
  const next=apiWith(path=>path.startsWith('/api/memories?')?{items:[memory(ids[0])],nextCursor:null}:{...memory(ids[0]),statement:'NEW SESSION DETAIL'});
  await act(async()=>render('month',next,'generated-device'));assert.equal(d.querySelector('.memory-detail'),null);assert.doesNotMatch(d.body.textContent!,/NEW SESSION DETAIL|Current evidence a/);
+});
+
+test('Library Memory keeps its selected card and integration panel across a 30-second rolling range',async t=>{
+ const {root,document:d}=await fixture(t);await featuresReady;
+ const item={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
+ const pending=deferred();let slow=false,detailReads=0;
+ const api=apiWith(path=>{
+   if(path.startsWith('/api/memories?'))return {items:[item],nextCursor:null};
+   if(path.startsWith('/api/memories/'+ids[0]+'?')){detailReads++;return slow?pending.promise:item;}
+   if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0}]};
+   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+   if(path==='/api/memory-recipes')return {items:[]};
+   return {};
+ });
+ const baseRequest=api.request;api.request=async(path,init)=>path==='/api/model-settings'?{settings:{model:'generated-model',agentTimeoutMs:300000}}:baseRequest(path,init);
+ t.mock.timers.enable({apis:['setInterval','Date'],now:Date.parse('2026-09-28T00:00:00Z')});
+ function LibraryShell({period,deviceId}:{period:string;deviceId?:string}){
+   const [revision,setRevision]=React.useState(0);
+   React.useEffect(()=>{const timer=setInterval(()=>setRevision(value=>value+1),30000);return()=>clearInterval(timer);},[]);
+   const range=React.useMemo(()=>({after:new Date(Date.now()-(period==='week'?7:30)*86400000).toISOString(),before:new Date().toISOString(),...(deviceId?{deviceId}:{})}),[period,revision,deviceId]);
+   const props={api,status:null,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},recent:[],insights:[],onPage:()=>{},onOpen:()=>{},range,rangeSelectionKey:period,archiveTab:'memories',setArchiveTab:()=>{},timelineRevision:0,refresh:()=>{},disconnect:()=>{},sessionLifetime:'permanent',changeSessionLifetime:()=>{}} as any;
+   return React.createElement(React.Suspense,{fallback:null},React.createElement(FeaturePage,{page:'archive',props}));
+ }
+ const render=(period='week',deviceId?:string)=>root.render(React.createElement(LibraryShell,{period,deviceId}));
+ await act(async()=>render());
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ assert.ok(d.querySelector('.memory-detail'));assert.ok(d.querySelector('#manual-memory-integration'));
+ const submit=()=>Array.from(d.querySelectorAll<HTMLButtonElement>('#manual-memory-integration button')).find(button=>button.textContent==='整理这条记忆')!;
+ assert.equal(submit().disabled,false);const selectedReads=detailReads;
+ await act(async()=>t.mock.timers.tick(30000));
+ assert.ok(d.querySelector('.memory-detail'),'Library selection survives the actual shell poll');
+ assert.ok(d.querySelector('#manual-memory-integration'),'the setup panel does not jump away');
+ assert.equal(detailReads,selectedReads,'rolling range does not start a new selected-card request');
+ slow=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/'+ids[0])));
+ assert.ok(d.querySelector('.memory-detail'));assert.ok(d.querySelector('#manual-memory-integration'));
+ assert.equal(submit().disabled,true,'a retained card cannot submit while freshness is being checked');
+ await act(async()=>pending.resolve(item));assert.equal(submit().disabled,false);
+ await act(async()=>render('month'));assert.equal(d.querySelector('.memory-detail'),null);assert.equal(d.querySelector('#manual-memory-integration'),null);
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());assert.ok(d.querySelector('.memory-detail'));
+ await act(async()=>render('month','generated-device'));assert.equal(d.querySelector('.memory-detail'),null);
 });
 
 test('single-record memory extraction uses explicit evidence and chosen recipe without rolling range',async t=>{
