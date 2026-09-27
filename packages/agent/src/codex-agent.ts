@@ -1,3 +1,4 @@
+import {parameterSchemaSpecToJsonSchema} from '@deepseek-ai/dsh-tools';
 import {ProviderFailure} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
 import {assembleContext,taskTools} from './task-context.js';
@@ -12,7 +13,7 @@ import {systemInstructions} from './instructions.js';
 import {AgentNotConfiguredError,AgentProviderError,AgentResponseError,AgentTimeoutError,reportProgress,reportTrace,validateHostOutput,type AgentOptions,type QueryInput,type AgentAnswer} from './types.js';
 
 const toolsFor=(input:QueryInput):CodexTool[]=>[...contextToolDefinitions(input).map(([name,description,fields]):CodexTool=>({
-  type:'function',name,description,inputSchema:{type:'object',properties:Object.fromEntries(Object.entries(fields).map(([key,{required:_,...schema}])=>[key,schema])),required:Object.entries(fields).filter(([,schema])=>schema.required).map(([key])=>key),additionalProperties:false},
+  type:'function',name,description,inputSchema:{...parameterSchemaSpecToJsonSchema(fields as unknown as Parameters<typeof parameterSchemaSpecToJsonSchema>[0]),additionalProperties:false},
 })),{type:'function',name:'skill',description:'Read a bundled Mote procedure by name. Available: '+bundledSkills.filter(s=>s.id!=='document-import').map(s=>s.id).join(', '),inputSchema:{type:'object',properties:{name:{type:'string'}},required:['name'],additionalProperties:false}}];
 export const codexContextTools=toolsFor({question:''});
 const answerSchema={type:'object',properties:{answer:{type:'string'},citationIds:{type:'array',items:{type:'string'}}},required:['answer','citationIds'],additionalProperties:false};
@@ -48,11 +49,11 @@ export function createCodexAgent(options:AgentOptions){
           const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(requestTimeoutMs??120000)});
           if(!response.ok){const body=await response.json() as {toolError?:{code:string;message:string;recovery:'correct_arguments'|'use_existing_evidence'|'stop';details:Record<string,unknown>}};const error=body.toolError;if(error)throw new ContextToolError(error.code,error.message,error.recovery,error.details);throw new Error('Context tool rejected');}
           const result=await response.json();
-          if(name==='read_image'&&result.imageDelivery){bridge.imageDelivery(result.imageDelivery,true);delete result.imageDelivery;}
+          if(name==='read_image'&&result.imageDelivery){bridge.imageDelivery(result.imageDelivery,true);delete result.imageDelivery;if(result.imageView)result.imageView.delivery='prepared';}
           // The model receives the image, but diagnostics only need its identity
           // and size. Copying base64 into traces duplicates private originals and
           // can overwhelm the log viewer even when the read itself is bounded.
-          const traced=name==='read_image'&&result.image?{source:result.source,id:result.id,...(result.attachmentId?{attachmentId:result.attachmentId}:{}),image:{mimeType:result.image.mimeType,encodedCharacters:result.image.data.length},hostBudget:result.hostBudget}:result;
+          const traced=name==='read_image'&&result.image?{source:result.source,id:result.id,...(result.attachmentId?{attachmentId:result.attachmentId}:{}),...(result.imageView?{imageView:result.imageView}:{}),imageBudget:result.imageBudget,image:{mimeType:result.image.mimeType,encodedCharacters:result.image.data.length},hostBudget:result.hostBudget}:result;
           trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'succeeded',payload:{result:traced}});return result;
         } catch(error) {
           trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError'}});throw error;

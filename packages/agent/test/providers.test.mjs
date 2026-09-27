@@ -1,3 +1,4 @@
+import {generatedImageRead,digest,assertRegionSchema} from './image-region-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -86,6 +87,22 @@ for (const protocol of ['openai-completions','openai-responses','anthropic-messa
       assert.equal(occurrences(requests[4].body,images[0]),1,'history retains the first image without appending a duplicate');assert.equal(occurrences(requests[4].body,images[1]),0);assert.match(JSON.stringify(requests[4].body),/already_disclosed/);
       for(const image of images)assert.equal(occurrences(requests[5].body,image),1,'a distinct attachment still supplies its pixels');
       assert.ok(!JSON.stringify(requests).includes('imageDelivery'));assert.ok(!JSON.stringify(requests).includes('_image_delivery'),'host receipts never enter model tools or content');
+    },{reader:imageReader},actions);
+  });
+  test(`real Harness ${protocol} preserves nested region schema, metadata and first-payload budgets`,{timeout:60000},async()=>{
+    const bytes=await sharp({create:{width:20,height:30,channels:3,background:'#34cabc'}}).png().toBuffer(),parent={...record,provenance:{document:{attachments:[{id:'image-a'}]}}};
+    const input={id:record.id,attachmentId:'image-a',expectedImageSha256:digest(bytes),region:{x:2,y:3,width:6,height:8}};
+    const output=await generatedImageRead(bytes,input),actions=[{name:'search_context',args:{}},{name:'evidence',args:{ids:[record.id]}},{name:'read_image',args:{id:record.id,attachmentId:'image-a',view:'metadata'}},{name:'read_image',args:input},{name:'read_image',args:input}];
+    const imageReader={...reader,search:async()=>[parent],evidence:async()=>[parent],readImage:args=>generatedImageRead(bytes,args)};
+    await withProvider(protocol,async(agent,requests)=>{
+      const answer=await agent.query({question:'Generated region transport'});assert.equal(requests.length,6);assert.equal(answer.citations[0].id,record.id);
+      const body=requests[0].body,tools=protocol==='google-generative-ai'?body.tools.flatMap(t=>t.functionDeclarations):body.tools.map(t=>t.function??t),tool=tools.find(t=>t.name==='read_image');
+      assertRegionSchema(assert,tool.parameters??tool.parametersJsonSchema??tool.input_schema);
+      for(const request of requests.slice(0,4))assert.ok(!JSON.stringify(request.body).includes(output.data),'metadata does not disclose pixels');
+      assert.equal(JSON.stringify(requests[4].body).split(output.data).length-1,1);assert.equal(JSON.stringify(requests[5].body).split(output.data).length-1,1);
+      const texts=[];const walk=value=>{if(typeof value==='string'){try{const parsed=JSON.parse(value.split('\n')[0]);if(parsed.imageView)texts.push(parsed);}catch{}}else if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')Object.values(value).forEach(walk);};walk(requests[4].body);
+      const delivered=texts.find(t=>t.imageView.delivery==='prepared');assert.ok(delivered);assert.deepEqual(delivered.imageView.region,input.region);assert.equal(delivered.imageBudget.remainingPayloads,3);assert.ok(delivered.hostBudget.remainingCalls>0);
+      assert.match(JSON.stringify(requests[5].body),/already_disclosed/);assert.deepEqual(answer.trace.filter(t=>t.tool==='read_image').map(t=>t.imageView.delivery),['metadata','prepared','already_disclosed']);
     },{reader:imageReader},actions);
   });
   test(`real Harness ${protocol} preserves read-only multi-round tools, evidence and native replay`, {timeout:60000}, async()=>{

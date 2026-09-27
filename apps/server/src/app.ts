@@ -1,3 +1,5 @@
+import {imageOutput} from './evidence-image.js';
+import {fileAttachmentAvailable} from './file-attachments.js';
 import {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
 import {memoryEvidenceFingerprint} from './memory.js';
@@ -163,8 +165,15 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
     currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs}));
   const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
+  const directImageAllowed=(id:string)=>{
+    try{const image=directImage(id),version=files.version(id);
+      return Boolean(image&&version.object_hash===image.hash&&store.evidence([id]).length&&fileAttachmentAvailable(store,id)&&
+        !store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted&&
+        (modelLocality.getStore()===true||!evidenceReader.evidenceLocalOnly(id)));
+    }catch{return false;}
+  };
   const fileRawReader=new FileRawReader(store,files,archivedFiles,{
-    mayReadFileVersion:(_sourceId,id)=>Boolean(directImage(id)),mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
+    mayReadFileVersion:(_sourceId,id)=>directImageAllowed(id),mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
   });
   const reader:ContextReader={...archiveReader,
     evidence:async args=>{
@@ -172,9 +181,10 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
       const regular=args.ids.filter(id=>!directImage(id));
       return [...direct,...(regular.length?await archiveReader.evidence({...args,ids:regular}):[])];
     },
-    readImage:async({id,attachmentId})=>{
+    readImage:async(input)=>{
+      const {id,attachmentId}=input;
       const direct=directImage(id);
-      if(!direct)return archiveReader.readImage!({id,attachmentId});
+      if(!direct)return archiveReader.readImage!(input);
       if(attachmentId!==undefined)throw new StoreError('Dialogue images have no nested attachments',400);
       const ref=fileOriginalRawRef(id,direct.hash),parts:Buffer[]=[];
       for(let offset=0;offset<direct.sizeBytes;){
@@ -182,7 +192,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
         if(page.status!=='available'||page.totalBytes!==direct.sizeBytes||page.mediaType!==direct.mimeType||page.bytes.length===0)throw new StoreError('Attached image is unavailable',404);
         parts.push(Buffer.from(page.bytes));offset+=page.bytes.length;
       }
-      return {mimeType:direct.mimeType,data:Buffer.concat(parts).toString('base64')};
+      return imageOutput(Buffer.concat(parts),direct.mimeType,input,()=>directImageAllowed(id));
     },
   };
   const queryImages=(ids:string[])=>ids.map(id=>{

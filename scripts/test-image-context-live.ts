@@ -91,7 +91,7 @@ try{
  }finally{manualBridges.delete(bridge.url);await bridge.close();}
  if(mode==='live'){
  const readImage=node.featureServices.archiveReader.readImage!.bind(node.featureServices.archiveReader);
- node.featureServices.archiveReader.readImage=async selection=>{assert.ok([parent.id,selectedId,composition?.childId].includes(selection.id),'Only the frozen parent or image child may disclose pixels');assert.ok(selection.attachmentId===undefined||selection.attachmentId===image.id,'Only the frozen attachment is authorized');const result=await readImage(selection);assert.equal(sha256(Buffer.from(result.data,'base64')),manifest.imageSha256);return result;};
+ node.featureServices.archiveReader.readImage=async selection=>{assert.ok([parent.id,selectedId,composition?.childId].includes(selection.id),'Only the frozen parent or image child may disclose pixels');assert.ok(selection.attachmentId===undefined||selection.attachmentId===image.id,'Only the frozen attachment is authorized');const result=await readImage(selection);assert.equal(sha256(Buffer.from(result.data!,'base64')),manifest.imageSha256);return result;};
  const query=node.agent.query.bind(node.agent);node.agent.query=async input=>{
   assert.equal(report.modelCalls,0,'Only one query is authorized');assert.ok(!input.skill&&!input.directImages?.length,'Use normal archive retrieval, not a dialogue attachment or extraction');report.modelCalls++;report.trace=[];await save();
   const deadline=AbortSignal.timeout(manifest.queryTimeoutMs),signal=input.signal?AbortSignal.any([input.signal,deadline]):deadline;

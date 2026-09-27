@@ -1,3 +1,4 @@
+import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
 import {pinContextTools} from './tool-contributions.js';
 import {rememberEvidence,projectEvidencePresentation,copyEvidencePresentation} from './evidence-ledger.js';
@@ -247,7 +248,7 @@ export async function startBridge(
   for(const image of directImages)expanded.add(image.id);
   // Query-local byte identities only: never skip the reader's fresh authorization
   // or merge the source attribution of two selections containing the same image.
-  type ImageDelivery={selection:{id:string;attachmentId?:string};token:string;confirmed:boolean;ready:Promise<void>;settle:()=>void;timer:ReturnType<typeof setTimeout>};
+  type ImageDelivery={selection:{id:string;attachmentId?:string};imageView?:ImageViewTrace;token:string;confirmed:boolean;ready:Promise<void>;settle:()=>void;timer:ReturnType<typeof setTimeout>};
   const disclosedImages=new Map<string,ImageDelivery>();
   let closing=false;
   const imageDelivery=(token:string,delivered:boolean)=>{
@@ -255,6 +256,7 @@ export async function startBridge(
     if(!entry){if(delivered)throw hostError('Image delivery receipt expired');return;}
     const [key,value]=entry;clearTimeout(value.timer);
     if(delivered)value.confirmed=true;else disclosedImages.delete(key);
+    if(value.imageView)value.imageView.delivery=delivered?'prepared':'failed';
     value.settle();
   };
   let calls = 0;
@@ -430,7 +432,9 @@ export async function startBridge(
         res.end(serialized);return;
       }
       if(tool==='read_image'){
-        if(Object.keys(args).some(key=>key!=='id'&&key!=='attachmentId'))throw hostError('Unsupported image selection arguments');
+        const parsed=imageReadSchema.safeParse(args);
+        if(!parsed.success)throw new ContextToolError('invalid_image_region','Use the declared image arguments. Regions require expectedImageSha256, integer original coordinates and sides of 1–2048.','correct_arguments',{maxRegionSide:IMAGE_REGION_MAX_SIDE});
+        const selection=parsed.data;
         if(typeof args.id!=='string'||!expanded.has(args.id)||!reader.readImage)throw hostError('Expand derived evidence before reading an authorized image');
         for(;;){
           if(closing||res.destroyed)return;
@@ -439,11 +443,36 @@ export async function startBridge(
           const document=documentSchema.safeParse((record?.provenance as {document?:unknown}|undefined)?.document),at=record&&sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
           if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at!)<Date.parse(scope.after)||scope.before&&Date.parse(at!)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
           if(args.attachmentId!==undefined&&(direct||typeof args.attachmentId!=='string'||!document.success||!document.data.attachments?.some(attachment=>attachment.id===args.attachmentId)))throw hostError('Select an image attachment declared by the expanded parent evidence');
-          const selection={id:args.id,...(typeof args.attachmentId==='string'?{attachmentId:args.attachmentId}:{})};
           const image=await reader.readImage(selection);
           if(closing||res.destroyed)return;
-          if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||image.data.length>12*1024*1024)throw hostError('Invalid image output');
-          const sha256=createHash('sha256').update(Buffer.from(image.data,'base64')).digest('hex'),key=image.mimeType+':'+sha256;
+          const metadata=selection.view==='metadata';
+          let imageView:ImageView|undefined;
+          if(image.imageView){
+            const checked=imageViewSchema.safeParse(image.imageView);if(!checked.success)throw hostError('Invalid image view metadata');imageView=checked.data;
+            const expectedTransform=metadata?'metadata@1':selection.region?'crop-encoded-raster-png@1':'original-bytes@1';
+            const expectedId=createHash('sha256').update(JSON.stringify([imageView.original.sha256,'encoded-raster-pixels-v1',selection.region??null,expectedTransform])).digest('hex');
+            if(JSON.stringify(imageView.region)!==JSON.stringify(selection.region??null)||imageView.transform!==expectedTransform||imageView.viewId!==expectedId||
+              selection.expectedImageSha256&&imageView.original.sha256!==selection.expectedImageSha256||
+              imageView.region&&(imageView.region.x+imageView.region.width>imageView.original.width||imageView.region.y+imageView.region.height>imageView.original.height||imageView.original.pages!==1))throw hostError('Image view does not match the requested original and region');
+          }else if(metadata||selection.region||selection.expectedImageSha256)throw new ContextToolError('image_view_unsupported','This image reader cannot verify metadata or regions. Use existing evidence or a plain original image request.','use_existing_evidence');
+          const publicView:ImageViewTrace|undefined=imageView?{...imageView,id:selection.id,...(selection.attachmentId?{attachmentId:selection.attachmentId}:{}),delivery:metadata?'metadata' as const:'pending' as const}:undefined;
+          const imageBudget=()=>({remainingPayloads:Math.max(0,4-disclosedImages.size),maxRegionSide:IMAGE_REGION_MAX_SIDE,maxOutputBytes:IMAGE_MAX_BYTES});
+          const sendImageResult=(result:Record<string,unknown>,entry:ToolTrace)=>{
+            const {image:payload,imageDelivery:receipt,...text}=result;
+            const characters=JSON.stringify(text).length;
+            if(characters>limits.toolResultCharacters||deliveredCharacters+characters>limits.totalToolCharacters){if(typeof receipt==='string')imageDelivery(receipt,false);throw budgetError();}
+            deliveredCharacters+=characters;trace.push(entry);reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(JSON.stringify(result));
+          };
+          if(metadata){
+            if(image.data!==undefined||imageView?.output)throw hostError('Metadata must not include image bytes');
+            sendImageResult({source:'untrusted_personal_context',...selection,imageView:publicView,imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,imageView:publicView});return;
+          }
+          if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||typeof image.data!=='string'||!image.data.length||image.data.length>12*1024*1024)throw hostError('Invalid image output');
+          const bytes=Buffer.from(image.data,'base64'),sha256=createHash('sha256').update(bytes).digest('hex'),key=image.mimeType+':'+sha256;
+          if(bytes.length>IMAGE_MAX_BYTES)throw hostError('Invalid image output size');
+          if(imageView&&(!imageView.output||imageView.output.sha256!==sha256||imageView.output.mimeType!==image.mimeType||imageView.output.sizeBytes!==bytes.length||
+            imageView.output.width!==(imageView.region?.width??imageView.original.width)||imageView.output.height!==(imageView.region?.height??imageView.original.height)||
+            !imageView.region&&(sha256!==imageView.original.sha256||image.mimeType!==imageView.original.mimeType)))throw hostError('Image output does not match its declared view');
           const existing=disclosedImages.get(key);
           if(existing&&!existing.confirmed){
             let disconnected!:()=>void;const connectionClosed=new Promise<void>(resolve=>{disconnected=resolve;res.once('close',disconnected);});
@@ -453,7 +482,7 @@ export async function startBridge(
             continue;
           }
           const firstSelection=existing?.selection;
-          if(!existing&&disclosedImages.size>=4)throw hostError('Image disclosure budget exceeded');
+          if(!existing&&disclosedImages.size>=4)throw new ContextToolError('image_budget_exceeded','Image disclosure budget exceeded. Finish with existing evidence and state incomplete visual coverage.','use_existing_evidence',{remainingPayloads:0});
           // No await between checking and recording: concurrent identical reads
           // append at most one image. Repeats still consume the normal tool budget.
           let delivery:ImageDelivery|undefined;
@@ -463,14 +492,13 @@ export async function startBridge(
             // forever. A late success is refused, so it cannot disclose a stale
             // reservation after a waiting reader has taken over.
             const timer=setTimeout(()=>imageDelivery(token,false),30_000);timer.unref();
-            delivery={selection,token,confirmed:false,ready,settle,timer};disclosedImages.set(key,delivery);
+            delivery={selection,imageView:publicView,token,confirmed:false,ready,settle,timer};disclosedImages.set(key,delivery);
           }
-          trace.push({tool,arguments:selection,count:1});
-          reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});
-          res.end(JSON.stringify({source:'untrusted_personal_context',...selection,...(firstSelection?{
-            imageDisclosure:{status:'already_disclosed',sha256,mimeType:image.mimeType,firstSelection},
+          if(firstSelection&&publicView)publicView.delivery='already_disclosed';
+          sendImageResult({source:'untrusted_personal_context',...selection,...(publicView?{imageView:publicView}:{}),...(firstSelection?{
+            imageDisclosure:{status:'already_disclosed',sha256,mimeType:image.mimeType,firstSelection,...(existing?.imageView?{firstImageView:existing.imageView}:{})},
             message:'These exact image bytes were already supplied in this query. Use the earlier image with this selection’s own source attribution.',
-          }:{image,imageDelivery:delivery!.token}),hostBudget:hostBudget()}));return;
+          }:{image:{mimeType:image.mimeType,data:image.data},imageDelivery:delivery!.token}),imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,...(publicView?{imageView:publicView}:{})});return;
         }
       }
       let value: unknown;
@@ -721,7 +749,7 @@ export async function startBridge(
     },
     async close() {
       closing=true;
-      for(const value of disclosedImages.values()){clearTimeout(value.timer);value.settle();}
+      for(const value of disclosedImages.values()){clearTimeout(value.timer);if(!value.confirmed&&value.imageView)value.imageView.delivery='failed';value.settle();}
       disclosedImages.clear();
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) =>

@@ -1,3 +1,5 @@
+import sharp from 'sharp';
+import {generatedImageRead,assertRegionSchema} from './image-region-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm,readFile,access,mkdir} from 'node:fs/promises';
@@ -53,11 +55,16 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
  }else if((mode==='image-flow'||mode==='image-repeat')&&(m.id===999||m.id===1000||mode==='image-repeat'&&m.id===1001)){
   if(!m.result?.success)process.exit(3);
   send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:m.id===999?{ids:['synthetic-codex-record']}:{id:'synthetic-codex-record',attachmentId:'generated-image'}}});
+ }else if(mode==='image-region'&&m.id>=999&&m.id<=1002){
+  if(!m.result?.success)process.exit(3);
+  const value=JSON.parse(m.result.contentItems[0].text);
+  const args=m.id===999?{ids:['synthetic-codex-record']}:m.id===1000?{id:'synthetic-codex-record',attachmentId:'generated-image',view:'metadata'}:{id:'synthetic-codex-record',attachmentId:'generated-image',expectedImageSha256:value.imageView.original.sha256,region:{x:1,y:2,width:4,height:5}};
+  send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:args}});
  }else if(m.id===999&&mode==='tool-repair'){
   const feedback=JSON.parse(m.result.contentItems[0].text);
   if(m.result.success!==false||feedback.toolError.code!=='invalid_tool_arguments'||feedback.toolError.recovery!=='correct_arguments')process.exit(5);
   send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:{}}});
- }else if(m.id===999||m.id===1000||m.id===1001||m.id===1002){
+ }else if(m.id===999||m.id===1000||m.id===1001||m.id===1002||m.id===1003){
   if(!m.result?.success)process.exit(3);
   if(mode==='image-echo'||mode==='image-flow')send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'image-echo',type:'dynamicToolCall',contentItems:m.result.contentItems}}});
   if(mode==='usage')for(const sample of [turns*100,turns*100])send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
@@ -252,4 +259,19 @@ test('Codex advertises and dispatches a host contribution from the same pinned d
  tools.register({name:'fixture_context',version:'generated-1',description:'Generated read-only metadata',fields:{},maxCharacters:1000,parse:args=>args,authorize:()=>true,read:()=>{calls++;return {fixture:'generated'};}});
  const agent=createAgent({reader:{...reader,contextTools:()=>tools.snapshot()},protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
  const answer=await agent.query({question:'Read generated metadata'});assert.equal(calls,1);assert.equal(answer.trace[0].tool,'fixture_context');assert.deepEqual(answer.citations,[]);
+});
+
+test('Codex receives a nested region schema and metadata, then native region plus budgets and successful repeat',async t=>{
+ const root=await fake(t,'image-region'),events=[],bytes=await sharp({create:{width:20,height:30,channels:3,background:'#145abc'}}).png().toBuffer();
+ const parent={...record,provenance:{document:{attachments:[{id:'generated-image',mimeType:'image/png'}]}}};
+ const agent=createAgent({reader:{...reader,timeline:async()=>[parent],evidence:async()=>[parent],readImage:args=>generatedImageRead(bytes,args)},protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ const answer=await agent.query({question:'Generated model-selected region',onTrace:e=>events.push(e)});assert.equal(answer.citations[0].id,record.id);
+ const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+ assertRegionSchema(assert,messages.find(m=>m.method==='thread/start').params.dynamicTools.find(t=>t.name==='read_image').inputSchema);
+ const metadata=messages.find(m=>m.id===1001).result,first=messages.find(m=>m.id===1002).result,repeat=messages.find(m=>m.id===1003).result;
+ assert.deepEqual(metadata.contentItems.map(x=>x.type),['inputText']);assert.equal(JSON.parse(metadata.contentItems[0].text).imageBudget.remainingPayloads,4);
+ const delivered=JSON.parse(first.contentItems[0].text);assert.deepEqual(delivered.imageView.region,{x:1,y:2,width:4,height:5});assert.equal(delivered.imageView.delivery,'prepared');assert.equal(delivered.imageBudget.remainingPayloads,3);assert.ok(delivered.hostBudget.remainingCalls>0);
+ assert.equal(first.contentItems[1].type,'inputImage');assert.deepEqual(repeat.contentItems.map(x=>x.type),['inputText']);assert.equal(JSON.parse(repeat.contentItems[0].text).imageDisclosure.status,'already_disclosed');
+ const imageData=first.contentItems[1].imageUrl.split(',')[1];assert.ok(!JSON.stringify(events).includes(imageData));
+ assert.deepEqual(answer.trace.filter(t=>t.tool==='read_image').map(t=>t.imageView.delivery),['metadata','prepared','already_disclosed']);
 });

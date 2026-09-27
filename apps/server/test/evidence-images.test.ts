@@ -106,7 +106,36 @@ test('imported ZIP image is readable through discovered Material evidence with p
  const page=await call('timeline',{}),id=page.data[0].id;assert.notEqual(id,parent.id,'query discovery prefers formal Material evidence');
  const evidence=await call('evidence',{ids:[id]});assert.deepEqual(evidence.data[0].provenance.document,parent.provenance!.document);assert.equal(evidence.data[0].contentAt,parent.provenance!.document!.recordedAt);
  const image=await call('read_image',{id,attachmentId:attachment.id});assert.equal(image.image.mimeType,'image/png');assert.equal(image.image.data,f.bytes.toString('base64'));assert.equal(image.attachmentId,attachment.id);
+ const metadata=await call('read_image',{id,attachmentId:attachment.id,view:'metadata'});assert.equal(metadata.image,undefined);
+ const region=await call('read_image',{id,attachmentId:attachment.id,expectedImageSha256:metadata.imageView.original.sha256,region:{x:0,y:0,width:1,height:1}});assert.equal(region.imageView.id,id,'formal source attribution survives raw resolution');assert.equal(region.imageView.original.sha256,sha256(f.bytes));assert.equal(region.imageView.output.width,1);
  const material=f.materials.get(materialId(parent.provenance!.sourceId,parent.provenance!.externalId))!;f.materials.retire(material.id,{expectedRevision:material.revision});
  await assert.rejects(f.agent.readImage!({id,attachmentId:attachment.id}),/Image not found/);
  assert.equal((await f.agent.readImage!({id:parent.id,attachmentId:attachment.id})).data,f.bytes.toString('base64'),'retiring a derived view does not delete the retained original');
+});
+
+test('image regions pin original versions while metadata, history and attachment grants remain current',async t=>{
+ const f=await fixture(t),one=await f.upload('regions'),region={x:0,y:0,width:1,height:2};
+ const meta=await f.agent.readImage!({id:one.id,view:'metadata'});assert.equal(meta.data,undefined);assert.equal(meta.imageView!.original.sha256,sha256(f.bytes));
+ const read={id:one.id,expectedImageSha256:sha256(f.bytes),region};
+ const cropped=await f.agent.readImage!(read);assert.deepEqual(cropped.imageView!.region,region);assert.equal(cropped.imageView!.output!.width,1);
+ f.setEnabled(false);await assert.rejects(f.agent.readImage!({id:one.id,view:'metadata'}),/disabled/);f.setEnabled(true);
+ f.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(one.id);await assert.rejects(f.agent.readImage!(read),/Image not found/);f.store.db.prepare('UPDATE file_jobs SET local_only=0 WHERE capture_id=?').run(one.id);
+ const next=await sharp({create:{width:2,height:2,channels:3,background:'#556677'}}).png().toBuffer(),two=await f.upload('regions','2',next);
+ assert.equal((await f.agent.readImage!(read)).data,cropped.data,'a retained explicit history version keeps its own pixels');
+ await assert.rejects(f.agent.readImage!({...read,id:two.id}),(error:any)=>error.code==='image_version_changed');
+ const image=f.archived.put({name:'generated.png',mimeType:'image/png',bytes:f.bytes});
+ const parent=await f.sources.upsert('generated-images',{externalId:'region-parent',revision:'1',observedAt:'2026-09-27T01:00:00Z',kind:'message',layer:'original',text:'Generated caption',document:{attachments:[{id:image.id}]}});f.archived.attach(parent.id,[image.id]);
+ assert.equal((await f.agent.readImage!({...read,id:parent.id,attachmentId:image.id})).data,cropped.data);
+ f.store.db.prepare('DELETE FROM capture_files WHERE capture_id=?').run(parent.id);await assert.rejects(f.agent.readImage!({...read,id:parent.id,attachmentId:image.id}),/Image not found/);
+ await f.sources.upsert('generated-images',{externalId:'regions',revision:'3',observedAt:'2026-09-27T02:00:00Z',kind:'file',layer:'reference',deleted:true});await assert.rejects(f.agent.readImage!(read),/Image not found/);
+});
+
+test('original identity is rechecked after image processing even if authority still returns true',async t=>{
+ const f=await fixture(t),one=await f.upload('pin'),original=f.store.db.prepare('SELECT object_hash FROM file_versions WHERE capture_id=?').get(one.id)!.object_hash;
+ let calls=0;
+ await assert.rejects(readEvidenceImage(f.store,f.files,f.archived,{id:one.id,view:'metadata'},()=>{
+  if(++calls===4)f.store.db.prepare('UPDATE file_versions SET object_hash=? WHERE capture_id=?').run('0'.repeat(64),one.id);
+  return true;
+ }));
+ f.store.db.prepare('UPDATE file_versions SET object_hash=? WHERE capture_id=?').run(original,one.id);assert.ok(calls>=4);
 });

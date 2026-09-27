@@ -34,6 +34,7 @@ import {
   type ContextRecord,
 } from "./types.js";
 export * from "./types.js";
+export {ContextToolError} from './tool-errors.js';
 export {validateInlineCitations} from "./citations.js";
 export {validateModelOptions} from './model-runtime.js';
 

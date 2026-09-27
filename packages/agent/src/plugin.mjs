@@ -113,7 +113,7 @@ export async function imageToolResult(value, attachments, receipt) {
     if(!attachments)throw Error('This model runtime does not support image attachments');
     const imageAttachment=await attachments.saveImage({data:Buffer.from(value.image.data,'base64'),mediaType:value.image.mimeType,name:'capture'});
     await receipt({token:value.imageDelivery,delivered:true});
-    return {id:value.id,...(value.attachmentId?{attachmentId:value.attachmentId}:{}),imageAttachment};
+    return {id:value.id,...(value.attachmentId?{attachmentId:value.attachmentId}:{}),...(value.imageView?{imageView:{...value.imageView,delivery:'prepared'}}:{}),...(value.imageBudget?{imageBudget:value.imageBudget}:{}),...(value.hostBudget?{hostBudget:value.hostBudget}:{}),imageAttachment};
   }catch(error){
     await receipt({token:value.imageDelivery,delivered:false}).catch(()=>undefined);
     throw error;
@@ -156,7 +156,7 @@ export async function apply(ctx) {
         parameters,
         output: {
           schema: { type: "json" },
-          render: (_args, value) => value?.imageAttachment ? [{type:'text',text:JSON.stringify({id:value.id,attachmentId:value.attachmentId,source:'untrusted_personal_context'})},{type:'image',attachment:value.imageAttachment}] : [{type:'text',text:JSON.stringify(value)}],
+          render: (_args, value) => value?.imageAttachment ? [{type:'text',text:JSON.stringify({id:value.id,attachmentId:value.attachmentId,...(value.imageView?{imageView:value.imageView}:{}),...(value.imageBudget?{imageBudget:value.imageBudget}:{}),...(value.hostBudget?{hostBudget:value.hostBudget}:{}),source:'untrusted_personal_context'})},{type:'image',attachment:value.imageAttachment}] : [{type:'text',text:JSON.stringify(value)}],
         },
         async execute(args, exec) {
           const value=await call(tool,args,exec.signal);

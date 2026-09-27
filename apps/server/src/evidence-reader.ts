@@ -756,7 +756,8 @@ export class EvidenceReader {
       catalog:async args=>contextIndex(this.store,{page:scope=>this.agentMemoryPage({...scope,asOf:scope?.asOf??options.currentContextTime?.()},policy,operation('discover'))},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),
       materialCatalog:async args=>{const page=this.materialCatalog(args);return {...page,items:page.items.filter(material=>this.materialExposure(material,operation('discover'),policy))};},
       materialRead:async args=>{const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);const page=this.materialRead(args);grant(page.originalRefs,{kind:'material',ref:material.ref,scope:{...args}});return page;},
-      readImage:async ({id,attachmentId})=>{
+      readImage:async (input)=>{
+        const {id,attachmentId}=input;
         if(!options.allowQueryImages?.())throw new StoreError('Query image disclosure is disabled',403);
         const captureId=evidenceRefId(id,'capture');if(!captureId)throw new StoreError('Invalid capture reference');
         const parent=()=>{
@@ -768,7 +769,7 @@ export class EvidenceReader {
           return this.materialHead(material,{});
         };
         const selected=parent();if(!selected)throw new StoreError('Image not found in authorized evidence',404);
-        return readEvidenceImage(store,this.files,this.archivedFiles,{id:selected.id,attachmentId},()=>{
+        return readEvidenceImage(store,this.files,this.archivedFiles,{...input,id:selected.id,attachmentId},()=>{
           const record=parent();return Boolean(options.allowQueryImages?.()&&record&&record.id===selected.id&&
             this.captureExposure(record,operation('expand'),policy,'image',hasScreenGrant(record.id)));
         });

@@ -52,7 +52,7 @@ export interface ContextReader {
   materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null}>;
   materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean}>;
   segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
-  readImage?(args:{id:string;attachmentId?:string}):Promise<{mimeType:string;data:string}>;
+  readImage?(args:import('@mote/shared').ImageReadInput):Promise<import('@mote/shared').ImageReadResult>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
   timeline(args: ContextRange): Promise<ContextRecord[] | ContextPage>;
   evidence(args: ContextRange & { ids: string[] }): Promise<ContextRecord[]>;
@@ -210,6 +210,7 @@ export interface Citation {
   provenance?:{sourceId?:string;externalId?:string;revision?:string;layer?:string;document?:SourceDocument};
 }
 export interface ToolTrace {
+  imageView?:import('@mote/shared').ImageViewTrace;
   tool: string;
   arguments: Record<string, unknown>;
   count: number;
