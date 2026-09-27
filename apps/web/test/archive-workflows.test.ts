@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
+import {JSDOM,ResourceLoader} from 'jsdom';
 import {InsightReport,reportDocument} from '../src/InsightReport.js';
 import {MemoryProgress,type MemoryJob} from '../src/MemoryProgress.js';
 import {SourceDocumentDetails} from '../src/SourceDocumentDetails.js';
@@ -27,6 +28,39 @@ test('report document places the restrictive resource policy before any generate
   for(const directive of ["default-src 'none'","script-src 'none'","connect-src 'none'","frame-src 'none'","object-src 'none'","base-uri 'none'","form-action 'none'"])assert.ok(html.includes(directive));
   assert.ok(html.includes("img-src data:"));
   assert.ok(!html.includes('allow-scripts'));
+});
+
+test('report display shortens only verified visible citation text in an inert copy',()=>{
+  const other='22222222-2222-4222-8222-222222222222';
+  const requests:string[]=[];
+  class WatchResources extends ResourceLoader {fetch(url:string){requests.push(url);return null;}}
+  const dom=new JSDOM('<!doctype html><body></body>',{url:'https://fixture.invalid/',resources:new WatchResources(),runScripts:'dangerously'});
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'document');
+  Object.defineProperty(globalThis,'document',{configurable:true,value:dom.window.document});
+  try{
+    const stored=`<html><head><title>Hidden [${evidenceId}]</title><style>p:before{content:'[${evidenceId}]'}</style></head><body><p>First [${evidenceId}][${other}] [unknown]</p><a href="https://example.invalid/[${evidenceId}]">Read [${evidenceId}]</a><code>[${evidenceId}]</code><pre>[${evidenceId}]</pre><textarea>[${evidenceId}]</textarea><noscript>[${evidenceId}]</noscript><template>[${evidenceId}]</template><svg><text>[${evidenceId}]</text></svg><script>window.fixtureExecuted=true</script><img src="https://example.invalid/pixel"></body></html>`;
+    const html=reportDocument(stored,[answer.citations[0],{...answer.citations[0],id:other},answer.citations[0]]);
+    assert.match(html,/First （来源 3）（来源 2） \[unknown\]/);
+    assert.match(html,/<a href="https:\/\/example.invalid\/\[11111111-1111-4111-8111-111111111111\]">Read （来源 3）<\/a>/);
+    for(const tag of ['title','code','pre','textarea','noscript','template','text'])assert.match(html,new RegExp(`<${tag}[^>]*>[^<]*\\[${evidenceId}\\]`));
+    assert.match(html,/<style>p:before\{content:'\[11111111-1111-4111-8111-111111111111\]'\}<\/style>/);
+    assert.match(html,/<script>window.fixtureExecuted=true<\/script>/);
+    assert.match(html,/<img src="https:\/\/example.invalid\/pixel">/);
+    assert.match(html,/First/);assert.match(html,/p:before/);
+    assert.ok(html.indexOf('Content-Security-Policy')<html.indexOf('p:before'));
+    assert.match(html,/script-src 'none'/);
+    assert.equal((dom.window as unknown as {fixtureExecuted?:boolean}).fixtureExecuted,undefined);
+    assert.deepEqual(requests,[]);
+    assert.ok(stored.includes(`[${evidenceId}]`),'the archived HTML value stays untouched');
+  }finally{if(previous)Object.defineProperty(globalThis,'document',previous);else Reflect.deleteProperty(globalThis,'document');dom.window.close();}
+});
+
+test('a narrow Insight coverage block has its own layout hook while iframe isolation remains',()=>{
+  const snapshot:NonNullable<Answer['snapshot']>={schemaVersion:1,id:'fixture-snapshot',seriesId:'fixture-series',version:1,asOf:'2026-09-15T03:00:00Z',scope:{before:'2026-09-15T03:00:00Z',timeZone:'Asia/Shanghai'},watermark:1,scopeFingerprint:'fixture',coverage:{records:5,materialRecords:5,referenceOnlyRecords:0,pendingProcessing:0,sourceStates:[],measured:{observedDurationMs:0,deviceDurationMs:0,overlapDurationMs:0,unobservedDurationMs:null,accounting:'union_across_devices',coverage:'observed_intervals_only'},limitations:[]}};
+  const html=renderToStaticMarkup(React.createElement(InsightReport,{answer:{...answer,snapshot},onOpen:()=>{}}));
+  assert.match(html,/<section class="notice report-coverage"/);
+  assert.equal((html.match(/<section class="notice report-coverage"[\s\S]*?<\/section>/)?.[0].match(/<p>/g)||[]).length,3);
+  assert.match(html,/<iframe[^>]+sandbox=""/);
 });
 
 test('legacy reports remain readable as markdown with clickable evidence when no HTML artifact exists',()=>{
