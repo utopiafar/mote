@@ -1346,6 +1346,34 @@ strong {
   max-width: 100%;
   display: none;
 }
+.answer-table-scroll {
+  max-width: 100%;
+  min-width: 0;
+  margin: 16px 0;
+  overflow: auto;
+  overscroll-behavior-x: contain;
+}
+.answer-table-scroll:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 3px;
+}
+.answer-table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font: inherit;
+}
+.answer-table-scroll th,
+.answer-table-scroll td {
+  min-width: 9rem;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.answer-table-scroll th {
+  background: #eef2e5;
+  font-weight: 600;
+}
 .citations {
   margin-top: 27px;
   border-top: 1px solid #e5eadd;

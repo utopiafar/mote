@@ -8,7 +8,7 @@ import {ArchivedFileButton} from './ArchivedFileButton';
 import {MemoryProgress,useMemoryJob} from './MemoryProgress';
 import {useResource} from './useResource';
 
-export const importStatusLabels:Record<ImportStatus,string>={queued:moteText("原件已归档"),preparing:moteText("正在理解资料"),awaiting_confirmation:moteText("等待你确认"),importing:moteText("正在保存记录"),completed:moteText("记录已保存"),failed:moteText("需要重试"),needs_configuration:moteText("等待配置模型"),unsupported:moteText("原件已保留")};
+export const importStatusLabels:Record<ImportStatus,string>={queued:moteText("原件已归档"),preparing:moteText("正在理解资料"),awaiting_confirmation:moteText("等待你确认"),importing:moteText("正在保存记录"),completed:moteText("记录已保存"),failed:moteText("需要重试"),cancelled:moteText("已取消"),needs_configuration:moteText("等待配置模型"),unsupported:moteText("原件已保留")};
 const working=(job:ImportJob)=>['queued','preparing','importing'].includes(job.status);
 
 export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersion=0}:{refreshVersion?:number;api:Api;onOpen:(id:string)=>void;onMemories:()=>void;onSettings:()=>void;onChanged:()=>void}){
@@ -70,7 +70,7 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
   async function action(path:string,body?:unknown){
     setBusy(true);setError('');
     try{update(await api.request<ImportJob>(path,{method:'POST',...(body?{body:JSON.stringify(body)}:{})}));onChanged();}
-    catch(e){setError(errorMessage(e));}finally{setBusy(false);}
+    catch(e){setError(e instanceof ApiError&&e.code==='import_stopping'?moteText('上一次处理仍在结束，请稍后再点击重试。'):errorMessage(e));}finally{setBusy(false);}
   }
   async function controlMemory(action:'retry'|'pause'|'resume'|'cancel'){if(!memoryJob)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+encodeURIComponent(memoryJob.id)+'/'+action,{method:'POST'});reloadMemory();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function remove(){
@@ -103,13 +103,15 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
         {active.reviewGate&&<p className="notice">{active.reviewGate.decision==='automatic'?moteText("自动发布"):moteText("需要确认")}{' · '}{active.reviewGate.reason}</p>}
         {active.warnings.length>0&&<div className="review-notes"><h3>{moteText("请留意这些信息")}</h3><ul>{active.warnings.map((warning,index)=><li key={index}>{warning}</li>)}</ul></div>}
         {active.dispositions&&<details className="import-dispositions" open={active.dispositions.counts.unsupported>0||active.dispositions.counts.excluded>0}><summary>{moteText("文件解析情况 ·")}{' '}{active.dispositions.counts.parsed}{' '}{moteText("个已解析")}{active.dispositions.counts.attachment>0?moteText(" · {0} 个作为附件", active.dispositions.counts.attachment):''}{active.dispositions.counts.unsupported>0?moteText(" · {0} 个暂不支持", active.dispositions.counts.unsupported):''}{active.dispositions.counts.excluded>0?moteText(" · {0} 个未纳入", active.dispositions.counts.excluded):''}</summary><p className="muted">{moteText("所有原件仍被保留，只有解析出的记录会进入后续记忆提取。")}</p>{active.dispositions.items.map(file=><div className="disposition-row" key={file.fileId}><strong>{file.path}</strong><span>{({parsed:moteText("已解析"),attachment:moteText("附件"),container:moteText("压缩包"),excluded:moteText("未纳入"),unsupported:moteText("暂不支持")})[file.status]}</span><p>{file.reason}</p></div>)}</details>}
+        {working(active)&&<button className="button" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/cancel')}>{moteText('取消处理')}</button>}
+        {active.status==='cancelled'&&<p role="status">{moteText('处理已取消，已归档的原件和记录仍保留。点击重试继续处理。')}</p>}
         {active.error&&<div className="error-banner" role="alert">{active.error}</div>}
         {active.status==='needs_configuration'&&<div className="workflow-line"><div><strong>{moteText("原件已归档，等待配置模型")}</strong><p>{moteText("配置后即可继续生成解析预览。")}</p><button className="button" onClick={onSettings}>{moteText("打开模型设置")}</button></div></div>}
         {active.status==='unsupported'&&<p className="muted">{moteText("这次未能提取可用记录，原件已保留。你可以补充格式说明后重新分析。")}</p>}
         {active.preview&&<section className="import-preview"><div className="section-heading"><div><h3>{moteText("解析预览")}</h3><p>{moteText("预计")}{' '}{active.preview.count}{' '}{moteText("条记录 · 以下是内容样例")}</p></div></div>{active.preview.samples.map((sample,index)=><article className="preview-sample" key={index}><strong>{sample.title||moteText("未命名记录")}</strong><p>{sample.text}</p>{sample.attachmentCount>0&&<small>{sample.attachmentCount}{' '}{moteText("个关联附件")}</small>}</article>)}</section>}
         {['awaiting_confirmation','needs_configuration','failed','unsupported'].includes(active.status)&&<ImportInstructions key={active.id} instruction={active.instruction} busy={busy} onPrepare={value=>void action('/api/imports/'+encodeURIComponent(active.id)+'/prepare',{instruction:value})}/>}
-        {active.status==='awaiting_confirmation'&&<div className="confirm-import"><div><strong>{moteText("确认这份资料的理解方式")}</strong><p>{moteText("确认后保存记录，并在后台分批提取记忆；记忆通过自动审核和证据校验后直接生效。")}</p></div><button className="button primary" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/confirm')}><Check size={16}/>{moteText("确认并开始导入")}</button></div>}
-        {active.status==='failed'&&<button className="button" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/retry')}><RefreshCw size={15}/>{moteText("重试导入")}</button>}
+        {active.status==='awaiting_confirmation'&&<div className="confirm-import"><div><strong>{moteText("确认这份资料的理解方式")}</strong><p>{moteText("确认后保存记录；记忆整理按自动设置执行，也可稍后手动发起。")}</p></div><button className="button primary" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/confirm')}><Check size={16}/>{moteText("确认并开始导入")}</button></div>}
+        {(active.status==='failed'||active.status==='cancelled')&&<button className="button" disabled={busy} onClick={()=>void action('/api/imports/'+encodeURIComponent(active.id)+'/retry')}><RefreshCw size={15}/>{moteText("重试导入")}</button>}
         {active.status==='completed'&&<div className="workflow-line"><span className="workflow-icon done"><Check size={18}/></span><div><strong>{moteText("记录已保存到中央归档")}</strong><p>{active.progress.imported}{' '}{moteText("条新记录 ·")}{' '}{active.progress.duplicates}{' '}{moteText("条重复记录")}{!active.memoryJobId?moteText("；尚未安排记忆整理。"):''}</p></div></div>}
         {memoryJob&&<MemoryProgress job={memoryJob} onRetry={()=>void controlMemory('retry')} onAction={action=>void controlMemory(action)} onView={onMemories} busy={busy}/>}{memoryError&&<p className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{memoryError}</p>}
         {active.status==='completed'&&!active.memoryJobId&&<button className="button" onClick={onMemories}>{moteText("前往记忆")}</button>}

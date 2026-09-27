@@ -1,4 +1,5 @@
 {
+  "回答中的表格": "Table in answer",
   "适应宽度": "Fit width",
   "原始尺寸": "Original size",
   "原图，可滚动查看": "Original image, scroll to view",
@@ -5613,5 +5614,9 @@
   "截图已保存，文字识别任务正在排队或处理。": "Screenshot saved. Text recognition is queued or processing.",
   "文字识别已完成，下方显示这条记录保留的全文。": "Text recognition is complete. The full retained text is shown below.",
   "文字识别失败，截图已保留。": "Text recognition failed. The screenshot is retained.",
-  "日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；可刷新查看文字识别的最新状态与结果。": "Dates use the current browser time zone. These records have synced to the central node; refresh to see the latest text recognition status and results."
+  "日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；可刷新查看文字识别的最新状态与结果。": "Dates use the current browser time zone. These records have synced to the central node; refresh to see the latest text recognition status and results.",
+  "取消处理": "Cancel processing",
+  "处理已取消，已归档的原件和记录仍保留。点击重试继续处理。": "Processing cancelled. Archived originals and records are retained. Retry to continue.",
+  "上一次处理仍在结束，请稍后再点击重试。": "The previous processing attempt is still stopping. Please retry shortly.",
+  "确认后保存记录；记忆整理按自动设置执行，也可稍后手动发起。": "Confirm to save the records. Memory processing follows your automatic settings, or you can start it manually later."
 }

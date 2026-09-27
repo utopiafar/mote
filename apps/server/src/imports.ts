@@ -43,6 +43,8 @@ function reviewGate(job:InternalJob,decision:ImportReviewDecision|undefined,info
 /** Deterministic formats decode locally; models map unfamiliar structures into reviewed records. */
 export class ImportStore {
   private running=new Set<string>();
+  /** Cancellation settles the execution lease before an uncooperative worker exits. */
+  hasActiveWorker(id:string):boolean{return this.running.has(id);}
   private creating=new Map<string,{fingerprint:string;promise:Promise<ImportJob>}>();
   private executor:ExecutionEngine;
   private phaseWaiters=new Map<string,Set<()=>void>>();
@@ -75,7 +77,7 @@ export class ImportStore {
         // The saved workspace/preview is intentionally absent from a backup.
         // Retire its runnable phases before admitting a new reviewed generation.
         store.db.prepare("UPDATE execution_steps SET state='stale',error='restored_preview_required',fence=NULL,lease_until=0,updated_at=? WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state IN ('waiting','running','blocked')").run(Date.now(),job.id);
-        job.preparationRevision=(job.preparationRevision??0)+1;job.status=job.blockedArchive?'failed':'queued';job.processingStatus=job.blockedArchive?'blocked':'archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;
+        job.preparationRevision=(job.preparationRevision??0)+1;job.status=job.status==='cancelled'?'cancelled':job.blockedArchive?'failed':'queued';job.processingStatus=job.blockedArchive?'blocked':'archived';job.failurePhase='prepare';job.preview=undefined;job.dispositions=undefined;job.reviewDecision=undefined;job.reviewGate=undefined;job.manifestHash=undefined;
         job.progress={total:0,processed:0,imported:0,duplicates:0};
         if(missingOriginals)job.error='This backup is missing original files. Upload them again to continue.';
         else if(!job.blockedArchive)job.error='Restored backup: original files are retained. Analyze this import again and review a new preview before continuing.';
@@ -315,7 +317,7 @@ export class ImportStore {
   private async confirmNow(id:string,grant:ExecutionGrant,signal?:AbortSignal):Promise<ImportJob>{
     const job=this.load(id);if(this.running.has(id))throw new StoreError('Import is already processing',409);
     if(job.status==='completed')return this.public(job);
-    if(job.status!=='awaiting_confirmation'&&!(job.status==='failed'&&job.failurePhase==='import'))throw new StoreError('Analyze and review a preview before confirming the import',409);
+    if(job.status!=='awaiting_confirmation'&&!(['failed','cancelled'].includes(job.status)&&job.failurePhase==='import'))throw new StoreError('Analyze and review a preview before confirming the import',409);
     this.running.add(id);
     const validated=join(job.workspace,'validated-'+randomUUID()+'.jsonl');
     try{
@@ -350,9 +352,9 @@ export class ImportStore {
   }
   private restoreOperation(job:InternalJob){
     for(const row of this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state='running' AND lease_until<=?").all(job.id,Date.now()))this.executor.fail(String(row.id),'interrupted');
-    const state=job.status==='awaiting_confirmation'||job.status==='completed'||job.failurePhase==='import'?'succeeded':job.status==='failed'?'failed':'blocked';
+    const state=job.status==='awaiting_confirmation'||job.status==='completed'||job.failurePhase==='import'?'succeeded':job.status==='cancelled'?'cancelled':job.status==='failed'?'failed':'blocked';
     this.admitPhase(job,'prepare',state,state==='blocked'?(job.status==='needs_configuration'?'model_unconfigured':job.status==='unsupported'?'unsupported_format':'awaiting_activation'):state==='failed'?'import_failed':undefined);
-    if(job.status==='awaiting_confirmation'||job.status==='completed'||job.failurePhase==='import')this.admitPhase(job,'commit',job.status==='completed'?'succeeded':job.status==='failed'?'failed':'blocked',job.status==='failed'?'import_failed':job.status==='completed'?undefined:'awaiting_confirmation');
+    if(job.status==='awaiting_confirmation'||job.status==='completed'||job.failurePhase==='import')this.admitPhase(job,'commit',job.status==='completed'?'succeeded':job.status==='cancelled'?'cancelled':job.status==='failed'?'failed':'blocked',job.status==='failed'?'import_failed':job.status==='completed'?undefined:'awaiting_confirmation');
     for(const id of job.captureIds){linkOperationParent(this.store,`import:${job.id}`,`capture:${id}`);linkOperationParent(this.store,`import:${job.id}`,`file:${id}`);}
     if(job.memoryJobId)linkOperationParent(this.store,`import:${job.id}`,`memory:${job.memoryJobId}`);
   }
@@ -366,28 +368,39 @@ export class ImportStore {
     const status=step.state==='waiting'?'queued':step.state==='succeeded'?'completed':step.state==='stale'?'failed':step.state;
     job.execution=executionEnvelope({status,attempts:step.attempts,errorCode:step.error,availableAt:step.availableAt});
     if(this.executor.closed&&step.state==='waiting'){this.executor.fail(step.id,'interrupted');return;}
-    if(['failed','cancelled','stale'].includes(step.state)&&!['failed','unsupported','needs_configuration'].includes(job.status)){job.status='failed';job.processingStatus='blocked';job.error=step.error==='interrupted'?'The server stopped during processing. Retry to resume.':'Import processing did not complete. Retry to resume.';}
+    if(step.state==='cancelled'||(['failed','stale'].includes(step.state)&&!['failed','unsupported','needs_configuration'].includes(job.status))){job.status=step.state==='cancelled'?'cancelled':'failed';job.processingStatus='blocked';job.error=step.state==='cancelled'?undefined:step.error==='interrupted'?'The server stopped during processing. Retry to resume.':'Import processing did not complete. Retry to resume.';}
     this.save(job);
     if(!['waiting','running'].includes(step.state)){const waiters=this.phaseWaiters.get(step.id);this.phaseWaiters.delete(step.id);for(const resolve of waiters??[])resolve();}
   }
   private async runPhase(id:string,phase:'prepare'|'commit'){
-    if(this.isScheduled(id))throw new StoreError('Import is already processing',409);
+    if(this.running.has(id)||this.isScheduled(id))throw new StoreError('Import is already processing',409);
     const job=this.load(id),stepId=this.admitPhase(job,phase),step=this.executor.get(stepId)!;
     if(step.state==='succeeded')return this.public(this.load(id));
     if(step.state!=='running')this.executor.retry(stepId,false);
     const done=new Promise<void>(resolve=>{let waiters=this.phaseWaiters.get(stepId);if(!waiters){waiters=new Set();this.phaseWaiters.set(stepId,waiters);}waiters.add(resolve);});
     void this.executor.tick().catch(()=>this.executor.fail(stepId,'import_failed'));await done;await this.executor.drain([stepId]);return this.public(this.load(id));
   }
-  async prepare(id:string):Promise<ImportJob>{
-    const job=this.load(id);if(job.progress.processed>0||job.status==='completed')throw new StoreError('Saved records cannot be reanalyzed in the same job',409);
+  async prepare(id:string,resumeCancelled=false):Promise<ImportJob>{
+    const job=this.load(id);if(job.status==='cancelled'&&!resumeCancelled)return this.public(job);if(job.progress.processed>0||job.status==='completed')throw new StoreError('Saved records cannot be reanalyzed in the same job',409);
     const result=await this.runPhase(id,'prepare');return result.status==='awaiting_confirmation'&&result.reviewGate?.decision==='automatic'?this.confirm(id):result;
   }
-  async confirm(id:string):Promise<ImportJob>{
-    const job=this.load(id);if(job.status==='completed')return this.public(job);
-    if(job.status!=='awaiting_confirmation'&&!(job.status==='failed'&&job.failurePhase==='import'))throw new StoreError('Analyze and review a preview before confirming the import',409);
+  async confirm(id:string,resumeCancelled=false):Promise<ImportJob>{
+    const job=this.load(id);if(job.status==='cancelled'&&!resumeCancelled)return this.public(job);if(job.status==='completed')return this.public(job);
+    if(job.status!=='awaiting_confirmation'&&!(['failed','cancelled'].includes(job.status)&&job.failurePhase==='import'))throw new StoreError('Analyze and review a preview before confirming the import',409);
     return this.runPhase(id,'commit');
   }
-  async retry(id:string):Promise<ImportJob>{const job=this.load(id);return job.failurePhase==='import'?this.confirm(id):this.prepare(id);}
+  cancel(id:string):ImportJob {
+    const job=this.load(id);
+    // Completed records are durable; a late cancel must not undo their commit.
+    if(job.status==='completed'||job.status==='cancelled')return this.public(job);
+    if(!['queued','preparing','importing'].includes(job.status))throw new StoreError('Only an active import can be cancelled',409);
+    const steps=this.store.db.prepare("SELECT id FROM execution_steps WHERE kind IN ('imports.prepare','imports.commit') AND json_extract(input,'$.jobId')=? AND state IN ('waiting','running','blocked')").all(id);
+    if(!steps.length){const phase=job.failurePhase==='import'?'commit':'prepare';steps.push({id:this.admitPhase(job,phase,'blocked','awaiting_activation')});}
+    for(const step of steps)this.executor.cancel(String(step.id));
+    const current=this.load(id);current.status='cancelled';current.processingStatus='blocked';current.error=undefined;this.save(current);
+    return this.public(current);
+  }
+  async retry(id:string):Promise<ImportJob>{const job=this.load(id);return job.failurePhase==='import'?this.confirm(id,true):this.prepare(id,true);}
   delete(id:string){
     const job=this.load(id);if(this.running.has(id)||this.isScheduled(id)||job.status==='preparing'||job.status==='importing')throw new StoreError('Wait for this import to stop before deleting it',409);
     const otherJobs=(this.store.db.prepare('SELECT json FROM import_jobs WHERE id!=?').all(id) as {json:string}[]).map(row=>JSON.parse(row.json) as InternalJob);

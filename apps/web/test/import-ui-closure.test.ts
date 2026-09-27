@@ -76,3 +76,23 @@ test('import detail exposes memory pause, resume and cancel and keeps original e
  await act(async()=>button(d,'当前批次结束后暂停').click());await act(async()=>button(d,'继续整理').click());await act(async()=>button(d,'取消剩余批次').click());assert.deepEqual(actions,['pause','resume','cancel']);assert.match(d.body.textContent!,/记忆提取已停止/);
  await act(async()=>button(d,'查看记录 1').click());assert.deepEqual(opened,['generated-record']);
 });
+
+test('running import exposes cancellation, keeps originals and requires explicit retry',async t=>{
+ const {root,d}=await fixture(t);let status='preparing';const actions:string[]=[];
+ const job=()=>importJob({status,captureIds:[],files:[{id:'original',name:'generated.custom',relativePath:'generated.custom',sizeBytes:9}],progress:{total:0,processed:0,imported:0,duplicates:0}});
+ const api=apiWith((path,init)=>{if(init?.method==='POST'){actions.push(path);status=path.endsWith('/cancel')?'cancelled':'preparing';return job();}return {items:[job()]};});
+ await act(async()=>root.render(view(api)));
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ assert.ok(button(d,'取消处理'));await act(async()=>button(d,'取消处理').click());
+ assert.match(d.body.textContent!,/处理已取消，已归档的原件和记录仍保留/);assert.match(d.body.textContent!,/generated.custom/);
+ assert.equal(button(d,'取消处理'),undefined);assert.deepEqual(actions,['/api/imports/import-generated/cancel']);
+ await act(async()=>button(d,'重试导入').click());assert.deepEqual(actions,['/api/imports/import-generated/cancel','/api/imports/import-generated/retry']);
+});
+
+test('retry while cancelled parser is stopping shows an actionable error without claiming resumed work',async t=>{
+ const {root,d}=await fixture(t);let writes=0;
+ const api=apiWith((_path,init)=>{if(init?.method==='POST'){writes++;throw new ApiError('Import is stopping',409,'generated-request','import_stopping');}return {items:[importJob({status:'cancelled',captureIds:[]})]};});
+ await act(async()=>root.render(view(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ await act(async()=>button(d,'重试导入').click());
+ assert.equal(writes,1);assert.match(d.body.textContent!,/上一次处理仍在结束，请稍后再点击重试/);assert.ok(button(d,'重试导入'));assert.equal(button(d,'取消处理'),undefined);
+});

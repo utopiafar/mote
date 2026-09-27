@@ -1,5 +1,11 @@
 /* Authored interface messages only; never translate captured content. */
 export const english: Readonly<Record<string, string>> = {
+  "确认后保存记录；记忆整理按自动设置执行，也可稍后手动发起。": "Confirm to save the records. Memory processing follows your automatic settings, or you can start it manually later.",
+  "回答中的表格": "Table in answer",
+  "上一次处理仍在结束，请稍后再点击重试。": "The previous processing attempt is still stopping. Please retry shortly.",
+  "取消处理": "Cancel processing",
+  "处理已取消，已归档的原件和记录仍保留。点击重试继续处理。": "Processing cancelled. Archived originals and records are retained. Retry to continue.",
+
   "适应宽度": "Fit width",
   "原始尺寸": "Original size",
   "原图，可滚动查看": "Original image, scroll to view",

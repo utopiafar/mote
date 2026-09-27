@@ -6,13 +6,17 @@ import {moteText} from '@mote/shared/i18n';
 import {type Api,errorMessage} from './api';
 import {useUnsavedChanges} from './unsaved';
 type Values={interactiveConcurrency:number;agentConcurrency:number;llmConcurrency:number;memoryConcurrency:number}|{enabled:boolean;debug:boolean;traceEnabled:boolean;level:string};
+export function runtimeSettingsDraft(value:Values):Values{
+  if('agentConcurrency' in value){const {interactiveConcurrency,agentConcurrency,llmConcurrency,memoryConcurrency}=value;return {interactiveConcurrency,agentConcurrency,llmConcurrency,memoryConcurrency};}
+  const {enabled,debug,traceEnabled,level}=value;return {enabled,debug,traceEnabled,level};
+}
 export function RuntimeSettings({api,kind,onApplied}:{api:Api;kind:'execution'|'diagnostics';onApplied?:()=>void}){
   const [draft,setDraft]=useState<Values>(),[saved,setSaved]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[dirty,setDirty]=useState(false);
   useUnsavedChanges(dirty);
   const path='/api/'+kind+'-settings';
   const read=useResource<Values>(api,path);
   useEffect(()=>{setDraft(undefined);setDirty(false);setSaved('');setError('');},[api,path]);
-  useEffect(()=>{if(read.data&&!dirty){const {queues:_,modelQuotaUnit:__,...settings}=read.data as Values&{queues?:unknown;modelQuotaUnit?:unknown};setDraft(settings);}if(read.error instanceof ApiError&&[401,403,404,410].includes(read.error.status)){setDraft(undefined);setDirty(false);}},[api,path,read.data,read.error]);
+  useEffect(()=>{if(read.data&&!dirty)setDraft(runtimeSettingsDraft(read.data));if(read.error instanceof ApiError&&[401,403,404,410].includes(read.error.status)){setDraft(undefined);setDirty(false);}},[api,path,read.data,read.error]);
   const change=(key:string,value:unknown)=>{setDraft(current=>({...current,[key]:value}) as Values);setDirty(true);setSaved('');};
   async function save(){setBusy(true);setError('');try{const value=await api.request<Values>(path,{method:'PUT',body:JSON.stringify(draft)});setDraft(value);setDirty(false);setSaved(moteText('已保存，立即生效。'));resources(api).invalidate(key=>key===path);onApplied?.();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   return <section className="panel"><div className="section-heading"><div><h2>{kind==='execution'?moteText('执行并发'):moteText('诊断偏好')}</h2><p>{moteText('保存后立即生效，重启后保留。')}</p></div></div>{draft&&<form onSubmit={e=>{e.preventDefault();void save();}}><fieldset disabled={busy}>

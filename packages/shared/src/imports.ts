@@ -1,6 +1,6 @@
 import {z} from 'zod';
 
-export const importStatusSchema=z.enum(['queued','preparing','awaiting_confirmation','importing','completed','failed','needs_configuration','unsupported']);
+export const importStatusSchema=z.enum(['queued','preparing','awaiting_confirmation','importing','completed','failed','cancelled','needs_configuration','unsupported']);
 export type ImportStatus=z.infer<typeof importStatusSchema>;
 export type ArchivedFile={id:string;hash:string;name:string;relativePath:string;mimeType:string;sizeBytes:number;createdAt:string};
 export type ImportPreview={count:number;samples:{title:string;text:string;kind:string;attachmentCount:number}[]};

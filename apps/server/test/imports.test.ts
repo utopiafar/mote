@@ -205,8 +205,9 @@ test('revoked commit worker cannot insert or advance a record after a new lease 
    return ingest(...args);
  };
  const stale=imports.confirm(job.id);await entered.promise;
- revoke(imports,runningStep(store,'imports.commit',job.id));await stale;
- const current=successor.confirm(job.id);release.resolve();
+ assert.equal(imports.cancel(job.id).status,'cancelled');await stale;
+ assert.equal(store.list().items.length,0);
+ const current=successor.retry(job.id);release.resolve();
  const saved=await current;
  assert.equal(saved.status,'completed');assert.equal(saved.progress.processed,1);
  assert.equal(saved.progress.imported,1);assert.equal(saved.captureIds.length,1);
@@ -292,4 +293,14 @@ test('decoder upgrades preserve legacy source versions while bounding the former
  const done=await imports.prepare(job.id);assert.equal(done.status,'completed');assert.equal(done.progress.total,3);assert.equal(store.evidence([legacy.id])[0].ocrText,text.slice(23999));
  const current=done.captureIds.map(id=>store.evidence([id])[0]);assert.ok(current.every(record=>record.ocrText.length<=24000));assert.equal(current.map(record=>record.ocrText).join(''),text);assert.notEqual(sources.getItem(job.sourceId,'legacy.txt:1')!.captureId,legacy.id);
  const replay=await imports.create({archivedFileIds:[file.id],processing:'automatic'}),again=await imports.prepare(replay.id);assert.equal(again.progress.duplicates,3);
+});
+
+test('cancel before prepare remains stopped until explicit retry, including direct late phase entry',async t=>{
+ let calls=0;const {imports,files}=fixture(t,{prepare:async()=>{calls++;return {summary:'Generated empty'};}});
+ const job=await imports.create({files:[entry('generated.custom','Generated original')]});
+ assert.equal(imports.cancel(job.id).status,'cancelled');
+ assert.equal((await imports.prepare(job.id)).status,'cancelled');
+ assert.equal((await imports.confirm(job.id)).status,'cancelled');
+ assert.equal(calls,0);assert.equal(files.read(job.files[0].id).toString(),'Generated original');
+ await imports.retry(job.id);assert.equal(calls,1);
 });
