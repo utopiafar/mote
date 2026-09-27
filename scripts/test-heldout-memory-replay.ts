@@ -1,9 +1,10 @@
 /** Zero-provider preparation for the frozen, sealed heldout v2 replay.
- * This revision intentionally has NO live mode. It never prints corpus/question values.
+ * Stage modes use the separately frozen first-batch adapter. Never prints corpus/question values.
  * MOTE_HELDOUT_OUTPUT=/new/external/path node --import tsx scripts/test-heldout-memory-replay.ts
  * Public output is counts/hashes/status only. Vaults and identity manifests are sealed.
  */
 import {execFileSync} from 'node:child_process';
+import {pathToFileURL} from 'node:url';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {cp,mkdir,readFile,realpath,stat,writeFile} from 'node:fs/promises';
 import {basename,dirname,join,relative,resolve} from 'node:path';
@@ -211,4 +212,8 @@ async function main(){
   check(admissions===0,'unexpected_agent_admission');report.checks.exactIndexReconstructedFromOriginals=true;report.providerAdmissionAttempts=admissions;report.status='prepared-clock-blocked';report.finishedAt=new Date().toISOString();await save();
   console.log(JSON.stringify({schema:report.schema,status:report.status,output,counts:report.counts,budget:report.budget,realModelCalls:0,stubModelCalls:report.stubModelCalls,semanticContentExposed:false}));
 }
-try{await main();}catch(error){try{await close();}catch{}report.status='failed';report.failure={phase,code:error instanceof SafeFailure?error.code:'internal_error_details_sealed'};report.providerAdmissionAttempts=admissions;await save();console.error(JSON.stringify({status:'failed',phase,code:report.failure.code,output,realModelCalls:0,semanticContentExposed:false}));process.exitCode=1;}
+export {base,corpus,evaluation,freezes,recipes,SafeFailure,check,equal,json,hashObject,externalNew,parse,verifyFreeze,lines,config,tables,closed,cloneClosed,ablateClone,exactIndex,sqliteCheck};
+if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href)void (async()=>{try{
+  if(['stage-freeze','stage-live'].includes(process.env.MOTE_HELDOUT_MODE??'')){const stage=await import('./test-heldout-memory-replay-stage.js');await stage.stageMain();}
+  else await main();
+}catch(error){try{await close();}catch{}report.status='failed';report.failure={phase,code:error instanceof SafeFailure?error.code:'internal_error_details_sealed'};report.providerAdmissionAttempts=admissions;await save();console.error(JSON.stringify({status:'failed',phase,code:report.failure.code,output,realModelCalls:process.env.MOTE_HELDOUT_MODE==='stage-live'?'unknown':0,ledger:process.env.MOTE_HELDOUT_LEDGER??null,semanticContentExposed:false}));process.exitCode=1;}})();
