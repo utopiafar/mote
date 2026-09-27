@@ -1,4 +1,5 @@
 import {generatedImageRead,digest,assertRegionSchema} from './image-region-fixture.mjs';
+import {generatedMaterialPages,materialRef} from './material-page-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -61,12 +62,12 @@ function respond(res, protocol, stage, final = answer, actions) {
   }
 }
 
-async function withProvider(protocol, run, options = {}, actions) {
+async function withProvider(protocol, run, options = {}, actions, final = answer) {
   const requests=[];
   const server=createServer(async(req,res)=>{
     let raw='';for await (const chunk of req) raw+=chunk;
     requests.push({url:req.url,headers:req.headers,body:JSON.parse(raw)});
-    respond(res, protocol, requests.length-1, answer, actions);
+    respond(res, protocol, requests.length-1, final, actions);
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const agent=createAgent({reader,protocol,baseUrl:`http://127.0.0.1:${server.address().port}${protocol === 'anthropic-messages' ? '' : '/v1'}`,apiKey:'generated-provider-secret',model:'fixture-model-not-in-catalog',timeoutMs:45000,headers:{'x-generated-header':'fixture-header-secret'},extraBody:protocol === 'google-generative-ai' ? {generationConfig:{temperature:0.23}} : {temperature:0.23},...options});
@@ -74,6 +75,19 @@ async function withProvider(protocol, run, options = {}, actions) {
 }
 
 for (const protocol of ['openai-completions','openai-responses','anthropic-messages','google-generative-ai']) {
+  test(`real Harness ${protocol} receives one budget-fitted material result with its continuation`,{timeout:60000},async()=>{
+    const fixture=generatedMaterialPages();
+    const actions=[{name:'material_catalog',args:{}},{name:'material_read',args:{ref:materialRef,length:10000}}];
+    await withProvider(protocol,async(agent,requests)=>{
+      const result=await agent.query({question:'Read a generated material page'});
+      assert.equal(requests.length,3,'local fitting does not request an extra provider turn');
+      assert.deepEqual(fixture.attempts.map(args=>args.length),[10000,5000]);
+      const pages=[];const walk=value=>{if(typeof value==='string'){try{const parsed=JSON.parse(value.split('\n')[0]);if(parsed.data?.pagination)pages.push(parsed);}catch{}}else if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')Object.values(value).forEach(walk);};walk(requests[2].body);
+      assert.equal(pages.length,1);assert.ok(JSON.stringify(pages[0]).length<=16000);
+      assert.equal(pages[0].data.pagination.limitedBy,'host_budget');assert.equal(pages[0].data.textRange.nextOffset,5000);
+      assert.deepEqual(result.trace.at(-1).materialPage,{readAttempts:2,requestedLength:10000,returnedLength:5000,budgetLimited:true});
+    },{reader:fixture.reader},actions,JSON.stringify({answer:'Generated mechanical result.',citationIds:[]}));
+  });
   test(`real Harness ${protocol} appends distinct images and successful duplicate metadata`, {timeout:60000}, async()=>{
     const images=await Promise.all(['#abcabc','#bcabca'].map(background=>sharp({create:{width:8,height:8,channels:3,background}}).png().toBuffer().then(bytes=>bytes.toString('base64'))));
     const parent={...record,provenance:{document:{attachments:[{id:'image-a',mimeType:'image/png'},{id:'image-b',mimeType:'image/png'}]}}};let reads=0;

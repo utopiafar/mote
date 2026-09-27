@@ -7,8 +7,9 @@ const at='2026-09-24T00:00:00Z';
 const ref=`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`;
 const id=`mat_${'a'.repeat(64)}`;
 const original={id:'generated-original-1',capturedAt:at,deviceId:'generated-device',appName:'Generated',ocrText:'Generated original evidence'};
-const material={id,ref,kind:'coding.session',schemaVersion:1,title:'Generated session',origin:{sourceId:'generated-source',externalId:'/private/source-path',deviceId:'generated-device',firstAt:at,lastAt:at},revision:'b'.repeat(64),updatedAt:at,memberCount:1,blockCount:1,textLength:27,assetCount:0,coverage:{state:'complete',reason:'private coverage detail'},fidelity:{state:'lossless',limitations:['private limitation']},retention:{original:'retained',policy:'keep'},text:'PRIVATE BODY',members:[original.id]};
-const page={material,text:'Generated material page text',textRange:{offset:0,total:27,nextOffset:null},spans:[{blockId:'block-1',kind:'text',format:'plain',pageRange:{start:0,end:27},materialRange:{start:0,end:27},memberIds:['member-1'],locator:{privatePath:'/hidden'}}],originalRefs:[original.id],originalRefsTotal:1,originalRefsTruncated:false};
+const text='Generated material page text';
+const material={id,ref,kind:'coding.session',schemaVersion:1,title:'Generated session',origin:{sourceId:'generated-source',externalId:'/private/source-path',deviceId:'generated-device',firstAt:at,lastAt:at},revision:'b'.repeat(64),updatedAt:at,memberCount:1,blockCount:1,textLength:text.length,assetCount:0,coverage:{state:'complete',reason:'private coverage detail'},fidelity:{state:'lossless',limitations:['private limitation']},retention:{original:'retained',policy:'keep'},text:'PRIVATE BODY',members:[original.id]};
+const page={material,text,textRange:{offset:0,total:text.length,nextOffset:null},spans:[{blockId:'block-1',kind:'text',format:'plain',pageRange:{start:0,end:text.length},materialRange:{start:0,end:text.length},memberIds:['member-1'],locator:{privatePath:'/hidden'}}],originalRefs:[original.id],originalRefsTotal:1,originalRefsTruncated:false};
 const baseReader={search:async()=>[],timeline:async()=>[],evidence:async({ids})=>[original].filter(row=>ids.includes(row.id)),activity:async()=>({}),devices:async()=>[],materialCatalog:async()=>({items:[material],nextCursor:null}),materialRead:async()=>page};
 async function fixture(t,reader=baseReader,bounds={question:'Generated material',deviceId:'generated-device',after:'2026-09-01T00:00:00Z',before:'2026-10-01T00:00:00Z'}) {
   const bridge=await startBridge(reader,bounds,40);t.after(()=>bridge.close());
@@ -48,11 +49,11 @@ test('material catalog and read enforce host time and device scope',async t=>{
   assert.equal((await changed.call('evidence',{ids:[original.id]})).status,400);
 });
 
-test('an over-budget material page cannot grant its original evidence ID',async t=>{
+test('a reader that ignores a smaller page request cannot grant its original evidence ID',async t=>{
   const large='x'.repeat(12000),largePage={...page,text:large,textRange:{offset:0,total:12000,nextOffset:null},spans:[{...page.spans[0],pageRange:{start:0,end:12000},materialRange:{start:0,end:12000},memberIds:Array.from({length:32},(_,i)=>`member-${i}-${'m'.repeat(110)}`)}]};
   const {call}=await fixture(t,{...baseReader,materialRead:async()=>largePage});
   assert.equal((await call('material_catalog',{})).status,200);
-  const denied=await call('material_read',{ref,length:12000});assert.equal(denied.status,400);assert.match(denied.body.error,/evidence budget/);
+  const denied=await call('material_read',{ref,length:12000});assert.equal(denied.status,400);assert.match(denied.body.error,/Invalid material read page/);
   assert.equal((await call('evidence',{ids:[original.id]})).status,400);
 });
 

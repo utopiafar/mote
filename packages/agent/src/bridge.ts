@@ -282,7 +282,7 @@ export async function startBridge(
       res.writeHead(405).end('{"error":"Method not allowed"}');
       return;
     }
-    let tool=req.url?.slice(1)??'',args:Record<string,unknown>={},metadataOnly=false;
+    let tool=req.url?.slice(1)??'',args:Record<string,unknown>={},metadataOnly=false,materialReadAttempts=0;
     try {
       let raw = "";
       for await (const part of req) {
@@ -383,31 +383,48 @@ export async function startBridge(
         const offset=args.offset??0,length=args.length??4000;
         if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw hostError('Invalid material read range');
         if(!reader.materialRead)throw hostError('Material reading is unavailable');
-        const scope=range({},bounds),page=await reader.materialRead({...scope,ref:args.ref,offset:Number(offset),length:Number(length)});
-        const material=materialMetadata(page.material,scope);
-        if(!material||material.ref!==args.ref||typeof page.text!=='string'||page.text.length>Number(length)||!page.textRange||page.textRange.offset!==offset||!Number.isSafeInteger(page.textRange.total)||page.textRange.total<0||page.textRange.nextOffset!==null&&(!Number.isSafeInteger(page.textRange.nextOffset)||page.textRange.nextOffset<=Number(offset)||page.textRange.nextOffset>page.textRange.total)||!Array.isArray(page.spans)||page.spans.length>64||!Array.isArray(page.originalRefs))throw hostError('Invalid material read page');
-        const spans=page.spans.map(span=>{
-          const pageRange=span?.pageRange as {start?:unknown;end?:unknown}|undefined;
-          const materialRange=span?.materialRange as {start?:unknown;end?:unknown}|undefined;
-          if(!span||typeof span.blockId!=='string'||span.blockId.length>128||typeof span.kind!=='string'||!['text','asset'].includes(span.kind)||!Array.isArray(span.memberIds)||span.memberIds.length>32||span.memberIds.some(id=>typeof id!=='string'||id.length>128)||!pageRange||!materialRange||!Number.isSafeInteger(pageRange.start)||!Number.isSafeInteger(pageRange.end)||Number(pageRange.start)<0||Number(pageRange.end)<Number(pageRange.start)||Number(pageRange.end)>page.text.length||!Number.isSafeInteger(materialRange.start)||!Number.isSafeInteger(materialRange.end)||Number(materialRange.start)<0||Number(materialRange.end)<Number(materialRange.start))throw hostError('Invalid material span');
-          return {blockId:span.blockId,kind:span.kind,...(typeof span.format==='string'&&span.format.length<=128?{format:span.format}:{}),pageRange:{start:pageRange.start,end:pageRange.end},materialRange:{start:materialRange.start,end:materialRange.end},memberIds:span.memberIds};
-        });
-        const refs=[...new Set(page.originalRefs.slice(0,30).map(captureId))];
-        if(refs.some(id=>typeof id!=='string'||!id||id.length>300))throw hostError('Invalid material original reference');
-        const ids=refs as string[];
-        if(ids.length){
-          const originals=await reader.evidence({...scope,ids});
-          const valid=new Set(originals.filter(record=>{const at=sourceContentTime(record);return (!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).map(record=>record.id));
-          if(ids.some(id=>!valid.has(id)))throw hostError('Material original is missing or outside the selected scope');
+        const scope=range({},bounds);
+        let effectiveLength=Number(length);
+        // length bounds the body, not its provenance/envelope. Retry only local
+        // reads of this same pinned window; halving 1–12000 terminates in 14 reads.
+        for(let readAttempts=1;readAttempts<=14;readAttempts++){
+          if(closing||res.destroyed)return;
+          bounds.signal?.throwIfAborted();
+          materialReadAttempts=readAttempts;
+          const page=await reader.materialRead({...scope,ref:args.ref,offset:Number(offset),length:effectiveLength});
+          bounds.signal?.throwIfAborted();
+          const material=materialMetadata(page.material,scope);
+          if(!material||material.ref!==args.ref||typeof page.text!=='string'||page.text.length>effectiveLength||!page.textRange||page.textRange.offset!==offset||!Number.isSafeInteger(page.textRange.total)||page.textRange.total<Number(offset)+page.text.length||page.textRange.nextOffset!==(Number(offset)+page.text.length<page.textRange.total?Number(offset)+page.text.length:null)||page.text.length===0&&Number(offset)<page.textRange.total||!Array.isArray(page.spans)||page.spans.length>64||!Array.isArray(page.originalRefs))throw hostError('Invalid material read page');
+          const spans=page.spans.map(span=>{
+            const pageRange=span?.pageRange as {start?:unknown;end?:unknown}|undefined;
+            const materialRange=span?.materialRange as {start?:unknown;end?:unknown}|undefined;
+            if(!span||typeof span.blockId!=='string'||span.blockId.length>128||typeof span.kind!=='string'||!['text','asset'].includes(span.kind)||!Array.isArray(span.memberIds)||span.memberIds.length>32||span.memberIds.some(id=>typeof id!=='string'||id.length>128)||!pageRange||!materialRange||!Number.isSafeInteger(pageRange.start)||!Number.isSafeInteger(pageRange.end)||Number(pageRange.start)<0||Number(pageRange.end)<Number(pageRange.start)||Number(pageRange.end)>page.text.length||!Number.isSafeInteger(materialRange.start)||!Number.isSafeInteger(materialRange.end)||Number(materialRange.start)<0||Number(materialRange.end)<Number(materialRange.start))throw hostError('Invalid material span');
+            return {blockId:span.blockId,kind:span.kind,...(typeof span.format==='string'&&span.format.length<=128?{format:span.format}:{}),pageRange:{start:pageRange.start,end:pageRange.end},materialRange:{start:materialRange.start,end:materialRange.end},memberIds:span.memberIds};
+          });
+          const refs=[...new Set(page.originalRefs.slice(0,30).map(captureId))];
+          if(refs.some(id=>typeof id!=='string'||!id||id.length>300))throw hostError('Invalid material original reference');
+          const ids=refs as string[];
+          if(ids.length){
+            const originals=await reader.evidence({...scope,ids});
+            const valid=new Set(originals.filter(record=>{const at=sourceContentTime(record);return (!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).map(record=>record.id));
+            if(ids.some(id=>!valid.has(id)))throw hostError('Material original is missing or outside the selected scope');
+          }
+          const total=Number.isSafeInteger(page.originalRefsTotal)&&page.originalRefsTotal>=ids.length?page.originalRefsTotal:ids.length;
+          if(closing||res.destroyed)return;
+          bounds.signal?.throwIfAborted();
+          const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids,originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length,pagination:{requestedLength:Number(length),returnedLength:page.text.length,limitedBy:readAttempts>1?'host_budget':null}};
+          const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget()});
+          if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000){
+            if(effectiveLength===1||page.text.length===0)throw budgetError();
+            effectiveLength=Math.max(1,Math.floor(effectiveLength/2));
+            continue;
+          }
+          deliveredCharacters+=serialized.length;
+          for(const id of ids){discovered.add(id);disclosedIds.add(id);}
+          completeLineage=false;
+          trace.push({tool,arguments:{ref:args.ref,offset,length},count:1,materialPage:{readAttempts,requestedLength:Number(length),returnedLength:page.text.length,budgetLimited:readAttempts>1}});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
         }
-        const total=Number.isSafeInteger(page.originalRefsTotal)&&page.originalRefsTotal>=ids.length?page.originalRefsTotal:ids.length;
-        const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids,originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length};
-        const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget()});
-        if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000)throw budgetError();
-        deliveredCharacters+=serialized.length;
-        for(const id of ids){discovered.add(id);disclosedIds.add(id);}
-        completeLineage=false;
-        trace.push({tool,arguments:{ref:args.ref,offset,length},count:1});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
+        throw budgetError();
       }
       if(restricted){
         if(tool!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
@@ -720,7 +737,7 @@ export async function startBridge(
       const signature=JSON.stringify([tool,issue.code,canonical(args)]);
       repeatedFailures=signature===previousFailure?repeatedFailures+1:1;previousFailure=signature;
       if(repeatedFailures>=3)issue=new ContextToolError('repeated_tool_failure','The same invalid tool request failed three times. This run has stopped; no output will be committed.','stop',{originalCode:issue.code});
-      reportTrace(bounds,{type:'tool.rejected',stage:'tool',tool,status:'rejected',payload:{...issue.toJSON(),call:calls,repeatCount:repeatedFailures,remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters)}});
+      reportTrace(bounds,{type:'tool.rejected',stage:'tool',tool,status:'rejected',payload:{...issue.toJSON(),call:calls,repeatCount:repeatedFailures,remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters),...(materialReadAttempts?{materialPage:{readAttempts:materialReadAttempts}}:{})}});
       res.writeHead(400).end(JSON.stringify({error:issue.message,toolError:issue.toJSON(),hostBudget:hostBudget()}));
       if(issue.recovery==='stop'||calls>maxToolCalls+2)rejectFailure(new AgentResponseError('Tool failure recovery exhausted.','tool_failure'));
 

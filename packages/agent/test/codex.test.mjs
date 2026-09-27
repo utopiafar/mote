@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import {generatedImageRead,assertRegionSchema} from './image-region-fixture.mjs';
+import {generatedMaterialPages,materialRef} from './material-page-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm,readFile,access,mkdir} from 'node:fs/promises';
@@ -51,7 +52,11 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='timeout')return;
   if(mode==='oversize-frame'){send({method:'fixture/opaque',params:{data:'x'.repeat(14*1024*1024)}});return;}
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
-  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='contribution'?'fixture_context':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
+  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='material-page'?'material_catalog':mode==='contribution'?'fixture_context':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
+ }else if(mode==='material-page'&&m.id===999){
+  if(!m.result?.success)process.exit(3);
+  const page=JSON.parse(m.result.contentItems[0].text);
+  send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'material_read',namespace:null,arguments:{ref:page.data.items[0].ref,length:10000}}});
  }else if((mode==='image-flow'||mode==='image-repeat')&&(m.id===999||m.id===1000||mode==='image-repeat'&&m.id===1001)){
   if(!m.result?.success)process.exit(3);
   send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:m.id===999?{ids:['synthetic-codex-record']}:{id:'synthetic-codex-record',attachmentId:'generated-image'}}});
@@ -68,7 +73,7 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(!m.result?.success)process.exit(3);
   if(mode==='image-echo'||mode==='image-flow')send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'image-echo',type:'dynamicToolCall',contentItems:m.result.contentItems}}});
   if(mode==='usage')for(const sample of [turns*100,turns*100])send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
-  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:mode==='contribution'?'Generated metadata':'Generated evidence [synthetic-codex-record]',citationIds:mode==='contribution'?[]:['synthetic-codex-record']})}}});
+  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:['contribution','material-page'].includes(mode)?'Generated metadata':'Generated evidence [synthetic-codex-record]',citationIds:['contribution','material-page'].includes(mode)?[]:['synthetic-codex-record']})}}});
   send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
  }
 });
@@ -80,6 +85,16 @@ test('Codex App Server exchanges scoped tools, validates citations and leaves no
   assert.equal(answer.citations[0].id,record.id);assert.equal(answer.trace[0].tool,'timeline');
   assert.equal((await readFile(join(root,'auth.json'),'utf8')).includes('synthetic-unused-key'),true);
   await assert.rejects(access(await readFile(join(root,'runtime-home'),'utf8')),{code:'ENOENT'});
+});
+test('Codex tool completion carries one fitted material page and preserves its original requested range',async t=>{
+  const root=await fake(t,'material-page'),fixture=generatedMaterialPages();
+  const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+  const answer=await agent.query({question:'Read a generated material page'}),rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  const result=rpc.find(message=>message.id===1000).result;assert.equal(result.success,true);assert.equal(result.contentItems.length,1);
+  const page=JSON.parse(result.contentItems[0].text);assert.equal(result.contentItems[0].type,'inputText');assert.ok(result.contentItems[0].text.length<=16000);
+  assert.equal(page.data.pagination.limitedBy,'host_budget');assert.equal(page.data.textRange.nextOffset,5000);
+  assert.deepEqual(fixture.attempts.map(args=>args.length),[10000,5000]);assert.equal(rpc.filter(message=>message.method==='turn/start').length,1);
+  assert.deepEqual(answer.trace.at(-1).arguments,{ref:materialRef,offset:0,length:10000});assert.equal(answer.trace.at(-1).materialPage.readAttempts,2);
 });
 test('Codex preserves the requested Max effort without silently downgrading it',async t=>{
   await fake(t,'max');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'max',timeoutMs:5000});t.after(()=>agent.close());

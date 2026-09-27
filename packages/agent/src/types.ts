@@ -211,6 +211,8 @@ export interface Citation {
 }
 export interface ToolTrace {
   imageView?:import('@mote/shared').ImageViewTrace;
+  /** Host-local page fitting, not extra model/provider calls. */
+  materialPage?:{readAttempts:number;requestedLength:number;returnedLength:number;budgetLimited:boolean};
   tool: string;
   arguments: Record<string, unknown>;
   count: number;
