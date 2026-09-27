@@ -17,4 +17,23 @@ Only a newly created API 35 / Android 15 / en-US emulator (`mote_fixture_api35`)
 
 The first 24-test run had four failures. Its realtime timeout lacked sufficient counters for unique causal attribution. Separate deterministic WorkManager failures established the lost-wake window and concurrent outbox access; both before-fix logs remain available. A later 28-test run also exposed the duplicate-send counter before the upload gate was added. None of these failures was overwritten.
 
-External evidence: `/Users/utopiafar/Documents/Codex/mote-goal-2026-09-27/android-emulator-validation-001/ROOT_SAFE_android-sync-fix-validation.json` (SHA-256 `ded1b606957f885bd1257987ba4df28504587fef910fcf5ca250ae5abce777b0`). The earlier three-round complex-note run used 18 generated notes and is separate from these 30 tests; it was not repeated after this repair. Physical-device, OEM power-management and post-repair process-kill recovery remain unverified.
+External evidence: `/Users/utopiafar/Documents/Codex/mote-goal-2026-09-27/android-emulator-validation-001/ROOT_SAFE_android-sync-fix-validation.json` (SHA-256 `ded1b606957f885bd1257987ba4df28504587fef910fcf5ca250ae5abce777b0`). The earlier three-round complex-note run used 18 generated notes and is separate from these 30 tests. That original validation did not cover post-repair process termination; a subsequent bounded check is recorded below.
+
+## Process termination and explicit resynchronization
+
+One new round of the existing complex-note harness passed all three phases on the same dedicated generated-data emulator: offline queueing, forced process termination and recovery, then explicit synchronization. App PIDs changed from 3022 to 3186 to 3291. All six original IDs, complete texts and moods survived; capture times matched the existing epoch-millisecond contract. The recovered queue held six notes and drained to zero, with six unique central records. The prepared note reused its UUID.
+
+This harness explicitly schedules synchronization and deliberately repeats six POSTs, all of which return `duplicate: true`. It proves one stored record per ID, not one HTTP request or automatic recovery from Activity launch alone. There were zero provider admissions, usage receipts, OCR or ASR calls. Physical-device and OEM behavior remain unverified.
+
+The offline build requires both the SDK location and the development test variant:
+
+```sh
+ANDROID_HOME=/Users/utopiafar/Library/Android/sdk \
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' \
+apps/android/gradlew -p apps/android --offline -Pmote.testBuildType=development \
+  :app:assembleDevelopment :app:assembleDevelopmentAndroidTest
+```
+
+Two earlier configuration-stage failures omitted these settings and are preserved separately; no instrumentation ran in those attempts. The successful check changed no source or harness. Root verification matched four source files, two harness files, two APKs and seven evidence hashes. All owned app, emulator, central, logcat and runner processes closed, with the test reverse mapping removed. Existing user emulators and physical devices were untouched.
+
+External report: `/Users/utopiafar/Documents/Codex/mote-goal-2026-09-27/android-process-recovery-validation-002/ROOT_SAFE_android-process-recovery.json` (SHA-256 `27a2417a5b3fd0ab570d8e1b26c659cb04370677dbf2c917e5312dbfa76d79ec`). This single six-note round is distinct from the earlier 18-note run and the 30-test instrumentation suite.
