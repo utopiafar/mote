@@ -207,7 +207,7 @@ export function RecordTimeline({
         )}
         <span className="filter-count">{totalCount === undefined ? moteText("已读取") + " " + items.length : moteText("共 {0} 条 · 本页 {1} 条", totalCount, items.length)}</span>
       </div>
-      <p className="capture-browse-note">{moteText("日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；待充电的 OCR 由采集端补做，结果同步后可刷新查看。")}</p>
+      <p className="capture-browse-note">{moteText("日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；可刷新查看文字识别的最新状态与结果。")}</p>
       {error && (
         <ErrorNotice
           text={error}

@@ -352,7 +352,18 @@ export function LoginDialog({ destination, onConnected, onClose }: {
 
 export function OriginalImage({api,capture}:{api:Api;capture:Capture}) {
   const [open,setOpen]=useState(false);
-  return <div className="original-image"><button className="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?moteText('收起原图'):moteText('查看原图')}</button>{open&&<AuthImage api={api} capture={capture} full/>}</div>;
+  const [nativeSize,setNativeSize]=useState(false);
+  useEffect(()=>{setOpen(false);setNativeSize(false);},[capture.id]);
+  return <div className="original-image">
+    <div className="original-image-controls">
+      <button className="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?moteText('收起原图'):moteText('查看原图')}</button>
+      {open&&<>
+        <button className="button" aria-pressed={!nativeSize} onClick={()=>setNativeSize(false)}>{moteText('适应宽度')}</button>
+        <button className="button" aria-pressed={nativeSize} onClick={()=>setNativeSize(true)}>{moteText('原始尺寸')}</button>
+      </>}
+    </div>
+    {open&&<div className={`original-image-viewport${nativeSize?' native-size':''}`} tabIndex={0} role="region" aria-label={moteText('原图，可滚动查看')}><AuthImage api={api} capture={capture} full/></div>}
+  </div>;
 }
 
 export function EvidenceDialog({
@@ -403,7 +414,7 @@ export function EvidenceDialog({
     }
   }
   const presentation = capture ? evidencePresentation(capture) : null;
-  const ocr = capture ? ocrPresentation(captureOcrState(capture), capture.ocrText, capture.metadata?.capture?.deduplication?.duplicate) : null;
+  const ocr = capture ? ocrPresentation(captureOcrState(capture), capture.ocrText, capture.metadata?.capture?.deduplication?.duplicate, capture.perceptionJobs) : null;
   return (
     <div
       className="modal-backdrop"

@@ -24,9 +24,9 @@ async function fixture(t:TestContext){
 }
 type Fixture=Awaited<ReturnType<typeof fixture>>;
 function output(f:Fixture,ids:string[],statement='Generated personal conclusion',extra:Record<string,unknown>={}):QueryResult{return {answer:JSON.stringify({memories:[{title:'Generated Memory',statement:statement+' '+ids.map(id=>`[${id}]`).join(' '),uncertainty:'Generated fixture, no real personal data.',evidenceIds:ids,evidence:ids.map(id=>({id,quote:f.store.evidence([id])[0].ocrText})),admission:{layer:'memory',scope:'fixture',reason:'Explicit owner statement in generated evidence',attribution:'user'},...extra}]}),runId:randomUUID(),trace:[],citations:ids.map(id=>({id,capturedAt:f.store.evidence([id])[0].capturedAt,appName:'Generated fixture',excerpt:''}))};}
-async function reviewed(f:Fixture,result:QueryResult,decision={sameConclusion:true,newSupportEvidenceIds:[] as string[]},options:{authorize?:(ids:string[])=>void;signal?:AbortSignal;onDeletion?:(input:QueryInput)=>Promise<void>|void}={}){
+async function reviewed(f:Fixture,result:QueryResult,decision={sameConclusion:true,newSupportEvidenceIds:[] as string[]},options:{authorize?:(ids:string[])=>void;signal?:AbortSignal;onDeletion?:(input:QueryInput)=>Promise<void>|void;skill?:QueryInput['skill']}={}){
  let comparisons=0;
- const input:QueryInput={question:'Extract generated memory',signal:options.signal,skill:'memory-extraction',responseMode:'memory-extraction',evidenceIds:result.citations.map(c=>c.id)};
+ const input:QueryInput={question:'Extract generated memory',signal:options.signal,skill:options.skill??'memory-extraction',responseMode:'memory-extraction',evidenceIds:result.citations.map(c=>c.id)};
  const answer=await reviewMemory(input,result,async query=>{
    if(query.question.startsWith('Host Memory deletion review.')){comparisons++;await options.onDeletion?.(query);return {...result,answer:JSON.stringify(decision)};}
    return {...result};
@@ -51,12 +51,111 @@ test('a relation loses its version race to an owner correction without partial a
  assert.equal(f.memories.get(old.id).supersededBy,corrected.id);assert.equal(f.memories.page({includeHistory:true}).items.length,2);
 });
 
+test('deleting an unpublished supersession proposal does not require an unestablished ancestor edge',async t=>{
+ const f=await fixture(t),id=await f.add('Generated original for a proposal.'),[old]=await save(f,output(f,[id]));
+ const proposal=f.memories.extract(output(f,[id],'Generated draft replacement',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]}),'fixture').items[0];
+ const stale=f.memories.extract(output(f,[id],'Another generated draft',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]}),'fixture').items[0];
+ f.store.db.prepare("UPDATE memories SET json=json_set(json,'$.status','stale') WHERE id=?").run(stale.id);
+ assert.equal(proposal.status,'proposed');assert.equal(f.memories.get(old.id).supersededBy,undefined);
+ assert.equal(f.memories.delete(proposal.id).deleted,1);
+ assert.equal(f.memories.get(old.id).supersededBy,undefined);
+ assert.ok(f.memories.deletions.export()[0].dependencies.includes(id));
+ assert.equal(f.memories.delete(stale.id).deleted,1,'an invalidated proposal also has no established supersession edge');
+});
+
+test('archive restore distinguishes a corrected unpublished proposal from an established supersession',async t=>{
+ const source=await fixture(t),id=await source.add('Generated archive proposal original.'),[old]=await save(source,output(source,[id]));
+ const proposal=source.memories.extract(output(source,[id],'Generated unpublished proposal',{relations:[{kind:'supersedes',memoryId:old.id,version:old.version,fingerprint:old.fingerprint}]}),'fixture').items[0];
+ const corrected=await source.memories.correct(proposal.id,{version:proposal.version,title:'Owner correction of draft',statement:'Generated owner correction of an unpublished proposal.'});
+ assert.equal(source.memories.get(proposal.id).version,2);
+ assert.equal(source.memories.get(old.id).supersededBy,undefined,'the proposed relation was never applied');
+ const restored=await fixture(t);await restored.store.importArchive(source.store.exportArchive(2_000_000));
+ assert.equal(restored.memories.get(proposal.id).status,'stale');
+ assert.equal(restored.memories.get(proposal.id).staleReason,'restored_archive');
+ assert.equal(restored.memories.delete(corrected.id).deleted,1);
+ assert.ok(restored.memories.deletions.export()[0].dependencies.includes(id));
+ assert.equal(restored.memories.get(old.id).supersededBy,undefined);
+
+ const actual=await fixture(t),firstId=await actual.add('Generated published archive original.'),[first]=await save(actual,output(actual,[firstId]));
+ const [published]=await save(actual,output(actual,[firstId],'Published replacement',{relations:[{kind:'supersedes',memoryId:first.id,version:first.version,fingerprint:first.fingerprint}]}));
+ const next=await actual.memories.correct(published.id,{version:published.version,title:'Owner correction of published',statement:'Generated correction of published replacement.'});
+ const corrupted=await fixture(t);await corrupted.store.importArchive(actual.store.exportArchive(2_000_000));
+ assert.equal(corrupted.memories.get(published.id).version,3);
+ corrupted.store.db.prepare("UPDATE memories SET json=json_remove(json,'$.supersededBy') WHERE id=?").run(first.id);
+ assert.throws(()=>corrupted.memories.delete(next.id),{statusCode:409},'a published relation missing its reverse edge fails closed after restore');
+ assert.equal(corrupted.memories.deletions.export().length,0);
+ assert.equal(corrupted.memories.get(next.id).status,'stale');
+});
+
 test('deletion survives restart and rejects a paraphrase from duplicated originals and another strategy version',async t=>{
  const f=await fixture(t),text='I tried a pottery workshop once.',id=await f.add(text),[old]=await save(f,output(f,[id],'Pottery is a lasting hobby'));
  f.memories.delete(old.id);assert.equal(f.store.evidence([id]).length,1);f.restart();
  const duplicate=await f.add(text),paraphrase=output(f,[duplicate],'The user has an enduring enthusiasm for ceramics');
  const check=await reviewed(f,paraphrase);assert.equal(check.comparisons,1);assert.deepEqual(JSON.parse(check.result.answer).memories,[]);
  assert.equal(f.memories.extract(check.result,'fixture',{reviewReceipt:check.receipt,skillVersion:'entirely-different-strategy@9'}).items.length,0);assert.equal(f.memories.list().length,0);
+});
+
+test('deleting a twice-corrected Memory routes every superseded original through bounded semantic review',async t=>{
+ const f=await fixture(t),text='Generated owner wanted an Android quick-recording entry for a sample project.',originalId=await f.add(text),[original]=await save(f,output(f,[originalId],'Generated quick-recording plan'));
+ const unrelatedId=await f.add('Generated unrelated preference for a different sample.'),[unrelated]=await save(f,output(f,[unrelatedId],'Unrelated generated preference'));
+ const first=await f.memories.correct(original.id,{version:original.version,title:'First owner correction',statement:'Generated correction: it was a tentative idea, not a completed feature.'});
+ const current=await f.memories.correct(first.id,{version:first.version,title:'Second owner correction',statement:'Generated correction: retain the tentative scope for this sample project only.'});
+ // Later metadata revisions do not erase the content fingerprint pinned by
+ // the supersession relation or make an explicit deletion impossible.
+ f.store.db.prepare("UPDATE memories SET json=json_set(json,'$.version',4) WHERE id=?").run(first.id);
+ f.memories.delete(current.id);
+ const deletion=f.memories.deletions.export()[0],expected=[originalId,first.evidenceIds[0],current.evidenceIds[0]].sort();
+ assert.deepEqual([...deletion.dependencies].sort(),expected);
+ assert.equal(f.store.evidence([originalId]).length,1,'deletion retains the original');
+ assert.equal(f.memories.get(unrelated.id).status,'published','unrelated Memory remains');
+ assert.equal(f.memories.get(original.id).supersededBy,first.id,'historical Memory is not resurrected');
+ f.restart();
+ const replay=await f.add(text),candidate=output(f,[replay],'A lasting Android quick-recording preference');let authorized:string[][]=[];
+ let judged=false;
+ await assert.rejects(reviewed(f,candidate,undefined,{authorize:()=>{throw Error('Generated source authorization denied');},onDeletion:()=>{judged=true;}}),/Generated source authorization denied/);
+ assert.equal(judged,false,'authorization precedes the semantic model call');
+ const blocked=await reviewed(f,candidate,undefined,{authorize:ids=>authorized.push(ids),skill:'coding-memory'});
+ assert.equal(blocked.comparisons,1,'reimported old event reaches the model deletion verdict');
+ assert.deepEqual(authorized.map(ids=>[...ids].sort()),[expected]);
+ assert.deepEqual(JSON.parse(blocked.result.answer).memories,[]);
+ assert.equal(f.memories.extract(blocked.result,'fixture',{reviewReceipt:blocked.receipt,skillVersion:'changed-recipe@9'}).items.length,0);
+ const distinct=await reviewed(f,output(f,[replay],'A different generated conclusion'),{sameConclusion:false,newSupportEvidenceIds:[]});
+ assert.equal(distinct.comparisons,1);assert.equal(JSON.parse(distinct.result.answer).memories.length,1,'sharing evidence does not blanket-suppress a distinct conclusion');
+ const fresh=await f.add('Generated later owner confirms using the quick entry every day.','2026-02-01T00:00:00Z');
+ const reconsidered=await reviewed(f,output(f,[replay,fresh],'Generated quick-recording preference with new support'),{sameConclusion:true,newSupportEvidenceIds:[fresh]});
+ assert.equal(reconsidered.comparisons,1);assert.equal(f.memories.extract(reconsidered.result,'fixture',{reviewReceipt:reconsidered.receipt}).items[0].status,'published');
+});
+
+test('missing or mismatched supersession ancestors do not leave a partial deletion intent',async t=>{
+ const f=await fixture(t),id=await f.add('Generated correction lineage original.'),[old]=await save(f,output(f,[id]));
+ const current=await f.memories.correct(old.id,{version:old.version,title:'Generated correction',statement:'Generated correction note.'});
+ const unchanged=f.store.db.prepare('SELECT json FROM memories WHERE id=?').get(current.id)!.json;
+ f.store.db.prepare("UPDATE memories SET json=json_set(json,'$.relations[0].fingerprint',?) WHERE id=?").run('0'.repeat(64),current.id);
+ assert.throws(()=>f.memories.delete(current.id),{statusCode:409});
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_deletions').get()!.n,0);
+ assert.ok(f.store.db.prepare('SELECT id FROM memories WHERE id=?').get(current.id));
+ f.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(unchanged,current.id);
+ f.store.db.prepare('DELETE FROM memories WHERE id=?').run(old.id);
+ assert.throws(()=>f.memories.delete(current.id),{statusCode:409});
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_deletions').get()!.n,0);
+ assert.ok(f.store.db.prepare('SELECT id FROM memories WHERE id=?').get(current.id));
+});
+
+test('a cyclic stored supersession lineage fails closed before changing deletion state',async t=>{
+ const f=await fixture(t),id=await f.add('Generated original for a malformed cycle.'),[old]=await save(f,output(f,[id]));
+ const first=await f.memories.correct(old.id,{version:old.version,title:'First correction',statement:'Generated first correction.'});
+ const current=await f.memories.correct(first.id,{version:first.version,title:'Second correction',statement:'Generated second correction.'});
+ // Simulate a corrupt persisted graph whose pins and reverse pointers look
+ // individually valid. A traversal still must stop at the repeated node.
+ const firstStored=f.memories.get(first.id),currentStored=f.memories.get(current.id);
+ firstStored.relations=[{kind:'supersedes',memoryId:current.id,fingerprint:current.fingerprint,version:current.version}];
+ firstStored.correction={memoryId:current.id,fingerprint:current.fingerprint,noteId:first.evidenceIds[0]};
+ currentStored.version=(currentStored.version??1)+1;currentStored.supersededBy=first.id;
+ f.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(firstStored),first.id);
+ f.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(currentStored),current.id);
+ assert.throws(()=>f.memories.delete(current.id),{statusCode:409});
+ assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_deletions').get()!.n,0);
+ assert.ok(f.store.db.prepare('SELECT id FROM memories WHERE id=?').get(current.id));
 });
 
 test('new evidence must support reconsideration; unrelated new citations do not remove the deletion constraint',async t=>{

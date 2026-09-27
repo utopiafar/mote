@@ -1,4 +1,7 @@
 {
+  "适应宽度": "Fit width",
+  "原始尺寸": "Original size",
+  "原图，可滚动查看": "Original image, scroll to view",
   "先选择中央节点。本机记录可以继续保存；选择节点后，中央资料仍需单独登录。": "Choose a central node first. You can keep saving records locally; central materials require a separate sign-in.",
   "中央界面暂时无法打开。本机记录不受影响；请检查节点地址和网络后重试，或打开连接设置。": "The central interface could not be opened. Local records are unaffected. Check the node address and network, then retry or open connection settings.",
   "验证采集连接只检查本设备的上传权限；中央资料仍需在中央界面单独登录。": "Verifying the collection connection only checks this device’s upload access. Sign in separately to read central materials.",
@@ -5599,5 +5602,16 @@
   "本次提取只使用下方资料，不使用顶部的时间范围。": "This extraction uses only the record below, independently of the time range above.",
   "所选资料无效，请重新打开原始记录。": "The selected record is invalid. Open the original record again.",
   "清除资料选择，恢复时间范围": "Clear record selection and use time range",
-  "问答读取原图尚未开启。请在中央感知设置中允许查询模型按需读取原图，再重新提问。": "Original-image access for queries is off. Enable on-demand image access for the query model in Central Perception settings, then ask again."
+  "问答读取原图尚未开启。请在中央感知设置中允许查询模型按需读取原图，再重新提问。": "Original-image access for queries is off. Enable on-demand image access for the query model in Central Perception settings, then ask again.",
+  "OCR 已取消": "OCR cancelled",
+  "中央文字识别已取消，截图已保留；当前没有正在处理的识别任务。": "Central OCR was cancelled. The screenshot is retained; no recognition task is currently running.",
+  "OCR 未启用": "OCR not enabled",
+  "中央文字识别未启用，截图已保留；当前不会自动识别文字。": "Central OCR is not enabled. The screenshot is retained; text will not be recognized automatically.",
+  "OCR 暂不可用": "OCR unavailable",
+  "中央文字识别模型尚未安装，截图已保留。": "The central OCR model is not installed. The screenshot is retained.",
+  "中央文字识别被阻止，请检查中央感知配置与处理状态。截图已保留。": "Central OCR is blocked. Check Central Perception configuration and processing status. The screenshot is retained.",
+  "截图已保存，文字识别任务正在排队或处理。": "Screenshot saved. Text recognition is queued or processing.",
+  "文字识别已完成，下方显示这条记录保留的全文。": "Text recognition is complete. The full retained text is shown below.",
+  "文字识别失败，截图已保留。": "Text recognition failed. The screenshot is retained.",
+  "日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；可刷新查看文字识别的最新状态与结果。": "Dates use the current browser time zone. These records have synced to the central node; refresh to see the latest text recognition status and results."
 }

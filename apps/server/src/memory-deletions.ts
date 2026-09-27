@@ -5,7 +5,7 @@ import {withExecutionCancellation} from './execution-cancellation.js';
 import {sourceContentTime,sourceIdSchema,type CaptureRecord,type QueryResult} from '@mote/shared';
 import {Store,StoreError,sha256} from './store.js';
 import {memoryDeletionDependencyBytes} from './storage-ledger.js';
-import type {Memory} from './memory-schema.js';
+import {memoryRelationSchema,type Memory} from './memory-schema.js';
 
 export const memoryDeletionSchema=z.object({id:z.string().uuid(),memoryId:z.string().uuid(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),deletedAt:z.string().datetime({offset:true}),originKeys:z.array(z.string().regex(/^(bytes|event|source):[a-f0-9]{64}$/)).min(1).max(60000),lineageKeys:z.array(z.string().regex(/^source:[a-f0-9]{64}$/)).max(20000),originalTexts:z.array(z.string().max(12000)).max(100),dependencies:z.array(z.string().uuid()).min(1).max(20000),derivationSourceIds:z.array(sourceIdSchema).max(40000).default([]),sourceLineageComplete:z.boolean().default(false)}).strict();
 type Rejection=z.infer<typeof memoryDeletionSchema>;
@@ -96,9 +96,60 @@ export class MemoryDeletions {
     }
     return [...sources].sort();
   }
+  /** Follow only stored, version-pinned supersession edges in this archive.
+   * Owner corrections cite their own note, so their ancestors' originals must
+   * also route a later attempt to regenerate the deleted conclusion. */
+  private deletionEvidenceIds(memory:Memory){
+    const ids=new Set<string>(),visited=new Set<string>(),path=new Set<string>();
+    const visit=(current:Memory,depth:number)=>{
+      if(path.has(current.id))throw new StoreError('Memory deletion lineage is cyclic',409);
+      if(visited.has(current.id))return;
+      if(depth>256||visited.size>=1000)throw new StoreError('Memory deletion lineage is too deep',409);
+      path.add(current.id);
+      const evidence=z.array(z.string().uuid()).min(1).max(30).safeParse(current.evidenceIds);
+      if(!evidence.success)throw new StoreError('Memory deletion lineage has invalid original evidence',409);
+      for(const id of evidence.data){
+        if(current.id!==memory.id&&!this.keys(id).length)throw new StoreError('Memory deletion lineage original is unavailable',409);
+        ids.add(id);
+      }
+      const parsed=z.array(memoryRelationSchema).max(20).safeParse(current.relations??[]);
+      if(!parsed.success)throw new StoreError('Memory deletion lineage relations are invalid',409);
+      // A proposal has not superseded its target. Archive restore turns every
+      // Memory stale, losing that status. A never-published proposal is v1; if
+      // it was owner-corrected first, correction advanced it only to v2 and
+      // set supersededBy. Publication itself advances to v2, so correcting a
+      // published non-correction Memory must leave it at v3 or later. Owner
+      // corrections have their own exact relation and must always be followed.
+      const neverPublished=current.status==='proposed'||current.status==='stale'&&!current.correction&&
+        ((current.version??1)===1||(current.version===2&&Boolean(current.supersededBy)));
+      const relations=parsed.data.filter(relation=>relation.kind==='supersedes');
+      if(current.correction&&(!current.evidenceIds.includes(current.correction.noteId)||!relations.some(relation=>relation.memoryId===current.correction!.memoryId&&relation.fingerprint===current.correction!.fingerprint)))throw new StoreError('Memory correction lineage is inconsistent',409);
+      for(const relation of relations){
+        const row=this.store.db.prepare('SELECT json FROM memories WHERE id=?').get(relation.memoryId);
+        if(!row){if(neverPublished)continue;throw new StoreError('Memory deletion lineage ancestor is missing',409);}
+        let ancestor:Memory;
+        try{ancestor=JSON.parse(String(row.json)) as Memory;}catch{throw new StoreError('Memory deletion lineage ancestor is unreadable',409);}
+        // A merely proposed relation is not an ancestor. If a trustworthy
+        // reverse edge exists, follow and validate it even after archive
+        // restore or evidence invalidation changed the proposal's status.
+        if(neverPublished&&ancestor.supersededBy!==current.id)continue;
+        // The relation pins the historical content. A later metadata version
+        // may advance, while its fingerprint and supersededBy edge stay exact.
+        if(ancestor.id!==relation.memoryId||ancestor.fingerprint!==relation.fingerprint||
+          ancestor.supersededBy!==current.id||(ancestor.version??1)<=relation.version)
+          throw new StoreError('Memory deletion lineage changed; refresh before deleting',409);
+        visit(ancestor,depth+1);
+      }
+      path.delete(current.id);visited.add(current.id);
+    };
+    visit(memory,0);
+    if(ids.size>20000)throw new StoreError('Memory deletion lineage exceeds the supported evidence limit',409);
+    return [...ids];
+  }
   remember(memory:Memory){
-    const dependencies=[...new Set(memory.evidenceIds.flatMap(id=>this.origins(id)))];
-    const value:Rejection={id:randomUUID(),memoryId:memory.id,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,deletedAt:new Date().toISOString(),originKeys:[...new Set(memory.evidenceIds.flatMap(id=>this.keys(id)))],lineageKeys:[...new Set(memory.evidenceIds.flatMap(id=>this.lineage(id)))],originalTexts:[...new Set((memory.evidence??[]).flatMap(e=>e.quote?[e.quote]:[]))],dependencies,derivationSourceIds:this.sourceIds([...memory.evidenceIds,...dependencies]),sourceLineageComplete:true};
+    const routedEvidence=this.deletionEvidenceIds(memory);
+    const dependencies=[...new Set(routedEvidence.flatMap(id=>this.origins(id)))];
+    const value:Rejection={id:randomUUID(),memoryId:memory.id,title:memory.title,statement:memory.statement,uncertainty:memory.uncertainty,deletedAt:new Date().toISOString(),originKeys:[...new Set(routedEvidence.flatMap(id=>this.keys(id)))],lineageKeys:[...new Set(routedEvidence.flatMap(id=>this.lineage(id)))],originalTexts:[...new Set((memory.evidence??[]).flatMap(e=>e.quote?[e.quote]:[]))],dependencies,derivationSourceIds:this.sourceIds([...routedEvidence,...dependencies]),sourceLineageComplete:true};
     if(!value.originKeys.length)throw new StoreError('Deletion evidence identity is unavailable',409);
     memoryDeletionSchema.parse(value);
     const json=JSON.stringify(value),rows=dependencies.map(id=>[value.id,id,JSON.stringify(this.keys(id)),JSON.stringify(this.lineage(id))] as const);
