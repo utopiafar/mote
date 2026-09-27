@@ -20,6 +20,8 @@ import {materialId} from '../apps/server/src/materials.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
 import {defaultMemoryIntegrationRecipe,defaultMemoryIntegrationStrategy,defaultMemoryIntegrationReview} from '../apps/server/src/memory-integration-policy.js';
+import {observationKey} from '../apps/server/src/evidence-archive.js';
+import {requestMemoryIntegration} from '../apps/server/src/memory-integration.js';
 
 const frozenWaveHash='6f02fa2ca1a129c3f8dcb427eecaf6fc7ad84893613d63ff1afa2925678a04e1';
 const frozenManifestHash='5e01370bee0816ca38cf8e2512fc74b7638606c456c146e296ea52fffe551c5e';
@@ -59,8 +61,31 @@ function tableSnapshot(db:DatabaseSync):Snapshot{return Object.fromEntries(db.pr
 const ablatedTables=['memories','memory_jobs','memory_checkpoints','memory_extraction_drafts','memory_lifecycle_state','memory_events'] as const;
 const ablationAllowed=new Set<string>([...ablatedTables,'memory_catalog','memory_scopes','memory_dependencies','memory_artifact_dependencies','memory_batches','memory_batch_dependencies','memory_job_counts','memory_input_plans','memory_input_authorizations','memory_extraction_draft_dependencies','storage_ledger','memories_fts','memories_fts_data','memories_fts_idx','memories_fts_content','memories_fts_docsize','memories_fts_config']);
 // Fresh text ingress has no other semantic products. Fail closed if this assumption changes.
-const emptyDerivedTables=['conversations','conversation_turns','working_memories','query_runs','insights','insight_runs','memory_deletions','memory_deletion_dependencies','context_artifacts','artifact_inputs','artifact_dependencies','artifact_material_inputs'];
-function assertNoOtherDerived(db:DatabaseSync){const snapshot=tableSnapshot(db);for(const name of emptyDerivedTables)if(snapshot[name])assert.equal(snapshot[name].rows,0,`Unexpected derived surface ${name}; this adapter does not silently carry it into A`);}
+const emptyDerivedTables=['conversations','conversation_turns','working_memories','query_runs','insights','insight_runs','memory_deletions','memory_deletion_dependencies','artifact_dependencies','artifact_material_inputs','memory_artifact_dependencies'];
+function assertNoOtherDerived(db:DatabaseSync){const snapshot=tableSnapshot(db);for(const name of emptyDerivedTables)if(snapshot[name])assert.equal(snapshot[name].rows,0,`Unexpected derived surface ${name}; this adapter does not silently carry it into A`);assertExactSourceSegments(db);}
+/** Only the three complete, single-original production exact-text segments qualify
+ * as shared retrieval indexes. Unknown processors and semantic caches fail closed. */
+function assertExactSourceSegments(db:DatabaseSync){
+  const hash=(value:unknown)=>sha256(JSON.stringify(value)),rows=db.prepare('SELECT * FROM context_artifacts ORDER BY id').all();assert.equal(rows.length,fixture.records.length,'Expected all three settled original-text segments');
+  for(const table of ['artifact_inputs','context_observations','context_contents','artifacts_fts','artifact_events'])assert.equal(Number(db.prepare(`SELECT count(*) n FROM ${quote(table)}`).get()!.n),rows.length,`Unexpected ${table} rows`);
+  assert.equal(Number(db.prepare('SELECT count(*) n FROM context_dirty').get()!.n),0,'Original indexes must settle before snapshot');const seen=new Set<string>();
+  for(const row of rows){
+    const artifact=JSON.parse(String(row.json)),inputs=db.prepare('SELECT observation_id,fingerprint FROM artifact_inputs WHERE artifact_id=?').all(row.id);assert.equal(inputs.length,1);
+    const raw=db.prepare('SELECT fingerprint,json FROM captures WHERE id=?').get(inputs[0].observation_id);assert.ok(raw);const original=JSON.parse(String(raw.json)),record=fixture.records.find(item=>item.id===original.provenance?.externalId);assert.ok(record);assert.ok(!seen.has(record.id));seen.add(record.id);
+    assert.equal(original.provenance.sourceId,sourceId);assert.equal(original.ocrText,record.text);assert.equal(sha256(original.ocrText),record.sha256);assert.equal(Date.parse(original.capturedAt),Date.parse(record.observedAt));assert.equal(original.provenance.document.recordedAt,record.recordedAt);
+    assert.equal(db.prepare('SELECT capture_id FROM source_heads WHERE source_id=? AND external_id=?').get(sourceId,record.id)!.capture_id,original.id,'Segment original is no longer current');
+    const perceptions=db.prepare("SELECT kind,json_extract(json,'$.text') AS text FROM perception_results WHERE capture_id=? AND current=1 ORDER BY kind").all(original.id);assert.deepEqual(perceptions,[],'Generated note segment acquired perception-derived text');
+    const fingerprint=hash([raw.fingerprint,perceptions]);assert.equal(inputs[0].fingerprint,fingerprint);const group=observationKey(original),id=hash([group,original.id]),contentHash=hash(record.text);
+    const metadata={grouping:'fixed_time_and_explicit_identity',semanticGrouping:false,observationCount:1,uniqueTexts:1,complete:true,entries:[{ids:[original.id],firstAt:original.capturedAt,lastAt:original.capturedAt,complete:true,characters:record.text.length}],originalCharacters:record.text.length,characters:record.text.length};
+    const revision=hash([[{id:original.id,fingerprint}],'mote.exact-segment','1',metadata]);assert.ok(!Number.isNaN(Date.parse(artifact.generatedAt)));
+    const expected={id,revision,kind:'segment',processor:'mote.exact-segment',processorVersion:'1',configFingerprint:hash({windowMs:300000,maxCharacters:12000,maxMembers:100}),generatedAt:artifact.generatedAt,firstAt:original.capturedAt,lastAt:original.capturedAt,deviceId:original.deviceId,appId:original.appId,source:original.source,members:[original.id],representatives:[original.id],contentHash,metadata,parents:[]};assert.deepEqual(artifact,expected,'Artifact is not the exact original-text index');
+    assert.deepEqual({...row},{id,group_key:group,revision,kind:'segment',first_at:original.capturedAt,last_at:original.capturedAt,device_id:original.deviceId,app_id:original.appId,source:original.source,content_hash:contentHash,json:row.json});
+    assert.deepEqual(JSON.parse(String(db.prepare('SELECT json FROM context_contents WHERE hash=?').get(contentHash)!.json)),{text:record.text});
+    assert.deepEqual({...db.prepare('SELECT * FROM context_observations WHERE id=?').get(original.id)},{id:original.id,group_key:group,content_hash:contentHash});
+    assert.deepEqual(db.prepare('SELECT id,text FROM artifacts_fts WHERE id=?').all(id).map(value=>({...value})),[{id,text:record.text}]);assert.deepEqual(db.prepare('SELECT entity,operation FROM artifact_events WHERE entity=?').all(id).map(value=>({...value})),[{entity:id,operation:'ready'}]);
+  }
+  assert.deepEqual([...seen].sort(),fixture.records.map(record=>record.id).sort());return rows.map(row=>({id:row.id,revision:row.revision,contentHash:row.content_hash}));
+}
 const queryWriteTables=new Set(['execution_operations','execution_steps','execution_jobs','execution_fairness','execution_operation_steps','execution_sequence','operation_changes','operation_progress','run_execution_owners','model_usage','query_runs','conversations','conversation_turns','working_memories','storage_ledger','memory_events']);
 function protectedSnapshot(db:DatabaseSync){return Object.fromEntries(Object.entries(tableSnapshot(db)).filter(([name])=>!ablationAllowed.has(name)&&!queryWriteTables.has(name)));}
 function assertSqlite(db:DatabaseSync){assert.equal(db.prepare('PRAGMA quick_check').get()!.quick_check,'ok');assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);}
@@ -112,6 +137,8 @@ assert.ok(preflight||process.env.MOTE_SCENARIO_PREFLIGHT_VARIANT===undefined,'A 
 const recoveryPath=process.env.MOTE_SCENARIO_RECOVERY_PLAN?await externalExisting(process.env.MOTE_SCENARIO_RECOVERY_PLAN):undefined;
 const recoveryBytes=recoveryPath?await readFile(recoveryPath):undefined;
 const recovery:RecoveryPlan|undefined=recoveryBytes?recoverySchema.parse(JSON.parse(recoveryBytes.toString('utf8'))):undefined;
+const recoveryValidateOnly=z.enum(['0','1']).parse(process.env.MOTE_SCENARIO_RECOVERY_VALIDATE_ONLY??'0')==='1';
+assert.ok(!recoveryValidateOnly||recovery,'Validation-only requires an explicit recovery plan');
 if(recovery){assert.equal(recovery.sourceMode,mode,'Preflight and live source runs cannot be mixed');assert.equal(recovery.fixtureSha256,frozenWaveHash);assert.deepEqual(recovery.integrationRecipe,defaultMemoryIntegrationRecipe);if(!preflight)assert.equal(sha256(recoveryBytes!),frozenLiveRecoveryHash,'Live recovery must use the separately frozen plan');}
 const preflightVariant=z.enum(['empty-integration','nonempty-integration','failed-integration-review']).parse(process.env.MOTE_SCENARIO_PREFLIGHT_VARIANT??(recovery?'nonempty-integration':'empty-integration'));
 if(recovery&&preflight)assert.equal(preflightVariant,'nonempty-integration','Recovery preflight must exercise independent integration review');
@@ -139,8 +166,8 @@ const started=Date.now(),reportPath=join(directory,'report.json'),token=randomBy
 const generationVault=join(directory,'generation','vault'),snapshotVault=join(directory,'snapshot','vault');
 const report:Record<string,any>={schema:'mote-memory-scenario-run@1',mode,status:'preparing',startedAt:new Date(started).toISOString(),personalDataUsed:false,heldOut:false,
   ...(preflight?{preflightVariant}:{}),
-  fixtureSha256:frozenWaveHash,fixtureHashes,manifestSha256:sha256(manifestBytes),intendedModel:fixture.model,actualAgent:preflight?'offline-stub':fixture.model,
-  semanticQualityAccepted:false,netBenefitAccepted:false,liveBaselineEligible:!preflight,browserTested:false,physicalDevicesTested:false,
+  fixtureSha256:frozenWaveHash,fixtureHashes,manifestSha256:sha256(manifestBytes),intendedModel:fixture.model,actualAgent:recoveryValidateOnly?'provider-blocked-source-validation':preflight?'offline-stub':fixture.model,
+  recoveryValidateOnly,semanticQualityAccepted:false,netBenefitAccepted:false,liveBaselineEligible:!preflight&&!recoveryValidateOnly,browserTested:false,physicalDevicesTested:false,
   maximumOuterCalls:limits.maximumOuterModelCalls,fixtureMaximumOuterCalls:fixture.limits.maximumOuterModelCalls,priorOuterCalls:recovery?.sourceOuterCalls??0,maximumCumulativeOuterCalls:(recovery?.sourceOuterCalls??0)+limits.maximumOuterModelCalls,maximumAutomaticOuterRetries:0,callCounterUnit:'outer agent.query invocation',providerInternalRequestCount:null,
   internalRepairPolicy:'Production Agent may repair validation within one outer invocation; visible model/repair turns are reported separately, hidden provider requests remain unknown.',
   deadlineProtection:{outerAdmissionDeadlineMs:limits.maximumRunDurationMs,perCallDeadlineMs:limits.perCallTimeoutMs,wholeProcessWatchdog:false,limitation:'Open, filesystem backup and close are not bounded by the query timer; supervise a live process separately.'},
@@ -190,7 +217,7 @@ async function stub(reader:ContextReader,input:QueryInput):Promise<QueryResult>{
 }
 async function open(vault:string){
   assert.equal(node,undefined);currentVault=vault;
-  node=await buildApp(config(vault),{backgroundWorker:false,...(preflight?{createModelAgent:async(_settings:any,reader:ContextReader)=>({configured:true,close:async()=>{},query:(input:QueryInput)=>stub(reader,input)})}:{})});
+  node=await buildApp(config(vault),{backgroundWorker:false,...(recoveryValidateOnly?{createModelAgent:async()=>({configured:true,close:async()=>{},query:async()=>{throw Error('Recovery source validation forbids provider calls');}})}:preflight?{createModelAgent:async(_settings:any,reader:ContextReader)=>({configured:true,close:async()=>{},query:(input:QueryInput)=>stub(reader,input)})}:{})});
   // Offline-only old-version fixture. A restarted recovery node does not install it.
   if(preflight&&!recovery&&preflightVariant==='failed-integration-review'){
     node.memoryStrategies.registerIntegration({...defaultMemoryIntegrationStrategy,version:'1',prompt:'Offline old-version integration plumbing fixture; no semantic evaluation.'});
@@ -200,6 +227,7 @@ async function open(vault:string){
   const settings=node.lifecycle.settings();for(const key of ['extraction','consolidation','insights','working'] as const)settings[key].enabled=false;node.lifecycle.configure(settings);
   const query=node.agent.query.bind(node.agent);
   node.agent.query=async input=>{
+    assert.ok(!recoveryValidateOnly,'Recovery source validation forbids agent admission');
     const phase=input.traceContext?.phase??'ask',key=[stage,currentArm??'',questionId??'',input.traceContext?.jobId??'',input.traceContext?.batchId??'',phase].join(':');
     assert.ok(report.calls.filter((call:any)=>call.stage===stage).length<({extraction:recovery?0:6,integration:2,ask:4}[stage]??0),'Frozen stage call budget exhausted');
     const request={...input,contextTime:fixture.contextTime};
@@ -243,6 +271,9 @@ async function seed(){
     const ids=node!.materials.evidenceIds(material.ref),formal=node!.memories.readEvidence(ids),capture=node!.store.evidence([ack.id])[0];assert.equal(formal.length,1);assert.ok(Date.parse(capture.receivedAt)>=before&&Date.parse(capture.receivedAt)<=Date.now());
     report.records.push({...record,captureId:ack.id,materialRef:material.ref,evidenceIds:ids,formalTextSha256:sha256(formal[0].ocrText),receivedAt:capture.receivedAt});await save();
   }
+  // The ordinary capture feature timer runs this same deterministic aggregate
+  // after a 15-second settling delay. Settle explicitly so fast stubs also cover it.
+  node!.store.archive.aggregate(100);report.originalTextSegments=assertExactSourceSegments(node!.store.db);
   verifyOriginals();assertNoOtherDerived(node!.store.db);assert.equal(report.calls.length,0);
 }
 function assertIdle(){assert.ok(node!.memoryPipeline.list().every(j=>['completed','failed','cancelled'].includes(j.status)),'Unfinished Memory job');assert.ok(node!.lifecycle.view().extensions.every(e=>!e.active),'Unfinished lifecycle window');}
@@ -296,13 +327,22 @@ async function assertRecoverySourceUnchanged(){
 }
 async function recoverGeneration(){
   assert.ok(recovery&&recoverySource);report.recovery.clone=await cloneClosed(recoverySource.vault,generationVault);report.records=structuredClone(recoverySource.records);report.jobs=structuredClone(recoverySource.jobs);
-  await open(generationVault);verifyOriginals();assertNoOtherDerived(node!.store.db);assert.deepEqual(memories(),recoverySource.parents);assert.deepEqual(extractionSnapshot(node!.store.db),recoverySource.jobSnapshot);
+  await open(generationVault);verifyOriginals();assertNoOtherDerived(node!.store.db);report.originalTextSegments=assertExactSourceSegments(node!.store.db);assert.deepEqual(memories(),recoverySource.parents);assert.deepEqual(extractionSnapshot(node!.store.db),recoverySource.jobSnapshot);
   assert.deepEqual(node!.memoryPipeline.modelSnapshot(),recoverySource.checkpoint.model,'Recovery model pin changed');
   const oldSelection=JSON.parse(String(node!.store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json));assert.deepEqual(oldSelection,recoverySource.oldState,'Opening clone changed old window');
   assert.equal(String(node!.store.db.prepare("SELECT value FROM settings WHERE key='memory-integration-selection'").get()!.value),recoverySource.integrationSelection,'Opening clone silently rebound the default selection');
   assert.throws(()=>node!.memoryStrategies.resolveIntegration({id:defaultMemoryIntegrationRecipe.id,version:'1'}),'Old recipe must not silently map to new policy');
   const cancellation=await request('POST',`/api/memory-integrations/${recovery.oldWindowId}/cancel`,{}),cancelled=cancellation.extensions.find((entry:any)=>entry.id==='consolidation');assert.equal(cancelled.status,'cancelled');assert.equal(cancelled.active.id,recovery.oldWindowId);assert.equal(cancelled.active.checkpoint,recoverySource.oldState.active.checkpoint);assert.equal(report.calls.length,0);
   report.recovery.oldWindowCancelled={id:cancelled.active.id,status:cancelled.status,checkpointUnchanged:true};report.recovery.newBinding=node!.memoryStrategies.resolveIntegration(recovery.integrationRecipe).binding;assert.equal(report.recovery.newBinding.integrate.version,'2');
+  if(recoveryValidateOnly){
+    // Same production request function as the HTTP route, without its tick side
+    // effect. Both the Agent admission wrapper and factory independently block
+    // provider calls, including a timer arriving during this validation.
+    const created=requestMemoryIntegration({recipe:recovery.integrationRecipe,memoryIds:recoverySource.checkpoint.inputs.map((input:any)=>input.id)},{lifecycle:node!.lifecycle,memories:node!.memories,pipeline:node!.memoryPipeline});assert.notEqual(created.id,recovery.oldWindowId);
+    const active=JSON.parse(String(node!.store.db.prepare("SELECT json FROM memory_lifecycle_state WHERE id='consolidation'").get()!.json)).active,next=JSON.parse(active.checkpoint);assert.equal(active.id,created.id);assert.deepEqual(next.selection.binding,report.recovery.newBinding);assert.deepEqual(next.inputs,recoverySource.checkpoint.inputs);assert.deepEqual(next.model,recoverySource.checkpoint.model);
+    assert.deepEqual(extractionSnapshot(node!.store.db),recoverySource.jobSnapshot);assert.equal(String(node!.store.db.prepare("SELECT value FROM settings WHERE key='memory-integration-selection'").get()!.value),recoverySource.integrationSelection);assert.equal(report.calls.length,0);
+    report.recovery.sourceValidation={newWindowId:created.id,originalTextSegments:report.originalTextSegments,newVersionPinned:true,completedExtractionsUnchanged:true,oldDefaultSelectionUnchanged:true,providerFactoryBlocked:true,agentAdmissionBlocked:true,modelCatalogSkipped:true,outerCalls:0};await close();await assertRecoverySourceUnchanged();return;
+  }
   await integrate(recovery.integrationRecipe);assert.deepEqual(extractionSnapshot(node!.store.db),recoverySource.jobSnapshot,'Recovery re-ran or changed completed extraction');assert.equal(String(node!.store.db.prepare("SELECT value FROM settings WHERE key='memory-integration-selection'").get()!.value),recoverySource.integrationSelection,'Manual v2 task changed the old default selection');report.recovery.oldDefaultSelectionUnchanged=true;report.recovery.extractionJobsUnchanged=true;assert.equal(report.calls.filter((call:any)=>call.stage==='extraction').length,0);await close();await assertRecoverySourceUnchanged();
 }
 async function generate(){
@@ -357,16 +397,16 @@ async function blindPackage(){
 }
 
 // No catalog lookup, Codex executable, HTTP transport or model factory is reachable in preflight.
-const realFetch=globalThis.fetch;if(preflight)globalThis.fetch=async()=>{throw Error('Offline preflight forbids network requests');};
+const realFetch=globalThis.fetch;if(preflight||recoveryValidateOnly)globalThis.fetch=async()=>{throw Error('Offline validation forbids network requests');};
 try{
   report.budgetPrecheck=await budgetPrecheck(limits.maximumOuterModelCalls);report.head=execFileSync('git',['rev-parse','HEAD'],{cwd:repositoryRoot,encoding:'utf8'}).trim();
-  const paths=['scripts/test-memory-scenario-live.ts','package-lock.json','apps/server/src/app.ts','apps/server/src/memory-pipeline.ts','apps/server/src/memory-review.ts','apps/server/src/memory-integration.ts','apps/server/src/memory-integration-policy.ts','apps/server/src/memory-policy.ts','apps/server/src/evidence-reader.ts','apps/server/src/opening-memory.ts','packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','packages/agent/dist/skills.js','packages/agent/dist/codex-agent.js','packages/agent/dist/codex-session.js','packages/agent/dist/bridge.js'];
+  const paths=['scripts/test-memory-scenario-live.ts','package-lock.json','apps/server/src/app.ts','apps/server/src/memory-pipeline.ts','apps/server/src/memory-review.ts','apps/server/src/memory-integration.ts','apps/server/src/memory-integration-policy.ts','apps/server/src/memory-policy.ts','apps/server/src/evidence-reader.ts','apps/server/src/evidence-archive.ts','apps/server/src/features/capture.ts','apps/server/src/opening-memory.ts','packages/agent/dist/instructions.js','packages/agent/dist/task-context.js','packages/agent/dist/skills.js','packages/agent/dist/codex-agent.js','packages/agent/dist/codex-session.js','packages/agent/dist/bridge.js'];
   report.codeHashes=Object.fromEntries(await Promise.all(paths.map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
   await mkdir(join(directory,'code'),{mode:0o700});await writeFile(join(directory,'code','working-tree.patch'),execFileSync('git',['diff','--binary'],{cwd:repositoryRoot}),{mode:0o600});
   for(const path of paths)await cp(join(repositoryRoot,path),join(directory,'code',path.replaceAll('/','__')));
   await writeFile(join(directory,'wave-1.v1.json'),fixtureBytes,{mode:0o600});await writeFile(join(directory,'source-manifest.json'),manifestBytes,{mode:0o600});
   if(recovery){await writeFile(join(directory,'recovery-plan.json'),recoveryBytes!,{mode:0o600});await recoveryPrecheck();}
-  if(!preflight){const {codexModels}=await import('../apps/server/src/model-catalog.js');const catalog=await codexModels(undefined,{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME});report.catalog=catalog.items.find(item=>item.id===fixture.model.model);assert.ok(report.catalog?.reasoningEfforts?.includes(fixture.model.reasoningEffort));}
+  if(!preflight&&!recoveryValidateOnly){const {codexModels}=await import('../apps/server/src/model-catalog.js');const catalog=await codexModels(undefined,{executable:process.env.MOTE_CODEX_BIN,home:process.env.MOTE_CODEX_HOME});report.catalog=catalog.items.find(item=>item.id===fixture.model.model);assert.ok(report.catalog?.reasoningEfforts?.includes(fixture.model.reasoningEffort));}
   report.status='running';await save();await mkdir(dirname(generationVault),{mode:0o700});
   if(recovery)await recoverGeneration();
   else{
@@ -375,11 +415,14 @@ try{
     const emptyControl=join(directory,'empty-memory-control','vault');await mkdir(dirname(emptyControl),{mode:0o700});await cloneClosed(rawVault,emptyControl);report.emptyMemoryAblation=ablate(emptyControl,'archive-only');assert.equal(report.emptyMemoryAblation.before.memories.rows,0);
     await open(generationVault);await generate();await close();
   }
+  if(recoveryValidateOnly){report.status='recovery-source-validated-no-model';report.structuralChecksPassed=true;assert.equal(budget.count,0);}
+  else{
   await mkdir(dirname(snapshotVault),{mode:0o700});report.snapshot=await cloneClosed(generationVault,snapshotVault);await chmod(join(snapshotVault,'mote.sqlite'),0o400);
   await writeFile(join(directory,'seed.json'),json({schema:'mote-memory-scenario-seed@1',artifactMode:preflight?'stub-preflight':'live-model',generationStatus:preflight?'stub-completed':'model-completed',semanticQualityAccepted:false,liveBaselineEligible:!preflight,personalDataUsed:false,heldOut:false,fixtureSha256:frozenWaveHash,records:report.records,memories:report.afterIntegration,snapshot:report.snapshot,maximumOuterCalls:limits.maximumOuterModelCalls,...(recovery?{recoveryPlanSha256:sha256(recoveryBytes!),priorOuterCalls:8}:{} )}),{mode:0o600});
   await questions();await blindPackage();assert.equal(sha256(await readFile(join(snapshotVault,'mote.sqlite'))),report.snapshot.cloneSha256,'Immutable snapshot changed');
   report.status=preflight?'preflight-structural-passed':'completed-awaiting-human-review';report.structuralChecksPassed=true;
   if(preflight){assert.equal(report.realModelCalls,0);assert.equal(report.stubCalls,recovery?6:preflightVariant==='nonempty-integration'?12:11);if(preflightVariant==='nonempty-integration')assert.equal(report.afterIntegration.length,report.beforeIntegration.length+1);}
+  }
 }catch(error){report.status='failed';report.failures.push({stage,questionId,arm:currentArm,message:message(error)});process.exitCode=1;}
 finally{
   await close();globalThis.fetch=realFetch;await assertRecoverySourceUnchanged();report.finishedAt=new Date().toISOString();report.durationMs=Date.now()-started;report.outerCalls=budget.count;report.cumulativeOuterCalls=(recovery?.sourceOuterCalls??0)+budget.count;
