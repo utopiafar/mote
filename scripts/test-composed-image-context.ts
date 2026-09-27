@@ -1,6 +1,7 @@
 /** Generated caption + long image + reused OCR proof. Default offline; no quality claim.
  * MOTE_COMPOSED_IMAGE_OUTPUT=/external/new-run node --import tsx scripts/test-composed-image-context.ts
  * Live additionally requires MODE=live and SEED=/external/passed-preflight. One ordinary Ask only.
+ * MOTE_COMPOSED_IMAGE_PROTOCOL defaults to one-original; bounded-views requires the region-capable product.
  * The evaluator rubric is hashed, never parsed into model context. Frozen v1 assets stay external.
  */
 import assert from 'node:assert/strict';
@@ -17,6 +18,7 @@ import {repositoryRoot,type Config} from '../apps/server/src/config.js';
 import {materialId} from '../apps/server/src/materials.js';
 import {sha256} from '../apps/server/src/store.js';
 import {usageTotals} from '../apps/server/src/usage.js';
+import {ComposedImageDisclosure,type ImageDisclosureProtocol} from './composed-image-disclosure.js';
 
 const frozenManifestHash='64196b1f2cf450e2b35ed4d84ec744061feaf628d999d2e83afcceaf0e5ed900';
 type Fixture={schemaVersion:1;id:string;personalDataUsed:false;heldOut:false;sourceId:string;deviceId:string;externalId:string;donorSourceId:string;donorDeviceId:string;
@@ -25,6 +27,7 @@ type Fixture={schemaVersion:1;id:string;personalDataUsed:false;heldOut:false;sou
 type Node=Awaited<ReturnType<typeof buildApp>>;
 type Seed={parentId:string;attachmentId:string;childId:string;donorId:string;materialRef:string;evidenceIds:string[];required:string[];fingerprint:string;artifactId:string};
 const mode=process.env.MOTE_COMPOSED_IMAGE_MODE??'preflight';assert.ok(mode==='preflight'||mode==='live');const live=mode==='live';
+const protocolValue=process.env.MOTE_COMPOSED_IMAGE_PROTOCOL??'one-original';assert.ok(protocolValue==='one-original'||protocolValue==='bounded-views','Unknown image disclosure protocol');const protocol:ImageDisclosureProtocol=protocolValue;
 const json=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 function disjoint(a:string,b:string){for(const [from,to] of [[a,b],[b,a]]){const part=relative(from,to);assert.ok(part==='..'||part.startsWith('../'),'Paths must be disjoint');}}
@@ -39,15 +42,15 @@ const bytes=await readFile(join(fixtureRoot,fixture.image.file)),imageHash=sha25
 assert.ok(process.env.MOTE_COMPOSED_IMAGE_OUTPUT,'An explicit new external output directory is required');
 const output=join(await external(dirname(resolve(process.env.MOTE_COMPOSED_IMAGE_OUTPUT))),basename(resolve(process.env.MOTE_COMPOSED_IMAGE_OUTPUT)));
 assert.notEqual(output,fixtureRoot);await mkdir(output,{mode:0o700});
-const report:Record<string,any>={status:'running',mode,startedAt:new Date().toISOString(),personalDataUsed:false,heldOut:false,semanticQualityAccepted:false,
+const report:Record<string,any>={status:'running',mode,imageProtocol:protocol,startedAt:new Date().toISOString(),personalDataUsed:false,heldOut:false,semanticQualityAccepted:false,
  realModelCalls:0,stubModelCalls:0,ocrStubCalls:0,realOcrCalls:0,asrCalls:0,externalFetchAttempts:0,blockedLoopbackFetchAttempts:0,backgroundWorker:false,memoryGenerated:false,browserTested:false,physicalDeviceTested:false,
  fixtureRoot,manifestSha256:frozenManifestHash,fixtureFiles:manifest.files,model:{provider:'codex',protocol:'codex-app-server',model:'gpt-6-sol',reasoningEffort:'max'},
  modelConfigurationScope:live?'actual live configuration':'reserved live configuration; offline factory rejects every query',contextTimeAdapter:{value:fixture.contextTime,scope:'Same frozen host time for tool preflight and the optional ordinary Ask; no answer or rubric injected'},
- limits:{maximumOuterCalls:1,perCallTimeoutMs:300000,automaticOuterRetries:0},checks:[],toolReads:[],permissionClones:[],calls:[],usageByVault:[],
+ limits:{maximumOuterCalls:1,perCallTimeoutMs:300000,automaticOuterRetries:0,maximumUniqueImagePayloads:protocol==='one-original'?1:4},checks:[],toolReads:[],permissionClones:[],calls:[],usageByVault:[],
  limitations:['Generated fixed sample, not held out or personal data.','OCR is a once-only known-text stub; accuracy is not tested.','Offline preflight proves structure and authorization, not semantic/visual understanding.',
   'One outer query may contain provider-internal requests or one output-validation repair; visible turns are recorded separately.','The 300 second bound is a model call deadline, not a whole-process watchdog.'],
  head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()};
-const codeFiles=['scripts/test-composed-image-context.ts','apps/server/src/app.ts','apps/server/src/evidence-reader.ts','apps/server/src/evidence-image.ts','apps/server/src/file-attachments.ts','apps/server/src/file-processing.ts',
+const codeFiles=['scripts/test-composed-image-context.ts','scripts/composed-image-disclosure.ts','apps/server/src/app.ts','apps/server/src/evidence-reader.ts','apps/server/src/evidence-image.ts','apps/server/src/file-attachments.ts','apps/server/src/file-processing.ts',
  'packages/agent/dist/bridge.js','packages/agent/dist/codex-agent.js','packages/agent/dist/codex-session.js'];
 report.codeHashes=Object.fromEntries(await Promise.all(codeFiles.map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
 let node:Node|undefined,currentVault='',seed:Seed,saveChain=Promise.resolve(),ocrAllowed=false;
@@ -56,6 +59,7 @@ function save(){const value=json(report);saveChain=saveChain.then(async()=>{awai
 function check(name:string){report.checks.push(name);}
 const realFetch=globalThis.fetch,bridgeOrigins=new Set<string>(),bridgeToolNames=new Set<string>();
 let agentBridgeAllowed=false,agentBridgeIdentity:string|undefined;
+let activeImageAudit:ComposedImageDisclosure|undefined,activeImageAbort:AbortController|undefined;
 function agentBridgeRequest(url:URL,init?:RequestInit){
  const headers=new Headers(init?.headers),authorization=headers.get('authorization')??'';
  if(!agentBridgeAllowed||url.protocol!=='http:'||url.hostname!=='127.0.0.1'||!url.port||url.username||url.password||url.search||url.hash||
@@ -66,7 +70,10 @@ globalThis.fetch=async(input,init)=>{const url=new URL(typeof input==='string'?i
  if(bridgeOrigins.has(url.origin)&&url.hostname==='127.0.0.1')return realFetch(input,init);
  // Codex owns a separate ephemeral authenticated bridge. Permit exactly one
  // loopback origin/token per active query, only for the pinned read-only tools.
- if(agentBridgeRequest(url,init)){report.agentBridgeRequests=(report.agentBridgeRequests??0)+1;return realFetch(input,init);}
+ if(agentBridgeRequest(url,init)){report.agentBridgeRequests=(report.agentBridgeRequests??0)+1;const response=await realFetch(input,init);
+  if(activeImageAudit&&url.pathname==='/read_image'&&response.ok){try{assert.equal(typeof init?.body,'string');await activeImageAudit.observeSuccessfulRead(JSON.parse(init!.body as string),await response.clone().json());}
+   catch(error){activeImageAbort?.abort(error);throw error;}}
+  return response;}
  // The Codex App Server uses its own stdio process; this runner never permits HTTP OCR or other fetches.
  if(url.hostname==='127.0.0.1')report.blockedLoopbackFetchAttempts++;else report.externalFetchAttempts++;
  throw Error('Composed-image harness forbids fetch: '+url.origin);};
@@ -122,26 +129,53 @@ function verifySeed(){const parent=node!.store.evidence([seed.parentId])[0];asse
  assert.equal(geometry.length,fixture.ocr.segments.length);for(const [i,value] of geometry.entries()){assert.equal(value.text,fixture.ocr.segments[i].text);assert.deepEqual(value.imageLocation,fixture.ocr.segments[i].imageLocation);}
  const artifact=node!.files.detail(seed.childId).artifacts.find((a:any)=>a.id===seed.artifactId) as any;assert.ok(artifact?.reuse);assert.equal(artifact.reuse.captureId,seed.donorId);
 }
-async function bridgeSession(label:string){const bridge=await startBridge(node!.featureServices.archiveReader,{question:fixture.question,deviceId:fixture.deviceId,contextTime:fixture.contextTime,timeZone:'Asia/Shanghai'},80);
+async function bridgeSession(label:string,audit?:ComposedImageDisclosure){const bridge=await startBridge(node!.featureServices.archiveReader,{question:fixture.question,deviceId:fixture.deviceId,contextTime:fixture.contextTime,timeZone:'Asia/Shanghai'},80);
  const origin=new URL(bridge.url).origin;bridgeOrigins.add(origin);
  const call=async(tool:string,args:Record<string,unknown>,expected=200)=>{const response=await fetch(bridge.url+'/'+tool,{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify(args)}),value=await response.json() as any;
   report.toolReads.push({label,tool,args,status:response.status,...(value.image?{image:{mimeType:value.image.mimeType,sha256:sha256(Buffer.from(value.image.data,'base64'))}}:{result:value})});
-  if(expected===200)assert.equal(response.status,200,`${tool}: ${json(value)}`);else assert.notEqual(response.status,200,tool+' must be denied');return value;};
+  if(expected===200)assert.equal(response.status,200,`${tool}: ${json(value)}`);else assert.notEqual(response.status,200,tool+' must be denied');
+  if(tool==='read_image'&&response.status===200&&audit){await audit.observeSuccessfulRead(args,value);if(value.imageDelivery)bridge.imageDelivery(value.imageDelivery,true);}
+  return value;};
  return {call,async close(){bridgeOrigins.delete(origin);await bridge.close();}};
 }
-async function toolPreflight(label:string){const session=await bridgeSession(label);try{
+async function toolPreflight(label:string){const session=await bridgeSession(label);let selected:string;try{
  const found=await session.call('material_catalog',{limit:12});const material=found.data.items.find((m:any)=>m.ref===seed.materialRef);assert.ok(material);
  let offset=0,full='',pages=0;const refs=new Set<string>();do{const page=(await session.call('material_read',{ref:seed.materialRef,offset,length:900})).data;
   assert.ok(page.text.length<=900);assert.equal(page.textRange.offset,offset);full+=page.text;page.originalRefs.forEach((id:string)=>refs.add(id));pages++;offset=page.textRange.nextOffset;
   assert.ok(pages<=40,'Bounded material pages exhausted');}while(offset!==null);
  assert.ok(full.includes(fixture.caption));for(const segment of fixture.ocr.segments)assert.ok(full.includes(segment.text));assert.ok(pages>1);
- const timeline=(await session.call('timeline',{limit:12})).data;const rows=Array.isArray(timeline)?timeline:timeline.items;assert.equal(rows.length,1);const selected=rows[0].id;
+ const timeline=(await session.call('timeline',{limit:12})).data;const rows=Array.isArray(timeline)?timeline:timeline.items;assert.equal(rows.length,1);selected=rows[0].id;
  const detail=(await session.call('evidence',{ids:[selected],offset:0,length:900})).data[0];assert.ok(detail.ocrText.includes(fixture.caption));assert.equal(detail.provenance.document.attachments[0].id,seed.attachmentId);
- const image=await session.call('read_image',{id:selected,attachmentId:seed.attachmentId});assert.equal(sha256(Buffer.from(image.image.data,'base64')),imageHash);
  // Material pages authorize their original members, not every internal formal anchor.
  assert.ok(refs.has(seed.parentId)&&refs.has(seed.childId));
  for(const segment of fixture.ocr.segments)assert.ok(full.includes(JSON.stringify(segment.imageLocation)),'Image coordinates must survive the normal bounded material pages');
- check(label+': ordinary tools expose complete caption/OCR, bounded pages, coordinates and exact attachment bytes');return selected;
+ check(label+': ordinary tools expose complete caption/OCR, bounded pages and coordinates');
+ }finally{await session.close();}
+ await imageProtocolPreflight(label,selected!);return selected!;
+}
+async function imageProtocolPreflight(label:string,expectedSelected:string){
+ // The exhaustive text/page proof above nearly fills a normal context budget.
+ // Use a separate zero-model bridge for transport checks, without raising any
+ // query budget or carrying its reads into the later ordinary Ask.
+ const audit=new ComposedImageDisclosure(protocol,bytes,fixture.image.width,fixture.image.height),session=await bridgeSession(label+'-image-protocol',audit);
+ try{
+  const timeline=(await session.call('timeline',{limit:12})).data,rows=Array.isArray(timeline)?timeline:timeline.items;assert.equal(rows.length,1);const selected=rows[0].id;assert.equal(selected,expectedSelected);
+  await session.call('evidence',{ids:[selected],offset:0,length:900});
+  if(protocol==='bounded-views'){
+   await session.call('material_catalog',{limit:12});const members=(await session.call('material_read',{ref:seed.materialRef,offset:0,length:900})).data.originalRefs as string[];assert.ok(members.includes(seed.parentId)&&members.includes(seed.childId));
+  // Mechanical top-left geometry checks the transport only. It is not derived
+  // from question/OCR/rubric and is never supplied to the later model query.
+  const metadata=await session.call('read_image',{id:selected,attachmentId:seed.attachmentId,view:'metadata'});assert.equal(metadata.image,undefined);
+  const region={x:0,y:0,width:Math.min(64,fixture.image.width),height:Math.min(64,fixture.image.height)},view={expectedImageSha256:imageHash,region};
+  await session.call('read_image',{id:selected,attachmentId:seed.attachmentId,...view});
+  await session.call('evidence',{ids:[seed.parentId,seed.childId]});
+  await session.call('read_image',{id:seed.parentId,attachmentId:seed.attachmentId,...view});
+  await session.call('read_image',{id:seed.childId,...view});
+  const original=await session.call('read_image',{id:seed.childId});assert.equal(sha256(Buffer.from(original.image.data,'base64')),imageHash);
+  await session.call('read_image',{id:selected,attachmentId:seed.attachmentId});
+  const disclosure=audit.snapshot();assert.equal(disclosure.imagePayloads,2);assert.equal(disclosure.metadataReads,1);assert.equal(disclosure.repeatedDisclosureMetadata,3);
+  }else{const image=await session.call('read_image',{id:selected,attachmentId:seed.attachmentId});assert.equal(sha256(Buffer.from(image.image.data,'base64')),imageHash);assert.equal(audit.snapshot().imagePayloads,1);}
+  (report.imageProtocolPreflights??=[]).push({label,...audit.snapshot()});check(label+': '+protocol+' validates exact original/view bytes in a fresh zero-model bridge');
  }finally{await session.close();}}
 async function agentBridgePreflight(){
  // Exercise the same fetch path as Codex's host callback with a new bridge
@@ -152,10 +186,16 @@ async function agentBridgePreflight(){
  try{
   for(const url of ['https://example.invalid/timeline','http://127.0.0.1:1/forbidden-ocr',bridge.url+'/unknown_tool'])assert.equal(agentBridgeRequest(new URL(url),init),false);
   const response=await fetch(bridge.url+'/timeline',init);assert.equal(response.status,200);const result=await response.json() as any;assert.equal(result.data.length,1);
+  const audit=new ComposedImageDisclosure(protocol,bytes,fixture.image.width,fixture.image.height);activeImageAudit=audit;activeImageAbort=new AbortController();
+  const read=async(tool:string,args:Record<string,unknown>)=>{const response=await fetch(bridge.url+'/'+tool,{...init,body:JSON.stringify(args)});assert.equal(response.status,200);const value=await response.json() as any;if(value.imageDelivery)bridge.imageDelivery(value.imageDelivery,true);return value;};
+  const id=result.data[0].id;await read('evidence',{ids:[id],offset:0,length:900});
+  if(protocol==='bounded-views')await read('read_image',{id,attachmentId:seed.attachmentId,view:'metadata'});
+  await read('read_image',{id,attachmentId:seed.attachmentId,...(protocol==='bounded-views'?{expectedImageSha256:imageHash,region:{x:0,y:0,width:Math.min(64,fixture.image.width),height:Math.min(64,fixture.image.height)}}:{})});
+  assert.equal(audit.snapshot().imagePayloads,1);report.agentBridgeImageProtocol={...audit.snapshot(),transport:'Unregistered agent-owned bridge response interception, zero model calls'};
   assert.equal(agentBridgeRequest(new URL('http://127.0.0.1:1/timeline'),init),false,'A second bridge origin cannot enter this query');
   assert.equal(agentBridgeRequest(new URL(bridge.url+'/timeline'),{...init,method:'GET'}),false);
   check('unregistered Agent-owned bridge transport is allowed with one origin/token; outbound, unknown tool and second origin remain blocked');
- }finally{agentBridgeAllowed=false;agentBridgeIdentity=undefined;await bridge.close();}
+ }finally{agentBridgeAllowed=false;agentBridgeIdentity=undefined;activeImageAudit=undefined;activeImageAbort=undefined;await bridge.close();}
 }
 async function closed(vault:string){for(const file of ['mote.sqlite-wal','logs/central.lock'])try{assert.equal((await stat(join(vault,file))).size,0,'Snapshot source is not closed');}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
 async function clone(source:string,target:string){await closed(source);const before=sha256(await readFile(join(source,'mote.sqlite')));
@@ -173,22 +213,19 @@ async function permissionClone(kind:'deleted-parent'|'image-disclosure-revoked')
  assert.equal(sha256(await readFile(join(source,'mote.sqlite'))),copy.sourceDatabaseSha256,'Destructive check changed the normal seed');}
 async function liveAsk(){assert.ok(process.env.MOTE_COMPOSED_IMAGE_SEED,'Live requires a passed offline seed directory');const source=await external(process.env.MOTE_COMPOSED_IMAGE_SEED);disjoint(source,output);
  const original=await readFile(join(source,'report.json')),prior=JSON.parse(original.toString());assert.equal(prior.status,'passed');assert.equal(prior.mode,'preflight');assert.equal(prior.manifestSha256,frozenManifestHash);assert.equal(prior.realModelCalls,0);assert.equal(prior.ocrStubCalls,1);assert.equal(prior.externalFetchAttempts,0);
+ report.seedImageProtocol=prior.imageProtocol??'one-original';
  assert.equal(sha256(await readFile(join(source,'seed-vault/mote.sqlite'))),prior.seedDatabaseSha256,'Offline seed changed after preflight');
  seed=prior.seed;report.seed=seed;report.source={reportSha256:sha256(original),...await clone(join(source,'seed-vault'),join(output,'live-vault'))};await open(join(output,'live-vault'));verifySeed();noDerived();await toolPreflight('live-before-admission');
+ const imageAudit=new ComposedImageDisclosure(protocol as ImageDisclosureProtocol,bytes,fixture.image.width,fixture.image.height);
  const query=node!.agent.query.bind(node!.agent);node!.agent.query=async input=>{assert.equal(report.realModelCalls,0,'Single outer Ask only');assert.ok(!input.skill&&!input.evidenceIds&&!input.evidenceRanges&&!input.directImages?.length&&!input.conversation&&!input.taskContext&&!input.openingMemories?.length,'Use the normal fresh read-only Ask');assert.equal(input.question,fixture.question);report.realModelCalls++;
   const call:Record<string,any>={status:'running',startedAt:new Date().toISOString(),input:{...input,contextTime:fixture.contextTime,signal:undefined,onTrace:undefined,onProgress:undefined,validateOutput:undefined},trace:[]};report.calls.push(call);await save();
-  const deadline=AbortSignal.timeout(300000),signal=input.signal?AbortSignal.any([input.signal,deadline]):deadline;
-  agentBridgeAllowed=true;agentBridgeIdentity=undefined;
+  const deadline=AbortSignal.timeout(300000),auditAbort=new AbortController(),signal=AbortSignal.any([deadline,auditAbort.signal,...(input.signal?[input.signal]:[])]);
+  agentBridgeAllowed=true;agentBridgeIdentity=undefined;activeImageAudit=imageAudit;activeImageAbort=auditAbort;
   try{const result=await query({...input,contextTime:fixture.contextTime,signal,onTrace:event=>{call.trace.push(event);input.onTrace?.(event);}});call.status='completed';call.result=result;return result;}
-  catch(error){call.status='failed';call.error=errorText(error);throw error;}finally{agentBridgeAllowed=false;agentBridgeIdentity=undefined;call.durationMs=Date.now()-Date.parse(call.startedAt);call.visibleModelTurns=call.trace.filter((e:any)=>e.type==='model.started').length;call.visibleRepairTurns=call.trace.filter((e:any)=>e.type==='model.started'&&e.payload?.repair===true).length;await save();}};
+  catch(error){call.status='failed';call.error=errorText(error);throw error;}finally{agentBridgeAllowed=false;agentBridgeIdentity=undefined;activeImageAudit=undefined;activeImageAbort=undefined;report.imageDisclosure=imageAudit.snapshot();call.durationMs=Date.now()-Date.parse(call.startedAt);call.visibleModelTurns=call.trace.filter((e:any)=>e.type==='model.started').length;call.visibleRepairTurns=call.trace.filter((e:any)=>e.type==='model.started'&&e.payload?.repair===true).length;await save();}};
  const start=Date.now(),response=await node!.app.inject({method:'POST',url:'/api/query',headers:{authorization:'Bearer '+token,'accept-language':'zh-CN'},payload:{question:fixture.question,deviceId:fixture.deviceId,timeZone:'Asia/Shanghai'}});
  report.httpStatus=response.statusCode;report.durationMs=Date.now()-start;report.result=response.json();await save();assert.equal(response.statusCode,200,'Ask failed; no automatic retry');
- const reads=report.result.trace.filter((event:any)=>event.tool==='read_image'&&event.arguments.attachmentId===seed.attachmentId);assert.ok(reads.length,'No successful ordinary read_image of the exact attachment');
- const imageEvents=report.calls.flatMap((call:any)=>call.trace).filter((event:any)=>event.type==='tool.completed'&&event.tool==='read_image'&&event.status==='succeeded'&&event.payload?.result?.attachmentId===seed.attachmentId);
- const actualImages=imageEvents.filter((event:any)=>event.payload.result.image?.encodedCharacters>0),repeatedImages=imageEvents.filter((event:any)=>event.payload.result.imageDisclosure?.status==='already_disclosed');
- assert.equal(actualImages.length,1,'Exactly one actual image payload must reach the local model adapter; duplicate metadata is not image delivery');
- assert.equal(actualImages.length+repeatedImages.length,reads.length,'Every successful read must be an image or a verified repeated disclosure');
- report.imageDisclosure={successfulReads:reads.length,imagePayloads:actualImages.length,repeatedDisclosureMetadata:repeatedImages.length,scope:'Local adapter events; provider resends of prior history and model attention are not measured'};report.modelImageReadVerified=true;
+ report.imageDisclosure=imageAudit.verifyModelDelivery(report.result.trace,report.calls.flatMap((call:any)=>call.trace));report.modelImageReadVerified=true;
  verifySeed();noDerived();assert.equal(report.ocrStubCalls,0);assert.equal(report.realModelCalls,1);assert.equal(sha256(await readFile(join(source,'report.json'))),sha256(original));assert.equal(sha256(await readFile(join(source,'seed-vault/mote.sqlite'))),report.source.sourceDatabaseSha256);
  check('one ordinary Ask completed with source image read; semantic verdict remains pending independent rubric review');}
 try{await save();if(live)await liveAsk();else{await seedOffline();await permissionClone('deleted-parent');await permissionClone('image-disclosure-revoked');assert.equal(report.stubModelCalls,0);assert.equal(report.ocrStubCalls,1);report.seedDatabaseSha256=sha256(await readFile(join(output,'seed-vault/mote.sqlite')));}
