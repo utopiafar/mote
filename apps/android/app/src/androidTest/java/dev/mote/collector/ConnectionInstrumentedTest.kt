@@ -24,6 +24,8 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class ConnectionInstrumentedTest {
+    private fun currentNodePrefix(server: String = "") = MoteI18n.text("当前节点：{0}\n设备 ID：{1}\n已有设备请让中央生成绑定此设备 ID 的邀请；设备身份不会重置。", server, "").substringBefore('\n')
+    private fun previewPrefix(server: String = "") = MoteI18n.text("将连接：{0}\n有效至：{1}\n请确认后连接。", server, "").substringBefore('\n')
     @Test fun connectionPageRefreshesSavedNodeAndSecondScanReplacesFirstPreview() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val preferences = context.getSharedPreferences("mote", 0); val original = preferences.all.toMap()
@@ -31,25 +33,25 @@ class ConnectionInstrumentedTest {
         fun invitation(server: String) = JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", server)
             .put("code", "A".repeat(43)).put("expiresAt", Instant.ofEpochMilli(System.currentTimeMillis() + 600_000).toString()).toString()
         try {
-            ActivityScenario.launch(ConnectionActivity::class.java).awaitUiText("当前节点：").use { scenario ->
+            ActivityScenario.launch(ConnectionActivity::class.java).awaitUiText(currentNodePrefix()).use { scenario ->
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
                 Settings(context).saveConnection("https://generated-new.invalid", "synthetic-collector-token-no-network-123456789", "合成设备", false)
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
-                scenario.awaitUiText("当前节点：https://generated-new.invalid")
+                scenario.awaitUiText(currentNodePrefix("https://generated-new.invalid"))
                 scenario.onActivity { activity ->
                     val receive = ConnectionActivity::class.java.getDeclaredMethod("onActivityResult", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Intent::class.java).apply { isAccessible = true }
                     fun scan(raw: String) { receive.invoke(activity, 1, android.app.Activity.RESULT_OK, Intent().putExtra("invitation", raw)) }
                     val texts = mutableListOf<android.widget.TextView>()
                     fun walk(v: android.view.View) { if (v is android.widget.TextView) texts += v; if (v is android.view.ViewGroup) repeat(v.childCount) { walk(v.getChildAt(it)) } }
                     walk(activity.window.decorView)
-                    assertTrue(texts.single { it.text.startsWith("当前节点：") }.text.startsWith("当前节点：https://generated-new.invalid"))
+                    assertTrue(texts.single { it.text.startsWith(currentNodePrefix()) }.text.startsWith(currentNodePrefix("https://generated-new.invalid")))
                     for (server in listOf("https://first.generated.invalid", "https://second.generated.invalid")) {
                         scan(invitation(server))
-                        assertTrue(texts.single { it.text.startsWith("将连接：") }.text.startsWith("将连接：$server"))
+                        assertTrue(texts.single { it.text.startsWith(previewPrefix()) }.text.startsWith(previewPrefix(server)))
                         assertEquals("https://generated-new.invalid", Settings(context).read().server)
                     }
                     scan("invalid generated invitation")
-                    assertFalse(texts.any { it.text.startsWith("将连接：") })
+                    assertFalse(texts.any { it.text.startsWith(previewPrefix()) })
                 }
             }
         } finally {
@@ -68,8 +70,8 @@ class ConnectionInstrumentedTest {
                 scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
                 scenario.onActivity { activity ->
                     fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
-                    views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == "本机" }.performClick()
-                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:连接与同步" }.performClick()
+                    views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString() == MoteI18n.text("本机") }.performClick()
+                    views(activity.window.decorView).single { it.isShown && it.tag == "menu:${MoteI18n.text("连接与同步")}" }.performClick()
                 }
                 scenario.awaitUiText("synthetic-collector-token-no-network-123456789")
                 scenario.onActivity { activity ->
@@ -77,7 +79,7 @@ class ConnectionInstrumentedTest {
                     fun walk(v: android.view.View) { if (v is android.widget.EditText) fields += v; if (v is android.view.ViewGroup) repeat(v.childCount) { walk(v.getChildAt(it)) } }
                     walk(activity.window.decorView)
                     val server = fields.single { it.hint?.toString() == "https://mote.example.com" }
-                    val token = fields.single { it.hint?.toString() == "建议通过邀请获取本设备凭据" }
+                    val token = fields.single { it.hint?.toString() == MoteI18n.text("建议通过邀请获取本设备凭据") }
                     assertTrue(token.text.isNotEmpty()); server.setText("https://another-generated.invalid"); assertTrue(token.text.isEmpty())
                 }
             }
@@ -92,11 +94,11 @@ class ConnectionInstrumentedTest {
         val raw = JSONObject().put("format", "mote.connection").put("version", 1).put("serverUrl", "https://generated.invalid")
             .put("code", "A".repeat(43)).put("expiresAt", Instant.now().plusSeconds(600).toString())
         val uri = "mote://connect?data=" + Base64.getUrlEncoder().withoutPadding().encodeToString(raw.toString().toByteArray())
-        ActivityScenario.launch<ConnectionActivity>(Intent(context, ConnectionActivity::class.java).setData(Uri.parse(uri))).awaitUiText("确认连接此节点").use { scenario ->
+        ActivityScenario.launch<ConnectionActivity>(Intent(context, ConnectionActivity::class.java).setData(Uri.parse(uri))).awaitUiText(MoteI18n.text("确认连接此节点")).use { scenario ->
             scenario.onActivity { activity ->
                 val labels = mutableListOf<String>()
                 fun walk(v: android.view.View) { if (v is android.widget.TextView) labels += v.text.toString(); if (v is android.view.ViewGroup) repeat(v.childCount) { walk(v.getChildAt(it)) } }
-                walk(activity.window.decorView); assertTrue(labels.contains("确认连接此节点")); assertTrue(labels.contains("扫描连接二维码"))
+                walk(activity.window.decorView); assertTrue(labels.contains(MoteI18n.text("确认连接此节点"))); assertTrue(labels.contains(MoteI18n.text("扫描连接二维码")))
                 assertTrue(activity.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE != 0)
             }
         }

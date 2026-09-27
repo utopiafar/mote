@@ -6,6 +6,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.WorkManager
 import androidx.work.WorkInfo
+import androidx.work.Worker
+import androidx.work.WorkerParameters
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
+import androidx.work.BackoffPolicy
+import androidx.work.workDataOf
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -20,6 +26,8 @@ import java.net.ServerSocket
 import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /** Own loopback HTTP fixture and generated records only. No screen capture or model is started. */
@@ -244,13 +252,166 @@ class OfflineSyncInstrumentedTest {
             settings.save(config)
             repeat(3) { index ->
                 QuickNotes.save(context, "Generated realtime note $index", "")
-                waitUntil { context.queue().depth() == 0 && archive.notes.get() == index + 1 && settings.syncState() == "idle" }
+                waitUntil(detail = { "index=$index pending=${context.queue().depth()} received=${archive.notes.get()} batches=${archive.batches.get()} work=${WorkManager.getInstance(context).getWorkInfosForUniqueWork("mote-upload").get().map { it.state }}" }) { context.queue().depth() == 0 && archive.notes.get() == index + 1 && settings.syncState() == "idle" }
             }
             assertEquals(3, archive.notes.get())
             assertNotNull(settings.lastUploadAt())
         }
     }
-    private fun waitUntil(check: () -> Boolean) { val deadline = System.currentTimeMillis() + 30_000; while (!check()) { require(System.currentTimeMillis() < deadline) { "Generated sync fixture timeout: ${Settings(InstrumentationRegistry.getInstrumentation().targetContext).syncState()} ${InstrumentationRegistry.getInstrumentation().targetContext.getSharedPreferences("mote", 0).getString("uploadStatus", "")}" }; Thread.sleep(50) } }
+    @Test fun realtimeEnqueuesOneSuccessorWhilePreviousUploadIsFinishing() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime")
+            settings.save(config)
+            UploadWorker.schedule(context, config)
+            val manager = WorkManager.getInstance(context)
+            // Isolate the one-time chain; periodic recovery must not hide a lost wake.
+            for (name in listOf("mote-upload-recovery", "mote-heartbeat")) manager.cancelUniqueWork(name).result.get(5, TimeUnit.SECONDS)
+            HeldUploadCompletionWorker.reset()
+            manager.enqueueUniqueWork("mote-upload", ExistingWorkPolicy.REPLACE, OneTimeWorkRequestBuilder<HeldUploadCompletionWorker>().build()).result.get(5, TimeUnit.SECONDS)
+            try {
+                assertTrue("Generated predecessor must be running", HeldUploadCompletionWorker.entered.await(5, TimeUnit.SECONDS))
+                QuickNotes.save(context, "Generated note in upload completion window", "")
+                val producers = Executors.newFixedThreadPool(4)
+                try {
+                    val start = CountDownLatch(1)
+                    val tasks = (0 until 12).map { producers.submit { start.await(); UploadWorker.schedule(context, config) } }
+                    start.countDown(); tasks.forEach { it.get(5, TimeUnit.SECONDS) }
+                    // Actual UI calls still dispatch asynchronously without waiting on WorkManager.
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync { UploadWorker.schedule(context, config) }
+                } finally { producers.shutdownNow() }
+                val unfinished = manager.getWorkInfosForUniqueWork("mote-upload").get().filter { !it.state.isFinished }
+                assertEquals("One running predecessor must retain exactly one waiting upload", 2, unfinished.size)
+                assertEquals(1, unfinished.count { it.state == WorkInfo.State.BLOCKED })
+            } finally { HeldUploadCompletionWorker.release.countDown() }
+            waitUntil { context.queue().depth() == 0 && archive.notes.get() == 1 }
+        }
+    }
+    @Test fun failedOrCancelledPredecessorDoesNotSilentlyRunItsDependentUpload() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime")
+            settings.save(config); UploadWorker.schedule(context, config)
+            val manager = WorkManager.getInstance(context)
+            for (name in listOf("mote-upload-recovery", "mote-heartbeat")) manager.cancelUniqueWork(name).result.get(5, TimeUnit.SECONDS)
+            for (cancel in listOf(false, true)) {
+                HeldUploadCompletionWorker.reset()
+                val predecessor = OneTimeWorkRequestBuilder<HeldUploadCompletionWorker>().setInputData(workDataOf("fail" to !cancel)).build()
+                manager.enqueueUniqueWork("mote-upload", ExistingWorkPolicy.REPLACE, predecessor).result.get(5, TimeUnit.SECONDS)
+                try {
+                    assertTrue(HeldUploadCompletionWorker.entered.await(5, TimeUnit.SECONDS))
+                    QuickNotes.save(context, "Generated dependent upload cancel=$cancel", "")
+                    assertEquals(2, manager.getWorkInfosForUniqueWork("mote-upload").get().count { !it.state.isFinished })
+                    if (cancel) manager.cancelWorkById(predecessor.id).result.get(5, TimeUnit.SECONDS)
+                } finally { HeldUploadCompletionWorker.release.countDown() }
+                waitUntil { manager.getWorkInfosForUniqueWork("mote-upload").get().all { it.state.isFinished } }
+                val expected = if (cancel) WorkInfo.State.CANCELLED else WorkInfo.State.FAILED
+                assertTrue(manager.getWorkInfosForUniqueWork("mote-upload").get().all { it.state == expected })
+                assertEquals(1, context.queue().depth()); val before = archive.notes.get()
+                // A new authorized scheduling event can replace a failed/cancelled chain.
+                UploadWorker.schedule(context, config)
+                waitUntil { context.queue().depth() == 0 && archive.notes.get() == before + 1 }
+            }
+        }
+    }
+    @Test fun waitingUploadUsesCurrentManualOrDisconnectedConfiguration() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val manager = WorkManager.getInstance(context)
+            for (manual in listOf(true, false)) {
+                val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime")
+                settings.save(config); UploadWorker.schedule(context, config)
+                for (name in listOf("mote-upload-recovery", "mote-heartbeat")) manager.cancelUniqueWork(name).result.get(5, TimeUnit.SECONDS)
+                HeldUploadCompletionWorker.reset()
+                manager.enqueueUniqueWork("mote-upload", ExistingWorkPolicy.REPLACE, OneTimeWorkRequestBuilder<HeldUploadCompletionWorker>().build()).result.get(5, TimeUnit.SECONDS)
+                try {
+                    assertTrue(HeldUploadCompletionWorker.entered.await(5, TimeUnit.SECONDS))
+                    QuickNotes.save(context, "Generated configuration fence manual=$manual", "")
+                    assertEquals(2, manager.getWorkInfosForUniqueWork("mote-upload").get().count { !it.state.isFinished })
+                    assertThrows(ConnectionFailure::class.java) { ConnectionGuard.change(context, "https://another-generated.invalid") { error("Pending records must not move to a different node") } }
+                    assertEquals(archive.url, settings.read().server)
+                    settings.save(if (manual) config.copy(syncMode = "manual") else config.copy(server = "", token = ""))
+                } finally { HeldUploadCompletionWorker.release.countDown() }
+                waitUntil { manager.getWorkInfosForUniqueWork("mote-upload").get().all { it.state.isFinished } }
+                assertEquals(0, archive.notes.get()); assertEquals(1, context.queue().depth())
+                context.queue().acknowledge(context.queue().peek()!!.getString("id"))
+            }
+        }
+    }
+    @Test fun repeatedRealtimeSchedulingKeepsAnExistingRetryBackoff() = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "realtime")
+            settings.save(config); UploadWorker.schedule(context, config)
+            val manager = WorkManager.getInstance(context)
+            for (name in listOf("mote-upload-recovery", "mote-heartbeat")) manager.cancelUniqueWork(name).result.get(5, TimeUnit.SECONDS)
+            HeldUploadCompletionWorker.reset()
+            val predecessor = OneTimeWorkRequestBuilder<HeldUploadCompletionWorker>().setInputData(workDataOf("retry" to true)).build()
+            manager.enqueueUniqueWork("mote-upload", ExistingWorkPolicy.REPLACE, predecessor).result.get(5, TimeUnit.SECONDS)
+            try {
+                assertTrue(HeldUploadCompletionWorker.entered.await(5, TimeUnit.SECONDS))
+                QuickNotes.save(context, "Generated note behind retry backoff", "")
+            } finally { HeldUploadCompletionWorker.release.countDown() }
+            waitUntil { manager.getWorkInfoById(predecessor.id).get().let { it != null && it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 1 } }
+            val before = requireNotNull(manager.getWorkInfoById(predecessor.id).get())
+            repeat(12) { UploadWorker.schedule(context, config) }
+            val after = requireNotNull(manager.getWorkInfoById(predecessor.id).get())
+            assertEquals(before.nextScheduleTimeMillis, after.nextScheduleTimeMillis)
+            assertEquals(1, after.runAttemptCount); assertEquals(WorkInfo.State.ENQUEUED, after.state)
+            val chain = manager.getWorkInfosForUniqueWork("mote-upload").get()
+            assertEquals(2, chain.size); assertEquals(1, chain.count { it.state == WorkInfo.State.BLOCKED })
+            assertEquals(0, archive.notes.get()); assertEquals(1, context.queue().depth())
+        }
+    }
+    @Test fun competingCaptureWorkersRetryWithoutReadingTheSamePendingBatch() = competingCaptureWorkers(cancelWaiting = false)
+    @Test fun cancellingACompetingCaptureWorkerDoesNotWaitForTheActiveUpload() = competingCaptureWorkers(cancelWaiting = true)
+    private fun competingCaptureWorkers(cancelWaiting: Boolean) = fixture { context, settings ->
+        LoopbackArchive().use { archive ->
+            val config = settings.read().copy(server = archive.url, token = token, debugHttp = true, wifiOnly = false, syncMode = "manual")
+            settings.save(config)
+            QuickNotes.save(context, "Generated competing upload record", "")
+            val manager = WorkManager.getInstance(context)
+            val completed = AtomicInteger(); val received = CountDownLatch(1); val release = CountDownLatch(1)
+            val previous = HttpJson.onComplete
+            HttpJson.onComplete = { duration ->
+                previous?.invoke(duration)
+                // Pull is first; hold after the capture response but before the
+                // first worker can acknowledge its queue record.
+                if (completed.incrementAndGet() == 2) { received.countDown(); release.await(20, TimeUnit.SECONDS) }
+            }
+            fun request() = OneTimeWorkRequestBuilder<UploadWorker>()
+                .setInputData(workDataOf("manual" to true, "syncStamp" to SyncSchedule.stamp(config)))
+                .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
+            val first = request(); val competing = request()
+            try {
+                manager.enqueueUniqueWork("mote-upload", ExistingWorkPolicy.REPLACE, first).result.get(5, TimeUnit.SECONDS)
+                assertTrue("First capture response is held before acknowledgement", received.await(5, TimeUnit.SECONDS))
+                assertEquals(1, archive.notes.get()); assertEquals(1, context.queue().depth())
+                manager.enqueueUniqueWork("mote-upload-recovery", ExistingWorkPolicy.REPLACE, competing).result.get(5, TimeUnit.SECONDS)
+                if (cancelWaiting) {
+                    val deadline = android.os.SystemClock.elapsedRealtime() + 5_000
+                    while (manager.getWorkInfoById(competing.id).get()?.state != WorkInfo.State.RUNNING) {
+                        check(android.os.SystemClock.elapsedRealtime() < deadline); Thread.sleep(5)
+                    }
+                    val started = android.os.SystemClock.elapsedRealtime()
+                    manager.cancelWorkById(competing.id).result.get(2, TimeUnit.SECONDS)
+                    waitUntil { manager.getWorkInfoById(competing.id).get()?.state == WorkInfo.State.CANCELLED }
+                    assertTrue("Cancellation must not wait for the held upload", android.os.SystemClock.elapsedRealtime() - started < 2_000)
+                } else {
+                    waitUntil { manager.getWorkInfoById(competing.id).get().let { it != null && (it.state.isFinished || (it.state == WorkInfo.State.ENQUEUED && it.runAttemptCount == 1)) } }
+                    val retry = requireNotNull(manager.getWorkInfoById(competing.id).get())
+                    assertEquals("Contention must retain a scheduled retry", WorkInfo.State.ENQUEUED, retry.state)
+                    assertEquals(1, retry.runAttemptCount)
+                    assertTrue(retry.nextScheduleTimeMillis > System.currentTimeMillis())
+                }
+                assertEquals("Only the active worker may issue capture-sync HTTP", 2, archive.requests.get())
+                assertEquals(1, archive.notes.get()); assertEquals(1, context.queue().depth())
+            } finally {
+                release.countDown()
+                waitUntil { manager.getWorkInfoById(first.id).get()?.state?.isFinished == true }
+                manager.cancelWorkById(competing.id).result.get(5, TimeUnit.SECONDS)
+                HttpJson.onComplete = previous
+            }
+            assertEquals(0, context.queue().depth()); assertEquals(1, archive.notes.get())
+        }
+    }
+    private fun waitUntil(detail: () -> String = { "" }, check: () -> Boolean) { val deadline = System.currentTimeMillis() + 30_000; while (!check()) { require(System.currentTimeMillis() < deadline) { "Generated sync fixture timeout: ${detail()} ${Settings(InstrumentationRegistry.getInstrumentation().targetContext).syncState()} ${InstrumentationRegistry.getInstrumentation().targetContext.getSharedPreferences("mote", 0).getString("uploadStatus", "")}" }; Thread.sleep(50) } }
     private class LoopbackArchive : Closeable {
         private val socket = ServerSocket(0, 20, InetAddress.getByName("127.0.0.1"))
         val url = "http://127.0.0.1:${socket.localPort}"
@@ -312,5 +473,20 @@ class OfflineSyncInstrumentedTest {
             } } catch (error: Exception) { if (running) throw error }
         }.apply { isDaemon = true; start() }
         override fun close() { running = false; socket.close(); thread.join(2_000) }
+    }
+}
+
+/** A deterministic WorkManager completion window; no capture or network work. */
+class HeldUploadCompletionWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
+    override fun doWork(): Result {
+        Settings(applicationContext).syncStatus("idle", "Generated predecessor completion window")
+        entered.countDown()
+        if (!release.await(20, TimeUnit.SECONDS) || inputData.getBoolean("fail", false)) return Result.failure()
+        return if (inputData.getBoolean("retry", false)) Result.retry() else Result.success()
+    }
+    companion object {
+        @Volatile var entered = CountDownLatch(1)
+        @Volatile var release = CountDownLatch(1)
+        fun reset() { entered = CountDownLatch(1); release = CountDownLatch(1) }
     }
 }

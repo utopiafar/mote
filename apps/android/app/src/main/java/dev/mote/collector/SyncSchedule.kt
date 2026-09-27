@@ -65,7 +65,23 @@ object SyncSchedule {
         val request = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config))
             .setInputData(workDataOf("manual" to explicit, "syncStamp" to stamp(config), "continuation" to true))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
-        WorkManager.getInstance(context).enqueueUniqueWork("mote-upload", ExistingWorkPolicy.APPEND_OR_REPLACE, request)
+        enqueueImmediate(context, request, replace = false)
+    }
+    /** Keep one successor when an upload is already finishing. KEEP alone loses
+     * a new record between the worker's final empty check and its terminal state. */
+    @Synchronized private fun enqueueImmediate(context: Context, request: OneTimeWorkRequest, replace: Boolean) {
+        check(Looper.myLooper() != Looper.getMainLooper())
+        val manager = WorkManager.getInstance(context)
+        val policy = if (replace) ExistingWorkPolicy.REPLACE else {
+            val active = manager.getWorkInfosForUniqueWork("mote-upload").get().filter { !it.state.isFinished }
+            // An enqueued retry retains its backoff; an existing successor will
+            // read the current queue. Repeated producers must not grow the chain.
+            if (active.any { it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.BLOCKED }) return
+            if (active.any { it.state == WorkInfo.State.RUNNING }) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP
+        }
+        // Publish before releasing this lock so concurrent producers observe the
+        // successor. This helper only runs on background/worker threads.
+        manager.enqueueUniqueWork("mote-upload", policy, request).result.get()
     }
     private var registeredStamp: String? = null
     @Synchronized private fun scheduleNow(context: Context, config: CollectorConfig, explicit: Boolean) {
@@ -99,7 +115,7 @@ object SyncSchedule {
             .setInitialDelay(wait, TimeUnit.MILLISECONDS).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         if (wait == 0L) {
             manager.cancelUniqueWork("mote-upload-timer")
-            manager.enqueueUniqueWork("mote-upload", if (explicit) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)
+            enqueueImmediate(context, request, replace = explicit)
         } else {
             if (settings.syncState() != "uploading") settings.syncStatus("waiting", MoteI18n.text("等待约定同步时间 · 系统省电可能推迟后台运行"))
             manager.enqueueUniqueWork("mote-upload-timer", ExistingWorkPolicy.KEEP, request)
