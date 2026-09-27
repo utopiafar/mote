@@ -227,12 +227,21 @@ export class SourcePipelineRuntime {
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
       const automatic=this.options(source.id).memory??pipeline.memory??false;
       for(const group of archived.changedGroups)this.memoryWork.inputs.receive({sourceId:source.id,inputKey:archived.groupCheckpoints[group]},automatic);
-      if(items.some(item=>item.deleted))for(const group of archived.groups)this.materials.redactUntilRebuilt(materialId(source.id,group));
+      // A repeated tombstone has already revoked its old projection. Hiding
+      // its unchanged current Material again would require a rebuild that an
+      // immutable replay must not enqueue. New deletions still revoke every
+      // changed group (including the previous group when an identity moves).
+      if(items.some(item=>item.deleted))for(const group of archived.changedGroups)this.materials.redactUntilRebuilt(materialId(source.id,group));
       db.prepare('INSERT OR IGNORE INTO source_pipeline_bindings(source_id,pipeline_id,storage) VALUES(?,?,?)').run(source.id,pipeline.id,pipeline.storage);
       const superseded:string[]=[];
       for(const group of archived.groups){
         const id=archiveHash([source.id,group]);
-        const prior=db.prepare('SELECT generation FROM source_pipeline_work WHERE id=?').get(id) as {generation:number}|undefined;
+        const prior=this.row(id),step=prior?this.engine.get(stepId(id,prior.generation)):undefined;
+        // An immutable receipt replay does not replace a valid queued/running
+        // worker, reset its failure, or rebuild an already published Material.
+        // Missing work and changed source/recipe/config pins still use the
+        // normal recovery/reprocessing path below.
+        if(prior?.archive_checkpoint===archived.groupCheckpoints[group]&&step&&this.validWork(step)&&!this.admitWork(step))continue;
         db.prepare(`INSERT INTO source_pipeline_work(id,source_id,pipeline_id,version,group_key,state,error,updated_at,material_ref,generation,archive_checkpoint,recipe_id,recipe_version,recipe_definition_fingerprint,recipe_config_fingerprint,recipe_component_pins,memory_trigger)
         VALUES(?,?,?,?,?,'pending',NULL,?,NULL,0,?,?,?,?,?,?,'source')
         ON CONFLICT(id) DO UPDATE SET state='pending',error=NULL,updated_at=excluded.updated_at,pipeline_id=excluded.pipeline_id,version=excluded.version,memory_trigger='source',
@@ -344,6 +353,15 @@ export class SourcePipelineRuntime {
     if(!this.store.db.prepare('SELECT 1 FROM source_pipeline_bindings WHERE source_id=?').get(sourceId))throw new StoreError('Source has no archive pipeline',409);
     const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
       db.prepare("UPDATE source_connections SET json=json_set(json,'$.enabled',json('false')) WHERE id=?").run(sourceId);
+      // Explicit source forgetting erases entire derived owner rules, including
+      // mixed-source conclusions. Ordinary retention uses partial cleanup instead.
+      if(db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletion_dependencies'").get())db.prepare(`DELETE FROM memory_deletions WHERE id IN (
+        SELECT d.deletion_id FROM memory_deletion_dependencies d
+        LEFT JOIN captures c ON c.id=d.evidence_id
+        LEFT JOIN material_evidence e ON e.id=d.evidence_id
+        LEFT JOIN material_heads m ON m.id=e.material_id
+        WHERE json_extract(c.json,'$.provenance.sourceId')=? OR m.source_id=?)
+        OR EXISTS (SELECT 1 FROM json_each(memory_deletions.json,'$.derivationSourceIds') s WHERE s.value=?)`).run(sourceId,sourceId,sourceId);
       for(const row of db.prepare('SELECT id FROM material_heads WHERE source_id=?').all(sourceId)){this.memoryWork.withdraw(String(row.id));this.materials.forget(String(row.id));}
       this.memoryWork.inputs.forgetSource(sourceId);
       for(const row of db.prepare('SELECT id,generation FROM source_pipeline_work WHERE source_id=?').all(sourceId) as {id:string;generation:number}[]){const id=stepId(row.id,row.generation);this.revoke(id);superseded.push(id);}

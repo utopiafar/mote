@@ -14,7 +14,12 @@ export function estimateCost(tokens:TokenUsage|undefined,price:ModelPrice|undefi
 export class UsageLedger {
   constructor(private readonly store:Store){
     store.db.exec('CREATE TABLE IF NOT EXISTS model_usage(id TEXT PRIMARY KEY,created_at TEXT NOT NULL,json TEXT NOT NULL); CREATE INDEX IF NOT EXISTS model_usage_created ON model_usage(created_at); CREATE TABLE IF NOT EXISTS model_prices(id TEXT PRIMARY KEY,json TEXT NOT NULL)');
-    for(const row of store.db.prepare("SELECT json FROM model_usage WHERE json_extract(json,'$.status')='running'").all() as {json:string}[]){const receipt=JSON.parse(row.json);this.save({...receipt,status:'failed',estimatedCost:null});}
+    for(const row of store.db.prepare("SELECT json FROM model_usage WHERE json_extract(json,'$.status')='running'").all() as {json:string}[]){
+      const receipt=JSON.parse(row.json) as UsageReceipt;
+      // An interrupted process cannot confirm that its last cumulative sample was final.
+      if(receipt.tokens?.measurement==='thread_cumulative')receipt.tokens={...receipt.tokens,complete:false};
+      this.save({...receipt,status:'failed',estimatedCost:null});
+    }
   }
   prices():ModelPrice[]{return (this.store.db.prepare('SELECT json FROM model_prices ORDER BY id').all() as {json:string}[]).map(r=>JSON.parse(r.json));}
   setPrice(body:unknown){const price=priceSchema.parse(body);this.store.reserveMetadata(2048);this.store.db.prepare('INSERT INTO model_prices VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify([price.provider,price.model]),JSON.stringify(price));return price;}

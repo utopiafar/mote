@@ -1,6 +1,7 @@
+import {imageReadSchema,imageViewSchema,IMAGE_MAX_BYTES,IMAGE_REGION_MAX_SIDE,type ImageView,type ImageViewTrace} from '@mote/shared';
 import {CONTEXT_TOOLS} from './context-tools.js';
 import {pinContextTools} from './tool-contributions.js';
-import {rememberEvidence} from './evidence-ledger.js';
+import {rememberEvidence,projectEvidencePresentation,copyEvidencePresentation} from './evidence-ledger.js';
 import {taskTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
 import {actionEvidenceText,parseEvidenceRef} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
@@ -85,7 +86,7 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
   const sourceMetadata = sourceMetadataSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.metadata);
   const document = documentSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.document);
   const contentAt = sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
-  return {
+  const projected:ContextRecord = {
     ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...(stateSeriesSchema.safeParse(record.stateSeries).success?{stateSeries:stateSeriesSchema.parse(record.stateSeries)}:{}),
     evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence])).digest('hex'),
@@ -138,6 +139,7 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
       ? { mood: record.mood.slice(0, 80) }
       : {}),
   };
+  return projectEvidencePresentation(record,projected);
 }
 
 /** Health reports are not archive coverage. Keep their timestamps out of the record namespace. */
@@ -244,7 +246,19 @@ export async function startBridge(
   let deliveredCharacters=JSON.stringify(seedEvidence).length;
   const expanded=new Set<string>();
   for(const image of directImages)expanded.add(image.id);
-  let imageCalls=0;
+  // Query-local byte identities only: never skip the reader's fresh authorization
+  // or merge the source attribution of two selections containing the same image.
+  type ImageDelivery={selection:{id:string;attachmentId?:string};imageView?:ImageViewTrace;token:string;confirmed:boolean;ready:Promise<void>;settle:()=>void;timer:ReturnType<typeof setTimeout>};
+  const disclosedImages=new Map<string,ImageDelivery>();
+  let closing=false;
+  const imageDelivery=(token:string,delivered:boolean)=>{
+    const entry=[...disclosedImages].find(([,value])=>value.token===token);
+    if(!entry){if(delivered)throw hostError('Image delivery receipt expired');return;}
+    const [key,value]=entry;clearTimeout(value.timer);
+    if(delivered)value.confirmed=true;else disclosedImages.delete(key);
+    if(value.imageView)value.imageView.delivery=delivered?'prepared':'failed';
+    value.settle();
+  };
   let calls = 0;
   let progressMessages=0;
   let ready = false;
@@ -268,7 +282,7 @@ export async function startBridge(
       res.writeHead(405).end('{"error":"Method not allowed"}');
       return;
     }
-    let tool=req.url?.slice(1)??'',args:Record<string,unknown>={},metadataOnly=false;
+    let tool=req.url?.slice(1)??'',args:Record<string,unknown>={},metadataOnly=false,materialReadAttempts=0;
     try {
       let raw = "";
       for await (const part of req) {
@@ -279,6 +293,13 @@ export async function startBridge(
       args = raw ? JSON.parse(raw) : {};
       if (!args || Array.isArray(args) || typeof args !== "object")
         throw hostError("Expected object arguments");
+
+      // Adapter-only receipt; absent from every model tool declaration. The
+      // authenticated adapter strips the opaque token before returning a tool.
+      if(tool==='_image_delivery'){
+        if(typeof args.token!=='string'||typeof args.delivered!=='boolean'||Object.keys(args).some(key=>key!=='token'&&key!=='delivered'))throw hostError('Invalid image delivery receipt');
+        imageDelivery(args.token,args.delivered);res.end('{"ok":true}');return;
+      }
 
       if (tool === "_ready") {
         const exposed = args.tools;
@@ -362,31 +383,48 @@ export async function startBridge(
         const offset=args.offset??0,length=args.length??4000;
         if(!Number.isSafeInteger(offset)||Number(offset)<0||!Number.isSafeInteger(length)||Number(length)<1||Number(length)>12000)throw hostError('Invalid material read range');
         if(!reader.materialRead)throw hostError('Material reading is unavailable');
-        const scope=range({},bounds),page=await reader.materialRead({...scope,ref:args.ref,offset:Number(offset),length:Number(length)});
-        const material=materialMetadata(page.material,scope);
-        if(!material||material.ref!==args.ref||typeof page.text!=='string'||page.text.length>Number(length)||!page.textRange||page.textRange.offset!==offset||!Number.isSafeInteger(page.textRange.total)||page.textRange.total<0||page.textRange.nextOffset!==null&&(!Number.isSafeInteger(page.textRange.nextOffset)||page.textRange.nextOffset<=Number(offset)||page.textRange.nextOffset>page.textRange.total)||!Array.isArray(page.spans)||page.spans.length>64||!Array.isArray(page.originalRefs))throw hostError('Invalid material read page');
-        const spans=page.spans.map(span=>{
-          const pageRange=span?.pageRange as {start?:unknown;end?:unknown}|undefined;
-          const materialRange=span?.materialRange as {start?:unknown;end?:unknown}|undefined;
-          if(!span||typeof span.blockId!=='string'||span.blockId.length>128||typeof span.kind!=='string'||!['text','asset'].includes(span.kind)||!Array.isArray(span.memberIds)||span.memberIds.length>32||span.memberIds.some(id=>typeof id!=='string'||id.length>128)||!pageRange||!materialRange||!Number.isSafeInteger(pageRange.start)||!Number.isSafeInteger(pageRange.end)||Number(pageRange.start)<0||Number(pageRange.end)<Number(pageRange.start)||Number(pageRange.end)>page.text.length||!Number.isSafeInteger(materialRange.start)||!Number.isSafeInteger(materialRange.end)||Number(materialRange.start)<0||Number(materialRange.end)<Number(materialRange.start))throw hostError('Invalid material span');
-          return {blockId:span.blockId,kind:span.kind,...(typeof span.format==='string'&&span.format.length<=128?{format:span.format}:{}),pageRange:{start:pageRange.start,end:pageRange.end},materialRange:{start:materialRange.start,end:materialRange.end},memberIds:span.memberIds};
-        });
-        const refs=[...new Set(page.originalRefs.slice(0,30).map(captureId))];
-        if(refs.some(id=>typeof id!=='string'||!id||id.length>300))throw hostError('Invalid material original reference');
-        const ids=refs as string[];
-        if(ids.length){
-          const originals=await reader.evidence({...scope,ids});
-          const valid=new Set(originals.filter(record=>{const at=sourceContentTime(record);return (!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).map(record=>record.id));
-          if(ids.some(id=>!valid.has(id)))throw hostError('Material original is missing or outside the selected scope');
+        const scope=range({},bounds);
+        let effectiveLength=Number(length);
+        // length bounds the body, not its provenance/envelope. Retry only local
+        // reads of this same pinned window; halving 1–12000 terminates in 14 reads.
+        for(let readAttempts=1;readAttempts<=14;readAttempts++){
+          if(closing||res.destroyed)return;
+          bounds.signal?.throwIfAborted();
+          materialReadAttempts=readAttempts;
+          const page=await reader.materialRead({...scope,ref:args.ref,offset:Number(offset),length:effectiveLength});
+          bounds.signal?.throwIfAborted();
+          const material=materialMetadata(page.material,scope);
+          if(!material||material.ref!==args.ref||typeof page.text!=='string'||page.text.length>effectiveLength||!page.textRange||page.textRange.offset!==offset||!Number.isSafeInteger(page.textRange.total)||page.textRange.total<Number(offset)+page.text.length||page.textRange.nextOffset!==(Number(offset)+page.text.length<page.textRange.total?Number(offset)+page.text.length:null)||page.text.length===0&&Number(offset)<page.textRange.total||!Array.isArray(page.spans)||page.spans.length>64||!Array.isArray(page.originalRefs))throw hostError('Invalid material read page');
+          const spans=page.spans.map(span=>{
+            const pageRange=span?.pageRange as {start?:unknown;end?:unknown}|undefined;
+            const materialRange=span?.materialRange as {start?:unknown;end?:unknown}|undefined;
+            if(!span||typeof span.blockId!=='string'||span.blockId.length>128||typeof span.kind!=='string'||!['text','asset'].includes(span.kind)||!Array.isArray(span.memberIds)||span.memberIds.length>32||span.memberIds.some(id=>typeof id!=='string'||id.length>128)||!pageRange||!materialRange||!Number.isSafeInteger(pageRange.start)||!Number.isSafeInteger(pageRange.end)||Number(pageRange.start)<0||Number(pageRange.end)<Number(pageRange.start)||Number(pageRange.end)>page.text.length||!Number.isSafeInteger(materialRange.start)||!Number.isSafeInteger(materialRange.end)||Number(materialRange.start)<0||Number(materialRange.end)<Number(materialRange.start))throw hostError('Invalid material span');
+            return {blockId:span.blockId,kind:span.kind,...(typeof span.format==='string'&&span.format.length<=128?{format:span.format}:{}),pageRange:{start:pageRange.start,end:pageRange.end},materialRange:{start:materialRange.start,end:materialRange.end},memberIds:span.memberIds};
+          });
+          const refs=[...new Set(page.originalRefs.slice(0,30).map(captureId))];
+          if(refs.some(id=>typeof id!=='string'||!id||id.length>300))throw hostError('Invalid material original reference');
+          const ids=refs as string[];
+          if(ids.length){
+            const originals=await reader.evidence({...scope,ids});
+            const valid=new Set(originals.filter(record=>{const at=sourceContentTime(record);return (!scope.deviceId||record.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).map(record=>record.id));
+            if(ids.some(id=>!valid.has(id)))throw hostError('Material original is missing or outside the selected scope');
+          }
+          const total=Number.isSafeInteger(page.originalRefsTotal)&&page.originalRefsTotal>=ids.length?page.originalRefsTotal:ids.length;
+          if(closing||res.destroyed)return;
+          bounds.signal?.throwIfAborted();
+          const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids,originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length,pagination:{requestedLength:Number(length),returnedLength:page.text.length,limitedBy:readAttempts>1?'host_budget':null}};
+          const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget()});
+          if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000){
+            if(effectiveLength===1||page.text.length===0)throw budgetError();
+            effectiveLength=Math.max(1,Math.floor(effectiveLength/2));
+            continue;
+          }
+          deliveredCharacters+=serialized.length;
+          for(const id of ids){discovered.add(id);disclosedIds.add(id);}
+          completeLineage=false;
+          trace.push({tool,arguments:{ref:args.ref,offset,length},count:1,materialPage:{readAttempts,requestedLength:Number(length),returnedLength:page.text.length,budgetLimited:readAttempts>1}});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
         }
-        const total=Number.isSafeInteger(page.originalRefsTotal)&&page.originalRefsTotal>=ids.length?page.originalRefsTotal:ids.length;
-        const data={material,text:page.text,textRange:{offset:page.textRange.offset,total:page.textRange.total,nextOffset:page.textRange.nextOffset},spans,originalRefs:ids,originalRefsTotal:total,originalRefsTruncated:page.originalRefsTruncated||total>ids.length||page.originalRefs.length>ids.length};
-        const serialized=JSON.stringify({source:'untrusted_personal_context',data,hostBudget:hostBudget()});
-        if(serialized.length>limits.toolResultCharacters||deliveredCharacters+serialized.length>limits.totalToolCharacters||Buffer.byteLength(serialized)>1_500_000)throw budgetError();
-        deliveredCharacters+=serialized.length;
-        for(const id of ids){discovered.add(id);disclosedIds.add(id);}
-        completeLineage=false;
-        trace.push({tool,arguments:{ref:args.ref,offset,length},count:1});reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(serialized);return;
+        throw budgetError();
       }
       if(restricted){
         if(tool!=='evidence')throw hostError('This extraction session uses only the supplied evidence ranges');
@@ -411,19 +449,74 @@ export async function startBridge(
         res.end(serialized);return;
       }
       if(tool==='read_image'){
+        const parsed=imageReadSchema.safeParse(args);
+        if(!parsed.success)throw new ContextToolError('invalid_image_region','Use the declared image arguments. Regions require expectedImageSha256, integer original coordinates and sides of 1–2048.','correct_arguments',{maxRegionSide:IMAGE_REGION_MAX_SIDE});
+        const selection=parsed.data;
         if(typeof args.id!=='string'||!expanded.has(args.id)||!reader.readImage)throw hostError('Expand derived evidence before reading an authorized image');
-        if(++imageCalls>4)throw hostError('Image disclosure budget exceeded');
-        const direct=directImages.some(image=>image.id===args.id);
-        const record=direct?records.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
-        const document=documentSchema.safeParse((record?.provenance as {document?:unknown}|undefined)?.document),at=record&&sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
-        if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at!)<Date.parse(scope.after)||scope.before&&Date.parse(at!)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
-        if(args.attachmentId!==undefined&&(direct||typeof args.attachmentId!=='string'||!document.success||!document.data.attachments?.some(attachment=>attachment.id===args.attachmentId)))throw hostError('Select an image attachment declared by the expanded parent evidence');
-        const selection={id:args.id,...(typeof args.attachmentId==='string'?{attachmentId:args.attachmentId}:{})};
-        const image=await reader.readImage(selection);
-        if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||image.data.length>12*1024*1024)throw hostError('Invalid image output');
-        trace.push({tool,arguments:selection,count:1});
-        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});
-        res.end(JSON.stringify({source:'untrusted_personal_context',...selection,image,hostBudget:hostBudget()}));return;
+        for(;;){
+          if(closing||res.destroyed)return;
+          const direct=directImages.some(image=>image.id===args.id);
+          const record=direct?records.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
+          const document=documentSchema.safeParse((record?.provenance as {document?:unknown}|undefined)?.document),at=record&&sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
+          if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at!)<Date.parse(scope.after)||scope.before&&Date.parse(at!)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
+          if(args.attachmentId!==undefined&&(direct||typeof args.attachmentId!=='string'||!document.success||!document.data.attachments?.some(attachment=>attachment.id===args.attachmentId)))throw hostError('Select an image attachment declared by the expanded parent evidence');
+          const image=await reader.readImage(selection);
+          if(closing||res.destroyed)return;
+          const metadata=selection.view==='metadata';
+          let imageView:ImageView|undefined;
+          if(image.imageView){
+            const checked=imageViewSchema.safeParse(image.imageView);if(!checked.success)throw hostError('Invalid image view metadata');imageView=checked.data;
+            const expectedTransform=metadata?'metadata@1':selection.region?'crop-encoded-raster-png@1':'original-bytes@1';
+            const expectedId=createHash('sha256').update(JSON.stringify([imageView.original.sha256,'encoded-raster-pixels-v1',selection.region??null,expectedTransform])).digest('hex');
+            if(JSON.stringify(imageView.region)!==JSON.stringify(selection.region??null)||imageView.transform!==expectedTransform||imageView.viewId!==expectedId||
+              selection.expectedImageSha256&&imageView.original.sha256!==selection.expectedImageSha256||
+              imageView.region&&(imageView.region.x+imageView.region.width>imageView.original.width||imageView.region.y+imageView.region.height>imageView.original.height||imageView.original.pages!==1))throw hostError('Image view does not match the requested original and region');
+          }else if(metadata||selection.region||selection.expectedImageSha256)throw new ContextToolError('image_view_unsupported','This image reader cannot verify metadata or regions. Use existing evidence or a plain original image request.','use_existing_evidence');
+          const publicView:ImageViewTrace|undefined=imageView?{...imageView,id:selection.id,...(selection.attachmentId?{attachmentId:selection.attachmentId}:{}),delivery:metadata?'metadata' as const:'pending' as const}:undefined;
+          const imageBudget=()=>({remainingPayloads:Math.max(0,4-disclosedImages.size),maxRegionSide:IMAGE_REGION_MAX_SIDE,maxOutputBytes:IMAGE_MAX_BYTES});
+          const sendImageResult=(result:Record<string,unknown>,entry:ToolTrace)=>{
+            const {image:payload,imageDelivery:receipt,...text}=result;
+            const characters=JSON.stringify(text).length;
+            if(characters>limits.toolResultCharacters||deliveredCharacters+characters>limits.totalToolCharacters){if(typeof receipt==='string')imageDelivery(receipt,false);throw budgetError();}
+            deliveredCharacters+=characters;trace.push(entry);reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});res.end(JSON.stringify(result));
+          };
+          if(metadata){
+            if(image.data!==undefined||imageView?.output)throw hostError('Metadata must not include image bytes');
+            sendImageResult({source:'untrusted_personal_context',...selection,imageView:publicView,imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,imageView:publicView});return;
+          }
+          if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||typeof image.data!=='string'||!image.data.length||image.data.length>12*1024*1024)throw hostError('Invalid image output');
+          const bytes=Buffer.from(image.data,'base64'),sha256=createHash('sha256').update(bytes).digest('hex'),key=image.mimeType+':'+sha256;
+          if(bytes.length>IMAGE_MAX_BYTES)throw hostError('Invalid image output size');
+          if(imageView&&(!imageView.output||imageView.output.sha256!==sha256||imageView.output.mimeType!==image.mimeType||imageView.output.sizeBytes!==bytes.length||
+            imageView.output.width!==(imageView.region?.width??imageView.original.width)||imageView.output.height!==(imageView.region?.height??imageView.original.height)||
+            !imageView.region&&(sha256!==imageView.original.sha256||image.mimeType!==imageView.original.mimeType)))throw hostError('Image output does not match its declared view');
+          const existing=disclosedImages.get(key);
+          if(existing&&!existing.confirmed){
+            let disconnected!:()=>void;const connectionClosed=new Promise<void>(resolve=>{disconnected=resolve;res.once('close',disconnected);});
+            try{await Promise.race([existing.ready,connectionClosed]);}finally{res.off('close',disconnected);}
+            // Authorization may have changed while another adapter prepared its
+            // image. Read again rather than reuse the pre-wait permission result.
+            continue;
+          }
+          const firstSelection=existing?.selection;
+          if(!existing&&disclosedImages.size>=4)throw new ContextToolError('image_budget_exceeded','Image disclosure budget exceeded. Finish with existing evidence and state incomplete visual coverage.','use_existing_evidence',{remainingPayloads:0});
+          // No await between checking and recording: concurrent identical reads
+          // append at most one image. Repeats still consume the normal tool budget.
+          let delivery:ImageDelivery|undefined;
+          if(!existing){
+            let settle!:()=>void;const ready=new Promise<void>(resolve=>settle=resolve),token=randomBytes(24).toString('hex');
+            // A lost local adapter receipt cannot leave future readers waiting
+            // forever. A late success is refused, so it cannot disclose a stale
+            // reservation after a waiting reader has taken over.
+            const timer=setTimeout(()=>imageDelivery(token,false),30_000);timer.unref();
+            delivery={selection,imageView:publicView,token,confirmed:false,ready,settle,timer};disclosedImages.set(key,delivery);
+          }
+          if(firstSelection&&publicView)publicView.delivery='already_disclosed';
+          sendImageResult({source:'untrusted_personal_context',...selection,...(publicView?{imageView:publicView}:{}),...(firstSelection?{
+            imageDisclosure:{status:'already_disclosed',sha256,mimeType:image.mimeType,firstSelection,...(existing?.imageView?{firstImageView:existing.imageView}:{})},
+            message:'These exact image bytes were already supplied in this query. Use the earlier image with this selection’s own source attribution.',
+          }:{image:{mimeType:image.mimeType,data:image.data},imageDelivery:delivery!.token}),imageBudget:imageBudget(),hostBudget:hostBudget()},{tool,arguments:selection,count:1,...(publicView?{imageView:publicView}:{})});return;
+        }
       }
       let value: unknown;
       let effective: Record<string, unknown> = args;
@@ -479,14 +572,33 @@ export async function startBridge(
         if(args.kind!==undefined&&!['episodic','semantic','procedural'].includes(String(args.kind)))throw hostError('Invalid memory kind');
         if(args.layer!==undefined&&!['observation','memory','legacy'].includes(String(args.layer)))throw hostError('Invalid memory layer');
         if(args.includeHistory!==undefined&&typeof args.includeHistory!=='boolean')throw hostError('Invalid memory history flag');
+        if(args.includeEvidence!==undefined&&typeof args.includeEvidence!=='boolean')throw hostError('Invalid memory evidence flag');
+        if(args.includeEvidence===true&&!args.id)throw hostError('Select a memory id before requesting its original evidence');
         if(args.asOf!==undefined&&(typeof args.asOf!=='string'||!Number.isFinite(Date.parse(args.asOf))))throw hostError('Invalid memory validity time');
         const search={includeHistory:args.id?true:args.includeHistory as boolean|undefined,asOf:args.asOf as string|undefined,layer:args.id?undefined:(args.layer??'memory') as 'observation'|'memory'|'legacy',query:args.query as string|undefined,tier:args.tier as 'episode'|'consolidated'|undefined,kind:args.kind as 'episodic'|'semantic'|'procedural'|undefined};
-        effective={...scope,id:args.id,...search};
-        const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search})??{items:[]};
+        effective={...scope,id:args.id,...search,includeEvidence:args.includeEvidence};
+        const result=await reader.memories?.({...scope,id:args.id as string|undefined,...search,includeEvidence:args.includeEvidence as boolean|undefined})??{items:[]};
         derivedIds.push(...result.items.flatMap(item=>typeof (item as {id?:unknown}).id==='string'?[(item as {id:string}).id]:[]));
         const evidence=(result.evidence??[]).filter(r=>{const d=documentSchema.safeParse((r.provenance as Record<string,unknown>|undefined)?.document);const at=sourceContentTime({capturedAt:r.capturedAt,...(d.success?{provenance:{document:d.data}}:{})});return (!scope.deviceId||r.deviceId===scope.deviceId)&&(!scope.after||Date.parse(at)>=Date.parse(scope.after))&&(!scope.before||Date.parse(at)<Date.parse(scope.before));}).slice(0,30).map(r=>({id:r.id,capturedAt:r.capturedAt,appName:r.appName,characters:r.ocrText.length}));
         discoveredMemoryIds.push(...evidence.map(r=>r.id),...(result.references??[]).map(r=>r.id));
-        value={items:result.items,evidence:[...evidence,...(result.references??[])],coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
+        const references=result.references??[];
+        if(args.includeEvidence===true&&result.items.length){
+          // Only host-verified, requested, in-scope original ranges become citable.
+          const allowedIds=new Set(references.map(ref=>ref.id));
+          for(const span of (result.sourceSpans??[]).slice(0,3)){
+            const r=span.record,at=sourceContentTime(r);
+            if(!allowedIds.has(r.id)||!Number.isFinite(Date.parse(at))||!Number.isSafeInteger(span.offset)||span.offset<0||!Number.isSafeInteger(span.length)||span.length<1||span.offset>=r.ocrText.length||
+              scope.deviceId&&r.deviceId!==scope.deviceId||scope.after&&Date.parse(at)<Date.parse(scope.after)||scope.before&&Date.parse(at)>=Date.parse(scope.before))continue;
+            memoryEvidence.push(project(r,span.offset,Math.min(span.length,2000),bounds.timeZone));
+          }
+        }
+        // Saved quotes locate a claim but are not a fresh permission/version check.
+        const items=result.items.map(item=>{
+          if(!item||typeof item!=='object'||!Array.isArray((item as {evidence?:unknown}).evidence))return item;
+          return {...item,evidence:(item as {evidence:Record<string,unknown>[]}).evidence.map(({quote,...ref})=>ref)};
+        });
+        const partial=result.sourceCoverage?.partial===true||memoryEvidence.length<references.length||(result.sourceSpans??[]).length>memoryEvidence.length||(result.sourceSpans??[]).some(span=>span.length>2000);
+        value={items,evidence:[...evidence,...references],...(args.includeEvidence===true?{sourceEvidence:memoryEvidence,sourceCoverage:{references:result.sourceCoverage?.references??references.length,delivered:memoryEvidence.length,partial}}:{}),coverage:{layer:'derived_memories',scope:'selected_summaries_only',originalSearchTool:'search_context'}};pagination={nextCursor:result.nextCursor??null};
       }
       else if (tool === "evidence") {
         if (
@@ -603,11 +715,11 @@ export async function startBridge(
       for(const id of discoveredMemoryIds)discovered.add(id);
       // Only a successfully serialized, deliverable tool result authorizes evidence.
       if (!metadataOnly&&(tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes')) {
-        for (const record of safeValue as ContextRecord[])
-          {rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
+        for (const [index,record] of (safeValue as ContextRecord[]).entries())
+          {copyEvidencePresentation((value as ContextRecord[])[index],record);rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
         if(tool==='evidence')for(const record of safeValue as ContextRecord[])expanded.add(record.id);
       }
-      for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
+      for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);if(tool==='memories')expanded.add(record.id);}
       trace.push({
         tool,
         arguments: effective,
@@ -625,7 +737,7 @@ export async function startBridge(
       const signature=JSON.stringify([tool,issue.code,canonical(args)]);
       repeatedFailures=signature===previousFailure?repeatedFailures+1:1;previousFailure=signature;
       if(repeatedFailures>=3)issue=new ContextToolError('repeated_tool_failure','The same invalid tool request failed three times. This run has stopped; no output will be committed.','stop',{originalCode:issue.code});
-      reportTrace(bounds,{type:'tool.rejected',stage:'tool',tool,status:'rejected',payload:{...issue.toJSON(),call:calls,repeatCount:repeatedFailures,remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters)}});
+      reportTrace(bounds,{type:'tool.rejected',stage:'tool',tool,status:'rejected',payload:{...issue.toJSON(),call:calls,repeatCount:repeatedFailures,remainingCalls:Math.max(0,maxToolCalls-calls),remainingCharacters:Math.max(0,limits.totalToolCharacters-deliveredCharacters),...(materialReadAttempts?{materialPage:{readAttempts:materialReadAttempts}}:{})}});
       res.writeHead(400).end(JSON.stringify({error:issue.message,toolError:issue.toJSON(),hostBudget:hostBudget()}));
       if(issue.recovery==='stop'||calls>maxToolCalls+2)rejectFailure(new AgentResponseError('Tool failure recovery exhausted.','tool_failure'));
 
@@ -642,6 +754,7 @@ export async function startBridge(
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     token,
+    imageDelivery,
     failure,
     trace,
     records,
@@ -652,6 +765,9 @@ export async function startBridge(
       return ready;
     },
     async close() {
+      closing=true;
+      for(const value of disclosedImages.values()){clearTimeout(value.timer);if(!value.confirmed&&value.imageView)value.imageView.delivery='failed';value.settle();}
+      disclosedImages.clear();
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

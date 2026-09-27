@@ -1,3 +1,5 @@
+import {imageOutput} from './evidence-image.js';
+import {fileAttachmentAvailable} from './file-attachments.js';
 import {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
 import {memoryEvidenceFingerprint} from './memory.js';
@@ -17,6 +19,7 @@ import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { gunzipSync } from 'node:zlib';
 import { z } from 'zod';
 import { Actions } from './actions.js';
+import { agentDeadline } from './agent-deadline.js';
 import { installAgentFeatures } from './agent-feature-host.js';
 import { ArchivedFileStore } from './archived-files.js';
 import { codingSourcePlugin } from './coding-source-plugin.js';
@@ -52,7 +55,7 @@ import { MaterialMemoryWork } from './material-memory-work.js';
 import { MaterialOrganizerRuntime } from './material-organizers.js';
 import { MaterialStore } from './materials.js';
 import { MediaAssets } from './media-assets.js';
-import { MemoryLifecycle,automaticMemoryExtractionEnabled,storedMemoryLifecycleSettings,type LifecycleExtension } from './memory-lifecycle.js';
+import { MemoryLifecycle,automaticMemoryExtractionEnabled,storedMemoryLifecycleSettings,freezeSemanticContextTime,type LifecycleExtension } from './memory-lifecycle.js';
 import {MemoryStrategies} from './memory-strategies.js';
 import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import { MemoryPipeline } from './memory-pipeline.js';
@@ -97,7 +100,7 @@ function parseCaptureBundle(body:unknown):CaptureInput[] {
   catch(error){if(error instanceof z.ZodError)throw error;throw new StoreError('Invalid capture bundle JSONL');}
 }
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export async function buildApp(config:Config,dependencies?:{backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
+export async function buildApp(config:Config,dependencies?:{semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   config={...config};
   const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();
   // A foreground node must not block listen() on a full orphan-blob sweep. When
@@ -153,16 +156,25 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const sourceOwner=(req:FastifyRequest,id:string)=>{const c=credential(req);if(c)connections.assertOwnSource(c,id);};
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
   const assertModelEvidence=(settings:import('@mote/shared/models').ModelSettings,input:QueryInput|undefined)=>{
+    if(input?.derivedContextEvidenceIds?.some(id=>!evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(settings)))))throw new StoreError('Derived context evidence is no longer permitted for this model',409);
     if(!usesLocalModel(settings)&&[...(input?.evidenceIds??[]),...(input?.directImages??[]).map(image=>image.id)].some(id=>evidenceReader.evidenceLocalOnly(id)))throw new StoreError('Local-only evidence requires a local model',409);
   };
   const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
     exposurePolicy:new EvidenceExposurePolicy([],()=>modelLocality.getStore()===true),
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
+    currentContextTime:()=>modelContext.getStore()?.contextTime,
     currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs}));
   const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
+  const directImageAllowed=(id:string)=>{
+    try{const image=directImage(id),version=files.version(id);
+      return Boolean(image&&version.object_hash===image.hash&&store.evidence([id]).length&&fileAttachmentAvailable(store,id)&&
+        !store.db.prepare('SELECT deleted FROM source_heads WHERE source_id=? AND external_id=?').get(version.source_id,version.external_id)?.deleted&&
+        (modelLocality.getStore()===true||!evidenceReader.evidenceLocalOnly(id)));
+    }catch{return false;}
+  };
   const fileRawReader=new FileRawReader(store,files,archivedFiles,{
-    mayReadFileVersion:(_sourceId,id)=>Boolean(directImage(id)),mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
+    mayReadFileVersion:(_sourceId,id)=>directImageAllowed(id),mayReadArchivedFile:()=>false,mayListSourceFiles:()=>false,mayListArchivedFiles:()=>false,
   });
   const reader:ContextReader={...archiveReader,
     evidence:async args=>{
@@ -170,9 +182,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       const regular=args.ids.filter(id=>!directImage(id));
       return [...direct,...(regular.length?await archiveReader.evidence({...args,ids:regular}):[])];
     },
-    readImage:async({id,attachmentId})=>{
+    readImage:async(input)=>{
+      const {id,attachmentId}=input;
       const direct=directImage(id);
-      if(!direct)return archiveReader.readImage!({id,attachmentId});
+      if(!direct)return archiveReader.readImage!(input);
       if(attachmentId!==undefined)throw new StoreError('Dialogue images have no nested attachments',400);
       const ref=fileOriginalRawRef(id,direct.hash),parts:Buffer[]=[];
       for(let offset=0;offset<direct.sizeBytes;){
@@ -180,7 +193,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
         if(page.status!=='available'||page.totalBytes!==direct.sizeBytes||page.mediaType!==direct.mimeType||page.bytes.length===0)throw new StoreError('Attached image is unavailable',404);
         parts.push(Buffer.from(page.bytes));offset+=page.bytes.length;
       }
-      return {mimeType:direct.mimeType,data:Buffer.concat(parts).toString('base64')};
+      return imageOutput(Buffer.concat(parts),direct.mimeType,input,()=>directImageAllowed(id));
     },
   };
   const queryImages=(ids:string[])=>ids.map(id=>{
@@ -344,17 +357,17 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     trace({type:'query.started',stage:'starting',payload:{question:input.question,taskContext:input.taskContext??null,conversation:input.conversation??null,evidenceIds:input.evidenceIds??null,evidenceRanges:input.evidenceRanges??null,scope:{after:input.after??null,before:input.before??null,deviceId:input.deviceId??null,timeZone:input.timeZone??null},skill:input.skill??null,responseMode:input.responseMode??'answer'}});
     const revision=store.deletionRevision();
     const meter=usageLedger.start(profile.settings.provider,input.modelOverride??profile.settings.model,input.skill??operation,{agentId:'context-query',moduleId,skillId:input.skill??null,operationId:input.traceContext?.operationId,jobId:input.traceContext?.jobId,requestId:diagnostics.requestId()});
-    const deadline=profile.settings.agentTimeoutMs;
-    const taskSignal=deadline===null?input.signal:AbortSignal.any([...(input.signal?[input.signal]:[]),AbortSignal.timeout(deadline)]);
+    const deadline=agentDeadline(input.signal,profile.settings.agentTimeoutMs),taskSignal=deadline.signal;
     const observed={...input,signal:taskSignal,traceContext,onProgress:(event:import('@mote/agent').AgentProgress)=>{trace({type:'progress',stage:event.stage,phase:event.phase,step:event.step,tool:event.tool,payload:event});input.onProgress?.(event);},onTrace:trace,onUsage:(tokens:import('@mote/shared').TokenUsage)=>{meter.update(tokens);input.onUsage?.(tokens);}};
     const heartbeat=setInterval(()=>diagnostics.record('agent.heartbeat',{jobId:input.traceContext?.jobId,elapsedMs:Date.now()-startedAt,idleMs:Date.now()-lastActivity,activeQueries:agentGate.snapshot().active},'info'),30000);heartbeat.unref();
     const promise=diagnostics.measure('agent',operation,()=>agent.query(observed).then(result=>{
       taskSignal?.throwIfAborted();
+      assertModelEvidence(profile.settings,input);
       // A long-running review may overlap routine imports and derived-layer updates.
       // Only an original actually disclosed to this run being deleted can make
       // its answer unsafe to publish; other archive changes belong to later runs.
       if(store.deletionRevision()!==revision){
-        const used=new Set([...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
+        const used=new Set([...(input.derivedContextEvidenceIds??[]),...(result.evidenceDependencies?.ids??[]),...result.citations.map(citation=>citation.id)]);
         for(const row of store.db.prepare("SELECT id FROM changes WHERE seq>? AND operation='delete'").iterate(revision)){
           if(used.has(String(row.id)))throw new StoreError('Evidence used by this answer was deleted during the run',409);
         }
@@ -362,11 +375,11 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       trace({type:'query.completed',stage:'validating',phase:'completed',status:'succeeded',payload:{answer:result.answer,citations:result.citations,trace:result.trace,contextUsage:(result as QueryResult & {contextUsage?:unknown}).contextUsage}});
       return {...result,configuration,usage:meter.finish('completed')};
     }).catch(error=>{meter.finish('failed');trace({type:'query.failed',status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError',reason:typeof (error as {reason?:unknown})?.reason==='string'?(error as {reason:string}).reason:undefined}});throw error;}),result=>({citations:result.citations.length,toolCalls:result.trace.length,activeQueries:activeQueries.size}));
-    activeQueries.add(promise);void promise.finally(()=>{clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
+    activeQueries.add(promise);void promise.finally(()=>{deadline.dispose();clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
   const memoryReviews=new MemoryReviewCache();
   const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
-    strategy,cache:memoryReviews,snapshot:()=>{
+    strategy,deletions:memories.deletions,authorizeDeletionEvidence:ids=>memoryPipeline.assertDeletionEvidenceAllowed(ids,input.modelProfileId),cache:memoryReviews,snapshot:()=>{
       const ids=input.evidenceIds??[];
       if(ids.some(id=>!memories.isCurrentEvidence(id)))throw new StoreError('Memory evidence changed during review',409);
       // Include full original metadata (speaker, source, device, dates, version),
@@ -374,11 +387,11 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
     },
   });
-  const memoryPipeline=new MemoryPipeline({materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
-  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor),working=new WorkingMemory(store,conversations);
+  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor,dependencies?.semanticContextTime),working=new WorkingMemory(store,conversations);
   const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
@@ -429,19 +442,21 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       if(value!==undefined&&value!==null)scope[key]=value;
     }
     insightSchema.parse(scope);
+    const contextTime=freezeSemanticContextTime(dependencies?.semanticContextTime);
     if(conversationId)runningConversations.add(conversationId);
+    let deadline:ReturnType<typeof agentDeadline>|undefined;
     try {
       const selectedProfile=modelSettings.select('chat',modelProfileId),timeout=selectedProfile.settings.agentTimeoutMs;
-      signal=timeout===null?signal:AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(timeout)]);
+      deadline=agentDeadline(signal,timeout);signal=deadline.signal;
       signal?.throwIfAborted();
       const previousIds=previous?.turns.slice(-20).flatMap(turn=>turn.attachments?.map(attachment=>attachment.id)??[])??[];
       const previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
       const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
       const [memoryLeads,conversation]=await Promise.all([
-        openingMemories(archiveReader,question,scope),
-        previous?working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution):undefined,
+        openingMemories(archiveReader,question,{...scope,contextTime}),
+        previous?working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,contextTime,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution):undefined,
       ]);
-      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,modelProfileId,modelOverride,onProgress,signal,directImages,openingMemories:memoryLeads,...(conversation?{conversation}:{})});
+      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,contextTime,modelProfileId,modelOverride,onProgress,signal,directImages,openingMemories:memoryLeads,...(conversation?{conversation}:{})});
       signal?.throwIfAborted();
       return ()=>({...result,...conversations.append(previous,{question,...scope,attachments:directImages.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result)});
     } catch(error) {
@@ -456,7 +471,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
         }
       }
       throw error;
-    }finally{if(conversationId)runningConversations.delete(conversationId);}
+    }finally{deadline?.dispose();if(conversationId)runningConversations.delete(conversationId);}
   }
 
   async function insight(range:QueryScope&{prompt?:string;modelProfileId?:string},onProgress?:QueryInput['onProgress'],signal?:AbortSignal,operationId='insight:'+randomUUID(),snapshot?:import('@mote/shared').InsightSnapshot) {

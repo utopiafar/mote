@@ -209,6 +209,20 @@ test('repeated tombstone republishes an unchanged visible projection at a fresh 
   assert.equal(materials.list({query:'Surviving event'}).items[0]?.revision,after.revision);
 });
 
+test('an exact tombstone replay keeps the rebuilt Material visible while a mixed new deletion revokes its own group',async t=>{
+  const {store,materials,runtime,sources}=await fixture(t);
+  const other=(i:number,text:string)=>{const item=event(i,text);return {...item,externalId:'other-'+i,document:{...item.document,coding:{...item.document.coding,sessionId:'other-generated-session',eventId:'other-'+i}}};};
+  await sources.upsertBatch('coding',[event(0,'FIRST_DELETED_BODY'),event(1,'First surviving event'),other(0,'SECOND_DELETED_BODY'),other(1,'Second surviving event')]);await runtime.tick();
+  const firstId=materialId('coding',group),secondId=materialId('coding',JSON.stringify(['codex','generated-project','other-generated-session']));
+  const deletion={...event(0,''),revision:'2',observedAt:'2026-09-25T01:00:00.000Z',deleted:true};await sources.upsert('coding',deletion);assert.equal(materials.get(firstId),undefined);await runtime.tick();
+  const first=materials.get(firstId)!,second=materials.get(secondId)!,work=store.db.prepare('SELECT * FROM source_pipeline_work ORDER BY id').all();assert.ok(first&&second);
+  assert.equal((await sources.upsert('coding',deletion)).duplicate,true);assert.equal(materials.get(firstId)?.revision,first.revision);await runtime.tick();
+  assert.equal(materials.get(firstId)?.revision,first.revision);assert.deepEqual(store.db.prepare('SELECT * FROM source_pipeline_work ORDER BY id').all(),work);assert.match(materials.read(first.ref,{length:12000}).text,/First surviving event/);
+  const nextDeletion={...other(0,''),revision:'2',observedAt:'2026-09-25T01:00:00.000Z',deleted:true};const mixed=await sources.upsertBatch('coding',[deletion,nextDeletion]);assert.deepEqual(mixed.receipts.map(receipt=>receipt.duplicate),[true,false]);
+  assert.equal(materials.get(firstId)?.revision,first.revision,'the already processed tombstone does not re-redact an unrelated unchanged group');assert.equal(materials.get(secondId),undefined,'the new tombstone hides its old Material before background work');assert.equal(materials.get(second.ref),undefined);
+  await runtime.tick();assert.equal(materials.get(firstId)?.revision,first.revision);const current=materials.get(secondId)!;assert.ok(current);assert.notEqual(current.revision,second.revision);assert.match(materials.read(current.ref,{length:12000}).text,/Second surviving event/);assert.equal(materials.list({query:'SECOND_DELETED_BODY'}).items.length,0);
+});
+
 test('pausing a source preserves previously published Material',async t=>{
   const {materials,runtime,sources}=await fixture(t);
   await sources.upsert('coding',event(0));await runtime.tick();const before=materials.list().items[0]!;

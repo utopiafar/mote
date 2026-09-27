@@ -38,6 +38,13 @@ export interface MediaContextRange extends ContextRange {
   playbackType?: 'local' | 'remote' | 'unknown';
 }
 
+/** Host-verified original range. The bridge projects it before model disclosure. */
+export interface MemorySourceSpan {
+  record: ContextRecord;
+  offset: number;
+  length: number;
+}
+
 export interface ContextReader {
   /** Host registry, snapshotted before each model run. */
   contextTools?():readonly import('./tool-contributions.js').ContextToolContribution[];
@@ -45,7 +52,7 @@ export interface ContextReader {
   materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null}>;
   materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean}>;
   segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
-  readImage?(args:{id:string;attachmentId?:string}):Promise<{mimeType:string;data:string}>;
+  readImage?(args:import('@mote/shared').ImageReadInput):Promise<import('@mote/shared').ImageReadResult>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
   timeline(args: ContextRange): Promise<ContextRecord[] | ContextPage>;
   evidence(args: ContextRange & { ids: string[] }): Promise<ContextRecord[]>;
@@ -57,7 +64,7 @@ export interface ContextReader {
   sourceHistory?(args:ContextRange & {id:string}): Promise<ContextRecord[]>;
   sources?(args:ContextRange): Promise<unknown>;
   sourceItems?(args:ContextRange & {sourceId?:string;kind?:string;includeDeleted?:boolean}): Promise<ContextRecord[]|ContextPage>;
-  memories?(args:ContextRange & {includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[]}>;
+  memories?(args:ContextRange & {includeEvidence?:boolean;includeHistory?:boolean;asOf?:string;id?:string;query?:string;tier?:'episode'|'consolidated';layer?:'observation'|'memory'|'legacy';kind?:'episodic'|'semantic'|'procedural';status?:'published'|'proposed'|'stale'}): Promise<{items:unknown[];nextCursor?:string|null;evidence?:ContextRecord[];references?:{id:string;capturedAt:string;characters:number}[];sourceSpans?:MemorySourceSpan[];sourceCoverage?:{references:number;delivered:number;partial:boolean}}>;
 }
 
 export interface AgentOptions {
@@ -94,6 +101,9 @@ export interface QueryInput {
   toolContributions?:readonly import('./tool-contributions.js').ContextToolContribution[];
   /** Host-verified originals deliberately attached to this dialogue. Bytes remain in the vault. */
   directImages?:{id:string;name:string;mimeType:string;hash:string;sizeBytes:number}[];
+  /** Host-only lineage of derived context already included in taskContext. Used
+   * solely for disclosure authorization/revocation; never evidence seeds or tools. */
+  derivedContextEvidenceIds?:readonly string[];
   /** Host-only bounded observation and coverage snapshot for one insight version. */
   insightSnapshot?: import('@mote/shared').InsightSnapshot;
   /** Host-only read grant for original action proposals. No mutation capability is exposed. */
@@ -200,6 +210,9 @@ export interface Citation {
   provenance?:{sourceId?:string;externalId?:string;revision?:string;layer?:string;document?:SourceDocument};
 }
 export interface ToolTrace {
+  imageView?:import('@mote/shared').ImageViewTrace;
+  /** Host-local page fitting, not extra model/provider calls. */
+  materialPage?:{readAttempts:number;requestedLength:number;returnedLength:number;budgetLimited:boolean};
   tool: string;
   arguments: Record<string, unknown>;
   count: number;

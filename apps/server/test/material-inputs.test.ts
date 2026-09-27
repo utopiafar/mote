@@ -46,6 +46,17 @@ test('append mappings include retained blocks and honor output-only state change
   assert.equal(failed.changed,true);assert.equal(materials.input(failed.ref,['conversation'])!.ready,false);
 });
 
+test('empty append no-op compares real members and dependency revisions after a full publication',t=>{
+  const {materials,draft}=fixture(t),initial={...draft,kind:'mote.coding-session',coverage:{state:'complete' as const},blocks:[{...draft.blocks[0],id:'section-0',kind:'text' as const,format:'markdown-fragment',text:'Generated immutable section'}],artifacts:[{key:'conversation',state:'ready' as const,revision:'input-1',blockIds:['section-0']}]};
+  const snapshot={checkpoint:'first',appendEpoch:1,headCount:1},first=materials.publish(initial,{codingSnapshot:snapshot});
+  const noContent={...initial,mode:'append' as const,baseRevision:first.revision,reuseBlocks:1,blocks:[]};
+  const same=materials.publish(noContent,{expectedRevision:first.revision,codingSnapshot:snapshot});assert.equal(same.changed,false);assert.equal(same.revision,first.revision);
+  const members=[{...initial.members[0],revision:'member-2'}],changedMember=materials.publish({...noContent,members},{expectedRevision:first.revision,codingSnapshot:snapshot});
+  assert.equal(changedMember.changed,true);assert.notEqual(changedMember.revision,first.revision);assert.deepEqual(materials.members(changedMember.ref).items,members);
+  const changedInput=materials.publish({...noContent,baseRevision:changedMember.revision,members,artifacts:[{...initial.artifacts[0],revision:'input-2'}]},{expectedRevision:changedMember.revision,codingSnapshot:snapshot});
+  assert.equal(changedInput.changed,true);assert.notEqual(changedInput.revision,changedMember.revision);
+});
+
 test('recipe requirement changes need a new identity and cannot substitute for an old pin',()=>{
   const strategies=new MemoryStrategies(),recipe={id:'fixture.required',version:'1',extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'},requires:['source-body']};
   assert.throws(()=>strategies.registerRecipe({...recipe,requires:['source-body','source-body']}),/Duplicate/);
@@ -54,21 +65,26 @@ test('recipe requirement changes need a new identity and cannot substitute for a
   strategies.registerRecipe({...recipe,version:'2',requires:['extracted-text']});assert.throws(()=>strategies.resolvePinned(pin),/not installed/);
 });
 
-test('a manual composition retains default dependencies even when another recipe pins the same evidence',async t=>{
+test('a manual composition retains default dependencies without blocking an independent body recipe',async t=>{
   const {store,materials,draft}=fixture(t),strategies=new MemoryStrategies(),recipe={id:'fixture.body',version:'1',extract:{id:'mote.context-extraction',version:'3.4.0'},review:{id:'mote.personal-review',version:'2'},requires:['body']};
   strategies.registerRecipe(recipe);
   const initial={...draft,blocks:[draft.blocks[0]],coverage:{state:'complete' as const},artifacts:[{key:'body',state:'ready' as const,blockIds:['body']},{key:'summary',state:'ready' as const,blockIds:[]}]};
   const first=materials.publish(initial),body=materials.input(first.ref,['body'])!;
   const memories=new MemoryStore(store,ids=>materials.evidence(ids),id=>materials.isCurrentEvidence(id));
+  const calls:string[][]=[];
   const pipeline=new MemoryPipeline({store,memories,strategies,configured:()=>true,model:()=> 'fixture',
     materialInput:(ref,required)=>materials.input(ref,required),materialAllowedForMemory:(ref,_profile,required)=>Boolean(materials.input(ref,required??['material'])?.ready),
-    query:async()=>{throw Error('No model call is authorized in this fixture');},review:async(_input,result)=>result});
+    query:async input=>{calls.push((input.processingMaterialInputs??[]).flatMap(pin=>pin.required));return {answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-independent-body'};},review:async(_input,result)=>result});
   try{
     const job=pipeline.create({evidenceIds:body.evidenceIds,recipes:[{id:recipe.id,version:recipe.version},{id:'mote.personal-memory',version:'2'}]});
     assert.deepEqual(job.materialInputs!.map(pin=>pin.required),[['body'],['material']]);
     const revised=materials.publish({...initial,coverage:{state:'partial'},artifacts:[initial.artifacts[0],{...initial.artifacts[1],state:'failed',reason:'Generated failure'}]},{expectedRevision:first.revision});
     assert.equal(materials.input(revised.ref,['body'])!.fingerprint,body.fingerprint);
-    await assert.rejects(pipeline.retry(job.id),/not ready or changed/);
+    const done=await pipeline.retry(job.id);
+    assert.equal(done.status,'failed');
+    assert.equal(done.batches.find(batch=>batch.strategy?.recipe.id===recipe.id)?.status,'completed');
+    assert.equal(done.batches.find(batch=>batch.strategy?.recipe.id==='mote.personal-memory')?.status,'invalidated');
+    assert.deepEqual(calls,[['body']],'only the independently ready recipe may call the model');
     assert.equal(pipeline.get(job.id).memoryIds.length,0);
   }finally{await pipeline.close();}
 });

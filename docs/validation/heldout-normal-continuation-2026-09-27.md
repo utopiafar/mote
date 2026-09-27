@@ -1,0 +1,43 @@
+# Continue the original heldout replay after E
+
+Recovery E completed the original second-wave first batch, then stopped as designed. The remaining original batches, integration windows and eight paired questions need one explicit continuation that preserves this successful checkpoint and the two earlier failed attempts. Reusing E or clearing its stop would lose that boundary.
+
+The normal continuation request binds the E plan and authorization, successful closure, stopped ledger head and closed snapshot. Preparation opens a new clone with no provider calls. It preserves the successful batch and existing 600-second model configuration, allowing only the production startup timestamp and the five untouched pending batches' native `paused` bookkeeping. It never retries the completed batch. The prepared transport snapshot remains distinct from the canonical successful snapshot.
+
+The same continuation proof follows the original sequence from wave 2, batch 1. Background extraction and integration use 600-second model bounds; ordinary paired Ask retains 300 seconds in independent clones. The fixed global cap remains 124, including the 16 existing admissions. The remaining planned maximum is 106 calls, not a quota or retry allowance. The first new failure, cancellation, unknown admission or receipt inconsistency stops continuation. The two historical failures, all receipts and incomplete usage remain in the ledger. Complete eight-pair anonymous export accepts only the exact continuation proof and preserves the original question plan, mapping and rubric.
+
+Main-tree generated validation passed 13/13 with 14 stub calls and zero real model calls. It covers zero-call preparation, the next original batch, later ingress and first-run configuration binding, integration, ordinary paired Ask, failure/cancellation stops and complete anonymous projection. Four relevant legacy runner tests and all 23 legacy export tests passed; script typechecking and diff checks passed. Earlier failed fixture attempts are retained outside Git.
+
+An independent narrow review passed both success and failure cases, including exact zero-call preparation checks. The final probes used three stub calls; an earlier diagnostic used two more before its overly broad timer assertion failed. All five are retained and none was a real model call. The diagnostic distinguished the unchanged local deletion-intent timer from the 600-second model/outer timers; the generated fixture had no deletion rules or additional query. Successful advancement retained the old failures and incomplete usage, while a new failure permanently rejected reentry without another admission.
+
+The separate normal supervisor fixes each phase's process budget and preserves the old supervisors. Its three test groups contain 25 generated control cases. Four generated CLI invocations rejected invalid root manifests before provider access, closed their process groups and left their sentinel ledger unchanged. These checks are not live model or semantic quality results.
+
+Evidence is outside Git in the 2026-09-27 goal directory: `ROOT_SAFE_normal-main-delivery.json`, `heldout-normal-offline-007/ROOT_SAFE_normal.json`, `heldout-normal-independent-002/ROOT_SAFE_independent-review.json` and `ROOT_SAFE_normal-supervisor-delivery.json`. The adapter delivery left original production/build pins, private inputs, actual heldout ledger and successful snapshots unchanged. Subsequent applicability and actual execution are recorded below; no heldout question pair or net-value result is claimed here.
+
+## Original frozen environment and actual preparation
+
+The exporter prerequisite and continuation adapter were subsequently migrated to frozen HEAD `840b4112`, preserving all 418 original production/build pins. All nine delivered source hashes matched. The 13 normal generated tests passed with 14 stub calls and zero real calls; script typechecking passed. The explicit existing generated E ancestor remained unchanged, and both test process groups closed. No production rebuild or new E run was needed.
+
+A read-only review of the actual E boundary confirmed its exact 16 admissions and receipts, two historical failures, completed first batch and eight checkpoints. The other five batches remained pending with zero attempts. The subsequent explicit preparation completed in 1.131 seconds with zero provider attempts and no usage delta. Its process group closed, its frozen controls and historical ledger prefix remained unchanged, and only the normal continuation authorization was appended. Root validation confirmed the original successful canonical tree, the separate prepared tree and the next cursor at wave 2, batch 1.
+
+These checks are recorded in `heldout-frozen-normal-validation-001/ROOT_SAFE_applicability.json`, `ROOT_SAFE_normal-actual-eligibility-001.json`, `heldout-normal-continuation-preparation-supervision-001/ROOT_SAFE_supervision.json` and `heldout-normal-continuation-freeze-001/ROOT_SAFE_root-review.json`. They establish preparation and applicability, not the outcome of subsequent live phases.
+
+## First normal batch completed
+
+The original second-wave batch at index 1 completed extraction, independent model review, submission and closed checks. `heldout-wave2-normal-batch1-live-001` closed normally after 422.195 seconds, with unchanged control hashes and ledger prefix, no remaining process group and no termination. The stage is `paused-success`, with two of six second-wave batches complete.
+
+Its two completed calls reported 28,399 tokens, bringing the closed experiment to 18 admissions and 18 receipts: 16 completed and the same two historical failures. There were no unknown admissions, unreconciled receipts, conflicts or host rejections. Cumulative reported usage is 771,949 tokens, still a lower bound because the two old incomplete/missing usage records remain. HTTP request counts and monetary costs remain unknown. No new repair was observed.
+
+The new closed snapshot hash is `ef2f01420077d0efe6544f07fa88e865556a7a18f2470d92e1423b4ccfb2c0d6`. Subsequent zero-call phase preparation selected only the original next batch, index 2, and left the ledger unchanged. These are technical completion results; the original question pairs and semantic assessment are still pending.
+
+## Next batch stopped during review
+
+The next original batch, index 2, completed extraction in 238.935 seconds, reporting 16,255 tokens. Its independent review reached the selected host's 600-second deadline without completing or reporting usage. The supervisor closed normally with exit 1 after 840.085 seconds, without termination or a remaining process group. Frozen controls and the previous ledger prefix were unchanged. The normal continuation stopped; no later batch was started.
+
+The closed experiment now has 20 admissions, terminals and receipts: 17 completed and three failures. There are no unknown admissions or receipt conflicts. Reported usage is 788,204 tokens, still a lower bound with three incomplete or missing failure receipts. The successful canonical snapshot remains `ef2f0142…`; the separate failed snapshot is `708dd42b…`. The second wave remains two of six batches complete.
+
+An independent metadata audit confirmed the target is `failed / review / model_failed`, attempt 1, with four original chunks and no committed checkpoint or saved Memory. One shared extraction draft remains: 6,564 bytes, four candidates and four evidence references. Its exact input key was independently recomputed and matched; its value matches the successful extraction result. Prior completed batches, Memory, checkpoints and usage remain unchanged. Both the default entry and original normal proof reject the new stop. This proves draft availability, not permission to retry or semantic validity.
+
+Technical event projection identifies the native host timeout reason, while the Agent trace reports `AgentTimeoutError`; the ledger records `outer_failed`. Review emitted message delta events until two milliseconds before its failed event, but had no completed turn, validation or usage update. Both extraction and review showed four retryable stream-disconnection notifications, and extraction succeeded; disconnections alone do not explain the failure. Neither event counts nor partial output establish provider request counts, costs or answer validity.
+
+Evidence is in `heldout-wave2-normal-batch2-live-001`, `heldout-wave2-normal-batch2-terminal-audit-002/ROOT_SAFE_audit.json` and `ROOT_SAFE_normal-batch2-timeout-diagnostic-001.json`. Originals and historical classifications are retained. A separately authorized review-only recovery is being designed; no further actual request, preparation or model call has been made.

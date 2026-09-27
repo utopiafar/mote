@@ -8,6 +8,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 
 object HttpJson {
     private val active = java.util.concurrent.ConcurrentHashMap.newKeySet<HttpURLConnection>()
@@ -68,7 +69,20 @@ object HttpJson {
 private class RecordedHeartbeatFailure : IllegalStateException()
 
 class UploadWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
-    override fun doWork(): Result = ConnectionGuard.sync { work() } ?: Result.retry()
+    override fun doWork(): Result {
+        if (isStopped) return Result.success()
+        // Immediate, timer and periodic workers share one capture outbox. Acquire
+        // its gate before the connection read lock, so a waiting upload cannot
+        // delay reconfiguration. Contention retains WorkManager's retry/backoff
+        // without occupying its executor for the active worker's network wait.
+        val acquired = try { captureUploadGate.tryLock(250, TimeUnit.MILLISECONDS) }
+        catch (_: InterruptedException) { Thread.currentThread().interrupt(); return if (isStopped) Result.success() else Result.retry() }
+        if (!acquired) return if (isStopped) Result.success() else Result.retry()
+        return try {
+            if (isStopped) Result.success()
+            else ConnectionGuard.sync { if (isStopped) Result.success() else work() } ?: Result.retry()
+        } finally { captureUploadGate.unlock() }
+    }
     private fun work(): Result {
         val settings = Settings(applicationContext)
         var stage = EventStage.CONFIG
@@ -238,6 +252,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
     }
     private fun finishStatus() = SyncHealth.finish(applicationContext)
     companion object {
+        private val captureUploadGate = ReentrantLock()
         fun heartbeat(context: Context, config: CollectorConfig) = HeartbeatWorker.stateChanged(context, config)
         fun schedule(context: Context, config: CollectorConfig, manual: Boolean = false) = SyncSchedule.schedule(context, config, manual)
         fun isWifi(context: Context): Boolean {

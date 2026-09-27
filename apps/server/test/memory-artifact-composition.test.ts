@@ -153,24 +153,31 @@ test('named ready outputs cannot bypass local-only policy at creation or late re
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
 });
 
-test('manual range selection honors named inputs and never drops a requested recipe to start a job',async t=>{
+test('manual recipes persist independent waiting inputs and resume only the original selection',async t=>{
   const f=await fixture(t),file=await f.upload();await f.organize();
   const scope={deviceId:'fixture',contextTime:'2026-05-07T08:00:00Z'};
-  for(const recipes of [undefined,[extractedPersonal],[bodyRecipe,extractedPersonal]]){
-    const response=await f.request({...scope,...(recipes?{recipes}:{})});assert.equal(response.statusCode,409,response.body);
-  }
-  assert.equal(f.node.memoryPipeline.list().length,0);assert.equal(f.calls.length,0);
-  const index=await f.request({...scope,recipes:[bodyRecipe]});assert.equal(index.statusCode,202,index.body);
-  assert.equal((await f.node.memoryPipeline.run(index.json().id)).status,'completed');
-  assert.deepEqual(f.node.memoryPipeline.get(index.json().id).evidenceIds,f.node.materials.input(file.materialId,['source-record'])!.evidenceIds);
+  assert.equal((await f.request(scope)).statusCode,409,'legacy unspecified-recipe request keeps its conservative contract');
+  const allPending=await f.request({...scope,recipes:[extractedPersonal]});assert.equal(allPending.statusCode,202,allPending.body);
+  assert.equal((await f.node.memoryPipeline.run(allPending.json().id)).status,'waiting_for_input');
+  assert.equal(f.calls.length,0);f.node.memoryPipeline.cancel(allPending.json().id);
+  const response=await f.request({...scope,recipes:[bodyRecipe,extractedPersonal]});assert.equal(response.statusCode,202,response.body);
+  const jobId=response.json().id,first=await f.node.memoryPipeline.run(jobId);
+  assert.equal(first.status,'waiting_for_input');assert.equal(first.completedBatches,1);assert.equal(first.inputPlans?.waiting,1);
+  assert.notEqual(first.execution?.status,'succeeded');assert.equal(first.memoryIds.length,1);
+  const body=f.node.memories.get(first.memoryIds[0]),bodyBatch=first.batches.find(b=>b.strategy?.recipe.id===bodyRecipe.id)!;
   f.control.failASR=true;await f.node.processing.tick();await f.organize();
-  const failed=await f.request({...scope,recipes:[extractedPersonal]});assert.equal(failed.statusCode,409,failed.body);
-  assert.equal(f.node.memoryPipeline.list().length,1);
-  f.control.failASR=false;f.node.processing.retry(file.id);await f.node.processing.tick();await f.organize();
-  const ready=await f.request({...scope,recipes:[extractedPersonal,extractedCoding]});assert.equal(ready.statusCode,202,ready.body);
-  const result=await f.node.memoryPipeline.run(ready.json().id);assert.equal(result.status,'completed');assert.equal(result.memoryIds.length,2);
-  assert.deepEqual(result.evidenceIds,f.node.materials.input(file.materialId,['extracted-text'])!.evidenceIds);
-  assert.equal(f.count('extract'),2);assert.equal(f.count('review'),3);assert.equal(f.asrCalls(),2);
+  assert.equal(f.node.materials.input(file.materialId,['extracted-text'])!.dependencies[0].state,'failed');
+  f.node.memoryPipeline.wakeInputs([file.materialId]);await f.node.memoryPipeline.tickInputs();const failed=await f.node.memoryPipeline.run(jobId);
+  assert.equal(failed.status,'failed');assert.equal(failed.inputPlans?.blocked,1);assert.equal(failed.completedBatches,1);
+  assert.deepEqual(f.node.memories.get(body.id),body);
+  const later=await f.upload('text/plain','generated-later');await f.organize();
+  await f.restart();f.control.failASR=false;f.node.processing.retry(file.id);await f.node.processing.tick();await f.organize();
+  const result=await f.node.memoryPipeline.retry(jobId);assert.equal(result.status,'completed');assert.equal(result.memoryIds.length,2);
+  assert.equal(result.inputPlans?.total,2);assert.equal(result.inputPlans?.completed,2);
+  assert.equal(result.batches.find(b=>b.id===bodyBatch.id)!.attempts,bodyBatch.attempts);
+  assert.deepEqual(f.node.memories.get(body.id),body);assert.equal(result.batches.some(b=>b.strategy?.recipe.id===extractedCoding.id),false);
+  const laterIds=f.node.materials.evidenceIds(later.materialId);assert.equal(result.evidenceIds.some(id=>laterIds.includes(id)),false);
+  assert.equal(f.count('extract'),2);assert.equal(f.count('review'),2);assert.equal(f.asrCalls(),2);
 });
 
 test('a multi-batch consumer cannot read other batches through its shared material input pin',async t=>{

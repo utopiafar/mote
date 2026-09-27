@@ -14,6 +14,25 @@ test('cumulative Codex tokens are priced independently of the unknown underlying
   const summary=usageTotals([{id:'codex',provider:'codex',model:'fixture',operation:'query',createdAt:new Date().toISOString(),durationMs:1,status:'completed',currency:'USD',estimatedCost:2.15,tokens:cumulative}]);
   assert.equal(summary.totalTokens,1100000);assert.equal(summary.unknownUsage,0);assert.equal(summary.unknownRequestCounts,1);assert.equal(summary.requests,0);
 });
+test('startup recovery marks only unclosed cumulative usage incomplete and preserves reported quantities',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mote-usage-recovery-'));let store=new Store(dir);const ledger=new UsageLedger(store);
+  t.after(()=>{store.close();rmSync(dir,{recursive:true,force:true});});
+  const cumulative={...tokens,requests:0,reportedRequests:0,measurement:'thread_cumulative' as const,complete:true};
+  ledger.setPrice(price);
+  ledger.start('fixture','fixture-model','unclosed-complete').update(cumulative);
+  ledger.start('fixture','fixture-model','unclosed-partial').update({...cumulative,complete:false});
+  ledger.start('fixture','fixture-model','unclosed-missing');
+  for(const status of ['failed','completed'] as const){const meter=ledger.start('fixture','fixture-model','closed-'+status);meter.update(cumulative);meter.finish(status);}
+  const read=()=>Object.fromEntries(store.db.prepare('SELECT json FROM model_usage').all().map(row=>{const receipt=JSON.parse(String(row.json));return [receipt.operation,receipt];}));
+  const before=read();store.close();store=new Store(dir);const recovered=new UsageLedger(store),after=read();
+  for(const operation of ['unclosed-complete','unclosed-partial'])assert.deepEqual(after[operation],{...before[operation],status:'failed',estimatedCost:null,tokens:{...before[operation].tokens,complete:false}});
+  assert.deepEqual(after['unclosed-missing'],{...before['unclosed-missing'],status:'failed',estimatedCost:null});
+  assert.equal(Object.hasOwn(after['unclosed-missing'],'tokens'),false);
+  for(const status of ['failed','completed'])assert.deepEqual(after['closed-'+status],before['closed-'+status]);
+  const day=new Date().toISOString().slice(0,10),summary=recovered.summary(day,day,'UTC');
+  assert.equal(summary.total.totalTokens,4*cumulative.totalTokens);assert.equal(summary.total.unknownUsage,3);assert.equal(summary.total.unpriced,3);assert.equal(summary.total.costs.USD,4.3);
+  new UsageLedger(store);assert.deepEqual(read(),after,'repeated startup must preserve already recovered receipts');
+});
 test('disjoint token buckets, incomplete costs, price snapshots and timezone days',t=>{
   assert.equal(estimateCost(tokens,price),2.15);
   assert.equal(estimateCost({...tokens,reportedRequests:1},price),null);

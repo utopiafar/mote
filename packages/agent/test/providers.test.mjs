@@ -1,6 +1,9 @@
+import {generatedImageRead,digest,assertRegionSchema} from './image-region-fixture.mjs';
+import {generatedMaterialPages,materialRef} from './material-page-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
+import sharp from 'sharp';
 import {createAgent, createRuntimePatch, validateModelOptions, AgentConfigurationError, AgentProviderError} from '../dist/index.js';
 import {TOOL_NAMES} from '../dist/bridge.js';
 
@@ -9,9 +12,9 @@ const reader = {search:async()=>[record], timeline:async()=>[record], evidence:a
 const answer = JSON.stringify({answer:`The generated note contains archive evidence. [${record.id}]`, citationIds:[record.id]});
 const send = (res, value) => res.write(`${value.type ? `event: ${value.type}\n` : ''}data: ${JSON.stringify(value)}\n\n`);
 
-function respond(res, protocol, stage, final = answer) {
+function respond(res, protocol, stage, final = answer, actions) {
   res.writeHead(200, {'Content-Type':'text/event-stream'});
-  const tool = stage === 0 ? {name:'search_context', args:{query:'synthetic fixture'}} : stage === 1 ? {name:'evidence', args:{ids:[record.id]}} : undefined;
+  const tool = actions ? actions[stage] : stage === 0 ? {name:'search_context', args:{query:'synthetic fixture'}} : stage === 1 ? {name:'evidence', args:{ids:[record.id]}} : undefined;
   if (protocol === 'openai-completions') {
     if (stage === 0) {
       send(res, {id:`fixture-${stage}`,choices:[{index:0,delta:{reasoning_content:'Synthetic reasoning, '},finish_reason:null}]});
@@ -59,12 +62,12 @@ function respond(res, protocol, stage, final = answer) {
   }
 }
 
-async function withProvider(protocol, run, options = {}) {
+async function withProvider(protocol, run, options = {}, actions, final = answer) {
   const requests=[];
   const server=createServer(async(req,res)=>{
     let raw='';for await (const chunk of req) raw+=chunk;
     requests.push({url:req.url,headers:req.headers,body:JSON.parse(raw)});
-    respond(res, protocol, requests.length-1);
+    respond(res, protocol, requests.length-1, final, actions);
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const agent=createAgent({reader,protocol,baseUrl:`http://127.0.0.1:${server.address().port}${protocol === 'anthropic-messages' ? '' : '/v1'}`,apiKey:'generated-provider-secret',model:'fixture-model-not-in-catalog',timeoutMs:45000,headers:{'x-generated-header':'fixture-header-secret'},extraBody:protocol === 'google-generative-ai' ? {generationConfig:{temperature:0.23}} : {temperature:0.23},...options});
@@ -72,6 +75,50 @@ async function withProvider(protocol, run, options = {}) {
 }
 
 for (const protocol of ['openai-completions','openai-responses','anthropic-messages','google-generative-ai']) {
+  test(`real Harness ${protocol} receives one budget-fitted material result with its continuation`,{timeout:60000},async()=>{
+    const fixture=generatedMaterialPages();
+    const actions=[{name:'material_catalog',args:{}},{name:'material_read',args:{ref:materialRef,length:10000}}];
+    await withProvider(protocol,async(agent,requests)=>{
+      const result=await agent.query({question:'Read a generated material page'});
+      assert.equal(requests.length,3,'local fitting does not request an extra provider turn');
+      assert.deepEqual(fixture.attempts.map(args=>args.length),[10000,5000]);
+      const pages=[];const walk=value=>{if(typeof value==='string'){try{const parsed=JSON.parse(value.split('\n')[0]);if(parsed.data?.pagination)pages.push(parsed);}catch{}}else if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')Object.values(value).forEach(walk);};walk(requests[2].body);
+      assert.equal(pages.length,1);assert.ok(JSON.stringify(pages[0]).length<=16000);
+      assert.equal(pages[0].data.pagination.limitedBy,'host_budget');assert.equal(pages[0].data.textRange.nextOffset,5000);
+      assert.deepEqual(result.trace.at(-1).materialPage,{readAttempts:2,requestedLength:10000,returnedLength:5000,budgetLimited:true});
+    },{reader:fixture.reader},actions,JSON.stringify({answer:'Generated mechanical result.',citationIds:[]}));
+  });
+  test(`real Harness ${protocol} appends distinct images and successful duplicate metadata`, {timeout:60000}, async()=>{
+    const images=await Promise.all(['#abcabc','#bcabca'].map(background=>sharp({create:{width:8,height:8,channels:3,background}}).png().toBuffer().then(bytes=>bytes.toString('base64'))));
+    const parent={...record,provenance:{document:{attachments:[{id:'image-a',mimeType:'image/png'},{id:'image-b',mimeType:'image/png'}]}}};let reads=0;
+    const imageReader={...reader,search:async()=>[parent],evidence:async()=>[parent],readImage:async args=>{reads++;return {mimeType:'image/png',data:images[args.attachmentId==='image-b'?1:0]};}};
+    const actions=[{name:'search_context',args:{}},{name:'evidence',args:{ids:[record.id]}},...['image-a','image-a','image-b'].map(attachmentId=>({name:'read_image',args:{id:record.id,attachmentId}}))];
+    await withProvider(protocol,async(agent,requests)=>{
+      assert.equal((await agent.query({question:'Inspect generated images'})).citations[0].id,record.id);assert.equal(requests.length,6);assert.equal(reads,3);
+      const occurrences=(body,image)=>JSON.stringify(body).split(image).length-1;
+      for(const request of requests.slice(0,3))for(const image of images)assert.equal(occurrences(request.body,image),0);
+      assert.equal(occurrences(requests[3].body,images[0]),1,'first read supplies real pixels');
+      assert.equal(occurrences(requests[4].body,images[0]),1,'history retains the first image without appending a duplicate');assert.equal(occurrences(requests[4].body,images[1]),0);assert.match(JSON.stringify(requests[4].body),/already_disclosed/);
+      for(const image of images)assert.equal(occurrences(requests[5].body,image),1,'a distinct attachment still supplies its pixels');
+      assert.ok(!JSON.stringify(requests).includes('imageDelivery'));assert.ok(!JSON.stringify(requests).includes('_image_delivery'),'host receipts never enter model tools or content');
+    },{reader:imageReader},actions);
+  });
+  test(`real Harness ${protocol} preserves nested region schema, metadata and first-payload budgets`,{timeout:60000},async()=>{
+    const bytes=await sharp({create:{width:20,height:30,channels:3,background:'#34cabc'}}).png().toBuffer(),parent={...record,provenance:{document:{attachments:[{id:'image-a'}]}}};
+    const input={id:record.id,attachmentId:'image-a',expectedImageSha256:digest(bytes),region:{x:2,y:3,width:6,height:8}};
+    const output=await generatedImageRead(bytes,input),actions=[{name:'search_context',args:{}},{name:'evidence',args:{ids:[record.id]}},{name:'read_image',args:{id:record.id,attachmentId:'image-a',view:'metadata'}},{name:'read_image',args:input},{name:'read_image',args:input}];
+    const imageReader={...reader,search:async()=>[parent],evidence:async()=>[parent],readImage:args=>generatedImageRead(bytes,args)};
+    await withProvider(protocol,async(agent,requests)=>{
+      const answer=await agent.query({question:'Generated region transport'});assert.equal(requests.length,6);assert.equal(answer.citations[0].id,record.id);
+      const body=requests[0].body,tools=protocol==='google-generative-ai'?body.tools.flatMap(t=>t.functionDeclarations):body.tools.map(t=>t.function??t),tool=tools.find(t=>t.name==='read_image');
+      assertRegionSchema(assert,tool.parameters??tool.parametersJsonSchema??tool.input_schema);
+      for(const request of requests.slice(0,4))assert.ok(!JSON.stringify(request.body).includes(output.data),'metadata does not disclose pixels');
+      assert.equal(JSON.stringify(requests[4].body).split(output.data).length-1,1);assert.equal(JSON.stringify(requests[5].body).split(output.data).length-1,1);
+      const texts=[];const walk=value=>{if(typeof value==='string'){try{const parsed=JSON.parse(value.split('\n')[0]);if(parsed.imageView)texts.push(parsed);}catch{}}else if(Array.isArray(value))value.forEach(walk);else if(value&&typeof value==='object')Object.values(value).forEach(walk);};walk(requests[4].body);
+      const delivered=texts.find(t=>t.imageView.delivery==='prepared');assert.ok(delivered);assert.deepEqual(delivered.imageView.region,input.region);assert.equal(delivered.imageBudget.remainingPayloads,3);assert.ok(delivered.hostBudget.remainingCalls>0);
+      assert.match(JSON.stringify(requests[5].body),/already_disclosed/);assert.deepEqual(answer.trace.filter(t=>t.tool==='read_image').map(t=>t.imageView.delivery),['metadata','prepared','already_disclosed']);
+    },{reader:imageReader},actions);
+  });
   test(`real Harness ${protocol} preserves read-only multi-round tools, evidence and native replay`, {timeout:60000}, async()=>{
     await withProvider(protocol, async(agent, requests)=>{
       const result=await agent.query({question:'Read the generated archive fixture.',deviceId:'fixture-device'});

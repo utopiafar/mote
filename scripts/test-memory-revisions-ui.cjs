@@ -1,18 +1,85 @@
 require('./fixture-language.cjs');
-/** Real renderer/API, generated versioned memories only. No model or personal archive. */
-const {app,BrowserWindow}=require('electron'),{mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync}=require('node:fs'),{tmpdir}=require('node:os'),{join,resolve}=require('node:path'),{pathToFileURL}=require('node:url'),{spawn}=require('node:child_process'),{randomBytes}=require('node:crypto'),assert=require('node:assert/strict');
-const repo=resolve(__dirname,'..'),root=mkdtempSync(join(tmpdir(),'mote-memory-ui-')),out=join(repo,'.mote/memory-revisions-ui');mkdirSync(out,{recursive:true});app.setPath('userData',join(root,'browser'));app.on('window-all-closed',()=>{});let server,window;
-const delay=ms=>new Promise(r=>setTimeout(r,ms));async function until(fn,label){const end=Date.now()+20000;while(Date.now()<end){if(await fn())return;await delay(80);}throw Error('Timeout: '+label);}
-async function run(){await app.whenReady();const token=randomBytes(32).toString('hex'),runner=join(root,'server.mjs'),ready=join(root,'ready');
-writeFileSync(runner,`import {buildApp} from ${JSON.stringify(pathToFileURL(join(repo,'apps/server/dist/app.js')).href)};import {writeFileSync} from 'node:fs';
-const node=await buildApp(${JSON.stringify({dataDir:join(root,'data'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'})},{agent:{configured:false,query:async()=>{throw Error('Fixture must not invoke a model');},close:async()=>{}}});node.sources.register({id:'generated',name:'Generated source',kind:'custom',deviceId:'fixture',platform:'import'});const text='Generated owner: for Aurora use written decisions.',r=await node.sources.upsert('generated',{externalId:'one',revision:'1',observedAt:new Date().toISOString(),kind:'message',layer:'original',text});
-const save=(title,relations)=>node.memories.extract({answer:JSON.stringify({memories:[{title,statement:'Generated Aurora policy ['+r.id+']',uncertainty:'Aurora only',admission:{layer:'memory',reason:'Explicit owner policy',scope:'Aurora',attribution:'user'},evidenceIds:[r.id],evidence:[{id:r.id,quote:text}],relations}]}),citations:[{id:r.id,capturedAt:new Date().toISOString(),appName:'Generated',excerpt:text}],trace:[],runId:'fixture'},'fixture').items[0];const old=node.memories.publish(save('旧版合成规则').id);save('新版合成规则',[{kind:'supersedes',memoryId:old.id,fingerprint:old.fingerprint,version:old.version}]);await node.app.listen({host:'127.0.0.1',port:0});writeFileSync(${JSON.stringify(ready)},node.app.server.address().port.toString());process.on('SIGTERM',async()=>{await node.app.close();process.exit(0);});`);
-server=spawn('node',[runner],{cwd:repo,env:Object.fromEntries(['PATH','HOME','TMPDIR','LANG'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])),stdio:['ignore','ignore','pipe']});let stderr='';server.stderr.on('data',c=>stderr+=c);await until(()=>{if(server.exitCode!==null)throw Error(stderr);return existsSync(ready);},'server');const url='http://127.0.0.1:'+readFileSync(ready,'utf8');
-window=new BrowserWindow({width:1280,height:1000,show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});const wc=window.webContents,js=s=>wc.executeJavaScript(s),click=text=>until(()=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)return false;b.click();return true;})()`),text);
-const request=async(path,body)=>{const response=await fetch(url+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});assert.equal(response.ok,true);return response.json();};
-await window.loadURL(url);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token}))});location.reload()`);await click('资料库');await click('记忆');await until(()=>js(`document.querySelectorAll('.workspace-select').length===2`),'memory list');
-await js(`[...document.querySelectorAll('.workspace-select')].find(e=>e.textContent.includes('新版合成规则')).click()`);await until(()=>js(`document.querySelector('.memory-detail')?.textContent.includes('确认后才应用此关系')`),'relation preview');await click('确认这条记忆');await until(async()=>{const p=await request('/api/memories?includeHistory=true');return p.items.find(m=>m.title==='新版合成规则')?.status==='published';},'published');
-await click('纠正并确认');await until(()=>js(`!!document.querySelector('form.review-notes textarea')`),'correction form');await js(`(()=>{const e=document.querySelector('form.review-notes textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'用户确认：Aurora 规则只适用于批量操作。');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);assert.equal(await js('document.documentElement.scrollWidth<=innerWidth'),true);writeFileSync(join(out,'correction.png'),(await wc.capturePage()).toPNG());await click('保存纠正并替代旧版本');await until(()=>js(`document.querySelector('.memory-detail')?.textContent.includes('这是用户主动纠正并确认的版本')`),'owner correction');
-const page=await request('/api/memories?includeHistory=true'),corrected=page.items.find(m=>m.correction);assert.ok(corrected);assert.equal(page.items.length,3);assert.equal((await request('/api/memories')).items.length,1);const detail=await request('/api/memories/'+corrected.id);assert.equal(detail.model,'owner');assert.ok(detail.statement.includes('批量操作'));
-await js(`document.querySelector('.memory-search input[type="checkbox"]').click()`);await until(()=>js(`document.querySelectorAll('.workspace-select').length===3`),'history rows');await js(`document.querySelectorAll('.workspace-select')[0].click()`);await click('替代的旧记忆');await until(()=>js(`document.querySelector('.memory-detail')?.textContent.includes('查看替代版本')`),'historical memory');await click('查看替代版本');await until(()=>js(`document.querySelector('.memory-detail')?.textContent.includes('用户主动纠正')`),'return current');window.setSize(430,1000);await delay(100);assert.equal(await js('document.documentElement.scrollWidth<=innerWidth'),true);writeFileSync(join(out,'history-mobile.png'),(await wc.capturePage()).toPNG());console.log(JSON.stringify({passed:true,checks:['version-bound publish','relation preview','owner correction through real API','current/history listing','old/new navigation','mobile layout'],personalDataUsed:false}));}
-run().catch(async e=>{console.error(e);if(window){writeFileSync(join(out,'failure.png'),(await window.webContents.capturePage()).toPNG());console.error(await window.webContents.executeJavaScript('document.body.innerText'));}process.exitCode=1;}).finally(async()=>{window?.destroy();if(server?.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('close',r)),delay(3000)]);}rmSync(root,{recursive:true,force:true});app.exit(process.exitCode||0);});
+/** Real renderer/API with generated memories, sources and review receipts. No live model or personal archive. */
+const {app,BrowserWindow}=require('electron');
+const {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync}=require('node:fs');
+const {tmpdir}=require('node:os'),{join,resolve}=require('node:path'),{pathToFileURL}=require('node:url');
+const {spawn}=require('node:child_process'),{randomBytes}=require('node:crypto'),assert=require('node:assert/strict');
+const repo=resolve(__dirname,'..'),root=mkdtempSync(join(tmpdir(),'mote-memory-ui-'));
+const outputRoot=process.env.MOTE_MEMORY_UI_OUTPUT||join(repo,'.mote/memory-revisions-ui');mkdirSync(outputRoot,{recursive:true});
+const out=mkdtempSync(join(outputRoot,'run-'));
+app.setPath('userData',join(root,'browser'));app.on('window-all-closed',()=>{});
+let server,window;
+const report={passed:false,personalDataUsed:false,liveModel:false,reviewReceipts:'generated fixture',physicalDevicesTested:false,checks:[],screenshots:out};
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+async function until(fn,label){const end=Date.now()+20000;while(Date.now()<end){if(await fn())return;await delay(80);}throw Error('Timeout: '+label);}
+function check(name,value){assert.ok(value,name);report.checks.push(name);}
+async function run(){
+ await app.whenReady();const token=randomBytes(32).toString('hex'),runner=join(root,'server.mjs'),ready=join(root,'ready');
+ const config={dataDir:join(root,'data'),token,tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:20000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent'};
+ writeFileSync(runner,`import {buildApp} from ${JSON.stringify(pathToFileURL(join(repo,'apps/server/dist/app.js')).href)};import {writeFileSync} from 'node:fs';import {createHash} from 'node:crypto';
+const node=await buildApp(${JSON.stringify(config)},{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('Fixture must not invoke a model');},close:async()=>{}}});
+node.sources.register({id:'generated',name:'Generated source',kind:'custom',deviceId:'fixture',platform:'import'});
+const text='Generated owner: for Aurora use written decisions. Update: for Aurora batch operations use a written checklist. Archive reference notes for Aurora.',r=await node.sources.upsert('generated',{externalId:'one',revision:'1',observedAt:new Date().toISOString(),kind:'message',layer:'original',text});
+const statements={'旧版合成规则':'For Aurora use written decisions.','新版合成规则':'For Aurora batch operations use a written checklist.','旧版待重新处理记录':'Archive reference notes for Aurora.'};
+const save=(title,relations)=>{const answer=JSON.stringify({memories:[{title,statement:statements[title]+' ['+r.id+']',uncertainty:'Aurora only',admission:{layer:'memory',reason:'Explicit owner policy',scope:'Aurora',attribution:'user'},evidenceIds:[r.id],evidence:[{id:r.id,quote:text}],relations}]});return node.memories.extract({answer,citations:[{id:r.id,capturedAt:new Date().toISOString(),appName:'Generated',excerpt:text}],trace:[],runId:'fixture-review'},'fixture',{reviewReceipt:{policy:'bounded-exact-review@1',decision:'independent',draftRunId:'fixture-draft',reviewRunId:'fixture-review',checkedAt:new Date().toISOString(),resultHash:createHash('sha256').update(answer).digest('hex'),deletionSnapshot:node.memories.deletions.snapshot()}}).items[0];};
+const old=save('旧版合成规则');const current=save('新版合成规则',[{kind:'supersedes',memoryId:old.id,fingerprint:old.fingerprint,version:old.version}]);
+const legacy=save('旧版待重新处理记录');legacy.status='proposed';delete legacy.reviewReceipt;delete legacy.reviewRunId;node.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(legacy),legacy.id);
+let failNext='';node.app.addHook('onRequest',async(req,reply)=>{if(failNext==='correct'&&req.url.endsWith('/correct')||failNext==='delete'&&req.method==='DELETE'&&req.url.startsWith('/api/memories/')){failNext='';return reply.code(503).send({error:'Generated transient save failure'});}});
+node.app.post('/api/fixture/fail',async req=>{failNext=req.body.action;return {ok:true};});
+node.app.get('/api/fixture/state',async()=>({old:node.memories.get(old.id),currentId:current.id,legacyId:legacy.id,originalAvailable:node.memories.readEvidence([r.id]).length===1}));
+await node.app.listen({host:'127.0.0.1',port:0});writeFileSync(${JSON.stringify(ready)},node.app.server.address().port.toString());process.once('SIGTERM',async()=>{await node.app.close();process.exit(0);});`,{mode:0o600});
+ server=spawn(process.execPath,[runner],{cwd:repo,env:{...Object.fromEntries(['PATH','HOME','TMPDIR','LANG'].filter(k=>process.env[k]).map(k=>[k,process.env[k]])),ELECTRON_RUN_AS_NODE:'1'},stdio:['ignore','ignore','pipe']});
+ let stderr='';server.stderr.on('data',c=>stderr=(stderr+c).slice(-12000));
+ await until(()=>{if(server.exitCode!==null)throw Error(stderr);return existsSync(ready);},'fixture server');const url='http://127.0.0.1:'+readFileSync(ready,'utf8');
+ const request=async(path,body)=>{const response=await fetch(url+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});assert.equal(response.ok,true,`${path}: ${response.status}`);return response.json();};
+ const state=await request('/api/fixture/state');
+ check('reviewed extraction is active without owner publish', (await request('/api/memories/'+state.currentId)).status==='published');
+ check('reviewed relationship automatically supersedes the previous version',state.old.supersededBy===state.currentId);
+ window=new BrowserWindow({width:1280,height:1000,show:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
+ const wc=window.webContents,js=s=>wc.executeJavaScript(s);
+ const click=text=>until(()=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)return false;b.click();return true;})()`),'button '+text);
+ const select=async title=>{await js(`(()=>{const e=[...document.querySelectorAll('.workspace-select')].find(e=>e.textContent.includes(${JSON.stringify(title)}));if(!e)throw Error('Missing memory');e.click();})()`);await until(()=>js(`document.querySelector('.memory-detail h2')?.textContent===${JSON.stringify(title)}`),'detail '+title);};
+ const screenshot=async name=>{await js(`document.querySelector('.memory-detail').scrollIntoView({block:'start',behavior:'instant'})`);await delay(120);check('no horizontal overflow: '+name,await js('document.documentElement.scrollWidth<=innerWidth'));writeFileSync(join(out,name+'.png'),(await wc.capturePage()).toPNG());};
+ await window.loadURL(url);await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({token}))});location.reload()`);await click('资料库');await click('记忆');
+ await until(()=>js(`document.querySelectorAll('.workspace-select').length===2`),'current and legacy memory list');
+ check('no confirmation queue in the default navigation',await js(`!document.querySelector('.memory-filters').textContent.includes('待确认')&&!document.querySelector('.memory-filters').textContent.includes('已确认')`));
+ await select('旧版待重新处理记录');
+ check('legacy records explain reprocessing without asking for confirmation',await js(`document.querySelector('.memory-detail [role="status"]')?.textContent.includes('无需逐条确认')&&document.querySelector('.memory-detail .status-label')?.textContent==='待重新处理'`));
+ check('legacy records have no publish button',await js(`![...document.querySelectorAll('.memory-detail button')].some(b=>b.textContent==='确认这条记忆')`));
+ await select('新版合成规则');
+ check('active memory is labeled active in the renderer',await js(`document.querySelector('.memory-detail .status-label')?.textContent==='已生效'`));
+ check('automatic relation has no confirmation gate',await js(`document.querySelector('.memory-detail').textContent.includes('替代的旧记忆')&&!document.querySelector('.memory-detail').textContent.includes('确认后才')`));
+ await screenshot('automatic-memory-desktop');
+ await click('纠正记忆');await until(()=>js(`!!document.querySelector('form.review-notes textarea')`),'correction form');
+ await js(`(()=>{const e=document.querySelector('form.review-notes textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'用户补充：Aurora 规则只适用于批量操作。');e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+ await request('/api/fixture/fail',{action:'correct'});await click('保存纠正并替代旧版本');
+ await until(()=>js(`document.querySelector('[role="alert"]')?.textContent.includes('Generated transient save failure')`),'correction failure shown');
+ check('failed correction preserves editable owner text',await js(`document.querySelector('form.review-notes textarea')?.value.includes('批量操作')`));
+ await click('保存纠正并替代旧版本');await until(()=>js(`document.querySelector('.memory-detail')?.textContent.includes('这是用户主动纠正的版本')`),'owner correction saved');
+ const page=await request('/api/memories?includeHistory=true'),corrected=page.items.find(m=>m.correction);
+ check('retry saves one active owner correction',corrected&&page.items.filter(m=>m.correction).length===1&&corrected.status==='published');
+ const detail=await request('/api/memories/'+corrected.id);check('owner correction becomes original evidence',detail.model==='owner'&&detail.statement.includes('批量操作')&&detail.evidenceIds.length===1);
+ check('current listing hides superseded memories',(await request('/api/memories')).items.length===2);
+ await js(`document.querySelector('.memory-search input[type="checkbox"]').click()`);await until(()=>js(`document.querySelectorAll('.workspace-select').length===4`),'history rows');
+ await select(corrected.title);await click('替代的旧记忆');await until(()=>js(`document.querySelector('.memory-detail')?.textContent.includes('查看替代版本')`),'historical memory');
+ check('superseded history is not labeled active',await js(`document.querySelector('.memory-detail .status-label')?.textContent==='已由新版本替代'`));
+ await click('查看替代版本');await until(()=>js(`document.querySelector('.memory-detail')?.textContent.includes('这是用户主动纠正的版本')`),'return current');
+ check('history and current versions are linked in both directions',true);
+ check('owner corrections are not represented as model conclusions',await js(`document.querySelector('.memory-detail').textContent.includes('这是你的主动纠正')&&!document.querySelector('.memory-detail').textContent.includes('模型未补充不确定性')`));
+ window.setSize(430,1000);await screenshot('history-mobile');
+ await select('旧版待重新处理记录');await click('删除记忆');
+ check('deletion explains original retention and evidence-specific suppression',await js(`document.querySelector('.memory-detail .memory-actions')?.textContent.includes('不会再用同一批旧证据生成这个结论，有新证据时可重新判断')`));
+ await request('/api/fixture/fail',{action:'delete'});await click('确认删除');await until(()=>js(`document.querySelector('[role="alert"]')?.textContent.includes('Generated transient save failure')`),'delete failure shown');
+ check('failed deletion retains the memory and retry controls',await js(`document.querySelector('.memory-detail h2')?.textContent==='旧版待重新处理记录'&&[...document.querySelectorAll('.memory-actions button')].some(b=>b.textContent==='确认删除'&&!b.disabled)`));
+ await click('确认删除');await until(()=>js(`!document.querySelector('.memory-detail')&&document.querySelectorAll('.workspace-select').length===3`),'delete retry succeeds');
+ check('deleted memory disappears from owner API',!(await request('/api/memories?includeHistory=true')).items.some(m=>m.id===state.legacyId));
+ check('deleting a memory retains its original source',(await request('/api/fixture/state')).originalAvailable);
+ await js(`localStorage.setItem('mote.language','en');location.reload()`);await click('Library');await click('Memories');await until(()=>js(`document.querySelectorAll('.workspace-select').length===1`),'English current list');await select(corrected.title);
+ check('English view translates activation and correction while retaining source text',await js(`document.querySelector('.memory-detail .status-label')?.textContent==='Active'&&[...document.querySelectorAll('.memory-detail button')].some(b=>b.textContent==='Correct memory')&&document.querySelector('.memory-detail').textContent.includes('批量操作')`));
+ window.setSize(1280,1000);await screenshot('automatic-memory-english');
+ report.passed=true;writeFileSync(join(out,'report.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
+}
+run().catch(async error=>{report.error=String(error);console.error(error);if(window){writeFileSync(join(out,'failure.png'),(await window.webContents.capturePage()).toPNG());console.error((await window.webContents.executeJavaScript('document.body.innerText')).slice(-5000));}writeFileSync(join(out,'report.json'),JSON.stringify(report,null,2)+'\n');process.exitCode=1;}).finally(async()=>{
+ window?.destroy();if(server?.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('close',r)),delay(3000)]);if(server.exitCode===null)server.kill('SIGKILL');}
+ rmSync(root,{recursive:true,force:true});app.exit(process.exitCode||0);
+});

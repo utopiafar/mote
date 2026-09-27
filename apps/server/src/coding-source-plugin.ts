@@ -129,7 +129,7 @@ const organizeAppend=(source:SourceConnection,identity:string,snapshot:RecipeSna
   return {mode:'append',baseRevision:prior.revision,reuseBlocks,id:prior.id,kind:'mote.coding-session',schemaVersion:prior.schemaVersion,
     title:prior.title,origin:{...prior.origin,...(newLast?{lastAt:newLast}:{})},blocks:body.blocks,
     members:[{id:'archive',kind:'archive',ref:'archive:'+archiveHash([source.id,identity])}],
-    coverage:{state:'complete'},artifacts:[{key:'conversation',state:'ready',revision:archiveHash([conversation?.revision??'',records.map(item=>[item.externalId,item.revision])])}],
+    coverage:{state:'complete'},artifacts:records.length?[{key:'conversation',state:'ready',revision:archiveHash([conversation?.revision??'',records.map(item=>[item.externalId,item.revision])])}]:prior.artifacts,
     fidelity:prior.fidelity,retention:prior.retention};
 };
 

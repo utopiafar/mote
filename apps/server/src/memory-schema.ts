@@ -27,6 +27,7 @@ export const memoryAdmissionSchema=z.object({
 export const memoryReviewReceiptSchema=z.object({
   strategy:memoryStrategyPinSchema.optional(),
   policy:z.literal('bounded-exact-review@1'),decision:z.enum(['independent','reused','empty']),
+  deletionSnapshot:z.string().regex(/^[a-f0-9]{64}$/).optional(),resultHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),
   draftRunId:z.string().max(200),reviewRunId:z.string().max(200).optional(),
   checkedAt:timestamp,contextTime:timestamp.optional(),inputHash:z.string().regex(/^[a-f0-9]{64}$/).optional(),model:z.string().max(512).optional(),
 }).strict();
@@ -43,7 +44,7 @@ export const memorySchema=z.object({
   id:z.string().uuid(),tier:z.enum(['episode','consolidated']).optional(),kind:z.enum(['episodic','semantic','procedural']).optional(),relatedMemoryIds:z.array(z.string().uuid()).max(50).optional(),validFrom:timestamp.optional(),validUntil:timestamp.optional(),title:z.string().max(160),statement:z.string().max(6000),uncertainty:z.string().max(2000),
   evidenceIds:z.array(z.string().uuid()).min(1).max(30),evidence:z.array(memoryEvidenceSchema).max(100).optional(),
   createdAt:timestamp,updatedAt:timestamp.optional(),status:z.enum(['proposed','published','stale']),
-  staleReason:z.enum(['evidence_changed','restored_archive']).optional(),model:z.string().max(200),runId:z.string().max(200),
+  staleReason:z.enum(['evidence_changed','restored_archive','memory_deleted']).optional(),model:z.string().max(200),runId:z.string().max(200),
   skillVersion:z.string().max(200).optional(),fingerprint:z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 export type Memory=z.infer<typeof memorySchema>;

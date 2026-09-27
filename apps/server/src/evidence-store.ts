@@ -11,6 +11,7 @@ import { moteText } from './i18n.js';
 import {textSearch} from './text-search.js';
 import {fileSchema} from './file-schema.js';
 import {systemEventText,sourceContentTime} from '@mote/shared';
+import {MemoryDeletions} from './memory-deletions.js';
 import {memorySchema} from './memory-schema.js';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
@@ -302,7 +303,7 @@ export class EvidenceStore {
     }catch(error){this.db.exec('ROLLBACK');this.sweep();throw error;}
   }
   async importArchive(raw:unknown) {
-    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[]};
+    const archive=raw as {version?:number;captures?:unknown[];sources?:unknown[];sourceHeads?:unknown[];sourceVersions?:unknown[];memories?:unknown[];memoryDeletions?:unknown[];files?:unknown[];captureFiles?:unknown[];perceptionResults?:unknown[];todos?:unknown[]};
     if(archive?.version!==1||!Array.isArray(archive.captures)||archive.captures.length>20000)throw new StoreError('Expected Mote archive version 1 (maximum 20,000 records per import)');
     const connections=(archive.sources??[]).map(v=>{const {createdAt,updatedAt,status,...fields}=v as Record<string,unknown>;const value=sourceConnectionSchema.parse(fields);return {...value,createdAt:typeof createdAt==='string'?createdAt:new Date().toISOString(),updatedAt:typeof updatedAt==='string'?updatedAt:new Date().toISOString()};});
     if(connections.length>500)throw new StoreError('Too many source connections');
@@ -347,6 +348,7 @@ export class EvidenceStore {
         }
       }
       for(const m of memoryEntries){if(m.evidenceIds.some(id=>!this.evidence([id]).length))throw new StoreError('Memory archive is missing supporting evidence');for(const e of m.evidence??[]){const record=this.evidence([e.id])[0];if(!m.evidenceIds.includes(e.id)||!record||(e.quote!==undefined&&(e.offset===undefined||e.length!==e.quote.length||record.ocrText.slice(e.offset,e.offset+e.length)!==e.quote)))throw new StoreError('Memory archive evidence quote mismatch');}this.db.prepare('INSERT OR IGNORE INTO memories(id,created_at,json) VALUES(?,?,?)').run(m.id,m.createdAt,JSON.stringify({...m,status:'stale',staleReason:'restored_archive'}));for(const id of m.evidenceIds)this.db.prepare('INSERT OR IGNORE INTO memory_dependencies(memory_id,evidence_id) VALUES(?,?)').run(m.id,id);}
+      if(archive.memoryDeletions!==undefined)new MemoryDeletions(this,ids=>this.evidence(ids)).restore(archive.memoryDeletions);
       // Merging individually valid archives must still respect the destination's total limits.
       if(Number(this.db.prepare('SELECT COUNT(*) AS n FROM source_connections').get()!.n)>500)throw new StoreError('Maximum 500 sources',413);
       for(const {requestHash,...task} of todoEntries){
@@ -635,7 +637,8 @@ export class EvidenceStore {
     if(estimated>maxBytes||stats.captures>20000)throw new StoreError('Archive too large for HTTP export; use npm run backup for a consistent database backup',413);
     const rows=this.db.prepare('SELECT * FROM captures ORDER BY captured_at,id').all() as unknown as Row[];
     const captures=rows.map(row=>{const c=JSON.parse(row.json);return {...c,receivedAt:row.received_at,...(row.blob_hash?{imageMime:row.mime,imageBase64:this.readBlob(row.blob_hash).toString('base64')}:{}),blobHash:row.blob_hash};});
-    const archive={todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
+    const memoryDeletions=this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='memory_deletions'").get()?new MemoryDeletions(this,ids=>this.evidence(ids)).export():[];
+    const archive={memoryDeletions,todos:this.db.prepare('SELECT json,request_hash FROM todos ORDER BY id').all().map(row=>({...JSON.parse(String(row.json)),requestHash:row.request_hash})),perceptionResults:this.db.prepare("SELECT capture_id,kind,json,current FROM perception_results WHERE kind='ocr'").all(),version:1,exportedAt:new Date().toISOString(),captures,sources:(this.db.prepare('SELECT json FROM source_connections').all() as {json:string}[]).map(r=>JSON.parse(r.json)),sourceVersions:this.db.prepare('SELECT * FROM source_versions WHERE capture_id IN (SELECT id FROM captures)').all(),sourceHeads:this.db.prepare('SELECT * FROM source_heads WHERE capture_id IN (SELECT id FROM captures)').all(),memories:(this.db.prepare('SELECT json FROM memories').all() as {json:string}[]).map(r=>JSON.parse(r.json)),files:archivedFiles.exportPortable(),captureFiles:this.db.prepare('SELECT capture_id AS captureId,file_id AS fileId FROM capture_files ORDER BY capture_id,file_id').all()};
     if(Buffer.byteLength(JSON.stringify(archive))>maxBytes)throw new StoreError('Expanded archive exceeds the export limit; use npm run backup',413);
     return archive;
   }

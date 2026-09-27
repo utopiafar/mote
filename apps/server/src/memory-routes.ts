@@ -8,7 +8,7 @@ import {sourceContentTime,type QueryResult} from '@mote/shared';
 import type {QueryInput} from '@mote/agent';
 import {scopeFields,validRange} from './query-scope.js';
 import {modelProfileIdSchema,type ModelSettingsStore} from './model-settings.js';
-import {MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,type MemoryStore} from './memory.js';
+import {MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,memoryEvidenceFingerprint,type MemoryStore} from './memory.js';
 import {memoryStrategyRefSchema} from './memory-strategy-contract.js';
 import {memoryReviewReceipt} from './memory-review.js';
 import type {MemoryPipeline} from './memory-pipeline.js';
@@ -18,6 +18,7 @@ import type {FileStore} from './files.js';
 import {StoreError,type Store} from './store.js';
 import {EvidenceExposurePolicy} from './evidence-exposure.js';
 import {usesLocalModel} from './model-agent.js';
+import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
 export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSettings,memoryRecipeSettings,store,files,evidenceReader,memories,memoryPipeline,lifecycle,modelSettings,query,reviewExtraction}:{memoryIntegrationSettings:MemoryIntegrationSettings;memoryRecipeSettings:MemoryRecipeSettings;store:Store;files:FileStore;evidenceReader:EvidenceReader;memories:MemoryStore;memoryPipeline:MemoryPipeline;lifecycle:MemoryLifecycle;modelSettings:ModelSettingsStore;query:(input:QueryInput)=>Promise<QueryResult>;reviewExtraction:(input:QueryInput,result:QueryResult)=>Promise<QueryResult>}){
  const jobId=(params:unknown)=>z.object({id:z.string().uuid()}).parse(params).id;
   app.post('/api/memories/:id/publish',async req=>{const body=z.object({version:z.number().int().positive().optional()}).strict().parse(req.body??{});return memories.publish((req.params as {id:string}).id,body.version);});
@@ -39,7 +40,18 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
   app.post('/api/memory-jobs',async(req,reply)=>{
     const scope=z.object({...scopeFields,contextTime:z.string().datetime({offset:true}).optional(),recipes:z.array(memoryStrategyRefSchema).min(1).max(8).optional(),modelProfileId:modelProfileIdSchema.optional(),evidenceIds:z.array(z.string().uuid()).min(1).max(20000).optional()}).strict().refine(validRange,{message:'Invalid time range'}).parse(req.body??{});
     const profile=modelSettings.select('memory',scope.modelProfileId);
-    const requirements=scope.recipes?.map(ref=>{try{return memoryPipeline.strategies.resolve(ref).binding.requires;}catch{throw new StoreError('Memory recipe is unavailable',409);}});
+    const policy=new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings));
+    const bindings=scope.recipes?.map(ref=>{try{return memoryPipeline.strategies.resolve(ref).binding;}catch{throw new StoreError('Memory recipe is unavailable',409);}});
+    const create=(ids:string[],manualPlans?:ManualMemoryInputPlanRequest[],selection?:unknown)=>{
+      const job=memoryPipeline.create({contextTime:scope.contextTime,recipes:scope.recipes,evidenceIds:ids,...(manualPlans?.length?{manualPlans}:{}),timeZone:scope.timeZone,batchCharacters:lifecycle.settings().batchCharacters,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});
+      void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send({...job,...(selection?{selection}:{})});
+    };
+    if(bindings&&!scope.evidenceIds){
+      const selected=evidenceReader.memoryPlanSelection(scope,bindings,policy);
+      if(!selected.evidenceIds.length&&!selected.manualPlans.length)throw new StoreError('No evidence in this range',409);
+      return create(selected.evidenceIds,selected.manualPlans,{unavailable:selected.unavailable});
+    }
+    const requirements=bindings?.map(binding=>binding.requires);
     const selection=scope.evidenceIds?undefined:evidenceReader.memorySelection(scope,undefined,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)),requirements);
     let ids=scope.evidenceIds??selection!.evidenceIds;
     if(!ids.length)throw new StoreError('No evidence in this range',409);
@@ -60,7 +72,12 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
       if(expanded.size>20000)throw new StoreError('Choose a smaller range for memory extraction',413);
     }
     ids=[...expanded];if(!ids.length)throw new StoreError('No processed evidence in this range',409);
-    const job=memoryPipeline.create({contextTime:scope.contextTime,recipes:scope.recipes,evidenceIds:ids,timeZone:scope.timeZone,batchCharacters:lifecycle.settings().batchCharacters,modelProfileId:profile.id,modelOverride:scope.modelProfileId?undefined:modelSettings.view().defaultModels?.memory});void memoryPipeline.run(job.id).catch(()=>{});return reply.code(202).send({...job,selection:selection?{waiting:selection.waiting,unavailable:selection.unavailable}:undefined});
+    if(bindings){
+      const selected=evidenceReader.memoryPlanSelection(scope,bindings,policy,ids);
+      if(!selected.evidenceIds.length&&!selected.manualPlans.length)throw new StoreError('No allowed evidence in this range',409);
+      return create(selected.evidenceIds,selected.manualPlans,{unavailable:selected.unavailable});
+    }
+    return create(ids,undefined,selection?{waiting:selection.waiting,unavailable:selection.unavailable}:undefined);
   });
   app.post('/api/memory-jobs/:id/pause',async req=>memoryPipeline.pause(jobId(req.params)));
   app.post('/api/memory-jobs/:id/resume',async req=>{const id=jobId(req.params);memoryPipeline.resume(id);return memoryPipeline.get(id);});
@@ -70,15 +87,16 @@ export function registerMemoryRoutes(app:FastifyInstance,{memoryIntegrationSetti
     const {modelProfileId,...scope}=z.object({...scopeFields,modelProfileId:modelProfileIdSchema.optional()}).strict().refine(validRange).parse(req.body??{}),profile=modelSettings.select('memory',modelProfileId);
     const selected=evidenceReader.memorySelection(scope,100,new EvidenceExposurePolicy([],()=>usesLocalModel(profile.settings)));
     if(!selected.evidenceIds.length)throw new StoreError('No processed evidence in this range',409);
-    const evidenceRanges=memories.readEvidence(selected.evidenceIds).map(record=>({id:record.id,offset:0,length:record.ocrText.length}));
+    const records=memories.readEvidence(selected.evidenceIds),expectedFingerprints=Object.fromEntries(records.map(record=>[record.id,memoryEvidenceFingerprint(record)]));
+    const evidenceRanges=records.map(record=>({id:record.id,offset:0,length:record.ocrText.length}));
     if(evidenceRanges.reduce((sum,range)=>sum+range.length,0)>100000)throw new StoreError('Use a Memory job for this larger range',413);
     const input:QueryInput={...scope,evidenceRanges,evidenceIds:selected.evidenceIds,modelProfileId:profile.id,modelOverride:profile.settings.model,skill:'memory-extraction',responseMode:'memory-extraction',question:MEMORY_EXTRACTION_PROMPT};
-    input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
+    input.validateOutput=result=>{try{memoryPipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id),profile.id);memories.extract(result,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
     const draft=await query(input);
     memoryPipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id),profile.id);
-    memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true});
+    memories.extract(draft,profile.settings.model,{requireAdmission:true,validateOnly:true,expectedFingerprints});
     const result=await reviewExtraction(input,draft);
     return memoryPipeline.withAdmissibleEvidence(result.citations.map(c=>c.id),()=>
-      memories.extract(result,profile.settings.model,{requireAdmission:true,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)}),profile.id);
+      memories.extract(result,profile.settings.model,{requireAdmission:true,expectedFingerprints,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result)}),profile.id);
   });
 }

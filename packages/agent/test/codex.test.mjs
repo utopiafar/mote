@@ -1,3 +1,6 @@
+import sharp from 'sharp';
+import {generatedImageRead,assertRegionSchema} from './image-region-fixture.mjs';
+import {generatedMaterialPages,materialRef} from './material-page-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,writeFile,rm,readFile,access,mkdir} from 'node:fs/promises';
@@ -28,6 +31,8 @@ import {writeFileSync,appendFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(join(root,'runtime-home'))},process.env.CODEX_HOME);
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 const mode=${JSON.stringify(mode)};let turns=0;
+const usage=sample=>send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
+if(mode==='usage-late-exit')process.on('SIGTERM',()=>{usage(200);setTimeout(()=>process.exit(0),20);});
 readline.createInterface({input:process.stdin}).on('line',line=>{
  const m=JSON.parse(line);appendFileSync(${JSON.stringify(join(root,'rpc.ndjson'))},JSON.stringify(m)+'\\n');
  if(m.method==='initialize')send({id:m.id,result:{}});
@@ -41,24 +46,34 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   turns++;
   if(['max','medium'].includes(mode)&&m.params.effort!==mode)process.exit(4);
   send({id:m.id,result:{turn:{id:'turn-fixture'}}});
+  if(['usage-timeout','usage-exit','usage-late-exit'].includes(mode)){usage(100);if(mode==='usage-exit')setTimeout(()=>process.exit(23),20);return;}
   if(mode==='import'){send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'import-fixture',type:'agentMessage',text:JSON.stringify({summary:'Generated import preview',recordsPath:null,warnings:[]})}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});return;}
   if(mode==='structured-error'){send({method:'error',params:{threadId:'thread-fixture',willRetry:false,error:{codexErrorInfo:'usageLimitExceeded',message:'synthetic-private-secret'}}});send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed'}}});return;}
   if(mode==='timeout')return;
   if(mode==='oversize-frame'){send({method:'fixture/opaque',params:{data:'x'.repeat(14*1024*1024)}});return;}
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
-  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='contribution'?'fixture_context':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
- }else if(mode==='image-flow'&&(m.id===999||m.id===1000)){
+  send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='material-page'?'material_catalog':mode==='contribution'?'fixture_context':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
+ }else if(mode==='material-page'&&m.id===999){
+  if(!m.result?.success)process.exit(3);
+  const page=JSON.parse(m.result.contentItems[0].text);
+  send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'material_read',namespace:null,arguments:{ref:page.data.items[0].ref,length:10000}}});
+ }else if((mode==='image-flow'||mode==='image-repeat')&&(m.id===999||m.id===1000||mode==='image-repeat'&&m.id===1001)){
   if(!m.result?.success)process.exit(3);
   send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:m.id===999?{ids:['synthetic-codex-record']}:{id:'synthetic-codex-record',attachmentId:'generated-image'}}});
+ }else if(mode==='image-region'&&m.id>=999&&m.id<=1002){
+  if(!m.result?.success)process.exit(3);
+  const value=JSON.parse(m.result.contentItems[0].text);
+  const args=m.id===999?{ids:['synthetic-codex-record']}:m.id===1000?{id:'synthetic-codex-record',attachmentId:'generated-image',view:'metadata'}:{id:'synthetic-codex-record',attachmentId:'generated-image',expectedImageSha256:value.imageView.original.sha256,region:{x:1,y:2,width:4,height:5}};
+  send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:args}});
  }else if(m.id===999&&mode==='tool-repair'){
   const feedback=JSON.parse(m.result.contentItems[0].text);
   if(m.result.success!==false||feedback.toolError.code!=='invalid_tool_arguments'||feedback.toolError.recovery!=='correct_arguments')process.exit(5);
   send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:{}}});
- }else if(m.id===999||m.id===1000||m.id===1001){
+ }else if(m.id===999||m.id===1000||m.id===1001||m.id===1002||m.id===1003){
   if(!m.result?.success)process.exit(3);
   if(mode==='image-echo'||mode==='image-flow')send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'image-echo',type:'dynamicToolCall',contentItems:m.result.contentItems}}});
   if(mode==='usage')for(const sample of [turns*100,turns*100])send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
-  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:mode==='contribution'?'Generated metadata':'Generated evidence [synthetic-codex-record]',citationIds:mode==='contribution'?[]:['synthetic-codex-record']})}}});
+  send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'message-fixture',type:'agentMessage',text:JSON.stringify({answer:['contribution','material-page'].includes(mode)?'Generated metadata':'Generated evidence [synthetic-codex-record]',citationIds:['contribution','material-page'].includes(mode)?[]:['synthetic-codex-record']})}}});
   send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'completed'}}});
  }
 });
@@ -70,6 +85,16 @@ test('Codex App Server exchanges scoped tools, validates citations and leaves no
   assert.equal(answer.citations[0].id,record.id);assert.equal(answer.trace[0].tool,'timeline');
   assert.equal((await readFile(join(root,'auth.json'),'utf8')).includes('synthetic-unused-key'),true);
   await assert.rejects(access(await readFile(join(root,'runtime-home'),'utf8')),{code:'ENOENT'});
+});
+test('Codex tool completion carries one fitted material page and preserves its original requested range',async t=>{
+  const root=await fake(t,'material-page'),fixture=generatedMaterialPages();
+  const agent=createAgent({reader:fixture.reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+  const answer=await agent.query({question:'Read a generated material page'}),rpc=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+  const result=rpc.find(message=>message.id===1000).result;assert.equal(result.success,true);assert.equal(result.contentItems.length,1);
+  const page=JSON.parse(result.contentItems[0].text);assert.equal(result.contentItems[0].type,'inputText');assert.ok(result.contentItems[0].text.length<=16000);
+  assert.equal(page.data.pagination.limitedBy,'host_budget');assert.equal(page.data.textRange.nextOffset,5000);
+  assert.deepEqual(fixture.attempts.map(args=>args.length),[10000,5000]);assert.equal(rpc.filter(message=>message.method==='turn/start').length,1);
+  assert.deepEqual(answer.trace.at(-1).arguments,{ref:materialRef,offset:0,length:10000});assert.equal(answer.trace.at(-1).materialPage.readAttempts,2);
 });
 test('Codex preserves the requested Max effort without silently downgrading it',async t=>{
   await fake(t,'max');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',reasoningEffort:'max',timeoutMs:5000});t.after(()=>agent.close());
@@ -106,6 +131,19 @@ test('Codex discloses a selected image to the model while keeping its bytes out 
  assert.ok(!JSON.stringify(events).includes(data.slice(0,200)),'neither model RPC echoes nor tool-completion traces retain image data');
  const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
  assert.equal(messages.find(m=>m.id===1001).result.contentItems[1].imageUrl,'data:image/png;base64,'+data);
+});
+test('Codex duplicate image completion succeeds as metadata without appending another inputImage',async t=>{
+ const root=await fake(t,'image-repeat'),events=[],data=Buffer.from('generated-image-transport').toString('base64'),parent={...record,provenance:{document:{attachments:[{id:'generated-image',mimeType:'image/png'}]}}};let reads=0;
+ const agent=createAgent({reader:{...reader,timeline:async()=>[parent],evidence:async()=>[parent],readImage:async()=>{reads++;return {mimeType:'image/png',data};}},protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ const answer=await agent.query({question:'Read generated pixels',onTrace:event=>events.push(event)});assert.equal(answer.citations[0].id,record.id);assert.equal(reads,2);
+ const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse),first=messages.find(m=>m.id===1001).result,repeat=messages.find(m=>m.id===1002).result;
+ assert.equal(first.success,true);assert.equal(first.contentItems.filter(item=>item.type==='inputImage').length,1);
+ assert.equal(repeat.success,true);assert.deepEqual(repeat.contentItems.map(item=>item.type),['inputText']);assert.equal(JSON.parse(repeat.contentItems[0].text).imageDisclosure.status,'already_disclosed');
+ assert.equal(messages.flatMap(m=>m.result?.contentItems??[]).filter(item=>item.type==='inputImage').length,1);
+ assert.equal(events.filter(e=>e.type==='tool.completed'&&e.tool==='read_image'&&e.status==='succeeded').length,2);assert.ok(!JSON.stringify(events).includes(data));
+ assert.ok(!JSON.stringify(messages).includes('imageDelivery'),'host receipts never enter the model protocol');
+ await agent.query({question:'Read generated pixels again'});assert.equal(reads,4);
+ const restarted=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(restarted.flatMap(m=>m.result?.contentItems??[]).filter(item=>item.type==='inputImage').length,2,'a new query on the same agent must disclose its first image');
 });
 test('Codex errors and approval requests are rejected without exposing raw provider output',async t=>{
   for(const mode of ['error','approval']){await fake(t,mode);const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});try{await assert.rejects(agent.query({question:'Fixture'}),e=>e instanceof AgentProviderError&&!e.message.includes('synthetic-private'));}finally{await agent.close();}}
@@ -200,6 +238,31 @@ test('Codex cumulative usage replaces duplicate samples and covers repair turns 
  await agent.query({question:'Generated usage fixture',onUsage:u=>samples.push(u),validateOutput:()=>++validation===1?{code:'fixture',feedback:'Return exact original citation.'}:undefined});
  assert.equal(samples.at(-1).totalTokens,300);assert.equal(samples.at(-1).complete,true);assert.equal(samples.at(-1).measurement,'thread_cumulative');assert.equal(samples.at(-1).requests,0);assert.equal(samples.at(-1).cacheReadTokens,40);assert.ok(samples.some(s=>s.complete===false));
 });
+test('Codex interrupted turns preserve observed counts but mark cumulative usage incomplete',{timeout:15000},async t=>{
+ for(const kind of ['deadline','host-deadline','cancel','close','child-exit','late-usage']){
+  await fake(t,kind==='child-exit'?'usage-exit':kind==='late-usage'?'usage-late-exit':'usage-timeout');
+  const samples=[];let sampleArrived;const firstSample=new Promise(resolve=>{sampleArrived=resolve;});
+  const session=new CodexSession({model:'fixture',timeoutMs:kind==='deadline'?1000:5000},async()=>({}),undefined,value=>{samples.push(value);sampleArrived();});
+  try{
+   await session.start('Generated interrupted usage',codexContextTools);const pending=session.run('Generated pending turn');void pending.catch(()=>{});
+   await Promise.race([firstSample,pending.then(()=>{throw Error('Fixture unexpectedly completed');})]);
+   assert.equal(samples[0].totalTokens,150);assert.equal(samples[0].complete,true);
+   if(kind==='host-deadline')session.cancel(new DOMException('Generated host deadline','TimeoutError'));
+   if(kind==='cancel'||kind==='late-usage')session.cancel(new DOMException('Generated owner cancellation','AbortError'));
+   if(kind==='close')await session.close();
+   await assert.rejects(pending,kind==='deadline'||kind==='host-deadline'?AgentTimeoutError:AgentProviderError);
+   await session.close();
+   const last=samples.at(-1);assert.equal(last.complete,false,kind);assert.equal(last.totalTokens,kind==='late-usage'?300:150,kind);
+   assert.equal(last.inputTokens,kind==='late-usage'?200:100);assert.equal(last.outputTokens,kind==='late-usage'?100:50);
+   assert.equal(last.measurement,'thread_cumulative');assert.equal(last.requests,0);
+   const interrupted=samples.findIndex(sample=>sample.complete===false);assert.ok(interrupted>=0);assert.ok(samples.slice(interrupted).every(sample=>sample.complete===false),'late samples must not restore completeness after interruption');
+  }finally{await session.close();}
+ }
+});
+test('Codex successful turn usage remains complete after normal session cleanup',async t=>{
+ await fake(t,'usage');const samples=[],session=new CodexSession({model:'fixture',timeoutMs:5000},async()=>({}),undefined,value=>samples.push(value));
+ try{await session.start('Generated successful usage',codexContextTools);await session.run('Generated completed turn');const before=structuredClone(samples.at(-1));assert.equal(before.complete,true);await session.close();assert.deepEqual(samples.at(-1),before);}finally{await session.close();}
+});
 test('Codex structured quota errors retain safe typed state without exposing provider text',async t=>{
  await fake(t,'structured-error');const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
  await assert.rejects(agent.query({question:'Generated failure'}),e=>e.details?.category==='blocked'&&e.details.code==='provider_quota'&&!e.message.includes('synthetic-private'));
@@ -211,4 +274,19 @@ test('Codex advertises and dispatches a host contribution from the same pinned d
  tools.register({name:'fixture_context',version:'generated-1',description:'Generated read-only metadata',fields:{},maxCharacters:1000,parse:args=>args,authorize:()=>true,read:()=>{calls++;return {fixture:'generated'};}});
  const agent=createAgent({reader:{...reader,contextTools:()=>tools.snapshot()},protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
  const answer=await agent.query({question:'Read generated metadata'});assert.equal(calls,1);assert.equal(answer.trace[0].tool,'fixture_context');assert.deepEqual(answer.citations,[]);
+});
+
+test('Codex receives a nested region schema and metadata, then native region plus budgets and successful repeat',async t=>{
+ const root=await fake(t,'image-region'),events=[],bytes=await sharp({create:{width:20,height:30,channels:3,background:'#145abc'}}).png().toBuffer();
+ const parent={...record,provenance:{document:{attachments:[{id:'generated-image',mimeType:'image/png'}]}}};
+ const agent=createAgent({reader:{...reader,timeline:async()=>[parent],evidence:async()=>[parent],readImage:args=>generatedImageRead(bytes,args)},protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ const answer=await agent.query({question:'Generated model-selected region',onTrace:e=>events.push(e)});assert.equal(answer.citations[0].id,record.id);
+ const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
+ assertRegionSchema(assert,messages.find(m=>m.method==='thread/start').params.dynamicTools.find(t=>t.name==='read_image').inputSchema);
+ const metadata=messages.find(m=>m.id===1001).result,first=messages.find(m=>m.id===1002).result,repeat=messages.find(m=>m.id===1003).result;
+ assert.deepEqual(metadata.contentItems.map(x=>x.type),['inputText']);assert.equal(JSON.parse(metadata.contentItems[0].text).imageBudget.remainingPayloads,4);
+ const delivered=JSON.parse(first.contentItems[0].text);assert.deepEqual(delivered.imageView.region,{x:1,y:2,width:4,height:5});assert.equal(delivered.imageView.delivery,'prepared');assert.equal(delivered.imageBudget.remainingPayloads,3);assert.ok(delivered.hostBudget.remainingCalls>0);
+ assert.equal(first.contentItems[1].type,'inputImage');assert.deepEqual(repeat.contentItems.map(x=>x.type),['inputText']);assert.equal(JSON.parse(repeat.contentItems[0].text).imageDisclosure.status,'already_disclosed');
+ const imageData=first.contentItems[1].imageUrl.split(',')[1];assert.ok(!JSON.stringify(events).includes(imageData));
+ assert.deepEqual(answer.trace.filter(t=>t.tool==='read_image').map(t=>t.imageView.delivery),['metadata','prepared','already_disclosed']);
 });

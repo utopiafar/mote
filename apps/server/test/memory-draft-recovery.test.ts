@@ -31,7 +31,7 @@ test('review timeout resumes a validated draft across a vault restart without sp
  assert.ok(!JSON.stringify(f.pipeline.get(job.id)).includes('making a bowl'),'Unreviewed text is not public job state');
  await f.restart();f.succeed();const done=await f.pipeline.retry(job.id);
  assert.equal(done.status,'completed');assert.equal(done.totalBatches,1);assert.deepEqual(f.counts(),{extracts:1,reviews:2});
- const memory=f.memories.get(done.memoryIds[0]);assert.equal(memory.status,'proposed');assert.equal(memory.reviewReceipt?.draftRunId,'extraction-1');assert.equal(memory.reviewReceipt?.decision,'independent');
+ const memory=f.memories.get(done.memoryIds[0]);assert.equal(memory.status,'published');assert.equal(memory.reviewReceipt?.draftRunId,'extraction-1');assert.equal(memory.reviewReceipt?.decision,'independent');
  assert.equal(f.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
 });
 

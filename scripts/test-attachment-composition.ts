@@ -62,7 +62,7 @@ try{
  const evidence=node!.materials.evidence(pin.evidenceIds),geometry=evidence.filter(r=>r.ocrText.includes('"imageLocation"'));assert.ok(geometry.length>0);
  const material=node!.materials.get(id)!;assert.equal(material.memberCount,2);
  const timeline=await node!.featureServices.archiveReader.timeline({deviceId:parent.deviceId}),items=Array.isArray(timeline)?timeline:timeline.items;assert.equal(items.length,1);
- const image=await node!.featureServices.archiveReader.readImage!({id:items[0].id,attachmentId:original.id});assert.equal(sha256(Buffer.from(image.data,'base64')),manifest.imageSha256);
+ const image=await node!.featureServices.archiveReader.readImage!({id:items[0].id,attachmentId:original.id});assert.equal(sha256(Buffer.from(image.data!,'base64')),manifest.imageSha256);
  assert.equal(node!.store.db.prepare('SELECT COUNT(*) n FROM model_usage').get()!.n,before);
  report.composition={parentId:parent.id,attachmentId:original.id,childId:child,materialRef:material.ref,evidenceBlocks:evidence.length,geometryBlocks:geometry.length,required,originalsUnchanged:true,ocrReused:true};
  await node!.app.close();node=undefined;await start();await organize();await node!.processing.tick();

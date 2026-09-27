@@ -1,25 +1,19 @@
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
-import {fileSpeakerAttributionSchema,imageLocationSchema,documentSchema,sourceItemKinds} from '@mote/shared';
+import {decodeSourceText,sourceTextFormat,sourceItemKinds} from '@mote/shared';
 import {MaterialStore,formatMaterialRef,type MaterialStoredBlock} from './materials.js';
 import {StoreError} from './store.js';
 
 // Presentation of the source-item organizer's declared block formats, never
 // intent inference. Unknown structures remain literal text in the fallback.
-const speech=z.object({speaker:z.string().max(100).optional(),speakerAttribution:fileSpeakerAttributionSchema.optional(),imageLocation:imageLocationSchema.optional(),text:z.string().max(250000)}).strict().refine(value=>value.speaker!==undefined||value.imageLocation!==undefined);
-const source=z.object({captureId:z.string().uuid(),capturedAt:z.string().datetime({offset:true}),source:z.enum(sourceItemKinds),appName:z.string().max(300).optional(),text:z.string().max(250000).optional(),documentTime:documentSchema.pick({recordedAt:true,occurredAt:true,timeBasis:true,contentRole:true}).strict().optional()}).passthrough();
 type Display={type:'text'|'source'|'asset'|'raw';text:string;speaker?:string;confirmedName?:string;capturedAt?:string;recordedAt?:string;occurredAt?:string;appName?:string;sourceRef?:string;sourceType?:string;startMs?:number;endMs?:number;mimeType?:string};
 function display(block:MaterialStoredBlock):Display {
   if(block.kind==='asset')return {type:'asset',text:'',mimeType:block.asset?.mimeType};
   const timing=typeof block.locator?.startMs==='number'&&Number.isFinite(block.locator.startMs)&&block.locator.startMs>=0?{startMs:block.locator.startMs,...(typeof block.locator.endMs==='number'&&Number.isFinite(block.locator.endMs)?{endMs:block.locator.endMs}:{})}:{};
   if(block.format==='json'){
-    let json:unknown;try{json=JSON.parse(block.text);}catch{return {type:'raw',text:block.text,...timing};}
-    if(block.id==='source-record'){
-      const value=source.safeParse(json);if(value.success)return {type:'source',text:value.data.text??'',capturedAt:value.data.capturedAt,recordedAt:value.data.documentTime?.recordedAt,occurredAt:value.data.documentTime?.occurredAt,appName:value.data.appName,sourceRef:'capture:'+value.data.captureId,sourceType:value.data.source};
-    }
-    if(typeof block.locator?.chunkId==='string'){
-      const value=speech.safeParse(json);if(value.success)return {type:'text',text:value.data.text,speaker:value.data.speaker,...(value.data.speakerAttribution?{confirmedName:value.data.speakerAttribution.name}:{}),...timing};
-    }
+    const format=sourceTextFormat(block),value=format&&decodeSourceText(format,block.text);
+    if(value?.kind==='source')return {type:'source',text:value.text,capturedAt:value.capturedAt,recordedAt:value.documentTime?.recordedAt,occurredAt:value.documentTime?.occurredAt,appName:value.appName,sourceRef:'capture:'+value.captureId,sourceType:value.source};
+    if(value?.kind==='speech')return {type:'text',text:value.text,speaker:value.speaker,...(value.speakerAttribution?{confirmedName:value.speakerAttribution.name}:{}),...timing};
     return {type:'raw',text:block.text,...timing};
   }
   return {type:'text',text:block.text,...timing};
