@@ -485,6 +485,49 @@ test('single-Material selection sends only its current anchors and refuses a sta
  await act(async()=>button.click());assert.equal(writes.length,1);
 });
 
+test('a single-Material job opens its old-dated result outside the current week while list reads and node changes keep their scope',async t=>{
+ const {root,document:d}=await fixture(t),materialId='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${materialId}@${revision}`;
+ const range={after:'2026-09-20T00:00:00Z',before:'2026-09-27T00:00:00Z',deviceId:'generated-device'};
+ const result={...memory(ids[0]),title:'Generated June result',createdAt:'2026-09-27T00:00:00Z',evidence:[{id:ids[0],capturedAt:'2026-06-03T01:00:00Z',receivedAt:'2026-09-27T00:00:00Z',contentHash:'generated',quote:'Generated June evidence'}]};
+ const current={...memory(ids[1]),title:'Generated current-week list card'},late=deferred(),detailReads:string[]=[];let delay=false,writes=0;
+ const job={id:'generated-old-date-job',status:'completed',createdAt:'2026-09-27T00:00:00Z',updatedAt:'2026-09-27T00:00:00Z',evidenceIds:[ids[0]],totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,memoryIds:[result.id],skillVersion:'generated'};
+ window.history.replaceState(null,'','#/library/memories?memoryMaterial='+encodeURIComponent(ref));
+ const read=(path:string)=>{
+  if(path===`/api/materials/${materialId}`)return {id:materialId,ref,revision,title:'Generated June Material',memorySource:{status:'ready',evidenceIds:[ids[0]]}};
+  if(path==='/api/memory-recipes')return {items:[{id:'mote.coding-memory',version:'2',available:true}]};
+  if(path==='/api/memory-jobs/'+job.id)return job;
+  if(path.startsWith('/api/memories?'))return {items:[current],nextCursor:null};
+  if(path.startsWith('/api/memories/')){
+   detailReads.push(path);const url=new URL(path,'http://generated.invalid');
+   if(url.pathname.endsWith(result.id)){
+    if(url.searchParams.has('after')||url.searchParams.has('before'))throw new ApiError('Generated old evidence is outside the week',404);
+    return delay?late.promise:result;
+   }
+   return current;
+  }
+  return {};
+ };
+ const api=apiWith(read),request=api.request;
+ api.request=async(path,init)=>{if(init?.method==='POST'){assert.equal(path,'/api/memory-jobs');assert.deepEqual(JSON.parse(String(init.body)).evidenceIds,[ids[0]]);writes++;return job as any;}return request(path,init);};
+ const render=(client=api)=>root.render(React.createElement(Memories,{api:client,range,rangeSelectionKey:'week',onOpen:()=>{}}));
+ await act(async()=>render());
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='提取所选资料的记忆')!.click());
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看记忆')!.click());
+ assert.equal(d.querySelector('.memory-detail h2')?.textContent,result.title,'a successful job remains readable when its source predates the list filter');
+ assert.equal(new URL(detailReads.at(-1)!,'http://generated.invalid').search,'?deviceId=generated-device');
+ assert.equal(d.querySelector('[role=alert]'),null);
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ assert.equal(d.querySelector('.memory-detail h2')?.textContent,current.title);
+ assert.deepEqual(Object.fromEntries(new URL(detailReads.at(-1)!,'http://generated.invalid').searchParams),range,'ordinary list selection still reads within the chosen week and device');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看记忆')!.click());
+ delay=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/'+result.id+'?')));
+ const next=apiWith(path=>path.startsWith('/api/memories?')?{items:[],nextCursor:null}:read(path));
+ await act(async()=>render(next));await act(async()=>late.resolve(result));
+ assert.equal(d.querySelector('.memory-detail'),null,'node changes clear the result selection and fence the old pending read');
+ assert.doesNotMatch(d.querySelector('.workspace-content')!.textContent!,/Generated June result|Generated June evidence/);
+ assert.equal(writes,1,'result navigation performs no further extraction');
+});
+
 test('explicit memory source rejects invalid or revoked records and fences a late previous preview',async t=>{
  const {root,document:d}=await fixture(t),late=deferred();let writes=0;
  const api=apiWith((path,init)=>{if(init?.method==='POST'){writes++;return {};}if(path.includes('/api/capture-browser/'+ids[0]))return late.promise;if(path.includes('/api/capture-browser/'+ids[1]))throw new ApiError('Generated access revoked',403);if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};if(path==='/api/memory-recipes')return {items:[]};return {};});
