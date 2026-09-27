@@ -47,6 +47,8 @@ export class ImportUploads {
  }
 }
 export function registerImportUploads(app:FastifyInstance,store:Store,files:ArchivedFileStore){
+ // Feature routes are encapsulated: the sibling files parser is not inherited.
+ app.addContentTypeParser('application/octet-stream',{parseAs:'buffer',bodyLimit:PART},(_req,body,done)=>done(null,body));
  const uploads=new ImportUploads(store,files);
  app.addHook('preClose',async()=>uploads.close());
  app.post('/api/import-uploads',{bodyLimit:4096,config:{rateLimit:{max:600,timeWindow:'1 minute'}}},async req=>uploads.begin(req.body));
