@@ -5,18 +5,30 @@ import {join} from 'node:path';
 const hash=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
 export class StageSafetyError extends Error{constructor(readonly code:string){super(code);}}
 const need=(ok:unknown,code:string)=>{if(!ok)throw new StageSafetyError(code);};
-type Event={index:number;at:string;previous:string;kind:string;data:Record<string,any>;sha256:string};
+export type LedgerEvent={index:number;at:string;previous:string;kind:string;data:Record<string,any>;sha256:string};
+
+/** Non-mutating checkpoint inspection; a live writer or uncertain stage is not resumable. */
+export function inspectAdmissionLedger(directory:string,experimentHash:string){
+  need(!existsSync(join(directory,'writer.lock')),'ledger_locked_unknown_interruption');
+  const bytes=readFileSync(join(directory,'admissions.ndjson'),'utf8');need(bytes.endsWith('\n'),'ledger_partial_record_unknown');const events:LedgerEvent[]=[];
+  for(const line of bytes.trimEnd().split('\n')){const row=JSON.parse(line) as LedgerEvent;const {sha256,...body}=row;need(row.index===events.length&&row.previous===(events.at(-1)?.sha256??'genesis')&&sha256===hash(body),'ledger_chain_invalid');events.push(row);}
+  need(events[0]?.kind==='manifest'&&events[0].data.manifestHash===experimentHash&&events[0].data.cumulativeCap===124,'ledger_manifest_mismatch');
+  need(!events.some(row=>row.kind==='stop'),'ledger_persistently_stopped');const closed=new Set(events.filter(row=>row.kind==='stage-close').map(row=>row.data.stage));
+  need(events.filter(row=>row.kind==='stage-open').every(row=>closed.has(row.data.stage)),'unknown_interrupted_stage');
+  for(const admission of events.filter(row=>row.kind==='admit')){const terminal=events.filter(row=>row.kind==='terminal'&&row.data.callId===admission.data.callId),receipt=events.filter(row=>row.kind==='receipt'&&row.data.id===admission.data.receiptId);need(terminal.length===1&&receipt.length===1&&receipt[0].data.status!=='running','admission_receipt_unknown');need(terminal[0].data.status===receipt[0].data.status,'terminal_receipt_conflict');}
+  return events;
+}
 /** Holding an exclusive lock for the complete stage makes check+reserve one writer operation.
  * A crash leaves that lock intentionally. No stale-lock reclamation or automatic retry. */
 export class AdmissionLedger{
-  readonly events:Event[]=[];private lock:number;private file=-1;private busy=false;private stage?:string;
+  readonly events:LedgerEvent[]=[];private lock:number;private file=-1;private busy=false;private stage?:string;
   constructor(readonly directory:string,readonly manifestHash:string,readonly cumulativeCap=124){
     mkdirSync(directory,{recursive:true,mode:0o700});
     try{this.lock=openSync(join(directory,'writer.lock'),'wx',0o600);}catch{throw new StageSafetyError('ledger_locked_unknown_interruption');}
     try{
       const path=join(directory,'admissions.ndjson');if(existsSync(path)){
         const bytes=readFileSync(path,'utf8');need(bytes.endsWith('\n'),'ledger_partial_record_unknown');
-        for(const line of bytes.trimEnd().split('\n')){const row=JSON.parse(line) as Event;const {sha256,...body}=row;need(row.index===this.events.length&&row.previous===(this.events.at(-1)?.sha256??'genesis')&&sha256===hash(body),'ledger_chain_invalid');this.events.push(row);}
+        for(const line of bytes.trimEnd().split('\n')){const row=JSON.parse(line) as LedgerEvent;const {sha256,...body}=row;need(row.index===this.events.length&&row.previous===(this.events.at(-1)?.sha256??'genesis')&&sha256===hash(body),'ledger_chain_invalid');this.events.push(row);}
       }
       this.file=openSync(path,'a',0o600);if(!this.events.length)this.append('manifest',{manifestHash,cumulativeCap});
       need(this.events[0].data.manifestHash===manifestHash&&this.events[0].data.cumulativeCap===cumulativeCap,'ledger_manifest_mismatch');
