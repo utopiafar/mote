@@ -29,7 +29,11 @@ export function storedMemoryLifecycleSettings(store:Store):LifecycleSettings {
   return row?lifecycleSettingsSchema.parse(JSON.parse(row.json)):structuredClone(defaultLifecycleSettings);
 }
 export const automaticMemoryExtractionEnabled=(store:Store)=>storedMemoryLifecycleSettings(store).extraction.enabled;
-export type LifecycleWindow={manual?:boolean;id:string;version:string;from:number;through:number;ids:string[];startedAt:number;settings:LifecycleSettings;checkpoint?:string};
+/** Host-only semantic time. Execution, authorization and retention keep their real clocks. */
+export function freezeSemanticContextTime(clock:()=>string=()=>new Date().toISOString()):string {
+  return z.string().max(64).datetime({offset:true}).refine(value=>Number.isFinite(Date.parse(value)),'Invalid semantic context time').parse(clock());
+}
+export type LifecycleWindow={manual?:boolean;id:string;version:string;from:number;through:number;ids:string[];startedAt:number;contextTime?:string;settings:LifecycleSettings;checkpoint?:string};
 type State={cancelled?:boolean;stream?:LifecycleExtension['stream'];drainThrough?:number;cursor:number;lastSuccess:number;retryAt?:number;failures:number;active?:LifecycleWindow;lastRun?:{id:string;through:number;completedAt:number};error?:string};
 export type LifecycleExecution={operationId:string;jobId:string;signal:AbortSignal;interrupted:()=>boolean;commit:<T>(write:()=>T)=>T};
 export type LifecycleExtension={id:keyof Pick<LifecycleSettings,'extraction'|'consolidation'|'insights'|'working'>;version:string;stream:'evidence'|'artifact'|'memory'|'conversation';maxAttempts?:number;
@@ -42,7 +46,7 @@ export class MemoryLifecycle {
   private extensions=new Map<string,LifecycleExtension>();
   private running=new Map<string,Promise<void>>();
   private closed=false;private abort=new AbortController();
-  constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,legacyInsightHours=0,private executor?:ExecutionEngine){
+  constructor(private store:Store,private configured:()=>boolean,private now:()=>number=Date.now,legacyInsightHours=0,private executor?:ExecutionEngine,private semanticContextTime?:()=>string){
     store.db.exec(`
       CREATE TABLE IF NOT EXISTS memory_lifecycle_settings(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS memory_lifecycle_state(id TEXT PRIMARY KEY,json TEXT NOT NULL);
@@ -84,7 +88,7 @@ export class MemoryLifecycle {
     const settings=this.settings(),state=this.state(id);
     if(this.running.has(id)||state.active&&!state.cancelled&&this.executor?.get('lifecycle:'+state.active.id)?.state!=='cancelled')throw new StoreError('Finish or cancel the active lifecycle task first',409);
     if(!ids.length||ids.length>settings[id].maxItems||new Set(ids).size!==ids.length||checkpoint.length>32000)throw new StoreError('Choose a smaller unique set of inputs',413);
-    state.active={manual:true,id:randomUUID(),version:extension.version,from:state.cursor,through:state.cursor,ids,startedAt:this.now(),settings,checkpoint};
+    state.active={manual:true,id:randomUUID(),version:extension.version,from:state.cursor,through:state.cursor,ids,startedAt:this.now(),contextTime:freezeSemanticContextTime(this.semanticContextTime),settings,checkpoint};
     delete state.cancelled;delete state.retryAt;delete state.error;state.failures=0;this.save(id,state);if(own)db.exec('COMMIT');return state.active.id;
     }catch(error){if(own&&db.isTransaction)db.exec('ROLLBACK');throw error;}
   }
@@ -147,7 +151,7 @@ export class MemoryLifecycle {
           if(extension.id==='extraction')state.drainThrough=Number(this.store.db.prepare(`SELECT max(seq) AS seq FROM (SELECT seq FROM ${extension.stream==='artifact'?'artifact_events':'changes'} WHERE seq>? ORDER BY seq LIMIT ?)`).get(state.cursor,p.maxItems*settings.drainWindows)?.seq)||undefined;
         }
         const events=this.events(extension,state.cursor,p.maxItems).filter(e=>!state.drainThrough||e.seq<=state.drainThrough);if(!events.length)return;
-        state.active={id:randomUUID(),version:extension.version,from:state.cursor,through:events.at(-1)!.seq,ids:[...new Set(events.map(e=>e.entity))],startedAt:now,settings};this.save(extension.id,state);
+        state.active={id:randomUUID(),version:extension.version,from:state.cursor,through:events.at(-1)!.seq,ids:[...new Set(events.map(e=>e.entity))],startedAt:now,contextTime:freezeSemanticContextTime(this.semanticContextTime),settings};this.save(extension.id,state);
       }
       try{
         if(state.active.version!==extension.version)throw new StoreError('Active window requires its original extension version',409);

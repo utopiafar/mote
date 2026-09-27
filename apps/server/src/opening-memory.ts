@@ -1,12 +1,12 @@
 import type {ContextReader,QueryInput} from '@mote/agent';
 
 type Lead=NonNullable<QueryInput['openingMemories']>[number];
-type Scope=Pick<QueryInput,'after'|'before'|'deviceId'>;
+type Scope=Pick<QueryInput,'after'|'before'|'deviceId'|'contextTime'>;
 
 /** Use the same privacy-aware reader as model tools; never place original records in the opening prompt. */
 export async function openingMemories(reader:ContextReader,question:string,scope:Scope):Promise<Lead[]> {
   if(!reader.memories)return [];
-  const bounds={after:scope.after,before:scope.before,deviceId:scope.deviceId,layer:'memory' as const};
+  const bounds={after:scope.after,before:scope.before,deviceId:scope.deviceId,asOf:scope.contextTime,layer:'memory' as const};
   const search=question.trim().length<=160?question.trim():'';
   const pages=await Promise.all([
     reader.memories({...bounds,status:'published',tier:'consolidated',limit:2}),

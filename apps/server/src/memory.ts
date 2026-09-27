@@ -262,7 +262,7 @@ export class MemoryStore {
     if(m.relations?.length&&version===undefined)throw new StoreError('A reviewed memory version is required before applying relationships',409);
     const own=!this.store.db.isTransaction;if(own)this.store.db.exec('BEGIN IMMEDIATE');try{
       for(const relation of m.relations??[]){const target=this.get(relation.memoryId);if(target.status==='stale'||target.supersededBy||target.fingerprint!==relation.fingerprint||target.version!==relation.version||target.evidenceIds.some(id=>!this.isCurrentEvidence(id)))throw new StoreError('Related memory changed; review the relationship again',409);
-        if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??new Date().toISOString();target.version=(target.version??1)+1;target.updatedAt=new Date().toISOString();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(target)));this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);}
+        if(relation.kind==='supersedes'){target.supersededBy=m.id;target.supersededAt=m.validFrom??m.reviewReceipt?.contextTime??new Date().toISOString();target.version=(target.version??1)+1;target.updatedAt=new Date().toISOString();this.store.reserveMetadata(Buffer.byteLength(JSON.stringify(target)));this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(target),target.id);}
       }
       m.status='published';m.version=(m.version??1)+1;m.updatedAt=new Date().toISOString();this.store.db.prepare('UPDATE memories SET json=? WHERE id=?').run(JSON.stringify(m),id);if(own)this.store.db.exec('COMMIT');return m;
     }catch(error){if(own)this.store.db.exec('ROLLBACK');throw error;}

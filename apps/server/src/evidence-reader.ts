@@ -703,7 +703,7 @@ export class EvidenceReader {
     }
     return {items,nextCursor:cursor??null};
   }
-  agent(options:{diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean;exposurePolicy?:EvidenceExposurePolicy;currentOperation?:()=> 'query'|'memory';currentGrantContext?:()=>object|undefined;currentProcessingEvidence?:()=>Readonly<Record<string,string>>|undefined;currentMaterialInputs?:()=>readonly MaterialInputPin[]|undefined}):ContextReader {
+  agent(options:{diagnostics:ServerDiagnostics;allowQueryImages?:()=>boolean;exposurePolicy?:EvidenceExposurePolicy;currentOperation?:()=> 'query'|'memory';currentContextTime?:()=>string|undefined;currentGrantContext?:()=>object|undefined;currentProcessingEvidence?:()=>Readonly<Record<string,string>>|undefined;currentMaterialInputs?:()=>readonly MaterialInputPin[]|undefined}):ContextReader {
     const {store,sources}=this,{diagnostics}=options;
     const policy=options.exposurePolicy??defaultEvidenceExposurePolicy;
     const operation=(normal:'discover'|'expand'):EvidenceOperation=>options.currentOperation?.()==='memory'?'memory':normal;
@@ -753,7 +753,7 @@ export class EvidenceReader {
       return this.captureExposure(record,operation('expand'),policy,'capture',hasScreenGrant(record.id));
     };
     return {
-      catalog:async args=>contextIndex(this.store,{page:scope=>this.agentMemoryPage(scope??{},policy,operation('discover'))},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),
+      catalog:async args=>contextIndex(this.store,{page:scope=>this.agentMemoryPage({...scope,asOf:scope?.asOf??options.currentContextTime?.()},policy,operation('discover'))},this.sources,args,scope=>this.agentSegments(scope,policy,operation('discover'))),
       materialCatalog:async args=>{const page=this.materialCatalog(args);return {...page,items:page.items.filter(material=>this.materialExposure(material,operation('discover'),policy))};},
       materialRead:async args=>{const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);const page=this.materialRead(args);grant(page.originalRefs,{kind:'material',ref:material.ref,scope:{...args}});return page;},
       readImage:async ({id,attachmentId})=>{
@@ -792,7 +792,7 @@ export class EvidenceReader {
         }
         return page as any;},
       memories:async args=>{
-        const page=this.agentMemoryPage({...args,level:args.id?'detail':'overview'},policy,operation('discover'));
+        const page=this.agentMemoryPage({...args,asOf:args.asOf??options.currentContextTime?.(),level:args.id?'detail':'overview'},policy,operation('discover'));
         const refs=args.id?page.items.flatMap((m:any)=>(m.evidence??[]) as import('./memory-schema.js').MemoryEvidence[]):[];
         const references=refs.map(e=>({id:e.id,capturedAt:e.capturedAt,characters:e.length??0}));
         if(!args.id||!args.includeEvidence)return {...page,references};

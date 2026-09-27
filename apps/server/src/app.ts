@@ -52,7 +52,7 @@ import { MaterialMemoryWork } from './material-memory-work.js';
 import { MaterialOrganizerRuntime } from './material-organizers.js';
 import { MaterialStore } from './materials.js';
 import { MediaAssets } from './media-assets.js';
-import { MemoryLifecycle,automaticMemoryExtractionEnabled,storedMemoryLifecycleSettings,type LifecycleExtension } from './memory-lifecycle.js';
+import { MemoryLifecycle,automaticMemoryExtractionEnabled,storedMemoryLifecycleSettings,freezeSemanticContextTime,type LifecycleExtension } from './memory-lifecycle.js';
 import {MemoryStrategies} from './memory-strategies.js';
 import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import { MemoryPipeline } from './memory-pipeline.js';
@@ -97,7 +97,7 @@ function parseCaptureBundle(body:unknown):CaptureInput[] {
   catch(error){if(error instanceof z.ZodError)throw error;throw new StoreError('Invalid capture bundle JSONL');}
 }
 const serverVersion=(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')) as {version:string}).version;
-export async function buildApp(config:Config,dependencies?:{backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
+export async function buildApp(config:Config,dependencies?:{semanticContextTime?:()=>string;backgroundWorker?:boolean;memoryExtensions?:LifecycleExtension[];store?:Store;agent?:QueryAgent;connections?:Connections;createModelAgent?:ModelAgentFactory;transcriptionProvider?:TranscriptionProvider;prepareImport?:(input:ImportPreparation)=>Promise<ImportPreparationResult>;observeImport?:(workspace:string,event:unknown)=>void}) {
   config={...config};
   const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();
   // A foreground node must not block listen() on a full orphan-blob sweep. When
@@ -159,6 +159,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
     exposurePolicy:new EvidenceExposurePolicy([],()=>modelLocality.getStore()===true),
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
+    currentContextTime:()=>modelContext.getStore()?.contextTime,
     currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs}));
   const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
@@ -380,7 +381,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
-  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor),working=new WorkingMemory(store,conversations);
+  const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor,dependencies?.semanticContextTime),working=new WorkingMemory(store,conversations);
   const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
   registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
@@ -431,6 +432,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       if(value!==undefined&&value!==null)scope[key]=value;
     }
     insightSchema.parse(scope);
+    const contextTime=freezeSemanticContextTime(dependencies?.semanticContextTime);
     if(conversationId)runningConversations.add(conversationId);
     try {
       const selectedProfile=modelSettings.select('chat',modelProfileId),timeout=selectedProfile.settings.agentTimeoutMs;
@@ -440,10 +442,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       const previousAvailable=previousIds.filter(id=>{try{return Boolean(files.detail(id).hasOriginal);}catch{return false;}});
       const directImages=queryImages([...new Set([...attachmentIds,...previousAvailable.slice(-4)])]);
       const [memoryLeads,conversation]=await Promise.all([
-        openingMemories(archiveReader,question,scope),
-        previous?working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution):undefined,
+        openingMemories(archiveReader,question,{...scope,contextTime}),
+        previous?working.prepare(previous,lifecycle.settings(),question,input=>queryAgent({...input,contextTime,traceContext:{...input.traceContext,operationId},executionLane:'interactive',modelProfileId,modelOverride,signal},'query','conversations'),execution):undefined,
       ]);
-      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,modelProfileId,modelOverride,onProgress,signal,directImages,openingMemories:memoryLeads,...(conversation?{conversation}:{})});
+      const result=await queryAgent({traceContext:{operationId},executionLane:'interactive',question,...scope,contextTime,modelProfileId,modelOverride,onProgress,signal,directImages,openingMemories:memoryLeads,...(conversation?{conversation}:{})});
       signal?.throwIfAborted();
       return ()=>({...result,...conversations.append(previous,{question,...scope,attachments:directImages.filter(image=>attachmentIds.includes(image.id)).map(({id,name,mimeType})=>({id,name,mimeType}))},result)});
     } catch(error) {
