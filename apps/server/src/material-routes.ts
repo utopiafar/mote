@@ -21,7 +21,16 @@ export function registerMaterialRoutes(app:FastifyInstance,materials:MaterialSto
   app.get('/api/materials',async req=>materials.list(listQuery.parse(req.query)));
   app.get('/api/materials/:id',async req=>{
     const material=materials.get(id.parse((req.params as {id:string}).id));
-    if(!material)throw new StoreError('Material not found',404);return material;
+    if(!material)throw new StoreError('Material not found',404);
+    // The owner UI must use stored, current anchors rather than reconstructing
+    // their IDs from a Material's title, source, or revision. A multi-block
+    // Material remains one explicit selection on the existing Memory route.
+    const anchors=material.coverage.state==='complete'?materials.evidenceIds(material.ref):[];
+    const memorySource=material.coverage.state!=='complete'?{status:'waiting' as const,evidenceIds:[]}:
+      anchors.length>20000?{status:'too_large' as const,evidenceIds:[]}:
+      !anchors.length||anchors.some(anchor=>!materials.isCurrentEvidence(anchor))?{status:'unavailable' as const,evidenceIds:[]}:
+      {status:'ready' as const,evidenceIds:anchors};
+    return {...material,memorySource};
   });
   app.get('/api/materials/:id/read',async req=>{
     const materialId=id.parse((req.params as {id:string}).id),{revision:version,...range}=readQuery.parse(req.query);

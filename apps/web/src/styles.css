@@ -4014,6 +4014,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .feature-cards .source-item{text-align:left;min-width:0;overflow-wrap:anywhere;padding:18px}
 .feature-json{white-space:pre-wrap;overflow-wrap:anywhere;max-height:480px;overflow:auto;font-size:12px;line-height:1.6;padding:16px;background:var(--surface-alt,#f5f5f3);border-radius:8px}
 .material-detail,.coding-uploads .panel,.feature-inventory .panel{margin:16px 0;overflow-wrap:anywhere}
+.material-detail>.button,.evidence-text>.button{white-space:normal;max-width:100%;text-align:left}
 .material-detail dl,.coding-uploads dl{display:grid;grid-template-columns:auto 1fr;gap:8px 20px}
 .agent-inspector label{display:flex;gap:12px;align-items:center;margin:16px 0}
 .feature-inventory code{overflow-wrap:anywhere}

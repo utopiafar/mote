@@ -36,9 +36,13 @@ test('capture details declare native file storage for import sources without exp
   const url=`/api/capture-browser/capture:${ack.id}`;
   const detail=await app.inject({url,headers:auth()});assert.equal(detail.statusCode,200,detail.body);
   assert.equal(detail.json().platform,'import');assert.deepEqual(detail.json().fileArchive,{captureId:ack.id});
+  assert.equal(detail.json().requiresMaterialForMemory,true);
+  assert.match(detail.json().memoryMaterialRef,/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/,
+    'the organizer may already have published a current Material; owner navigation uses its stored relationship');
   const phone=await paired();assert.equal((await app.inject({url,headers:auth(phone.token)})).statusCode,404);
   const ordinary=capture();await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:ordinary});
   assert.equal((await app.inject({url:`/api/capture-browser/${ordinary.id}`,headers:auth()})).json().fileArchive,undefined);
+  assert.equal((await app.inject({url:`/api/capture-browser/${ordinary.id}`,headers:auth()})).json().requiresMaterialForMemory,false);
 });
 
 test('scoped owner Memory and evidence views retain corrected formal quotes without admitting them to model reads',async t=>{
@@ -49,6 +53,11 @@ test('scoped owner Memory and evidence views retain corrected formal quotes with
   const {id}=await node.sources.upsert('generated-materials',{externalId,revision:'1',observedAt:at,title:'Generated original',kind:'message',layer:'snapshot',text:'Generated original',deleted:false});
   const draft:MaterialDraft={id:materialId('generated-materials',externalId),kind:'mote.note',schemaVersion:1,title:'Generated corrected material',origin:{sourceId:'generated-materials',externalId,deviceId:'generated-owner',firstAt:at,lastAt:at},blocks:[{id:'body',kind:'text',format:'plain',text:'Generated old claim',memberIds:['original'],evidenceContext:{observedAt:at,document:{timeBasis:'unknown',contentRole:'other'}}}],members:[{id:'original',kind:'capture',ref:'capture:'+id}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}};
   const initial=materials.publish(draft),anchor=materials.evidence(materials.evidenceIds(initial.ref))[0];
+  const originalDetail=await app.inject({url:`/api/capture-browser/${id}`,headers:auth()});
+  const anchorDetail=await app.inject({url:`/api/capture-browser/${anchor.id}`,headers:auth()});
+  assert.equal(originalDetail.json().requiresMaterialForMemory,true);
+  assert.equal(originalDetail.json().memoryMaterialRef,initial.ref,'trusted current source head maps raw original to published Material');
+  assert.equal(anchorDetail.json().memoryMaterialRef,initial.ref,'formal anchor maps to its current Material');
   const memory=memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated memory',statement:`Generated old claim [${anchor.id}]`,uncertainty:'Generated fixture',admission:{layer:'memory',reason:'Generated explicit claim',scope:'Generated fixture',attribution:'user'},evidenceIds:[anchor.id],evidence:[{id:anchor.id,quote:anchor.ocrText}]}]}),citations:[{id:anchor.id,capturedAt:at,appName:'Generated',excerpt:anchor.ocrText}],trace:[],runId:'generated'},'fixture').items[0].id);
   assert.equal(reader.evidence([anchor.id]).length,1);
   materials.publish({...draft,blocks:[{...draft.blocks[0],text:'Generated new claim'}]},{expectedRevision:initial.revision});assert.equal(memories.get(memory.id).status,'stale');assert.deepEqual(reader.evidence([anchor.id]),[]);

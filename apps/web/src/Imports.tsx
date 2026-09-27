@@ -70,7 +70,7 @@ export function Imports({api,onOpen,onMemories,onSettings,onChanged,refreshVersi
   async function action(path:string,body?:unknown){
     setBusy(true);setError('');
     try{update(await api.request<ImportJob>(path,{method:'POST',...(body?{body:JSON.stringify(body)}:{})}));onChanged();}
-    catch(e){setError(e instanceof ApiError&&e.code==='import_stopping'?moteText('上一次处理仍在结束，请稍后再点击重试。'):errorMessage(e));}finally{setBusy(false);}
+    catch(e){setError(e instanceof ApiError&&e.code==='import_stopping'?moteText('上一次处理仍在结束，请稍后再点击重试。'):e instanceof ApiError&&e.code==='import_finishing'?moteText('解析正在收尾，请稍后再确认。'):errorMessage(e));}finally{setBusy(false);}
   }
   async function controlMemory(action:'retry'|'pause'|'resume'|'cancel'){if(!memoryJob)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+encodeURIComponent(memoryJob.id)+'/'+action,{method:'POST'});reloadMemory();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   async function remove(){

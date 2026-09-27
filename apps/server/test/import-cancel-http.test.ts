@@ -43,3 +43,33 @@ test('owner cancellation aborts import parsing, fences late results, survives re
  const confirmed=await node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers});assert.equal(confirmed.statusCode,202);await wait(id,'completed');
  const late=await node.app.inject({method:'POST',url:`/api/imports/${id}/cancel`,headers});assert.equal(late.json().status,'completed');assert.equal(node.store.list().items.length,1);assert.equal(node.archivedFiles.read(file.id).toString(),'Generated original');
 });
+
+for(const changed of [false,true])test(`confirm during settled preview cleanup ${changed?'rejects a changed preview':'is bounded and idempotent'}`,async t=>{
+ const directory=mkdtempSync(join(tmpdir(),'mote-import-confirm-tail-'));
+ const config:Config={dataDir:directory,token:'generated-confirm-owner',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:30_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',diagnosticsEnabled:false};
+ let release!:()=>void,entered!:()=>void;
+ const gate=new Promise<void>(r=>release=r),atCleanup=new Promise<void>(r=>entered=r);
+ const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,close:async()=>{},query:async()=>{throw Error('No model');}},prepareImport:async input=>{
+  writeFileSync(join(input.workspace,'records.jsonl'),JSON.stringify({item:{externalId:'generated',revision:'1',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original',text:'Generated confirmation boundary'},evidencePaths:input.inputPaths})+'\n');
+  return {summary:'Generated preview'};
+ }});await node.app.ready();
+ t.after(async()=>{release();await node.app.close();rmSync(directory,{recursive:true,force:true});});
+ const executor=node.featureServices.executor,drain=executor.drain.bind(executor);let held=false;
+ executor.drain=async ids=>{await drain(ids);if(!held&&ids.some(id=>executor.get(id)?.kind==='imports.prepare')){held=true;entered();await gate;}};
+ const headers={authorization:'Bearer '+config.token};
+ const created=await node.app.inject({method:'POST',url:'/api/imports',headers,payload:{files:[{name:'generated.custom',dataBase64:Buffer.from('Generated confirmation boundary').toString('base64')}]}});
+ assert.equal(created.statusCode,202);const id=created.json().id;await atCleanup;
+ assert.equal(node.imports.get(id).status,'awaiting_confirmation');assert.equal(node.imports.hasActiveWorker(id),false);
+ assert.equal(node.featureServices.importTasks.has(id),true,'only preparation orchestration cleanup remains');
+ const timedOut=await node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers});
+ assert.equal(timedOut.statusCode,409,'unsettled cleanup must not hang or falsely acknowledge confirmation');assert.equal(timedOut.json().error,'import_finishing');
+ assert.equal(node.store.list().items.length,0);
+ const confirming=node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers});
+ const concurrent=node.app.inject({method:'POST',url:`/api/imports/${id}/confirm`,headers});
+ await setTimeout(20);if(changed){node.imports.updateInstruction(id,'Generated new analysis request');await node.imports.prepare(id);assert.equal(node.imports.get(id).status,'awaiting_confirmation');}release();
+ const responses=await Promise.all([confirming,concurrent]);
+ for(const response of responses)assert.equal(response.statusCode,changed?409:202,response.body);
+ if(changed){assert.equal(node.imports.get(id).status,'awaiting_confirmation');assert.equal(node.store.list().items.length,0);return;}
+ for(let i=0;i<100&&node.imports.get(id).status!=='completed';i++)await setTimeout(10);
+ assert.equal(node.imports.get(id).status,'completed');assert.equal(node.store.list().items.length,1);
+});

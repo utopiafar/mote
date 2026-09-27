@@ -158,6 +158,26 @@ test('owner material API requires owner credential and serves only bounded reads
   assert.equal(read.statusCode,200);assert.equal(read.json().text,'first m');
   assert.equal((await app.inject({url:'/api/materials',headers})).json().items[0].ref,record.ref);
   assert.equal((await app.inject({url:`/api/materials/${record.id}/read?length=12001`,headers})).statusCode,400);
+  const captureId=randomUUID();
+  await store.ingest({id:captureId,deviceId:'fixture-device',deviceName:'Generated device',platform:'import',source:'note',
+    capturedAt:'2026-09-24T01:00:00.000Z',durationMs:0,ocrText:'Generated original for two blocks'});
+  const value:MaterialDraft={...draft('fixture-source','two-block-selection'),
+    members:[{id:'original',kind:'capture',ref:`capture:${captureId}`}],
+    blocks:[0,1].map(index=>({id:`body-${index}`,kind:'text' as const,format:'plain',text:`Generated block ${index}`,memberIds:['original']}))};
+  const current=materials.publish(value),anchors=materials.evidenceIds(current.ref);
+  assert.equal(anchors.length,2);
+  const owner=await app.inject({url:`/api/materials/${current.id}`,headers});
+  assert.deepEqual(owner.json().memorySource,{status:'ready',evidenceIds:anchors},'both current blocks belong to one explicit Material selection');
+  assert.equal((await app.inject(`/api/materials/${current.id}`)).statusCode,401);
+  const revised=materials.publish({...value,blocks:[value.blocks[0]!,{...value.blocks[1]!,text:'Generated revised second block'}]},
+    {expectedRevision:current.revision});
+  assert.deepEqual((await app.inject({url:`/api/materials/${revised.id}`,headers})).json().memorySource,
+    {status:'ready',evidenceIds:materials.evidenceIds(revised.ref)});
+  assert.equal((await app.inject({url:`/api/materials/${current.id}/revisions/${current.revision}`,headers})).json().memorySource,undefined,
+    'historical revisions never carry a current extraction selection');
+  store.invalidateMemoryEvidence(materials.evidenceIds(revised.ref)[0]!);
+  assert.deepEqual((await app.inject({url:`/api/materials/${revised.id}`,headers})).json().memorySource,
+    {status:'waiting',evidenceIds:[]},'an invalidated current anchor must not be offered for extraction');
 });
 
 test('source invalidation permits an identical rebuild once, preserves other anchors and stays idempotent across store instances',async t=>{

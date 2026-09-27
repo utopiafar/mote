@@ -96,3 +96,12 @@ test('retry while cancelled parser is stopping shows an actionable error without
  await act(async()=>button(d,'重试导入').click());
  assert.equal(writes,1);assert.match(d.body.textContent!,/上一次处理仍在结束，请稍后再点击重试/);assert.ok(button(d,'重试导入'));assert.equal(button(d,'取消处理'),undefined);
 });
+
+test('preview finishing conflict keeps confirmation available with localized guidance',async t=>{
+ const {root,d}=await fixture(t);let writes=0;
+ const api=apiWith((_path,init)=>{if(init?.method==='POST'){writes++;throw new ApiError('Parsing is finishing',409,'generated-request','import_finishing');}return {items:[importJob({status:'awaiting_confirmation',captureIds:[],preview:{count:1,samples:[]}})]};});
+ await act(async()=>root.render(view(api)));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ await act(async()=>button(d,'确认并开始导入').click());
+ assert.equal(writes,1);assert.match(d.body.textContent!,/解析正在收尾，请稍后再确认。/);
+ assert.ok(button(d,'确认并开始导入'));assert.doesNotMatch(d.body.textContent!,/Parsing is finishing|上一次处理仍在结束/);
+});

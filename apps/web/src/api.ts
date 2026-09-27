@@ -19,6 +19,8 @@ export interface FileEvidence {
   overlap?: boolean;
 }
 export interface Capture {
+  requiresMaterialForMemory?: boolean;
+  memoryMaterialRef?: string;
   perceptionJobs?: Array<{kind:string;state:string;error?:string|null}>;
   revisionState?: 'current'|'historical';
   fileArchive?: {captureId:string};

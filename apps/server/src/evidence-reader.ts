@@ -540,6 +540,13 @@ export class EvidenceReader {
       return this.materialHead(material,scope)?.id===head.captureId?material:undefined;
     }catch{return;}
   }
+  /** Owner navigation uses current stored anchor or source-head relationships.
+   * Neither an upstream URI nor captured prose can name another Material. */
+  currentMemoryMaterialRef(record:CaptureRecord):string|undefined {
+    const anchor=this.materials&&this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(record.id);
+    if(anchor){const material=this.materials!.get(String(anchor.material_id));return material&&this.materials!.isCurrentEvidence(record.id)?material.ref:undefined;}
+    return this.sourceItemMaterial(record,{})?.ref;
+  }
   private materialHead(material:MaterialRecord,scope:Range):CaptureRecord|undefined {
     if(!this.materials||material.memberCount>101||!this.scopedMaterial(material.ref,scope))return;
     try{

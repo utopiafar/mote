@@ -15,7 +15,27 @@ app.post('/api/imports/:id/cancel',async req=>imports.cancel(jobId(req.params)))
 app.get('/api/imports/:id',async req=>imports.get(jobId(req.params)));
 app.delete('/api/imports/:id',async req=>{const id=jobId(req.params);if(importTasks.has(id))throw new StoreError('Import is already processing',409);return imports.delete(id);});
 app.post('/api/imports/:id/prepare',async(req,reply)=>{const id=jobId(req.params),body=z.object({instruction:z.string().max(12000).optional()}).strict().parse(req.body??{});if(importTasks.has(id))return reply.code(202).send(imports.get(id));if(body.instruction!==undefined)imports.updateInstruction(id,body.instruction);imports.get(id);launchImport(id,()=>imports.prepare(id));return reply.code(202).send(imports.get(id));});
-app.post('/api/imports/:id/confirm',async(req,reply)=>{const id=jobId(req.params),job=imports.get(id);if(job.status!=='awaiting_confirmation'&&job.status!=='completed')throw new StoreError('Review an import preview before confirming',409);launchImport(id,()=>imports.confirm(id));return reply.code(202).send(imports.get(id));});
+app.post('/api/imports/:id/confirm',async(req,reply)=>{
+  const id=jobId(req.params);let job=imports.get(id);
+  if(job.status==='completed'||job.status==='importing')return reply.code(202).send(job);
+  if(job.status!=='awaiting_confirmation')throw new StoreError('Review an import preview before confirming',409);
+  // A preview can be visible before its prepare task finishes orchestration cleanup.
+  // Do not acknowledge a confirmation that launchImport would silently discard.
+  const previewIdentity=imports.confirmationIdentity(id);
+  const finishing=()=>reply.code(409).send({error:'import_finishing',message:'Parsing is finishing. Please confirm again shortly.',requestId:req.id});
+  const preparing=importTasks.get(id);
+  if(preparing){
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    try{const finished=await Promise.race([preparing.then(()=>true),new Promise<false>(resolve=>{timer=setTimeout(()=>resolve(false),1000);})]);if(!finished)return finishing();}
+    finally{if(timer)clearTimeout(timer);}
+  }
+  job=imports.get(id);
+  if(imports.confirmationIdentity(id)!==previewIdentity)throw new StoreError('The preview changed; review it before confirming',409);
+  if(job.status==='completed'||job.status==='importing')return reply.code(202).send(job);
+  if(job.status!=='awaiting_confirmation')throw new StoreError('Review an import preview before confirming',409);
+  if(imports.hasActiveWorker(id))return finishing();
+  launchImport(id,()=>imports.confirm(id));return reply.code(202).send(imports.get(id));
+});
 app.post('/api/imports/:id/retry',async(req,reply)=>{const id=jobId(req.params);imports.get(id);if(importTasks.has(id)||imports.hasActiveWorker(id))return reply.code(409).send({error:'import_stopping',message:'Import processing is still stopping. Retry shortly.',requestId:req.id});launchImport(id,()=>imports.retry(id));return reply.code(202).send(imports.get(id));});
 app.get('/api/archived-files/:id',async req=>archivedFiles.get(jobId(req.params)));
 app.get('/api/archived-files/:id/content',async(req,reply)=>{const id=jobId(req.params),file=archivedFiles.get(id);return reply.type('application/octet-stream').header('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(file.name).replace(/'/g,'%27')}`).header('Content-Security-Policy',"default-src 'none'; sandbox").send(archivedFiles.stream(id));});

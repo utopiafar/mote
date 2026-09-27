@@ -45,6 +45,7 @@ export class ImportStore {
   private running=new Set<string>();
   /** Cancellation settles the execution lease before an uncooperative worker exits. */
   hasActiveWorker(id:string):boolean{return this.running.has(id);}
+  confirmationIdentity(id:string):string{return this.phaseId(this.load(id),'commit');}
   private creating=new Map<string,{fingerprint:string;promise:Promise<ImportJob>}>();
   private executor:ExecutionEngine;
   private phaseWaiters=new Map<string,Set<()=>void>>();

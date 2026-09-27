@@ -34,6 +34,22 @@ test('material corrections hide cached prose while pending and explicitly link h
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看当前版本')!.click());assert.deepEqual(opened,[next.ref]);
  state='revoked';await act(async()=>resources(api).invalidate(()=>true));assert.doesNotMatch(d.body.textContent!,/旧的生成正文|查看当前版本/);assert.match(d.body.textContent!,/Generated revoked/);
 });
+test('current multi-block Material offers one bounded extraction route; stale and agent views do not',async t=>{
+ const {root,document:d}=await fixture(t),id='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${id}@${revision}`;
+ const material:Material={id,ref,revision,kind:'mote.file',schemaVersion:1,title:'Generated two-block material',sequence:1,textLength:30,blockCount:2,coverage:{state:'complete'},origin:{sourceId:'generated'},retention:{original:'retained'}};
+ const anchors=[ids[0],ids[1]];let current={...material,memorySource:{status:'ready' as const,evidenceIds:anchors}};
+ const api=apiWith(path=>path.includes('/read?')?{material,text:'Generated formal body',textRange:{offset:0,total:21,nextOffset:null}}:current);
+ await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,onOpen:()=>{}})));
+ const link=d.querySelector<HTMLAnchorElement>('.material-detail a[href*="memoryMaterial="]');assert.ok(link);
+ assert.match(link.href,/memoryMaterial=material%3Amat_[a-f0-9]{64}%40[b]{64}/);
+ current={...current,coverage:{state:'pending'},memorySource:{status:'waiting',evidenceIds:[]}} as typeof current;
+ await act(async()=>resources(api).invalidate(key=>key===`/api/materials/${id}`));
+ assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null);
+ assert.match(d.querySelector('.material-detail')!.textContent!,/暂不能单独提取记忆/);
+ const old={...material,ref:`material:${id}@${'c'.repeat(64)}`,revision:'c'.repeat(64)};
+ await act(async()=>root.render(React.createElement(MaterialDetail,{api,material:old,onOpen:()=>{}})));
+ assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null,'historical pinned version cannot borrow the current link');
+});
 test('agent material views cannot fall back to owner routes when a corrected reference becomes unavailable',async t=>{
  const {root,document:d}=await fixture(t);let unavailable=false;const paths:string[]=[];
  const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'mote.file',schemaVersion:1,title:'Generated agent material',sequence:1,textLength:6,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};
@@ -176,6 +192,19 @@ test('full record uses a visible heading and unnamed text content without losing
  assert.equal(body.querySelector('b, img, script'),null);assert.equal(body.closest('[aria-hidden=true], [inert]'),null);
  assert.equal((d.defaultView as unknown as {__evidenceExecuted?:boolean}).__evidenceExecuted,undefined);
 });
+test('registered source originals navigate through verified Material mapping and never offer raw Memory input',async t=>{
+ const {EvidenceDialog}=await import('../src/shell-components.js');const {root,document:d}=await fixture(t),opened:string[]=[];
+ const ref=`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`;
+ const capture={id:ids[0],source:'file',platform:'import',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated upload',deviceName:'Fixture',ocrText:'Generated original',durationMs:0,indexingStatus:'indexed',privacy:{excluded:false,redacted:false},revisionState:'current',requiresMaterialForMemory:true,memoryMaterialRef:ref};
+ let mapped=true;const api=apiWith(path=>{assert.equal(path,`/api/capture-browser/${ids[0]}`);return mapped?capture:{...capture,memoryMaterialRef:undefined};});
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:ref=>opened.push(ref)})));
+ assert.equal(d.querySelector('.evidence-text a[href*="memorySource="]'),null);
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看正式资料并提取记忆')!.click());
+ assert.deepEqual(opened,[ref]);
+ mapped=false;await act(async()=>resources(api).invalidate(key=>key===`/api/capture-browser/${ids[0]}`));
+ assert.equal(d.querySelector('.evidence-text a[href*="memorySource="]'),null);
+ assert.match(d.querySelector<HTMLAnchorElement>('.evidence-text a[href="#/library/materials"]')!.textContent!,/查看正式资料/);
+});
 
 for(const legacy of [false,true])test(`failed speaker separation keeps raw transcript readable with ${legacy?'legacy':'applied'} summary-disabled policy`,async t=>{
  const {root,document:d}=await fixture(t),mutations:any[]=[];let dialogue=false;
@@ -286,6 +315,26 @@ test('single-record memory extraction uses explicit evidence and chosen recipe w
  assert.deepEqual(writes[0].evidenceIds,[ids[0]]);assert.deepEqual(writes[0].recipes,[{id:'mote.personal-memory',version:'2'}]);assert.equal(writes[0].after,undefined);assert.equal(writes[0].before,undefined);assert.equal(writes[0].deviceId,undefined);
  await act(async()=>{Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='清除资料选择，恢复时间范围')!.click();window.dispatchEvent(new window.HashChangeEvent('hashchange'));});
  assert.equal(d.querySelector('.memory-source-selection'),null);await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='提取当前范围的记忆')!.click());assert.equal(writes[1].evidenceIds,undefined);assert.equal(writes[1].after,'2020-01-01T00:00:00Z');
+});
+test('single-Material selection sends only its current anchors and refuses a stale pinned revision',async t=>{
+ const {root,document:d}=await fixture(t),materialId='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${materialId}@${revision}`,writes:any[]=[];
+ window.history.replaceState(null,'','#/library/memories?memoryMaterial='+encodeURIComponent(ref));
+ let current={id:materialId,ref,revision,title:'Generated two-block R09',memorySource:{status:'ready',evidenceIds:ids}};
+ const api=apiWith(path=>{if(path===`/api/materials/${materialId}`)return current;if(path==='/api/memory-recipes')return {items:[{id:'mote.coding-memory',version:'2',available:true}]};if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};throw Error('Unexpected fixture path '+path);});
+ const read=api.request;api.request=async(path,init)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated submit retained for inspection');}return read(path,init);};
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{after:'2020-01-01T00:00:00Z',before:'2020-01-02T00:00:00Z',deviceId:'other-device'},rangeSelectionKey:'today',onOpen:()=>{}})));
+ assert.match(d.querySelector('.memory-source-selection')!.textContent!,/Generated two-block R09/);
+ await act(async()=>d.querySelector<HTMLInputElement>('.manual-memory-recipes input')!.click());
+ const submit=Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='提取所选资料的记忆')!;
+ assert.equal(submit.disabled,false,d.querySelector('.memory-source-selection')!.textContent!);
+ await act(async()=>submit.click());
+ assert.deepEqual(writes[0].evidenceIds,ids);assert.deepEqual(writes[0].recipes,[{id:'mote.coding-memory',version:'2'}]);
+ assert.equal(writes[0].after,undefined);assert.equal(writes[0].before,undefined);assert.equal(writes[0].deviceId,undefined);
+ current={...current,revision:'c'.repeat(64),ref:`material:${materialId}@${'c'.repeat(64)}`};
+ await act(async()=>resources(api).invalidate(key=>key===`/api/materials/${materialId}`));
+ const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='提取所选资料的记忆')!;
+ assert.equal(button.disabled,true);assert.match(d.querySelector('.memory-source-selection')!.textContent!,/已变化或暂不可提取/);
+ await act(async()=>button.click());assert.equal(writes.length,1);
 });
 
 test('explicit memory source rejects invalid or revoked records and fences a late previous preview',async t=>{

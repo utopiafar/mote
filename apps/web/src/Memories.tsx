@@ -1,4 +1,4 @@
-import {currentMemorySource,memorySourceId,subscribeMemorySource} from './memory-source-route';
+import {currentMemoryMaterial,currentMemorySource,memoryMaterialId,memorySourceId,subscribeMemorySource} from './memory-source-route';
 import {useSyncExternalStore} from 'react';
 import {FeaturePanels} from './features/runtime';
 import {useResource} from './useResource';
@@ -13,6 +13,7 @@ import {AnswerMarkdown} from './AnswerMarkdown';
 import {ArchivedFileButton} from './ArchivedFileButton';
 import {MemoryProgress,useMemoryJob,memoryJobLabels,type MemoryJob} from './MemoryProgress';
 import {ManualMemoryRecipes} from './ManualMemoryRecipes';
+import type {Material} from './Materials';
 import type {MemoryRecipeRef} from './memory-recipes';
 import {type Api,errorMessage,dateTime,type Range,type FileEvidence} from './api';
 
@@ -37,8 +38,13 @@ const labels:Record<string,string>={proposed:moteText("待重新处理"),publish
 function memoryStatus(item:Memory,at:number){if(item.status==='published'){if(item.supersededBy&&(!item.supersededAt||Date.parse(item.supersededAt)<=at))return moteText("已由新版本替代");if(item.validUntil&&Date.parse(item.validUntil)<=at)return moteText("已过期");if(item.validFrom&&Date.parse(item.validFrom)>at)return moteText("尚未生效");}return labels[item.status]||item.status;}
 export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,embedded=false,onChanged}:{onChanged?:()=>void;embedded?:boolean;refreshVersion?:number;api:Api;range:Range;rangeSelectionKey?:string;onOpen:(id:string)=>void}){
   const requestedSource=useSyncExternalStore(subscribeMemorySource,currentMemorySource,()=>null),sourceId=memorySourceId(requestedSource);
+  const requestedMaterial=useSyncExternalStore(subscribeMemorySource,currentMemoryMaterial,()=>null),materialId=memoryMaterialId(requestedMaterial);
   const source=useResource<import('./api').Capture>(api,sourceId?'/api/capture-browser/'+encodeURIComponent(sourceId):null);
-  const explicitSource=requestedSource!==null,sourceReady=!!sourceId&&!!source.data&&!source.error&&!source.loading;
+  const material=useResource<Material>(api,materialId?'/api/materials/'+encodeURIComponent(materialId):null);
+  const explicitMaterial=requestedMaterial!==null,explicitSource=requestedSource!==null||explicitMaterial;
+  const materialReady=!!materialId&&!!material.data&&material.data.ref===requestedMaterial&&material.data.memorySource?.status==='ready'&&!!material.data.memorySource.evidenceIds.length&&!material.error&&!material.loading;
+  const sourceReady=!explicitMaterial&&!!sourceId&&!!source.data&&!source.error&&!source.loading;
+  const selectionReady=explicitMaterial?materialReady:sourceReady;
   const Heading=embedded?'h2':'h1';
   const preserveSelection=useRef(false);const [createdMemoryId,setCreatedMemoryId]=useState<string>();
   const selectionApi=useRef(api);
@@ -64,9 +70,9 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
   useEffect(()=>{const sameSession=selectionApi.current===api;selectionApi.current=api;setCursor(undefined);if(!(sameSession&&preserveSelection.current)){setSelectedId(null);setCreatedMemoryId(undefined);}preserveSelection.current=false;},[api,selectionScope,query,tier,layer,filter,history,asOf]);
   useEffect(()=>{if(job?.status==='completed'||job?.status==='failed')refresh();},[job?.id,job?.status]);
   async function extract(){
-    if(explicitSource&&!sourceReady)return;
+    if(explicitSource&&!selectionReady)return;
     setBusy(true);setError('');
-    try{const result=await api.request<MemoryJob>('/api/memory-jobs',{method:'POST',body:JSON.stringify({... (explicitSource?{evidenceIds:[sourceId]}:range),...(recipes.length?{recipes}:{}),modelProfileId:modelProfileId||undefined,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});setJobId(result.id);reloadJob();refresh();}
+    try{const result=await api.request<MemoryJob>('/api/memory-jobs',{method:'POST',body:JSON.stringify({... (explicitMaterial?{evidenceIds:material.data!.memorySource!.evidenceIds}:explicitSource?{evidenceIds:[sourceId]}:range),...(recipes.length?{recipes}:{}),modelProfileId:modelProfileId||undefined,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});setJobId(result.id);reloadJob();refresh();}
     catch(e){setError(errorMessage(e));}finally{setBusy(false);}
   }
   function open(id:string){setCreatedMemoryId(undefined);setCorrecting(false);setError('');setConfirmDelete(false);setSelectedId(id);}
@@ -77,8 +83,8 @@ export function Memories({api,range,rangeSelectionKey,onOpen,refreshVersion=0,em
   async function retry(){if(!job)return;setBusy(true);setError('');try{await api.request('/api/memory-jobs/'+encodeURIComponent(job.id)+'/retry',{method:'POST'});reloadJob();refresh();}catch(e){setError(errorMessage(e));}finally{setBusy(false);}}
   const visible=items.filter(item=>filter==='all'||item.status===filter),statusAt=asOf&&!history?new Date(asOf).getTime():Date.now();
   const evidence:MemoryEvidence[]=detail?.evidence?.length?detail.evidence:(detail?.evidenceIds??[]).map(id=>({id,capturedAt:detail!.createdAt,receivedAt:detail!.createdAt,contentHash:''}));
-  return <section className="memories-page"><div className="page-heading split-heading"><div><div className="eyebrow">{moteText("有依据，才值得记住")}</div><Heading>{moteText("记忆")}</Heading><p>{moteText("记忆通过自动审核和证据校验后直接生效，辅助问答。你可以随时查看来源、纠正或删除。")}</p></div><button className="button primary" disabled={busy||(explicitSource&&!sourceReady)||job?.status==='running'||job?.status==='queued'} onClick={()=>void extract()}>{busy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>}{explicitSource?moteText("提取所选资料的记忆"):moteText("提取当前范围的记忆")}</button></div>
-    {explicitSource&&<section className="panel panel-pad memory-source-selection"><h2>{moteText("仅这条资料")}</h2><p>{moteText("本次提取只使用下方资料，不使用顶部的时间范围。")} </p>{source.data&&!source.error&&<><strong>{source.data.windowTitle||source.data.appName||moteText("原始记录")}</strong><p>{dateTime(source.data.capturedAt)}</p><p className="file-text">{source.data.ocrText?.slice(0,300)}</p><button className="button" onClick={()=>onOpen(sourceId!)}>{moteText("查看原始记录")}</button></>}{source.loading&&<p role="status">{moteText("正在读取…")}</p>}{(source.error||!sourceId)&&<p role="alert">{source.error?errorMessage(source.error):moteText("所选资料无效，请重新打开原始记录。")}</p>}<button className="button subtle" onClick={()=>{window.location.hash='#/library/memories';}}>{moteText("清除资料选择，恢复时间范围")}</button></section>}
+  return <section className="memories-page"><div className="page-heading split-heading"><div><div className="eyebrow">{moteText("有依据，才值得记住")}</div><Heading>{moteText("记忆")}</Heading><p>{moteText("记忆通过自动审核和证据校验后直接生效，辅助问答。你可以随时查看来源、纠正或删除。")}</p></div><button className="button primary" disabled={busy||(explicitSource&&!selectionReady)||job?.status==='running'||job?.status==='queued'} onClick={()=>void extract()}>{busy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>}{explicitSource?moteText("提取所选资料的记忆"):moteText("提取当前范围的记忆")}</button></div>
+    {explicitSource&&<section className="panel panel-pad memory-source-selection"><h2>{explicitMaterial?moteText('仅这份正式资料'):moteText("仅这条资料")}</h2><p>{moteText("本次提取只使用下方资料，不使用顶部的时间范围。")} </p>{explicitMaterial?<>{materialReady&&<><strong>{material.data!.title}</strong><p>{moteText('当前正式资料 · {0} 个证据片段',material.data!.memorySource!.evidenceIds.length)}</p><button className="button" onClick={()=>onOpen(material.data!.ref)}>{moteText('查看正式资料')}</button></>}{material.loading&&<p role="status">{moteText("正在读取…")}</p>}{(material.error||!materialId||material.data&&!materialReady)&&<p role="alert">{material.error?errorMessage(material.error):moteText('所选正式资料已变化或暂不可提取，请重新打开当前版本。')}</p>}</>:<>{source.data&&!source.error&&<><strong>{source.data.windowTitle||source.data.appName||moteText("原始记录")}</strong><p>{dateTime(source.data.capturedAt)}</p><p className="file-text">{source.data.ocrText?.slice(0,300)}</p><button className="button" onClick={()=>onOpen(sourceId!)}>{moteText("查看原始记录")}</button></>}{source.loading&&<p role="status">{moteText("正在读取…")}</p>}{(source.error||!sourceId)&&<p role="alert">{source.error?errorMessage(source.error):moteText("所选资料无效，请重新打开原始记录。")}</p>}</>}<button className="button subtle" onClick={()=>{window.location.hash='#/library/memories';}}>{moteText("清除资料选择，恢复时间范围")}</button></section>}
     <ModelSelector api={api} feature="memory" value={modelProfileId} onChange={setModelProfileId} disabled={busy||job?.status==='running'||job?.status==='queued'}/>
     <ManualMemoryRecipes api={api} value={recipes} onChange={setRecipes} disabled={busy}/>
     {error&&<div className="error-banner" role="alert">{error}</div>}{jobError&&<div className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{jobError}</div>}
