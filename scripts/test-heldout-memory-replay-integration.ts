@@ -13,7 +13,7 @@ import {usageTotals} from '../apps/server/src/usage.js';
 import {check,equal,json,hashObject,closed,cloneClosed,sqliteCheck,externalNew,corpus,evaluation,verifyFreeze} from './test-heldout-memory-replay.js';
 import {AdmissionLedger,inspectAdmissionLedger,StageSafetyError} from './test-heldout-memory-replay-ledger.js';
 import {type Manifest,codeHashes,executorPins,treeHash,protectedTables,privateWrite,sealedError,safeCode,bindings,settings,openNode} from './test-heldout-memory-replay-stage.js';
-import {type PhaseManifest,type Ref,type WavePlan,ref,readRef,rootAndRuntime,validation,phaseCursor} from './test-heldout-memory-replay-sequence.js';
+import {type PhaseManifest,type Ref,type WavePlan,ref,readRef,rootAndRuntime,validation,phaseCursor,validateRecoveryRoot} from './test-heldout-memory-replay-sequence.js';
 
 type Node=Awaited<ReturnType<typeof openNode>>['node'];
 type Stub=(reader:ContextReader,input:QueryInput)=>Promise<QueryResult>;
@@ -58,21 +58,21 @@ export async function validateIntegration(m:IntegrationManifest,ledgerDirectory:
   const root=await rootAndRuntime(m.rootManifest);check(root.kind===m.kind&&root.experimentHash===m.experimentHash,'integration_experiment_changed');equal(m.runtime,root.runtime,'integration_runtime_changed');
   equal(await codeHashes(),m.codeHashes,'integration_executor_changed');await validation(m.validation,m.codeHashes,'integration');check(sha256(await readFile(m.executor.supervisorPath))===m.executor.supervisorHash,'integration_supervisor_changed');
   if(root.kind==='heldout'){await verifyFreeze(corpus,root.corpusFreeze);await verifyFreeze(evaluation,root.evaluationFreeze);check(sha256(await readFile(root.model.codexBin))===root.model.codexBinHash,'integration_codex_changed');}
-  const events=inspectAdmissionLedger(ledgerDirectory,m.experimentHash);check(events.at(-1)?.sha256===m.parent.ledgerHeadHash,'integration_ledger_advanced');
+  await validateRecoveryRoot(m.recoveryLineage,root,m.rootManifest,m.executor);const events=inspectAdmissionLedger(ledgerDirectory,m.experimentHash,m.recoveryLineage);check(events.at(-1)?.sha256===m.parent.ledgerHeadHash,'integration_ledger_advanced');
   const previous=await readRef<Manifest|PhaseManifest>(m.previousManifest);check(previous.experimentHash===m.experimentHash&&events.filter(e=>e.kind==='executor-freeze').at(-1)?.data.manifestHash===m.previousManifest.sha256,'integration_previous_executor_changed');
-  const cursor=phaseCursor(events,root),expected=await boundary(root,cursor);check(cursor.wave===m.task.wave&&cursor.contextTime===m.task.contextTime&&cursor.archiveHeadHash===m.parent.treeHash,'integration_parent_not_canonical');
+  const cursor=phaseCursor(events,root,m.recoveryLineage),expected=await boundary(root,cursor);check(cursor.wave===m.task.wave&&cursor.contextTime===m.task.contextTime&&cursor.archiveHeadHash===m.parent.treeHash,'integration_parent_not_canonical');
   check(await treeHash(m.parent.path)===m.parent.treeHash,'integration_parent_changed');const plan=await readRef<IntegrationPlan>(m.task.selectionPlan);
   check(plan.wave===cursor.wave&&plan.contextTime===cursor.contextTime&&plan.experimentHash===m.experimentHash&&plan.totalBatches===cursor.totalBatches,'integration_selection_scope_changed');equal(plan.wavePlan,cursor.wavePlan,'integration_wave_plan_changed');
   equal({settingsHash:plan.settingsHash,bindingsHash:plan.bindingsHash,protectedHash:plan.protectedHash},{settingsHash:expected.settingsHash,bindingsHash:expected.bindingsHash,protectedHash:expected.protectedHash},'integration_configuration_changed');
   equal(await selectionAt(m.parent.path,m.task.contextTime),selectionFields(plan),'integration_selection_changed');return {root,cursor,plan,ledgerHead:events.at(-1)!.sha256};
 }
 /** No app/model is opened during freeze. Selection details are sealed, not ROOT_SAFE. */
-export async function freezeIntegration(options:{rootManifest:string;previousManifest:string;parent:string;ledgerDirectory:string;validation:string;supervisorPath:string;output:string}){
-  const rootRef=await ref(options.rootManifest),root=await rootAndRuntime(rootRef),events=inspectAdmissionLedger(options.ledgerDirectory,root.experimentHash),cursor=phaseCursor(events,root),expected=await boundary(root,cursor);
+export async function freezeIntegration(options:{rootManifest:string;previousManifest:string;parent:string;ledgerDirectory:string;validation:string;supervisorPath:string;output:string;recoveryLineage?:PhaseManifest['recoveryLineage']}){
+  const rootRef=await ref(options.rootManifest),root=await rootAndRuntime(rootRef),events=inspectAdmissionLedger(options.ledgerDirectory,root.experimentHash,options.recoveryLineage),cursor=phaseCursor(events,root,options.recoveryLineage),expected=await boundary(root,cursor);
   const selection=await selectionAt(options.parent,cursor.contextTime);equal(selection.protectedHash,expected.protectedHash,'integration_protected_source_changed');
   const plan:IntegrationPlan={...selection,experimentHash:root.experimentHash,wave:cursor.wave,totalBatches:cursor.totalBatches,settingsHash:expected.settingsHash,bindingsHash:expected.bindingsHash,...(cursor.wavePlan?{wavePlan:cursor.wavePlan}:{})};
   const planPath=join(options.output,'DO_NOT_OPEN','integration-selection.json');await privateWrite(planPath,plan);
-  const m:IntegrationManifest={schema:'mote-heldout-phase-manifest@1',kind:root.kind,experimentHash:root.experimentHash,rootManifest:rootRef,previousManifest:await ref(options.previousManifest),validation:await ref(options.validation),runtime:root.runtime,executor:{supervisorPath:options.supervisorPath,supervisorHash:sha256(await readFile(options.supervisorPath))},codeHashes:await codeHashes(),limits:integrationLimits,parent:{path:options.parent,treeHash:await treeHash(options.parent),ledgerHeadHash:events.at(-1)!.sha256},task:{kind:'integration',wave:cursor.wave,contextTime:cursor.contextTime,selectionPlan:await ref(planPath)}};
+  const m:IntegrationManifest={...(options.recoveryLineage?{recoveryLineage:options.recoveryLineage}:{}),schema:'mote-heldout-phase-manifest@1',kind:root.kind,experimentHash:root.experimentHash,rootManifest:rootRef,previousManifest:await ref(options.previousManifest),validation:await ref(options.validation),runtime:root.runtime,executor:{supervisorPath:options.supervisorPath,supervisorHash:sha256(await readFile(options.supervisorPath))},codeHashes:await codeHashes(),limits:integrationLimits,parent:{path:options.parent,treeHash:await treeHash(options.parent),ledgerHeadHash:events.at(-1)!.sha256},task:{kind:'integration',wave:cursor.wave,contextTime:cursor.contextTime,selectionPlan:await ref(planPath)}};
   await validateIntegration(m,options.ledgerDirectory);await privateWrite(join(options.output,'ROOT_SAFE_manifest.json'),m);return m;
 }
 
@@ -100,7 +100,7 @@ export async function runIntegration(options:{manifest:IntegrationManifest;manif
   check(sha256(json(m))===options.manifestHash,'integration_manifest_changed');const {root,cursor,plan,ledgerHead}=await validateIntegration(m,options.ledgerDirectory);
   // Ledger lives outside both mutable clones and immutable parent snapshots.
   await externalNew(options.ledgerDirectory);for(const other of [output,m.parent.path])for(const [a,b] of [[other,options.ledgerDirectory],[options.ledgerDirectory,other]]){const part=relative(a,b);check(part==='..'||part.startsWith('../'),'integration_ledger_inside_snapshot');}
-  const ledger=new AdmissionLedger(options.ledgerDirectory,m.experimentHash,124),stage=`wave${m.task.wave}-integration`,vault=join(output,'DO_NOT_OPEN','working');let node:Node|undefined,started=false,succeeded=false,failure:unknown,windowId:string|undefined,snapshot='',inherited=new Set<string>(),admissionOpen=true,activeControl:AbortController|undefined;
+  const ledger=new AdmissionLedger(options.ledgerDirectory,m.experimentHash,124,m.recoveryLineage),stage=`wave${m.task.wave}-integration`,vault=join(output,'DO_NOT_OPEN','working');let node:Node|undefined,started=false,succeeded=false,failure:unknown,windowId:string|undefined,snapshot='',inherited=new Set<string>(),admissionOpen=true,activeControl:AbortController|undefined;
   const order=new IntegrationCallOrder(plan.inputs),usedReceipts=new Set<string>();let inFlight=false;const report:Record<string,any>={schema:'mote-heldout-integration-stage@1',stage,phase:'integration',wave:m.task.wave,contextTime:m.task.contextTime,status:'running',manifestHash:options.manifestHash,selectionPlanHash:m.task.selectionPlan.sha256,inputCount:plan.inputs.length,capacity:plan.capacity,completedDomainCount:0,realModelCalls:0,stubModelCalls:0,semanticContentExposed:false,startedAt:new Date().toISOString(),limits:m.limits};
   const interrupted=()=>{ledger.stop('integration_interrupted');admissionOpen=false;activeControl?.abort();};process.on('SIGTERM',interrupted);process.on('SIGINT',interrupted);
   try{
