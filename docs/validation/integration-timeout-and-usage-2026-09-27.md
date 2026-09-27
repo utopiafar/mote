@@ -28,3 +28,11 @@ Generated Codex subprocess fixtures cover local deadline, host deadline, owner c
 | Script groups | 4 / 4 | 0 |
 
 All 5,575 bilingual messages/call sites, library builds, workspace/script types and the central-runner checks passed. No new live-model run, private-media processing or physical-device check was performed for this correction. The full Goal remains incomplete.
+
+## Startup recovery follow-up
+
+A generated close-and-reopen probe found a separate interruption path: when the server exited before closing a usage receipt, startup changed `running` to `failed` but retained `complete: true` on its last cumulative token sample. The summary then reported no unknown usage and the detail view presented that partial sample as complete.
+
+Startup now marks only unclosed `thread_cumulative` samples incomplete, preserving every reported quantity and retaining an unknown cost. Missing usage remains missing. Already closed failed/completed receipts are unchanged, and repeated startup is idempotent. This does not infer missing tokens or retrospectively rewrite already closed historical failures.
+
+The regression failed before the fix and passed afterward. The affected server usage/query-run suites passed 14/14, Web usage tests passed 2/2, and server typechecking passed on Node 24. No real model, private input or frozen experiment was used or changed. This follow-up used targeted verification; the earlier full-suite results above remain historical.
