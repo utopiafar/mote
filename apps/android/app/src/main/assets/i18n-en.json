@@ -1,4 +1,8 @@
 {
+  "取消回顾": "Cancel review",
+  "回顾已取消": "Review cancelled",
+  "本次回顾已停止，不会继续生成报告。原始资料仍保留。": "This review has stopped and will not produce a report. Original records are retained.",
+
   "解析正在收尾，请稍后再确认。": "Parsing is finishing. Please confirm again shortly.",
   "回答中的表格": "Table in answer",
   "适应宽度": "Fit width",

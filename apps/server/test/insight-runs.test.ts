@@ -27,6 +27,7 @@ test('review launch acknowledges immediately, survives reconnect, reports real t
   assert.equal((await app.inject({url:'/api/insight-runs',headers})).json().items[0].id,payload.requestId);
   release();await insightRuns.close();
   const completed=(await app.inject({url:'/api/insight-runs/'+payload.requestId,headers})).json();assert.equal(completed.status,'completed');assert.equal(completed.result.answer,result.answer);
+  const lateCancel=await app.inject({method:'POST',url:`/api/insight-runs/${payload.requestId}/cancel`,headers});assert.equal(lateCancel.json().status,'completed');assert.equal(lateCancel.json().result.answer,result.answer);
   store.db.exec('DELETE FROM insights');assert.equal(insightRuns.detail(payload.requestId).result,undefined,'deleted reports are never revived by job polling');
 });
 test('a review publishes when another original arrives during model generation',async t=>{
@@ -49,4 +50,17 @@ test('failures and interrupted runs are visible without provider secrets; run en
   store.db.prepare('DELETE FROM execution_steps WHERE id=?').run(`insight:${id}`);
   const recovered=new InsightRuns(store);assert.equal(recovered.get(id).error?.code,'interrupted');
   const invalid=await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{requestId:randomUUID(),after:'2026-09-16T00:00:00Z',before:'2026-09-15T00:00:00Z'}});assert.equal(invalid.statusCode,400);
+});
+
+test('owner HTTP cancellation aborts a review and fences late reports without replay',async t=>{
+ let release!:()=>void,entered!:()=>void,signal:AbortSignal|undefined,calls=0;
+ const gate=new Promise<void>(r=>release=r),started=new Promise<void>(r=>entered=r);
+ const {app,store,insightRuns,connections}=await fixture(t,{configured:true,query:async input=>{calls++;signal=input.signal;entered();await gate;return {answer:'Generated late report',citations:[],trace:[],runId:randomUUID()};},close:async()=>release()});
+ const id=randomUUID();assert.equal((await app.inject({method:'POST',url:'/api/insight-runs',headers,payload:{requestId:id}})).statusCode,202);await started;
+ const {invitation}=connections.invite({serverUrl:'http://127.0.0.1:3456',label:'Generated collector'}),collector=await connections.redeem({code:invitation.code,deviceId:'fixture',deviceName:'Generated',platform:'macos'});
+ for(const [authorization,code] of [['',401],['Bearer '+collector.token,403]] as const)assert.equal((await app.inject({method:'POST',url:`/api/insight-runs/${id}/cancel`,headers:{authorization}})).statusCode,code);
+ const response=await app.inject({method:'POST',url:`/api/insight-runs/${id}/cancel`,headers});assert.equal(response.statusCode,200);assert.equal(response.json().status,'cancelled');assert.equal(signal?.aborted,true);
+ release();await insightRuns.close();assert.equal(insightRuns.get(id).status,'cancelled');assert.equal(store.insights().length,0);assert.equal(calls,1);
+ assert.equal((await app.inject({method:'POST',url:`/api/insight-runs/${id}/cancel`,headers})).json().status,'cancelled');
+ const restored=new InsightRuns(store);assert.equal(restored.get(id).status,'cancelled');await restored.close();assert.equal(calls,1);
 });

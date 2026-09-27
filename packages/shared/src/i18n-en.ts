@@ -2,6 +2,9 @@
 export const english: Readonly<Record<string, string>> = {
   "确认后保存记录；记忆整理按自动设置执行，也可稍后手动发起。": "Confirm to save the records. Memory processing follows your automatic settings, or you can start it manually later.",
   "回答中的表格": "Table in answer",
+  "取消回顾": "Cancel review",
+  "回顾已取消": "Review cancelled",
+  "本次回顾已停止，不会继续生成报告。原始资料仍保留。": "This review has stopped and will not produce a report. Original records are retained.",
   "解析正在收尾，请稍后再确认。": "Parsing is finishing. Please confirm again shortly.",
   "上一次处理仍在结束，请稍后再点击重试。": "The previous processing attempt is still stopping. Please retry shortly.",
   "取消处理": "Cancel processing",
