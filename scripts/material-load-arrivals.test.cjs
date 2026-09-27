@@ -27,6 +27,7 @@ test('independent schedule survives held ACK, producer-only outage and accepted 
  await command(control,'offline');await assert.rejects(request(proxy.url,'/api/fixture/state'));await command(control,'recover');
  const result=await run.done;assert.equal(result.uniqueAcknowledged,12);assert.ok(Object.values(result.attempts).some(n=>n>1));
  let state;await until(async()=>{state=await request(endpoint,'/api/fixture/drain',{});return state.count===13;});assert.equal(new Set(state.catalog.map(r=>r.id)).size,13);assert.equal(state.calls.length,0);
+ assert.equal(new Set(state.publications.map(e=>JSON.stringify([e.materialId,e.revision]))).size,13);assert.ok(state.publications.every(e=>Number.isFinite(Date.parse(e.publishedAt))&&Date.parse(e.publishedAt)>Date.parse('2026-09-01T00:00:00Z')),'Publication clock is runtime, not source observedAt');
  assert.deepEqual(state.catalog.filter(x=>x.id!==fixture.control.materialId).map(x=>x.id).sort(),fixture.records.slice(0,12).map(x=>x.materialId).sort());
  const events=readFileSync(join(root,'arrivals.jsonl'),'utf8').trim().split('\n').map(JSON.parse);assert.deepEqual(events.filter(x=>x.event==='enqueued').map(x=>x.plannedMs),Array.from({length:12},(_,i)=>i*10));
  writeFileSync(join(root,'receipt.json'),JSON.stringify({status:'passed',realModels:0,planned:12,uniqueAcknowledged:12,uniqueMaterials:12,result},null,2),{mode:0o600});t.diagnostic('Private small-run evidence: '+root);
@@ -39,4 +40,22 @@ test('wrong receipt identity fails closed, and late success cannot change a dead
  let release;const held=new Promise(r=>{release=r;});const late=startArrivals({records,ledgerPath:join(root,'late.jsonl'),intervalMs:5,dispatchMs:5,deadlineMs:50,maxPending:1,send:()=>held});
  await assert.rejects(late.done,/deadline/);release({receipts:[{sourceId:records[0].sourceId,externalId:'0',revision:'1',receipt:{state:'received'}}]});await late.settled();assert.equal(late.snapshot().uniqueAcknowledged,0);assert.ok(!readFileSync(join(root,'late.jsonl'),'utf8').includes('"event":"acknowledged"'));
  t.diagnostic('Private failure-boundary evidence: '+root);
+});
+
+test('publication timestamps reveal commits between unchanged drain samples and reconstruct the pending queue', () => {
+ const {publicationOverlap}=require('./material-load-arrivals.cjs');
+ const schedule=Array.from({length:4},(_,i)=>({key:'key'+i,materialId:'material'+i,plannedMs:i*10}));
+ const ledger=[{event:'plan',schedule},...schedule.map((x,i)=>({event:'enqueued',key:x.key,at:1000+i*10})),{event:'acknowledged',key:'key0',at:1100},{event:'acknowledged',key:'key1',at:1150},{event:'acknowledged',key:'key2',at:1300},{event:'acknowledged',key:'key3',at:1350}];
+ // Both bounded drain call samples see zero internal change. A real publication lies between them.
+ const drainSamples=[{start:1160,end:1170,beforeCount:1,afterCount:1},{start:1240,end:1250,beforeCount:2,afterCount:2}];
+ assert.ok(drainSamples.every(x=>x.beforeCount===x.afterCount));
+ const publications=[{materialId:'material1',revision:'1',publishedAt:new Date(1200).toISOString()},{materialId:'not-planned',revision:'1',publishedAt:new Date(1200).toISOString()}];
+ const result=publicationOverlap({ledger,publications,actions:[{name:'wheel',start:1190,end:1230},{name:'later',start:1400,end:1450}],recoveredAt:1180});
+ assert.throws(()=>publicationOverlap({ledger,publications,actions:[],recoveredAt:NaN}),/Recovery/);
+ const cleared=[...ledger,{event:'acknowledged',key:'key2',at:1175},{event:'acknowledged',key:'key3',at:1180}];
+ const clearedResult=publicationOverlap({ledger:cleared,publications,actions:[{name:'wheel',start:1190,end:1230}],recoveredAt:1180});
+ assert.equal(clearedResult.events.length,1);assert.equal(clearedResult.events[0].pendingAtPublication,0);assert.equal(clearedResult.overlappingActions.length,0);
+ assert.equal(result.events.length,1);assert.equal(result.events[0].pendingAtPublication,2);assert.deepEqual(result.overlappingActions.map(x=>x.name),['wheel']);
+ assert.equal(publicationOverlap({ledger,publications,actions:[{name:'before',start:1100,end:1170}],recoveredAt:1180}).overlappingActions.length,0);
+ assert.equal(publicationOverlap({ledger,publications,actions:[{name:'wide',start:1000,end:1400}],recoveredAt:1250}).events.length,0);
 });

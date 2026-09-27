@@ -14,7 +14,7 @@ function startArrivals({records,ledgerPath,send,intervalMs=250,dispatchMs=2000,b
  const pending=[],acknowledged=new Set(),attempts=new Map();
  const done=new Promise((yes,no)=>{resolve=yes;reject=no;});done.catch(()=>{});
  const log=(event,fields={})=>appendFileSync(ledgerPath,JSON.stringify({event,at:Date.now(),elapsedMs:performance.now()-start,...fields})+'\n');
- log('plan',{wallStart,schedule:schedule.map(({key,plannedMs,record})=>({key,plannedMs,sha256:record.sha256}))});
+ log('plan',{wallStart,schedule:schedule.map(({key,plannedMs,record})=>({key,plannedMs,materialId:record.materialId,sha256:record.sha256}))});
  function stop(error){if(stopped)return;stopped=true;clearInterval(arrivals);clearInterval(dispatcher);clearTimeout(deadline);if(error){log('failed',{message:error.message});reject(error);}else{log('complete',{uniqueAcknowledged:acknowledged.size,peakPending});resolve({wallStart,uniqueAcknowledged:acknowledged.size,peakPending,attempts:Object.fromEntries(attempts)});}}
  function enqueue(){try{const elapsed=performance.now()-start;while(next<schedule.length&&schedule[next].plannedMs<=elapsed){const entry=schedule[next++];pending.push(entry);peakPending=Math.max(peakPending,pending.length);assert.ok(pending.length<=maxPending,'Frozen pending bound exceeded');log('enqueued',{key:entry.key,plannedMs:entry.plannedMs,latenessMs:elapsed-entry.plannedMs,pending:pending.length});}}catch(e){stop(e);}}
  async function dispatch(){if(stopped||active||!pending.length)return;active=true;const selected=pending.slice(0,batchSize);
@@ -24,4 +24,24 @@ function startArrivals({records,ledgerPath,send,intervalMs=250,dispatchMs=2000,b
  enqueue();
  return {done,settled:()=>activeWork,stop:()=>stop(Error('Independent arrivals stopped')),snapshot:()=>({planned:schedule.length,enqueued:next,pending:pending.length,active,uniqueAcknowledged:acknowledged.size,peakPending})};
 }
-module.exports={startArrivals};
+/** Correlate actual persisted publication timestamps, never infer work from drain call spans. */
+function publicationOverlap({ledger,publications,actions,recoveredAt}){
+ assert.ok(Number.isFinite(recoveredAt),'Recovery application time was not observed');
+ const plan=ledger.find(e=>e.event==='plan');assert.ok(plan,'Missing immutable plan');
+ const planned=new Map(plan.schedule.map(e=>[e.key,e]));
+ assert.ok(plan.schedule.every(e=>typeof e.materialId==='string'&&e.materialId.length>0),'Missing planned Material identity');
+ const allowed=new Set(plan.schedule.map(e=>e.materialId));assert.equal(allowed.size,plan.schedule.length,'Duplicate planned Material identity');
+ const transitions=ledger.filter(e=>['enqueued','acknowledged'].includes(e.event));
+ const unique=new Map();
+ for(const e of publications){
+  const at=Date.parse(e.publishedAt);assert.ok(Number.isFinite(at),'Invalid publication clock');
+  if(!allowed.has(e.materialId)||at<recoveredAt)continue;
+  // Millisecond ties are conservative: an enqueue in the publication millisecond is not proof it preceded the publish; an ACK at that time removes it.
+  const pending=new Set();
+  for(const change of transitions){if(change.at>at)continue;assert.ok(planned.has(change.key),'Unplanned queue identity');if(change.event==='enqueued'){if(change.at<at)pending.add(change.key);}else pending.delete(change.key);}
+  const key=JSON.stringify([e.materialId,e.revision]);unique.set(key,{...e,at,pendingAtPublication:pending.size});
+ }
+ const events=[...unique.values()];
+ return {events,overlappingActions:actions.filter(a=>events.some(e=>e.pendingAtPublication>0&&a.start<=e.at&&a.end>=e.at)).map(a=>({name:a.name,start:a.start,end:a.end,publications:events.filter(e=>e.pendingAtPublication>0&&a.start<=e.at&&a.end>=e.at)}))};
+}
+module.exports={startArrivals,publicationOverlap};
