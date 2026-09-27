@@ -11,6 +11,17 @@ test('image tool requires prior text expansion, scope and a bounded read budget'
  const call=(tool,args)=>fetch(b.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+b.token,'Content-Type':'application/json'},body:JSON.stringify(args)});
  assert.equal((await call('read_image',{id:record.id})).status,400);await call('search_context',{});assert.equal((await call('read_image',{id:record.id})).status,400);await call('evidence',{ids:[record.id]});assert.equal((await call('read_image',{id:record.id})).status,200);assert.equal(calls,1);
 });
+test('authored image attachments retain parent scope and exact selection through the bridge',async t=>{
+ const attachmentId='generated-attachment',parent={...record,sourceType:'message',capturedAt:'2026-09-27T00:00:00Z',provenance:{sourceId:'generated',externalId:'caption',revision:'1',kind:'message',layer:'original',document:{recordedAt:'2026-04-13T13:18:00+08:00',timeBasis:'recorded',contentRole:'authored',attachments:[{id:attachmentId,mimeType:'image/png'}]}}};
+ const selections=[],reader={search:async()=>[parent],timeline:async()=>[parent],evidence:async()=>[parent],activity:async()=>({}),devices:async()=>[],readImage:async args=>{selections.push(args);return {mimeType:'image/png',data:'Zml4dHVyZQ=='};}};
+ const b=await startBridge(reader,{question:'Generated caption and image',after:'2026-04-13T00:00:00+08:00',before:'2026-04-14T00:00:00+08:00'},24);t.after(()=>b.close());
+ const call=(tool,args)=>fetch(b.url+'/'+tool,{method:'POST',headers:{Authorization:'Bearer '+b.token,'Content-Type':'application/json'},body:JSON.stringify(args)});
+ assert.equal((await call('read_image',{id:parent.id,attachmentId})).status,400);
+ assert.equal((await call('search_context',{})).status,200);assert.equal((await call('evidence',{ids:[parent.id]})).status,200);
+ assert.equal((await call('read_image',{id:parent.id,attachmentId:'another'})).status,400);
+ const image=await call('read_image',{id:parent.id,attachmentId});assert.equal(image.status,200,await image.clone().text());assert.equal((await image.json()).attachmentId,attachmentId);
+ assert.deepEqual(selections,[{id:parent.id,attachmentId}]);
+});
 test('Harness sends image bytes only after model-selected read_image', {timeout:45000},async t=>{
  const bytes=await sharp({create:{width:8,height:8,channels:3,background:'#abcabc'}}).png().toBuffer(),requests=[];
  const reader={search:async()=>[record],timeline:async()=>[record],evidence:async()=>[record],activity:async()=>({}),devices:async()=>[],readImage:async()=>({mimeType:'image/png',data:bytes.toString('base64')})};

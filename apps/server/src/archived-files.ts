@@ -86,7 +86,7 @@ export class ArchivedFileStore {
       archiveRelativePath(file.relativePath);
       if(file.name!==basename(file.relativePath)||/[\r\n\u0000]/.test(file.mimeType))throw new StoreError('Invalid portable file metadata');
       if(seen.has(file.id))throw new StoreError('Duplicate portable file ID');seen.add(file.id);
-      if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(dataBase64))throw new StoreError('Invalid portable file base64');
+      if(!validBase64(dataBase64))throw new StoreError('Invalid portable file base64');
       const bytes=Buffer.from(dataBase64,'base64');total+=bytes.length;if(total>512*1024*1024)throw new StoreError('Portable files exceed 512 MiB',413);
       if(bytes.length!==file.sizeBytes||sha256(bytes)!==file.hash)throw new StoreError('Portable file checksum or size mismatch');
       const existing=this.store.db.prepare('SELECT json FROM archived_files WHERE id=?').get(file.id) as {json:string}|undefined;
@@ -121,3 +121,4 @@ export class ArchivedFileStore {
     this.store.assets.sweep();return {files,bytes};
   }
 }
+import {validBase64} from './base64.js';

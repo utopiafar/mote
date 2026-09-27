@@ -9,13 +9,26 @@ import {reviewMemory,memoryReviewReceipt} from '../src/memory-review.js';
 import {MemoryReviewCache} from '../src/memory-review-cache.js';
 import {Store} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
-import {MemoryStore} from '../src/memory.js';
+import {MemoryStore,MEMORY_ADMISSION_PROMPT,MEMORY_EXTRACTION_PROMPT} from '../src/memory.js';
+import {CONSOLIDATION_RELATION_POLICY} from '../src/memory-policy.js';
 import {MemoryPipeline} from '../src/memory-pipeline.js';
+import {defaultMemoryReviewStrategy} from '../src/memory-review-policy.js';
+import {memoryStrategyPin} from '../src/memory-strategy-contract.js';
 import {memorySchema} from '../src/memory-schema.js';
 
 const id=randomUUID();
 const draft=()=>({answer:JSON.stringify({memories:[{title:'Untrusted candidate',statement:`Proposed meeting [${id}]`,uncertainty:'Outcome unknown',admission:{layer:'observation',attribution:'observed',reason:'Model says low risk',scope:'Generated'},evidenceIds:[id],evidence:[{id,quote:'Meeting proposed'}]}]}),citations:[{id,capturedAt:'2026-09-01T00:00:00Z',appName:'Generated',excerpt:'Meeting proposed'}],trace:[],runId:randomUUID()});
 const input=():QueryInput=>({contextTime:'2026-09-01T00:00:00Z',question:'Keep speaker and event state',skill:'memory-extraction',responseMode:'memory-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:16}],validateOutput:()=>undefined});
+
+test('review of a complete consolidation task fits the Agent question limit without discarding its context',async()=>{
+ const context='Generated candidate context. '.repeat(100),question=MEMORY_EXTRACTION_PROMPT+'\n'+CONSOLIDATION_RELATION_POLICY+'\n'+context,d=draft();
+ assert.ok(question.length+MEMORY_ADMISSION_PROMPT.length>20000,'Fixture must cross the old duplicate-policy limit');
+ await reviewMemory({...input(),question,skill:'memory-consolidation'},d,async request=>{
+  assert.ok(request.question.length<=20000);assert.equal(request.question.split(MEMORY_ADMISSION_PROMPT).length-1,1);
+  assert.ok(request.question.includes(context));assert.ok(request.question.includes(CONSOLIDATION_RELATION_POLICY));
+  assert.deepEqual(request.taskContext?.untrustedMemoryDraft,JSON.parse(d.answer));return {...d,runId:'review'};
+ });
+});
 
 test('only an identical independently reviewed verdict is reused; no duplicate usage or false run receipt',async()=>{
  const cache=new MemoryReviewCache(),options={cache,snapshot:()=> 'host-version'},d=draft();let calls=0,validations=0;
@@ -24,7 +37,7 @@ test('only an identical independently reviewed verdict is reused; no duplicate u
  const first=await reviewMemory(request,d,query,options);assert.equal(memoryReviewReceipt(first)?.decision,'independent');assert.equal(calls,1);
  const second=await reviewMemory({...request,traceContext:{jobId:'another-job'},onTrace:()=>{}},{...d,runId:'later-extraction'},query,options);
  assert.equal(calls,1);assert.equal(validations,4);assert.equal(second.answer,first.answer);assert.equal(second.usage,undefined);
- assert.deepEqual(memoryReviewReceipt(second),{policy:'bounded-exact-review@1',decision:'reused',draftRunId:'later-extraction',reviewRunId:'actual-review',checkedAt:memoryReviewReceipt(second)!.checkedAt,contextTime:input().contextTime,inputHash:memoryReviewReceipt(first)!.inputHash,model:'fixture'});
+ assert.deepEqual(memoryReviewReceipt(second),{strategy:memoryStrategyPin(defaultMemoryReviewStrategy),policy:'bounded-exact-review@1',decision:'reused',draftRunId:'later-extraction',reviewRunId:'actual-review',checkedAt:memoryReviewReceipt(second)!.checkedAt,contextTime:input().contextTime,inputHash:memoryReviewReceipt(first)!.inputHash,model:'fixture'});
  second.answer='mutated by caller';assert.equal((await reviewMemory(request,d,query,options)).answer,'{"memories":[]}');
 });
 
@@ -82,7 +95,7 @@ test('pipeline saves the host review receipt and keeps user publication separate
  assert.equal(memories.publish(m.id).status,'published');
 });
 
-test('transaction rollback retries extraction with the original independent verdict, without duplicating review charges',async t=>{
+test('transaction rollback reuses the validated draft and original independent verdict without duplicate charges',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'mote-review-recovery-')),store=new Store(dir),sources=new SourceStore(store),memories=new MemoryStore(store),cache=new MemoryReviewCache();
  sources.register({id:'generated',name:'Generated',kind:'custom',deviceId:'generated',platform:'import'});
  const original=await sources.upsert('generated',{externalId:'1',revision:'1',text:'Meeting proposed',observedAt:'2026-09-01T00:00:00Z',kind:'file',layer:'original'});
@@ -92,6 +105,14 @@ test('transaction rollback retries extraction with the original independent verd
  store.db.exec("CREATE TRIGGER fixture_commit_failure BEFORE INSERT ON memory_checkpoints BEGIN SELECT RAISE(ABORT,'generated commit failure'); END");
  const job=await pipeline.run(pipeline.create({evidenceIds:[original.id]}).id);assert.equal(job.status,'failed');assert.equal(memories.list().length,0);assert.equal(reviews,1);
  store.db.exec('DROP TRIGGER fixture_commit_failure');
- const recovered=await pipeline.retry(job.id);assert.equal(recovered.status,'completed');assert.equal(extractions,2);assert.equal(reviews,1);
- const m=memories.get(recovered.memoryIds[0]);assert.equal(m.reviewReceipt?.decision,'reused');assert.equal(m.reviewReceipt?.draftRunId,'draft-2');assert.equal(m.reviewRunId,'original-independent-review');assert.equal(m.status,'proposed');
+ const recovered=await pipeline.retry(job.id);assert.equal(recovered.status,'completed');assert.equal(extractions,1);assert.equal(reviews,1);
+ const m=memories.get(recovered.memoryIds[0]);assert.equal(m.reviewReceipt?.decision,'reused');assert.equal(m.reviewReceipt?.draftRunId,'draft-1');assert.equal(m.reviewRunId,'original-independent-review');assert.equal(m.status,'proposed');
+});
+
+test('changed host integration instructions invalidate a bounded review cache entry',async()=>{
+ const d=draft(),cache=new MemoryReviewCache(),options={cache,snapshot:()=> 'same',strategy:defaultMemoryReviewStrategy};let calls=0;
+ const query=async(request:QueryInput)=>{calls++;assert.ok(request.question.includes('Generated host scope'));return {...d,runId:'review-'+calls};};
+ await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope A'});
+ await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope B'});
+ await reviewMemory(input(),d,query,{...options,taskInstructions:'Generated host scope B'});assert.equal(calls,2);
 });

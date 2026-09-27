@@ -17,13 +17,27 @@ async function fixture(t:any){
  const dir=mkdtempSync(join(tmpdir(),'mote-shared-reader-'));let agentReader!:ContextReader;
  const config:Config={dataDir:dir,token,tokenPath:'fixture-only',host:'127.0.0.1',port:0,maxStorageBytes:20_000_000,maxExportBytes:1_000_000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture-model',modelBaseUrl:'https://synthetic.invalid',apiKey:'synthetic-key',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',connectors:{directory:join(dir,'connectors'),mcpEnabled:true,mcpReadToken:readToken}};
  const node=await buildApp(config,{createModelAgent:async(_settings,reader)=>{agentReader=reader;return {configured:true,query:async()=>({answer:'fixture',citations:[],trace:[],runId:randomUUID()}),close:async()=>{}};}});
- await node.app.listen({host:'127.0.0.1',port:0});
  const client=new Client({name:'generated-reader-test',version:'1.0'});
+ // Register cleanup before transport setup: a failed MCP handshake must not
+ // leave a listening fixture behind and keep the whole test process alive.
+ t.after(async()=>{try{await client.close();}finally{try{await node.app.close();}finally{rmSync(dir,{recursive:true,force:true});}}});
+ await node.app.listen({host:'127.0.0.1',port:0});
  await client.connect(new StreamableHTTPClientTransport(new URL('/mcp',node.app.listeningOrigin),{requestInit:{headers:{authorization:`Bearer ${readToken}`}}}));
- t.after(async()=>{await client.close();await node.app.close();rmSync(dir,{recursive:true,force:true});});
  const call=async(name:string,args:Record<string,unknown>)=>{const result=await client.callTool({name,arguments:args});assert.ok(!result.isError,JSON.stringify(result));return result.structuredContent??JSON.parse((result.content as any[])[0].text);};
  return {...node,agentReader,call,client};
 }
+
+test('direct Agent expansion preserves the source protocol through bounded evidence projection',async t=>{
+ const {app,agentReader}=await fixture(t),id=randomUUID(),text='Generated note: media notification screen are quoted words, not the source protocol.';
+ const response=await app.inject({method:'POST',url:'/api/notes',headers:{...headers,'x-mote-ingress-version':'2'},payload:{id,deviceId:'generated-notes',deviceName:'Generated',platform:'import',capturedAt:'2026-09-20T00:00:00Z',text}});
+ assert.equal(response.statusCode,201,response.body);
+ const expanded=(await agentReader.evidence({ids:[id]}))[0];
+ assert.equal(expanded.sourceType,'note');assert.equal(expanded.ocrText,text);assert.equal(expanded.ref,'capture:'+id);
+ const {startBridge}=await import('../../../packages/agent/dist/bridge.js');
+ const bridge=await startBridge(agentReader,{question:'Extract generated note',skill:'memory-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:0,length:text.length}]},4);t.after(()=>bridge.close());
+ assert.equal(bridge.seedEvidence[0].sourceType,'note');assert.equal(bridge.seedEvidence[0].ocrText,text);
+ assert.deepEqual(await agentReader.evidence({ids:[id],deviceId:'another-device'}),[]);
+});
 
 test('Web, MCP and Agent share ranked refs and scoped expansions across 400 generated days',async t=>{
  const {app,store,sources,materialOrganizer,agentReader,call,client}=await fixture(t);

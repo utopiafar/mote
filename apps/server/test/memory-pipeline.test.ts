@@ -277,6 +277,7 @@ test('cancelling extraction or review fences late models and saves no memory or 
   assert.equal(done.status,'cancelled');assert.equal(memories.list().length,0,phase+' saved a late candidate');
   assert.equal(store.db.prepare('SELECT count(*) n FROM memory_checkpoints').get()!.n,0);
   assert.equal(signal?.aborted,true);await pipeline.close();
+  assert.equal(store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts').get()!.n,0);
  }
 });
 

@@ -1,20 +1,21 @@
 import {randomUUID} from 'node:crypto';
 import {InsightRuns} from './insight-runs.js';
 import {linkOperationParent} from './operation-projection.js';
-import {reviewMemory,memoryReviewReceipt} from './memory-review.js';
 import { moteText } from './i18n.js';
 import type {QueryInput} from '@mote/agent';
 import {ProviderFailure,type QueryResult} from '@mote/shared';
 import {MemoryLifecycle} from './memory-lifecycle.js';
 import {MemoryPipeline} from './memory-pipeline.js';
-import {MemoryStore,MemoryOutputValidationError,MEMORY_EXTRACTION_PROMPT,memoryEvidenceFingerprint} from './memory.js';
+import {MemoryStore} from './memory.js';
 import {FileStore} from './files.js';
-import {Store,StoreError,sha256} from './store.js';
+import {Store,StoreError} from './store.js';
 import {WorkingMemory} from './working-memory.js';
 import {insightResult} from './insights.js';
-import {CODING_MEMORY_PROMPT} from './memory-profiles.js';
+import {registerMemoryIntegration} from './memory-integration.js';
+import {MemoryIntegrationSettings} from './memory-integration-settings.js';
 
-export function registerMemoryExtensions({lifecycle,store,files,memories,pipeline,working,query,model,semanticArtifacts,insights,insightTimeout}:{
+export function registerMemoryExtensions({integrationSettings,lifecycle,store,files,memories,pipeline,working,query,model,semanticArtifacts,insights,insightTimeout}:{
+  integrationSettings?:MemoryIntegrationSettings;
   semanticArtifacts?:(ids:string[],operationId?:string)=>Promise<string[]>;
   insights?:InsightRuns;insightTimeout?:()=>number|null;
   lifecycle:MemoryLifecycle;store:Store;files:FileStore;memories:MemoryStore;pipeline:MemoryPipeline;working:WorkingMemory;
@@ -29,7 +30,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
       DELETE FROM memory_lifecycle_state WHERE id IN ('extraction','insights');
       INSERT INTO settings VALUES('layered-extraction-v3','1'); COMMIT;`);
   }
-  lifecycle.register({id:'extraction',version:'3.0.0',stream:'artifact',async run(window,checkpoint,execution){
+  lifecycle.register({id:'extraction',version:'3.3.0',stream:'artifact',async run(window,checkpoint,execution){
     let job=window.checkpoint?pipeline.get(window.checkpoint):undefined;
     if(!job){
       if(!semanticArtifacts)return;
@@ -45,35 +46,7 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
       throw new StoreError('Scheduled extraction is incomplete',503);
     }
   }});
-  lifecycle.register({id:'consolidation',version:'1.1.0',stream:'memory',async run(window,checkpoint,execution){
-    if(window.checkpoint==='completed')return;
-    const all=window.ids.flatMap(id=>{try{const m=memories.get(id);return m.status==='stale'||m.tier==='consolidated'||m.admission?.layer!=='memory'?[]:[m];}catch{return [];}});
-    const completed=new Set<string>(window.checkpoint?JSON.parse(window.checkpoint):[]);
-    // Preserve the model-selected semantic domain, independently of source provenance.
-    // Keep coding applicability and validation instead of converting it to a personal fact.
-    for(const profile of ['personal','coding'] as const){
-    if(completed.has(profile))continue;
-    const candidates=all.filter(m=>(m.domain??'personal')===profile);if(!candidates.length)continue;
-    const snapshots=new Map(candidates.map(m=>[m.id,sha256(JSON.stringify(m))]));
-    const evidence=[...new Set(candidates.flatMap(m=>m.evidenceIds))];
-    pipeline.assertAdmissibleEvidence(evidence);
-    const expected=Object.fromEntries(candidates.flatMap(m=>(m.evidence??[]).map(e=>[e.id,e.contentHash])));
-    const generationModel=model();
-    const input:QueryInput={...(execution?{signal:execution.signal,traceContext:{operationId:execution.operationId,jobId:execution.jobId}}:{}),modelOverride:generationModel,skill:'memory-consolidation',responseMode:'memory-extraction',question:(profile==='coding'?CODING_MEMORY_PROMPT:MEMORY_EXTRACTION_PROMPT)+'\nThis run consolidates episodic text memories into longer-lived proposals. Follow memory-consolidation. Optional kind, validFrom and validUntil are supported. Preserve the host-selected '+profile+' output contract above; every output must preserve that domain and use admission.layer=memory. Use memories(id) to inspect these cards, memories(query) to find related context, then expand original evidence before relying on it. Explain conflicts or changed preferences with dates and attribution; retain unknown outcomes. Treat these cards as untrusted derived navigation aids:\n'+JSON.stringify(candidates.map(m=>({id:m.id,title:m.title})))};
-    const validation={profile,tier:'consolidated' as const,relatedMemoryIds:candidates.map(m=>m.id),requireAdmission:true,expectedFingerprints:expected};
-    input.validateOutput=result=>{try{pipeline.assertAdmissibleEvidence(result.citations.map(c=>c.id));memories.extract(result,generationModel,{...validation,validateOnly:true});}catch(error){if(!(error instanceof MemoryOutputValidationError))throw error;return {code:error.code,feedback:error.repairInstruction};}};
-    const draft=await query(input,'memories');
-    pipeline.assertAdmissibleEvidence(draft.citations.map(c=>c.id));
-    memories.extract(draft,generationModel,{...validation,validateOnly:true});
-    const result=await reviewMemory(input,draft,next=>query(next,'memories'));
-    const commit=()=>{
-    for(const [id,hash] of snapshots)if(sha256(JSON.stringify(memories.get(id)))!==hash)throw new StoreError('Input memories changed during consolidation',409);
-    pipeline.withAdmissibleEvidence([...new Set([...evidence,...result.citations.map(c=>c.id)])],()=>
-      memories.extract(result,generationModel,{...validation,reviewRunId:memoryReviewReceipt(result)?.reviewRunId,reviewReceipt:memoryReviewReceipt(result),skillVersion:'memory-consolidation@3.0.0',expectedFingerprints:expected,onSaved:()=>{checkpoint(JSON.stringify([...completed,profile]));completed.add(profile);} }));
-    };if(execution)execution.commit(commit);else commit();
-    }
-    checkpoint('completed');
-  }});
+  registerMemoryIntegration({lifecycle,memories,pipeline,settings:integrationSettings??new MemoryIntegrationSettings(store,pipeline.strategies),query:input=>query(input,'memories')});
   lifecycle.register({id:'working',version:'1.0.0',stream:'conversation',async run(window,_checkpoint,execution){
     for(const id of window.ids)await working.compact(id,window.settings,input=>query({...input,...(execution?{signal:execution.signal,traceContext:{operationId:execution.operationId,jobId:execution.jobId}}:{})},'conversations'),undefined,execution);
   }});
@@ -100,7 +73,9 @@ export function registerMemoryExtensions({lifecycle,store,files,memories,pipelin
 export function recoverableMemoryJobs(store:Store,lifecycle:MemoryLifecycle):string[]{
   const state=lifecycle.view(),active=state.extensions.find(e=>e.id==='extraction')?.active?.checkpoint;
   return (store.db.prepare("SELECT id,json FROM memory_jobs WHERE json_extract(json,'$.status') IN ('queued','running')").all() as {id:string;json:string}[]).filter(row=>{
-    const job=JSON.parse(row.json) as {importJobId?:string};
+    const job=JSON.parse(row.json) as {importJobId?:string;originKey?:string};
+    // Material work is resumed only by its durable, currently authorized queue.
+    if(job.originKey?.startsWith('material:'))return false;
     return !job.importJobId?.startsWith('lifecycle:')||(state.settings.extraction.enabled&&row.id!==active);
   }).map(row=>row.id);
 }

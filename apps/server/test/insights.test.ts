@@ -1,8 +1,14 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {skillCatalog} from '@mote/agent';
 import {staticReportHtml,insightResult} from '../src/insights.js';
 
 const id='11111111-1111-4111-8111-111111111111',missing='22222222-2222-4222-8222-222222222222';
+test('stored report provenance identifies the selected insight policy version',()=>{
+  const result=insightResult({answer:JSON.stringify({title:'Generated recap',markdown:`A bounded observation [${id}]`,html:`<p>A bounded observation [${id}]</p>`}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:'Generated fixture'}],trace:[],runId:'generated-run'});
+  assert.equal(result.artifact?.skillId,'personal-insight');
+  assert.equal(result.artifact?.skillVersion,skillCatalog().find(skill=>skill.id==='personal-insight')?.version);
+});
 test('HTML report citations follow the same retrieved-ID boundary as its Markdown fallback',()=>{
   const result={answer:JSON.stringify({title:'Generated report',markdown:`Supported [${id}]`,html:`<p>Unsupported [${missing}]</p>`}),citations:[{id,capturedAt:'2026-01-01T00:00:00Z',appName:'Generated',excerpt:'Generated fixture'}],trace:[],runId:'generated-run'};
   assert.throws(()=>insightResult(result),/not retrieved/);

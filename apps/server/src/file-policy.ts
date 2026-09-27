@@ -10,9 +10,10 @@ export function migrateFilePolicy(s:FileProcessingSettings,registry:ProcessorReg
   if(s.localModelName)services.push({id:'model-local',name:moteText("本地语言模型"),kind:'model',execution:'local',endpoint:s.localModelEndpoint,model:s.localModelName,apiKey:s.localModelApiKey});
   const profiles:ProcessingProfile[]=[];
   const add=(processorId:string)=>{const found=profiles.find(p=>p.processorId===processorId);if(found)return found.id;
-    const local=processorId==='audio.local-dialogue',plugin=registry.list().find(p=>p.id===processorId),id=processorId==='archive'?'archive':`profile.${processorId.length<=90?processorId:sha256(processorId).slice(0,40)}`;
-    profiles.push({id,name:processorId==='archive'?moteText("仅归档原件"):plugin?.name??processorId,processorId,parameters:local?{speakerCount:s.speakerCount,semanticTurns:s.semanticTurns}:{},diarizationProcessor:s.diarizationProcessor,
-      ...(plugin?.serviceKind==='asr'?{serviceId:local?'asr-local':'asr-api'}:plugin?.serviceKind==='image'&&s.imageEndpoint?{serviceId:'image-api'}:{}),...(local&&s.localModelName?{modelServiceId:'model-local'}:{}),summarize:!local&&processorId!=='archive'&&s.summarize});return id;};
+    const plugin=registry.list().find(p=>p.id===processorId),local=plugin?.contentPolicy==='local-only',id=processorId==='archive'?'archive':`profile.${processorId.length<=90?processorId:sha256(processorId).slice(0,40)}`;
+    const parameters=plugin?.dialogue?Object.fromEntries((plugin.parameters??[]).filter(p=>p.key==='speakerCount'||p.key==='semanticTurns').map(p=>[p.key,s[p.key as 'speakerCount'|'semanticTurns']])):{};
+    profiles.push({id,name:processorId==='archive'?moteText("仅归档原件"):plugin?.name??processorId,processorId,parameters,diarizationProcessor:s.diarizationProcessor,
+      ...(plugin?.serviceKind==='asr'?{serviceId:plugin.localOnly?'asr-local':'asr-api'}:plugin?.serviceKind==='image'&&s.imageEndpoint?{serviceId:'image-api'}:{}),...(local&&s.localModelName?{modelServiceId:'model-local'}:{}),summarize:plugin?.allowSummary!==false&&processorId!=='archive'&&s.summarize});return id;};
   const rules:PolicyRule[]=[{type:'audio/*',profileId:add(s.audioProcessor)},{type:'image/*',profileId:add(s.imageProcessor)},{type:'text/*',profileId:add('text.utf8')},...DOCUMENT_MIME_TYPES.map(type=>({type,profileId:add('document.generic')})),{type:'*/*',profileId:add('archive')}];add('audio.local-dialogue');add('audio.http');
   for(const [type,processor] of Object.entries(s.typeProfiles)){const rule=rules.find(r=>r.type===type);if(rule)rule.profileId=add(processor);else rules.push({type,profileId:add(processor)});}
   for(const [sourceId,processor] of Object.entries(s.sourceProfiles)){if(processor==='inherit')continue;const types=processor==='archive'?['*/*']:registry.list().find(p=>p.id===processor)?.mediaTypes??['*/*'];for(const type of types)rules.push({sourceId,type:type.endsWith('/')?type+'*':type,profileId:add(processor)});}
@@ -35,9 +36,12 @@ export function parseFilePolicy(raw:unknown,previous:FilePolicy,registry:Process
     const service=policy.services.find(s=>s.id===profile.serviceId),model=policy.services.find(s=>s.id===profile.modelServiceId);
     if(service&&service.kind!==plugin.serviceKind)throw new StoreError(moteText("服务类型与处理插件不匹配"),400);
     if(model?.kind!=='model'&&profile.modelServiceId)throw new StoreError(moteText("分析步骤需要语言模型服务"),400);
-    if(profile.processorId==='audio.local-dialogue'){
-      if(service?.execution==='remote'||model?.execution==='remote'||profile.summarize)throw new StoreError(moteText("本地多人录音仅使用本地服务，自动摘要请另行配置处理插件"),400);
-      const diarizer=registry.get(profile.diarizationProcessor);if(diarizer.stage!=='diarize'||!diarizer.localOnly)throw new StoreError(moteText("需要本地说话人分离插件"),400);
+    if(plugin.localOnly&&service?.execution==='remote')throw new StoreError(moteText("本地处理插件只能绑定本地服务"),400);
+    if(plugin.contentPolicy==='local-only'&&model?.execution==='remote')throw new StoreError(moteText("此方案只允许本地模型"),400);
+    if(plugin.allowSummary===false&&profile.summarize)throw new StoreError(moteText("此处理插件不支持自动摘要"),400);
+    if(plugin.dialogue){
+      const diarizer=registry.get(profile.diarizationProcessor);if(diarizer.stage!=='diarize'||plugin.contentPolicy==='local-only'&&!diarizer.localOnly)throw new StoreError(moteText("需要本地说话人分离插件"),400);
+      if(diarizer.localOnly&&service?.execution==='remote')throw new StoreError(moteText("本地处理插件只能绑定本地服务"),400);
     }
     const definitions=plugin.parameters??[];
     for(const key of Object.keys(profile.parameters))if(!definitions.some(d=>d.key===key))throw new StoreError(moteText("插件不支持参数 {0}", key),400);
@@ -64,6 +68,8 @@ export function effectiveFileSettings(applied:AppliedFilePolicy,policy:FilePolic
     return {...snapshot,apiKey:live.apiKey};};
   const endpoint=service(profile.serviceId),model=service(profile.modelServiceId),plugin=registry.get(profile.processorId);
   if(plugin.serviceKind&&!endpoint)throw new StoreError(moteText("请为方案选择处理服务"),409);
+  if(endpoint&&endpoint.kind!==plugin.serviceKind)throw new StoreError(moteText("服务类型与处理插件不匹配"),409);
+  if(plugin.localOnly&&endpoint?.execution==='remote'||plugin.contentPolicy==='local-only'&&model?.execution==='remote')throw new StoreError('Local processing requires local services',409);
   const settings:FileProcessingSettings={...base,apiKey:undefined,localWorkerApiKey:undefined,localModelApiKey:undefined,localModelName:'',imageEndpoint:'',audioProcessor:profile.processorId,
     diarizationProcessor:profile.diarizationProcessor,speakerCount:typeof profile.parameters.speakerCount==='number'?profile.parameters.speakerCount:null,semanticTurns:profile.parameters.semanticTurns===true,summarize:profile.summarize,
     ...(endpoint?{endpoint:endpoint.endpoint,apiKey:endpoint.apiKey,allowRemote:endpoint.execution==='remote',...(endpoint.kind==='image'?{imageEndpoint:endpoint.endpoint}:{}),...(endpoint.execution==='local'?{localEndpoint:endpoint.endpoint,localWorkerApiKey:endpoint.apiKey}:{})}:{}),

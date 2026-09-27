@@ -8,7 +8,7 @@ import {join, resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {parseArgs} from 'node:util';
 import sharp from 'sharp';
-const {values}=parseArgs({options:{python:{type:'string'},'model-root':{type:'string'}}});
+const {values}=parseArgs({options:{python:{type:'string'},'model-root':{type:'string'},'long-image':{type:'boolean',default:false}}});
 if(!values.python||!values['model-root'])throw Error('Usage: node scripts/test-ocr-runtime.mjs --python VENV_PYTHON --model-root INSTALLED_OCR_DIRECTORY');
 const root=await mkdtemp(join(tmpdir(),'mote-live-ocr-')),models=join(root,'ocr'),secret=randomUUID();
 const socket=createServer();await new Promise(r=>socket.listen(0,'127.0.0.1',r));const port=socket.address().port;await new Promise(r=>socket.close(r));
@@ -27,5 +27,16 @@ try{
  const response=await fetch(url+'/ocr',{method:'POST',headers:{...headers,'Content-Type':'image/png'},body:image,signal:AbortSignal.timeout(60000)});
  assert.equal(response.status,200);const result=await response.json(),text=result.segments.map(x=>x.text).join(' ');
  assert.match(text,/MOTE OCR TEST 123/i);
+ if(values['long-image']){
+  // Matches the shape of a long phone screenshot, with generated text only.
+  const markers=Array.from({length:16},(_,i)=>({label:`MOTE PANEL ${String(i).padStart(2,'0')}`,y:120+i*960}));
+  const svg='<svg width="1200" height="14825"><rect width="100%" height="100%" fill="white"/>'+markers.map(marker=>`<text x="60" y="${marker.y}" font-family="Arial" font-size="50" fill="black">${marker.label}</text>`).join('')+'</svg>';
+  const longImage=await sharp(Buffer.from(svg)).png().toBuffer(),at=Date.now();
+  const longResponse=await fetch(url+'/ocr',{method:'POST',headers:{...headers,'Content-Type':'image/png'},body:longImage,signal:AbortSignal.timeout(120000)});
+  assert.equal(longResponse.status,200,'Long generated screenshot must be processed');
+  const longResult=await longResponse.json(),lines=longResult.segments.map(x=>x.text);
+  assert.deepEqual(lines,markers.map(marker=>marker.label),'Every panel must survive once, in image order');
+  console.log(JSON.stringify({longImage:true,width:1200,height:14825,lines:lines.length,durationMs:Date.now()-at,personalScreenshotsUsed:false}));
+ }
  console.log(JSON.stringify({passed:true,workerStartedWithoutModel:true,installedWithoutRestart:true,recognized:text,fixture:'generated image',personalScreenshotsUsed:false}));
 }finally{child.kill('SIGTERM');const force=setTimeout(()=>child.kill('SIGKILL'),5000);await closed;clearTimeout(force);await rm(root,{recursive:true,force:true});}

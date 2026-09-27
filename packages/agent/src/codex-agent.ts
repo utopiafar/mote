@@ -47,7 +47,12 @@ export function createCodexAgent(options:AgentOptions){
         try {
           const response=await fetch(bridge.url+'/'+name,{method:'POST',headers:{Authorization:'Bearer '+bridge.token,'Content-Type':'application/json'},body:JSON.stringify(args),signal:AbortSignal.timeout(requestTimeoutMs??120000)});
           if(!response.ok){const body=await response.json() as {toolError?:{code:string;message:string;recovery:'correct_arguments'|'use_existing_evidence'|'stop';details:Record<string,unknown>}};const error=body.toolError;if(error)throw new ContextToolError(error.code,error.message,error.recovery,error.details);throw new Error('Context tool rejected');}
-          const result=await response.json();trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'succeeded',payload:{result}});return result;
+          const result=await response.json();
+          // The model receives the image, but diagnostics only need its identity
+          // and size. Copying base64 into traces duplicates private originals and
+          // can overwhelm the log viewer even when the read itself is bounded.
+          const traced=name==='read_image'?{source:result.source,id:result.id,...(result.attachmentId?{attachmentId:result.attachmentId}:{}),image:{mimeType:result.image.mimeType,encodedCharacters:result.image.data.length},hostBudget:result.hostBudget}:result;
+          trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'succeeded',payload:{result:traced}});return result;
         } catch(error) {
           trace({type:'tool.completed',stage:'tool',phase:'completed',tool:name,status:'failed',payload:{errorName:error instanceof Error?error.name:'UnknownError'}});throw error;
         }
@@ -59,7 +64,7 @@ export function createCodexAgent(options:AgentOptions){
       trace({type:'instructions.assembled',stage:'starting',payload:{system:system,tools:runTools}});
       await session.start(system,runTools);
       reportProgress(input,{stage:'model'});
-      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,runTools,options.maxTokens??65536);
+      const {prompt,metrics}=assembleContext(input,bridge.seedEvidence,system,runTools,options.maxTokens??65536,options.maxToolCalls??24);
       trace({type:'context.assembled',stage:'starting',payload:{prompt,metrics,seedEvidence:bridge.seedEvidence}});
       trace({type:'model.started',stage:'model',phase:'started',payload:{prompt}});
       const modelStarted=performance.now();

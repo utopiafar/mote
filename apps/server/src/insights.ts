@@ -1,6 +1,6 @@
 import sanitizeHtml from 'sanitize-html';
 import {z} from 'zod';
-import {SKILL_VERSION,validateInlineCitations} from '@mote/agent';
+import {skillCatalog,validateInlineCitations} from '@mote/agent';
 import type {QueryResult} from '@mote/shared';
 import {StoreError} from './store.js';
 
@@ -35,7 +35,7 @@ export function insightResult(result:QueryResult):InsightResult {
   if(!parsed.success)throw new StoreError('Insight report has an invalid structure; retry generation',502);
   const ids=result.citations.map(c=>c.id);
   validateInlineCitations(parsed.data.markdown,ids,ids);
-  return {...result,answer:parsed.data.markdown,artifact:{id:result.runId,title:parsed.data.title,html:staticReportHtml(parsed.data.html,ids),createdAt:new Date().toISOString(),skillId:'personal-insight',skillVersion:SKILL_VERSION}};
+  return {...result,answer:parsed.data.markdown,artifact:{id:result.runId,title:parsed.data.title,html:staticReportHtml(parsed.data.html,ids),createdAt:new Date().toISOString(),skillId:'personal-insight',skillVersion:skillCatalog().find(skill=>skill.id==='personal-insight')!.version}};
 }
 
 /** Read-only acceptance check, usable while the provider conversation is still open. */

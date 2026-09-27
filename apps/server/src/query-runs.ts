@@ -1,7 +1,7 @@
 import {ProviderFailure,type EvidenceDependencies} from '@mote/shared';
 import { moteText } from './i18n.js';
 import {createHash} from 'node:crypto';
-import type {AgentProgress} from '@mote/agent';
+import {AgentTimeoutError,type AgentProgress} from '@mote/agent';
 import {Store,StoreError} from './store.js';
 import {normalizeRun} from './execution.js';
 import {safeError} from './diagnostics.js';
@@ -60,7 +60,13 @@ export class QueryRuns {
   async perform<T extends {conversationId:string;turnId:string}>(id:string,input:unknown,work:QueryWork<T>,deadline:RunDeadline={}):Promise<T>{
     let result:T|undefined,error:unknown;
     this.start(id,input,async(observe,signal,execution)=>{try{const prepared=await work(observe,signal,execution);return ()=>{result=typeof prepared==='function'?prepared():prepared;return {conversationId:result.conversationId,turnId:result.turnId};};}catch(value){error=value;throw value;}},deadline);
-    await this.execution.wait(id);if(!this.store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(id))throw new StoreError('Query was deleted while running',409);if(this.get(id).status==='completed'&&result)return result;throw error??new StoreError(this.get(id).error?.message??'Query did not complete',this.get(id).error?.code==='timeout'?504:409);
+    await this.execution.wait(id);if(!this.store.db.prepare('SELECT 1 FROM query_runs WHERE id=?').get(id))throw new StoreError('Query was deleted while running',409);if(this.get(id).status==='completed'&&result)return result;
+    if(error!==undefined)throw error;
+    const failure=this.get(id).error;
+    // The host deadline can win before the provider settles its rejection.
+    // Preserve the public timeout category in that race, not just HTTP 504.
+    if(failure?.code==='timeout')throw new AgentTimeoutError();
+    throw new StoreError(failure?.message??'Query did not complete',409);
   }
   async close(){await this.execution.close();}
 }

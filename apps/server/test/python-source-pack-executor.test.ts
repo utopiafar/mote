@@ -14,13 +14,13 @@ import {PythonSourcePackExecutor,macPythonSandboxProfile,pythonImportOutputSchem
 const fixtureLauncher:PythonSandboxLauncher=(workspace,python,runner)=>({command:python,args:['-I','-B',runner],cwd:workspace,
   env:{PATH:'/usr/bin:/bin',HOME:workspace,TMPDIR:workspace,PYTHONNOUSERSITE:'1',PYTHONDONTWRITEBYTECODE:'1'}});
 
-function fixture(t:import('node:test').TestContext,script:string,options:{timeoutMs?:number;maxInputBytes?:number;maxOutputBytes?:number;digest?:string}={}){
+function fixture(t:import('node:test').TestContext,script:string,options:{timeoutMs?:number;maxInputFiles?:number;maxInputBytes?:number;maxOutputBytes?:number;digest?:string;config?:Record<string,unknown>}={}){
   const directory=mkdtempSync(join(tmpdir(),'mote-python-source-pack-test-'));
   const packRoot=join(directory,'pack'),workspace=join(directory,'workspace');mkdirSync(packRoot,{mode:0o700});mkdirSync(workspace,{mode:0o700});mkdirSync(join(workspace,'inputs'),{mode:0o700});
   const scriptPath=join(packRoot,'main.py');writeFileSync(scriptPath,script,{mode:0o600});
   const inputPath=join(workspace,'inputs','generated.txt');writeFileSync(inputPath,'Generated Python Source Pack input.',{mode:0o600});
   const executor=new PythonSourcePackExecutor({id:'fixture.python-pack',version:'1',packRoot,script:'main.py',scriptSha256:options.digest??sha256(script),pythonExecutable:'/usr/bin/python3',
-    outputSchema:z.object({value:z.string()}).strict(),timeoutMs:options.timeoutMs,maxInputBytes:options.maxInputBytes,maxOutputBytes:options.maxOutputBytes},fixtureLauncher);
+    outputSchema:z.object({value:z.string()}).strict(),timeoutMs:options.timeoutMs,maxInputFiles:options.maxInputFiles,maxInputBytes:options.maxInputBytes,maxOutputBytes:options.maxOutputBytes,config:options.config},fixtureLauncher);
   t.after(()=>rmSync(directory,{recursive:true,force:true}));
   return {directory,packRoot,workspace,inputPath,executor};
 }
@@ -32,6 +32,20 @@ test('trusted Python pack reads only staged input and returns schema-checked bou
   const profile=macPythonSandboxProfile('/private/tmp/generated-run','/usr/bin/python3',['/usr/bin','/usr/lib']);
   assert.match(profile,/\(deny default\)/);assert.doesNotMatch(profile,/allow network/);
   assert.match(profile,/file-write\* \(subpath "\/private\/tmp\/generated-run"\)/);
+});
+
+test('expanded archives can opt into a bounded file count without exposing host paths',async t=>{
+  const script="import json\nr=json.load(open('request.json'))\nprint(json.dumps({'value':json.dumps(r)}))\n";
+  const f=fixture(t,script,{maxInputFiles:32,config:{timeZoneOffset:'+08:00'}});
+  mkdirSync(join(f.workspace,'inputs','export'));
+  const paths=Array.from({length:20},(_,i)=>{const path=join(f.workspace,'inputs','export',`note-${i}.md`);writeFileSync(path,'Generated record');return path;});
+  const result=await f.executor.run({workspace:f.workspace,inputPaths:paths});assert.equal(result.status,'succeeded');if(result.status!=='succeeded')return;
+  const request=JSON.parse(result.output.value);assert.equal(request.inputs.length,20);assert.deepEqual(request.config,{timeZoneOffset:'+08:00'});
+  assert.ok(Number.isFinite(Date.parse(request.importedAt)));assert.equal(request.inputs[19].relativePath,'export/note-19.md');assert.equal(request.inputs[19].path,'input-19.bin');
+  assert.ok(!result.output.value.includes(f.directory));
+  const defaults=fixture(t,script);assert.deepEqual(await defaults.executor.run({workspace:defaults.workspace,inputPaths:Array(17).fill(defaults.inputPath)}),{status:'failed',code:'input_limit'});
+  assert.deepEqual(await f.executor.run({workspace:f.workspace,inputPaths:Array(33).fill(f.inputPath)}),{status:'failed',code:'input_limit'});
+  assert.throws(()=>fixture(t,script,{maxInputFiles:4001}),/Invalid Python Source Pack/);
 });
 
 test('pack changes, outside inputs, output limits and invalid JSON fail with fixed codes',async t=>{

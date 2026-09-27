@@ -11,6 +11,9 @@ import socket
 import subprocess
 import wave
 
+MAX_SPEAKER_LABELS = 100
+MAX_SPEAKER_PREVIEWS = 16
+
 
 def offline_process():
     os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1', HF_HUB_DISABLE_TELEMETRY='1', DO_NOT_TRACK='1')
@@ -40,12 +43,31 @@ def normalize(source, destination, budget_ms, timeout=600):
 
 
 def transcribe(normalized, model_path, threads):
-    from faster_whisper import WhisperModel
+    from faster_whisper import WhisperModel, BatchedInferencePipeline
+    from faster_whisper.audio import decode_audio
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
     if not Path(model_path).is_dir():
         raise ValueError('A local ASR model directory is required')
+    audio = decode_audio(str(normalized), sampling_rate=16000)
+    duration_ms = len(audio) / 16
+    # Keep model-detected speech clips separate. Packing distinct voices back into
+    # one decoder window dropped complete turns in the generated control.
+    speech = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=500, max_speech_duration_s=30))
+    if len(speech) > 50000:
+        raise OverflowError('Too many speech clips')
+    clips = []
+    previous_end = 0
+    for clip in speech:
+        start, end = clip['start'], clip['end']
+        if start < previous_end or end <= start or end > len(audio) or end - start > 30 * 16000:
+            raise ValueError('Invalid or oversized speech clip')
+        clips.append({'start': start / 16000, 'end': end / 16000})
+        previous_end = end
+    if not clips:
+        return {'durationMs': duration_ms, 'segments': [], 'engine': 'faster-whisper-local/vad-clips-1', 'uncorrected': True}
     model = WhisperModel(str(model_path), device='cpu', compute_type='int8', cpu_threads=threads, local_files_only=True)
-    segments, info = model.transcribe(str(normalized), beam_size=5, vad_filter=True,
-                                     word_timestamps=True, condition_on_previous_text=False)
+    segments, _info = BatchedInferencePipeline(model).transcribe(
+        audio, beam_size=5, vad_filter=False, clip_timestamps=clips, word_timestamps=True, batch_size=1)
     result = []
     for segment in segments:
         if not segment.text.strip():
@@ -56,8 +78,8 @@ def transcribe(normalized, model_path, threads):
                        'text': segment.text.strip(), 'words': words})
         if len(result) > 50000:
             raise OverflowError('Too many transcript segments')
-    return {'durationMs': info.duration * 1000, 'segments': result,
-            'engine': 'faster-whisper-local', 'uncorrected': True}
+    return {'durationMs': duration_ms, 'segments': result,
+            'engine': 'faster-whisper-local/vad-clips-1', 'uncorrected': True}
 
 
 def sample_bytes(normalized, start_ms, end_ms):
@@ -112,21 +134,33 @@ def diarize(normalized, segmentation_path, embedding_path, speaker_count, thread
     if model.sample_rate != 16000:
         raise ValueError('Diarization model must accept 16 kHz')
     result = model.process(samples).sort_by_start_time()
+    return diarization_output(normalized, result, duration_ms, speaker_count)
+
+
+def diarization_output(normalized, segments, duration_ms, speaker_count):
+    """Preserve bounded model labels independently of the audio-preview budget.
+
+    Labels are unverified acoustic clusters, not confirmed people. No merging,
+    threshold adjustment, speaker naming or semantic attribution occurs here.
+    """
     labels = {}
     rows = []
-    for segment in result:
+    for segment in segments:
         if segment.speaker not in labels:
             labels[segment.speaker] = 'SPEAKER_' + str(len(labels))
         start, end = max(0, round(segment.start * 1000)), min(round(duration_ms), round(segment.end * 1000))
         if end > start:
             rows.append({'startMs': start, 'endMs': end, 'speaker': labels[segment.speaker]})
-        if len(rows) > 100000 or len(labels) > 16:
+        if len(rows) > 100000 or len(labels) > MAX_SPEAKER_LABELS:
             raise OverflowError('Diarization output exceeds limit')
     warnings = []
     if speaker_count and len(labels) != speaker_count:
         warnings.append('预期说话人数与识别结果不同；请试听并确认，不会补造说话人。')
     clips = []
-    for speaker in labels.values():
+    if len(labels) > MAX_SPEAKER_PREVIEWS:
+        warnings.append('自动分离产生 ' + str(len(labels)) + ' 个匿名标签，不等于已确认的真人数量；分离准确性需要核听。')
+        warnings.append('全部分离区间已保留；预先生成的试听片段最多覆盖前 ' + str(MAX_SPEAKER_PREVIEWS) + ' 个标签。')
+    for speaker in list(labels.values())[:MAX_SPEAKER_PREVIEWS]:
         interval = exclusive_sample(rows, speaker)
         if not interval or interval[1] - interval[0] < 300:
             warnings.append(speaker + ' 没有足够长的独立发言可供试听。')

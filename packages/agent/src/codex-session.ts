@@ -10,6 +10,10 @@ import {AgentNotConfiguredError,AgentProviderError,AgentTimeoutError,type AgentO
 export type CodexTool={type:'function';name:string;description:string;inputSchema:unknown};
 type Rpc={id?:number|string;method?:string;params?:any;result?:any;error?:unknown};
 type Pending={resolve:(value:any)=>void;reject:(error:Error)=>void};
+// A completed dynamic image tool may echo the base64 payload. Permit one
+// bounded image (12 MiB encoded at the bridge) plus its RPC envelope, while
+// retaining a separate total stream budget for the whole session.
+const MAX_RPC_FRAME_BYTES=13*1024*1024,MAX_RPC_STREAM_BYTES=32*1024*1024;
 
 /** Official newline-delimited App Server protocol. Only the host supplies executable paths.
  * A private home links ONLY file-backed login credentials; user plugins, MCP servers,
@@ -72,7 +76,7 @@ export class CodexSession {
       this.exited=new Promise(done=>this.child!.once('close',()=>{this.fail(new AgentProviderError());done();}));
       this.child.on('error',()=>this.fail(new AgentProviderError()));
       this.child.stdin.on('error',()=>this.fail(new AgentProviderError()));
-      this.child.stderr.on('data',(chunk:Buffer)=>{this.bytes+=chunk.length;if(this.bytes>32*1024*1024)this.fail(new AgentProviderError());});
+      this.child.stderr.on('data',(chunk:Buffer)=>{this.bytes+=chunk.length;if(this.bytes>MAX_RPC_STREAM_BYTES)this.transportLimit('stream_limit',MAX_RPC_STREAM_BYTES);});
       this.child.stdout.setEncoding('utf8');
       this.child.stdout.on('data',(chunk:string)=>this.receive(chunk));
       const agentTimeoutMs = this.options.agentTimeoutMs !== undefined ? this.options.agentTimeoutMs : this.options.timeoutMs ?? 120000;
@@ -102,13 +106,19 @@ export class CodexSession {
     if(this.child&&!this.ending)this.child.kill('SIGTERM');
   }
   private receive(chunk:string){
-    this.bytes+=Buffer.byteLength(chunk);if(this.bytes>32*1024*1024){this.fail(new AgentProviderError());return;}
-    this.buffer+=chunk;if(Buffer.byteLength(this.buffer)>2*1024*1024){this.fail(new AgentProviderError());return;}
+    this.bytes+=Buffer.byteLength(chunk);if(this.bytes>MAX_RPC_STREAM_BYTES){this.transportLimit('stream_limit',MAX_RPC_STREAM_BYTES);return;}
+    this.buffer+=chunk;
     let newline:number;
     while((newline=this.buffer.indexOf('\n'))>=0){
       const line=this.buffer.slice(0,newline);this.buffer=this.buffer.slice(newline+1);if(!line.trim())continue;
+      if(Buffer.byteLength(line)>MAX_RPC_FRAME_BYTES){this.transportLimit('frame_limit',MAX_RPC_FRAME_BYTES);return;}
       try{this.dispatch(JSON.parse(line));}catch{this.fail(new AgentProviderError());return;}
     }
+    if(Buffer.byteLength(this.buffer)>MAX_RPC_FRAME_BYTES)this.transportLimit('frame_limit',MAX_RPC_FRAME_BYTES);
+  }
+  private transportLimit(code:'frame_limit'|'stream_limit',limitBytes:number){
+    this.emit({type:'codex.transport.failed',stage:'model',payload:{code,limitBytes}});
+    this.fail(new AgentProviderError({category:'permanent',code:'processing_limit'}));
   }
   private emit(event:AgentTraceEvent){try{this.observe?.(event);}catch{}}
   private publishUsage(value:TokenUsage){this.usage=value;try{this.onUsage?.(structuredClone(value));}catch{}}
@@ -141,7 +151,7 @@ export class CodexSession {
       const args=message.params;
       if(args?.threadId!==this.threadId||args.namespace){this.fail(new AgentProviderError());return;}
       this.toolQueue=this.toolQueue.then(async()=>{
-        try{const result=await this.toolCall(args.tool,args.arguments);this.send({id:message.id,result:{contentItems:args.tool==='read_image'&&result&&typeof result==='object'&&'image' in result?[{type:'inputText',text:JSON.stringify({id:(result as any).id,source:'untrusted_personal_context'})},{type:'inputImage',imageUrl:`data:${(result as any).image.mimeType};base64,${(result as any).image.data}`}]:[{type:'inputText',text:JSON.stringify(result)}],success:true}});}
+        try{const result=await this.toolCall(args.tool,args.arguments);this.send({id:message.id,result:{contentItems:args.tool==='read_image'&&result&&typeof result==='object'&&'image' in result?[{type:'inputText',text:JSON.stringify({id:(result as any).id,attachmentId:(result as any).attachmentId,source:'untrusted_personal_context'})},{type:'inputImage',imageUrl:`data:${(result as any).image.mimeType};base64,${(result as any).image.data}`}]:[{type:'inputText',text:JSON.stringify(result)}],success:true}});}
         catch(error){if(!this.failure&&!this.ending)this.send({id:message.id,result:{contentItems:[{type:'inputText',text:error instanceof ContextToolError?JSON.stringify({toolError:error.toJSON()}):'Tool unavailable or arguments outside the permitted scope.'}],success:false}});}
       }).catch(()=>this.fail(new AgentProviderError()));return;
     }

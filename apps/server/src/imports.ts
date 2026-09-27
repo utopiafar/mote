@@ -19,6 +19,7 @@ import {Store,StoreError,sha256} from './store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionGrant,type ExecutionStep} from './execution-engine.js';
 import {executionEnvelope} from '@mote/shared/execution';
 import {linkOperationParent} from './operation-projection.js';
+import {validBase64} from './base64.js';
 
 const MAX_INPUT_BYTES=256*1024*1024,MAX_EXPANDED_BYTES=512*1024*1024,MAX_FILES=4000;
 export type ImportPreparation={operationId?:string;signal?:AbortSignal;workspace:string;inputPaths:string[];instruction:string;previous?:{summary:string;error?:string}};
@@ -118,7 +119,7 @@ export class ImportStore {
     if(request.archivedFileIds){
       for(const id of request.archivedFileIds){const file=this.files.get(id);total+=file.sizeBytes;if(total>MAX_INPUT_BYTES)throw new StoreError('Import exceeds 256 MiB',413);entries.push({name:file.relativePath,mimeType:file.mimeType,fileId:id});}
     }else if(request.files){
-      for(const file of request.files){if(!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(file.dataBase64))throw new StoreError('Invalid file base64');add(file.name,Buffer.from(file.dataBase64,'base64'),file.mimeType);}
+      for(const file of request.files){if(!validBase64(file.dataBase64))throw new StoreError('Invalid file base64');add(file.name,Buffer.from(file.dataBase64,'base64'),file.mimeType);}
     }else{
       const source=realpathSync(resolve(request.directory!)),vault=realpathSync(this.store.directory);
       if(inside(source,vault)||inside(vault,source))throw new StoreError('Choose a directory outside the Mote data directory');

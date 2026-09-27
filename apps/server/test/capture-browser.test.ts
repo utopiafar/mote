@@ -7,6 +7,7 @@ import {randomUUID} from 'node:crypto';
 import sharp from 'sharp';
 import {buildApp} from '../src/app.js';
 import type {Config} from '../src/config.js';
+import {materialId,type MaterialDraft} from '../src/materials.js';
 
 const owner='synthetic-owner-token-for-browser-tests';
 const auth=(token=owner)=>({authorization:`Bearer ${token}`,'x-mote-ingress-version':'2'});
@@ -27,6 +28,43 @@ async function fixture(t:TestContext){
   };
   return {...value,capture,paired,image};
 }
+
+test('capture details declare native file storage for import sources without exposing foreign records',async t=>{
+  const {app,files,sources,capture,paired}=await fixture(t);
+  sources.register({id:'generated-import',name:'Generated import',kind:'local-files',deviceId:'importer',platform:'import',retention:'archive'});
+  const ack=await files.revision({sourceId:'generated-import',previousRevision:null,item:{externalId:'generated.wav',revision:'1',observedAt:'2026-09-13T12:00:00.000Z',title:'Generated recording',kind:'file',layer:'reference',text:'',mimeType:'audio/wav',deleted:false},relativePath:'generated.wav',sizeBytes:10},()=>{});
+  const url=`/api/capture-browser/capture:${ack.id}`;
+  const detail=await app.inject({url,headers:auth()});assert.equal(detail.statusCode,200,detail.body);
+  assert.equal(detail.json().platform,'import');assert.deepEqual(detail.json().fileArchive,{captureId:ack.id});
+  const phone=await paired();assert.equal((await app.inject({url,headers:auth(phone.token)})).statusCode,404);
+  const ordinary=capture();await app.inject({method:'POST',url:'/api/captures',headers:auth(),payload:ordinary});
+  assert.equal((await app.inject({url:`/api/capture-browser/${ordinary.id}`,headers:auth()})).json().fileArchive,undefined);
+});
+
+test('scoped owner Memory and evidence views retain corrected formal quotes without admitting them to model reads',async t=>{
+  const node=await fixture(t),{app,store,materials,memories,featureServices}=node,reader=featureServices.evidenceReader;
+  node.materialOrganizer.tick=async()=>0;
+  const externalId='generated-note',at='2026-09-13T12:00:00.000Z';
+  node.sources.register({id:'generated-materials',name:'Generated source',kind:'custom',deviceId:'generated-owner',platform:'import'});
+  const {id}=await node.sources.upsert('generated-materials',{externalId,revision:'1',observedAt:at,title:'Generated original',kind:'message',layer:'snapshot',text:'Generated original',deleted:false});
+  const draft:MaterialDraft={id:materialId('generated-materials',externalId),kind:'mote.note',schemaVersion:1,title:'Generated corrected material',origin:{sourceId:'generated-materials',externalId,deviceId:'generated-owner',firstAt:at,lastAt:at},blocks:[{id:'body',kind:'text',format:'plain',text:'Generated old claim',memberIds:['original'],evidenceContext:{observedAt:at,document:{timeBasis:'unknown',contentRole:'other'}}}],members:[{id:'original',kind:'capture',ref:'capture:'+id}],coverage:{state:'complete'},fidelity:{state:'derived'},retention:{original:'retained',policy:'keep'}};
+  const initial=materials.publish(draft),anchor=materials.evidence(materials.evidenceIds(initial.ref))[0];
+  const memory=memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated memory',statement:`Generated old claim [${anchor.id}]`,uncertainty:'Generated fixture',admission:{layer:'memory',reason:'Generated explicit claim',scope:'Generated fixture',attribution:'user'},evidenceIds:[anchor.id],evidence:[{id:anchor.id,quote:anchor.ocrText}]}]}),citations:[{id:anchor.id,capturedAt:at,appName:'Generated',excerpt:anchor.ocrText}],trace:[],runId:'generated'},'fixture').items[0].id);
+  assert.equal(reader.evidence([anchor.id]).length,1);
+  materials.publish({...draft,blocks:[{...draft.blocks[0],text:'Generated new claim'}]},{expectedRevision:initial.revision});assert.equal(memories.get(memory.id).status,'stale');assert.deepEqual(reader.evidence([anchor.id]),[]);
+  const scope=new URLSearchParams({deviceId:'generated-owner',after:'2026-09-13T00:00:00.000Z',before:'2026-09-14T00:00:00.000Z'});
+  const list=await app.inject({url:'/api/memories?includeStale=true&'+scope,headers:auth()});assert.deepEqual(list.json().items.map((m:any)=>m.id),[memory.id]);
+  assert.equal((await app.inject({url:`/api/memories/${memory.id}?${scope}`,headers:auth()})).json().status,'stale');
+  const retained=await app.inject({url:`/api/capture-browser/${anchor.id}?${scope}`,headers:auth()});assert.equal(retained.statusCode,200,retained.body);assert.equal(retained.json().ocrText,anchor.ocrText);assert.equal(retained.json().revisionState,'historical');
+  assert.equal(retained.json().provenance.externalId,externalId);assert.equal(retained.json().provenance.revision,'1');assert.equal(retained.json().source,'message');
+  assert.equal((await app.inject({url:`/api/memories/${memory.id}/evidence?${scope}`,headers:auth()})).json().items[0].ocrText,anchor.ocrText);
+  for(const query of ['deviceId=other','after=2026-09-14T00%3A00%3A00.000Z','sourceId=other','source=screen']){
+    assert.equal((await app.inject({url:'/api/memories?includeStale=true&'+query,headers:auth()})).json().items.length,0);
+    assert.equal((await app.inject({url:`/api/capture-browser/${anchor.id}?${query}`,headers:auth()})).statusCode,404);
+  }
+  assert.equal(reader.memoryPage({...Object.fromEntries(scope),includeStale:true}).items.length,0,'default/model-facing scope does not widen to historical evidence');
+  store.delete(id);assert.equal((await app.inject({url:`/api/capture-browser/${anchor.id}`,headers:auth()})).statusCode,404,'removing originals still prevents archive disclosure');
+});
 
 test('capture browser isolates collector lists, details, thumbnails and OCR writes',async t=>{
   const {app,capture,paired}=await fixture(t),phone=await paired(),own=capture(),foreign=capture('other');

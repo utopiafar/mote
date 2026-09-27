@@ -59,12 +59,10 @@ test('same-value saves preserve execution identity and receipts never retain cre
  const persisted=f.store.db.prepare('SELECT receipt FROM file_configuration_snapshots').all();assert.ok(!JSON.stringify(persisted).includes(secret));
 });
 
-test('legacy global-revision work reuses a compatible successful extraction after reconstruction',async t=>{
+test('global-revision work reuses an exact compatible extraction after reconstruction',async t=>{
  const f=await fixture(t),running=f.processing.tick();await f.started;f.finish();await running;await f.processing.tick();
- const original=f.files.chunks(f.id)[0].id,settings=f.processing.currentSettings(),revision=f.processing.view().revision;
- const legacyKey=[f.files.detail(f.id).sha256,'audio.http','1',settings.endpoint,settings.imageEndpoint,{}];
- f.store.db.prepare("UPDATE file_steps SET fingerprint=? WHERE capture_id=? AND step='extract'").run(sha256(JSON.stringify(legacyKey)),f.id);
- // Generated pre-upgrade durable program: the outer step used the global settings revision.
+ const original=f.files.chunks(f.id)[0].id,revision=f.processing.view().revision;
+ // The durable wrapper can be reconstructed, but its exact extraction dependencies remain pinned.
  f.store.db.prepare("DELETE FROM execution_steps WHERE operation_id=?").run('file:'+f.id);
  f.store.db.prepare("UPDATE file_jobs SET state='waiting',summary_state='waiting',attempts=0,available_at=0 WHERE capture_id=?").run(f.id);
  const legacy=f.processing.engine.enqueue('file:'+f.id,'files.pipeline',{captureId:f.id,revision});
@@ -72,6 +70,17 @@ test('legacy global-revision work reuses a compatible successful extraction afte
  for(const until=Date.now()+5000;Date.now()<until&&f.files.detail(f.id).job.state!=='succeeded';){await f.processing.tick();if(f.files.detail(f.id).job.state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(f.processing.engine.get(legacy)!.state,'succeeded');assert.equal(f.calls.length,1);assert.equal(f.files.chunks(f.id)[0].id,original);
  assert.equal(f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items.length,1,'migration must not create a second runnable wrapper');
+});
+
+test('legacy fingerprints without declared dependencies require fresh extraction',async t=>{
+ const f=await fixture(t),running=f.processing.tick();await f.started;f.finish();await running;await f.processing.tick();
+ const settings=f.processing.currentSettings(),processor=f.processing.runtime.registry.get('audio.http');
+ const legacyKey=[f.files.detail(f.id).sha256,processor.id,processor.version,settings.endpoint,settings.imageEndpoint,{}];
+ f.store.db.prepare("UPDATE file_steps SET fingerprint=? WHERE capture_id=? AND step='extract'").run(sha256(JSON.stringify(legacyKey)),f.id);
+ f.store.db.prepare("DELETE FROM execution_steps WHERE operation_id=?").run('file:'+f.id);
+ f.store.db.prepare("UPDATE file_jobs SET state='waiting',summary_state='waiting',attempts=0,available_at=0 WHERE capture_id=?").run(f.id);
+ await f.restart();await f.processing.tick();
+ assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.calls.length,2,'old keys do not prove the new dependency contract');
 });
 
 test('restart reconciles a persisted relevant config change before resuming interrupted work',async t=>{

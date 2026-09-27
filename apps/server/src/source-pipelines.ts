@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import type {MemoryPipeline} from './memory-pipeline.js';
+import {MaterialMemoryWork,type MaterialMemoryRunner} from './material-memory-work.js';
 import {Context,type Plugin} from '@deepseek-ai/cordis';
 import type {SourceConnection,SourceItem} from '@mote/shared';
 import {materialId,type CodingArchiveSnapshot,type MaterialAppendDraft,type MaterialDraft,type MaterialStore} from './materials.js';
@@ -9,13 +9,12 @@ import {BackendPluginScope} from './backend-plugin-scope.js';
 import {SourceRecipeExecutor,type RecipeSnapshot} from './source-recipe-executor.js';
 import {recipeFingerprint} from './recipe-contract.js';
 import type {InstalledRecipe} from './recipe-registry.js';
-import {materialDependencyStatus} from './material-readiness.js';
 import {SourceArchiveRawReader} from './source-archive-reader.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 
-type WorkRow={id:string;source_id:string;pipeline_id:string;version:string;group_key:string;state:string;generation:number;archive_checkpoint:string|null;
+type WorkRow={id:string;source_id:string;pipeline_id:string;version:string;group_key:string;state:string;generation:number;archive_checkpoint:string|null;memory_trigger:'source'|'rebuild';
   recipe_id:string|null;recipe_version:string|null;recipe_definition_fingerprint:string|null;recipe_config_fingerprint:string|null;recipe_component_pins:string|null};
-type GroupInput={workId:string;sourceId:string;pipelineId:string;version:string;group:string;generation:number;checkpoint:string|null;
+type GroupInput={workId:string;sourceId:string;pipelineId:string;version:string;group:string;generation:number;checkpoint:string|null;memoryTrigger:'source'|'rebuild';
   recipeId:string|null;recipeVersion:string|null;recipeDefinitionFingerprint:string|null;recipeConfigFingerprint:string|null;recipeComponentPins:string|null;
   sourceFingerprint:string;configFingerprint:string;policyFingerprint:string;reprocess:'deterministic'|'manual'};
 type PreparedGroup={draft:MaterialDraft|MaterialAppendDraft|undefined;pipeline:SourcePipeline;recipe:InstalledRecipe|undefined;sourceJson:string;configJson:string|null;checkpoint:string;policyFingerprint:string;
@@ -32,7 +31,7 @@ export interface SourcePipeline {
   index:'none'|'material';
   modelInput:'material';
   memory?:boolean;
-  /** Named material outputs required before this source may derive Memory. */
+  /** Default named outputs for Memory recipes without their own requirements. */
   memoryDependencies?:string[];
   /** A declarative recipe pins trusted implementations used by this pipeline. */
   recipe?:{id:string;version:string};
@@ -61,20 +60,22 @@ declare module '@deepseek-ai/cordis' {interface Context {moteSourcePipelines:Sou
 export class SourcePipelineRuntime {
   readonly registry=new SourcePipelineRegistry();readonly recipes=new SourceRecipeExecutor();readonly context:Context;readonly archive:SourceArchive;private readonly pluginScope:BackendPluginScope;
   readonly engine:ExecutionEngine;private readonly ownsEngine:boolean;private readonly unregisterHandler:()=>void;
+  readonly memoryWork:MaterialMemoryWork;
   readonly ready:Promise<void>;
-  constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],root?:Context,executor?:ExecutionEngine){
+  constructor(readonly store:Store,readonly materials:MaterialStore,plugins:Plugin[]=[],root?:Context,executor?:ExecutionEngine,memoryWork?:MaterialMemoryWork){
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.engine=executor??new ExecutionEngine(store);this.ownsEngine=!executor;
     this.archive=new SourceArchive(store);this.pluginScope.provide('moteSourcePipelines',this.registry);this.pluginScope.provide('moteSourceRecipes',this.recipes);
     store.db.exec(`CREATE TABLE IF NOT EXISTS source_pipeline_bindings(source_id TEXT PRIMARY KEY,pipeline_id TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS source_pipeline_work(id TEXT PRIMARY KEY,source_id TEXT NOT NULL,pipeline_id TEXT NOT NULL,version TEXT NOT NULL,group_key TEXT NOT NULL,state TEXT NOT NULL,error TEXT,updated_at INTEGER NOT NULL,material_ref TEXT,generation INTEGER NOT NULL DEFAULT 0,archive_checkpoint TEXT,
         recipe_id TEXT,recipe_version TEXT,recipe_definition_fingerprint TEXT,recipe_config_fingerprint TEXT,recipe_component_pins TEXT);
-      CREATE TABLE IF NOT EXISTS source_pipeline_config(source_id TEXT PRIMARY KEY,json TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS material_memory_work(material_id TEXT PRIMARY KEY REFERENCES material_heads(id) ON DELETE CASCADE,revision TEXT NOT NULL,ready_at INTEGER NOT NULL,job_id TEXT,error TEXT);`);
+      CREATE TABLE IF NOT EXISTS source_pipeline_config(source_id TEXT PRIMARY KEY,json TEXT NOT NULL);`);
+    this.memoryWork=memoryWork??new MaterialMemoryWork(store,materials);
     if(!(store.db.prepare('PRAGMA table_info(source_pipeline_bindings)').all() as {name:string}[]).some(c=>c.name==='storage'))store.db.exec('ALTER TABLE source_pipeline_bindings ADD COLUMN storage TEXT');
     const workColumns=new Set((store.db.prepare('PRAGMA table_info(source_pipeline_work)').all() as {name:string}[]).map(column=>column.name));
     if(!workColumns.has('generation'))store.db.exec('ALTER TABLE source_pipeline_work ADD COLUMN generation INTEGER NOT NULL DEFAULT 0');
     if(!workColumns.has('archive_checkpoint'))store.db.exec('ALTER TABLE source_pipeline_work ADD COLUMN archive_checkpoint TEXT');
+    if(!workColumns.has('memory_trigger'))store.db.exec("ALTER TABLE source_pipeline_work ADD COLUMN memory_trigger TEXT NOT NULL DEFAULT 'rebuild'");
     for(const name of ['recipe_id','recipe_version','recipe_definition_fingerprint','recipe_config_fingerprint','recipe_component_pins'])if(!workColumns.has(name))store.db.exec(`ALTER TABLE source_pipeline_work ADD COLUMN ${name} TEXT`);
     this.unregisterHandler=this.engine.register({kind:STEP_KIND,pool:'source.archive',concurrency:()=>2,
       resourceKeys:step=>[`source.archive:${(step.input as unknown as GroupInput).workId}`],
@@ -114,7 +115,7 @@ export class SourcePipelineRuntime {
       db.prepare('UPDATE source_pipeline_work SET archive_checkpoint=? WHERE id=? AND generation=?').run(row.archive_checkpoint,row.id,row.generation);}
     const pipeline=this.registry.get(row.pipeline_id);
     const input:GroupInput={workId:row.id,sourceId:row.source_id,pipelineId:row.pipeline_id,version:row.version,group:row.group_key,
-      generation:row.generation,checkpoint:row.archive_checkpoint,recipeId:row.recipe_id,recipeVersion:row.recipe_version,
+      generation:row.generation,checkpoint:row.archive_checkpoint,memoryTrigger:row.memory_trigger,recipeId:row.recipe_id,recipeVersion:row.recipe_version,
       recipeDefinitionFingerprint:row.recipe_definition_fingerprint,recipeConfigFingerprint:row.recipe_config_fingerprint,
       recipeComponentPins:row.recipe_component_pins,sourceFingerprint:this.sourceFingerprint(sourceJson),configFingerprint:archiveHash(configJson),
       policyFingerprint:pipeline?this.policyFingerprint(pipeline):'',reprocess:pipeline?.reprocess??'manual'};
@@ -126,7 +127,7 @@ export class SourcePipelineRuntime {
   }
   private validWork(step:ExecutionStep){
     try{
-      const input=this.input(step),row=this.row(input.workId);if(!row||row.generation!==input.generation||row.source_id!==input.sourceId||row.pipeline_id!==input.pipelineId||row.version!==input.version||row.group_key!==input.group||row.archive_checkpoint!==input.checkpoint)return false;
+      const input=this.input(step),row=this.row(input.workId);if(!row||row.generation!==input.generation||row.source_id!==input.sourceId||row.pipeline_id!==input.pipelineId||row.version!==input.version||row.group_key!==input.group||row.archive_checkpoint!==input.checkpoint||row.memory_trigger!==(input.memoryTrigger??'rebuild'))return false;
       if(row.recipe_id!==input.recipeId||row.recipe_version!==input.recipeVersion||row.recipe_definition_fingerprint!==input.recipeDefinitionFingerprint||row.recipe_config_fingerprint!==input.recipeConfigFingerprint||row.recipe_component_pins!==input.recipeComponentPins)return false;
       const db=this.store.db,sourceJson=(db.prepare('SELECT json FROM source_connections WHERE id=?').get(row.source_id) as {json:string}|undefined)?.json??'',
         configJson=(db.prepare('SELECT json FROM source_pipeline_config WHERE source_id=?').get(row.source_id) as {json:string}|undefined)?.json??null;
@@ -193,9 +194,9 @@ export class SourcePipelineRuntime {
       const published=this.materials.publish(result.draft,{expectedRevision:result.priorRevision,codingSnapshot:result.codingSnapshot});ref=published.ref;
       const shouldIndex=result.options.index??pipeline.index==='material',isIndexed=Boolean(db.prepare('SELECT 1 FROM material_searchable WHERE material_id=?').get(published.id));
       if(shouldIndex!==isIndexed)this.materials.setSearchable(published.id,shouldIndex);
-      const required=result.options.memoryDependencies??pipeline.memoryDependencies??['material'],readiness=materialDependencyStatus(published,required);
-      if(!readiness.ready)db.prepare('DELETE FROM material_memory_work WHERE material_id=?').run(published.id);
-      else if((published.changed||!db.prepare('SELECT 1 FROM material_memory_work WHERE material_id=?').get(published.id))&&(result.options.memory??pipeline.memory??false))db.prepare(`INSERT INTO material_memory_work VALUES(?,?,?,NULL,NULL) ON CONFLICT(material_id) DO UPDATE SET revision=excluded.revision,ready_at=excluded.ready_at,job_id=NULL,error=NULL`).run(published.id,published.revision,Date.now()+result.options.settleSeconds*1000);}
+      const required=result.options.memoryDependencies??pipeline.memoryDependencies??['material'];
+      this.memoryWork.observe(published.id,required,{inputKey:result.checkpoint,change:input.memoryTrigger??'rebuild',
+        automatic:result.options.memory??pipeline.memory??false},result.options.settleSeconds*1000);}
     const changed=db.prepare("UPDATE source_pipeline_work SET state='complete',error=NULL,material_ref=? WHERE id=? AND generation=?").run(ref,input.workId,input.generation).changes;
     if(changed!==1)throw new ExecutionFailure('stale','input_changed');
   }
@@ -224,15 +225,17 @@ export class SourcePipelineRuntime {
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
       const archived=recipe?this.recipes.receive(recipe,this.archive,source,items,groups):this.archive.receive(source.id,items,groups);
       if(recipe&&(this.recipeFor(pipeline,source)!==recipe||this.recipeMetadata(recipe,source.id).configFingerprint!==metadata!.configFingerprint))throw new StoreError('Source recipe configuration changed',409);
+      const automatic=this.options(source.id).memory??pipeline.memory??false;
+      for(const group of archived.changedGroups)this.memoryWork.inputs.receive({sourceId:source.id,inputKey:archived.groupCheckpoints[group]},automatic);
       if(items.some(item=>item.deleted))for(const group of archived.groups)this.materials.redactUntilRebuilt(materialId(source.id,group));
       db.prepare('INSERT OR IGNORE INTO source_pipeline_bindings(source_id,pipeline_id,storage) VALUES(?,?,?)').run(source.id,pipeline.id,pipeline.storage);
       const superseded:string[]=[];
       for(const group of archived.groups){
         const id=archiveHash([source.id,group]);
         const prior=db.prepare('SELECT generation FROM source_pipeline_work WHERE id=?').get(id) as {generation:number}|undefined;
-        db.prepare(`INSERT INTO source_pipeline_work(id,source_id,pipeline_id,version,group_key,state,error,updated_at,material_ref,generation,archive_checkpoint,recipe_id,recipe_version,recipe_definition_fingerprint,recipe_config_fingerprint,recipe_component_pins)
-        VALUES(?,?,?,?,?,'pending',NULL,?,NULL,0,?,?,?,?,?,?)
-        ON CONFLICT(id) DO UPDATE SET state='pending',error=NULL,updated_at=excluded.updated_at,pipeline_id=excluded.pipeline_id,version=excluded.version,
+        db.prepare(`INSERT INTO source_pipeline_work(id,source_id,pipeline_id,version,group_key,state,error,updated_at,material_ref,generation,archive_checkpoint,recipe_id,recipe_version,recipe_definition_fingerprint,recipe_config_fingerprint,recipe_component_pins,memory_trigger)
+        VALUES(?,?,?,?,?,'pending',NULL,?,NULL,0,?,?,?,?,?,?,'source')
+        ON CONFLICT(id) DO UPDATE SET state='pending',error=NULL,updated_at=excluded.updated_at,pipeline_id=excluded.pipeline_id,version=excluded.version,memory_trigger='source',
           generation=source_pipeline_work.generation+1,archive_checkpoint=excluded.archive_checkpoint,recipe_id=excluded.recipe_id,recipe_version=excluded.recipe_version,
           recipe_definition_fingerprint=excluded.recipe_definition_fingerprint,recipe_config_fingerprint=excluded.recipe_config_fingerprint,recipe_component_pins=excluded.recipe_component_pins`).run(
             id,source.id,pipeline.id,pipeline.version,group,Date.now(),archived.groupCheckpoints[group],
@@ -257,7 +260,7 @@ export class SourcePipelineRuntime {
             this.revoke(old);superseded.push(old);
           };
           if(row.recipe_id===null&&!policy.recipe){
-            db.prepare("UPDATE source_pipeline_work SET state='pending',error=NULL,version=?,generation=generation+1,updated_at=? WHERE id=? AND generation=?").run(policy.version,Date.now(),row.id,row.generation);
+            db.prepare("UPDATE source_pipeline_work SET memory_trigger=CASE WHEN state='complete' THEN 'rebuild' ELSE memory_trigger END,state='pending',error=NULL,version=?,generation=generation+1,updated_at=? WHERE id=? AND generation=?").run(policy.version,Date.now(),row.id,row.generation);
           }else if(policy.recipe&&policy.reprocess==='deterministic'&&row.recipe_id===policy.recipe.id){
             const prior=this.engine.get(old),input=prior?.input as unknown as GroupInput|undefined;
             const sourceJson=(db.prepare('SELECT json FROM source_connections WHERE id=?').get(row.source_id) as {json:string}|undefined)?.json??'',
@@ -271,7 +274,7 @@ export class SourcePipelineRuntime {
               if(this.select(source)!==this.registry.get(policy.id))throw Error('Source binding changed');
               metadata=this.recipeMetadata(this.recipeFor(this.registry.get(policy.id)!,source)!,row.source_id,configuration.parse(configJson?JSON.parse(configJson):{}));
             }catch{block('recipe_unavailable');continue;}
-            db.prepare(`UPDATE source_pipeline_work SET state='pending',error=NULL,version=?,generation=generation+1,updated_at=?,
+            db.prepare(`UPDATE source_pipeline_work SET memory_trigger=CASE WHEN state='complete' THEN 'rebuild' ELSE memory_trigger END,state='pending',error=NULL,version=?,generation=generation+1,updated_at=?,
               recipe_id=?,recipe_version=?,recipe_definition_fingerprint=?,recipe_config_fingerprint=?,recipe_component_pins=? WHERE id=? AND generation=?`).run(
                 policy.version,Date.now(),metadata.id,metadata.version,metadata.definitionFingerprint,metadata.configFingerprint,metadata.componentPins,row.id,row.generation);
           }else{block('recipe_unavailable');continue;}
@@ -320,28 +323,29 @@ export class SourcePipelineRuntime {
     const metadata=recipe?this.recipeMetadata(recipe,sourceId,value):undefined;
     const previous=db.prepare('SELECT * FROM source_pipeline_work WHERE source_id=?').all(sourceId) as WorkRow[];
     db.prepare('INSERT INTO source_pipeline_config VALUES(?,?) ON CONFLICT(source_id) DO UPDATE SET json=excluded.json').run(sourceId,JSON.stringify(value));
-    db.prepare(`UPDATE source_pipeline_work SET state='pending',error=NULL,generation=generation+1,updated_at=?,pipeline_id=coalesce(?,pipeline_id),version=coalesce(?,version),
+    db.prepare(`UPDATE source_pipeline_work SET memory_trigger=CASE WHEN state='complete' THEN 'rebuild' ELSE memory_trigger END,state='pending',error=NULL,generation=generation+1,updated_at=?,pipeline_id=coalesce(?,pipeline_id),version=coalesce(?,version),
       recipe_id=?,recipe_version=?,recipe_definition_fingerprint=?,recipe_config_fingerprint=?,recipe_component_pins=? WHERE source_id=?`).run(
         Date.now(),selected?.id??null,selected?.version??null,metadata?.id??null,metadata?.version??null,metadata?.definitionFingerprint??null,metadata?.configFingerprint??null,metadata?.componentPins??null,sourceId);
     for(const prior of previous){const old=stepId(prior.id,prior.generation);this.revoke(old);superseded.push(old);this.enqueueWork(this.row(prior.id)!);}
     db.exec('COMMIT');for(const id of superseded)this.engine.abortLocal(id);return value;}catch(error){if(db.isTransaction)db.exec('ROLLBACK');throw error;}}
-  drainMemory(pipeline:MemoryPipeline,enabled:boolean,limit=1){
-    if(!enabled)return;
-    for(const row of this.store.db.prepare('SELECT * FROM material_memory_work WHERE job_id IS NULL AND ready_at<=? ORDER BY ready_at LIMIT ?').all(Date.now(),limit)){
-      const material=this.materials.get(String(row.material_id));if(!material||material.revision!==row.revision)continue;
-      if(this.options(material.origin.sourceId).memory===false){this.store.db.prepare('UPDATE material_memory_work SET ready_at=? WHERE material_id=?').run(Date.now()+60000,row.material_id);continue;}
-      const binding=this.store.db.prepare('SELECT pipeline_id FROM source_pipeline_bindings WHERE source_id=?').get(material.origin.sourceId);if(!binding||!this.registry.get(String(binding.pipeline_id)))continue;
-      const sourcePipeline=this.registry.get(String(binding.pipeline_id))!,required=this.options(material.origin.sourceId).memoryDependencies??sourcePipeline.memoryDependencies??['material'];
-      if(!materialDependencyStatus(material,required).ready){this.store.db.prepare('DELETE FROM material_memory_work WHERE material_id=?').run(row.material_id);continue;}
-      try{const job=pipeline.create({evidenceIds:this.materials.evidenceIds(material.ref),originKey:material.ref});this.store.db.prepare('UPDATE material_memory_work SET job_id=?,error=NULL WHERE material_id=? AND revision=?').run(job.id,row.material_id,row.revision);void pipeline.run(job.id).catch(()=>{});}
-      catch{this.store.db.prepare("UPDATE material_memory_work SET error='memory_enqueue_failed',ready_at=? WHERE material_id=?").run(Date.now()+60000,row.material_id);}
-    }
+  memoryAllowed(sourceId:string):boolean {
+    try{const options=this.options(sourceId),binding=this.store.db.prepare('SELECT pipeline_id,storage FROM source_pipeline_bindings WHERE source_id=?').get(sourceId);
+      if(!binding||binding.storage!=='archive')return options.memory!==false;
+      const pipeline=this.registry.get(String(binding.pipeline_id));return Boolean(pipeline&&(options.memory??pipeline.memory??false));
+    }catch{return false;}
+  }
+  drainMemory(pipeline:MaterialMemoryRunner,enabled:boolean,limit=1){
+    return this.memoryWork.drain(pipeline,enabled,limit,materialId=>{
+      const material=this.materials.get(materialId);if(!material)return true;
+      return this.memoryAllowed(material.origin.sourceId);
+    });
   }
   forget(sourceId:string){
     if(!this.store.db.prepare('SELECT 1 FROM source_pipeline_bindings WHERE source_id=?').get(sourceId))throw new StoreError('Source has no archive pipeline',409);
     const db=this.store.db,superseded:string[]=[];db.exec('BEGIN IMMEDIATE');try{
       db.prepare("UPDATE source_connections SET json=json_set(json,'$.enabled',json('false')) WHERE id=?").run(sourceId);
-      for(const row of db.prepare('SELECT id FROM material_heads WHERE source_id=?').all(sourceId))this.materials.forget(String(row.id));
+      for(const row of db.prepare('SELECT id FROM material_heads WHERE source_id=?').all(sourceId)){this.memoryWork.withdraw(String(row.id));this.materials.forget(String(row.id));}
+      this.memoryWork.inputs.forgetSource(sourceId);
       for(const row of db.prepare('SELECT id,generation FROM source_pipeline_work WHERE source_id=?').all(sourceId) as {id:string;generation:number}[]){const id=stepId(row.id,row.generation);this.revoke(id);superseded.push(id);}
       db.prepare('DELETE FROM source_pipeline_work WHERE source_id=?').run(sourceId);
       db.exec('COMMIT');

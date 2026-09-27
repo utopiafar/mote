@@ -10,9 +10,11 @@ import type {ImportPreparation,ImportPreparationResult} from './imports.js';
 
 const MAX_PACK_BYTES=256*1024;
 const MAX_INPUT_BYTES=32*1024*1024;
-const MAX_OUTPUT_BYTES=1024*1024;
+const DEFAULT_OUTPUT_BYTES=1024*1024;
+const MAX_OUTPUT_BYTES=4*1024*1024;
 const MAX_STDERR_BYTES=16*1024;
-const MAX_INPUT_FILES=16;
+const DEFAULT_INPUT_FILES=16;
+const MAX_INPUT_FILES=4000;
 const MAX_TIMEOUT_MS=120000;
 const idPattern=/^[a-z][a-z0-9.-]{2,127}$/;
 const hashPattern=/^[a-f0-9]{64}$/;
@@ -25,7 +27,9 @@ export type PythonPackSpec<T>={
   runtimeReadRoots?:string[];
   // The schema may supply defaults, so its input shape can be narrower than T.
   outputSchema:z.ZodType<T,z.ZodTypeDef,any>;
-  timeoutMs?:number;maxInputBytes?:number;maxOutputBytes?:number;
+  timeoutMs?:number;maxInputFiles?:number;maxInputBytes?:number;maxOutputBytes?:number;
+  /** Trusted parser settings, such as an export's explicitly selected time zone. */
+  config?:Record<string,unknown>;
 };
 export type PythonRunInput={workspace:string;inputPaths:string[];signal?:AbortSignal;config?:Record<string,unknown>};
 export type PythonLaunch={command:string;args:string[];cwd:string;env:NodeJS.ProcessEnv};
@@ -107,16 +111,18 @@ export async function runBoundedPythonChild(launch:PythonLaunch,timeoutMs:number
 export class PythonSourcePackExecutor<T> {
   private readonly timeoutMs:number;
   private readonly maxInputBytes:number;
+  private readonly maxInputFiles:number;
   private readonly maxOutputBytes:number;
   constructor(private readonly spec:PythonPackSpec<T>,private readonly launcher:PythonSandboxLauncher=defaultPythonSandbox){
     this.timeoutMs=bounded(spec.timeoutMs,30000,MAX_TIMEOUT_MS);
     this.maxInputBytes=bounded(spec.maxInputBytes,MAX_INPUT_BYTES,MAX_INPUT_BYTES);
-    this.maxOutputBytes=bounded(spec.maxOutputBytes,MAX_OUTPUT_BYTES,MAX_OUTPUT_BYTES);
-    if(!idPattern.test(spec.id)||!spec.version||spec.version.length>64||!hashPattern.test(spec.scriptSha256)||!isAbsolute(spec.packRoot)||!isAbsolute(spec.pythonExecutable)||isAbsolute(spec.script)||!spec.script||spec.script.split(/[\\/]/).some(part=>!part||part==='.'||part==='..')||[this.timeoutMs,this.maxInputBytes,this.maxOutputBytes].some(Number.isNaN))throw Error('Invalid Python Source Pack configuration');
+    this.maxInputFiles=bounded(spec.maxInputFiles,DEFAULT_INPUT_FILES,MAX_INPUT_FILES);
+    this.maxOutputBytes=bounded(spec.maxOutputBytes,DEFAULT_OUTPUT_BYTES,MAX_OUTPUT_BYTES);
+    if(!idPattern.test(spec.id)||!spec.version||spec.version.length>64||!hashPattern.test(spec.scriptSha256)||!isAbsolute(spec.packRoot)||!isAbsolute(spec.pythonExecutable)||isAbsolute(spec.script)||!spec.script||spec.script.split(/[\\/]/).some(part=>!part||part==='.'||part==='..')||[this.timeoutMs,this.maxInputFiles,this.maxInputBytes,this.maxOutputBytes].some(Number.isNaN))throw Error('Invalid Python Source Pack configuration');
   }
   async run(input:PythonRunInput):Promise<PythonRunResult<T>> {
     if(input.signal?.aborted)return {status:'cancelled',code:'cancelled'};
-    if(input.inputPaths.length<1||input.inputPaths.length>MAX_INPUT_FILES)return {status:'failed',code:'input_limit'};
+    if(input.inputPaths.length<1||input.inputPaths.length>this.maxInputFiles)return {status:'failed',code:'input_limit'};
     let workspace:string,root:string,scriptPath:string,python:string,roots:string[];
     try{
       workspace=await realpath(input.workspace);root=await realpath(this.spec.packRoot);python=await realpath(this.spec.pythonExecutable);
@@ -132,7 +138,7 @@ export class PythonSourcePackExecutor<T> {
       if(sha256(script)!==this.spec.scriptSha256)return {status:'blocked',code:'pack_changed'};
       temporary=await realpath(await mkdtemp(join(tmpdir(),'mote-python-pack-')));await chmod(temporary,0o700);
       await writeFile(join(temporary,'pack.py'),script,{mode:0o600,flag:'wx'});
-      const staged:{index:number;path:string;sizeBytes:number}[]=[];let total=0;
+      const staged:{index:number;path:string;relativePath:string;sizeBytes:number}[]=[];let total=0;
       for(const [index,path] of input.inputPaths.entries()){
         input.signal?.throwIfAborted();
         let actual:string;
@@ -141,10 +147,11 @@ export class PythonSourcePackExecutor<T> {
         const bytes=await readRegular(actual,this.maxInputBytes-total);total+=bytes.length;
         if(total>this.maxInputBytes)return {status:'failed',code:'input_limit'};
         const name=`input-${index}.bin`;await writeFile(join(temporary,name),bytes,{mode:0o600,flag:'wx'});
-        staged.push({index,path:name,sizeBytes:bytes.length});
+        // Original names are untrusted metadata, never executable paths in the child.
+        staged.push({index,path:name,relativePath:relative(join(workspace,'inputs'),actual).split(sep).join('/'),sizeBytes:bytes.length});
       }
-      const config=input.config??{};if(Buffer.byteLength(JSON.stringify(config))>8192)return {status:'failed',code:'input_limit'};
-      await writeFile(join(temporary,'request.json'),JSON.stringify({pack:{id:this.spec.id,version:this.spec.version},inputs:staged,config}),{mode:0o600,flag:'wx'});
+      const config=input.config??this.spec.config??{};if(Buffer.byteLength(JSON.stringify(config))>8192)return {status:'failed',code:'input_limit'};
+      await writeFile(join(temporary,'request.json'),JSON.stringify({pack:{id:this.spec.id,version:this.spec.version},importedAt:new Date().toISOString(),inputs:staged,config}),{mode:0o600,flag:'wx'});
       const runner=join(temporary,'runner.py'),profile=join(temporary,'sandbox.sb');
       await writeFile(runner,runnerScript(512*1024*1024,Math.max(1,Math.ceil(this.timeoutMs/1000))),{mode:0o600,flag:'wx'});
       if(process.platform==='darwin')await writeFile(profile,macPythonSandboxProfile(temporary,python,roots),{mode:0o600,flag:'wx'});

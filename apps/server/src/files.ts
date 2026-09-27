@@ -10,6 +10,8 @@ import type {ContextRecord,ContextRange} from '@mote/agent';
 import {Store,StoreError,sha256,type Range} from './store.js';
 import {SourceStore} from './sources.js';
 import {privateDirectory} from './private-storage.js';
+import {readFileSpeakerAttributions} from './file-speaker-attribution.js';
+import {fileAttachmentAvailable} from './file-attachments.js';
 
 type Upload={id:string;source_id:string;manifest:string;fingerprint:string;created_at:string;ack:string|null};
 type Version={capture_id:string;source_id:string;external_id:string;revision:string;manifest:string;object_hash:string|null};
@@ -186,10 +188,17 @@ export class FileStore {
     for(const bytes of this.store.assets.bytes(v.object_hash,start,end)){this.version(id);yield bytes;}
   }
   stream(id:string,start=0,end?:number){return Readable.from(this.bytes(id,start,end));}
-  chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
-  private chunkRecord(c:Chunk):CaptureRecord & ContextRecord{const record=this.store.evidence([c.capture_id])[0],v=this.version(c.capture_id);return {...record,id:c.id,capturedAt:record.capturedAt,deviceId:record.deviceId,appName:record.appName,windowTitle:record.windowTitle,sourceType:'file',ocrText:((JSON.parse(c.metadata??'{}') as {speaker?:string}).speaker?`[${JSON.parse(c.metadata??'{}').speaker}] `:'')+c.text,durationMs:0,provenance:{...record.provenance!,layer:'derived'},fileEvidence:fileEvidenceSchema.parse({captureId:c.capture_id,revision:v.revision,artifactId:c.artifact_id,chunkId:c.id,...JSON.parse(c.metadata??'{}'),...(c.start_ms===null?{}:{startMs:c.start_ms,endMs:c.end_ms})})};}
+  chunks(id:string,offset=0,limit=100){this.version(id);return (this.store.db.prepare(`SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.capture_id=? AND ${activeChunks} ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT ? OFFSET ?`).all(id,Math.min(limit,200),offset) as Chunk[]).map(c=>this.chunkRecord(c));}
+  speakerAttributions(captureId:string,artifactId:string){
+    return readFileSpeakerAttributions(this.store,captureId,artifactId);
+  }
+  private chunkRecord(c:Chunk):CaptureRecord & ContextRecord{
+    const record=this.store.evidence([c.capture_id])[0],v=this.version(c.capture_id),metadata=JSON.parse(c.metadata??'{}'),attribution=metadata.speaker?this.speakerAttributions(c.capture_id,c.artifact_id)[metadata.speaker]:undefined;
+    return {...record,id:c.id,capturedAt:record.capturedAt,deviceId:record.deviceId,appName:record.appName,windowTitle:record.windowTitle,sourceType:'file',ocrText:(metadata.speaker?`[${metadata.speaker}] `:'')+c.text,durationMs:0,provenance:{...record.provenance!,layer:'derived'},fileEvidence:fileEvidenceSchema.parse({captureId:c.capture_id,revision:v.revision,artifactId:c.artifact_id,chunkId:c.id,...metadata,...(attribution?{speakerAttribution:attribution}:{}),...(c.start_ms===null?{}:{startMs:c.start_ms,endMs:c.end_ms})})};
+  }
   /** Only the preferred transcript/text of the retained current file revision is independent evidence. */
   isCurrentEvidence(id:string):boolean {
+    if(!fileAttachmentAvailable(this.store,id))return false;
     return Boolean(this.store.db.prepare(`SELECT c.id FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id JOIN file_heads h ON h.capture_id=c.capture_id JOIN file_versions v ON v.capture_id=c.capture_id WHERE c.id=? AND ${activeChunks} AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')`).get(id));
   }
   evidence(ids:string[]){return ids.flatMap(id=>{const c=this.store.db.prepare('SELECT c.* FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id WHERE c.id=? AND a.current=1').get(id) as Chunk|undefined;return c?[this.chunkRecord(c)]:[];});}

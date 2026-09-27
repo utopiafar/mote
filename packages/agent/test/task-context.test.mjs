@@ -25,8 +25,10 @@ test('shared context separates long task input and retains incremental semantics
  const input={question:'Compact',skill:'working-memory',taskContext:{turns:[{turnId:'t1',answer:'x'.repeat(30000)}]},incrementalEvidenceIds:['one']};
  const envelope=buildContextEnvelope(input,[],'2026-09-18T00:00:00Z');
  assert.equal(envelope.request,'Compact');assert.equal(envelope.untrustedTaskContext.turns[0].answer.length,30000);assert.equal(envelope.incrementalContext.count,1);assert.deepEqual(taskTools(input),[]);assert.deepEqual(taskTools({question:'Extract',evidenceIds:['one']}),['evidence']);
- assert.match(envelope.disclosurePolicy,/material_catalog.*material_read.*evidence before citing/);
- assert.match(envelope.disclosurePolicy,/source tags.*untrusted/);
+ assert.match(envelope.disclosurePolicy,/No archive retrieval is available/);
+ const archive=buildContextEnvelope({question:'Browse generated'},[]);
+ assert.match(archive.disclosurePolicy,/material_catalog.*material_read.*evidence before citing/);
+ assert.match(archive.disclosurePolicy,/source tags.*untrusted/);
  assert.throws(()=>buildContextEnvelope({...input,taskContext:{turns:[{turnId:'t1',answer:'x'.repeat(80000)}]}},[]));
 });
 test('search localizes late match and separate reads retain both citation spans',async t=>{
@@ -61,9 +63,22 @@ test('host context accounts for schema and system input before admitting a task'
  const {metrics}=assembleContext({question:'generated'},[],'system',[{name:'evidence'}],4096);
  assert.equal(metrics.system,6);assert.equal(metrics.outputTokenReserve,4096);assert.equal(metrics.unit,'utf16_characters');
  assert.throws(()=>assembleContext({question:'generated'},[],'x'.repeat(180000),[],4096),/input budget/);
+ const limited=JSON.parse(assembleContext({question:'generated'},[],'system',[],4096,7).prompt);
+ assert.equal(limited.contextBudget.maxToolCalls,7);
+ assert.equal(buildContextEnvelope({question:'Extract',evidenceIds:['one']},[]).retrievalInstruction,undefined,'Bounded extraction is not given archive convergence instructions');
 });
 
 test('bounded evidence does not silently change an ordinary answer into memory extraction',()=>{
  assert.equal(buildContextEnvelope({question:'Answer this',evidenceIds:['one']},[]).responseMode,'answer');
  assert.equal(buildContextEnvelope({question:'Extract',skill:'memory-extraction',evidenceIds:['one']},[]).responseMode,'memory-extraction');
+});
+
+test('bounded extraction supplies the unchanged procedure, draft and originals without archive discovery instructions',()=>{
+ const input={question:'Exact host admission contract',skill:'memory-extraction',evidenceIds:[record.id],evidenceRanges:[{id:record.id,offset:0,length:record.ocrText.length}],taskContext:{untrustedMemoryDraft:{memories:[{statement:'Untrusted draft'}]}}};
+ const envelope=buildContextEnvelope(input,[record]);
+ assert.equal(envelope.request,input.question);assert.deepEqual(envelope.untrustedEvidence,[record]);assert.deepEqual(envelope.untrustedTaskContext,input.taskContext);
+ assert.match(envelope.procedure,/Preserve the subject, speaker, tense, uncertainty/);
+ assert.match(envelope.procedureInstruction,/no skill tool call is required/);
+ assert.match(envelope.disclosurePolicy,/Archive discovery tools are unavailable/);
+ assert.doesNotMatch(envelope.disclosurePolicy,/material_catalog|search_context|context_index/);
 });

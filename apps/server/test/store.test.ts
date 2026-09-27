@@ -54,6 +54,13 @@ test('same-time pagination has no dropped records and Unicode retrieval works',a
   assert.equal(ids.size,5);assert.equal(store.search({query:'资料'}).length,5);assert.equal(store.search({query:'Synthetic'}).length,5);
   assert.equal(store.search({query:"' OR 1=1 --"}).length,0);
 });
+test('retention counts and journals selected excerpts even when parent invalidation removes them first',async t=>{
+  const store=vault(t),parent=await fixture(),excerpt=await fixture();await store.ingest(parent);await store.ingest(excerpt);
+  store.db.prepare('INSERT INTO file_evidence_links(parent_id,capture_id) VALUES(?,?)').run(parent.id,excerpt.id);
+  assert.equal(store.prune('2026-09-13T00:00:00Z'),2);
+  const deleted=store.db.prepare("SELECT id FROM changes WHERE operation='delete'").all().map(row=>String(row.id)).sort();
+  assert.deepEqual(deleted,[parent.id,excerpt.id].sort());assert.equal(store.list().items.length,0);
+});
 test('privacy-excluded, oversized/mismatched image and invalid events fail before writing',async t=>{
   const store=vault(t);const f=await fixture();
   await assert.rejects(store.ingest({...f,privacy:{excluded:true,redacted:false,mode:'local'}}));

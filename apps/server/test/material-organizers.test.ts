@@ -22,6 +22,24 @@ function fixture(t:TestContext){
 }
 const at=(seconds:number)=>new Date(Date.parse('2026-09-20T00:00:00.000Z')+seconds*1000).toISOString();
 
+test('formal evidence preserves declared source role and three distinct times without interpreting body metadata',async t=>{
+  const {sources,materials,organizers}=fixture(t);
+  sources.register({id:'fixture-provenance',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
+  const document={recordedAt:at(-86_400),occurredAt:at(-172_800),timeBasis:'occurred' as const,contentRole:'authored' as const};
+  const text=JSON.stringify({documentTime:{recordedAt:at(999),contentRole:'transcript'},text:'Generated authored diary, with quoted metadata.'});
+  await sources.upsert('fixture-provenance',{externalId:'authored',revision:'1',kind:'message',layer:'original',observedAt:at(0),document,text});
+  await sources.upsert('fixture-provenance',{externalId:'unknown',revision:'1',kind:'message',layer:'original',observedAt:at(1),text});
+  await organizers.tick(20);
+  const authored=materials.evidence(materials.evidenceIds(materialId('fixture-provenance','authored')))[0]!;
+  assert.deepEqual(authored.provenance?.document,document);
+  assert.equal(authored.capturedAt,at(0));
+  assert.equal(JSON.parse(authored.ocrText!).text,text,'the captured body remains literal evidence');
+  const unknown=materials.evidence(materials.evidenceIds(materialId('fixture-provenance','unknown')))[0]!;
+  assert.equal(unknown.capturedAt,at(1));
+  assert.deepEqual(unknown.provenance?.document,{timeBasis:'unknown',contentRole:'other'});
+  assert.equal(unknown.provenance?.document?.recordedAt,undefined,'an import timestamp is not an original recording date');
+});
+
 test('source items gain scoped formal revisions, retire on tombstone and return after a new revision',async t=>{
   const {store,sources,materials,organizers}=fixture(t);
   sources.register({id:'fixture-source',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
@@ -65,8 +83,8 @@ test('ordinary source-item work pins a declared recipe and fails closed without 
 
 test('ordinary material revisions and retirement update the fenced Memory request',async t=>{
   const directory=mkdtempSync(join(tmpdir(),'mote-material-memory-organizer-'));
-  const store=new Store(directory),sources=new SourceStore(store),materials=new MaterialStore(store);
-  const memoryWork=new MaterialMemoryWork(store,materials);
+  const store=new Store(directory),materials=new MaterialStore(store),memoryWork=new MaterialMemoryWork(store,materials);
+  const sources=new SourceStore(store,undefined,memoryWork.inputs);
   const organizers=new MaterialOrganizerRuntime(store,materials,[],undefined,memoryWork);
   t.after(()=>{store.close();rmSync(directory,{recursive:true,force:true});});
   sources.register({id:'fixture-memory-source',name:'Generated source',kind:'custom',deviceId:'fixture-device',platform:'import',retention:'archive'});
@@ -92,11 +110,27 @@ test('ordinary material revisions and retirement update the fenced Memory reques
   assert.equal(request(),undefined);
 });
 
+test('installing organizers over an existing source archive backfills readable materials without authorizing model work',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-existing-source-memory-'));
+  const store=new Store(directory),materials=new MaterialStore(store),work=new MaterialMemoryWork(store,materials),sources=new SourceStore(store,undefined,work.inputs);
+  sources.register({id:'fixture-existing',name:'Generated archive',kind:'custom',deviceId:'fixture',platform:'import',retention:'archive'});
+  await sources.upsert('fixture-existing',{externalId:'old',revision:'1',observedAt:at(0),text:'Generated existing original',kind:'message',layer:'original'});
+  const organizers=new MaterialOrganizerRuntime(store,materials,[],undefined,work);
+  t.after(async()=>{await organizers.close();store.close();rmSync(directory,{recursive:true,force:true});});
+  for(let i=0;i<8;i++)await organizers.tick();
+  const old=materials.get(materialId('fixture-existing','old'))!;assert.ok(old);
+  assert.equal(work.readyForMemory(old.ref),true);assert.equal(materials.list({query:'existing original'}).items[0]?.id,old.id);
+  let calls=0;const runner={create:()=>{calls++;return {id:'fixture'};},get:()=>({status:'completed'}),run:async()=>{},cancel:()=>{}};
+  assert.equal(work.drain(runner,true),0);assert.equal(calls,0);
+  await sources.upsert('fixture-existing',{externalId:'new',revision:'1',observedAt:at(1),text:'Generated new original',kind:'message',layer:'original'});
+  await organizers.tick();work.drain(runner,true);assert.equal(calls,1);
+});
+
 test('real FileStore original stays pinned while processing and late attachment changes rebuild its material',async t=>{
   const {store,sources,files,materials,organizers,archived}=fixture(t);
   sources.register({id:'fixture-files',name:'Generated files',kind:'local-files',deviceId:'fixture-phone',platform:'android',retention:'archive'});
   const bytes=Buffer.from('Generated audio bytes'),hash=sha256(bytes);
-  const input={sourceId:'fixture-files',previousRevision:null,item:{externalId:'audio-1',revision:'v1',observedAt:at(0),title:'Generated recording',text:'',kind:'file' as const,layer:'original' as const,mimeType:'audio/wav'},relativePath:'recordings/generated.wav',sizeBytes:bytes.length,sha256:hash};
+  const input={sourceId:'fixture-files',previousRevision:null,item:{externalId:'audio-1',revision:'v1',observedAt:at(0),document:{recordedAt:at(-86_400),timeBasis:'recorded' as const,contentRole:'other' as const},title:'Generated recording',text:'',kind:'file' as const,layer:'original' as const,mimeType:'audio/wav'},relativePath:'recordings/generated.wav',sizeBytes:bytes.length,sha256:hash};
   const upload=files.begin(input,()=>{});files.part(upload.uploadId,0,bytes,()=>{});
   const receipt=await files.commit(upload.uploadId,()=>{});
   await organizers.tick(20);
@@ -112,6 +146,9 @@ test('real FileStore original stays pinned while processing and late attachment 
   await organizers.tick(20);
   assert.equal(materials.get(id)?.coverage.state,'complete');
   assert.match(materials.read(id).text,/Generated transcript segment/);
+  const transcript=materials.evidence(materials.evidenceIds(id)).find(record=>record.ocrText==='Generated transcript segment')!;
+  assert.equal(transcript.capturedAt,at(0));
+  assert.deepEqual(transcript.provenance?.document,{recordedAt:at(-86_400),timeBasis:'recorded',contentRole:'transcript'});
   const attachment=archived.put({name:'generated.txt',bytes:Buffer.from('Generated attached original')});
   archived.attach(receipt.id,[attachment.id]);
   await organizers.tick(20);
@@ -125,6 +162,9 @@ test('real FileStore original stays pinned while processing and late attachment 
   const latest=materials.read(id).text;
   assert.match(latest,/Generated dialogue correction/);
   assert.doesNotMatch(latest,/Generated transcript segment/);
+  const corrected=materials.evidence(materials.evidenceIds(id)).find(record=>record.ocrText==='Generated dialogue correction')!;
+  assert.equal(corrected.provenance?.document?.contentRole,'transcript');
+  assert.equal(corrected.provenance?.document?.recordedAt,at(-86_400));
 });
 
 test('coding session keeps the newest 2000 complete JSON events and declares older coverage partial',async t=>{

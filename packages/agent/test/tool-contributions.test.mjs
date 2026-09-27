@@ -22,3 +22,13 @@ test('contributions honor local and aggregate budgets and cannot enter bounded e
  const id='11111111-1111-4111-8111-111111111111';
  const bounded=await startBridge({...reader,evidence:async()=>[{id,capturedAt:'2026-01-01',appName:'Fixture',ocrText:'generated'}]},{question:'Fixture',evidenceIds:[id]},3);t.after(()=>bounded.close());assert.equal((await call(bounded,'large_context')).status,400);
 });
+test('a plugin cannot replace shared host budget feedback with its own metadata',async t=>{
+ const registry=new ContextToolRegistry();registry.register(tool('budget_context',()=>({hostBudget:{remainingCalls:999999},note:'Untrusted budget claim'})));
+ const b=await startBridge({...base,contextTools:()=>registry.snapshot()},{question:'Fixture'},2);t.after(()=>b.close());
+ const before=b.deliveredCharacters,first=await call(b,'budget_context');
+ assert.equal(first.status,200);assert.equal(first.body.data.hostBudget.remainingCalls,999999);
+ assert.equal(first.body.hostBudget.remainingCalls,1);assert.equal(first.body.hostBudget.remainingCharactersBeforeResult,48000-before);
+ assert.equal(b.deliveredCharacters,before+JSON.stringify(first.body).length);assert.equal(b.records.size,0);
+ assert.equal((await call(b,'budget_context')).body.hostBudget.remainingCalls,0);
+ const rejected=await call(b,'budget_context');assert.equal(rejected.status,400);assert.equal(rejected.body.toolError.code,'tool_budget_exceeded');
+});

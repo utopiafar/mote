@@ -12,6 +12,8 @@ import {MemoryStore,memoryEvidenceFingerprint} from '../src/memory.js';
 import {InsightRuns} from '../src/insight-runs.js';
 import {createInsightSnapshot} from '../src/insight-snapshots.js';
 import {evidenceDependents} from '../src/evidence-dependencies.js';
+import {MaterialStore,materialId} from '../src/materials.js';
+import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 
 test('one changed segment invalidates only its descendants; unchanged chunks and old reports survive container replacement',async t=>{
  const directory=mkdtempSync(join(tmpdir(),'mote-file-dependencies-')),store=new Store(directory),sources=new SourceStore(store),files=new FileStore(store,sources);let revision=1;
@@ -26,9 +28,21 @@ test('one changed segment invalidates only its descendants; unchanged chunks and
  const proposal=save(0),scope={after:'2025-01-01T00:00:00Z',before:'2025-01-02T00:00:00Z',deviceId:'fixture'},snapshot=createInsightSnapshot(store,randomUUID(),scope);
  const stable=memories.publish(proposal.id),changed=memories.publish(save(1).id),reportId=randomUUID();assert.notEqual(createInsightSnapshot(store,randomUUID(),scope).scopeFingerprint,snapshot.scopeFingerprint);store.saveInsight({runId:reportId,answer:'Historical generated report'},reportId);
  assert.ok(evidenceDependents(store,{kind:'file_chunk',id:before[0].id}).some(node=>node.kind==='memory'&&node.id===stable.id));
+ const materials=new MaterialStore(store),organizers=new MaterialOrganizerRuntime(store,materials);
+ t.after(()=>organizers.close());while(await organizers.tick(100));
+ const materialIdValue=materialId('generated','generated.wav'),formal=materials.get(materialIdValue)!;
+ const anchors=materials.evidence(materials.evidenceIds(formal.ref));
+ const stableAnchor=anchors.find(record=>record.ocrText==='Stable first segment')!,changedAnchor=anchors.find(record=>record.ocrText==='Second segment version 1')!;
+ assert.ok(stableAnchor);assert.ok(changedAnchor);
  revision++;processing.retry(original.id);await processing.tick();const after=files.chunks(original.id);
  assert.equal(after[0].id,before[0].id);assert.notEqual(after[1].id,before[1].id);assert.notEqual(after[0].fileEvidence!.artifactId,oldArtifact);assert.equal(memoryEvidenceFingerprint(after[0]),stableFingerprint);
  assert.equal(memories.get(stable.id).status,'published');assert.equal(memories.get(changed.id).status,'stale');assert.equal(files.isCurrentEvidence(before[1].id),false);
+ assert.equal(materials.isCurrentEvidence(changedAnchor.id),false,'retired file chunks immediately invalidate formal descendants');
+ assert.equal(materials.isCurrentEvidence(stableAnchor.id),true);
+ assert.throws(()=>materials.read(formal.ref),{statusCode:409});
+ while(await organizers.tick(100));
+ assert.equal(materials.isCurrentEvidence(stableAnchor.id),true);
+ assert.ok(materials.evidenceIds(materialIdValue).includes(stableAnchor.id));
  assert.equal(processing.artifact(oldArtifact).transcript.segments[1].text,'Second segment version 1');assert.equal(files.evidence([before[1].id]).length,0);assert.equal(store.db.prepare('SELECT COUNT(*) n FROM insights WHERE id=?').get(reportId)!.n,1);
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,summarize:true}});await processing.tick();assert.equal(memories.get(stable.id).status,'published');assert.equal(store.db.prepare('SELECT COUNT(*) n FROM insights WHERE id=?').get(reportId)!.n,1);
 });

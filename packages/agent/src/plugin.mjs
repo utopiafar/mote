@@ -142,14 +142,14 @@ export async function apply(ctx) {
         parameters,
         output: {
           schema: { type: "json" },
-          render: (_args, value) => value?.imageAttachment ? [{type:'text',text:JSON.stringify({id:value.id,source:'untrusted_personal_context'})},{type:'image',attachment:value.imageAttachment}] : [{type:'text',text:JSON.stringify(value)}],
+          render: (_args, value) => value?.imageAttachment ? [{type:'text',text:JSON.stringify({id:value.id,attachmentId:value.attachmentId,source:'untrusted_personal_context'})},{type:'image',attachment:value.imageAttachment}] : [{type:'text',text:JSON.stringify(value)}],
         },
         async execute(args, exec) {
           const value=await call(tool,args,exec.signal);
           if(tool==='read_image'){
             const attachments=ctx.get('attachments');if(!attachments)throw Error('This model runtime does not support image attachments');
             const imageAttachment=await attachments.saveImage({data:Buffer.from(value.image.data,'base64'),mediaType:value.image.mimeType,name:'capture'});
-            return {id:value.id,imageAttachment};
+            return {id:value.id,...(value.attachmentId?{attachmentId:value.attachmentId}:{}),imageAttachment};
           }
           return value;
         },

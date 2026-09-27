@@ -70,6 +70,24 @@ test('native skill tool loads its body inside real Harness while memory batches 
   }finally{await agent.close();await fixture.close();}
 });
 
+test('configured Memory strategy reaches the real Harness with neutral procedure and unchanged read-only scope', {timeout:90000}, async()=>{
+  const fixture=await provider(request=>{
+    assert.deepEqual(request.tools.map(t=>t.function.name).sort(),['evidence','skill']);
+    const messages=JSON.stringify(request.messages);
+    assert.ok(messages.includes('Generated independently selected admission policy'));
+    assert.ok(messages.includes('memory-strategy'));
+    assert.ok(messages.includes('apply the selected review policy'));
+    assert.ok(!messages.includes('Direct owner experiences, feelings, wishes'));
+    assert.ok(!messages.includes(prefix)&&!messages.includes(suffix));
+    return {answer:{answer:'{"memories":[]}',citationIds:[]}};
+  });
+  const agent=createAgent({reader,model:'fixture-model',apiKey:'generated-only',baseUrl:fixture.baseUrl,timeoutMs:60000});
+  try{
+    const result=await agent.query({question:'Generated independently selected admission policy',skill:'memory-strategy',responseMode:'memory-extraction',evidenceIds:[id],evidenceRanges:[{id,offset:prefix.length,length:body.length}]});
+    assert.deepEqual(fixture.errors,[]);assert.equal(fixture.requests.length,1);assert.deepEqual(JSON.parse(result.answer),{memories:[]});
+  }finally{await agent.close();await fixture.close();}
+});
+
 test('dedicated import Harness uses native skill, read, write and shell tools to generate a reviewed manifest', {timeout:90000}, async()=>{
   const workspace=await mkdtemp(join(tmpdir(),'mote-native-import-generated-'));await mkdir(join(workspace,'inputs'));
   await writeFile(join(workspace,'inputs','generated.json'),JSON.stringify({id:'generated-record',text:'合成日记原文，没有真实个人资料。',recordedAt:'2020-02-03T08:00:00+08:00'}));

@@ -45,7 +45,7 @@ export interface ContextReader {
   materialCatalog?(args:ContextRange&{sourceId?:string;kind?:string;query?:string}):Promise<{items:{id:string;ref:string;[field:string]:unknown}[];nextCursor:string|null}>;
   materialRead?(args:ContextRange&{ref:string;offset?:number;length?:number}):Promise<{material:{id:string;ref:string;[field:string]:unknown};text:string;textRange:{offset:number;total:number;nextOffset:number|null};spans:{memberIds:string[];[field:string]:unknown}[];originalRefs:string[];originalRefsTotal:number;originalRefsTruncated:boolean}>;
   segments?(args:ContextRange & {id?:string;query?:string}):Promise<{items:{members:string[];[key:string]:unknown}[];nextCursor:string|null;[key:string]:unknown}>;
-  readImage?(args:{id:string}):Promise<{mimeType:string;data:string}>;
+  readImage?(args:{id:string;attachmentId?:string}):Promise<{mimeType:string;data:string}>;
   search(args: ContextRange & { query?: string }): Promise<ContextRecord[]>;
   timeline(args: ContextRange): Promise<ContextRecord[] | ContextPage>;
   evidence(args: ContextRange & { ids: string[] }): Promise<ContextRecord[]>;
@@ -125,6 +125,8 @@ export interface QueryInput {
   evidenceIds?: string[];
   /** Host-only immutable evidence fingerprints for a bounded background read. */
   processingEvidence?: Record<string,string>;
+  /** Host-only named material outputs for a bounded background read. */
+  processingMaterialInputs?: {materialId:string;required:string[];fingerprint:string;evidenceIds:string[]}[];
   /** Host snapshot for paginated change disclosure; does not restrict historical retrieval. */
   incrementalEvidenceIds?:string[];
   /** Host-reported archive-wide coverage, not a guarantee for the selected window. */

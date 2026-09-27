@@ -1,4 +1,8 @@
 import type {MaterialRecord} from './materials.js';
+import {z} from 'zod';
+
+export const materialRequirementsSchema=z.array(z.string().min(1).max(128).regex(/^[a-z0-9][a-z0-9._/-]*$/)).min(1).max(64).refine(v=>new Set(v).size===v.length,'Duplicate material dependency');
+export type MaterialInputPin={materialId:string;required:string[];fingerprint:string;evidenceIds:string[]};
 
 export type MaterialDependencyStatus={key:string;state:'ready'|'pending'|'failed'|'unavailable';reason?:string};
 

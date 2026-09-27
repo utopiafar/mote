@@ -12,7 +12,8 @@ const importPythonPackSchema=z.object({
   id:z.string().regex(/^[a-z][a-z0-9.-]{2,127}$/),version:z.string().min(1).max(64),description:z.string().trim().min(1).max(200).optional(),
   packRoot:z.string().min(1).max(2000).refine(isAbsolute),script:z.string().min(1).max(500).refine(value=>!isAbsolute(value)&&!value.split(/[\\/]/).some(part=>!part||part==='.'||part==='..')),
   scriptSha256:z.string().regex(/^[a-f0-9]{64}$/),pythonExecutable:z.string().min(1).max(2000).refine(isAbsolute),
-  timeoutMs:z.number().int().min(1).max(120000).optional(),maxInputBytes:z.number().int().min(1).max(32*1024*1024).optional(),maxOutputBytes:z.number().int().min(1).max(1024*1024).optional(),
+  timeoutMs:z.number().int().min(1).max(120000).optional(),maxInputFiles:z.number().int().min(1).max(4000).optional(),maxInputBytes:z.number().int().min(1).max(32*1024*1024).optional(),maxOutputBytes:z.number().int().min(1).max(4*1024*1024).optional(),
+  config:z.record(z.unknown()).refine(value=>Buffer.byteLength(JSON.stringify(value))<=8192,'Parser configuration exceeds 8 KiB').optional(),
 }).strict();
 export type ImportPythonPackConfig=z.infer<typeof importPythonPackSchema>;
 

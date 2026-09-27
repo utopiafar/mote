@@ -2,16 +2,13 @@
 """Loopback-only, offline OCR worker. Model files are installed by Mote first."""
 import argparse
 import hmac
-import io
 import json
 import os
 import socket
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import BoundedSemaphore
-
-class UnsupportedImage(Exception):
-    pass
+from mote_ocr import UnsupportedImage, recognize_image
 
 
 def main():
@@ -46,27 +43,8 @@ def main():
             pipeline_marker = stamp
 
     def recognize(image):
-        from PIL import Image
-        import numpy as np
-        Image.MAX_IMAGE_PIXELS = 40_000_000
-        try:
-            with Image.open(io.BytesIO(image)) as opened:
-                if opened.format not in ('PNG', 'JPEG', 'WEBP') or opened.width * opened.height > 40_000_000 or max(opened.size) > 12000:
-                    raise UnsupportedImage('Image format or dimensions unsupported')
-                pixels = np.asarray(opened.convert('RGB'))
-        except (ValueError, OSError) as error:
-            raise UnsupportedImage('Image could not be decoded') from error
         load_model()
-        segments = []
-        for result in pipeline.predict(pixels):
-            data = result.json.get('res', result.json)
-            for value in data.get('rec_texts', []):
-                line = str(value).strip()
-                if line:
-                    segments.append({'startMs': 0, 'endMs': 0, 'text': line[:8000]})
-                if len(segments) > 50000:
-                    raise ValueError('OCR result too large')
-        return {'durationMs': 0, 'segments': segments, 'engine': 'PP-OCRv5-mobile-ONNX'}
+        return recognize_image(image, pipeline.predict)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):

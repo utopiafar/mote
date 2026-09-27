@@ -14,10 +14,13 @@ export interface FileEvidence {
   startMs?: number;
   endMs?: number;
   speaker?: string;
+  speakerAttribution?: {name:string;confirmedBy:'owner';confirmationId:string;confirmedAt:string};
   uncertain?: boolean;
   overlap?: boolean;
 }
 export interface Capture {
+  revisionState?: 'current'|'historical';
+  fileArchive?: {captureId:string};
   fileEvidence?: FileEvidence;
   id: string;
   capturedAt: string;

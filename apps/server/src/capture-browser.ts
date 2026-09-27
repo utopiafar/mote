@@ -22,7 +22,7 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
   const thumbnails=new Map<string,Buffer>();let cachedBytes=0;
   const ownRecord=(req:FastifyRequest)=>{
     const id=evidenceRefId((req.params as {id:string}).id,'capture');
-    const record=id?evidenceReader.evidence([id],navigationScopeSchema.parse(req.query))[0]:undefined,c=credential(req);
+    const record=id?evidenceReader.archivedEvidence([id],navigationScopeSchema.parse(req.query))[0]:undefined,c=credential(req);
     if(c)connections.assertActive(c);
     // Missing and foreign IDs share a response so collectors cannot probe other devices.
     if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,moteText("采集记录不存在或已被清理。"));
@@ -77,7 +77,12 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     if(!record||(c&&record.deviceId!==c.deviceId))throw new ConnectionError('capture_not_found',404,moteText("采集记录不存在或已被清理。"));
     return record;
   };
-  app.get('/api/capture-browser/:id',async req=>ownRecord(req));
+  app.get('/api/capture-browser/:id',async req=>{
+    const record=ownRecord(req);
+    // Storage identity is authoritative; a native file can also come from an import source.
+    const file=store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=?').get(record.id);
+    return {...evidenceReader.context([record])[0],fileArchive:file?{captureId:record.id}:undefined};
+  });
   app.get('/api/capture-browser/:id/image',async(req,reply)=>{
     const record=ownImage(req);
     const {thumbnail,deviceId,source}=z.object({...navigationScopeSchema.shape,thumbnail:z.enum(['1','true']).optional()}).strict().parse(req.query);

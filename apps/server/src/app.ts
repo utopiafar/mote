@@ -1,3 +1,4 @@
+import {MemoryRecipeSettings} from './memory-recipe-settings.js';
 import {CAPTURE_BATCH_MAX_RECORDS,CAPTURE_BATCH_MAX_BYTES} from './capture-limits.js';
 import {memoryEvidenceFingerprint} from './memory.js';
 import { Context } from '@deepseek-ai/cordis';
@@ -27,6 +28,7 @@ import { ContentStorageService } from './content-storage.js';
 import { Conversations } from './conversations.js';
 import { ServerDiagnostics,safeError,type AgentTraceContext } from './diagnostics.js';
 import { EvidenceReader } from './evidence-reader.js';
+import { EvidenceExposurePolicy } from './evidence-exposure.js';
 import { ExecutionEngine } from './execution-engine.js';
 import { ExecutionSettings } from './execution-settings.js';
 import { ServerFeatureHost } from './feature-host.js';
@@ -44,16 +46,19 @@ import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite } from '.
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
+import {MemoryIntegrationSettings} from './memory-integration-settings.js';
 import { MaintenanceWorker } from './maintenance.js';
 import { MaterialMemoryWork } from './material-memory-work.js';
 import { MaterialOrganizerRuntime } from './material-organizers.js';
 import { MaterialStore } from './materials.js';
 import { MediaAssets } from './media-assets.js';
-import { MemoryLifecycle,type LifecycleExtension } from './memory-lifecycle.js';
+import { MemoryLifecycle,automaticMemoryExtractionEnabled,storedMemoryLifecycleSettings,type LifecycleExtension } from './memory-lifecycle.js';
+import {MemoryStrategies} from './memory-strategies.js';
+import type {MemoryReviewStrategy} from './memory-strategy-contract.js';
 import { MemoryPipeline } from './memory-pipeline.js';
 import { MemoryReviewCache } from './memory-review-cache.js';
 import { reviewMemory } from './memory-review.js';
-import { ReloadableAgent,applyModelSettings,createModelAgent,createModelRegistry,modelSettingsFromConfig,testModelConnection,type ModelAgentFactory } from './model-agent.js';
+import { ReloadableAgent,applyModelSettings,createModelAgent,createModelRegistry,modelSettingsFromConfig,testModelConnection,usesLocalModel,type ModelAgentFactory } from './model-agent.js';
 import { MINIMUM_MODEL_INPUT_RESERVATION_TOKENS,ModelBudgets } from './model-budgets.js';
 import { ModelCatalogError } from './model-catalog.js';
 import { modelConfiguration } from './model-configuration.js';
@@ -110,19 +115,22 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const agentGate=new ConcurrencyGate(execution.agentConcurrency),llmGate=new ConcurrencyGate(execution.llmConcurrency);
   const interactiveGate=new ConcurrencyGate(execution.interactiveConcurrency),interactiveModelGate=new ConcurrencyGate(execution.interactiveConcurrency);
   const modelContext=new AsyncLocalStorage<QueryInput>();
+  const modelLocality=new AsyncLocalStorage<boolean>();
   const budgetContext=new AsyncLocalStorage<{id:string;operationId:string;usage?:import('@mote/shared').TokenUsage;price?:import('@mote/shared').ModelPrice}>();
-  const admitModelRequest=(settings:import('@mote/shared/models').ModelSettings)=>(inputBytes:number)=>{const context=budgetContext.getStore();if(!context){if(modelBudgets.enabled(settings.provider))throw new ProviderFailure({category:'blocked',code:'model_budget_unavailable'});return;}modelBudgets.reserve({id:context.id,operationId:context.operationId,provider:settings.provider,model:settings.model,inputTokens:Math.max(MINIMUM_MODEL_INPUT_RESERVATION_TOKENS,inputBytes),outputTokens:settings.maxTokens,price:context.price});};
+  const admitModelRequest=(settings:import('@mote/shared/models').ModelSettings)=>(inputBytes:number)=>{assertModelEvidence(settings,modelContext.getStore());const context=budgetContext.getStore();if(!context){if(modelBudgets.enabled(settings.provider))throw new ProviderFailure({category:'blocked',code:'model_budget_unavailable'});return;}modelBudgets.reserve({id:context.id,operationId:context.operationId,provider:settings.provider,model:settings.model,inputTokens:Math.max(MINIMUM_MODEL_INPUT_RESERVATION_TOKENS,inputBytes),outputTokens:settings.maxTokens,price:context.price});};
   const runModelFor=(settings:import('@mote/shared/models').ModelSettings):NonNullable<import('@mote/agent').AgentOptions['runModel']>=>(task,signal)=>{
     signal?.throwIfAborted();providerAdmission.check(settings);if(settings.protocol==='codex-app-server')modelBudgets.requireBoundedRuntime(settings.provider);
     const queuedAt=performance.now(),input=modelContext.getStore(),gate=input?.executionLane==='interactive'?interactiveModelGate:llmGate;input?.onTrace?.({type:'model.queued',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background'}});
     input?.onProgress?.({stage:'model',message:moteText('等待模型执行名额')});
-    return gate.run(async()=>{providerAdmission.check(settings);input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background',queueWaitMs:performance.now()-queuedAt}});return task();},signal??input?.signal,input?.traceContext?.operationId??budgetContext.getStore()?.operationId);
+    return gate.run(async()=>{providerAdmission.check(settings);assertModelEvidence(settings,input);input?.onProgress?.({stage:'model',message:moteText('模型处理中')});input?.onTrace?.({type:'model.admitted',stage:'model',payload:{...gate.snapshot(),unit:'harness_session',lane:input?.executionLane??'background',queueWaitMs:performance.now()-queuedAt}});return task();},signal??input?.signal,input?.traceContext?.operationId??budgetContext.getStore()?.operationId);
   };
   const diagnostics=new ServerDiagnostics({...runtimeSettings.diagnostics(),directory:config.logDirectory??join(config.dataDir,'logs'),maxBytes:config.logMaxBytes,maxFiles:config.logMaxFiles,maxEntries:config.logMaxEntries});
   await diagnostics.init();
   const executor=new ExecutionEngine(store);
   backendContext.provide('moteExecution',executor);
-  const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor);await sourcePipelines.ready;
+  const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
+  const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>automaticMemoryExtractionEnabled(store),memoryRecipeSettings);
+  const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor,materialMemoryWork);await sourcePipelines.ready;
   const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources),ingress=new IngressService(store,sources,files);const fileEvidence=new FileEvidenceRequests(sources);
   const mediaAssets=new MediaAssets(process.env.MOTE_MEDIA_MODEL_DIR||join(store.directory,'media-models'));
   const usageLedger=new UsageLedger(store);
@@ -132,7 +140,6 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     const meter=usageLedger.start(provider,model,'embedding',{agentId:'embedding',moduleId:'retrieval',skillId:null,operationId});
     return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');modelBudgets.finish(id,usage,price);}};
   },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId});
-  const materialMemoryWork=new MaterialMemoryWork(store,materials);
   const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
   const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials,sourcePipelines,materialOrganizer.sourceItemRecipes,
     ref=>materialMemoryWork.readyForMemory(ref));
@@ -145,9 +152,13 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const credential=(req:FastifyRequest)=>identities.get(req);
   const sourceOwner=(req:FastifyRequest,id:string)=>{const c=credential(req);if(c)connections.assertOwnSource(c,id);};
   const context=(records:CaptureRecord[])=>evidenceReader.context(records);
+  const assertModelEvidence=(settings:import('@mote/shared/models').ModelSettings,input:QueryInput|undefined)=>{
+    if(!usesLocalModel(settings)&&[...(input?.evidenceIds??[]),...(input?.directImages??[]).map(image=>image.id)].some(id=>evidenceReader.evidenceLocalOnly(id)))throw new StoreError('Local-only evidence requires a local model',409);
+  };
   const agentFeatures=await installAgentFeatures(backendContext,evidenceReader.agent({diagnostics,allowQueryImages:()=>perception.settings().allowQueryImages,
+    exposurePolicy:new EvidenceExposurePolicy([],()=>modelLocality.getStore()===true),
     currentOperation:()=>modelContext.getStore()?.responseMode==='memory-extraction'?'memory':'query',
-    currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence}));
+    currentGrantContext:()=>modelContext.getStore(),currentProcessingEvidence:()=>modelContext.getStore()?.processingEvidence,currentMaterialInputs:()=>modelContext.getStore()?.processingMaterialInputs}));
   const archiveReader=agentFeatures.reader;
   const directImage=(id:string)=>modelContext.getStore()?.directImages?.find(image=>image.id===id);
   const fileRawReader=new FileRawReader(store,files,archivedFiles,{
@@ -159,9 +170,10 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       const regular=args.ids.filter(id=>!directImage(id));
       return [...direct,...(regular.length?await archiveReader.evidence({...args,ids:regular}):[])];
     },
-    readImage:async({id})=>{
+    readImage:async({id,attachmentId})=>{
       const direct=directImage(id);
-      if(!direct)return archiveReader.readImage!({id});
+      if(!direct)return archiveReader.readImage!({id,attachmentId});
+      if(attachmentId!==undefined)throw new StoreError('Dialogue images have no nested attachments',400);
       const ref=fileOriginalRawRef(id,direct.hash),parts:Buffer[]=[];
       for(let offset=0;offset<direct.sizeBytes;){
         const page=await fileRawReader.read(ref,{offset,length:Math.min(MAX_RAW_READ_BYTES,direct.sizeBytes-offset)});
@@ -179,13 +191,15 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   const agent=new ReloadableAgent(()=>diagnostics.record('agent.failed',{category:'internal'},'error'));
   const codex={executable:config.codexBin,home:config.codexHome};
   const wrapAgent=(inner:QueryAgent,settings:import('@mote/shared/models').ModelSettings):QueryAgent=>({get configured(){return inner.configured;},close:()=>inner.close(),query:async input=>{
+    const local=usesLocalModel(settings);
+    assertModelEvidence(settings,input);
     if(input.evidenceIds&&input.executionLane!=='interactive')input={...input,processingEvidence:Object.fromEntries(memories.readEvidence(input.evidenceIds).map(record=>[record.id,memoryEvidenceFingerprint(record)]))};
     input.signal?.throwIfAborted();providerAdmission.check(settings);
     input.onProgress?.({stage:'starting',phase:'started',message:moteText('等待 Agent 执行名额')});
     return (input.executionLane==='interactive'?interactiveGate:agentGate).run(async()=>{
       const id=randomUUID(),context={id,operationId:input.traceContext?.operationId??(input.traceContext?.jobId?'job:'+input.traceContext.jobId:'query:'+id),price:usageLedger.prices().find(p=>p.provider===settings.provider&&p.model===settings.model),usage:undefined as import('@mote/shared').TokenUsage|undefined};
       const observed={...input,onUsage:(usage:import('@mote/shared').TokenUsage)=>{context.usage=usage;modelBudgets.observe(id,usage,context.price);input.onUsage?.(usage);}};
-      try{return await budgetContext.run(context,()=>providerAdmission.run(settings,()=>modelContext.run(observed,()=>inner.query(observed))));}finally{modelBudgets.finish(id,context.usage,context.price);}
+      try{return await budgetContext.run(context,()=>providerAdmission.run(settings,()=>{assertModelEvidence(settings,input);return modelLocality.run(local,()=>modelContext.run(observed,()=>inner.query(observed)));}));}finally{modelBudgets.finish(id,context.usage,context.price);}
     },input.signal,input.traceContext?.operationId);
   }});
   const factory:ModelAgentFactory=async(settings,reader)=>wrapAgent(await (dependencies?.createModelAgent?dependencies.createModelAgent(settings,reader):createModelAgent(settings,reader,codex,runModelFor(settings),admitModelRequest(settings))),settings);
@@ -286,7 +300,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
   });
   const actions=new Actions(store,files,input=>queryAgent({...input,language:requestLocale.getStore()??'zh-CN'},'query','actions'),()=>agent.configured,{semanticArtifacts,executor});
 
-  const connectors=await registerConnectors(app,{files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
+  const connectors=await registerConnectors(app,{memoryStrategies,files,sources,store,evidenceReader,materials,sourcePipelines,materialOrganizers:materialOrganizer,processing:workflows,config,mcpAuthorization:header=>connections.mcpAuthorization(header,config.connectors)});
   const connectionRate={rateLimit:{max:20,timeWindow:'1 minute'}};
 
   const softwareUpdate=createUpdateService({currentVersion:serverVersion,profile:config.profile,runtime:config.configuration?.runtime,profileHome:config.configuration?.hostConfigFile?dirname(dirname(config.configuration.hostConfigFile)):undefined,repository:config.updateRepository,channel:config.updateChannel});
@@ -351,8 +365,8 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     activeQueries.add(promise);void promise.finally(()=>{clearInterval(heartbeat);activeQueries.delete(promise);}).catch(()=>{});return promise;
   }
   const memoryReviews=new MemoryReviewCache();
-  const reviewExtraction=(input:QueryInput,result:QueryResult)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
-    cache:memoryReviews,snapshot:()=>{
+  const reviewExtraction=(input:QueryInput,result:QueryResult,strategy?:MemoryReviewStrategy)=>reviewMemory(input,result,next=>queryAgent(next,'query','memories'),{
+    strategy,cache:memoryReviews,snapshot:()=>{
       const ids=input.evidenceIds??[];
       if(ids.some(id=>!memories.isCurrentEvidence(id)))throw new StoreError('Memory evidence changed during review',409);
       // Include full original metadata (speaker, source, device, dates, version),
@@ -360,9 +374,13 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
       return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
     },
   });
-  const memoryPipeline=new MemoryPipeline({executor,store,memories,materialAllowedForMemory:ref=>evidenceReader.materialAllowedForMemory(ref),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
+  memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
+  materialMemoryWork.reconcile(memoryPipeline);
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor),working=new WorkingMemory(store,conversations);
-  registerMemoryExtensions({semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
+  const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
+  registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
 
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();
@@ -471,7 +489,7 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     });
   } else app.setNotFoundHandler((req,reply)=>reply.code(404).send({error:'not_found',message:moteText("未找到所请求的资料。"),requestId:req.id}));
   const maintenanceWorker=dependencies?.backgroundWorker?new MaintenanceWorker(config):undefined;
-  const featureServices={setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelBudgets,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
+  const featureServices={memoryIntegrationSettings,memoryRecipeSettings,setPlaybackAuthorization:(authorize:ReturnType<typeof registerFileRoutes>)=>{playbackAuthorization=authorize;},connectors,processing,executor,agentFeatures,archiveReader,isClosing:()=>closing,actions,agent,agentGate,archivedFiles,codex,config,connectionRate,connections,contentStorage,conversations,credential,diagnosticSnapshot,diagnostics,eventLoop,evidenceReader,fileEvidence,files,importTasks,imports,indexer,ingress,insight,insightRequestSchema,insightRuns,interactiveGate,interactiveModelGate,jobId,launchImport,lifecycle,llmGate,maintenanceWorker,materialOrganizer,materialMemoryWork,materials,mediaAssets,mediaRange,memories,memoryPipeline,modelBudgets,modelSettings,parseCaptureBundle,perception,providerAdmission,queryAgent,queryRuns,queryWithAttachmentsSchema,reviewExtraction,runQuery,runtimeSettings,semanticSelection,serverVersion,softwareUpdate,sourceOwner,sourcePipelines,sources,store,usageLedger,webVersion,workflows};
   const featureHost=new ServerFeatureHost(backendContext,app,()=>diagnostics.record('request.failed',{category:'internal'},'error'));
   await installServerFeatures(featureHost,featureServices);
   diagnostics.record('server.started');
@@ -491,5 +509,5 @@ export async function buildApp(config:Config,dependencies?:{backgroundWorker?:bo
     memoryReviews.clear();
     try{if(!dependencies?.store)store.close();}finally{diagnostics.record('server.stopping');await diagnostics.close();}
   });
-  return {app,featureServices,featureHost,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
+  return {app,featureServices,featureHost,memoryIntegrationSettings,memoryRecipeSettings,memoryStrategies,sourcePipelines,executor,workflows,perception,actions,store,sources,files,processing,materials,materialMemoryWork,materialOrganizer,memories,archivedFiles,imports,memoryPipeline,indexer,agent,diagnostics,connections,modelSettings,insightRuns,lifecycle,working};
 }

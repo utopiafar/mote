@@ -1,21 +1,26 @@
 import {codingProjectContext} from './coding-project.js';
 import {createHash} from 'node:crypto';
-import {sourceContentTime,type CaptureRecord} from '@mote/shared';
-import {materialId,MaterialStore,type MaterialDraft} from './materials.js';
+import {sourceContentTime,imageLocationSchema,type CaptureRecord,type Transcript} from '@mote/shared';
+import {materialId,MaterialStore,type MaterialDraft,type MaterialEvidenceContext} from './materials.js';
 import {ArchivedFileStore} from './archived-files.js';
 import type {Store} from './store.js';
 import {ExecutionEngine,ExecutionFailure,type ExecutionStep} from './execution-engine.js';
 import {CaptureRawReader,captureRawRef} from './capture-raw-reader.js';
 import {SourceItemRecipeCatalog,type SourceItemRecipePin} from './source-item-recipe.js';
 import type {MaterialMemoryWork} from './material-memory-work.js';
+import {readFileSpeakerAttributions} from './file-speaker-attribution.js';
+import {fileAttachmentAvailable,fileAttachmentChildren,fileAttachmentParent} from './file-attachments.js';
 
 /** Organizers select declared source shapes, never infer a topic or user intent. */
 export interface MaterialOrganizerFile {
   objectHash?:string;
   attachments:{id:string;hash:string;mimeType:string;relativePath?:string}[];
-  chunks:{id:string;text:string;startMs:number|null;endMs:number|null;kind:string;artifact:{complete?:boolean;coverage?:string}}[];
+  chunks:{id:string;text:string;startMs:number|null;endMs:number|null;kind:string;speaker?:string;
+    imageLocation?:Transcript['segments'][number]['imageLocation'];
+    speakerAttribution?:ReturnType<typeof readFileSpeakerAttributions>[string];artifact:{complete?:boolean;coverage?:string}}[];
   job?:{state:string;error:string|null};
   attachmentsTruncated:boolean;
+  attachedFiles?:{fileId:string;record:CaptureRecord;file:MaterialOrganizerFile}[];
 }
 
 /** A build receives only evidence selected by its declared group. It has no SQL or write access. */
@@ -47,6 +52,12 @@ const member=(record:CaptureRecord)=>({id:record.id,kind:'capture' as const,ref:
 const iso=(value:string)=>new Date(value).toISOString();
 const sourceKey=(prefix:string,deviceId:string)=>`${prefix}:${digest(deviceId)}`;
 const canonicalGroup=(group:Record<string,string>):Record<string,string>=>Object.fromEntries(Object.entries(group).sort(([a],[b])=>a.localeCompare(b)));
+/** Source declarations and processor contracts, never fields parsed from prose. */
+const evidenceContext=(record:CaptureRecord,role?:MaterialEvidenceContext['document']['contentRole']):MaterialEvidenceContext=>{
+  const document=record.provenance?.document;
+  return {observedAt:record.capturedAt,document:{recordedAt:document?.recordedAt,occurredAt:document?.occurredAt,
+    timeBasis:document?.timeBasis??'unknown',contentRole:role??document?.contentRole??'other'}};
+};
 /** Model-facing material text is an allowlist, not the stored capture JSON. The
  * latter can contain local file URIs, document paths and provider metadata. */
 const captureText=(record:CaptureRecord)=>{
@@ -111,24 +122,34 @@ function organizerReader(store:Store,selection:Record<string,string>,pinnedSourc
       WHERE o.group_key=? AND c.device_id=? ORDER BY c.captured_at,o.id LIMIT 1001`).all(group.groupKey,group.deviceId) as {id:string}[];
     return {records:rows.slice(0,1000).map(row=>permit(capture(store,row.id))).filter((r):r is CaptureRecord=>Boolean(r)),truncated:rows.length>1000};
   };
-  const file=(captureId:string):MaterialOrganizerFile|undefined=>{
+  const file=(captureId:string,includeAttached=true):MaterialOrganizerFile|undefined=>{
     if(!allowed.has(captureId))return;
     const original=store.db.prepare('SELECT object_hash FROM file_versions WHERE capture_id=?').get(captureId) as {object_hash:string|null}|undefined;
     const attachmentRows=store.db.prepare('SELECT f.id,f.hash,f.json FROM capture_files c JOIN archived_files f ON f.id=c.file_id WHERE c.capture_id=? ORDER BY f.id LIMIT 2001').all(captureId) as {id:string;hash:string;json:string}[];
-    const chunkRows=store.db.prepare(`SELECT c.id,c.text,c.start_ms,c.end_ms,a.kind,a.json artifact_json FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id
+    const chunkRows=store.db.prepare(`SELECT c.id,c.artifact_id,c.text,c.metadata,c.start_ms,c.end_ms,a.kind,a.json artifact_json FROM file_chunks c JOIN file_artifacts a ON a.id=c.artifact_id
       WHERE c.capture_id=? AND a.current=1 AND a.kind IN ('text','image-text','transcript','dialogue','corrected-dialogue')
       AND NOT EXISTS(SELECT 1 FROM file_artifacts preferred WHERE preferred.capture_id=a.capture_id AND preferred.current=1
         AND ((preferred.kind='corrected-dialogue' AND a.kind!='corrected-dialogue')
           OR (preferred.kind='dialogue' AND a.kind IN ('transcript','text','image-text'))))
-      ORDER BY c.start_ms,c.rowid LIMIT 2001`).all(captureId) as {id:string;text:string;start_ms:number|null;end_ms:number|null;kind:string;artifact_json:string}[];
+      ORDER BY c.start_ms,c.ordinal,c.rowid LIMIT 2001`).all(captureId) as {id:string;artifact_id:string;text:string;metadata:string|null;start_ms:number|null;end_ms:number|null;kind:string;artifact_json:string}[];
+    const confirmations=new Map([...new Set(chunkRows.map(row=>row.artifact_id))].map(id=>[id,readFileSpeakerAttributions(store,captureId,id)]));
     const job=store.db.prepare('SELECT state,error FROM file_jobs WHERE capture_id=?').get(captureId) as {state:string;error:string|null}|undefined;
-    return {objectHash:original?.object_hash??undefined,
+    const attachedFiles=includeAttached?fileAttachmentChildren(store,captureId).flatMap(({record,fileId})=>{
+      permit(record);const selected=file(record.id,false);return selected?[{fileId,record,file:selected}]:[];
+    }):[];
+    return {objectHash:original?.object_hash??undefined,...(attachedFiles.length?{attachedFiles}:{}),
       attachments:attachmentRows.slice(0,2000).map(row=>{
         const metadata=JSON.parse(row.json) as {mimeType?:string;relativePath?:string};
         return {id:row.id,hash:row.hash,mimeType:metadata.mimeType??'application/octet-stream',...(metadata.relativePath?{relativePath:metadata.relativePath}:{})};
       }),
-      chunks:chunkRows.map(row=>({id:row.id,text:row.text,startMs:row.start_ms,endMs:row.end_ms,kind:row.kind,
-        artifact:JSON.parse(row.artifact_json) as {complete?:boolean;coverage?:string}})),job,
+      chunks:chunkRows.map(row=>{
+        const metadata=JSON.parse(row.metadata??'{}'),speaker=typeof metadata.speaker==='string'?metadata.speaker:undefined;
+        const speakerAttribution=speaker?confirmations.get(row.artifact_id)?.[speaker]:undefined;
+        return {id:row.id,text:row.text,startMs:row.start_ms,endMs:row.end_ms,kind:row.kind,
+          ...(speaker?{speaker}:{}),...(speakerAttribution?{speakerAttribution}:{}),
+          ...(metadata.imageLocation?{imageLocation:imageLocationSchema.parse(metadata.imageLocation)}:{}),
+          artifact:JSON.parse(row.artifact_json) as {complete?:boolean;coverage?:string}};
+      }),job,
       attachmentsTruncated:attachmentRows.length>2000};
   };
   return Object.freeze({capture:()=>group.captureId?permit(capture(store,group.captureId)):undefined,sourceHead,codingSession,screenGroup,file});
@@ -168,7 +189,7 @@ class MaterialBody {
     if(this.members.length>=MAX_MEMBERS){this.limitations.add('member_limit');return false;}
     this.members.push(member(record));return true;
   }
-  text(id:string,text:string,memberId:string,format:'plain'|'json'|'transcript'='plain',locator?:Record<string,unknown>){
+  text(id:string,text:string,memberId:string|string[],format:'plain'|'json'|'transcript'='plain',locator?:Record<string,unknown>,evidenceIds?:string[],context?:MaterialEvidenceContext){
     if(!text)return;
     let position=0,part=0;
     while(position<text.length){
@@ -178,7 +199,9 @@ class MaterialBody {
       if(end<text.length&&/[\uD800-\uDBFF]/.test(text[end-1])&&/[\uDC00-\uDFFF]/.test(text[end]))end--;
       if(end===position){this.limitations.add('text_limit');return;}
       const slice=text.slice(position,end);
-      this.blocks.push({id:part?`${id}:${part}`:id,kind:'text',format,text:slice,memberIds:[memberId],
+      this.blocks.push({id:part?`${id}:${part}`:id,kind:'text',format,text:slice,memberIds:Array.isArray(memberId)?memberId:[memberId],
+        ...(evidenceIds?{evidenceIds}:{}),
+        ...(context?{evidenceContext:context}:{}),
         ...(locator||part?{locator:{...locator,textStart:position,textEnd:end}}:{})});
       this.characters+=slice.length;position=end;part++;
     }
@@ -201,7 +224,7 @@ const codingExternalId=(g:Record<string,string>)=>JSON.stringify([g.provider,g.p
 
 /** A source item keeps its own identity; a coding session is assembled separately. */
 const sourceItem:MaterialOrganizer={
-  id:'mote.source-item',version:'1',slot:'source-item',
+  id:'mote.source-item',version:'8',slot:'source-item',
   select:r=>r.provenance&&!r.provenance.document?.coding?{sourceId:r.provenance.sourceId,externalId:r.provenance.externalId}:undefined,
   identity:g=>materialId(g.sourceId,g.externalId),
   build(reader,g){
@@ -209,10 +232,35 @@ const sourceItem:MaterialOrganizer={
     const file=reader.file(r.id);if(!file)return;
     const {attachments,chunks,job}=file;
     const body=new MaterialBody();body.addMember(r);
-    body.text('source-record',captureText(r),r.id,'json');
+    body.text('source-record',captureText(r),r.id,'json',undefined,undefined,evidenceContext(r));
+    const sourceBlocks=body.blocks.map(block=>block.id);
     for(const c of chunks){
-      body.text(`chunk:${c.id}`,c.text,r.id,c.kind==='transcript'||c.kind==='dialogue'||c.kind==='corrected-dialogue'?'transcript':'plain',
-        {chunkId:c.id,...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})});
+      const structured=c.speaker!==undefined||c.imageLocation!==undefined;
+      const text=structured?JSON.stringify({...(c.speaker!==undefined?{speaker:c.speaker}:{}),...(c.speakerAttribution?{speakerAttribution:c.speakerAttribution}:{}),...(c.imageLocation?{imageLocation:c.imageLocation}:{}),text:c.text}):c.text;
+      // The chunk writer preserves a real media timeline across corrections.
+      // A corrected-dialogue container can also contain untimed document text.
+      body.text(`chunk:${c.id}`,text,r.id,structured?'json':c.startMs===null?'plain':'transcript',
+        {chunkId:c.id,...(c.imageLocation?{imageLocation:c.imageLocation}:{}),...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],
+        evidenceContext(r,c.startMs===null?undefined:'transcript'));
+    }
+    const extractedBlocks=body.blocks.filter(block=>!sourceBlocks.includes(block.id)).map(block=>block.id);
+    const attachedArtifacts:NonNullable<MaterialDraft['artifacts']>=[];
+    let attachmentPartial=false;
+    for(const {fileId,record:attached,file:processed} of file.attachedFiles??[]){
+      if(!body.addMember(attached))break;
+      if(processed.attachmentsTruncated)body.limitations.add('attachment_processing_truncated');
+      if(processed.chunks.some(c=>c.artifact.complete===false||c.artifact.coverage==='partial'))attachmentPartial=true;
+      const blockIds:string[]=[];
+      for(const c of processed.chunks){
+        const before=body.blocks.length;
+        body.text(`attachment:${fileId}:${c.id}`,JSON.stringify({attachment:{fileId,captureId:attached.id,parentCaptureId:r.id},
+          ...(c.speaker?{speaker:c.speaker}:{}),...(c.speakerAttribution?{speakerAttribution:c.speakerAttribution}:{}),
+          ...(c.imageLocation?{imageLocation:c.imageLocation}:{}),text:c.text}),[r.id,attached.id],'json',
+          {fileId,captureId:attached.id,chunkId:c.id,...(c.imageLocation?{imageLocation:c.imageLocation}:{}),...(c.startMs===null?{}:{startMs:c.startMs,endMs:c.endMs})},[c.id],evidenceContext(attached,c.startMs===null?'other':'transcript'));
+        blockIds.push(...body.blocks.slice(before).map(b=>b.id));
+      }
+      const waiting=['waiting','running'].includes(processed.job?.state??'waiting'),failed=['blocked','failed'].includes(processed.job?.state??'');
+      attachedArtifacts.push({key:`attachment/${fileId}/text`,blockIds,state:waiting?'pending':failed?'failed':blockIds.length?'ready':'unavailable',...(processed.job?.error?{reason:processed.job.error}:{})});
     }
     if(file.objectHash)body.asset('original',file.objectHash,r.provenance?.mimeType??'application/octet-stream',r.id);
     for(const attachment of attachments){
@@ -229,14 +277,19 @@ const sourceItem:MaterialOrganizer={
       else if(artifact&&(artifact.complete===false||artifact.coverage==='partial')){state='partial';reason='processor_partial';}
     }
     if(r.provenance?.document?.fileIndex&&r.provenance.document.fileIndex.coverage!=='full'){state='partial';reason='source_index_partial';}
+    if(attachmentPartial||attachedArtifacts.some(a=>a.state!=='ready')){state='partial';reason='attachment_processing_incomplete';}
     const reference=r.provenance?.layer==='reference'||r.provenance?.layer==='derived';
     const hasSourceBody=Boolean(r.ocrText?.trim());
-    const limitations=['metadata_projected',...(reference?['original_body_not_collected']:[]),...(state==='partial'?[reason??'processing_incomplete']:[])];
+    // Processing readiness belongs to coverage/artifacts. Changing an unrelated
+    // processor's state must not change the identity of the authored body.
+    const limitations=['metadata_projected',...(reference?['original_body_not_collected']:[])];
     const artifacts:MaterialDraft['artifacts']=[
-      {key:'source-body',state:reference||!hasSourceBody?'unavailable':'ready',
+      {key:'source-record',blockIds:sourceBlocks,state:'ready'},
+      {key:'source-body',blockIds:sourceBlocks,state:reference||!hasSourceBody?'unavailable':'ready',
         ...(reference?{reason:'original_body_not_collected'}:!hasSourceBody?{reason:'source_body_empty'}:{})},
-      ...(file.objectHash?[{key:'original',state:'ready' as const,revision:file.objectHash}]:[]),
-      ...(file.objectHash?[{key:'extracted-text',state:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed'].includes(job?.state??'')?'failed' as const:chunks.length?'ready' as const:'unavailable' as const,...(job?.error?{reason:job.error}:{})}]:[]),
+      ...(file.objectHash?[{key:'original',blockIds:body.blocks.filter(b=>b.id==='original').map(b=>b.id),state:'ready' as const,revision:file.objectHash}]:[]),
+      ...(file.objectHash?[{key:'extracted-text',blockIds:extractedBlocks,state:['waiting','running'].includes(job?.state??'waiting')?'pending' as const:['blocked','failed'].includes(job?.state??'')?'failed' as const:chunks.length?'ready' as const:'unavailable' as const,...(job?.error?{reason:job.error}:{})}]:[]),
+      ...attachedArtifacts,
     ];
     const start=r.provenance?.calendar?.start??sourceContentTime(r),end=r.provenance?.calendar?.end??start;
     return {id:materialId(g.sourceId,g.externalId),kind:r.source==='file'?'mote.file':`mote.${r.source}`,schemaVersion:1,
@@ -247,7 +300,7 @@ const sourceItem:MaterialOrganizer={
 };
 
 const codingSession:MaterialOrganizer={
-  id:'mote.coding-session',version:'2',slot:'coding-session',
+  id:'mote.coding-session',version:'3',slot:'coding-session',
   select:r=>{const c=r.provenance?.document?.coding;return c?{sourceId:r.provenance!.sourceId,provider:c.provider,projectKey:c.projectKey,sessionId:c.sessionId}:undefined;},
   identity:g=>materialId(g.sourceId,codingExternalId(g)),
   build(reader,g){
@@ -258,7 +311,7 @@ const codingSession:MaterialOrganizer={
     for(const [index,r] of records.entries()){
       if(body.full){body.limitations.add('session_text_limit');break;}
       if(!body.addMember(r))break;
-      body.text(`event:${r.id}`,captureText(r),r.id,'json',{newestIndex:index});
+      body.text(`event:${r.id}`,captureText(r),r.id,'json',{newestIndex:index},undefined,evidenceContext(r,'transcript'));
     }
     const order=new Map(records.map((r,index)=>[r.id,index]));
     body.blocks.sort((a,b)=>(order.get(b.memberIds[0]!)??0)-(order.get(a.memberIds[0]!)??0));
@@ -275,7 +328,7 @@ const codingSession:MaterialOrganizer={
 };
 
 const screenGroup:MaterialOrganizer={
-  id:'mote.screen-segment',version:'1',slot:'screen-segment',
+  id:'mote.screen-segment',version:'2',slot:'screen-segment',
   select:r=>{if(r.source!=='screen'&&r.source!=='ui_page')return;const row=(r as CaptureRecord&{groupKey?:string}).groupKey;return {deviceId:r.deviceId,groupKey:row??''};},
   identity:g=>g.groupKey?materialId(sourceKey('screen',g.deviceId),g.groupKey):undefined,
   build(reader,g){
@@ -299,14 +352,16 @@ const screenGroup:MaterialOrganizer={
     const apps=[...applications.values()].sort((a,b)=>b.durationMs-a.durationMs||a.appId.localeCompare(b.appId));
     body.text('overview',JSON.stringify({sampleCount:records.length,firstAt:sourceContentTime(records[0]!),lastAt:sourceContentTime(records.at(-1)!),
       observedDurationMs:durationMs,applicationCount:apps.length,applications:apps.slice(0,8),distinctOcrCount:distinctOcr.size,
-      keyframeCount:frameIndices.length,originalsRetained:true}),records[0]!.id,'json');
+      keyframeCount:frameIndices.length,originalsRetained:true}),records[0]!.id,'json',undefined,undefined,
+      {observedAt:records[0]!.capturedAt,document:{timeBasis:'unknown',contentRole:'summary'}});
     for(const [index,position] of frameIndices.entries()){
       const r=records[position]!;
       body.text(`keyframe:${index}`,JSON.stringify({capturedAt:r.capturedAt,appId:r.appId,appName:r.appName,
-        ocrText:(r.ocrText??'').trim().slice(0,800),hasImage:Boolean(r.blobHash)}),r.id,'json',{capturedAt:r.capturedAt});
+        ocrText:(r.ocrText??'').trim().slice(0,800),hasImage:Boolean(r.blobHash)}),r.id,'json',{capturedAt:r.capturedAt},undefined,evidenceContext(r));
     }
     body.text('ocr-distinct',JSON.stringify({items:[...distinctOcr.values()].slice(0,12).map(text=>text.slice(0,500)),
-      total:distinctOcr.size,truncated:distinctOcr.size>12}),records[0]!.id,'json');
+      total:distinctOcr.size,truncated:distinctOcr.size>12}),records[0]!.id,'json',undefined,undefined,
+      {observedAt:records[0]!.capturedAt,document:{timeBasis:'unknown',contentRole:'other'}});
     const ocrPending=records.some(r=>r.ocr?.status==='pending'),ocrFailed=records.some(r=>r.ocr?.status==='failed');
     return {id:materialId(sourceId,externalId),kind:'mote.screen-segment',schemaVersion:1,title:records.at(-1)?.appName||'Screen',
       origin:origin(sourceId,externalId,records),blocks:body.blocks,members:body.members,
@@ -317,13 +372,13 @@ const screenGroup:MaterialOrganizer={
 };
 
 const stateSeries:MaterialOrganizer={
-  id:'mote.state-series',version:'1',slot:'state-series',
+  id:'mote.state-series',version:'2',slot:'state-series',
   select:r=>r.stateSeries||['activity','media','device_event'].includes(r.source)?{deviceId:r.deviceId,captureId:r.id}:undefined,
   identity:g=>materialId(sourceKey('state',g.deviceId),g.captureId),
   build(reader,g){
     const r=reader.capture();if(!r)return;
     const sourceId=sourceKey('state',r.deviceId),body=new MaterialBody();body.addMember(r);
-    body.text('samples',captureText(r),r.id,'json');
+    body.text('samples',captureText(r),r.id,'json',undefined,undefined,evidenceContext(r));
     return {id:materialId(sourceId,r.id),kind:'mote.state-series',schemaVersion:1,title:r.appName||r.source,
       origin:origin(sourceId,r.id,[r],{firstAt:iso(r.capturedAt),lastAt:iso(r.stateSeries?.samples.at(-1)?.at??r.capturedAt)}),
       blocks:body.blocks,members:body.members,coverage:body.coverage(),artifacts:[{key:'state-series',state:'ready'}],fidelity:body.fidelity('derived',['metadata_projected']),retention:{original:'retained',policy:'keep'}};
@@ -331,13 +386,13 @@ const stateSeries:MaterialOrganizer={
 };
 
 const authored:MaterialOrganizer={
-  id:'mote.authored-record',version:'1',slot:'authored-record',
+  id:'mote.authored-record',version:'2',slot:'authored-record',
   select:r=>r.provenance||['screen','ui_page','activity','media','device_event'].includes(r.source)?undefined:{deviceId:r.deviceId,captureId:r.id},
   identity:g=>materialId(sourceKey('authored',g.deviceId),g.captureId),
   build(reader,g){
     const r=reader.capture();if(!r)return;
     const sourceId=sourceKey('authored',r.deviceId),body=new MaterialBody();body.addMember(r);
-    body.text('record',captureText(r),r.id,'json');
+    body.text('record',captureText(r),r.id,'json',undefined,undefined,evidenceContext(r,r.source==='note'?'authored':undefined));
     const file=reader.file(r.id);if(!file)return;
     for(const attachment of file.attachments)body.asset(`attachment:${attachment.id}`,attachment.hash,attachment.mimeType,r.id,{fileId:attachment.id,...(attachment.relativePath?{relativePath:attachment.relativePath}:{})});
     if(file.attachmentsTruncated)body.limitations.add('attachment_limit');
@@ -374,7 +429,7 @@ export class MaterialOrganizerRegistry {
   list(){return [...this.organizers.values()].map(({id,version,slot,priority,exclusive})=>({id,version,slot:slot??id,priority:priority??0,exclusive:Boolean(exclusive)}));}
 }
 
-type OrganizerJobInput=Record<string,unknown>&{groupKey:string;organizerId:string;version:string;group:Record<string,string>;materialId:string;generation:number;checkpoint:number;active:boolean;recipe?:SourceItemRecipePin};
+type OrganizerJobInput=Record<string,unknown>&{groupKey:string;organizerId:string;version:string;group:Record<string,string>;materialId:string;generation:number;checkpoint:number;active:boolean;sourceChanged?:boolean;recipe?:SourceItemRecipePin};
 type OrganizerResult={draft:MaterialDraft|undefined;calls:ReaderCall[];pinnedSourceHead?:string};
 type OrganizerGroupRow={group_key:string;organizer_id:string;version:string;group_json:string;material_id:string;generation:number;checkpoint:number;active:number};
 const ORGANIZER_STEP='material.organizer';
@@ -422,6 +477,9 @@ export class MaterialOrganizerRuntime {
         INSERT INTO changes(id,operation,changed_at) VALUES(old.capture_id,'supersede',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
       END;`);
     if(!(store.db.prepare('PRAGMA table_info(material_organizer_inputs)').all() as {name:string}[]).some(row=>row.name==='material_id'))store.db.exec('ALTER TABLE material_organizer_inputs ADD COLUMN material_id TEXT');
+    // Installation may find an existing archive. Rebuild it deterministically
+    // through backfill; only changes after installation count as new intake.
+    store.db.prepare("INSERT OR IGNORE INTO settings(key,value) SELECT 'material-organizer-cursor',CAST(coalesce(max(seq),0) AS TEXT) FROM changes").run();
     this.sourceItemRecipes=new SourceItemRecipeCatalog(store,sourceItem.version);
     this.executor=executor??new ExecutionEngine(store);
     this.unregister=this.executor.register({kind:ORGANIZER_STEP,pool:'material-organizer',concurrency:()=>8,
@@ -457,9 +515,9 @@ export class MaterialOrganizerRuntime {
           materials.setSearchable(input.materialId,true);
           if(input.organizerId===sourceItem.id){
             const required=prepared.draft.artifacts?.some(item=>item.key==='original')?'extracted-text':'source-body';
-            const state=prepared.draft.artifacts?.find(item=>item.key===required)?.state;
-            if(state==='unavailable'||state==='failed')this.memoryWork?.withdraw(input.materialId);
-            else this.memoryWork?.observe(input.materialId,[required]);
+            if(prepared.pinnedSourceHead)this.memoryWork?.observe(input.materialId,[required],{
+              inputKey:prepared.pinnedSourceHead,change:input.sourceChanged?'source':'rebuild',
+            });
           }
         }else if(!other){
           const prior=materials.get(input.materialId);if(prior)materials.retire(input.materialId,{expectedRevision:prior.revision});
@@ -482,9 +540,10 @@ export class MaterialOrganizerRuntime {
   private cursor(){return Number(this.store.db.prepare("SELECT value FROM settings WHERE key='material-organizer-cursor'").get()?.value??0);}
   private selectedFor(captureId:string){
     const record=capture(this.store,captureId);
-    if(!record||!current(this.store,record.id))return [];
+    if(!record||!current(this.store,record.id)||!fileAttachmentAvailable(this.store,record.id))return [];
     return this.registry.select(record).map(({organizer,group})=>{
       if(organizer===screenGroup){const row=this.store.db.prepare('SELECT group_key FROM context_observations WHERE id=?').get(record.id) as {group_key:string}|undefined;group.groupKey=row?.group_key??'';}
+      if(organizer===sourceItem){const parent=fileAttachmentParent(this.store,record.id)?.record.provenance;if(parent)group={sourceId:parent.sourceId,externalId:parent.externalId};}
       return {organizer,group:canonicalGroup(group)};
     });
   }
@@ -564,11 +623,12 @@ export class MaterialOrganizerRuntime {
         .find(row=>this.registry.get(row.id)?.version===row.version);
       const backfillRows=backfill?db.prepare('SELECT rowid,id FROM captures WHERE rowid>? ORDER BY rowid LIMIT ?').all(backfill.cursorRowid,batchSize) as {rowid:number;id:string}[]:[];
       const changedIds=[...new Set([...rows.map(row=>row.id),...backfillRows.map(row=>row.id)])];
-      const touched=new Map<string,{organizerId:string;group:Record<string,string>;priorMaterialId:string|null}>();
+      const changedSourceIds=new Set(rows.map(row=>row.id));
+      const touched=new Map<string,{organizerId:string;group:Record<string,string>;priorMaterialId:string|null;sourceChanged:boolean}>();
       const replacements=new Map<string,Set<string>>();
-      const touch=(organizerId:string,group:Record<string,string>,priorMaterialId:string|null=null)=>{
+      const touch=(organizerId:string,group:Record<string,string>,priorMaterialId:string|null=null,sourceChanged=false)=>{
         const key=digest([organizerId,group]),prior=touched.get(key);
-        touched.set(key,{organizerId,group,priorMaterialId:prior?.priorMaterialId??priorMaterialId});
+        touched.set(key,{organizerId,group,priorMaterialId:prior?.priorMaterialId??priorMaterialId,sourceChanged:Boolean(prior?.sourceChanged||sourceChanged)});
       };
       for(const captureId of changedIds){
         const previous=db.prepare('SELECT organizer_id,group_json,material_id FROM material_organizer_inputs WHERE capture_id=?').all(captureId) as {organizer_id:string;group_json:string;material_id:string|null}[];
@@ -584,7 +644,7 @@ export class MaterialOrganizerRuntime {
         }
         db.prepare('DELETE FROM material_organizer_inputs WHERE capture_id=?').run(captureId);
         for(const {organizer,group} of selections){
-          touch(organizer.id,group);
+          touch(organizer.id,group,null,changedSourceIds.has(captureId));
           db.prepare('INSERT INTO material_organizer_inputs(capture_id,organizer_id,group_json,material_id) VALUES(?,?,?,?)').run(captureId,organizer.id,JSON.stringify(group),organizer.identity(group)??null);
         }
       }
@@ -592,7 +652,7 @@ export class MaterialOrganizerRuntime {
       // backlog must still invalidate a group before its fenced commit.
       const checkpoint=rows.at(-1)?.seq??this.cursor();
       const prepared:{key:string;input:OrganizerJobInput;id:string}[]=[];
-      for(const [key,{organizerId,group,priorMaterialId}] of touched){
+      for(const [key,{organizerId,group,priorMaterialId,sourceChanged}] of touched){
         const organizer=this.registry.get(organizerId),prior=db.prepare('SELECT * FROM material_organizer_groups WHERE group_key=?').get(key) as OrganizerGroupRow|undefined;
         const materialId=organizer?.identity(group)??priorMaterialId??prior?.material_id;
         if(!materialId)continue;
@@ -604,7 +664,7 @@ export class MaterialOrganizerRuntime {
           ON CONFLICT(group_key) DO UPDATE SET version=excluded.version,group_json=excluded.group_json,material_id=excluded.material_id,
             generation=excluded.generation,checkpoint=excluded.checkpoint,active=excluded.active`).run(key,organizerId,version,groupJson,materialId,generation,checkpoint,Number(active));
         const recipe=active&&organizerId===sourceItem.id?this.sourceItemRecipes.resolveForSourceId(group.sourceId):undefined;
-        const input:OrganizerJobInput={groupKey:key,organizerId,version,group,materialId,generation,checkpoint,active,...(recipe?{recipe}:{})};
+        const input:OrganizerJobInput={groupKey:key,organizerId,version,group,materialId,generation,checkpoint,active,sourceChanged,...(recipe?{recipe}:{})};
         prepared.push({key,input,id:digest([ORGANIZER_STEP,key,generation])});
       }
       const ids=new Map(prepared.map(item=>[item.key,item.id]));

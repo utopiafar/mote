@@ -44,10 +44,19 @@ test('imported file records keep their archived-original controls separate from 
   assert.equal(imported.textLabel, '原始文本');
   assert.match(imported.deleteDescription, /导入仍保留原始文件/);
   assert.doesNotMatch(imported.deleteDescription, /删除中央文件归档/);
-  const metadata = evidencePresentation({id:'device-file',source:'file',platform:'android'});
+  const metadata = evidencePresentation({id:'device-file',source:'file',platform:'android',fileArchive:{captureId:'device-file'}});
   assert.deepEqual(metadata.nativeFile, {captureId:'device-file'});
   assert.equal(metadata.textLabel, '文件元信息');
   assert.match(metadata.deleteDescription, /来源设备上的原文件保留/);
+});
+
+test('host file archive identity opens processing regardless of source platform or document metadata',()=>{
+  const capture={id:'imported-file',source:'file' as const,platform:'import',provenance:{sourceId:'source',externalId:'file',revision:'1',layer:'original' as const,deleted:false,document:{path:'generated.wav'}}};
+  assert.equal(evidencePresentation(capture).nativeFile,undefined);
+  const display=evidencePresentation({...capture,fileArchive:{captureId:capture.id}});
+  assert.deepEqual(display.nativeFile,{captureId:capture.id});
+  assert.equal(display.textLabel,'文件元信息');
+  assert.match(display.deleteDescription,/删除中央文件归档/);
 });
 
 test('native transcript citations open their parent file at the cited offset', () => {
