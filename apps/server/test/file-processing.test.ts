@@ -5,6 +5,7 @@ import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
+import sharp from 'sharp';
 import {type Plugin} from '@deepseek-ai/cordis';
 import {type Transcript,diarizationSchema,transcriptSchema,fileProcessingSchema} from '@mote/shared';
 import {Store,sha256} from '../src/store.js';
@@ -23,6 +24,7 @@ import {MaterialOrganizerRuntime} from '../src/material-organizers.js';
 import {MaterialMemoryWork} from '../src/material-memory-work.js';
 import {EvidenceReader} from '../src/evidence-reader.js';
 import {evidenceDependents} from '../src/evidence-dependencies.js';
+import {sourceMaterialView} from '../src/source-material-view.js';
 
 const raw:Transcript={durationMs:3000,segments:[{startMs:0,endMs:1000,text:'使用扣迪斯插件。',words:[{startMs:0,endMs:300,text:'使用'},{startMs:300,endMs:700,text:'扣迪斯'},{startMs:700,endMs:1000,text:'插件。'}]},{startMs:1500,endMs:2500,text:'嗯，对，尚未完成。'}]};
 const wave=Buffer.alloc(32044);wave.write('RIFF');wave.writeUInt32LE(wave.length-8,4);wave.write('WAVEfmt ',8);wave.writeUInt32LE(16,16);wave.writeUInt16LE(1,20);wave.writeUInt16LE(1,22);wave.writeUInt32LE(16000,24);wave.writeUInt32LE(32000,28);wave.writeUInt16LE(2,32);wave.writeUInt16LE(16,34);wave.write('data',36);wave.writeUInt32LE(32000,40);
@@ -274,6 +276,41 @@ test('document text correction retains original locations without inventing audi
   while(await organizers.tick(100));assert.equal(materials.isCurrentEvidence(stable.id),true);
   assert.equal(materials.evidence([stable.id])[0]?.provenance?.document?.contentRole,'other','corrected document text is not an audio transcript');
   assert.ok(materials.evidenceIds(material.id).includes(stable.id));assert.match(materials.read(material.id).text,/Right/);
+ }finally{await organizers.close();}
+});
+
+for(const change of ['geometry','text'] as const)test(`image ${change} changes preserve unrelated evidence and carry original-pixel locations through file and Material reads`,async t=>{
+ const location=(x:number,y:number)=>({width:128,height:600,polygon:[[x,y],[x+30,y],[x+30,y+12],[x,y+12]] as [number,number][]});
+ const transcript:Transcript={durationMs:0,segments:[{startMs:0,endMs:0,text:'Same words',imageLocation:location(8,40)},{startMs:0,endMs:0,text:'Same words',imageLocation:location(75,300)}]};
+ const bytes=await sharp({create:{width:128,height:600,channels:3,background:'#ffffff'}}).png().toBuffer();
+ const f=await fixture(t,{file:{name:'generated.png',mimeType:'image/png',bytes},settings:{imageProcessor:'image.http',imageEndpoint:'http://127.0.0.1:9008/ocr',summarize:false},
+  analyze:async(records:any[])=>{const chunk=JSON.parse(records[0].ocrText);return {answer:JSON.stringify({suggestions:[{chunkId:chunk.chunkId,original:'Same words',replacement:'Corrected first line',reason:'Generated correction'}]}),citations:[{id:chunk.chunkId}]};}});
+ let calls=0;f.processing.runtime.registry.get('image.http').process=async()=>{calls++;return structuredClone(transcript);};
+ await f.processing.tick();assert.equal(calls,1);const before=f.files.chunks(f.id);
+ assert.equal(before.length,2);assert.notEqual(before[0].id,before[1].id,'repeated words in different regions remain distinct evidence');
+ assert.deepEqual(before.map(r=>r.fileEvidence!.imageLocation),transcript.segments.map(s=>s.imageLocation));
+ assert.ok(before.every(r=>r.fileEvidence!.startMs===undefined&&r.fileEvidence!.speaker===undefined));
+ const materials=new MaterialStore(f.store),work=new MaterialMemoryWork(f.store,materials),organizers=new MaterialOrganizerRuntime(f.store,materials,[],undefined,work);
+ try{
+  while(await organizers.tick(100));const first=materials.get(materialId('phone','generated.png'))!;
+  const anchors=materials.evidence(materials.evidenceIds(first.ref)).filter(r=>JSON.parse(r.ocrText).imageLocation);
+  assert.equal(anchors.length,2);assert.deepEqual(anchors.map(r=>JSON.parse(r.ocrText).imageLocation),transcript.segments.map(s=>s.imageLocation));
+  assert.deepEqual(materials.block(first.ref,1)!.block.locator!.imageLocation,transcript.segments[0].imageLocation);
+  const view=sourceMaterialView(materials,first.id,{revision:first.revision});
+  assert.deepEqual(view.items.filter(i=>i.type==='text').map(i=>i.text),['Same words','Same words']);
+  assert.ok(view.items.every(i=>!i.speaker&&!i.confirmedName&&i.startMs===undefined));
+  const memories=new MemoryStore(f.store,ids=>materials.evidence(ids),id=>materials.isCurrentEvidence(id));
+  const saved=anchors.map(r=>memories.publish(memories.extract({answer:JSON.stringify({memories:[{title:'Generated image fixture',statement:`Generated text [${r.id}]`,uncertainty:'Fixture',evidenceIds:[r.id],evidence:[{id:r.id,quote:r.ocrText}]}]}),citations:[{id:r.id,capturedAt:r.capturedAt,appName:r.appName,excerpt:r.ocrText}],trace:[],runId:'generated-image'},'fixture').items[0].id));
+  if(change==='geometry'){transcript.segments[0].imageLocation=location(12,45);f.processing.retry(f.id);await f.processing.tick();assert.equal(calls,2);}
+  else {const reviews=new FileReviews(f.files,f.processing),proposal=await reviews.propose(f.id,{kind:'terms'});reviews.confirm(f.id,proposal.id,{action:'accept',selected:[proposal.suggestions[0].id]});assert.equal(calls,1);}
+  const after=f.files.chunks(f.id);assert.notEqual(after[0].id,before[0].id);assert.equal(after[1].id,before[1].id);
+  assert.deepEqual(after.map(r=>r.fileEvidence!.imageLocation),transcript.segments.map(s=>s.imageLocation));
+  assert.equal(memories.get(saved[0].id).status,'stale');assert.equal(memories.get(saved[1].id).status,'published');
+  while(await organizers.tick(100));assert.equal(materials.isCurrentEvidence(anchors[1].id),true);
+  const second=materials.get(first.id)!;assert.notEqual(second.ref,first.ref);
+  assert.equal(JSON.parse(materials.block(first.ref,1)!.block.text).text,'Same words','historical OCR stays readable');
+  assert.deepEqual(JSON.parse(materials.block(first.ref,1)!.block.text).imageLocation,before[0].fileEvidence!.imageLocation);
+  assert.deepEqual(JSON.parse(materials.block(second.ref,1)!.block.text).imageLocation,after[0].fileEvidence!.imageLocation);
  }finally{await organizers.close();}
 });
 

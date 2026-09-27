@@ -1,12 +1,12 @@
 import {z} from 'zod';
 import type {FastifyInstance} from 'fastify';
-import {fileSpeakerAttributionSchema,documentSchema,sourceItemKinds} from '@mote/shared';
+import {fileSpeakerAttributionSchema,imageLocationSchema,documentSchema,sourceItemKinds} from '@mote/shared';
 import {MaterialStore,formatMaterialRef,type MaterialStoredBlock} from './materials.js';
 import {StoreError} from './store.js';
 
 // Presentation of the source-item organizer's declared block formats, never
 // intent inference. Unknown structures remain literal text in the fallback.
-const speech=z.object({speaker:z.string().max(100),speakerAttribution:fileSpeakerAttributionSchema.optional(),text:z.string().max(250000)}).strict();
+const speech=z.object({speaker:z.string().max(100).optional(),speakerAttribution:fileSpeakerAttributionSchema.optional(),imageLocation:imageLocationSchema.optional(),text:z.string().max(250000)}).strict().refine(value=>value.speaker!==undefined||value.imageLocation!==undefined);
 const source=z.object({captureId:z.string().uuid(),capturedAt:z.string().datetime({offset:true}),source:z.enum(sourceItemKinds),appName:z.string().max(300).optional(),text:z.string().max(250000).optional(),documentTime:documentSchema.pick({recordedAt:true,occurredAt:true,timeBasis:true,contentRole:true}).strict().optional()}).passthrough();
 type Display={type:'text'|'source'|'asset'|'raw';text:string;speaker?:string;confirmedName?:string;capturedAt?:string;recordedAt?:string;occurredAt?:string;appName?:string;sourceRef?:string;sourceType?:string;startMs?:number;endMs?:number;mimeType?:string};
 function display(block:MaterialStoredBlock):Display {

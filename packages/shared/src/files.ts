@@ -18,10 +18,17 @@ export const fileRevisionSchema=z.object({
 });
 export type FileRevision=z.infer<typeof fileRevisionSchema>;
 export const documentLocationSchema=z.object({pageNumber:z.number().int().positive().optional(),sheetName:z.string().max(200).optional(),rowNumber:z.number().int().positive().optional(),offset:z.number().int().nonnegative(),length:z.number().int().nonnegative()}).strict();
+/** Pixel coordinates in the original image, not in an OCR tile. Geometry is
+ * evidence for model interpretation, never an inferred speaker or UI role. */
+export const imageLocationSchema=z.object({
+  width:z.number().int().positive().max(1_000_000),height:z.number().int().positive().max(1_000_000),
+  polygon:z.array(z.tuple([z.number().finite().min(-1_000_000).max(1_000_000),z.number().finite().min(-1_000_000).max(1_000_000)])).min(3).max(16),
+}).strict();
 export const transcriptSegmentSchema=z.object({
   startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),text:z.string().min(1).max(8000),
   speaker:z.string().max(100).optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional(),
   documentLocation:documentLocationSchema.optional(),
+  imageLocation:imageLocationSchema.optional(),
   words:z.array(z.object({startMs:z.number().finite().nonnegative(),endMs:z.number().finite().nonnegative(),text:z.string().max(1000),probability:z.number().min(0).max(1).optional()}).strict()).max(8000).optional(),
 }).strict();
 export const transcriptSchema=z.object({
@@ -43,7 +50,7 @@ export const diarizationSchema=z.object({
 }).strict().superRefine((v,c)=>{for(const s of [...v.segments,...v.samples])if(s.endMs<=s.startMs||s.endMs>v.durationMs+1000)c.addIssue({code:'custom',message:'Invalid diarization timeline'});});
 export type Diarization=z.infer<typeof diarizationSchema>;
 export const fileSpeakerAttributionSchema=z.object({name:z.string().trim().min(1).max(100),confirmedBy:z.literal('owner'),confirmationId:z.string().uuid(),confirmedAt:z.string().datetime()}).strict();
-export const fileEvidenceSchema=z.object({documentLocation:documentLocationSchema.optional(),captureId:z.string().uuid(),revision:z.string().max(200),artifactId:z.string().uuid(),chunkId:z.string().uuid(),startMs:z.number().nonnegative().optional(),endMs:z.number().nonnegative().optional(),speaker:z.string().max(100).optional(),speakerAttribution:fileSpeakerAttributionSchema.optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional()}).strict();
+export const fileEvidenceSchema=z.object({documentLocation:documentLocationSchema.optional(),imageLocation:imageLocationSchema.optional(),captureId:z.string().uuid(),revision:z.string().max(200),artifactId:z.string().uuid(),chunkId:z.string().uuid(),startMs:z.number().nonnegative().optional(),endMs:z.number().nonnegative().optional(),speaker:z.string().max(100).optional(),speakerAttribution:fileSpeakerAttributionSchema.optional(),uncertain:z.boolean().optional(),overlap:z.boolean().optional()}).strict();
 export const fileProcessingSchema=z.object({
   enabled:z.boolean().default(true),
   endpoint:z.string().max(2000).default('http://127.0.0.1:9009/transcribe'),

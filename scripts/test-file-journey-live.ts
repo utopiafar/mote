@@ -8,10 +8,12 @@ import {createServer} from 'node:net';
 import {join,relative,resolve} from 'node:path';
 import {parseArgs} from 'node:util';
 import {z} from 'zod';
+import sharp from 'sharp';
 import {FILE_PART_BYTES} from '@mote/shared';
 import {buildApp} from '../apps/server/src/app.js';
 import {repositoryRoot,type Config} from '../apps/server/src/config.js';
 import {sha256} from '../apps/server/src/store.js';
+import {materialId} from '../apps/server/src/materials.js';
 
 const {values}=parseArgs({options:{manifest:{type:'string'},output:{type:'string'},python:{type:'string'},'ocr-model-root':{type:'string'},'asr-model-root':{type:'string'},'processor-module':{type:'string'},'audio-processor':{type:'string'},'allow-generated-central-analysis':{type:'boolean',default:false}}});
 const audioProcessor=values['audio-processor']??'audio.local-dialogue';
@@ -70,8 +72,8 @@ async function request(method:'POST'|'PUT'|'GET',url:string,payload?:Record<stri
 try{
   await save();
   report.processorModule=values['processor-module']?{path:resolve(values['processor-module']),sha256:sha256(await readFile(resolve(values['processor-module'])))}:null;
-  report.processingCodeHashes=Object.fromEntries(await Promise.all(['apps/server/src/file-processors.ts','apps/server/src/file-processing.ts','apps/server/src/file-policy.ts','apps/server/src/file-configuration.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
-  report.workerCodeHashes=Object.fromEntries(await Promise.all(['scripts/mote_audio.py','scripts/transcription-server.py','scripts/requirements-audio.txt','scripts/test-file-journey-live.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
+  report.processingCodeHashes=Object.fromEntries(await Promise.all(['apps/server/src/file-processors.ts','apps/server/src/file-processing.ts','apps/server/src/file-policy.ts','apps/server/src/file-configuration.ts','apps/server/src/file-transcript-chunks.ts','apps/server/src/material-organizers.ts','apps/server/src/source-material-view.ts','packages/shared/dist/files.js'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
+  report.workerCodeHashes=Object.fromEntries(await Promise.all(['scripts/mote_audio.py','scripts/transcription-server.py','scripts/mote_ocr.py','scripts/ocr-server.py','scripts/requirements-audio.txt','scripts/test-file-journey-live.ts'].map(async path=>[path,sha256(await readFile(join(repositoryRoot,path)))])));
   const hasImage=manifest.files.some(file=>file.mimeType.startsWith('image/')),hasAudio=manifest.files.some(file=>file.mimeType.startsWith('audio/'));
   assert.ok(manifest.files.every(file=>file.mimeType.startsWith('image/')||file.mimeType.startsWith('audio/')),'Choose image/audio files');
   if(hasImage)assert.ok(values['ocr-model-root'],'OCR model root required');if(hasAudio)assert.ok(values['asr-model-root'],'ASR model root required');
@@ -121,6 +123,23 @@ try{
       const chunks:unknown[]=[];
       for(let offset=0;;){const page=(await request('GET',`/api/files/${ack.id}/chunks?offset=${offset}`)).json();chunks.push(...page.items);if(page.nextOffset===null)break;offset=page.nextOffset;}
       result.chunks=chunks;assert.ok(chunks.length,'Processed media has no readable evidence');
+      if(file.mimeType.startsWith('image/')){
+        const dimensions=await sharp(bytes).metadata(),records=chunks as {id:string;ocrText:string;fileEvidence:{imageLocation?:{width:number;height:number;polygon:[number,number][]};startMs?:number;speaker?:string}}[];
+        for(const record of records){assert.ok(record.fileEvidence.imageLocation,'Native OCR must retain each line location');assert.equal(record.fileEvidence.imageLocation.width,dimensions.width);assert.equal(record.fileEvidence.imageLocation.height,dimensions.height);assert.equal(record.fileEvidence.startMs,undefined);assert.equal(record.fileEvidence.speaker,undefined);}
+        let settled=false;for(let i=0;i<100;i++)if(await node.materialOrganizer.tick(100)===0){settled=true;break;}assert.ok(settled,'Image Material did not settle');
+        const material=node.materials.get(materialId(sourceId,file.id));assert.ok(material);assert.equal(material.coverage.state,'complete');
+        const formal:{id:string;ocrText:string}[]=node.memories.readEvidence(node.materials.evidenceIds(material.ref)).filter(record=>JSON.parse(record.ocrText).imageLocation);
+        assert.equal(formal.length,records.length);assert.deepEqual(formal.map(record=>JSON.parse(record.ocrText).imageLocation),records.map(record=>record.fileEvidence.imageLocation));
+        assert.deepEqual(formal.map(record=>JSON.parse(record.ocrText).text),records.map(record=>record.ocrText));
+        let position={block:0,offset:0};const displayed:string[]=[];let complete=false;
+        for(let i=0;i<200;i++){
+          const page:{items:{blockId:string;type:string;text:string;speaker?:string;startMs?:number}[];next:{block:number;offset:number}|null}=(await request('GET',`/api/materials/${material.id}/source-view?`+new URLSearchParams({revision:material.revision,block:String(position.block),offset:String(position.offset),length:'8000'}))).json();
+          for(const item of page.items.filter(item=>item.blockId.startsWith('chunk:'))){assert.equal(item.type,'text');assert.equal(item.speaker,undefined);assert.equal(item.startMs,undefined);displayed.push(item.text);}
+          if(!page.next){complete=true;break;}position=page.next;
+        }
+        assert.ok(complete,'Image source reading view did not terminate');assert.equal(displayed.join(''),records.map(record=>record.ocrText).join(''));
+        result.imageGeometry={width:dimensions.width,height:dimensions.height,lines:records.length,formalEvidenceIds:formal.map(record=>record.id),materialRef:material.ref,originalPixelCoordinates:true,plainReadingView:true,attributionInferred:false};
+      }
       const rawArtifact=detail.artifacts.find((a:{kind:string})=>a.kind==='transcript'),dialogue=detail.artifacts.find((a:{kind:string})=>a.kind==='dialogue');
       if(rawArtifact&&dialogue){
         const text=(artifactId:string)=>node!.store.db.prepare('SELECT text FROM file_chunks WHERE artifact_id=? ORDER BY start_ms,ordinal,rowid').all(artifactId).map(row=>String(row.text)).join('');

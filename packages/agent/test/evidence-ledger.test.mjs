@@ -32,3 +32,14 @@ test('file evidence preserves owner-confirmed speaker metadata as untrusted data
   const after=await search();assert.equal(after.data[0].ocrText,before.data[0].ocrText);assert.notEqual(after.data[0].evidenceFingerprint,before.data[0].evidenceFingerprint);assert.equal(after.data[0].fileEvidence.speaker,'SPEAKER_0');
  }finally{await bridge.close();}
 });
+test('file image geometry reaches read-only tools and affects evidence identity without inferring a speaker',async()=>{
+ const imageLocation={width:1200,height:14825,polygon:[[20,2040],[600,2040],[600,2080],[20,2080]]};
+ const record={id:randomUUID(),capturedAt:'2026-09-01T00:00:00Z',appName:'Generated image',sourceType:'file',ocrText:'Generated repeated words',fileEvidence:{captureId:randomUUID(),revision:'1',artifactId:randomUUID(),chunkId:'',imageLocation}};record.fileEvidence.chunkId=record.id;
+ const reader={search:async()=>[record],timeline:async()=>({items:[],nextCursor:null}),evidence:async()=>[record],devices:async()=>[],activity:async()=>({})};
+ const bridge=await startBridge(reader,{question:'Generated layout check'},4);
+ const read=async()=>{const response=await fetch(bridge.url+'/search_context',{method:'POST',headers:{authorization:'Bearer '+bridge.token,'content-type':'application/json'},body:JSON.stringify({query:'Generated'})});assert.equal(response.status,200);return response.json();};
+ try{const first=await read();assert.deepEqual(first.data[0].fileEvidence.imageLocation,imageLocation);assert.equal(first.data[0].fileEvidence.speaker,undefined);assert.equal(first.source,'untrusted_personal_context');
+  record.fileEvidence.imageLocation={...imageLocation,polygon:[[620,2040],[1100,2040],[1100,2080],[620,2080]]};
+  const second=await read();assert.equal(second.data[0].ocrText,first.data[0].ocrText);assert.notEqual(second.data[0].evidenceFingerprint,first.data[0].evidenceFingerprint);
+ }finally{await bridge.close();}
+});

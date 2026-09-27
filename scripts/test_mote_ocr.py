@@ -20,8 +20,11 @@ class ImagePreparation(unittest.TestCase):
             data = {'rec_texts': [text for _, text in visible],
                     'rec_polys': [[[100, y-crop[1]-10], [200, y-crop[1]-10],
                                    [200, y-crop[1]+10], [100, y-crop[1]+10]] for y, _ in visible]}
-            found.extend(owned_lines(data, crop, core, True))
+            found.extend(owned_lines(data, crop, core, True, (1200, 4000)))
         self.assertEqual([(y, segment['text']) for y, _, segment in sorted(found)], lines)
+        for y, _, segment in found:
+            self.assertEqual(segment['imageLocation'], {'width': 1200, 'height': 4000,
+                             'polygon': [[100.0, y-10], [200.0, y-10], [200.0, y+10], [100.0, y+10]]})
 
     def test_oversized_or_pathologically_thin_images_remain_bounded(self):
         for width, height in [(0, 100), (10000, 10000), (1, 1_000_000)]:
@@ -31,14 +34,16 @@ class ImagePreparation(unittest.TestCase):
     def test_tiled_output_requires_geometry_not_text_deduplication(self):
         crop, core = next(image_tiles(1000, 3000))
         with self.assertRaises(ValueError):
-            list(owned_lines({'rec_texts': ['unlocated text']}, crop, core, True))
-        self.assertEqual(list(owned_lines({'rec_texts': ['single image']}, crop, core, False))[0][2]['text'], 'single image')
+            list(owned_lines({'rec_texts': ['unlocated text']}, crop, core, True, (1000, 3000)))
+        segment = list(owned_lines({'rec_texts': ['single image']}, crop, core, False, (1000, 3000)))[0][2]
+        self.assertEqual(segment['text'], 'single image')
+        self.assertNotIn('imageLocation', segment)
 
     def test_invalid_geometry_fails_instead_of_silently_dropping_text(self):
         crop, core = next(image_tiles(1000, 3000))
         for polygon in [[], [[0, 0]]*3, [[float('nan'), 0]]*4]:
             with self.assertRaises(ValueError):
-                list(owned_lines({'rec_texts': ['generated'], 'rec_polys': [polygon]}, crop, core, True))
+                list(owned_lines({'rec_texts': ['generated'], 'rec_polys': [polygon]}, crop, core, True, (1000, 3000)))
 
 
 if __name__ == '__main__':

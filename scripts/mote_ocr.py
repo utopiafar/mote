@@ -30,7 +30,7 @@ def image_tiles(width, height):
                    (left, top, right, bottom))
 
 
-def owned_lines(data, crop, core, tiled):
+def owned_lines(data, crop, core, tiled, image_size):
     texts, polygons = data.get('rec_texts', []), data.get('rec_polys', [])
     if tiled and len(texts) != len(polygons):
         raise ValueError('Tiled OCR requires aligned text geometry')
@@ -39,6 +39,7 @@ def owned_lines(data, crop, core, tiled):
         if not line:
             continue
         x, y = 0, index
+        location = None
         if index < len(polygons):
             polygon = polygons[index]
             if (len(polygon) != 4 or any(len(point) != 2 for point in polygon)
@@ -48,7 +49,11 @@ def owned_lines(data, crop, core, tiled):
             y = sum(point[1] for point in polygon) / 4 + crop[1]
             if not (core[0] <= x < core[2] and core[1] <= y < core[3]):
                 continue
-        yield y, x, {'startMs': 0, 'endMs': 0, 'text': line[:8000]}
+            location = {'width': image_size[0], 'height': image_size[1],
+                        'polygon': [[float(point[0]) + crop[0], float(point[1]) + crop[1]]
+                                    for point in polygon]}
+        yield y, x, {'startMs': 0, 'endMs': 0, 'text': line[:8000],
+                    **({'imageLocation': location} if location else {})}
 
 
 def recognize_image(image, predict):
@@ -69,7 +74,7 @@ def recognize_image(image, predict):
             with pixels.crop(crop) as tile:
                 for result in predict(np.asarray(tile)):
                     data = result.json.get('res', result.json)
-                    for segment in owned_lines(data, crop, core, len(tiles) > 1):
+                    for segment in owned_lines(data, crop, core, len(tiles) > 1, pixels.size):
                         segments.append(segment)
                         if len(segments) > 50000:
                             raise ValueError('OCR result too large')
@@ -80,4 +85,6 @@ def recognize_image(image, predict):
     if len(tiles) > 1:
         segments.sort(key=lambda segment: (segment[0], segment[1]))
     return {'durationMs': 0, 'segments': [segment[2] for segment in segments],
-            'engine': 'PP-OCRv5-mobile-ONNX'}
+            'engine': 'PP-OCRv5-mobile-ONNX-layout-v1',
+            **({'warnings': ['Some OCR lines have no image geometry.']}
+               if any('imageLocation' not in item[2] for item in segments) else {})}
