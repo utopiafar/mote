@@ -1,3 +1,4 @@
+import {normalAuthorization,type NormalContinuation} from './test-heldout-memory-replay-ledger.js';
 /** Read-only, zero-model projection of a complete frozen eight-pair Ask run. */
 import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
@@ -78,22 +79,24 @@ export async function exportBlindReview(inputPath:string,output:string){
   const events:Event[]=[],lineEnds:number[]=[];let byteOffset=0;
   for(const line of text.slice(0,-1).split('\n')){byteOffset+=Buffer.byteLength(line+'\n');lineEnds.push(byteOffset);const event=JSON.parse(line) as Event;const {sha256,...body}=event;
     check(event.index===events.length&&event.previous===(events.at(-1)?.sha256??'genesis')&&objectHash(body)===sha256,'review_ledger_chain_invalid');
-    check(typeof event.at==='string'&&['manifest','executor-freeze','stage-open','admit','terminal','receipt','host-rejection-receipt','stage-close','stop','recovery-authorized'].includes(event.kind)&&event.data&&typeof event.data==='object','review_ledger_event_invalid');events.push(event);}
+    check(typeof event.at==='string'&&['manifest','executor-freeze','stage-open','admit','terminal','receipt','host-rejection-receipt','stage-close','stop','recovery-authorized','recovery-e-authorized','normal-continuation-authorized'].includes(event.kind)&&event.data&&typeof event.data==='object','review_ledger_event_invalid');events.push(event);}
   check(events[0]?.kind==='manifest'&&events[0].data.manifestHash===input.experimentHash&&events[0].data.cumulativeCap===124,'review_ledger_experiment_changed');
   const by=(kind:string)=>events.filter(e=>e.kind===kind),opens=by('stage-open'),closes=by('stage-close'),admissions=by('admit');
+  const normalEvents=by('normal-continuation-authorized');check(normalEvents.length<=1,'review_normal_ambiguous');let normal:NormalContinuation|undefined;const oldFailedClosures=new Set<string>();if(normalEvents.length){const event=normalEvents[0];normal={plan:refSchema.parse(event.data.plan),eventHash:event.sha256};const p=await read(normal.plan),ep=await read(refSchema.parse(p.parentE?.plan)),dp=await read(refSchema.parse(ep.parentD?.plan));for(const value of [p.request,p.preparationCommitment,ep.request,ep.preparationCommitment,dp.preparationCommitment])await read(refSchema.parse(value));try{normalAuthorization(events,normal);}catch{check(false,'review_normal_proof_invalid');}equal(p.rootManifest,input.rootManifest,'review_normal_root_changed');oldFailedClosures.add(ep.failedCloseHash);oldFailedClosures.add(dp.failedCloseHash);}else check(!by('recovery-e-authorized').length,'review_normal_required');
   check(by('manifest').length===1&&admissions.length<=124,'review_ledger_budget_invalid');
   check(new Set(opens.map(e=>e.data.stage)).size===opens.length&&closes.length===opens.length,'review_stage_closure_ambiguous');
   for(const open of opens){const matches=closes.filter(e=>e.data.stage===open.data.stage);check(matches.length===1&&matches[0].index>open.index,'review_stage_unclosed');
     const close=matches[0];check(typeof open.data.stage==='string'&&open.data.stage.length>0&&typeof close.data.succeeded==='boolean'&&Number.isInteger(open.data.maxCalls)&&open.data.maxCalls>=0&&open.data.maxCalls<=4,'review_stage_shape_invalid');
     check(!opens.some(other=>other.index>open.index&&other.index<close.index),'review_stages_overlap');
-    check(close.data.phase===undefined?/^wave1-batch-\d+$/.test(close.data.stage):close.data.phase!==null&&['ingress','extraction','integration','evaluation'].includes(close.data.phase.kind),'review_stage_phase_unknown');
+    check(close.data.phase===undefined?(oldFailedClosures.has(close.sha256)||/^wave1-batch-\d+$/.test(close.data.stage)):close.data.phase!==null&&['ingress','extraction','integration','evaluation'].includes(close.data.phase.kind),'review_stage_phase_unknown');
     check(admissions.filter(a=>a.data.stage===open.data.stage).length<=open.data.maxCalls,'review_stage_budget_exceeded');
     if(close.data.succeeded===false)check(by('stop').some(s=>s.index>open.index&&s.index<close.index),'review_failed_stage_without_stop');}
   check(events.at(-1)?.kind==='stage-close'&&events.at(-1)?.data.succeeded===true,'review_final_stage_not_closed');
   // Historical paid failures stay in the chain. Only already recorded, hash-bound
   // recovery events can cover old stops; this is not a recovery authorization API.
   const covered=new Set<string>();check(by('recovery-authorized').length<=1,'review_recovery_ambiguous');
-  for(const event of by('recovery-authorized')){const p=await read(refSchema.parse(event.data.plan));
+  if(normal){for(const h of normalAuthorization(events,normal).stopHashes)covered.add(h);}
+  else for(const event of by('recovery-authorized')){const p=await read(refSchema.parse(event.data.plan));
     check(p.experimentHash===input.experimentHash&&p.stoppedHeadHash===event.previous&&Array.isArray(p.stopHashes)&&p.stopHashes.length>0,'review_recovery_binding_invalid');
     check(!by('stop').some(e=>e.index>event.index),'review_stop_after_recovery');
     for(const h of p.stopHashes){check(events.some(e=>e.kind==='stop'&&e.sha256===h&&e.index<event.index)&&!covered.has(h),'review_recovery_stop_invalid');covered.add(h);}}
@@ -129,7 +132,7 @@ export async function exportBlindReview(inputPath:string,output:string){
     const freeze=events.filter(e=>e.kind==='executor-freeze'&&e.index<open.index).at(-1);
     check(freeze?.data.manifestHash===files.manifest.sha256&&freeze===events[open.index-1]&&freeze.previous===m.parent.ledgerHeadHash,'review_executor_binding_changed');
     const recovery=by('recovery-authorized')[0];
-    equal(m.recoveryLineage,recovery?{plan:recovery.data.plan,eventHash:recovery.sha256}:undefined,'review_recovery_lineage_changed');
+    equal(m.recoveryLineage,!normal&&recovery?{plan:recovery.data.plan,eventHash:recovery.sha256}:undefined,'review_recovery_lineage_changed');equal(m.normalContinuation,normal,'review_normal_lineage_changed');
     check(stage.schema==='mote-heldout-ask-stage@1'&&stage.status==='paired-success'&&(stage.stage===undefined||stage.stage===stageId)&&stage.phase==='evaluation'&&stage.wave===m.task.wave&&stage.pairOrdinal===m.task.index,'review_stage_not_successful');
     check(stage.manifestHash===files.manifest.sha256&&stage.experimentHash===input.experimentHash&&stage.planHash===planRef.sha256&&stage.completedCalls===2&&!stage.failure,'review_stage_binding_changed');
     check(stage.realModelCalls===(input.kind==='heldout'?2:0)&&stage.stubModelCalls===(input.kind==='mechanical'?2:0),'review_stage_calls_unknown');
@@ -138,7 +141,7 @@ export async function exportBlindReview(inputPath:string,output:string){
     check(stage.pairedResultHash===files.result.sha256&&closure.data.snapshotHash===files.result.sha256&&stage.archiveHeadHash===m.parent.treeHash,'review_result_binding_changed');
     const stageDirectory=dirname(files.stage.path);
     check(files.stage.path===join(stageDirectory,'ROOT_SAFE_stage.json')&&files.result.path===join(stageDirectory,'DO_NOT_OPEN','paired-results.json'),'review_result_location_invalid');
-    check(supervision.schema==='mote-heldout-phase-supervision@2'&&supervision.phase==='evaluation'&&supervision.mode==='stage-ask-live'&&supervision.status==='process-closed','review_supervision_invalid');
+    check(supervision.schema===(normal?'mote-heldout-normal-phase-supervision@1':'mote-heldout-phase-supervision@2')&&supervision.phase==='evaluation'&&supervision.mode==='stage-ask-live'&&supervision.status==='process-closed','review_supervision_invalid');
     check(supervision.exitCode===0&&supervision.terminationRequested===false&&supervision.interrupted===false&&supervision.remainingProcessGroupAfterParentExit===false&&supervision.processGroupClosed===true,'review_process_not_closed');
     check(supervision.frozenControlsUnchangedAfterClose===true&&supervision.ledgerPrefixUnchangedAfterClose===true,'review_closed_controls_changed');
     equal(supervision.limits,limits,'review_supervision_limits_changed');
