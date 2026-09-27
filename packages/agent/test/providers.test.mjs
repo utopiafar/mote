@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
+import sharp from 'sharp';
 import {createAgent, createRuntimePatch, validateModelOptions, AgentConfigurationError, AgentProviderError} from '../dist/index.js';
 import {TOOL_NAMES} from '../dist/bridge.js';
 
@@ -9,9 +10,9 @@ const reader = {search:async()=>[record], timeline:async()=>[record], evidence:a
 const answer = JSON.stringify({answer:`The generated note contains archive evidence. [${record.id}]`, citationIds:[record.id]});
 const send = (res, value) => res.write(`${value.type ? `event: ${value.type}\n` : ''}data: ${JSON.stringify(value)}\n\n`);
 
-function respond(res, protocol, stage, final = answer) {
+function respond(res, protocol, stage, final = answer, actions) {
   res.writeHead(200, {'Content-Type':'text/event-stream'});
-  const tool = stage === 0 ? {name:'search_context', args:{query:'synthetic fixture'}} : stage === 1 ? {name:'evidence', args:{ids:[record.id]}} : undefined;
+  const tool = actions ? actions[stage] : stage === 0 ? {name:'search_context', args:{query:'synthetic fixture'}} : stage === 1 ? {name:'evidence', args:{ids:[record.id]}} : undefined;
   if (protocol === 'openai-completions') {
     if (stage === 0) {
       send(res, {id:`fixture-${stage}`,choices:[{index:0,delta:{reasoning_content:'Synthetic reasoning, '},finish_reason:null}]});
@@ -59,12 +60,12 @@ function respond(res, protocol, stage, final = answer) {
   }
 }
 
-async function withProvider(protocol, run, options = {}) {
+async function withProvider(protocol, run, options = {}, actions) {
   const requests=[];
   const server=createServer(async(req,res)=>{
     let raw='';for await (const chunk of req) raw+=chunk;
     requests.push({url:req.url,headers:req.headers,body:JSON.parse(raw)});
-    respond(res, protocol, requests.length-1);
+    respond(res, protocol, requests.length-1, answer, actions);
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const agent=createAgent({reader,protocol,baseUrl:`http://127.0.0.1:${server.address().port}${protocol === 'anthropic-messages' ? '' : '/v1'}`,apiKey:'generated-provider-secret',model:'fixture-model-not-in-catalog',timeoutMs:45000,headers:{'x-generated-header':'fixture-header-secret'},extraBody:protocol === 'google-generative-ai' ? {generationConfig:{temperature:0.23}} : {temperature:0.23},...options});
@@ -72,6 +73,21 @@ async function withProvider(protocol, run, options = {}) {
 }
 
 for (const protocol of ['openai-completions','openai-responses','anthropic-messages','google-generative-ai']) {
+  test(`real Harness ${protocol} appends distinct images and successful duplicate metadata`, {timeout:60000}, async()=>{
+    const images=await Promise.all(['#abcabc','#bcabca'].map(background=>sharp({create:{width:8,height:8,channels:3,background}}).png().toBuffer().then(bytes=>bytes.toString('base64'))));
+    const parent={...record,provenance:{document:{attachments:[{id:'image-a',mimeType:'image/png'},{id:'image-b',mimeType:'image/png'}]}}};let reads=0;
+    const imageReader={...reader,search:async()=>[parent],evidence:async()=>[parent],readImage:async args=>{reads++;return {mimeType:'image/png',data:images[args.attachmentId==='image-b'?1:0]};}};
+    const actions=[{name:'search_context',args:{}},{name:'evidence',args:{ids:[record.id]}},...['image-a','image-a','image-b'].map(attachmentId=>({name:'read_image',args:{id:record.id,attachmentId}}))];
+    await withProvider(protocol,async(agent,requests)=>{
+      assert.equal((await agent.query({question:'Inspect generated images'})).citations[0].id,record.id);assert.equal(requests.length,6);assert.equal(reads,3);
+      const occurrences=(body,image)=>JSON.stringify(body).split(image).length-1;
+      for(const request of requests.slice(0,3))for(const image of images)assert.equal(occurrences(request.body,image),0);
+      assert.equal(occurrences(requests[3].body,images[0]),1,'first read supplies real pixels');
+      assert.equal(occurrences(requests[4].body,images[0]),1,'history retains the first image without appending a duplicate');assert.equal(occurrences(requests[4].body,images[1]),0);assert.match(JSON.stringify(requests[4].body),/already_disclosed/);
+      for(const image of images)assert.equal(occurrences(requests[5].body,image),1,'a distinct attachment still supplies its pixels');
+      assert.ok(!JSON.stringify(requests).includes('imageDelivery'));assert.ok(!JSON.stringify(requests).includes('_image_delivery'),'host receipts never enter model tools or content');
+    },{reader:imageReader},actions);
+  });
   test(`real Harness ${protocol} preserves read-only multi-round tools, evidence and native replay`, {timeout:60000}, async()=>{
     await withProvider(protocol, async(agent, requests)=>{
       const result=await agent.query({question:'Read the generated archive fixture.',deviceId:'fixture-device'});

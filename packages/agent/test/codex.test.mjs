@@ -50,14 +50,14 @@ readline.createInterface({input:process.stdin}).on('line',line=>{
   if(mode==='oversize-frame'){send({method:'fixture/opaque',params:{data:'x'.repeat(14*1024*1024)}});return;}
   if(mode==='error'){send({method:'turn/completed',params:{threadId:'thread-fixture',turn:{status:'failed',error:{message:'synthetic-private-secret'}}}});return;}
   send({id:999,method:mode==='approval'?'item/commandExecution/requestApproval':'item/tool/call',params:{threadId:'thread-fixture',tool:mode==='contribution'?'fixture_context':mode==='image-echo'?'read_image':'timeline',namespace:null,arguments:mode==='tool-repair'?{limit:0}:{}}});
- }else if(mode==='image-flow'&&(m.id===999||m.id===1000)){
+ }else if((mode==='image-flow'||mode==='image-repeat')&&(m.id===999||m.id===1000||mode==='image-repeat'&&m.id===1001)){
   if(!m.result?.success)process.exit(3);
   send({id:m.id+1,method:'item/tool/call',params:{threadId:'thread-fixture',tool:m.id===999?'evidence':'read_image',namespace:null,arguments:m.id===999?{ids:['synthetic-codex-record']}:{id:'synthetic-codex-record',attachmentId:'generated-image'}}});
  }else if(m.id===999&&mode==='tool-repair'){
   const feedback=JSON.parse(m.result.contentItems[0].text);
   if(m.result.success!==false||feedback.toolError.code!=='invalid_tool_arguments'||feedback.toolError.recovery!=='correct_arguments')process.exit(5);
   send({id:1000,method:'item/tool/call',params:{threadId:'thread-fixture',tool:'timeline',namespace:null,arguments:{}}});
- }else if(m.id===999||m.id===1000||m.id===1001){
+ }else if(m.id===999||m.id===1000||m.id===1001||m.id===1002){
   if(!m.result?.success)process.exit(3);
   if(mode==='image-echo'||mode==='image-flow')send({method:'item/completed',params:{threadId:'thread-fixture',item:{id:'image-echo',type:'dynamicToolCall',contentItems:m.result.contentItems}}});
   if(mode==='usage')for(const sample of [turns*100,turns*100])send({method:'thread/tokenUsage/updated',params:{threadId:'thread-fixture',turnId:'turn-fixture',tokenUsage:{total:{inputTokens:sample,outputTokens:sample/2,totalTokens:sample*1.5,cachedInputTokens:sample/5,cacheWriteInputTokens:0,reasoningOutputTokens:sample/10}}}});
@@ -109,6 +109,19 @@ test('Codex discloses a selected image to the model while keeping its bytes out 
  assert.ok(!JSON.stringify(events).includes(data.slice(0,200)),'neither model RPC echoes nor tool-completion traces retain image data');
  const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);
  assert.equal(messages.find(m=>m.id===1001).result.contentItems[1].imageUrl,'data:image/png;base64,'+data);
+});
+test('Codex duplicate image completion succeeds as metadata without appending another inputImage',async t=>{
+ const root=await fake(t,'image-repeat'),events=[],data=Buffer.from('generated-image-transport').toString('base64'),parent={...record,provenance:{document:{attachments:[{id:'generated-image',mimeType:'image/png'}]}}};let reads=0;
+ const agent=createAgent({reader:{...reader,timeline:async()=>[parent],evidence:async()=>[parent],readImage:async()=>{reads++;return {mimeType:'image/png',data};}},protocol:'codex-app-server',model:'fixture',timeoutMs:5000});t.after(()=>agent.close());
+ const answer=await agent.query({question:'Read generated pixels',onTrace:event=>events.push(event)});assert.equal(answer.citations[0].id,record.id);assert.equal(reads,2);
+ const messages=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse),first=messages.find(m=>m.id===1001).result,repeat=messages.find(m=>m.id===1002).result;
+ assert.equal(first.success,true);assert.equal(first.contentItems.filter(item=>item.type==='inputImage').length,1);
+ assert.equal(repeat.success,true);assert.deepEqual(repeat.contentItems.map(item=>item.type),['inputText']);assert.equal(JSON.parse(repeat.contentItems[0].text).imageDisclosure.status,'already_disclosed');
+ assert.equal(messages.flatMap(m=>m.result?.contentItems??[]).filter(item=>item.type==='inputImage').length,1);
+ assert.equal(events.filter(e=>e.type==='tool.completed'&&e.tool==='read_image'&&e.status==='succeeded').length,2);assert.ok(!JSON.stringify(events).includes(data));
+ assert.ok(!JSON.stringify(messages).includes('imageDelivery'),'host receipts never enter the model protocol');
+ await agent.query({question:'Read generated pixels again'});assert.equal(reads,4);
+ const restarted=(await readFile(join(root,'rpc.ndjson'),'utf8')).trim().split('\n').map(JSON.parse);assert.equal(restarted.flatMap(m=>m.result?.contentItems??[]).filter(item=>item.type==='inputImage').length,2,'a new query on the same agent must disclose its first image');
 });
 test('Codex errors and approval requests are rejected without exposing raw provider output',async t=>{
   for(const mode of ['error','approval']){await fake(t,mode);const agent=createAgent({reader,protocol:'codex-app-server',model:'fixture',timeoutMs:5000});try{await assert.rejects(agent.query({question:'Fixture'}),e=>e instanceof AgentProviderError&&!e.message.includes('synthetic-private'));}finally{await agent.close();}}

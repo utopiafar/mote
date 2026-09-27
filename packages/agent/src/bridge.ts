@@ -245,7 +245,18 @@ export async function startBridge(
   let deliveredCharacters=JSON.stringify(seedEvidence).length;
   const expanded=new Set<string>();
   for(const image of directImages)expanded.add(image.id);
-  let imageCalls=0;
+  // Query-local byte identities only: never skip the reader's fresh authorization
+  // or merge the source attribution of two selections containing the same image.
+  type ImageDelivery={selection:{id:string;attachmentId?:string};token:string;confirmed:boolean;ready:Promise<void>;settle:()=>void;timer:ReturnType<typeof setTimeout>};
+  const disclosedImages=new Map<string,ImageDelivery>();
+  let closing=false;
+  const imageDelivery=(token:string,delivered:boolean)=>{
+    const entry=[...disclosedImages].find(([,value])=>value.token===token);
+    if(!entry){if(delivered)throw hostError('Image delivery receipt expired');return;}
+    const [key,value]=entry;clearTimeout(value.timer);
+    if(delivered)value.confirmed=true;else disclosedImages.delete(key);
+    value.settle();
+  };
   let calls = 0;
   let progressMessages=0;
   let ready = false;
@@ -280,6 +291,13 @@ export async function startBridge(
       args = raw ? JSON.parse(raw) : {};
       if (!args || Array.isArray(args) || typeof args !== "object")
         throw hostError("Expected object arguments");
+
+      // Adapter-only receipt; absent from every model tool declaration. The
+      // authenticated adapter strips the opaque token before returning a tool.
+      if(tool==='_image_delivery'){
+        if(typeof args.token!=='string'||typeof args.delivered!=='boolean'||Object.keys(args).some(key=>key!=='token'&&key!=='delivered'))throw hostError('Invalid image delivery receipt');
+        imageDelivery(args.token,args.delivered);res.end('{"ok":true}');return;
+      }
 
       if (tool === "_ready") {
         const exposed = args.tools;
@@ -412,19 +430,48 @@ export async function startBridge(
         res.end(serialized);return;
       }
       if(tool==='read_image'){
+        if(Object.keys(args).some(key=>key!=='id'&&key!=='attachmentId'))throw hostError('Unsupported image selection arguments');
         if(typeof args.id!=='string'||!expanded.has(args.id)||!reader.readImage)throw hostError('Expand derived evidence before reading an authorized image');
-        if(++imageCalls>4)throw hostError('Image disclosure budget exceeded');
-        const direct=directImages.some(image=>image.id===args.id);
-        const record=direct?records.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
-        const document=documentSchema.safeParse((record?.provenance as {document?:unknown}|undefined)?.document),at=record&&sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
-        if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at!)<Date.parse(scope.after)||scope.before&&Date.parse(at!)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
-        if(args.attachmentId!==undefined&&(direct||typeof args.attachmentId!=='string'||!document.success||!document.data.attachments?.some(attachment=>attachment.id===args.attachmentId)))throw hostError('Select an image attachment declared by the expanded parent evidence');
-        const selection={id:args.id,...(typeof args.attachmentId==='string'?{attachmentId:args.attachmentId}:{})};
-        const image=await reader.readImage(selection);
-        if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||image.data.length>12*1024*1024)throw hostError('Invalid image output');
-        trace.push({tool,arguments:selection,count:1});
-        reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});
-        res.end(JSON.stringify({source:'untrusted_personal_context',...selection,image,hostBudget:hostBudget()}));return;
+        for(;;){
+          if(closing||res.destroyed)return;
+          const direct=directImages.some(image=>image.id===args.id);
+          const record=direct?records.get(args.id):(await reader.evidence({ids:[args.id]}))[0],scope=range({},bounds);
+          const document=documentSchema.safeParse((record?.provenance as {document?:unknown}|undefined)?.document),at=record&&sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
+          if(!record||!direct&&(scope.deviceId&&record.deviceId!==scope.deviceId||scope.after&&Date.parse(at!)<Date.parse(scope.after)||scope.before&&Date.parse(at!)>=Date.parse(scope.before)))throw hostError('Image is outside scope or deleted');
+          if(args.attachmentId!==undefined&&(direct||typeof args.attachmentId!=='string'||!document.success||!document.data.attachments?.some(attachment=>attachment.id===args.attachmentId)))throw hostError('Select an image attachment declared by the expanded parent evidence');
+          const selection={id:args.id,...(typeof args.attachmentId==='string'?{attachmentId:args.attachmentId}:{})};
+          const image=await reader.readImage(selection);
+          if(closing||res.destroyed)return;
+          if(!['image/png','image/jpeg','image/webp'].includes(image.mimeType)||image.data.length>12*1024*1024)throw hostError('Invalid image output');
+          const sha256=createHash('sha256').update(Buffer.from(image.data,'base64')).digest('hex'),key=image.mimeType+':'+sha256;
+          const existing=disclosedImages.get(key);
+          if(existing&&!existing.confirmed){
+            let disconnected!:()=>void;const connectionClosed=new Promise<void>(resolve=>{disconnected=resolve;res.once('close',disconnected);});
+            try{await Promise.race([existing.ready,connectionClosed]);}finally{res.off('close',disconnected);}
+            // Authorization may have changed while another adapter prepared its
+            // image. Read again rather than reuse the pre-wait permission result.
+            continue;
+          }
+          const firstSelection=existing?.selection;
+          if(!existing&&disclosedImages.size>=4)throw hostError('Image disclosure budget exceeded');
+          // No await between checking and recording: concurrent identical reads
+          // append at most one image. Repeats still consume the normal tool budget.
+          let delivery:ImageDelivery|undefined;
+          if(!existing){
+            let settle!:()=>void;const ready=new Promise<void>(resolve=>settle=resolve),token=randomBytes(24).toString('hex');
+            // A lost local adapter receipt cannot leave future readers waiting
+            // forever. A late success is refused, so it cannot disclose a stale
+            // reservation after a waiting reader has taken over.
+            const timer=setTimeout(()=>imageDelivery(token,false),30_000);timer.unref();
+            delivery={selection,token,confirmed:false,ready,settle,timer};disclosedImages.set(key,delivery);
+          }
+          trace.push({tool,arguments:selection,count:1});
+          reportProgress(bounds,{stage:'tool',tool,phase:'completed',count:1});
+          res.end(JSON.stringify({source:'untrusted_personal_context',...selection,...(firstSelection?{
+            imageDisclosure:{status:'already_disclosed',sha256,mimeType:image.mimeType,firstSelection},
+            message:'These exact image bytes were already supplied in this query. Use the earlier image with this selection’s own source attribution.',
+          }:{image,imageDelivery:delivery!.token}),hostBudget:hostBudget()}));return;
+        }
       }
       let value: unknown;
       let effective: Record<string, unknown> = args;
@@ -662,6 +709,7 @@ export async function startBridge(
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     token,
+    imageDelivery,
     failure,
     trace,
     records,
@@ -672,6 +720,9 @@ export async function startBridge(
       return ready;
     },
     async close() {
+      closing=true;
+      for(const value of disclosedImages.values()){clearTimeout(value.timer);value.settle();}
+      disclosedImages.clear();
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
