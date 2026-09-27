@@ -1,6 +1,25 @@
 import type { Connection } from './api';
 
 export const connectionStorageKey = 'mote.connection';
+export const periodStorageKey = 'mote.period';
+export type Period = 'today' | 'week' | 'month' | 'all';
+const validScope=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+export const periodValue=(value:unknown):Period=>value==='today'||value==='month'||value==='all'?value:'week';
+
+export function readPeriod(connection:Connection|null):Period {
+  try {
+    const saved=JSON.parse(globalThis.sessionStorage?.getItem(periodStorageKey)??'null');
+    if(connection?.viewScope&&(!connection.expiresAt||connection.expiresAt>Date.now())&&saved?.scope===connection.viewScope)return periodValue(saved.period);
+    globalThis.sessionStorage?.removeItem(periodStorageKey);
+  } catch { /* blocked or malformed view storage uses the default */ }
+  return 'week';
+}
+export function savePeriod(connection:Connection|null,value:unknown):Period {
+  const period=periodValue(value);
+  try {if(connection?.viewScope&&(!connection.expiresAt||connection.expiresAt>Date.now()))globalThis.sessionStorage?.setItem(periodStorageKey,JSON.stringify({scope:connection.viewScope,period}));} catch { /* in-memory selection still works */ }
+  return period;
+}
+
 export const sessionLifetimeStorageKey = 'mote.session-lifetime';
 export type SessionLifetime = 'session' | '1d' | '7d' | '30d';
 type PersistentLifetime = Exclude<SessionLifetime, 'session'>;
@@ -38,7 +57,7 @@ export function connectionForLifetime(token: string, lifetime: SessionLifetime, 
 
 /** Persist only the browser session credential; the central owner token itself remains server-managed. */
 export function persistSession(connection: Connection, lifetime: SessionLifetime, now = Date.now()): Connection {
-  const stored = connectionForLifetime(connection.token, lifetime, now);
+  const stored = {...connectionForLifetime(connection.token, lifetime, now),viewScope:validScope(connection.viewScope)?connection.viewScope:crypto.randomUUID()};
   try {
     globalThis.sessionStorage?.removeItem(connectionStorageKey);
     globalThis.localStorage?.removeItem(connectionStorageKey);
@@ -46,7 +65,7 @@ export function persistSession(connection: Connection, lifetime: SessionLifetime
   } catch {
     try {
       globalThis.localStorage?.removeItem(connectionStorageKey);
-      globalThis.sessionStorage?.setItem(connectionStorageKey, JSON.stringify({token: connection.token}));
+      globalThis.sessionStorage?.setItem(connectionStorageKey, JSON.stringify({token: connection.token,viewScope:stored.viewScope}));
     } catch {
       // Keep the in-memory connection alive when browser storage is unavailable.
     }
@@ -55,6 +74,7 @@ export function persistSession(connection: Connection, lifetime: SessionLifetime
 }
 
 export function clearSession(): void {
+  try { globalThis.sessionStorage?.removeItem(periodStorageKey); } catch { /* storage may be blocked */ }
   try { globalThis.sessionStorage?.removeItem(connectionStorageKey); } catch { /* storage may be blocked */ }
   try { globalThis.localStorage?.removeItem(connectionStorageKey); } catch { /* storage may be blocked */ }
 }
@@ -67,7 +87,7 @@ export function restoreSession(raw: string | null, origin: string, now = Date.no
     if (value.expiresAt !== undefined && (!Number.isSafeInteger(value.expiresAt) || value.expiresAt <= now)) return null;
     // Accept old same-service sessions; invalidate the former remote-node option.
     if (value.url !== undefined && value.url !== '' && value.url !== origin) return null;
-    return { token: value.token, ...(value.expiresAt === undefined ? {} : {expiresAt: value.expiresAt}) };
+    return { token: value.token, ...(validScope(value.viewScope)?{viewScope:value.viewScope}:{}), ...(value.expiresAt === undefined ? {} : {expiresAt: value.expiresAt}) };
   } catch {
     return null;
   }
@@ -77,11 +97,18 @@ export function readStoredSession(origin: string, now = Date.now()): Connection 
   let raw: string | null = null;
   try { raw = globalThis.sessionStorage?.getItem(connectionStorageKey) ?? null; } catch { /* try persistent storage */ }
   const session = restoreSession(raw, origin, now);
-  if (session) return session;
+  if (session) return ensureViewScope(session,'sessionStorage');
   try { raw = globalThis.localStorage?.getItem(connectionStorageKey) ?? null; } catch { raw = null; }
   const persistent = restoreSession(raw, origin, now);
   if (!persistent && raw) {
     try { globalThis.localStorage?.removeItem(connectionStorageKey); } catch { /* ignore stale storage */ }
   }
-  return persistent;
+  return persistent?ensureViewScope(persistent,'localStorage'):null;
+}
+
+function ensureViewScope(connection:Connection,storage:'sessionStorage'|'localStorage'):Connection {
+  if(connection.viewScope)return connection;
+  const migrated={...connection,viewScope:crypto.randomUUID()};
+  try {globalThis[storage]?.setItem(connectionStorageKey,JSON.stringify(migrated));} catch { /* keep the in-memory identity */ }
+  return migrated;
 }

@@ -46,7 +46,7 @@ import { changeEvidenceRoute,readEvidenceRoute } from './evidence-route';
 import { FeaturePage,featuresReady,webFeatures } from './features/runtime';
 import { pageLabels,readPage,routes,sectionFor,sections,type Page } from './navigation';
 import { readResource,resources } from './resource-cache';
-import { clearSession,persistSession,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
+import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
 import { CentralStatusPill,ErrorNotice,EvidenceDialog,LoginDialog,SetupSteps,Spinner } from './shell-components';
 import "./styles.css";
 import { confirmNavigation } from './unsaved';
@@ -99,7 +99,7 @@ function App() {
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
-  const [period, setPeriod] = useState("week");
+  const [period, setPeriod] = useState<Period>(()=>readPeriod(connection));
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(()=>{
     if(!menuOpen)return;
@@ -140,6 +140,7 @@ function App() {
   const clearConnection = useCallback(() => {
     connectionGeneration.current++;
     clearSession();
+    setPeriod("week");
     setConnection(null);
     setVerified(false);
     setShowConnect(false);
@@ -256,7 +257,9 @@ function App() {
     connectionGeneration.current++;
     saveSessionLifetime(lifetime);
     setSessionLifetime(lifetime);
-    setConnection(persistSession(value, lifetime));
+    const next=persistSession({token:value.token}, lifetime);
+    setConnection(next);
+    setPeriod(readPeriod(next));
     setVerified(false);
     setStatus(null);
     setDevices([]); setRecent([]); setInsights([]);
@@ -351,7 +354,7 @@ function App() {
                     className="period-select"
                     aria-label={moteText("选择时间范围")}
                     value={period}
-                    onChange={(e) => setPeriod(e.target.value)}
+                    onChange={(e) => setPeriod(savePeriod(connection,e.target.value))}
                   >
                     {Object.entries(periodNames).map(([key, label]) => (
                       <option key={key} value={key}>

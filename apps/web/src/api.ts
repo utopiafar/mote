@@ -5,6 +5,8 @@ export interface Connection {
   token: string;
   /** Browser-only expiry for a persisted management session; the server token is unchanged. */
   expiresAt?: number;
+  /** Non-secret identity for tab view state; never sent to the server. */
+  viewScope?: string;
 }
 export interface FileEvidence {
   captureId: string;
