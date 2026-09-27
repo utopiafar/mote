@@ -53,12 +53,15 @@ const priorUsageIds=new Set<string>();
 const save=()=>writeFile(join(directory,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
 const realFetch=globalThis.fetch,manualBridges=new Map<string,string>(),modelTools=new Set<string>();let liveQueryActive=false,modelBridgeIdentity:string|undefined;
 let activeImageAudit:ComposedImageDisclosure|undefined,activeImageAbort:AbortController|undefined;
+let assertImageSelection:((selection:{id:string;attachmentId?:string})=>void)|undefined;
 globalThis.fetch=async(input,init)=>{
  const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url),headers=new Headers(init?.headers),authorization=headers.get('authorization')??'';
  const local=url.protocol==='http:'&&url.hostname==='127.0.0.1'&&!!url.port&&!url.username&&!url.password&&!url.search&&!url.hash&&init?.method==='POST'&&headers.get('content-type')==='application/json';
  if(local&&manualBridges.get(url.origin)===authorization&&['timeline','evidence','read_image'].includes(url.pathname.slice(1)))return realFetch(input,init);
- if(local&&liveQueryActive&&/^Bearer [a-f0-9]{64}$/.test(authorization)&&modelTools.has(url.pathname.slice(1))){const identity=url.origin+' '+authorization;if(!modelBridgeIdentity||identity===modelBridgeIdentity){modelBridgeIdentity=identity;report.modelBridgeRequests=(report.modelBridgeRequests??0)+1;const response=await realFetch(input,init);
-  if(activeImageAudit&&url.pathname==='/read_image'&&response.ok){try{assert.equal(typeof init?.body,'string');await activeImageAudit.observeSuccessfulRead(JSON.parse(init!.body as string),await response.clone().json());}catch(error){activeImageAbort?.abort(error);throw error;}}
+ if(local&&liveQueryActive&&/^Bearer [a-f0-9]{64}$/.test(authorization)&&modelTools.has(url.pathname.slice(1))){const identity=url.origin+' '+authorization;if(!modelBridgeIdentity||identity===modelBridgeIdentity){modelBridgeIdentity=identity;
+  if(activeImageAudit&&url.pathname==='/read_image'){try{assert.equal(typeof init?.body,'string');assert.ok(assertImageSelection,'Image scope must be installed before transport');assertImageSelection(JSON.parse(init!.body as string));}catch(error){activeImageAbort?.abort(error);throw error;}}
+  report.modelBridgeRequests=(report.modelBridgeRequests??0)+1;const response=await realFetch(input,init);
+  if(activeImageAudit&&url.pathname==='/read_image'&&response.ok){try{await activeImageAudit.observeSuccessfulRead(JSON.parse(init!.body as string),await response.clone().json());}catch(error){activeImageAbort?.abort(error);throw error;}}
   return response;}}
  if(url.hostname==='127.0.0.1')report.blockedLoopbackFetchAttempts++;else report.externalFetchAttempts++;
  throw Error('Image reuse harness forbids this fetch');
@@ -104,6 +107,9 @@ try{
   if(manifest.imageDisclosureProtocol==='bounded-views')await call('read_image',imageSelection);
   report.preflight={status:'passed',selectedId,parentId:parent.id,attachmentId:image.id,mimeType:original.image.mimeType,sha256:manifest.imageSha256,modelCalls:0,imageDisclosure:preflightAudit.snapshot(),separateFromLiveContext:true,generatedGeometryChecked:mode==='preflight'&&!manifest.personalDataUsed&&manifest.imageDisclosureProtocol==='bounded-views'};await save();
  }finally{manualBridges.delete(bridge.url);await bridge.close();}
+ // Archive readers are immutable. Guard the existing callback transport before
+ // forwarding a read; the image audit separately verifies original/output bytes.
+ assertImageSelection=selection=>{assert.ok([parent.id,selectedId,composition?.childId].filter(Boolean).includes(selection.id),'Only the frozen parent or image child may disclose pixels');assert.ok(selection.attachmentId===undefined||selection.attachmentId===image.id,'Only the frozen attachment is authorized');};
  if(mode==='preflight'&&!manifest.personalDataUsed){
   // Generated-only proof of the separate Agent callback transport. This bridge
   // is deliberately absent from manualBridges and does not invoke an adapter/model.
@@ -116,13 +122,15 @@ try{
    if(manifest.imageDisclosureProtocol==='bounded-views')await call('read_image',{...selected,view:'metadata'});
    await call('read_image',selected);
    if(manifest.imageDisclosureProtocol==='bounded-views')await call('read_image',selected);
-   assert.equal(audit.snapshot().imagePayloads,1);report.agentBridgePreflight={...audit.snapshot(),realModelCalls:0,transport:'Generated unregistered Agent callback bridge; no adapter or model invocation'};
+   assert.equal(audit.snapshot().imagePayloads,1);const requestsBeforeInvalid=report.modelBridgeRequests;
+   await assert.rejects(call('read_image',{id:'generated-out-of-scope'}),/Only the frozen parent/);
+   await assert.rejects(call('read_image',{...selected,attachmentId:'generated-other-attachment'}),/Only the frozen attachment/);
+   assert.equal(report.modelBridgeRequests,requestsBeforeInvalid,'Rejected selections must not reach the archive reader');
+   report.agentBridgePreflight={...audit.snapshot(),realModelCalls:0,imageSelectionRejectedBeforeRead:true,transport:'Generated unregistered Agent callback bridge; no adapter or model invocation'};
   }finally{liveQueryActive=false;modelBridgeIdentity=undefined;activeImageAudit=undefined;activeImageAbort=undefined;await agentBridge.close();}
  }
  if(mode==='live'){
  const imageAudit=newImageAudit();
- const readImage=node.featureServices.archiveReader.readImage!.bind(node.featureServices.archiveReader);
- node.featureServices.archiveReader.readImage=async selection=>{assert.ok([parent.id,selectedId,composition?.childId].includes(selection.id),'Only the frozen parent or image child may disclose pixels');assert.ok(selection.attachmentId===undefined||selection.attachmentId===image.id,'Only the frozen attachment is authorized');const result=await readImage(selection);assert.equal(result.imageView?.original.sha256,manifest.imageSha256,'Only the frozen original may back metadata or pixels');return result;};
  const query=node.agent.query.bind(node.agent);node.agent.query=async input=>{
   assert.equal(report.modelCalls,0,'Only one query is authorized');assert.ok(!input.skill&&!input.evidenceIds&&!input.evidenceRanges&&!input.directImages?.length&&!input.conversation&&!input.taskContext&&!input.openingMemories?.length,'Use a fresh normal archive Ask');assert.equal(input.question,manifest.question);report.modelCalls++;report.trace=[];await save();
   const deadline=AbortSignal.timeout(manifest.queryTimeoutMs),auditAbort=new AbortController(),signal=AbortSignal.any([deadline,auditAbort.signal,...(input.signal?[input.signal]:[])]);
