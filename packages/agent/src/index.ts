@@ -2,7 +2,7 @@ import {SYSTEM_PROMPT,systemInstructions} from './instructions.js';
 import {observeModelTransport} from './model-transport-observer.js';
 import {contextToolDefinitions,pinContextTools} from './tool-contributions.js';
 export {ContextToolRegistry,type ContextToolContribution} from './tool-contributions.js';
-import {evidenceExcerpt} from './evidence-ledger.js';
+import {evidenceExcerpt,excerptSlice} from './evidence-ledger.js';
 import {assembleContext,taskTools} from './task-context.js';
 import {observeHarness} from './usage.js';
 import {DEFAULT_MODEL_MAX_TOKENS} from '@mote/shared/models';
@@ -150,7 +150,7 @@ export function parseAnswer(raw: string, records: Map<string, ContextRecord>) {
         id,
         capturedAt: record.capturedAt,
         appName: record.appName,
-        excerpt: (evidenceExcerpt(record) || record.summary || mediaExcerpt || "").slice(0, 600),
+        excerpt: excerptSlice(evidenceExcerpt(record) || record.summary || mediaExcerpt || "",600),
         ...(typeof record.contentAt==='string'?{contentAt:record.contentAt}:{}),
         ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
         ...(record.provenance?{provenance:record.provenance as import('./types.js').Citation['provenance']}:{}),

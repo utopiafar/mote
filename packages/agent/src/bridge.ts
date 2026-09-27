@@ -1,6 +1,6 @@
 import {CONTEXT_TOOLS} from './context-tools.js';
 import {pinContextTools} from './tool-contributions.js';
-import {rememberEvidence} from './evidence-ledger.js';
+import {rememberEvidence,projectEvidencePresentation,copyEvidencePresentation} from './evidence-ledger.js';
 import {taskTools,HOST_CONTEXT_LIMITS,retrievalLimits} from './task-context.js';
 import {actionEvidenceText,parseEvidenceRef} from '@mote/shared';
 import {ContextToolError} from './tool-errors.js';
@@ -85,7 +85,7 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
   const sourceMetadata = sourceMetadataSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.metadata);
   const document = documentSchema.safeParse((record.provenance as Record<string, unknown> | undefined)?.document);
   const contentAt = sourceContentTime({capturedAt:record.capturedAt,...(document.success?{provenance:{document:document.data}}:{})});
-  return {
+  const projected:ContextRecord = {
     ...(fileEvidenceSchema.safeParse(record.fileEvidence).success?{fileEvidence:fileEvidenceSchema.parse(record.fileEvidence)}:{}),
     ...(stateSeriesSchema.safeParse(record.stateSeries).success?{stateSeries:stateSeriesSchema.parse(record.stateSeries)}:{}),
     evidenceFingerprint:createHash('sha256').update(JSON.stringify([text,record.provenance,record.fileEvidence])).digest('hex'),
@@ -138,6 +138,7 @@ function project(record: ContextRecord, offset = 0, length = 600, timeZone = 'UT
       ? { mood: record.mood.slice(0, 80) }
       : {}),
   };
+  return projectEvidencePresentation(record,projected);
 }
 
 /** Health reports are not archive coverage. Keep their timestamps out of the record namespace. */
@@ -622,8 +623,8 @@ export async function startBridge(
       for(const id of discoveredMemoryIds)discovered.add(id);
       // Only a successfully serialized, deliverable tool result authorizes evidence.
       if (!metadataOnly&&(tool === "search_context" || tool === "timeline" || tool === "evidence" || tool==='source_items' || tool==='source_history' || tool==='file_chunks' || tool==='changes')) {
-        for (const record of safeValue as ContextRecord[])
-          {rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
+        for (const [index,record] of (safeValue as ContextRecord[]).entries())
+          {copyEvidencePresentation((value as ContextRecord[])[index],record);rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);}
         if(tool==='evidence')for(const record of safeValue as ContextRecord[])expanded.add(record.id);
       }
       for(const record of memoryEvidence){rememberEvidence(records,record);discovered.add(record.id);disclosedIds.add(record.id);if(tool==='memories')expanded.add(record.id);}

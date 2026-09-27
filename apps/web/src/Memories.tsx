@@ -10,6 +10,8 @@ import {Layers3,LoaderCircle,RefreshCw,Sparkles,Trash2} from 'lucide-react';
 import {AnswerMarkdown} from './AnswerMarkdown';
 import {ArchivedFileButton} from './ArchivedFileButton';
 import {MemoryProgress,useMemoryJob,memoryJobLabels,type MemoryJob} from './MemoryProgress';
+import {ManualMemoryRecipes} from './ManualMemoryRecipes';
+import type {MemoryRecipeRef} from './memory-recipes';
 import {type Api,errorMessage,dateTime,type Range,type FileEvidence} from './api';
 
 interface MemoryEvidence {
@@ -35,6 +37,7 @@ export function Memories({api,range,onOpen,refreshVersion=0,embedded=false,onCha
   const Heading=embedded?'h2':'h1';
   const preserveSelection=useRef(false);const [createdMemoryId,setCreatedMemoryId]=useState<string>();
   const [modelProfileId,setModelProfileId]=useState('');
+  const [recipes,setRecipes]=useState<MemoryRecipeRef[]>([]);
   const [selectedId,setSelectedId]=useState<string|null>(null),[mutationError,setError]=useState(''),[busy,setBusy]=useState(false),[filter,setFilter]=useState('all'),[confirmDelete,setConfirmDelete]=useState(false);
   const [search,setSearch]=useState(''),[query,setQuery]=useState(''),[tier,setTier]=useState(''),[layer,setLayer]=useState('memory'),[cursor,setCursor]=useState<string>();
   const [jobId,setJobId]=useState<string>();
@@ -48,12 +51,12 @@ export function Memories({api,range,onOpen,refreshVersion=0,embedded=false,onCha
   useOperationUpdates(api);
   function refresh(){resources(api).invalidate(key=>/^\/api\/(memories|memory-jobs)([/?]|$)/.test(key));}
   useEffect(()=>{if(refreshVersion)refresh();},[api,refreshVersion]);
-  useEffect(()=>{setJobId(current=>current??jobs.find(item=>['queued','running','pausing','paused','failed','waiting_for_model'].includes(item.status))?.id);},[jobList.data]);
+  useEffect(()=>{setJobId(current=>current??jobs.find(item=>['queued','running','pausing','paused','failed','waiting_for_model','waiting_for_input'].includes(item.status))?.id);},[jobList.data]);
   useEffect(()=>{setCursor(undefined);if(preserveSelection.current)preserveSelection.current=false;else{setSelectedId(null);setCreatedMemoryId(undefined);}},[range.after,range.before,range.deviceId,query,tier,layer,filter,history,asOf]);
   useEffect(()=>{if(job?.status==='completed'||job?.status==='failed')refresh();},[job?.id,job?.status]);
   async function extract(){
     setBusy(true);setError('');
-    try{const result=await api.request<MemoryJob>('/api/memory-jobs',{method:'POST',body:JSON.stringify({...range,modelProfileId:modelProfileId||undefined,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});setJobId(result.id);reloadJob();refresh();}
+    try{const result=await api.request<MemoryJob>('/api/memory-jobs',{method:'POST',body:JSON.stringify({...range,...(recipes.length?{recipes}:{}),modelProfileId:modelProfileId||undefined,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone})});setJobId(result.id);reloadJob();refresh();}
     catch(e){setError(errorMessage(e));}finally{setBusy(false);}
   }
   function open(id:string){setCreatedMemoryId(undefined);setCorrecting(false);setError('');setConfirmDelete(false);setSelectedId(id);}
@@ -66,9 +69,10 @@ export function Memories({api,range,onOpen,refreshVersion=0,embedded=false,onCha
   const evidence:MemoryEvidence[]=detail?.evidence?.length?detail.evidence:(detail?.evidenceIds??[]).map(id=>({id,capturedAt:detail!.createdAt,receivedAt:detail!.createdAt,contentHash:''}));
   return <section className="memories-page"><div className="page-heading split-heading"><div><div className="eyebrow">{moteText("有依据，才值得记住")}</div><Heading>{moteText("记忆")}</Heading><p>{moteText("记忆通过自动审核和证据校验后直接生效，辅助问答。你可以随时查看来源、纠正或删除。")}</p></div><button className="button primary" disabled={busy||job?.status==='running'||job?.status==='queued'} onClick={()=>void extract()}>{busy?<LoaderCircle size={16} className="spin"/>:<Sparkles size={16}/>}{moteText("提取当前范围的记忆")}</button></div>
     <ModelSelector api={api} feature="memory" value={modelProfileId} onChange={setModelProfileId} disabled={busy||job?.status==='running'||job?.status==='queued'}/>
+    <ManualMemoryRecipes api={api} value={recipes} onChange={setRecipes} disabled={busy}/>
     {error&&<div className="error-banner" role="alert">{error}</div>}{jobError&&<div className="error-banner" role="alert">{moteText("记忆进度暂时无法更新：")}{jobError}</div>}
     <ExecutionQueueOverview api={api}/>
-    {job&&<MemoryProgress job={job} onAction={action=>void control(action)} onRetry={()=>void retry()} busy={busy}/>}
+    {job&&<MemoryProgress job={job} onAction={action=>void control(action)} onRetry={()=>void retry()} onView={()=>open(job.memoryIds[0])} onOpen={onOpen} busy={busy}/>}
     {jobs.length>0&&<details className="memory-job-history"><summary>{moteText("整理任务与排队（")}{jobs.length}）</summary><div className="evidence-buttons">{jobs.map(item=><button className="button subtle" key={item.id} onClick={()=>setJobId(item.id)}>{item.importJobId?.startsWith('lifecycle:')?moteText('自动整理'):moteText('手动整理')} · {memoryJobLabels[item.status]} · {item.completedBatches}/{item.totalBatches} · {dateTime(item.createdAt)} · {item.memoryIds.length}{' '}{moteText("条记忆")}</button>)}</div></details>}
     <form className="memory-search" onSubmit={e=>{e.preventDefault();setQuery(search);setCursor(undefined);}}><label>{moteText("检索记忆")}<input aria-label={moteText("检索记忆")} value={search} onChange={e=>setSearch(e.target.value)} placeholder={moteText("搜索中文或英文原文")} maxLength={500}/></label><label>{moteText("内容分类")}<select aria-label={moteText("内容分类")} value={layer} onChange={e=>{setLayer(e.target.value);setCursor(undefined);}}><option value="memory">{moteText("精选记忆")}</option><option value="observation">{moteText("事件与资料")}</option><option value="legacy">{moteText("旧版未审核")}</option><option value="">{moteText("全部")}</option></select></label><label>{moteText("记忆层级")}<select value={tier} onChange={e=>{setTier(e.target.value);setCursor(undefined);}}><option value="">{moteText("全部层级")}</option><option value="episode">{moteText("初次提取")}</option><option value="consolidated">{moteText("整合产物")}</option></select></label><button className="button subtle" type="submit">{moteText("搜索")}</button></form>
     <div className="memory-search"><label><input type="checkbox" checked={history} onChange={e=>setHistory(e.target.checked)}/>{moteText("包括已替代和过期的历史记忆")}</label><label>{moteText("查看当时有效的记忆")}<input type="datetime-local" value={asOf} disabled={history} onChange={e=>setAsOf(e.target.value)}/></label>{asOf&&<button className="button subtle" onClick={()=>setAsOf('')}>{moteText("回到当前")}</button>}</div>

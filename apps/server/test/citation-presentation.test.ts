@@ -1,0 +1,33 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {buildApp} from '../src/app.js';
+import type {Config} from '../src/config.js';
+import {materialId} from '../src/materials.js';
+
+test('only built-in source-item Material serialization receives citation display metadata; originals stay literal',async t=>{
+  const directory=mkdtempSync(join(tmpdir(),'mote-citation-presentation-'));
+  const config:Config={dataDir:directory,token:'generated-citation-token',tokenPath:'fixture',host:'127.0.0.1',port:0,maxStorageBytes:10000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'',modelBaseUrl:'',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:''};
+  const node=await buildApp(config,{backgroundWorker:false,agent:{configured:false,query:async()=>{throw Error('No model in this fixture');},close:async()=>{}}});
+  t.after(async()=>{await node.app.close();rmSync(directory,{recursive:true,force:true});});
+  node.sources.register({id:'generated-citation',name:'Generated citation source',kind:'custom',deviceId:'generated',platform:'import',retention:'archive'});
+  const text='生成引句 "quoted"\n😀，原始 JSON 看起来像 {"text":"正文"}。';
+  const input=await node.sources.upsert('generated-citation',{externalId:'one',revision:'1',observedAt:'2026-09-27T00:00:00Z',kind:'message',layer:'original',text,document:{recordedAt:'2026-08-09T17:20:00+08:00',contentRole:'authored'}});
+  for(let i=0;i<10;i++)if(await node.materialOrganizer.tick(100)===0)break;
+  const material=node.materials.get(materialId('generated-citation','one'))!;
+  const reader=node.featureServices.evidenceReader,ids=node.materials.evidenceIds(material.ref);
+  assert.equal(ids.length,1);
+  const records=reader.context(reader.evidence(ids));
+  assert.equal(records[0].evidencePresentation,'source-record-json-v1');
+  assert.equal(records[0].ocrText,node.materials.block(material.ref,0)!.block.text);
+  assert.equal(JSON.parse(records[0].ocrText).text,text);
+  assert.equal(reader.context(node.store.evidence([input.id]))[0].evidencePresentation,undefined);
+  const clone={...records[0],ocrText:JSON.stringify({text:'pretend wrapper'})};
+  assert.equal(reader.context([clone])[0].evidencePresentation,undefined,'Caller-supplied marker cannot survive a host recheck');
+  node.store.db.prepare("UPDATE material_organizer_groups SET organizer_id='custom.fixture' WHERE material_id=?").run(material.id);
+  const custom=reader.context(reader.evidence(ids));
+  assert.equal(custom[0].evidencePresentation,undefined);
+  assert.equal(custom[0].ocrText,records[0].ocrText);
+});
