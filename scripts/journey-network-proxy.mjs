@@ -36,13 +36,14 @@ async function writeJson(path, value) {
   await rename(temporary, path);
 }
 export async function command(control, action) {
-  if (!['arm', 'recover'].includes(action)) throw new Error('Expected arm or recover.');
+  if (!['arm', 'recover', 'offline'].includes(action)) throw new Error('Expected arm, recover or offline.');
   await privateDirectory(control);
   await writeJson(control, { id: randomUUID(), action });
 }
-export async function startProxy({ upstream, port = 0, control, timeoutMs = 30_000, maxBytes = 32 * 1024 * 1024, maxConcurrent = 32 }) {
+export async function startProxy({ upstream, port = 0, control, timeoutMs = 30_000, maxBytes = 32 * 1024 * 1024, maxConcurrent = 32, sourceBatchAck = false }) {
   const target = new URL(upstream);
   if (target.protocol !== 'http:' || !['127.0.0.1', '[::1]'].includes(target.hostname) || target.username || target.password || target.pathname !== '/' || target.search || target.hash) throw new Error('Upstream must be an explicit loopback HTTP origin.');
+  if (typeof sourceBatchAck !== 'boolean') throw new Error('Invalid source batch ACK option.');
   if (!Number.isInteger(port) || port < 0 || port > 65535 || !Number.isSafeInteger(maxBytes) || maxBytes < 1 || !Number.isInteger(timeoutMs) || timeoutMs < 1 || !Number.isInteger(maxConcurrent) || maxConcurrent < 1) throw new Error('Invalid bounds.');
   await privateDirectory(control);
   const statePath = `${control}.state.json`;
@@ -54,9 +55,9 @@ export async function startProxy({ upstream, port = 0, control, timeoutMs = 30_0
   async function refresh() {
     const request = await readJson(control, null);
     if (!request || request.id === state.commandId) return;
-    if (typeof request.id !== 'string' || !['arm', 'recover'].includes(request.action)) throw new Error('Invalid proxy command.');
+    if (typeof request.id !== 'string' || !['arm', 'recover', 'offline'].includes(request.action)) throw new Error('Invalid proxy command.');
     // Arming does not silently bring an offline transport back online.
-    state = { commandId: request.id, mode: request.action === 'recover' ? 'online' : state.mode === 'offline' ? 'offline' : 'armed' };
+    state = { commandId: request.id, appliedAt: new Date().toISOString(), mode: request.action === 'offline' ? 'offline' : request.action === 'recover' ? 'online' : state.mode === 'offline' ? 'offline' : 'armed' };
     await writeJson(statePath, state);
   }
   const sockets = new Set();
@@ -87,7 +88,7 @@ export async function startProxy({ upstream, port = 0, control, timeoutMs = 30_0
       const pathname = new URL(request.url, 'http://127.0.0.1').pathname;
       const mode = await locked(async () => {
         await refresh();
-        if (state.mode === 'armed' && !candidate && request.method === 'POST' && TARGETS.has(pathname)) candidate = ownsCandidate = true;
+        if (state.mode === 'armed' && !candidate && request.method === 'POST' && (TARGETS.has(pathname) || (sourceBatchAck && /^\/api\/sources\/[^/]+\/items\/batch$/.test(pathname)))) candidate = ownsCandidate = true;
         return state.mode;
       });
       if (mode === 'offline' || settled) { fail(); return; }
@@ -155,11 +156,11 @@ export async function startProxy({ upstream, port = 0, control, timeoutMs = 30_0
 }
 async function main() {
   const args = process.argv.slice(2);
-  const action = ['arm', 'recover'].includes(args[0]) ? args.shift() : 'serve';
+  const action = ['arm', 'recover', 'offline'].includes(args[0]) ? args.shift() : 'serve';
   const options = {};
   while (args.length) {
     const key = args.shift();
-    if (!['--control', '--upstream', '--port'].includes(key) || !args.length) throw new Error('Usage: journey-network-proxy.mjs [arm|recover] --control /private/path/control.json [--upstream http://127.0.0.1:PORT --port PORT]');
+    if (!['--control', '--upstream', '--port'].includes(key) || !args.length) throw new Error('Usage: journey-network-proxy.mjs [arm|recover|offline] --control /private/path/control.json [--upstream http://127.0.0.1:PORT --port PORT]');
     options[key.slice(2)] = args.shift();
   }
   if (!options.control) throw new Error('--control is required.');

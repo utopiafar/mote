@@ -1,14 +1,18 @@
 require('./fixture-language.cjs');
 /** Real full application during generated ingress. Default preserves the legacy 20→631 profile. */
 const {app,BrowserWindow}=require('electron');
-const {mkdtempSync,mkdirSync,writeFileSync,readFileSync,existsSync,rmSync,statSync}=require('node:fs');
+const {mkdtempSync,mkdirSync,appendFileSync,writeFileSync,readFileSync,existsSync,rmSync,statSync}=require('node:fs');
 const {tmpdir,release,arch,platform}=require('node:os');
 const {join,resolve,relative}=require('node:path');
 const {spawn,execFileSync}=require('node:child_process');
 const {randomBytes}=require('node:crypto');
 const assert=require('node:assert/strict');
 const {makeFixture,sha}=require('./material-load-fixture.cjs');
+const {startArrivals}=require('./material-load-arrivals.cjs');
 const repo=resolve(__dirname,'..'),profile=process.env.MOTE_MATERIAL_UI_PROFILE||'legacy-631',interactive=profile==='interactive-400';
+const independent=process.env.MOTE_MATERIAL_UI_ARRIVALS==='independent';
+assert.ok(!process.env.MOTE_MATERIAL_UI_ARRIVALS||independent,'Unknown arrival mode');
+assert.ok(!independent||interactive,'Independent arrivals require interactive-400');
 const fixture=makeFixture(profile),root=mkdtempSync(join(tmpdir(),'mote-material-ui-'));
 const outputRoot=resolve(process.env.MOTE_MATERIAL_UI_OUTPUT||join(repo,'.mote/material-load-ui'));
 if(interactive)assert.ok(relative(repo,outputRoot).startsWith('..'),'Interactive reports must be outside the repository');
@@ -20,7 +24,7 @@ writeFileSync(join(out,'fixture.json'),fixtureJson,{mode:0o600});
 app.setPath('userData',join(root,'browser'));app.on('window-all-closed',()=>{});
 const report={status:'running',profile,fixtureRoot:root,scope:'Full production Web app and loopback server in Electron, generated sources and controlled processing stub',personalDataUsed:false,modelInvoked:false,physicalDevicesTested:false,actualElectronRenderer:true,initialRecords:fixture.initial,targetRecords:fixture.total,fixtureSha256:sha(fixtureJson),actions:[],requests:[],backgroundWrites:[],checks:[],screenshots:[],crashes:[],httpErrors:[],consoleErrors:[],blockedRequests:[],startedAt:new Date().toISOString(),environment:{platform:platform(),release:release(),arch:arch(),versions:process.versions,concurrentSystemLoad:process.env.MOTE_MATERIAL_UI_CONCURRENT_LOAD||'Not controlled; other system activity is unknown'}};
 const save=()=>writeFileSync(join(out,'report.json'),JSON.stringify(report,null,2)+'\n',{mode:0o600});
-const delay=ms=>new Promise(r=>setTimeout(r,ms));let server,window,deadline;
+const delay=ms=>new Promise(r=>setTimeout(r,ms));let server,window,deadline,arrivalRun,producerProxy,drainTimer,outageTimer,recoveryTimer;
 function check(name,value){assert.ok(value,name);report.checks.push(name);}
 async function until(work,label,timeout=25000){const started=Date.now();while(Date.now()-started<timeout){if(await work())return;await delay(50);}throw Error('Timeout: '+label);}
 const js=code=>window.webContents.executeJavaScript(code);
@@ -71,7 +75,7 @@ async function beginMetrics(label){await js(`(()=>{window.uiMetrics={label:${JSO
 async function endMetrics(){const value=await js(`(()=>{const m=window.uiMetrics;m.running=false;m.observer.disconnect();return {label:m.label,start:m.start,end:Date.now(),sampleCount:m.frames.length,maxGapMs:Math.max(0,...m.frames),over50ms:m.frames.filter(n=>n>50).length,frames:m.frames,longTasks:m.longTasks};})()`);report.frameWindows??=[];report.frameWindows.push(value);check('frame sampling active: '+value.label,value.sampleCount>10);}
 async function run(){
  report.gitHead=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim();report.gitStatus=execFileSync('git',['status','--short'],{cwd:repo,encoding:'utf8'}).trim();
- report.code=Object.fromEntries(['scripts/test-material-load-ui.cjs','scripts/material-load-fixture.cjs','scripts/material-load-fixture-server.mjs','apps/server/dist/app.js','apps/server/dist/material-organizers.js','apps/web/dist/index.html','packages/agent/dist/index.js','packages/shared/dist/index.js'].map(p=>[p,{sha256:sha(readFileSync(join(repo,p))),mtime:statSync(join(repo,p)).mtime.toISOString()}]));save();
+ report.code=Object.fromEntries(['scripts/test-material-load-ui.cjs','scripts/material-load-fixture.cjs','scripts/material-load-arrivals.cjs','scripts/journey-network-proxy.mjs','scripts/material-load-fixture-server.mjs','apps/server/dist/app.js','apps/server/dist/material-organizers.js','apps/web/dist/index.html','packages/agent/dist/index.js','packages/shared/dist/index.js'].map(p=>[p,{sha256:sha(readFileSync(join(repo,p))),mtime:statSync(join(repo,p)).mtime.toISOString()}]));save();
  await app.whenReady();const token=randomBytes(32).toString('hex'),ready=join(root,'ready.json'),configPath=join(root,'server-config.json');
  const config={dataDir:join(root,'vault'),token,tokenPath:join(root,'token'),host:'127.0.0.1',port:0,maxStorageBytes:150000000,maxExportBytes:1000000,retentionDays:0,insightIntervalHours:0,allowedOrigins:[],model:'fixture',modelProvider:'custom',modelProtocol:'openai-completions',modelBaseUrl:'http://127.0.0.1:1/v1',apiKey:'',allowUnauthenticatedLocal:false,embeddingModel:'',embeddingBaseUrl:'',embeddingApiKey:'',logLevel:'silent',diagnosticsEnabled:false};
  writeFileSync(configPath,JSON.stringify({config,fixturePath,ready}),{mode:0o600});
@@ -110,14 +114,69 @@ async function run(){
   await screenshot('waiting-desktop','.memory-progress');window.setSize(430,1000);await screenshot('waiting-mobile','.memory-progress');window.setSize(1280,1000);await click('查看记忆',"document.querySelector('.memory-progress')");await until(()=>js(`document.querySelector('.memory-detail .status-label')?.textContent==='已生效'`),'active saved body Memory');check('completed result is immediately readable',await js(`document.querySelector('.memory-detail')?.textContent.includes('written checklists')`));
   const citationRecord=fixture.records.find(r=>r.long);const citation=await request('/api/fixture/conversation',{index:citationRecord.index});
   await materials();await beginMetrics('ingress-interactive');const firstIncremental=report.backgroundWrites.length;
+  if(independent){
+   const {startProxy,command}=await import('./journey-network-proxy.mjs');
+   const control=join(root,'producer-proxy','control.json');producerProxy=await startProxy({upstream:endpoint,control,timeoutMs:5000});
+   report.arrivalMode='independent';report.generatedScope='Generated text source protocol load only; no image/audio decoding or native capture';
+   let drainActive=false,drainFailure;
+   drainTimer=setInterval(()=>{if(drainActive)return;drainActive=true;request('/api/fixture/drain',{}).then(state=>{report.backlogSamples.push({at:Date.now(),pending:arrivalRun?.snapshot().pending??0,published:state.count,tick:state.ticks.at(-1)});}).catch(e=>{drainFailure=e;}).finally(()=>{drainActive=false;});},2000);
+   const uiScheduleStart=performance.now();report.arrivalsStartWall=Date.now();report.backlogSamples=[];
+   arrivalRun=startArrivals({records:fixture.records.slice(fixture.initialIngress),ledgerPath:join(out,'arrivals.jsonl'),send:async(sourceId,items)=>{
+    const entry={start:Date.now(),requests:[],accepted:false};
+    try{const r=await fetch(producerProxy.url+'/api/sources/'+sourceId+'/items/batch',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json','x-mote-ingress-version':'2'},body:JSON.stringify({items}),signal:AbortSignal.timeout(6000)});if(!r.ok){const error=Error('Producer HTTP '+r.status);error.fatal=r.status<500;throw error;}const result=await r.json();entry.accepted=true;return result;}
+    finally{if(existsSync(producerProxy.statePath)){const state=JSON.parse(readFileSync(producerProxy.statePath,'utf8'));if(state.mode==='offline'&&!report.producerOutage.firstOfflineObservedAt){report.producerOutage.firstOfflineObservedAt=Date.now();report.producerOutage.offlineAppliedAt=state.appliedAt;}if(state.mode==='online'&&report.producerOutage.firstOfflineObservedAt&&!report.producerOutage.firstRecoveredObservedAt){report.producerOutage.firstRecoveredObservedAt=Date.now();report.producerOutage.recoverAppliedAt=state.appliedAt;}}entry.end=Date.now();entry.requests.push({sourceId,start:entry.start,end:entry.end,accepted:entry.accepted});report.backgroundWrites.push(entry);}
+   }});
+   report.producerOutage={plannedStartMs:20000,plannedEndMs:35000,scope:'producer proxy only; renderer and controlled drain direct'};
+   outageTimer=setTimeout(()=>{command(control,'offline').then(()=>{report.producerOutage.offlineCommandWrittenAt=Date.now();}).catch(e=>{drainFailure=e;});},20000);
+   recoveryTimer=setTimeout(()=>{command(control,'recover').then(()=>{report.producerOutage.recoverCommandWrittenAt=Date.now();}).catch(e=>{drainFailure=e;});},35000);
+   report.uiRoundSchedule=[0,15000,30000,36000].map(plannedMs=>({plannedMs}));
+   for(let round=0;round<4;round++){
+    const slot=report.uiRoundSchedule[round],target=uiScheduleStart+slot.plannedMs;
+    slot.waitStartedAt=Date.now();await delay(Math.max(0,target-performance.now()));slot.startedAt=Date.now();slot.waitMs=slot.startedAt-slot.waitStartedAt;slot.latenessMs=Math.max(0,performance.now()-target);
+    // Waiting is outside measure(): action latency does not include scheduled idle time.
+    if(drainFailure)throw drainFailure;
+    await measure('ingress','next-page',nextPage);await firstPage();const record=await measure('ingress','open-long',openLong);await measure('ingress','wheel',()=>wheel('ingress'));await measure('ingress','read-long',()=>readLong(record));await measure('ingress','original',()=>originalFromBody(record));
+    if(round===0){await measure('ingress','save-generated-note',async()=>{
+     const text='GENERATED LOAD FOREGROUND NOTE\nSeparate from the fixed 400 source materials.';
+     await js("location.hash='/notes'");await until(()=>js("!!document.querySelector('#note-text')"),'Notes input');
+     await js(`(()=>{const e=document.querySelector('#note-text');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,${JSON.stringify(text)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+     await click('保存并同步');await until(()=>js(`document.body.innerText.includes('随手记已同步到你的中央节点。')`),'foreground note synchronized');report.frontendNote={textSha256:sha(text),savedAt:Date.now(),additionalToPlanned400:true};await materials();
+    });}
+    slot.endedAt=Date.now();
+   }
+   report.arrivals=await arrivalRun.done;if(drainFailure)throw drainFailure;
+   const offlineStart=Date.parse(report.producerOutage.offlineAppliedAt),recovered=Date.parse(report.producerOutage.recoverAppliedAt);
+   report.offlineOverlappingActions=report.actions.filter(a=>a.phase==='ingress'&&a.start<recovered&&a.end>offlineStart).map(a=>({name:a.name,start:a.start,end:a.end}));
+   const recoveryWork=report.backlogSamples.filter(s=>s.at>=recovered&&s.pending>0&&s.tick?.afterCount>s.tick?.beforeCount).map(s=>s.tick);
+   report.recoveryBacklogOverlappingActions=report.actions.filter(a=>a.phase==='ingress'&&recoveryWork.some(t=>a.start<t.end&&a.end>t.start)).map(a=>({name:a.name,start:a.start,end:a.end}));
+   check('foreground action overlaps observed producer offline interval',report.offlineOverlappingActions.length>0);
+   check('foreground action overlaps post-recovery publication while backlog remains',report.recoveryBacklogOverlappingActions.length>0);
+
+   const ledger=readFileSync(join(out,'arrivals.jsonl'),'utf8').trim().split('\n').map(JSON.parse),enqueued=new Map(ledger.filter(e=>e.event==='enqueued').map(e=>[e.key,e]));
+   const distribution=values=>{values.sort((a,b)=>a-b);return {count:values.length,p50:values[Math.floor((values.length-1)*.5)],p95:values[Math.floor((values.length-1)*.95)],max:values.at(-1)};};
+   report.arrivals.latenessMs=distribution([...enqueued.values()].map(e=>e.latenessMs));report.arrivals.ackLatencyMs=distribution(ledger.filter(e=>e.event==='acknowledged').map(e=>e.elapsedMs-enqueued.get(e.key).plannedMs));
+   report.arrivals.plannedDuringOutage=[...enqueued.values()].filter(e=>e.plannedMs>=20000&&e.plannedMs<35000).length;assert.equal(report.arrivals.plannedDuringOutage,60);check('producer outage observed and recovered with at least 60 queued arrivals',!!report.producerOutage.firstOfflineObservedAt&&!!report.producerOutage.firstRecoveredObservedAt&&report.arrivals.peakPending>=60);
+
+   clearInterval(drainTimer);await until(()=>!drainActive,'controlled drain finishes');
+   await until(async()=>{const s=await request('/api/fixture/drain',{});return s.count===401;},'independent terminal publication');
+   const terminal=await request('/api/fixture/state');const expected=fixture.records.slice(fixture.initialIngress).map(r=>r.materialId);
+   assert.deepEqual(terminal.catalog.filter(r=>expected.includes(r.id)).map(r=>r.id).sort(),expected.sort());
+   const initialById=new Map(initial.catalog.map(r=>[r.id,r]));assert.deepEqual(terminal.catalog.filter(r=>initialById.has(r.id)).sort((a,b)=>a.id.localeCompare(b.id)),[...initialById.values()].sort((a,b)=>a.id.localeCompare(b.id)));
+   report.frontendNote.materials=terminal.catalog.filter(r=>!initialById.has(r.id)&&!expected.includes(r.id));assert.equal(report.frontendNote.materials.length,1);
+   report.arrivalTerminals=terminal.catalog.filter(r=>expected.includes(r.id)).map(r=>({id:r.id,revision:r.revision,observedAt:Date.now()}));
+   for(const entry of report.arrivalTerminals)appendFileSync(join(out,'arrivals.jsonl'),JSON.stringify({event:'terminal_material',...entry})+'\n');
+   check('240 unique planned inputs acknowledged and published with initial 160 unchanged',report.arrivals.uniqueAcknowledged===240&&arrivalRun.snapshot().pending===0);
+  }else{
   for(let round=0;round<4;round++){
    // Three paced, real ingress batches run beside each complete UI journey. No synthetic busy loop.
    const producer=(async()=>{for(let k=0;k<3;k++){const at=Date.now(),start=fixture.initialIngress+(round*3+k)*20;await batch(start,start+20);await delay(Math.max(0,500-(Date.now()-at)));}})();producer.catch(()=>{});
    await measure('ingress','next-page',nextPage);await firstPage();const record=await measure('ingress','open-long',openLong);await measure('ingress','wheel',()=>wheel('ingress'));await measure('ingress','read-long',()=>readLong(record));await measure('ingress','original',()=>originalFromBody(record));await producer;
   }
-  await endMetrics();const state=await request('/api/fixture/state');assert.equal(state.count,400);assert.equal(state.jobs.find(j=>j.id===job.id).status,'waiting_for_input');
-  const intervals=report.backgroundWrites.slice(firstIncremental).flatMap(b=>[...b.requests,...state.ticks.filter(t=>t.start>=b.start&&t.end<=b.end&&t.afterCount>t.beforeCount)]);
+  }
+  await endMetrics();const state=await request('/api/fixture/state');assert.equal(state.count,independent?401:400);assert.equal(state.jobs.find(j=>j.id===job.id).status,'waiting_for_input');
+  const intervals=independent?[...report.backgroundWrites.slice(firstIncremental).filter(b=>b.accepted).flatMap(b=>b.requests),...state.ticks.filter(t=>t.start>=report.arrivals.wallStart&&t.afterCount>t.beforeCount)]:report.backgroundWrites.slice(firstIncremental).flatMap(b=>[...b.requests,...state.ticks.filter(t=>t.start>=b.start&&t.end<=b.end&&t.afterCount>t.beforeCount)]);
   for(const action of report.actions.filter(a=>a.phase==='ingress'))action.actualWorkOverlap=intervals.filter(b=>action.start<b.end&&action.end>b.start).map(b=>({start:b.start,end:b.end,sourceId:b.sourceId??'publication'}));
+  report.actualWorkOverlapMeaning='Successful receipt HTTP intervals or publication-changing drain intervals; not instantaneous CPU execution';
   report.actionsDuringActualWork=report.actions.filter(a=>a.phase==='ingress'&&a.actualWorkOverlap.length).length;check('at least three actions overlap actual ingress or publication',report.actionsDuringActualWork>=3);
   await rateWindowBreak('after-ingress-before-cancel');await citationJourney(citation,citationRecord,'400');
   await js("location.hash='/library/memories'");await allHistory();await until(()=>js(`document.querySelector('.memory-progress')?.textContent.includes('等待资料处理')`),'waiting after navigation');
@@ -129,14 +188,14 @@ async function run(){
   await js('location.reload()');await allHistory();await until(()=>js(`!!document.querySelector('.memory-job-history')`),'job history after reload');await js(`document.querySelector('.memory-job-history').open=true`);await until(()=>js(`(()=>{const b=[...document.querySelectorAll('.memory-job-history button')].find(b=>b.textContent.includes('记忆提取已停止'));if(!b)return false;b.click();return true;})()`),'select cancelled job history');await until(()=>js(`document.querySelector('.memory-progress')?.textContent.includes('记忆提取已停止')`),'cancelled persists after reload');await click('查看记忆',"document.querySelector('.memory-progress')");await until(()=>js(`document.querySelector('.memory-detail .status-label')?.textContent==='已生效'`),'saved result remains after cancel and reload');
   await rateWindowBreak('after-cancel-before-400');await materials();await click('刷新',"document.querySelector('.materials-browser')");await until(async()=> (await listTitles()).length===12,'400 refreshed first page');
   await beginMetrics('400-interactive');for(let i=0;i<3;i++){await measure('400','next-page',nextPage);await firstPage();const record=await measure('400','open-long',openLong);await measure('400','read-long',()=>readLong(record,i===0));if(i===0)await measure('400','wheel',()=>wheel('400'));}await endMetrics();
-  await firstPage();const all=[];let pages=0;for(;;){const titles=await listTitles();assert.equal(titles.length,pages===33?4:12);all.push(...titles);pages++;if(!await js(`[...${listScope}.querySelectorAll('button')].some(b=>b.textContent==='下一页')`))break;await measure('400-enumeration','next-page',nextPage);assert.ok(pages<35,'Pagination terminates');}
-  assert.equal(pages,34);assert.equal(new Set(all).size,400);assert.deepEqual([...all].sort(),[...fixture.records.map(r=>r.title),fixture.control.title].sort());report.enumeratedTitles=all;check('all 400 Materials enumerated exactly across 34 bounded UI pages',true);
+  await firstPage();const all=[];let pages=0;for(;;){const titles=await listTitles();assert.equal(titles.length,pages===33?(independent?5:4):12);all.push(...titles);pages++;if(!await js(`[...${listScope}.querySelectorAll('button')].some(b=>b.textContent==='下一页')`))break;await measure('400-enumeration','next-page',nextPage);assert.ok(pages<35,'Pagination terminates');}
+  assert.equal(pages,34);assert.equal(new Set(all).size,independent?401:400);assert.deepEqual([...all].sort(),[...fixture.records.map(r=>r.title),fixture.control.title,...(independent?report.frontendNote.materials.map(r=>r.title):[])].sort());report.enumeratedTitles=all;check(independent?'all 400 load Materials plus 1 foreground Note enumerated across 34 bounded UI pages':'all 400 Materials enumerated exactly across 34 bounded UI pages',true);
   const lists=report.requests.filter(r=>r.origin==='renderer'&&r.path.startsWith('/api/materials?'));check('renderer list requests explicitly bounded at 12',lists.length>0&&lists.every(r=>new URLSearchParams(r.path.split('?')[1]).get('limit')==='12'));
   await firstPage();await openLong();await screenshot('400-long-desktop','.material-detail');window.setSize(430,1000);await screenshot('400-long-mobile','.material-detail');await citationJourney(citation,citationRecord,'mobile');window.setSize(1280,1000);
   await beginMetrics('400-idle');await delay(1000);await endMetrics();
   report.stubCalls=(await request('/api/fixture/state')).calls;check('stub calls bounded and no transcript run',report.stubCalls.length<=4&&report.stubCalls.every(c=>c.recipe==='fixture.body-memory'));
  }
- const final=await request('/api/fixture/state');report.publishedRecords=final.count;report.peakServerRssBytes=final.peakRss;report.finalState=final;assert.equal(final.count,fixture.total);
+ const final=await request('/api/fixture/state');report.publishedRecords=final.count;report.peakServerRssBytes=final.peakRss;report.serverCpuUsageMicroseconds=final.cpuUsage;report.finalState=final;assert.equal(final.count,fixture.total+(independent?1:0));
  for(const name of ['crashes','httpErrors','consoleErrors','blockedRequests'])assert.deepEqual(report[name],[],name);
  report.timingSummary=Object.fromEntries([...new Set(report.actions.map(a=>a.phase+':'+a.name))].map(key=>{const values=report.actions.filter(a=>a.phase+':'+a.name===key).map(a=>a.durationMs).sort((a,b)=>a-b);return [key,{samples:values.length,medianMs:(values[Math.floor((values.length-1)/2)]+values[Math.floor(values.length/2)])/2,maxMs:values.at(-1)}];}));
  report.status='passed';
@@ -146,4 +205,4 @@ async function run(){
  }
 }
 deadline=setTimeout(()=>{report.failure='Frozen ten-minute run deadline exceeded';report.status='failed';save();server?.kill('SIGTERM');window?.destroy();app.exit(1);},fixture.expectations.runTimeoutMs);
-run().catch(async error=>{report.status='failed';report.failure=error.stack;process.exitCode=1;if(window&&!window.isDestroyed()){writeFileSync(join(out,'failure.png'),(await window.webContents.capturePage()).toPNG());writeFileSync(join(out,'failure-dom.txt'),await js('document.body.innerText'));}}).finally(async()=>{clearTimeout(deadline);report.endedAt=new Date().toISOString();save();console.log(JSON.stringify({status:report.status,report:join(out,'report.json'),failure:report.failure}));window?.destroy();if(server?.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('close',r)),delay(3000)]);if(server.exitCode===null)server.kill('SIGKILL');}if(report.status==='passed')rmSync(root,{recursive:true,force:true});app.exit(process.exitCode||0);});
+run().catch(async error=>{report.status='failed';report.failure=error.stack;process.exitCode=1;if(window&&!window.isDestroyed()){writeFileSync(join(out,'failure.png'),(await window.webContents.capturePage()).toPNG());writeFileSync(join(out,'failure-dom.txt'),await js('document.body.innerText'));}}).finally(async()=>{clearTimeout(deadline);clearInterval(drainTimer);clearTimeout(outageTimer);clearTimeout(recoveryTimer);arrivalRun?.stop();await producerProxy?.close();await arrivalRun?.settled();report.endedAt=new Date().toISOString();save();console.log(JSON.stringify({status:report.status,report:join(out,'report.json'),failure:report.failure}));window?.destroy();if(server?.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('close',r)),delay(3000)]);if(server.exitCode===null)server.kill('SIGKILL');}if(report.status==='passed')rmSync(root,{recursive:true,force:true});app.exit(process.exitCode||0);});

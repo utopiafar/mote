@@ -34,7 +34,7 @@ if(interactive){
  await node.materialOrganizer.tick(200);
 }
 const catalog=()=>node.store.db.prepare('SELECT id FROM material_heads WHERE retired=0').all().map(row=>{const m=node.materials.get(row.id);return {id:m.id,ref:m.ref,title:m.title,kind:m.kind,revision:m.revision};});
-const state=()=>({count:catalog().length,catalog:catalog(),peakRss,calls,ticks,jobs:node.memoryPipeline.list().map(job=>({...node.memoryPipeline.get(job.id),operation:node.store.db.prepare('SELECT state FROM operation_progress WHERE id=?').get('memory:'+job.id)})),control:interactive?{recordId:controlRecord.id,material:node.materials.get(fixture.control.materialId)}:undefined});
+const state=()=>({count:catalog().length,catalog:catalog(),peakRss,cpuUsage:process.cpuUsage(),calls,ticks,jobs:node.memoryPipeline.list().map(job=>({...node.memoryPipeline.get(job.id),operation:node.store.db.prepare('SELECT state FROM operation_progress WHERE id=?').get('memory:'+job.id)})),control:interactive?{recordId:controlRecord.id,material:node.materials.get(fixture.control.materialId)}:undefined});
 node.app.post('/api/fixture/configure',async()=>node.sourcePipelines.configure('generated-load',{settleSeconds:0,memory:false}));
 node.app.post('/api/fixture/drain',async()=>{const start=Date.now(),beforeCount=catalog().length;await node.sourcePipelines.tick(100);await node.materialOrganizer.tick(200);ticks.push({start,end:Date.now(),beforeCount,afterCount:catalog().length});return state();});
 node.app.get('/api/fixture/state',async()=>state());
