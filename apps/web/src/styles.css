@@ -4025,3 +4025,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .evidence-source-actions:empty {display:none}
 .evidence-source-actions>.button {white-space:normal;max-width:100%;text-align:left;box-sizing:border-box;overflow-wrap:anywhere}
 .evidence-text>.eyebrow {display:block}
+.memory-job-history .evidence-buttons>.button {white-space:normal;max-width:100%;overflow-wrap:anywhere;text-align:left}
+.memory-detail>.section-heading {flex-wrap:wrap}
+.memory-detail>.section-heading>div,.evidence-heading>div {flex:1;min-width:0;overflow-wrap:anywhere}
+.evidence-heading>.icon-button {flex-shrink:0}

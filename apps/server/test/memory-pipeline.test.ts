@@ -21,6 +21,21 @@ function fixture(t:TestContext){
 const item=(externalId='a',text='合成原文：我计划学习 TypeScript，尚未开始。',revision='1',observedAt='2026-09-15T01:00:00Z')=>({externalId,text,revision,observedAt,title:'Generated record',kind:'file',layer:'original'});
 const result=(id:string,quote?:{offset:number;quote:string})=>({answer:JSON.stringify({memories:[{title:'合成候选',statement:`尚未开始的计划 [${id}]`,uncertainty:'没有完成证据',evidenceIds:[id],...(quote?{evidence:[{id,...quote}]}:{})}]}),citations:[{id,capturedAt:'2026-09-15T01:00:00Z',appName:'Generated',excerpt:'合成'}],trace:[],runId:'generated-run'});
 const empty=()=>({answer:'{"memories":[]}',citations:[],trace:[],runId:'generated-empty'});
+test('job summaries count distinct surviving batch memories without exposing their IDs',async t=>{
+ const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item());
+ const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>result(record.id)});t.after(()=>pipeline.close());
+ const completed=await pipeline.run(pipeline.create({evidenceIds:[record.id]}).id),id=completed.memoryIds[0];
+ assert.ok(id);const summary=()=>pipeline.list().find(job=>job.id===completed.id)!;
+ assert.deepEqual(summary().evidenceIds,[]);assert.deepEqual(summary().memoryIds,[]);
+ assert.equal(summary().memoryCount,1);assert.equal(pipeline.get(completed.id).memoryCount,1);
+ const row=store.db.prepare('SELECT json FROM memory_batches WHERE id=?').get(completed.batches[0].id)!,batch=JSON.parse(String(row.json));
+ batch.memoryIds=[id,id,'00000000-0000-4000-8000-000000000000'];
+ store.db.prepare('UPDATE memory_batches SET json=? WHERE id=?').run(JSON.stringify(batch),batch.id);
+ assert.equal(summary().memoryCount,1,'duplicates and missing memories do not inflate the summary');
+ assert.equal(summary().memoryCount,pipeline.get(completed.id).memoryIds.length);
+ memories.delete(id);
+ assert.equal(summary().memoryCount,0);assert.equal(pipeline.get(completed.id).memoryCount,0);
+});
 test('model deadlines remain typed and retryable without committing a checkpoint',async t=>{
  const {store,sources,memories}=fixture(t),record=await sources.upsert('generated',item());let calls=0;
  const pipeline=new MemoryPipeline({store,memories,model:()=> 'fixture',configured:()=>true,query:async()=>{if(++calls===1)throw new AgentTimeoutError();return empty();}});t.after(()=>pipeline.close());

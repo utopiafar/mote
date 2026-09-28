@@ -23,6 +23,7 @@ export interface MemoryJob {
   failedBatches: number;
   skippedChunks: number;
   memoryIds: string[];
+  memoryCount?: number;
   errorCode?: string;
   availableAt?:number;
   skillVersion: string;

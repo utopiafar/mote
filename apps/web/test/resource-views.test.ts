@@ -18,6 +18,25 @@ function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
 function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return {settings:{agentTimeoutMs:120000},profiles:[]};if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const memory=(id:string)=>({id,title:'Generated '+id[0],statement:'Current evidence '+id[0],status:'published',createdAt:'2020-01-01T00:00:00Z',evidenceIds:[]});
+test('Memory history uses summary counts and uncertainty links the same verified citations as its statement',async t=>{
+ const {root,document:d}=await fixture(t),opened:string[]=[];
+ const record={...memory(ids[0]),statement:`Known statement [${ids[0]}]`,uncertainty:`Known limit [${ids[0]}]. Unknown [${ids[1]}]. Literal \`[${ids[0]}]\`. <script>untrusted()</script>`,evidence:Array.from({length:4},()=>({id:ids[0],capturedAt:'2020-01-01T00:00:00Z',receivedAt:'2020-01-01T00:00:00Z',contentHash:'generated',quote:'Generated proof'}))};
+ const completed={id:'generated-history',status:'completed',createdAt:'2020-01-01T00:00:00Z',updatedAt:'2020-01-01T00:00:00Z',evidenceIds:[],memoryIds:[],memoryCount:1,totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,skillVersion:'generated'};
+ const legacy={...completed,id:'generated-legacy-history',memoryCount:undefined};
+ const api=apiWith(path=>path.startsWith('/api/memories?')?{items:[record],nextCursor:null}:path.startsWith('/api/memories/')?record:{}),read=api.request;
+ api.request=async(path,init)=>path==='/api/memory-jobs'?{items:[completed,legacy]} as any:read(path,init);
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:id=>opened.push(id)})));
+ const history=Array.from(d.querySelectorAll('.memory-job-history button'));
+ assert.match(history[0].textContent!,/1 条记忆$/);assert.doesNotMatch(history[1].textContent!,/0 条记忆$/,'older services do not turn omitted IDs into a zero count');
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ const notes=Array.from(d.querySelectorAll('.review-notes')).find(n=>n.querySelector('h3')?.textContent==='判断的边界')!;
+ const link=notes.querySelector<HTMLButtonElement>('.inline-citation')!;
+ assert.equal(link.textContent,'来源 4','duplicate evidence IDs keep the existing last-index numbering');
+ await act(async()=>link.click());assert.deepEqual(opened,[ids[0]]);
+ assert.match(notes.textContent!,new RegExp('Unknown \\['+ids[1]+'\\]'));
+ assert.equal(notes.querySelector('code')?.textContent,'['+ids[0]+']');assert.equal(notes.querySelector('script'),null);
+ assert.deepEqual(record.evidence.map(x=>x.id),Array(4).fill(ids[0]));
+});
 test('manual consolidation uses one fresh selected card and feature default, never treats an automatic window as this run',async t=>{
  const {root,document:d}=await fixture(t),candidate={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
  const writes:{path:string;body?:unknown}[]=[];
