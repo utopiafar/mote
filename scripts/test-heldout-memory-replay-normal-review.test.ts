@@ -14,9 +14,9 @@ import {MemoryExtractionDrafts} from '../apps/server/src/memory-extraction-draft
 import {sha256} from '../apps/server/src/store.js';
 import {base, json, hashObject, SafeFailure} from './test-heldout-memory-replay.js';
 import {type Manifest, codeHashes, executorPins, newOutput, treeHash, runBatch, openNode, batchPin} from './test-heldout-memory-replay-stage.js';
-import {AdmissionLedger, readAdmissionChain, inspectAdmissionLedger, StageSafetyError, normalLimits, normalReviewLimits, normalReviewAuthorization, readNormalReviewPlan, readNormalPlan, type NormalContinuation, type NormalReviewRecovery, type NormalReviewRequest, type NormalReviewPlan} from './test-heldout-memory-replay-ledger.js';
-import {ref, readRef, phaseCursor, freezePhase, validatePhase, type PhaseManifest, type WavePlan} from './test-heldout-memory-replay-sequence.js';
-import {freezeNormal, freezeNormalReview, normalReviewQueryGuard} from './test-heldout-memory-replay-recovery.js';
+import {AdmissionLedger, readAdmissionChain, inspectAdmissionLedger, StageSafetyError, normalLimits, normalReviewLimits, normalReviewAuthorization, authorizeNormalReview, readNormalReviewPlan, readNormalPlan, type NormalContinuation, type NormalReviewRecovery, type NormalReviewRequest, type NormalReviewPlan} from './test-heldout-memory-replay-ledger.js';
+import {ref, readRef, phaseCursor, freezePhase, validatePhase, validation as validateReport, type PhaseManifest, type WavePlan} from './test-heldout-memory-replay-sequence.js';
+import {freezeNormal, freezeNormalReview, normalReviewQueryGuard, correctNormalReviewPreparation} from './test-heldout-memory-replay-recovery.js';
 import {freezeIntegration, runIntegration} from './test-heldout-memory-replay-integration.js';
 import {freezeAsk} from './test-heldout-memory-replay-ask.js';
 import {exportBlindReview} from './test-heldout-memory-review.js';
@@ -168,4 +168,52 @@ test('review recovery CLI requires an exact request pair and refuses mixed scope
  for(const [name,extra,expected] of [['missing-hash',{},'normal_review_request_pair_required'],['wrong-scope',{MOTE_HELDOUT_NORMAL_REVIEW_REQUEST_SHA256:sha256(await readFile(requestPath)),MOTE_HELDOUT_MODE:'stage-live'},'normal_review_cli_scope_invalid'],['mixed-proof',{MOTE_HELDOUT_NORMAL_REVIEW_REQUEST_SHA256:sha256(await readFile(requestPath)),MOTE_HELDOUT_RECOVERY_LINEAGE:'generated-not-read'},'normal_review_cli_scope_invalid']] as const){
   const out=join(output,'cli-'+name),result=spawnSync(process.execPath,['--import','tsx','scripts/test-heldout-memory-replay.ts'],{env:{...common,...extra,MOTE_HELDOUT_OUTPUT:out},encoding:'utf8',timeout:30000});assert.equal(result.status,1);const status=JSON.parse(await readFile(join(out,'ROOT_SAFE_status.json'),'utf8'));assert.equal(status.code,expected);assert.deepEqual(await readFile(join(ledger,'admissions.ndjson')),before);assert.equal(existsSync(join(ledger,'normal-review-preparation.json')),false);
  }
+});
+
+
+test('narrow normal-review validation freezes the exact review-only extraction CLI without broadening ordinary extraction',async()=>{
+ const ledger=await ledgerCopy('cli-narrow',baselineLedger),before=readAdmissionChain(ledger),report=JSON.parse(await readFile(validation,'utf8'));
+ report.validatedPhases=['normal-review-recovery'];
+ const narrow=join(output,'ROOT_SAFE_narrow-validation.json');await writeFile(narrow,json(report));
+ const narrowRef=await ref(narrow);
+ await rejects(async()=>validateReport(narrowRef,await codeHashes(),'extraction'),'phase_validation_scope_missing');
+ const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith('MOTE_')&&!k.startsWith('NODE_')&&k!=='NODE_OPTIONS'));
+ const out=join(output,'cli-narrow-freeze'),result=spawnSync(process.execPath,['--import','tsx','scripts/test-heldout-memory-replay.ts'],{env:{...env,MOTE_HELDOUT_MODE:'stage-normal-review-freeze',MOTE_HELDOUT_ROOT_MANIFEST:rootManifest,MOTE_HELDOUT_MANIFEST:failedManifestPath,MOTE_HELDOUT_PARENT:failedSnapshot,MOTE_HELDOUT_LEDGER:ledger,MOTE_HELDOUT_VALIDATION:narrow,MOTE_HELDOUT_SUPERVISOR:supervisorPath,MOTE_HELDOUT_NORMAL_REVIEW_REQUEST:requestPath,MOTE_HELDOUT_NORMAL_REVIEW_REQUEST_SHA256:sha256(await readFile(requestPath)),MOTE_HELDOUT_OUTPUT:out},encoding:'utf8',timeout:30000});
+ assert.equal(result.status,0,result.stderr);
+ const manifest=JSON.parse(await readFile(join(out,'ROOT_SAFE_manifest.json'),'utf8'));
+ assert.equal(manifest.task.kind,'extraction');assert.equal(manifest.task.wave,2);assert.equal(manifest.task.index,2);assert.ok(manifest.normalReviewRecovery);assert.deepEqual(manifest.validation,narrowRef);
+ const after=readAdmissionChain(ledger);assert.deepEqual(after.slice(0,before.length),before);assert.equal(after.filter(e=>e.kind==='admit').length,before.filter(e=>e.kind==='admit').length);
+});
+
+
+test('single preparation correction binds old authorization and exact executors without new admission or broader permission',async()=>{
+ const dir=join(output,'correction');await mkdir(dir);const ledger=await ledgerCopy('correction',baselineLedger),current=executorPins(await codeHashes());
+ const oldExecutors={...current,'scripts/test-heldout-memory-replay-sequence.ts':'0'.repeat(64)},oldReport=JSON.parse(await readFile(validation,'utf8'));oldReport.executorCodeHashes=oldExecutors;oldReport.validatedPhases=['normal-review-recovery'];
+ const oldValidation=await save(join(dir,'old-validation.json'),oldReport),plan=JSON.parse(await readFile(join(output,'cli-narrow-freeze/ROOT_SAFE_normal-review-plan.json'),'utf8'));
+ plan.validation=oldValidation;plan.preparationExecutorHash=hashObject(oldExecutors);const planRef=await save(join(dir,'original-plan.json'),plan),original=authorizeNormalReview(ledger,planRef);
+ const newValidation=await save(join(dir,'new-validation.json'),{...oldReport,executorCodeHashes:current});
+ const amendment={authorization:original,oldExecutors,newExecutors:current,validation:newValidation};
+ const unchanged=async(fn:()=>Promise<unknown>,expected:string)=>{const before=await readFile(join(ledger,'admissions.ndjson')),calls=stubCalls;await rejects(fn,expected);assert.deepEqual(await readFile(join(ledger,'admissions.ndjson')),before);assert.equal(stubCalls,calls);};
+ await unchanged(()=>correctNormalReviewPreparation(ledger,{...amendment,authorization:{...original,eventHash:'f'.repeat(64)}}),'normal_review_correction_not_preparation');
+ await unchanged(()=>correctNormalReviewPreparation(ledger,{...amendment,oldExecutors:current}),'normal_review_correction_old_executor');
+ await unchanged(()=>correctNormalReviewPreparation(ledger,{...amendment,newExecutors:{...current,'scripts/test-heldout-memory-replay-stage.ts':'a'.repeat(64)}}),'normal_review_correction_executor_scope');
+ const wrong=await save(join(dir,'wrong-validation.json'),{...oldReport,executorCodeHashes:current,validatedPhases:['extraction']});await unchanged(()=>correctNormalReviewPreparation(ledger,{...amendment,validation:wrong}),'normal_review_correction_validation');
+ const stale={...current,'scripts/test-heldout-memory-replay-sequence.ts':'b'.repeat(64)},staleValidation=await save(join(dir,'stale-validation.json'),{...oldReport,executorCodeHashes:stale});await unchanged(()=>correctNormalReviewPreparation(ledger,{...amendment,newExecutors:stale,validation:staleValidation}),'normal_review_correction_current_executor');
+ const marker=join(plan.preparedPath,'generated-out-of-scope');await writeFile(marker,'generated mutation');try{await unchanged(()=>correctNormalReviewPreparation(ledger,amendment),'normal_review_correction_data_changed');}finally{await (await import('node:fs/promises')).unlink(marker);}
+ const expanded=await save(join(dir,'expanded-plan.json'),{...plan,limits:{...plan.limits,stageOuter:2}});await unchanged(()=>correctNormalReviewPreparation(ledger,{...amendment,authorization:{...original,plan:expanded}}),'normal_review_limits_changed');
+ const busy=await ledgerCopy('correction-admitted',ledger),events=readAdmissionChain(busy),body={index:events.length,at:new Date().toISOString(),previous:events.at(-1)!.sha256,kind:'admit',data:{stage:plan.targetStage}};
+ await writeFile(join(busy,'admissions.ndjson'),JSON.stringify({...body,sha256:hashObject(body)})+'\n',{flag:'a'});const busyBefore=await readFile(join(busy,'admissions.ndjson'));await rejects(()=>correctNormalReviewPreparation(busy,amendment),'normal_review_correction_not_preparation');assert.deepEqual(await readFile(join(busy,'admissions.ndjson')),busyBefore);
+ const prefix=await readFile(join(ledger,'admissions.ndjson')),calls=stubCalls,event=await correctNormalReviewPreparation(ledger,amendment);assert.equal(event.previous,original.eventHash);assert.equal(stubCalls,calls);assert.ok((await readFile(join(ledger,'admissions.ndjson'))).subarray(0,prefix.length).equals(prefix));
+ await unchanged(()=>correctNormalReviewPreparation(ledger,amendment),'normal_review_correction_not_preparation');
+ const out=await newOutput(join(dir,'completed-freeze')),m=await freezePhase({rootManifest,previousManifest:failedManifestPath,parent:plan.preparedPath,ledgerDirectory:ledger,validation:newValidation.path,output:out,kind:'extraction',index:2,normalContinuation:normal,normalReviewRecovery:original,supervisorPath});
+ assert.deepEqual(m.normalReviewRecovery,original);assert.deepEqual(m.validation,newValidation);assert.deepEqual(m.limits,normalReviewLimits);assert.equal(readAdmissionChain(ledger).filter(e=>e.kind==='admit').length,20);assert.equal(stubCalls,calls);assert.deepEqual(readNormalReviewPlan(planRef),plan);
+ const outside=structuredClone(m);outside.task={...outside.task,index:3} as typeof outside.task;outside.limits=normalLimits.extraction;await rejects(()=>validatePhase(outside,ledger),'phase_validation_scope_missing');
+ const inherited=history(plan.preparedPath),seen:any[]=[],beforeRun=stubCalls,oldChain=readAdmissionChain(ledger),manifestHash=sha256(await readFile(join(out,'ROOT_SAFE_manifest.json')));
+ const result=await runBatch({manifest:root,manifestHash,sequence:m,ledgerDirectory:ledger,output:await newOutput(join(dir,'native-review-run')),stub:async(r,i)=>{seen.push([i.traceContext?.phase,i.traceContext?.attempt]);assert.deepEqual(i.taskContext?.untrustedMemoryDraft,JSON.parse(JSON.parse(String(inherited.drafts.find((d:any)=>d.batch_id===plan.target.batchId)!.json)).answer));return answer(r,i);}});
+ assert.ok(result.succeeded,JSON.stringify(result.report.failure));assert.deepEqual(seen,[['review',2]]);assert.equal(stubCalls-beforeRun,1);assert.equal(result.report.cumulative.admitted,21);
+ const currentHistory=history(result.snapshot);for(const key of ['usage','memories','checkpoints'] as const)for(const old of inherited[key])assert.ok(currentHistory[key].some(row=>JSON.stringify(row)===JSON.stringify(old)),key+' old row preserved');assert.deepEqual(currentHistory.drafts,inherited.drafts);assert.deepEqual(currentHistory.batches.slice(0,2),inherited.batches.slice(0,2));assert.deepEqual(currentHistory.batches.slice(3).map(batchPin),inherited.batches.slice(3).map(batchPin));assert.equal(currentHistory.batches[2].status,'completed');assert.equal(currentHistory.batches[2].attempts,2);
+ for(const chunk of currentHistory.batches[2].chunks)assert.ok(currentHistory.checkpoints.some(row=>row.key===chunk.key));
+ const finalChain=readAdmissionChain(ledger);assert.deepEqual(finalChain.slice(0,oldChain.length),oldChain);assert.equal(phaseCursor(finalChain,root,undefined,normal,original).nextBatch,3);assert.equal(finalChain.filter(e=>e.kind==='admit').at(-1)!.data.logicalKey,hashObject([jobId,plan.target.batchId,'review',original.plan.sha256,2]));
+ await assert.rejects(runBatch({manifest:root,manifestHash,sequence:m,ledgerDirectory:ledger,output:await newOutput(join(dir,'refused-second-run')),stub:async()=>{stubCalls++;throw Error('Second outer must not reach provider');}}));assert.equal(stubCalls-beforeRun,1);assert.deepEqual(readAdmissionChain(ledger),finalChain);
+ checks.push({name:'corrected-native-review-only',providerCalls:1,extractCalls:0,oldAdmissions:20,finalAdmissions:21,nextBatch:3,originalPlanPaidKey:true,secondOuterProviderCalls:0});
 });
