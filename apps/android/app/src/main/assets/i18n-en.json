@@ -4849,7 +4849,7 @@
   "保存 Provider 的地址、协议与凭据，并设置默认模型。对话中可临时选择该 Provider 下的其他模型，无需重复保存凭据。": "Save each provider endpoint, protocol and credentials with a default model. Select another model for a conversation without duplicating credentials.",
   "单文件上限（MiB，1–512）": "Maximum file size (MiB, 1–512)",
   "图片与语音附件": "Image and audio attachments",
-  "图片复用中央 OCR，音频复用转写流程；处理状态可在资料库查看。每个附件最多 50 MiB。": "Images use central OCR and audio uses transcription. Check processing in the library. Up to 50 MiB per attachment.",
+  "图片和录音会先归档。是否提取文字或转写录音取决于中央处理设置；请在资料库查看状态。每个附件最多 50 MiB。": "Images and recordings are archived first. Text extraction and audio transcription depend on the central processing settings; check their status in the Library. Each attachment can be up to 50 MiB.",
   "在中央随手记中添加附件": "Add attachments in central notes",
   "对话在中央继续，可随时返回查看或停止": "Conversations continue on the server. Return to view or stop them.",
   "导出中央元数据": "Export central metadata",
@@ -5660,5 +5660,10 @@
   "取消处理": "Cancel processing",
   "处理已取消，已归档的原件和记录仍保留。点击重试继续处理。": "Processing cancelled. Archived originals and records are retained. Retry to continue.",
   "上一次处理仍在结束，请稍后再点击重试。": "The previous processing attempt is still stopping. Please retry shortly.",
-  "确认后保存记录；记忆整理按自动设置执行，也可稍后手动发起。": "Confirm to save the records. Memory processing follows your automatic settings, or you can start it manually later."
+  "确认后保存记录；记忆整理按自动设置执行，也可稍后手动发起。": "Confirm to save the records. Memory processing follows your automatic settings, or you can start it manually later.",
+  "当前处理尚未结束，请稍后再试。": "The current processing call has not finished. Please try again later.",
+  "上次处理是否结束未知，重试可能重复执行。请确认后继续。": "It is unknown whether the previous processing call has finished. Retrying may run it again. Confirm to continue.",
+  "当前调用尚在等待结束；此时不能重试。": "Waiting for the current call to finish. Retrying is unavailable for now.",
+  "本次处理已取消，不再保存后续结果；原件和已保存的成果保留。": "This processing run is cancelled. Further results will not be saved; originals and previously saved results are retained.",
+  "取消本次处理": "Cancel this processing run"
 }

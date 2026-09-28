@@ -83,7 +83,7 @@ test('ready record index survives failed media, restart and recovery; two waitin
   }finally{release();}
   assert.equal((await running).status,'completed');f.control.review=undefined;
   const saved=f.node.memoryPipeline.get(bodyJob.id).memoryIds[0];f.node.memories.publish(saved);const product=f.node.memories.get(saved);
-  await f.restart();f.control.failASR=false;f.node.processing.retry(file.id);await f.node.processing.tick();await f.organize();
+  await f.restart();assert.equal(f.node.processing.cancellation(file.id).wait,'unknown');assert.throws(()=>f.node.processing.retry(file.id),{statusCode:409});f.control.failASR=false;f.node.processing.retry(file.id,'transcribe',false,true);await f.node.processing.tick();await f.organize();
   assert.equal(f.asrCalls(),2);assert.equal(f.node.files.detail(file.id).job.state,'succeeded');
   f.control.failCoding=true;await f.run();jobs=f.node.memoryPipeline.list().map(j=>f.node.memoryPipeline.get(j.id));assert.equal(jobs.length,3);
   const failed=jobs.find(j=>j.recipes![0].id===extractedCoding.id)!;assert.equal(failed.status,'failed');
@@ -171,7 +171,7 @@ test('manual recipes persist independent waiting inputs and resume only the orig
   assert.equal(failed.status,'failed');assert.equal(failed.inputPlans?.blocked,1);assert.equal(failed.completedBatches,1);
   assert.deepEqual(f.node.memories.get(body.id),body);
   const later=await f.upload('text/plain','generated-later');await f.organize();
-  await f.restart();f.control.failASR=false;f.node.processing.retry(file.id);await f.node.processing.tick();await f.organize();
+  await f.restart();assert.equal(f.node.processing.cancellation(file.id).wait,'unknown');assert.throws(()=>f.node.processing.retry(file.id),{statusCode:409});f.control.failASR=false;f.node.processing.retry(file.id,'transcribe',false,true);await f.node.processing.tick();await f.organize();
   const result=await f.node.memoryPipeline.retry(jobId);assert.equal(result.status,'completed');assert.equal(result.memoryIds.length,2);
   assert.equal(result.inputPlans?.total,2);assert.equal(result.inputPlans?.completed,2);
   assert.equal(result.batches.find(b=>b.id===bodyBatch.id)!.attempts,bodyBatch.attempts);

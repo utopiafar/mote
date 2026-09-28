@@ -84,7 +84,8 @@ test('processing one selected attachment does not block its caption or another r
  const ready=`attachment/${authored.originals[0].id}/text`,waiting=`attachment/${authored.originals[1].id}/text`;
  assert.equal(f.node.materials.input(authored.materialId,['source-body',ready])!.ready,true);assert.equal(f.node.materials.input(authored.materialId,[waiting])!.ready,false);
  const before=f.node.materials.input(authored.materialId,[ready])!.fingerprint;
- f.failed.delete(two);f.node.processing.retry(two,'transcribe',true);await f.node.processing.tick();await f.organize();
+ assert.equal(f.node.processing.cancellation(two).wait,'unknown');assert.throws(()=>f.node.processing.retry(two,'transcribe',true),{statusCode:409});
+ f.failed.delete(two);f.node.processing.retry(two,'transcribe',true,true);await f.node.processing.tick();await f.organize();
  assert.equal(f.node.materials.input(authored.materialId,[waiting])!.ready,true);assert.equal(f.node.materials.input(authored.materialId,[ready])!.fingerprint,before);assert.equal(f.ocrCalls(),2,'recovery reuses the already valid independent image extraction');
 });
 

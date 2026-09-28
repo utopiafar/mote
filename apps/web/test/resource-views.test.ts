@@ -594,3 +594,35 @@ test('source drawer decodes only declared organizer text once and separates acti
  declaration=undefined;await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/capture-browser/')));assert.equal(body().textContent,envelope,'ordinary JSON prose is never unwrapped heuristically');
  declaration='source-record-json-v1';raw='{"text":"not a valid organizer envelope"}';await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/capture-browser/')));assert.equal(body().textContent,raw,'invalid declarations retain the supplied evidence');
 });
+
+
+test('file processing cancellation distinguishes waiting from unknown and requires explicit retry confirmation',async t=>{
+ const {root,document:d}=await fixture(t);let wait:'running'|'unknown'|null='running',state='running';const writes:Array<{path:string;body:any}>=[];
+ const api=apiWith((path,init)=>{if(init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});if(path.endsWith('/cancel'))state='cancelled';return {};}
+ return {captureId:ids[0],item:{title:'Generated WAV',mimeType:'audio/wav'},sizeBytes:100,hasOriginal:true,job:{state,summary_state:'cancelled',local_only:1},cancellation:{canCancel:state==='running',wait},artifacts:[]};});
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ const button=(label:string)=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!;
+ assert.equal(button('重新转写 / 提取').disabled,true);
+ await act(async()=>button('取消本次处理').click());assert.equal(writes.length,1);assert.match(d.body.textContent!,/不再保存后续结果/);
+ wait='unknown';await act(async()=>button('刷新处理状态').click());window.confirm=()=>false;
+ await act(async()=>button('重新转写 / 提取').click());assert.equal(writes.length,1);
+ window.confirm=()=>true;await act(async()=>button('重新转写 / 提取').click());assert.deepEqual(writes[1].body,{stage:'transcribe',confirmUnknown:true});
+});
+
+for(const outcome of ['resolve','reject'] as const)test('file cancellation ignores old session '+outcome+' while new node can cancel',async t=>{
+ const {root,document:d}=await fixture(t),late=deferred();let newWrites=0;
+ const file={captureId:ids[0],item:{title:'Generated file'},sizeBytes:1,hasOriginal:false,job:{state:'running',summary_state:'waiting'},cancellation:{canCancel:true,wait:'running'},artifacts:[]};
+ const oldApi=apiWith((path,init)=>init?.method==='POST'?late.promise:file),newApi=apiWith((path,init)=>{if(init?.method==='POST'){newWrites++;return {};}return file;});
+ const render=(api:Api)=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})),cancel=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='取消本次处理')!;
+ await act(async()=>render(oldApi));await act(async()=>cancel().click());await act(async()=>render(newApi));assert.equal(cancel().disabled,false);
+ await act(async()=>cancel().click());assert.equal(newWrites,1);await act(async()=>outcome==='resolve'?late.resolve({state:'cancelled'}):late.reject(new Error('generated stale failure')));assert.doesNotMatch(d.body.textContent!,/generated stale failure/);
+});
+
+test('file processor wait polling enables retry after raw completion without an operation event',async t=>{
+ const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});let waiting=true,reads=0;
+ const api=apiWith(()=>{reads++;return {captureId:ids[0],item:{title:'Generated cancelled file'},sizeBytes:1,hasOriginal:false,job:{state:'cancelled',summary_state:'cancelled'},cancellation:{canCancel:false,wait:waiting?'running':null},artifacts:[]};});
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ const retry=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='重新转写 / 提取')!;assert.equal(retry().disabled,true);
+ waiting=false;await act(async()=>t.mock.timers.tick(2000));assert.equal(retry().disabled,false);const before=reads;
+ await act(async()=>t.mock.timers.tick(6000));assert.equal(reads,before,'polling stops after the physical wait settles');
+});

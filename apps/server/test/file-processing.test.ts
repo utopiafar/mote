@@ -7,11 +7,11 @@ import {join} from 'node:path';
 import {gunzipSync} from 'node:zlib';
 import sharp from 'sharp';
 import {type Plugin} from '@deepseek-ai/cordis';
-import {type Transcript,diarizationSchema,transcriptSchema,fileProcessingSchema} from '@mote/shared';
+import {ProviderFailure,providerHttpFailure,type Transcript,diarizationSchema,transcriptSchema,fileProcessingSchema} from '@mote/shared';
 import {Store,sha256} from '../src/store.js';
 import {SourceStore} from '../src/sources.js';
 import {FileStore} from '../src/files.js';
-import {FileProcessing} from '../src/file-processing.js';
+import {FileProcessing,HttpTranscriptionProvider} from '../src/file-processing.js';
 import {ExecutionEngine} from '../src/execution-engine.js';
 import {FileProcessorRuntime} from '../src/file-processors.js';
 import {alignDialogue,applySemanticGroups} from '../src/file-dialogue.js';
@@ -36,9 +36,9 @@ async function fixture(t:any,options:any={}){
  const bytes=options.file?.bytes??wave,filename=options.file?.name??'fixture.wav';
  const manifest={sourceId:'phone',item:{externalId:filename,revision:'1',observedAt:new Date().toISOString(),title:options.file?.name??'Synthetic interview.wav',kind:'file',layer:'original',text:'',mimeType:options.file?.mimeType??'audio/wav',deleted:false},sizeBytes:bytes.length,sha256:sha256(bytes)};
  const begun=files.begin(manifest,()=>{});files.part(begun.uploadId,0,bytes,()=>{});const ack=await files.commit(begun.uploadId,()=>{});let asrCalls=0,diaryCalls=0,summaries=0,disposed=false;
- const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return options.diarization??diary;}});return()=>{disposed=true;dispose();};});}};
+ const plugin:Plugin={name:'fixture-diarizer',inject:['moteFileProcessors'],apply(ctx){ctx.effect(()=>{const dispose=ctx.moteFileProcessors.register({id:'fixture.diarize',name:'Synthetic diarizer',version:'1',stage:'diarize',localOnly:true,mediaTypes:['audio/'],async process(input){diaryCalls++;if(options.failFirst&&diaryCalls===1)throw Error('generated failure');return options.diarize?options.diarize(input):options.diarization??diary;}});return()=>{disposed=true;dispose();};});}};
  const diagnostics=new ServerDiagnostics({directory:join(dir,'logs'),debug:true});await diagnostics.init();
- const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async()=>{asrCalls++;return options.transcribe?options.transcribe():raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics});instances.push(instance);return instance;};const processing=createProcessing();
+ const instances:FileProcessing[]=[];const createProcessing=(executor?:ExecutionEngine)=>{const instance=new FileProcessing(files,{transcribe:async input=>{asrCalls++;return options.transcribe?options.transcribe(input):raw;}},async()=>{summaries++;throw Error('Unexpected cloud summary');},{executor,plugins:[plugin],analyze:options.analyze,diagnostics});instances.push(instance);return instance;};const processing=createProcessing();
  await processing.runtime.ready;
  processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.local-dialogue',diarizationProcessor:'fixture.diarize',speakerCount:2,summarize:true,...options.settings}});
  t.after(async()=>{for(const instance of instances)await instance.close();await diagnostics.close();store.close();rmSync(dir,{recursive:true,force:true});});
@@ -61,6 +61,7 @@ test('actual Cordis registration and disposal; local pipeline checkpoints resume
  const f=await fixture(t,{failFirst:true});await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'failed');assert.equal(f.files.detail(f.id).artifacts.filter((a:any)=>a.kind==='transcript').length,1);
  // Reconstruct the engine and Cordis runtime, leaving the persisted checkpoint in place.
  await f.processing.close();const resumed=f.createProcessing();await resumed.runtime.ready;
+ assert.equal(resumed.cancellation(f.id).wait,'unknown');assert.throws(()=>resumed.retry(f.id,'diarize'),{statusCode:409});resumed.retry(f.id,'diarize',false,true);
  f.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE kind='files.pipeline'").run();f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();await resumed.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.deepEqual(f.counts(),{asrCalls:1,diaryCalls:2,summaries:0,disposed:true});
  const chunks=f.files.chunks(f.id);assert.equal(chunks.length,2);assert.equal(chunks[0].ocrText,'[SPEAKER_0] 使用扣迪斯插件。');assert.equal(chunks[1].fileEvidence?.speaker,'SPEAKER_1');
  assert.equal(f.files.pendingIndex('cloud-model').length,0);assert.equal(f.files.pendingIndex('local-model',true).length,2);
@@ -354,13 +355,14 @@ test('changing defaults cannot send completed local-only transcripts into a clou
 
 test('file diagnostics trace retries and checkpoint reuse without original content or provider errors',async t=>{
  const f=await fixture(t,{failFirst:true});await f.processing.tick();
+ assert.equal(f.processing.cancellation(f.id).wait,'unknown');f.processing.retry(f.id,'diarize',false,true);
  f.store.db.prepare("UPDATE execution_steps SET available_at=0 WHERE kind='files.pipeline'").run();f.store.db.prepare('UPDATE file_jobs SET available_at=0').run();await f.processing.tick();
  const events=f.diagnostics.events().items;
  assert.ok(events.some(e=>e.event==='file.step.started'&&e.operation==='extract'&&e.level==='debug'));
  assert.ok(events.some(e=>e.event==='file.step.failed'&&e.operation==='diarize'&&e.level==='error'));
  assert.ok(events.some(e=>e.event==='file.failed'&&e.attempt===1&&e.retryAfterMs===30000));
  assert.ok(events.some(e=>e.event==='file.cached'&&e.operation==='extract'));
- assert.ok(events.some(e=>e.event==='file.completed'&&e.attempt===2));
+ assert.ok(events.some(e=>e.event==='file.completed'&&e.attempt===1));
  assert.ok(events.some(e=>e.event==='file.blocked'&&e.category==='local_only'));
  assert.ok(events.filter(e=>e.operation==='extract').every(e=>e.jobId===f.id&&e.requestId));
  const serialized=JSON.stringify(events);for(const privateText of ['Synthetic interview','generated failure','使用扣迪斯','fixture.diarize'])assert.ok(!serialized.includes(privateText));
@@ -374,7 +376,7 @@ test('shared engine shutdown fences an uncooperative file provider and resumes t
  const ids=processing.prepare(),run=engine.drain(ids);await started;
  await engine.close();await run;await processing.close();
  assert.equal(engine.get(ids[0])!.state,'waiting');assert.equal(f.files.detail(f.id).artifacts.length,0);
- const resumed=f.createProcessing();await resumed.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');
+ const resumed=f.createProcessing();await resumed.tick();assert.equal(resumed.cancellation(f.id).wait,'unknown');assert.equal(calls,1);assert.throws(()=>resumed.retry(f.id),{statusCode:409});resumed.retry(f.id,'transcribe',false,true);await resumed.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');
  release({...raw,segments:[{startMs:0,endMs:1000,text:'Late synthetic result must not replace committed output'}]});await new Promise(r=>setImmediate(r));
  assert.equal(calls,2);assert.equal(f.files.detail(f.id).artifacts.filter((a:any)=>a.kind==='transcript').length,1);assert.ok(!JSON.stringify(f.files.chunks(f.id)).includes('Late synthetic'));
  const steps=resumed.engine.list({operationId:'file:'+f.id,limit:100}).items;assert.equal(steps.find(s=>s.kind==='files.pipeline')!.state,'succeeded');assert.equal(steps.filter(s=>s.kind.startsWith('file-step.')).length,3);
@@ -422,4 +424,124 @@ test('manual correction route rejects device credentials and validates owner seg
  assert.equal((await app.inject({...request,payload:{...payload,originalText:'stale'}})).statusCode,409);
  assert.equal((await app.inject(request)).statusCode,200);
  assert.equal((await app.inject(request)).statusCode,409);
+});
+
+
+test('cancel fences a held processor result, blocks retry until it returns, and preserves original',async t=>{
+ let release!:()=>void,entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve),gate=new Promise<void>(resolve=>release=resolve);let signal:AbortSignal|undefined;
+ const f=await fixture(t,{transcribe:async(input:any)=>{signal=input.signal;entered();await gate;return raw;}}),original=JSON.stringify(f.files.version(f.id));
+ const task=f.processing.tick();await started;
+ assert.equal(f.processing.cancel(f.id).state,'cancelled');await task;
+ assert.equal(signal!.aborted,false,'manual cancellation does not misrepresent HTTP physical completion');
+ assert.equal(f.processing.cancellation(f.id).wait,'running');assert.throws(()=>f.processing.retry(f.id),{statusCode:409});
+ release();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(f.processing.cancellation(f.id).wait,null);assert.equal(f.files.detail(f.id).job.state,'cancelled');assert.equal(f.files.detail(f.id).artifacts.length,0);assert.equal(f.counts().diaryCalls,0);
+ assert.equal(JSON.stringify(f.files.version(f.id)),original);await f.processing.tick();assert.equal(f.counts().asrCalls,1,'background ticks cannot revive cancellation');
+ f.processing.retry(f.id);await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(f.counts().asrCalls,2);
+ assert.equal(f.processing.cancel(f.id).state,'completed','disabled optional summary does not make completed pipeline cancellable');
+});
+
+test('ambiguous transport failure survives restart and requires explicit acknowledgement',async t=>{
+ let fail=true;const f=await fixture(t,{transcribe:async()=>{if(fail)throw new TypeError('generated lost connection');return raw;}});
+ await f.processing.tick();assert.equal(f.processing.cancellation(f.id).wait,'unknown');
+ await f.processing.close();const resumed=f.createProcessing();await resumed.runtime.ready;
+ await resumed.tick();assert.equal(f.counts().asrCalls,1);assert.throws(()=>resumed.retry(f.id),{statusCode:409});
+ fail=false;resumed.retry(f.id,'transcribe',false,true);await resumed.tick();assert.equal(f.counts().asrCalls,2);assert.equal(f.files.detail(f.id).job.state,'succeeded');assert.equal(resumed.cancellation(f.id).wait,null);
+});
+
+test('restart marks an issued processing call unknown until explicit retry',async t=>{
+ const f=await fixture(t);const db=f.store.db;
+ db.prepare("INSERT INTO file_processor_waits VALUES('generated-resource',?,'old-attempt','running')").run(f.id);
+ await f.processing.close();const resumed=f.createProcessing();await resumed.runtime.ready;
+ assert.equal(resumed.cancellation(f.id).wait,'unknown');assert.throws(()=>resumed.retry(f.id),{statusCode:409});
+ resumed.retry(f.id,'transcribe',false,true);assert.equal(db.prepare('SELECT COUNT(*) AS n FROM file_processor_waits').get()!.n,0);
+});
+
+
+test('same original on another capture shares the physical processor exclusion',async t=>{
+ let release!:()=>void,entered!:()=>void;const started=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+ const f=await fixture(t,{transcribe:async()=>{entered();await gate;return raw;}});const task=f.processing.tick();await started;f.processing.cancel(f.id);await task;
+ const upload=f.files.begin({sourceId:'phone',item:{externalId:'second.wav',revision:'1',observedAt:new Date().toISOString(),title:'Generated second alias',kind:'file',layer:'original',text:'',mimeType:'audio/wav',deleted:false},sizeBytes:wave.length,sha256:sha256(wave)},()=>{});
+ f.files.part(upload.uploadId,0,wave,()=>{});const second=await f.files.commit(upload.uploadId,()=>{});
+ assert.equal(f.processing.cancellation(second.id).wait,'running');assert.throws(()=>f.processing.retry(second.id),{statusCode:409});await f.processing.tick();assert.equal(f.counts().asrCalls,1);
+ release();await new Promise(resolve=>setImmediate(resolve));assert.equal(f.processing.cancellation(second.id).wait,null);assert.equal(f.files.detail(f.id).job.state,'cancelled');
+});
+
+
+test('explicit worker busy rejection permits ordinary retry without unknown acknowledgement',async t=>{
+ let first=true;const f=await fixture(t,{transcribe:async()=>{if(first){first=false;throw new ProviderFailure(providerHttpFailure(429));}return raw;}});
+ await f.processing.tick();assert.equal(f.processing.cancellation(f.id).wait,null);f.processing.retry(f.id);await f.processing.tick();assert.equal(f.files.detail(f.id).job.state,'succeeded');
+});
+
+test('cancelling diarization retains already committed raw transcript and prevents later stages',async t=>{
+ let release!:()=>void,entered!:()=>void;const started=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);
+ const f=await fixture(t,{diarize:async()=>{entered();await gate;return diary;}});const task=f.processing.tick();await started;
+ const rawBefore=JSON.stringify(f.files.detail(f.id).artifacts);assert.ok(f.files.detail(f.id).artifacts.some((a:any)=>a.kind==='transcript'));
+ f.processing.cancel(f.id);await task;release();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(JSON.stringify(f.files.detail(f.id).artifacts),rawBefore);assert.equal(f.files.detail(f.id).job.state,'cancelled');assert.equal(f.counts().summaries,0);
+});
+
+test('summary receives cancellation signal and its late response is not published',async t=>{
+ let release!:()=>void,entered!:()=>void;const started=new Promise<void>(r=>entered=r),gate=new Promise<void>(r=>release=r);let signal:AbortSignal|undefined;
+ const f=await fixture(t,{settings:{audioProcessor:'audio.http',summarize:true},analyze:async(records:any[],_prompt:any,_settings:any,_local:any,current:AbortSignal)=>{signal=current;entered();await gate;return {answer:'Generated summary',citations:[{id:records[0].id}]};}});
+ const task=f.processing.tick();await started;const before=JSON.stringify(f.files.detail(f.id).artifacts);f.processing.cancel(f.id);assert.equal(signal!.aborted,true);await task;
+ assert.throws(()=>f.processing.retry(f.id,'summary'),{statusCode:409});release();await new Promise(resolve=>setImmediate(resolve));assert.equal(JSON.stringify(f.files.detail(f.id).artifacts),before);assert.equal(f.files.detail(f.id).job.summary_state,'cancelled');
+});
+
+test('actual loopback HTTP response remains held after cancel until bounded call settles',async t=>{
+ const {createServer}=await import('node:http');let respond!:()=>void,entered!:()=>void;const started=new Promise<void>(r=>entered=r);
+ const server=createServer((req,res)=>{req.resume();req.on('end',()=>{respond=()=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(raw));};entered();});});
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>{server.closeAllConnections();server.close();});const address=server.address();assert.ok(address&&typeof address!=='string');
+ const provider=new HttpTranscriptionProvider(),f=await fixture(t,{transcribe:(input:any)=>provider.transcribe({...input,localOnly:false,settings:{...input.settings,endpoint:'http://127.0.0.1:'+address.port}})});
+ const task=f.processing.tick();await started;f.processing.cancel(f.id);await task;assert.equal(f.processing.cancellation(f.id).wait,'running');assert.throws(()=>f.processing.retry(f.id),{statusCode:409});
+ respond();for(let i=0;i<100&&f.processing.cancellation(f.id).wait==='running';i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(f.processing.cancellation(f.id).wait,null);assert.equal(f.files.detail(f.id).artifacts.length,0);assert.equal(f.counts().diaryCalls,0);
+});
+
+test('late old processor cannot clear the replacement attempt token after restart acknowledgement',async t=>{
+ let enterOld!:()=>void,enterNew!:()=>void,releaseOld!:()=>void,releaseNew!:()=>void,calls=0;
+ const oldStarted=new Promise<void>(r=>enterOld=r),newStarted=new Promise<void>(r=>enterNew=r),oldGate=new Promise<void>(r=>releaseOld=r),newGate=new Promise<void>(r=>releaseNew=r);
+ const f=await fixture(t,{transcribe:async()=>{if(++calls===1){enterOld();await oldGate;}else{enterNew();await newGate;}return raw;}});
+ const oldTask=f.processing.tick();await oldStarted;f.processing.cancel(f.id);await oldTask;await f.processing.close();
+ const resumed=f.createProcessing();await resumed.runtime.ready;assert.equal(resumed.cancellation(f.id).wait,'unknown');resumed.retry(f.id,'transcribe',false,true);
+ const newTask=resumed.tick();await newStarted;const token=f.store.db.prepare('SELECT token FROM file_processor_waits').get()!.token;
+ releaseOld();await new Promise(resolve=>setImmediate(resolve));assert.equal(f.store.db.prepare('SELECT token FROM file_processor_waits').get()!.token,token);assert.equal(resumed.cancellation(f.id).wait,'running');
+ assert.throws(()=>resumed.retry(f.id),{statusCode:409});releaseNew();await newTask;assert.equal(f.files.detail(f.id).job.state,'succeeded');
+});
+
+test('file cancel/retry routes enforce owner access, completion races and explicit unknown consent',async t=>{
+ const f=await fixture(t,{transcribe:async()=>{throw new TypeError('generated transport loss');}});await f.processing.tick();
+ const {default:Fastify}=await import('fastify'),{registerFileRoutes}=await import('../src/file-routes.js');const app=Fastify();t.after(()=>app.close());
+ registerFileRoutes(app,f.files,f.processing,{} as any,()=>{},req=>req.headers['x-generated-device']?'generated-device':undefined,{evidence:()=>[{}]} as any);
+ for(const action of ['cancel','retry'])assert.equal((await app.inject({method:'POST',url:'/api/files/'+f.id+'/'+action,payload:{},headers:{'x-generated-device':'true'}})).statusCode,403);
+ assert.equal((await app.inject({method:'POST',url:'/api/files/'+f.id+'/cancel',payload:{}})).json().state,'cancelled');
+ assert.equal((await app.inject({method:'POST',url:'/api/files/'+f.id+'/retry',payload:{}})).statusCode,409);
+ assert.equal((await app.inject({method:'POST',url:'/api/files/'+f.id+'/retry',payload:{confirmUnknown:true}})).statusCode,200);
+});
+
+test('actual HTTP timeout persists unknown across restart and only explicit retry sends another request',async t=>{
+ const {createServer}=await import('node:http');let requests=0,answer=false;
+ const server=createServer((req,res)=>{requests++;req.resume();req.on('end',()=>{if(answer){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(raw));}});});
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>{server.closeAllConnections();server.close();});const address=server.address();assert.ok(address&&typeof address!=='string');
+ const provider=new HttpTranscriptionProvider(),f=await fixture(t,{settings:{timeoutMs:1000},transcribe:(input:any)=>provider.transcribe({...input,localOnly:false,settings:{...input.settings,endpoint:'http://127.0.0.1:'+address.port}})});
+ await f.processing.tick();for(let i=0;i<100&&f.processing.cancellation(f.id).wait==='running';i++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(f.processing.cancellation(f.id).wait,'unknown');assert.equal(requests,1);await f.processing.close();const resumed=f.createProcessing();await resumed.runtime.ready;
+ await resumed.tick();assert.equal(requests,1);assert.throws(()=>resumed.retry(f.id),{statusCode:409});answer=true;resumed.retry(f.id,'transcribe',false,true);await resumed.tick();assert.equal(requests,2);assert.equal(f.files.detail(f.id).job.state,'succeeded');
+});
+
+
+test('ordinary cooperative processor still receives cancellation and cannot publish its late result',async t=>{
+ let enter!:()=>void,release!:()=>void;const started=new Promise<void>(r=>enter=r),gate=new Promise<void>(r=>release=r);let signal:AbortSignal|undefined;
+ const f=await fixture(t,{diarize:async(input:any)=>{signal=input.signal;enter();await gate;return diary;}});const task=f.processing.tick();await started;const saved=JSON.stringify(f.files.detail(f.id).artifacts);
+ f.processing.cancel(f.id);assert.equal(signal!.aborted,true,'plugins without transport opt-in retain cooperative cancellation');await task;assert.equal(f.processing.cancellation(f.id).wait,'running');release();await new Promise(resolve=>setImmediate(resolve));assert.equal(f.processing.cancellation(f.id).wait,null);assert.equal(JSON.stringify(f.files.detail(f.id).artifacts),saved);
+ assert.throws(()=>f.processing.runtime.registry.register({id:'fixture.invalid-cancel',version:'1',name:'Generated',stage:'extract',mediaTypes:['text/'],awaitResponseOnCancel:'yes' as any,process:async()=>raw}));
+});
+
+
+test('explicit retry leaves cancelled children from an obsolete configuration untouched',async t=>{
+ const f=await fixture(t,{transcribe:async()=>{throw new ProviderFailure(providerHttpFailure(429));}});await f.processing.tick();
+ f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,localEndpoint:'http://127.0.0.1:9047/generated-new-endpoint'}});
+ assert.equal(f.processing.engine.list({operationId:'file:'+f.id,kind:'files.pipeline'}).items[0].state,'cancelled','fixture must actually revoke the old configuration');
+ const historical=()=>f.store.db.prepare("SELECT e.* FROM execution_steps e JOIN execution_operation_steps o ON o.step_id=e.id WHERE o.operation_id=? AND e.kind LIKE 'file-step.%'").all('file:'+f.id);
+ const before=JSON.stringify(historical());assert.ok(historical().length);f.processing.retry(f.id);assert.equal(JSON.stringify(historical()),before,'only current-generation child backoff may reset');
 });
