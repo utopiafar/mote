@@ -137,6 +137,7 @@ object FileUpload {
     private fun syncSlice(context: Context, source: LocalSource, config: CollectorConfig, slice: UploadSlice, stillSelected: () -> Boolean): Boolean {
         var selectedRow: JSONObject? = null
         fun send(stage: EventStage, path: String, method: String, body: ByteArray? = null, binary: Boolean = false): JSONObject {
+            SyncSchedule.requireConditions(context, config)
             if (!slice.admit(body?.size ?: 0)) throw SliceYield()
             check(stillSelected())
             selectedRow?.let { context.fileArchives().assertCurrent(source, it) }
@@ -150,7 +151,7 @@ object FileUpload {
             head.optString("revision").takeIf { head.has("revision") && !head.isNull("revision") && it.isNotEmpty() }
         } ?: return queue.pendingCount(source.id) == 0
         selectedRow = row
-        fun checkSelection() { check(stillSelected()); queue.assertCurrent(source, row); check(SyncSchedule.waitingReason(context, config) == null) }
+        fun checkSelection() { check(stillSelected()); queue.assertCurrent(source, row); SyncSchedule.requireConditions(context, config) }
         checkSelection()
         val pending = row.getJSONObject("pending"); val manifest = pending.getJSONObject("manifest"); val item = manifest.getJSONObject("item")
         if (!manifest.has("sha256")) {

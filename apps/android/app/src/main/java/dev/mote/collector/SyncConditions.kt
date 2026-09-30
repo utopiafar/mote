@@ -9,3 +9,5 @@ data class SyncConditions(val chargingOnly: Boolean, val batteryNotLow: Boolean,
         else -> null
     }
 }
+
+internal class SyncConditionsUnavailable(val waitingReason: String) : IllegalStateException(waitingReason)

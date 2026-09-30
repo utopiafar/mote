@@ -137,6 +137,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     val id = ocrUpdate.getString("id"); pendingRecordId = id
                     val body = JSONObject().put("ocrText", ocrUpdate.getString("ocrText")).put("status", ocrUpdate.getString("status"))
                     slice.record(body.toString().toByteArray(Charsets.UTF_8).size.toLong()); remaining--; ocrSinceCapture++
+                    SyncSchedule.requireConditions(applicationContext, config)
                     val (code, response) = HttpJson.post("${config.server}/api/capture-browser/$id/ocr", body, config.token)
                     if ((code == 404 && response?.optString("error") == "capture_not_found") || code == 410) {
                         queue.archiveMissing(id); pendingRecordId = null
@@ -180,6 +181,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                     val result = UploadNegotiation.sendShrinking(events.take(25)) { batch ->
                         val body = JSONObject().put("captures", org.json.JSONArray(batch))
                         wireBytes += body.toString().toByteArray(Charsets.UTF_8).size
+                        SyncSchedule.requireConditions(applicationContext, config)
                         HttpJson.post("${config.server}/api/captures/batch", body, config.token)
                     }
                     sent = result.first; response = result.second; individual = false
@@ -188,6 +190,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 if (useBundle) {
                     val result = UploadNegotiation.sendShrinking(sent) { batch ->
                         val bundle = CaptureBundle.encode(batch); wireBytes += bundle.size
+                        SyncSchedule.requireConditions(applicationContext, config)
                         HttpJson.postBytes("${config.server}/api/captures/bundle", bundle, config.token, CaptureBundle.CONTENT_TYPE)
                     }
                     sent = result.first; response = result.second
@@ -199,6 +202,7 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
                 if (!config.packedUpload || UploadNegotiation.unsupported(response.first)) {
                     sent = events.take(1); individual = true
                     wireBytes += sent.first().toString().toByteArray(Charsets.UTF_8).size
+                    SyncSchedule.requireConditions(applicationContext, config)
                     response = HttpJson.post("${config.server}/api/captures", sent.first(), config.token)
                 }
                 slice.record(wireBytes); ocrSinceCapture = 0
@@ -244,6 +248,9 @@ class UploadWorker(context: Context, params: WorkerParameters) : Worker(context,
             // A successful chunk may continue the same explicit operation; failures never retry in manual mode.
             if (queue.pendingSync().hasWork) SyncSchedule.continueUpload(applicationContext, config, explicit)
             Result.success()
+        } catch (error: SyncConditionsUnavailable) {
+            settings.syncStatus("waiting", error.waitingReason)
+            Result.retry()
         } catch (error: Exception) {
             SupportEvents.record(applicationContext, stage, EventJournal.failure(error, stage))
             if (error !is RecordedHeartbeatFailure) Operations.record(applicationContext, OperationKind.UPLOAD_RETRY, Operations.failure(error, stage), recordId = pendingRecordId)
@@ -287,6 +294,7 @@ internal object SyncHeartbeat {
         if (status == "permission_required") body.put("error", if (!runtimeAlive && settings.enabled)
             MoteI18n.text("采集服务未连接，请打开手机应用恢复权限") else settings.message())
         else if (status == "error") body.put("error", settings.message())
+        SyncSchedule.requireConditions(context, config)
         Diagnostics(context).add("heartbeatRequests")
         val (code, response) = HttpJson.post("${config.server}/api/devices/heartbeat", body, config.token)
         if (code !in 200..299 || response?.optBoolean("ok") != true) SupportEvents.record(context, EventStage.HEARTBEAT, EventJournal.httpFailure(code), httpStatus = code)

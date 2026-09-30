@@ -5666,5 +5666,6 @@ export const english: Readonly<Record<string, string>> = {
   "上次处理是否结束未知，重试可能重复执行。请确认后继续。": "It is unknown whether the previous processing call has finished. Retrying may run it again. Confirm to continue.",
   "当前调用尚在等待结束；此时不能重试。": "Waiting for the current call to finish. Retrying is unavailable for now.",
   "本次处理已取消，不再保存后续结果；原件和已保存的成果保留。": "This processing run is cancelled. Further results will not be saved; originals and previously saved results are retained.",
-  "取消本次处理": "Cancel this processing run"
+  "取消本次处理": "Cancel this processing run",
+  "确认重试": "Confirm retry"
 };
