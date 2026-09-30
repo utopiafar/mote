@@ -152,7 +152,7 @@ test('rate limits keep their HTTP status and return a correlated safe error',asy
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-rate-'));const cfg=config(directory);const {app}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${cfg.token}`};let last;
   for(let i=0;i<11;i++)last=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
-  assert.equal(last!.statusCode,429);assert.equal(last!.json().error,'rate_limited');assert.equal(last!.json().requestId,last!.headers['x-request-id']);assert.ok(!last!.body.includes(marker));
+  assert.equal(last!.statusCode,429);assert.equal(last!.json().error,'api_rate_limited');assert.equal(last!.json().requestId,last!.headers['x-request-id']);assert.ok(!last!.body.includes(marker));
 });
 
 test('request correlation survives the per-query local HTTP tool bridge boundary',async t=>{

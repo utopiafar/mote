@@ -45,7 +45,7 @@ import { moteText,requestLocale } from './i18n.js';
 import { prepareImportInput } from './import-runtime.js';
 import { ImportStore,type ImportPreparation,type ImportPreparationResult } from './imports.js';
 import { Indexer } from './indexer.js';
-import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite } from './ingress.js';
+import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite,collectorTransportRequest } from './ingress.js';
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
@@ -290,7 +290,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
   const expectedBearer=Buffer.from(`Bearer ${config.token}`);
   const validBearer=(req:{headers:{authorization?:string}})=>{if(typeof req.headers.authorization!=='string')return false;const supplied=Buffer.from(req.headers.authorization);return supplied.length===expectedBearer.length&&timingSafeEqual(supplied,expectedBearer);};
-  await app.register(rateLimit,{max:180,timeWindow:'1 minute',keyGenerator:req=>validBearer(req)?'authenticated-owner':connections.authenticate(req.headers.authorization)?.id??`unauthenticated:${req.ip}`,errorResponseBuilder:(req,context)=>({statusCode:context.statusCode,error:'rate_limited',message:moteText("请求过于频繁，请稍后重试。"),requestId:req.id})});
+  await app.register(rateLimit,{max:180,timeWindow:'1 minute',keyGenerator:req=>{const identity=validBearer(req)?'authenticated-owner':connections.authenticate(req.headers.authorization)?.id;return identity?`${identity}:${collectorTransportRequest(req.method,req.routeOptions.url??'')?'transport':'foreground'}`:`unauthenticated:${req.ip}`;},errorResponseBuilder:(req,context)=>({statusCode:context.statusCode,error:'api_rate_limited',message:moteText("请求过于频繁，请稍后重试。"),requestId:req.id})});
   let playbackAuthorization:(req:FastifyRequest)=>boolean=()=>false;
   app.addHook('onRequest',async(req,reply)=>{
     const isApi=req.routeOptions.url?.startsWith('/api/')||req.url.startsWith('/api/');
