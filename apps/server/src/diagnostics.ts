@@ -26,7 +26,7 @@ const levels = ['debug','info','warn','error','silent'] as const;
 const operations:Operation[] = ['capture','note','import','embedding','search','timeline','evidence','activity','devices','query','insight','retention','extract','diarize','align','turns','summary','file_upload','file_part','file_commit','file_revision','file_process','file_settings','file_retry'];
 const events = new Set(['server.started','server.stopping','request.started','request.completed','request.failed','queue.snapshot','support.exported','agent.trace','agent.tool_rejected','agent.memory_validation_failed','agent.waiting','agent.heartbeat','file.blocked','file.retry','file.cached','file.cancelled','file.settings','file.step.started','file.step.completed','file.step.failed',...['ingest','index','agent','source','maintenance','file'].flatMap(s=>[`${s}.started`,`${s}.completed`,`${s}.failed`])]);
 const routes = new Set(['files','file-sync','file-processing','conversations','configuration','sources','memories','layers','connectors','health','status','captures','notes','image','devices','connections','updates','activity','query','insights','index','export','import','diagnostics','support','web','unknown']);
-const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
+const categories = new Set(['validation','unauthorized','forbidden','not_found','conflict','deleted','too_large','rate_limited','api_rate_limited','model_not_configured','agent_response','embedding_http','embedding_invalid','embedding_transport','timeout','unavailable','storage_full','internal','not_configured','archive_only','unsupported_format','daily_budget','local_only','summary_disabled','cancelled']);
 const numberKeys = ['durationMs','statusCode','count','bytes','pending','failed','queueDepth','activeQueries','toolCalls','citations','httpStatus','deleted','attempt','retryAfterMs','part','batchIndex','candidateIndex','spanIndex','declaredOffset','declaredLength','quoteLength','sourceLength','authorizedMatches','idleMs','elapsedMs','remainingCalls','remainingCharacters','repeatCount'] as const;
 const responseReasons:Record<string,string>={
   provider_quota:"模型服务额度不足，恢复账户额度后再继续。",
@@ -51,6 +51,7 @@ const responseReasons:Record<string,string>={
 
   invalid_response:"模型未返回可验证的回答，请重试或检查模型配置。",
   tool_failure:"工具调用修复次数已耗尽，本次任务已停止。",
+  image_disclosure_disabled:"问答读取原图尚未开启。请在中央感知设置中允许查询模型按需读取原图，再重新提问。",
   host_validation:"模型输出未通过业务校验，当前对话内修复后仍不合规。",
   invalid_json:"模型返回的回答格式不完整或无效，请重试。",
   invalid_shape:"模型返回的回答或引用列表格式无效，请重试。",
@@ -112,7 +113,7 @@ function describeError(error:unknown):{status:number;category:string;message:str
   if(e.name==='AbortError'||e.name==='TimeoutError')return {status:504,category:'timeout',message:moteText("操作已取消或超时，请稍后重试。")};
   if(typeof e.code==='string'&&['embedding_http','embedding_invalid','embedding_transport'].includes(e.code))return {status:502,category:e.code,message:moteText("索引模型请求未完成，请检查模型配置或稍后重试。")};
   const status=typeof e.statusCode==='number'&&Number.isInteger(e.statusCode)&&e.statusCode>=400&&e.statusCode<=599?e.statusCode:500;
-  const fixed:Record<number,[string,string]>={400:['validation',moteText("输入格式无效，请检查必填项和取值范围。")],401:['unauthorized',moteText("访问凭据无效或已失效，请重新验证身份。")],403:['forbidden',moteText("此操作不可用。")],404:['not_found',moteText("未找到所请求的资料。")],409:['conflict',moteText("资料状态已变化或当前配置不支持此操作，请刷新后重试。")],410:['deleted',moteText("该条目已删除，排队重试不能恢复它。")],413:['too_large',moteText("内容超过大小限制，请分批处理。")],429:['rate_limited',moteText("请求过于频繁或已有任务运行，请稍后重试。")],503:['unavailable',moteText("服务暂不可用，请检查节点状态与模型配置。")],507:['storage_full',moteText("存储容量已满，请清理空间或调整容量限制。")]};
+  const fixed:Record<number,[string,string]>={400:['validation',moteText("输入格式无效，请检查必填项和取值范围。")],401:['unauthorized',moteText("访问凭据无效或已失效，请重新验证身份。")],403:['forbidden',moteText("此操作不可用。")],404:['not_found',moteText("未找到所请求的资料。")],409:['conflict',moteText("资料状态已变化或当前配置不支持此操作，请刷新后重试。")],410:['deleted',moteText("该条目已删除，排队重试不能恢复它。")],413:['too_large',moteText("内容超过大小限制，请分批处理。")],429:['api_rate_limited',moteText("请求过于频繁或已有任务运行，请稍后重试。")],503:['unavailable',moteText("服务暂不可用，请检查节点状态与模型配置。")],507:['storage_full',moteText("存储容量已满，请清理空间或调整容量限制。")]};
   const [category,message]=fixed[status]??['internal',moteText("请求未完成，请使用请求编号查看诊断记录。")];
   return {status,category,message};
 }
@@ -124,7 +125,7 @@ function fields(raw:unknown):EventFields {
   if(typeof value.jobId==='string'&&uuid.test(value.jobId))out.jobId=value.jobId;
   for(const key of ['batchId','runId','evidenceId'] as const)if(typeof value[key]==='string'&&uuid.test(value[key]))out[key]=value[key];
   if(typeof value.validationCode==='string'&&Object.hasOwn(validationFeedback,value.validationCode))out.validationCode=value.validationCode;
-  if(typeof value.toolErrorCode==='string'&&['evidence_changed','invalid_tool_arguments','evidence_budget_exceeded','tool_budget_exceeded','evidence_scope_denied','invalid_evidence_range','evidence_range_exceeded','invalid_changes_view','context_tool_failed','repeated_tool_failure'].includes(value.toolErrorCode))out.toolErrorCode=value.toolErrorCode;
+  if(typeof value.toolErrorCode==='string'&&['evidence_changed','invalid_tool_arguments','evidence_budget_exceeded','tool_budget_exceeded','evidence_scope_denied','invalid_evidence_range','evidence_range_exceeded','invalid_changes_view','context_tool_failed','repeated_tool_failure','image_disclosure_disabled'].includes(value.toolErrorCode))out.toolErrorCode=value.toolErrorCode;
   if(value.validationPhase==='extract'||value.validationPhase==='review')out.validationPhase=value.validationPhase;
   if(typeof value.method==='string'&&['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(value.method))out.method=value.method as EventFields['method'];
   if(operations.includes(value.operation as Operation))out.operation=value.operation as Operation;

@@ -158,7 +158,7 @@ export interface DesktopApi {
   noteDraft(): Promise<import('./note-draft').NoteDraft>;
   updateNoteDraft(input: import('./note-draft').NoteDraft): Promise<import('./note-draft').NoteDraft>;
   saveNote(input: import('./note-draft').NoteDraft): Promise<{ id: string; draft: import('./note-draft').NoteDraft }>;
-  openCentral(page?: string): Promise<void>;
+  openCentral(page?: string, evidenceId?: string): Promise<void>;
   exportSupport(hours?:number): Promise<{ canceled: boolean }>;
   exportDiagnostics(): Promise<{ canceled: boolean }>;
   readRawEvents(): Promise<string>;

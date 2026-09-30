@@ -120,7 +120,7 @@ class Settings(private val context: Context) {
         }
         return cachedToken
     }
-    fun save(c: CollectorConfig, expected: CollectorConfig? = null) = synchronized(Settings::class.java) {
+    fun save(c: CollectorConfig, expected: CollectorConfig? = null, confirmCentralEndpoint: Boolean = false) = synchronized(Settings::class.java) {
         if (expected != null && read() != expected) throw SettingsChangedFailure()
         c.validate()
         val origin = originAfterChange(c)
@@ -144,7 +144,8 @@ class Settings(private val context: Context) {
             "nsfwEnabled" to c.nsfw.enabled, "nsfwThreads" to c.nsfw.threads, "qwenTimeout" to c.nsfw.timeoutMs,
             "nsfwSource" to c.nsfw.source, "qwenCustomUrl" to c.nsfw.customUrl, "qwenPolicy" to c.nsfw.policy,
             "qwenMaxTokens" to c.nsfw.maxTokens, "qwenMaxSide" to c.nsfw.reviewMaxSide)
-        val previous = values.keys.associateWith { prefs.all[it] }
+        val committedValues = if (confirmCentralEndpoint) values + ("centralEndpoint" to c.server.trim().trimEnd('/')) else values
+        val previous = committedValues.keys.associateWith { prefs.all[it] }
         fun write(items: Map<String, Any?>): Boolean {
             val edit = prefs.edit()
             items.forEach { (key, value) -> when (value) {
@@ -154,24 +155,26 @@ class Settings(private val context: Context) {
             } }
             return edit.commit()
         }
-        if (!write(values)) {
+        if (!write(committedValues)) {
             if (!write(previous)) { enabled = false; status("error", MoteI18n.text("设置保存与恢复均未持久完成，采集已停止；请检查存储空间并重试")) }
             throw SettingsWriteFailure()
         }
         /* Configuration is committed as one snapshot; status counters are never rolled back. */
     }
+    fun centralEndpoint(): String = prefs.getString("centralEndpoint", "")!!
     fun saveConnection(server: String, token: String, deviceName: String, debugHttp: Boolean) = synchronized(Settings::class.java) {
         val next = read().copy(server = server, token = token, deviceName = deviceName, debugHttp = debugHttp)
         next.validate(); next.validateConnection()
         val origin = originAfterChange(next)
         val previousServer = prefs.getString("server", null); val previousToken = prefs.getString("token", null)
         val previousOrigin = prefs.getString("dataOrigin", null)
+        val previousCentralEndpoint = prefs.getString("centralEndpoint", null)
         val previousName = prefs.getString("deviceName", null); val previousHttp = prefs.getBoolean("debugHttp", BuildConfig.MOTE_PROFILE == "dev")
-        val saved = prefs.edit().putString("dataOrigin", origin).putString("server", server.trimEnd('/')).putString("token", Base64.encodeToString(secret.seal(token.toByteArray()), Base64.NO_WRAP))
+        val saved = prefs.edit().putString("centralEndpoint", server.trim().trimEnd('/')).putString("dataOrigin", origin).putString("server", server.trimEnd('/')).putString("token", Base64.encodeToString(secret.seal(token.toByteArray()), Base64.NO_WRAP))
             .putString("deviceName", deviceName).putBoolean("debugHttp", debugHttp).commit()
         if (!saved) {
             // Restore memory as well as attempt durable rollback; caller retains the encrypted redemption journal.
-            if (!prefs.edit().putString("dataOrigin", previousOrigin).putString("server", previousServer).putString("token", previousToken).putString("deviceName", previousName).putBoolean("debugHttp", previousHttp).commit()) {
+            if (!prefs.edit().putString("centralEndpoint", previousCentralEndpoint).putString("dataOrigin", previousOrigin).putString("server", previousServer).putString("token", previousToken).putString("deviceName", previousName).putBoolean("debugHttp", previousHttp).commit()) {
                 enabled = false; status("error", MoteI18n.text("连接设置未能持久恢复，采集已停止；原连接恢复资料仍保留"))
             }
             throw SettingsWriteFailure()
@@ -183,13 +186,16 @@ class Settings(private val context: Context) {
         val old = read()
         return if (prefs.contains("server") && old.server.isNotBlank()) old.server.trimEnd('/') else ""
     }
-    fun hasPendingData(): Boolean = context.fileArchives().pendingSync().count > 0 || context.queue().depth() > 0 || QuickNotes.draft(context).read().prepared != null ||
+    fun hasPendingData(): Boolean = context.fileArchives().pendingSync().count > 0 || context.queue().hasPendingConnectionWork() || BulkDedupeStore(context).quarantine().hasUnboundRecords() || QuickNotes.draft(context).read().prepared != null ||
         context.localSources().sources().any { (context.localSources().state(it.id).optJSONArray("pending")?.length() ?: 0) > 0 }
     private fun originAfterChange(next: CollectorConfig): String {
         val previous = dataOrigin()
         val current = read()
         if (current.server == next.server && current.token == next.token) return previous
-        if (!hasPendingData()) return if (next.hasSyncConnection()) next.server.trimEnd('/') else ""
+        if (!hasPendingData()) {
+            if (previous.isNotBlank() && previous != (if (next.hasSyncConnection()) next.server.trim().trimEnd('/') else "")) context.queue().pinRetainedOrigin(previous)
+            return if (next.hasSyncConnection()) next.server.trimEnd('/') else ""
+        }
         require(previous.isBlank() || next.server.isBlank() || previous == next.server.trimEnd('/')) { MoteI18n.text("待同步资料属于原节点，请先同步到原节点；清空连接不会解除资料绑定") }
         return previous.ifBlank { if (next.hasSyncConnection()) next.server.trimEnd('/') else "" }
     }
@@ -239,4 +245,4 @@ class Settings(private val context: Context) {
     fun uploadStatus(): String = prefs.getString("uploadStatus", MoteI18n.text("尚未上传"))!!
 }
 
-fun Context.queue() = QueueStorage(this).openQueue()
+fun Context.queue() = QueueStorage(this).openQueue().apply { archiveOrigin = Settings(this@queue).dataOrigin() }

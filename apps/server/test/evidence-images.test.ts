@@ -39,7 +39,10 @@ test('query reads exact uploaded image revisions while disclosure, policy and to
  const f=await fixture(t),one=await f.upload('same');
  assert.throws(()=>f.store.image(one.id),/Image not found/,'the screenshot-only reader cannot read a normal uploaded image');
  assert.equal((await f.agent.readImage!({id:one.id})).data,f.bytes.toString('base64'));
- f.setEnabled(false);await assert.rejects(f.agent.readImage!({id:one.id}),/disabled/);f.setEnabled(true);
+ f.setEnabled(false);await assert.rejects(f.agent.readImage!({id:one.id}),error=>{
+  assert.equal((error as {code?:string}).code,'image_disclosure_disabled');
+  assert.equal((error as {recovery?:string}).recovery,'stop');return true;
+ });f.setEnabled(true);
  const denied=f.reader.agent({diagnostics:f.diagnostics,allowQueryImages:()=>true,exposurePolicy:new EvidenceExposurePolicy([{sourceKind:'upload',representation:'image',allow:false}])});
  await assert.rejects(denied.readImage!({id:one.id}),/Image not found/);
  f.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(one.id);
@@ -118,7 +121,7 @@ test('image regions pin original versions while metadata, history and attachment
  const meta=await f.agent.readImage!({id:one.id,view:'metadata'});assert.equal(meta.data,undefined);assert.equal(meta.imageView!.original.sha256,sha256(f.bytes));
  const read={id:one.id,expectedImageSha256:sha256(f.bytes),region};
  const cropped=await f.agent.readImage!(read);assert.deepEqual(cropped.imageView!.region,region);assert.equal(cropped.imageView!.output!.width,1);
- f.setEnabled(false);await assert.rejects(f.agent.readImage!({id:one.id,view:'metadata'}),/disabled/);f.setEnabled(true);
+ f.setEnabled(false);await assert.rejects(f.agent.readImage!({id:one.id,view:'metadata'}),(error:any)=>error.code==='image_disclosure_disabled'&&error.recovery==='stop');f.setEnabled(true);
  f.store.db.prepare('UPDATE file_jobs SET local_only=1 WHERE capture_id=?').run(one.id);await assert.rejects(f.agent.readImage!(read),/Image not found/);f.store.db.prepare('UPDATE file_jobs SET local_only=0 WHERE capture_id=?').run(one.id);
  const next=await sharp({create:{width:2,height:2,channels:3,background:'#556677'}}).png().toBuffer(),two=await f.upload('regions','2',next);
  assert.equal((await f.agent.readImage!(read)).data,cropped.data,'a retained explicit history version keeps its own pixels');

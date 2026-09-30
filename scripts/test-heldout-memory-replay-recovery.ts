@@ -45,7 +45,7 @@ export async function prepareNativeRetry(input:{parent:string;destination:string
  await closed(input.destination);const finalDb=new DatabaseSync(join(input.destination,'mote.sqlite'),{readOnly:true});try{equal(immutableRows(finalDb,input.jobId),inherited,'recovery_close_changed_inherited');}finally{finalDb.close();}equal(await treeHash(input.parent),beforeTree,'recovery_parent_mutated');result!.preparedTree=await treeHash(input.destination);return result!;
 }
 
-import {readFile,open,realpath} from 'node:fs/promises';
+import {readFile,open,realpath,unlink} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {sha256} from '../apps/server/src/store.js';
 import {batchPin,codeHashes,executorPins,privateWrite} from './test-heldout-memory-replay-stage.js';
@@ -142,3 +142,17 @@ export async function freezeNormalReview(options:{request:import('./test-heldout
  const planPath=join(options.output,'ROOT_SAFE_normal-review-plan.json'),file=await open(planPath,'wx',0o600);try{await file.writeFile(JSON.stringify(plan,null,2)+'\n');await file.sync();}finally{await file.close();}const proof=authorizeNormalReview(options.ledgerDirectory,await ref(planPath));await privateWrite(join(options.output,'ROOT_SAFE_normal-review-recovery.json'),proof);const manifest=await freezePhase({rootManifest:options.rootManifest,previousManifest:options.previousManifest,parent:preparedPath,ledgerDirectory:options.ledgerDirectory,validation:options.validation,supervisorPath:options.supervisorPath,output:options.output,kind:'extraction',index:2,normalContinuation:request.normalContinuation,normalReviewRecovery:proof});await privateWrite(join(options.output,'ROOT_SAFE_normal-review.json'),{schema:'mote-heldout-normal-review-preparation-report@1',status:'prepared',realModelCalls:0,providerAttempts,usageDelta:0,experimentHash:root.experimentHash,inheritedAdmissions:20,inheritedFailed:3,inheritedUnknownUsage:3,limits:normalReviewLimits,preparedSnapshotHash,canonicalSnapshotHash:request.canonicalSnapshotHash,draftHash:request.draft.jsonSha256,semanticContentExposed:false});return {plan,proof,manifest};
 }
 export async function loadNormalReview(path?:string):Promise<NormalReviewRecovery|undefined>{if(!path)return;const proof=JSON.parse(await readFile(path,'utf8'));check(proof&&Object.keys(proof).sort().join(',')==='eventHash,plan'&&/^[a-f0-9]{64}$/.test(proof.eventHash),'normal_review_proof_invalid');await normalReviewControls(proof);return proof;}
+
+/** Explicit zero-provider preparation amendment; never called by freeze/live automatically. */
+export async function correctNormalReviewPreparation(directory:string,data:import('./test-heldout-memory-replay-ledger.js').NormalReviewCorrection){
+ const {readAdmissionChain,normalReviewAuthorization,validateNormalReviewCorrection}=await import('./test-heldout-memory-replay-ledger.js');
+ let lock;try{lock=await open(join(directory,'writer.lock'),'wx',0o600);}catch{check(false,'ledger_locked_unknown_interruption');}let writing=false;
+ try{
+  const events=readAdmissionChain(directory);check(events.at(-1)?.sha256===data.authorization.eventHash,'normal_review_correction_not_preparation');
+  const p=validateNormalReviewCorrection(data,data.authorization);normalReviewAuthorization(events,p.normalContinuation,data.authorization);await normalReviewControls(data.authorization);
+  await rootAndRuntime(p.rootManifest);equal(executorPins(await codeHashes()),data.newExecutors,'normal_review_correction_current_executor');await validation(data.validation,await codeHashes(),'normal-review-recovery');
+  for(const [path,expected] of [[p.preparedPath,p.preparedSnapshotHash],[p.failedSnapshotPath,p.failedSnapshotHash],[p.canonicalSnapshotPath,p.canonicalSnapshotHash]]){await closed(path);equal(await treeHash(path),expected,'normal_review_correction_data_changed');}
+  const body={index:events.length,at:new Date().toISOString(),previous:data.authorization.eventHash,kind:'normal-review-preparation-corrected',data},event={...body,sha256:hashObject(body)};
+  const file=await open(join(directory,'admissions.ndjson'),'a',0o600);try{writing=true;await file.writeFile(JSON.stringify(event)+'\n');await file.sync();writing=false;}finally{await file.close();}return event;
+ }finally{await lock!.close();if(!writing)await unlink(join(directory,'writer.lock'));}
+}

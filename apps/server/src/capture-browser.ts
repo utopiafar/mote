@@ -81,7 +81,13 @@ export function registerCaptureBrowser(app:FastifyInstance,context:{store:Store;
     const record=ownRecord(req);
     // Storage identity is authoritative; a native file can also come from an import source.
     const file=store.db.prepare('SELECT capture_id FROM file_versions WHERE capture_id=?').get(record.id);
-    return {...evidenceReader.context([record])[0],fileArchive:file?{captureId:record.id}:undefined};
+    const provenance=record.provenance;
+    const requiresMaterialForMemory=Boolean(provenance?.sourceId&&provenance.externalId&&
+      record.source!=='screen'&&record.source!=='ui_page'&&
+      store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(provenance.sourceId));
+    const memoryMaterialRef=evidenceReader.currentMemoryMaterialRef(record);
+    return {...evidenceReader.context([record])[0],fileArchive:file?{captureId:record.id}:undefined,
+      requiresMaterialForMemory,...(memoryMaterialRef?{memoryMaterialRef}:{})};
   });
   app.get('/api/capture-browser/:id/image',async(req,reply)=>{
     const record=ownImage(req);

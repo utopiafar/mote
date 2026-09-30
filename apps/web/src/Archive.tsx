@@ -34,8 +34,8 @@ import { CaptureCard,Empty,ErrorNotice,Spinner } from './shell-components';
 export type ArchiveTab = string;
 export function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>{moteText("应用活动概况")}</h2><p>{moteText("前台应用采样时长 ·")}{' '}{duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">{moteText("多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。")}</p></>:<Empty icon={Clock3} title={moteText("这段时间还没有活动采样")}><p>{moteText("设备完成同步后，可以在这里查看应用时间分布。")}</p></Empty>}</section>;}
 
-export function Archive({api,devices,range,activity,revision,onOpen,tab,setTab,onChanged}:{onChanged?:()=>void;api:Api;devices:Device[];range:Range;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
- return <div className="archive-page"><div className="page-heading"><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("浏览原始记录、活动与播放分布，以及有证据支撑的记忆。")}</p></div><FeatureCollections selected={tab} onSelect={setTab} props={{api,devices,range,activity,revision,onOpen,onChanged}}/></div>;
+export function Archive({api,devices,range,rangeSelectionKey,activity,revision,onOpen,tab,setTab,onChanged}:{onChanged?:()=>void;api:Api;devices:Device[];range:Range;rangeSelectionKey?:string;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
+ return <div className="archive-page"><div className="page-heading"><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("浏览原始记录、活动与播放分布，以及有证据支撑的记忆。")}</p></div><FeatureCollections selected={tab} onSelect={setTab} props={{api,devices,range,rangeSelectionKey,activity,revision,onOpen,onChanged}}/></div>;
 }
 
 export function Timeline(props:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number;embedded?:boolean}) {
@@ -207,7 +207,7 @@ export function RecordTimeline({
         )}
         <span className="filter-count">{totalCount === undefined ? moteText("已读取") + " " + items.length : moteText("共 {0} 条 · 本页 {1} 条", totalCount, items.length)}</span>
       </div>
-      <p className="capture-browse-note">{moteText("日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；待充电的 OCR 由采集端补做，结果同步后可刷新查看。")}</p>
+      <p className="capture-browse-note">{moteText("日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；可刷新查看文字识别的最新状态与结果。")}</p>
       {error && (
         <ErrorNotice
           text={error}

@@ -32,7 +32,7 @@ import { Conversations } from './conversations.js';
 import { ServerDiagnostics,safeError,type AgentTraceContext } from './diagnostics.js';
 import { EvidenceReader } from './evidence-reader.js';
 import { EvidenceExposurePolicy } from './evidence-exposure.js';
-import { ExecutionEngine } from './execution-engine.js';
+import { ExecutionEngine,ExecutionFailure } from './execution-engine.js';
 import { ExecutionSettings } from './execution-settings.js';
 import { ServerFeatureHost } from './feature-host.js';
 import { installServerFeatures } from './features/index.js';
@@ -45,7 +45,7 @@ import { moteText,requestLocale } from './i18n.js';
 import { prepareImportInput } from './import-runtime.js';
 import { ImportStore,type ImportPreparation,type ImportPreparationResult } from './imports.js';
 import { Indexer } from './indexer.js';
-import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite } from './ingress.js';
+import { INGRESS_PROTOCOL_VERSION,IngressService,collectorIngressWrite,collectorTransportRequest } from './ingress.js';
 import { InsightRuns } from './insight-runs.js';
 import { insightResult,validateInsightOutput } from './insights.js';
 import { registerMemoryExtensions } from './lifecycle-extensions.js';
@@ -256,7 +256,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
   const perception=new Perception(store,processing.runtime,executor,mediaAssets);
   const semanticSelection=()=>{const selected=modelSettings.select('memory');return {...modelConfiguration(selected.id,selected.settings,modelSettings.view().revision),configured:agent.configuredFor(selected.id)};};
   workflows.registry.register(semanticProcessor({store,memories,query:input=>{const selected=modelSettings.select('memory',input.modelProfileId),traceContext={...input.traceContext,traceId:randomUUID(),operation:'query' as const,moduleId:'memories',profileId:selected.id,provider:selected.settings.provider,protocol:selected.settings.protocol,model:input.modelOverride??selected.settings.model};return agent.query({...input,onTrace:event=>{diagnostics.agentTrace(event,traceContext);input.onTrace?.(event);}});},records:ids=>store.evidence(ids),selection:semanticSelection,usage:usageLedger}));
-  const semanticArtifacts=async(ids:string[],operationId?:string)=>{
+  const semanticArtifacts=async(ids:string[],operationId?:string,mode?:'lifecycle')=>{
     const ready:string[]=[];
     for(const id of ids){
       const artifact=store.archive.get(id);if(!artifact)continue;
@@ -265,8 +265,10 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
       const jobs=workflows.enqueue([{name:'semantic',processor:'mote.segment-understanding',inputs:[],artifactInputs:[{id,revision:artifact.revision}],config:{artifactId:id,modelFingerprint:semanticSelection().fingerprint}}]);
       if(operationId)linkOperationParent(store,operationId,executor.get(jobs.semantic)!.operationId);
       await workflows.tick();
-      const row=store.db.prepare('SELECT state,json FROM processing_jobs WHERE id=?').get(jobs.semantic)!;
+      const row=store.db.prepare('SELECT state,json,error,available_at FROM processing_jobs WHERE id=?').get(jobs.semantic)!;
       if(row.state==='stale')continue;
+      if(mode==='lifecycle'&&(row.state==='waiting'||row.state==='running'))throw new ExecutionFailure('waiting',String(row.error??'semantic_processing_pending'),Math.max(1000,Number(row.available_at)-Date.now()||60000));
+      if(mode==='lifecycle'&&(row.state==='failed'||row.state==='blocked'))throw new ExecutionFailure('blocked',row.state==='failed'?'semantic_processing_failed':'semantic_processing_blocked');
       if(row.state!=='succeeded')throw new StoreError('Semantic processing is pending or blocked',409);
       ready.push(...JSON.parse(String(row.json)).outputs);
     }
@@ -288,7 +290,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
   await app.register(cors,{origin:config.allowedOrigins,credentials:false});
   const expectedBearer=Buffer.from(`Bearer ${config.token}`);
   const validBearer=(req:{headers:{authorization?:string}})=>{if(typeof req.headers.authorization!=='string')return false;const supplied=Buffer.from(req.headers.authorization);return supplied.length===expectedBearer.length&&timingSafeEqual(supplied,expectedBearer);};
-  await app.register(rateLimit,{max:180,timeWindow:'1 minute',keyGenerator:req=>validBearer(req)?'authenticated-owner':connections.authenticate(req.headers.authorization)?.id??`unauthenticated:${req.ip}`,errorResponseBuilder:(req,context)=>({statusCode:context.statusCode,error:'rate_limited',message:moteText("请求过于频繁，请稍后重试。"),requestId:req.id})});
+  await app.register(rateLimit,{max:180,timeWindow:'1 minute',keyGenerator:req=>{const identity=validBearer(req)?'authenticated-owner':connections.authenticate(req.headers.authorization)?.id;return identity?`${identity}:${collectorTransportRequest(req.method,req.routeOptions.url??'')?'transport':'foreground'}`:`unauthenticated:${req.ip}`;},errorResponseBuilder:(req,context)=>({statusCode:context.statusCode,error:'api_rate_limited',message:moteText("请求过于频繁，请稍后重试。"),requestId:req.id})});
   let playbackAuthorization:(req:FastifyRequest)=>boolean=()=>false;
   app.addHook('onRequest',async(req,reply)=>{
     const isApi=req.routeOptions.url?.startsWith('/api/')||req.url.startsWith('/api/');
@@ -387,13 +389,13 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
       return sha256(JSON.stringify([modelSettings.select('memory',input.modelProfileId).settings,memories.readEvidence(ids)]));
     },
   });
-  const memoryPipeline=new MemoryPipeline({materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
+  const memoryPipeline=new MemoryPipeline({materialSourceCurrent:(pin,id)=>evidenceReader.materialSourceCurrent(pin,id),materialPlanAllowed:(id,profileId)=>evidenceReader.materialPlanAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),authoredMaterialOriginalForReuse:(id,ref)=>evidenceReader.authoredMaterialOriginalForReuse(id,ref),materialInput:(ref,required)=>materials.input(ref,required),materialRequirements:ref=>materialMemoryWork.sourceRequirements(ref),batchCharacters:()=>storedMemoryLifecycleSettings(store).batchCharacters,automaticAllowed:job=>materialMemoryWork.authorized(job)&&(!job.automaticGrant||sourcePipelines.memoryAllowed(job.automaticGrant.sourceId)),strategies:memoryStrategies,executor,store,memories,deletionEvidenceAllowedForMemory:(id,profileId)=>evidenceReader.deletionContextAllowed(id,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings))),evidenceAllowedForMemory:(id,profileId)=>!evidenceReader.evidenceLocalOnly(id)||usesLocalModel(modelSettings.select('memory',profileId).settings),materialAllowedForMemory:(ref,profileId,required)=>evidenceReader.materialAllowedForMemory(ref,new EvidenceExposurePolicy([],()=>usesLocalModel(modelSettings.select('memory',profileId).settings)),required),configuration:(id,model)=>{const selected=modelSettings.select('memory',id);return modelConfiguration(selected.id,{...selected.settings,...(model?{model}:{})},modelSettings.view().revision);},concurrency:()=>runtimeSettings.execution().memoryConcurrency,requireAdmission:true,onValidationFailure:event=>diagnostics.record('agent.memory_validation_failed',{jobId:event.jobId,batchId:event.batchId,batchIndex:event.batchIndex,attempt:event.attempt,runId:event.runId,validationCode:event.code,validationPhase:event.phase,...event.details},'warn'),review:reviewExtraction,query:input=>queryAgent(input,'query','memories'),model:id=>modelSettings.select('memory',id).settings.model,configured:id=>{try{return agent.configuredFor(modelSettings.select('memory',id).id);}catch{return false;}},skillVersion:`memory-extraction@${skillCatalog().find(s=>s.id==='memory-extraction')!.version}`});
   memoryRecipeSettings.onChange=()=>materialMemoryWork.inputs.revokeDisabled();
   memoryRecipeSettings.onApplied=()=>materialMemoryWork.reconcile(memoryPipeline);
   materialMemoryWork.reconcile(memoryPipeline);
   const lifecycle=new MemoryLifecycle(store,()=>agent.configured,Date.now,config.insightIntervalHours,executor,dependencies?.semanticContextTime),working=new WorkingMemory(store,conversations);
   const memoryIntegrationSettings=new MemoryIntegrationSettings(store,memoryStrategies);
-  registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
+  registerMemoryExtensions({integrationSettings:memoryIntegrationSettings,semanticArtifacts,providerCooldownCheck:()=>providerAdmission.check(modelSettings.select('memory').settings),insights:insightRuns,insightTimeout:()=>modelSettings.select('insight').settings.agentTimeoutMs,lifecycle,store,files,memories,pipeline:memoryPipeline,working,query:(input,module)=>queryAgent(input,input.skill==='personal-insight'?'insight':'query',module),model:()=>modelSettings.select('memory').settings.model});
   for(const extension of dependencies?.memoryExtensions??[])lifecycle.replace(extension);
 
   const importAgents=new Set<ReturnType<typeof createImportAgent>>(),importTasks=new Map<string,Promise<unknown>>();

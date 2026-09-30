@@ -65,3 +65,15 @@ test('native transcript citations open their parent file at the cited offset', (
   assert.equal(segment.textLabel, '转写片段');
   assert.match(segment.deleteDescription, /依赖记忆/);
 });
+
+test('central OCR explanations do not promise collector work for cancelled or unavailable jobs',()=>{
+ const show=(status:'disabled'|'failed'|'pending'|'completed',state:string,error?:string)=>ocrPresentation({status},'',false,[{kind:'ocr',state,error}]);
+ assert.equal(show('disabled','cancelled').label,'OCR 已取消');
+ assert.equal(show('disabled','waiting').label,'OCR 未启用');
+ assert.match(show('failed','blocked','model_missing').description,/尚未安装/);
+ assert.equal(show('failed','blocked','provider_not_configured').label,'OCR 暂不可用');
+ assert.equal(show('failed','failed').label,'OCR 失败');
+ assert.equal(show('pending','running').label,'OCR 待处理');
+ assert.doesNotMatch(show('pending','running').description,/采集端/);
+ assert.equal(show('completed','failed').label,'OCR 未识别到文字');
+});

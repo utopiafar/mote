@@ -1,6 +1,7 @@
 import {useMemo} from 'react';
 import { moteText } from '@mote/shared/i18n';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Answer } from './api';
 
 interface MarkdownNode { type:string; value?:string; url?:string; children?:MarkdownNode[] }
@@ -49,11 +50,12 @@ export function AnswerMarkdown({answer,onOpen}:{answer:Answer;onOpen:(id:string)
   // evidence dialog updates its route or switches to a nested reference.
   const components=useMemo<NonNullable<React.ComponentProps<typeof ReactMarkdown>['components']>>(()=>({
     img:()=>null,
+    table:({children})=><div className="answer-table-scroll" role="region" aria-label={moteText("回答中的表格")} tabIndex={0}><table>{children}</table></div>,
     a:({href,children})=>{
       const id=href?verified.get(href):undefined;
       return id ? <button type="button" className="inline-citation" onClick={()=>onOpen(id)} aria-label={moteText("查看证据：{0}", children)}>{children}</button>
         : <a href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
     },
   }),[verified,onOpen]);
-  return <ReactMarkdown skipHtml remarkPlugins={[citationLinks(answer.citations)]} components={components}>{answer.answer}</ReactMarkdown>;
+  return <ReactMarkdown skipHtml remarkPlugins={[remarkGfm,citationLinks(answer.citations)]} components={components}>{answer.answer}</ReactMarkdown>;
 }

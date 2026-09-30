@@ -69,12 +69,17 @@ export interface FileProcessor {
   /** Output depends only on original bytes, MIME and the pinned processor inputs,
    * never on a record ID, title, owner context or human corrections. */
   reuseByContent?:boolean;
+  /** Issued HTTP calls retain their deadline after publication is cancelled. Default: forward cancellation. */
+  awaitResponseOnCancel?:boolean;
   process(input:ProcessorInput):Promise<unknown>;
 }
+// Only host-authored builtin metadata is translated; plugin-authored strings stay literal.
+const builtinProcessors=new WeakSet<FileProcessor>();
 export class ProcessorRegistry {
   private entries=new Map<string,FileProcessor>();
   register(processor:FileProcessor){
     if(!/^[a-z][a-z0-9.-]{0,99}$/.test(processor.id)||!processor.version||this.entries.has(processor.id))throw new Error('Invalid or duplicate file processor');
+    if(processor.awaitResponseOnCancel!==undefined&&typeof processor.awaitResponseOnCancel!=='boolean')throw new Error('Invalid processor cancellation capability');
     if(processor.contentPolicy!==undefined&&(processor.contentPolicy!=='local-only'||processor.localOnly!==true))throw new Error('Local-only content requires a local processor');
     if(processor.dialogue&&(processor.stage!=='extract'||!processor.mediaTypes.length||!processor.mediaTypes.every(type=>type.startsWith('audio/'))))throw new Error('Dialogue composition requires an audio extraction processor');
     if(processor.managedModel!==undefined&&processor.managedModel!=='dialogue')throw new Error('Unknown managed processing model');
@@ -90,10 +95,16 @@ export class ProcessorRegistry {
     return ()=>{if(this.entries.get(processor.id)===processor)this.entries.delete(processor.id);};
   }
   get(id:string){const processor=this.entries.get(id);if(!processor)throw new StoreError('Processing plugin is unavailable',409);return processor;}
-  list(){return [...this.entries.values()].map(({process,...metadata})=>metadata);}
+  list(){return [...this.entries.values()].map(processor=>{
+    const {process,...metadata}=processor;
+    if(!builtinProcessors.has(processor))return metadata;
+    // Keep canonical labels in the registry; concurrent request locales get independent views.
+    return {...metadata,name:moteText(metadata.name),...(metadata.parameters?{parameters:metadata.parameters.map(parameter=>({...parameter,label:moteText(parameter.label),...(parameter.description!==undefined?{description:moteText(parameter.description)}:{})}))}:{})};
+  });}
 }
 declare module '@deepseek-ai/cordis' {interface Context {moteFileProcessors:ProcessorRegistry;}}
 function builtin(processor:FileProcessor):Plugin {
+  builtinProcessors.add(processor);
   return {name:'mote-'+processor.id,inject:['moteFileProcessors'],apply(ctx:Context){ctx.effect(()=>ctx.moteFileProcessors.register(processor));}};
 }
 /** File processing plugins live in the shared backend context when mounted by the server. */
@@ -103,23 +114,23 @@ export class FileProcessorRuntime {
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.pluginScope.provide('moteFileProcessors',this.registry);
     if(contextProcessors&&!root)this.pluginScope.provide('moteContextProcessors',contextProcessors);
-    const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'3':'2',name:localOnly?moteText("本地多人录音"):moteText("转写接口"),stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',
+    const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'3':'2',name:localOnly?"本地多人录音":"转写接口",stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
       ...(localOnly?{contentPolicy:'local-only' as const,allowSummary:false,dialogue:true,managedModel:'dialogue' as const}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
-      parameters:localOnly?[{key:'speakerCount',label:moteText("预期说话人数"),type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:moteText("留空由模型自动识别")},{key:'semanticTurns',label:moteText("使用本地语言模型合并自然发言轮次"),type:'boolean',default:false}]:[],
+      parameters:localOnly?[{key:'speakerCount',label:"预期说话人数",type:'number',nullable:true,default:null,min:1,max:16,integer:true,description:"留空由模型自动识别"},{key:'semanticTurns',label:"使用本地语言模型合并自然发言轮次",type:'boolean',default:false}]:[],
       process:input=>provider.transcribe({body:input.readOriginal(),sizeBytes:input.file.sizeBytes,mimeType:input.file.mimeType,settings:input.settings,localOnly,maxAudioMs:input.maxAudioMs,signal:input.signal})});
     const pluginScope=this.pluginScope;
     this.ready=(async()=>{
       try{
         await pluginScope.install(audio('audio.http'));
         await pluginScope.install(audio('audio.local-dialogue',true));
-        await pluginScope.install(builtin({id:'text.utf8',version:'3',name:moteText("UTF-8 文字提取"),stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
-        await pluginScope.install(builtin({id:'document.generic',version:'1',name:moteText("文档文字提取"),stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,dependencies:{settings:[]},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
-        await pluginScope.install(builtin({id:'image.http',version:'2',name:moteText("图片文字提取接口"),stage:'extract',mediaTypes:['image/'],serviceKind:'image',reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
+        await pluginScope.install(builtin({id:'text.utf8',version:'3',name:"UTF-8 文字提取",stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));
+        await pluginScope.install(builtin({id:'document.generic',version:'1',name:"文档文字提取",stage:'extract',mediaTypes:[...DOCUMENT_MIME_TYPES],localOnly:true,dependencies:{settings:[]},process:input=>extractDocument(input.readOriginal(),input.file.sizeBytes,input.file.mimeType,input.signal)}));
+        await pluginScope.install(builtin({id:'image.http',version:'2',name:"图片文字提取接口",stage:'extract',mediaTypes:['image/'],serviceKind:'image',awaitResponseOnCancel:true,reuseByContent:true,dependencies:{settings:['imageEndpoint','apiKey','allowRemote']},async process(input){
           if(!input.settings.imageEndpoint)throw new StoreError('Image processing service is not configured',409);
           const response=await fetch(input.settings.imageEndpoint,{method:'POST',headers:{'Content-Type':'application/octet-stream','Content-Length':String(input.file.sizeBytes),'X-Mote-Media-Type':input.file.mimeType,...(input.settings.apiKey?{Authorization:`Bearer ${input.settings.apiKey}`}:{})},body:input.readOriginal() as unknown as BodyInit,duplex:'half',signal:input.signal,redirect:'error'} as RequestInit);
           const transcript=transcriptSchema.parse(await readProcessorJson(response));if(transcript.durationMs!==0)throw new StoreError('Image text cannot have audio duration',502);return transcript;
         }}));
-        await pluginScope.install(builtin({id:'audio.diarize',version:'2',name:moteText("本地说话人分离"),stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:'dialogue',dependencies:{settings:['endpoint','apiKey','speakerCount'],parameters:['speakerCount']},async process(input){
+        await pluginScope.install(builtin({id:'audio.diarize',version:'2',name:"本地说话人分离",stage:'diarize',mediaTypes:['audio/'],localOnly:true,managedModel:'dialogue',awaitResponseOnCancel:true,dependencies:{settings:['endpoint','apiKey','speakerCount'],parameters:['speakerCount']},async process(input){
           if(!isLoopback(input.settings.endpoint))throw new StoreError('Diarization requires a loopback worker',409);
           const endpoint=new URL(input.settings.endpoint);endpoint.pathname=endpoint.pathname.replace(/\/transcribe\/?$/,'/diarize');
           if(!endpoint.pathname.endsWith('/diarize'))throw new StoreError('Local worker URL must end with /transcribe',409);

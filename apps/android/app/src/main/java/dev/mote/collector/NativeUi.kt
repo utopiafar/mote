@@ -55,6 +55,13 @@ object MoteUi {
         minHeight = context.moteDp(52)
     }
 
+    /** Set line behavior before inputType: setSingleLine replaces password transformation. */
+    fun textInput(field: EditText, type: Int, multiline: Boolean = false) = field.apply {
+        setSingleLine(!multiline)
+        if (multiline) { minLines = 2; gravity = Gravity.TOP }
+        inputType = if (multiline) android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE else type
+    }
+
     /** Apply the same controls to dynamic native lists and dialog forms. */
     fun styleTree(view: View) {
         when (view) {

@@ -7,7 +7,7 @@ import {materialSourcePinSchema} from './material-source-pin.js';
 /** Host-created selection metadata. Execution state belongs to ExecutionEngine. */
 export const manualMemoryInputPlanSchema=z.object({materialId:z.string().regex(/^mat_[a-f0-9]{64}$/),selectedRef:z.string().max(256),sourcePin:materialSourcePinSchema,strategy:memoryRecipeBindingSchema,required:materialRequirementsSchema,evidenceAllowList:z.array(z.string().uuid()).max(20000).optional()}).strict();
 export type ManualMemoryInputPlanRequest=z.infer<typeof manualMemoryInputPlanSchema>;
-export type ManualMemoryInputPlan=ManualMemoryInputPlanRequest&{id:string;jobId:string;resolvedInput?:MaterialInputPin;batchIds?:string[]};
+export type ManualMemoryInputPlan=ManualMemoryInputPlanRequest&{id:string;jobId:string;resolvedInput?:MaterialInputPin;batchIds?:string[];coveredByBatchId?:string};
 export type MemoryPlanSummary={total:number;waiting:number;blocked:number;stale:number;completed:number};
 export type MemoryRecipeProgress={recipe:MemoryStrategyRef;inputs:MemoryPlanSummary;completedBatches:number;failedBatches:number;reasons:{code:string;required?:string[];materialRef?:string}[]};
 export class MemoryInputPlans {

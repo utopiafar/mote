@@ -96,6 +96,7 @@ test('real agent error classes map to safe categories without exposing provider 
   const error=safeError(new AgentResponseError(marker));assert.equal(error.status,502);assert.equal(error.category,'agent_response');assert.ok(!JSON.stringify(error).includes(marker));
   const limited=safeError(new AgentResponseError(marker,'output_limit'));assert.equal(limited.reason,'output_limit');assert.match(limited.message,/输出上限/);assert.ok(!JSON.stringify(limited).includes(marker));
   const malformed=safeError(new AgentResponseError(marker,'invalid_json'));assert.equal(malformed.reason,'invalid_json');assert.notEqual(malformed.message,limited.message);
+  const imageDenied=safeError(new AgentResponseError(marker,'image_disclosure_disabled'));assert.equal(imageDenied.reason,'image_disclosure_disabled');assert.match(imageDenied.message,/中央感知/);assert.ok(!JSON.stringify(imageDenied).includes(marker));
   assert.equal(safeError(Object.assign(new AgentResponseError(marker),{reason:marker})).reason,'invalid_response');
   assert.ok(!JSON.stringify(safeError(Object.assign(new Error(marker),{name:marker,code:marker,statusCode:502}))).includes(marker));
   assert.equal(safeError({get name(){throw new Error(marker);}}).category,'internal');
@@ -151,7 +152,7 @@ test('rate limits keep their HTTP status and return a correlated safe error',asy
   const directory=await mkdtemp(join(tmpdir(),'mote-diagnostics-rate-'));const cfg=config(directory);const {app}=await buildApp(cfg,{agent:inactive});t.after(async()=>{await app.close();await rm(directory,{recursive:true,force:true});});
   const headers={authorization:`Bearer ${cfg.token}`};let last;
   for(let i=0;i<11;i++)last=await app.inject({method:'POST',url:'/api/query',headers,payload:{question:marker}});
-  assert.equal(last!.statusCode,429);assert.equal(last!.json().error,'rate_limited');assert.equal(last!.json().requestId,last!.headers['x-request-id']);assert.ok(!last!.body.includes(marker));
+  assert.equal(last!.statusCode,429);assert.equal(last!.json().error,'api_rate_limited');assert.equal(last!.json().requestId,last!.headers['x-request-id']);assert.ok(!last!.body.includes(marker));
 });
 
 test('request correlation survives the per-query local HTTP tool bridge boundary',async t=>{

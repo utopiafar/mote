@@ -1,4 +1,5 @@
 import {nativeStatusSummary} from './native-status';
+import { renderAskAnswer, renderAskCitation } from './ask-presentation';
 import { moteText, getLocale } from '@mote/shared/i18n';
 import {builtinUiRules} from '@mote/shared';
 const desktopApi = window.mote;
@@ -975,21 +976,25 @@ function askControls(): void {
   const running = askRun?.status === 'running';
   byId<HTMLButtonElement>('ask-send').disabled = askBusy || running;
   byId<HTMLButtonElement>('ask-new').disabled = askBusy || running;
+  byId<HTMLButtonElement>('ask-login').disabled = askBusy;
+  byId<HTMLButtonElement>('ask-logout').disabled = askBusy;
   byId('ask-stop').hidden = !running;
   for (const button of Array.from(byId('ask-history').querySelectorAll('button'))) button.disabled = askBusy || running;
 }
 function renderAsk(): void {
   const messages = byId('ask-messages'); messages.replaceChildren();
   for (const turn of askConversation?.turns ?? []) {
-    const article = document.createElement('article'), question = document.createElement('h3'), answer = document.createElement('p');
-    question.textContent = turn.question; answer.textContent = turn.result?.answer ?? turn.error?.message ?? moteText('回答未完成');
-    article.append(question, answer);
-    for (const citation of turn.result?.citations ?? []) {
-      const evidence = document.createElement('details'), title = document.createElement('summary'), quote = document.createElement('p');
-      title.textContent = `${citation.appName} · ${citation.capturedAt} · ${citation.id}`; quote.textContent = citation.excerpt;
-      evidence.append(title, quote); article.append(evidence);
-    }
+    const article = document.createElement('article'), question = document.createElement('h3');
+    question.textContent = turn.question;
+    const openEvidence = (id: string) => void askAction(() => desktopApi.openCentral('ask', id));
+    article.append(question, renderAskAnswer(document, turn.result?.answer ?? turn.error?.message ?? moteText('回答未完成'), turn.result?.citations ?? [], openEvidence));
+    for (const citation of turn.result?.citations ?? []) article.append(renderAskCitation(document, citation, openEvidence));
     messages.append(article);
+  }
+  if (askConversation?.turns.some(turn => turn.result?.citations?.length)) {
+    const hint = document.createElement('p'); hint.className = 'helper';
+    hint.textContent = moteText('中央仓库将在 Chrome 打开，未安装时使用默认浏览器。请在浏览器中独立登录管理员账号；采集令牌不会传给浏览器。');
+    messages.append(hint);
   }
   const last = askRun?.events?.at(-1);
   setText('ask-progress', !askRun ? '' : askRun.status === 'running' ? last?.message ?? (last?.tool ? `${moteText('正在读取资料')} · ${last.tool}` : moteText('中央节点正在回答…')) : askRun.status === 'cancelled' ? moteText('已停止回答') : askRun.status === 'failed' ? askRun.error?.message ?? moteText('回答未完成') : moteText('回答已完成'));
@@ -1014,7 +1019,9 @@ async function askAction(action: () => Promise<void>): Promise<void> {
 }
 async function refreshAsk(): Promise<void> {
   await askAction(async () => {
-    await askHistory();
+    setText('ask-login-status', moteText('正在连接中央节点…'));
+    try { await askHistory(); } catch (error) { setText('ask-login-status', moteText('请求失败，请重试')); throw error; }
+    setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl));
     const page = await askCall<{items: import('./ask').AskRun[]}>('runs');
     askRun = page.items.find(item => item.status === 'running') ?? askRun;
     if (askRun?.conversationId) askConversation = await askCall('conversation', {id: askRun.conversationId});
@@ -1052,5 +1059,5 @@ byId('ask-refresh').addEventListener('click', () => void refreshAsk());
 byId('ask-more').addEventListener('click', () => void askAction(() => askHistory(true)));
 byId('ask-stop').addEventListener('click', () => void askAction(async () => { if (askRun) { askRun = await askCall('cancel', {id: askRun.id}); renderAsk(); scheduleAskPoll(); } }));
 byId('ask-new').addEventListener('click', () => { if (askBusy || askRun?.status === 'running') return; askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; renderAsk(); });
-byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { await askCall('login', {token}); askGeneration++; askRun = undefined; askConversation = undefined; renderAsk(); await askHistory(); }); });
-byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout'); askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; byId('ask-history').replaceChildren(); renderAsk(); }));
+byId('ask-login').addEventListener('click', () => { const token = readInput('ask-token'); byId<HTMLInputElement>('ask-token').value = ''; void askAction(async () => { setText('ask-login-status', moteText('正在连接中央节点…')); try { await askCall('login', {token}); } catch (error) { setText('ask-login-status', moteText('问一问需要有效的中央所有者令牌，请登录。')); throw error; } setText('ask-login-status', moteText('已登录 · {0}', currentStatus.config.serverUrl)); askGeneration++; askRun = undefined; askConversation = undefined; renderAsk(); await askHistory(); }); });
+byId('ask-logout').addEventListener('click', () => void askAction(async () => { await askCall('logout'); setText('ask-login-status', moteText('已退出问答登录')); askGeneration++; clearTimeout(askTimer); askRun = undefined; askConversation = undefined; byId('ask-history').replaceChildren(); renderAsk(); }));

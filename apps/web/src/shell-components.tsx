@@ -1,4 +1,5 @@
-import { captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
+import {memorySourceRoute} from './memory-source-route';
+import { decodeSourceText,captureOcrState,parseEvidenceRef,systemEventText,type CapturePreview } from '@mote/shared';
 import { moteText } from '@mote/shared/i18n';
 import {
 ArrowRight,
@@ -305,7 +306,11 @@ export function LoginDialog({ destination, onConnected, onClose }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const active = useRef<AbortController | null>(null);
+  const panel = useRef<HTMLElement | null>(null);
+  const tokenInput = useRef<HTMLInputElement | null>(null);
+  const opener = useRef(document.activeElement as HTMLElement | null);
   useEffect(() => () => active.current?.abort(), []);
+  useEffect(() => panel.current ? containDialogFocus(panel.current, opener.current, tokenInput.current) : undefined, []);
   async function connect(event: React.FormEvent) {
     event.preventDefault();
     if (active.current) return;
@@ -326,7 +331,7 @@ export function LoginDialog({ destination, onConnected, onClose }: {
     } finally { if (!controller.signal.aborted) setBusy(false); active.current = null; }
   }
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && onClose()} onKeyDown={e => e.key === "Escape" && onClose()}>
-    <section className="modal connect-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title">
+    <section ref={panel} className="modal connect-modal" role="dialog" aria-modal="true" aria-labelledby="connect-title">
       <button className="icon-button close" aria-label={moteText("关闭登录")} onClick={onClose}><X size={19}/></button>
       <div className="modal-icon"><ShieldCheck size={24}/></div>
       <div className="eyebrow">{moteText("MOTE · 中央管理界面")}</div>
@@ -334,7 +339,7 @@ export function LoginDialog({ destination, onConnected, onClose }: {
       <p className="muted-copy">{moteText("此服务就是中央节点，负责接收和归档客户端采集的数据。验证管理令牌后，进入「")}{destination}」。</p>
       <form onSubmit={connect}>
         <p className="login-endpoint">{moteText("当前服务")}{' '}<strong>{window.location.origin}</strong></p>
-        <label>{moteText("管理访问令牌")}<input aria-label={moteText("管理访问令牌")} autoFocus type="password" autoComplete="off" placeholder={moteText("输入此节点的管理令牌")} value={token} onChange={e=>setToken(e.target.value)} required disabled={busy}/></label>
+        <label>{moteText("管理访问令牌")}<input ref={tokenInput} aria-label={moteText("管理访问令牌")} autoFocus type="password" autoComplete="off" placeholder={moteText("输入此节点的管理令牌")} value={token} onChange={e=>setToken(e.target.value)} required disabled={busy}/></label>
         <label className="session-lifetime-control"><span>{moteText("登录会话有效期")}</span><select aria-label={moteText("登录会话有效期")} value={lifetime} onChange={e=>setLifetime(e.target.value as SessionLifetime)} disabled={busy}><option value="session">{moteText("当前窗口（Session）")}</option><option value="1d">{moteText("1 天")}</option><option value="7d">{moteText("7 天")}</option><option value="30d">{moteText("30 天")}</option></select></label>
         <div className="field-note"><ShieldCheck size={15}/>{lifetime==='session'?moteText("令牌只保留在当前标签页会话，退出登录后清除。"):moteText("令牌会保存在此浏览器中，并在所选期限后自动清除；退出登录会立即清除。")}</div>
         {error && <ErrorNotice text={error}/>}
@@ -347,7 +352,18 @@ export function LoginDialog({ destination, onConnected, onClose }: {
 
 export function OriginalImage({api,capture}:{api:Api;capture:Capture}) {
   const [open,setOpen]=useState(false);
-  return <div className="original-image"><button className="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?moteText('收起原图'):moteText('查看原图')}</button>{open&&<AuthImage api={api} capture={capture} full/>}</div>;
+  const [nativeSize,setNativeSize]=useState(false);
+  useEffect(()=>{setOpen(false);setNativeSize(false);},[capture.id]);
+  return <div className="original-image">
+    <div className="original-image-controls">
+      <button className="button" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?moteText('收起原图'):moteText('查看原图')}</button>
+      {open&&<>
+        <button className="button" aria-pressed={!nativeSize} onClick={()=>setNativeSize(false)}>{moteText('适应宽度')}</button>
+        <button className="button" aria-pressed={nativeSize} onClick={()=>setNativeSize(true)}>{moteText('原始尺寸')}</button>
+      </>}
+    </div>
+    {open&&<div className={`original-image-viewport${nativeSize?' native-size':''}`} tabIndex={0} role="region" aria-label={moteText('原图，可滚动查看')}><AuthImage api={api} capture={capture} full/></div>}
+  </div>;
 }
 
 export function EvidenceDialog({
@@ -398,7 +414,12 @@ export function EvidenceDialog({
     }
   }
   const presentation = capture ? evidencePresentation(capture) : null;
-  const ocr = capture ? ocrPresentation(captureOcrState(capture), capture.ocrText, capture.metadata?.capture?.deduplication?.duplicate) : null;
+  // Decode only the server-declared organizer format; user prose that resembles JSON stays literal.
+  const sourceBody=capture?.evidencePresentation==='source-record-json-v1'?decodeSourceText(capture.evidencePresentation,capture.ocrText):undefined;
+  const readableText=sourceBody?.kind==='source'?sourceBody.text:capture?.ocrText;
+  const ocr = capture ? ocrPresentation(captureOcrState(capture), capture.ocrText, capture.metadata?.capture?.deduplication?.duplicate, capture.perceptionJobs) : null;
+  const materialRef=capture?.revisionState==='current'&&capture.memoryMaterialRef;
+  const currentMaterialRef=materialRef&&/^material:mat_[a-f0-9]{64}@[a-f0-9]{64}$/.test(materialRef)?materialRef:undefined;
   return (
     <div
       className="modal-backdrop"
@@ -442,11 +463,15 @@ export function EvidenceDialog({
             <div className={`evidence-grid ${!capture.blobHash ? 'note-evidence' : ''}`}>
               {capture.blobHash && <OriginalImage key={capture.id} api={api} capture={capture}/>}
               <div className="evidence-text"><EvidenceState/>
+                <div className="evidence-source-actions">{currentMaterialRef?<button className="button" onClick={()=>onOpen(currentMaterialRef)}>{moteText('查看正式资料并提取记忆')}</button>:
+                  capture.requiresMaterialForMemory?<p className="muted">{moteText('此来源的原始记录需通过正式资料提取记忆。')} <a href="#/library/materials">{moteText('查看正式资料')}</a></p>:
+                  capture.revisionState!=='historical'&&<a className="button" href={memorySourceRoute(capture.id)}>{moteText("仅从这条资料提取记忆")}</a>}</div>
                 <span className="eyebrow">{presentation?.textLabel}</span>
                 <h3>{capture.windowTitle || sourceLabels[capture.source] || moteText("原始上下文")}</h3>
                 {capture.source === 'screen' && ocr && <div className="evidence-ocr-status" role="status"><span className={`badge ${ocr.tone}`}>{ocr.label}</span><p>{ocr.description}</p></div>}
-                <pre aria-label={capture.source === 'screen' ? moteText("OCR 全文") : moteText("记录全文")}>
-                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || capture.ocrText || (capture.provenance?.deleted ? moteText("来源已报告删除；本次只保留来源元数据。") : capture.provenance?.layer === 'reference' ? moteText("此来源仅保留引用与元数据，未导入正文。") : presentation?.nativeFile&&capture.provenance?.layer==='original'?moteText("原件单独保存；转写与摘要见上方。"):capture.blobHash ? moteText("暂无文字。") : moteText("此记录没有正文。"))}
+                <h4 className="evidence-body-heading">{capture.source === 'screen' ? moteText("OCR 全文") : moteText("记录全文")}</h4>
+                <pre>
+                  {capture.source==='media'?mediaExplanation:capture.source === 'activity' ? activityExplanation : systemEventText(capture.metadata) || readableText || (capture.provenance?.deleted ? moteText("来源已报告删除；本次只保留来源元数据。") : capture.provenance?.layer === 'reference' ? moteText("此来源仅保留引用与元数据，未导入正文。") : presentation?.nativeFile&&capture.provenance?.layer==='original'?moteText("原件单独保存；转写与摘要见上方。"):capture.blobHash ? moteText("暂无文字。") : moteText("此记录没有正文。"))}
                 </pre>
                 {(capture.source==='media'||capture.metadata?.media)&&<MediaSnapshot media={capture.metadata?.media} observedAt={capture.metadata?.observedAt??capture.capturedAt} screenLocked={capture.metadata?.state?.screenLocked} collection={capture.privacy.collection}/>}
                 <dl>

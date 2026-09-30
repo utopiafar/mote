@@ -46,7 +46,7 @@ import { changeEvidenceRoute,readEvidenceRoute } from './evidence-route';
 import { FeaturePage,featuresReady,webFeatures } from './features/runtime';
 import { pageLabels,readPage,routes,sectionFor,sections,type Page } from './navigation';
 import { readResource,resources } from './resource-cache';
-import { clearSession,persistSession,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
+import { clearSession,persistSession,readPeriod,savePeriod,type Period,readSessionLifetime,readStoredSession,saveSessionLifetime,type SessionLifetime } from "./session";
 import { CentralStatusPill,ErrorNotice,EvidenceDialog,LoginDialog,SetupSteps,Spinner } from './shell-components';
 import "./styles.css";
 import { confirmNavigation } from './unsaved';
@@ -99,7 +99,7 @@ function App() {
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
-  const [period, setPeriod] = useState("week");
+  const [period, setPeriod] = useState<Period>(()=>readPeriod(connection));
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(()=>{
     if(!menuOpen)return;
@@ -137,9 +137,10 @@ function App() {
   }, []);
   const [notice, setNotice] = useState("");
   const [timelineRevision, setTimelineRevision] = useState(0);
-  const disconnect = useCallback(() => {
+  const clearConnection = useCallback(() => {
     connectionGeneration.current++;
     clearSession();
+    setPeriod("week");
     setConnection(null);
     setVerified(false);
     setShowConnect(false);
@@ -150,14 +151,19 @@ function App() {
     setDevices([]);
     setRecent([]);
     setInsights([]);
+  }, []);
+  const disconnect = useCallback(() => {
+    clearConnection();
     setEvidenceId(null);
     window.moteCentralSession?.close();
-  }, []);
+  }, [clearConnection, setEvidenceId]);
   const unauthorized = useCallback(() => {
-    disconnect();
+    // A same-node re-login may continue a direct evidence link. Clear the
+    // credential and private UI, but keep the URL until the owner logs in.
+    clearConnection();
     setNotice(moteText("登录已失效，请重新输入管理令牌。"));
     setShowConnect(true);
-  }, [disconnect]);
+  }, [clearConnection]);
   useEffect(() => {
     if (!connection?.expiresAt) return;
     let timer: number | undefined;
@@ -251,10 +257,13 @@ function App() {
     connectionGeneration.current++;
     saveSessionLifetime(lifetime);
     setSessionLifetime(lifetime);
-    setConnection(persistSession(value, lifetime));
+    const next=persistSession({token:value.token}, lifetime);
+    setConnection(next);
+    setPeriod(readPeriod(next));
     setVerified(false);
     setStatus(null);
-    setDevices([]); setRecent([]); setInsights([]); setEvidenceId(null);
+    setDevices([]); setRecent([]); setInsights([]);
+    updateEvidenceId(readEvidenceRoute(window.location.hash));
     setActivity({apps:[],devices:[],totalDurationMs:0,captures:0});
     setShowConnect(false);
     setNotice("");
@@ -345,7 +354,7 @@ function App() {
                     className="period-select"
                     aria-label={moteText("选择时间范围")}
                     value={period}
-                    onChange={(e) => setPeriod(e.target.value)}
+                    onChange={(e) => setPeriod(savePeriod(connection,e.target.value))}
                   >
                     {Object.entries(periodNames).map(([key, label]) => (
                       <option key={key} value={key}>
@@ -462,7 +471,7 @@ function App() {
                 : api && (
                     <>
                       {!["notes","devices","connections","settings","sources","archive","memories","imports","insights","about"].includes(page) && !status && !error && <Spinner label={moteText("正在读取节点状态…")}/>}
-                      <FeaturePage page={page} props={{api,status,devices,activity,recent,insights,onPage,onOpen:setEvidenceId,range,archiveTab,setArchiveTab,timelineRevision,refresh,disconnect,sessionLifetime,changeSessionLifetime}}/>
+                      <FeaturePage page={page} props={{api,status,devices,activity,recent,insights,onPage,onOpen:setEvidenceId,range,rangeSelectionKey:period,archiveTab,setArchiveTab,timelineRevision,refresh,disconnect,sessionLifetime,changeSessionLifetime}}/>
                     </>
                   )}
             </>
@@ -484,7 +493,7 @@ function App() {
           onClose={() => setShowConnect(false)}
         />
       )}
-      {evidenceId && api && (
+      {evidenceId && api && verified && (
         <EvidenceDialog
           id={evidenceId}
           api={api}

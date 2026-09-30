@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>布局连线卡 · Story B 合成采集页</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <span class="fixture-badge">合成测试页 · 非真实用户经历</span>
+    <h1>布局连线卡</h1>
+    <p>虚构的资料室记录。卡片与图例的关系画在页面中。</p>
+    <nav class="site-nav" aria-label="合成页面">
+      <a href="index.html" aria-current="page">布局连线</a>
+      <a href="long.html">三屏长文</a>
+      <a href="revision.html?v=1">版本更正</a>
+    </nav>
+  </header>
+  <main>
+    <section class="panel" aria-labelledby="layout-title">
+      <p class="eyebrow">画面 01 / 03</p>
+      <h2 id="layout-title">卡片与图例</h2>
+      <p>左侧是两张记录卡，右侧是两张图例。图形之间有交叉连线；卡片文字并不描述连接结果。</p>
+      <figure class="diagram-wrap">
+        <svg id="layout-diagram" viewBox="0 0 360 440" role="img" aria-label="两张记录卡与两张图例之间有交叉连线">
+          <title>虚构记录卡与图例的连线</title>
+          <defs>
+            <marker id="arrow-blue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#146b99" stroke-width="1.5"/></marker>
+            <marker id="arrow-orange" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="#bd5c1f" stroke-width="1.5"/></marker>
+          </defs>
+          <text x="14" y="27" class="diagram-copy">记录卡</text>
+          <text x="233" y="27" class="diagram-copy">图例</text>
+          <rect x="10" y="50" width="127" height="116" rx="12" fill="#e7f4fa" stroke="#146b99" stroke-width="3"/>
+          <text x="23" y="83" class="diagram-label">A · 本人记录</text>
+          <text x="23" y="111" class="diagram-copy">岚：“我把标记</text>
+          <text x="23" y="132" class="diagram-copy">放在桌边。”</text>
+          <rect x="10" y="273" width="127" height="116" rx="12" fill="#fff0e4" stroke="#bd5c1f" stroke-width="3"/>
+          <text x="23" y="306" class="diagram-label">B · 第三方观察</text>
+          <text x="23" y="334" class="diagram-copy">周沐：“我看见标记</text>
+          <text x="23" y="355" class="diagram-copy">留在桌边。”</text>
+          <rect x="223" y="50" width="127" height="116" rx="12" fill="#fff" stroke="#778fa4" stroke-width="2"/>
+          <text x="237" y="82" class="diagram-label">X · 方格图</text>
+          <path d="M248 104 H322 M248 124 H322 M267 95 V136 M288 95 V136 M309 95 V136" fill="none" stroke="#497089" stroke-width="2"/>
+          <rect x="223" y="273" width="127" height="116" rx="12" fill="#fff" stroke="#778fa4" stroke-width="2"/>
+          <text x="237" y="305" class="diagram-label">Y · 圆环图</text>
+          <circle cx="286" cy="341" r="25" fill="none" stroke="#497089" stroke-width="3"/>
+          <circle cx="286" cy="341" r="5" fill="#497089"/>
+          <path id="path-a" d="M137 109 C169 109 191 331 223 331" fill="none" stroke="#146b99" stroke-width="5" marker-end="url(#arrow-blue)"/>
+          <path id="path-b" d="M137 331 C169 331 191 109 223 109" fill="none" stroke="#bd5c1f" stroke-width="5" stroke-dasharray="12 7" marker-end="url(#arrow-orange)"/>
+          <circle cx="139" cy="109" r="5" fill="#146b99"/>
+          <circle cx="139" cy="331" r="5" fill="#bd5c1f"/>
+        </svg>
+        <figcaption>蓝色实线与橙色虚线各自从一张记录卡出发；交叉处没有合并节点。</figcaption>
+      </figure>
+      <p class="note">此页只用于受控页面采集与阅读检查。人物、地点和图例均为原创虚构内容。</p>
+    </section>
+  </main>
+  <footer class="site-footer">Story B · 本地生成夹具 · 2026-09-27</footer>
+</body>
+</html>

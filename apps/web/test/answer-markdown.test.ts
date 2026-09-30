@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import React from 'react';
+import React,{act} from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import {JSDOM} from 'jsdom';
 import { AnswerMarkdown, answerPreview } from '../src/AnswerMarkdown.js';
 import type { Answer } from '../src/api.js';
 const id='11111111-1111-4111-8111-111111111111';
@@ -23,4 +24,30 @@ test('history previews remove Markdown formatting and only verified citation mar
   assert.equal(text,'合成回顾 完成检查 项目记录 [unverified]');
   assert.ok(!text.includes(id));
   assert.equal(answerPreview({...answer,answer:'一二三四五'},3),'一二三…');
+});
+test('GFM tables retain semantic cells, formatting and verified evidence controls',()=>{
+  const html=render(`| Item | Evidence |\n| --- | --- |\n| **Generated plan** | Pending [${id}] |\n| Escaped \\| pipe | \`[${id}]\` |`);
+  const dom=new JSDOM(html),d=dom.window.document;
+  try{
+    assert.equal(d.querySelectorAll('table').length,1);
+    assert.equal(d.querySelectorAll('thead th').length,2);
+    assert.equal(d.querySelectorAll('tbody tr').length,2);
+    assert.equal(d.querySelector('td strong')?.textContent,'Generated plan');
+    assert.equal(d.querySelectorAll('td .inline-citation').length,1);
+    assert.equal(d.querySelector('td code')?.textContent,`[${id}]`);
+    assert.equal(d.querySelectorAll('tbody tr')[1].firstElementChild?.textContent,'Escaped | pipe');
+    assert.equal(d.querySelector('.answer-table-scroll')?.getAttribute('tabindex'),'0');
+  }finally{dom.window.close();}
+});
+test('table citations open the verified original and retain focus across answer rerenders',async t=>{
+  const dom=new JSDOM('<!doctype html><div id="mount"></div>',{url:'http://localhost/',pretendToBeVisual:true}),globals=new Map<string,PropertyDescriptor|undefined>();
+  for(const [key,value]of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,IS_REACT_ACT_ENVIRONMENT:true})){globals.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}
+  const {createRoot}=await import('react-dom/client'),root=createRoot(dom.window.document.querySelector('#mount')!),opened:string[]=[],onOpen=(ref:string)=>opened.push(ref),value={...answer,answer:`| Plan | Status |\n| --- | --- |\n| Generated | Unknown [${id}] |`};
+  t.after(async()=>{await act(async()=>root.unmount());dom.window.close();for(const [key,previous]of globals){if(previous)Object.defineProperty(globalThis,key,previous);else Reflect.deleteProperty(globalThis,key);}});
+  await act(async()=>root.render(React.createElement(AnswerMarkdown,{answer:value,onOpen})));
+  const button=dom.window.document.querySelector<HTMLButtonElement>('td .inline-citation')!;button.focus();
+  await act(async()=>button.click());assert.deepEqual(opened,[id]);
+  await act(async()=>root.render(React.createElement(AnswerMarkdown,{answer:{...value,citations:[...value.citations]},onOpen})));
+  assert.equal(dom.window.document.querySelector('td .inline-citation'),button);
+  assert.equal(dom.window.document.activeElement,button);
 });

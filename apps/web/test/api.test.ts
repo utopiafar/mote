@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ApiError, createApi, errorMessage } from '../src/api.js';
+import {configureLocale,getLocale,type Locale} from '@mote/shared/i18n';
 
 test('failed requests retain validated request IDs for cross-service diagnostics', async t => {
   const requestId = 'c919bc95-272d-4094-92a1-7f9c0ae944ca';
@@ -98,4 +99,27 @@ test('provider reason outranks generic HTTP category and local configuration gui
  const mock=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({error:'model_not_configured',reason:'provider_quota',message:'RAW EXTERNAL ENGINE'}),{status:502}));
  await assert.rejects(createApi({token:'fixture'}).request('/api/query-runs'),error=>{assert.ok(error instanceof ApiError);assert.equal(error.code,'provider_quota');assert.match(errorMessage(error),/补充额度/);return true;});mock.mock.restore();
  const {failureMessage}=await import('../src/failure-message.js');assert.match(failureMessage('model_settings_credential_reuse'),/确认复用已有凭据/);assert.match(failureMessage('validation'),/必填项和取值范围/);
+});
+
+test('API request throttling and provider throttling retain distinct localized messages for HTTP 429',async t=>{
+ const previousLocale=getLocale();t.after(()=>configureLocale(()=>previousLocale));
+ let unauthorized=0;
+ const requestId='c919bc95-272d-4094-92a1-7f9c0ae944ca';
+ for(const locale of ['zh-CN','en'] as Locale[]){
+  configureLocale(()=>locale);
+  for(const code of ['api_rate_limited','rate_limited']){
+   const payload=code==='api_rate_limited'?{error:code}:{error:'provider_failed',reason:code};
+   const mock=t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({...payload,message:'RAW EXTERNAL LIMIT DETAIL',requestId}),{status:429}));
+   await assert.rejects(createApi({token:'synthetic'},()=>unauthorized++).request('/api/files'),error=>{
+    assert.ok(error instanceof ApiError);assert.equal(error.status,429);assert.equal(error.code,code);
+    const message=errorMessage(error),expected=code==='api_rate_limited'
+     ?locale==='en'?'Too many requests. Retry later.':'请求过于频繁，请稍后重试。'
+     :locale==='en'?'The model service is rate limiting requests. Wait for the task to update.':'模型服务暂时限流，请等待任务更新。';
+    assert.ok(message.startsWith(expected),message);assert.ok(message.includes(requestId));
+    assert.doesNotMatch(message,/RAW EXTERNAL LIMIT DETAIL/);return true;
+   });
+   mock.mock.restore();
+  }
+ }
+ assert.equal(unauthorized,0);
 });

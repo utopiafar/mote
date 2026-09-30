@@ -17,7 +17,7 @@ const messages:Record<string,string>={
 
  actions_disabled:'日程分析未开启，请检查发现设置。',actions_closed:'日程分析服务已停止，请检查节点状态。',action_settings_changed:'日程分析设置已变化，请重新分析。',action_analysis_failed:'日程分析未完成，请查看批次状态后重试。',invalid_action_output:'模型返回的日程建议未通过校验，请重试分析。',
  provider_failed:'模型服务未完成请求，请查看任务状态。',model_failed:'模型服务未完成请求，请查看任务状态。',agent_response:'模型返回的结果未通过校验。',
- timeout:'请求等待超时，请查看任务状态。',provider_timeout:'请求等待超时，请查看任务状态。',network:'连接暂时中断，请检查网络。',provider_network:'连接暂时中断，请检查网络。',rate_limited:'模型服务暂时限流，请等待任务更新。',
+ timeout:'请求等待超时，请查看任务状态。',provider_timeout:'请求等待超时，请查看任务状态。',network:'连接暂时中断，请检查网络。',provider_network:'连接暂时中断，请检查网络。',api_rate_limited:'请求过于频繁，请稍后重试。',rate_limited:'模型服务暂时限流，请等待任务更新。',
  provider_unavailable:'模型服务暂时不可用，请检查服务配置。',provider_quota:'模型服务额度不足，请补充额度后继续。',
  model_token_budget:'当前 token 预算不足，请检查预算设置。',model_cost_budget:'当前金额预算不足，请检查预算设置。',daily_budget:'本日处理预算不足，请检查预算设置。',
  budget_price_required:'请先设置与预算币种一致的模型价格。',budget_unbounded_runtime:'当前模型运行方式无法保证硬预算，请调整预算或模型配置。',model_budget_unavailable:'暂时无法读取模型预算，请查看任务状态。',

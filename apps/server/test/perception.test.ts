@@ -1,3 +1,4 @@
+import {EvidenceReader} from '../src/evidence-reader.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
@@ -110,4 +111,35 @@ test('first healthy worker recovers exhausted legacy failures but leaves histori
  assert.equal(store.db.prepare("SELECT state FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(historical)!.state,'failed');
  store.db.prepare("UPDATE perception_jobs SET state='failed',attempts=4,error='processor_failed' WHERE capture_id=? AND kind='ocr'").run(input.id);
  await p.tick();assert.equal(store.db.prepare("SELECT attempts FROM perception_jobs WHERE capture_id=? AND kind='ocr'").get(input.id)!.attempts,4);
+});
+
+test('central OCR projections and filters distinguish disabled, cancelled, blocked and live work without changing originals',async t=>{
+ const {store,p,input}=await setup(t);await store.ingest(input);
+ const original=store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(input.id);
+ p.configure({...p.settings(),enabled:true});
+ for(const [state,error,expected] of [['waiting',null,'pending'],['running',null,'pending'],['cancelled',null,'disabled'],['blocked','model_missing','failed'],['blocked','processing_disabled','disabled'],['failed','processor_failed','failed'],['succeeded',null,'failed']] as const){
+  store.db.prepare("UPDATE perception_jobs SET state=?,error=? WHERE capture_id=? AND kind='ocr'").run(state,error,input.id);
+  assert.equal(store.evidence([input.id])[0].ocr?.status,expected,state);
+  const context=EvidenceReader.prototype.context.call({store} as EvidenceReader,store.evidence([input.id]));assert.equal(context[0].ocr?.status,expected);assert.equal((context[0] as any).perceptionJobs[0].state,state);
+  assert.equal(store.previews({ocrStatus:expected}).items[0]?.id,input.id,state);
+  assert.equal(store.previews({ocrStatus:expected==='pending'?'failed':'pending'}).items.length,0,state);
+ }
+ p.configure({...p.settings(),enabled:false});store.db.prepare("UPDATE perception_jobs SET state='waiting',error=NULL WHERE capture_id=?").run(input.id);
+ assert.equal(store.evidence([input.id])[0].ocr?.status,'disabled');assert.equal(store.previews({ocrStatus:'disabled'}).items.length,1);
+ assert.deepEqual(store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(input.id),original);
+ p.configure({...p.settings(),enabled:true,ocrEndpoint:'http://127.0.0.1/ocr'});await p.tick();
+ store.db.prepare("UPDATE perception_results SET json=json_set(json,'$.text','') WHERE capture_id=? AND kind='ocr' AND current=1").run(input.id);
+ assert.equal(store.evidence([input.id])[0].ocr?.status,'completed');assert.equal(store.evidence([input.id])[0].ocrText,'');
+ assert.equal(store.previews({ocrStatus:'completed'}).items.length,1);
+});
+
+
+test('legacy metadata-only disabled OCR follows the same central status projection and filters',async t=>{
+ const {store,input}=await setup(t);const legacy={...input,ocr:undefined,metadata:{version:1,observedAt:input.capturedAt,capture:{ocrEnabled:false}}};await store.ingest(legacy);
+ const original=store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(input.id);
+ store.db.prepare("UPDATE perception_jobs SET state='running',error=NULL WHERE capture_id=? AND kind='ocr'").run(input.id);
+ assert.equal(store.evidence([input.id])[0].ocr?.status,'pending');assert.equal(store.previews({ocrStatus:'pending'}).items[0]?.id,input.id);assert.equal(store.previews({ocrStatus:'disabled'}).items.length,0);
+ store.db.prepare("UPDATE perception_jobs SET state='cancelled' WHERE capture_id=? AND kind='ocr'").run(input.id);
+ assert.equal(store.evidence([input.id])[0].ocr?.status,'disabled');assert.equal(store.previews({ocrStatus:'disabled'}).items[0]?.id,input.id);
+ assert.deepEqual(store.db.prepare('SELECT json,fingerprint FROM captures WHERE id=?').get(input.id),original);
 });

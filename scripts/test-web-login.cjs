@@ -17,12 +17,13 @@ async function run(){
  const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('MOTE_')));
  server=spawn('node',[join(repo,'apps/server/dist/index.js')],{env:{...env,MOTE_ENV_FILE:envFile},stdio:'ignore'});
  await until(async()=>{try{return(await fetch(base+'/api/health')).ok;}catch{return false;}},'fixture server');
- const request=(path,token,body)=>fetch(base+path,{method:body?'POST':'GET',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
+ const request=(path,token,body)=>fetch(base+path,{method:body?'POST':'GET',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...(path==='/api/notes'?{'x-mote-ingress-version':'2'}:{})},...(body?{body:JSON.stringify(body)}:{})});
  const invite=await(await request('/api/connections/invitations',owner,{label:'Generated phone',serverUrl:base})).json();
  const collector=await(await request('/api/connections/redeem',null,{code:invite.invitation.code,deviceId:'fixture-phone',deviceName:'合成测试手机',platform:'android'})).json();
- assert.equal((await request('/api/notes',collector.token,{id:randomUUID(),deviceId:'fixture-phone',deviceName:'合成测试手机',platform:'android',capturedAt:new Date().toISOString(),text:'Generated private note for authentication regression.'})).status,201);
+ const noteId=randomUUID(),evidenceRef='capture:'+noteId;
+ assert.equal((await request('/api/notes',collector.token,{id:noteId,deviceId:'fixture-phone',deviceName:'合成测试手机',platform:'android',capturedAt:new Date().toISOString(),text:'Generated private note for authentication regression.'})).status,201);
  window=new BrowserWindow({width:1360,height:1000,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});
- const wc=window.webContents,js=code=>wc.executeJavaScript(code);
+ let wc=window.webContents;const js=code=>wc.executeJavaScript(code);
  const click=async text=>until(()=>js(`(()=>{const b=[...document.querySelectorAll('button')].find(b=>b.getClientRects().length&&b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)return false;b.click();return true;})()`),'button '+text);
  const input=async value=>js(`(()=>{const e=document.querySelector('[aria-label="管理访问令牌"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`);
  const selectLifetime=async value=>js(`(()=>{const e=document.querySelector('[aria-label="登录会话有效期"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
@@ -67,6 +68,40 @@ async function run(){
  assert.equal(await js(`sessionStorage.getItem('mote.connection')`),null);
  assert.equal(await js(`!!document.querySelector('.capture-card,.device-overview,.archive-page')`),false);
  await window.reload();await until(()=>js(`!!document.querySelector('.welcome')`),'logged out survives reload');
+ // Open a direct evidence URL in a fresh browser tab without a session. A
+ // collector credential cannot read it; owner login resumes the same route.
+ window.destroy();window=new BrowserWindow({width:1360,height:1000,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true}});wc=window.webContents;
+ await window.loadURL(base+'/#/ask?evidence='+encodeURIComponent(evidenceRef));
+ await until(()=>js(`!!document.querySelector('.welcome')`),'anonymous evidence deep link');
+ assert.equal(await js(`new URLSearchParams(location.hash.split('?')[1]).get('evidence')`),evidenceRef);
+ assert.equal(await js(`!!document.querySelector('.evidence-modal')`),false);
+ await js(`window.fixtureEvidenceReads=0;window.fixtureExpire=false;const originalEvidenceFetch=fetch.bind(window);window.fetch=async(input,init)=>{const path=new URL(typeof input==='string'?input:input.url,location.href).pathname;if(path.startsWith('/api/capture-browser/'))window.fixtureEvidenceReads++;if(window.fixtureExpire&&path==='/api/status')return new Response(JSON.stringify({message:'Generated expired session'}),{status:401});return originalEvidenceFetch(input,init);};true;`);
+ assert.equal(await js(`window.fixtureEvidenceReads`),0,'anonymous link cannot read evidence');
+ await js(`document.querySelector('.welcome button.primary').click()`);
+ await until(()=>js(`!!document.querySelector('#connect-title')`),'deep-link login');
+ await input(collector.token);await click('登录并继续');
+ await until(()=>js(`document.querySelector('.connect-modal')?.innerText.includes('没有管理权限')`),'collector rejected on deep link');
+ assert.equal(await js(`window.fixtureEvidenceReads`),0,'collector login cannot read evidence');
+ assert.equal(await js(`!!document.querySelector('.evidence-modal')`),false);
+ await input(owner);await click('登录并继续');
+ await until(()=>js(`document.querySelector('.evidence-modal')?.textContent.includes('Generated private note for authentication regression.')`),'owner opens deep-linked note');
+ assert.ok(await js(`window.fixtureEvidenceReads>0`),'normal authenticated reader fetches evidence');
+ assert.equal(await js(`new URLSearchParams(location.hash.split('?')[1]).get('evidence')`),evidenceRef);
+ await js(`document.querySelector('[aria-label="关闭证据详情"]').click()`);
+ await until(()=>js(`!document.querySelector('.evidence-modal')&&!new URLSearchParams(location.hash.split('?')[1]).has('evidence')`),'direct detail closes in place');
+ assert.equal(await js(`location.hash`),'#/ask');
+ await js(`location.hash=${JSON.stringify('/ask?evidence='+encodeURIComponent(evidenceRef))}`);
+ await until(()=>js(`!!document.querySelector('.evidence-modal')`),'reopen evidence before expiry');
+ await js(`window.fixtureExpire=true;document.querySelector('[aria-label="刷新资料"]').click()`);
+ await until(()=>js(`!!document.querySelector('#connect-title')&&!document.querySelector('.evidence-modal')&&sessionStorage.getItem('mote.connection')===null`),'expired deep link returns to login');
+ assert.equal(await js(`new URLSearchParams(location.hash.split('?')[1]).get('evidence')`),evidenceRef,'expiry retains same-node evidence intent');
+ assert.equal(await js(`document.body.innerText.includes('Generated private note for authentication regression.')`),false,'private note removed while unauthenticated');
+ await js(`window.fixtureExpire=false;true;`);await input(owner);await click('登录并继续');
+ await until(()=>js(`document.querySelector('.evidence-modal')?.textContent.includes('Generated private note for authentication regression.')`),'relogin resumes deep-linked evidence');
+ await js(`document.querySelector('[aria-label="关闭证据详情"]').click()`);
+ await until(()=>js(`!document.querySelector('.evidence-modal')`),'close after relogin');
+ await js(`document.querySelector('[aria-label="登录会话"]').click()`);await click('退出登录');
+ await until(()=>js(`!new URLSearchParams(location.hash.split('?')[1]).has('evidence')&&sessionStorage.getItem('mote.connection')===null`),'explicit logout clears evidence route before switching node');
  // A saved token is untrusted until the owner-only endpoint validates it again.
  await js(`sessionStorage.setItem('mote.connection',${JSON.stringify(JSON.stringify({url:'',token:collector.token}))});location.reload()`);
  await until(()=>js(`document.body.innerText.includes('此令牌没有管理权限')`),'restored collector session denied');
@@ -84,7 +119,7 @@ async function run(){
  void window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==='退出登录').click()`).catch(()=>{});
  await until(()=>window.isDestroyed(),'native logout closes privileged window');
  await assert.rejects(nativeSession.fetch(base+'/api/configuration'));
- writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,checks:['anonymous page guard','same-origin login','invalid token','collector denied','intended page restored','independent endpoint failures','device QR reachable','expired session clears data','logout','restored token verification','desktop/mobile layout','native owner-only header authentication','native logout closes authorized session']},null,2));
+ writeFileSync(join(output,'result.json'),JSON.stringify({passed:true,generatedOnly:true,checks:['anonymous page guard','same-origin login','invalid token','collector denied','intended page restored','independent endpoint failures','device QR reachable','expired session clears data','anonymous evidence deep link','collector denied on evidence','owner login opens original evidence','direct detail closes in place','expired deep link resumes after re-login','logout clears evidence route','restored token verification','desktop/mobile layout','native owner-only header authentication','native logout closes authorized session']},null,2));
  console.log('PASS: real central + browser login, permission gates, independent navigation and device QR; generated content only.');
 }
 async function finish(code){if(window&&!window.isDestroyed())window.destroy();if(server&&server.exitCode===null){server.kill('SIGTERM');await Promise.race([new Promise(r=>server.once('close',r)),delay(5000)]);}rmSync(root,{recursive:true,force:true});app.exit(code);}

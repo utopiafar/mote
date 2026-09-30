@@ -4,6 +4,8 @@ import React,{act} from 'react';
 import {createRoot} from 'react-dom/client';
 import {JSDOM} from 'jsdom';
 import {Memories} from '../src/Memories.js';
+import {MemoryIntegration} from '../src/MemoryIntegration.js';
+import {FeaturePage,featuresReady} from '../src/features/runtime.js';
 import {Files,FileDetail} from '../src/Files.js';
 import {Sources} from '../src/Sources.js';
 import {ReferenceDetail} from '../src/ReferenceDetail.js';
@@ -16,6 +18,129 @@ function deferred(){let resolve!:(value:any)=>void,reject!:(value:unknown)=>void
 async function fixture(t:any){const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'http://localhost/',pretendToBeVisual:true}),backups=new Map<string,PropertyDescriptor|undefined>();for(const [key,value] of Object.entries({window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,localStorage:dom.window.localStorage,IS_REACT_ACT_ENVIRONMENT:true})){backups.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,configurable:true,writable:true});}dom.window.localStorage.setItem('mote.language','zh-CN');const root=createRoot(dom.window.document.getElementById('root')!);t.after(async()=>{await act(async()=>root.unmount());for(const [key,descriptor] of backups){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else Reflect.deleteProperty(globalThis,key);}dom.window.close();});return {root,document:dom.window.document};}
 function apiWith(read:(path:string,init?:RequestInit)=>unknown):Api{return {request:async(path:string,init?:RequestInit)=>{if(path.startsWith('/api/operations/changes'))return {ids:[],cursor:0,hasMore:false,reset:false};if(path==='/api/model-settings')return {settings:{agentTimeoutMs:120000},profiles:[]};if(path==='/api/memory-jobs')return {items:[]};if(path==='/api/execution-settings')return {queues:{agents:{active:0,waiting:0,limit:1},llm:{active:0,waiting:0,limit:1}}};if(path==='/api/file-processing')return null;if(path==='/api/connectors/status')return {};return await read(path,init);},setAgentTimeout:()=>{}} as Api;}
 const memory=(id:string)=>({id,title:'Generated '+id[0],statement:'Current evidence '+id[0],status:'published',createdAt:'2020-01-01T00:00:00Z',evidenceIds:[]});
+test('Memory history uses summary counts and uncertainty links the same verified citations as its statement',async t=>{
+ const {root,document:d}=await fixture(t),opened:string[]=[];
+ const record={...memory(ids[0]),statement:`Known statement [${ids[0]}]`,uncertainty:`Known limit [${ids[0]}]. Unknown [${ids[1]}]. Literal \`[${ids[0]}]\`. <script>untrusted()</script>`,evidence:Array.from({length:4},()=>({id:ids[0],capturedAt:'2020-01-01T00:00:00Z',receivedAt:'2020-01-01T00:00:00Z',contentHash:'generated',quote:'Generated proof'}))};
+ const completed={id:'generated-history',status:'completed',createdAt:'2020-01-01T00:00:00Z',updatedAt:'2020-01-01T00:00:00Z',evidenceIds:[],memoryIds:[],memoryCount:1,totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,skillVersion:'generated'};
+ const legacy={...completed,id:'generated-legacy-history',memoryCount:undefined};
+ const api=apiWith(path=>path.startsWith('/api/memories?')?{items:[record],nextCursor:null}:path.startsWith('/api/memories/')?record:{}),read=api.request;
+ api.request=async(path,init)=>path==='/api/memory-jobs'?{items:[completed,legacy]} as any:read(path,init);
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:id=>opened.push(id)})));
+ const history=Array.from(d.querySelectorAll('.memory-job-history button'));
+ assert.match(history[0].textContent!,/1 条记忆$/);assert.doesNotMatch(history[1].textContent!,/0 条记忆$/,'older services do not turn omitted IDs into a zero count');
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ const notes=Array.from(d.querySelectorAll('.review-notes')).find(n=>n.querySelector('h3')?.textContent==='判断的边界')!;
+ const link=notes.querySelector<HTMLButtonElement>('.inline-citation')!;
+ assert.equal(link.textContent,'来源 4','duplicate evidence IDs keep the existing last-index numbering');
+ await act(async()=>link.click());assert.deepEqual(opened,[ids[0]]);
+ assert.match(notes.textContent!,new RegExp('Unknown \\['+ids[1]+'\\]'));
+ assert.equal(notes.querySelector('code')?.textContent,'['+ids[0]+']');assert.equal(notes.querySelector('script'),null);
+ assert.deepEqual(record.evidence.map(x=>x.id),Array(4).fill(ids[0]));
+});
+test('manual consolidation uses one fresh selected card and feature default, never treats an automatic window as this run',async t=>{
+ const {root,document:d}=await fixture(t),candidate={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
+ const writes:{path:string;body?:unknown}[]=[];
+ let windowState:{id:string;manual:boolean;items:number;startedAt:number}|undefined={id:ids[1],manual:false,items:4,startedAt:0};let status='running';
+ const view=()=>({settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status,failures:0,active:windowState}]});
+ const api={request:async(path:string,init?:RequestInit)=>{
+   if(path==='/api/memory-settings')return view();
+   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+   if(path==='/api/model-settings')return {settings:{model:'',agentTimeoutMs:120000},profiles:[{id:'fixture',name:'Generated profile',settings:{model:'',agentTimeoutMs:120000}}],defaults:{memory:'fixture'},defaultModels:{memory:'generated-model'}};
+   if(path==='/api/memories/'+candidate.id)return candidate;
+   if(path==='/api/memory-integrations'&&init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});windowState={id:ids[0],manual:true,items:1,startedAt:Date.now()};status='running';return {id:ids[0]};}
+   if(path==='/api/memory-integrations/'+ids[0]+'/cancel'){writes.push({path});status='cancelled';return view();}
+   throw Error('Unexpected fixture path '+path);
+ },setAgentTimeout:()=>{}} as Api;
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate})));
+ assert.match(d.body.textContent!,/Generated profile · generated-model.*120 秒/);
+ assert.match(d.body.textContent!,/自动整理当前已关闭/);
+ assert.match(d.body.textContent!,/自动整理窗口正在运行/);
+ assert.equal(Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.disabled,true);
+ assert.equal(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='取消整理'),false);
+ windowState=undefined;status='waiting_for_increment';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.click());
+ assert.deepEqual(writes[0],{path:'/api/memory-integrations',body:{recipe:{id:'mote.memory-integration',version:'2'},memoryIds:[ids[0]]}});
+ assert.match(d.body.textContent!,/本次所选：Generated a/);
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api})));
+ assert.ok(d.querySelector('#manual-memory-integration'),'active manual work remains visible after clearing the card');
+ assert.equal(d.querySelector('select[aria-label="整理方案"]'),null,'the setup form does not fill the empty list view');
+ assert.ok(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='取消整理'));
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate})));
+ status='retry_wait';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.ok(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='取消整理'),'cancel stays available during backoff');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='取消整理')!.click());
+ assert.equal(writes[1].path,'/api/memory-integrations/'+ids[0]+'/cancel');
+ assert.ok(Array.from(d.querySelectorAll('button')).some(b=>b.textContent==='显式重试整理'));
+ assert.equal(Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.disabled,false,'a cancelled window does not permanently block a new manual run');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!.click());
+ assert.deepEqual(writes[2].body,{recipe:{id:'mote.memory-integration',version:'2'},memoryIds:[ids[0]]});
+});
+test('cancelled consolidation hides its obsolete failure code while failed and retry-wait retain diagnostics',async t=>{
+ const {root,document:d}=await fixture(t);let status='failed';
+ const api=apiWith(path=>path==='/api/memory-settings'?{settings:{consolidation:{enabled:false,maxItems:1}},extensions:[{id:'consolidation',status,error:'workflow_failed',failures:1,retryAt:Date.now()+120000,active:{id:ids[0],manual:true,items:1,startedAt:0}}]}:{});
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api})));
+ const panel=()=>d.querySelector('#manual-memory-integration')!;
+ assert.match(panel().textContent!,/整理失败/);assert.match(panel().textContent!,/workflow_failed/);
+ status='retry_wait';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.match(panel().textContent!,/等待自动重试/);assert.match(panel().textContent!,/workflow_failed/);
+ status='cancelled';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.match(panel().textContent!,/已取消/);assert.doesNotMatch(panel().textContent!,/workflow_failed|预计重试时间/);
+ assert.ok(Array.from(panel().querySelectorAll('button')).some(button=>button.textContent==='显式重试整理'));
+ assert.ok(!Array.from(panel().querySelectorAll('button')).some(button=>button.textContent==='取消整理'));
+ status='failed';await act(async()=>resources(api).invalidate(path=>path==='/api/memory-settings'));
+ assert.match(panel().textContent!,/workflow_failed/,'a later genuine failure is not hidden by the earlier cancellation');
+});
+test('manual consolidation rejects changed or expired cards and fences a late response from another node',async t=>{
+ const {root,document:d}=await fixture(t),candidate={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
+ let late=deferred();let posts=0,reads=0,fresh={...candidate,version:3};
+ const makeApi=(defer:boolean)=>({request:async(path:string,init?:RequestInit)=>{
+   if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:1}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0}]};
+   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+   if(path==='/api/model-settings')return {settings:{model:'generated-model',agentTimeoutMs:300000}};
+   if(path==='/api/memories/'+candidate.id){reads++;return defer?late.promise:fresh;}
+   if(path==='/api/memory-integrations'&&init?.method==='POST'){posts++;return {id:ids[1]};}
+   throw Error('Unexpected fixture path '+path);
+ },setAgentTimeout:()=>{}} as Api);
+ let api=makeApi(false);await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate})));
+ const submit=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='整理这条记忆')!;
+ await act(async()=>submit().click());assert.equal(posts,0);assert.match(d.body.textContent!,/所选记忆已变化/);
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate:{...candidate,validUntil:'2020-01-01T00:00:00Z'}})));
+ assert.equal(d.querySelector('#manual-memory-integration'),null,'expired cards have no consolidation entry');
+ api=makeApi(true);await act(async()=>root.render(React.createElement(MemoryIntegration,{api,candidate})));
+ await act(async()=>{submit().click();submit().click();});assert.equal(reads,2,'one earlier stale check and one in-flight fresh read');
+ const other=makeApi(false);await act(async()=>root.render(React.createElement(MemoryIntegration,{api:other,candidate})));
+ await act(async()=>late.resolve(candidate));assert.equal(posts,0,'old node cannot submit after its fresh read resolves');
+ late=deferred();const selected=makeApi(true);await act(async()=>root.render(React.createElement(MemoryIntegration,{api:selected,candidate})));
+ await act(async()=>submit().click());
+ await act(async()=>root.render(React.createElement(MemoryIntegration,{api:selected,candidate:{...candidate,id:ids[1]}})));
+ await act(async()=>late.resolve(candidate));assert.equal(posts,0,'switching cards during fresh GET cannot submit the old card');
+ assert.match(d.body.textContent!,/所选记忆已变化/);
+});
+test('current featured Memory detail offers the manual consolidation entry, while historical and observation cards do not',async t=>{
+ const {root,document:d}=await fixture(t),item={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
+ let shown:any=item;
+ const api=apiWith(path=>{
+   if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0}]};
+   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+   if(path==='/api/memory-recipes')return {items:[]};
+   if(path.startsWith('/api/memories?'))return {items:[shown],nextCursor:null};
+   if(path==='/api/memories/'+ids[0]||path.startsWith('/api/memories/'+ids[0]+'?'))return shown;
+   return {};
+ });
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));
+ assert.equal(d.querySelector('#manual-memory-integration'),null,'no full form above the list before selecting a current card');
+ await act(async()=>d.querySelector('.workspace-select')!.dispatchEvent(new window.MouseEvent('click',{bubbles:true})));
+ assert.ok(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'));
+ assert.match(d.querySelector('#manual-memory-integration')!.textContent!,/仅选择此卡作为整合起点/);
+ assert.equal(Array.from(d.querySelectorAll('#manual-memory-integration button')).find(b=>b.textContent==='整理这条记忆')!.disabled,true,'the Memory feature default is unconfigured in this fixture');
+ shown={...item,validUntil:'2020-01-01T00:00:00Z'};
+ await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/')));
+ assert.equal(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'),false);
+ shown={...item,admission:{layer:'observation'}};
+ await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/')));
+ assert.equal(Array.from(d.querySelectorAll('.memory-detail button')).some(b=>b.textContent==='从这条记忆开始整理'),false);
+ assert.equal(d.querySelector('#manual-memory-integration'),null);
+});
 test('material corrections hide cached prose while pending and explicitly link historical revisions to the current one',async t=>{
  const {root,document:d}=await fixture(t);let state='ready';const opened:string[]=[];
  const material:Material={id:ids[0],ref:'material:generated@v1',revision:'v1',kind:'generated',schemaVersion:1,title:'Generated material',sequence:1,textLength:20,blockCount:1,coverage:{state:'full'},origin:{sourceId:'generated'},retention:{original:'retained'}};
@@ -33,6 +158,22 @@ test('material corrections hide cached prose while pending and explicitly link h
  assert.match(d.body.textContent!,/旧的生成正文/);assert.match(d.body.textContent!,/历史版本/);
  await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看当前版本')!.click());assert.deepEqual(opened,[next.ref]);
  state='revoked';await act(async()=>resources(api).invalidate(()=>true));assert.doesNotMatch(d.body.textContent!,/旧的生成正文|查看当前版本/);assert.match(d.body.textContent!,/Generated revoked/);
+});
+test('current multi-block Material offers one bounded extraction route; stale and agent views do not',async t=>{
+ const {root,document:d}=await fixture(t),id='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${id}@${revision}`;
+ const material:Material={id,ref,revision,kind:'mote.file',schemaVersion:1,title:'Generated two-block material',sequence:1,textLength:30,blockCount:2,coverage:{state:'complete'},origin:{sourceId:'generated'},retention:{original:'retained'}};
+ const anchors=[ids[0],ids[1]];let current={...material,memorySource:{status:'ready' as const,evidenceIds:anchors}};
+ const api=apiWith(path=>path.includes('/read?')?{material,text:'Generated formal body',textRange:{offset:0,total:21,nextOffset:null}}:current);
+ await act(async()=>root.render(React.createElement(MaterialDetail,{api,material,onOpen:()=>{}})));
+ const link=d.querySelector<HTMLAnchorElement>('.material-detail a[href*="memoryMaterial="]');assert.ok(link);
+ assert.match(link.href,/memoryMaterial=material%3Amat_[a-f0-9]{64}%40[b]{64}/);
+ current={...current,coverage:{state:'pending'},memorySource:{status:'waiting',evidenceIds:[]}} as typeof current;
+ await act(async()=>resources(api).invalidate(key=>key===`/api/materials/${id}`));
+ assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null);
+ assert.match(d.querySelector('.material-detail')!.textContent!,/暂不能单独提取记忆/);
+ const old={...material,ref:`material:${id}@${'c'.repeat(64)}`,revision:'c'.repeat(64)};
+ await act(async()=>root.render(React.createElement(MaterialDetail,{api,material:old,onOpen:()=>{}})));
+ assert.equal(d.querySelector('.material-detail a[href*="memoryMaterial="]'),null,'historical pinned version cannot borrow the current link');
 });
 test('agent material views cannot fall back to owner routes when a corrected reference becomes unavailable',async t=>{
  const {root,document:d}=await fixture(t);let unavailable=false;const paths:string[]=[];
@@ -76,7 +217,7 @@ test('Memory selection and scope changes fence uncooperative late detail replies
  await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));const buttons=d.querySelectorAll<HTMLButtonElement>('.workspace-select');
  await act(async()=>buttons[0].click());await act(async()=>buttons[1].click());await act(async()=>b.resolve(memory(ids[1])));await act(async()=>a.resolve(memory(ids[0])));
  assert.equal(d.querySelector('.memory-detail h2')?.textContent,'Generated b');assert.doesNotMatch(d.querySelector('.workspace-content')!.textContent!,/Current evidence a/);
- failure=true;await act(async()=>root.render(React.createElement(Memories,{api,range:{after:'2025-01-01T00:00:00Z'},onOpen:()=>{}})));assert.match(d.body.textContent!,/generated offline/);assert.doesNotMatch(d.body.textContent!,/这里还没有记忆/);assert.equal(d.querySelector('.memory-detail'),null);
+ failure=true;await act(async()=>root.render(React.createElement(Memories,{api,range:{after:'2025-01-01T00:00:00Z'},onOpen:()=>{}})));assert.match(d.body.textContent!,/generated offline/);assert.doesNotMatch(d.body.textContent!,/当前筛选下没有匹配的记忆/);assert.equal(d.querySelector('.memory-detail'),null);
 });
 test('Files session changes and failed reads cannot publish an old list or a false empty state',async t=>{
  const {root,document:d}=await fixture(t),old=deferred(),fresh=deferred();const reader=(pending:ReturnType<typeof deferred>)=>apiWith(path=>path==='/api/sources'?{items:[]}:pending.promise);
@@ -160,4 +301,328 @@ test('budget settings explain reservations and remove editable drafts after revo
  await act(async()=>{const input=d.querySelector('select')!;input.value='CNY';input.dispatchEvent(new window.Event('change',{bubbles:true}));});
  revoked=true;await act(async()=>resources(api).invalidate(key=>key==='/api/model-budgets'));assert.equal(d.querySelector('form'),null);assert.match(d.body.textContent!,/Generated budget revoked/);
  const next=apiWith(()=>value());await act(async()=>root.render(React.createElement(ModelBudgets,{api:next})));assert.equal(d.querySelector('select')!.value,'USD');assert.doesNotMatch(d.body.textContent!,/Generated budget revoked/);
+});
+
+
+test('full record uses a visible heading and unnamed text content without losing whitespace or interpreting markup',async t=>{
+ const {EvidenceDialog}=await import('../src/shell-components.js');const {root,document:d}=await fixture(t);
+ const text=Array.from({length:6},(_,index)=>`生成段落 ${index+1}：  保留空格与原文 🌉 <b>plain evidence</b> & text.\n<img src=x onerror="window.__evidenceExecuted=true"><script>window.__evidenceExecuted=true</script>`).join('\n\n');
+ const capture={id:ids[0],source:'note',platform:'macos',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated note',deviceName:'Fixture Mac',ocrText:text,durationMs:0,indexingStatus:'indexed',privacy:{excluded:false,redacted:false}};
+ const api=apiWith(path=>{assert.equal(path,`/api/capture-browser/${ids[0]}`);return capture;});
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:()=>{}})));
+ const body=d.querySelector('.evidence-text pre')!;
+ assert.match(d.querySelector<HTMLAnchorElement>('.evidence-text a')!.href,/library\/memories\?memorySource=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/);
+ assert.equal(body.previousElementSibling?.tagName,'H4');assert.equal(body.previousElementSibling?.textContent,'记录全文');
+ assert.equal(body.textContent,text);assert.equal(body.getAttribute('aria-label'),null);assert.equal(body.getAttribute('aria-labelledby'),null);
+ assert.equal(body.querySelector('b, img, script'),null);assert.equal(body.closest('[aria-hidden=true], [inert]'),null);
+ assert.equal((d.defaultView as unknown as {__evidenceExecuted?:boolean}).__evidenceExecuted,undefined);
+});
+test('registered source originals navigate through verified Material mapping and never offer raw Memory input',async t=>{
+ const {EvidenceDialog}=await import('../src/shell-components.js');const {root,document:d}=await fixture(t),opened:string[]=[];
+ const ref=`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`;
+ const capture={id:ids[0],source:'file',platform:'import',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated upload',deviceName:'Fixture',ocrText:'Generated original',durationMs:0,indexingStatus:'indexed',privacy:{excluded:false,redacted:false},revisionState:'current',requiresMaterialForMemory:true,memoryMaterialRef:ref};
+ let mapped=true;const api=apiWith(path=>{assert.equal(path,`/api/capture-browser/${ids[0]}`);return mapped?capture:{...capture,memoryMaterialRef:undefined};});
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:ref=>opened.push(ref)})));
+ assert.equal(d.querySelector('.evidence-text a[href*="memorySource="]'),null);
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看正式资料并提取记忆')!.click());
+ assert.deepEqual(opened,[ref]);
+ mapped=false;await act(async()=>resources(api).invalidate(key=>key===`/api/capture-browser/${ids[0]}`));
+ assert.equal(d.querySelector('.evidence-text a[href*="memorySource="]'),null);
+ assert.match(d.querySelector<HTMLAnchorElement>('.evidence-text a[href="#/library/materials"]')!.textContent!,/查看正式资料/);
+});
+
+for(const legacy of [false,true])test(`failed speaker separation keeps raw transcript readable with ${legacy?'legacy':'applied'} summary-disabled policy`,async t=>{
+ const {root,document:d}=await fixture(t),mutations:any[]=[];let dialogue=false;
+ const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:dialogue?'succeeded':'failed',error:dialogue?'cancelled':'provider_failed',summary_state:dialogue?'cancelled':'waiting',local_only:1},processingPolicy:{applied:legacy?null:{revision:'generated',profile:{name:'Generated local',processorId:'generated',summarize:false},rule:{type:'audio/*'}},current:{profile:{name:'Generated local',summarize:false},rule:{type:'audio/*'}},legacyRevision:legacy?'generated-config-fingerprint':null},steps:[{step:'extract',state:'succeeded',attempts:1},{step:'diarize',state:dialogue?'succeeded':'failed',attempts:dialogue?5:4}],artifacts:[{id:'raw-generated',kind:'transcript'},...(dialogue?[{id:'dialogue-generated',kind:'dialogue'}]:[])]});
+ const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.endsWith('/retry')){mutations.push(JSON.parse(String(init?.body)));return {};}if(path.includes('/chunks?'))return {items:[{id:'generated-chunk',ocrText:dialogue?'Generated dialogue':'Generated raw <b>words</b>',fileEvidence:{startMs:0}}],nextOffset:null};assert.equal(path,'/api/files/'+ids[0]);return value();});
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ const click=async(label:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!.click());
+ assert.match(d.body.textContent!,/整体处理：处理失败/);assert.match(d.body.textContent!,/摘要：未启用/);assert.doesNotMatch(d.body.textContent!,/转写服务未完成/);
+ assert.match(d.body.textContent!,/转写 \/ 提取：已完成/);assert.match(d.body.textContent!,/说话人分离：处理失败/);
+ await click('展开原始转写（未校正）');assert.match(d.body.textContent!,/Generated raw <b>words<\/b>/);assert.equal(d.querySelector('.file-text b'),null);assert.match(d.body.textContent!,/原始转写 · 未校正/);
+ await click('重新分离说话人（保留转写）');assert.deepEqual(mutations,[{stage:'diarize'}]);
+ dialogue=true;await act(async()=>resources(api).invalidate(key=>key==='/api/files/'+ids[0]));
+ assert.match(d.body.textContent!,/整体处理：已完成；摘要：未启用/);assert.doesNotMatch(d.body.textContent!,/处理未完成/);
+ assert.doesNotMatch(d.body.textContent!,/Generated raw/);await click('展开转写 / 原文片段');assert.match(d.body.textContent!,/Generated dialogue/);
+});
+
+
+test('summary failure is attributed to summary after extraction succeeds',async t=>{
+ const {root,document:d}=await fixture(t);
+ const api=apiWith(()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:'succeeded',error:'summary_failed',summary_state:'failed',local_only:0},artifacts:[]}));
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ assert.match(d.body.textContent!,/整体处理：已完成；摘要：处理失败（摘要生成失败，可单独重试）/);
+});
+
+test('late raw reply cannot repopulate dialogue view',async t=>{
+ const {root,document:d}=await fixture(t),raw=deferred();let dialogue=false;
+ const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated',mimeType:'audio/wav',observedAt:'2026-09-27T00:00:00Z'},job:{state:dialogue?'succeeded':'failed',error:dialogue?'cancelled':'provider_failed',summary_state:'cancelled',local_only:1},artifacts:[{id:'raw-generated',kind:'transcript'},...(dialogue?[{id:'dialogue-generated',kind:'dialogue'}]:[])]});
+ const api=apiWith(path=>path.endsWith('/reviews')?{items:[]}:path.includes('/chunks?')?raw.promise:value());
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='展开原始转写（未校正）')!.click());
+ dialogue=true;await act(async()=>resources(api).invalidate(key=>key==='/api/files/'+ids[0]));
+ assert.match(d.body.textContent!,/展开转写 \/ 原文片段/);
+ await act(async()=>raw.resolve({items:[{id:'raw-chunk',ocrText:'STALE GENERATED RAW',fileEvidence:{startMs:0}}],nextOffset:null}));
+ assert.doesNotMatch(d.body.textContent!,/STALE GENERATED RAW/);
+});
+
+for(const change of ['artifact','session','unmount'] as const)for(const outcome of ['success','error'] as const)test(`chunk read ignores late ${outcome} after ${change} and prevents duplicate requests`,async t=>{
+ const {root,document:d}=await fixture(t),pending=deferred();let artifact='raw-generated',reads=0,signal:AbortSignal|undefined;
+ const value=()=>({captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',observedAt:'2026-09-27T00:00:00Z'},job:null,artifacts:[{id:artifact,kind:artifact==='raw-generated'?'transcript':'dialogue'}]});
+ const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.includes('/chunks?')){reads++;signal=init?.signal as AbortSignal;return pending.promise;}return value();});
+ const render=(client:Api)=>root.render(React.createElement(FileDetail,{api:client,id:ids[0],onOpen:()=>{}}));
+ await act(async()=>render(api));
+ await act(async()=>{const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='展开原始转写（未校正）')!;button.click();button.click();});assert.equal(reads,1);
+ if(change==='artifact'){artifact='dialogue-generated';await act(async()=>resources(api).invalidate(key=>key==='/api/files/'+ids[0]));}
+ if(change==='session'){const next=apiWith(path=>path.endsWith('/reviews')?{items:[]}:value());await act(async()=>render(next));}
+ if(change==='unmount')await act(async()=>root.render(null));
+ assert.equal(signal?.aborted,true);
+ await act(async()=>{if(outcome==='success')pending.resolve({items:[{id:'stale',ocrText:'STALE GENERATED CONTENT'}],nextOffset:null});else pending.reject(new Error('STALE GENERATED ERROR'));});
+ assert.doesNotMatch(d.body.textContent!,/STALE GENERATED/);
+ if(change!=='unmount'){const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent===(change==='artifact'?'展开转写 / 原文片段':'展开原始转写（未校正）'));assert.ok(button);assert.equal(button.disabled,false);}
+});
+
+test('manual segment editor preserves literal speaker prefix, cancels without mutation and submits exact identity',async t=>{
+ const {root,document:d}=await fixture(t),writes:any[]=[];
+ // React was imported before this fixture's DOM; support its legacy input-event probe.
+ (window.HTMLElement.prototype as any).attachEvent=()=>{};(window.HTMLElement.prototype as any).detachEvent=()=>{};
+ const original='[SPEAKER_0] Literal original\n  second line';
+ const api=apiWith((path,init)=>{if(path.endsWith('/reviews'))return {items:[]};if(path.endsWith('/corrections')){writes.push(JSON.parse(String(init?.body)));throw new ApiError('Generated stale segment',409);}if(path.includes('/chunks?'))return {items:[{id:ids[1],ocrText:'[SPEAKER_0] '+original,fileEvidence:{artifactId:ids[0],speaker:'SPEAKER_0',startMs:0}}],nextOffset:null};return {captureId:ids[0],sourceId:'generated',sizeBytes:100,hasOriginal:false,originMissing:false,item:{title:'Generated recording',observedAt:'2026-09-27T00:00:00Z'},job:{state:'succeeded',summary_state:'cancelled',local_only:1},artifacts:[{id:ids[0],kind:'dialogue'}]};});
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ const click=async(label:string)=>act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!.click());
+ await click('展开转写 / 原文片段');await click('纠正此段');assert.equal(d.querySelector('textarea')!.value,original);
+ await click('取消');assert.equal(writes.length,0);await click('纠正此段');
+ await act(async()=>{const input=d.querySelector('textarea')!;Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')!.set!.call(input,'Owner corrected text');input.dispatchEvent(new window.Event('input',{bubbles:true}));input.dispatchEvent(new window.Event('change',{bubbles:true}));input.dispatchEvent(new window.KeyboardEvent('keyup',{bubbles:true,key:'t'}));});
+ await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));
+ assert.deepEqual(writes,[{artifactId:ids[0],chunkId:ids[1],originalText:original,correctedText:'Owner corrected text'}]);
+ assert.match(d.querySelector('[role=alert]')!.textContent!,/Generated stale segment/);assert.equal(d.querySelector('textarea')!.value,'Owner corrected text');
+});
+
+
+test('Memory rolling-window polling retains selected detail while real scope and session changes fence late replies',async t=>{
+ const {root,document:d}=await fixture(t),late=deferred();let delayDetail=false;
+ t.mock.timers.enable({apis:['setInterval','Date'],now:Date.parse('2026-09-28T00:00:00Z')});
+ const api=apiWith(path=>path.startsWith('/api/memories?')?{items:[memory(ids[0])],nextCursor:null}:delayDetail?late.promise:memory(ids[0]));
+ // Reproduce the shell's revision-driven rolling range calculation: a poll
+ // moves both endpoints, but the owner's selected period remains "week".
+ function PollingShell({period,client,deviceId}:{period:string;client:Api;deviceId?:string}){
+  const [revision,setRevision]=React.useState(0);
+  React.useEffect(()=>{const timer=setInterval(()=>setRevision(value=>value+1),30000);return()=>clearInterval(timer);},[]);
+  const range=React.useMemo(()=>{const now=Date.now();return {after:new Date(now-(period==='week'?7:30)*86400000).toISOString(),before:new Date(now).toISOString(),...(deviceId?{deviceId}:{})};},[period,revision,deviceId]);
+  return React.createElement(Memories,{api:client,rangeSelectionKey:period,range,onOpen:()=>{}});
+ }
+ const render=(period='week',client=api,deviceId?:string)=>root.render(React.createElement(PollingShell,{period,client,deviceId}));
+ const open=()=>act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ await act(async()=>render());await open();assert.match(d.querySelector('.memory-detail')!.textContent!,/Current evidence a/);
+ await act(async()=>t.mock.timers.tick(30000));assert.match(d.querySelector('.memory-detail')!.textContent!,/Current evidence a/);
+ delayDetail=true;await act(async()=>t.mock.timers.tick(30000));assert.match(d.querySelector('.memory-detail')!.textContent!,/Current evidence a/);
+ await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/'+ids[0])));
+ assert.match(d.querySelector('.memory-detail')!.textContent!,/Current evidence a/,'an in-flight refresh keeps the previously authorized detail visible');
+ await act(async()=>render('month'));await act(async()=>late.resolve({...memory(ids[0]),statement:'STALE WINDOW DETAIL'}));
+ assert.equal(d.querySelector('.memory-detail'),null);assert.doesNotMatch(d.body.textContent!,/STALE WINDOW DETAIL/);
+ delayDetail=false;await open();assert.ok(d.querySelector('.memory-detail'));
+ await act(async()=>render('month',api,'generated-device'));assert.equal(d.querySelector('.memory-detail'),null);
+ await open();assert.ok(d.querySelector('.memory-detail'));
+ await act(async()=>{const select=d.querySelector<HTMLSelectElement>('[aria-label="内容分类"]')!;select.value='observation';select.dispatchEvent(new window.Event('change',{bubbles:true}));});assert.equal(d.querySelector('.memory-detail'),null);
+ await open();assert.ok(d.querySelector('.memory-detail'));
+ const next=apiWith(path=>path.startsWith('/api/memories?')?{items:[memory(ids[0])],nextCursor:null}:{...memory(ids[0]),statement:'NEW SESSION DETAIL'});
+ await act(async()=>render('month',next,'generated-device'));assert.equal(d.querySelector('.memory-detail'),null);assert.doesNotMatch(d.body.textContent!,/NEW SESSION DETAIL|Current evidence a/);
+});
+
+test('Library Memory keeps its selected card and integration panel across a 30-second rolling range',async t=>{
+ const {root,document:d}=await fixture(t);await featuresReady;
+ const item={...memory(ids[0]),version:2,fingerprint:'a'.repeat(64),admission:{layer:'memory'}};
+ const pending=deferred();let slow=false,detailReads=0;
+ const api=apiWith(path=>{
+   if(path.startsWith('/api/memories?'))return {items:[item],nextCursor:null};
+   if(path.startsWith('/api/memories/'+ids[0]+'?')){detailReads++;return slow?pending.promise:item;}
+   if(path==='/api/memory-settings')return {settings:{consolidation:{enabled:false,maxItems:3}},extensions:[{id:'consolidation',status:'waiting_for_increment',failures:0}]};
+   if(path==='/api/memory-integration-recipes')return {items:[{id:'mote.memory-integration',version:'2',available:true}]};
+   if(path==='/api/memory-recipes')return {items:[]};
+   return {};
+ });
+ const baseRequest=api.request;api.request=async(path,init)=>path==='/api/model-settings'?{settings:{model:'generated-model',agentTimeoutMs:300000}}:baseRequest(path,init);
+ t.mock.timers.enable({apis:['setInterval','Date'],now:Date.parse('2026-09-28T00:00:00Z')});
+ function LibraryShell({period,deviceId}:{period:string;deviceId?:string}){
+   const [revision,setRevision]=React.useState(0);
+   React.useEffect(()=>{const timer=setInterval(()=>setRevision(value=>value+1),30000);return()=>clearInterval(timer);},[]);
+   const range=React.useMemo(()=>({after:new Date(Date.now()-(period==='week'?7:30)*86400000).toISOString(),before:new Date().toISOString(),...(deviceId?{deviceId}:{})}),[period,revision,deviceId]);
+   const props={api,status:null,devices:[],activity:{apps:[],devices:[],totalDurationMs:0,captures:0},recent:[],insights:[],onPage:()=>{},onOpen:()=>{},range,rangeSelectionKey:period,archiveTab:'memories',setArchiveTab:()=>{},timelineRevision:0,refresh:()=>{},disconnect:()=>{},sessionLifetime:'permanent',changeSessionLifetime:()=>{}} as any;
+   return React.createElement(React.Suspense,{fallback:null},React.createElement(FeaturePage,{page:'archive',props}));
+ }
+ const render=(period='week',deviceId?:string)=>root.render(React.createElement(LibraryShell,{period,deviceId}));
+ await act(async()=>render());
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ assert.ok(d.querySelector('.memory-detail'));assert.ok(d.querySelector('#manual-memory-integration'));
+ const submit=()=>Array.from(d.querySelectorAll<HTMLButtonElement>('#manual-memory-integration button')).find(button=>button.textContent==='整理这条记忆')!;
+ assert.equal(submit().disabled,false);const selectedReads=detailReads;
+ await act(async()=>t.mock.timers.tick(30000));
+ assert.ok(d.querySelector('.memory-detail'),'Library selection survives the actual shell poll');
+ assert.ok(d.querySelector('#manual-memory-integration'),'the setup panel does not jump away');
+ assert.equal(detailReads,selectedReads,'rolling range does not start a new selected-card request');
+ slow=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/'+ids[0])));
+ assert.ok(d.querySelector('.memory-detail'));assert.ok(d.querySelector('#manual-memory-integration'));
+ assert.equal(submit().disabled,true,'a retained card cannot submit while freshness is being checked');
+ await act(async()=>pending.resolve(item));assert.equal(submit().disabled,false);
+ await act(async()=>render('month'));assert.equal(d.querySelector('.memory-detail'),null);assert.equal(d.querySelector('#manual-memory-integration'),null);
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());assert.ok(d.querySelector('.memory-detail'));
+ await act(async()=>render('month','generated-device'));assert.equal(d.querySelector('.memory-detail'),null);
+});
+
+test('single-record memory extraction uses explicit evidence and chosen recipe without rolling range',async t=>{
+ const {root,document:d}=await fixture(t),writes:any[]=[];
+ const source={id:ids[0],source:'note',capturedAt:'2026-09-28T00:00:00Z',windowTitle:'Generated chosen record',ocrText:'Generated isolated content'};
+ window.history.replaceState(null,'','#/library/memories?memorySource='+ids[0]);
+ const api=apiWith((path,init)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated submit retained for inspection');}if(path.startsWith('/api/capture-browser/'))return source;if(path==='/api/memory-recipes')return {items:[{id:'mote.personal-memory',version:'2',available:true}]};if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};throw Error('Unexpected fixture path '+path);});
+ const read=api.request;api.request=async(path,init)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated submit retained for inspection');}return read(path,init);};
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{after:'2020-01-01T00:00:00Z',before:'2020-01-02T00:00:00Z',deviceId:'other-device'},rangeSelectionKey:'today',onOpen:()=>{}})));
+ assert.match(d.querySelector('.memory-source-selection')!.textContent!,/Generated chosen record/);
+ await act(async()=>d.querySelector<HTMLInputElement>('.manual-memory-recipes input')!.click());
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='提取所选资料的记忆')!.click());
+ assert.deepEqual(writes[0].evidenceIds,[ids[0]]);assert.deepEqual(writes[0].recipes,[{id:'mote.personal-memory',version:'2'}]);assert.equal(writes[0].after,undefined);assert.equal(writes[0].before,undefined);assert.equal(writes[0].deviceId,undefined);
+ await act(async()=>{Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='清除资料选择，恢复时间范围')!.click();window.dispatchEvent(new window.HashChangeEvent('hashchange'));});
+ assert.equal(d.querySelector('.memory-source-selection'),null);await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='提取当前范围的记忆')!.click());assert.equal(writes[1].evidenceIds,undefined);assert.equal(writes[1].after,'2020-01-01T00:00:00Z');
+});
+test('single-Material selection sends only its current anchors and refuses a stale pinned revision',async t=>{
+ const {root,document:d}=await fixture(t),materialId='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${materialId}@${revision}`,writes:any[]=[];
+ window.history.replaceState(null,'','#/library/memories?memoryMaterial='+encodeURIComponent(ref));
+ let current={id:materialId,ref,revision,title:'Generated two-block R09',memorySource:{status:'ready',evidenceIds:ids}};
+ const api=apiWith(path=>{if(path===`/api/materials/${materialId}`)return current;if(path==='/api/memory-recipes')return {items:[{id:'mote.coding-memory',version:'2',available:true}]};if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};throw Error('Unexpected fixture path '+path);});
+ const read=api.request;api.request=async(path,init)=>{if(init?.method==='POST'){writes.push(JSON.parse(String(init.body)));throw Error('Generated submit retained for inspection');}return read(path,init);};
+ await act(async()=>root.render(React.createElement(Memories,{api,range:{after:'2020-01-01T00:00:00Z',before:'2020-01-02T00:00:00Z',deviceId:'other-device'},rangeSelectionKey:'today',onOpen:()=>{}})));
+ assert.match(d.querySelector('.memory-source-selection')!.textContent!,/Generated two-block R09/);
+ await act(async()=>d.querySelector<HTMLInputElement>('.manual-memory-recipes input')!.click());
+ const submit=Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='提取所选资料的记忆')!;
+ assert.equal(submit.disabled,false,d.querySelector('.memory-source-selection')!.textContent!);
+ await act(async()=>submit.click());
+ assert.deepEqual(writes[0].evidenceIds,ids);assert.deepEqual(writes[0].recipes,[{id:'mote.coding-memory',version:'2'}]);
+ assert.equal(writes[0].after,undefined);assert.equal(writes[0].before,undefined);assert.equal(writes[0].deviceId,undefined);
+ current={...current,revision:'c'.repeat(64),ref:`material:${materialId}@${'c'.repeat(64)}`};
+ await act(async()=>resources(api).invalidate(key=>key===`/api/materials/${materialId}`));
+ const button=Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='提取所选资料的记忆')!;
+ assert.equal(button.disabled,true);assert.match(d.querySelector('.memory-source-selection')!.textContent!,/已变化或暂不可提取/);
+ await act(async()=>button.click());assert.equal(writes.length,1);
+});
+
+test('a single-Material job opens its old-dated result outside the current week while list reads and node changes keep their scope',async t=>{
+ const {root,document:d}=await fixture(t),materialId='mat_'+'a'.repeat(64),revision='b'.repeat(64),ref=`material:${materialId}@${revision}`;
+ const range={after:'2026-09-20T00:00:00Z',before:'2026-09-27T00:00:00Z',deviceId:'generated-device'};
+ const result={...memory(ids[0]),title:'Generated June result',createdAt:'2026-09-27T00:00:00Z',evidence:[{id:ids[0],capturedAt:'2026-06-03T01:00:00Z',receivedAt:'2026-09-27T00:00:00Z',contentHash:'generated',quote:'Generated June evidence'}]};
+ const current={...memory(ids[1]),title:'Generated current-week list card'},late=deferred(),detailReads:string[]=[];let delay=false,writes=0;
+ const job={id:'generated-old-date-job',status:'completed',createdAt:'2026-09-27T00:00:00Z',updatedAt:'2026-09-27T00:00:00Z',evidenceIds:[ids[0]],totalBatches:1,completedBatches:1,failedBatches:0,skippedChunks:0,memoryIds:[result.id],skillVersion:'generated'};
+ window.history.replaceState(null,'','#/library/memories?memoryMaterial='+encodeURIComponent(ref));
+ const read=(path:string)=>{
+  if(path===`/api/materials/${materialId}`)return {id:materialId,ref,revision,title:'Generated June Material',memorySource:{status:'ready',evidenceIds:[ids[0]]}};
+  if(path==='/api/memory-recipes')return {items:[{id:'mote.coding-memory',version:'2',available:true}]};
+  if(path==='/api/memory-jobs/'+job.id)return job;
+  if(path.startsWith('/api/memories?'))return {items:[current],nextCursor:null};
+  if(path.startsWith('/api/memories/')){
+   detailReads.push(path);const url=new URL(path,'http://generated.invalid');
+   if(url.pathname.endsWith(result.id)){
+    if(url.searchParams.has('after')||url.searchParams.has('before'))throw new ApiError('Generated old evidence is outside the week',404);
+    return delay?late.promise:result;
+   }
+   return current;
+  }
+  return {};
+ };
+ const api=apiWith(read),request=api.request;
+ api.request=async(path,init)=>{if(init?.method==='POST'){assert.equal(path,'/api/memory-jobs');assert.deepEqual(JSON.parse(String(init.body)).evidenceIds,[ids[0]]);writes++;return job as any;}return request(path,init);};
+ const render=(client=api)=>root.render(React.createElement(Memories,{api:client,range,rangeSelectionKey:'week',onOpen:()=>{}}));
+ await act(async()=>render());
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='提取所选资料的记忆')!.click());
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看记忆')!.click());
+ assert.equal(d.querySelector('.memory-detail h2')?.textContent,result.title,'a successful job remains readable when its source predates the list filter');
+ assert.equal(new URL(detailReads.at(-1)!,'http://generated.invalid').search,'?deviceId=generated-device');
+ assert.equal(d.querySelector('[role=alert]'),null);
+ await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ assert.equal(d.querySelector('.memory-detail h2')?.textContent,current.title);
+ assert.deepEqual(Object.fromEntries(new URL(detailReads.at(-1)!,'http://generated.invalid').searchParams),range,'ordinary list selection still reads within the chosen week and device');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(button=>button.textContent==='查看记忆')!.click());
+ delay=true;await act(async()=>resources(api).invalidate(path=>path.startsWith('/api/memories/'+result.id+'?')));
+ const next=apiWith(path=>path.startsWith('/api/memories?')?{items:[],nextCursor:null}:read(path));
+ await act(async()=>render(next));await act(async()=>late.resolve(result));
+ assert.equal(d.querySelector('.memory-detail'),null,'node changes clear the result selection and fence the old pending read');
+ assert.doesNotMatch(d.querySelector('.workspace-content')!.textContent!,/Generated June result|Generated June evidence/);
+ assert.equal(writes,1,'result navigation performs no further extraction');
+});
+
+test('explicit memory source rejects invalid or revoked records and fences a late previous preview',async t=>{
+ const {root,document:d}=await fixture(t),late=deferred();let writes=0;
+ const api=apiWith((path,init)=>{if(init?.method==='POST'){writes++;return {};}if(path.includes('/api/capture-browser/'+ids[0]))return late.promise;if(path.includes('/api/capture-browser/'+ids[1]))throw new ApiError('Generated access revoked',403);if(path.startsWith('/api/memories?'))return {items:[],nextCursor:null};if(path==='/api/memory-recipes')return {items:[]};return {};});
+ const change=(value:string)=>{window.history.replaceState(null,'','#/library/memories?memorySource='+value);window.dispatchEvent(new window.HashChangeEvent('hashchange'));};
+ change(ids[0]);await act(async()=>root.render(React.createElement(Memories,{api,range:{},onOpen:()=>{}})));
+ const button=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='提取所选资料的记忆')!;assert.equal(button().disabled,true);
+ await act(async()=>change(ids[1]));await act(async()=>late.resolve({id:ids[0],windowTitle:'STALE SOURCE',ocrText:'STALE BODY',capturedAt:'2026-09-28T00:00:00Z'}));
+ assert.doesNotMatch(d.body.textContent!,/STALE SOURCE|STALE BODY/);assert.match(d.body.textContent!,/Generated access revoked/);assert.equal(button().disabled,true);
+ await act(async()=>change('material:unsupported'));assert.match(d.body.textContent!,/所选资料无效/);assert.equal(button().disabled,true);await act(async()=>button().click());assert.equal(writes,0);
+});
+
+test('generated archived JPEG renders after authorized load and supports native-size reading',async t=>{
+ const {root,document:d}=await fixture(t);let loads=0;
+ const api=apiWith(path=>{if(path.endsWith('/playback')){loads++;return {url:'/api/files/'+ids[0]+'/content'};}return {captureId:ids[0],item:{title:'Generated diagram.jpg',mimeType:'image/jpeg'},sizeBytes:100,hasOriginal:true,job:null,artifacts:[]};});
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>/加载原件|查看原图/.test(b.textContent!))!.click());
+ const img=d.querySelector('img');assert.ok(img,'authorized image original must be visible');assert.equal(img.getAttribute('src'),'/api/files/'+ids[0]+'/content');assert.equal(img.getAttribute('alt'),'Generated diagram.jpg');
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='原始尺寸')!.click());assert.ok(d.querySelector('.native-size'));assert.equal(loads,1,'resizing reuses authorized URL');
+ await act(async()=>img.dispatchEvent(new d.defaultView!.Event('error')));assert.ok(d.querySelector('[role=alert]'));
+});
+
+for(const outcome of ['resolve','reject'] as const)test('archived image ignores late '+outcome+' after API session changes',async t=>{
+ const {root,document:d}=await fixture(t),pending=deferred();let oldSignal:AbortSignal|undefined;
+ const file={captureId:ids[0],item:{title:'Generated image.jpg',mimeType:'image/jpeg'},sizeBytes:100,hasOriginal:true,job:null,artifacts:[]};
+ const oldApi=apiWith((path,init)=>{if(path.endsWith('/playback')){oldSignal=init?.signal as AbortSignal;return pending.promise;}return file;});
+ const newApi=apiWith(path=>path.endsWith('/playback')?{url:'/generated-current.jpg'}:file);
+ const render=(api:Api)=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}}));
+ await act(async()=>render(oldApi));await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());
+ await act(async()=>render(newApi));assert.equal(oldSignal?.aborted,true);
+ await act(async()=>{if(outcome==='resolve')pending.resolve({url:'/generated-stale.jpg'});else pending.reject(new Error('generated stale failure'));});
+ assert.equal(d.querySelector('img'),null);assert.doesNotMatch(d.body.textContent!,/generated stale failure/);
+ await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='查看原图')!.click());assert.equal(d.querySelector('img')!.getAttribute('src'),'/generated-current.jpg');
+});
+
+test('source drawer decodes only declared organizer text once and separates actions from the body heading',async t=>{
+ const {EvidenceDialog}=await import('../src/shell-components.js');const {root,document:d}=await fixture(t);
+ const text='Generated first line\n\n{"text":"literal inner JSON"}\n<SCRIPT>untrusted</SCRIPT> [SPEAKER_0] tail';
+ const envelope=JSON.stringify({captureId:ids[1],capturedAt:'2026-09-27T00:00:00Z',source:'file',text});
+ let declaration:string|undefined='source-record-json-v1',raw=envelope;
+ const api=apiWith(()=>({id:ids[0],source:'file',platform:'import',capturedAt:'2026-09-27T00:00:00Z',appName:'Generated',ocrText:raw,evidencePresentation:declaration,privacy:{},revisionState:'current',requiresMaterialForMemory:true,memoryMaterialRef:`material:mat_${'a'.repeat(64)}@${'b'.repeat(64)}`}));
+ await act(async()=>root.render(React.createElement(EvidenceDialog,{id:ids[0],api,onClose:()=>{},onDeleted:()=>{},onOpen:()=>{}})));
+ const body=()=>d.querySelector('.evidence-text>pre')!;
+ assert.equal(body().textContent,text);assert.equal(body().querySelector('script'),null);
+ const action=d.querySelector('.evidence-source-actions')!;assert.ok(action.querySelector('button'));assert.equal(action.nextElementSibling?.className,'eyebrow');assert.equal(body().previousElementSibling?.tagName,'H4');
+ declaration=undefined;await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/capture-browser/')));assert.equal(body().textContent,envelope,'ordinary JSON prose is never unwrapped heuristically');
+ declaration='source-record-json-v1';raw='{"text":"not a valid organizer envelope"}';await act(async()=>resources(api).invalidate(key=>key.startsWith('/api/capture-browser/')));assert.equal(body().textContent,raw,'invalid declarations retain the supplied evidence');
+});
+
+
+test('file processing cancellation distinguishes waiting from unknown and requires explicit retry confirmation',async t=>{
+ const {root,document:d}=await fixture(t);let wait:'running'|'unknown'|null='running',state='running';const writes:Array<{path:string;body:any}>=[];
+ const api=apiWith((path,init)=>{if(init?.method==='POST'){writes.push({path,body:JSON.parse(String(init.body))});if(path.endsWith('/cancel'))state='cancelled';return {};}
+ return {captureId:ids[0],item:{title:'Generated WAV',mimeType:'audio/wav'},sizeBytes:100,hasOriginal:true,job:{state,summary_state:'cancelled',local_only:1},cancellation:{canCancel:state==='running',wait},artifacts:[]};});
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ const button=(label:string)=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!;
+ assert.equal(button('重新转写 / 提取').disabled,true);
+ await act(async()=>button('取消本次处理').click());assert.equal(writes.length,1);assert.match(d.body.textContent!,/不再保存后续结果/);
+ wait='unknown';await act(async()=>button('刷新处理状态').click());window.confirm=()=>false;
+ await act(async()=>button('重新转写 / 提取').click());assert.equal(writes.length,1);
+ window.confirm=()=>true;await act(async()=>button('重新转写 / 提取').click());assert.deepEqual(writes[1].body,{stage:'transcribe',confirmUnknown:true});
+});
+
+for(const outcome of ['resolve','reject'] as const)test('file cancellation ignores old session '+outcome+' while new node can cancel',async t=>{
+ const {root,document:d}=await fixture(t),late=deferred();let newWrites=0;
+ const file={captureId:ids[0],item:{title:'Generated file'},sizeBytes:1,hasOriginal:false,job:{state:'running',summary_state:'waiting'},cancellation:{canCancel:true,wait:'running'},artifacts:[]};
+ const oldApi=apiWith((path,init)=>init?.method==='POST'?late.promise:file),newApi=apiWith((path,init)=>{if(init?.method==='POST'){newWrites++;return {};}return file;});
+ const render=(api:Api)=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})),cancel=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='取消本次处理')!;
+ await act(async()=>render(oldApi));await act(async()=>cancel().click());await act(async()=>render(newApi));assert.equal(cancel().disabled,false);
+ await act(async()=>cancel().click());assert.equal(newWrites,1);await act(async()=>outcome==='resolve'?late.resolve({state:'cancelled'}):late.reject(new Error('generated stale failure')));assert.doesNotMatch(d.body.textContent!,/generated stale failure/);
+});
+
+test('file processor wait polling enables retry after raw completion without an operation event',async t=>{
+ const {root,document:d}=await fixture(t);t.mock.timers.enable({apis:['setTimeout']});let waiting=true,reads=0;
+ const api=apiWith(()=>{reads++;return {captureId:ids[0],item:{title:'Generated cancelled file'},sizeBytes:1,hasOriginal:false,job:{state:'cancelled',summary_state:'cancelled'},cancellation:{canCancel:false,wait:waiting?'running':null},artifacts:[]};});
+ await act(async()=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}})));
+ const retry=()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='重新转写 / 提取')!;assert.equal(retry().disabled,true);
+ waiting=false;await act(async()=>t.mock.timers.tick(2000));assert.equal(retry().disabled,false);const before=reads;
+ await act(async()=>t.mock.timers.tick(6000));assert.equal(reads,before,'polling stops after the physical wait settles');
 });

@@ -4,7 +4,8 @@ import {type Api,ApiError,errorMessage} from './api';
 import {useResource} from './useResource';
 import {FeatureView} from './features/runtime';
 import {AnswerMarkdown} from './AnswerMarkdown';
-export type Material={id:string;ref:string;revision:string;kind:string;schemaVersion:number;title:string;sequence:number;textLength:number;blockCount:number;coverage:{state:string;reason?:string};origin:{sourceId:string;provider?:string;sessionId?:string};artifacts?:{key:string;state:string;reason?:string}[];retention:{original:string}};
+import {memoryMaterialRoute} from './memory-source-route';
+export type Material={id:string;ref:string;revision:string;kind:string;schemaVersion:number;title:string;sequence:number;textLength:number;blockCount:number;coverage:{state:string;reason?:string};origin:{sourceId:string;provider?:string;sessionId?:string};artifacts?:{key:string;state:string;reason?:string}[];retention:{original:string};memorySource?:{status:'ready'|'waiting'|'unavailable'|'too_large';evidenceIds:string[]}};
 type ReadPage={material:Material;text:string;textRange:{offset:number;total:number;nextOffset:number|null}};
 export function MaterialDetail({api,material,onOpen,agent=false}:{api:Api;material:Material;onOpen:(ref:string)=>void;agent?:boolean}){
   const [offset,setOffset]=useState(0),[tab,setTab]=useState('body');
@@ -15,9 +16,12 @@ export function MaterialDetail({api,material,onOpen,agent=false}:{api:Api;materi
   const selected=current.error===undefined&&current.data?.revision===material.revision?current.data:read.error===undefined?read.data?.material??material:material;
   const rebuilding=selected.coverage.reason==='source_evidence_changed'||read.error instanceof ApiError&&read.error.status===409;
   const historical=current.error===undefined&&current.data&&current.data.revision!==material.revision;
+  const memorySource=!agent&&!historical&&current.error===undefined&&current.data?.ref===material.ref?current.data.memorySource:undefined;
   const retry=()=>{read.refresh();current.refresh();};
   return <article className="panel panel-pad material-detail"><h2>{selected.title}</h2><p><code>{selected.kind}</code> · {moteText('版本 {0}',selected.sequence)} · {selected.coverage.state}</p>
     {historical&&<p role="status">{moteText('这是历史版本，当前资料已更新。')} <button className="button" onClick={()=>onOpen(current.data!.ref)}>{moteText('查看当前版本')}</button></p>}
+    {memorySource?.status==='ready'&&<a className="button" href={memoryMaterialRoute(selected.ref)}>{moteText('仅从这份正式资料提取记忆')}</a>}
+    {memorySource&&memorySource.status!=='ready'&&<p role="status">{moteText('这份正式资料暂不能单独提取记忆，请查看来源与处理状态。')}</p>}
     <nav className="section-tabs">{[['body',moteText('正文')],['origin',moteText('来源与处理')]].map(([id,label])=><button key={id} aria-current={tab===id?'page':undefined} onClick={()=>{setTab(id);setOffset(0);}}>{label}</button>)}</nav>
     {rebuilding?<p role="status">{moteText('来源已更正，正在重新整理资料。完成后可继续查看。')} <button onClick={retry}>{moteText('刷新')}</button></p>:read.error!==undefined&&<p role="alert">{errorMessage(read.error)} <button onClick={retry}>{moteText('重试')}</button></p>}
     {current.error!==undefined&&<p role="alert">{errorMessage(current.error)} <button onClick={retry}>{moteText('重试')}</button></p>}

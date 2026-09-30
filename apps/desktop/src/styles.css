@@ -372,7 +372,14 @@ progress::-webkit-progress-value { border-radius: 5px; background: #759664; }
 
 .ask-layout { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 20px; }
 #ask-history button { display: block; width: 100%; text-align: left; margin: 8px 0; }
-#ask-messages { max-height: 55vh; overflow-y: auto; }
+#ask-messages { min-width: 0; }
+.ask-layout > .panel { min-width: 0; }
+#ask-history button { white-space: normal; overflow-wrap: anywhere; }
+.ask-answer { line-height: 1.8; overflow-wrap: anywhere; }
+.ask-answer pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--green-soft); border-radius: 7px; }
+.ask-inline-citation { padding: 1px 6px; margin: 0 3px; color: var(--green); background: var(--green-soft); font-size: 12px; vertical-align: baseline; }
+.ask-evidence { border-top: 1px solid var(--line); padding: 12px 0; }
+.ask-evidence details { margin-top: 12px; }
 #ask-messages article { border-bottom: 1px solid var(--border, #ddd); padding: 14px 0; }
 #ask-messages p { white-space: pre-wrap; overflow-wrap: anywhere; }
 #ask-question { width: 100%; box-sizing: border-box; }

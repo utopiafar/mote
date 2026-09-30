@@ -102,9 +102,9 @@ function serialize<T>(operation: () => Promise<T>): Promise<T> {
 function encryptedStorageAvailable(): boolean {
   return safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text');
 }
-async function showCentral(page?: string): Promise<void> {
+async function showCentral(page?: string, evidenceId?: string): Promise<void> {
   await openCentralBrowser(settings.serverUrl, page, process.platform,
-    url => promisify(execFile)('/usr/bin/open', ['-a', 'Google Chrome', url]), url => shell.openExternal(url));
+    url => promisify(execFile)('/usr/bin/open', ['-a', 'Google Chrome', url]), url => shell.openExternal(url), evidenceId);
 }
 function showWindow(): void { window?.show(); window?.focus(); }
 function showClientPage(page: 'overview' | 'notes' | 'sources' | 'settings'): void {
@@ -415,7 +415,10 @@ else {
       await writeFile(selected.filePath, JSON.stringify({...buildSupportBundle(profile, app.getVersion(), clientStatus(), logs.events),...logs}, null, 2), { mode: 0o600 });
       return { canceled: false };
     });
-    handle('mote:central', async page => { await showCentral(typeof page === 'string' ? page : undefined); });
+    handle('mote:central', async (page, evidenceId) => {
+      if (evidenceId !== undefined && typeof evidenceId !== 'string') throw new Error('Invalid evidence reference');
+      await showCentral(typeof page === 'string' ? page : undefined, evidenceId);
+    });
     handle('mote:note-draft', () => noteDrafts.get());
     handle('mote:note-draft-update', input => trackNote(noteDrafts.update(input as NoteDraft)));
     handle('mote:note', input => trackNote(serialize(async () => {

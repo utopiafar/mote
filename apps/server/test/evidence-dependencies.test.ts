@@ -22,7 +22,8 @@ test('one changed segment invalidates only its descendants; unchanged chunks and
  const processing=new FileProcessing(files,{transcribe:async()=>({durationMs:2000,segments:[{startMs:0,endMs:1000,text:'Stable first segment'},{startMs:1000,endMs:2000,text:'Second segment version '+revision}]})},undefined,{analyze:async records=>({answer:'Generated summary',citations:[{id:records[0].id}]})});
  const runs=new InsightRuns(store,{executor:processing.engine});
  t.after(async()=>{await processing.close();await runs.close();store.close();rmSync(directory,{recursive:true,force:true});});
- processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true}});await processing.tick();
+ // This lineage fixture supplies only synthetic transcription; never call the default local diarizer.
+ processing.update({revision:processing.view().revision,settings:{...processing.view().settings,enabled:true,audioProcessor:'audio.http'}});await processing.tick();
  const before=files.chunks(original.id),oldArtifact=before[0].fileEvidence!.artifactId,stableFingerprint=memoryEvidenceFingerprint(before[0]),memories=new MemoryStore(store,ids=>files.evidence(ids),id=>files.isCurrentEvidence(id));
  const save=(index:number)=>{const record=before[index];return memories.extract({answer:JSON.stringify({memories:[{title:'Generated '+index,statement:`Generated statement [${record.id}]`,uncertainty:'Fixture only',evidenceIds:[record.id],evidence:[{id:record.id,quote:record.ocrText}]}]}),citations:[{id:record.id,capturedAt:record.capturedAt,appName:'Generated',excerpt:record.ocrText}],trace:[],runId:randomUUID()},'fixture').items[0];};
  const proposal=save(0),scope={after:'2025-01-01T00:00:00Z',before:'2025-01-02T00:00:00Z',deviceId:'fixture'},snapshot=createInsightSnapshot(store,randomUUID(),scope);

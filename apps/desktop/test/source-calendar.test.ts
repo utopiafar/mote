@@ -18,4 +18,14 @@ describe('EventKit adapter fixtures (no calendar reads or permission requests)',
     expect(decodeCalendarScan({ permission: 'granted', complete: true, events: [event] }, { ...DEFAULT_SOURCE_OPTIONS, retention: 'reference' }, scope).items[0].text).toBe('');
     expect(() => decodeCalendarScan({ permission: 'granted', complete: true, events: [{ ...event, end: '2026-09-13T01:00:00Z' }] }, DEFAULT_SOURCE_OPTIONS, scope)).toThrow('无效');
   });
+  it('compares absolute instants across offsets and preserves the supplied calendar timestamps', () => {
+    const acrossOffsets = { ...event, start: '2026-09-14T09:00:00+08:00', end: '2026-09-14T02:00:00Z' };
+    const result = decodeCalendarScan({ permission: 'granted', complete: true, events: [acrossOffsets] }, DEFAULT_SOURCE_OPTIONS, scope);
+    expect(result.items[0].calendar).toMatchObject({ start: acrossOffsets.start, end: acrossOffsets.end });
+  });
+  it('rejects an actually reversed interval even when offset timestamp text sorts forward', () => {
+    const reversed = { ...event, start: '2026-09-14T02:00:00Z', end: '2026-09-14T09:00:00+08:00' };
+    expect(() => decodeCalendarScan({ permission: 'granted', complete: true, events: [reversed] }, DEFAULT_SOURCE_OPTIONS, scope)).toThrow('无效');
+  });
+
 });

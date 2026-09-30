@@ -53,7 +53,7 @@ object RuntimeSettings {
         }
     }
     fun apply(context: Context, next: CollectorConfig, bindLocal: Boolean = false, change: (() -> Unit)? = null,
-        nextServer: String = if (next.hasSyncConnection()) next.server else "", expected: CollectorConfig? = null,
+        nextServer: String = if (next.hasSyncConnection()) next.server else "", expected: CollectorConfig? = null, confirmCentralEndpoint: Boolean = false,
         finished: (kotlin.Result<Applied>) -> Unit) {
         check(Looper.myLooper() == Looper.getMainLooper())
         val app = context.applicationContext; val settings = Settings(app)
@@ -87,7 +87,7 @@ object RuntimeSettings {
                 ConnectionGuard.reconfigure(app, nextServer, bindLocal, expected) {
                     if (change == null) {
                         val discardImageComparisons = settings.read().imageDedupeDiagnosticsEnabled && !next.imageDedupeDiagnosticsEnabled
-                        settings.save(next, expected)
+                        settings.save(next, expected, confirmCentralEndpoint)
                         if (discardImageComparisons) app.imageDedupeDiagnostics().clear()
                         ImageDedupeDiagnosticsMaintenance.configure(app, next.imageDedupeDiagnosticsEnabled)
                     } else change()

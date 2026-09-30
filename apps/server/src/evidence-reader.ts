@@ -1,7 +1,7 @@
 import {materialDependencyStatus,type MaterialInputPin} from './material-readiness.js';
 import {scopeRecord} from './evidence-scope-record.js';
 import {sourceContentTime,parseEvidenceRef,evidenceRefId,formatEvidenceRef,formatArtifactRef,parseArtifactRef,sourceItemKinds,sourceTextFormat,decodeSourceText,type CaptureRecord} from '@mote/shared';
-import type {ContextReader} from '@mote/agent';
+import {ContextToolError,type ContextReader} from '@mote/agent';
 import {StoreError,type Store,type Range} from './store.js';
 import {MemoryStore,memoryEvidenceFingerprint} from './memory.js';
 import type {SourceStore} from './sources.js';
@@ -20,6 +20,7 @@ import {ArchivedFileStore} from './archived-files.js';
 import {readEvidenceImage} from './evidence-image.js';
 import {fileAttachmentAvailable,fileAttachmentParent} from './file-attachments.js';
 import {materialSourcePin,materialSourceCurrent,type MaterialSourcePin} from './material-source-pin.js';
+import {authoredRecordProjection} from './material-organizers.js';
 import type {MemoryRecipeBinding} from './memory-strategy-contract.js';
 import type {ManualMemoryInputPlanRequest} from './memory-input-plans.js';
 
@@ -253,14 +254,19 @@ export class EvidenceReader {
   /** A manual selection names fixed originals and recipes, including inputs
    * still being processed. It never authorizes a later range rescan. */
   memoryPlanSelection(scope:Range,bindings:readonly MemoryRecipeBinding[],policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,evidenceIds?:readonly string[],maximum=20000){
-    const manualPlans:ManualMemoryInputPlanRequest[]=[],raw=new Set<string>(),unavailable:string[]=[];
+    const manualPlans:ManualMemoryInputPlanRequest[]=[],raw=new Set<string>(),unavailable:string[]=[],materialOriginals=new Set<string>();
     const addMaterial=(material:MaterialRecord,allowList?:string[])=>{
-      if(!this.scopedMaterial(material.ref,scope)||!this.materialPlanAllowed(material.id,policy)){unavailable.push(material.ref);return;}
+      const scoped=this.scopedMaterial(material.ref,scope);
+      if(!scoped||!this.materialPlanAllowed(material.id,policy)){unavailable.push(material.ref);return;}
       const sourcePin=materialSourcePin(this.store,this.materials!,material,this.sourcePipelines?.archive);
       for(const strategy of bindings){
         const required=[...(strategy.requires??this.sourcePipelines?.memoryWork.sourceRequirements(material.ref)??['material'])];
         manualPlans.push({materialId:material.id,selectedRef:material.ref,sourcePin,strategy,required,...(allowList?{evidenceAllowList:allowList}:{})});
       }
+      // Only the built-in authored projection is known to represent this one
+      // entire original. Other Materials may cover only part of a member.
+      const original=this.authoredMaterialOriginal(material);
+      if(original)materialOriginals.add(original.id);
       if(manualPlans.length>2000||manualPlans.length+raw.size>maximum)throw new StoreError('Choose a smaller range or fewer recipes for memory extraction',413);
     };
     if(evidenceIds){
@@ -274,6 +280,7 @@ export class EvidenceReader {
         else raw.add(id);
       }
       for(const {material,ids} of selected.values())addMaterial(material,ids);
+      for(const id of materialOriginals)raw.delete(id);
     }else{
       let cursor:string|undefined;
       do{const page=this.materialCatalog({...scope,cursor,limit:100});for(const material of page.items)addMaterial(material);cursor=page.nextCursor??undefined;}while(cursor);
@@ -281,7 +288,7 @@ export class EvidenceReader {
       // Formal materials above must not also be sent as raw source items.
       do{const page=this.store.list({...scope,cursor,limit:200});
         for(const record of page.items){
-          if(this.sourceItemMaterial(record,scope)||record.provenance?.document?.coding)continue;
+          if(materialOriginals.has(record.id)||this.sourceItemMaterial(record,scope)||record.provenance?.document?.coding)continue;
           if(record.provenance?.sourceId&&record.source!=='screen'&&record.source!=='ui_page'&&this.store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(record.provenance.sourceId))continue;
           if(bindings.every(binding=>binding.requires!==undefined)||record.ocr?.status==='pending'||record.ocr?.status==='failed')continue;
           if(record.ocrText.length&&this.memories.isCurrentEvidence(record.id)&&record.provenance?.layer!=='reference'&&record.provenance?.document?.fileIndex?.coverage!=='lightweight'&&this.captureExposure(record,'memory',policy,'capture',true))raw.add(record.id);
@@ -295,7 +302,7 @@ export class EvidenceReader {
   /** Legacy selection admits ready inputs. Explicit manual recipes use the
    * independent, durable plans above; automatic jobs have their own queue. */
   memorySelection(scope:Range={}, maximum=20000,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy,requirements:readonly (readonly string[]|undefined)[]=[undefined]){
-    const ids=new Set<string>(),waiting:string[]=[],unavailable:string[]=[];
+    const ids=new Set<string>(),waiting:string[]=[],unavailable:string[]=[],materialOriginals=new Set<string>();
     const add=(id:string)=>{const record=this.memories.readEvidence([id])[0];
       if(record&&withinEvidenceScope(record,scope)&&this.memories.isCurrentEvidence(id)&&record.ocrText.length&&record.provenance?.layer!=='reference'&&record.provenance?.document?.fileIndex?.coverage!=='lightweight')ids.add(id);
       if(ids.size>maximum)throw new StoreError('Choose a smaller range for memory extraction',413);
@@ -308,17 +315,18 @@ export class EvidenceReader {
           const pending=selections.some(({required,input})=>required?input?.dependencies.some(d=>d.state==='pending'):material.coverage.state!=='complete');
           (pending?waiting:unavailable).push(material.ref);continue;
         }
+        const scoped=this.scopedMaterial(material.ref,scope),original=this.authoredMaterialOriginal(material);
+        if(original)materialOriginals.add(original.id);
         const anchors=[...new Set(selections.flatMap(({input})=>input?.evidenceIds??this.materials!.evidenceIds(material.ref)))];
         if(anchors.length){anchors.forEach(add);continue;}
-        const selected=this.scopedMaterial(material.ref,scope);
-        for(const member of selected?.members??[]){const id=evidenceRefId(member.ref,'capture');if(id)add(id);}
+        for(const member of scoped?.members??[]){const id=evidenceRefId(member.ref,'capture');if(id)add(id);}
       }
       cursor=page.nextCursor??undefined;
     }while(cursor);
     cursor=undefined;
     do{const page=this.store.list({...scope,cursor,limit:200});
       for(const record of page.items){
-        if(this.sourceItemMaterial(record,scope)||record.provenance?.document?.coding)continue;
+        if(materialOriginals.has(record.id)||this.sourceItemMaterial(record,scope)||record.provenance?.document?.coding)continue;
         if(record.provenance?.sourceId&&record.source!=='screen'&&record.source!=='ui_page'&&this.store.db.prepare('SELECT 1 FROM source_connections WHERE id=?').get(record.provenance.sourceId))continue;
         if(requirements.some(required=>required!==undefined)){unavailable.push(record.id);continue;}
         if(record.ocr?.status==='pending'){waiting.push(record.id);continue;}
@@ -435,19 +443,45 @@ export class EvidenceReader {
     const phase:EvidencePhase=record.ocr?.status==='pending'?'pending':record.ocr?.status==='failed'?'partial':'complete';
     return this.exposureAllows({sourceKind,sourceId:provenance?.sourceId,representation,operation,phase,localOnly:this.evidenceLocalOnly(record.id)},policy,screenOriginalGrant);
   }
-  private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[]){
+  /** The built-in authored organizer binds a logical Material to one current
+   * owner capture. A string prefix alone is never an authorization claim. */
+  private authoredMaterialOriginal(material:MaterialRecord):CaptureRecord|undefined {
+    if(!this.materials||material.memberCount!==1)return;
+    if(!this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='material_organizer_groups'").get())return;
+    const owners=this.store.db.prepare('SELECT organizer_id,version,group_json FROM material_organizer_groups WHERE material_id=? AND active=1').all(material.id) as
+      {organizer_id:string;version:string;group_json:string}[];
+    if(owners.length!==1||owners[0].organizer_id!=='mote.authored-record'||owners[0].version!=='2')return;
+    let group:{deviceId?:unknown;captureId?:unknown};
+    try{group=JSON.parse(owners[0].group_json);}catch{return;}
+    if(typeof group.deviceId!=='string'||typeof group.captureId!=='string')return;
+    const expectedSource='authored:'+createHash('sha256').update(JSON.stringify(group.deviceId)).digest('hex');
+    if(material.origin.sourceId!==expectedSource||material.origin.externalId!==group.captureId||
+      material.origin.deviceId!==group.deviceId||material.id!==materialId(expectedSource,group.captureId))return;
+    const members=this.materials.members(material.ref,{limit:2}).items;
+    if(members.length!==1||members[0].kind!=='capture'||evidenceRefId(members[0].ref,'capture')!==group.captureId)return;
+    const original=this.store.evidence([group.captureId])[0];
+    if(!original||!this.store.isCurrentEvidence(original.id)||original.deviceId!==group.deviceId||
+      original.provenance||material.kind!==`mote.${original.source}`)return;
+    return original;
+  }
+  private materialExposure(material:MaterialRecord,operation:EvidenceOperation,policy:EvidenceExposurePolicy,required?:readonly string[],planning=false){
     const access=this.materialMemberAccess(material);if(!access.available)return false;
-    if(required&&!this.materials?.input(material.ref,required)?.ready)return false;
+    if(!planning&&required&&!this.materials?.input(material.ref,required)?.ready)return false;
     if(operation==='memory'&&this.sourceItemRecipes){
-      try{
-        const source=this.sources.getSource(material.origin.sourceId),pipeline=this.sourcePipelines?.select(source);
-        if(!required){
-          if(pipeline&&!materialDependencyStatus(material,this.sourcePipelines!.options(source.id).memoryDependencies??pipeline.memoryDependencies??['material']).ready)return false;
-          if(!pipeline?.recipe&&pipeline?.storage!=='archive'&&!this.materialMemoryReady?.(material.ref))return false;
-        }
-      }catch{return false;}
+      const original=this.authoredMaterialOriginal(material);
+      if(original){
+        if(!this.captureExposure(original,'memory',policy))return false;
+      }else{
+        try{
+          const source=this.sources.getSource(material.origin.sourceId),pipeline=this.sourcePipelines?.select(source);
+          if(!planning&&!required){
+            if(pipeline&&!materialDependencyStatus(material,this.sourcePipelines!.options(source.id).memoryDependencies??pipeline.memoryDependencies??['material']).ready)return false;
+            if(!pipeline?.recipe&&pipeline?.storage!=='archive'&&!this.materialMemoryReady?.(material.ref))return false;
+          }
+        }catch{return false;}
+      }
     }
-    const phase=required&&material.coverage.state==='pending'?'partial':material.coverage.state;
+    const phase=planning?'complete':required&&material.coverage.state==='pending'?'partial':material.coverage.state;
     return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation,phase,localOnly:access.localOnly},policy);
   }
   /** Memory runners can inspect a material only after its declared route admits the current phase. */
@@ -457,9 +491,21 @@ export class EvidenceReader {
   /** Planning checks permission to derive after readiness; no original content
    * is disclosed by admitting a waiting plan. Actual batches recheck readiness. */
   materialPlanAllowed(id:string,policy:EvidenceExposurePolicy=defaultEvidenceExposurePolicy):boolean {
-    const material=this.materials?.get(id);if(!material)return false;
-    const access=this.materialMemberAccess(material);if(!access.available)return false;
-    return this.exposureAllows({sourceKind:this.materialKind(material),sourceId:material.origin.sourceId,representation:'material',operation:'memory',phase:'complete',localOnly:access.localOnly},policy);
+    const material=this.materials?.get(id);
+    return Boolean(material&&this.materialExposure(material,'memory',policy,undefined,true));
+  }
+  /** Recovery may equate a completed raw original with only this exact current
+   * built-in authored projection, never an arbitrary logical source prefix. */
+  authoredMaterialOriginalForReuse(id:string,ref:string):string|undefined {
+    const material=this.materials?.get(id);
+    if(!material||material.ref!==ref||material.coverage.state!=='complete'||material.blockCount!==1||material.assetCount!==0)return;
+    const original=this.authoredMaterialOriginal(material);
+    if(!original)return;
+    const block=this.store.db.prepare(`SELECT b.block_id,b.format,p.text FROM material_blocks b
+      JOIN material_block_payloads p ON p.hash=b.payload_hash WHERE b.material_id=? AND b.revision=?`).all(material.id,material.revision) as
+      {block_id:string;format:string|null;text:string}[];
+    return block.length===1&&block[0].block_id==='record'&&block[0].format==='json'&&
+      block[0].text===authoredRecordProjection(original)?original.id:undefined;
   }
   materialSourceCurrent(pin:MaterialSourcePin,id:string):boolean {
     return Boolean(this.materials&&materialSourceCurrent(this.store,this.materials,pin,id,this.sourcePipelines?.archive));
@@ -493,6 +539,13 @@ export class EvidenceReader {
       if(!material||material.origin.sourceId!==p.sourceId||material.origin.externalId!==p.externalId)return;
       return this.materialHead(material,scope)?.id===head.captureId?material:undefined;
     }catch{return;}
+  }
+  /** Owner navigation uses current stored anchor or source-head relationships.
+   * Neither an upstream URI nor captured prose can name another Material. */
+  currentMemoryMaterialRef(record:CaptureRecord):string|undefined {
+    const anchor=this.materials&&this.store.db.prepare('SELECT material_id FROM material_evidence WHERE id=?').get(record.id);
+    if(anchor){const material=this.materials!.get(String(anchor.material_id));return material&&this.materials!.isCurrentEvidence(record.id)?material.ref:undefined;}
+    return this.sourceItemMaterial(record,{})?.ref;
   }
   private materialHead(material:MaterialRecord,scope:Range):CaptureRecord|undefined {
     if(!this.materials||material.memberCount>101||!this.scopedMaterial(material.ref,scope))return;
@@ -758,7 +811,7 @@ export class EvidenceReader {
       materialRead:async args=>{const material=this.materials?.get(args.ref);if(!material||this.materials?.get(material.id)?.ref!==material.ref||!this.materialExposure(material,operation('expand'),policy))throw new StoreError('Material not found in selected scope',404);const page=this.materialRead(args);grant(page.originalRefs,{kind:'material',ref:material.ref,scope:{...args}});return page;},
       readImage:async (input)=>{
         const {id,attachmentId}=input;
-        if(!options.allowQueryImages?.())throw new StoreError('Query image disclosure is disabled',403);
+        if(!options.allowQueryImages?.())throw new ContextToolError('image_disclosure_disabled','Original-image access for queries is off. The owner must enable on-demand image access in Central Perception settings before a new query. Do not repeat this image request.','stop');
         const captureId=evidenceRefId(id,'capture');if(!captureId)throw new StoreError('Invalid capture reference');
         const parent=()=>{
           const original=scopeRecord(store,captureId);if(original)return original;

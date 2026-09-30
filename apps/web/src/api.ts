@@ -5,6 +5,8 @@ export interface Connection {
   token: string;
   /** Browser-only expiry for a persisted management session; the server token is unchanged. */
   expiresAt?: number;
+  /** Non-secret identity for tab view state; never sent to the server. */
+  viewScope?: string;
 }
 export interface FileEvidence {
   captureId: string;
@@ -19,6 +21,10 @@ export interface FileEvidence {
   overlap?: boolean;
 }
 export interface Capture {
+  evidencePresentation?: import('@mote/shared').SourceTextFormat;
+  requiresMaterialForMemory?: boolean;
+  memoryMaterialRef?: string;
+  perceptionJobs?: Array<{kind:string;state:string;error?:string|null}>;
   revisionState?: 'current'|'historical';
   fileArchive?: {captureId:string};
   fileEvidence?: FileEvidence;

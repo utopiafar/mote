@@ -104,6 +104,7 @@ for(const changed of [false,true])test(`summary model snapshot ${changed?'fences
  f.processing.update({revision:f.processing.view().revision,settings:{...f.processing.view().settings,summarize:true}});
  f.finish();const running=f.processing.tick();await started;
  revision++;if(changed)model=generatedModel('model-two');
+ if(changed){await f.processing.tick();assert.equal(seen.length,1,'new summary waits until the old raw analysis returns');}
  finish();await running;
  for(const until=Date.now()+5000;Date.now()<until&&f.files.detail(f.id).job.summary_state!=='succeeded';){await f.processing.tick();if(f.files.detail(f.id).job.summary_state!=='succeeded')await new Promise(r=>setTimeout(r,25));}
  assert.equal(f.files.detail(f.id).job.summary_state,'succeeded');assert.equal(f.calls.length,1,'model settings must not repeat ASR');

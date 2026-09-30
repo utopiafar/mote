@@ -122,6 +122,33 @@ test('one failed reviewer leaves the other product intact and retries only its n
   assert.equal(f.node.store.db.prepare('SELECT count(*) n FROM memory_extraction_drafts WHERE shared=1').get()!.n,0,'changed evidence invalidates its shared intermediate');
 });
 
+test('revising one source invalidates and recomputes only its product while another source stays byte-identical',async t=>{
+  const f=await fixture(t),a=await f.add('generated-source-a'),b=await f.add('generated-source-b',true);
+  const firstA=await f.run(a.evidenceIds,['coding']),firstB=await f.run(b.evidenceIds,['coding']);
+  assert.equal(firstA.status,'completed');assert.equal(firstB.status,'completed');
+  assert.equal(firstA.memoryIds.length,1);assert.equal(firstB.memoryIds.length,1);
+  const oldA=firstA.memoryIds[0],keptB=firstB.memoryIds[0];
+  const rawB=()=>f.node.store.db.prepare('SELECT json FROM memories WHERE id=?').get(keptB)!.json;
+  const beforeB=rawB(),beforeCalls=f.calls.length;
+  const callsForB=()=>f.calls.filter(call=>call.evidenceIds?.some(id=>b.evidenceIds.includes(id))).length;
+  const beforeBCalls=callsForB();assert.equal(beforeBCalls,2);
+  assert.equal(f.node.memories.get(keptB).status,'published');
+  const revisedA=await f.add('generated-source-a',false,'2');
+  assert.equal(f.node.memories.get(oldA).status,'stale');
+  assert.equal(rawB(),beforeB,'source invalidation preserves every serialized field of the unrelated Memory');
+  assert.equal(f.calls.length,beforeCalls,'updating a source does not itself authorize model work');
+  const recomputed=await f.run([...revisedA.evidenceIds,...b.evidenceIds],['coding']);
+  assert.equal(recomputed.status,'completed');assert.equal(recomputed.batches.length,1,'unchanged B reuses its fixed-context completion checkpoint');
+  assert.equal(recomputed.memoryIds.length,1);
+  const fresh=f.node.memories.get(recomputed.memoryIds[0]);assert.equal(fresh.status,'published');assert.notEqual(fresh.id,oldA);
+  assert.deepEqual(fresh.evidenceIds,revisedA.evidenceIds);
+  assert.equal(f.node.memories.get(oldA).status,'stale','recomputation never revives the superseded evidence product');
+  assert.equal(f.calls.length,beforeCalls+2,'only the changed source needs one extraction and one review');
+  assert.ok(f.calls.slice(beforeCalls).every(call=>call.evidenceIds?.every(id=>revisedA.evidenceIds.includes(id))));
+  assert.equal(callsForB(),beforeBCalls,'no new model phase reads B');
+  assert.equal(rawB(),beforeB,'B keeps its full JSON including receipt, versions and timestamps after A recomputes');
+});
+
 test('replaceable semantic review cannot bypass exact evidence validation',async t=>{
   const f=await fixture(t),source=await f.add('diary');
   const job=await f.run(source.evidenceIds,['bad']);assert.equal(job.status,'failed');assert.equal(job.memoryIds.length,0);

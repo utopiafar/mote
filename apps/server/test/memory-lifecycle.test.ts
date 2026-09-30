@@ -27,6 +27,23 @@ test('durable threshold-or-maximum-wait admission, immutable window, arrivals du
   assert.throws(()=>lifecycle.configure({...lifecycle.settings(),summaryCharacters:12000,contextCharacters:4000}));
 });
 
+test('lifecycle view identifies manual consolidation without attributing an automatic window to it',async t=>{
+  const store=fixture(t),lifecycle=new MemoryLifecycle(store,()=>true);t.after(()=>lifecycle.close());
+  let release!:()=>void,entered!:()=>void;
+  const ready=new Promise<void>(resolve=>entered=resolve);
+  lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(){entered();await new Promise<void>(resolve=>release=resolve);}});
+  lifecycle.register({id:'consolidation',version:'fixture',stream:'memory',async run(){}});
+  const settings=lifecycle.settings();lifecycle.configure({...settings,extraction:{...settings.extraction,minChanges:1},consolidation:{...settings.consolidation,enabled:false}});
+  event(store);const running=lifecycle.tick();await ready;await new Promise(resolve=>setImmediate(resolve));
+  const manualId=lifecycle.request('consolidation',[randomUUID()],'generated-checkpoint');
+  const views=lifecycle.view().extensions;
+  assert.equal(views.find(item=>item.id==='extraction')?.active?.manual,false);
+  assert.equal(views.find(item=>item.id==='consolidation')?.active?.manual,true);
+  assert.equal(views.find(item=>item.id==='consolidation')?.active?.id,manualId);
+  assert.equal(views.find(item=>item.id==='consolidation')?.status,'pending','manual work remains available while automatic consolidation is off');
+  release();await running;
+});
+
 test('restart preserves failed window, snapshot settings and backoff; success alone advances cursor',async t=>{
   const store=fixture(t);let now=0;let lifecycle=new MemoryLifecycle(store,()=>true,()=>now);
   lifecycle.register({id:'extraction',version:'fixture',stream:'evidence',async run(_w,checkpoint){checkpoint('durable-child');throw Error('fixture failure');}});
