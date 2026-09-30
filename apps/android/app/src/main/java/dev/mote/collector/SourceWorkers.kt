@@ -75,12 +75,14 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     if (!store.state(source.id).optBoolean("registered")) {
                         val registrationBody = source.registration(settings.deviceId)
                         slice.record(registrationBody.toString().toByteArray(Charsets.UTF_8).size.toLong())
+                        SyncSchedule.requireConditions(applicationContext, config)
                         val (code, registration) = HttpJson.post("${config.server}/api/sources", registrationBody, config.token)
                         if (code !in 200..299 || registration?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(code), httpStatus = code); store.status(source.id, "http"); failed = true; continue }
                         if (!registration.optBoolean("enabled", true)) { store.status(source.id, "paused"); continue }
                         if (!stillSelected()) return Result.retry()
                         val patch = org.json.JSONObject().put("name", source.name).put("initialSync", source.initialSync).put("retention", source.retention)
                         slice.record(patch.toString().toByteArray(Charsets.UTF_8).size.toLong())
+                        SyncSchedule.requireConditions(applicationContext, config)
                         val (patchCode, updated) = HttpJson.request("PATCH", "${config.server}/api/sources/${source.id}", patch, config.token)
                         if (patchCode !in 200..299 || updated?.optString("id") != source.id) { Operations.record(applicationContext, OperationKind.SOURCE_FAILED, Operations.httpReason(patchCode), httpStatus = patchCode); store.status(source.id, "http"); failed = true; continue }
                         store.registered(source.id, target)
@@ -97,13 +99,15 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                         SyncSchedule.waitingReason(applicationContext, config)?.let { settings.syncStatus("waiting", it); return Result.retry() }
                         val body = store.next(source.id, target) ?: break
                         if (!slice.admit(body.toString().toByteArray(Charsets.UTF_8).size)) break
+                        SyncSchedule.requireConditions(applicationContext, config)
                         val (code, ack) = HttpJson.request("PUT", "${config.server}/api/sources/${source.id}/items", body, config.token)
                         if (code == 409 || code == 410) {
                             Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = code)
                             val paused = code == 409 && runCatching {
+                                SyncSchedule.requireConditions(applicationContext, config)
                                 val (lookupCode, listing) = HttpJson.get("${config.server}/api/sources", config.token)
                                 lookupCode == 200 && IngressV2Protocol.sourcePaused(source.id, listing)
-                            }.getOrDefault(false)
+                            }.getOrElse { if (it is SyncConditionsUnavailable) throw it else false }
                             store.status(source.id, if (paused) "paused" else "ack")
                             if (!paused) blocked = true
                             break
@@ -118,12 +122,15 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                     }
                     if (store.next(source.id, target) == null) store.status(source.id, "synced")
                     else if (submitted >= 20 || slice.exhausted) more = true
+                } catch (error: SyncConditionsUnavailable) {
+                    throw error
                 } catch (error: FileIngressRejection) {
                     Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.HTTP, httpStatus = error.httpStatus)
                     val paused = error.httpStatus == 409 && runCatching {
+                        SyncSchedule.requireConditions(applicationContext, config)
                         val (lookupCode, listing) = HttpJson.get("${config.server}/api/sources", config.token)
                         lookupCode == 200 && IngressV2Protocol.sourcePaused(source.id, listing)
-                    }.getOrDefault(false)
+                    }.getOrElse { if (it is SyncConditionsUnavailable) throw it else false }
                     store.status(source.id, if (paused) "paused" else "ack")
                     if (!paused) blocked = true
                 } catch (_: Exception) { store.status(source.id, "offline"); Operations.record(applicationContext, OperationKind.SOURCE_FAILED, OperationReason.NETWORK); SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.NETWORK); failed = true }
@@ -140,6 +147,9 @@ class SourceUploadWorker(context: Context, params: WorkerParameters) : Worker(co
                 SyncHeartbeat.send(applicationContext, settings, config, applicationContext.queue())
                 Result.success()
             }
+        } catch (error: SyncConditionsUnavailable) {
+            settings.syncStatus("waiting", error.waitingReason)
+            Result.retry()
         } catch (_: Exception) { SupportEvents.record(applicationContext, EventStage.SOURCE, EventCode.CONFIG_INVALID); failure() }
     }
 }
@@ -180,7 +190,7 @@ object SourceWork {
     fun upload(context: Context, explicit: Boolean = false) = UploadWorker.schedule(context, Settings(context).read(), explicit)
     internal fun enqueueUpload(context: Context, config: CollectorConfig, explicit: Boolean, continuation: Boolean = false, delaySeconds: Long = 0) {
         if (context.localSources().sources().none { it.enabled }) return
-        val request = OneTimeWorkRequestBuilder<SourceUploadWorker>().setInitialDelay(delaySeconds, TimeUnit.SECONDS).setConstraints(SyncSchedule.constraints(config))
+        val request = OneTimeWorkRequestBuilder<SourceUploadWorker>().setInitialDelay(delaySeconds, TimeUnit.SECONDS).setConstraints(SyncSchedule.constraints(config, explicit))
             .setInputData(workDataOf("manual" to explicit, "syncStamp" to SyncSchedule.stamp(config)))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         WorkManager.getInstance(context).enqueueUniqueWork("mote-source-upload", if (continuation) ExistingWorkPolicy.APPEND_OR_REPLACE else if (explicit) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP, request)

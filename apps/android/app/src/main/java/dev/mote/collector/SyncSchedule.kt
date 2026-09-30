@@ -38,8 +38,8 @@ object SyncSchedule {
         val pending = pending(context)
         return config.syncPolicy().delayMillis(System.currentTimeMillis(), pending.count, pending.oldestAt, Settings(context).lastSyncDispatch(), explicit, pending.pendingUpdates)
     }
-    fun constraints(config: CollectorConfig) = Constraints.Builder()
-        .setRequiredNetworkType(if (config.wifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
+    fun constraints(config: CollectorConfig, explicit: Boolean = false) = Constraints.Builder()
+        .setRequiredNetworkType(SyncNetworkPolicy.requiredNetworkType(config.server, config.wifiOnly, explicit))
         .setRequiresCharging(config.syncChargingOnly).setRequiresBatteryNotLow(config.syncBatteryNotLow).build()
     fun waitingReason(context: Context, config: CollectorConfig): String? {
         val battery = context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
@@ -48,6 +48,10 @@ object SyncSchedule {
         val low = battery?.getBooleanExtra(android.os.BatteryManager.EXTRA_BATTERY_LOW, false)
         return SyncConditions(config.syncChargingOnly, config.syncBatteryNotLow, config.wifiOnly)
             .waitingReason(charging, low, !config.wifiOnly || UploadWorker.isWifi(context))
+    }
+    /** Recheck user restrictions before each HTTP attempt, including fallback and file-part requests. */
+    internal fun requireConditions(context: Context, config: CollectorConfig) {
+        waitingReason(context, config)?.let { throw SyncConditionsUnavailable(it) }
     }
 
     fun schedule(context: Context, config: CollectorConfig, explicit: Boolean = false) {
@@ -62,7 +66,7 @@ object SyncSchedule {
     }
     fun invalidate() { synchronized(this) { registeredStamp = null }; HeartbeatWorker.invalidate() }
     internal fun continueUpload(context: Context, config: CollectorConfig, explicit: Boolean) {
-        val request = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config))
+        val request = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config, explicit))
             .setInputData(workDataOf("manual" to explicit, "syncStamp" to stamp(config), "continuation" to true))
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         enqueueImmediate(context, request, replace = false)
@@ -110,7 +114,7 @@ object SyncSchedule {
             registeredStamp = stamp(config)
         }
         val wait = delay(context, config, explicit) ?: return
-        val request = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config))
+        val request = OneTimeWorkRequestBuilder<UploadWorker>().setConstraints(constraints(config, explicit))
             .setInputData(workDataOf("manual" to explicit, "syncStamp" to stamp(config)))
             .setInitialDelay(wait, TimeUnit.MILLISECONDS).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
         if (wait == 0L) {

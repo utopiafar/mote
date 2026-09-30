@@ -7,6 +7,7 @@ object PerceptionSync {
   val prefs=context.getSharedPreferences("central-perception",Context.MODE_PRIVATE)
   val key=SourceRules.hash(config.server+"\n"+config.token+"\n"+settings.deviceId)
   val cursor=prefs.getLong(key,0)
+  SyncSchedule.requireConditions(context,config)
   val (code,body)=HttpJson.get("${config.server}/api/capture-browser/updates?cursor=$cursor&limit=20&deviceId=${URLEncoder.encode(settings.deviceId,"UTF-8")}",config.token)
   if(code!=200||body==null)return
   val next=body.getLong("nextCursor");require(next>=cursor)

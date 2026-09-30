@@ -40,6 +40,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
                     report(MoteI18n.text("检查完成：中央可见 {0} 条，不可见 {1} 条。检查范围为手机仍保留的采集记录；不可见可能是缺失、删除或无权限，不会自动恢复。来源快照由全量补传时核验。", present, unavailable))
                     return Result.success()
                 }
+                SyncSchedule.requireConditions(applicationContext, config)
                 val (code, response) = HttpJson.post("${config.server}/api/capture-browser/reconcile",
                     JSONObject().put("deviceId", settings.deviceId).put("ids", JSONArray(ids)), config.token)
                 if (code == 401 || code == 403) { report(MoteI18n.text("检查失败：连接授权失效，请重新连接同一节点后重试")); return Result.failure() }
@@ -57,6 +58,9 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
                 report(MoteI18n.text("已检查 {0} 条 · 中央可见 {1} · 不可见 {2}", present + unavailable, present, unavailable))
             }
             return Result.retry()
+        } catch (error: SyncConditionsUnavailable) {
+            report(error.waitingReason)
+            return Result.retry()
         } catch (_: Exception) {
             report(MoteI18n.text("操作未完成，已完成的步骤保留；请检查网络或存储。本次手动操作可再次点击继续，未删除任何副本。"))
             return Result.failure()
@@ -65,7 +69,7 @@ class SyncRecoveryWorker(context: Context, params: WorkerParameters) : Worker(co
     companion object {
         fun start(context: Context, replay: Boolean) {
             val config = Settings(context).read(); config.validateConnection()
-            val request = OneTimeWorkRequestBuilder<SyncRecoveryWorker>().setConstraints(SyncSchedule.constraints(config))
+            val request = OneTimeWorkRequestBuilder<SyncRecoveryWorker>().setConstraints(SyncSchedule.constraints(config, explicit = true))
                 .setInputData(workDataOf("replay" to replay, "syncStamp" to SyncSchedule.stamp(config)))
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build()
             WorkManager.getInstance(context).enqueueUniqueWork("mote-sync-recovery", ExistingWorkPolicy.KEEP, request)

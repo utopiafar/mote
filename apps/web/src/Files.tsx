@@ -2,11 +2,12 @@ import {useResource} from './useResource';
 import {resources} from './resource-cache';
 import {useOperationUpdates} from './useOperationUpdates';
 import { moteText } from '@mote/shared/i18n';
-import {useEffect,useLayoutEffect,useRef,useState} from 'react';
+import {useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
 import {type Api,type Capture,bytes,dateTime,errorMessage} from './api';
 import {FileProcessingSettings} from './FileProcessingSettings';
 import {FileReview} from './FileReview';
 import {AnswerMarkdown} from './AnswerMarkdown';
+import {containDialogFocus} from './dialog-focus';
 
 type FileRow={cancellation?:{canCancel:boolean;wait:'running'|'unknown'|null};processingPolicy?:{applied:any;current:any;legacyRevision:string|null};captureId:string;sourceId:string;sizeBytes:number;hasOriginal:boolean;originMissing:boolean;item:{document?:{fileIndex?:import('@mote/shared').FileIndex};text?:string;title:string;layer:string;observedAt:string;mimeType?:string};job:null|{state:string;error?:string;summary_state:string;local_only?:number;execution?:import('@mote/shared').ExecutionEnvelope};steps?:{step:string;state:string;attempts:number;execution?:import('@mote/shared').ExecutionEnvelope}[];artifacts:{id:string;kind:string;complete?:boolean;sections?:{answer:string;citationIds:string[]}[]}[]};
 const errors:Record<string,string>={archive_only:moteText("仅归档原件"),model_missing:moteText("等待安装本地模型"),processor_not_configured:moteText("处理插件或本地模型尚未配置"),not_configured:moteText("请配置中央处理服务"),unsupported_format:moteText("此格式仅归档原件"),provider_failed:moteText("转写服务未完成，请检查服务后重试"),processing_limit:moteText("超过处理大小或单文件时长限制"),summary_failed:moteText("摘要生成失败，可单独重试")};
@@ -42,17 +43,29 @@ function SegmentCorrection({api,id,chunk,onSaved}:{api:Api;id:string;chunk:Captu
 }
 
 export function FileDetail(props:{api:Api;id:string;startMs?:number;onOpen:(id:string)=>void}){return <FileDetailContents key={props.id} {...props}/>;}
+function UnknownRetryConfirmation({onCancel,onConfirm}:{onCancel:()=>void;onConfirm:()=>void}){
+ const panel=useRef<HTMLElement|null>(null),cancel=useRef<HTMLButtonElement|null>(null),opener=useRef(document.activeElement as HTMLElement|null),titleId=useId(),warningId=useId();
+ useEffect(()=>panel.current?containDialogFocus(panel.current,opener.current,cancel.current):undefined,[]);
+ return <div className="modal-backdrop" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();onCancel();}}} onMouseDown={event=>{if(event.target===event.currentTarget)onCancel();}}>
+  <section ref={panel} className="modal connect-modal" role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={warningId}>
+   <h2 id={titleId}>{moteText('确认重试')}</h2><p id={warningId}>{moteText('上次处理是否结束未知，重试可能重复执行。请确认后继续。')}</p>
+   <div className="source-toolbar"><button ref={cancel} className="button" onClick={onCancel}>{moteText('取消')}</button><button className="button primary" onClick={onConfirm}>{moteText('确认重试')}</button></div>
+  </section>
+ </div>;
+}
 function FileDetailContents({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs?:number;onOpen:(id:string)=>void}){
  const {data:file,error:readError,loading,refresh}=useResource<FileRow>(api,'/api/files/'+encodeURIComponent(id));
  useOperationUpdates(api);
  const [mutationError,setError]=useState(''),[chunks,setChunks]=useState<Capture[]>([]),[offset,setOffset]=useState<number|null>(0),[url,setUrl]=useState('');
  useEffect(()=>file?.cancellation?.wait==='running'?resources(api).get<FileRow>('/api/files/'+encodeURIComponent(id)).poll(2000):undefined,[api,id,file?.cancellation?.wait]);
  const processingRequest=useRef<AbortController|null>(null),[processingBusy,setProcessingBusy]=useState(false);
- useLayoutEffect(()=>{setProcessingBusy(false);return()=>{processingRequest.current?.abort();processingRequest.current=null;};},[api]);
- async function processAction(kind:'cancel'|'retry',stage='transcribe'){
+ const [unknownRetryStage,setUnknownRetryStage]=useState<string|null>(null);
+ useLayoutEffect(()=>{setProcessingBusy(false);setUnknownRetryStage(null);return()=>{processingRequest.current?.abort();processingRequest.current=null;};},[api]);
+ async function processAction(kind:'cancel'|'retry',stage='transcribe',unknownConfirmed=false){
   if(processingRequest.current||loading||readError)return;
+  if(kind==='retry'&&file?.cancellation?.wait==='running')return;
   const confirmUnknown=kind==='retry'&&file?.cancellation?.wait==='unknown';
-  if(confirmUnknown&&!window.confirm(moteText('上次处理是否结束未知，重试可能重复执行。请确认后继续。')))return;
+  if(confirmUnknown&&!unknownConfirmed){setUnknownRetryStage(stage);return;}
   const controller=new AbortController();processingRequest.current=controller;setProcessingBusy(true);setError('');
   try{await api.request('/api/files/'+id+'/'+kind,{method:'POST',body:JSON.stringify(kind==='cancel'?{}:{stage,...(confirmUnknown?{confirmUnknown:true}:{})}),signal:controller.signal});if(processingRequest.current===controller&&!controller.signal.aborted)refresh();}
   catch(error){if(processingRequest.current===controller&&!controller.signal.aborted)setError(errorMessage(error));}
@@ -97,6 +110,7 @@ function FileDetailContents({api,id,startMs=0,onOpen}:{api:Api;id:string;startMs
  async function action(fn:()=>Promise<void>){try{setError('');await fn();}catch(e){setError(errorMessage(e));}}
  if(!file)return <section className="file-detail">{loading&&<p role="status">{moteText('正在读取…')}</p>}{error&&<p role="alert" className="error-banner">{error}<button className="button" onClick={refresh}>{moteText('重新读取')}</button></p>}</section>;
  return <section className="file-detail"><h3>{file.item.title}</h3><p>{bytes(file.sizeBytes)} · {fileAvailability(file)}{file.originMissing?moteText(" · 来源已不可见，中央归档仍可使用"):''}</p>
+ {unknownRetryStage!==null&&<UnknownRetryConfirmation onCancel={()=>setUnknownRetryStage(null)} onConfirm={()=>{const stage=unknownRetryStage;setUnknownRetryStage(null);void processAction('retry',stage,true);}}/>}
  {file.hasOriginal&&<div className="source-toolbar"><button className="button" disabled={originalLoading} onClick={()=>void loadOriginal()}>{originalLoading?moteText('正在读取…'):file.item.mimeType?.startsWith('image/')?moteText('查看原图'):moteText("加载原件 / 回听")}</button><button className="button" onClick={()=>void action(async()=>{await api.request('/api/files/'+id+'/playback',{method:'POST',body:'{}'});const a=document.createElement('a');a.href='/api/files/'+id+'/content?download=1';a.download=file.item.title;a.click();})}>{moteText("下载原件")}</button></div>}
  {url&&!readError&&file.item.mimeType?.startsWith('image/')&&<div className="original-image"><div className="original-image-controls"><button className="button" aria-pressed={!nativeSize} onClick={()=>setNativeSize(false)}>{moteText('适应宽度')}</button><button className="button" aria-pressed={nativeSize} onClick={()=>setNativeSize(true)}>{moteText('原始尺寸')}</button><button className="button" onClick={()=>setUrl('')}>{moteText('收起原图')}</button></div><div className={`original-image-viewport${nativeSize?' native-size':''}`} tabIndex={0} role="region" aria-label={moteText('原图，可滚动查看')}><div className="capture-image"><img src={url} alt={file.item.title} decoding="async" onError={()=>setError(moteText('影像暂不可用'))}/></div></div></div>}
  {url&&file.item.mimeType?.startsWith('audio/')&&<audio onError={()=>setError(moteText("浏览器无法播放此编码，可下载原件使用本机播放器打开。"))} ref={player} controls src={url} preload="metadata" onLoadedMetadata={()=>{if(player.current)player.current.currentTime=startMs/1000;}}/>}

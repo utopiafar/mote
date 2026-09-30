@@ -604,9 +604,27 @@ test('file processing cancellation distinguishes waiting from unknown and requir
  const button=(label:string)=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent===label)!;
  assert.equal(button('重新转写 / 提取').disabled,true);
  await act(async()=>button('取消本次处理').click());assert.equal(writes.length,1);assert.match(d.body.textContent!,/不再保存后续结果/);
- wait='unknown';await act(async()=>button('刷新处理状态').click());window.confirm=()=>false;
- await act(async()=>button('重新转写 / 提取').click());assert.equal(writes.length,1);
- window.confirm=()=>true;await act(async()=>button('重新转写 / 提取').click());assert.deepEqual(writes[1].body,{stage:'transcribe',confirmUnknown:true});
+ wait='unknown';await act(async()=>button('刷新处理状态').click());window.confirm=()=>{throw Error('A retry must use the accessible application dialog');};
+ const retry=button('重新转写 / 提取');retry.focus();
+ await act(async()=>retry.click());assert.equal(writes.length,1);
+ assert.match(d.querySelector('[role=alertdialog]')!.textContent!,/重试可能重复执行/);
+ assert.equal(d.activeElement,button('取消'),'cancel receives initial focus');
+ await act(async()=>button('取消').click());assert.equal(writes.length,1);assert.equal(d.querySelector('[role=alertdialog]'),null);assert.equal(d.activeElement,retry);
+ await act(async()=>retry.click());await act(async()=>button('取消').dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+ assert.equal(writes.length,1);assert.equal(d.querySelector('[role=alertdialog]'),null);
+ await act(async()=>button('重新分离说话人（保留转写）').click());assert.equal(writes.length,1);
+ await act(async()=>button('确认重试').click());assert.deepEqual(writes[1].body,{stage:'diarize',confirmUnknown:true});
+ assert.equal(d.querySelector('[role=alertdialog]'),null);
+});
+
+test('unknown file retry confirmation cannot carry approval to another node',async t=>{
+ const {root,document:d}=await fixture(t),writes:string[]=[];
+ const file={captureId:ids[0],item:{title:'Generated file'},sizeBytes:1,hasOriginal:false,job:{state:'failed',summary_state:'cancelled'},cancellation:{canCancel:false,wait:'unknown'},artifacts:[]};
+ const client=(node:string)=>apiWith((path,init)=>{if(init?.method==='POST')writes.push(node);return file;});
+ const first=client('first'),second=client('second'),render=(api:Api)=>root.render(React.createElement(FileDetail,{api,id:ids[0],onOpen:()=>{}}));
+ await act(async()=>render(first));await act(async()=>Array.from(d.querySelectorAll('button')).find(b=>b.textContent==='重新转写 / 提取')!.click());
+ assert.ok(d.querySelector('[role=alertdialog]'));
+ await act(async()=>render(second));assert.equal(d.querySelector('[role=alertdialog]'),null);assert.deepEqual(writes,[]);
 });
 
 for(const outcome of ['resolve','reject'] as const)test('file cancellation ignores old session '+outcome+' while new node can cancel',async t=>{
