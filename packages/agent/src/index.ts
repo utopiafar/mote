@@ -1,7 +1,8 @@
 import {SYSTEM_PROMPT,systemInstructions} from './instructions.js';
 import {observeModelTransport} from './model-transport-observer.js';
 import {contextToolDefinitions,pinContextTools} from './tool-contributions.js';
-export {ContextToolRegistry,type ContextToolContribution} from './tool-contributions.js';
+export {ContextToolRegistry,contextToolDefinitions,type ContextToolContribution} from './tool-contributions.js';
+export {buildContextEnvelope,taskTools} from './task-context.js';
 import {evidenceExcerpt,excerptSlice} from './evidence-ledger.js';
 import {assembleContext,taskTools} from './task-context.js';
 import {observeHarness} from './usage.js';
@@ -48,7 +49,7 @@ export const PLUGIN_SOURCE=readFileSync(new URL('./plugin.mjs',import.meta.url),
   .replace('from "./context-tools.js"',`from ${JSON.stringify(new URL('./context-tools.js',import.meta.url).href)}`)
         .replace('from "@deepseek-ai/dsh-tools"',`from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tools'))}`)
   .replace('from "@deepseek-ai/dsh-tool-skill"',`from ${JSON.stringify(import.meta.resolve('@deepseek-ai/dsh-tool-skill'))}`);
-export {SYSTEM_PROMPT,SOURCE_TIME_INSTRUCTIONS} from './instructions.js';
+export {SYSTEM_PROMPT,SOURCE_TIME_INSTRUCTIONS,systemInstructions} from './instructions.js';
 
 export function createRuntimePatch(
   pluginPath: string,
