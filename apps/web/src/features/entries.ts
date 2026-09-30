@@ -1,4 +1,5 @@
 import { pages as pages13 } from './actions';
+import { pages as agentPages } from './agent-view';
 import { pages as pages3 } from './ask';
 import { pages as pages2 } from './capture';
 import { pages as pages17 } from './connections';
@@ -17,4 +18,4 @@ import { pages as pages6 } from './sources';
 import { pages as pages5 } from './storage';
 import { pages as pages1 } from './system';
 import { pages as pages11 } from './usage';
-export const builtinPages=[...pages0,...pages1,...pages2,...pages3,...pages4,...pages5,...pages6,...pages7,...pages8,...pages9,...pages10,...pages11,...pages12,...pages13,...pages14,...pages15,...pages16,...pages17,...pages18];
+export const builtinPages=[...agentPages,...pages0,...pages1,...pages2,...pages3,...pages4,...pages5,...pages6,...pages7,...pages8,...pages9,...pages10,...pages11,...pages12,...pages13,...pages14,...pages15,...pages16,...pages17,...pages18];
