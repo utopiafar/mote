@@ -55,10 +55,11 @@ class CaptureRecordsActivity : MoteActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState); window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (android.os.Build.VERSION.SDK_INT >= 33) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { navigateBack() }
-        date = savedInstanceState?.getString("date")?.let(LocalDate::parse) ?: date
+        date = savedInstanceState?.getString("date")?.let(LocalDate::parse)
+            ?: intent.getStringExtra("recordDate")?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: date
         central = savedInstanceState?.getBoolean("central") ?: false
         album = savedInstanceState?.getString("album")?.let(::JSONObject)
-        recordSource = savedInstanceState?.getString("recordSource")?.takeIf { it in recordSources } ?: "screen"
+        recordSource = (savedInstanceState?.getString("recordSource") ?: intent.getStringExtra("recordSource"))?.takeIf { it in recordSources } ?: "screen"
         sessionGrouping = savedInstanceState?.getBoolean("sessionGrouping", true) ?: true
         grid = savedInstanceState?.getBoolean("grid", true) ?: true
         body = moteDetailPage { navigateBack() }

@@ -61,11 +61,11 @@ class NavigationInstrumentedTest {
         }
     }
 
-    @Test fun everyBottomTabSwitchesOnItsFirstTouch() {
+    @Test fun everyLocalBottomTabSwitchesOnItsFirstTouch() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         instrumentation.setInTouchMode(true)
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            for (label in listOf("资料", "问一问", "本机", "今天", "本机", "资料", "今天")) {
+            for (label in listOf("资料库", "本机", "今天", "本机", "资料库", "今天")) {
                 instrumentation.waitForIdleSync()
                 var x = 0f; var y = 0f
                 scenario.onActivity { activity ->
@@ -85,6 +85,22 @@ class NavigationInstrumentedTest {
                 }
             }
         }
+    }
+
+    @Test fun conversationUsesTheSamePrimaryNavigationEvenBeforeConnecting() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val settings = Settings(context); val previous = settings.read()
+        org.junit.Assume.assumeTrue("Fresh generated development fixture only", context.packageName == "dev.mote.collector.dev" && previous.token.isBlank() && !settings.enabled && context.queue().depth() == 0)
+        settings.save(previous.copy(server = "", token = ""), confirmCentralEndpoint = true)
+        try { ActivityScenario.launch(AskActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val tabs = views(activity.window.decorView).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
+                assertEquals(listOf("今天", "资料库", "问一问", "本机"), tabs.map { it.text.toString() })
+                assertTrue(tabs.single { it.text == "问一问" }.isSelected)
+                assertFalse(views(activity.window.decorView).filterIsInstance<TextView>().any { it.text == "打开对话" })
+                assertFalse(Settings(activity).enabled)
+            }
+        } } finally { settings.save(previous, confirmCentralEndpoint = true) }
     }
 
     @Test fun permissionsAndLocalLogsOpenWithoutStartingCapture() {
@@ -230,6 +246,51 @@ class NavigationInstrumentedTest {
         }
     }
 
+
+    @Test fun generatedNoteKeyboardKeepsPrimaryNavigationVisible() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation(); val context = instrumentation.targetContext
+        org.junit.Assume.assumeTrue("Explicit generated-only UI rendering required", InstrumentationRegistry.getArguments().getString("renderGeneratedUi") == "true")
+        require(context.packageName == "dev.mote.collector.dev" && Build.FINGERPRINT.startsWith("google/sdk_gphone64_arm64/emu64a:") && !Settings(context).enabled)
+        require(QuickNotes.draft(context).read().text.isEmpty())
+        ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
+            scenario.onActivity { tab(it, "记录") }
+            val editorDeadline = SystemClock.elapsedRealtime() + 10000; var ready = false
+            while (!ready && SystemClock.elapsedRealtime() < editorDeadline) {
+                scenario.onActivity { ready = editor(it, "记下此刻的想法…").isEnabled && it.window.decorView.hasWindowFocus() }
+                if (!ready) Thread.sleep(50)
+            }
+            assertTrue("Fixture note draft must finish loading", ready)
+            scenario.onActivity { activity ->
+                val field = editor(activity, "记下此刻的想法…"); assertTrue(field.requestFocus())
+                activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java).showSoftInput(field, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
+            val deadline = SystemClock.elapsedRealtime() + 10000; var shown = false
+            while (!shown && SystemClock.elapsedRealtime() < deadline) {
+                scenario.onActivity { shown = it.window.decorView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true }
+                if (!shown) Thread.sleep(50)
+            }
+            assertTrue("Fixture keyboard must open", shown)
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
+                val root = activity.window.decorView
+                val ime = root.rootWindowInsets.getInsets(android.view.WindowInsets.Type.ime())
+                val availableBottom = root.height - ime.bottom
+                val items = views(root).filterIsInstance<TextView>().filter { it.tag?.toString()?.startsWith("primary:") == true }
+                assertEquals(4, items.size)
+                for (item in items) {
+                    val bounds = android.graphics.Rect(); assertTrue(item.getGlobalVisibleRect(bounds))
+                    assertTrue("${item.text} must remain above the keyboard", bounds.bottom <= availableBottom + 2)
+                }
+                assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
+                val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+                root.draw(Canvas(bitmap))
+                File(context.filesDir, "generated-ui").apply { mkdirs() }.resolve("notes-keyboard.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+                activity.getSystemService(android.view.inputmethod.InputMethodManager::class.java).hideSoftInputFromWindow(root.windowToken, 0)
+            }
+        }
+    }
+
     @Test fun renderGeneratedNavigationPagesWhenExplicitlyRequested() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         org.junit.Assume.assumeTrue("Explicit generated-only UI rendering required", InstrumentationRegistry.getArguments().getString("renderGeneratedUi") == "true")
@@ -239,7 +300,8 @@ class NavigationInstrumentedTest {
         require(QuickNotes.draft(context).read().text.isEmpty())
         val directory = File(context.filesDir, "generated-ui").apply { mkdirs() }
         ActivityScenario.launch(MainActivity::class.java).awaitMainUi().use { scenario ->
-            listOf("今天" to "overview", "记录" to "notes", "资料" to "library", "问一问" to "ask", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
+            // AskActivity has its own generated native rendering fixture; Main no longer owns a jump page.
+            listOf("今天" to "overview", "记录" to "notes", "资料库" to "library", "本机来源" to "sources", "本机" to "settings", "采集与存储" to "capture-settings", "连接与同步" to "sync-settings", "隐私与应用规则" to "privacy-settings", "本机存储" to "storage-settings", "图像与文字识别" to "processing-settings").forEach { (label, file) ->
                 scenario.onActivity {
                     when {
                         file == "sources" -> { tab(it, "本机"); menu(it, label) }
@@ -257,6 +319,22 @@ class NavigationInstrumentedTest {
                     File(directory, "$file.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
                     bitmap.recycle()
                 }
+            }
+        }
+        ActivityScenario.launch(AskActivity::class.java).use { scenario ->
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
+                assertTrue(activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)
+                val root = activity.window.decorView
+                val header = views(root).single { it.tag == "central-header" } as ViewGroup
+                for (index in 0 until header.childCount) {
+                    val child = header.getChildAt(index)
+                    assertTrue("Central header child must have room", child.width > 0 && child.right <= header.width)
+                }
+                val bitmap = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+                root.draw(Canvas(bitmap))
+                File(directory, "central-login.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
             }
         }
     }
