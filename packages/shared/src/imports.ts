@@ -4,11 +4,14 @@ export const importStatusSchema=z.enum(['queued','preparing','awaiting_confirmat
 export type ImportStatus=z.infer<typeof importStatusSchema>;
 export type ArchivedFile={id:string;hash:string;name:string;relativePath:string;mimeType:string;sizeBytes:number;createdAt:string};
 export type ImportPreview={count:number;samples:{title:string;text:string;kind:string;attachmentCount:number}[]};
-export type ImportDispositionStatus='parsed'|'attachment'|'container'|'excluded'|'unsupported';
-export type ImportDispositions={counts:Record<ImportDispositionStatus,number>;items:{fileId:string;path:string;status:ImportDispositionStatus;reason:string}[]};
+export type ImportDispositionStatus='parsed'|'attachment'|'container'|'excluded'|'unsupported'|'processing';
+export type ImportDispositions={counts:Record<Exclude<ImportDispositionStatus,'processing'>,number>&{processing?:number};items:{fileId:string;path:string;status:ImportDispositionStatus;reason:string}[]};
 export const importReviewDecisionSchema=z.object({confidence:z.enum(['high','low','unknown']),ambiguous:z.boolean(),reason:z.string().min(1).max(1000).optional()}).strict();
 export type ImportReviewDecision=z.infer<typeof importReviewDecisionSchema>;
 export type ImportReviewGate={decision:'automatic'|'confirmation';reason:string};
+export type ImportMediaItem={fileId:string;format:{id:string;version:string;mimeType:string;reason:string};captureId?:string;
+  processing?:{state:string;stage:string;error?:string};searchable?:boolean;
+  memory?:{state:string;jobIds:string[]}};
 export type ImportJob={
   id:string;operationId?:string;execution?:import('./execution.js').ExecutionEnvelope;name:string;instruction:string;sourceId:string;sourcePackId?:string;status:ImportStatus;
   processingStatus:'archived'|'analyzing'|'preview_ready'|'saving'|'saved'|'blocked';
@@ -16,6 +19,7 @@ export type ImportJob={
   archive:{files:number;bytes:number;expandedFiles:number};
   progress:{total:number;processed:number;imported:number;duplicates:number};
   preview?:ImportPreview;dispositions?:ImportDispositions;reviewDecision?:ImportReviewDecision;reviewGate?:ImportReviewGate;error?:string;captureIds:string[];memoryJobId?:string;
+  media?:ImportMediaItem[];
 };
 export const importRequestSchema=z.object({
   requestId:z.string().uuid().optional(),

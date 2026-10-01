@@ -75,3 +75,5 @@ export class MemoryStrategies {
   }
   list(){return [...this.recipes.values()].map(recipe=>{try{return {...recipe,available:true,binding:this.resolve(recipe).binding};}catch{return {...recipe,available:false};}});}
 }
+
+declare module '@deepseek-ai/cordis' {interface Context {moteMemoryStrategies:MemoryStrategies;}}

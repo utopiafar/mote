@@ -24,6 +24,19 @@ async function select(d:Document,files:File[]){const input=d.querySelector<HTMLI
 async function submit(d:Document){await act(async()=>d.querySelector('form')!.dispatchEvent(new window.Event('submit',{bubbles:true,cancelable:true})));}
 async function until(check:()=>boolean){for(let i=0;i<100;i++){if(check())return;await act(async()=>new Promise(resolve=>setTimeout(resolve,10)));}assert.ok(check(),'Generated UI operation did not settle');}
 
+test('media admission distinguishes extraction, search and Memory and retries the existing file',async t=>{
+ const {root,d}=await fixture(t),writes:string[]=[],opened:string[]=[];
+ const job=importJob({files:[{id:'generated-media',name:'generated.mp3',relativePath:'generated.mp3',sizeBytes:9}],media:[{fileId:'generated-media',captureId:'generated-record',format:{id:'mote.media-format',version:'1',mimeType:'audio/mpeg',reason:'Generated format'},processing:{state:'failed',stage:'extract',error:'unsupported_format'},searchable:false,memory:{state:'failed',jobIds:[]}}]});
+ const api=apiWith((path,init)=>{
+  if(init?.method==='POST'){writes.push(path);return {queued:true};}
+  if(path==='/api/imports')return {items:[job]};if(path==='/api/imports/'+job.id)return job;return {items:[]};
+ });
+ await act(async()=>root.render(view(api,{onOpen:(id:string)=>opened.push(id)})));await act(async()=>d.querySelector<HTMLButtonElement>('.workspace-select')!.click());
+ assert.match(d.body.textContent!,/媒体已接入/);assert.match(d.body.textContent!,/内容提取失败/);assert.match(d.body.textContent!,/尚无可搜索片段/);assert.match(d.body.textContent!,/记忆整理失败/);assert.doesNotMatch(d.body.textContent!,/记录已保存到中央归档/);
+ await act(async()=>button(d,'重试处理').click());assert.deepEqual(writes,['/api/files/capture%3Agenerated-record/retry']);
+ await act(async()=>button(d,'查看记录').click());assert.deepEqual(opened,['generated-record']);
+});
+
 test('import history failures recover without false empty state, and revoked history is removed',async t=>{
  const {root,d}=await fixture(t);let failure=503;
  const api=apiWith(()=>{if(failure)throw new ApiError('Generated read failure',failure);return {items:[importJob()]};});

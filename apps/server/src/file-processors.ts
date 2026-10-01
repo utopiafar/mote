@@ -11,6 +11,8 @@ import {once} from 'node:events';
 import {transcriptSchema,diarizationSchema,fileProcessingSchema,type Transcript,type FileProcessingSettings,processorParameterSchema,type ProcessorParameter} from '@mote/shared';
 import {StoreError} from './store.js';
 import {BackendPluginScope} from './backend-plugin-scope.js';
+import {ImportIntakeRegistry,installImportIntake} from './import-intake.js';
+import {FileRecipeRegistry,FileOutputRegistry,installFileRecipes,type ComponentRef} from './file-recipes.js';
 
 export interface TranscriptionProvider {
   transcribe(input:{body:AsyncIterable<Buffer>;sizeBytes:number;mimeType:string;settings:FileProcessingSettings;localOnly?:boolean;maxAudioMs:number;signal:AbortSignal}):Promise<Transcript>;
@@ -71,6 +73,8 @@ export interface FileProcessor {
   reuseByContent?:boolean;
   /** Issued HTTP calls retain their deadline after publication is cancelled. Default: forward cancellation. */
   awaitResponseOnCancel?:boolean;
+  output?:ComponentRef;
+  recipe?:ComponentRef;
   process(input:ProcessorInput):Promise<unknown>;
 }
 // Only host-authored builtin metadata is translated; plugin-authored strings stay literal.
@@ -110,9 +114,13 @@ function builtin(processor:FileProcessor):Plugin {
 /** File processing plugins live in the shared backend context when mounted by the server. */
 export class FileProcessorRuntime {
   readonly context:Context;readonly registry=new ProcessorRegistry();readonly ready:Promise<void>;private readonly pluginScope:BackendPluginScope;
+  readonly intake=new ImportIntakeRegistry();readonly recipes=new FileRecipeRegistry();readonly outputs=new FileOutputRegistry();
   constructor(provider:TranscriptionProvider=new HttpTranscriptionProvider(),plugins:Plugin[]=[],modules:string[]=[],contextProcessors?:import('./processing-runtime.js').ContextProcessorRegistry,root?:Context){
     this.pluginScope=new BackendPluginScope(root);this.context=this.pluginScope.context;
     this.pluginScope.provide('moteFileProcessors',this.registry);
+    this.pluginScope.provide('moteImportIntake',this.intake);
+    this.pluginScope.provide('moteFileRecipes',this.recipes);
+    this.pluginScope.provide('moteFileOutputs',this.outputs);
     if(contextProcessors&&!root)this.pluginScope.provide('moteContextProcessors',contextProcessors);
     const audio=(id:string,localOnly=false)=>builtin({id,version:localOnly?'3':'2',name:localOnly?"本地多人录音":"转写接口",stage:'extract',mediaTypes:['audio/'],localOnly,serviceKind:'asr',awaitResponseOnCancel:true,
       ...(localOnly?{contentPolicy:'local-only' as const,allowSummary:false,dialogue:true,managedModel:'dialogue' as const}:{}),dependencies:{settings:['endpoint','apiKey','allowRemote'],parameters:[]},
@@ -121,6 +129,7 @@ export class FileProcessorRuntime {
     const pluginScope=this.pluginScope;
     this.ready=(async()=>{
       try{
+        await pluginScope.install({name:'mote-file-capabilities',apply:ctx=>{ctx.effect(()=>installImportIntake(this.intake));ctx.effect(()=>installFileRecipes(this.recipes,this.outputs));}});
         await pluginScope.install(audio('audio.http'));
         await pluginScope.install(audio('audio.local-dialogue',true));
         await pluginScope.install(builtin({id:'text.utf8',version:'3',name:"UTF-8 文字提取",stage:'extract',mediaTypes:['text/'],localOnly:true,dependencies:{settings:[]},process:input=>extractUtf8(input.readOriginal(),input.file.sizeBytes,input.signal)}));

@@ -8,6 +8,7 @@ import { StoreError } from '../store.js';
 /** imports: owns its transport, data and command contributions. */
 export function register(app:FastifyInstance,{archivedFiles,config,evidenceReader,importTasks,imports,jobId,launchImport,store}:Pick<FeatureServices,"archivedFiles"|"config"|"evidenceReader"|"importTasks"|"imports"|"jobId"|"launchImport"|"store">){
 registerImportUploads(app,store,archivedFiles);
+app.get('/api/import-capabilities',async()=>imports.intake.list());
 app.get('/api/imports',async()=>({items:imports.list()}));
 app.get('/api/import-source-packs',async()=>({items:(config.importPythonPacks??[]).map(({id,version,description})=>({id,version,...(description?{description}:{})}))}));
 app.post('/api/imports',{bodyLimit:360*1024*1024,config:{rateLimit:{max:10,timeWindow:'1 minute'}}},async(req,reply)=>{const job=await imports.create(req.body);if(job.status==='queued')launchImport(job.id,()=>imports.prepare(job.id));return reply.code(202).send(imports.get(job.id));});

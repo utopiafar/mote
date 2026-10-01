@@ -132,6 +132,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
   const executor=new ExecutionEngine(store);
   backendContext.provide('moteExecution',executor);
   const memoryStrategies=new MemoryStrategies(),memoryRecipeSettings=new MemoryRecipeSettings(store,memoryStrategies);
+  backendContext.provide('moteMemoryStrategies',memoryStrategies);
   const materialMemoryWork=new MaterialMemoryWork(store,materials,Date.now,()=>automaticMemoryExtractionEnabled(store),memoryRecipeSettings);
   const sourcePipelines=new SourcePipelineRuntime(store,materials,[codingSourcePlugin],backendContext,executor,materialMemoryWork);await sourcePipelines.ready;
   const sources=new SourceStore(store,sourcePipelines),files=new FileStore(store,sources),ingress=new IngressService(store,sources,files);const fileEvidence=new FileEvidenceRequests(sources);
@@ -144,6 +145,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
     return {finish:(usage,failed)=>{if(usage)meter.update(usage);meter.finish(failed?'failed':'completed');modelBudgets.finish(id,usage,price);}};
   },{executor,operationId:()=>modelContext.getStore()?.traceContext?.operationId});
   const materialOrganizer=new MaterialOrganizerRuntime(store,materials,[],executor,materialMemoryWork);
+  backendContext.provide('moteMaterialOrganizers',materialOrganizer.registry);
   const evidenceReader=new EvidenceReader(store,sources,files,indexer,fileEvidence,materials,sourcePipelines,materialOrganizer.sourceItemRecipes,
     ref=>materialMemoryWork.readyForMemory(ref));
   const allEvidence=(ids:string[])=>evidenceReader.evidence(ids);
@@ -250,7 +252,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
   const queryRuns=new QueryRuns(store,{executor,concurrency:()=>runtimeSettings.execution().interactiveConcurrency});
   const insightRuns=new InsightRuns(store,{executor,evidenceReader});
   const workflows=new ProcessingRuntime(store,[],{},Date.now,executor,materials,backendContext);
-  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:config.fileProcessorModules,analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
+  const processing:FileProcessing=new FileProcessing(files,dependencies?.transcriptionProvider,undefined,{executor,modules:[...new Set([...(config.backendPluginModules??[]),...(config.fileProcessorModules??[])])],analyze:analyzeFile,analysisSnapshot:resolveFileModel,analysisRevision:()=>modelSettings.view().revision,diagnostics,contextProcessors:workflows.registry,pluginContext:backendContext,mediaAssets});
   try{await processing.runtime.ready;}catch(error){await processing.close();await workflows.close();await sourcePipelines.close();await executor.close();await backendContext.fiber.dispose();await modelSettings.close();await agent.close();await connections.close();await indexer.close();if(!dependencies?.store)store.close();await diagnostics.close();throw error;}
 
   const perception=new Perception(store,processing.runtime,executor,mediaAssets);
@@ -403,7 +405,7 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
     const executor=new PythonSourcePackExecutor<PythonImportOutput>({...spec,outputSchema:pythonImportOutputSchema});
     return [spec.id,{revision:sha256(JSON.stringify(spec)),prepare:pythonImportPreparation(executor)}] as const;
   }));
-  const imports=new ImportStore(store,archivedFiles,sources,{executor,
+  const imports=new ImportStore(store,archivedFiles,sources,{executor,intake:processing.runtime.intake,fileStore:files,
     sourcePacks,
     prepare:dependencies?.prepareImport??(async input=>{
       if(!agent.configured)throw new AgentNotConfiguredError();

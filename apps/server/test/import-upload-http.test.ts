@@ -45,9 +45,10 @@ test('HTTP binary import archives exact generated image without a model, enforci
  for(let attempt=0;attempt<100&&!['needs_configuration','failed','completed'].includes(job.status);attempt++){
   await setTimeout(10);const response=await node.app.inject({method:'GET',url:`/api/imports/${job.id}`,headers});assert.equal(response.statusCode,200);job=response.json();
  }
- assert.equal(job.status,'needs_configuration');assert.equal(job.processingStatus,'blocked');
- assert.equal(job.files[0].id,file.id);assert.equal(job.preview,undefined);
- assert.equal(node.store.list().items.length,0);assert.equal(modelCalls,0);
+ assert.equal(job.status,'completed');assert.equal(job.processingStatus,'saved');
+ assert.equal(job.files[0].id,file.id);assert.equal(job.media.length,1);assert.equal(job.media[0].searchable,false);
+ await node.processing.tick();assert.equal(node.files.detail(job.media[0].captureId).job.state,'blocked');
+ assert.equal(node.store.list().items.length,1);assert.equal(modelCalls,0);
  for(const table of ['model_usage','processing_usage'])assert.equal(node.store.db.prepare(`SELECT count(*) n FROM ${table}`).get()!.n,0);
  const retained=await node.app.inject({method:'GET',url:`/api/archived-files/${file.id}/content`,headers});
  assert.equal(retained.statusCode,200);assert.equal(sha256(retained.rawPayload),sha256(bytes));

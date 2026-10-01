@@ -83,13 +83,15 @@ export function configFromEnv() {
   const modelHeaders=jsonObject('MOTE_MODEL_HEADERS') as Record<string,string>,modelExtraBody=jsonObject('MOTE_MODEL_EXTRA_BODY');
   let fileProcessorModules:string[]=[];
   try{fileProcessorModules=JSON.parse(env.MOTE_FILE_PROCESSOR_PLUGINS??'[]');if(!Array.isArray(fileProcessorModules)||fileProcessorModules.length>30||fileProcessorModules.some(s=>typeof s!=='string'||s.length>2000))throw Error();}catch{throw new ConfigError('MOTE_FILE_PROCESSOR_PLUGINS','Use a JSON array of trusted installed plugin modules');}
+  let backendPluginModules:string[]=[];
+  try{backendPluginModules=JSON.parse(env.MOTE_BACKEND_PLUGINS??'[]');if(!Array.isArray(backendPluginModules)||backendPluginModules.length>30||backendPluginModules.some(s=>typeof s!=='string'||!s||s.length>2000))throw Error();}catch{throw new ConfigError('MOTE_BACKEND_PLUGINS','Use a JSON array of installed backend plugin modules');}
   let connectorModules:string[]=[];
   try{connectorModules=JSON.parse(env.MOTE_CONNECTOR_PLUGINS??'[]');if(!Array.isArray(connectorModules)||connectorModules.length>30||connectorModules.some(s=>typeof s!=='string'||!s||s.length>2000||/[\r\n\0]/.test(s)||/^[a-z][a-z0-9+.-]*:/i.test(s)&&!s.startsWith('file:')))throw Error();}catch{throw new ConfigError('MOTE_CONNECTOR_PLUGINS','Use a JSON array of trusted installed connector module specifiers');}
   let importPythonPacks:ImportPythonPackConfig[];
   try{importPythonPacks=z.array(importPythonPackSchema).max(16).parse(JSON.parse(env.MOTE_IMPORT_PYTHON_PACKS??'[]'));if(new Set(importPythonPacks.map(pack=>pack.id)).size!==importPythonPacks.length)throw Error();}
   catch{throw new ConfigError('MOTE_IMPORT_PYTHON_PACKS','Use a JSON array of unique, trusted Python packs with absolute paths and a fixed script SHA-256');}
   const config={
-    fileProcessorModules,importPythonPacks,
+    fileProcessorModules,backendPluginModules,importPythonPacks,
     host:env.MOTE_HOST||'127.0.0.1',port:number('MOTE_PORT',47832,1,65535,true),dataDir,
     profile,tokenFromEnvironment:Boolean(env.MOTE_TOKEN?.trim()),
     updateRepository:text('MOTE_UPDATE_REPOSITORY','utopiafar/mote'),updateChannel:choice('MOTE_UPDATE_CHANNEL',['stable','preview'] as const,'stable'),
@@ -153,5 +155,5 @@ export function configFromEnv() {
   return {...config,token,tokenPath,configuration};
 }
 type EnvironmentConfig=ReturnType<typeof configFromEnv>;
-type OptionalFields='agentConcurrency'|'llmConcurrency'|'memoryConcurrency'|'codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'importPythonPacks'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelRequestTimeoutMs'|'agentTimeoutMs'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'agentTraceEnabled'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
+type OptionalFields='agentConcurrency'|'llmConcurrency'|'memoryConcurrency'|'codexBin'|'codexHome'|'contentEncryptionEnabled'|'fileProcessorModules'|'backendPluginModules'|'importPythonPacks'|'modelProvider'|'modelProtocol'|'modelHeaders'|'modelExtraBody'|'updateRepository'|'updateChannel'|'connectors'|'configuration'|'modelReasoningEffort'|'modelMaxTokens'|'modelRequestTimeoutMs'|'agentTimeoutMs'|'modelTimeoutMs'|'profile'|'tokenFromEnvironment'|'diagnosticsEnabled'|'diagnosticsDebug'|'agentTraceEnabled'|'logLevel'|'logDirectory'|'logMaxBytes'|'logMaxFiles'|'logMaxEntries';
 export type Config=Omit<EnvironmentConfig,OptionalFields> & Partial<Pick<EnvironmentConfig,OptionalFields>>;

@@ -11,6 +11,7 @@ import {FileStore} from '../src/files.js';
 import {FileProcessing} from '../src/file-processing.js';
 import {type ProcessorInput} from '../src/file-processors.js';
 import {TURN_GROUP_PROMPT} from '../src/file-dialogue.js';
+import {installFileRecipes} from '../src/file-recipes.js';
 import {buildApp} from '../src/app.js';
 import {configFromEnv} from '../src/config.js';
 
@@ -123,7 +124,9 @@ test('temporarily missing Cordis plugins retain configured profiles and block un
  await f.processing.runtime.context.fiber.dispose();await f.processing.runtime.ready;
  f.processing.runtime.registry.register({...processor,id:'fixture.replacement'});
  const p=f.processing.view().policy;assert.doesNotThrow(()=>f.save(p));const id=await f.upload('unavailable.wav');await f.processing.tick();assert.equal(f.files.detail(id).job.state,'blocked');assert.equal(f.files.detail(id).job.error,'processor_not_configured');
- f.processing.runtime.registry.register(processor);f.save();await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');
+ f.processing.runtime.registry.register(processor);f.save();await f.processing.tick();assert.equal(f.files.detail(id).job.error,'file_capability_unavailable');
+ const restore=installFileRecipes(f.processing.runtime.recipes,f.processing.runtime.outputs);t.after(restore);
+ f.save();await f.processing.tick();assert.equal(f.files.detail(id).job.state,'succeeded');
 });
 
 test('changing dialogue speaker count reuses transcription while rebuilding downstream artifacts',async t=>{
