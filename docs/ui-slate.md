@@ -4,7 +4,7 @@
 
 中央一级入口为今天、资料库、问一问、行动、连接。系统管理集中运行统计、上下文任务、处理器、模型、费用、存储和诊断；用户设置保留会话与语言。所有旧 hash 入口由 `apps/web/src/navigation.ts` 映射至同一业务页。资料筛选在证据打开期间保留；浏览器返回/前进恢复证据，关闭后恢复焦点。原图需要主动展开。
 
-Mac 本机窗口保留本机采集、记录、来源和独立的隐私/连接设置。Android 复用原生 Activity 与受限中央 WebView，底部为今天、资料、问一问、本机。设备配对不授予中央所有者权限。Android 后台切换不丢弃配置草稿，离开编辑页会询问；草稿不写入系统 Bundle。
+Mac 本机窗口保留本机采集、记录、来源和独立的隐私/连接设置。Android 使用 Kotlin 原生 Activity 和 Android Views，中央工作台、资料库、问答、随手记及全部中央管理页共用原生登录，不再内嵌中央 WebView；本机入口保留今天、资料、问一问、本机。设备配对不授予中央所有者权限。Android 后台切换不丢弃配置草稿，离开编辑页会询问；草稿不写入系统 Bundle。
 
 共享配色源在 `packages/shared/design-tokens.json`。运行 `node scripts/generate-design-tokens.mjs` 生成 Web/Electron CSS 与 Kotlin token。平台导航、系统权限与文件选择器仍用原生实现。
 

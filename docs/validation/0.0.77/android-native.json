@@ -1,0 +1,31 @@
+{
+  "version": "0.0.77",
+  "date": "2026-10-01",
+  "scope": "Android native central UI and unified owner session",
+  "localCheck": "npm run check:local: passed",
+  "android": {
+    "variant": "development",
+    "versionCode": 88,
+    "unitTests": 239,
+    "unitFailures": 0,
+    "assemble": "passed",
+    "lint": "passed"
+  },
+  "instrumentation": {
+    "class": "NativeCentralInstrumentedTest",
+    "emulator": "dedicated fresh Android 35 ARM64 Google APIs emulator",
+    "tests": 7,
+    "failures": 0,
+    "centralPages": 26,
+    "evidence": "generated note text and deterministic injected query agent",
+    "visualReview": [
+      "ask",
+      "notes",
+      "settings"
+    ]
+  },
+  "physicalDevice": "not performed",
+  "liveModel": "not performed",
+  "externalAccountOAuth": "not performed",
+  "macFunctionalChanges": false
+}

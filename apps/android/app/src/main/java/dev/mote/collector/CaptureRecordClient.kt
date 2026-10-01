@@ -9,8 +9,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 
-internal class CaptureRecordClient(private val config: CollectorConfig, private val deviceId: String) {
-    init { config.validateConnection() }
+internal class CaptureRecordClient(private val config: CollectorConfig, private val deviceId: String, private val owner: CentralClient? = null) {
+    init { if (owner == null) config.validateConnection() else require(owner.server == config.server.trim().trimEnd('/')) }
     fun page(after: String, before: String, cursor: String?, source: String = "screen"): JSONObject {
         require(source in setOf("screen", "media", "notification", "device_event", "note", "activity", "ui_page"))
         val uri = Uri.parse("${config.server}/api/capture-browser").buildUpon()
@@ -34,6 +34,10 @@ internal class CaptureRecordClient(private val config: CollectorConfig, private 
     fun detail(id: String) = JSONObject(String(request("${config.server}/api/capture-browser/${UUID.fromString(id)}", false), Charsets.UTF_8))
     fun image(id: String, thumbnail: Boolean) = request("${config.server}/api/capture-browser/${UUID.fromString(id)}/image${if (thumbnail) "?thumbnail=1" else ""}", true, thumbnail)
     private fun request(url: String, image: Boolean, thumbnail: Boolean = false): ByteArray {
+        owner?.let {
+            val path = URIPath(url, it.server)
+            return if (image) it.image(path) else it.get(path).toString().toByteArray(Charsets.UTF_8)
+        }
         val connection = URL(url).openConnection() as HttpURLConnection
         try {
             connection.connectTimeout = if (thumbnail) 5_000 else 15_000; connection.readTimeout = if (thumbnail) 8_000 else 30_000
@@ -50,6 +54,9 @@ internal class CaptureRecordClient(private val config: CollectorConfig, private 
                 output.toByteArray()
             }
         } finally { connection.disconnect() }
+    }
+    private fun URIPath(url: String, server: String): String {
+        require(url.startsWith(server.trimEnd('/') + "/api/")); return url.removePrefix(server.trimEnd('/'))
     }
 }
 

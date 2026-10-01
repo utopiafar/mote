@@ -163,8 +163,9 @@ class CaptureRecordsActivity : MoteActivity() {
             try {
                 if (request != loadGeneration) return@execute
                 val settings = Settings(this); val config = settings.read()
-                if (remote && !config.hasSyncConnection()) error(MoteI18n.text("请先在连接与同步中配置中央节点"))
-                val client = if (remote) CaptureRecordClient(config, settings.deviceId) else null
+                val owner = if (remote) CentralAccess.resolve(this).client else null
+                if (remote && !config.hasSyncConnection() && owner == null) error(MoteI18n.text("请先在连接与同步中配置中央节点"))
+                val client = if (remote) CaptureRecordClient(config, settings.deviceId, owner) else null
         val page = if (source == "screen" && sessions) {
                     client?.sessions(after, before, cursor, selected?.getString("id")) ?: queue().sessionPage(after, before, cursor, selected?.getString("id"))
                 } else if (source == "screen" && selected == null) {
