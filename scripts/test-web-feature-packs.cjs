@@ -29,7 +29,7 @@ async function run(){
  await click('查看聚合正文');await until(()=>js(`!!document.querySelector('.materials-browser .source-item')`),'material card');await js(`document.querySelector('.materials-browser .source-item').click()`);
  await until(()=>js(`document.querySelector('.material-detail')?.textContent.includes('Generated transcript 2')`),'actual published body');
  writeFileSync(join(output,'coding-desktop.png'),(await wc.capturePage()).toPNG());
- await route('system/agent','.agent-inspector');await until(()=>js(`document.querySelector('.agent-inspector').textContent.includes('/context/memory')`),'model directory');
+ await route('system/agent','.agent-inspector');await until(()=>js(`document.querySelectorAll('.agent-inspector .agent-entry').length===3`),'model directory');
  await click('正式资料');await until(()=>js(`!!document.querySelector('.agent-inspector .source-item')`),'Agent materials');await js(`document.querySelector('.agent-inspector .source-item').click()`);await until(()=>js(`document.querySelector('.material-detail')?.textContent.includes('Generated transcript 2')`),'Agent read');
  await click('实际输入与读取轨迹');await until(()=>js(`document.querySelector('.agent-inspector').textContent.includes('输入追踪未开启')`),'honest unavailable input');
  await click('可访问范围');window.setSize(430,1000);await delay(200);assert.ok(await js('document.documentElement.scrollWidth<=window.innerWidth'),'mobile directory fits');writeFileSync(join(output,'agent-mobile.png'),(await wc.capturePage()).toPNG());window.setSize(1360,1000);

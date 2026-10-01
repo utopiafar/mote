@@ -499,6 +499,9 @@ export async function buildApp(config:Config,dependencies?:{semanticContextTime?
     await app.register(staticFiles,{root:web,prefix:'/'});
     app.setNotFoundHandler(async(req,reply)=>{
       if(req.url.startsWith('/api/'))return reply.code(404).send({error:'not_found',requestId:req.id});
+      // A removed hashed bundle must not receive the SPA HTML fallback. Open
+      // tabs can still request the previous build's lazy pages after upgrades.
+      if(req.url.startsWith('/assets/'))return reply.header('Cache-Control','no-store').code(404).send({error:'not_found',requestId:req.id});
       return reply.type('text/html').sendFile('index.html');
     });
     app.addHook('onSend',async(req,reply,payload)=>{
