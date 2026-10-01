@@ -31,11 +31,12 @@ class ProfileSupportInstrumentedTest {
                 }
                 fun views(v: android.view.View): List<android.view.View> = listOf(v) + if (v is android.view.ViewGroup) (0 until v.childCount).flatMap { views(v.getChildAt(it)) } else emptyList()
                 views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString()=="本机" }.performClick()
-                views(activity.window.decorView).single { it.isShown && it.tag=="menu:关于与更新" }.performClick()
+                views(activity.window.decorView).filterIsInstance<android.widget.Button>().single { it.isShown && it.text.toString()=="高级与维护" }.performClick()
                 views(activity.window.decorView).single { it.isShown && it.tag=="menu:开发者选项" }.performClick()
                 visit(activity.window.decorView)
                 assertTrue(texts.any { it.contains("环境：dev") && it.contains(context.noBackupFilesDir.absolutePath) })
                 views(activity.window.decorView).filterIsInstance<android.widget.TextView>().single { it.isShown && it.isClickable && it.text.toString()=="本机" }.performClick()
+                views(activity.window.decorView).single { it.isShown && it.tag=="menu:开发者选项" }.performClick()
                 views(activity.window.decorView).single { it.isShown && it.tag=="menu:诊断与支持" }.performClick()
                 texts.clear(); visit(activity.window.decorView); assertTrue(texts.contains("导出安全支持包 JSON"))
             }

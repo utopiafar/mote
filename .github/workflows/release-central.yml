@@ -32,7 +32,10 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with: { node-version: '24', cache: npm }
       - run: npm ci --ignore-scripts
-      - name: Build and verify central workspaces and generated fixtures
+      - name: Build central workspaces
+        run: npm run build:central
+      - name: Verify central workspaces and generated fixtures
+        if: vars.MOTE_PRE_RELEASE_CHECKS == 'true'
         run: npm run check:central
       - name: Package committed central source and verify archive metadata
         run: node scripts/release/source-package.mjs

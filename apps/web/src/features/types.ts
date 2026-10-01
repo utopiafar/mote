@@ -10,4 +10,4 @@ export type ViewValue={kind:string;schemaVersion:number;representation:string;re
 export type ViewProps={value:ViewValue;api:Api;onOpen:(ref:string)=>void;fallback?:ReactNode};
 export type ViewEntry={id:string;kind:string;schemaVersion:number;representation:string;render:(props:ViewProps)=>ReactNode};
 export type CollectionProps={api:Api;devices:Device[];range:Range;rangeSelectionKey?:string;activity:Activity;revision:number;onOpen:(ref:string)=>void;onChanged?:()=>void};
-export type CollectionEntry={id:string;featureId:string;label:string;order:number;render:(props:CollectionProps)=>ReactNode};
+export type CollectionEntry={id:string;featureId:string;label:string;order:number;usesTimeRange?:boolean;render:(props:CollectionProps)=>ReactNode};

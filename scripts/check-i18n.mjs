@@ -16,6 +16,8 @@ for(const dir of ['apps/web/src','apps/desktop/src','apps/server/src','packages/
 }
 for(const file of walk('apps/android/app/src/main/java').filter(f=>f.endsWith('.kt'))){
  const text=readFileSync(file,'utf8');
+ // These explicit route descriptors provide dynamic translation keys to native navigation.
+ if(file.endsWith('/PrimaryNavigation.kt'))for(const m of text.matchAll(/(?:MoteNavigationGroup|^\s*[A-Z_]+)\(("(?:[^"\\]|\\.)*")/gm))check(JSON.parse(m[1]),file);
  for(const m of text.matchAll(/MoteI18n\.text\(("(?:[^"\\]|\\.)*")/g))check(JSON.parse(m[1].replaceAll('\\$','$')),file);
 }
 const html=readFileSync('apps/desktop/src/index.html','utf8');

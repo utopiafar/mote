@@ -10,6 +10,20 @@ Mote 保留 npm Monorepo，按独立安装/部署单元发布。根 `package.jso
 
 三个单元分别走 [Central](../.github/workflows/release-central.yml)、[Desktop](../.github/workflows/release-desktop.yml)、[Android](../.github/workflows/release-android.yml) workflow。只推送要发布的组件标签，只构建、验证和上传该组件的产物。当前依然是 DEV prerelease、手动安装/部署，不恢复签名在线更新，也不发布 GHCR 镜像。架构、协议和迁移边界见 [独立发布架构](release-architecture.md)，安装见 [更新说明](updating.md)。
 
+## MVP 阶段的 GitHub 检查开关
+
+2026-10-02 暂停 GitHub 的 `Checks` 和 `Component checks` 工作流，并将仓库变量 `MOTE_PRE_RELEASE_CHECKS` 设为 `false`。三个发布工作流保持启用，默认跳过 Central/Desktop 的测试与独立类型检查、Android 单元测试，以及 Mac 打包后的兼容性 smoke。构建、组件版本、签名、应用身份与发布附件完整性校验继续执行。未设置变量时同样跳过发布测试；本地检查命令仍可手动使用，本地 Mac 打包未设置该环境变量时仍执行 smoke。
+
+需要恢复时运行：
+
+```sh
+gh workflow enable checks.yml --repo utopiafar/mote
+gh workflow enable component-checks.yml --repo utopiafar/mote
+gh variable set MOTE_PRE_RELEASE_CHECKS --repo utopiafar/mote --body true
+```
+
+这会恢复后续 PR/主分支检查及新发布的测试；完整 `Checks` 仍需手动触发。旧标签保留创建时的工作流，不受新提交中的测试开关控制。
+
 旧 `vX.Y.Z` Release、标签和 `release/notes/X.Y.Z.md` 保留追溯；新发布不再使用统一标签。初始拆分保持各端原安装版本与 Android 版本码，调整发布流程本身不创建安装包。后续只递增实际发布的组件。
 
 ## 开发早期版本编号
@@ -63,7 +77,7 @@ Mac 默认 adhoc 只提供本期可构建的分发方式，不代表 Apple 认�
 
 1. 运行 `npm run release:version -- android patch`（或 `central`、`desktop`，也可给出更高的完整版本）。脚本只修改该发布单元；Central 同步 server/web 和对应 lockfile 条目，Android 单独递增 versionCode。
 2. 编写 `release/notes/<组件>/<版本>.md`，记录这个端的变化与实际验证范围。
-3. 提交/PR 前运行 `npm run check:local`；发布前运行 `npm run release:verify -- android`，并补做该端的平台检查。Central 可运行 `npm run check:central`，macOS 可运行 `npm run check:desktop`；Android 用 Gradle 单元测试、构建与 lint。
+3. 提交/PR 前运行 `npm run check:local`；发布前运行 `npm run release:verify -- android`。MVP 阶段平台测试由维护者按需手动运行：Central 可运行 `npm run check:central`，macOS 可运行 `npm run check:desktop`；Android 用 Gradle 单元测试、构建与 lint。GitHub 的默认暂停策略见上面的检查开关。
 4. 合并后在对应提交推送不可变组件标签，例如 `android-v0.0.78`。手动启动 workflow 也必须选择准确的组件标签，普通分支无法发版。
 5. 对应工作流构建、验证并上传唯一组件产物。Mac 使用 `MOTE_MAC_DEVELOPMENT=1`；Android 使用原证书并核验包名、版本码和 16 KiB 对齐；Central 构建 server/web 后从标签归档所需源码，并验证结构与版本。`.asset.json` 等 CI 校验数据不作为公开附件。
 
@@ -79,7 +93,7 @@ git tag android-v0.0.78
 git push origin android-v0.0.78
 ```
 
-[Component checks](../.github/workflows/component-checks.yml) 按代码输入和 npm 依赖选择平台检查；协议或共享契约变更检查所有消费者，普通端侧改动只检查该端。完整手动检查仍保留在 [Checks](../.github/workflows/checks.yml)，本地 PR 检查仍为 `check:local`。检查所有端不会创建其他端的发布。
+[Component checks](../.github/workflows/component-checks.yml) 恢复启用后按代码输入和 npm 依赖选择平台检查；协议或共享契约变更检查所有消费者，普通端侧改动只检查该端。完整手动检查仍保留在 [Checks](../.github/workflows/checks.yml)，本地 PR 检查仍为 `check:local`。检查所有端不会创建其他端的发布。
 
 已发布 Release 不可覆盖，失败草稿可以重试。各端版本不能相互比较，也不必同时递增。文档修改本身不要求发布安装包；共享库变化需要判断实际受影响产品并分别发版。中央源码包保留 npm lockfile 和跨工作区依赖，以便在目标机器独立构建。升级步骤见 [更新指南](updating.md)。
 

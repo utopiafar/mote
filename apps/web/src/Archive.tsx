@@ -1,21 +1,26 @@
-import { type CapturePreview } from '@mote/shared';
+import { formatEvidenceRef,parseEvidenceRef,type CapturePreview } from '@mote/shared';
 import { getLocale,moteText } from '@mote/shared/i18n';
 import {
 ArrowLeft,
 ArrowRight,
 Clock3,
+FileText,
 Monitor,
-RefreshCw
+RefreshCw,
+Upload
 } from "lucide-react";
 import React,{
 useCallback,
 useEffect,
+useLayoutEffect,
 useMemo,
 useRef,
 useState,
+useSyncExternalStore,
 } from "react";
 import {
 duration,
+dateTime,
 errorMessage,
 queryString,
 type Activity,
@@ -23,8 +28,10 @@ type Api,
 type Device,
 type Range
 } from "./api";
-import { captureDateRange,localDateInput } from './capture-presentation';
-import { FeatureCollections } from './features/runtime';
+import { captureDateRange,localDateInput,ocrPresentation } from './capture-presentation';
+import { webFeatures } from './features/runtime';
+import type {CollectionEntry,CollectionProps} from './features/types';
+import {LibraryBrowseLayout,LibraryMaterials} from './LibraryBrowse';
 const CaptureSessions = React.lazy(()=>import('./CaptureSessions').then(module=>({default:module.CaptureSessions})));
 
 import { sourceLabels } from './Metadata';
@@ -35,7 +42,24 @@ export type ArchiveTab = string;
 export function ActivitySummary({activity}:{activity:Activity}) {return <section className="panel activity-panel"><div className="section-heading"><div><h2>{moteText("应用活动概况")}</h2><p>{moteText("前台应用采样时长 ·")}{' '}{duration(activity.totalDurationMs)}</p></div></div>{activity.apps.length?<><div className="app-list">{activity.apps.map((app,index)=><div className="app-row" key={app.appId||app.appName}><span className={'app-dot dot-'+index%5}/><strong>{app.appName}</strong><span>{duration(app.durationMs)}</span><small>{activity.totalDurationMs?Math.round(app.durationMs/activity.totalDurationMs*100):0}%</small></div>)}</div><p className="measurement-note">{moteText("多台设备分别计时；未采样的时间不会补齐，应用活动不代表注意力或实际工作成果。后台媒体播放单独统计，可在「媒体播放」中查看。")}</p></>:<Empty icon={Clock3} title={moteText("这段时间还没有活动采样")}><p>{moteText("设备完成同步后，可以在这里查看应用时间分布。")}</p></Empty>}</section>;}
 
 export function Archive({api,devices,range,rangeSelectionKey,activity,revision,onOpen,tab,setTab,onChanged}:{onChanged?:()=>void;api:Api;devices:Device[];range:Range;rangeSelectionKey?:string;activity:Activity;revision:number;onOpen:(id:string)=>void;tab:ArchiveTab;setTab:(tab:ArchiveTab)=>void}) {
- return <div className="archive-page"><div className="page-heading"><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("浏览原始记录、活动与播放分布，以及有证据支撑的记忆。")}</p></div><FeatureCollections selected={tab} onSelect={setTab} props={{api,devices,range,rangeSelectionKey,activity,revision,onOpen,onChanged}}/></div>;
+ useSyncExternalStore(webFeatures.registry.subscribe,webFeatures.registry.getRevision,webFeatures.registry.getRevision);
+ const entries=webFeatures.collections(),entry=entries.find(item=>item.id===tab)??entries[0];
+ const [selection,setSelection]=useState<{owner:Api;view:string;reference:string}>();
+ const opener=useRef<HTMLElement|null>(null);
+ const selected=selection?.owner===api&&selection.view===entry?.id?selection.reference:undefined;
+ useEffect(()=>{setSelection(undefined);opener.current=null;},[api,entry?.id]);
+ useLayoutEffect(()=>{if(!selected&&opener.current?.isConnected)opener.current.focus();},[selected]);
+ const clearSelection=useCallback(()=>{setSelection(undefined);},[]);
+ const select=useCallback((ref:string)=>{opener.current=document.activeElement as HTMLElement|null;const parsed=parseEvidenceRef(ref);setSelection({owner:api,view:entry?.id??tab,reference:parsed?formatEvidenceRef(parsed.kind,parsed.id):ref});},[api,entry?.id,tab]);
+ const props={api,devices,range,rangeSelectionKey,activity,revision,onOpen:select,onChanged};
+ return <div className={'archive-page library-archive'+(selected?' has-selection':'')}><div className="page-heading library-heading"><div><div className="eyebrow">{moteText("有来处，也有脉络")}</div><h1>{moteText("资料库")}</h1><p>{moteText("所有记录放在一处。选择资料，查看内容与来源。")}</p></div><a className="button primary" href="#/library/import"><Upload size={16}/>{moteText('导入资料')}</a></div><div className="library-controls"><label>{moteText('资料类型')}<select aria-label={moteText('资料类型')} value={entry?.id??''} onChange={event=>{clearSelection();setTab(event.target.value);}}>{entries.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}</select></label></div><LibraryBrowseLayout reference={selected} api={api} onClose={clearSelection} onOpen={onOpen} supporting={!['records','materials'].includes(entry?.id??'')}><LibraryCollectionBoundary key={entry?.id}>
+   {entry?.id==='records'?<RecordTimeline api={api} devices={devices} revision={revision} onOpen={select} library selectedReference={selected} onBrowseChanged={clearSelection}/>:entry?.id==='materials'?<LibraryMaterials api={api} revision={revision} selected={selected} onSelect={select} onBrowseChanged={clearSelection}/>:entry?<LibraryCollection entry={entry} props={props}/>:<Spinner/>}
+ </LibraryCollectionBoundary></LibraryBrowseLayout></div>;
+}
+function LibraryCollection({entry,props}:{entry:CollectionEntry;props:CollectionProps}){return entry.render(props);}
+class LibraryCollectionBoundary extends React.Component<{children:React.ReactNode},{failed:boolean}>{
+ state={failed:false};static getDerivedStateFromError(){return {failed:true};}
+ render(){return this.state.failed?<p role="status">{moteText('专用视图暂不可用，请查看资料库或重试。')}</p>:this.props.children;}
 }
 
 export function Timeline(props:{api:Api;devices:Device[];onOpen:(id:string)=>void;revision:number;embedded?:boolean}) {
@@ -49,11 +73,17 @@ export function RecordTimeline({
   devices,
   onOpen,
   revision,
+  library=false,
+  selectedReference,
+  onBrowseChanged,
 }: {
   api: Api;
   devices: Device[];
   onOpen: (id: string) => void;
   revision: number;
+  library?:boolean;
+  selectedReference?:string;
+  onBrowseChanged?:()=>void;
 }) {
   const [layout,setLayout]=useState<'grid'|'list'>(()=>localStorage.getItem('mote.record-layout')==='grid'?'grid':'list');
   const [after, setAfter] = useState("");
@@ -139,6 +169,17 @@ export function RecordTimeline({
     }
     return [...result.entries()];
   }, [items]);
+  useEffect(()=>{if(library)onBrowseChanged?.();},[range,library,onBrowseChanged]);
+  if(library)return <section className="library-captures">
+    <div className="library-capture-tools"><label><span>{moteText('按天查看')}</span><input type="date" aria-label={moteText('查看某天的采集记录')} value={after&&after===before?after:''} onChange={event=>{setAfter(event.target.value);setBefore(event.target.value);}}/></label><label><span>{moteText('设备')}</span><select aria-label={moteText('筛选设备')} value={device} onChange={event=>setDevice(event.target.value)}><option value="">{moteText('全部设备')}</option>{devices.map(item=><option key={item.deviceId} value={item.deviceId}>{item.deviceName}</option>)}</select></label><button className="icon-button" aria-label={moteText('刷新记录')} disabled={loading} onClick={()=>setRefreshVersion(value=>value+1)}><RefreshCw size={16} className={loading?'spin':''}/></button></div>
+    <details className="library-advanced-filters"><summary>{moteText('更多筛选')}</summary><div className="filter-bar"><label><span>{moteText('从')}</span><input type="date" aria-label={moteText('开始日期')} value={after} onChange={event=>setAfter(event.target.value)}/></label><label><span>{moteText('至')}</span><input type="date" aria-label={moteText('结束日期')} value={before} min={after} onChange={event=>setBefore(event.target.value)}/></label><label><span>{moteText('来源')}</span><select aria-label={moteText('筛选记录来源')} value={source} onChange={event=>{setSource(event.target.value);if(event.target.value&&event.target.value!=='screen')setOcrStatus('');}}><option value="">{moteText('全部来源')}</option>{Object.entries(sourceLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><label><span>{moteText('采集级别')}</span><select aria-label={moteText('筛选采集级别')} value={collection} onChange={event=>setCollection(event.target.value as typeof collection)}><option value="">{moteText('全部记录')}</option><option value="activity">{moteText('仅活动状态')}</option><option value="content">{moteText('允许保留的内容')}</option></select></label><label><span>OCR</span><select aria-label={moteText('筛选 OCR 状态')} value={ocrStatus} onChange={event=>setOcrStatus(event.target.value)}><option value="">{moteText('全部状态')}</option><option value="pending">{moteText('待处理')}</option><option value="completed">{moteText('已完成')}</option><option value="failed">{moteText('失败')}</option><option value="disabled">{moteText('已关闭')}</option><option value="unknown">{moteText('状态未知')}</option></select></label></div></details>
+    <div className="library-list-status"><span>{totalCount===undefined?moteText('已读取')+' '+items.length:moteText('共 {0} 条 · 本页 {1} 条',totalCount,items.length)}</span>{(after||before||device||collection||source||ocrStatus)&&<button className="text-button" onClick={()=>{setAfter('');setBefore('');setDevice('');setCollection('');setSource('');setOcrStatus('');}}>{moteText('清除筛选')}</button>}</div>
+    {error&&<ErrorNotice text={error} retry={()=>void load(pageCursors[page],requestVersion.current,page)}/>}
+    {groups.map(([day,records])=><section className="library-record-group" key={day}><h2>{day}</h2><div className="library-record-list">{records.map(capture=><button className={'library-record'+(selectedReference===capture.id||selectedReference==='capture:'+capture.id?' selected':'')} key={capture.id} aria-current={selectedReference==='capture:'+capture.id?'true':undefined} onClick={()=>onOpen('capture:'+capture.id)}><span className="library-record-icon"><FileText size={18}/></span><span className="library-record-copy"><strong>{capture.windowTitle||capture.appName||sourceLabels[capture.source]}</strong><small>{sourceLabels[capture.source]??capture.source} · {capture.deviceName} · {dateTime(capture.capturedAt)}</small>{capture.textPreview&&<span className="library-record-preview">{capture.textPreview}</span>}{capture.source==='screen'&&<small>{ocrPresentation(capture.ocr,capture.textPreview).label}</small>}</span></button>)}</div></section>)}
+    {loading&&<div className="load-more"><Spinner label={moteText('正在找回这些片刻…')}/></div>}
+    {!loading&&!items.length&&!error&&<Empty icon={Clock3} title={moteText('这段时间还没有记录')}><p>{moteText('试试其他时间或设备，或检查采集端是否已开启。')}</p></Empty>}
+    <nav className="library-pagination" aria-label={moteText('采集记录分页')}><button className="button subtle" disabled={loading||page===0} onClick={()=>{onBrowseChanged?.();void load(pageCursors[page-1],requestVersion.current,page-1);}}>{moteText('上一页')}</button><span>{moteText('第 {0} 页',page+1)}</span><button className="button subtle" disabled={loading||!cursor} onClick={()=>{onBrowseChanged?.();if(cursor)void load(cursor,requestVersion.current,page+1);}}>{moteText('下一页')}</button></nav><p className="library-time-note">{moteText('日期按当前浏览器时区显示。这里展示已同步到中央节点的记录；可刷新查看文字识别的最新状态与结果。')}</p>
+  </section>;
   return (
     <>
       <div className="page-heading timeline-heading">
